@@ -196,12 +196,14 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
     }
   }
   const plans = Object.fromEntries(REVIEW_ORDER.map((kind) => [kind, planFor(kind)]))
+  const { text, truncated } = capDiff(change.diff)
 
   const paths = changedPaths(git, options.repo, base, head)
   const tier = riskTier(paths)
   const budget = TIERS[tier.tier]
   // The files to show: what any pass reviews this round (all changed files as soon as one pass reviews the whole diff).
-  const reviewedTexts = [...new Set(Object.values(plans).map((plan) => plan.incremental?.text ?? change.diff))]
+  // Scanned from what is SENT (the capped diffs), never from the uncut diff the model does not see.
+  const reviewedTexts = [...new Set(Object.values(plans).map((plan) => plan.incremental?.text ?? text))]
   const focus = Object.values(plans).some((plan) => !plan.incremental) ? paths
     : [...new Set(Object.values(plans).flatMap((plan) => changedPaths(git, options.repo, plan.incremental.from, head)))]
   const tree = new Set((git(options.repo, ['ls-tree', '-r', '--name-only', head]) ?? '').split('\n').filter(Boolean))
@@ -214,7 +216,6 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   // One budget for both reviews (they run in parallel) and every continuation.
   const budgetEnds = Date.now() + REVIEW_BUDGET_MS
   const caller = call ?? ((request) => bedrockCall(request, { region, env, timeoutMs: budgetEnds - Date.now() }))
-  const { text, truncated } = capDiff(change.diff)
   const pullRequest = prContext({ title: pr.title, body: pr.body, issueComments, reviewComments: readComments(readJson(options.reviewComments)) })
   const tenets = readFileSync(join(options.promptsRoot, 'TENETS.md'), 'utf8')
   const reviewGuide = readText(join(options.promptsRoot, 'REVIEW.md'))
@@ -239,11 +240,15 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   }
 
   // The STATUS lines are read from the raw answer; the comment shows the answer without them (they are in the recap).
-  const { ledger: next, recap } = advanceLedger(ledger, results.map((r) => (r.error ? r : { ...r, output: r.raw })))
+  // The people who commented (bots and the reviewers' own comments left out): a blocker answered as ANSWERED must name one.
+  const repliers = [...issueComments, ...readComments(readJson(options.reviewComments))].filter((c) => !c.isBot).map((c) => c.login)
+  const { ledger: next, recap } = advanceLedger(ledger, results.map((r) => (r.error ? r : { ...r, output: r.raw })), { repliers })
   // A pass moves its resume point only when it reviewed this head to the end (no failure, no cut answer).
   // A cut DIFF still moves it: the cut is permanent (the same prefix would be cut again every round, and the pass would
   // never converge), so it is disclosed as a partial review instead.
-  // An answer without its verdict line (INCOMPLETE) did not finish either.
+  // An answer without its verdict line (INCOMPLETE) did not finish either. (With a diff permanently over the cap, a
+  // pass that keeps omitting its verdict line keeps re-reviewing the same cut prefix: the strict rule is deliberate,
+  // and the model normally writes the line.)
   const finished = (r) => !r.error && !r.truncated && r.verdict?.verdict !== 'INCOMPLETE'
   next.reviewed = Object.fromEntries(results.map((r) => [r.kind, finished(r) ? pr.headSha : (resumeFrom(r.kind) ?? '')]))
   const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))

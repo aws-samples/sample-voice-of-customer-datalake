@@ -112,6 +112,7 @@ export function decodeLedger(body) {
 const SHA = /\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/
 const FILE_LINE = /[\w./-]+\.[\w]+:\d+/
 const citesFix = (note) => SHA.test(note) && FILE_LINE.test(note)
+const citesReply = (note, people) => [...note.matchAll(/@([\w-]+)/g)].some((m) => people.has(m[1].toLowerCase()))
 
 const STATUS_LINE = /^STATUS -- ([TC]\d{1,4}) -- (RESOLVED|OPEN|ANSWERED)(?: -- (.*))?$/
 
@@ -171,7 +172,8 @@ export function previousFindingsBlock(ledger, pass) {
  * (`{kind, output, verdict}`, or `{kind, error: true}` when the call failed: that pass's open findings carry over
  * untouched). An open finding the model gave no STATUS for stays open: nothing quietly disappears.
  */
-export function advanceLedger(previous, results) {
+export function advanceLedger(previous, results, { repliers = [] } = {}) {
+  const people = new Set(repliers.map((login) => login.toLowerCase()))
   const ledger = structuredClone(previous ?? emptyLedger())
   ledger.round += 1
   const recap = {}
@@ -189,6 +191,10 @@ export function advanceLedger(previous, results) {
       // word alone keeps it open.
       if (answer?.status === 'resolved' && finding.blocking && !citesFix(answer.note)) {
         answer = { status: 'open', note: `RESOLVED without a commit and file:line cited: ${answer.note}`.slice(0, MAX_TEXT) }
+      }
+      // And as ANSWERED only when it names (@login) a person who actually commented on the pull request.
+      if (answer?.status === 'answered' && finding.blocking && !citesReply(answer.note, people)) {
+        answer = { status: 'open', note: `ANSWERED without naming the author's reply (@login): ${answer.note}`.slice(0, MAX_TEXT) }
       }
       if (answer && answer.status !== 'open') {
         finding.status = answer.status

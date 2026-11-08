@@ -139,7 +139,8 @@ fails no check.
     from the last commit it reviewed to the end, so a pass that failed, was cut short or gave no verdict reviews what it
     missed;
   - gives every earlier finding a status by id: **resolved** (a blocking finding only with the commit and file:line
-    that fix it), **answered by the author** (a reply with a reason the reviewer accepts) or **still open**, listed in
+    that fix it), **answered by the author** (a reply with a reason the reviewer accepts; a blocking finding only when the answer
+    names a person who commented) or **still open**, listed in
     one line and never explained again;
   - shows that recap above its new findings.
 
