@@ -243,15 +243,18 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   // A pass moves its resume point only when it reviewed this head to the end (no failure, no cut answer).
   // A cut DIFF still moves it: the cut is permanent (the same prefix would be cut again every round, and the pass would
   // never converge), so it is disclosed as a partial review instead.
-  next.reviewed = Object.fromEntries(results.map((r) => [r.kind, !r.error && !r.truncated ? pr.headSha : (resumeFrom(r.kind) ?? '')]))
+  // An answer without its verdict line (INCOMPLETE) did not finish either.
+  const finished = (r) => !r.error && !r.truncated && r.verdict?.verdict !== 'INCOMPLETE'
+  next.reviewed = Object.fromEntries(results.map((r) => [r.kind, finished(r) ? pr.headSha : (resumeFrom(r.kind) ?? '')]))
   const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))
   for (const result of results) say(`${result.kind}: ${result.error ? 'not run' : verdicts[result.kind]}`)
   const body = renderComment({
     headSha: pr.headSha, hash, ledgerLine: encodeLedger(next), modelId, results, recap, verdicts, round,
     ranges: Object.fromEntries(REVIEW_ORDER.map((kind) => [kind, plans[kind].range])), tier, context,
     earlierRounds: reviewRounds(issueComments), omitted: change.omitted, dropped: next.dropped,
-    // Disclosed when the whole diff OR a pass's new-commits diff was cut.
-    diffTruncated: truncated || Object.values(plans).some((plan) => plan.incremental?.truncated),
+    // Disclosed only for what a pass REVIEWED: the whole diff when it reviewed it whole, else its new-commits diff (an
+    // incremental round sends the whole diff as context only, and its cut is not a gap in the review).
+    diffTruncated: Object.values(plans).some((plan) => (plan.incremental ? plan.incremental.truncated : truncated)),
   })
   if (options.out) writeFileSync(options.out, body)
   writeOutput(env.GITHUB_OUTPUT, 'comment', 'true')

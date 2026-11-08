@@ -294,7 +294,7 @@ export function renderComment({
   const seen = distinct.size === 0 ? 'nothing' : distinct.size === 1 ? passes[0].seen : passes.map((p) => `${p.label}: ${p.seen}`).join('; ')
   const files = `${context.included.length} repository file${context.included.length === 1 ? '' : 's'}`
   const notes = [
-    ...(diffTruncated ? ['> The diff was cut to fit: this review is partial.'] : []),
+    ...(diffTruncated ? ['> The diff was cut to fit: this review is partial, and the part past the cut is not reviewed in a later round.'] : []),
     ...(omitted.length > 0 ? [`> Not sent to the model (named like a secret, review them yourself): ${names(omitted)}`] : []),
     ...(context.skipped.length > 0 ? [`> Repository files left out for size: ${names(context.skipped)}`] : []),
     ...(dropped > 0 ? [`> ${dropped} of the oldest non-blocking open findings no longer fit and were dropped from the follow-up list.`] : []),

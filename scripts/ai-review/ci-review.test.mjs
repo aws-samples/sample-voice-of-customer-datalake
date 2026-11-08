@@ -488,6 +488,32 @@ test('an outage of BOTH passes still fails an enforced check while a blocking fi
   }
 })
 
+test('an answer with no verdict line does not move its resume point; a whole diff sent only as context is not "partial"', async () => {
+  const box = scratch()
+  try {
+    // Round 1 over the cap; the code answer ends without its verdict line.
+    const run = (...args) => spawnSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: box.repo, encoding: 'utf8' })
+    run('checkout', '-q', 'refs/pr/head')
+    writeFileSync(join(box.repo, 'big.ts'), 'export const x = 1\n'.repeat(9_000))
+    run('add', 'big.ts')
+    run('commit', '-q', '--amend', '--no-edit')
+    run('update-ref', 'refs/pr/head', 'HEAD')
+    writeFileSync(join(box.dir, 'event.json'), JSON.stringify({ pull_request: { number: 9, head: { sha: run('rev-parse', 'HEAD').stdout.trim() }, title: 'NAT', body: '' } }))
+    await main(box.args, {}, { call: fakeBedrock([reply(PASS('tenets')), reply('NIT -- big.ts:1 -- n\n')]).call })
+    const round1 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    const reviewed1 = latestReview(readComments([comment(BOT_LOGIN, round1)])).ledger.reviewed
+    assert.match(reviewed1.tenets, /^[0-9a-f]{40}$/)
+    assert.equal(reviewed1.commit, '', 'no verdict line: the code review did not finish')
+    // Round 2: a small push. Tenets reviews it incrementally, so its context diff being over the cap is not a gap.
+    push(box, { files: { 'flag.ts': 'export const flag = 1\n' }, message: 'a flag', comments: [comment(BOT_LOGIN, round1)] })
+    await main(box.args, {}, { call: fakeBedrock([reply(PASS('tenets')), reply(PASS('commit'))]).call })
+    const round2 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    assert.match(round2, /this review is partial/, 'the code pass reviewed the whole (cut) diff')
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
 test('a cut diff is disclosed and still moves the resume point, so a large pull request converges', async () => {
   const box = scratch()
   try {
@@ -496,10 +522,14 @@ test('a cut diff is disclosed and still moves the resume point, so a large pull 
     push(box, { files: { 'big.ts': `${'export const x = 1\n'.repeat(9_000)}` }, message: 'a large file', comments: [comment(BOT_LOGIN, round1)] })
     await main(box.args, {}, { call: fakeBedrock([reply(PASS('tenets')), reply(PASS('commit'))]).call })
     const round2 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
-    assert.match(round2, /The diff was cut to fit: this review is partial\./)
+    assert.match(round2, /The diff was cut to fit: this review is partial, and the part past the cut is not reviewed in a later round\./)
     const reviewed2 = latestReview(readComments([comment(BOT_LOGIN, round2)])).ledger.reviewed
     const head = spawnSync('git', ['rev-parse', 'refs/pr/head'], { cwd: box.repo, encoding: 'utf8' }).stdout.trim()
     assert.deepEqual(reviewed2, { tenets: head, commit: head }, 'the next round reviews only what comes after')
+    // Round 3, a small push: both passes review it in full; the whole diff is over the cap but only context.
+    push(box, { files: { 'flag.ts': 'export const flag = 1\n' }, message: 'a flag', comments: [comment(BOT_LOGIN, round2)] })
+    await main(box.args, {}, { call: fakeBedrock([reply(PASS('tenets')), reply(PASS('commit'))]).call })
+    assert.doesNotMatch(readFileSync(join(box.dir, 'comment.md'), 'utf8'), /this review is partial/)
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }
