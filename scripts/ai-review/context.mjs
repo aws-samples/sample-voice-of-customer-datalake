@@ -13,8 +13,12 @@ import { REVIEW_PATHSPEC } from './lib.mjs'
 
 /** Paths whose change gets the deep review. Prefixes end with `/`; the rest match the whole path. */
 const DEEP_PATHS = Object.freeze([
-  '.github/', 'tools/ai-review-ci/', 'scripts/ai-review/', 'scripts/pr-checks/', '.kiro/agents/', 'voc-datalake/lib/stacks/',
-  'TENETS.md', 'REVIEW.md', 'voc-datalake/lambda/shared/ai_writing.py',
+  '.github/', 'tools/ai-review-ci/', 'scripts/ai-review/', 'scripts/pr-checks/', 'scripts/git-hooks/', '.kiro/agents/',
+  'voc-datalake/lib/stacks/', 'TENETS.md', 'REVIEW.md', 'voc-datalake/lambda/shared/ai_writing.py',
+  // The gates that enforce the tenets: weakening one is as sensitive as the change it would let through.
+  'scripts/validate.sh', 'scripts/validate-affected.sh', 'voc-datalake/lib/fixed-cost-guard.test.ts',
+  'voc-datalake/lib/test-support/fixed-cost-rules.ts', 'voc-datalake/lib/customer-data-deletes.test.ts',
+  'voc-datalake/lib/utils/audit-row-guard.ts', 'voc-datalake/lambda/api/test/test_route_admin_gates.py',
 ])
 /** Data deletion and authentication code, wherever it lives in the Lambdas. */
 const DEEP_LAMBDA = /^voc-datalake\/lambda\/(?:.*\/)?(?:auth\/|[^/]*(?:retention|erasure|delete))/i
@@ -35,18 +39,28 @@ export function riskTier(paths) {
 
 /** The output budget and context of each tier. Quick reviews are short; deep ones read more and may answer longer. */
 export const TIERS = Object.freeze({
-  quick: Object.freeze({ maxTokens: 8_000, maxContinuations: 1, contextChars: 30_000 }),
+  // Quick keeps the standard context: checking that a doc tells the truth needs the code it describes.
+  quick: Object.freeze({ maxTokens: 8_000, maxContinuations: 1, contextChars: 80_000 }),
   standard: Object.freeze({ maxTokens: 24_000, maxContinuations: 2, contextChars: 80_000 }),
   deep: Object.freeze({ maxTokens: 32_000, maxContinuations: 2, contextChars: 150_000 }),
 })
 
-/** Said to the model, after the CI preamble. */
-export function tierNote({ tier, sensitive }) {
+/**
+ * Said to the model, after the CI preamble. Fixed text only: the paths that made a review deep come from the pull
+ * request, so they go in the USER message (depthBlock), never in the system prompt.
+ */
+export function tierNote({ tier }) {
   if (tier === 'quick') return '## Depth: quick\n\nThis change touches documentation only. Keep the review short: check that what it says is true of the files you are shown, and do not invent work.\n\n'
   if (tier === 'deep') {
-    return `## Depth: deep\n\nThis change touches sensitive paths (${sensitive.slice(0, 12).join(', ')}${sensitive.length > 12 ? ', …' : ''}): the review itself, CI, permissions, stacks, data deletion or the AI-writing guard. Review those files with extra care: trust boundaries, least privilege, what runs with which credentials, and what a mistake would delete or expose.\n\n`
+    return '## Depth: deep\n\nThis change touches sensitive paths, listed in <depth> as data: the review itself, CI and the gates, permissions, stacks, data deletion, authentication or the AI-writing guard. Review those files with extra care: trust boundaries, least privilege, what runs with which credentials, and what a mistake would delete or expose.\n\n'
   }
   return ''
+}
+
+/** The user-message block naming the sensitive paths of a deep review, or null. */
+export function depthBlock({ tier, sensitive }) {
+  if (tier !== 'deep') return null
+  return { tag: 'depth', body: `deep, because of: ${sensitive.slice(0, 12).join(', ')}${sensitive.length > 12 ? ', …' : ''}` }
 }
 
 /** Changed paths between `base` and `head`, review pathspec applied. */

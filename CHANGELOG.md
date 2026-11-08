@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.03.02] - 2026-11-07
+## [6.03.02] - 2026-11-08
 
 The pull request AI review converges: later rounds review only the new commits and give every earlier finding a status. It also reads the changed files, follows a new `REVIEW.md`, and scales its depth to what changed. This is development tooling only: the platform, its stacks and the workshop packaging do not change.
 
@@ -37,7 +37,7 @@ The pull request AI review converges: later rounds review only the new commits a
 - **The reviewer sees the code around the change**: the current text of the changed files and of the files the change names by path, within a size limit, read from git objects only.
 - **Depth follows the changed paths**:
   - documentation only (`*.md`, `docs/`, `LICENSE`; never TENETS.md, REVIEW.md, CONTRIBUTING.md or `.kiro/`) gets a short review;
-  - CI, the reviewers, IAM and stacks, data deletion and the AI-writing guard get a deep one, with a larger output budget and context;
+  - CI and the gates that enforce the tenets, the reviewers, TENETS.md and REVIEW.md, IAM and stacks, data deletion, authentication and the AI-writing guard get a deep one, with a larger output budget and context;
   - everything else gets the standard review.
 
 ### Upgrade notes

@@ -473,6 +473,21 @@ test('a comment from before ledgers existed counts as a round, and both passes r
   }
 })
 
+test('an outage of BOTH passes still fails an enforced check while a blocking finding is open', async () => {
+  const box = scratch()
+  try {
+    const round1 = await roundOne(box)
+    push(box, { files: { 'flag.ts': 'export const flag = 1\n' }, message: 'a flag', comments: [comment(BOT_LOGIN, round1)] })
+    const down = () => fakeBedrock([new Error('ThrottlingException'), new Error('ThrottlingException')]).call
+    const out = join(box.dir, 'github-output')
+    assert.equal(await main(box.args, { GITHUB_OUTPUT: out, AI_REVIEW_ENFORCED: 'true' }, { call: down() }), 1, 'T1 is still open and blocking')
+    assert.match(outputsOf(out), /\nfalse\n/, 'and nothing is posted')
+    assert.equal(await main(box.args, {}, { call: down() }), 0, 'advisory: the job passes')
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
 test('a push that changes only files the review skips (a lockfile) makes no round and no model call', async () => {
   const box = scratch()
   try {

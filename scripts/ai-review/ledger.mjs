@@ -25,8 +25,10 @@ export const MAX_OPEN = 40
 const MAX_TEXT = 160
 
 const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
+// One line, bounded, and no angle brackets: a finding's text goes back into the next prompt inside a tag, and a
+// quoted `</previous-findings>` must not be able to close it.
 const text = (value, max = MAX_TEXT) => {
-  const line = typeof value === 'string' ? value.replace(/[\r\n]+/g, ' ').trim() : ''
+  const line = typeof value === 'string' ? value.replace(/[\r\n]+/g, ' ').replace(/</g, '‹').replace(/>/g, '›').trim() : ''
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
 const count = (value) => (Number.isInteger(value) && value >= 0 && value < 100_000 ? value : null)
@@ -43,7 +45,7 @@ export function emptyLedger() {
 export function encodeLedger(ledger) {
   const findings = ledger.findings.filter((f) => f.status === 'open')
     .map(({ id, pass, kind, where, title, tenet, blocking, round }) => ({ id, pass, kind, where, title, tenet, blocking, round }))
-  const carried = { v: 1, round: ledger.round, next: ledger.next, findings, reviewed: ledger.reviewed }
+  const carried = { v: 1, round: ledger.round, next: ledger.next, findings, reviewed: ledger.reviewed, dropped: ledger.dropped ?? 0 }
   return `<!-- voc-ai-review-ledger ${Buffer.from(JSON.stringify(carried), 'utf8').toString('base64')} -->`
 }
 
@@ -99,7 +101,8 @@ export function decodeLedger(body) {
     v: 1, round: raw.round, ...(reviewed ? { reviewed } : {}),
     // Never reuse an id, even if `next` was tampered with or lost.
     next: { T: Math.max(count(next.T) ?? 1, highest('T') + 1), C: Math.max(count(next.C) ?? 1, highest('C') + 1) },
-    findings: kept, dropped,
+    // Dropped so far: the comment reports the total over the pull request, not one round.
+    findings: kept, dropped: (count(raw.dropped) ?? 0) + dropped,
   }
 }
 
@@ -186,7 +189,12 @@ export function advanceLedger(previous, results) {
       }
     }
     const complete = new Set(result.verdict.blocking)
+    // A finding the model raises again although it is still open is the same finding, not a new one: convergence must
+    // not depend on the model obeying "never repeat".
+    const key = (kind, where, title) => `${kind}|${text(where)}|${text(title)}`.toLowerCase()
+    const openKeys = new Set(entry.stillOpen.map((f) => key(f.kind, f.where, f.title)))
     for (const item of [...result.verdict.blocking, ...result.verdict.others]) {
+      if (openKeys.has(key(item.kind, item.where, item.title))) continue
       const finding = {
         id: `${prefix}${ledger.next[prefix]++}`, pass, kind: item.kind, where: text(item.where), title: text(item.title),
         tenet: item.tenet ?? null, blocking: complete.has(item), round: ledger.round, status: 'open', note: '', closedRound: null,
