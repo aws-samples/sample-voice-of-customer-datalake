@@ -488,17 +488,18 @@ test('an outage of BOTH passes still fails an enforced check while a blocking fi
   }
 })
 
-test('a pass shown a cut diff keeps its resume point, so the part it never saw is reviewed next round', async () => {
+test('a cut diff is disclosed and still moves the resume point, so a large pull request converges', async () => {
   const box = scratch()
   try {
     const round1 = await roundOne(box)
-    const reviewed1 = latestReview(readComments([comment(BOT_LOGIN, round1)])).ledger.reviewed
-    // More than the 150,000-character cap in one push.
+    // More than the 150,000-character cap in one push: the cut would be the same every round.
     push(box, { files: { 'big.ts': `${'export const x = 1\n'.repeat(9_000)}` }, message: 'a large file', comments: [comment(BOT_LOGIN, round1)] })
     await main(box.args, {}, { call: fakeBedrock([reply(PASS('tenets')), reply(PASS('commit'))]).call })
     const round2 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
     assert.match(round2, /The diff was cut to fit: this review is partial\./)
-    assert.deepEqual(latestReview(readComments([comment(BOT_LOGIN, round2)])).ledger.reviewed, reviewed1)
+    const reviewed2 = latestReview(readComments([comment(BOT_LOGIN, round2)])).ledger.reviewed
+    const head = spawnSync('git', ['rev-parse', 'refs/pr/head'], { cwd: box.repo, encoding: 'utf8' }).stdout.trim()
+    assert.deepEqual(reviewed2, { tenets: head, commit: head }, 'the next round reviews only what comes after')
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }

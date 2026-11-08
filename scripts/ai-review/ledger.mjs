@@ -106,9 +106,9 @@ export function decodeLedger(body) {
   }
 }
 
-// A short SHA (hex with at least one digit and one letter, so neither a number nor a word like "defaced") and a
-// `path:line`.
-const SHA = /\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/
+// A short SHA (7 to 40 hex characters with at least one digit, so not a word like "defaced"; an all-digit SHA is
+// valid) and a `path:line`.
+const SHA = /\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/
 const FILE_LINE = /[\w./-]+\.[\w]+:\d+/
 const citesFix = (note) => SHA.test(note) && FILE_LINE.test(note)
 
