@@ -178,18 +178,33 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
 
   // A comment from before ledgers existed still counts as a round, with nothing to carry over.
   const ledger = previous ? (previous.ledger ?? { ...emptyLedger(), round: reviewRounds(issueComments).length }) : null
-  const range = reviewRange(git, options.repo, { previousSha: previous?.sha ?? null, base: 'refs/pr/base', head })
-  const sinceLast = range.mode === 'incremental' ? collectChange(options.repo, range.from, head) : null
-  const incremental = sinceLast?.diff ? { ...capDiff(sinceLast.diff), from: range.from } : null
-  const reviewed = incremental ? range : { mode: 'full', reason: range.reason ?? 'no new reviewable commits since the last review' }
+  // Where each pass resumes: the last commit IT reviewed to the end. A pass that failed or was cut short keeps its
+  // older commit (or none), so it reviews the commits it missed; a ledger without this record means both passes ran.
+  const resumeFrom = (kind) => (ledger?.reviewed ? (ledger.reviewed[kind] || null) : (previous?.sha ?? null))
+  const sinceCache = new Map()
+  const planFor = (kind) => {
+    let range = reviewRange(git, options.repo, { previousSha: resumeFrom(kind), base: 'refs/pr/base', head })
+    if (ledger && resumeFrom(kind) === null) range = { mode: 'full', reason: 'this review did not finish in an earlier round' }
+    if (range.mode === 'incremental' && !sinceCache.has(range.from)) sinceCache.set(range.from, collectChange(options.repo, range.from, head))
+    const since = range.mode === 'incremental' ? sinceCache.get(range.from) : null
+    const incremental = since?.diff ? { ...capDiff(since.diff), from: range.from } : null
+    return {
+      incremental, commits: (incremental ? since : change).commits,
+      range: incremental ? range : { mode: 'full', reason: range.reason ?? 'no new reviewable commits since the last review' },
+    }
+  }
+  const plans = Object.fromEntries(REVIEW_ORDER.map((kind) => [kind, planFor(kind)]))
 
   const paths = changedPaths(git, options.repo, base, head)
   const tier = riskTier(paths)
   const budget = TIERS[tier.tier]
-  const focus = incremental ? changedPaths(git, options.repo, range.from, head) : paths
+  // The files to show: what any pass reviews this round (all changed files as soon as one pass reviews the whole diff).
+  const reviewedTexts = [...new Set(Object.values(plans).map((plan) => plan.incremental?.text ?? change.diff))]
+  const focus = Object.values(plans).some((plan) => !plan.incremental) ? paths
+    : [...new Set(Object.values(plans).flatMap((plan) => changedPaths(git, options.repo, plan.incremental.from, head)))]
   const tree = new Set((git(options.repo, ['ls-tree', '-r', '--name-only', head]) ?? '').split('\n').filter(Boolean))
   const context = contextFiles(git, options.repo, head, {
-    changed: focus, referenced: referencedPaths(`${incremental?.text ?? change.diff}\n${pr.body}`, tree), maxChars: budget.contextChars,
+    changed: focus, referenced: referencedPaths(`${reviewedTexts.join('\n')}\n${pr.body}`, tree), maxChars: budget.contextChars,
   })
 
   const modelId = env.AI_REVIEW_MODEL || DEFAULT_MODEL
@@ -202,23 +217,28 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   const tenets = readFileSync(join(options.promptsRoot, 'TENETS.md'), 'utf8')
   const reviewGuide = readText(join(options.promptsRoot, 'REVIEW.md'))
   const round = (ledger?.round ?? 0) + 1
-  const systemPrefix = CI_PREAMBLE + tierNote(tier) + (ledger ? followUpPreamble({ round, incremental: Boolean(incremental), reason: reviewed.reason }) : '')
-  say(`round ${round} (${incremental ? `commits since ${range.from.slice(0, 8)}` : 'whole diff'}), depth ${tier.tier}, ${context.included.length} repository files, ${modelId}${truncated ? ', diff cut' : ''}...`)
+  const describe = (plan) => (plan.incremental ? `commits since ${plan.incremental.from.slice(0, 8)}` : 'whole diff')
+  say(`round ${round} (${REVIEW_ORDER.map((kind) => `${kind}: ${describe(plans[kind])}`).join(', ')}), depth ${tier.tier}, ${context.included.length} repository files, ${modelId}${truncated ? ', diff cut' : ''}...`)
   const results = await Promise.all(REVIEW_ORDER.map((kind) => runReview(kind, {
-    call: caller, modelId, systemPrefix, promptsRoot: options.promptsRoot, tier: budget,
+    call: caller, modelId, promptsRoot: options.promptsRoot, tier: budget,
+    systemPrefix: CI_PREAMBLE + tierNote(tier)
+      + (ledger ? followUpPreamble({ round, incremental: Boolean(plans[kind].incremental), reason: plans[kind].range.reason }) : ''),
     prompt: buildPrompt({
-      kind, tenets, reviewGuide, commits: (incremental ? sinceLast : change).commits, base: base.slice(0, 12), files: change.files, diff: text,
-      truncated, omitted: change.omitted, pullRequest, canRead: false, extra: extraBlocks(kind, { context, ledger, incremental }),
+      kind, tenets, reviewGuide, commits: plans[kind].commits, base: base.slice(0, 12), files: change.files, diff: text,
+      truncated, omitted: change.omitted, pullRequest, canRead: false, extra: extraBlocks(kind, { context, ledger, incremental: plans[kind].incremental }),
     }),
   })))
   if (results.every((result) => result.error)) return skip('no review was run (see the warnings above): nothing to post')
 
   // The STATUS lines are read from the raw answer; the comment shows the answer without them (they are in the recap).
   const { ledger: next, recap } = advanceLedger(ledger, results.map((r) => (r.error ? r : { ...r, output: r.raw })))
+  // A pass moves its resume point only when it reviewed this head to the end (no failure, no cut answer).
+  next.reviewed = Object.fromEntries(results.map((r) => [r.kind, !r.error && !r.truncated ? pr.headSha : (resumeFrom(r.kind) ?? '')]))
   const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))
   for (const result of results) say(`${result.kind}: ${result.error ? 'not run' : verdicts[result.kind]}`)
   const body = renderComment({
-    headSha: pr.headSha, hash, ledgerLine: encodeLedger(next), modelId, results, recap, verdicts, round, range: reviewed, tier, context,
+    headSha: pr.headSha, hash, ledgerLine: encodeLedger(next), modelId, results, recap, verdicts, round,
+    ranges: Object.fromEntries(REVIEW_ORDER.map((kind) => [kind, plans[kind].range])), tier, context,
     earlierRounds: reviewRounds(issueComments), diffTruncated: truncated, omitted: change.omitted, dropped: next.dropped,
   })
   if (options.out) writeFileSync(options.out, body)

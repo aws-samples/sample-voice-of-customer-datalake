@@ -280,13 +280,17 @@ function section(label, result, recap, chars) {
  * nothing the model wrote renders as markup, mentions or links.
  */
 export function renderComment({
-  headSha, hash, ledgerLine, modelId, results, recap, verdicts, round, range, tier, context = { included: [], skipped: [] },
+  headSha, hash, ledgerLine, modelId, results, recap, verdicts, round, ranges, tier, context = { included: [], skipped: [] },
   earlierRounds = [], diffTruncated = false, omitted = [], dropped = 0,
 }) {
   const isFollowUp = round > 1
-  const seen = range.mode === 'incremental'
-    ? `the commits since \`${range.from.slice(0, 12)}\` (round ${round - 1}), with the whole diff as context`
-    : `the whole diff${isFollowUp ? ` (${range.reason})` : ''}`
+  const seenBy = (range) => (range.mode === 'incremental'
+    ? `the commits since \`${range.from.slice(0, 12)}\`, with the whole diff as context`
+    : `the whole diff${isFollowUp ? ` (${range.reason})` : ''}`)
+  const passes = results.map((result) => ({ label: LABELS[result.kind], seen: seenBy(ranges[result.kind]) }))
+  // One line when both passes reviewed the same range, else one per pass (a pass that did not finish resumes earlier).
+  const seen = new Set(passes.map((p) => p.seen)).size === 1 ? passes[0]?.seen ?? 'nothing'
+    : passes.map((p) => `${p.label}: ${p.seen}`).join('; ')
   const files = `${context.included.length} repository file${context.included.length === 1 ? '' : 's'}`
   const notes = [
     ...(diffTruncated ? ['> The diff was cut to fit: this review is partial.'] : []),

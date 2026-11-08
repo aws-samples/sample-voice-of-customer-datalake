@@ -14,7 +14,7 @@ test('a ledger survives the round trip through a comment, carrying only what the
   assert.deepEqual(decodeLedger(bodyWith(ledger)), ledger)
   assert.equal(ledger.round, 1)
   const carried = JSON.parse(Buffer.from(/ledger (\S+) -->/.exec(encodeLedger(ledger))[1], 'base64').toString('utf8'))
-  assert.deepEqual(Object.keys(carried), ['v', 'round', 'next', 'findings'])
+  assert.deepEqual(Object.keys(carried), ['v', 'round', 'next', 'findings', 'reviewed'])
   assert.deepEqual(Object.keys(carried.findings[0]), ['id', 'pass', 'kind', 'where', 'title', 'tenet', 'blocking', 'round'])
 })
 
@@ -55,6 +55,11 @@ test('STATUS answers count only for ids open in that pass', () => {
   const statuses = parseStatuses(output, 'commit', ['C1', 'C2', 'C3', 'C4', 'T1'])
   assert.deepEqual([...statuses], [['C1', { status: 'resolved', note: 'fixed in abc' }], ['C3', { status: 'open', note: '' }]])
   assert.equal(stripStatusLines(`${output}\nREVIEW-VERDICT: commit PASS`), 'STATUS -- C2 -- answered -- lower case is not the contract\n> STATUS -- C4 -- RESOLVED -- quoted from the diff\nREVIEW-VERDICT: commit PASS')
+})
+
+test('blank lines inside a code block the model wrote are kept as written', () => {
+  const output = 'STATUS -- C1 -- OPEN -- x\n\n\n\nSee:\n\n```\n> a\n\n\n\n> b\n```\nREVIEW-VERDICT: commit WARN'
+  assert.equal(stripStatusLines(output), 'See:\n\n```\n> a\n\n\n\n> b\n```\nREVIEW-VERDICT: commit WARN')
 })
 
 test('separate code blocks the model wrote stay separate, even empty ones', () => {

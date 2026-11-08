@@ -33,7 +33,7 @@ const count = (value) => (Number.isInteger(value) && value >= 0 && value < 100_0
 
 /** An empty ledger, before the first round. */
 export function emptyLedger() {
-  return { v: 1, round: 0, next: { T: 1, C: 1 }, findings: [], dropped: 0 }
+  return { v: 1, round: 0, next: { T: 1, C: 1 }, findings: [], reviewed: { tenets: '', commit: '' }, dropped: 0 }
 }
 
 /**
@@ -43,7 +43,7 @@ export function emptyLedger() {
 export function encodeLedger(ledger) {
   const findings = ledger.findings.filter((f) => f.status === 'open')
     .map(({ id, pass, kind, where, title, tenet, blocking, round }) => ({ id, pass, kind, where, title, tenet, blocking, round }))
-  const carried = { v: 1, round: ledger.round, next: ledger.next, findings }
+  const carried = { v: 1, round: ledger.round, next: ledger.next, findings, reviewed: ledger.reviewed }
   return `<!-- voc-ai-review-ledger ${Buffer.from(JSON.stringify(carried), 'utf8').toString('base64')} -->`
 }
 
@@ -92,8 +92,11 @@ export function decodeLedger(body) {
   const highest = (prefix) => Math.max(0, ...findings.filter((f) => f.id[0] === prefix).map((f) => Number(f.id.slice(1))))
   const next = isRecord(raw.next) ? raw.next : {}
   const { kept, dropped } = bound(findings.filter((f) => f.status === 'open'))
+  // The commit each pass last reviewed to the end ('' = none yet); absent in a ledger written before it was recorded.
+  const sha = (value) => (typeof value === 'string' && /^([0-9a-f]{40})?$/.test(value) ? value : '')
+  const reviewed = isRecord(raw.reviewed) ? { tenets: sha(raw.reviewed.tenets), commit: sha(raw.reviewed.commit) } : undefined
   return {
-    v: 1, round: raw.round,
+    v: 1, round: raw.round, ...(reviewed ? { reviewed } : {}),
     // Never reuse an id, even if `next` was tampered with or lost.
     next: { T: Math.max(count(next.T) ?? 1, highest('T') + 1), C: Math.max(count(next.C) ?? 1, highest('C') + 1) },
     findings: kept, dropped,
@@ -121,20 +124,19 @@ const FENCE = /^\s*(`{3,}|~{3,})/
  * goes with them; every other block, even an empty one the model wrote, stays exactly as written.
  */
 export function stripStatusLines(output) {
-  const kept = []
+  const kept = [] // {line, block}: block lines are kept byte for byte
   let block = null // {fence, lines, stripped}: the code block being read
   for (const line of String(output).split(/\r?\n/)) {
     const fence = FENCE.exec(line)?.[1]
     if (block === null) {
       if (fence) block = { fence, lines: [line], stripped: false }
-      else if (STATUS_LINE.test(line.trim())) continue
-      else kept.push(line)
+      else if (!STATUS_LINE.test(line.trim())) kept.push({ line, block: false })
       continue
     }
     if (fence && fence[0] === block.fence[0] && fence.length >= block.fence.length && line.trim() === fence) {
       block.lines.push(line)
       const emptied = block.stripped && block.lines.slice(1, -1).every((l) => l.trim() === '')
-      if (!emptied) kept.push(...block.lines)
+      if (!emptied) kept.push(...block.lines.map((l) => ({ line: l, block: true })))
       block = null
     } else if (STATUS_LINE.test(line.trim())) {
       block.stripped = true
@@ -142,8 +144,10 @@ export function stripStatusLines(output) {
       block.lines.push(line)
     }
   }
-  if (block !== null) kept.push(...block.lines)
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  if (block !== null) kept.push(...block.lines.map((l) => ({ line: l, block: true })))
+  // Removing lines can leave runs of blank lines between blocks: collapse those, never a blank line inside a block.
+  const lines = kept.filter((entry, i) => entry.block || entry.line.trim() !== '' || !(kept[i - 1] && !kept[i - 1].block && kept[i - 1].line.trim() === ''))
+  return lines.map((entry) => entry.line).join('\n').trim()
 }
 
 /** The prompt block listing the findings of `pass` still open, for the model to answer by id. */

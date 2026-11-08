@@ -115,7 +115,7 @@ function render(results, { previous = null, round = (previous?.round ?? 0) + 1, 
   const { ledger, recap } = advanceLedger(previous, results)
   const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))
   const body = renderComment({
-    headSha: SHA, hash: '0123456789abcdef', ledgerLine: encodeLedger(ledger), modelId: DEFAULT_MODEL, results, recap, verdicts, round, range,
+    headSha: SHA, hash: '0123456789abcdef', ledgerLine: encodeLedger(ledger), modelId: DEFAULT_MODEL, results, recap, verdicts, round, ranges: { tenets: range, commit: range },
     tier: { tier: 'standard', sensitive: [] }, ...rest,
   })
   return { body, ledger, recap, verdicts }
@@ -146,7 +146,7 @@ test('a verdict the table does not know is shown as it is, never as undefined', 
   const { recap } = advanceLedger(null, results)
   const body = renderComment({
     headSha: SHA, hash: '0123456789abcdef', ledgerLine: '', modelId: 'm', results, recap, verdicts: { commit: 'ODD' }, round: 1,
-    range: { mode: 'full', reason: 'first review' }, tier: { tier: 'quick', sensitive: [] },
+    ranges: { commit: { mode: 'full', reason: 'first review' } }, tier: { tier: 'quick', sensitive: [] },
   })
   assert.match(body, /\| Code review \| ODD \|/)
   assert.doesNotMatch(body, /undefined/)
@@ -210,7 +210,7 @@ test('round 2 recaps what was resolved, answered, still open and new, and links 
   assert.deepEqual(ledger.findings.map((f) => f.id), ['C2', 'C4'], 'only open findings travel on')
   assert.match(body, /^### 🤖 AI review, round 2: /m)
   assert.match(body, /\| Code review \| ❌ BLOCK \| 1 \| 1 \| 1 \| 1 \|/)
-  assert.match(body, /the commits since `bbbbbbbbbbbb` \(round 1\)/)
+  assert.match(body, /\*\*Reviewed:\*\* the commits since `bbbbbbbbbbbb`, with the whole diff as context, at /)
   assert.match(body, /Earlier rounds: \[round 1\]\(https:\/\/github\.com\/o\/r\/pull\/1#issuecomment-1\)/)
   assert.match(body, /Resolved \(1\)\n {2}C1 +MUST-FIX +a\.mjs:1 — cap never applied {2}\[fixed in 1a2b3c4\]/)
   assert.match(body, /Answered by the author \(1\)\n {2}C3 /)
@@ -425,6 +425,34 @@ test('a rewritten history is reviewed whole again, still answering the earlier f
     const body = readFileSync(join(box.dir, 'comment.md'), 'utf8')
     assert.match(body, /\*\*Reviewed:\*\* the whole diff \(the history was rewritten since [0-9a-f]{12}\)/)
     assert.match(body, /\| Tenets \(TENETS\.md\) \| ❌ BLOCK \| 0 \| 1 \| 0 \| 0 \|/)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('a pass that failed or was cut short resumes from where IT stopped, not from the other pass', async () => {
+  const box = scratch()
+  try {
+    // Round 1: the tenets call fails, the code review runs.
+    await main(box.args, {}, { call: fakeBedrock([new Error('ThrottlingException'), reply(PASS('commit'))]).call })
+    const round1 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    const reviewed1 = latestReview(readComments([comment(BOT_LOGIN, round1)])).ledger.reviewed
+    assert.equal(reviewed1.tenets, '', 'the tenets review did not finish: no resume point')
+    assert.match(reviewed1.commit, /^[0-9a-f]{40}$/)
+
+    push(box, { files: { 'flag.ts': 'export const flag = 1\n' }, message: 'a flag', comments: [comment(BOT_LOGIN, round1)] })
+    // Round 2: the code review's answer is cut short this time.
+    const fake = fakeBedrock([reply(PASS('tenets')), reply('NIT -- flag.ts:1 -- n\n', 'max_tokens'), reply('', 'max_tokens')])
+    await main(box.args, {}, { call: fake.call })
+    const [tenets, commit] = fake.requests
+    assert.match(tenets.system[0].text, /No <changes-since-last-review> \(this review did not finish in an earlier round\)/)
+    assert.doesNotMatch(tenets.messages[0].content[0].text, /<changes-since-last-review/, 'the tenets pass reviews the whole diff')
+    assert.match(commit.messages[0].content[0].text, /<changes-since-last-review from="[0-9a-f]{12}">/, 'the code pass resumes from its own commit')
+    const round2 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    assert.match(round2, /\*\*Reviewed:\*\* Tenets \(TENETS\.md\): the whole diff \(this review did not finish in an earlier round\); Code review: the commits since `[0-9a-f]{12}`/)
+    const reviewed2 = latestReview(readComments([comment(BOT_LOGIN, round2)])).ledger.reviewed
+    assert.match(reviewed2.tenets, /^[0-9a-f]{40}$/, 'the tenets review finished this time')
+    assert.equal(reviewed2.commit, reviewed1.commit, 'a cut answer keeps the older resume point')
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }
