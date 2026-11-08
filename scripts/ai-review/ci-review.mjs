@@ -241,7 +241,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   // The STATUS lines are read from the raw answer; the comment shows the answer without them (they are in the recap).
   const { ledger: next, recap } = advanceLedger(ledger, results.map((r) => (r.error ? r : { ...r, output: r.raw })))
   // A pass moves its resume point only when it reviewed this head to the end (no failure, no cut answer).
-  next.reviewed = Object.fromEntries(results.map((r) => [r.kind, !r.error && !r.truncated ? pr.headSha : (resumeFrom(r.kind) ?? '')]))
+  // Nor when the diff it was shown was cut: the part it never saw is reviewed next round.
+  const sawAll = (kind) => !(plans[kind].incremental ? plans[kind].incremental.truncated : truncated)
+  next.reviewed = Object.fromEntries(results.map((r) => [r.kind, !r.error && !r.truncated && sawAll(r.kind) ? pr.headSha : (resumeFrom(r.kind) ?? '')]))
   const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))
   for (const result of results) say(`${result.kind}: ${result.error ? 'not run' : verdicts[result.kind]}`)
   const body = renderComment({

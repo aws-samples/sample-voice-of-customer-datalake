@@ -192,7 +192,7 @@ test('round 2 recaps what was resolved, answered, still open and new, and links 
   const first = render([answer('commit', `${MUST('cap never applied', 1)}\n${MUST('error swallowed', 2)}\nSHOULD-FIX -- b.md:1 -- stale number\nWhy: w\nREVIEW-VERDICT: commit BLOCK`)]).ledger
   assert.deepEqual(first.findings.map((f) => f.id), ['C1', 'C2', 'C3'])
   const output = [
-    'STATUS -- C1 -- RESOLVED -- fixed in 1a2b3c4',
+    'STATUS -- C1 -- RESOLVED -- fixed in 1a2b3c4 a.mjs:1',
     'STATUS -- C3 -- ANSWERED -- the author showed the number is generated',
     'STATUS -- T9 -- RESOLVED -- not a commit id, ignored',
     'NIT -- c.ts:4 -- a misleading name',
@@ -212,7 +212,7 @@ test('round 2 recaps what was resolved, answered, still open and new, and links 
   assert.match(body, /\| Code review \| ❌ BLOCK \| 1 \| 1 \| 1 \| 1 \|/)
   assert.match(body, /\*\*Reviewed:\*\* the commits since `bbbbbbbbbbbb`, with the whole diff as context, at /)
   assert.match(body, /Earlier rounds: \[round 1\]\(https:\/\/github\.com\/o\/r\/pull\/1#issuecomment-1\)/)
-  assert.match(body, /Resolved \(1\)\n {2}C1 +MUST-FIX +a\.mjs:1 — cap never applied {2}\[fixed in 1a2b3c4\]/)
+  assert.match(body, /Resolved \(1\)\n {2}C1 +MUST-FIX +a\.mjs:1 — cap never applied {2}\[fixed in 1a2b3c4 a\.mjs:1\]/)
   assert.match(body, /Answered by the author \(1\)\n {2}C3 /)
   assert.match(body, /Still open \(1\)\n {2}C2 +MUST-FIX +a\.mjs:2 — error swallowed {2}\(round 1; no status given this round\)/)
   assert.match(body, /New \(1\)\n {2}C4 +NIT +c\.ts:4 — a misleading name/)
@@ -382,7 +382,7 @@ test('round 2 reviews only the new commits, carries the open findings by id, and
     })
 
     const second = fakeBedrock([
-      reply('STATUS -- T1 -- RESOLVED -- behind the NAT flag now, commit deadbee flag.ts:1\nREVIEW-VERDICT: tenets PASS\n'),
+      reply('STATUS -- T1 -- RESOLVED -- behind the NAT flag now, commit 1a2b3c4 flag.ts:1\nREVIEW-VERDICT: tenets PASS\n'),
       reply('NIT -- flag.ts:1 -- name the flag NAT_GATEWAY\nREVIEW-VERDICT: commit WARN\n'),
     ])
     assert.equal(await main(box.args, {}, { call: second.call }), 0)
@@ -483,6 +483,22 @@ test('an outage of BOTH passes still fails an enforced check while a blocking fi
     assert.equal(await main(box.args, { GITHUB_OUTPUT: out, AI_REVIEW_ENFORCED: 'true' }, { call: down() }), 1, 'T1 is still open and blocking')
     assert.match(outputsOf(out), /\nfalse\n/, 'and nothing is posted')
     assert.equal(await main(box.args, {}, { call: down() }), 0, 'advisory: the job passes')
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('a pass shown a cut diff keeps its resume point, so the part it never saw is reviewed next round', async () => {
+  const box = scratch()
+  try {
+    const round1 = await roundOne(box)
+    const reviewed1 = latestReview(readComments([comment(BOT_LOGIN, round1)])).ledger.reviewed
+    // More than the 150,000-character cap in one push.
+    push(box, { files: { 'big.ts': `${'export const x = 1\n'.repeat(9_000)}` }, message: 'a large file', comments: [comment(BOT_LOGIN, round1)] })
+    await main(box.args, {}, { call: fakeBedrock([reply(PASS('tenets')), reply(PASS('commit'))]).call })
+    const round2 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    assert.match(round2, /The diff was cut to fit: this review is partial\./)
+    assert.deepEqual(latestReview(readComments([comment(BOT_LOGIN, round2)])).ledger.reviewed, reviewed1)
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }
