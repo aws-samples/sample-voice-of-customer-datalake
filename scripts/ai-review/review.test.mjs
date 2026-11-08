@@ -182,6 +182,20 @@ test('with only claude installed it sends the diff and untracked files on stdin 
   }
 })
 
+test('the local review sends REVIEW.md as its guide when the repository has one, and no guide block otherwise', () => {
+  const box = scratch({ claude: 'REVIEW-VERDICT: tenets PASS\n' })
+  try {
+    assert.equal(review(box).status, 0)
+    assert.doesNotMatch(called(box.dir).stdin, /<review-guide/)
+    writeFileSync(join(box.repo, 'REVIEW.md'), '# Review guide\nDocs fail when they lie.\n')
+    const result = review(box, { AI_REVIEW_CACHE: '0' })
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    assert.match(called(box.dir).stdin, /<review-guide file="REVIEW\.md">\n# Review guide\nDocs fail when they lie\./)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
 test('kiro-cli is preferred, a violation fails the step, and the same change is answered from the cache', () => {
   const box = scratch({ 'kiro-cli': `${VIOLATION}\nREVIEW-VERDICT: tenets BLOCK\n`, claude: 'REVIEW-VERDICT: tenets PASS\n' })
   try {
