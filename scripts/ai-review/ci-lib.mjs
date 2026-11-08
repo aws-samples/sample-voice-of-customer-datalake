@@ -59,7 +59,8 @@ ${what}
 
 Rules:
 1. For EVERY id in <previous-findings>, write exactly one line, all of them before any new item:
-   STATUS -- <id> -- RESOLVED -- <the commit and file:line that fix it>
+   STATUS -- <id> -- RESOLVED -- <the commit (short SHA) and file:line that fix it; a blocking finding without a
+                                   commit stays open>
    STATUS -- <id> -- ANSWERED -- <where the author answered it with a reason you accept: by design, proven, out of scope>
    STATUS -- <id> -- OPEN -- <what is still missing, in a few words>
 2. Never repeat a finding that is still open as a new item: its STATUS line is enough. An answer you do not accept
@@ -296,7 +297,7 @@ export function renderComment({
     ...(diffTruncated ? ['> The diff was cut to fit: this review is partial.'] : []),
     ...(omitted.length > 0 ? [`> Not sent to the model (named like a secret, review them yourself): ${names(omitted)}`] : []),
     ...(context.skipped.length > 0 ? [`> Repository files left out for size: ${names(context.skipped)}`] : []),
-    ...(dropped > 0 ? [`> ${dropped} of the oldest open findings no longer fit and were dropped from the follow-up list.`] : []),
+    ...(dropped > 0 ? [`> ${dropped} of the oldest non-blocking open findings no longer fit and were dropped from the follow-up list.`] : []),
   ]
   const links = earlierRounds.filter((r) => r.url).map((r) => `[round ${r.round}](${r.url})`)
   const head = [

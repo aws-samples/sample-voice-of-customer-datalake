@@ -382,7 +382,7 @@ test('round 2 reviews only the new commits, carries the open findings by id, and
     })
 
     const second = fakeBedrock([
-      reply('STATUS -- T1 -- RESOLVED -- behind the NAT flag now\nREVIEW-VERDICT: tenets PASS\n'),
+      reply('STATUS -- T1 -- RESOLVED -- behind the NAT flag now, commit deadbee flag.ts:1\nREVIEW-VERDICT: tenets PASS\n'),
       reply('NIT -- flag.ts:1 -- name the flag NAT_GATEWAY\nREVIEW-VERDICT: commit WARN\n'),
     ])
     assert.equal(await main(box.args, {}, { call: second.call }), 0)
