@@ -1,11 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { contextFiles, DEEP_FILES, depthBlock, referencedPaths, reviewRange, riskTier, tierNote, TIERS } from './context.mjs'
-import { existsSync } from 'node:fs'
+import { contextFiles, DEEP_FILES, DEEP_PREFIXES, depthBlock, referencedPaths, reviewRange, riskTier, tierNote, TIERS } from './context.mjs'
 import { git } from './review.mjs'
 
 test('the depth comes from the changed paths: docs are quick, sensitive paths are deep, the rest standard', () => {
@@ -35,6 +34,7 @@ test('every exact deep path still exists, so a rename cannot silently demote a g
   const ROOT = join(import.meta.dirname, '..', '..')
   assert.ok(DEEP_FILES.length >= 10)
   for (const path of DEEP_FILES) assert.ok(existsSync(join(ROOT, path)), `${path} is listed in DEEP_PATHS but does not exist`)
+  for (const prefix of DEEP_PREFIXES) assert.ok(existsSync(join(ROOT, prefix)), `${prefix} is listed in DEEP_PATHS but does not exist`)
 })
 
 test('paths named in text resolve exactly, or by a unique tail; ambiguous and unknown names are skipped', () => {

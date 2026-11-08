@@ -106,6 +106,12 @@ export function decodeLedger(body) {
   }
 }
 
+// A short SHA (hex with at least one digit and one letter, so neither a number nor a word like "defaced") and a
+// `path:line`.
+const SHA = /\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/
+const FILE_LINE = /[\w./-]+\.[\w]+:\d+/
+const citesFix = (note) => SHA.test(note) && FILE_LINE.test(note)
+
 const STATUS_LINE = /^STATUS -- ([TC]\d{1,4}) -- (RESOLVED|OPEN|ANSWERED)(?: -- (.*))?$/
 
 /** The STATUS answers in a pass's output, for ids that were open in that pass: Map id → {status, note}. */
@@ -178,9 +184,10 @@ export function advanceLedger(previous, results) {
     const statuses = parseStatuses(result.output, pass, open.map((f) => f.id))
     for (const finding of open) {
       let answer = statuses.get(finding.id)
-      // A blocking finding is closed as RESOLVED only with a commit cited: the model's word alone keeps it open.
-      if (answer?.status === 'resolved' && finding.blocking && !/\b[0-9a-f]{7,40}\b/.test(answer.note)) {
-        answer = { status: 'open', note: `RESOLVED without a commit cited: ${answer.note}`.slice(0, MAX_TEXT) }
+      // A blocking finding is closed as RESOLVED only with its evidence cited, a commit and a file:line: the model's
+      // word alone keeps it open.
+      if (answer?.status === 'resolved' && finding.blocking && !citesFix(answer.note)) {
+        answer = { status: 'open', note: `RESOLVED without a commit and file:line cited: ${answer.note}`.slice(0, MAX_TEXT) }
       }
       if (answer && answer.status !== 'open') {
         finding.status = answer.status
@@ -197,9 +204,14 @@ export function advanceLedger(previous, results) {
     // not depend on the model obeying "never repeat".
     // Keyed on place and title, not severity: the same problem re-raised as a MUST-FIX stays the same finding.
     const key = (where, title) => `${text(where)}|${text(title)}`.toLowerCase()
-    const openKeys = new Set(entry.stillOpen.map((f) => key(f.where, f.title)))
+    const openByKey = new Map(entry.stillOpen.map((f) => [key(f.where, f.title), f]))
     for (const item of [...result.verdict.blocking, ...result.verdict.others]) {
-      if (openKeys.has(key(item.where, item.title))) continue
+      const same = openByKey.get(key(item.where, item.title))
+      if (same) {
+        // Re-raised as blocking: the open finding is promoted, never the other way round.
+        if (complete.has(item) && !same.blocking) Object.assign(same, { blocking: true, kind: item.kind })
+        continue
+      }
       const finding = {
         id: `${prefix}${ledger.next[prefix]++}`, pass, kind: item.kind, where: text(item.where), title: text(item.title),
         tenet: item.tenet ? text(item.tenet, 4) : null, blocking: complete.has(item), round: ledger.round, status: 'open', note: '', closedRound: null,

@@ -90,10 +90,12 @@ test('the verdict follows what is open now: a resolved blocker clears it, an ope
   assert.deepEqual(fixed.ledger.findings, [])
   const ignored = advanceLedger(first.ledger, [pass('commit', 'REVIEW-VERDICT: commit PASS')])
   assert.equal(passVerdict(ignored.recap.commit, 'PASS'), 'BLOCK')
-  const uncited = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- trust me\nREVIEW-VERDICT: commit PASS')])
-  assert.equal(passVerdict(uncited.recap.commit, 'PASS'), 'BLOCK', 'a blocker resolved without a commit cited stays open')
-  assert.match(uncited.recap.commit.stillOpen[0].note, /^RESOLVED without a commit cited: trust me/)
-  const onlyWarn = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- 1a2b3c4\nREVIEW-VERDICT: commit PASS')])
+  for (const note of ['trust me', '1a2b3c4 with no file', 'defaced a.mjs:1', '1234567 a.mjs:1']) {
+    const uncited = advanceLedger(first.ledger, [pass('commit', `STATUS -- C1 -- RESOLVED -- ${note}\nREVIEW-VERDICT: commit PASS`)])
+    assert.equal(passVerdict(uncited.recap.commit, 'PASS'), 'BLOCK', `a blocker "resolved" with "${note}" stays open`)
+    assert.match(uncited.recap.commit.stillOpen[0].note, /^RESOLVED without a commit and file:line cited: /)
+  }
+  const onlyWarn = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- 1a2b3c4 a.mjs:1\nREVIEW-VERDICT: commit PASS')])
   assert.equal(passVerdict(onlyWarn.recap.commit, 'PASS'), 'WARN', 'C2 (SHOULD-FIX) still open')
   assert.equal(passVerdict(advanceLedger(null, [pass('commit', 'no verdict')]).recap.commit, 'INCOMPLETE'), 'INCOMPLETE')
   assert.equal(passVerdict({ error: true, stillOpen: [] }, 'PASS'), null, 'a pass that did not run has no verdict of its own')
@@ -120,6 +122,12 @@ test('a finding raised again while it is still open stays one finding, not a new
   assert.deepEqual(recap.commit.stillOpen.map((f) => f.id), ['C1'])
   assert.deepEqual(recap.commit.added.map((f) => f.id), ['C2'], 'only the genuinely new finding')
   assert.deepEqual(ledger.findings.map((f) => f.id), ['C1', 'C2'])
+  // The other direction: a SHOULD-FIX re-raised as a complete MUST-FIX is promoted, so it blocks.
+  const soft = advanceLedger(null, [pass('commit', 'SHOULD-FIX -- a.mjs:3 -- cap never applied\nWhy: w\nREVIEW-VERDICT: commit WARN')])
+  const escalated = advanceLedger(soft.ledger, [pass('commit', `${MUST('cap never applied', 3)}\nREVIEW-VERDICT: commit BLOCK`)])
+  assert.deepEqual(escalated.recap.commit.added, [])
+  assert.deepEqual([escalated.ledger.findings[0].id, escalated.ledger.findings[0].kind, escalated.ledger.findings[0].blocking], ['C1', 'MUST-FIX', true])
+  assert.equal(passVerdict(escalated.recap.commit, 'BLOCK'), 'BLOCK')
 })
 
 test('a finding\'s text cannot close the prompt tag it goes back into', () => {

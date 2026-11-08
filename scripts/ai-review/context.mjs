@@ -28,6 +28,7 @@ const DEEP_PATHS = Object.freeze([
 const DEEP_LAMBDA = /^voc-datalake\/lambda\/(?:.*\/)?(?:auth\/|[^/]*(?:retention|erasure|delete|auth|_access\b|mcp_[^/]*tokens?\b))/i
 /** The exact files in DEEP_PATHS (no trailing `/`): context.test.mjs checks each still exists, so a rename fails. */
 export const DEEP_FILES = Object.freeze(DEEP_PATHS.filter((p) => !p.endsWith('/')))
+export const DEEP_PREFIXES = Object.freeze(DEEP_PATHS.filter((p) => p.endsWith('/')))
 /** Documentation that is NOT quick: it changes what the reviewers and contributors are held to. */
 const POLICY_DOCS = Object.freeze(['TENETS.md', 'REVIEW.md', 'CONTRIBUTING.md'])
 
