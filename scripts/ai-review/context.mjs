@@ -2,8 +2,9 @@
  * What the pull request AI review gets to see beyond the diff, and how hard it looks: all read from git objects of the
  * fetched pull request, nothing checked out or run.
  *
- *   - riskTier: quick (documentation only), standard, or deep (the review, CI, IAM and stacks, data deletion and the
- *     AI-writing guard), from the changed paths, never from the author.
+ *   - riskTier: quick (documentation only), standard, or deep (the review itself, CI, the git hooks and the gates that
+ *     enforce the tenets, TENETS.md and REVIEW.md, IAM and stacks, the AI-writing guard, and in the Lambdas the data
+ *     deletion, auth and access-check code), from the changed paths, never from the author.
  *   - reviewRange: review only the commits since the last review when that is a clean extension of what was reviewed;
  *     otherwise (history rewritten, base merged in) the whole diff again.
  *   - contextFiles: the current text of the changed files and of the repository files the change names by path, within

@@ -163,6 +163,8 @@ test('the worst case still fits in one GitHub comment: 40 long open findings, lo
   ], { previous: first, range: { mode: 'incremental', from: 'b'.repeat(40) } })
   assert.ok(body.length < 65_536, `${body.length} characters`)
   assert.equal(latestReview(readComments([comment(BOT_LOGIN, body)])).ledger.findings.length, 40, 'the ledger line survives intact')
+  const missing = first.findings.filter((f) => !body.includes(`\n  ${f.id.padEnd(4)} `)).map((f) => f.id)
+  assert.deepEqual(missing, [], 'every carried finding is listed in the recap, none cut')
 })
 
 test('a secret-shaped path or a skipped file named by the pull request cannot break out of its code span', () => {
@@ -198,7 +200,7 @@ test('round 2 recaps what was resolved, answered, still open and new, and links 
     'NIT -- c.ts:4 -- a misleading name',
     'REVIEW-VERDICT: commit PASS',
   ].join('\n')
-  const { body, ledger, recap, verdicts } = render([answer('commit', output, { output })], {
+  const { body, ledger, recap, verdicts } = render([answer('commit', output)], {
     previous: first, range: { mode: 'incremental', from: 'b'.repeat(40) },
     earlierRounds: [{ round: 1, url: 'https://github.com/o/r/pull/1#issuecomment-1' }],
   })

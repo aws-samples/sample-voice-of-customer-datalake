@@ -232,15 +232,19 @@ const codeSpan = (name) => `\`${name.replace(/[`\r\n]/g, '')}\``
 const MAX_NAMES = 20
 const names = (paths) => `${paths.slice(0, MAX_NAMES).map((p) => codeSpan(p.slice(0, 200))).join(', ')}${paths.length > MAX_NAMES ? ` and ${paths.length - MAX_NAMES} more` : ''}`
 
-const findingLine = (f, suffix = '') => `  ${f.id.padEnd(4)} ${f.kind.padEnd(10)} ${f.where} — ${f.title}${suffix}`
+// One recap line is bounded (the ledger's own limit is MAX_TEXT, 160, per field): 40 earlier findings must all fit in
+// the recap, and the full text of a finding is in the round that raised it.
+const cut = (value, max) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
+const findingLine = (f, suffix = '') => `  ${f.id.padEnd(4)} ${f.kind.padEnd(10)} ${cut(f.where, 80)} — ${cut(f.title, 100)}${suffix}`
+const noteOf = (f) => cut(f.note, 100)
 
 /** The recap of one pass, as plain text (it goes inside a code block): what became of the earlier findings, and what is new. */
 export function recapText(entry) {
   const group = (title, findings, line) => (findings.length === 0 ? [] : [`${title} (${findings.length})`, ...findings.map(line)])
   return [
-    ...group('Resolved', entry.resolved, (f) => findingLine(f, f.note ? `  [${f.note}]` : '')),
-    ...group('Answered by the author', entry.answered, (f) => findingLine(f, f.note ? `  [${f.note}]` : '')),
-    ...group('Still open', entry.stillOpen, (f) => findingLine(f, `  (round ${f.round}${f.note ? `; ${f.note}` : ''})`)),
+    ...group('Resolved', entry.resolved, (f) => findingLine(f, f.note ? `  [${noteOf(f)}]` : '')),
+    ...group('Answered by the author', entry.answered, (f) => findingLine(f, f.note ? `  [${noteOf(f)}]` : '')),
+    ...group('Still open', entry.stillOpen, (f) => findingLine(f, `  (round ${f.round}${f.note ? `; ${noteOf(f)}` : ''})`)),
     ...group('New', entry.added, (f) => findingLine(f)),
   ].join('\n')
 }
@@ -253,8 +257,10 @@ function verdictRow(label, result, entry, verdict) {
   return `| ${label} | ${VERDICT_TEXT[verdict] ?? verdict} | ${entry.resolved.length} | ${entry.stillOpen.length} | ${entry.answered.length} | ${entry.added.length} |`
 }
 
-// The recap of one pass is bounded too (40 open findings plus this round's closures fit well within it).
-const RECAP_CHARS = 8_000
+// The recap of one pass is bounded too. A recap line is at most about 320 characters, so the earlier findings (at most
+// MAX_OPEN, 40, across both passes, all in one pass at worst) take at most about 13,000 and always fit; only the tail
+// of "New" can be cut, and every new finding is also in the answer below the recap.
+const RECAP_CHARS = 14_000
 
 function section(label, result, recap, chars) {
   const heading = `#### ${label}`
@@ -298,7 +304,7 @@ export function renderComment({
     ...(diffTruncated ? ['> The diff was cut to fit: this review is partial, and the part past the cut is not reviewed in a later round.'] : []),
     ...(omitted.length > 0 ? [`> Not sent to the model (named like a secret, review them yourself): ${names(omitted)}`] : []),
     ...(context.skipped.length > 0 ? [`> Repository files left out for size: ${names(context.skipped)}`] : []),
-    ...(dropped > 0 ? [`> ${dropped} of the oldest open findings no longer fit and were dropped from the follow-up list (non-blocking ones first; blocking ones only when more than ${MAX_OPEN} are open).`] : []),
+    ...(dropped > 0 ? [`> ${dropped} of the oldest open findings no longer fit and were dropped from the follow-up list (non-blocking ones first; blocking ones only when more than ${MAX_OPEN} blocking findings are open).`] : []),
   ]
   const links = earlierRounds.filter((r) => r.url).map((r) => `[round ${r.round}](${r.url})`)
   const head = [
