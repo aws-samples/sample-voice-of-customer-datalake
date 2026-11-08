@@ -85,12 +85,15 @@ test('the follow-up block lists the open findings of one pass, with their tenet 
 test('the verdict follows what is open now: a resolved blocker clears it, an open one blocks over a PASS line', () => {
   const first = advanceLedger(null, [pass('commit', `${MUST('cap')}\nSHOULD-FIX -- b:1 -- s\nWhy: w\nREVIEW-VERDICT: commit BLOCK`)])
   assert.equal(passVerdict(first.recap.commit, 'BLOCK'), 'BLOCK')
-  const fixed = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- r\nSTATUS -- C2 -- ANSWERED -- a\nREVIEW-VERDICT: commit PASS')])
+  const fixed = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- fixed in 1a2b3c4 a.mjs:1\nSTATUS -- C2 -- ANSWERED -- a\nREVIEW-VERDICT: commit PASS')])
   assert.equal(passVerdict(fixed.recap.commit, 'PASS'), 'PASS')
   assert.deepEqual(fixed.ledger.findings, [])
   const ignored = advanceLedger(first.ledger, [pass('commit', 'REVIEW-VERDICT: commit PASS')])
   assert.equal(passVerdict(ignored.recap.commit, 'PASS'), 'BLOCK')
-  const onlyWarn = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- r\nREVIEW-VERDICT: commit PASS')])
+  const uncited = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- trust me\nREVIEW-VERDICT: commit PASS')])
+  assert.equal(passVerdict(uncited.recap.commit, 'PASS'), 'BLOCK', 'a blocker resolved without a commit cited stays open')
+  assert.match(uncited.recap.commit.stillOpen[0].note, /^RESOLVED without a commit cited: trust me/)
+  const onlyWarn = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- 1a2b3c4\nREVIEW-VERDICT: commit PASS')])
   assert.equal(passVerdict(onlyWarn.recap.commit, 'PASS'), 'WARN', 'C2 (SHOULD-FIX) still open')
   assert.equal(passVerdict(advanceLedger(null, [pass('commit', 'no verdict')]).recap.commit, 'INCOMPLETE'), 'INCOMPLETE')
   assert.equal(passVerdict({ error: true, stillOpen: [] }, 'PASS'), null, 'a pass that did not run has no verdict of its own')
@@ -113,7 +116,7 @@ test('past 40 open findings the oldest non-blocking ones are dropped and counted
 
 test('a finding raised again while it is still open stays one finding, not a new one', () => {
   const first = advanceLedger(null, [pass('commit', `${MUST('cap never applied', 3)}\nREVIEW-VERDICT: commit BLOCK`)])
-  const { recap, ledger } = advanceLedger(first.ledger, [pass('commit', `${MUST('Cap never applied', 3)}\n${MUST('another', 4)}\nREVIEW-VERDICT: commit BLOCK`)])
+  const { recap, ledger } = advanceLedger(first.ledger, [pass('commit', `SHOULD-FIX -- a.mjs:3 -- Cap never applied\nWhy: w\n${MUST('another', 4)}\nREVIEW-VERDICT: commit BLOCK`)])
   assert.deepEqual(recap.commit.stillOpen.map((f) => f.id), ['C1'])
   assert.deepEqual(recap.commit.added.map((f) => f.id), ['C2'], 'only the genuinely new finding')
   assert.deepEqual(ledger.findings.map((f) => f.id), ['C1', 'C2'])

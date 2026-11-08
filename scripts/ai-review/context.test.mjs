@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { contextFiles, depthBlock, referencedPaths, reviewRange, riskTier, tierNote, TIERS } from './context.mjs'
+import { contextFiles, DEEP_FILES, depthBlock, referencedPaths, reviewRange, riskTier, tierNote, TIERS } from './context.mjs'
+import { existsSync } from 'node:fs'
 import { git } from './review.mjs'
 
 test('the depth comes from the changed paths: docs are quick, sensitive paths are deep, the rest standard', () => {
@@ -16,7 +17,8 @@ test('the depth comes from the changed paths: docs are quick, sensitive paths ar
     '.kiro/agents/prompts/commit-reviewer.md', 'voc-datalake/lib/stacks/api-stack.ts', 'TENETS.md', 'REVIEW.md',
     'voc-datalake/lambda/shared/ai_writing.py', 'voc-datalake/lambda/shared/retention.py', 'voc-datalake/lambda/api/feature_boards_delete.py',
     'voc-datalake/lambda/auth/handler.py', 'scripts/validate.sh', 'scripts/git-hooks/pre-push', 'voc-datalake/lib/fixed-cost-guard.test.ts',
-    'voc-datalake/lib/customer-data-deletes.test.ts', 'voc-datalake/lambda/api/test/test_route_admin_gates.py']) {
+    'voc-datalake/lib/customer-data-deletes.test.ts', 'voc-datalake/lambda/api/test/test_route_admin_gates.py',
+    'voc-datalake/lambda/shared/mcp_oauth_authorize.py', 'voc-datalake/lambda/shared/project_access.py', 'voc-datalake/lambda/shared/mcp_global_tokens.py']) {
     assert.deepEqual(riskTier(['docs/a.md', path]), { tier: 'deep', sensitive: [path] }, path)
   }
   assert.ok(TIERS.deep.maxTokens > TIERS.standard.maxTokens && TIERS.standard.maxTokens > TIERS.quick.maxTokens)
@@ -27,6 +29,12 @@ test('the depth comes from the changed paths: docs are quick, sensitive paths ar
   assert.equal(depthBlock({ tier: 'standard', sensitive: [] }), null)
   assert.match(tierNote({ tier: 'quick', sensitive: [] }), /documentation only/)
   assert.equal(tierNote({ tier: 'standard', sensitive: [] }), '')
+})
+
+test('every exact deep path still exists, so a rename cannot silently demote a gate to the standard review', () => {
+  const ROOT = join(import.meta.dirname, '..', '..')
+  assert.ok(DEEP_FILES.length >= 10)
+  for (const path of DEEP_FILES) assert.ok(existsSync(join(ROOT, path)), `${path} is listed in DEEP_PATHS but does not exist`)
 })
 
 test('paths named in text resolve exactly, or by a unique tail; ambiguous and unknown names are skipped', () => {

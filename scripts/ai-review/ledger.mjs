@@ -177,7 +177,11 @@ export function advanceLedger(previous, results) {
     if (result.error) { entry.stillOpen = open; continue }
     const statuses = parseStatuses(result.output, pass, open.map((f) => f.id))
     for (const finding of open) {
-      const answer = statuses.get(finding.id)
+      let answer = statuses.get(finding.id)
+      // A blocking finding is closed as RESOLVED only with a commit cited: the model's word alone keeps it open.
+      if (answer?.status === 'resolved' && finding.blocking && !/\b[0-9a-f]{7,40}\b/.test(answer.note)) {
+        answer = { status: 'open', note: `RESOLVED without a commit cited: ${answer.note}`.slice(0, MAX_TEXT) }
+      }
       if (answer && answer.status !== 'open') {
         finding.status = answer.status
         finding.note = answer.note
@@ -191,13 +195,14 @@ export function advanceLedger(previous, results) {
     const complete = new Set(result.verdict.blocking)
     // A finding the model raises again although it is still open is the same finding, not a new one: convergence must
     // not depend on the model obeying "never repeat".
-    const key = (kind, where, title) => `${kind}|${text(where)}|${text(title)}`.toLowerCase()
-    const openKeys = new Set(entry.stillOpen.map((f) => key(f.kind, f.where, f.title)))
+    // Keyed on place and title, not severity: the same problem re-raised as a MUST-FIX stays the same finding.
+    const key = (where, title) => `${text(where)}|${text(title)}`.toLowerCase()
+    const openKeys = new Set(entry.stillOpen.map((f) => key(f.where, f.title)))
     for (const item of [...result.verdict.blocking, ...result.verdict.others]) {
-      if (openKeys.has(key(item.kind, item.where, item.title))) continue
+      if (openKeys.has(key(item.where, item.title))) continue
       const finding = {
         id: `${prefix}${ledger.next[prefix]++}`, pass, kind: item.kind, where: text(item.where), title: text(item.title),
-        tenet: item.tenet ?? null, blocking: complete.has(item), round: ledger.round, status: 'open', note: '', closedRound: null,
+        tenet: item.tenet ? text(item.tenet, 4) : null, blocking: complete.has(item), round: ledger.round, status: 'open', note: '', closedRound: null,
       }
       ledger.findings.push(finding)
       entry.added.push(finding)

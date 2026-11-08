@@ -20,8 +20,14 @@ const DEEP_PATHS = Object.freeze([
   'voc-datalake/lib/test-support/fixed-cost-rules.ts', 'voc-datalake/lib/customer-data-deletes.test.ts',
   'voc-datalake/lib/utils/audit-row-guard.ts', 'voc-datalake/lambda/api/test/test_route_admin_gates.py',
 ])
-/** Data deletion and authentication code, wherever it lives in the Lambdas. */
-const DEEP_LAMBDA = /^voc-datalake\/lambda\/(?:.*\/)?(?:auth\/|[^/]*(?:retention|erasure|delete))/i
+/**
+ * Data deletion, authentication and access-check code, wherever it lives in the Lambdas, by file name: `auth/`,
+ * `*auth*` (OAuth, authorizers), `*_access` (project, category, board access checks), the MCP token stores, and
+ * `*retention*` / `*erasure*` / `*delete*`. Errs towards deep: a false match costs only a larger budget.
+ */
+const DEEP_LAMBDA = /^voc-datalake\/lambda\/(?:.*\/)?(?:auth\/|[^/]*(?:retention|erasure|delete|auth|_access\b|mcp_[^/]*tokens?\b))/i
+/** The exact files in DEEP_PATHS (no trailing `/`): context.test.mjs checks each still exists, so a rename fails. */
+export const DEEP_FILES = Object.freeze(DEEP_PATHS.filter((p) => !p.endsWith('/')))
 /** Documentation that is NOT quick: it changes what the reviewers and contributors are held to. */
 const POLICY_DOCS = Object.freeze(['TENETS.md', 'REVIEW.md', 'CONTRIBUTING.md'])
 
