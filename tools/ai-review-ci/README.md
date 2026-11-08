@@ -56,6 +56,26 @@ The role ARN is a secret so the account id stays out of the repository and the l
   call other than `InvokeModel` on the three models.
 - Without the secret, the workflow skips with a notice, so a fork of this sample stays green.
 
+### What the `review` job's log says
+
+| Log line | Meaning |
+| --- | --- |
+| `no AI_REVIEW_ROLE_ARN secret in this repository; skipped` (notice) | The secret is not set: nothing ran. |
+| `the default branch has no scripts/ai-review/ci-review.mjs yet` (notice) | The reviewer is not on `main` yet (the pull request that adds it). |
+| `ai review: skipped: the event is not a pull request with a head SHA` | The event JSON has no pull request: nothing ran. |
+| `ai review: skipped: refs/pr/base and refs/pr/head have no merge base` | The fetch missed one of the two refs: nothing ran. |
+| `ai review: nothing to review since <sha>` | The diff is empty once the paths the review skips are left out (secret-shaped files, lockfiles, build output, locales: `REVIEW_PATHSPEC` in `scripts/ai-review/lib.mjs`). |
+| `ai review: the diff is the one reviewed at <sha>: no new review` | The push left the diff unchanged (a rebase): no model call, no comment. |
+| `REVIEW.md is missing from the trusted checkout` (warning) | `main` has no REVIEW.md: the review runs without its guide. |
+| `ai review: round <n> (tenets: <range>, commit: <range>), depth <tier>, <n> repository files, <model>` | The round starts. Each pass reviews the `whole diff` or the `commits since <sha>`; `, diff cut` means the diff was over the size cap and the review is partial. |
+| `the <kind> review was not run: <error>` (warning) | That Bedrock call failed; the comment marks the pass as not run and carries its open findings. |
+| `ai review: no review was run (see the warnings above): nothing to post` | Both calls failed. With `; open blocking findings carried: <ids>`, an enforced check still fails. |
+| `ai review: tenets: PASS` / `ai review: commit: WARN` … | The verdicts posted in the comment (`not run` for a failed pass). |
+| `ai review: BLOCK: a complete VIOLATION or MUST-FIX is open (AI_REVIEW_ENFORCED=true)` | Enforced mode only: the check fails. |
+
+The `post` job logs the URL of the comment it posted. `the review produced no postable body` (warning) means GitHub
+dropped the output because it held a masked value, such as the account id quoted in a diff.
+
 ## Cost and switches
 
 Each push that changes the diff makes two Bedrock calls (more when a long answer is continued), billed to the
