@@ -488,7 +488,7 @@ test('an outage of BOTH passes still fails an enforced check while a blocking fi
   }
 })
 
-test('an answer with no verdict line does not move its resume point; a whole diff sent only as context is not "partial"', async () => {
+test('an answer with no verdict line does not move its resume point, and the pass reviews the whole diff next round', async () => {
   const box = scratch()
   try {
     // Round 1 over the cap; the code answer ends without its verdict line.
@@ -508,7 +508,7 @@ test('an answer with no verdict line does not move its resume point; a whole dif
     push(box, { files: { 'flag.ts': 'export const flag = 1\n' }, message: 'a flag', comments: [comment(BOT_LOGIN, round1)] })
     await main(box.args, {}, { call: fakeBedrock([reply(PASS('tenets')), reply(PASS('commit'))]).call })
     const round2 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
-    assert.match(round2, /this review is partial/, 'the code pass reviewed the whole (cut) diff')
+    assert.match(round2, /this review is partial/, 'the code pass reviewed the whole (cut) diff again')
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }

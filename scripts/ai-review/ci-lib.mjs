@@ -61,7 +61,8 @@ Rules:
 1. For EVERY id in <previous-findings>, write exactly one line, all of them before any new item:
    STATUS -- <id> -- RESOLVED -- <the commit (short SHA) and the file:line that fix it; a blocking finding without
                                    both stays open>
-   STATUS -- <id> -- ANSWERED -- <where the author answered it with a reason you accept: by design, proven, out of scope>
+   STATUS -- <id> -- ANSWERED -- <@login of the person who answered it, and their reason you accept: by design, proven,
+                                   out of scope; a blocking finding without a real commenter's @login stays open>
    STATUS -- <id> -- OPEN -- <what is still missing, in a few words>
 2. Never repeat a finding that is still open as a new item: its STATUS line is enough. An answer you do not accept
    stays OPEN; say why in its STATUS line.

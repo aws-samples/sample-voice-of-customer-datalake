@@ -86,6 +86,11 @@ test('the verdict follows what is open now: a resolved blocker clears it, an ope
   const first = advanceLedger(null, [pass('commit', `${MUST('cap')}\nSHOULD-FIX -- b:1 -- s\nWhy: w\nREVIEW-VERDICT: commit BLOCK`)])
   assert.equal(passVerdict(first.recap.commit, 'BLOCK'), 'BLOCK')
   const fixed = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- fixed in 1a2b3c4 a.mjs:1\nSTATUS -- C2 -- ANSWERED -- a\nREVIEW-VERDICT: commit PASS')])
+  // A blocker ANSWERED must name someone who commented; the model's word, or a made-up name, keeps it open.
+  for (const [note, repliers, closes] of [['@ana: by design', ['ana'], true], ['by design', ['ana'], false], ['@mallory: fine', ['ana'], false]]) {
+    const { recap } = advanceLedger(first.ledger, [pass('commit', `STATUS -- C1 -- ANSWERED -- ${note}\nREVIEW-VERDICT: commit PASS`)], { repliers })
+    assert.equal(recap.commit.answered.some((f) => f.id === 'C1'), closes, `${note} with commenters ${repliers}`)
+  }
   assert.equal(passVerdict(fixed.recap.commit, 'PASS'), 'PASS')
   assert.deepEqual(fixed.ledger.findings, [])
   const ignored = advanceLedger(first.ledger, [pass('commit', 'REVIEW-VERDICT: commit PASS')])
