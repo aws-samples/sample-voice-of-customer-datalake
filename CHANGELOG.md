@@ -32,10 +32,11 @@ The pull request AI review converges: later rounds review only the new commits a
   - every earlier finding keeps a stable id (`T1`, `C1`, …) and is listed once as **Resolved**, **Answered by the author** or **Still open**, above the new findings;
   - a blocking finding still open keeps the verdict at BLOCK, whatever the model's own verdict line says;
   - there is no limit on rounds;
+  - each pass resumes from the last commit it reviewed to the end, so a pass that failed or was cut short reviews the commits it missed;
   - a rewritten history gets the whole diff again, still with the recap.
 - **The reviewer sees the code around the change**: the current text of the changed files and of the files the change names by path, within a size limit, read from git objects only.
 - **Depth follows the changed paths**:
-  - documentation only gets a short review;
+  - documentation only (`*.md`, `docs/`, `LICENSE`; never TENETS.md, REVIEW.md, CONTRIBUTING.md or `.kiro/`) gets a short review;
   - CI, the reviewers, IAM and stacks, data deletion and the AI-writing guard get a deep one, with a larger output budget and context;
   - everything else gets the standard review.
 
