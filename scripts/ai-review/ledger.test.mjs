@@ -90,11 +90,13 @@ test('the verdict follows what is open now: a resolved blocker clears it, an ope
   assert.deepEqual(fixed.ledger.findings, [])
   const ignored = advanceLedger(first.ledger, [pass('commit', 'REVIEW-VERDICT: commit PASS')])
   assert.equal(passVerdict(ignored.recap.commit, 'PASS'), 'BLOCK')
-  for (const note of ['trust me', '1a2b3c4 with no file', 'defaced a.mjs:1', '1234567 a.mjs:1']) {
+  for (const note of ['trust me', '1a2b3c4 with no file', 'defaced a.mjs:1']) {
     const uncited = advanceLedger(first.ledger, [pass('commit', `STATUS -- C1 -- RESOLVED -- ${note}\nREVIEW-VERDICT: commit PASS`)])
     assert.equal(passVerdict(uncited.recap.commit, 'PASS'), 'BLOCK', `a blocker "resolved" with "${note}" stays open`)
     assert.match(uncited.recap.commit.stillOpen[0].note, /^RESOLVED without a commit and file:line cited: /)
   }
+  const digits = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- 1234567 a.mjs:1\nREVIEW-VERDICT: commit PASS')])
+  assert.deepEqual(digits.recap.commit.resolved.map((f) => f.id), ['C1'], 'an all-digit short SHA is a SHA')
   const onlyWarn = advanceLedger(first.ledger, [pass('commit', 'STATUS -- C1 -- RESOLVED -- 1a2b3c4 a.mjs:1\nREVIEW-VERDICT: commit PASS')])
   assert.equal(passVerdict(onlyWarn.recap.commit, 'PASS'), 'WARN', 'C2 (SHOULD-FIX) still open')
   assert.equal(passVerdict(advanceLedger(null, [pass('commit', 'no verdict')]).recap.commit, 'INCOMPLETE'), 'INCOMPLETE')
