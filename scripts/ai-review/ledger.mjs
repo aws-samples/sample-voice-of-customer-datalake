@@ -107,7 +107,8 @@ export function decodeLedger(body) {
 }
 
 // A short SHA (7 to 40 hex characters with at least one digit, so not a word like "defaced"; an all-digit SHA is
-// valid) and a `path:line`.
+// valid) and a `path:line`. The shape is checked, not the commit: a date like 20261108 passes. The citation stays
+// self-asserted by the model until a verifier checks it (a planned follow-up).
 const SHA = /\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/
 const FILE_LINE = /[\w./-]+\.[\w]+:\d+/
 const citesFix = (note) => SHA.test(note) && FILE_LINE.test(note)

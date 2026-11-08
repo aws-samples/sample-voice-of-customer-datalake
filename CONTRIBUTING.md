@@ -135,9 +135,12 @@ fails no check.
   hooks and the gates that enforce the tenets, the reviewers, TENETS.md or REVIEW.md, IAM and stacks, data deletion, authentication and
   access checks, or the AI-writing guard gets a deep one with a larger budget.
 - **Rounds converge.** The first push gets a full review. Every later push gets a new round that:
-  - reviews only the commits since the last review, with the whole diff as context;
-  - gives every earlier finding a status by id: **resolved**, **answered by the author** (a reply with a reason the
-    reviewer accepts) or **still open**, listed in one line and never explained again;
+  - reviews only the commits since the last review, with the whole diff as context. Each pass (tenets, code) resumes
+    from the last commit it reviewed to the end, so a pass that failed, was cut short or gave no verdict reviews what it
+    missed;
+  - gives every earlier finding a status by id: **resolved** (a blocking finding only with the commit and file:line
+    that fix it), **answered by the author** (a reply with a reason the reviewer accepts) or **still open**, listed in
+    one line and never explained again;
   - shows that recap above its new findings.
 
   A blocking finding still open keeps the round's verdict at BLOCK. There is no limit on rounds. A rewritten history
