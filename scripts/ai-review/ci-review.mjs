@@ -22,7 +22,8 @@
  *
  * Env: AI_REVIEW_MODEL (default global.anthropic.claude-opus-5-5), AWS_REGION (default us-east-1),
  * AI_REVIEW_ENFORCED ('true': exit 1 on a complete VIOLATION or MUST-FIX; anything else: advisory, exit 0).
- * A Bedrock failure is a warning in the log, never a failed check.
+ * A Bedrock failure is a warning in the log and does not fail the check by itself; under AI_REVIEW_ENFORCED=true a
+ * blocking finding carried from an earlier round still fails it, even when every pass failed (nothing clears it).
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

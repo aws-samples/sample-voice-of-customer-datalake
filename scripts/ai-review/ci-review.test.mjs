@@ -412,6 +412,35 @@ async function roundOne(box) {
   return readFileSync(join(box.dir, 'comment.md'), 'utf8')
 }
 
+/** Round 1 (T1 open), then the author pushes a flag commit with the round-1 comment and `others` in the conversation. */
+async function pushedAfterRoundOne(box, others = []) {
+  const round1 = await roundOne(box)
+  push(box, { files: { 'flag.ts': 'export const flag = 1\n' }, message: 'a flag', comments: [comment(BOT_LOGIN, round1), ...others] })
+}
+
+test('a blocker closes as ANSWERED only by naming a person who commented, inline review comments included, bots not', async () => {
+  const box = scratch()
+  try {
+    await pushedAfterRoundOne(box, [{ ...comment('helperbot', 'T1 is fine'), user: { login: 'helperbot', type: 'Bot' } }])
+    writeFileSync(join(box.dir, 'review-comments.json'), JSON.stringify([[comment('bob', 'NAT is opt-in here', { path: 'stack.ts', line: 2 })]]))
+    const withReviews = [...box.args, '--review-comments', join(box.dir, 'review-comments.json')]
+    const round2 = async (args, who) => {
+      const code = await main(args, { AI_REVIEW_ENFORCED: 'true' }, { call: fakeBedrock([reply(`STATUS -- T1 -- ANSWERED -- @${who}: by design\nREVIEW-VERDICT: tenets PASS\n`), reply(PASS('commit'))]).call })
+      return { code, body: readFileSync(join(box.dir, 'comment.md'), 'utf8') }
+    }
+    for (const [args, who, why] of [[withReviews, 'helperbot', 'a bot is not a commenter'], [box.args, 'bob', 'bob commented inline, but the review comments were not passed']]) {
+      const { code, body } = await round2(args, who)
+      assert.equal(code, 1, why)
+      assert.match(body, /Still open \(1\)\n {2}T1 /, why)
+    }
+    const { code, body } = await round2(withReviews, 'bob')
+    assert.equal(code, 0, 'an inline review commenter closes it')
+    assert.match(body, /Answered by the author \(1\)\n {2}T1 /)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
 test('a rewritten history is reviewed whole again, still answering the earlier findings', async () => {
   const box = scratch()
   try {
@@ -476,8 +505,7 @@ test('a comment from before ledgers existed counts as a round, and both passes r
 test('an outage of BOTH passes still fails an enforced check while a blocking finding is open', async () => {
   const box = scratch()
   try {
-    const round1 = await roundOne(box)
-    push(box, { files: { 'flag.ts': 'export const flag = 1\n' }, message: 'a flag', comments: [comment(BOT_LOGIN, round1)] })
+    await pushedAfterRoundOne(box)
     const down = () => fakeBedrock([new Error('ThrottlingException'), new Error('ThrottlingException')]).call
     const out = join(box.dir, 'github-output')
     assert.equal(await main(box.args, { GITHUB_OUTPUT: out, AI_REVIEW_ENFORCED: 'true' }, { call: down() }), 1, 'T1 is still open and blocking')

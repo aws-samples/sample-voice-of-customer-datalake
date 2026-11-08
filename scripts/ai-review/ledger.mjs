@@ -112,6 +112,10 @@ export function decodeLedger(body) {
 const SHA = /\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/
 const FILE_LINE = /[\w./-]+\.[\w]+:\d+/
 const citesFix = (note) => SHA.test(note) && FILE_LINE.test(note)
+// An ANSWERED blocker must name (@login) someone who commented on the pull request, bots left out. Shape-only too:
+// the commenter is real, but whether that comment actually answers the finding is the model's word until a verifier
+// checks it. The PR description has no commenter, so an answer written ONLY there cannot close a blocker: the
+// author answers in a comment (or fixes it, which closes as RESOLVED).
 const citesReply = (note, people) => [...note.matchAll(/@([\w-]+)/g)].some((m) => people.has(m[1].toLowerCase()))
 
 const STATUS_LINE = /^STATUS -- ([TC]\d{1,4}) -- (RESOLVED|OPEN|ANSWERED)(?: -- (.*))?$/
