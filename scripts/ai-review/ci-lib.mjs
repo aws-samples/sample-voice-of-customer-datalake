@@ -59,7 +59,7 @@ ${what}
 
 Rules:
 1. For EVERY id in <previous-findings>, write exactly one line, all of them before any new item:
-   STATUS -- <id> -- RESOLVED -- <the change that fixes it>
+   STATUS -- <id> -- RESOLVED -- <the commit and file:line that fix it>
    STATUS -- <id> -- ANSWERED -- <where the author answered it with a reason you accept: by design, proven, out of scope>
    STATUS -- <id> -- OPEN -- <what is still missing, in a few words>
 2. Never repeat a finding that is still open as a new item: its STATUS line is enough. An answer you do not accept
@@ -289,8 +289,8 @@ export function renderComment({
     : `the whole diff${isFollowUp ? ` (${range.reason})` : ''}`)
   const passes = results.map((result) => ({ label: LABELS[result.kind], seen: seenBy(ranges[result.kind]) }))
   // One line when both passes reviewed the same range, else one per pass (a pass that did not finish resumes earlier).
-  const seen = new Set(passes.map((p) => p.seen)).size === 1 ? passes[0]?.seen ?? 'nothing'
-    : passes.map((p) => `${p.label}: ${p.seen}`).join('; ')
+  const distinct = new Set(passes.map((p) => p.seen))
+  const seen = distinct.size === 0 ? 'nothing' : distinct.size === 1 ? passes[0].seen : passes.map((p) => `${p.label}: ${p.seen}`).join('; ')
   const files = `${context.included.length} repository file${context.included.length === 1 ? '' : 's'}`
   const notes = [
     ...(diffTruncated ? ['> The diff was cut to fit: this review is partial.'] : []),

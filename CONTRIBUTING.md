@@ -131,8 +131,9 @@ fails no check.
   - the current text of the changed files and of the files the change names by path, within a size limit.
 
   What it cannot check, it reports as a `CONCERN` or a `SHOULD-FIX`.
-- **Depth follows the changed paths.** A documentation-only change gets a short review. A change to CI, the reviewers,
-  IAM and stacks, data deletion or the AI-writing guard gets a deep one with a larger budget.
+- **Depth follows the changed paths.** A documentation-only change gets a short review. A change to CI and the
+  gates that enforce the tenets, the reviewers, TENETS.md or REVIEW.md, IAM and stacks, data deletion, authentication or
+  the AI-writing guard gets a deep one with a larger budget.
 - **Rounds converge.** The first push gets a full review. Every later push gets a new round that:
   - reviews only the commits since the last review, with the whole diff as context;
   - gives every earlier finding a status by id: **resolved**, **answered by the author** (a reply with a reason the

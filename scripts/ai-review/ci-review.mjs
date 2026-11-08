@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CI_PREAMBLE, converseLong, diffHash, followUpPreamble, latestReview, prContext, readComments, renderComment, REVIEW_ORDER, reviewRounds, writeOutput } from './ci-lib.mjs'
-import { changedPaths, contextFiles, referencedPaths, reviewRange, riskTier, tierNote, TIERS } from './context.mjs'
+import { changedPaths, contextFiles, depthBlock, referencedPaths, reviewRange, riskTier, tierNote, TIERS } from './context.mjs'
 import { advanceLedger, emptyLedger, encodeLedger, passVerdict, previousFindingsBlock, stripStatusLines } from './ledger.mjs'
 import { buildPrompt, capDiff, KINDS, parseVerdict } from './lib.mjs'
 import { collectChange, git } from './review.mjs'
@@ -149,8 +149,9 @@ async function runReview(kind, { call, modelId, systemPrefix, promptsRoot, promp
 const readText = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : '')
 
 /** The prompt blocks only CI adds: the repository files and, from round 2, the open findings and the new commits. */
-function extraBlocks(kind, { context, ledger, incremental }) {
+function extraBlocks(kind, { context, ledger, incremental, tier }) {
   return [
+    ...[depthBlock(tier)].filter(Boolean),
     ...(context.text ? [{ tag: 'repository-files', body: context.text, attrs: ' ref="pull request head"' }] : []),
     ...(ledger ? [{ tag: 'previous-findings', body: previousFindingsBlock(ledger, kind) || '(none open)', attrs: ` round="${ledger.round}"` }] : []),
     ...(incremental ? [{ tag: 'changes-since-last-review', body: incremental.text, attrs: ` from="${incremental.from.slice(0, 12)}"` }] : []),
@@ -217,6 +218,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   const pullRequest = prContext({ title: pr.title, body: pr.body, issueComments, reviewComments: readComments(readJson(options.reviewComments)) })
   const tenets = readFileSync(join(options.promptsRoot, 'TENETS.md'), 'utf8')
   const reviewGuide = readText(join(options.promptsRoot, 'REVIEW.md'))
+  if (!reviewGuide) console.log('::warning title=AI review::REVIEW.md is missing from the trusted checkout: the review runs without its guide')
   const round = (ledger?.round ?? 0) + 1
   const describe = (plan) => (plan.incremental ? `commits since ${plan.incremental.from.slice(0, 8)}` : 'whole diff')
   say(`round ${round} (${REVIEW_ORDER.map((kind) => `${kind}: ${describe(plans[kind])}`).join(', ')}), depth ${tier.tier}, ${context.included.length} repository files, ${modelId}${truncated ? ', diff cut' : ''}...`)
@@ -226,10 +228,15 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
       + (ledger ? followUpPreamble({ round, incremental: Boolean(plans[kind].incremental), reason: plans[kind].range.reason }) : ''),
     prompt: buildPrompt({
       kind, tenets, reviewGuide, commits: plans[kind].commits, base: base.slice(0, 12), files: change.files, diff: text,
-      truncated, omitted: change.omitted, pullRequest, canRead: false, extra: extraBlocks(kind, { context, ledger, incremental: plans[kind].incremental }),
+      truncated, omitted: change.omitted, pullRequest, canRead: false, extra: extraBlocks(kind, { context, ledger, incremental: plans[kind].incremental, tier }),
     }),
   })))
-  if (results.every((result) => result.error)) return skip('no review was run (see the warnings above): nothing to post')
+  if (results.every((result) => result.error)) {
+    // Nothing to post, but an outage of BOTH passes must not clear an enforced block either.
+    const carried = (ledger?.findings ?? []).filter((f) => f.blocking).map((f) => f.id)
+    skip(`no review was run (see the warnings above): nothing to post${carried.length > 0 ? `; open blocking findings carried: ${carried.join(', ')}` : ''}`)
+    return carried.length > 0 && env.AI_REVIEW_ENFORCED === 'true' ? 1 : 0
+  }
 
   // The STATUS lines are read from the raw answer; the comment shows the answer without them (they are in the recap).
   const { ledger: next, recap } = advanceLedger(ledger, results.map((r) => (r.error ? r : { ...r, output: r.raw })))
@@ -240,7 +247,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   const body = renderComment({
     headSha: pr.headSha, hash, ledgerLine: encodeLedger(next), modelId, results, recap, verdicts, round,
     ranges: Object.fromEntries(REVIEW_ORDER.map((kind) => [kind, plans[kind].range])), tier, context,
-    earlierRounds: reviewRounds(issueComments), diffTruncated: truncated, omitted: change.omitted, dropped: next.dropped,
+    earlierRounds: reviewRounds(issueComments), omitted: change.omitted, dropped: next.dropped,
+    // Disclosed when the whole diff OR a pass's new-commits diff was cut.
+    diffTruncated: truncated || Object.values(plans).some((plan) => plan.incremental?.truncated),
   })
   if (options.out) writeFileSync(options.out, body)
   writeOutput(env.GITHUB_OUTPUT, 'comment', 'true')
