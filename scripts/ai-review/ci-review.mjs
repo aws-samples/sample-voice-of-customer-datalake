@@ -177,7 +177,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   if (previous?.diffhash === hash) return skip(`the diff is the one reviewed at ${previous.sha.slice(0, 12)}: no new review`)
 
   // A comment from before ledgers existed still counts as a round, with nothing to carry over.
-  const ledger = previous ? (previous.ledger ?? { ...emptyLedger(), round: reviewRounds(issueComments).length }) : null
+  // (No `reviewed` record either: both passes resume from that comment's commit.)
+  const ledger = previous ? (previous.ledger ?? { ...emptyLedger(), reviewed: undefined, round: reviewRounds(issueComments).length }) : null
   // Where each pass resumes: the last commit IT reviewed to the end. A pass that failed or was cut short keeps its
   // older commit (or none), so it reviews the commits it missed; a ledger without this record means both passes ran.
   const resumeFrom = (kind) => (ledger?.reviewed ? (ledger.reviewed[kind] || null) : (previous?.sha ?? null))

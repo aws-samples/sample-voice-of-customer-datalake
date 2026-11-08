@@ -458,6 +458,21 @@ test('a pass that failed or was cut short resumes from where IT stopped, not fro
   }
 })
 
+test('a comment from before ledgers existed counts as a round, and both passes resume from its commit', async () => {
+  const box = scratch()
+  try {
+    // The round-1 comment without its ledger line: what the reviewer posted before this change.
+    const round1 = (await roundOne(box)).split('\n').filter((line, i) => i !== 1).join('\n')
+    push(box, { files: { 'flag.ts': 'export const flag = 1\n' }, message: 'a flag', comments: [comment(BOT_LOGIN, round1)] })
+    const fake = fakeBedrock([reply(PASS('tenets')), reply(PASS('commit'))])
+    await main(box.args, {}, { call: fake.call })
+    for (const request of fake.requests) assert.match(request.messages[0].content[0].text, /<changes-since-last-review from="[0-9a-f]{12}">/)
+    assert.match(readFileSync(join(box.dir, 'comment.md'), 'utf8'), /^### 🤖 AI review, round 2: /m)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
 test('a push that changes only files the review skips (a lockfile) makes no round and no model call', async () => {
   const box = scratch()
   try {
