@@ -155,7 +155,9 @@ the card (`lambda/shared/config_write_guard.py`, TENETS.md tenet 4). `POST /scra
 | `mode` | `create` \| `update` | `create`: **409** `A scraper with id "<id>" already exists; nothing was saved. A create never overwrites.` (an app connector: also when the same `app_name` or identifier, `app_id` / `package_name` / `url`, is configured under another id: `An app connector for "<name>" already exists; …`). `update`: **404** `… does not exist; nothing was saved.` Any other value: 400 |
 | `base_etag` | the record's `etag` as read (≤ 64 characters) | **409** `… changed since it was read; nothing was saved. Read it again.` when the stored record's `etag` differs |
 
-Both absent = the upsert older clients rely on. `GET /scrapers` and `GET /integrations/{source}/apps` add a computed
+Both absent = the upsert older clients rely on. The checks read the stored configuration before the save, and the
+configurations live in a secret with no conditional write, so two writes of the same record at the same moment can
+both pass (the later one wins). `GET /scrapers` and `GET /integrations/{source}/apps` add a computed
 `etag` to each record (the first 16 hex characters of a SHA-256 of its canonical JSON); it is never stored, and a
 record sent back with its `etag` is saved without it. The assistant's `create_scraper` / `create_app_connector`
 executors send `mode: create`; `update_scraper` sends `mode: update` and the `etag` the card read; a plan step does

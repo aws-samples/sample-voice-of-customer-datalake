@@ -45,7 +45,10 @@ nothing, when:
   `This is the last enabled administrator: make another user an administrator first.`
 
 The SPA and the assistant's `update_user` card check the same rules before asking; the API is the rule (TENETS.md
-tenet 4). A Cognito fault during the check answers the route's own fixed error message (500).
+tenet 4). A Cognito fault during the check answers the route's own fixed error message (500). Cognito has no
+conditional write, so the last-admin check reads before it writes: two administrators who demote, disable or delete
+each other at the same moment can both pass it. An account administrator can always restore an admin in the AWS
+console.
 
 ## Account: five tabs
 
