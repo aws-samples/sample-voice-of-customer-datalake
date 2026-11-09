@@ -21,6 +21,10 @@ the platform package version.
 
 The web app's push notices reach the browser: 6.04 blocked their WebSocket with its own Content-Security-Policy.
 
+### Added
+
+- The production e2e suite covers the 6.00–6.04 features ([voc-datalake/frontend/e2e/COVERAGE.md](voc-datalake/frontend/e2e/COVERAGE.md)): push notices end to end (`realtime`), methodology, the feedback catalogue, workflow warnings and the erasure legal basis (`methodology-catalogue`), the 6.04 global MCP tools (`mcp-tools-6x`), and the scraper write rules, colour themes, two-editor unsaved guard and board Insights (`features-6x`).
+
 ### Fixed
 
 - The web app's Content-Security-Policy (VocCoreStack, CloudFront `SecurityHeadersPolicy`) allows the AppSync Events WebSocket (`wss://*.appsync-realtime-api.<region>.amazonaws.com`). Before, every signed-in page logged "Connecting to 'wss://…' violates the following Content Security Policy directive", and the job, assistant and run notices of 6.04 never arrived, so the pages fell back to polling.
