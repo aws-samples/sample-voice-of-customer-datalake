@@ -203,7 +203,7 @@ describe('board user pool', () => {
   it.each([
     ['BoardPreSignUpLambda', 'auth/board_triggers.handler'],
     ['BoardCustomMessageLambda', 'auth/board_triggers.handler'],
-  ])('%s runs %s (Python 3.14, ARM64, 128 MB) with the table names and the SPA origin', (constructId, handler) => {
+  ])('%s runs %s (Python 3.14, ARM64, 256 MB) with the table names and the SPA origin', (constructId, handler) => {
     const fns = Object.entries(coreWithBoard().findResources('AWS::Lambda::Function'))
       .filter(([id]) => id.startsWith(constructId));
     expect(fns).toHaveLength(1);
@@ -211,7 +211,7 @@ describe('board user pool', () => {
       Handler: z.string(), Runtime: z.string(), Architectures: z.array(z.string()), MemorySize: z.number(),
       Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }),
     }) }).parse(fns[0]?.[1]).Properties;
-    expect([fn.Handler, fn.Runtime, fn.Architectures, fn.MemorySize]).toStrictEqual([handler, 'python3.14', ['arm64'], 128]);
+    expect([fn.Handler, fn.Runtime, fn.Architectures, fn.MemorySize]).toStrictEqual([handler, 'python3.14', ['arm64'], 256]);
     expect(Object.keys(fn.Environment.Variables).sort(byCodeUnit)).toStrictEqual(['FRONTEND_URL', 'LOG_LEVEL', 'PARTICIPANTS_TABLE', 'PROJECTS_TABLE']);
   });
 
