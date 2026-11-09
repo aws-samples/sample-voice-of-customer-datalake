@@ -328,8 +328,8 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'voc-settings-assist': 512,
   'voc-scrapers-assist': 1024,
   // Engagement API (5.33.00): participants, asks and their self-invoked send slices, the board;
-  // DynamoDB and SES at ≤ 10/s, I/O-bound (unmeasured, new).
-  'voc-engagement-api': 512,
+  // DynamoDB and SES at ≤ 10/s; 2026-11-09: 512 MB at 98.6 % CPU p95 → 1024.
+  'voc-engagement-api': 1024,
   // The SPA upload (api-stack.ts WEBSITE_DEPLOYMENT_MEMORY_MB): at the 128 MB default `aws s3 sync` ran out of
   // memory and timed out (5.36.01 deploy, 128 of 128 MB used).
   'VocApiStack/CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C1024MiBB049752D': 1024,
@@ -343,9 +343,10 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'VocCoreStack/CustomMessageLambda448F9FBF': null,
   'VocCoreStack/AdminBootstrapProviderframeworkonEventF4719509': null,
   // The board pool (core-board-auth.ts; every deployment since 5.45.00, before only with `-c emailFrom`):
-  // Cognito triggers, a few GetItems / one string render each (unmeasured, new in 5.33.00).
-  'voc-board-pre-sign-up': 128,
-  'voc-board-custom-message': 128,
+  // Cognito triggers, a few GetItems / one string render each; 2026-11-09: the PreSignUp trigger peaked at 74.2 %
+  // of 128 MB → 256 for both (one constant, the same handler).
+  'voc-board-pre-sign-up': 256,
+  'voc-board-custom-message': 256,
   // The model agreements (BedrockModelAgreements under the id ImageModelAccess, bedrock-access-stack.ts):
   // deploy-time custom resource for the image model (5.45.00) and every Claude model, the CDK default.
   'VocCoreStack/ImageModelAccessModelAgreementLambda252AEB5F': null,

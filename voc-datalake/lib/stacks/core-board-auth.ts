@@ -46,7 +46,8 @@ const BOARD_PRE_SIGN_UP_FUNCTION_BASE_NAME = 'voc-board-pre-sign-up';
 const BOARD_CUSTOM_MESSAGE_FUNCTION_BASE_NAME = 'voc-board-custom-message';
 
 /** Trigger memory: one GetItem or a string render; well inside Cognito's 5 s trigger budget. */
-const BOARD_TRIGGER_MEMORY_MB = 128;
+// 128 MB peaked at 74.2 % on the PreSignUp trigger (2026-11-09 capacity check): one step up (lib/sizing/policy.ts).
+const BOARD_TRIGGER_MEMORY_MB = 256;
 const BOARD_TRIGGER_TIMEOUT = cdk.Duration.seconds(5);
 
 /**
