@@ -25,10 +25,13 @@ The web app's push notices reach the browser: 6.04 blocked their WebSocket with 
 
 - The production e2e suite covers the 6.00–6.04 features ([voc-datalake/frontend/e2e/COVERAGE.md](voc-datalake/frontend/e2e/COVERAGE.md)): push notices end to end (`realtime`), methodology, the feedback catalogue, workflow warnings and the erasure legal basis (`methodology-catalogue`), the 6.04 global MCP tools (`mcp-tools-6x`), and the scraper write rules, colour themes, two-editor unsaved guard and board Insights (`features-6x`).
 
+### Changed
+
+- Lambda sizes, per the 60 % rule ([docs/lambda-sizing.md](docs/lambda-sizing.md)): the board sign-up and custom-message triggers go from 128 to 256 MB (the sign-up trigger peaked at 74 % of its memory), and `voc-engagement-api` goes from 512 to 1024 MB (98.6 % CPU at p95).
+
 ### Fixed
 
 - The web app's Content-Security-Policy (VocCoreStack, CloudFront `SecurityHeadersPolicy`) allows the AppSync Events WebSocket (`wss://*.appsync-realtime-api.<region>.amazonaws.com`). Before, every signed-in page logged "Connecting to 'wss://…' violates the following Content Security Policy directive", and the job, assistant and run notices of 6.04 never arrived, so the pages fell back to polling.
-- Lambda sizes, per the 60 % rule ([docs/lambda-sizing.md](docs/lambda-sizing.md)): the board sign-up and custom-message triggers go from 128 to 256 MB (the sign-up trigger peaked at 74 % of its memory), and `voc-engagement-api` goes from 512 to 1024 MB (98.6 % CPU at p95).
 
 ### Upgrade notes
 
