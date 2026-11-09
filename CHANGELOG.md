@@ -27,7 +27,7 @@ the platform package version.
 
 ### Upgrade notes
 
-- If a 6.04.00 deploy failed, VocCoreStack rolled back by itself (`UPDATE_ROLLBACK_COMPLETE`) and the other stacks still run the previous release. Deploy 6.04.01 the usual way (`npm run deploy:infra`, then `npm run deploy:frontend`). Nothing has to be cleaned up first.
+- If a 6.04.00 deploy failed, VocCoreStack rolled back by itself (`UPDATE_ROLLBACK_COMPLETE`) and the stacks that deploy after it (Ingestion, Processing, Api) still run the previous release. Deploy 6.04.01 the usual way (`npm run deploy:infra`, then `npm run deploy:frontend`). Nothing has to be cleaned up first.
 
 ## [6.04.00] - 2026-11-09
 
