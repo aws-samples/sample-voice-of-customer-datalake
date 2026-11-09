@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.01] - 2026-11-09
+
+6.04.00 could not be deployed: VocCoreStack failed creating the realtime channel namespaces and rolled back. This release fixes the cause.
+
+### Fixed
+
+- The AppSync Events subscribe handler on the `jobs`, `chat` and `runs` namespaces (VocCoreStack) now compiles in AppSync. Its own-channel check is a private helper, because APPSYNC_JS refuses to call an exported function from inside the module ("Error processing APPSYNC_JS code"). A test now fails if the handler exports anything other than `onSubscribe`.
+
+### Upgrade notes
+
+- If a 6.04.00 deploy failed, VocCoreStack rolled back by itself (`UPDATE_ROLLBACK_COMPLETE`) and the other stacks still run the previous release. Deploy 6.04.01 the usual way (`npm run deploy:infra`, then `npm run deploy:frontend`). Nothing has to be cleaned up first.
+
 ## [6.04.00] - 2026-11-09
 
 The browser hears when work finishes instead of asking every second and a half, the methodology is checked and reported by the server for every client, MCP can run the methodology steps, plugins declare what makes them different, the memory scanner stops scanning a whole table, the processed feedback item has a catalogue, and the SPA reads the code it shares with the assistant's stream Lambda from the stream package itself.
