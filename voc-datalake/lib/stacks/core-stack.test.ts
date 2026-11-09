@@ -1469,6 +1469,13 @@ describe('the SPA security headers (WA SEC11, EDGE-3/4/6)', () => {
     expect(csp).not.toContain('lambda-url');
   });
 
+  it("lets the SPA open the Event API's WebSocket (wss: needs its own connect-src source)", () => {
+    const csp = JSON.stringify(recordAt(spaPolicy(), 'SecurityHeadersConfig', 'ContentSecurityPolicy'));
+    const connect = /connect-src ([^;]*);/u.exec(csp)?.[1] ?? '';
+    expect(connect).toContain('wss://*.appsync-realtime-api.');
+    expect(connect).not.toMatch(/wss:\/\/\*\.amazonaws\.com|wss:(?!\/\/\*\.appsync-realtime-api\.)/u);
+  });
+
   it('turns the legacy XSS filter off and denies device features the app never uses', () => {
     const config = spaPolicy();
     expect(recordAt(config, 'SecurityHeadersConfig', 'XSSProtection')).toMatchObject({ Protection: false });

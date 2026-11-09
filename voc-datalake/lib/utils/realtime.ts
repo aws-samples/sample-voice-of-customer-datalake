@@ -35,6 +35,16 @@ export const REALTIME_API_BASE_NAME = 'voc-events';
 export const REALTIME_HTTP_DNS_ENV = 'REALTIME_HTTP_DNS';
 
 /**
+ * The SPA's Content-Security-Policy `connect-src` source for the Event API's WebSocket
+ * (`wss://<id>.appsync-realtime-api.<region>.amazonaws.com/event/realtime`, frontend/src/realtime). The HTTP host is
+ * already covered by `https://*.amazonaws.com`; a `wss:` URL matches only a `wss:` source. Region-scoped: the CDN is
+ * built before the Event API exists, so the exact host is not known there.
+ */
+export function realtimeConnectSrc(region: string): string {
+  return `wss://*.appsync-realtime-api.${region}.amazonaws.com`;
+}
+
+/**
  * The namespace subscribe handler (APPSYNC_JS). A subscription is allowed only to exactly
  * `/<namespace>/<the caller's own sub>`: no wildcard, no deeper path, no other person's sub.
  * `ownChannel` is the whole decision; lib/utils/realtime-subscribe.test.ts runs it through `onSubscribe`.
