@@ -47,8 +47,18 @@ export function resetPersistedUi(role: Role): void {
   const saved = readIfPresent(file)
   if (saved === undefined) return
   const state: unknown = JSON.parse(saved)
-  fs.writeFileSync(file, JSON.stringify(withoutPersistedUi(state), null, 2), { mode: 0o600 })
-  fs.chmodSync(file, 0o600)
+  writeAtomically(file, JSON.stringify(withoutPersistedUi(state), null, 2))
+}
+
+/**
+ * Write `file` through a temp file and a rename, so a worker reading it at the same moment sees the old or the new
+ * session, never a truncated one (parallel workers share the role's file: "Unexpected end of JSON input", 6.04.01).
+ */
+function writeAtomically(file: string, text: string): void {
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
+  fs.writeFileSync(tmp, text, { mode: 0o600 })
+  fs.chmodSync(tmp, 0o600)
+  fs.renameSync(tmp, file)
 }
 
 /** The file's text, or undefined when it does not exist (one read, no check-then-read gap). */
@@ -63,10 +73,8 @@ function readIfPresent(file: string): string | undefined {
 
 /** Write a context's session back to its role's file (token refresh), without its UI state. */
 export async function saveSession(context: BrowserContext, role: Role): Promise<void> {
-  const file = storageStatePath(role)
-  await context.storageState({ path: file })
-  fs.chmodSync(file, 0o600)
-  resetPersistedUi(role)
+  const state = await context.storageState()
+  writeAtomically(storageStatePath(role), JSON.stringify(withoutPersistedUi(state), null, 2))
 }
 
 const resetFiles = new Set<string>()

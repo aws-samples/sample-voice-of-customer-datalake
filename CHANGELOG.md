@@ -28,9 +28,11 @@ The web app's push notices reach the browser: 6.04 blocked their WebSocket with 
 ### Changed
 
 - Lambda sizes, per the 60 % rule ([docs/lambda-sizing.md](docs/lambda-sizing.md)): the board sign-up and custom-message triggers go from 128 to 256 MB (the sign-up trigger peaked at 74 % of its memory), and `voc-engagement-api` goes from 512 to 1024 MB (98.6 % CPU at p95).
+- An agent run's review analysis and final review ask the model once more (one more call from the run's budget) when its answer holds no readable JSON, instead of failing the run with "The AI's answer could not be read" ([docs/autonomous-agents.md](docs/autonomous-agents.md)).
 
 ### Fixed
 
+- Persona import (`voc-job-persona-importer`) reads every text block of the model's answer. A model that thinks answers with a reasoning block first; the import read only that block and failed with "Persona import failed: Expecting value".
 - The web app's Content-Security-Policy (VocCoreStack, CloudFront `SecurityHeadersPolicy`) allows the AppSync Events WebSocket (`wss://*.appsync-realtime-api.<region>.amazonaws.com`). Before, every signed-in page logged "Connecting to 'wss://…' violates the following Content Security Policy directive", and the job, assistant and run notices of 6.04 never arrived, so the pages fell back to polling.
 
 ### Upgrade notes

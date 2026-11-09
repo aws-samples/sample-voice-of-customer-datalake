@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agents import context_blocks, llm, principal
+from agents import context_blocks, principal
 from agents.nodes.base import DEFAULT_REVIEW_DAYS, NodeContext, NodeFailure, done, scope_categories
 from shared.display_labels import humanize_id
 from shared.prompt_labels import PromptLabels
@@ -159,7 +159,7 @@ def start(ctx: NodeContext) -> dict:
         context_blocks.wrap('reviews', '\n'.join(_review_line(r, labels) for r in selected), 30000),
         'Return the JSON object now.',
     )
-    answer = llm.parse_json_object(ctx.ask(prompt, system_prompt=SYSTEM, max_tokens=ANSWER_TOKENS))
+    answer = ctx.ask_json(prompt, system_prompt=SYSTEM, max_tokens=ANSWER_TOKENS)
     if not answer:
         raise NodeFailure('the review analysis was not valid JSON')
     known = {str(r.get('feedback_id')) for r in selected}

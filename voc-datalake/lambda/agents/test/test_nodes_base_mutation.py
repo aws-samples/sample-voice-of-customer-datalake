@@ -17,6 +17,7 @@ import pytest
 from agents import llm, principal
 from agents.graph import Node
 from agents.nodes.base import (
+    JSON_RETRY_NOTE,
     MAX_SUMMARY_CHARS,
     NodeContext,
     NodeFailure,
@@ -88,6 +89,37 @@ class TestTheContextReadsTheRun:
         assert ctx.param('days') == 14
         assert ctx.param('missing') is None
         assert ctx.param('missing', 'fallback') == 'fallback'
+
+
+class TestAskJsonRetriesOnceOnAnUnreadableAnswer:
+    """A worker answer with no JSON object gets ONE more budgeted call (6.04.02: 2 of 17 review analyses failed)."""
+
+    def test_a_readable_answer_takes_one_call(self):
+        with patch.object(llm, 'ask', return_value='{"title": "x"}') as ask:
+            assert _ctx({}).ask_json('prompt', system_prompt='sys', max_tokens=50) == {'title': 'x'}
+        assert ask.call_count == 1
+
+    def test_an_unreadable_answer_is_asked_again_with_the_note(self):
+        with patch.object(llm, 'ask', side_effect=['{"title": }', 'Here: {"title": "y"}']) as ask:
+            assert _ctx({}).ask_json('prompt', system_prompt='sys', max_tokens=50) == {'title': 'y'}
+        assert ask.call_count == 2
+        second = ask.call_args_list[1]
+        assert second.args == (AGENT, 'ar_1', 'worker', f'prompt\n\n{JSON_RETRY_NOTE}')
+        assert second.kwargs == {'system_prompt': 'sys', 'max_tokens': 50, 'step_name': 'agent_aggregate_reviews'}
+
+    def test_two_unreadable_answers_give_none_and_never_log_the_text(self):
+        with patch.object(llm, 'ask', return_value='secret review quote, no json'), \
+                patch('agents.nodes.base.logger') as logger:
+            assert _ctx({}).ask_json('prompt') is None
+        logger.warning.assert_called_once()
+        assert 'secret review quote' not in repr(logger.warning.call_args)
+        assert logger.warning.call_args.kwargs['extra'] == {
+            'node_type': 'aggregate_reviews', 'run_id': 'ar_1', 'answer_chars': len('secret review quote, no json'), 'has_brace': False}
+
+    def test_an_empty_object_is_an_answer_not_a_retry(self):
+        with patch.object(llm, 'ask', return_value='{}') as ask:
+            assert _ctx({}).ask_json('prompt') == {}
+        assert ask.call_count == 1
 
 
 class TestAskAndProjectsForwardExactly:

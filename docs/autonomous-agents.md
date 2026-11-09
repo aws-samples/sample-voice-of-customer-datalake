@@ -238,6 +238,7 @@ Any task error ─▶ RecordFailure (conductor, action 'fail') ─▶ Fail
 
 **What the journal says.** People read the run log, so the journal uses plain words, names and labels:
 
+- The review analysis (`aggregate_reviews`) and the final review ask the model once more when an answer holds no readable JSON object (`NodeContext.ask_json` in `agents/nodes/base.py`): one more call from the run's budget, with a note to return only the JSON object. The retry logs the answer's length, never its text. Only a second unreadable answer fails the step.
 - A failed step reads as a plain sentence (`agents/failure_reason.py`). For example: "The review analysis came back in an unexpected format, so the run stopped. It is safe to run it again." The technical reason (`the review analysis was not valid JSON`, an HTTP refusal, a verification mismatch) is kept in the event's `detail`, masked like the summary. `GET /agents/{id}/runs/{run_id}/events` returns it. The run summary reads `<step> failed. <plain reason>.`
 - Projects are named by their name, never by their id ("Created the project "Faster checkout" for Billing"). The name is read once per run and cached in the run context (`project_names`, `agents/event_text.py`). A name that cannot be read shows as "the project".
 - Categories and sources use their labels (`shared/display_labels.py`). Documents are spelled PR/FAQ, PRD, prototype and research report.

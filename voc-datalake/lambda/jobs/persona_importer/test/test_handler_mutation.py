@@ -174,9 +174,9 @@ def run(request, mock_bedrock, lambda_context):
         from jobs.persona_importer.handler import lambda_handler
 
         def invoke(event: dict, persona=FULL_PERSONA, response_text: str | None = None,
-                   context=lambda_context) -> dict:
+                   context=lambda_context, response: dict | None = None) -> dict:
             text = json.dumps(persona) if response_text is None else response_text
-            mock_bedrock.converse.return_value = _bedrock_response(text)
+            mock_bedrock.converse.return_value = _bedrock_response(text) if response is None else response
             return lambda_handler(event, context)
 
         yield _Run(invoke, retry_kwargs, model)
@@ -244,6 +244,14 @@ class TestTheResponseIsUnfenced:
     ])
     def test_each_shape_yields_the_same_persona(self, run, mock_dynamodb, text_import_event, wrap):
         run(text_import_event, response_text=wrap.format(json=json.dumps(FULL_PERSONA)))
+        assert _put_item(mock_dynamodb)['name'] == 'Sarah Chen'
+
+    def test_a_reasoning_block_before_the_text_is_skipped(self, run, mock_dynamodb, text_import_event):
+        # A thinking model answers reasoning first; reading only block 0 failed the import (6.04.01).
+        run(text_import_event, response={'output': {'message': {'content': [
+            {'reasoningContent': {'reasoningText': {'text': 'Thinking about the persona'}}},
+            {'text': json.dumps(FULL_PERSONA)},
+        ]}}})
         assert _put_item(mock_dynamodb)['name'] == 'Sarah Chen'
 
     def test_non_json_fails_the_job_with_the_decoder_message(
