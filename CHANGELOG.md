@@ -28,7 +28,7 @@ the platform package version.
 ### Upgrade notes
 
 - If a 6.04.00 deploy failed on an existing deployment, VocCoreStack rolled back by itself (`UPDATE_ROLLBACK_COMPLETE`) and the stacks that deploy after it (Ingestion, Processing, Api) still run the previous release. Deploy 6.04.01 the usual way (`npm run deploy:infra`, then `npm run deploy:frontend`). Nothing has to be cleaned up first.
-- If 6.04.00 was the first-ever deploy, VocCoreStack is in `ROLLBACK_COMPLETE`, which CloudFormation cannot update. Delete that empty stack first (`aws cloudformation delete-stack --stack-name VocCoreStack`), then deploy 6.04.01. The protected tables, buckets and user pools are not left behind: their `RetainExceptOnCreate` policy removes them when a first create rolls back.
+- If 6.04.00 was the first-ever deploy, VocCoreStack is in `ROLLBACK_COMPLETE` (or `ROLLBACK_FAILED`), which CloudFormation cannot update. Delete that stack first (`aws cloudformation delete-stack --stack-name VocCoreStack`, or `<prefix>-VocCoreStack` for a prefixed deployment). Before deploying 6.04.01, check that no `voc-*` table, bucket or user pool of that deployment is left (with `-c protectData=true` they carry deletion protection), and remove any that is: it holds no data yet, and its fixed name would block the new create.
 
 ## [6.04.00] - 2026-11-09
 
