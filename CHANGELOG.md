@@ -17,6 +17,19 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.02] - 2026-11-09
+
+The web app's push notices reach the browser: 6.04 blocked their WebSocket with its own Content-Security-Policy.
+
+### Fixed
+
+- The web app's Content-Security-Policy (VocCoreStack, CloudFront `SecurityHeadersPolicy`) allows the AppSync Events WebSocket (`wss://*.appsync-realtime-api.<region>.amazonaws.com`). Before, every signed-in page logged "Connecting to 'wss://…' violates the following Content Security Policy directive", and the job, assistant and run notices of 6.04 never arrived, so the pages fell back to polling.
+- Lambda sizes, per the 60 % rule ([docs/lambda-sizing.md](docs/lambda-sizing.md)): the board sign-up and custom-message triggers go from 128 to 256 MB (the sign-up trigger peaked at 74 % of its memory), and `voc-engagement-api` goes from 512 to 1024 MB (98.6 % CPU at p95).
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`). The CloudFront header change reaches the browsers within a few minutes; a page loaded before it still polls until it is reloaded.
+
 ## [6.04.01] - 2026-11-09
 
 6.04.00 could not be deployed: VocCoreStack failed creating the realtime channel namespaces and rolled back. This release fixes the cause.
