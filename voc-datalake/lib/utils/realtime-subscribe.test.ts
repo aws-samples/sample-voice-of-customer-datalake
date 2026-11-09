@@ -3,6 +3,13 @@
  * APPSYNC_JS module is written to a temp file with its one import (`util` from @aws-appsync/utils, which
  * exists only inside AppSync) replaced by a stub, and imported. Only `onSubscribe` is exported (APPSYNC_JS
  * refuses to call an exported function from inside the module), so every case goes through it.
+ *
+ * Only AppSync can show that it compiles. To re-check after changing the handler, copy it with `onSubscribe`
+ * renamed to `request`, `export function response(ctx) { return null; }` appended and the channel read from
+ * `ctx.arguments` (an evaluator context has no `ctx.info.channel`), then run
+ * `aws appsync evaluate-code --runtime name=APPSYNC_JS,runtimeVersion=1.0.0 --function request
+ *  --code file://handler.js --context file://ctx.json` with ctx.json = `{"identity":{"sub":"abc"},
+ *  "arguments":{"channel":{"segments":["jobs","abc"]}}}`: it answers `null`, another sub `Unauthorized`.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,10 +24,11 @@ import { REALTIME_SUBSCRIBE_HANDLER_CODE } from './realtime';
 const IMPORT_LINE = "import { util } from '@aws-appsync/utils';";
 const SUB = '0a1b2c3d-1111-4222-8333-444455556666';
 
-const HandlerModuleSchema = z.object({ onSubscribe: z.function() }).strict();
+const HandlerModuleSchema = z.object({ onSubscribe: z.function() });
 
-const state: { dir: string; onSubscribe: (ctx: unknown) => unknown } = {
+const state: { dir: string; exportNames: string[]; onSubscribe: (ctx: unknown) => unknown } = {
   dir: '',
+  exportNames: [],
   onSubscribe: () => undefined,
 };
 
@@ -34,7 +42,9 @@ beforeAll(async () => {
   writeFileSync(file, REALTIME_SUBSCRIBE_HANDLER_CODE.replace(IMPORT_LINE, stub));
   Object.assign(globalThis, { RealtimeUnauthorized: Unauthorized });
   const loaded: unknown = await import(pathToFileURL(file).href);
-  const parsed = HandlerModuleSchema.parse(z.record(z.string(), z.unknown()).parse(loaded));
+  const exports = z.record(z.string(), z.unknown()).parse(loaded);
+  state.exportNames = Object.keys(exports).sort((a, b) => a.localeCompare(b));
+  const parsed = HandlerModuleSchema.parse(exports);
   state.onSubscribe = (ctx) => Reflect.apply(parsed.onSubscribe, undefined, [ctx]);
 });
 
@@ -49,10 +59,7 @@ const ctxFor = (path: string, sub: string | undefined) => ({
 
 describe('the own-channel subscribe handler', () => {
   it('exports onSubscribe and nothing else (APPSYNC_JS rejects calls to an exported helper)', () => {
-    const exported = [...REALTIME_SUBSCRIBE_HANDLER_CODE.matchAll(/^export\s+(?:async\s+)?function\s+(\w+)/gmu)]
-      .map((match) => match[1]);
-    expect(exported).toStrictEqual(['onSubscribe']);
-    expect(REALTIME_SUBSCRIBE_HANDLER_CODE).not.toMatch(/^export\s+(?!function\s+onSubscribe\b)/mu);
+    expect(state.exportNames).toStrictEqual(['onSubscribe']);
   });
 
   it('allows exactly /<namespace>/<own sub>', () => {
