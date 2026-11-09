@@ -27,8 +27,12 @@ from agents.fields import dict_field
 from agents.graph import Node
 from shared import methodology as methodology_mod
 from shared.display_labels import humanize_id
+from shared.logging import logger
 
 MAX_SUMMARY_CHARS = 500
+
+#: Appended to the prompt of the one retry after an answer that held no JSON object.
+JSON_RETRY_NOTE = 'Your previous answer was not one valid JSON object. Return ONLY the JSON object, nothing else.'
 #: The review window every step reads unless its ``days`` param says otherwise.
 DEFAULT_REVIEW_DAYS = 30
 
@@ -78,6 +82,24 @@ class NodeContext:
         return llm.ask(self.agent, self.run_id, role or self.node.role, prompt,
                        system_prompt=system_prompt, max_tokens=max_tokens,
                        step_name=f'agent_{self.node.type}')
+
+    def ask_json(self, prompt: str, *, system_prompt: str = '', max_tokens: int = 2000) -> dict | None:
+        """``ask`` for one JSON object: one more budgeted call when the answer holds none, else None.
+
+        A worker model now and then answers JSON a decoder refuses (2 of 17 review analyses on Haiku 5.5 in
+        two weeks, the run then failed "The AI's answer could not be read"). The retry costs one call of the
+        run's budget; the warning records the answer's shape only, never its text (it quotes reviews).
+        """
+        text = self.ask(prompt, system_prompt=system_prompt, max_tokens=max_tokens)
+        answer = llm.parse_json_object(text)
+        if answer is not None:
+            return answer
+        logger.warning('Agent node answer held no JSON object; asking once more', extra={
+            'node_type': self.node.type, 'run_id': self.run_id, 'answer_chars': len(text or ''),
+            'has_brace': '{' in (text or ''),
+        })
+        return llm.parse_json_object(self.ask(f'{prompt}\n\n{JSON_RETRY_NOTE}', system_prompt=system_prompt,
+                                              max_tokens=max_tokens))
 
     def projects(self, method: str, path: str, **kwargs: Any) -> Any:
         return principal.projects(method, path, self.claims, **kwargs)

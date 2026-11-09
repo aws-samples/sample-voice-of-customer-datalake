@@ -6,7 +6,7 @@ instructions; company objectives come in as the ``<company_context>`` block.
 """
 from __future__ import annotations
 
-from agents import artifacts, context_blocks, llm
+from agents import artifacts, context_blocks
 from agents.conductor.planning import objections_text
 from agents.nodes.base import NodeContext, NodeFailure, done
 
@@ -56,7 +56,7 @@ def start(ctx: NodeContext) -> dict:
         f'Checklist:\n{checklist}',
         'Return the JSON object now.',
     )
-    answer = llm.parse_json_object(ctx.ask(prompt, system_prompt=SYSTEM, max_tokens=1500))
+    answer = ctx.ask_json(prompt, system_prompt=SYSTEM, max_tokens=1500)
     if not answer or not isinstance(answer.get('pass'), bool):
         raise NodeFailure('the final review was not valid JSON')
     passed = answer['pass']
