@@ -29,7 +29,8 @@ const ENGAGEMENT_API_FUNCTION_BASE_NAME = 'voc-engagement-api';
 const ENGAGEMENT_TIMEOUT = cdk.Duration.seconds(60);
 
 /** I/O-bound (DynamoDB, SES at ≤ 10/s); unmeasured, new in 5.33.00 (lib/sizing/policy.ts). */
-const ENGAGEMENT_MEMORY_MB = 512;
+// 512 MB reached 98.6 % CPU p95 (2026-11-09 capacity check): one step up (lib/sizing/policy.ts).
+const ENGAGEMENT_MEMORY_MB = 1024;
 
 /** A queued send continuation older than this is dropped to the failure destination. */
 const ENGAGEMENT_MAX_EVENT_AGE = cdk.Duration.hours(1);
