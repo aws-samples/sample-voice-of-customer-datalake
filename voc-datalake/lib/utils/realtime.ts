@@ -37,11 +37,13 @@ export const REALTIME_HTTP_DNS_ENV = 'REALTIME_HTTP_DNS';
 /**
  * The namespace subscribe handler (APPSYNC_JS). A subscription is allowed only to exactly
  * `/<namespace>/<the caller's own sub>`: no wildcard, no deeper path, no other person's sub.
- * `ownChannel` is the whole decision; lib/utils/realtime-subscribe.test.ts runs it.
+ * `ownChannel` is the whole decision; lib/utils/realtime-subscribe.test.ts runs it through `onSubscribe`.
+ * `onSubscribe` must stay the module's only export: APPSYNC_JS refuses to call an exported function from
+ * inside the module ("Invalid function: … INVALID_FUNCTION_INVOCATION"), which failed the 6.04.00 deploy.
  */
 export const REALTIME_SUBSCRIBE_HANDLER_CODE = `import { util } from '@aws-appsync/utils';
 
-export function ownChannel(segments, sub) {
+function ownChannel(segments, sub) {
   if (typeof sub !== 'string' || sub.length === 0) return false;
   if (!Array.isArray(segments) || segments.length !== 2) return false;
   return segments[1] === sub;
