@@ -183,6 +183,8 @@ const SAVE_SETTLE_MS = 8_000
 /** A run counts as finished only after this long, so the Send button seen before Stop appears is not mistaken for the end. */
 const MIN_RUN_MS = 3_000
 const POLL_MS = 1_000
+/** How long one read of a card's state may wait: a card that left the DOM meanwhile has resolved. */
+const CARD_STATE_READ_MS = 1_000
 /** How long `/chat/stream` may take to answer with headers before the turn records status null. */
 const STREAM_HEADERS_TIMEOUT_MS = 90_000
 
@@ -198,8 +200,11 @@ async function approvePending(page: Page, card: Locator, deadline: number): Prom
   const id = await card.getAttribute('data-interrupt-id')
   await card.getByRole('button', { name: 'Approve', exact: true }).click()
   const resolved = page.locator(`[data-testid="approval-card"][data-interrupt-id="${id ?? ''}"]`)
-  // A resolved card may collapse into a status chip and leave the DOM, so absent counts as resolved.
-  const stateOf = async (): Promise<string> => (await resolved.count()) === 0 ? 'resolved' : ((await resolved.getAttribute('data-state')) ?? 'resolved')
+  // A resolved card may collapse into a status chip and leave the DOM, so absent counts as resolved. It can also
+  // leave between the count and the read: a short read that finds nothing counts as resolved too (s3 07b, 6.04.01).
+  const stateOf = async (): Promise<string> => (await resolved.count()) === 0
+    ? 'resolved'
+    : ((await resolved.getAttribute('data-state', { timeout: CARD_STATE_READ_MS }).catch(() => null)) ?? 'resolved')
   await expect.poll(stateOf, { timeout: Math.max(1_000, deadline - Date.now()) }).not.toMatch(/^(pending|executing)$/)
   return { state: await stateOf(), title }
 }
