@@ -55,10 +55,10 @@ function idStartingWith(template: Template, type: string, prefix: string): strin
 }
 
 describe('voc-engagement-api Lambda', () => {
-  it('runs engagement_handler (Python 3.14, ARM64, 512 MB, 60 s)', () => {
+  it('runs engagement_handler (Python 3.14, ARM64, 1024 MB, 60 s)', () => {
     const fn = engagementFunction(apiTemplate());
     expect([fn.Handler, fn.Runtime, fn.Architectures, fn.MemorySize, fn.Timeout])
-      .toStrictEqual(['engagement_handler.lambda_handler', 'python3.14', ['arm64'], 512, 60]);
+      .toStrictEqual(['engagement_handler.lambda_handler', 'python3.14', ['arm64'], 1024, 60]);
   });
 
   it('carries exactly the contract environment', () => {
