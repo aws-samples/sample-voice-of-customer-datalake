@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.04.00] - 2026-11-07
+## [6.04.00] - 2026-11-09
 
 The browser hears when work finishes instead of asking every second and a half, the methodology is checked and reported by the server for every client, MCP can run the methodology steps, plugins declare what makes them different, the memory scanner stops scanning a whole table, the processed feedback item has a catalogue, and the SPA reads the code it shares with the assistant's stream Lambda from the stream package itself.
 
@@ -44,14 +44,14 @@ The browser hears when work finishes instead of asking every second and a half, 
 - The SPA imports the AG-UI contract, the plan schema and checks, the persona-result storage and the approval-card bounds (persona, product context, feedback form, review import, Radar, memory, company, agents, workflows, assist-job polling) from `voc-datalake/lambda/stream/src` through the `@stream/*` alias (`frontend/streamSource.ts`: vite, vitest and tsconfig, zod deduplicated). The bounds, rules and messages are the ones each side used before; where the two sides worded a message differently, each keeps its own.
 - The stream Lambda lints every module the SPA reaches with a `browser-safe` block (no Node built-ins, `@aws-sdk` or `@smithy`, not even as a type, and no Node-only globals), and `src/browser-safe.test.ts` fails when the SPA reaches a stream module the block does not cover (CONTRIBUTING.md → "Code the SPA shares with the stream Lambda").
 - One `IconBadge` component draws 18 icon badges (verdicts, run outcomes, plans, visibility, pins, release watch, model tests). Nothing on screen changes.
-- The duplication excuses for the SPA ↔ stream copies go: 6 `.jscpd.json` file ignores, 10 inline `jscpd:ignore` blocks, 6 TypeScript clone allowlist entries and the knip and reachability entries that existed for the mirrors.
+- The duplication excuses for the SPA ↔ stream copies go: 6 `.jscpd.json` file ignores, 10 inline `jscpd:ignore` blocks, 5 TypeScript clone allowlist entries for the mirrors and the knip and reachability entries that existed for them; 3 more clone allowlist entries go because their copies are now shared (the agent heartbeat and memory scanner builders, the scraper and user approval executors, the verdict and run-outcome badges).
 - TENETS.md: tenet 7 says how work moves (EventBridge schedules, job + worker, AppSync Events notices, SSE for the live answer, MCP request/response, polling only as fallback), and the "Where the platform stands today" rows for tenets 2, 4, 5, 7 and D7 follow this release.
 
 ### Fixed
 
 - `POST /projects/{id}/build-prototype` with no PRD and no PR/FAQ answers 409 before any job, instead of a 202 and a failed job.
 - The users API refuses (409) an administrator's change to their own role, enabled state or account, and the demotion, disabling or deletion of the last enabled administrator, for every client, not only in the web app ([docs/account-vs-admin.md → Users](docs/account-vs-admin.md#users)).
-- The scraper and app-connector create-never-overwrites and stale-update rules are enforced by the API (409 / 404), not only by the assistant's card.
+- The scraper and app-connector create-never-overwrites and stale-update rules are enforced by the API (409 / 404) when the client sends `mode` / `base_etag` (the web app, the assistant and plan steps do), not only by the assistant's card.
 - The "Adding a New Data Source" steps (`.kiro/steering/structure.md`) and the plugin template README describe the real procedure.
 
 ### Upgrade notes

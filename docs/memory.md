@@ -205,7 +205,9 @@ Its cost follows the sessions active in the last week, not every conversation ev
 tenet 7; before 6.04.00 it was a filtered Scan of the whole table). The index is keyed on attributes
 both writers already store (`chat_handler.py` and the stream's session recorder), so DynamoDB indexes
 the existing conversations while it builds the index on deploy: no backfill, and no session is
-skipped. CloudFormation finishes the VocCoreStack update only once the new index is active, and the
+skipped. Every assistant session sits under one index partition (`kind = assistant`), and each session save
+updates it: fine at this platform's scale; a deployment with thousands of concurrent assistant runs would need a
+sharded key (`kind#<n>`, queried n times). CloudFormation finishes the VocCoreStack update only once the new index is active, and the
 scanner's code and grant ship in VocProcessingStack, which deploys after it, so the old scanner keeps
 scanning until the new one can query.
 Workers bundle `lambda/memory/` + `lambda/shared/` (path-style handlers, e.g. `memory/extractor/handler.lambda_handler`);
