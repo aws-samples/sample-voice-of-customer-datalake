@@ -25,6 +25,7 @@ import {
   cloudfrontDefaultCertSuppressions,
 } from '../utils/nag-suppressions';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
+import { realtimeConnectSrc } from '../utils/realtime';
 import type { DataProtection } from '../utils/data-protection';
 
 /** What a VocCoreStack builder needs from the stack: itself and its prefix-aware names. */
@@ -78,7 +79,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
         // the /prototypes/* behavior's own PrototypeHeadersPolicy (script-src 'unsafe-inline')
         // still governs script execution inside that framed document; this only permits the
         // cross-document load itself.
-        contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com; form-action 'self'; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
+        contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com ${realtimeConnectSrc(stack.region)}; form-action 'self'; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
         override: true,
       },
       contentTypeOptions: { override: true },
