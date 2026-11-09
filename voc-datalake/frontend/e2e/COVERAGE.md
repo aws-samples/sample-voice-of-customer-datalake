@@ -80,8 +80,8 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | The SPA opens the Event API WebSocket with no CSP violation (6.04.02) | any signed-in page | Covered | realtime |
 | Global MCP 6.04 tools: read tools listed to a read token, catalogue / Radar / prioritization reads, unknown job, write tools refused, audit log | `POST /mcp/global` | Covered | mcp-tools-6x |
 | Scraper write rules: `mode` create / update, `base_etag`, computed `etag` (409 / 409 / 200 / 404), e2e-user 403 (6.04) | `POST /scrapers` | Covered | features-6x |
-| Colour themes: Account → Preferences pick, reload, restore; Administration → General default theme (read only) (6.01) | `/account?tab=preferences`, `/admin?tab=brand` | Covered | features-6x |
-| Unsaved changes with two dirty editors: one dialog at a time (6.01) | `/admin?tab=brand` | Covered | features-6x |
+| Colour themes: Account → Preferences pick, reload, restore; Administration → General default theme (read only) (6.01) | `/account?tab=preferences`, `/admin?tab=general` | Covered | features-6x |
+| Unsaved changes with two dirty editors: one dialog at a time (6.01) | `/admin?tab=general` | Covered | features-6x |
 | Board Insights tab, insights and search APIs without names or emails (6.02) | `/feature-requests?tab=insights` | Covered | features-6x |
 | MCP write tools succeeding, with person attribution (6.04) | `POST /mcp/global` | Missing | needs a write token and a real write; the MCP unit tests cover it |
 | Reprocess a slice / resume, silver history (6.03) | Administration → Taxonomy | Missing | rewrites stored feedback in production; pytest covers it |

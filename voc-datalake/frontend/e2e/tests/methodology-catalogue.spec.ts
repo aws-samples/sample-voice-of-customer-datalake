@@ -240,7 +240,7 @@ test.describe('erasure needs a legal basis (6.00.00)', () => {
       const blank = await apiCall(role, 'POST', '/settings/erasure', { ...noBasis, legal_basis: '   ' })
       expect(blank.status, 'a blank legal basis').toBe(400)
     } else {
-      expect([400, 403], JSON.stringify(res.body).slice(0, 300)).toContain(res.status)
+      expect(res.status, `the admin gate answers first: ${JSON.stringify(res.body).slice(0, 300)}`).toBe(403)
       expect((await apiCall(role, 'GET', '/settings/erasure')).status, 'the job list is admin-only').toBe(403)
     }
     const after = await apiCall('admin', 'GET', '/settings/erasure')
