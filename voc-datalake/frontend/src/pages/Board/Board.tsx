@@ -102,6 +102,11 @@ export default function Board() {
       const path = slug === null ? APP_BOARD_HOST.basePath : `${APP_BOARD_HOST.basePath}/${encodeURIComponent(slug)}`
       return <Navigate to={`${path}${location.search}`} replace />
     }
+    // Already signed in to the app: no board sign-in to show. Without this, `login` reached BoardRoutes as a board
+    // slug and asked the API for a board named "login" (404, seen in the 6.04 e2e logs).
+    if (location.pathname === BOARD_LOGIN_PATH) {
+      return <Navigate to={`${BOARD_PATH}${withoutSignInParams(location.search)}`} replace />
+    }
     return <Shell email={appEmail}><AppSessionBoards /></Shell>
   }
   if (!auth) {
