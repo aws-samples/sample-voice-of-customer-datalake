@@ -431,6 +431,7 @@ class TestSourcesStatusDescribesRulesInParallel:
     @patch('integrations_handler.events_client')
     def test_all_rules_are_in_flight_together(self, mock_events, api_gateway_event, lambda_context):
         import threading
+
         import integrations_handler
         barrier = threading.Barrier(integrations_handler.MAX_PARALLEL_RULE_DESCRIBES, timeout=5)
         mock_events.exceptions.ResourceNotFoundException = type('ResourceNotFoundException', (Exception,), {})
