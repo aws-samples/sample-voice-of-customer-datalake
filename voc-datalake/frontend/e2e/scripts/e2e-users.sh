@@ -33,11 +33,14 @@ ENV_FILE="${E2E_ENV_FILE:-$HOME/.config/voc-e2e/suite.env}"
 
 # The env file holds passwords: refuse a path inside any git work tree (a commit could publish it).
 ENV_DIR="$(dirname "$ENV_FILE")"
-mkdir -p "$ENV_DIR"
-if git -C "$ENV_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+# Check the nearest existing ancestor first, so a refused path leaves no new directory behind.
+PROBE="$ENV_DIR"
+while [[ ! -d "$PROBE" ]]; do PROBE="$(dirname "$PROBE")"; done
+if git -C "$PROBE" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   echo "E2E_ENV_FILE is inside a git work tree ($ENV_FILE): choose a path outside any repository" >&2
   exit 2
 fi
+mkdir -p "$ENV_DIR"
 
 output() { # stack, output key
   local value
