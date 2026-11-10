@@ -90,10 +90,11 @@ set_password() { # username password
   input="$(mktemp)"
   chmod 600 "$input"
   POOL="$POOL" USER_NAME="$1" PASSWORD="$2" python3 -c 'import json, os; print(json.dumps({"UserPoolId": os.environ["POOL"], "Username": os.environ["USER_NAME"], "Password": os.environ["PASSWORD"], "Permanent": True}))' > "$input"
-  aws cognito-idp admin-set-user-password --cli-input-json "file://$input"
-  local status=$?
+  # `|| status=$?`: under `set -e` a failed call must still remove the file holding the password.
+  local status=0
+  aws cognito-idp admin-set-user-password --cli-input-json "file://$input" || status=$?
   rm -f "$input"
-  return $status
+  return "$status"
 }
 set_password "$ADMIN_USER" "$ADMIN_PASSWORD"
 set_password "$PLAIN_USER" "$PLAIN_PASSWORD"
