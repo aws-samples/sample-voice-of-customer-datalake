@@ -14,6 +14,7 @@ import { test } from '../lib/test'
 import { isRecord } from '../lib/guards'
 import { E2E_PREFIX, OUT_DIR, RUN_ID, TRACK } from '../lib/env'
 import { runStep } from '../lib/fixtures'
+import { expectRefusal } from '../lib/expectedRefusal'
 import { recordWindow } from '../lib/cloudwatch'
 import type { StepRecorder } from '../lib/recorder'
 
@@ -152,10 +153,13 @@ export async function s1Step(
 ): Promise<void> {
   const startMs = Date.now()
   // audit:false where a modal must survive into the next step: the design audit presses Escape.
-  const { record, problems } = await runStep({ page, role: options.role ?? 'admin', theme: 'dark', step: `s1-${name}`, action, audit: options.audit })
+  const run = () => runStep({ page, role: options.role ?? 'admin', theme: 'dark', step: `s1-${name}`, action, audit: options.audit })
+  // The 4xx the step provokes on purpose is also declared on its requests (any method on that path), so the log
+  // sweep counts it as expected.
+  const expected = options.expected4xx
+  const { record, problems } = expected === undefined ? await run() : await expectRefusal(page, { path: expected.path }, [expected.status], run)
   // Call sites list short names (`metrics-api`); the window stores base names (`voc-metrics-api`).
   recordWindow({ step: `s1-${name}`, startMs, endMs: Date.now() + 2_000, lambdas: lambdas.map((l) => `voc-${l}`) })
-  const expected = options.expected4xx
   const excused = expected === undefined
     ? 0
     : record.calls.filter((c) => c.status === expected.status && expected.path.test(c.path)).length

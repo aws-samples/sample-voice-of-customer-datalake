@@ -84,8 +84,9 @@ test.describe('methodology on the server (6.04.00)', () => {
 
   test('GET /projects/{id} names the missing upstream steps of an empty project', async ({}, testInfo) => {
     const id = projectIdOrSkip(PROJECT)
-    const res = await apiCall(roleOf(testInfo), 'GET', `/projects/${encodeURIComponent(id)}`)
-    if (roleOf(testInfo) === 'user') {
+    const invisible = roleOf(testInfo) === 'user'
+    const res = await apiCall(roleOf(testInfo), 'GET', `/projects/${encodeURIComponent(id)}`, undefined, invisible ? { expect: [404] } : {})
+    if (invisible) {
       expect(res.status, 'a private project of another user is invisible').toBe(404)
       return
     }
@@ -118,7 +119,7 @@ test.describe('methodology on the server (6.04.00)', () => {
   test('build-prototype on an empty project is a 409 before any job', async ({}, testInfo) => {
     const role = roleOf(testInfo)
     const id = encodeURIComponent(projectIdOrSkip(PROJECT))
-    const res = await apiCall(role, 'POST', `/projects/${id}/build-prototype`, {})
+    const res = await apiCall(role, 'POST', `/projects/${id}/build-prototype`, {}, { expect: [role === 'user' ? 404 : 409] })
     if (role === 'user') {
       expect(res.status, 'a private project of another user is invisible').toBe(404)
       return
@@ -233,15 +234,15 @@ test.describe('erasure needs a legal basis (6.00.00)', () => {
     const before = await apiCall('admin', 'GET', '/settings/erasure')
     expect(before.status).toBe(200)
     const jobIds = (body: unknown): unknown[] => listOf(body, 'jobs').map((j) => j['job_id'])
-    const res = await apiCall(role, 'POST', '/settings/erasure', noBasis)
+    const res = await apiCall(role, 'POST', '/settings/erasure', noBasis, { expect: [role === 'admin' ? 400 : 403] })
     if (role === 'admin') {
       expect(res.status, JSON.stringify(res.body).slice(0, 300)).toBe(400)
       expect(JSON.stringify(res.body)).toContain('legal_basis is required')
-      const blank = await apiCall(role, 'POST', '/settings/erasure', { ...noBasis, legal_basis: '   ' })
+      const blank = await apiCall(role, 'POST', '/settings/erasure', { ...noBasis, legal_basis: '   ' }, { expect: [400] })
       expect(blank.status, 'a blank legal basis').toBe(400)
     } else {
       expect(res.status, `the admin gate answers first: ${JSON.stringify(res.body).slice(0, 300)}`).toBe(403)
-      expect((await apiCall(role, 'GET', '/settings/erasure')).status, 'the job list is admin-only').toBe(403)
+      expect((await apiCall(role, 'GET', '/settings/erasure', undefined, { expect: [403] })).status, 'the job list is admin-only').toBe(403)
     }
     const after = await apiCall('admin', 'GET', '/settings/erasure')
     expect(jobIds(after.body), 'the job list is unchanged').toEqual(jobIds(before.body))

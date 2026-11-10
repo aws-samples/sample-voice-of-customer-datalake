@@ -28,7 +28,7 @@
  */
 import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
-import { apiCall, listOf, stringField } from '../lib/api'
+import { apiCall, listOf, stringField, type ApiCallOptions } from '../lib/api'
 import { dialogNamed } from '../lib/dialogs'
 import { MOCK, RUN_PREFIX } from '../lib/env'
 import { assertStep, isApi, jsonOf, roleOf, settle, site } from '../lib/fixtures'
@@ -58,10 +58,12 @@ async function openBoard(page: Page, search = ''): Promise<void> {
   await settle(page, 300)
 }
 
-/** The request's GET status (200 / 404) as the admin. */
-async function requestStatus(id: string): Promise<number> {
-  return (await apiCall('admin', 'GET', `/feature-requests/${encodeURIComponent(id)}`)).status
+/** The request's GET status (200 / 404) as the admin. `options.expect: [404]` where a 404 is the normal answer. */
+async function requestStatus(id: string, options: ApiCallOptions = {}): Promise<number> {
+  return (await apiCall('admin', 'GET', `/feature-requests/${encodeURIComponent(id)}`, undefined, options)).status
 }
+
+const GONE: ApiCallOptions = { expect: [404] }
 
 /** Every card's title and rendered Committed figure (its digits), top to bottom. */
 async function cardFigures(page: Page): Promise<Array<{ title: string; committed: number }>> {
@@ -103,10 +105,12 @@ const figure = (scope: Locator, term: string): Locator =>
 test.describe('feature requests: the in-app board', () => {
   test.afterAll(async () => {
     if (state.id === '') return
-    if ((await requestStatus(state.id)) === 200) {
-      await apiCall('admin', 'DELETE', `/feature-requests/${encodeURIComponent(state.id)}`)
+    // The admin test deletes the request in the UI, so a 404 is the normal answer here as well.
+    if ((await requestStatus(state.id, GONE)) === 200) {
+      // A UI delete can land between the check and this call: its 404 is the same outcome.
+      await apiCall('admin', 'DELETE', `/feature-requests/${encodeURIComponent(state.id)}`, undefined, GONE)
     }
-    expect(await requestStatus(state.id), 'the e2e request is gone').toBe(404)
+    expect(await requestStatus(state.id, GONE), 'the e2e request is gone').toBe(404)
   })
 
   test('admin creates a request, +1s it in USD, finds it, deep-links it, plans it and deletes it', async ({ page }, testInfo) => {
@@ -213,7 +217,7 @@ test.describe('feature requests: the in-app board', () => {
       expect((await deleted).status()).toBeLessThan(300)
       await expect(detail).toBeHidden()
       await expect(cardOf(page, state.id)).toHaveCount(0)
-      expect(await requestStatus(state.id)).toBe(404)
+      expect(await requestStatus(state.id, GONE)).toBe(404)
       const list = await apiCall('admin', 'GET', '/feature-requests')
       expect(listOf(list.body, 'requests').some((item) => item['request_id'] === state.id)).toBe(false)
       r.note('deleted: GET is a 404, absent from the list')
@@ -245,7 +249,7 @@ test.describe('feature requests: the in-app board', () => {
       await expect(detail.getByLabel('Status', { exact: true })).toHaveCount(0)
     })
 
-    const forced = await apiCall('user', 'PUT', `/feature-requests/${encodeURIComponent(id)}/status`, { status: current })
+    const forced = await apiCall('user', 'PUT', `/feature-requests/${encodeURIComponent(id)}/status`, { status: current }, { expect: [403] })
     expect(forced.status).toBe(403)
   })
 })

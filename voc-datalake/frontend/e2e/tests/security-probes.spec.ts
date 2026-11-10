@@ -31,7 +31,7 @@ import { roleOf } from '../lib/fixtures'
 import { readLedger, recordCreated } from '../lib/ledger'
 import { idTokenFor } from '../lib/session'
 import { isRecord } from '../lib/guards'
-import { e2eFetch, nodeUserAgent } from '../lib/trafficTag'
+import { e2eFetch, nodeUserAgent, nodeUserAgentExpecting, type ExpectedStatuses } from '../lib/trafficTag'
 
 const FORM_NAME = `${RUN_PREFIX}security-probe-form`
 
@@ -116,9 +116,11 @@ interface Probe {
 
 async function probe(
   api: APIRequestContext, label: string, method: 'GET' | 'POST' | 'DELETE', path: string,
-  options: { role?: Role; body?: unknown; rawBody?: string; authorization?: string; origin?: string } = {},
+  options: { role?: Role; body?: unknown; rawBody?: string; authorization?: string; origin?: string; expect?: ExpectedStatuses } = {},
 ): Promise<Probe> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  // The refusal the probe is meant to get travels in the User-Agent (lib/trafficTag.ts), for the log sweep.
+  if (options.expect !== undefined) headers['User-Agent'] = nodeUserAgentExpecting(options.expect)
   if (options.role !== undefined) headers['Authorization'] = idTokenFor(options.role)
   if (options.authorization !== undefined) headers['Authorization'] = options.authorization
   if (options.origin !== undefined) headers['Origin'] = options.origin
@@ -198,7 +200,7 @@ test.describe('security probes (API level)', () => {
     test.skip(roleOf(testInfo) !== 'admin', 'public route: probed once')
     const badIds: ReadonlyArray<readonly [string, string]> = [['hostile id', HOSTILE_FORM_ID], ['missing id', MISSING_FORM_ID]]
     for (const [label, id] of badIds) {
-      const res = await probe(api, `iframe ${label}`, 'GET', `/feedback-forms/${id}/iframe`)
+      const res = await probe(api, `iframe ${label}`, 'GET', `/feedback-forms/${id}/iframe`, { expect: [404] })
       expect(res.status, label).toBe(404)
       expect(res.headers['content-type'] ?? '', `${label}: no HTML page for an id that is not a form`).not.toContain('text/html')
       expect(res.text, `${label}: nothing reflected`).not.toMatch(/<img|onerror|alert\(1\)/i)
@@ -226,7 +228,7 @@ test.describe('security probes (API level)', () => {
   test("a gateway 401 carries the site's CORS origin, Vary and a Bearer challenge", async ({}, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', 'unauthenticated: probed once')
     const origin = new URL(siteUrl()).origin
-    const res = await probe(api, '401 no token', 'GET', '/projects', { origin })
+    const res = await probe(api, '401 no token', 'GET', '/projects', { origin, expect: [401] })
     expect(res.status).toBe(401)
     const allowed = res.headers['access-control-allow-origin']
     // `*` only in dev (api-stack.ts allowedOrigin); a deployed site names itself.
@@ -240,7 +242,7 @@ test.describe('security probes (API level)', () => {
   test('scraper analyze-url refuses internal targets: 400 for the admin, 403 for e2e-user (#244)', async ({}, testInfo) => {
     const role = roleOf(testInfo)
     for (const target of SSRF_TARGETS) {
-      const res = await probe(api, `analyze-url ${target.why}`, 'POST', '/scrapers/analyze-url', { role, body: { url: target.url } })
+      const res = await probe(api, `analyze-url ${target.why}`, 'POST', '/scrapers/analyze-url', { role, body: { url: target.url }, expect: [role === 'admin' ? 400 : 403] })
       expect.soft(res.status, `${target.why}: ${target.url}`).toBe(role === 'admin' ? 400 : 403)
       expect.soft(errorText(res), `${target.why}: refused`).toMatch(role === 'admin' ? /not allowed|only http and https/i : /admin access required/i)
     }
@@ -251,7 +253,7 @@ test.describe('security probes (API level)', () => {
     // An id the save validation refuses: if the gate regressed, the answer is a 400
     // and nothing is written, rather than a scraper left in the shared secret.
     const body = { scraper: { id: 'e2e invalid id!', base_url: 'https://example.com/' } }
-    const res = await probe(api, 'user save scraper', 'POST', '/scrapers', { role: 'user', body })
+    const res = await probe(api, 'user save scraper', 'POST', '/scrapers', { role: 'user', body, expect: [403] })
     expect(res.status).toBe(403)
   })
 
@@ -282,7 +284,7 @@ test.describe('security probes (API level)', () => {
     // e2e-user is refused (403) before the body is read.
     const role = roleOf(testInfo)
     for (const [label, options] of MALFORMED_BODIES) {
-      const res = await probe(api, label, 'POST', '/scrapers/analyze-url', { role, ...options })
+      const res = await probe(api, label, 'POST', '/scrapers/analyze-url', { role, ...options, expect: [role === 'admin' ? 400 : 403] })
       expect.soft(res.status, label).toBe(role === 'admin' ? 400 : 403)
     }
   })
@@ -300,7 +302,7 @@ test.describe('security probes (API level)', () => {
 
   test('e2e-user cannot clear validation logs (403); the admin is never sent the DELETE', async ({}, testInfo) => {
     test.skip(roleOf(testInfo) !== 'user', 'a DELETE as admin would erase logs')
-    const res = await probe(api, 'user DELETE logs', 'DELETE', '/logs/validation/e2e-none', { role: 'user' })
+    const res = await probe(api, 'user DELETE logs', 'DELETE', '/logs/validation/e2e-none', { role: 'user', expect: [403] })
     expect(res.status).toBe(403)
   })
 
@@ -309,12 +311,14 @@ test.describe('security probes (API level)', () => {
     // Self-contained: Playwright restarts the worker after a failed test, which
     // resets module state, so this test makes one error answer of each kind itself.
     errorBodies.length = 0
-    await probe(api, 'unknown project', 'GET', '/projects/e2e-nonexistent-0000', { role })
-    await probe(api, 'bad token', 'GET', '/feedback', { authorization: 'e2e-not-a-token', origin: new URL(siteUrl()).origin })
-    await probe(api, 'iframe hostile id', 'GET', `/feedback-forms/${HOSTILE_FORM_ID}/iframe`)
-    await probe(api, 'analyze-url metadata IP', 'POST', '/scrapers/analyze-url', { role, body: { url: 'http://169.254.169.254/' } })
-    for (const [label, options] of MALFORMED_BODIES) await probe(api, label, 'POST', '/scrapers/analyze-url', { role, ...options })
-    if (role === 'user') await probe(api, 'user DELETE logs', 'DELETE', '/logs/validation/e2e-none', { role })
+    // Each probe declares the refusal its own status test asserts (above), so the log sweep counts it as expected.
+    const gated: ExpectedStatuses = [role === 'admin' ? 400 : 403]
+    await probe(api, 'unknown project', 'GET', '/projects/e2e-nonexistent-0000', { role, expect: [404] })
+    await probe(api, 'bad token', 'GET', '/feedback', { authorization: 'e2e-not-a-token', origin: new URL(siteUrl()).origin, expect: [401] })
+    await probe(api, 'iframe hostile id', 'GET', `/feedback-forms/${HOSTILE_FORM_ID}/iframe`, { expect: [404] })
+    await probe(api, 'analyze-url metadata IP', 'POST', '/scrapers/analyze-url', { role, body: { url: 'http://169.254.169.254/' }, expect: gated })
+    for (const [label, options] of MALFORMED_BODIES) await probe(api, label, 'POST', '/scrapers/analyze-url', { role, ...options, expect: gated })
+    if (role === 'user') await probe(api, 'user DELETE logs', 'DELETE', '/logs/validation/e2e-none', { role, expect: [403] })
     expect(errorBodies.length).toBeGreaterThanOrEqual(5)
     const leaks = errorBodies.filter((e) => LEAK.test(e.body) || e.body.length > MAX_ERROR_BODY_CHARS)
     expect(leaks, 'error bodies with exception text or oversized').toEqual([])

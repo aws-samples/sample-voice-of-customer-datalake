@@ -39,7 +39,7 @@ import { isRecord } from '../lib/guards'
 import { injectFailure } from '../lib/inject'
 import {
   addPersonToList, createList, deleteListAs, e2eEmail, erasePersonAs, listIdNamed, personIdByEmail,
-  E2E_LEGAL_BASIS, listStatus, personStatus, readEngagementSettings,
+  E2E_LEGAL_BASIS, GONE, listStatus, personStatus, readEngagementSettings,
 } from '../lib/participants'
 import { ensureE2eProject } from '../lib/projects'
 
@@ -125,7 +125,7 @@ test.describe('participants (admin)', () => {
       expect((await deleted).status()).toBeLessThan(300)
       await expect(listCard(page, NAME.renamed)).toHaveCount(0)
     })
-    expect(await listStatus(listId), 'deleted list').toBe(404)
+    expect(await listStatus(listId, GONE), 'deleted list').toBe(404)
     expect(await listIdNamed(NAME.renamed), 'not in GET /participants/lists').toBeUndefined()
     made.lists.delete(listId)
   })
@@ -189,7 +189,7 @@ test.describe('participants (admin)', () => {
       await expect(page.getByText('No one matches.')).toBeVisible()
     })
     for (const id of made.people) {
-      expect(await personStatus(id), 'erased person').toBe(404)
+      expect(await personStatus(id, GONE), 'erased person').toBe(404)
       made.people.delete(id)
     }
     expect(await personIdByEmail(EMAIL.person), 'not in the people search').toBeUndefined()
@@ -319,7 +319,7 @@ test.describe('participants (e2e-user)', () => {
   })
 
   test('forced admin-only deletes are refused with 403', async () => {
-    expect((await apiCall('user', 'DELETE', `/participants/people/${NOBODY.person}`)).status, 'erase a person').toBe(403)
-    expect((await apiCall('user', 'DELETE', `/participants/lists/${NOBODY.list}`)).status, 'delete a list').toBe(403)
+    expect((await apiCall('user', 'DELETE', `/participants/people/${NOBODY.person}`, undefined, { expect: [403] })).status, 'erase a person').toBe(403)
+    expect((await apiCall('user', 'DELETE', `/participants/lists/${NOBODY.list}`, undefined, { expect: [403] })).status, 'delete a list').toBe(403)
   })
 })

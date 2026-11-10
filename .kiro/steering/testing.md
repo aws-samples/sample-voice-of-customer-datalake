@@ -1139,7 +1139,7 @@ log events, so never try to "clean" logs: filter by the tag.
   through `use.userAgent`; every Node-side call MUST go through `e2eFetch` (a bare `fetch(` in `e2e/lib` or
   `e2e/tests` fails `unit/trafficTag.spec.ts`). A User-Agent needs no CORS change; do not add a custom request header.
   `run-sharded.sh` sets one `E2E_TAG_RUN_ID` for all shards.
-- **Where it shows:** the API Gateway access log has `userAgent` (plus `path`, `integrationStatus`,
+- **Where it shows:** the API Gateway access log has `userAgent` (plus `resourcePath`, `integrationStatus`,
   `errorMessage`; `lib/stacks/api-access-log.ts`), and every log line of a tagged API Lambda invocation has
   `test_run` (`lambda/shared/e2e_tag.py`, applied by `api_handler`). The TypeScript `voc-chat-stream` Lambda has no
   `test_run`: filter its requests by the access log's `userAgent`.
@@ -1153,6 +1153,9 @@ filter userAgent like /voc-e2e\/<run tag>/
 filter not ispresent(test_run)
 ```
 
+- **Expected refusals:** a call meant to be refused declares its status (`apiCall(..., { expect: [403] })`,
+  `e2eFetch(..., { expect })`, `expectRefusal(page, ...)`), sent as `voc-e2e-expect/<status>`; `scripts/ops/log_sweep.py`
+  counts those 4xx and lists every other 4xx, 5xx and Lambda error, e2e traffic included.
 - **Hand-made probes** against production (curl, scratch scripts) should send the token too
   (`curl -A "node voc-e2e/<label>"`), so they are excluded like the suite.
 - **A new API Lambda entry point** that does not use `api_handler` must apply `with_test_run_tag(logger)`

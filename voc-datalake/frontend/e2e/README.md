@@ -68,7 +68,14 @@ filter not ispresent(test_run)
 filter test_run = 'e2e-20261010T080000Z'
 ```
 
-The access log also carries `path` (the real path, ids included), `integrationStatus` and `errorMessage`. The TypeScript `voc-chat-stream` Lambda does not add `test_run` (filter its requests by the access log's `userAgent`).
+The access log also carries `resourcePath` (the route template, never the real path: that carries bearer ids), `integrationStatus` and `errorMessage`. The TypeScript `voc-chat-stream` Lambda does not add `test_run` (filter its requests by the access log's `userAgent`).
+
+**Expected refusals.** A call the suite MEANS to be refused declares the status it expects, as a second User-Agent
+token `voc-e2e-expect/<status>[,<status>]` (4xx only): `apiCall(role, method, path, body, { expect: [403] })`,
+`e2eFetch(url, init, { expect: [404] })`, and for a request the page sends, `expectRefusal(page, { method, path },
+[409], action)` (`lib/expectedRefusal.ts`). The log sweep (`scripts/ops/log_sweep.py`) counts an e2e 4xx with its
+status declared and lists every other one, so a 4xx a test did not ask for is a finding. Declare only the statuses the
+test asserts; `unit/expectedStatus.spec.ts` fails when a call followed by a 4xx assertion declares nothing.
 
 ### Models: the `e2e` group (5.63)
 

@@ -34,6 +34,7 @@ import { isRecord } from '../lib/guards'
 import { recordCreated } from '../lib/ledger'
 import { ensureE2eProject } from '../lib/projects'
 import { isApi, roleOf, settle, site } from '../lib/fixtures'
+import { expectRefusal } from '../lib/expectedRefusal'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const AGENTS: unknown = JSON.parse(fs.readFileSync(path.resolve(HERE, '../../public/locales/en/agents.json'), 'utf8'))
@@ -169,9 +170,13 @@ test.describe('two tabs, one user', () => {
     await saveButton(tabA).click()
     await expect(tabA.getByRole('status').filter({ hasText: agentsText('editor.outcome.saved') })).toBeVisible()
 
-    const refused = tabB.waitForResponse((r) => isApi(r, 'PUT', /\/workflows\/[^/]+$/))
-    await saveButton(tabB).click()
-    expect((await refused).status(), 'the stale save is refused').toBe(409)
+    // Tab B's stale save is MEANT to be refused: declared, so the log sweep counts the 409 as expected.
+    const refusedStatus = await expectRefusal(tabB, { method: 'PUT', path: /\/workflows\/[^/]+$/ }, [409], async () => {
+      const refused = tabB.waitForResponse((r) => isApi(r, 'PUT', /\/workflows\/[^/]+$/))
+      await saveButton(tabB).click()
+      return (await refused).status()
+    })
+    expect(refusedStatus, 'the stale save is refused').toBe(409)
     const conflict = tabB.getByRole('alert').filter({ hasText: agentsText('editor.conflict') })
     await expect(conflict).toBeVisible()
     await expect(conflict.getByRole('button', { name: agentsText('editor.conflictSaveAs') })).toBeVisible()
@@ -202,7 +207,8 @@ test.describe('two tabs, one user', () => {
     const textA = `${RUN_PREFIX} content saved in tab A`
     const textB = `${RUN_PREFIX} content saved in tab B`
     expect(await saveDocument(page, textA)).toBe(200)
-    expect(await saveDocument(tabB, textB), 'the stale save is refused').toBe(409)
+    const staleSave = await expectRefusal(tabB, { method: 'PUT', path: /\/projects\/[^/]+\/documents\/[^/]+$/ }, [409], () => saveDocument(tabB, textB))
+    expect(staleSave, 'the stale save is refused').toBe(409)
 
     const conflict = tabB.getByRole('alert').filter({ hasText: DOC_CONFLICT })
     await expect(conflict).toBeVisible()

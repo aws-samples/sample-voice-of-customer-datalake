@@ -31,6 +31,7 @@ import { MOCK, apiUrl } from '../lib/env'
 import { isRecord } from '../lib/guards'
 import { ERROR_BOUNDARY_TEXT, roleOf, settle, site } from '../lib/fixtures'
 import { armStreamCut, emulateSlow3g, failApiGet, navigateInApp, streamCutAt } from '../lib/network'
+import { expectRefusal } from '../lib/expectedRefusal'
 
 interface ListScreen {
   name: string
@@ -191,20 +192,26 @@ test.describe('bad networks', () => {
     await armStreamCut(page)
     if (MOCK) await serveServerRunInMock(page, prompt)
     await page.goto(site('/chat'), { waitUntil: 'domcontentloaded' })
-    const streamed = page.waitForRequest((r) => r.method() === 'POST' && /\/chat\/stream$/.test(new URL(r.url()).pathname))
-    await composer(page).fill(prompt)
-    await page.getByRole('button', { name: 'Send', exact: true }).filter({ visible: true }).first().click()
-    const threadId = threadIdOf((await streamed).postData())
-    expect(threadId, 'the run names its conversation').not.toBe('')
-    await expect.poll(() => streamCutAt(page), { timeout: 90_000, message: 'the stream was cut after its first answer bytes' }).not.toBeNull()
-    // The cut is said, OR the tab already recovered: after a cut the save is refused (409) and the tab adopts
-    // the server's copy, which replaces the alert as soon as a short answer has finished (5.35.03 prod run).
-    const cutSaid = page.getByRole('alert').filter({ hasText: /connection closed before the answer finished|Something went wrong/ })
-    await expect.poll(async () => {
-      if (await cutSaid.isVisible()) return 'alert'
-      const read = await apiCall('admin', 'GET', `/chat/conversations/${encodeURIComponent(threadId)}`)
-      return read.status === 200 && runStatusOf(read.body) === 'finished' && await conversationLog(page).locator('p').count() > 1 ? 'recovered' : ''
-    }, { timeout: 30_000, message: 'the cut is said, or the server copy is already shown' }).not.toBe('')
+    // After the cut, the tab's save of its conversation is refused 409 and it adopts the server's copy: that refusal
+    // is the designed outcome, declared for the log sweep from Send until the tab has recovered (a fresh chat, so
+    // the only conversation saved in that window is this run's).
+    const threadId = await expectRefusal(page, { method: 'POST', path: /\/chat\/conversations\/[^/]+$/ }, [409], async () => {
+      const streamed = page.waitForRequest((r) => r.method() === 'POST' && /\/chat\/stream$/.test(new URL(r.url()).pathname))
+      await composer(page).fill(prompt)
+      await page.getByRole('button', { name: 'Send', exact: true }).filter({ visible: true }).first().click()
+      const thread = threadIdOf((await streamed).postData())
+      expect(thread, 'the run names its conversation').not.toBe('')
+      await expect.poll(() => streamCutAt(page), { timeout: 90_000, message: 'the stream was cut after its first answer bytes' }).not.toBeNull()
+      // The cut is said, OR the tab already recovered: after a cut the save is refused (409) and the tab adopts
+      // the server's copy, which replaces the alert as soon as a short answer has finished (5.35.03 prod run).
+      const cutSaid = page.getByRole('alert').filter({ hasText: /connection closed before the answer finished|Something went wrong/ })
+      await expect.poll(async () => {
+        if (await cutSaid.isVisible()) return 'alert'
+        const read = await apiCall('admin', 'GET', `/chat/conversations/${encodeURIComponent(thread)}`)
+        return read.status === 200 && runStatusOf(read.body) === 'finished' && await conversationLog(page).locator('p').count() > 1 ? 'recovered' : ''
+      }, { timeout: 30_000, message: 'the cut is said, or the server copy is already shown' }).not.toBe('')
+      return thread
+    })
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     const log = conversationLog(page)

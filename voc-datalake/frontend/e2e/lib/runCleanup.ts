@@ -34,7 +34,8 @@ export async function deleteConversations(entries: readonly Created[]): Promise<
     const owner: Role = conv.role ?? 'admin'
     const path = `/chat/conversations/${encodeURIComponent(conv.id)}`
     const deleted = await apiCall(owner, 'DELETE', path)
-    const check = await apiCall(owner, 'GET', path)
+    // The proof's normal answer is a 404 (gone): declared, so the log sweep counts it as expected.
+    const check = await apiCall(owner, 'GET', path, undefined, { expect: [404] })
     proof.push({ id: conv.id, owner, deleteStatus: deleted.status, getStatus: check.status })
   }
   return proof
@@ -53,7 +54,7 @@ export async function deleteProjects(entries: readonly Created[]): Promise<Proje
   for (const project of entries) {
     const path = `/projects/${encodeURIComponent(project.id)}`
     const deleted = await apiCall('admin', 'DELETE', path)
-    const check = await apiCall('admin', 'GET', path)
+    const check = await apiCall('admin', 'GET', path, undefined, { expect: [404] })
     proof.push({ id: project.id, name: project.name, deleteStatus: deleted.status, getStatus: check.status })
   }
   return proof

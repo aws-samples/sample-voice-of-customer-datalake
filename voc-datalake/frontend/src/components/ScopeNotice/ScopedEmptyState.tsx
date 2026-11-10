@@ -37,9 +37,10 @@ export default function ScopedEmptyState({ scope }: Readonly<{ scope: ViewerScop
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-bg-hover text-muted">
           <Icon size={24} aria-hidden="true" />
         </div>
-        <h2 id="scoped-empty-title" className="mb-2 text-xl font-bold tracking-tight text-text-strong">
+        {/* The page's only heading (the whole Dashboard for a viewer with nothing in scope): its h1. */}
+        <h1 id="scoped-empty-title" className="mb-2 text-xl font-bold tracking-tight text-text-strong">
           {t('scopedEmpty.heading')}
-        </h2>
+        </h1>
         <p className="text-muted">{body}</p>
       </section>
     </div>

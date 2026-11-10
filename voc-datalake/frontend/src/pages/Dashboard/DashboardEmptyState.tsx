@@ -23,7 +23,8 @@ export default function DashboardEmptyState() {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-bg-hover text-muted">
           <Inbox size={24} />
         </div>
-        <h2 className="mb-2 text-xl font-bold tracking-tight text-text-strong">{t('onboarding.heading')}</h2>
+        {/* The page's only heading (the whole Dashboard): its h1. */}
+        <h1 className="mb-2 text-xl font-bold tracking-tight text-text-strong">{t('onboarding.heading')}</h1>
         <p className="mb-6 text-muted">{t('onboarding.subheading')}</p>
         <Link
           to="/"

@@ -288,7 +288,7 @@ test.describe('writes (admin, e2e-owned data only)', () => {
       const response = await deleted
       r.note(`DELETE /projects/{id} -> ${response.status()}`)
       expect(response.status()).toBeLessThan(300)
-      const check = await apiCall('admin', 'GET', `/projects/${state.projectId ?? ''}`)
+      const check = await apiCall('admin', 'GET', `/projects/${state.projectId ?? ''}`, undefined, { expect: [404] })
       r.note(`GET /projects/{id} after delete -> ${check.status}`)
       expect(check.status).toBe(404)
     })
