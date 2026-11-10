@@ -133,8 +133,10 @@ def handle_job(ctx: JobContext, project_id: str, _job_id: str, import_config: di
 
     # Every text block, in order: a model that thinks answers with a reasoning block FIRST, and reading only
     # block 0 then found no text and failed the import with "Expecting value" (6.04.01 production run).
-    content_blocks = response.get('output', {}).get('message', {}).get('content', [])
-    response_text = ''.join(block['text'] for block in content_blocks if isinstance(block, dict) and isinstance(block.get('text'), str))
+    content_blocks = response.get('output', {}).get('message', {}).get('content') or []
+    response_text = ''.join(
+        block['text'] for block in content_blocks if isinstance(block, dict) and isinstance(block.get('text'), str)
+    )
 
     # Parse JSON
     json_text = response_text

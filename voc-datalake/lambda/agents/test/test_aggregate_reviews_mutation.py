@@ -387,6 +387,11 @@ class TestTheAnswerBecomesTheNodeResult:
         with pytest.raises(NodeFailure, match=r'^the review analysis was not valid JSON$'):
             aggregate_reviews.start(_ctx())
 
+    def test_an_unreadable_answer_is_asked_once_more_before_the_node_fails(self, seams):
+        seams.ask.side_effect = ['{"title": }', json.dumps(ANSWER)]
+        assert aggregate_reviews.start(_ctx())['updates']['aggregate']['title'] == 'Checkout is slow'
+        assert seams.ask.call_count == 2
+
     @pytest.mark.parametrize('top_problems', [None, [], {}, 'Slow payment', [None, {'title': 5}, 'x']])
     def test_an_answer_without_a_usable_problem_fails(self, seams, top_problems):
         answer = {**ANSWER}

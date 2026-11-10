@@ -216,3 +216,8 @@ class TestTheVerdictBecomesTheNodeResult:
         ask.return_value = answer
         with pytest.raises(NodeFailure, match=r'^the final review was not valid JSON$'):
             final_review.start(_ctx({'project_id': PROJECT}))
+
+    def test_an_unreadable_answer_is_asked_once_more_before_the_node_fails(self, ask):
+        ask.side_effect = ['I cannot judge this.', json.dumps({'pass': True, 'summary': 'ok'})]
+        assert final_review.start(_ctx({'project_id': PROJECT}))['outcome'] == 'pass'
+        assert ask.call_count == 2

@@ -234,6 +234,9 @@ export const RAISED_FOR_CPU: Readonly<Record<string, number>> = {
   'voc-scrapers-api': 1536,
   // 2026-10-18: 256 MB at 84.8 % → 512 (the only plugin webhook; `infrastructure.webhook.memory` in its manifest).
   'voc-webhook-github_issues': 512,
+  // Engagement API (5.33.00): participants, asks and their self-invoked send slices, the board; DynamoDB and SES
+  // at ≤ 10/s. 2026-11-09 capacity check: 512 MB at 98.6 % CPU p95 → 1024.
+  'voc-engagement-api': 1024,
 };
 
 /** The owner's later move off a pin. The record stays as history; it waives nothing any more. */
@@ -326,9 +329,6 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'voc-job-document-merger': 1024,
   'voc-job-persona-importer': 512,
   'voc-chat-stream': 1024,
-  // Engagement API (5.33.00): participants, asks and their self-invoked send slices, the board; DynamoDB and SES
-  // at ≤ 10/s. 2026-11-09 capacity check: 512 MB at 98.6 % CPU p95 → 1024.
-  'voc-engagement-api': 1024,
   // Assist twins (api-assist-workers.ts): the same code, role and env as their API Lambda, at their
   // own (4.00.00) size: the 2026-10-18 raise of voc-projects-api / voc-settings-api / voc-scrapers-api
   // was measured on the REST path and does not cover them (unmeasured).
