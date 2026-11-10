@@ -35,6 +35,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 from boto3.dynamodb.conditions import Key
+from dynamodb_query_fixtures import partition_of
 from handler_events_fixtures import call_route, clear_validation_logs
 from logs_fixtures import LIST_ROUTES
 from module_reload_fixtures import reload_cycle
@@ -87,13 +88,8 @@ def table() -> Iterator[MagicMock]:
 
 def _answer_by_source(table, by_source: dict[str, list]) -> None:
     """`table.query` answers each source's rows by its partition key, not by call order (parallel workers)."""
-    table.query.side_effect = lambda **kwargs: {'Items': by_source[_pk(kwargs).rsplit('#', 1)[1]]}
+    table.query.side_effect = lambda **kwargs: {'Items': by_source[partition_of(kwargs).rsplit('#', 1)[1]]}
 
-def _pk(query_kwargs: dict) -> str:
-    """The partition key value of a mocked `table.query(KeyConditionExpression=...)` call."""
-    condition = query_kwargs['KeyConditionExpression']
-    pk_condition = condition.get_expression()['values'][0]
-    return pk_condition.get_expression()['values'][1]
 
 class TestTheColdStartModuleState:
     def test_the_table_is_resolved_at_import_and_the_bounds_are_the_documented_ones(self):
@@ -406,7 +402,7 @@ class TestTheSummaryAddsUpEverySource:
         # Answered by partition, not by call order: the counts run on parallel workers.
         counts = {'LOGS#validation#webscraper': 2, 'LOGS#processing#webscraper': 3,
                   'LOGS#validation#manual_import': 4, 'LOGS#processing#manual_import': 1}
-        table.query.side_effect = lambda **kwargs: {'Count': counts[_pk(kwargs)], 'ScannedCount': counts[_pk(kwargs)]}
+        table.query.side_effect = lambda **kwargs: {'Count': counts[partition_of(kwargs)], 'ScannedCount': counts[partition_of(kwargs)]}
 
         _, body = _get(api_gateway_event, lambda_context, '/logs/summary')
 
@@ -423,7 +419,7 @@ class TestTheSummaryAddsUpEverySource:
     def test_a_source_without_rows_is_left_out_of_the_per_source_counts(self, table, api_gateway_event, lambda_context):
         counts = {'LOGS#validation#webscraper': 0, 'LOGS#processing#webscraper': 1,
                   'LOGS#validation#manual_import': 1, 'LOGS#processing#manual_import': 0}
-        table.query.side_effect = lambda **kwargs: {'Count': counts[_pk(kwargs)]}
+        table.query.side_effect = lambda **kwargs: {'Count': counts[partition_of(kwargs)]}
 
         _, body = _get(api_gateway_event, lambda_context, '/logs/summary')
 
