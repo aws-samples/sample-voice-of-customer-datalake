@@ -37,7 +37,7 @@ afterEach(() => {
 function convert(template: Record<string, unknown>): z.infer<typeof ConvertedSchema> {
   writeFileSync(path.join(dir, 'cdk.out', 'Stack.template.json'), JSON.stringify(template));
   writeFileSync(path.join(dir, 'cdk.out', 'Stack.assets.json'), JSON.stringify({ files: {} }));
-  execFileSync(process.execPath, [SCRIPT, 'Stack'], { cwd: dir, stdio: 'pipe' });
+  execFileSync(process.execPath, [SCRIPT, 'Stack'], { cwd: dir, stdio: 'pipe', encoding: 'utf8', timeout: 30_000 });
   const json: unknown = JSON.parse(readFileSync(path.join(dir, 'Workshop', 'static', 'cfn', 'Stack.json'), 'utf8'));
   return ConvertedSchema.parse(json);
 }
