@@ -39,6 +39,8 @@ API_NAME_BASE = 'analytics-api'
 #: Logs Insights takes at most 50 log groups per query.
 GROUPS_PER_QUERY = 50
 POLL_SECONDS = 2
+#: How long one Logs Insights query may run before the sweep gives up (it reports an error, never "clean").
+QUERY_DEADLINE_SECONDS = 600
 MESSAGE_CHARS = 300
 #: Rows a `stats` query may return; the access log is grouped by status, method and route, far below this.
 STATS_LIMIT = 10000
@@ -106,8 +108,13 @@ def row_of(result: list[dict[str, str]]) -> tuple[str, str, str]:
 def run_insights(logs: Any, groups: list[str], start: int, end: int, query: str,
                  sleep: Callable[[float], None] = time.sleep) -> list[list[dict[str, str]]]:
     query_id = logs.start_query(logGroupNames=groups, startTime=start, endTime=end, queryString=query)['queryId']
+    waited = 0.0
     while (response := logs.get_query_results(queryId=query_id))['status'] in ('Running', 'Scheduled'):
+        if waited >= QUERY_DEADLINE_SECONDS:
+            logs.stop_query(queryId=query_id)
+            raise RuntimeError(f'Logs Insights query {query_id} still running after {QUERY_DEADLINE_SECONDS} s')
         sleep(POLL_SECONDS)
+        waited += POLL_SECONDS
     if response['status'] != 'Complete':
         raise RuntimeError(f'Logs Insights query {query_id} ended {response["status"]}')
     return response.get('results', [])

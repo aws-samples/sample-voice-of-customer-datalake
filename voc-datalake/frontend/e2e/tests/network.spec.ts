@@ -207,7 +207,8 @@ test.describe('bad networks', () => {
       const cutSaid = page.getByRole('alert').filter({ hasText: /connection closed before the answer finished|Something went wrong/ })
       await expect.poll(async () => {
         if (await cutSaid.isVisible()) return 'alert'
-        const read = await apiCall('admin', 'GET', `/chat/conversations/${encodeURIComponent(thread)}`)
+        // Before the run's first session write the conversation does not exist yet: a 404 is a normal answer here.
+        const read = await apiCall('admin', 'GET', `/chat/conversations/${encodeURIComponent(thread)}`, undefined, { expect: [404] })
         return read.status === 200 && runStatusOf(read.body) === 'finished' && await conversationLog(page).locator('p').count() > 1 ? 'recovered' : ''
       }, { timeout: 30_000, message: 'the cut is said, or the server copy is already shown' }).not.toBe('')
       return thread

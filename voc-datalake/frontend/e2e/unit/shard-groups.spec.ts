@@ -53,11 +53,13 @@ test('group names are unique, and every token is a spec, workers=<n> or a --flag
   }
 })
 
-test('the runner refuses a missing groups file or a group without specs before it starts anything', () => {
+test('the runner refuses a missing groups file, a group without specs or one with only a comment, before it starts anything', () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'voc-e2e-groups-'))
   const bad = path.join(out, 'groups.txt')
   fs.writeFileSync(bad, 'lonely\n')
-  for (const args of [['--groups'], ['--groups', path.join(out, 'missing.txt')], ['--groups', bad]]) {
+  const commentOnly = path.join(out, 'comment-only.txt')
+  fs.writeFileSync(commentOnly, 'notes # only a comment, no spec\n')
+  for (const args of [['--groups'], ['--groups', path.join(out, 'missing.txt')], ['--groups', bad], ['--groups', commentOnly]]) {
     const run = spawnSync('bash', ['scripts/run-sharded.sh', ...args], {
       cwd: E2E_ROOT, env: { ...process.env, E2E_SHARD_OUT: path.join(out, 'run') },
     })
