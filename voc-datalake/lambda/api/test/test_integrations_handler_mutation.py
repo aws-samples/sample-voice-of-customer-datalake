@@ -129,7 +129,7 @@ def _written(put: MagicMock) -> dict:
 class TestTheColdStartModuleState:
     def test_the_bounds_are_the_documented_ones(self):
         assert (h.MAX_CREDENTIAL_KEYS_PER_REQUEST, h.MAX_SOURCES_PER_STATUS_REQUEST) == (20, 50)
-        assert h.MAX_PARALLEL_RULE_DESCRIBES == 8
+        assert h.MAX_PARALLEL_RULE_DESCRIBES == 2
         assert h.PLUGIN_DEFAULTS_ENV_VAR == 'PLUGIN_SECRET_DEFAULTS'
         assert sorted(h.APP_CONFIG_PLUGINS) == ['app_reviews_android', 'app_reviews_ios', 'web_reviews']
 

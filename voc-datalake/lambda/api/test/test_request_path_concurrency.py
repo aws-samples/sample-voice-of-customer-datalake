@@ -116,7 +116,8 @@ class TestLogsSourcesAreReadTogether:
         sources.return_value = list(self.SOURCES)
         sizes = {'LOGS#validation#webscraper': 2, 'LOGS#processing#webscraper': 0,
                  'LOGS#validation#manual_import': 1, 'LOGS#processing#manual_import': 4}
-        agg.query.side_effect = _barrier_query(4, lambda kw: {'Count': sizes[_pk_of(kw)]})
+        # LOG_READ_WORKERS (2) reads at a time: the barrier releases each pair together.
+        agg.query.side_effect = _barrier_query(2, lambda kw: {'Count': sizes[_pk_of(kw)]})
         from logs_handler import lambda_handler
 
         response, body = call_route(lambda_handler, api_gateway_event, lambda_context,

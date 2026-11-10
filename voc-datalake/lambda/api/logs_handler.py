@@ -67,6 +67,10 @@ LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX = 100, 500
 SCRAPER_LIMIT_DEFAULT, SCRAPER_LIMIT_MAX = 50, 200
 # `/logs/summary` counts at most this many rows per (source, type) partition.
 SUMMARY_COUNT_CAP = 1000
+# Concurrent DynamoDB reads of the all-sources listing and of `/logs/summary` (16 counts). Each worker opens its
+# own TLS connection after an idle gap: 8 workers cost ~80 ms of CPU, 2 workers ~37 ms (6.04.03 measurement; the
+# function was 84 % CPU at one vCPU), and in the region 16 reads still take well under 100 ms on 2.
+LOG_READ_WORKERS = 2
 
 
 def _days_param(params: dict) -> int:
@@ -114,7 +118,8 @@ def _list_logs(log_type: str) -> dict:
             logs = [
                 log
                 for source_logs in ordered_map(
-                    lambda src: _query_logs_for_source(log_type, src, days, share), sources)
+                    lambda src: _query_logs_for_source(log_type, src, days, share), sources,
+                    max_workers=LOG_READ_WORKERS)
                 for log in source_logs
             ]
 
@@ -218,7 +223,8 @@ def get_logs_summary():
         # (results in (source, type) order, so the summary is built as before).
         sources = default_source_ids()
         pairs = [(source, log_type) for source in sources for log_type in ('validation', 'processing')]
-        results = ordered_map(lambda pair: _count_logs_for_source(pair[1], pair[0], days, SUMMARY_COUNT_CAP), pairs)
+        results = ordered_map(lambda pair: _count_logs_for_source(pair[1], pair[0], days, SUMMARY_COUNT_CAP), pairs,
+                              max_workers=LOG_READ_WORKERS)
         by_pair = dict(zip(pairs, results, strict=True))
         for source in sources:
             val_count = by_pair[(source, 'validation')]

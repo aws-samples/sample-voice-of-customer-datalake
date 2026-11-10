@@ -406,8 +406,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     code: createApiLambdaCode('settings_handler.py'),
     role: settingsRole,
     timeout: cdk.Duration.seconds(30),
-    // Power Tuning 2026-10-06 pinned 512; superseded 2026-10-18 (96.4 % p95 at 512 MB, lib/sizing/policy.ts)
-    memorySize: 1024, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
+    // Power Tuning 2026-10-06 pinned 512; superseded 2026-10-18 (96.4 % p95 at 512 MB); 2026-11-10: 86.2 % at
+    // 1024 MB → one vCPU (lib/sizing/policy.ts POWER_TUNED raisedAgain)
+    memorySize: 1769, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
     environment: {
       AGGREGATES_TABLE: aggregatesTable.tableName,
       // The category reprocess worker lives in VocProcessingStack. Named, not

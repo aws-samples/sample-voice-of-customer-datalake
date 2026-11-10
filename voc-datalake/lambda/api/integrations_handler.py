@@ -943,10 +943,12 @@ def _get_source_run_status(source: str):
         return {'source': source, 'status': 'unknown'}
 
 
-# Concurrent DescribeRule calls one GET /sources/status makes. The default list
-# is a handful of sources; the cap keeps a 50-source request (the per-request
-# maximum) from bursting EventBridge's per-account DescribeRule rate.
-MAX_PARALLEL_RULE_DESCRIBES = 8
+# Concurrent DescribeRule calls one GET /sources/status makes. Each worker opens its own TLS connection,
+# and after an idle gap every handshake is new: 8 workers cost ~80 ms of CPU for the default 8 sources, 2
+# workers ~40 ms (6.04.03 measurement; the route was 77 % CPU at one vCPU). In the region a call takes
+# ~10 ms, so 2 keep the answer near 50 ms. The cap also keeps a 50-source request (the per-request maximum)
+# from bursting EventBridge's per-account DescribeRule rate.
+MAX_PARALLEL_RULE_DESCRIBES = 2
 
 
 def _schedule_status(source: str) -> dict:
