@@ -23,7 +23,7 @@ Workshop templates pass Workshop Studio's template validation again.
 
 ### Fixed
 
-- `voc-datalake/scripts/convert-template.mjs` (`npm run generate:workshop-artifacts`) keeps a template's `Description` as a literal string. Its region and account rewrite turned the VocWebSearchStack Description, which names its region, into an `Fn::Sub`, and the Workshop Studio build refused the template with "Every Description member must be a string". `voc-datalake/scripts/convert-template.test.ts` runs the converter on a scratch template.
+- `voc-datalake/scripts/convert-template.mjs` (`npm run generate:workshop-artifacts`) keeps every `Description` CloudFormation requires as a literal string: the template's own and each Parameter's and Output's. Its region and account rewrite turned the VocWebSearchStack Description, which names its region, into an `Fn::Sub`, and the Workshop Studio build refused the template with "Every Description member must be a string". `voc-datalake/scripts/convert-template.test.ts` runs the converter on a scratch template.
 
 ## [6.04.04] - 2026-11-10
 
