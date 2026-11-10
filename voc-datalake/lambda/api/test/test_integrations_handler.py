@@ -421,17 +421,18 @@ class TestSourcesStatusDescribesRulesInParallel:
     """GET /sources/status describes its rules concurrently (E2E F10).
 
     The loop was serial: the response waited for each DescribeRule in turn. The
-    barrier below only releases when all three calls are in flight at once, so a
-    serial loop times out on the first call and reports an error entry for every
-    source instead of its schedule.
+    barrier below only releases when MAX_PARALLEL_RULE_DESCRIBES calls are in flight at
+    once (it resets after each group), so a serial loop times out on the first call and
+    reports an error entry for every source instead of its schedule.
     """
 
-    SOURCES = ('webscraper', 'app_reviews_ios', 'synthetic_reviews')
+    SOURCES = ('webscraper', 'app_reviews_ios', 'synthetic_reviews', 'github_issues')
 
     @patch('integrations_handler.events_client')
     def test_all_rules_are_in_flight_together(self, mock_events, api_gateway_event, lambda_context):
         import threading
-        barrier = threading.Barrier(len(self.SOURCES), timeout=5)
+        import integrations_handler
+        barrier = threading.Barrier(integrations_handler.MAX_PARALLEL_RULE_DESCRIBES, timeout=5)
         mock_events.exceptions.ResourceNotFoundException = type('ResourceNotFoundException', (Exception,), {})
 
         def describe_rule(**_kwargs):

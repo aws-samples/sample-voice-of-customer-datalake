@@ -172,8 +172,9 @@ export const RAISED_FOR_CPU: Readonly<Record<string, number>> = {
   // 256 MB at 143 % → 1024 (two steps; [PT] picked 512); 2026-10-18: 1024 MB at 90.9 % → 1769 (one vCPU:
   // projected 60.6 % at 1536, owner: every function under 60 %).
   'voc-ballots-api': 1769,
-  // 256 MB at 129 % → 512 ([PT] picked 512); 2026-10-18: 512 MB at 96.4 % → 1024.
-  'voc-settings-api': 1024,
+  // 256 MB at 129 % → 512 ([PT] picked 512); 2026-10-18: 512 MB at 96.4 % → 1024; 2026-11-10: 1024 MB at 86.2 %
+  // → 1769 (one vCPU; POWER_TUNED raisedAgain).
+  'voc-settings-api': 1769,
   // 512 MB at 102 % → 1024 ([PT] picked 1024); 2026-10-18: 1024 MB at 94.6 % → 1769 (one vCPU: projected
   // 63.1 % at 1536).
   'voc-agents-api': 1769,
@@ -263,6 +264,8 @@ export interface PowerTuningRecord {
   readonly pinnedMb: number;
   /** Set when the owner moved the function off the pin: the CPU rule judges every size again. */
   readonly superseded?: PowerTuningSupersession;
+  /** A later raise from the size that superseded the pin (a newer capacity check), up the ladder, at most one vCPU. */
+  readonly raisedAgain?: PowerTuningSupersession;
 }
 
 const PT_2026_10_06: Pick<PowerTuningRecord, 'date' | 'method'> = {
@@ -287,7 +290,12 @@ const raisedOn20261018 = (toMb: number): PowerTuningSupersession => ({
 export const POWER_TUNED: Readonly<Record<string, PowerTuningRecord>> = {
   // Pinned above the pick: 512 projected to 71.5 % CPU under the pre-2026-10-07 rule.
   'voc-ballots-api': { ...PT_2026_10_06, durationMs: { 512: 7.0, 1024: 5.8, 1536: 6.1, 1769: 6.0, 2048: 6.1 }, pickMb: 512, pinnedMb: 1024, superseded: raisedOn20261018(1769) },
-  'voc-settings-api': { ...PT_2026_10_06, durationMs: { 512: 8.2, 1024: 7.6, 1536: 7.8, 1769: 8.4, 2048: 7.9 }, pickMb: 512, pinnedMb: 512, superseded: raisedOn20261018(1024) },
+  'voc-settings-api': {
+    ...PT_2026_10_06, durationMs: { 512: 8.2, 1024: 7.6, 1536: 7.8, 1769: 8.4, 2048: 7.9 }, pickMb: 512, pinnedMb: 512,
+    superseded: raisedOn20261018(1024),
+    // 1536 would project to 57.4 %, too close to the ceiling: one vCPU, the most a Python function gets.
+    raisedAgain: { date: '2026-11-10', toMb: 1769, reason: 'owner: 86.2 % CPU p95 at 1024 MB (2026-11-09 capacity check)' },
+  },
   'voc-metrics-api': { ...PT_2026_10_06, durationMs: { 512: 40.8, 1024: 21.9, 1536: 21.8, 1769: 20.7, 2048: 16.6 }, pickMb: 1024, pinnedMb: 1024, superseded: raisedOn20261018(1536) },
   'voc-projects-api': { ...PT_2026_10_06, durationMs: { 512: 54.0, 1024: 36.5, 1536: 35.1, 1769: 36.7, 2048: 34.1 }, pickMb: 1024, pinnedMb: 1024, superseded: raisedOn20261018(1536) },
   'voc-memory-api': { ...PT_2026_10_06, durationMs: { 512: 39.2, 1024: 23.3, 1536: 20.3, 1769: 23.6, 2048: 24.2 }, pickMb: 1024, pinnedMb: 1024, superseded: raisedOn20261018(1536) },

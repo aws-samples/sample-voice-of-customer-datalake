@@ -142,7 +142,8 @@ describe('Lambda memory sizes (sizing policy: peak memory and CPU ≤ 60 %, ever
   // kept at 1,024 MB from before the 2026-10-07 refinement), never below it, and never
   // above one vCPU without measured gains (none were).
   it.each(Object.entries(POWER_TUNED))('%s is emitted at its Power Tuning pin, the size that superseded it, or one vCPU (capped 2026-10-23)', (stem, record) => {
-    const expected = stem in CAPPED_AT_ONE_VCPU_2026_10_23 ? MB_PER_VCPU : record.superseded?.toMb ?? record.pinnedMb;
+    const expected = stem in CAPPED_AT_ONE_VCPU_2026_10_23 ? MB_PER_VCPU
+      : record.raisedAgain?.toMb ?? record.superseded?.toMb ?? record.pinnedMb;
     expect(MEMORY_SIZES[stem], stem).toBe(expected);
     expect(MEMORY_STEPS_MB).toContain(record.pinnedMb);
   });
@@ -159,6 +160,17 @@ describe('Lambda memory sizes (sizing policy: peak memory and CPU ≤ 60 %, ever
       const oneStep = nextMemoryStep(record.pinnedMb);
       expect([oneStep, nextMemoryStep(oneStep)]).toContain(record.superseded?.toMb);
       expect(record.superseded?.toMb ?? 0).toBeLessThanOrEqual(MB_PER_VCPU);
+    });
+
+  // A later raise (a newer capacity check) starts from the size that superseded the pin, goes up the ladder and
+  // stops at one vCPU.
+  it.each(SUPERSEDED_PINS.filter(([, record]) => record.raisedAgain !== undefined))(
+    '%s was raised again up the ladder from its superseding size, at most one vCPU', (_stem, record) => {
+      const from = record.superseded?.toMb ?? 0;
+      const to = record.raisedAgain?.toMb ?? 0;
+      expect(to).toBeGreaterThan(from);
+      expect(MEMORY_STEPS_MB).toContain(to);
+      expect(to).toBeLessThanOrEqual(MB_PER_VCPU);
     });
 
   it.each(Object.entries(POWER_TUNED))('%s is pinned between its pick and one vCPU', (_stem, record) => {

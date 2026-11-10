@@ -19,7 +19,7 @@ the platform package version.
 
 ## [6.04.03] - 2026-11-10
 
-Operator tooling: a log sweep after a deploy, a helper for the e2e test users, and a grouped e2e run.
+Operator tooling (a log sweep, an e2e users helper, a grouped e2e run), cheaper CPU for the integrations and logs APIs, and one vCPU for the settings API.
 
 ### Added
 
@@ -27,8 +27,14 @@ Operator tooling: a log sweep after a deploy, a helper for the e2e test users, a
 - `voc-datalake/frontend/e2e/scripts/e2e-users.sh enable|disable`: turns the two e2e test users on (the `e2e` group, new random passwords, the suite's env file written outside the repository) and off again, reading the deployment from the stack outputs ([frontend/e2e/README.md → Run](voc-datalake/frontend/e2e/README.md#run)).
 - `run-sharded.sh --groups <file>`: one shard per named group of spec files, with per-group workers and Playwright flags; `e2e/shard-groups.txt` splits the production suite into 8 balanced groups, and `unit/shard-groups.spec.ts` keeps every spec in exactly one.
 
+### Changed
+
+- `GET /sources/status` (`voc-integrations-api`) describes the schedule rules on 2 parallel connections instead of 8, and the logs listing and `GET /logs/summary` (`voc-logs-api`) read DynamoDB on 2 instead of 8. Each connection after an idle gap is a new TLS handshake; measured on 8 sources, CPU per call drops from about 80 ms to about 40 ms, while the answer stays well under the 29 s gateway limit. Both functions were over the 60 % CPU rule at one vCPU ([docs/lambda-sizing.md](docs/lambda-sizing.md)).
+- `voc-settings-api` runs at 1,769 MB (one vCPU) instead of 1,024 MB: it reached 86 % CPU at p95.
+
 ### Fixed
 
+- The e2e `s2-agents` arrow test waits for the arrow's side panel to appear; `isVisible({ timeout })` answered at once and failed 1 run in 3. A unit check refuses that pattern in the suite.
 - The Logs Insights filter documented for leaving out e2e traffic (`filter ispresent(test_run) = 0`, in the e2e README, `shared/e2e_tag.py` and the testing guide) does not compile; it now reads `filter not ispresent(test_run)`.
 
 ## [6.04.02] - 2026-11-09
