@@ -83,6 +83,13 @@ def table() -> Iterator[MagicMock]:
 # Module state
 # ============================================
 
+
+def _pk(query_kwargs: dict) -> str:
+    """The partition key value of a mocked `table.query(KeyConditionExpression=...)` call."""
+    condition = query_kwargs['KeyConditionExpression']
+    pk_condition = condition.get_expression()['values'][0]
+    return pk_condition.get_expression()['values'][1]
+
 class TestTheColdStartModuleState:
     def test_the_table_is_resolved_at_import_and_the_bounds_are_the_documented_ones(self):
         assert h.aggregates_table.name == 'test-aggregates'
@@ -273,7 +280,8 @@ class TestTheUnfilteredListingFansOutOverEverySource:
             'app_reviews_ios': [_validation_row('ios', '2026-03-08T00:00:00+00:00')],
             'manual_import': [_validation_row('mi', '2026-03-07T00:00:00+00:00')],
         }
-        table.query.side_effect = [{'Items': by_source[s]} for s in self.SOURCES]
+        # By partition, not call order (parallel workers).
+        table.query.side_effect = lambda **kwargs: {'Items': by_source[_pk(kwargs).rsplit('#', 1)[1]]}
 
         _, body = _get(api_gateway_event, lambda_context, '/logs/validation', query={'limit': '3'})
 
@@ -288,7 +296,8 @@ class TestTheUnfilteredListingFansOutOverEverySource:
             'app_reviews_ios': [_validation_row('c', '2026-03-09T00:00:00+00:00')],
             'manual_import': [_validation_row('a', '2026-03-07T00:00:00+00:00')],
         }
-        table.query.side_effect = [{'Items': by_source[s]} for s in self.SOURCES]
+        # By partition, not call order (parallel workers).
+        table.query.side_effect = lambda **kwargs: {'Items': by_source[_pk(kwargs).rsplit('#', 1)[1]]}
 
         _, body = _get(api_gateway_event, lambda_context, '/logs/validation')
 
@@ -377,24 +386,24 @@ class TestTheSummaryAddsUpEverySource:
         monkeypatch.setenv('ENABLED_SOURCES', '["webscraper"]')
 
     @pytest.mark.usefixtures('frozen_clock')
-    def test_each_source_is_asked_to_count_validation_then_processing_rows_up_to_a_thousand(
+    def test_each_source_is_asked_to_count_its_validation_and_processing_rows_up_to_a_thousand(
         self, table, api_gateway_event, lambda_context
     ):
         _get(api_gateway_event, lambda_context, '/logs/summary')
         # Parallel workers: each (source, type) count once, in any order.
-        assert table.query.call_count == 4
+        pairs = [(source, log_type) for source in ('webscraper', 'manual_import') for log_type in ('validation', 'processing')]
+        assert table.query.call_count == len(pairs)
         table.query.assert_has_calls([
             call(KeyConditionExpression=Key('pk').eq(f'LOGS#{log_type}#{source}') & Key('sk').gte(CUTOFF_7D),
                  ScanIndexForward=False, Limit=1000, Select='COUNT')
-            for source in ('webscraper', 'manual_import')
-            for log_type in ('validation', 'processing')
+            for source, log_type in pairs
         ], any_order=True)
 
     def test_counts_are_per_source_and_the_totals_are_their_sums(self, table, api_gateway_event, lambda_context):
-        def rows(n: int) -> dict:
-            return {'Count': n, 'ScannedCount': n}
-        # webscraper: 2 validation, 3 processing; manual_import: 4 validation, 1 processing.
-        table.query.side_effect = [rows(2), rows(3), rows(4), rows(1)]
+        # Answered by partition, not by call order: the counts run on parallel workers.
+        counts = {'LOGS#validation#webscraper': 2, 'LOGS#processing#webscraper': 3,
+                  'LOGS#validation#manual_import': 4, 'LOGS#processing#manual_import': 1}
+        table.query.side_effect = lambda **kwargs: {'Count': counts[_pk(kwargs)], 'ScannedCount': counts[_pk(kwargs)]}
 
         _, body = _get(api_gateway_event, lambda_context, '/logs/summary')
 
@@ -409,9 +418,9 @@ class TestTheSummaryAddsUpEverySource:
         }
 
     def test_a_source_without_rows_is_left_out_of_the_per_source_counts(self, table, api_gateway_event, lambda_context):
-        one = {'Count': 1}
-        # webscraper: 0 validation, 1 processing; manual_import: 1 validation, 0 processing.
-        table.query.side_effect = [{'Count': 0}, one, one, {'Count': 0}]
+        counts = {'LOGS#validation#webscraper': 0, 'LOGS#processing#webscraper': 1,
+                  'LOGS#validation#manual_import': 1, 'LOGS#processing#manual_import': 0}
+        table.query.side_effect = lambda **kwargs: {'Count': counts[_pk(kwargs)]}
 
         _, body = _get(api_gateway_event, lambda_context, '/logs/summary')
 
