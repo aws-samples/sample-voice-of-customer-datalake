@@ -1,0 +1,20 @@
+# CodeQL path filters for the local run (scripts/codeql.sh turns these into the
+# extractors' LGTM_INDEX_FILTERS). Source we own only: no dependencies, build
+# output, generated coverage reports or Lambda layer vendoring. The e2e suite IS
+# scanned: it is our code; its by-design flows are accepted by rule + path in
+# scripts/codeql-summary.mjs with a reason each, not hidden here.
+#
+# Glob dialect: the extractors accept `**` only as a whole path segment, so a
+# directory is excluded as `**/<name>` (it and everything under it) and a name
+# pattern never mixes `**` into a segment (`**/*.min.js` is illegal).
+paths-ignore:
+  - "**/node_modules"
+  - "**/dist"
+  - "**/build"
+  - "**/cdk.out"
+  - "**/.cache"
+  - "**/coverage"
+  - "**/coverage_html"
+  - "**/.venv"
+  - "voc-datalake/lambda/layers"
+  - "voc-datalake/frontend/public"

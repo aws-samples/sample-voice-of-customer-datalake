@@ -1,0 +1,4 @@
+{
+  "$comment": "Reviewed ignores for scripts/dependency-audit.mjs. Each entry: id (GHSA/PYSEC/CVE), package, reason (why it cannot reach us or cannot be fixed yet), expires (YYYY-MM-DD, at most 90 days ahead). Expired or malformed entries fail the audit. See docs/dependencies.md.",
+  "ignores": []
+}

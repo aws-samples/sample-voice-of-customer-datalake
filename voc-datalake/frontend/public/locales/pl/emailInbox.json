@@ -1,0 +1,56 @@
+{
+  "title": "Skrzynka e-mail",
+  "description": "Klienci, pracownicy i partnerzy wysyłają opinie na te adresy. Każda wiadomość jest sprawdzana, deduplikowana i anonimizowana, zanim stanie się elementem opinii.",
+  "on": "Włączona",
+  "off": "Wyłączona",
+  "loading": "Ładowanie skrzynki e-mail…",
+  "notDeployed": "Skrzynka e-mail nie jest wdrożona. Wdróż z parametrem -c inboundEmailDomain=<your domain> (zobacz docs/email-intake.md).",
+  "addresses": "Adresy",
+  "ruleSetInactive": "Zestaw reguł odbioru {{ruleSet}} nie jest aktywny, więc żadne wiadomości jeszcze nie docierają. Aktywuj go w Amazon SES lub ponownie wdróż do aktywnego zestawu reguł, używając parametru -c inboundEmailRuleSet.",
+  "pii": {
+    "redact": "Dane osobowe są anonimizowane: imiona, adresy e-mail i numery telefonów są zastępowane przed zapisem.",
+    "allow": "Dane osobowe są zachowywane w otrzymanej postaci (profil źródła na to zezwala).",
+    "summary_only": "Zachowywane są wyłącznie pola pochodne (profil źródła: tylko podsumowanie)."
+  },
+  "dimension": {
+    "missing": "Utwórz wymiar Typ opinii, aby adresy ideas@, bugs@ i reviews@ oraz znaczniki tematu, takie jak [bug], przypisywały każdy element do odpowiedniej kategorii.",
+    "create": "Utwórz wymiar"
+  },
+  "today": {
+    "title": "Dzisiaj (UTC)",
+    "accepted": "Przyjęte",
+    "deduped": "Zdeduplikowane",
+    "dropped": "Odrzucone",
+    "deferred": "Odroczone",
+    "modelCalls": "Wywołania modelu"
+  },
+  "reasons": {
+    "duplicate_message": "Ta sama wiadomość dostarczona dwukrotnie",
+    "seen_in_thread": "Tekst już obecny w wątku",
+    "no_new_info": "Odpowiedź bez nowych informacji",
+    "forward_duplicate": "Oryginał już przekazany dalej",
+    "spam": "Ocena: spam",
+    "virus": "Ocena: wirus",
+    "auto_reply": "Automatyczna odpowiedź",
+    "bulk": "Wiadomość masowa lub z listy dystrybucyjnej",
+    "loop_sender": "Nadawca systemu pocztowego",
+    "sender_cap": "Osiągnięto limit nadawcy",
+    "no_text": "Brak tekstu",
+    "unparseable": "Nieczytelna",
+    "too_large": "Zbyt duża"
+  },
+  "caps": {
+    "title": "Dzienne limity",
+    "daily_cap": "Wiadomości dziennie",
+    "sender_daily_cap": "Wiadomości dziennie od jednego nadawcy",
+    "daily_model_calls": "Wywołania modelu dziennie",
+    "range": "Od {{min, number}} do {{max, number}}",
+    "save": "Zapisz limity",
+    "saved": "Limity zapisane"
+  },
+  "errors": {
+    "load": "Nie udało się wczytać stanu skrzynki e-mail.",
+    "save": "Nie udało się zapisać limitów.",
+    "dimension": "Nie udało się utworzyć wymiaru."
+  }
+}

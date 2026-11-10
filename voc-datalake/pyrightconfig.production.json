@@ -1,0 +1,5 @@
+{
+  "extends": "./pyrightconfig.json",
+  "exclude": ["**/node_modules", "**/__pycache__", ".venv", "dist", "build", "cdk.out", "lambda/layers", "lambda/stream", "frontend", "**/test", "**/test_*.py", "**/*_test.py", "**/conftest.py"],
+  "reportPrivateUsage": "error"
+}

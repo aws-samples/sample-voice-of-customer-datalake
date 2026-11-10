@@ -1,5 +1,5 @@
 /**
- * @fileoverview Tests for WindowCoverageNotice (U5b).
+ * @fileoverview Tests for WindowCoverageNotice.
  *
  * Asserts the real English strings rather than key names — the test setup loads
  * the actual `problemAnalysis` catalogue, so a key that goes missing or stops
@@ -10,107 +10,44 @@ import userEvent from '@testing-library/user-event'
 
 import { WindowCoverageNotice } from './WindowCoverageNotice'
 
-const complete = {
-  isLoadingMore: false,
-  isPartial: false,
-  hasFailed: false,
-  loadedCount: 40,
-  totalCount: 40,
-}
+const complete = { isPartial: false, hasFailed: false }
 
 describe('WindowCoverageNotice', () => {
-  it('renders nothing when the window was read in full', () => {
+  it('renders nothing when the server read the window in full', () => {
     const { container } = render(<WindowCoverageNotice {...complete} />)
     // A complete count needs no caveat, and an always-present line would train
     // people to ignore it.
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('reports progress while further pages are loading', () => {
-    render(<WindowCoverageNotice {...complete} isLoadingMore loadedCount={200} totalCount={615} />)
-
-    expect(screen.getByText('Loading feedback… 200 of 615 so far.')).toBeInTheDocument()
+  it('names the oldest day read when the read stopped early', () => {
+    render(<WindowCoverageNotice {...complete} isPartial scannedThrough="2026-03-14" />)
+    expect(screen.getByRole('status')).toHaveTextContent(/^Counts cover reviews back to Mar 14, 2026 only/)
   })
 
-  it('says the counts undercount when the walk stopped short', () => {
-    render(<WindowCoverageNotice {...complete} isPartial loadedCount={2000} totalCount={5000} />)
-
-    // Thousands separators come from the locale, via `{{loaded, number}}`.
-    expect(
-      screen.getByText('Counts cover 2,000 of 5,000 items in this window.')
-    ).toBeInTheDocument()
+  it('says the counts are partial when the read hit its row cap', () => {
+    render(<WindowCoverageNotice {...complete} isPartial scannedThrough={null} />)
+    expect(screen.getByRole('status')).toHaveTextContent(/^Counts cover part of this period only/)
   })
 
-  it('shows progress rather than the partial caveat while still loading', () => {
-    // Both can be true at once; "still arriving" is the more useful reading,
-    // because the partial verdict is not final until the walk stops.
-    render(<WindowCoverageNotice {...complete} isLoadingMore isPartial loadedCount={100} totalCount={900} />)
-
-    expect(screen.getByText('Loading feedback… 100 of 900 so far.')).toBeInTheDocument()
-    expect(screen.queryByText(/Counts cover/)).not.toBeInTheDocument()
+  it('says only the largest problems are listed while the counts cover all', () => {
+    render(<WindowCoverageNotice {...complete} truncated={{ listed: 2000, total: 5310 }} />)
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The 2,000 largest of 5,310 problems are listed; every count above includes all of them.')
   })
 
-  it('announces the terminal partial state to assistive technology', () => {
-    render(<WindowCoverageNotice {...complete} isPartial loadedCount={100} totalCount={900} />)
+  it('reports a failed read as unknown, with a retry control', async () => {
+    const onRetry = vi.fn()
+    render(<WindowCoverageNotice isPartial={false} hasFailed onRetry={onRetry} />)
 
-    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/^Could not load feedback for this window/)
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
   })
 
-  it('does not announce progress, which would fire once per page of the walk', () => {
-    // A full walk settles a dozen times; a live region would talk over
-    // everything else on the page. Only terminal states are announced.
-    render(<WindowCoverageNotice {...complete} isLoadingMore loadedCount={200} totalCount={615} />)
-
+  it('outranks the partial caveat with the failure', () => {
+    render(<WindowCoverageNotice isPartial hasFailed onRetry={vi.fn()} />)
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.getByText(/Loading feedback/)).toBeInTheDocument()
-  })
-
-  describe('when nothing could be read', () => {
-    it('reports the failure instead of implying the window is empty', () => {
-      render(<WindowCoverageNotice {...complete} hasFailed loadedCount={0} totalCount={0} />)
-
-      expect(screen.getByRole('alert')).toHaveTextContent('Could not load feedback for this window')
-    })
-
-    it('offers the retry it tells the user to perform', async () => {
-      // The message says "Retry, or narrow the time range" — the time range
-      // lives in the app header, but retry has to come from here or the
-      // instruction points at nothing.
-      const onRetry = vi.fn()
-      const user = userEvent.setup()
-      render(<WindowCoverageNotice {...complete} hasFailed loadedCount={0} totalCount={0} onRetry={onRetry} />)
-
-      await user.click(screen.getByRole('button', { name: 'Retry' }))
-      expect(onRetry).toHaveBeenCalledOnce()
-    })
-
-    it('omits the retry control when no handler is supplied', () => {
-      render(<WindowCoverageNotice {...complete} hasFailed loadedCount={0} totalCount={0} />)
-
-      expect(screen.getByRole('alert')).toBeInTheDocument()
-      expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    })
-
-    it('prefers the failure message over any coverage message', () => {
-      // Failure outranks the rest: a partial count nobody can trust is worse
-      // than saying the window is unknown.
-      render(
-        <WindowCoverageNotice {...complete} hasFailed isPartial isLoadingMore loadedCount={0} totalCount={0} />
-      )
-
-      expect(screen.getByRole('alert')).toBeInTheDocument()
-      expect(screen.queryByText(/Loading feedback/)).not.toBeInTheDocument()
-      expect(screen.queryByText(/Counts cover/)).not.toBeInTheDocument()
-    })
-
-    it('keeps the partial caveat when a failure still left some rows loaded', () => {
-      // Some rows did arrive, so the counts are usable-but-short rather than
-      // unknown — that is the partial case, not the failure case.
-      render(<WindowCoverageNotice {...complete} hasFailed isPartial loadedCount={100} totalCount={900} />)
-
-      expect(screen.getByText('Counts cover 100 of 900 items in this window.')).toBeInTheDocument()
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    })
+    expect(screen.getByRole('alert')).toBeInTheDocument()
   })
 })

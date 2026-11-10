@@ -42,12 +42,12 @@ TWO COUPLINGS WORTH KNOWING
   403->200 laundering that used to hide them is deliberately gone.
 """
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 
 from botocore.signers import CloudFrontSigner
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from shared.aws import get_secret
 from shared.logging import logger
@@ -75,10 +75,9 @@ def _signing_key_pair_id() -> str:
 
 
 def _default_ttl_seconds() -> int:
-    raw = os.environ.get('CDN_SIGNED_URL_TTL_SECONDS', '')
     try:
-        ttl = int(raw)
-    except (TypeError, ValueError):
+        ttl = int(os.environ['CDN_SIGNED_URL_TTL_SECONDS'])
+    except (KeyError, ValueError):
         return FALLBACK_TTL_SECONDS
     # A non-positive TTL would mint URLs that are already expired, which looks
     # exactly like a broken key. Treat it as misconfiguration and fall back.
@@ -90,7 +89,7 @@ def is_configured() -> bool:
     return bool(_signing_secret_arn() and _signing_key_pair_id())
 
 
-@lru_cache(maxsize=1)
+@lru_cache
 def _load_private_key():
     """Parse the signing key once per container.
 
@@ -105,20 +104,20 @@ def _load_private_key():
     return serialization.load_pem_private_key(private_key_pem.encode('utf-8'), password=None)
 
 
-@lru_cache(maxsize=1)
+@lru_cache
 def _signer() -> CloudFrontSigner:
     private_key = _load_private_key()
+    # CloudFront signatures are RSA-SHA1 only (see the module docstring), so a
+    # key of any other type can never produce a valid signature.
+    if not isinstance(private_key, rsa.RSAPrivateKey):
+        raise TypeError(
+            f'CloudFront signing key must be RSA, got {type(private_key).__name__}'
+        )
 
     def rsa_signer(message: bytes) -> bytes:
         return private_key.sign(message, padding.PKCS1v15(), hashes.SHA1())
 
     return CloudFrontSigner(_signing_key_pair_id(), rsa_signer)
-
-
-def clear_signer_cache() -> None:
-    """Drop the cached key and signer. For tests and forced rotation."""
-    _load_private_key.cache_clear()
-    _signer.cache_clear()
 
 
 def sign_url(url: str, ttl_seconds: int | None = None) -> str | None:
@@ -150,12 +149,12 @@ def sign_url(url: str, ttl_seconds: int | None = None) -> str | None:
         )
         return None
 
-    expires_at = datetime.now(timezone.utc) + timedelta(
+    expires_at = datetime.now(UTC) + timedelta(
         seconds=ttl_seconds if ttl_seconds is not None else _default_ttl_seconds()
     )
     try:
         return _signer().generate_presigned_url(url, date_less_than=expires_at)
-    except Exception as e:  # noqa: BLE001 — see below
+    except Exception as e:
         # Deliberately broad. The failure modes span botocore errors, a
         # malformed PEM, and crypto backend errors, and the correct response to
         # all of them is identical: log it and return None. Narrowing this risks

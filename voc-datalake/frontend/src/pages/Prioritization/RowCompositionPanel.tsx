@@ -29,12 +29,13 @@ import {
 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import ConfirmModal from '../../components/ConfirmModal'
+import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { SCORABLE_TYPE_META } from './prioritizationUtils'
 import type { PrioritizationRowView } from './prioritizationUtils'
 import type { ProjectDocument } from '../../api/types'
 import type { TFunction } from 'i18next'
 import type { ReactElement } from 'react'
+import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 
 /**
  * Which picker, if any, is open. One value rather than two booleans: the two
@@ -219,21 +220,21 @@ function DocumentPicker({
     ))
   }
   return (
-    <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
+    <div className="mt-2 rounded-lg border border-border bg-card p-3">
       <fieldset>
         {/* A real `legend` in a real `fieldset`, which is what names the GROUP: the
             checkboxes are one choice about one row, and a heading beside them would
             leave a screen reader announcing seven unrelated boxes. No `id` needed —
             the legend names the fieldset natively, and pointing an
             `aria-labelledby` at it would restate what the element already does. */}
-        <legend className="text-sm font-medium text-gray-700">
+        <legend className="text-sm font-medium text-text">
           {t('composition.documentsLegend')}
         </legend>
         <div className="mt-2 space-y-1.5">
           {documents.map((doc) => {
             const typeMeta = SCORABLE_TYPE_META[doc.document_type]
             return (
-              <label key={doc.document_id} className="flex items-start gap-2 text-sm text-gray-800">
+              <label key={doc.document_id} className="flex items-start gap-2 text-sm text-text-strong">
                 <input
                   type="checkbox"
                   className="mt-1"
@@ -245,7 +246,7 @@ function DocumentPicker({
                     PR/FAQ with the same name and the choice is between them. */}
                 <span className="min-w-0">
                   <span className="font-medium">{doc.title}</span>
-                  <span className="text-gray-500"> · {typeMeta ? t(typeMeta.i18nKey) : doc.document_type}</span>
+                  <span className="text-muted"> · {typeMeta ? t(typeMeta.i18nKey) : doc.document_type}</span>
                 </span>
               </label>
             )
@@ -256,18 +257,18 @@ function DocumentPicker({
           explanation. Ordinary text next to the control it explains, like the
           over-long-note panel above the list: it renders with the state it describes. */}
       {selected.length === 0 ? (
-        <p className="mt-2 text-xs text-amber-700">{t('composition.requiresOne')}</p>
+        <p className="mt-2 text-xs text-warn">{t('composition.requiresOne')}</p>
       ) : null}
-      <div className="mt-3 flex items-center gap-2">
+      <StickyActionBar variant="inline" className="mt-3 flex items-center gap-2 py-2">
         <button
           type="button"
           onClick={() => onSubmit(selected)}
           disabled={selected.length === 0 || pending}
           className={clsx(
-            'px-3 py-1.5 rounded-lg text-sm font-medium',
+            'btn btn-sm',
             selected.length === 0 || pending
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700',
+              ? 'btn-secondary'
+              : 'btn-primary',
           )}
         >
           {pending ? t('composition.saving') : submitLabel}
@@ -276,11 +277,11 @@ function DocumentPicker({
           type="button"
           onClick={onCancel}
           disabled={pending}
-          className="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100"
+          className="btn btn-ghost btn-sm"
         >
           {t('composition.cancel')}
         </button>
-      </div>
+      </StickyActionBar>
     </div>
   )
 }
@@ -354,19 +355,18 @@ export default function RowCompositionPanel({
         return
       case 'recompose':
         onRecompose(row, documentIds, editButton.current)
-        return
     }
   }
   return (
-    <div data-testid={`row-composition-${row.row_id}`} className="rounded-lg border border-gray-200 bg-white p-3">
-      <h4 className="font-medium text-gray-900 text-sm">{t('composition.title')}</h4>
+    <div data-testid={`row-composition-${row.row_id}`} className="rounded-lg border border-border bg-card p-3">
+      <h4 className="text-sm font-semibold tracking-tight text-text-strong">{t('composition.title')}</h4>
       {/* The freeze, in words, with the action that IS available named in the same
           sentence. Not a disabled Edit button with no explanation: the reason a
           composition cannot change is a fact about the row that a reviewer can act on
           — by adding another row — and the button below is exactly that. */}
       {row.is_frozen ? (
-        <p className="mt-1 flex items-start gap-1.5 text-xs text-gray-600">
-          <Lock size={14} className="mt-0.5 flex-shrink-0 text-gray-400" aria-hidden="true" />
+        <p className="mt-1 flex items-start gap-1.5 text-xs text-text">
+          <Lock size={14} className="mt-0.5 flex-shrink-0 text-muted" aria-hidden="true" />
           {t('composition.locked')}
         </p>
       ) : null}
@@ -380,7 +380,7 @@ export default function RowCompositionPanel({
             // is announced rather than left to visual proximity.
             aria-expanded={openPicker === 'recompose'}
             disabled={pending}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+            className="btn btn-secondary btn-sm"
           >
             <Pencil size={14} aria-hidden="true" />
             {t('composition.edit')}
@@ -392,7 +392,7 @@ export default function RowCompositionPanel({
           onClick={() => setOpenPicker((open) => (open === 'compose' ? 'none' : 'compose'))}
           aria-expanded={openPicker === 'compose'}
           disabled={pending}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+          className="btn btn-secondary btn-sm"
         >
           <FilePlus2 size={14} aria-hidden="true" />
           {t('composition.addRow')}
@@ -403,7 +403,7 @@ export default function RowCompositionPanel({
             ref={deleteButton}
             onClick={() => setConfirmingDelete(true)}
             disabled={pending}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+            className="btn btn-danger btn-sm"
           >
             <Trash2 size={14} aria-hidden="true" />
             {t('composition.deleteAction')}
@@ -419,8 +419,8 @@ export default function RowCompositionPanel({
           settled — see `rowCountSettled`. Where it has not, the control is simply absent
           for the moment, which is the recoverable half of the same caution. */}
       {canDelete && isOnlyDefaultRow && rowCountSettled ? (
-        <p className="mt-2 flex items-start gap-1.5 text-xs text-gray-600">
-          <Lock size={14} className="mt-0.5 flex-shrink-0 text-gray-400" aria-hidden="true" />
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-text">
+          <Lock size={14} className="mt-0.5 flex-shrink-0 text-muted" aria-hidden="true" />
           {t('composition.onlyRow')}
         </p>
       ) : null}
@@ -429,7 +429,7 @@ export default function RowCompositionPanel({
           {/* Which ask this picker is for, above the group it belongs to: the two
               differ only in what a save means, and a reviewer who opened the wrong one
               has nothing else on screen telling them so. */}
-          <p className="mt-2 text-xs text-gray-600">
+          <p className="mt-2 text-xs text-text">
             {openPicker === 'compose' ? t('composition.addRowHint') : t('composition.editHint')}
           </p>
           <DocumentPicker

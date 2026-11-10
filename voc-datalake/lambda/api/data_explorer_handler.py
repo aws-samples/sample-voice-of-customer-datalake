@@ -1,10 +1,20 @@
 """
-Data Explorer API Lambda - Full CRUD for S3 raw data and DynamoDB feedback.
+Data Explorer API Lambda - admin browser for S3 raw data and DynamoDB feedback.
 
 Provides endpoints for:
-- Browse, create, update, delete S3 raw data files
-- View, update, delete DynamoDB feedback records
-- Sync changes between S3 and DynamoDB
+- Browsing and previewing S3 raw data files
+- Creating S3 files (objects under `raw/` are write-once: never overwritten)
+- Editing DynamoDB feedback records
+
+NOTHING HERE DELETES. A VoC data lake reads and interprets customer data but never
+removes it, so there is no DELETE route for S3 objects or feedback records, a PUT
+refuses to overwrite an existing raw object (409), and a feedback edit never
+writes back to the raw object it came from.
+
+ADMIN ONLY, every route: raw S3 objects cannot be filtered by the per-user category
+scope the rest of the API enforces, so the explorer is not a route a restricted
+user may reach at all. Enforced by one resolver middleware, so a new route is
+covered without having to remember the check.
 
 Dedicated Lambda to avoid 20KB IAM policy limit.
 """
@@ -12,17 +22,57 @@ Dedicated Lambda to avoid 20KB IAM policy limit.
 import json
 import os
 import sys
-from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer
-from shared.aws import get_s3_client, get_dynamodb_resource, get_sqs_client
-from shared.api import create_api_resolver, api_handler, DecimalEncoder
-from shared.exceptions import ConfigurationError, ValidationError, NotFoundError, ServiceError
+from boto3.dynamodb.conditions import Attr, ConditionBase
+from botocore.exceptions import BotoCoreError, ClientError
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.type_defs import PutObjectRequestTypeDef
+
+from shared.api import admins_only, api_handler, create_api_resolver
+from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, is_missing_s3_object
+from shared.data_version import bump_data_version
+from shared.delete_audit import actor_from_event
+from shared.exceptions import (
+    ApiError,
+    ConfigurationError,
+    ConflictError,
+    NotFoundError,
+    ServiceError,
+    ValidationError,
+)
+from shared.feedback_category import (
+    LOST_UPDATE_MESSAGE,
+    CategoryChange,
+    ManualEdit,
+    apply_conditional_update,
+    assignment_clauses,
+    categories_config,
+    category_change,
+    category_label,
+    item_exists,
+    keep_before_edit,
+    manual_edit_fields,
+    override_record,
+    update_expression,
+    validate_target,
+)
+from shared.feedback_field_edits import EDITABLE_FIELDS, FieldEdits, field_edits
 from shared.indexes import FEEDBACK_BY_ID_INDEX
+from shared.logging import logger, tracer
+from shared.project_gate import caller_from_event
+from shared.raw_object_summary import add_summaries
+from shared.raw_versions import app_connector
+from shared.request_body import json_object_body
+from shared.retention import RAW_PREFIX
+from shared.silver_provenance import REASON_DATA_EXPLORER_EDIT, SILVER_PREFIX
+from shared.source_policy import apply_source_policy, raw_archive_allowed
+from shared.source_profiles import cached_source_profile_strict
+from shared.tables import get_aggregates_table
+from shared.timestamps import now_iso
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
@@ -37,27 +87,62 @@ AVAILABLE_BUCKETS = {
     'raw-data': {'name': RAW_DATA_BUCKET, 'label': 'VoC Raw Data', 'description': 'Raw feedback data from all sources'},
 }
 
+# Ingested raw data lives under this prefix and is immutable once written.
+
+# S3 answers a failed `IfNoneMatch='*'` with one of these: 412 when the object
+# exists, 409 when a concurrent conditional write to the same key is in flight.
+_OBJECT_EXISTS_ERROR_CODES = frozenset({'PreconditionFailed', 'ConditionalRequestConflict'})
+
+# Client-facing text for an unexpected failure (#263, after PR #403). Never
+# `str(e)`: `shared/api.py` returns a ServiceError's message verbatim, and boto
+# text carries the bucket/table names, key structure and request ids. Each site
+# logs the fault with `logger.exception` instead, and re-raises `ApiError` ahead
+# of its catch-all so a typed 4xx raised inside keeps its own status.
+FAILED_LIST = 'Failed to list S3 objects'
+FAILED_PREVIEW = 'Failed to preview file'
+FAILED_SAVE = 'Failed to save file'
+# The connector a raw object created here records (shared/raw_versions.py), at the app release.
+DATA_EXPLORER_CONNECTOR = 'data_explorer'
+
+
 app = create_api_resolver()
 
 
-def _reject_prototype_mutation(key: str) -> None:
+# Every data-explorer route is admin-only (403 otherwise). See the module docstring.
+app.use(middlewares=[admins_only])
+
+
+def _reject_read_only_prefix(key: str) -> None:
     if key.startswith('prototypes/'):
         raise ValidationError('Generated prototypes are read-only in Data Explorer')
+    # Kept versions of processed feedback (shared/silver_provenance.py) are the platform's own history: a file
+    # written here by hand would read as a change that never happened (and the bucket policy refuses the put).
+    if key.startswith(SILVER_PREFIX):
+        raise ValidationError('Feedback history (silver/) is read-only in Data Explorer')
 
 
-def decimal_to_native(obj):
-    """Convert Decimal to native Python types recursively."""
-    if isinstance(obj, Decimal):
-        return float(obj) if obj % 1 else int(obj)
-    elif isinstance(obj, dict):
-        return {k: decimal_to_native(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [decimal_to_native(i) for i in obj]
-    return obj
+def _is_raw_key(key: str) -> bool:
+    return key.startswith(RAW_PREFIX)
+
+
+def _keyed_bucket_request(request: dict) -> tuple[str, str]:
+    """`(bucket name, object key)` from a request naming a `bucket` id and a `key`.
+
+    The bucket must be one of `AVAILABLE_BUCKETS` and configured (else a 500: the
+    deployment, not the caller, is missing it); the key must be present (else 400).
+    """
+    bucket_id = request.get('bucket', 'raw-data')
+    key = request.get('key', '')
+    bucket_name = AVAILABLE_BUCKETS.get(bucket_id, {}).get('name', '')
+    if not bucket_name:
+        raise ConfigurationError('Bucket not configured')
+    if not key:
+        raise ValidationError('File key is required')
+    return bucket_name, key
 
 
 # ============================================
-# S3 Raw Data CRUD
+# S3 Raw Data (read + create)
 # ============================================
 
 @app.get("/data-explorer/s3")
@@ -67,17 +152,17 @@ def list_s3_objects():
     params = app.current_event.query_string_parameters or {}
     bucket_id = params.get('bucket', 'raw-data')
     prefix = params.get('prefix', '').strip('/')
-    
+
     # Get bucket name from available buckets
     bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
     bucket_name = bucket_config.get('name', '')
-    
+
     if not bucket_name:
         return {'objects': [], 'bucket': None, 'bucketId': bucket_id, 'prefix': '', 'error': 'Bucket not configured'}
-    
+
     if prefix:
         prefix = f"{prefix}/"
-    
+
     try:
         response = s3_client.list_objects_v2(
             Bucket=bucket_name,
@@ -85,12 +170,12 @@ def list_s3_objects():
             Delimiter='/',
             MaxKeys=500
         )
-        
+
         objects = []
-        
+
         # Folders
         for common_prefix in response.get('CommonPrefixes', []):
-            folder_path = common_prefix['Prefix']
+            folder_path = common_prefix.get('Prefix', '')
             folder_name = folder_path.rstrip('/').split('/')[-1]
             objects.append({
                 'key': folder_name,
@@ -98,350 +183,422 @@ def list_s3_objects():
                 'lastModified': '',
                 'isFolder': True
             })
-        
+
         # Files
         for obj in response.get('Contents', []):
-            key = obj['Key']
+            key = obj.get('Key', '')
             if key == prefix:
                 continue
             filename = key.split('/')[-1]
             if filename:
+                last_modified = obj.get('LastModified')
                 objects.append({
                     'key': filename,
                     'fullKey': key,
-                    'size': obj['Size'],
-                    'lastModified': obj['LastModified'].isoformat(),
+                    'size': obj.get('Size', 0),
+                    'lastModified': last_modified.isoformat() if last_modified else '',
                     'isFolder': False
                 })
-        
+
         objects.sort(key=lambda x: (not x['isFolder'], x['key'].lower()))
-        
+        # Raw review files are named after the source's item id: say what each is about.
+        add_summaries(s3_client, bucket_name, objects)
+
         return {
-            'objects': objects, 
-            'bucket': bucket_name, 
+            'objects': objects,
+            'bucket': bucket_name,
             'bucketId': bucket_id,
             'bucketLabel': bucket_config.get('label', bucket_name),
             'prefix': prefix.rstrip('/')
         }
-        
+
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f"Failed to list S3 objects: {e}")
-        raise ServiceError(f'Failed to list S3 objects: {str(e)}')
+        logger.exception("Failed to list S3 objects")
+        raise ServiceError(FAILED_LIST) from e
+
+
+_IMAGE_EXTENSIONS = ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico')
+_MAX_PREVIEW_BYTES = 1024 * 1024
+_TRUNCATION_MARKER = '\n\n... [truncated - file too large]'
+
+
+def _extension(key: str) -> str:
+    """The lower-cased text after the key's last dot, or '' when it has none."""
+    return key.rsplit('.', maxsplit=1)[-1].lower() if '.' in key else ''
+
+
+def _is_binary_object(key: str, content_type: str) -> bool:
+    """Images and PDFs are previewed by URL, everything else inline as text."""
+    ext = _extension(key)
+    is_image = content_type.startswith('image/') or ext in _IMAGE_EXTENSIONS
+    is_pdf = content_type == 'application/pdf' or ext == 'pdf'
+    return is_image or is_pdf
+
+
+def _read_text_preview(bucket_name: str, key: str, size: int) -> str:
+    """The object's text, cut to the first MiB (with a visible marker) when larger."""
+    if size > _MAX_PREVIEW_BYTES:
+        response = s3_client.get_object(Bucket=bucket_name, Key=key, Range=f'bytes=0-{_MAX_PREVIEW_BYTES - 1}')
+        return response['Body'].read().decode('utf-8', errors='replace') + _TRUNCATION_MARKER
+    response = s3_client.get_object(Bucket=bucket_name, Key=key)
+    return response['Body'].read().decode('utf-8', errors='replace')
+
+
+def _decoded_preview_content(content: str) -> object:
+    """Parsed JSON when the (untruncated part of the) text is JSON; the text itself otherwise."""
+    body = content.split('\n... [truncated', maxsplit=1)[0] if '... [truncated' in content else content
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        return content
+
+
+def _object_preview(bucket_name: str, key: str) -> dict:
+    """The preview payload for one object: a presigned URL for binaries, content for text."""
+    head_response = s3_client.head_object(Bucket=bucket_name, Key=key)
+    size = head_response['ContentLength']
+    content_type = head_response.get('ContentType', 'application/octet-stream')
+
+    # For binary files, return a presigned URL
+    if _is_binary_object(key, content_type):
+        presigned_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket_name, 'Key': key},
+            ExpiresIn=3600  # 1 hour
+        )
+        return {
+            'content': presigned_url,
+            'size': size,
+            'contentType': content_type,
+            'key': key,
+            'isPresignedUrl': True
+        }
+
+    # For text files, read and return content
+    content = _read_text_preview(bucket_name, key, size)
+    return {'content': _decoded_preview_content(content), 'size': size, 'contentType': content_type, 'key': key}
 
 
 @app.get("/data-explorer/s3/preview")
 @tracer.capture_method
 def preview_s3_file():
     """Preview a file from S3 bucket.
-    
+
     For text/JSON files: returns the content directly.
     For binary files (images, PDFs): returns a presigned URL.
     """
-    params = app.current_event.query_string_parameters or {}
-    bucket_id = params.get('bucket', 'raw-data')
-    key = params.get('key', '')
-    
-    # Get bucket name from available buckets
-    bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
-    bucket_name = bucket_config.get('name', '')
-    
-    if not bucket_name:
-        raise ConfigurationError('Bucket not configured')
-    
-    if not key:
-        raise ValidationError('File key is required')
-    
+    bucket_name, key = _keyed_bucket_request(app.current_event.query_string_parameters or {})
+
     try:
-        head_response = s3_client.head_object(Bucket=bucket_name, Key=key)
-        size = head_response['ContentLength']
-        content_type = head_response.get('ContentType', 'application/octet-stream')
-        
-        # Determine file type from content type or extension
-        ext = key.split('.')[-1].lower() if '.' in key else ''
-        is_image = content_type.startswith('image/') or ext in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']
-        is_pdf = content_type == 'application/pdf' or ext == 'pdf'
-        is_binary = is_image or is_pdf
-        
-        # For binary files, return a presigned URL
-        if is_binary:
-            presigned_url = s3_client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': bucket_name, 'Key': key},
-                ExpiresIn=3600  # 1 hour
-            )
-            return {
-                'content': presigned_url,
-                'size': size,
-                'contentType': content_type,
-                'key': key,
-                'isPresignedUrl': True
-            }
-        
-        # For text files, read and return content
-        max_preview_size = 1024 * 1024
-        if size > max_preview_size:
-            response = s3_client.get_object(Bucket=bucket_name, Key=key, Range=f'bytes=0-{max_preview_size - 1}')
-            content = response['Body'].read().decode('utf-8', errors='replace')
-            content = content + '\n\n... [truncated - file too large]'
-        else:
-            response = s3_client.get_object(Bucket=bucket_name, Key=key)
-            content = response['Body'].read().decode('utf-8', errors='replace')
-        
-        try:
-            parsed = json.loads(content.split('\n... [truncated')[0] if '... [truncated' in content else content)
-            return {'content': parsed, 'size': size, 'contentType': content_type, 'key': key}
-        except json.JSONDecodeError:
-            return {'content': content, 'size': size, 'contentType': content_type, 'key': key}
-            
-    except s3_client.exceptions.NoSuchKey:
-        raise NotFoundError('File not found')
+        preview = _object_preview(bucket_name, key)
+    except s3_client.exceptions.NoSuchKey as e:
+        # The get_object path. Kept beside the ClientError clause below rather
+        # than folded into it, so the 404 does not rest on botocore's modelling.
+        raise NotFoundError('File not found') from e
+    except ClientError as e:
+        # The head_object path — see shared.aws.S3_MISSING_KEY_CODES. Any other code falls
+        # through to the generic 500.
+        if is_missing_s3_object(e):
+            raise NotFoundError('File not found') from e
+        logger.exception("Failed to preview S3 file")
+        raise ServiceError(FAILED_PREVIEW) from e
+    except ApiError:
+        raise
     except Exception as e:
-        logger.exception(f"Failed to preview S3 file: {e}")
-        raise ServiceError(f'Failed to preview file: {str(e)}')
+        logger.exception("Failed to preview S3 file")
+        raise ServiceError(FAILED_PREVIEW) from e
+    return preview
+
+
+def _put_object(bucket_name: str, key: str, content: str) -> None:
+    """Write one object; under `raw/` only if no object exists at `key` yet.
+
+    The check is S3's own conditional write (`IfNoneMatch='*'`), not a HEAD
+    followed by a PUT, so two concurrent saves cannot both "create" the object.
+    """
+    write_once = _is_raw_key(key)
+    request: PutObjectRequestTypeDef = {
+        'Bucket': bucket_name,
+        'Key': key,
+        'Body': content.encode('utf-8'),
+        'ContentType': 'application/json',
+    }
+    if write_once:
+        request['IfNoneMatch'] = '*'
+        # Who wrote this raw object (shared/raw_versions.py): every new raw object names its connector.
+        request['Metadata'] = app_connector(DATA_EXPLORER_CONNECTOR).metadata()
+    try:
+        s3_client.put_object(**request)
+    except ClientError as e:
+        code = e.response.get('Error', {}).get('Code')
+        if write_once and code in _OBJECT_EXISTS_ERROR_CODES:
+            raise ConflictError(
+                'Raw data is immutable: an object already exists at this key under raw/'
+            ) from e
+        raise
+
+
+def _raw_key_source(key: str) -> str | None:
+    """The source a `raw/{source}/...` key archives for, or None outside that layout."""
+    parts = key.split('/')
+    return parts[1] if len(parts) > 2 and parts[0] == 'raw' and parts[1] else None
+
+
+def _refuse_policy_blocked_archive(key: str) -> None:
+    """A redact / summary-only source keeps no raw copy, so no raw object may be created for it."""
+    source = _raw_key_source(key)
+    # Strict: an unreadable policy is a 503 (retry), never "allow" by default.
+    if source is not None and not raw_archive_allowed(cached_source_profile_strict(source)):
+        raise ValidationError(f'Source "{source}" keeps no raw copies (its PII policy is not "allow")')
+
+
+def _policy_queue_message(parsed: dict, bucket_name: str, key: str) -> dict | None:
+    """The saved object as a processing-queue message, under its source's PII policy."""
+    source = str(parsed.get('source_platform') or _raw_key_source(key) or '')
+    profile = cached_source_profile_strict(source)
+    message = apply_source_policy(parsed, profile)
+    if message is not None and raw_archive_allowed(profile):
+        message['s3_raw_uri'] = f"s3://{bucket_name}/{key}"
+    return message
 
 
 @app.put("/data-explorer/s3")
 @tracer.capture_method
 def save_s3_file():
-    """Create or update a file in S3 bucket."""
-    body = app.current_event.json_body
+    """Create a file in S3 (update only outside `raw/`, whose objects are write-once)."""
+    body = json_object_body(app)
     bucket_id = body.get('bucket', 'raw-data')
-    key = body.get('key', '')
     content = body.get('content', '')
     sync_to_dynamo = body.get('sync_to_dynamo', False)
-    
-    # Get bucket name from available buckets
-    bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
-    bucket_name = bucket_config.get('name', '')
-    
-    if not bucket_name:
-        raise ConfigurationError('Bucket not configured')
-    
-    if not key:
-        raise ValidationError('File key is required')
-    _reject_prototype_mutation(key)
-    
+    bucket_name, key = _keyed_bucket_request(body)
+    _reject_read_only_prefix(key)
+
+    # Ensure content is a string
+    if isinstance(content, dict):
+        content = json.dumps(content, indent=2)
+    if not isinstance(content, str):
+        raise ValidationError('content must be a string or a JSON object')
+    _refuse_policy_blocked_archive(key)
     try:
-        # Ensure content is a string
-        if isinstance(content, dict):
-            content = json.dumps(content, indent=2)
-        
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=key,
-            Body=content.encode('utf-8'),
-            ContentType='application/json'
-        )
-        
-        synced = False
-        # Only sync to DynamoDB for raw-data bucket
-        if sync_to_dynamo and PROCESSING_QUEUE_URL and bucket_id == 'raw-data':
-            # Send to processing queue to reprocess
-            try:
-                parsed = json.loads(content)
-                parsed['s3_raw_uri'] = f"s3://{bucket_name}/{key}"
+        _put_object(bucket_name, key, content)
+    except ApiError:
+        raise
+    except Exception as e:
+        logger.exception("Failed to save S3 file")
+        raise ServiceError(FAILED_SAVE) from e
+
+    synced = False
+    # Only sync to DynamoDB for raw-data bucket
+    if sync_to_dynamo and PROCESSING_QUEUE_URL and bucket_id == 'raw-data':
+        # Send to processing queue to process the new raw object
+        try:
+            message = _policy_queue_message(json.loads(content), bucket_name, key)
+            if message is not None:
                 sqs_client.send_message(
                     QueueUrl=PROCESSING_QUEUE_URL,
-                    MessageBody=json.dumps(parsed)
+                    MessageBody=json.dumps(message)
                 )
                 synced = True
-                logger.info(f"Sent to processing queue for reprocessing: {key}")
-            except Exception as e:
-                logger.warning(f"Failed to sync to DynamoDB: {e}")
-        
-        return {'success': True, 'message': 'File saved', 'key': key, 'synced': synced}
-        
-    except Exception as e:
-        logger.exception(f"Failed to save S3 file: {e}")
-        raise ServiceError(f'Failed to save file: {str(e)}')
+                logger.info("Sent new raw object to the processing queue")
+        except (ClientError, BotoCoreError, ValueError, TypeError, AttributeError) as e:
+            # The save itself succeeded; a non-JSON / non-object body or a queue
+            # failure only means it is not re-processed now (synced=False).
+            logger.warning(f"Failed to sync to DynamoDB: {e}")
 
-
-@app.delete("/data-explorer/s3")
-@tracer.capture_method
-def delete_s3_file():
-    """Delete a file from S3 bucket."""
-    params = app.current_event.query_string_parameters or {}
-    bucket_id = params.get('bucket', 'raw-data')
-    key = params.get('key', '')
-    
-    # Get bucket name from available buckets
-    bucket_config = AVAILABLE_BUCKETS.get(bucket_id, {})
-    bucket_name = bucket_config.get('name', '')
-    
-    if not bucket_name:
-        raise ConfigurationError('Bucket not configured')
-    
-    if not key:
-        raise ValidationError('File key is required')
-    _reject_prototype_mutation(key)
-    
-    try:
-        s3_client.delete_object(Bucket=bucket_name, Key=key)
-        return {'success': True, 'message': 'File deleted', 'key': key}
-    except Exception as e:
-        logger.exception(f"Failed to delete S3 file: {e}")
-        raise ServiceError(f'Failed to delete file: {str(e)}')
+    return {'success': True, 'message': 'File saved', 'key': key, 'synced': synced}
 
 
 # ============================================
-# DynamoDB Feedback CRUD
+# DynamoDB Feedback (read + edit)
 # ============================================
+
+# Fields an admin may edit on a processed feedback record: `shared.feedback_field_edits`
+# (validated, PII-policy applied). `category` and `subcategory` are NOT plain fields: a
+# change to either goes through `shared.feedback_category`, exactly like PUT /feedback/{id}/category.
+CATEGORY_FIELDS = ('category', 'subcategory')
+
+
+def _feedback_key_by_id(table, feedback_id: str) -> dict:
+    """The record's primary key via the by-id GSI, or 404."""
+    response = table.query(
+        IndexName=FEEDBACK_BY_ID_INDEX,
+        KeyConditionExpression='feedback_id = :fid',
+        ExpressionAttributeValues={':fid': feedback_id},
+        Limit=1
+    )
+    items = response.get('Items') or []
+    if not items:
+        raise NotFoundError('Feedback not found')
+    return {'pk': items[0]['pk'], 'sk': items[0]['sk']}
+
+
+def _stored_item(table, key: dict) -> dict:
+    """The record at `key`, strongly read, or 404."""
+    item = table.get_item(Key=key, ConsistentRead=True).get('Item')
+    if not item:
+        raise NotFoundError('Feedback not found')
+    return item
+
+
+def _located_item(table, feedback_id: str, source_platform: str) -> tuple[dict, dict]:
+    """`(key, item)` of the record: tried at `SOURCE#{source_platform}` first, else found by id.
+
+    The editor sends `source_platform` back with the record, but a branded review lives under
+    `SOURCE#{brand_name}` (the processor's partition), so that key alone would answer 404 for it.
+    """
+    if source_platform:
+        try:
+            key = {'pk': f"SOURCE#{source_platform}", 'sk': f"FEEDBACK#{feedback_id}"}
+            return key, _stored_item(table, key)
+        except NotFoundError:
+            pass
+    key = _feedback_key_by_id(table, feedback_id)
+    return key, _stored_item(table, key)
+
+
+def _requested_category(item: dict, data: dict) -> tuple[str, str | None] | None:
+    """`(category, subcategory)` when `data` changes the item's, else None.
+
+    The editor sends the whole record, so an unchanged category is not a change
+    (it must not stamp `category_source='manual'`). A new category without a
+    subcategory drops the old one, which belonged to the old category.
+    """
+    if not any(name in data for name in CATEGORY_FIELDS):
+        return None
+    current = (item.get('category'), item.get('subcategory'))
+    category = category_label(data.get('category', current[0]), 'category', required=True)
+    if 'subcategory' in data:
+        subcategory = category_label(data.get('subcategory'), 'subcategory', required=False)
+    else:
+        subcategory = current[1] if category == current[0] else None
+    return None if (category, subcategory) == current else (category, subcategory)
+
+
+def _category_change(item: dict, data: dict) -> CategoryChange | None:
+    """The validated, audited category move `data` asks for (see `shared.feedback_category`)."""
+    requested = _requested_category(item, data)
+    if requested is None:
+        return None
+    category, subcategory = requested
+    aggregates_table = get_aggregates_table()
+    if not aggregates_table:
+        raise ConfigurationError('Aggregates table not configured')
+    validate_target(categories_config(aggregates_table), category, subcategory)
+    caller = caller_from_event(app.current_event.raw_event)
+    return category_change(item, category, subcategory, override_record(item, caller))
+
+
+def _unchanged_since_read(item: dict) -> ConditionBase:
+    """The item still is what was read: its last change stamp (``updated_at``) is the one read, or still absent.
+
+    Every in-place change stamps ``updated_at``, so a change that landed after the read fails this and the
+    version kept of the read item never hides it.
+    """
+    stamp = item.get('updated_at')
+    return Attr('updated_at').eq(stamp) if isinstance(stamp, str) and stamp else Attr('updated_at').not_exists()
+
+
+def _refuse_stale_editor(item: dict, data: dict) -> None:
+    """409 when the editor's copy is older than the record: it names the ``updated_at`` it was opened with.
+
+    The editor sends the whole record as it opened it, so its untouched fields would otherwise overwrite a
+    change made since. A body without ``updated_at`` (an older client) is judged on the server's read only.
+    """
+    if 'updated_at' not in data:
+        return
+    opened, stored = data.get('updated_at'), item.get('updated_at')
+    if (opened or None) != (stored or None):
+        raise ConflictError(LOST_UPDATE_MESSAGE)
+
+
+def _write_condition(change: CategoryChange | None) -> ConditionBase:
+    """A category move's own condition (it exists with the category read), else that it exists."""
+    return change.condition if change is not None and change.condition is not None else item_exists()
+
+
+def _update_kwargs(item: dict, key: dict, edits: FieldEdits, change: CategoryChange | None,
+                   edit: ManualEdit) -> dict:
+    """One conditional `update_item`: plain fields, the category move, the change stamp.
+
+    Always conditional on the item existing (an edit can never create one) and unchanged since it was
+    read; a category move adds "still has the category that was read".
+    """
+    sets, names, values = assignment_clauses(edits.sets, 'fld')
+    removes = [f'#rm{index}' for index in range(len(edits.removes))]
+    names.update(dict(zip(removes, edits.removes, strict=True)))
+    if change is not None:
+        sets, removes = [*sets, *change.sets], [*removes, *change.removes]
+        names, values = {**names, **change.names}, {**values, **change.values}
+    stamp_sets, stamp_names, stamp_values = assignment_clauses(manual_edit_fields(edit, now_iso()), 'edit')
+    return {
+        'Key': key,
+        'UpdateExpression': update_expression([*sets, *stamp_sets], removes),
+        'ConditionExpression': _write_condition(change) & _unchanged_since_read(item),
+        'ExpressionAttributeNames': {**names, **stamp_names},
+        'ExpressionAttributeValues': {**values, **stamp_values},
+    }
+
 
 @app.put("/data-explorer/feedback")
 @tracer.capture_method
 def save_feedback():
-    """Update a feedback record in DynamoDB."""
+    """Update a feedback record in DynamoDB, in place.
+
+    The raw object the record was ingested from is never touched: raw data is
+    immutable, so there is no write-back to S3 (the former `sync_to_s3` flag is
+    ignored). Only the fields that differ from the stored record change; each is
+    validated and put through the source's PII policy (`shared.feedback_field_edits`).
+    A category change is validated, moves `gsi2pk` and is audited exactly as
+    `PUT /feedback/{id}/category` does (409 on a concurrent change). Once the update
+    landed, the record as it was is kept under `silver/`, and the update stamps `updated_by` (the admin),
+    `updated_at` and `change_reason` (the enrichment provenance is left as it was).
+    """
     if not FEEDBACK_TABLE:
         raise ConfigurationError('Feedback table not configured')
-    
-    body = app.current_event.json_body
+
+    body = json_object_body(app)
     feedback_id = body.get('feedback_id', '')
     data = body.get('data', {})
-    sync_to_s3 = body.get('sync_to_s3', False)
-    
+
     if not feedback_id:
         raise ValidationError('Feedback ID is required')
+    if not isinstance(data, dict):
+        raise ValidationError('data must be an object')
+    if not any(name in data for name in (*EDITABLE_FIELDS, *CATEGORY_FIELDS)):
+        raise ValidationError('No fields to update')
 
-    s3_sync_target: tuple[str, str] | None = None
-    if sync_to_s3 and RAW_DATA_BUCKET:
-        s3_raw_uri = data.get('s3_raw_uri', '')
-        if isinstance(s3_raw_uri, str) and s3_raw_uri.startswith('s3://'):
-            bucket, separator, key = s3_raw_uri.removeprefix('s3://').partition('/')
-            if separator and bucket == RAW_DATA_BUCKET and key:
-                _reject_prototype_mutation(key)
-                s3_sync_target = (bucket, key)
-    
+    table = dynamodb.Table(FEEDBACK_TABLE)
     try:
-        table = dynamodb.Table(FEEDBACK_TABLE)
-        
-        # Get existing item to find the PK/SK
-        # feedback_id format is typically: {source}_{id}
-        source_platform = data.get('source_platform', '')
-        
-        # Build update expression
-        update_parts = []
-        expr_names = {}
-        expr_values = {}
-        
-        # Fields that can be updated
-        updatable_fields = [
-            'original_text', 'normalized_text', 'category', 'subcategory',
-            'sentiment_label', 'sentiment_score', 'urgency', 'impact_area',
-            'problem_summary', 'problem_root_cause_hypothesis', 'persona_name',
-            'persona_type', 'journey_stage', 'rating'
-        ]
-        
-        for field in updatable_fields:
-            if field in data:
-                update_parts.append(f"#{field} = :{field}")
-                expr_names[f"#{field}"] = field
-                value = data[field]
-                # Convert floats to Decimal for DynamoDB
-                if isinstance(value, float):
-                    value = Decimal(str(value))
-                expr_values[f":{field}"] = value
-        
-        if not update_parts:
-            raise ValidationError('No fields to update')
-        
-        # Add updated_at timestamp
-        update_parts.append("#updated_at = :updated_at")
-        expr_names["#updated_at"] = "updated_at"
-        expr_values[":updated_at"] = datetime.now(timezone.utc).isoformat()
-        
-        update_expression = "SET " + ", ".join(update_parts)
-        
-        # Query to find the item by feedback_id (using GSI or scan)
-        # For simplicity, we'll use the source_platform from data
-        pk = f"SOURCE#{source_platform}" if source_platform else None
-        sk = f"FEEDBACK#{feedback_id}"
-        
-        if pk:
-            table.update_item(
-                Key={'pk': pk, 'sk': sk},
-                UpdateExpression=update_expression,
-                ExpressionAttributeNames=expr_names,
-                ExpressionAttributeValues=expr_values
-            )
-        else:
-            # Need to find the item first
-            response = table.query(
-                IndexName=FEEDBACK_BY_ID_INDEX,
-                KeyConditionExpression='feedback_id = :fid',
-                ExpressionAttributeValues={':fid': feedback_id},
-                Limit=1
-            )
-            if response.get('Items'):
-                item = response['Items'][0]
-                table.update_item(
-                    Key={'pk': item['pk'], 'sk': item['sk']},
-                    UpdateExpression=update_expression,
-                    ExpressionAttributeNames=expr_names,
-                    ExpressionAttributeValues=expr_values
-                )
-            else:
-                raise NotFoundError('Feedback not found')
-        
-        synced = False
-        if s3_sync_target is not None:
-            bucket, key = s3_sync_target
-            try:
-                s3_client.put_object(
-                    Bucket=bucket,
-                    Key=key,
-                    Body=json.dumps(data, indent=2, cls=DecimalEncoder),
-                    ContentType='application/json'
-                )
-                synced = True
-            except Exception as e:
-                logger.warning(f"Failed to sync to S3: {e}")
-        
-        return {'success': True, 'message': 'Feedback updated', 'synced': synced}
-        
-    except Exception as e:
-        logger.exception(f"Failed to update feedback: {e}")
-        raise ServiceError(f'Failed to update feedback: {str(e)}')
-
-
-@app.delete("/data-explorer/feedback")
-@tracer.capture_method
-def delete_feedback():
-    """Delete a feedback record from DynamoDB."""
-    if not FEEDBACK_TABLE:
-        raise ConfigurationError('Feedback table not configured')
-    
-    params = app.current_event.query_string_parameters or {}
-    feedback_id = params.get('feedback_id', '')
-    
-    if not feedback_id:
-        raise ValidationError('Feedback ID is required')
-    
-    try:
-        table = dynamodb.Table(FEEDBACK_TABLE)
-        
-        # Find the item first using GSI
-        response = table.query(
-            IndexName=FEEDBACK_BY_ID_INDEX,
-            KeyConditionExpression='feedback_id = :fid',
-            ExpressionAttributeValues={':fid': feedback_id},
-            Limit=1
-        )
-        
-        if not response.get('Items'):
-            raise NotFoundError('Feedback not found')
-        
-        item = response['Items'][0]
-        
-        # Delete the item
-        table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
-        
-        return {'success': True, 'message': 'Feedback deleted', 'feedback_id': feedback_id}
-        
-    except NotFoundError:
+        key, item = _located_item(table, feedback_id, str(data.get('source_platform') or ''))
+        # Before any field check: a stale editor reloads, even when its values match or one fails today's rules.
+        _refuse_stale_editor(item, data)
+        change = _category_change(item, data)
+        edits = field_edits(item, data)
+    except ApiError:
         raise
     except Exception as e:
-        logger.exception(f"Failed to delete feedback: {e}")
-        raise ServiceError(f'Failed to delete feedback: {str(e)}')
+        logger.exception("Failed to read feedback")
+        raise ServiceError('Failed to update feedback') from e
+    if change is None and not edits.changed:
+        return {'success': True, 'message': 'No changes'}
+
+    edit = ManualEdit(actor=actor_from_event(app.current_event.raw_event, admin=True), reason=REASON_DATA_EXPLORER_EDIT)
+    kwargs = _update_kwargs(item, key, edits, change, edit)
+    try:
+        apply_conditional_update(table, kwargs)
+    except ConflictError:
+        # The item vanished (404) or changed since it was read (the shared lost-update 409).
+        if not table.get_item(Key=key, ConsistentRead=True).get('Item'):
+            raise NotFoundError('Feedback not found') from None
+        raise
+    # The review as it was before the edit (TENETS.md D1), kept once the edit landed, so a refused
+    # edit leaves no version; never fails the edit.
+    keep_before_edit(item, edit, kwargs)
+    # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
+    bump_data_version(get_aggregates_table())
+    return {'success': True, 'message': 'Feedback updated'}
 
 
 @app.get("/data-explorer/buckets")
@@ -458,40 +615,6 @@ def list_buckets():
                 'description': config.get('description', ''),
             })
     return {'buckets': buckets}
-
-
-@app.get("/data-explorer/stats")
-@tracer.capture_method
-def get_data_stats():
-    """Get statistics about the data lake."""
-    stats = {
-        's3': {
-            'buckets': [],
-            'configured': bool(RAW_DATA_BUCKET)
-        },
-        'dynamodb': {'table': FEEDBACK_TABLE, 'configured': bool(FEEDBACK_TABLE)}
-    }
-    
-    # Add info for each configured bucket
-    for bucket_id, config in AVAILABLE_BUCKETS.items():
-        bucket_name = config.get('name', '')
-        if bucket_name:
-            bucket_info = {
-                'id': bucket_id,
-                'name': bucket_name,
-                'label': config.get('label', bucket_name),
-            }
-            try:
-                response = s3_client.list_objects_v2(Bucket=bucket_name, Delimiter='/', MaxKeys=100)
-                folders = [p['Prefix'].rstrip('/') for p in response.get('CommonPrefixes', []) if p['Prefix'].rstrip('/')]
-                bucket_info['folders'] = folders
-                bucket_info['folder_count'] = len(folders)
-            except Exception as e:
-                logger.warning(f"Failed to get stats for bucket {bucket_name}: {e}")
-                bucket_info['error'] = str(e)
-            stats['s3']['buckets'].append(bucket_info)
-    
-    return stats
 
 
 @api_handler

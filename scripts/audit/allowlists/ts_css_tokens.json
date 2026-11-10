@@ -1,0 +1,5 @@
+{
+  "entries": [
+    { "key": "css:--color-chart-?", "kind": "unused-property", "reason": "The data ramp is one palette of eight steps (docs/kiro-design-system.md → Data ramp, pinned whole by theme/chartRamp.test.ts): a series or category takes its step by index, so the utility mapping stays complete even while only steps 1-3 are written as utilities (SocialFeed). Tailwind emits nothing for an unused utility, so the kept mappings cost no CSS." }
+  ]
+}

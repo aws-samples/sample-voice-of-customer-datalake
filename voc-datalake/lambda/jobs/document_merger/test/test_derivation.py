@@ -6,7 +6,11 @@ requested document that no longer exists is silently skipped. The shared
 derivation records the ones that reached the model, and the selected count keeps
 the missing one visible.
 """
+import re
+
 import pytest
+
+from jobs.test.project_tables_fixtures import feedback_table_beside, negative_webscraper_reviews
 
 
 def _saved_item(mock_dynamodb):
@@ -38,8 +42,9 @@ class TestMergeProvenance:
             ],
         }
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_records_the_documents_merged_not_the_ones_requested(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, event, lambda_context,
+        self, mock_dynamodb, event, lambda_context,
     ):
         from jobs.document_merger.handler import lambda_handler
 
@@ -52,8 +57,9 @@ class TestMergeProvenance:
         ]
         assert item['derivation']['selected_document_count'] == 3
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_keeps_writing_its_original_shape_unchanged(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, event, lambda_context,
+        self, mock_dynamodb, event, lambda_context,
     ):
         """Additive: `source_documents` and `merge_instructions` are untouched,
         so every existing reader keeps working."""
@@ -65,8 +71,9 @@ class TestMergeProvenance:
         assert item['source_documents'] == ['doc_1', 'doc_gone', 'doc_2']
         assert item['merge_instructions'] == 'Combine the key insights'
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_records_the_personas_used(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, event, lambda_context,
+        self, mock_dynamodb, event, lambda_context,
     ):
         from jobs.document_merger.handler import lambda_handler
 
@@ -74,24 +81,14 @@ class TestMergeProvenance:
 
         assert _saved_item(mock_dynamodb)['derivation']['persona_ids'] == ['persona_1']
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_records_the_feedback_items_used(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, event, lambda_context,
+        self, mock_dynamodb, event, lambda_context,
     ):
-        from unittest.mock import MagicMock
-
         event['merge_config']['use_feedback'] = True
         # One day of lookback, so the mocked table answers the date loop once.
         event['merge_config']['days'] = 1
-        feedback_table = MagicMock()
-        feedback_table.query.return_value = {
-            'Items': [
-                {'original_text': f'review {i}', 'source_platform': 'webscraper', 'sentiment_label': 'negative'}
-                for i in range(3)
-            ],
-        }
-        mock_dynamodb['resource'].Table.side_effect = (
-            lambda name: feedback_table if 'feedback' in name.lower() else mock_dynamodb['table']
-        )
+        feedback_table_beside(mock_dynamodb, negative_webscraper_reviews(3))
 
         from jobs.document_merger.handler import lambda_handler
 
@@ -100,3 +97,34 @@ class TestMergeProvenance:
         derivation = _saved_item(mock_dynamodb)['derivation']
         assert derivation['feedback_count'] == 3
         assert derivation['product_context_included'] is False
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
+    def test_stores_the_ids_of_the_reviews_its_prompt_held_in_prompt_order(
+        self, mock_dynamodb, mock_converse, event, lambda_context,
+    ):
+        """#236: the corpus behind a merged document, capped at the 20 reviews the prompt quotes."""
+        event['merge_config']['use_feedback'] = True
+        event['merge_config']['days'] = 1
+        reviews = [{**review, 'feedback_id': f'fb{i}'} for i, review in enumerate(negative_webscraper_reviews(25))]
+        feedback_table_beside(mock_dynamodb, reviews)
+
+        from jobs.document_merger.handler import lambda_handler
+
+        lambda_handler(event, lambda_context)
+
+        prompt = mock_converse.call_args.kwargs['prompt']
+        quoted = [f'fb{n}' for n in re.findall(r'\): review (\d+)', prompt)]
+        item = _saved_item(mock_dynamodb)
+        assert len(quoted) == 20
+        assert item['input_feedback_ids'] == quoted
+        assert item['derivation']['feedback_count'] == 20
+
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
+    def test_a_merge_without_feedback_stores_no_corpus_ids(
+        self, mock_dynamodb, event, lambda_context,
+    ):
+        from jobs.document_merger.handler import lambda_handler
+
+        lambda_handler(event, lambda_context)
+
+        assert 'input_feedback_ids' not in _saved_item(mock_dynamodb)

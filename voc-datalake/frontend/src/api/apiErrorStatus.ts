@@ -2,13 +2,12 @@
  * @fileoverview The HTTP status behind a rejected API call, recovered from what
  * `fetchApi` actually throws.
  *
- * `fetchApi` (in `client.ts`) reports a non-OK response as `new Error('API Error:
- * {status}')` and DISCARDS the response body — so a caller that needs to tell a
- * refusal from a passing failure has only that text to read. Two callers already
- * read it, and a third would have written the same regex again: the prioritization
- * page decides whether to retry a row-ensure by it, and the ballot page's own
- * module documents the same discarding as the reason its public calls bypass
- * `fetchApi` entirely.
+ * `fetchApi` (in `client.ts`) reports a non-OK response as an `ApiError` carrying
+ * the status and the server's `message` (or `API Error: {status}` when the body
+ * has none). This reads the typed status first and falls back to the legacy text
+ * for older callers that still throw a plain Error. Two callers read it: the
+ * prioritization page decides whether to retry a row-ensure by it, and the
+ * sharing dialog maps a refusal to a message key.
  *
  * Its own module beside `fetchApi` rather than inline at a call site, because the
  * format is a contract between the thrower and every reader of it. A private copy
@@ -26,6 +25,9 @@
  */
 import { ApiError } from '../lib/errors'
 
+/** 409: the write lost a race (a stale revision, a run already live). */
+export const HTTP_CONFLICT = 409
+
 /** The shape `fetchApi` throws for a non-OK response, and nothing else. */
 const API_ERROR_MESSAGE = /^API Error: (\d{3})$/
 
@@ -42,6 +44,15 @@ export function apiErrorStatus(reason: unknown): number | null {
   const message = reason instanceof Error ? reason.message : ''
   const matched = API_ERROR_MESSAGE.exec(message)
   return matched ? Number(matched[1]) : null
+}
+
+/**
+ * TanStack Query `retry` for a read by id: one retry, none after a 404. A 404 is the
+ * server's answer (absent, erased, or not visible to the caller), so asking again only
+ * doubles the wait. Used by the feedback detail read and the project corpus list.
+ */
+export function retryOnceUnlessNotFound(failures: number, error: unknown): boolean {
+  return apiErrorStatus(error) !== 404 && failures < 1
 }
 
 /**
@@ -83,4 +94,19 @@ const RETRYABLE_4XX = new Set([403, 429])
 export function isPermanentRefusal(reason: unknown): boolean {
   const status = apiErrorStatus(reason)
   return status !== null && status >= 400 && status < 500 && !RETRYABLE_4XX.has(status)
+}
+
+/** One row of a status → user-facing message table. */
+export interface StatusMessage {
+  readonly status: number
+  readonly messageKey: string
+}
+
+/**
+ * The namespaced message key a rejection's status maps to in `table`, else
+ * `generic`. The tables are held as `messageKey` data so i18n-check sees them.
+ */
+export function messageKeyForStatus(error: unknown, table: readonly StatusMessage[], generic: Readonly<{ messageKey: string }>): string {
+  const status = apiErrorStatus(error)
+  return (table.find((entry) => entry.status === status) ?? generic).messageKey
 }

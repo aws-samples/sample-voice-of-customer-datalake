@@ -8,14 +8,16 @@
  * Pre-#105 environments deploy with `-c omitUserPoolUsernameConfiguration=true`
  * to keep their pool untouched; greenfield keeps case-insensitive sign-in.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
-import { VocCoreStack } from './core-stack';
+import { ABORT_MULTIPART_DAYS, ACCESS_LOGS_EXPIRATION_DAYS, ACCESS_LOGS_NONCURRENT_VERSION_DAYS } from './core-buckets';
+import { SCRATCH_EXPIRATION_DAYS } from './core-buckets';
+import { buildCoreStack, synthCoreTemplate } from '../test-support/core-stack-fixture';
+import { itemAt, recordAt, valueAt } from '../test-support/guards';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
+import { acknowledgementCovering, acknowledgementsOn } from '../utils/nag-ack';
 import {
   BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS,
   pythonIntConstant,
@@ -25,7 +27,18 @@ import {
 // silently. Importing costs nothing at module load — synth-app.ts only shells out
 // to `cdk synth` inside `synthApp()`, and its sole module-level work is a `join()`
 // on two path constants.
-import { SYNTH_ACCOUNT, SYNTH_REGION, cdkJsonContextStrict, committedFeatureFlags } from '../test-support/synth-app';
+import { SYNTH_ACCOUNT, SYNTH_TIMEOUT_MS, cdkJsonContextStrict, committedFeatureFlags } from '../test-support/synth-app';
+import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
+import { byCodeUnit } from '../utils/compare';
+import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
+
+/** The construct of `stack` that renders the resource `logicalId`. */
+function constructRendering(stack: cdk.Stack, logicalId: string): cdk.CfnElement {
+  const found = stack.node.findAll()
+    .find((construct): construct is cdk.CfnElement => construct instanceof cdk.CfnElement && stack.getLogicalId(construct) === logicalId);
+  if (found === undefined) throw new Error(`no construct renders ${logicalId}`);
+  return found;
+}
 
 /**
  * cdk.json's CDK feature flags, resolved once for every case in this file.
@@ -60,23 +73,6 @@ import { SYNTH_ACCOUNT, SYNTH_REGION, cdkJsonContextStrict, committedFeatureFlag
  * turns that from a comment into a guard.
  */
 const CDK_FEATURE_FLAGS = committedFeatureFlags();
-
-function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
-  // Skip asset bundling (Docker) — template assertions only need structure.
-  const app = new cdk.App({
-    context: {
-      ...CDK_FEATURE_FLAGS,
-      'aws:cdk:bundling-stacks': [],
-      skipFrontendBuildCheck: true,
-      ...context,
-    },
-  });
-  const stack = new VocCoreStack(app, 'TestCoreStack', {
-    env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION },
-    brandName: 'TestBrand',
-  });
-  return Template.fromStack(stack);
-}
 
 /** Any policy document, down to the statement list. */
 const StatementsSchema = z.object({ Statement: z.array(z.unknown()) });
@@ -121,11 +117,11 @@ describe('VocCoreStack synth context', () => {
     expect(
       projectKeys.filter((key) => key in CDK_FEATURE_FLAGS),
       'synthCoreTemplate() must not spread cdk.json project context',
-    ).toEqual([]);
+    ).toStrictEqual([]);
     // And that the flags themselves really do arrive, so a cdk.json that lost its
     // `context` block cannot satisfy the assertion above by supplying nothing.
     expect(CDK_FEATURE_FLAGS['@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy']).toBe(true);
-    expect(Object.keys(CDK_FEATURE_FLAGS)).toEqual(
+    expect(Object.keys(CDK_FEATURE_FLAGS)).toStrictEqual(
       Object.keys(rawContext).filter((key) => key.startsWith('@aws-cdk')),
     );
   });
@@ -133,7 +129,8 @@ describe('VocCoreStack synth context', () => {
   it('merges IAM statements the way a real deploy\'s feature flags do', () => {
     // `@aws-cdk/aws-iam:minimizePolicies` merges statements that share a
     // resource set, so these three resources genuinely change shape between a
-    // bare `App` and this one (10→6, 2→1, 6→5).
+    // bare `App` and this one (10→6, 2→1, 6→5, counted before the app's rewrites,
+    // lib/utils/app-aspects.ts, which add statements of their own: see below).
     //
     // Named for the mechanism rather than for the numbers because the numbers
     // move for TWO unrelated causes, and the failure gives no hint which: the
@@ -153,23 +150,28 @@ describe('VocCoreStack synth context', () => {
       const found = Object.entries(template.findResources(type))
         .filter(([logicalId]) => logicalId.startsWith(logicalIdPrefix));
       expect(found, `expected exactly one ${logicalIdPrefix}*`).toHaveLength(1);
-      return StatementsSchema.parse(found[0][1].Properties?.[documentKey]).Statement.length;
+      return StatementsSchema.parse(itemAt(found, 0)[1].Properties?.[documentKey]).Statement.length;
     };
 
     const because = (resource: string) =>
       `${resource}'s statement count moved: either the synth context lost `
       + '@aws-cdk/aws-iam:minimizePolicies, or this policy gained a statement. Both want reading.';
 
+    // 8: the Claude grant lives in the stack's shared managed policies (lib/utils/claude-model-grant.ts); the app's
+    // rewrites (lib/utils/app-aspects.ts) add the DynamoDB-only KMS statement, the writes to its own log group and
+    // the one audit-row Deny on voc-projects, which it writes but holds no audit row of (audit-row-guard.ts).
     expect(
       statementCount('AWS::IAM::Policy', 'ProductDocExtractorLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the doc-extractor role'),
-    ).toBe(6);
+    ).toBe(8);
+    // 2: its secret + the writes to its own log group (lib/utils/app-aspects.ts).
     expect(
       statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the CDN signing-key role'),
-    ).toBe(1);
-    expect(statementCount('AWS::KMS::Key', 'VocKmsKey', 'KeyPolicy'), because('the KMS key')).toBe(5);
-  });
+    ).toBe(2);
+    // 5 + the CloudWatch alarm-topic grant + the EventBridge schedule-DLQ grant (one key since 5.74.00).
+    expect(statementCount('AWS::KMS::Key', 'VocKmsKey', 'KeyPolicy'), because('the KMS key')).toBe(7);
+  }, SYNTH_TIMEOUT_MS);
 });
 
 describe('VocCoreStack admin bootstrap (issue #196)', () => {
@@ -177,7 +179,7 @@ describe('VocCoreStack admin bootstrap (issue #196)', () => {
     // The old code minted a random password at synth time, so every synth
     // produced a different template (and every deploy no-op-updated the
     // stack). Two independent synths must now be byte-identical.
-    expect(synthCoreTemplate().toJSON()).toEqual(synthCoreTemplate().toJSON());
+    expect(synthCoreTemplate().toJSON()).toStrictEqual(synthCoreTemplate().toJSON());
   });
 
   it('embeds no password in the template — generation happens at runtime', () => {
@@ -192,10 +194,10 @@ describe('VocCoreStack admin bootstrap (issue #196)', () => {
 
   it('wires InitialAdminPassword to the runtime attribute of the bootstrap resource', () => {
     const template = synthCoreTemplate();
-    const output = template.findOutputs('InitialAdminPassword').InitialAdminPassword;
+    const output = valueAt(template.findOutputs('InitialAdminPassword'), 'InitialAdminPassword');
     const bootstrapLogicalIds = Object.keys(template.findResources('Custom::AdminBootstrap'));
 
-    expect(output.Value).toEqual({ 'Fn::GetAtt': [bootstrapLogicalIds[0], 'Password'] });
+    expect(output.Value).toStrictEqual({ 'Fn::GetAtt': [bootstrapLogicalIds[0], 'Password'] });
   });
 
   it('keeps the provider framework logging at FATAL so Data.Password never reaches CloudWatch', () => {
@@ -203,10 +205,12 @@ describe('VocCoreStack admin bootstrap (issue #196)', () => {
     // response — including the password. FATAL is today's aws-cdk-lib
     // default, but this pins the guarantee against dependency bumps and
     // debugging sessions alike.
-    synthCoreTemplate().hasResourceProperties('AWS::Lambda::Function', {
+    const template = synthCoreTemplate();
+
+    expect(() => template.hasResourceProperties('AWS::Lambda::Function', {
       Description: Match.stringLikeRegexp('provider framework - onEvent .*AdminBootstrapProvider'),
       LoggingConfig: Match.objectLike({ ApplicationLogLevel: 'FATAL' }),
-    });
+    })).not.toThrow();
   });
 });
 
@@ -214,31 +218,32 @@ describe('VocCoreStack UserPool UsernameConfiguration (issue #184)', () => {
   it('sets case-insensitive sign-in by default (greenfield)', () => {
     const template = synthCoreTemplate();
 
-    template.hasResourceProperties('AWS::Cognito::UserPool', {
+    expect(() => template.hasResourceProperties('AWS::Cognito::UserPool', {
       UsernameConfiguration: { CaseSensitive: false },
-    });
+    })).not.toThrow();
   });
 
-  it('omits UsernameConfiguration entirely with the pre-#105 compatibility flag', () => {
-    const template = synthCoreTemplate({ omitUserPoolUsernameConfiguration: true });
-
-    const pools = template.findResources('AWS::Cognito::UserPool');
-    const poolProps = Object.values(pools).map((p) => p.Properties ?? {});
+  /**
+   * The app pool (voc-user-pool-*) carries no UsernameConfiguration. The property
+   * must be ABSENT — Cognito rejects any update that carries it against a pool
+   * created without it — and the pool must exist, or the absence assertion
+   * would pass vacuously. The board pool (core-board-auth.ts, 5.45.00 on every
+   * deployment) is a separate, newer pool the flag does not concern.
+   */
+  function expectPoolWithoutUsernameConfiguration(template: Template): void {
+    const poolProps = Object.values(template.findResources('AWS::Cognito::UserPool', {
+      Properties: { UserPoolName: Match.objectLike({ 'Fn::Join': ['', Match.arrayWith(['voc-user-pool-'])] }) },
+    })).map((p) => p.Properties ?? {});
     expect(poolProps).toHaveLength(1);
-    // The property must be ABSENT — Cognito rejects any update that carries
-    // it against a pool created without it.
     expect(poolProps[0]).not.toHaveProperty('UsernameConfiguration');
+  }
+
+  it('omits UsernameConfiguration entirely with the pre-#105 compatibility flag', () => {
+    expectPoolWithoutUsernameConfiguration(synthCoreTemplate({ omitUserPoolUsernameConfiguration: true }));
   });
 
   it('accepts the string form of the flag (CLI -c passes strings)', () => {
-    const template = synthCoreTemplate({ omitUserPoolUsernameConfiguration: 'true' });
-
-    const poolProps = Object.values(template.findResources('AWS::Cognito::UserPool'))
-      .map((p) => p.Properties ?? {});
-    // Guard against a vacuous pass: the pool must exist for the absence
-    // assertion below to mean anything.
-    expect(poolProps).toHaveLength(1);
-    expect(poolProps[0]).not.toHaveProperty('UsernameConfiguration');
+    expectPoolWithoutUsernameConfiguration(synthCoreTemplate({ omitUserPoolUsernameConfiguration: 'true' }));
   });
 });
 
@@ -267,14 +272,14 @@ describe('VocCoreStack raw-data bucket CORS', () => {
    * `Aws.ACCOUNT_ID`/`Aws.REGION` pseudo-parameters, so BucketName synthesizes
    * to an Fn::Join object rather than a comparable string.
    */
-  function rawDataBucketCors(): z.infer<typeof CorsRuleSchema>[] {
-    const buckets = Object.entries(synthCoreTemplate().findResources('AWS::S3::Bucket'));
+  function rawDataBucketCors(template: Template = synthCoreTemplate()): z.infer<typeof CorsRuleSchema>[] {
+    const buckets = Object.entries(template.findResources('AWS::S3::Bucket'));
     const raw = buckets.filter(([logicalId]) => logicalId.startsWith('RawDataBucket'));
     // Count FIRST, parse second. Parsing inside the filter would report a
     // bucket that exists but lost its CORS block as a raw ZodError, hiding
     // which of the two distinct problems actually occurred.
     expect(raw, 'expected exactly one RawDataBucket in the template').toHaveLength(1);
-    const [, bucket] = raw[0];
+    const [, bucket] = itemAt(raw, 0);
     return RawBucketSchema.parse(bucket.Properties).CorsConfiguration.CorsRules;
   }
 
@@ -282,12 +287,13 @@ describe('VocCoreStack raw-data bucket CORS', () => {
     const rules = rawDataBucketCors();
 
     expect(rules).toHaveLength(1);
-    expect(rules[0].AllowedMethods).toEqual(expect.arrayContaining(['GET', 'PUT']));
+    expect(itemAt(rules, 0).AllowedMethods).toStrictEqual(expect.arrayContaining(['GET', 'PUT']));
   });
 
-  it('keeps the localhost dev origins alongside the deployed origin', () => {
-    // Dropping these silently breaks the upload flow under `npm run dev`.
-    expect(rawDataBucketCors()[0].AllowedOrigins).toEqual(
+  it('allows the localhost dev origins only under -c environment=dev (DATA-10)', () => {
+    // A production bucket answers no page on the operator's own machine; a dev deployment keeps them.
+    expect(itemAt(rawDataBucketCors(), 0).AllowedOrigins.filter((o) => o.startsWith('http://localhost'))).toStrictEqual([]);
+    expect(itemAt(rawDataBucketCors(synthCoreTemplate({ environment: 'dev' })), 0).AllowedOrigins).toStrictEqual(
       expect.arrayContaining(['http://localhost:5173', 'http://localhost:3000']),
     );
   });
@@ -296,7 +302,7 @@ describe('VocCoreStack raw-data bucket CORS', () => {
     // Presigned URLs are the auth gate, but the origin list includes a
     // *.cloudfront.net wildcard — so the method list must stay minimal.
     // DELETE/POST here would widen that wildcard into a real concern.
-    expect(rawDataBucketCors()[0].AllowedMethods.sort()).toEqual(['GET', 'PUT']);
+    expect([...itemAt(rawDataBucketCors(), 0).AllowedMethods].sort(byCodeUnit)).toStrictEqual(['GET', 'PUT']);
   });
 });
 
@@ -343,11 +349,6 @@ describe('VocCoreStack S3 server access logging', () => {
     }),
   });
 
-  /** Suppression ids on a resource, or none when the metadata block is absent. */
-  const NagMetadataSchema = z.object({
-    cdk_nag: z.object({ rules_to_suppress: z.array(z.object({ id: z.string() })) }).optional(),
-  });
-
   /** A bucket policy resource, down to the statement list this block reads. */
   const PolicyResourceSchema = z.object({
     Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(z.unknown()) }) }),
@@ -375,7 +376,12 @@ describe('VocCoreStack S3 server access logging', () => {
    * drops the key and the assertion passes while the property it guards is gone.
    */
   const LifecycleSchema = z.object({
-    Rules: z.array(z.object({ ExpirationInDays: z.number(), Status: z.string() }).strict()),
+    Rules: z.array(z.object({
+      ExpirationInDays: z.number(),
+      Status: z.string(),
+      NoncurrentVersionExpiration: z.object({ NoncurrentDays: z.number() }).strict(),
+      AbortIncompleteMultipartUpload: z.object({ DaysAfterInitiation: z.number() }).strict(),
+    }).strict()),
   });
 
   /**
@@ -395,7 +401,7 @@ describe('VocCoreStack S3 server access logging', () => {
     const found = Object.entries(template.findResources('AWS::S3::Bucket'))
       .filter(([logicalId]) => logicalId.startsWith(prefix));
     expect(found, `expected exactly one bucket named ${prefix}*`).toHaveLength(1);
-    return found[0];
+    return itemAt(found, 0);
   }
 
   /**
@@ -411,7 +417,7 @@ describe('VocCoreStack S3 server access logging', () => {
     const policies = Object.entries(template.findResources('AWS::S3::BucketPolicy'))
       .filter(([logicalId]) => logicalId.startsWith('AccessLogsBucketPolicy'));
     expect(policies, 'expected exactly one AccessLogsBucket policy').toHaveLength(1);
-    return PolicyResourceSchema.parse(policies[0][1]).Properties.PolicyDocument.Statement;
+    return PolicyResourceSchema.parse(itemAt(policies, 0)[1]).Properties.PolicyDocument.Statement;
   }
 
   // ONLY these two: the S3-import bucket is the third producer into this
@@ -464,9 +470,11 @@ describe('VocCoreStack S3 server access logging', () => {
 
     // Scoped to this producer's own prefix, so one bucket's grant cannot be
     // used to write over another's logs.
-    const joinParts = grants[0].Resource['Fn::Join'][1];
-    expect(joinParts.at(-1)).toBe(`/${logPrefix}*`);
-    expect(grants[0].Condition.StringEquals['aws:SourceAccount']).toBe(SYNTH_ACCOUNT);
+    const grant = itemAt(grants, 0);
+    expect({
+      resourceSuffix: grant.Resource['Fn::Join'][1].at(-1),
+      sourceAccount: grant.Condition.StringEquals['aws:SourceAccount'],
+    }).toStrictEqual({ resourceSuffix: `/${logPrefix}*`, sourceAccount: SYNTH_ACCOUNT });
   });
 
   it('leaves the access-logs bucket without a destination of its own', () => {
@@ -475,7 +483,7 @@ describe('VocCoreStack S3 server access logging', () => {
     // self-targets — so this is a declined option, not an impossible one. It is
     // declined because log deliveries themselves generate access log records:
     // the bucket would grow on its own writes, against a lifecycle rule that is
-    // UNPREFIXED and expires everything at 90 days, and buy no visibility that
+    // UNPREFIXED and expires everything at 30 days, and buy no visibility that
     // the four producer prefixes do not already give.
     //
     // No suppression is missing either. cdk-nag's AwsSolutions-S1 has a fallback
@@ -488,8 +496,8 @@ describe('VocCoreStack S3 server access logging', () => {
     // `cloudfront-frontend/` prefix never counts because a distribution is not a
     // CfnBucket. So two of the FOUR producers in total — three buckets plus the
     // distribution — satisfy the rule, this bucket is
-    // compliant by construction and raises no finding —
-    // AwsSolutions-VocCoreStack-NagReport.csv records it as `Compliant`. Worth
+    // compliant by construction and raises no finding (the cdk-nag 2 report recorded
+    // it as `Compliant`). Worth
     // stating because the tempting wrong conclusion is that some suppression
     // elsewhere is quietly covering it; none is. Move RawDataBucket to another
     // stack and only WebsiteBucket would remain — move both and the rule starts
@@ -500,13 +508,13 @@ describe('VocCoreStack S3 server access logging', () => {
     expect(accessLogs.Properties ?? {}).not.toHaveProperty('LoggingConfiguration');
   });
 
-  it('expires everything in the access-logs bucket at 90 days, with no prefix', () => {
+  it('expires everything in the access-logs bucket at 30 days, with no prefix', () => {
     // The premise two comments in this block rest on, and the reason adding a
     // fourth producer needed no lifecycle change at all: the rule is BUCKET-WIDE,
     // so `website-bucket/` — and `raw-data-bucket/`, `s3-import-bucket/`,
-    // `cloudfront-frontend/` — inherit the 90-day expiry without a rule of their
+    // `cloudfront-frontend/` — inherit the 30-day expiry without a rule of their
     // own. The absence of `Prefix` is the load-bearing half. Add a prefix-scoped
-    // rule (the plausible next step: "keep CloudFront logs 30 days, S3 logs 90")
+    // rule (the plausible next step: "keep CloudFront logs 7 days, S3 logs 30")
     // and every unlisted prefix accumulates forever, which is invisible in a diff
     // and would silently falsify both the comment above and this PR's claim that
     // the destination needed no changes.
@@ -517,22 +525,27 @@ describe('VocCoreStack S3 server access logging', () => {
 
     const rules = LifecycleSchema.parse(accessLogs.Properties?.LifecycleConfiguration).Rules;
     expect(rules, 'expected exactly one lifecycle rule on the access-logs bucket').toHaveLength(1);
-    expect(rules[0].ExpirationInDays).toBe(90);
-    expect(rules[0].Status).toBe('Enabled');
+    expect(itemAt(rules, 0)).toStrictEqual({
+      ExpirationInDays: ACCESS_LOGS_EXPIRATION_DAYS,
+      Status: 'Enabled',
+      NoncurrentVersionExpiration: { NoncurrentDays: ACCESS_LOGS_NONCURRENT_VERSION_DAYS },
+      AbortIncompleteMultipartUpload: { DaysAfterInitiation: ABORT_MULTIPART_DAYS },
+    });
   });
 
-  it('carries no AwsSolutions-S1 suppression on the website bucket', () => {
+  it('carries no AwsSolutions-S1 acknowledgement on the website bucket', () => {
     // The retired suppression described the missing property above. With the
-    // property present the rule no longer fires, so a suppression would be dead
+    // property present the rule no longer fires, so an acknowledgement would be dead
     // metadata that a later audit has to re-litigate.
     //
-    // Narrowed to this one rule on purpose: a future suppression on this bucket
+    // Narrowed to this one rule on purpose: a future acknowledgement on this bucket
     // for some OTHER finding is a legitimate act, and it must not fail a case
-    // whose whole subject is AwsSolutions-S1.
-    const [, website] = bucketByLogicalIdPrefix(synthCoreTemplate(), 'WebsiteBucket');
+    // whose whole subject is AwsSolutions-S1. Read on the bucket's CfnBucket and
+    // its ancestors, which is where cdk-nag 3 looks.
+    const { websiteBucket } = buildCoreStack();
+    const cfn = websiteBucket.node.defaultChild ?? websiteBucket;
 
-    const suppressions = NagMetadataSchema.parse(website.Metadata ?? {}).cdk_nag?.rules_to_suppress ?? [];
-    expect(suppressions.map((rule) => rule.id)).not.toContain('AwsSolutions-S1');
+    expect(acknowledgementCovering(cfn, 'AwsSolutions-S1')).toBeUndefined();
   });
 });
 
@@ -570,7 +583,7 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
   function distributionConfig(): z.infer<typeof DistributionConfigSchema> {
     const distributions = Object.values(synthCoreTemplate().findResources('AWS::CloudFront::Distribution'));
     expect(distributions, 'expected exactly one frontend distribution').toHaveLength(1);
-    return DistributionConfigSchema.parse(distributions[0].Properties.DistributionConfig);
+    return DistributionConfigSchema.parse(itemAt(distributions, 0).Properties.DistributionConfig);
   }
 
   it('restricts every non-default cache behavior to a trusted key group', () => {
@@ -580,7 +593,7 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     // "needs a signature".
     const behaviors = distributionConfig().CacheBehaviors;
 
-    expect(behaviors.map((b) => b.PathPattern).sort()).toEqual([...PRIVATE_PATHS].sort());
+    expect(behaviors.map((b) => b.PathPattern).sort(byCodeUnit)).toStrictEqual([...PRIVATE_PATHS].sort(byCodeUnit));
     for (const behavior of behaviors) {
       expect(behavior.TrustedKeyGroups, `${behavior.PathPattern} must require a signature`)
         .toBeDefined();
@@ -616,9 +629,16 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     const websitePolicies = policies.filter(([logicalId]) => logicalId.startsWith('WebsiteBucket'));
     expect(websitePolicies, 'expected a WebsiteBucket policy').toHaveLength(1);
 
-    const statements = websitePolicies[0][1].Properties.PolicyDocument.Statement as {
-      Action?: unknown; Principal?: { Service?: string };
-    }[];
+    const statements = z.object({
+      Properties: z.object({
+        PolicyDocument: z.object({
+          Statement: z.array(z.object({
+            Action: z.unknown(),
+            Principal: z.object({ Service: z.string().optional() }).optional(),
+          })),
+        }),
+      }),
+    }).parse(itemAt(websitePolicies, 0)[1]).Properties.PolicyDocument.Statement;
     const listStatements = statements.filter(
       (s) => s.Action === 's3:ListBucket' && s.Principal?.Service === 'cloudfront.amazonaws.com',
     );
@@ -634,7 +654,7 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     const rawPolicies = policies.filter(([logicalId]) => logicalId.startsWith('RawDataBucket'));
     expect(rawPolicies).toHaveLength(1);
 
-    const serialized = JSON.stringify(rawPolicies[0][1].Properties.PolicyDocument);
+    const serialized = JSON.stringify(itemAt(rawPolicies, 0)[1].Properties.PolicyDocument);
 
     expect(serialized).not.toContain('s3:ListBucket');
   });
@@ -652,8 +672,9 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     );
     expect(signingKeyFns).toHaveLength(1);
 
-    expect(signingKeyFns[0].Properties.Code).not.toHaveProperty('ZipFile');
-    expect(signingKeyFns[0].Properties.Code).toHaveProperty('S3Bucket');
+    const { Code: code } = itemAt(signingKeyFns, 0).Properties;
+    expect(code).not.toHaveProperty('ZipFile');
+    expect(code).toHaveProperty('S3Bucket');
   });
 
   it('keeps the prototype CSP on the prototypes behavior', () => {
@@ -663,15 +684,70 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     // that it is still attached and still forbids everything by default.
     const template = synthCoreTemplate();
     const policies = Object.values(template.findResources('AWS::CloudFront::ResponseHeadersPolicy'));
-    const csps = policies.map(
-      (p) => p.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig
-        ?.ContentSecurityPolicy?.ContentSecurityPolicy as string | undefined,
-    );
+    const csps = policies.map((p): string | undefined => {
+      const csp: unknown = recordAt(
+        p, 'Properties', 'ResponseHeadersPolicyConfig', 'SecurityHeadersConfig', 'ContentSecurityPolicy',
+      )?.ContentSecurityPolicy;
+      return typeof csp === 'string' ? csp : undefined;
+    });
 
     const prototypeCsp = csps.find((csp) => csp?.includes("script-src 'unsafe-inline'"));
     expect(prototypeCsp, 'prototype response-headers policy is missing').toBeDefined();
-    expect(prototypeCsp).toContain("default-src 'none'");
+    expect(prototypeCsp).toBe(PROTOTYPE_BASE_CSP);
     expect(prototypeCsp).not.toContain('connect-src');
+  });
+
+  // The function adds connect-src for a prototype's OWN pin submit URL and
+  // nothing broader (lib/utils/prototype-csp.test.ts runs its source). Pin that
+  // it is the source CloudFront gets, on the viewer response of that behavior.
+  const prototypeCspFunctions = () => Object.entries(synthCoreTemplate().findResources('AWS::CloudFront::Function'));
+
+  it('deploys exactly the tested prototype CSP function source, on the 2.0 runtime', () => {
+    const functions = prototypeCspFunctions();
+    expect(functions).toHaveLength(1);
+    const properties = recordAt(itemAt(functions, 0)[1], 'Properties');
+    expect(properties?.FunctionCode).toBe(prototypeCspFunctionCode());
+    expect(recordAt(properties, 'FunctionConfig')?.Runtime).toBe('cloudfront-js-2.0');
+  });
+
+  it('runs that function on the viewer response of /prototypes/*, and of no other behavior', () => {
+    const [functionId] = itemAt(prototypeCspFunctions(), 0);
+    const distribution = itemAt(Object.values(synthCoreTemplate().findResources('AWS::CloudFront::Distribution')), 0);
+    const behaviors = z.array(z.object({
+      PathPattern: z.string(),
+      FunctionAssociations: z.array(z.object({ EventType: z.string(), FunctionARN: z.unknown() })).optional(),
+    })).parse(recordAt(distribution, 'Properties', 'DistributionConfig')?.CacheBehaviors);
+    const associated = behaviors.filter((behavior) => (behavior.FunctionAssociations ?? []).length > 0);
+    expect(associated.map((behavior) => behavior.PathPattern)).toStrictEqual(['/prototypes/*']);
+    expect(associated[0]?.FunctionAssociations).toStrictEqual([
+      { EventType: 'viewer-response', FunctionARN: { 'Fn::GetAtt': [functionId, 'FunctionARN'] } },
+    ]);
+  });
+
+  it('lets the function own the prototype CSP header: the policy only fills in when it did not run', () => {
+    const prototypePolicy = Object.values(synthCoreTemplate().findResources('AWS::CloudFront::ResponseHeadersPolicy'))
+      .map((policy) => recordAt(policy, 'Properties', 'ResponseHeadersPolicyConfig', 'SecurityHeadersConfig', 'ContentSecurityPolicy'))
+      .find((csp) => csp?.ContentSecurityPolicy === PROTOTYPE_BASE_CSP);
+    expect(prototypePolicy?.Override).toBe(false);
+  });
+
+  // Same origin as the SPA (Cognito tokens in localStorage): both the fallback
+  // policy and the function must give a prototype document an opaque origin.
+  it('sandboxes prototypes without allow-same-origin in the fallback policy AND the function', () => {
+    const template = synthCoreTemplate();
+    const policyCsp = Object.values(template.findResources('AWS::CloudFront::ResponseHeadersPolicy'))
+      .map((policy) => recordAt(policy, 'Properties', 'ResponseHeadersPolicyConfig', 'SecurityHeadersConfig',
+        'ContentSecurityPolicy')?.ContentSecurityPolicy)
+      .find((csp): csp is string => typeof csp === 'string' && csp.includes("script-src 'unsafe-inline'"));
+    const functionCode = recordAt(itemAt(prototypeCspFunctions(), 0)[1], 'Properties')?.FunctionCode;
+    const posture = (csp: unknown) => typeof csp === 'string' && {
+      sandbox: csp.includes('sandbox allow-scripts allow-popups;'),
+      formAction: csp.includes("form-action 'none'"),
+      widened: ['allow-same-origin', 'allow-forms', 'allow-top-navigation'].filter((flag) => csp.includes(flag)),
+    };
+    const expected = { sandbox: true, formAction: true, widened: [] };
+    expect({ policy: posture(policyCsp), function: posture(functionCode) })
+      .toStrictEqual({ policy: expected, function: expected });
   });
 
   it('never puts signing key MATERIAL in the template', () => {
@@ -701,14 +777,33 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     expect(signingSecrets).toHaveLength(1);
 
     // Generated, not literal: a SecretString here would be the key in the template.
-    expect(signingSecrets[0].Properties).toHaveProperty('GenerateSecretString');
-    expect(signingSecrets[0].Properties).not.toHaveProperty('SecretString');
+    const signingSecretProps = itemAt(signingSecrets, 0).Properties;
+    expect(signingSecretProps).toHaveProperty('GenerateSecretString');
+    expect(signingSecretProps).not.toHaveProperty('SecretString');
   });
 
   it('still synthesizes deterministically with the keypair custom resource', () => {
     // Generating a key at synth time instead would break this — which is
     // precisely why it is generated at deploy time.
-    expect(synthCoreTemplate().toJSON()).toEqual(synthCoreTemplate().toJSON());
+    expect(synthCoreTemplate().toJSON()).toStrictEqual(synthCoreTemplate().toJSON());
+  });
+});
+
+/**
+ * 5.64.00 transition: VocApiStack stopped importing the identity pool id, but the DEPLOYED VocApiStack
+ * still imports it until its own update, and VocCoreStack deploys first. Without the explicit
+ * `exportValue` CDK drops the export with its last consumer and CloudFormation refuses the Core update
+ * ("export ... is in use"). Remove this case together with the pool.
+ */
+describe('VocCoreStack keeps the identity pool id export for the deployed VocApiStack (5.64.00)', () => {
+  it('exports the pool id under the name the deployed VocApiStack imports', () => {
+    // `<stack name>:` + the name CDK derives from the pool's logical id; the real app's
+    // `VocCoreStack:ExportsOutputFnGetAttVocIdentityPoolId9B6189CA` is pinned in baseline.json.
+    const outputs = z.record(z.string(), z.object({ Export: z.object({ Name: z.string() }).optional() }))
+      .parse(synthCoreTemplate().toJSON()['Outputs']);
+    const exported = Object.values(outputs).flatMap((output) => (output.Export ? [output.Export.Name] : []));
+
+    expect(exported).toContainEqual('TestCoreStack:ExportsOutputFnGetAttVocIdentityPoolId9B6189CA');
   });
 });
 
@@ -749,10 +844,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
   // an empty action set because both fields above are then legitimately absent.
   const ActionOrResourceSchema = z
     .union([z.string(), z.array(z.string())], {
-      errorMap: () => ({
-        message:
-          'unreadable Action/Resource shape (an Fn::If or Fn::Join?) — extend this schema to read it',
-      }),
+      error: 'unreadable Action/Resource shape (an Fn::If or Fn::Join?) — extend this schema to read it',
     })
     .optional();
   /**
@@ -765,10 +857,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
    * below and fail on their value instead.
    */
   const UNREADABLE_POOL_REF = {
-    errorMap: () => ({
-      message:
-        'unreadable Identity Pool reference (a cross-stack import or Fn::GetAtt?) — extend this schema to read it',
-    }),
+    error: 'unreadable Identity Pool reference (a cross-stack import or Fn::GetAtt?) — extend this schema to read it',
   };
   const StatementSchema = z.object({
     Action: ActionOrResourceSchema,
@@ -814,7 +903,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     expect(attachments, 'expected exactly one IdentityPoolRoleAttachment').toHaveLength(1);
     const authenticated = z
       .object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) })
-      .parse(attachments[0].Properties?.Roles?.authenticated);
+      .parse(itemAt(attachments, 0).Properties?.Roles?.authenticated);
     return authenticated['Fn::GetAtt'][0];
   }
 
@@ -822,7 +911,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
   function identityPoolLogicalId(template: Template): string {
     const pools = Object.keys(template.findResources('AWS::Cognito::IdentityPool'));
     expect(pools, 'expected exactly one Identity Pool').toHaveLength(1);
-    return pools[0];
+    return itemAt(pools, 0);
   }
 
   /**
@@ -846,12 +935,62 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
       .parse(audience).Ref;
   }
 
+  /**
+   * The role the Identity Pool hands to a signed-in browser, failing with the
+   * cause named when the attachment points at something that is not a role here.
+   */
+  function authenticatedRole(template: Template): ReturnType<Template['findResources']>[string] {
+    const logicalId = authenticatedRoleLogicalId(template);
+    return valueAt(
+      template.findResources('AWS::IAM::Role'),
+      logicalId,
+      `the attachment names ${logicalId}, which is not a role in this template`,
+    );
+  }
+
+  /**
+   * The ONE statement of the role's trust document, which must be federated.
+   *
+   * Non-empty is the anti-vacuity half — the role must STILL be assumable by
+   * the pool, so deleting it cannot green the cases above. Exactly-one is the
+   * fail-open half: a second federated statement has no legitimate purpose
+   * here, so refusing the shape beats trying to read every way it could widen
+   * the trust, the same stance the `ManagedPolicyArns` guard takes.
+   */
+  function soleFederatedTrustStatement(template: Template): unknown {
+    // StatementsSchema, not PolicyDocumentSchema: the latter's statement shape
+    // lists Action/Resource and zod strips the rest, which would drop the
+    // `Principal` this case is about.
+    const trust = StatementsSchema.parse(authenticatedRole(template).Properties?.AssumeRolePolicyDocument);
+    // Every federated statement, not the first one `find()` happens to return:
+    // IAM evaluates a trust document as a UNION, so the trust is only as tight as
+    // its LOOSEST statement. Reading one of them made the guard's outcome depend
+    // on statement ORDER — appending a second federated statement with no `aud`
+    // and `amr: unauthenticated` left this case green while the role became
+    // assumable by anonymous identities from any pool in any AWS account.
+    const federatedStatements = trust.Statement.filter(
+      (statement) =>
+        z
+          .object({ Principal: z.object({ Federated: z.string() }) })
+          .safeParse(statement)
+          .data?.Principal.Federated === 'cognito-identity.amazonaws.com',
+    );
+    // The second count catches what the first cannot: a statement with a
+    // NON-federated principal (`Principal.AWS: '*'` + `sts:AssumeRole`) never
+    // matches the predicate above, yet it widens who can assume this role just
+    // as much. One assertion over both counts, so a failure shows the two side
+    // by side.
+    expect(
+      { federatedStatements: federatedStatements.length, allStatements: trust.Statement.length },
+      'the trust must be exactly one federated statement, must still have one, and must carry no other',
+    ).toStrictEqual({ federatedStatements: 1, allStatements: 1 });
+    return itemAt(federatedStatements, 0);
+  }
+
   /** Every statement that role can act under, however the policy is attached. */
   function authenticatedRoleStatements(template: Template): z.infer<typeof StatementSchema>[] {
     const logicalId = authenticatedRoleLogicalId(template);
-    const role = template.findResources('AWS::IAM::Role')[logicalId];
-    expect(role, `the attachment names ${logicalId}, which is not a role in this template`)
-      .toBeDefined();
+    const role = authenticatedRole(template);
 
     // ANY `ManagedPolicyArns` entry fails loudly, because this guard does not
     // follow the reference: an AWS-managed or cross-stack ARN is a string whose
@@ -865,7 +1004,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     expect(
       role.Properties?.ManagedPolicyArns ?? [],
       'authenticated role gained a managed policy — inspect it, and extend this guard to read it if it is in-stack',
-    ).toEqual([]);
+    ).toStrictEqual([]);
 
     // All three IN-TEMPLATE attachment shapes, reduced to a flat list of policy
     // DOCUMENTS:
@@ -908,7 +1047,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     expect(actions).not.toContain('lambda:InvokeFunctionUrl');
     // And nothing else in the lambda: namespace either — `lambda:*` or
     // `lambda:InvokeAsync` would be the same bypass under a different spelling.
-    expect(actions.filter((action) => /^lambda:|^\*$/.test(action))).toEqual([]);
+    expect(actions.filter((action) => /^lambda:|^\*$/.test(action))).toStrictEqual([]);
   });
 
   it('names no chat-stream Lambda among its resources', () => {
@@ -925,46 +1064,10 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
 
   it('keeps the pool attachment and the federated trust policy intact', () => {
     // The removal above is a permission removal only. The pool, the role and the
-    // attachment stay — Amplify is configured from `identityPoolId` and the
-    // credential exchange needs an assumable role — so a change that deleted the
-    // role outright would make the two cases above vacuously green.
+    // attachment stay until a release deletes them on purpose, so a change that
+    // deleted the role outright would make the two cases above vacuously green.
     const template = synthCoreTemplate();
-    const role = template.findResources('AWS::IAM::Role')[authenticatedRoleLogicalId(template)];
-
-    // StatementsSchema, not PolicyDocumentSchema: the latter's statement shape
-    // lists Action/Resource and zod strips the rest, which would drop the
-    // `Principal` this case is about.
-    const trust = StatementsSchema.parse(role.Properties?.AssumeRolePolicyDocument);
-    // Every federated statement, not the first one `find()` happens to return:
-    // IAM evaluates a trust document as a UNION, so the trust is only as tight as
-    // its LOOSEST statement. Reading one of them made the guard's outcome depend
-    // on statement ORDER — appending a second federated statement with no `aud`
-    // and `amr: unauthenticated` left this case green while the role became
-    // assumable by anonymous identities from any pool in any AWS account.
-    const federatedStatements = trust.Statement.filter(
-      (statement) =>
-        z
-          .object({ Principal: z.object({ Federated: z.string() }) })
-          .safeParse(statement)
-          .data?.Principal.Federated === 'cognito-identity.amazonaws.com',
-    );
-
-    // Non-empty is the anti-vacuity half — the role must STILL be assumable by
-    // the pool, so deleting it cannot green the cases above. Exactly-one is the
-    // fail-open half: a second federated statement has no legitimate purpose
-    // here, so refusing the shape beats trying to read every way it could widen
-    // the trust, the same stance the `ManagedPolicyArns` guard takes.
-    expect(
-      federatedStatements,
-      'the trust must be exactly one federated statement, and must still have one',
-    ).toHaveLength(1);
-    // And nothing else in the document either. A statement with a NON-federated
-    // principal (`Principal.AWS: '*'` + `sts:AssumeRole`) never matches the
-    // predicate above, so counting only federated statements would not see it,
-    // yet it widens who can assume this role just as much.
-    expect(trust.Statement, 'the trust must carry no statement beyond that one').toHaveLength(1);
-
-    const federated = federatedStatements[0];
+    const federated = soleFederatedTrustStatement(template);
 
     // The assertions carrying weight, read structurally rather than as substrings
     // of the rendered statement: the presence of a condition KEY says nothing
@@ -1015,18 +1118,18 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     ).toBe('authenticated');
   });
 
-  it('leaves no AwsSolutions-IAM5 suppression on the role with no wildcard left to suppress', () => {
-    // The grant's blanket suppression (no `appliesTo`) was removed with it. A
-    // suppression that outlives its finding is worse than none: it silences
-    // whatever wildcard the next edit adds here, and cdk-nag would not complain.
+  it('leaves no AwsSolutions-IAM5 acknowledgement over the role with no wildcard left to acknowledge', () => {
+    // The grant's blanket suppression was removed with it. An acknowledgement
+    // that outlives its finding is worse than none: it silences whatever
+    // identical wildcard the next edit adds here, and cdk-nag would not complain.
     //
-    // SCOPE: this reads the suppressions attached to the ROLE RESOURCE. A
-    // stack-level one (`NagSuppressions.addStackSuppressions`) or one on an
-    // ancestor construct lands elsewhere in the template and is not seen here.
-    const template = synthCoreTemplate();
-    const role = template.findResources('AWS::IAM::Role')[authenticatedRoleLogicalId(template)];
+    // SCOPE: the role's CfnRole and every ancestor (the role construct, the
+    // stack, the app) — everything cdk-nag 3 consults for a finding on it.
+    const stack = buildCoreStack();
+    const role = constructRendering(stack, authenticatedRoleLogicalId(Template.fromStack(stack)));
 
-    expect(JSON.stringify(role.Metadata ?? {})).not.toContain('AwsSolutions-IAM5');
+    const acknowledged = role.node.scopes.flatMap(acknowledgementsOn).map((ack) => ack.id);
+    expect(acknowledged.filter((id) => id.startsWith('AwsSolutions-IAM5'))).toStrictEqual([]);
   });
 });
 
@@ -1036,7 +1139,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
  * in the URL fragment (browser history / Referer leakage) and cannot be
  * protected by PKCE — OAuth 2.1 drops it entirely.
  *
- * The application signs in via SRP (amazon-cognito-identity-js) and never
+ * The application signs in via SRP (Amplify v6, aws-amplify/auth) and never
  * uses the hosted-UI redirect flow, so disabling it is safe. A repository-
  * wide search at the time of writing found core-stack.ts to be the only
  * file referencing the implicit flow or the hosted-UI domain.
@@ -1057,9 +1160,12 @@ describe('VocCoreStack Cognito OAuth flow set (issue #252)', () => {
   });
 
   function allowedOAuthFlows(): string[] {
-    const clients = Object.values(synthCoreTemplate().findResources('AWS::Cognito::UserPoolClient'));
-    expect(clients, 'expected exactly one UserPoolClient').toHaveLength(1);
-    return UserPoolClientSchema.parse(clients[0].Properties).AllowedOAuthFlows;
+    // The app client (voc-web-client-*); the board client has no OAuth at all (core-engagement.test.ts).
+    const clients = Object.values(synthCoreTemplate().findResources('AWS::Cognito::UserPoolClient', {
+      Properties: { ClientName: Match.objectLike({ 'Fn::Join': ['', Match.arrayWith(['voc-web-client-'])] }) },
+    }));
+    expect(clients, 'expected exactly one app UserPoolClient').toHaveLength(1);
+    return UserPoolClientSchema.parse(itemAt(clients, 0).Properties).AllowedOAuthFlows;
   }
 
   it('enables the authorization-code flow ("code")', () => {
@@ -1109,7 +1215,7 @@ describe('VocCoreStack product doc extractor', () => {
     // Count FIRST, parse second: a function that exists but lost its
     // Environment block should read as a schema error, not as "not found".
     expect(extractors, 'expected exactly one ProductDocExtractorLambda').toHaveLength(1);
-    return FunctionSchema.parse(extractors[0][1].Properties);
+    return FunctionSchema.parse(itemAt(extractors, 0)[1].Properties);
   }
 
   /** Statements from the extractor role's default policy. */
@@ -1117,14 +1223,14 @@ describe('VocCoreStack product doc extractor', () => {
     const policies = Object.entries(synthCoreTemplate().findResources('AWS::IAM::Policy'))
       .filter(([logicalId]) => logicalId.startsWith('ProductDocExtractorLambdaServiceRoleDefaultPolicy'));
     expect(policies, 'expected exactly one extractor role policy').toHaveLength(1);
-    return policies[0][1].Properties.PolicyDocument.Statement;
+    return itemAt(policies, 0)[1].Properties.PolicyDocument.Statement;
   }
 
   it('exists as an ARM Python function with a 120s timeout', () => {
     const fn = extractorFunction();
 
     expect(fn.Handler).toBe('handler.lambda_handler');
-    expect(fn.Architectures).toEqual(['arm64']);
+    expect(fn.Architectures).toStrictEqual(['arm64']);
     // Must stay well under product_context.py's EXTRACTION_STALL_SECONDS (300),
     // which fails any record not extracted inside that window — a longer timeout
     // would start marking SUCCESSFUL extractions as failed.
@@ -1163,7 +1269,7 @@ describe('VocCoreStack product doc extractor', () => {
     const functions = Object.entries(synthCoreTemplate().findResources('AWS::Lambda::Function'))
       .filter(([logicalId]) => logicalId.startsWith('ProductDocExtractorLambda'));
 
-    expect(functions[0][1].Properties).not.toHaveProperty('Layers');
+    expect(itemAt(functions, 0)[1].Properties).not.toHaveProperty('Layers');
   });
 
   it('registers the notification on the RawDataBucket in THIS stack, filtered to projects/', () => {
@@ -1172,52 +1278,54 @@ describe('VocCoreStack product doc extractor', () => {
       .filter((r) => JSON.stringify(r.Properties?.BucketName ?? '').includes('RawDataBucket'));
     expect(notifications, 'expected a notification on the RawDataBucket').toHaveLength(1);
 
-    const configs = notifications[0].Properties.NotificationConfiguration
-      .LambdaFunctionConfigurations as {
-        Events: string[];
-        Filter?: { Key: { FilterRules: { Name: string; Value: string }[] } };
-        LambdaFunctionArn: { 'Fn::GetAtt': string[] };
-      }[];
+    const configs = z.array(z.object({
+      Events: z.array(z.string()),
+      Filter: z.object({
+        Key: z.object({ FilterRules: z.array(z.object({ Name: z.string(), Value: z.string() })) }),
+      }).optional(),
+      LambdaFunctionArn: z.object({ 'Fn::GetAtt': z.array(z.string()) }),
+    })).parse(itemAt(notifications, 0).Properties.NotificationConfiguration.LambdaFunctionConfigurations);
     // ONE rule: S3 permits a single prefix per rule and rejects overlapping
     // rules for the same event type, so this cannot be narrowed per project.
     expect(configs).toHaveLength(1);
-    expect(configs[0].Events).toEqual(['s3:ObjectCreated:*']);
-    expect(configs[0].Filter?.Key.FilterRules).toEqual([{ Name: 'prefix', Value: 'projects/' }]);
+    const config = itemAt(configs, 0);
+    expect({ events: config.Events, filterRules: config.Filter?.Key.FilterRules }).toStrictEqual({
+      events: ['s3:ObjectCreated:*'],
+      filterRules: [{ Name: 'prefix', Value: 'projects/' }],
+    });
     // Same-stack target — this is the assertion that would fail if the function
     // were ever moved to the processing stack.
-    expect(configs[0].LambdaFunctionArn['Fn::GetAtt'][0]).toMatch(/^ProductDocExtractorLambda/);
+    expect(config.LambdaFunctionArn['Fn::GetAtt'].at(0)).toMatch(/^ProductDocExtractorLambda/);
   });
 
   it('grants Bedrock invoke on the allowlisted models only', () => {
-    const bedrockStatements = extractorPolicyStatements()
-      .filter((s) => s.Action === 'bedrock:InvokeModel');
-    expect(bedrockStatements).toHaveLength(1);
-
-    const resources = bedrockStatements[0].Resource as string[];
-    // Every allowlisted model, and nothing that would let it reach another one.
-    for (const modelId of ALLOWED_MODEL_IDS) {
-      expect(resources.some((arn) => arn.includes(modelId))).toBe(true);
-    }
-    expect(resources.some((arn) => arn === '*' || arn.endsWith('foundation-model/*'))).toBe(false);
+    // The Claude grant is the stack's shared managed policies, not the inline policy.
+    expect(extractorPolicyStatements().filter((s) => JSON.stringify(s.Action).includes('bedrock:'))).toStrictEqual([]);
+    const grant = claudeRoleGrantOf('Core', synthCoreTemplate().toJSON(), 'ProductDocExtractorLambdaServiceRole');
+    // Every allowlisted model in all three parts, and nothing that would let it reach another one.
+    expect(missingModelGrants([grant], ALLOWED_MODEL_IDS, 'global')).toStrictEqual([]);
+    expect(grant.statements.flatMap((s) => s.resources).filter((arn) => arn.includes('*'))).toStrictEqual([]);
   });
 
   it('scopes the S3 write to the extracted/ prefix and never to raw/', () => {
     // A write grant reaching raw/ would let this role overwrite the user's own
     // uploads — including the input it is about to read.
     const writeStatements = extractorPolicyStatements().filter(
-      (s) => Array.isArray(s.Action) && (s.Action as string[]).includes('s3:PutObject'),
+      (s) => Array.isArray(s.Action) && s.Action.includes('s3:PutObject'),
     );
     expect(writeStatements).toHaveLength(1);
 
-    const rendered = JSON.stringify(writeStatements[0].Resource);
+    const rendered = JSON.stringify(itemAt(writeStatements, 0).Resource);
     expect(rendered).toContain('/projects/*/product_docs/extracted/*');
     expect(rendered).not.toContain('product_docs/raw');
+  });
 
+  it('scopes the S3 read to the raw/ upload prefix', () => {
     const readStatements = extractorPolicyStatements().filter(
-      (s) => Array.isArray(s.Action) && (s.Action as string[]).includes('s3:GetObject*'),
+      (s) => Array.isArray(s.Action) && s.Action.includes('s3:GetObject'),
     );
     expect(readStatements).toHaveLength(1);
-    expect(JSON.stringify(readStatements[0].Resource)).toContain('/projects/*/product_docs/raw/*');
+    expect(JSON.stringify(itemAt(readStatements, 0).Resource)).toContain('/projects/*/product_docs/raw/*');
   });
 
   it('injects a MODEL_ALLOWLIST that parses to a non-empty array of allowlisted ids', () => {
@@ -1227,10 +1335,13 @@ describe('VocCoreStack product doc extractor', () => {
     const env = extractorFunction().Environment.Variables;
 
     expect(typeof env.MODEL_ALLOWLIST).toBe('string');
-    const parsed: unknown = JSON.parse(env.MODEL_ALLOWLIST as string);
+    const parsed: unknown = JSON.parse(String(env.MODEL_ALLOWLIST));
     expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed as string[]).toEqual([...ALLOWED_MODEL_IDS]);
-    expect((parsed as string[]).length).toBeGreaterThan(0);
+    expect(parsed).toStrictEqual([...ALLOWED_MODEL_IDS]);
+  });
+
+  it('has a non-empty allowlist to inject, so the equality above is not vacuous', () => {
+    expect(ALLOWED_MODEL_IDS.length).toBeGreaterThan(0);
   });
 
   it('injects the image caps and the default model, all resolvable at runtime', () => {
@@ -1238,9 +1349,12 @@ describe('VocCoreStack product doc extractor', () => {
 
     // Strings, because Lambda environment values are strings — a number here
     // fails at synth, but a missing one only fails in production.
-    expect(env.MAX_IMAGE_BYTES).toBe(String(MAX_IMAGE_BYTES));
-    expect(env.MAX_IMAGE_DIMENSION_PX).toBe(String(MAX_IMAGE_DIMENSION_PX));
-    expect(ALLOWED_MODEL_IDS).toContain(env.DEFAULT_MODEL_ID as string);
+    expect(env).toMatchObject({
+      MAX_IMAGE_BYTES: String(MAX_IMAGE_BYTES),
+      MAX_IMAGE_DIMENSION_PX: String(MAX_IMAGE_DIMENSION_PX),
+    });
+    expect(typeof env.DEFAULT_MODEL_ID).toBe('string');
+    expect(ALLOWED_MODEL_IDS).toContain(String(env.DEFAULT_MODEL_ID));
     for (const key of ['RAW_DATA_BUCKET', 'PROJECTS_TABLE', 'AGGREGATES_TABLE']) {
       expect(env[key], `${key} must be injected`).toBeDefined();
     }
@@ -1290,12 +1404,11 @@ describe('DynamoDB TTL, as the verification fixture relies on it', () => {
     const entries = Object.entries(synthCoreTemplate().findResources('AWS::DynamoDB::Table'))
       .filter(([logicalId]) => logicalId.startsWith(constructId));
     expect(entries, `expected exactly one ${constructId}`).toHaveLength(1);
-    return (entries[0][1] as { Properties: Record<string, unknown> })
-      .Properties.TimeToLiveSpecification;
+    return recordAt(itemAt(entries, 0)[1], 'Properties')?.TimeToLiveSpecification;
   };
 
   it('expires Aggregates rows on the `ttl` attribute', () => {
-    expect(ttlOf('AggregatesTable')).toEqual({ AttributeName: 'ttl', Enabled: true });
+    expect(ttlOf('AggregatesTable')).toStrictEqual({ AttributeName: 'ttl', Enabled: true });
   });
 
   it('does NOT expire Projects rows, so fixture cleanup depends on teardown', () => {
@@ -1307,5 +1420,65 @@ describe('DynamoDB TTL, as the verification fixture relies on it', () => {
       + 'Update this case, docs/deployment.md and the header of '
       + 'lambda/api/verification_fixture_provider.py together.',
     ).toBeUndefined();
+  });
+});
+
+/**
+ * Runtime keeps everything, teardown removes everything (#248). Feedback items carry no TTL, so nothing is deleted while
+ * the platform runs; deleting the stack is a full cleanup: every table, the raw
+ * bucket (emptied of every object version first) and the KMS key go with it.
+ * No table carries deletion protection (it would block that teardown) and
+ * every one keeps point-in-time recovery.
+ */
+/**
+ * Capacity pin (QA perf, 2026-10): the CDN signing-key generator measured 78.9%
+ * of 128 MB and a 4.4 s CPU-bound run (RSA keygen) in production, over the
+ * owner's 70% memory/CPU rule. 256 MB is the next step; going back below it
+ * reintroduces the overload.
+ */
+describe('VocCoreStack CDN signing-key Lambda capacity', () => {
+  it('runs with 256 MB', () => {
+    const functions = Object.entries(synthCoreTemplate().findResources('AWS::Lambda::Function'))
+      .filter(([logicalId]) => logicalId.startsWith('CdnSigningKeysLambda'));
+    expect(functions, 'expected exactly one CdnSigningKeysLambda').toHaveLength(1);
+    const props = z.object({ MemorySize: z.number() }).parse(itemAt(functions, 0)[1].Properties);
+    expect(props.MemorySize).toBe(256);
+  });
+});
+
+describe('raw bucket scratch copies (DATA-4)', () => {
+  it('expire scratch/ claim-checks a failed workflow left behind', () => {
+    const [bucket] = Object.entries(synthCoreTemplate().findResources('AWS::S3::Bucket'))
+      .filter(([id]) => id.startsWith('RawDataBucket')).map(([, resource]) => resource);
+    expect(bucket).toMatchObject({ Properties: { LifecycleConfiguration: { Rules: expect.arrayContaining([
+      { Id: 'scratch-expiry', Prefix: 'scratch/', Status: 'Enabled', ExpirationInDays: SCRATCH_EXPIRATION_DAYS,
+        NoncurrentVersionExpiration: { NoncurrentDays: SCRATCH_EXPIRATION_DAYS } },
+    ]) } } });
+  });
+});
+
+describe('the SPA security headers (WA SEC11, EDGE-3/4/6)', () => {
+  const spaPolicy = () => Object.values(synthCoreTemplate().findResources('AWS::CloudFront::ResponseHeadersPolicy'))
+    .map((policy) => recordAt(policy, 'Properties', 'ResponseHeadersPolicyConfig'))
+    .find((config) => recordAt(config, 'SecurityHeadersConfig', 'ContentSecurityPolicy')?.ContentSecurityPolicy
+      !== PROTOTYPE_BASE_CSP);
+
+  it('limits form posts to the app and drops the dead Lambda Function URL source', () => {
+    const csp = String(recordAt(spaPolicy(), 'SecurityHeadersConfig', 'ContentSecurityPolicy')?.ContentSecurityPolicy);
+    expect(csp).toContain("form-action 'self'");
+    expect(csp).not.toContain('lambda-url');
+  });
+
+  it("lets the SPA open the Event API's WebSocket (wss: needs its own connect-src source)", () => {
+    const csp = JSON.stringify(recordAt(spaPolicy(), 'SecurityHeadersConfig', 'ContentSecurityPolicy'));
+    const connect = /connect-src ([^;]*);/u.exec(csp)?.[1] ?? '';
+    expect(connect).toContain('wss://*.appsync-realtime-api.');
+    expect(connect).not.toMatch(/wss:\/\/\*\.amazonaws\.com|wss:(?!\/\/\*\.appsync-realtime-api\.)/u);
+  });
+
+  it('turns the legacy XSS filter off and denies device features the app never uses', () => {
+    const config = spaPolicy();
+    expect(recordAt(config, 'SecurityHeadersConfig', 'XSSProtection')).toMatchObject({ Protection: false });
+    expect(JSON.stringify(recordAt(config, 'CustomHeadersConfig'))).toContain('camera=(), microphone=()');
   });
 });

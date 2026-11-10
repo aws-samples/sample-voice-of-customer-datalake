@@ -1,0 +1,86 @@
+{
+  "id": "web_reviews",
+  "name": "Web Reviews",
+  "icon": "Web",
+  "description": "Read customer reviews from public review pages (Trustpilot, TripAdvisor, forums) with a managed browser. Each page you add is its own source.",
+  "category": "reviews",
+  "version": "1.0.0",
+
+  "infrastructure": {
+    "ingestor": {
+      "enabled": true,
+      "schedule": "rate(15 minutes)",
+      "timeout": 900,
+      "memory": 512,
+      "bedrock": true,
+      "browser": true
+    }
+  },
+
+  "config": [
+    {
+      "key": "app_name",
+      "label": "Name",
+      "type": "text",
+      "placeholder": "Trustpilot - Example",
+      "required": true,
+      "secret": false
+    },
+    {
+      "key": "url",
+      "label": "Review page URL (https)",
+      "type": "text",
+      "placeholder": "https://www.trustpilot.com/review/example.com",
+      "required": true,
+      "secret": false
+    },
+    {
+      "key": "max_pages",
+      "label": "Pages per run (0 = all, up to 100)",
+      "type": "text",
+      "placeholder": "10",
+      "required": false,
+      "secret": false
+    },
+    {
+      "key": "max_reviews",
+      "label": "Max reviews per run (0 = no limit, up to 5000)",
+      "type": "text",
+      "placeholder": "0",
+      "required": false,
+      "secret": false
+    },
+    {
+      "key": "frequency_minutes",
+      "label": "Run Frequency",
+      "type": "select",
+      "required": false,
+      "secret": false,
+      "options": [
+        { "value": "0", "label": "Manual only" },
+        { "value": "15", "label": "Every 15 minutes" },
+        { "value": "30", "label": "Every 30 minutes" },
+        { "value": "60", "label": "Every hour" },
+        { "value": "180", "label": "Every 3 hours" },
+        { "value": "360", "label": "Every 6 hours" },
+        { "value": "720", "label": "Every 12 hours" },
+        { "value": "1440", "label": "Daily" }
+      ]
+    }
+  ],
+
+  "setup": {
+    "title": "Web Reviews Setup",
+    "color": "blue",
+    "steps": [
+      "Open the public review page you want to follow and copy its https URL",
+      "Add it above with a name and how many pages to read per run",
+      "Use Run now, or choose a frequency and enable the schedule",
+      "A site that blocks automated browsers is reported as blocked in the run status"
+    ]
+  },
+
+  "secrets": {
+    "configs": "[]"
+  }
+}

@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { parseResolvedProblemsResponse } from './problemResolution'
 import type { ResolvedProblemsMap } from './problemResolution'
+import { resolvedProblemsKey } from '../../api/queryKeys'
 
 interface ProblemResolutionState {
   resolvedMap: ResolvedProblemsMap
@@ -37,7 +38,7 @@ export function useProblemResolution(enabled: boolean): ProblemResolutionState {
   const [toggleFailed, setToggleFailed] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['resolved-problems'],
+    queryKey: resolvedProblemsKey(),
     queryFn: async () => parseResolvedProblemsResponse(await api.getResolvedProblems()),
     enabled,
     // Resolution state is shared across users, so keep it deliberately
@@ -64,7 +65,7 @@ export function useProblemResolution(enabled: boolean): ProblemResolutionState {
       setToggleFailed(true)
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['resolved-problems'] })
+      void queryClient.invalidateQueries({ queryKey: resolvedProblemsKey() })
     },
   })
 

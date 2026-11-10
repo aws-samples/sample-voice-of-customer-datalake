@@ -10,369 +10,129 @@
  * @module pages/Dashboard
  */
 
-import { useQuery } from '@tanstack/react-query'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, BarChart, Bar } from 'recharts'
-import { MessageSquare, TrendingUp, AlertTriangle, Users, Zap, FileDown } from 'lucide-react'
-import { api, getDateRangeParams } from '../../api/client'
-import type { MetricsSummary, SentimentBreakdown, CategoryBreakdown, SourceBreakdown, FeedbackItem } from '../../api/client'
+import { Zap, FileDown } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { accountTabPath } from '../Account/accountSections'
+import { getDateRangeParams } from '../../api/client'
+import type { DateRangeParams } from '../../api/client'
+import type { DateBasis } from '../../api/types'
 import { useConfigStore } from '../../store/configStore'
-import MetricCard from '../../components/MetricCard'
-import FeedbackCard from '../../components/FeedbackCard'
-import SocialFeed from '../../components/SocialFeed'
+import SocialFeed from '../../components/SocialFeed/SocialFeed'
 import { generateDashboardPDF } from './dashboardPdfGenerator'
+import { activeSourceCount, buildPDFExportData } from './dashboardData'
+import { MetricsGrid, SentimentChart, UrgentFeedback } from './DashboardSections'
+import PartialCountsNote from './PartialCountsNote'
+import DashboardCard from './DashboardCard'
+import GitHubInsights from './GitHubInsights'
+import DimensionBreakdown from './DimensionBreakdown'
+import { CategoryChart, SourceChart, TrendChart } from './DashboardCharts'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
-import DashboardEmptyState from './DashboardEmptyState'
-import { useSummaryQuery } from '../../hooks/useSummaryQuery'
-
-const COLORS = ['#22c55e', '#6b7280', '#ef4444', '#eab308']
-
-/**
- * How many urgent items the dashboard previews. The list is a preview, not the
- * full set — the heading reports the true total from /metrics/summary, so this
- * number must never be presented as a count.
- */
-const URGENT_PREVIEW_LIMIT = 5
-
-/**
- * Count for the "Urgent Issues (N)" heading.
- *
- * The heading and the list beneath it come from different sources: the exact
- * `METRIC#urgent` aggregate (via /metrics/summary) and a windowed scan (via
- * /feedback/urgent). They can disagree when aggregates are missing, stale, or
- * bounded differently — and the aggregate can legitimately read 0 while the scan
- * still returns items, so a nullish fallback would not catch it (0 is not
- * nullish).
- *
- * Taking the larger value holds two invariants at once: never understate the
- * total (reporting the page size was the original defect), and never claim fewer
- * items than are visibly rendered.
- */
-function urgentHeadingCount(aggregateTotal: number | undefined, previewLength: number | undefined): number {
-  return Math.max(aggregateTotal ?? 0, previewLength ?? 0)
-}
+import DashboardWindowEmpty from './DashboardWindowEmpty'
+import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import ScopeNotice from '../../components/ScopeNotice/ScopeNotice'
+import { failedReads, type FailedReads } from '../../utils/failedReads'
+import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import { hasActiveFacets } from '../../api/feedbackFacets'
+import { useFacetParams } from '../../hooks/useFacetParams'
+import { useDashboardData } from './useDashboardData'
+import { DashboardFilters, FilteredEmpty } from './DashboardFilters'
 
 function NotConfiguredState() {
+  const { t } = useTranslation(['dashboard', 'common'])
   return (
     <div className="flex flex-col items-center justify-center h-full">
       <div className="text-center max-w-md">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to VoC Analytics</h2>
-        <p className="text-gray-600 mb-6">
-          Configure your API endpoint and brand settings to start analyzing customer feedback.
-        </p>
-        <a href="/settings" className="btn btn-primary">
-          Go to Settings
-        </a>
+        <h1 className="text-2xl font-bold tracking-tight text-text-strong mb-2">{t('welcome')}</h1>
+        <p className="text-sm text-muted mb-6">{t('welcomeDescription')}</p>
+        <Link to={accountTabPath('preferences')} className="btn btn-primary">
+          {t('common:goToSettings')}
+        </Link>
       </div>
     </div>
   )
 }
 
 function LoadingState() {
-  return <div className="flex items-center justify-center h-full">Loading...</div>
-}
-
-interface MetricsGridProps {
-  summary: MetricsSummary | undefined
-  sourcesCount: number
-}
-
-function MetricsGrid({ summary, sourcesCount }: Readonly<MetricsGridProps>) {
-  // 'common', matching the namespace this file already reads, and where the
-  // sibling partial-window copy lives (`partialWindowHint`, used by the
-  // Categories results line): the hint is about counts being a lower bound, not
-  // about the dashboard.
-  const { t } = useTranslation('common')
-  const avgSentiment = summary ? Number(summary.avg_sentiment) : 0
-  const sentimentTrend = avgSentiment > 0 ? 'up' : 'down'
-  const sentimentColor = avgSentiment > 0 ? 'green' : 'red'
-  // The route reports this on BOTH of its paths now, so the hint names neither
-  // cause — see `MetricsSummary.is_partial` in api/types.ts for the three of
-  // them. Whichever fired, the counts are a lower bound and the cards must say
-  // so instead of looking exact.
-  const isPartial = summary?.is_partial ?? false
-  const partialHint = isPartial ? t('partialCountsHint') : undefined
-  const approx = (n: number | string) => (isPartial ? `~${n}` : n)
-
+  const { t } = useTranslation(['dashboard', 'common'])
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-      <MetricCard
-        title="Total Feedback"
-        value={approx(summary?.total_feedback.toLocaleString() || 0)}
-        icon={<MessageSquare size={24} />}
-        color="blue"
-        hint={partialHint}
-      />
-      <MetricCard
-        title="Avg Sentiment"
-        value={avgSentiment.toFixed(2)}
-        icon={<TrendingUp size={24} />}
-        color={sentimentColor}
-        trend={sentimentTrend}
-      />
-      <MetricCard
-        title="Urgent Issues"
-        value={approx(summary?.urgent_count || 0)}
-        icon={<AlertTriangle size={24} />}
-        color="orange"
-        hint={partialHint}
-      />
-      <MetricCard
-        title="Sources Active"
-        value={sourcesCount}
-        icon={<Users size={24} />}
-        color="gray"
-      />
+    <div className="flex items-center justify-center h-full" role="status">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" aria-hidden="true" />
+      <span className="sr-only">{t('common:loading')}</span>
     </div>
   )
 }
 
-interface TrendChartProps {
-  dailyTotals: Array<{ date: string; count: number }> | undefined
+/** The page title over a LoadFailed: the summary read failed, which is not "no feedback". */
+function SummaryLoadFailed({ failure }: Readonly<{ failure: FailedReads }>) {
+  const { t } = useTranslation('dashboard')
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text-strong">{t('title')}</h1>
+      <LoadFailed onRetry={failure.retry} retrying={failure.retrying} />
+    </div>
+  )
 }
 
-function TrendChart({ dailyTotals }: Readonly<TrendChartProps>) {
-  const sortedData = [...(dailyTotals || [])].sort((a, b) => a.date.localeCompare(b.date))
+interface DashboardBodyProps {
+  readonly dateParams: DateRangeParams
+  readonly dateBasis: DateBasis
+  readonly data: ReturnType<typeof useDashboardData>
+  readonly sourcesCount: number
+}
 
+/** The cards, charts and lists (the filtered reads; the GitHub, dimension and social cards are unfiltered). */
+function DashboardBody({ dateParams, dateBasis, data, sourcesCount }: DashboardBodyProps) {
+  const { t } = useTranslation('dashboard')
+  const { summaryQuery: { data: summary }, sentiment, categories, sources, urgentFeedback } = data
   return (
-    <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Feedback Volume & Sentiment Trend</h3>
-      <div className="h-[200px] sm:h-[300px] -mx-2 sm:mx-0">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <LineChart data={sortedData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10 }} width={35} />
-            <Tooltip />
-            <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
+    <>
+      <MetricsGrid summary={summary} sentiment={sentiment} activeSources={sourcesCount} />
+      <PartialCountsNote summary={summary} dateBasis={dateBasis} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <TrendChart summary={summary} />
+        <SentimentChart sentiment={sentiment} />
       </div>
-    </div>
-  )
-}
 
-function prepareSentimentPieData(sentiment: SentimentBreakdown | undefined) {
-  if (!sentiment) return []
-  return [
-    { name: 'Positive', value: sentiment.breakdown.positive || 0, fill: COLORS[0] },
-    { name: 'Neutral', value: sentiment.breakdown.neutral || 0, fill: COLORS[1] },
-    { name: 'Negative', value: sentiment.breakdown.negative || 0, fill: COLORS[2] },
-    { name: 'Mixed', value: sentiment.breakdown.mixed || 0, fill: COLORS[3] },
-  ].filter(d => d.value > 0)
-}
-
-interface SentimentChartProps {
-  sentiment: SentimentBreakdown | undefined
-}
-
-function SentimentChart({ sentiment }: Readonly<SentimentChartProps>) {
-  const pieData = prepareSentimentPieData(sentiment)
-
-  return (
-    <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Sentiment Distribution</h3>
-      <div className="h-[200px] sm:h-[300px]">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <PieChart>
-            <Pie
-              data={pieData}
-              cx="50%"
-              cy="50%"
-              innerRadius="40%"
-              outerRadius="70%"
-              paddingAngle={2}
-              dataKey="value"
-              label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-              labelLine={{ strokeWidth: 1 }}
-            >
-            </Pie>
-            <Tooltip />
-          </PieChart>
-        </ResponsiveContainer>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <CategoryChart categories={categories} />
+        <SourceChart sources={sources} />
       </div>
-    </div>
-  )
-}
 
-function prepareCategoryData(categories: CategoryBreakdown | undefined) {
-  if (!categories) return []
-  return Object.entries(categories.categories)
-    .slice(0, 8)
-    .map(([name, value]) => ({ name, value }))
-}
+      <GitHubInsights dateParams={dateParams} sources={sources} />
 
-interface CategoryChartProps {
-  categories: CategoryBreakdown | undefined
-}
+      <DimensionBreakdown dateParams={dateParams} />
 
-function CategoryChart({ categories }: Readonly<CategoryChartProps>) {
-  const barData = prepareCategoryData(categories)
-
-  return (
-    <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Top Issue Categories</h3>
-      <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <BarChart data={barData} layout="vertical" margin={{ left: 0, right: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis type="number" tick={{ fontSize: 10 }} />
-            <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={80} />
-            <Tooltip />
-            <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
+        <DashboardCard
+          icon={<Zap className="text-accent-text flex-shrink-0" size={18} aria-hidden="true" />}
+          title={t('liveSocialFeed')}
+        >
+          <SocialFeed limit={8} showFilters={true} />
+        </DashboardCard>
+        <UrgentFeedback items={urgentFeedback?.items} aggregateTotal={summary?.urgent_count} />
       </div>
-    </div>
+    </>
   )
-}
-
-function prepareSourceData(sources: SourceBreakdown | undefined) {
-  if (!sources) return []
-  return Object.entries(sources.sources)
-    .map(([name, value]) => ({ name: name.replace('_', ' '), value }))
-}
-
-interface SourceChartProps {
-  sources: SourceBreakdown | undefined
-}
-
-function SourceChart({ sources }: Readonly<SourceChartProps>) {
-  const barData = prepareSourceData(sources)
-
-  return (
-    <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Feedback by Source</h3>
-      <div className="h-[250px] sm:h-[300px] -mx-2 sm:mx-0">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <BarChart data={barData} margin={{ left: 0, right: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={60} />
-            <YAxis tick={{ fontSize: 10 }} width={35} />
-            <Tooltip />
-            <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  )
-}
-
-interface UrgentFeedbackProps {
-  items: FeedbackItem[] | undefined
-  /**
-   * Exact urgent total for the window, from /metrics/summary's `urgent_count`.
-   * Deliberately not the preview list's `count`, which is that page's length and
-   * is clamped by the limit it was fetched with. The heading is reconciled
-   * against the rendered items by `urgentHeadingCount`.
-   */
-  aggregateTotal: number | undefined
-}
-
-function UrgentFeedback({ items, aggregateTotal }: Readonly<UrgentFeedbackProps>) {
-  const hasItems = items && items.length > 0
-  const count = urgentHeadingCount(aggregateTotal, items?.length)
-
-  return (
-    <div className="card !p-4 sm:!p-6">
-      <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
-        <AlertTriangle className="text-orange-500 flex-shrink-0" size={20} />
-        <span>Urgent Issues ({count})</span>
-      </h3>
-      {hasItems ? (
-        <div className="space-y-3 max-h-[400px] sm:max-h-[600px] overflow-y-auto">
-          {items.slice(0, URGENT_PREVIEW_LIMIT).map((item) => (
-            <FeedbackCard key={item.feedback_id} feedback={item} compact />
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-6 sm:py-8 text-gray-500">
-          No urgent issues - great job! 🎉
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface PDFExportInput {
-  summary: MetricsSummary | undefined
-  sentiment: SentimentBreakdown | undefined
-  categories: CategoryBreakdown | undefined
-  sources: SourceBreakdown | undefined
-  urgentFeedback: { items?: FeedbackItem[]; count?: number } | undefined
-  timeRange: string
-  sourcesCount: number
-}
-
-function buildSentimentEntries(sentiment: SentimentBreakdown | undefined) {
-  if (!sentiment) return []
-  return Object.entries(sentiment.breakdown)
-    .filter(([, v]) => v > 0)
-    .map(([name, value]) => ({ name, value }))
-}
-
-function buildCategoryEntries(categories: CategoryBreakdown | undefined) {
-  if (!categories) return []
-  return Object.entries(categories.categories)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
-    .map(([name, value]) => ({ name, value }))
-}
-
-function buildPDFExportData(input: PDFExportInput) {
-  return {
-    timeRange: input.timeRange,
-    totalFeedback: input.summary?.total_feedback ?? 0,
-    avgSentiment: input.summary ? Number(input.summary.avg_sentiment) : 0,
-    urgentCount: input.summary?.urgent_count ?? 0,
-    sourcesCount: input.sourcesCount,
-    dailyTotals: input.summary?.daily_totals ?? [],
-    sentimentBreakdown: buildSentimentEntries(input.sentiment),
-    categoryBreakdown: buildCategoryEntries(input.categories),
-    sourceBreakdown: prepareSourceData(input.sources),
-    urgentItems: input.urgentFeedback?.items ?? [],
-  }
 }
 
 export default function Dashboard() {
-  const { t } = useTranslation('common')
+  const { t } = useTranslation(['common', 'dashboard'])
+  const labels = useDisplayLabels()
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
 
-  // Shared with the sidebar urgent badge via useSummaryQuery so the two cannot
-  // resolve to different cache entries (see that module).
-  // Takes the endpoint rather than `isConfigured`: the hook owns both the query
-  // key and its enabling condition, so callers cannot make them disagree.
-  const { data: summary, isLoading: summaryLoading } = useSummaryQuery(dateParams, config.apiEndpoint)
-
-  const { data: sentiment } = useQuery({
-    queryKey: ['sentiment', dateParams],
-    queryFn: () => api.getSentiment(dateParams),
-    enabled: isConfigured,
-  })
-
-  const { data: categories } = useQuery({
-    queryKey: ['categories', dateParams],
-    queryFn: () => api.getCategories(dateParams),
-    enabled: isConfigured,
-  })
-
-  const { data: sources } = useQuery({
-    queryKey: ['sources', dateParams],
-    queryFn: () => api.getSources(dateParams),
-    enabled: isConfigured,
-  })
-
-  // `limit` MUST stay in the query key: /feedback/urgent returns a different
-  // payload per limit, so a key that omits it lets two callers with different
-  // limits collide on one cache entry (which is how the sidebar badge used to
-  // render this list's page size).
-  const { data: urgentFeedback } = useQuery({
-    queryKey: ['urgent', dateParams, URGENT_PREVIEW_LIMIT],
-    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: URGENT_PREVIEW_LIMIT }),
-    enabled: isConfigured,
-  })
+  // The facet filters live in the URL (`?source=a,b&usefulness=high`). With none set, every
+  // read is the unfiltered one: the summary shares the sidebar badge's cache entry
+  // (useSummaryQuery), so the badge and the "Urgent Issues" card cannot disagree.
+  const facetParams = useFacetParams()
+  const filtered = hasActiveFacets(facetParams.facets)
+  const data = useDashboardData(dateParams, config.apiEndpoint, facetParams.facets)
+  const { summaryQuery, sentiment, categories, sources, urgentFeedback } = data
+  const { data: summary, isLoading: summaryLoading } = summaryQuery
+  const summaryFailure = failedReads([summaryQuery])
 
   if (!isConfigured) {
     return <NotConfiguredState />
@@ -382,14 +142,22 @@ export default function Dashboard() {
     return <LoadingState />
   }
 
-  // No feedback in this range → show a compact prompt that points to the Home
-  // page, which carries the full getting-started walkthrough (prd-fix #10
-  // onboarding/IA). Avoids rendering empty charts or duplicating the guide.
-  if ((summary?.total_feedback ?? 0) === 0) {
-    return <DashboardEmptyState />
+  // A failed summary read is not "no feedback": without this, offline / 500 /
+  // 403 fell through to the empty-window state below and told the user their
+  // workspace had nothing in it (e2e error-states.spec.ts).
+  if (summaryFailure.loadFailed) {
+    return <SummaryLoadFailed failure={summaryFailure} />
   }
 
-  const sourcesCount = Object.keys(sources?.sources || {}).length
+  // No feedback in this range: DashboardWindowEmpty checks the all-time total
+  // and shows the welcome state only when the workspace truly has none, else
+  // the newest feedback date with a one-click "Show all time" (E2E F4).
+  // A FILTERED window with nothing in it keeps the page and its filters (DashboardFilters).
+  if (!filtered && (summary?.total_feedback ?? 0) === 0) {
+    return <DashboardWindowEmpty dateParams={dateParams} apiEndpoint={config.apiEndpoint} loading={<LoadingState />} />
+  }
+
+  const sourcesCount = activeSourceCount(sources)
 
   const exportPDF = () => {
     try {
@@ -401,6 +169,7 @@ export default function Dashboard() {
         urgentFeedback,
         timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
         sourcesCount,
+        labels,
       }))
     } catch {
       // PDF generation is best-effort (e.g. popup blocked)
@@ -409,39 +178,28 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="flex justify-end">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text-strong">{t('dashboard:title')}</h1>
+          <p className="text-sm text-muted mt-1">{t('dashboard:subtitle')}</p>
+          <ScopeNotice className="mt-2" />
+        </div>
         <button
+          type="button"
           onClick={exportPDF}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
-          title={t('exportPdfTooltip')}
+          className="btn btn-secondary btn-sm self-start sm:self-auto"
+          title={t('common:exportPdfTooltip')}
         >
-          <FileDown size={14} />
-          {t('exportPdf')}
+          <FileDown size={14} aria-hidden="true" />
+          {t('common:exportPdf')}
         </button>
       </div>
 
-      <MetricsGrid summary={summary} sourcesCount={sourcesCount} />
+      <DashboardFilters params={facetParams} sourceOptions={data.sourceOptions} categoryOptions={data.categoryOptions} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <TrendChart dailyTotals={summary?.daily_totals} />
-        <SentimentChart sentiment={sentiment} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <CategoryChart categories={categories} />
-        <SourceChart sources={sources} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <div className="card !p-4 sm:!p-6">
-          <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
-            <Zap className="text-blue-500 flex-shrink-0" size={20} />
-            Live Social Feed
-          </h3>
-          <SocialFeed limit={8} showFilters={true} />
-        </div>
-        <UrgentFeedback items={urgentFeedback?.items} aggregateTotal={summary?.urgent_count} />
-      </div>
+      {(summary?.total_feedback ?? 0) === 0
+        ? <FilteredEmpty onClear={facetParams.clearAll} />
+        : <DashboardBody dateParams={dateParams} dateBasis={dateBasis} data={data} sourcesCount={sourcesCount} />}
     </div>
   )
 }

@@ -31,6 +31,13 @@
 /** The feedback-form list — `api.getFeedbackForms`. */
 export const feedbackFormsKey = () => ['feedback-forms'] as const
 
+/**
+ * The list WITH every form's stats — `api.getFeedbackFormsWithStats`, read by the
+ * Feedback Forms page. Under the list's own prefix, so every invalidation of
+ * `feedbackFormsKey()` refreshes it too.
+ */
+export const feedbackFormsWithStatsKey = () => [...feedbackFormsKey(), 'with-stats'] as const
+
 /** One form's submission count and average rating — `api.getFeedbackFormStats`. */
 export const formStatsKey = (formId: string) => ['form-stats', formId] as const
 

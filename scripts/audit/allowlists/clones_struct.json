@@ -1,0 +1,52 @@
+{
+  "$comment": "Clone groups of scripts/audit/clones_struct.py kept on purpose. A group is silenced when EVERY copy's file matches one of `files` (and, with `name`, one copy is that function). Triaged 2026-10-24 (docs/code-audit.md).",
+  "entries": [
+    {
+      "files": [
+        "voc-datalake/lambda/product_doc_extractor/handler.py",
+        "voc-datalake/lambda/shared/invocation_cost.py",
+        "voc-datalake/lambda/shared/aws.py"
+      ],
+      "reason": "product_doc_extractor is stdlib + boto3 only by design (no powertools, cannot import shared; its module docstring) and keeps marked copies of is_conditional_check_failure and the invocation-cost helpers"
+    },
+    {
+      "files": [
+        "voc-datalake/scripts/mcp_tokens/backfill_creator_index.py",
+        "voc-datalake/scripts/memory/backfill_categories.py",
+        "voc-datalake/scripts/retention/retention_common.py"
+      ],
+      "reason": "operator scripts: (1) the CloudFormation output lookups stay in each script because scripts/audit/stack_outputs.py resolves a helper's OutputKey reads only within the file that defines it, so one imported helper would hide every caller's output key from that gate; (2) parse_args declares each script's own flags (env defaults, table names, --dry-run/--apply wording)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/projects_handler.py",
+        "voc-datalake/lambda/shared/radar_brands.py"
+      ],
+      "reason": "projects_handler._validated_source_ids (document ids: keyed ownership read per id, ValidationError, 'names more than N documents') vs radar_brands._domains (host names: URL/www stripping and a regex, ValueError the brand-list route words as '{brand} radar_domains may hold at most N domains'); a common helper would take the parser, the exception and both messages as parameters"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/ballots_handler.py",
+        "voc-datalake/lambda/api/product_context.py"
+      ],
+      "reason": "wire DTOs of two unrelated records (a voting session's facilitator view with derived row/state fields and created_by left out on purpose; an uploaded product document); equal only in being field-by-field dict projections with defaults"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/projects.py",
+        "voc-datalake/lambda/shared/decision_records.py"
+      ],
+      "reason": "two keyed reads of different records with different checks: a source document resolved by id through _find_document's stored sort key and checked by document_id; a decision addressed as DOC#<id> after an EVIDENCE_ID_RE check and checked by document_type; each answers its own 404 text"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/feedback_form_handler.py",
+        "voc-datalake/lambda/shared/company_context.py",
+        "voc-datalake/lambda/shared/dimension_config.py",
+        "voc-datalake/lambda/shared/draft_intent.py",
+        "voc-datalake/lambda/shared/prioritization_axes.py"
+      ],
+      "reason": "optional-field validators whose 400 wording and rules are each route's contract: form fields checked unstripped ('must be a string'), company-context lists ('may hold at most N entries'), dimension config lists raising ValueError ('At most N <what> are allowed'), draft intent text ('must be text' / 'is too long (at most N characters)', stripped after the check), Prioritization axis text (stripped before the check, '' -> None); one helper would need the type, exception, strip order and both messages as parameters"
+    }
+  ]
+}

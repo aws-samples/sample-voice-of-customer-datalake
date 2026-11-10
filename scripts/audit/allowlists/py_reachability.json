@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {"key": "lambda/agents/state_machine.py", "reason": "Build-time generator of state_machine.asl.json (the CDK loads the JSON); test_graph_and_state_machine.py keeps the two in lockstep. Never imported at run time by design."},
+    {"key": "lambda/shared/api.py::clear_categories_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the module-level categories cache between API tests."},
+    {"key": "lambda/shared/memory_store.py::clear_pool_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container embedding pool between memory tests."},
+    {"key": "lambda/shared/memory_store.py::clear_objective_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container objectives cache between memory tests."},
+    {"key": "lambda/shared/model_capacity.py::clear_quota_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the Service Quotas listing cache between cases."},
+    {"key": "lambda/shared/response_cache.py::ResponseCache.clear", "reason": "Test seam (pyproject.toml vulture ignore_names `clear`): lambda/api/test/conftest.py empties the process-wide read memo around every API test."},
+    {"key": "lambda/shared/mcp_delegate.py::SYNTHETIC_CLAIM_KEYS", "reason": "Named set pinned EXACTLY by test_mcp_delegate_mutation so a claim nobody considered fails a test (pyproject.toml ignore_names)."},
+    {"key": "lambda/shared/mcp_delegate.py::OPTIONAL_SYNTHETIC_CLAIM_KEYS", "reason": "Named set pinned EXACTLY by test_mcp_delegate_mutation (pyproject.toml ignore_names)."},
+    {"key": "lambda/api/product_context.py::PRODUCT_DOC_STATUSES", "reason": "Lockstep contract: product_doc_extractor/test/test_status_lockstep.py pins the extractor's status partition against this tuple (pyproject.toml ignore_names)."},
+    {"key": "lambda/shared/time_budget.py::API_GATEWAY_INTEGRATION_TIMEOUT_SECONDS", "reason": "The 29 s ceiling the walk budget is pinned below by test_time_budget.py and mirrored into the CDK by api-stack.test.ts (pyproject.toml ignore_names)."},
+    {"key": "lambda/shared/http_utils.py::_TenacityLogger.log", "reason": "Called by tenacity (before_sleep_log calls logger.log); the class duck-types tenacity's LoggerProtocol, so there is no base for the graph to see."},
+    {"key": "plugins/s3_import/ingestor/handler.py::S3ImportIngestor.fetch_new_items", "reason": "Abstract method of BaseIngestor: the class cannot be instantiated without it, even though the S3 import path calls process_file instead."}
+  ]
+}

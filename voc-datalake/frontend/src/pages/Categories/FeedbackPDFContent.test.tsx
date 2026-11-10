@@ -40,9 +40,10 @@ describe('FeedbackTableSection', () => {
     expect(screen.getByText(/Feedback Items \(2\)/)).toBeInTheDocument()
   })
 
-  it('humanizes the source platform (underscores to spaces)', () => {
+  it('shows source and category labels, not the stored ids', () => {
     render(<FeedbackTableSection items={[makeItem({ source_platform: 'app_store' })]} />)
-    expect(screen.getByText('app store')).toBeInTheDocument()
+    expect(screen.getByText('App store')).toBeInTheDocument()
+    expect(screen.getByText('Checkout flow')).toBeInTheDocument()
   })
 
   it('shows rating as N/5 when present', () => {
@@ -72,24 +73,19 @@ describe('FeedbackTableSection', () => {
     // Regression: the /feedback API can return sentiment_score as a JSON string
     // for records persisted as DynamoDB String attributes. Calling .toFixed()
     // on a string previously threw and produced a blank PDF window.
-    const stringScoreItem = makeItem({
-      original_text: 'Manual import review',
-      // Cast through unknown: the runtime value violates the declared number type.
-      sentiment_score: '0.9' as unknown as number,
-    })
+    // Object.assign widens nothing: the runtime value violates the declared number
+    // type, exactly as the wire does, without a type assertion.
+    const stringScoreItem = Object.assign(makeItem({ original_text: 'Manual import review' }), { sentiment_score: '0.9' })
     expect(() =>
       render(<FeedbackTableSection items={[stringScoreItem]} />)
     ).not.toThrow()
     expect(screen.getByText('Manual import review')).toBeInTheDocument()
-    // Coerced and formatted to 2 decimals rather than crashing.
-    expect(screen.getByText(/negative \(0\.90\)/)).toBeInTheDocument()
+    // Coerced and formatted to 2 signed decimals rather than crashing.
+    expect(screen.getByText(/negative \(\+0\.90\)/)).toBeInTheDocument()
   })
 
   it('falls back to 0.00 when sentiment_score is not numeric', () => {
-    const badScoreItem = makeItem({
-      original_text: 'Garbage score review',
-      sentiment_score: 'not-a-number' as unknown as number,
-    })
+    const badScoreItem = Object.assign(makeItem({ original_text: 'Garbage score review' }), { sentiment_score: 'not-a-number' })
     expect(() =>
       render(<FeedbackTableSection items={[badScoreItem]} />)
     ).not.toThrow()

@@ -2,16 +2,18 @@
  * When the Background Jobs panel stops polling.
  *
  * The panel's whole reliability rests on this decision. Polling that stops too
- * early is the defect the U9 handover exists to fix: a job started outside a
+ * early is the defect the U9 hand-off exists to fix: a job started outside a
  * wizard is invisible until something else happens to refetch.
  *
  * The interesting cases are all about elapsed time, so they are asserted on the
  * pure function rather than by driving a component through 30 seconds of timers.
  * Fake timers here leaked across files and broke unrelated suites.
  */
-import { describe, it, expect } from 'vitest'
-import { jobsPollInterval, JOB_START_POLL_WINDOW_MS } from './useProjectData'
-import type { ProjectJob } from '../../api/types'
+import { afterEach, describe, it, expect } from 'vitest'
+import { jobsPollInterval, JOB_START_POLL_WINDOW_MS, liveJobsPollInterval } from './useProjectData'
+import { setRealtimeLive } from '../../realtime/hub'
+import { SUBSCRIBED_JOB_POLL_INTERVAL_MS } from '../../realtime/jobRefresh'
+import type { ProjectJob } from '../../api/projectTypes'
 
 type JobStatuses = ReadonlyArray<Pick<ProjectJob, 'status'>>
 
@@ -61,5 +63,20 @@ describe('jobsPollInterval', () => {
     // is missing because its row is not readable yet — stopping here would
     // reinstate the blindness. The window's own expiry is what bounds this.
     expect(jobsPollInterval(finished, NOW - 1000, NOW)).toBeGreaterThan(0)
+  })
+})
+
+describe('liveJobsPollInterval', () => {
+  afterEach(() => { setRealtimeLive(false) })
+
+  it('polls a running job slower while push is live: its end arrives as a notice, the poll is the fallback', () => {
+    expect(liveJobsPollInterval(running, null)).toBeLessThan(SUBSCRIBED_JOB_POLL_INTERVAL_MS)
+    setRealtimeLive(true)
+    expect(liveJobsPollInterval(running, null)).toBe(SUBSCRIBED_JOB_POLL_INTERVAL_MS)
+  })
+
+  it('stops as before when nothing runs', () => {
+    setRealtimeLive(true)
+    expect(liveJobsPollInterval(finished, null)).toBe(0)
   })
 })

@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
+import { dataProtectionOf } from './data-protection';
 import { DeploymentNaming } from './naming';
 
 /**
@@ -35,6 +36,9 @@ export class VocStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocStackProps) {
     super(scope, id, props);
     this.naming = new DeploymentNaming(this, props.deploymentPrefix);
+    // A protected (production) deployment cannot be deleted by one `cdk destroy` or console click (OPS-9):
+    // the operator turns termination protection off first, on purpose (docs/deployment.md).
+    if (dataProtectionOf(this).deletionProtection === true) this.terminationProtection = true;
   }
 
   /** The prefix in force, or `undefined` for an unprefixed deployment. */
@@ -85,17 +89,16 @@ export class VocStack extends cdk.Stack {
   /**
    * Lambda environment entries that exist ONLY on a prefixed deployment.
    *
-   * Two handlers rebuild a per-plugin resource name at runtime
-   * (`lambda/api/integrations_handler.py`, `plugins/_shared/circuit_breaker.py`).
-   * Their existing `{base}-{DEPLOY_ACCOUNT_ID}-{DEPLOY_REGION}` derivation is
+   * `lambda/api/integrations_handler.py` rebuilds per-plugin resource names at
+   * runtime. Its existing `{base}-{DEPLOY_ACCOUNT_ID}-{DEPLOY_REGION}` derivation is
    * exactly right with no prefix and wrong with one, so CDK hands down the
    * resolved PATTERN — but only when it would differ, because adding an
    * environment variable unconditionally would change the template of every
    * existing deployment, and "no prefix means byte-identical" is the invariant
    * that makes this whole change safe to merge (lib/app-baseline.test.ts).
    *
-   * The handlers therefore never learn that prefixes exist: they prefer a
-   * pattern when given one and keep their own derivation otherwise.
+   * The handler therefore never learns that prefixes exist: it prefers a
+   * pattern when given one and keeps its own derivation otherwise.
    */
   protected prefixOnlyEnv(entries: Record<string, string>): Record<string, string> {
     return this.deploymentPrefix ? entries : {};

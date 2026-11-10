@@ -25,19 +25,10 @@ A full checkout is required, deliberately
 -----------------------------------------
 There is no `skipif` for a missing `lib/` tree. An earlier version carried one on
 each comparison, reasoning that a checkout without the CDK should not report a
-mismatch it never measured — but that tolerance could not take effect, for three
-reasons:
-
-1. `test_the_ci_interpreter_is_declared_and_parses` carries no marker and would
-   fail on such a checkout anyway; the markers changed which test reported the
-   problem, not whether one did.
-2. `scripts/mcp_gate.py` floors this module on tests that RAN, so any skip drops
-   it below its floor and fails the audit regardless.
-3. The supported consumers — local full-backend testing and the manually-
-   dispatched MCP workflow — both use a full checkout.
-
-Failing loudly on a partial checkout is also the better behaviour here: a guard
-that quietly measures nothing is worse than one that says it cannot run.
+mismatch it never measured — but `test_the_ci_interpreter_is_declared_and_parses`
+carries no marker and would fail on such a checkout anyway, so the markers only
+changed which test reported the problem. The full reasoning, shared by every
+lockstep test, is "A full checkout is required" in `shared/test/repo_paths.py`.
 """
 import re
 from pathlib import Path

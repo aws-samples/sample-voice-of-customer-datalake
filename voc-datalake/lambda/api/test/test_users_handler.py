@@ -1,593 +1,98 @@
 """
-Tests for users_handler.py - /users/* endpoints.
-Cognito user management for admins.
+Tests for users_handler.py - GET /users membership reads.
+
+The per-route contract (admin gate, exact Cognito calls, refusals, responses) is
+pinned in test_users_handler_mutation.py; group-parsing/require_admin unit tests
+live in lambda/shared/test/test_api.py.
 """
 import json
 from unittest.mock import patch
-from datetime import datetime, timezone
+
+import pytest
 
 
-# NOTE: group-parsing/require_admin unit tests live in
-# lambda/shared/test/test_api.py — users_handler now gates through the
-# shared implementation instead of a local copy.
+def _call_users(api_gateway_event, lambda_context, **event_kwargs):
+    """Build a /users event for the default (admin) caller, invoke the handler, return (status, body)."""
+    from users_handler import lambda_handler
+    response = lambda_handler(api_gateway_event(**event_kwargs), lambda_context)
+    return response['statusCode'], json.loads(response['body'])
 
 
-class TestListUsers:
-    """Tests for GET /users endpoint."""
+def _pool_user(name: str) -> dict:
+    return {
+        'Username': name, 'Attributes': [{'Name': 'sub', 'Value': f'sub-{name}'}],
+        'UserStatus': 'CONFIRMED', 'Enabled': True,
+    }
+
+
+class TestListUsersGroupsWithoutPerUserCalls:
+    """GET /users reads memberships per GROUP, not per user (E2E F10).
+
+    It used to call AdminListGroupsForUser once per user, serially: production's
+    13 users meant 13 round-trips and a p95 of ~3.8 s. The call count is now a
+    function of the number of groups, which is fixed.
+    """
+
+    @staticmethod
+    def _pool(mock_cognito, users: int) -> None:
+        names = [f'user{i}' for i in range(users)]
+        # Two pages of users, to prove ListUsers still pages.
+        mock_cognito.list_users.side_effect = [
+            {'Users': [_pool_user(n) for n in names[:users // 2]], 'PaginationToken': 'p2'},
+            {'Users': [_pool_user(n) for n in names[users // 2:]]},
+        ]
+        mock_cognito.list_groups.return_value = {'Groups': [{'GroupName': 'admins'}, {'GroupName': 'users'}]}
+        members = {'admins': names[:1], 'users': names[1:-1]}  # the last user is in no group
+        mock_cognito.list_users_in_group.side_effect = lambda GroupName, **_kw: {
+            'Users': [{'Username': n} for n in members[GroupName]]}
+
+    @staticmethod
+    def _groups_by_user(api_gateway_event, lambda_context) -> dict[str, list[str]]:
+        """GET /users, reduced to each listed user's groups."""
+        _, body = _call_users(api_gateway_event, lambda_context, method='GET', path='/users')
+        return {u['username']: u['groups'] for u in body['users']}
+
+    @pytest.mark.parametrize('users', [4, 40])
+    @patch('users_handler.cognito')
+    def test_cognito_calls_do_not_grow_with_users(self, mock_cognito, api_gateway_event, lambda_context, users):
+        self._pool(mock_cognito, users)
+
+        status, body = _call_users(api_gateway_event, lambda_context, method='GET', path='/users')
+
+        assert status == 200
+        assert len(body['users']) == users
+        mock_cognito.admin_list_groups_for_user.assert_not_called()
+        assert mock_cognito.list_groups.call_count == 1
+        assert mock_cognito.list_users_in_group.call_count == 2
+        assert mock_cognito.list_users.call_count == 2
 
     @patch('users_handler.cognito')
-    def test_returns_user_list_for_admins(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns list of users for admin callers."""
-        # Arrange
-        mock_cognito.list_users.return_value = {
-            'Users': [{
-                'Username': 'testuser',
-                'Attributes': [
-                    {'Name': 'email', 'Value': 'test@example.com'},
-                    {'Name': 'name', 'Value': 'Test User'}
-                ],
-                'UserStatus': 'CONFIRMED',
-                'Enabled': True,
-                'UserCreateDate': datetime(2025, 1, 1, tzinfo=timezone.utc),
-                'UserLastModifiedDate': datetime(2025, 1, 2, tzinfo=timezone.utc)
-            }]
+    def test_every_user_keeps_exactly_its_groups(self, mock_cognito, api_gateway_event, lambda_context):
+        self._pool(mock_cognito, 4)
+
+        assert self._groups_by_user(api_gateway_event, lambda_context) == {
+            'user0': ['admins'], 'user1': ['users'], 'user2': ['users'], 'user3': []}
+
+    @patch('users_handler.cognito')
+    def test_group_listings_follow_next_token(self, mock_cognito, api_gateway_event, lambda_context):
+        mock_cognito.list_users.return_value = {'Users': [_pool_user('a'), _pool_user('b')]}
+        mock_cognito.list_groups.side_effect = [
+            {'Groups': [{'GroupName': 'admins'}], 'NextToken': 'g2'},
+            {'Groups': [{'GroupName': 'users'}]},
+        ]
+        # Keyed by (group, token), not an ordered list: the two groups are now
+        # listed concurrently, so their calls interleave in any order.
+        member_pages = {
+            ('admins', None): {'Users': [{'Username': 'a'}], 'NextToken': 'm2'},
+            ('admins', 'm2'): {'Users': [{'Username': 'b'}]},
+            ('users', None): {'Users': [{'Username': 'b'}]},
         }
-        mock_cognito.admin_list_groups_for_user.return_value = {
-            'Groups': [{'GroupName': 'viewers'}]
-        }
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(method='GET', path='/users')
-        # Add admin group to claims
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        assert len(body['users']) == 1
-        assert body['users'][0]['username'] == 'testuser'
-        assert body['users'][0]['email'] == 'test@example.com'
+        mock_cognito.list_users_in_group.side_effect = (
+            lambda GroupName, NextToken=None, **_kw: member_pages[(GroupName, NextToken)])
 
-    @patch('users_handler.cognito')
-    def test_returns_unauthorized_for_non_admins(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns 403 for non-admin callers."""
-        # Arrange
-        from users_handler import lambda_handler
-        event = api_gateway_event(method='GET', path='/users')
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'viewers'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        
-        # Assert - now returns 403 Forbidden (AuthorizationError)
-        assert response['statusCode'] == 403
-
-
-class TestCreateUser:
-    """Tests for POST /users endpoint."""
-
-    @patch('users_handler.uuid')
-    @patch('users_handler.cognito')
-    def test_creates_user_successfully(
-        self, mock_cognito, mock_uuid, api_gateway_event, lambda_context
-    ):
-        """Creates new user in Cognito with UUID username."""
-        # Arrange
-        mock_uuid.uuid4.return_value = 'test-uuid-1234'
-        mock_cognito.admin_create_user.return_value = {
-            'User': {'Username': 'test-uuid-1234'}
-        }
-        mock_cognito.admin_add_user_to_group.return_value = {}
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST',
-            path='/users',
-            body={
-                'email': 'newuser@example.com',
-                'name': 'New User',
-                'group': 'users'  # Valid group: 'admins' or 'users'
-            }
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        assert 'newuser@example.com' in body['message']
-        # Verify UUID was used as username, not email
-        mock_cognito.admin_create_user.assert_called_once()
-        call_args = mock_cognito.admin_create_user.call_args
-        assert call_args.kwargs['Username'] == 'test-uuid-1234'
-        mock_cognito.admin_add_user_to_group.assert_called_once()
-
-    @patch('users_handler.cognito')
-    def test_returns_error_when_email_missing(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns 400 when email not provided."""
-        # Arrange
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST',
-            path='/users',
-            body={'name': 'No Email User'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        
-        # Assert
-        assert response['statusCode'] == 400
-
-    @patch('users_handler.cognito')
-    def test_returns_error_for_invalid_group(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns 400 for invalid group name."""
-        # Arrange
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST',
-            path='/users',
-            body={'email': 'test@example.com', 'group': 'superadmins'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        
-        # Assert
-        assert response['statusCode'] == 400
-
-    @patch('users_handler.cognito')
-    def test_handles_duplicate_user(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns error when user already exists."""
-        # Arrange
-        mock_cognito.exceptions.UsernameExistsException = type(
-            'UsernameExistsException', (Exception,), {}
-        )
-        mock_cognito.admin_create_user.side_effect = mock_cognito.exceptions.UsernameExistsException()
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST',
-            path='/users',
-            body={'email': 'existing@example.com', 'group': 'users'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert - now returns 409 Conflict with error key
-        assert response['statusCode'] == 409
-        assert 'error' in body
-        assert 'already exists' in body['error']
-
-
-class TestUpdateUser:
-    """Tests for PUT /users/<username> endpoint."""
-
-    @patch('users_handler.cognito')
-    def test_updates_user_attributes_successfully(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Updates given_name and family_name in Cognito."""
-        mock_cognito.admin_get_user.return_value = {
-            'UserAttributes': [
-                {'Name': 'given_name', 'Value': 'Old'},
-                {'Name': 'family_name', 'Value': 'Name'},
-            ]
-        }
-        mock_cognito.admin_update_user_attributes.return_value = {}
-
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser',
-            path_params={'username': 'testuser'},
-            body={'given_name': 'New', 'family_name': 'Name'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        assert body['given_name'] == 'New'
-        assert body['family_name'] == 'Name'
-        assert body['name'] == 'New Name'
-        mock_cognito.admin_update_user_attributes.assert_called_once()
-
-    @patch('users_handler.cognito')
-    def test_partial_update_given_name_only(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Updates only given_name, merges with existing family_name."""
-        mock_cognito.admin_get_user.return_value = {
-            'UserAttributes': [
-                {'Name': 'given_name', 'Value': 'Old'},
-                {'Name': 'family_name', 'Value': 'Smith'},
-            ]
-        }
-        mock_cognito.admin_update_user_attributes.return_value = {}
-
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser',
-            path_params={'username': 'testuser'},
-            body={'given_name': 'New'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
-        assert response['statusCode'] == 200
-        assert body['given_name'] == 'New'
-        assert body['family_name'] == 'Smith'
-        assert body['name'] == 'New Smith'
-
-    @patch('users_handler.cognito')
-    def test_partial_update_family_name_only(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Updates only family_name, merges with existing given_name."""
-        mock_cognito.admin_get_user.return_value = {
-            'UserAttributes': [
-                {'Name': 'given_name', 'Value': 'Jane'},
-                {'Name': 'family_name', 'Value': 'Old'},
-            ]
-        }
-        mock_cognito.admin_update_user_attributes.return_value = {}
-
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser',
-            path_params={'username': 'testuser'},
-            body={'family_name': 'Doe'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
-        assert response['statusCode'] == 200
-        assert body['given_name'] == 'Jane'
-        assert body['family_name'] == 'Doe'
-        assert body['name'] == 'Jane Doe'
-
-    @patch('users_handler.cognito')
-    def test_rejects_non_string_given_name(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns 400 when given_name is not a string."""
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser',
-            path_params={'username': 'testuser'},
-            body={'given_name': 123}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-
-        response = lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 400
-
-    @patch('users_handler.cognito')
-    def test_returns_error_when_both_names_missing(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns 400 when neither given_name nor family_name in body."""
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser',
-            path_params={'username': 'testuser'},
-            body={'some_other_field': 'value'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-
-        response = lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 400
-
-    @patch('users_handler.cognito')
-    def test_rejects_whitespace_only_names(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns 400 when names are whitespace-only and no existing names."""
-        mock_cognito.exceptions.UserNotFoundException = type(
-            'UserNotFoundException', (Exception,), {}
-        )
-        mock_cognito.admin_get_user.return_value = {
-            'UserAttributes': []
-        }
-
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser',
-            path_params={'username': 'testuser'},
-            body={'given_name': '   ', 'family_name': '  '}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-
-        response = lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 400
-
-    @patch('users_handler.cognito')
-    def test_returns_not_found_for_nonexistent_user(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns 404 when user does not exist."""
-        mock_cognito.exceptions.UserNotFoundException = type(
-            'UserNotFoundException', (Exception,), {}
-        )
-        mock_cognito.admin_get_user.side_effect = (
-            mock_cognito.exceptions.UserNotFoundException()
-        )
-
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/ghost',
-            path_params={'username': 'ghost'},
-            body={'given_name': 'Ghost'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-
-        assert response['statusCode'] == 404
-        assert 'not found' in body['error'].lower()
-
-    @patch('users_handler.cognito')
-    def test_returns_unauthorized_for_non_admins(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns 403 for non-admin callers."""
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser',
-            path_params={'username': 'testuser'},
-            body={'given_name': 'New'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'viewers'
-
-        response = lambda_handler(event, lambda_context)
-
-        assert response['statusCode'] == 403
-
-
-class TestUpdateUserGroup:
-    """Tests for PUT /users/<username>/group endpoint."""
-
-    @patch('users_handler.cognito')
-    def test_updates_user_group_successfully(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Updates user group from users to admins."""
-        # Arrange - use 'users' as current group since handler only removes 'admins' or 'users'
-        mock_cognito.admin_list_groups_for_user.return_value = {
-            'Groups': [{'GroupName': 'users'}]
-        }
-        mock_cognito.admin_remove_user_from_group.return_value = {}
-        mock_cognito.admin_add_user_to_group.return_value = {}
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser/group',
-            path_params={'username': 'testuser'},
-            body={'group': 'admins'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        assert body['group'] == 'admins'
-        mock_cognito.admin_remove_user_from_group.assert_called_once()
-        mock_cognito.admin_add_user_to_group.assert_called_once()
-
-    @patch('users_handler.cognito')
-    def test_handles_user_not_found(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns error when user not found."""
-        # Arrange
-        mock_cognito.exceptions.UserNotFoundException = type(
-            'UserNotFoundException', (Exception,), {}
-        )
-        mock_cognito.admin_list_groups_for_user.side_effect = mock_cognito.exceptions.UserNotFoundException()
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/nonexistent/group',
-            path_params={'username': 'nonexistent'},
-            body={'group': 'admins'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert - now returns 404 with error key
-        assert response['statusCode'] == 404
-        assert 'error' in body
-        assert 'not found' in body['error'].lower()
-
-
-class TestResetUserPassword:
-    """Tests for POST /users/<username>/reset-password endpoint."""
-
-    @patch('users_handler.cognito')
-    def test_resets_password_successfully(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Resets user password and sends email."""
-        # Arrange
-        mock_cognito.admin_reset_user_password.return_value = {}
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST',
-            path='/users/testuser/reset-password',
-            path_params={'username': 'testuser'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        mock_cognito.admin_reset_user_password.assert_called_once()
-
-
-class TestEnableUser:
-    """Tests for PUT /users/<username>/enable endpoint."""
-
-    @patch('users_handler.cognito')
-    def test_enables_user_successfully(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Enables disabled user."""
-        # Arrange
-        mock_cognito.admin_enable_user.return_value = {}
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser/enable',
-            path_params={'username': 'testuser'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        mock_cognito.admin_enable_user.assert_called_once()
-
-
-class TestDisableUser:
-    """Tests for PUT /users/<username>/disable endpoint."""
-
-    @patch('users_handler.cognito')
-    def test_disables_user_successfully(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Disables user to prevent login."""
-        # Arrange
-        mock_cognito.admin_disable_user.return_value = {}
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='PUT',
-            path='/users/testuser/disable',
-            path_params={'username': 'testuser'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        mock_cognito.admin_disable_user.assert_called_once()
-
-
-class TestDeleteUser:
-    """Tests for DELETE /users/<username> endpoint."""
-
-    @patch('users_handler.cognito')
-    def test_deletes_user_successfully(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Deletes user from Cognito."""
-        # Arrange
-        mock_cognito.admin_delete_user.return_value = {}
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='DELETE',
-            path='/users/testuser',
-            path_params={'username': 'testuser'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert body['success'] is True
-        mock_cognito.admin_delete_user.assert_called_once()
-
-    @patch('users_handler.cognito')
-    def test_handles_delete_nonexistent_user(
-        self, mock_cognito, api_gateway_event, lambda_context
-    ):
-        """Returns error when deleting nonexistent user."""
-        # Arrange
-        mock_cognito.exceptions.UserNotFoundException = type(
-            'UserNotFoundException', (Exception,), {}
-        )
-        mock_cognito.admin_delete_user.side_effect = mock_cognito.exceptions.UserNotFoundException()
-        
-        from users_handler import lambda_handler
-        event = api_gateway_event(
-            method='DELETE',
-            path='/users/nonexistent',
-            path_params={'username': 'nonexistent'}
-        )
-        event['requestContext']['authorizer']['claims']['cognito:groups'] = 'admins'
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert - now returns 404 with error key
-        assert response['statusCode'] == 404
-        assert 'error' in body
-        assert 'not found' in body['error'].lower()
+        assert self._groups_by_user(api_gateway_event, lambda_context) == {'a': ['admins'], 'b': ['admins', 'users']}
+        assert mock_cognito.list_groups.call_args_list[1].kwargs['NextToken'] == 'g2'
+        assert sorted(
+            (c.kwargs['GroupName'], c.kwargs.get('NextToken', ''))
+            for c in mock_cognito.list_users_in_group.call_args_list
+        ) == [('admins', ''), ('admins', 'm2'), ('users', '')]

@@ -22,8 +22,9 @@
 
 import { z } from 'zod'
 import type {
-  Project, ProjectDetail,
-} from '../../api/types'
+  Project,
+  ProjectDetail,
+} from '../../api/projectTypes'
 
 /** One document of one project — what a form's link is matched against. */
 export interface DocumentRowIdentity {
@@ -72,10 +73,12 @@ export type LinkedForm = z.infer<typeof LinkedFormSchema>
 
 /**
  * Normalize the wire's form list down to the link fields, dropping records
- * without a usable identity.
+ * without a usable identity. Takes `unknown` because the list itself is unvalidated:
+ * a response with no `forms` field reads as no forms rather than crashing the page.
  */
-export function normalizeLinkedForms(rawForms: readonly unknown[]): LinkedForm[] {
-  return rawForms.flatMap((raw) => {
+export function normalizeLinkedForms(rawForms: unknown): LinkedForm[] {
+  if (!Array.isArray(rawForms)) return []
+  return rawForms.flatMap((raw: unknown) => {
     const parsed = LinkedFormSchema.safeParse(raw)
     return parsed.success ? [parsed.data] : []
   })
@@ -90,7 +93,7 @@ type DetailWithDocuments = Pick<Partial<ProjectDetail>, 'documents'>
  * Needed to tell a project-wide link apart from a stale one: a form pointing at
  * a document that is still present belongs to that document alone, while a form
  * pointing at a document that is gone (regenerated) falls back to the project.
- * Details are aligned with `projects` by index, the same way `collectPRFAQs`
+ * Details are aligned with `projects` by index, the same way `collectRows`
  * aligns them.
  */
 export function collectProjectDocumentIds(
@@ -100,7 +103,7 @@ export function collectProjectDocumentIds(
   const byProject = new Map<string, Set<string>>()
   if (!allProjectDetails || !projects) return byProject
   for (const [index, detail] of allProjectDetails.entries()) {
-    const project = projects[index]
+    const project = projects.at(index)
     if (!project) continue
     // A detail can be absent even when the array is not: a caller mapping
     // `useQueries().map((q) => q.data)` yields undefined for every entry still

@@ -3,6 +3,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useConfigStore } from './configStore'
+import { DEFAULT_DATE_BASIS, DEFAULT_TIME_RANGE } from './timeRanges'
+import { getDaysFromRange } from '../api/baseUrl'
 import * as runtimeConfig from '../runtimeConfig'
 
 // Mock the runtimeConfig module
@@ -13,6 +15,24 @@ vi.mock('../runtimeConfig', () => ({
     cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
   }))
 }))
+
+const TRUSTED_ENDPOINT = 'https://trusted-api.example.com/v1'
+
+/** Mark the runtime config loaded with `apiEndpoint` as its API. */
+function loadRuntimeEndpoint(apiEndpoint: string) {
+  vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
+  vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
+    apiEndpoint,
+    cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
+  })
+}
+
+/** Put the trusted endpoint in the store directly, as a baseline for discard assertions. */
+function presetTrustedEndpoint() {
+  useConfigStore.setState((state) => ({
+    config: { ...state.config, apiEndpoint: TRUSTED_ENDPOINT },
+  }))
+}
 
 describe('configStore', () => {
   beforeEach(() => {
@@ -26,8 +46,6 @@ describe('configStore', () => {
         urlsToTrack: [],
         sources: {
           webscraper: { enabled: false, schedule: 'rate(5 minutes)', credentials: {} },
-          manual_import: { enabled: false, schedule: 'rate(5 minutes)', credentials: {} },
-          s3_import: { enabled: false, schedule: 'rate(5 minutes)', credentials: {} },
         },
       },
       timeRange: '7d',
@@ -39,11 +57,7 @@ describe('configStore', () => {
   describe('setConfig', () => {
     it('sets API endpoint correctly when origin is trusted', () => {
       // With config loaded, the runtime endpoint's origin is allowed.
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://api.example.com/v1',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://api.example.com/v1')
 
       const { setConfig } = useConfigStore.getState()
       setConfig({ apiEndpoint: 'https://api.example.com/v1' })
@@ -53,11 +67,7 @@ describe('configStore', () => {
     })
 
     it('preserves existing config when updating partial config', () => {
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://api.example.com/v1',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://api.example.com/v1')
 
       const { setConfig } = useConfigStore.getState()
       setConfig({ apiEndpoint: 'https://api.example.com/v1', brandName: 'TestBrand' })
@@ -74,36 +84,20 @@ describe('configStore', () => {
       setConfig({ brandHandles: ['@brand', '@company'] })
 
       const { config } = useConfigStore.getState()
-      expect(config.brandHandles).toEqual(['@brand', '@company'])
+      expect(config.brandHandles).toStrictEqual(['@brand', '@company'])
     })
   })
 
   describe('setTimeRange', () => {
-    it('sets time range to 24h', () => {
+    type TimeRange = Parameters<ReturnType<typeof useConfigStore.getState>['setTimeRange']>[0]
+
+    it.each<[range: TimeRange]>([['24h'], ['30d'], ['custom']])('sets time range to %s', (range) => {
       const { setTimeRange } = useConfigStore.getState()
 
-      setTimeRange('24h')
+      setTimeRange(range)
 
       const { timeRange } = useConfigStore.getState()
-      expect(timeRange).toBe('24h')
-    })
-
-    it('sets time range to 30d', () => {
-      const { setTimeRange } = useConfigStore.getState()
-
-      setTimeRange('30d')
-
-      const { timeRange } = useConfigStore.getState()
-      expect(timeRange).toBe('30d')
-    })
-
-    it('sets time range to custom', () => {
-      const { setTimeRange } = useConfigStore.getState()
-
-      setTimeRange('custom')
-
-      const { timeRange } = useConfigStore.getState()
-      expect(timeRange).toBe('custom')
+      expect(timeRange).toBe(range)
     })
   })
 
@@ -127,6 +121,26 @@ describe('configStore', () => {
 
       const { customDays } = useConfigStore.getState()
       expect(customDays).toBeNull()
+    })
+  })
+
+  describe('defaults', () => {
+    it('starts a fresh store on the last 14 days by imported date', () => {
+      const { timeRange, customDays, dateBasis } = useConfigStore.getInitialState()
+
+      expect({ timeRange, customDays, dateBasis }).toStrictEqual({ timeRange: '14d', customDays: null, dateBasis: 'imported' })
+      expect(getDaysFromRange(timeRange, customDays)).toBe(14)
+    })
+
+    it('exports the same default the store starts with', () => {
+      expect(DEFAULT_TIME_RANGE).toBe(useConfigStore.getInitialState().timeRange)
+      expect(DEFAULT_DATE_BASIS).toBe(useConfigStore.getInitialState().dateBasis)
+    })
+
+    it('accepts the 14-day preset', () => {
+      useConfigStore.getState().setTimeRange('14d')
+
+      expect(useConfigStore.getState().timeRange).toBe('14d')
     })
   })
 
@@ -169,11 +183,7 @@ describe('configStore', () => {
   describe('syncWithRuntimeConfig', () => {
     it('updates apiEndpoint from runtime config when config is loaded', () => {
       // Mock isConfigLoaded to return true
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://runtime-api.example.com',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://runtime-api.example.com')
 
       const { syncWithRuntimeConfig } = useConfigStore.getState()
       syncWithRuntimeConfig()
@@ -185,9 +195,8 @@ describe('configStore', () => {
     it('does not update apiEndpoint when runtime config is not loaded', () => {
       vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(false)
 
-      const { syncWithRuntimeConfig, setConfig } = useConfigStore.getState()
-      // setConfig with a foreign URL: in a live app with config loaded this
-      // would be rejected; here config is NOT loaded so the boundary validator
+      const { syncWithRuntimeConfig } = useConfigStore.getState()
+      // A foreign URL: in a live app with config loaded setConfig would reject it;
       // cannot build an allowlist — it will discard the value too.
       useConfigStore.setState((state) => ({
         config: { ...state.config, apiEndpoint: 'https://local-api.example.com' },
@@ -199,11 +208,7 @@ describe('configStore', () => {
     })
 
     it('does not update when runtime endpoint matches store endpoint', () => {
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://same-api.example.com',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://same-api.example.com')
 
       // Bypass the store boundary to set the same value as runtime config.
       useConfigStore.setState((state) => ({
@@ -223,11 +228,7 @@ describe('configStore', () => {
       // This is the realistic attack scenario: the user previously saved a
       // foreign URL and it is sitting in localStorage. On next load the app
       // syncs with runtime config, which must win.
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://real-api.example.com',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://real-api.example.com')
 
       // Force-write a foreign value directly (bypassing setConfig validation),
       // simulating a value that was persisted by an earlier build.
@@ -247,11 +248,7 @@ describe('configStore', () => {
 
   describe('setConfig — store boundary validation (issue #262)', () => {
     it('DOES accept an endpoint that matches the runtime config origin (positive case)', () => {
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://trusted-api.example.com/v1',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://trusted-api.example.com/v1')
 
       const { setConfig } = useConfigStore.getState()
       setConfig({ apiEndpoint: 'https://trusted-api.example.com/v1' })
@@ -260,16 +257,9 @@ describe('configStore', () => {
     })
 
     it('discards a foreign apiEndpoint (out-of-allowlist value cannot be persisted)', () => {
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://trusted-api.example.com/v1',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://trusted-api.example.com/v1')
 
-      // Set a trusted value first so we have a reference baseline.
-      useConfigStore.setState((state) => ({
-        config: { ...state.config, apiEndpoint: 'https://trusted-api.example.com/v1' },
-      }))
+      presetTrustedEndpoint()
 
       const { setConfig } = useConfigStore.getState()
       setConfig({ apiEndpoint: 'https://attacker.example.com/steal' })
@@ -279,11 +269,7 @@ describe('configStore', () => {
     })
 
     it('still updates other fields when apiEndpoint is out-of-allowlist', () => {
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://trusted-api.example.com/v1',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://trusted-api.example.com/v1')
 
       const { setConfig } = useConfigStore.getState()
       setConfig({ apiEndpoint: 'https://attacker.example.com/steal', brandName: 'My Brand' })
@@ -295,15 +281,9 @@ describe('configStore', () => {
     })
 
     it('accepts an empty string (the "not configured" sentinel)', () => {
-      vi.mocked(runtimeConfig.isConfigLoaded).mockReturnValue(true)
-      vi.mocked(runtimeConfig.getRuntimeConfig).mockReturnValue({
-        apiEndpoint: 'https://trusted-api.example.com/v1',
-        cognito: { userPoolId: 'pool-123', clientId: 'client-123', region: 'us-east-1' }
-      })
+      loadRuntimeEndpoint('https://trusted-api.example.com/v1')
 
-      useConfigStore.setState((state) => ({
-        config: { ...state.config, apiEndpoint: 'https://trusted-api.example.com/v1' },
-      }))
+      presetTrustedEndpoint()
 
       const { setConfig } = useConfigStore.getState()
       setConfig({ apiEndpoint: '' })

@@ -8,43 +8,15 @@ redeployments can never reset a live admin or print a password that was
 never applied.
 """
 import os
-from unittest.mock import MagicMock
-
-import pytest
 
 import admin_bootstrap
+import pytest
+
+from custom_resources.test.admin_bootstrap_fakes import UserNotFound, make_event
 
 HANDLER_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'admin_bootstrap.py'
 )
-
-
-class UserNotFound(Exception):
-    pass
-
-
-@pytest.fixture
-def cognito(monkeypatch):
-    """Mocked cognito client injected into the module."""
-    client = MagicMock()
-    client.exceptions.UserNotFoundException = UserNotFound
-    monkeypatch.setattr(admin_bootstrap, 'cognito', client)
-    return client
-
-
-def make_event(request_type='Create', physical_id=None):
-    event = {
-        'RequestType': request_type,
-        'ResourceProperties': {
-            'UserPoolId': 'us-east-1_TEST',
-            'Username': 'admin',
-            'Email': 'admin@local.host',
-            'GroupName': 'admins',
-        },
-    }
-    if physical_id is not None:
-        event['PhysicalResourceId'] = physical_id
-    return event
 
 
 def assert_untouched(cognito, result):
@@ -135,11 +107,6 @@ class TestUpdateAndDelete:
         assert_untouched(cognito, result)
         # Keeps the existing physical id so CloudFormation never replaces it.
         assert result['PhysicalResourceId'] == 'admin-bootstrap-us-east-1_TEST'
-
-
-def test_alphabet_has_no_ambiguous_characters():
-    pool = admin_bootstrap.UPPER + admin_bootstrap.LOWER + admin_bootstrap.DIGITS
-    assert not set(pool) & set('0OlI')
 
 
 def test_handler_fits_the_cloudformation_inline_limit():

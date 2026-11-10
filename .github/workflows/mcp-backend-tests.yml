@@ -65,14 +65,14 @@ jobs:
     # rather than to accommodate the run time.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing in this job pushes, tags, or calls the API, so the token has
           # no use in `.git/config`. Keeping it out is also the safe default if
           # the commented pull-request trigger is re-enabled for untrusted forks.
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version-file: .python-version
           cache: pip
@@ -81,25 +81,28 @@ jobs:
           cache-dependency-path: |
             voc-datalake/requirements-dev.txt
             voc-datalake/lambda/layers/processing-deps/requirements.txt
+            voc-datalake/lambda/layers/signing-deps/requirements.txt
 
       # Two files, both needed:
       #
-      # requirements-dev.txt supplies pytest and `jsonschema`, which
-      # test_mcp_output_schema_conformance.py uses to validate every declared
-      # `outputSchema` against a payload the tool really produces.
+      # requirements-dev.txt supplies pytest and moto.
       #
       # processing-deps/requirements.txt supplies the tracer extra
-      # (`aws-lambda-powertools[tracer]`, hence aws_xray_sdk) and pydantic.
-      # The MCP handler and the domain API modules it delegates to decorate
+      # (`aws-lambda-powertools[tracer]`, hence aws_xray_sdk) and pydantic;
+      # signing-deps/requirements.txt supplies cryptography, which the projects
+      # domain module reaches through shared/cloudfront_signing.py (it moved out
+      # of processing-deps into its own layer in 5.31).
+      # The global MCP handler and the domain API modules it delegates to decorate
       # helpers with `@tracer.capture_method` at import time, so without this
       # file collection fails on ModuleNotFoundError before a single
       # assertion runs. requirements-dev.txt's own header names it as the
       # companion install for exactly this reason.
       #
       # The modules under `lambda/shared/test/` need nothing beyond these two:
-      # the token, vocabulary-mirror, runtime-lockstep and gate-audit modules are
-      # pure Python over `shared/mcp_tokens.py`, over source files read as text,
-      # and over `scripts/mcp_gate.py` respectively.
+      # the token, runtime-lockstep and gate-audit modules are pure Python over
+      # `shared/mcp_tokens.py`, over source files read as text, and over
+      # `scripts/mcp_gate.py` respectively. (The per-project MCP server and its
+      # suites were retired in 3.00.00; the gate now covers the global server.)
       #
       # No Lambda layer *build* is needed — these are host-side unit tests
       # importing the modules directly, not a packaged bundle. Node, AWS
@@ -107,8 +110,8 @@ jobs:
       # nothing here synthesizes CDK, builds the frontend, or reaches an AWS
       # endpoint: the conftest layers mock AWS at the import boundary.
       #
-      # Known exposure: both files bound their dependencies with `>=` and only
-      # `jsonschema` is capped (`<5`), and `.python-version` pins a floating
+      # Known exposure: both files bound most dependencies with `>=`, and
+      # `.python-version` pins a floating
       # patch of 3.14. So a breaking upstream release can turn this gate red
       # on a pull request that changed nothing. A red run whose failure is an
       # import error, a resolver conflict, or a message naming a third-party
@@ -130,6 +133,7 @@ jobs:
           python -m pip install --disable-pip-version-check
           -r voc-datalake/requirements-dev.txt
           -r voc-datalake/lambda/layers/processing-deps/requirements.txt
+          -r voc-datalake/lambda/layers/signing-deps/requirements.txt
 
       # -o addopts="": pytest.ini's addopts turn every run into a
       # whole-repository coverage run (`--cov=lambda --cov=plugins`) that also
@@ -232,8 +236,11 @@ jobs:
       # exit-code is never compared against '0'.
       - name: Report the test result
         if: ${{ !cancelled() && steps.run-tests.outcome != 'skipped' && steps.run-tests.outputs.exit-code != '0' }}
+        # Passed through env and read as data, never expanded into the script (template injection).
+        env:
+          PYTEST_EXIT: ${{ steps.run-tests.outputs.exit-code }}
         run: |
-          echo "::error::The MCP test surface failed (pytest exit ${{ steps.run-tests.outputs.exit-code }}). See the 'Run MCP test surface' step."
+          echo "::error::The MCP test surface failed (pytest exit ${PYTEST_EXIT}). See the 'Run MCP test surface' step."
           exit 1
 
       # Kept on failure only: a green run's report says nothing the log does not,
@@ -241,7 +248,7 @@ jobs:
       # truncated or the failure is a collection error.
       - name: Upload the JUnit report
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-gate-report
           path: voc-datalake/mcp-gate-report.xml

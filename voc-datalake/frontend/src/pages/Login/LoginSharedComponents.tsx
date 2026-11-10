@@ -7,6 +7,9 @@ import clsx from 'clsx'
 import {
   Loader2, AlertCircle, Eye, EyeOff,
 } from 'lucide-react'
+import { useId } from 'react'
+import { useTranslation } from 'react-i18next'
+import { TextInputField } from '../../components/TextInputField/TextInputField'
 
 // Error Alert Component
 interface ErrorAlertProps { readonly message: string }
@@ -25,7 +28,7 @@ export function ErrorAlert({ message }: Readonly<ErrorAlertProps>) {
      */
     <div
       role="alert"
-      className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg"
+      className="flex items-center gap-2 text-danger text-sm bg-danger-subtle border border-danger/30 p-3 rounded-lg"
     >
       <AlertCircle size={16} />
       {message}
@@ -38,7 +41,7 @@ interface SuccessMessageProps { readonly message: string }
 
 export function SuccessMessage({ message }: Readonly<SuccessMessageProps>) {
   return (
-    <div className="text-green-600 text-sm bg-green-50 p-3 rounded-lg">
+    <div className="text-ok text-sm bg-ok-subtle border border-ok/30 p-3 rounded-lg">
       {message}
     </div>
   )
@@ -69,6 +72,23 @@ export function SubmitButton({
   )
 }
 
+// Labelled text field — the <label> is tied to its input so clicking it
+// focuses the field and assistive tech announces the label, not the placeholder.
+interface TextFieldProps {
+  readonly value: string
+  readonly onChange: (value: string) => void
+  readonly label: string
+  readonly placeholder: string
+  readonly type?: 'text' | 'password'
+  readonly autoComplete?: string
+  readonly minLength?: number
+}
+
+/** Every login field is required. */
+export function TextField(props: Readonly<TextFieldProps>) {
+  return <TextInputField {...props} required />
+}
+
 // Password Input Component
 interface PasswordInputProps {
   readonly value: string
@@ -77,8 +97,7 @@ interface PasswordInputProps {
   readonly onToggleShow: () => void
   readonly placeholder: string
   readonly label: string
-  readonly required?: boolean
-  readonly minLength?: number
+  readonly autoComplete?: string
 }
 
 export function PasswordInput({
@@ -88,30 +107,36 @@ export function PasswordInput({
   onToggleShow,
   placeholder,
   label,
-  required = true,
-  minLength,
+  autoComplete = 'current-password',
 }: Readonly<PasswordInputProps>) {
+  const { t } = useTranslation('login')
+  const id = useId()
+  const toggleLabel = showPassword ? t('hidePassword') : t('showPassword')
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
+      <label htmlFor={id} className="block text-sm font-medium text-text mb-1">
         {label}
       </label>
       <div className="relative">
         <input
+          id={id}
           type={showPassword ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="input pr-10"
+          className="input pr-11"
           placeholder={placeholder}
-          required={required}
-          minLength={minLength}
+          autoComplete={autoComplete}
+          required
         />
         <button
           type="button"
           onClick={onToggleShow}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          aria-label={toggleLabel}
+          aria-pressed={showPassword}
+          title={toggleLabel}
+          className="icon-btn absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 flex items-center justify-center"
         >
-          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       </div>
     </div>

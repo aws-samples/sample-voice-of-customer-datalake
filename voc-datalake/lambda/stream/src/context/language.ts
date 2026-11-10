@@ -5,8 +5,8 @@
  *   - the set of languages the model may be asked to ANSWER in
  *   - the human-readable language names used in model system prompts
  *   - `isSupportedLanguage`, the ONE runtime membership test for the allowlist
- *   - the `getLanguageInstruction` function consumed by both voc-context.ts and
- *     persona-prompt.ts
+ *   - the `getLanguageInstruction` function consumed by persona-prompt.ts (the
+ *     assistant's system prompt and consult_personas import this module too)
  *
  * ## This is NOT the shipped-UI-catalogue list, and the distinction matters
  *
@@ -41,6 +41,7 @@ export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
   ar: 'Arabic',
   de: 'German',
+  // Stryker disable next-line StringLiteral: never interpolated — getLanguageInstruction returns '' for en before the lookup
   en: 'English',
   es: 'Spanish',
   fr: 'French',
@@ -60,12 +61,12 @@ const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
 /**
  * Derived from LANGUAGE_NAMES so membership and naming are the SAME data: a
  * locale cannot be accepted by the allowlist but left unnamed, and the exhaustive
- * Record above makes the reverse a compile error. Keyed by `string` rather than
- * SupportedLanguage on purpose — that is what lets the guard below test an
- * unknown value without an assertion, and what makes `get()` honestly return
- * `string | undefined`.
+ * Record above makes the reverse a compile error. Keyed by `unknown` rather than
+ * SupportedLanguage on purpose — that is what lets the guard below test any
+ * value without an assertion (a non-string is simply absent), and what makes
+ * `get()` honestly return `string | undefined`.
  */
-const NAME_LOOKUP: ReadonlyMap<string, string> = new Map(Object.entries(LANGUAGE_NAMES));
+const NAME_LOOKUP: ReadonlyMap<unknown, string> = new Map(Object.entries(LANGUAGE_NAMES));
 
 /**
  * Runtime membership test for the locale allowlist.
@@ -76,7 +77,7 @@ const NAME_LOOKUP: ReadonlyMap<string, string> = new Map(Object.entries(LANGUAGE
  * rather than an assertion, per the repo convention.
  */
 export function isSupportedLanguage(value: unknown): value is SupportedLanguage {
-  return typeof value === 'string' && NAME_LOOKUP.has(value);
+  return NAME_LOOKUP.has(value);
 }
 
 /**
@@ -84,8 +85,10 @@ export function isSupportedLanguage(value: unknown): value is SupportedLanguage 
  *
  * Returns an empty string for English (or when no language is specified) because
  * the model responds in English by default — an explicit instruction adds noise.
+ * Accepts any string so the insurance below is a real, tested path rather than
+ * one only a type assertion could reach.
  */
-export function getLanguageInstruction(lang: SupportedLanguage | undefined): string {
+export function getLanguageInstruction(lang: string | undefined): string {
   if (!lang || lang === 'en') return '';
   // Insurance, NOT a fix, and deliberately labelled as such: the sole runtime
   // entry point parses through chatRequestSchema, whose preprocess step maps

@@ -35,7 +35,7 @@ python -m pytest --cov=lambda    # With coverage report
 | Location | Type | Environment |
 |----------|------|-------------|
 | `lambda/api/test/` | API Lambda unit tests | Python/pytest |
-| `lambda/ingestors/test/` | Ingestor unit tests | Python/pytest |
+| `plugins/*/ingestor/test_*.py`, `plugins/_shared/test/` | Plugin ingestor and shared plugin tests | Python/pytest |
 | `lambda/processor/test/` | Processor unit tests | Python/pytest |
 | `lambda/shared/test/` | Shared utilities tests | Python/pytest |
 | `frontend/src/components/*.test.tsx` | Component unit tests | node |
@@ -326,90 +326,48 @@ def test_stores_feedback_item_in_dynamodb(dynamodb_table):
 
 ### Testing Bedrock Integration
 
+Every Lambda talks to Bedrock through `shared/converse.py` (`converse`, `converse_chain`), never through
+a bare client, so tests double ONE seam: `shared.converse.get_bedrock_client`. Model ids are resolved
+inside the code under test (`shared.model_config.get_active_model_id(surface=...)`) — never hardcode one
+in a test either. The real examples live in `lambda/shared/test/test_converse.py`.
+
 ```python
-"""Tests for Bedrock AI integration."""
-import json
-import pytest
+"""Tests for a feature that asks Bedrock through shared.converse."""
 from unittest.mock import patch, MagicMock
-
-# Resolve INSIDE the code under test (module-level calls run at import time
-# and dodge test mocks/monkeypatching) — never hardcode ids:
-#   from shared.model_config import get_active_model_id
-#   model_id = get_active_model_id(surface='utilities')
+from botocore.exceptions import ClientError
 
 
-@pytest.fixture
-def mock_bedrock_response():
-    """Create a mock Bedrock response."""
-    def _create_response(text: str):
-        return {
-            'body': MagicMock(read=lambda: json.dumps({
-                'content': [{'text': text}]
-            }).encode())
-        }
-    return _create_response
+def _reply(text: str) -> dict:
+    """A Converse response carrying one text block."""
+    return {'output': {'message': {'content': [{'text': text}]}}}
 
 
-class TestChatEndpoint:
-    """Tests for POST /chat endpoint with Bedrock."""
+class TestConverse:
+    @patch('shared.converse.get_bedrock_client')
+    def test_returns_the_models_text(self, mock_get_client):
+        client = MagicMock()
+        client.converse.return_value = _reply('Hello, world!')
+        mock_get_client.return_value = client
 
-    @patch('chat_handler.get_bedrock_client')
-    @patch('chat_handler.feedback_table')
-    @patch('chat_handler.aggregates_table')
-    def test_returns_ai_response_for_valid_message(
-        self, mock_agg_table, mock_fb_table, mock_get_bedrock, 
-        mock_bedrock_response, api_gateway_event, lambda_context
-    ):
-        """Returns AI-generated response based on feedback data."""
-        # Arrange
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.return_value = mock_bedrock_response(
-            'Based on the feedback data, customers are generally satisfied.'
-        )
-        mock_get_bedrock.return_value = mock_bedrock
-        mock_agg_table.get_item.return_value = {'Item': {'count': 100}}
-        mock_fb_table.query.return_value = {'Items': []}
-        
-        from chat_handler import lambda_handler
-        event = api_gateway_event(
-            method='POST', 
-            path='/chat',
-            body={'message': 'What do customers think about our product?'}
-        )
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200
-        assert 'response' in body
-        assert 'satisfied' in body['response']
-        mock_bedrock.invoke_model.assert_called_once()
-        call_kwargs = mock_bedrock.invoke_model.call_args.kwargs
-        assert call_kwargs['modelId'] == BEDROCK_MODEL_ID
+        from shared.converse import converse
+        assert converse('Say hello', surface='utilities') == 'Hello, world!'
+        client.converse.assert_called_once()
 
-    @patch('chat_handler.get_bedrock_client')
-    def test_returns_error_message_when_bedrock_fails(
-        self, mock_get_bedrock, api_gateway_event, lambda_context
-    ):
-        """Returns graceful error when Bedrock service fails."""
-        # Arrange
-        mock_bedrock = MagicMock()
-        mock_bedrock.invoke_model.side_effect = Exception('Service unavailable')
-        mock_get_bedrock.return_value = mock_bedrock
-        
-        from chat_handler import lambda_handler
-        event = api_gateway_event(method='POST', path='/chat', body={'message': 'test'})
-        
-        # Act
-        response = lambda_handler(event, lambda_context)
-        body = json.loads(response['body'])
-        
-        # Assert
-        assert response['statusCode'] == 200  # Graceful degradation
-        assert 'error' in body or 'Error' in body.get('response', '')
+    @patch('shared.converse.get_bedrock_client')
+    def test_retries_a_throttle_then_succeeds(self, mock_get_client):
+        client = MagicMock()
+        throttle = ClientError({'Error': {'Code': 'ThrottlingException'}}, 'Converse')
+        client.converse.side_effect = [throttle, _reply('Success')]
+        mock_get_client.return_value = client
+
+        from shared.converse import converse
+        assert converse('Test', max_retries=3) == 'Success'
+        assert client.converse.call_count == 2
 ```
+
+A route that calls Bedrock is tested the same way, one layer up: patch
+`shared.converse.converse` (or the handler's imported name) with `return_value='...'`, drive the
+route through `lambda_handler`, and assert on the response shape plus the prompt the mock received.
 
 ### Lambda Test Checklist
 
@@ -541,18 +499,8 @@ global.IntersectionObserver = vi.fn().mockImplementation(() => ({
 }))
 ```
 
-Create `frontend/src/test/setup-component.ts`:
-
-```typescript
-import './setup'
-import { cleanup } from '@testing-library/react'
-import { afterEach } from 'vitest'
-
-// Cleanup after each test
-afterEach(() => {
-  cleanup()
-})
-```
+`setup.ts` is vitest's only `setupFiles` entry; it also runs React Testing Library's `cleanup()` after each test
+(`afterEach`), so component tests need no setup file of their own.
 
 Create `frontend/src/test/test-utils.tsx`:
 
@@ -1177,6 +1125,42 @@ describe('API Client', () => {
 - [ ] User interactions: Clicks, form inputs, navigation
 - [ ] Edge cases: Empty data, missing optional props
 
+
+---
+
+## Production E2E Traffic and Log Sweeps
+
+Every request the production e2e suite (`voc-datalake/frontend/e2e`) sends is tagged, so a log or error sweep can
+tell test traffic from real users. A sharded run makes about 1,000 deliberate 4xx calls (negative auth tests,
+fake-id sweeps, GET-after-DELETE proofs); without the tag they drown real errors. CloudWatch cannot delete single
+log events, so never try to "clean" logs: filter by the tag.
+
+- **The tag:** User-Agent token `voc-e2e/<run tag>` (`frontend/e2e/lib/trafficTag.ts`). Browser contexts get it
+  through `use.userAgent`; every Node-side call MUST go through `e2eFetch` (a bare `fetch(` in `e2e/lib` or
+  `e2e/tests` fails `unit/trafficTag.spec.ts`). A User-Agent needs no CORS change; do not add a custom request header.
+  `run-sharded.sh` sets one `E2E_TAG_RUN_ID` for all shards.
+- **Where it shows:** the API Gateway access log has `userAgent` (plus `path`, `integrationStatus`,
+  `errorMessage`; `lib/stacks/api-access-log.ts`), and every log line of a tagged API Lambda invocation has
+  `test_run` (`lambda/shared/e2e_tag.py`, applied by `api_handler`). The TypeScript `voc-chat-stream` Lambda has no
+  `test_run`: filter its requests by the access log's `userAgent`.
+- **Sweep queries (Logs Insights):**
+
+```
+# API access log: real traffic only / one run only
+filter isblank(userAgent) or userAgent not like /voc-e2e\//
+filter userAgent like /voc-e2e\/<run tag>/
+# API Lambda logs
+filter ispresent(test_run) = 0
+```
+
+- **Hand-made probes** against production (curl, scratch scripts) should send the token too
+  (`curl -A "node voc-e2e/<label>"`), so they are excluded like the suite.
+- **A new API Lambda entry point** that does not use `api_handler` must apply `with_test_run_tag(logger)`
+  outermost, or its lines cannot be filtered.
+- Anyone can send the token, so it hides traffic only from the DEFAULT sweep; when investigating abuse, include it
+  (`filter userAgent like /voc-e2e\//` shows every tagged request by IP).
+
+Details: `voc-datalake/frontend/e2e/README.md` → "Test traffic tag".
 
 ---
 

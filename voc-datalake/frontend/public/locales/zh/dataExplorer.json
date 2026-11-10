@@ -1,17 +1,5 @@
 {
-  "categories": {
-    "errorLoading": "加载分类出错",
-    "noCategories": "无分类",
-    "summary": "{{count}} 个分类 • {{total}} 项 • 最近 {{days}} 天",
-    "summary_one": "{{count}} 个分类 • {{total}} 项 • 最近 {{days}} 天",
-    "summary_other": "{{count}} 个分类 • {{total}} 项 • 最近 {{days}} 天"
-  },
-  "deleteConfirm": {
-    "deleteFeedback": "删除反馈",
-    "deleteS3File": "删除 S3 文件",
-    "message": "确定要删除吗？此操作无法撤销。"
-  },
-  "description": "浏览、编辑和同步原始 S3 数据和处理后的 DynamoDB 记录",
+  "description": "浏览 S3 原始数据和已处理的 DynamoDB 记录。这里的数据永不删除，已存储的原始文件为只读。",
   "editModal": {
     "cancel": "取消",
     "close": "关闭",
@@ -24,36 +12,47 @@
     "key": "键",
     "save": "保存",
     "syncToDynamo": "同时更新 DynamoDB",
-    "syncToS3": "同时更新 S3",
     "type": "类型",
     "viewFeedback": "查看反馈",
-    "viewS3File": "查看 S3 文件"
+    "viewS3File": "查看 S3 文件",
+    "content": "文件内容",
+    "staleRecord": "此记录在您打开后已被更改。请关闭编辑器并重新打开以查看当前版本。"
   },
   "feedback": {
     "category": "分类：{{category}}",
-    "delete": "删除",
     "edit": "编辑",
-    "errorLoading": "加载反馈出错",
     "noFeedback": "未找到反馈",
-    "showingRecords": "显示 {{filtered}} / {{total}} 条记录",
+    "showingRecords": "显示 {{filtered, number}} / {{total, number}} 条记录",
     "urgent": "紧急",
-    "view": "查看"
+    "view": "查看",
+    "noFeedbackHint": "请尝试其他来源或更长的时间范围。",
+    "showDetails": "显示详情",
+    "hideDetails": "隐藏详情",
+    "showingRecordsAtLeast": "已显示 {{filtered, number}} 条，还有更多",
+    "showingRecordsShown": "已显示 {{filtered, number}} 条",
+    "loadMore": "加载更多",
+    "loadingMore": "正在加载…"
   },
   "filters": {
     "allSources": "所有来源",
-    "searchPlaceholder": "搜索..."
+    "searchPlaceholder": "搜索...",
+    "bucket": "存储桶",
+    "source": "来源",
+    "search": "搜索反馈"
   },
   "newFile": "新文件",
-  "notConfigured": "在设置中配置 API 端点以浏览数据",
+  "notConfigured": "在“管理 → 常规”中配置 API 端点以浏览数据",
   "refresh": "刷新",
   "s3Browser": {
     "back": "返回",
-    "delete": "删除",
     "download": "下载",
     "edit": "编辑",
-    "errorLoading": "加载文件出错",
     "noFiles": "未找到文件",
-    "view": "查看"
+    "view": "查看",
+    "path": "文件夹路径",
+    "noFilesHint": "此文件夹为空。可在此创建文件，或从数据源导入数据。",
+    "personaFolder": "用户画像 {{n, number}} · {{date}}",
+    "personaFolderDated": "用户画像 · {{date}}"
   },
   "tabs": {
     "categories": "分类",
@@ -61,7 +60,111 @@
     "feedbackShort": "反馈",
     "processedFeedback": "处理后的反馈",
     "s3RawData": "S3 原始数据",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "数据视图"
   },
-  "title": "数据浏览器"
+  "title": "数据浏览器",
+  "details": {
+    "title": "标题",
+    "text": "评价",
+    "source": "来源",
+    "date": "日期",
+    "category": "类别",
+    "rating": "评分",
+    "language": "语言",
+    "author": "作者",
+    "problem": "问题",
+    "persona": "用户画像",
+    "showRaw": "显示原始 JSON",
+    "hideRaw": "隐藏原始 JSON"
+  },
+  "dataQuality": {
+    "title": "数据质量",
+    "description": "每个来源的反馈有多大用处：根据长度、具体信息（数字、产品术语）以及是否提出具体问题或需求，按规则划分等级。若某来源的反馈大多为低，通常意味着爬虫配置有误或表单字段被跳过。",
+    "loading": "正在加载数据质量…",
+    "empty": "此时间范围内没有反馈。",
+    "unratedShare": "此时间范围内有 {{share}} 的反馈尚未评级。",
+    "backfillHint": "在评级功能之前存储的反馈没有等级；运行类别重新处理（管理 → 分类体系）即可为其评级。",
+    "chartTop_one": "图表显示反馈最多的来源；表格列出所有来源。",
+    "chartTop_other": "图表显示反馈最多的 {{count, number}} 个来源；表格列出所有来源。",
+    "partial": "部分数据未能及时读取，因此这些数字可能低于实际值。",
+    "tableCaption": "各来源的反馈有用性",
+    "allSources": "所有来源",
+    "columns": {
+      "source": "来源",
+      "total": "总计"
+    },
+    "bands": {
+      "high": "高",
+      "medium": "中",
+      "low": "低",
+      "unrated": "未评级"
+    },
+    "profile": {
+      "title": "来源概况",
+      "description": "每个来源的反馈情况：评分、情绪和文本长度。",
+      "notProfiled": "此时间段内 {{share}} 的反馈在开始统计概况之前存储，未包含在内。重建该时间段的汇总数据即可加入。",
+      "facetGroup": "要显示的概况",
+      "tableCaption": "各来源的{{facet}}",
+      "profiled": "已统计",
+      "facets": {
+        "rating": "评分",
+        "sentiment": "情绪",
+        "length": "文本长度"
+      },
+      "rating": {
+        "5": "5 星",
+        "4": "4 星",
+        "3": "3 星",
+        "2": "2 星",
+        "1": "1 星",
+        "none": "无评分"
+      },
+      "sentiment": {
+        "positive": "正面",
+        "neutral": "中性",
+        "mixed": "混合",
+        "negative": "负面",
+        "other": "其他"
+      },
+      "length": {
+        "short": "少于 50 个字符",
+        "medium": "50–199 个字符",
+        "long": "200–999 个字符",
+        "very_long": "1,000 个字符及以上"
+      }
+    }
+  },
+  "fields": {
+    "title": "字段",
+    "description": "反馈条目中每个已存储字段的含义：类型、由哪个步骤设置、是否包含个人数据、脱敏或仅摘要的来源策略会如何处理它，以及允许的取值。含义以英文显示。",
+    "loading": "正在加载字段…",
+    "empty": "API 未返回任何字段。",
+    "caption": "反馈条目的字段（{{table}}）",
+    "keyBadge": "键",
+    "redact": "脱敏：{{effect}}",
+    "summaryOnly": "仅摘要：{{effect}}",
+    "columns": {
+      "field": "字段",
+      "type": "类型",
+      "meaning": "含义",
+      "setBy": "设置方",
+      "personalData": "个人数据",
+      "policies": "脱敏 / 仅摘要时",
+      "values": "取值"
+    },
+    "pii": {
+      "customer_text": "客户文本",
+      "personal": "个人数据",
+      "derived_text": "源自客户文本",
+      "none": "无"
+    },
+    "effects": {
+      "kept": "保留",
+      "redacted": "脱敏",
+      "dropped": "删除",
+      "from_redacted": "源自脱敏后的文本",
+      "replaced": "替换"
+    }
+  }
 }

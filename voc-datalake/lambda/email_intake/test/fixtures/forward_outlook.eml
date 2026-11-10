@@ -1,0 +1,25 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: Lee Staff <lee@company-eu.example>
+To: feedback@voc.example.com
+Subject: FW: Tracking is wrong
+Date: Fri, 06 Mar 2026 11:00:00 +0000
+Message-ID: <fwd-006@company-eu.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Same complaint reached me.
+
+________________________________
+From: Bo Customer <bo@customer.example>
+Sent: Thursday, March 5, 2026 6:00 PM
+To: Lee Staff
+Subject: Tracking is wrong
+
+The delivery tracking page shows my parcel in the wrong city.
+Please fix the tracking map, it is confusing.
+
+Thanks,
+Bo

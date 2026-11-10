@@ -1,0 +1,431 @@
+#!/usr/bin/env bash
+# Every gate; a green run here is a green CI run. Run it ONCE, on the release branch, just before it is
+# pushed for its PR. Topic/agent branches use scripts/validate-affected.sh instead (CONTRIBUTING.md).
+#
+# Each step is a hard stop with zero findings allowed. Gates whose pre-existing findings are not
+# fixed yet are NOT here: scripts/quality-baseline.sh counts them, and a gate moves from there to
+# here in the change that brings it to zero. That list only ever shrinks.
+#
+# The steps run in independent LANES at once (each lane runs its own steps in order), and every step
+# writes its own log. The first failing step stops the run (the other lanes are stopped too) and its
+# log tail is printed; a table of every step's status and duration ends each run.
+#
+#   bash scripts/validate.sh                  every step, lanes in parallel, fail fast
+#   bash scripts/validate.sh --serial         every step one after another (the old behaviour)
+#   bash scripts/validate.sh --keep-going     do not stop the other lanes when a step fails
+#   bash scripts/validate.sh --only python,cdk   only the steps tagged with one of these groups
+#   bash scripts/validate.sh --lane py,tsc    only the steps of these lanes (CI runs one lane per job)
+#   bash scripts/validate.sh --list           print the steps (lane, groups, name) and exit
+#   bash scripts/validate.sh --pytest-first   run the pytest step alone, then every other lane (for a loaded machine)
+#   bash scripts/validate.sh --dry-run        schedule and report every step with its command replaced by a no-op
+#   bash scripts/validate.sh --failed         only the steps that did not pass in the last run (FAIL, stopped, not-run)
+#
+# Groups (used by scripts/validate-affected.sh): python, frontend, cdk, stream = every step of that
+# package; <package>-static = its lint/type/dead-code steps; <package>-tests = its test suite
+# (cdk-tests includes the vite build it needs); bridge; repo (version, gitleaks, jscpd); codeql; tenets, commit (the
+# local AI reviews, scripts/ai-review/: against TENETS.md, and of the whole change; need kiro-cli or claude, else skipped);
+# audit = every code-audit detector step, or one family: audit-py-synth, audit-callers, audit-patterns,
+# audit-clones-py, audit-clones-ts, audit-ts, audit-unions, audit-locale, audit-tools (docs/code-audit.md).
+# Env: VALIDATE_PYTEST_WORKERS (pytest-xdist workers; default: CPUs - 4, at least 2),
+#      VALIDATE_LOG_DIR (default $VALIDATE_LOG_ROOT/<timestamp>), PYTHON_BIN,
+#      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs),
+#      AI_REVIEW=auto|kiro|claude|off (the AI reviews; scripts/ai-review/review.mjs),
+#      VALIDATE_LOG_ROOT (where runs are logged and --failed looks for the newest one; default .cache/validate/logs).
+#
+# bash 3.2 (macOS /bin/bash) compatible on purpose: no associative arrays, no `wait -n`.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+ROOT="$PWD"
+CDK="$ROOT/voc-datalake"
+FRONTEND="$CDK/frontend"
+STREAM="$CDK/lambda/stream"
+KNIP_PROD="$ROOT/scripts/knip-production.mjs"
+# Incremental TypeScript state, per worktree. NOT under node_modules: node_modules is shared between
+# worktrees through a symlink, and a shared .tsbuildinfo could make one worktree's check trust another's.
+TSC_CACHE="$ROOT/.cache/validate/tsc"
+
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "$CDK/.venv/bin/python" ]]; then PYTHON_BIN="$CDK/.venv/bin/python"; else PYTHON_BIN="$(command -v python3)"; fi
+fi
+PATH="$(dirname "$PYTHON_BIN"):$PATH"   # ruff, vulture, pytest from the same environment
+CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+if [[ -z "${VALIDATE_PYTEST_WORKERS:-}" ]]; then
+  VALIDATE_PYTEST_WORKERS=$(( CPUS > 6 ? CPUS - 4 : 2 ))
+fi
+# The CDK suite keeps vitest's 5 s default for local runs (a hung test reports fast). Here it runs
+# beside three other lanes, and its in-process VocApiStack synths take 1–3 s on an idle machine, so
+# load alone could cross 5 s. A per-test timeout is not an assertion: nothing a test checks changes.
+# The same value covers hooks: a file's beforeAll synth (default 10 s) timed out under CI load once (5.48.05).
+VALIDATE_VITEST_TIMEOUT_MS="${VALIDATE_VITEST_TIMEOUT_MS:-30000}"
+# Locally a baseline row whose file now reaches the coverage floor is deleted (and named) instead of failing the
+# step, so the one-line fix lands in the commit; CI cannot edit files and stays strict (docs/coverage-gate.md).
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then COVERAGE_PRUNE=""; else COVERAGE_PRUNE="--prune-graduated"; fi
+export ROOT CDK FRONTEND STREAM KNIP_PROD TSC_CACHE PYTHON_BIN PATH VALIDATE_PYTEST_WORKERS VALIDATE_VITEST_TIMEOUT_MS CPUS COVERAGE_PRUNE
+
+# ---- Options ----
+SERIAL=0; FAIL_FAST=1; ONLY=""; LANE_ONLY=""; LIST=0; PYTEST_FIRST=0; DRY_RUN=0; FAILED_ONLY=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --serial) SERIAL=1 ;;
+    --keep-going) FAIL_FAST=0 ;;
+    --only) ONLY="${2:?--only needs a comma-separated group list}"; shift ;;
+    --only=*) ONLY="${1#--only=}" ;;
+    --lane) LANE_ONLY="${2:?--lane needs a comma-separated lane list}"; shift ;;
+    --lane=*) LANE_ONLY="${1#--lane=}" ;;
+    --list) LIST=1 ;;
+    --pytest-first) PYTEST_FIRST=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    --failed) FAILED_ONLY=1 ;;
+    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+    *) printf 'validate: unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+# ---- Steps: lane | groups | name | command (run with `bash -euo pipefail -c`) ----
+# Lanes (measured: their critical paths are about equal): py (Python lint, types, pytest-xdist),
+# tsc (type checks, knip, small node checks, most code-audit detectors), lint (eslint — typed, on
+# `--concurrency auto` worker threads — jscpd, gitleaks, ts_reachability), test (vite build, the
+# synth-based audit detectors, then the CDK and stream vitest suites: the CDK stacks and the audit synth
+# stage frontend/dist as an asset), web (the frontend vitest suite, which needs no build); sec (CodeQL).
+# CI runs each lane as its own job (.github/workflows/quality-gates.yml, `--lane <name>`), so a lane's
+# steps never share a runner with another lane's.
+S_LANE=(); S_GROUPS=(); S_NAME=(); S_CMD=()
+def() { S_LANE+=("$1"); S_GROUPS+=("$2"); S_NAME+=("$3"); S_CMD+=("$4"); }
+
+# Python (voc-datalake/: ruff.toml, pyproject.toml, pytest.ini, pyrightconfig.json)
+def py   python,python-static               "ruff"                               'cd "$CDK" && ruff check lambda plugins scripts'
+def py   python,python-static               "vulture: production code"           'cd "$CDK" && bash scripts/lint-python.sh --dead-code'
+def py   python,python-static               "vulture: test-support code"         'cd "$CDK" && bash scripts/lint-python.sh --dead-code-tests'
+# pyright standard mode + reportUnnecessary* (pyrightconfig.json); zero errors.
+def py   python,python-static               "pyright"                            'cd "$CDK" && npx --prefix "$ROOT" pyright --pythonpath "$PYTHON_BIN"'
+# Production code only (pyrightconfig.production.json): no use of another module's private names.
+def py   python,python-static               "pyright: production (private usage)" 'cd "$CDK" && npx --prefix "$ROOT" pyright --pythonpath "$PYTHON_BIN" -p pyrightconfig.production.json'
+# Every pytest test asserts something (directly or through a helper it calls).
+def py   python,python-static               "check_tests_assert"                 'cd "$CDK" && out="$("$PYTHON_BIN" scripts/check_tests_assert.py)" && [ -z "$out" ] || { printf "%s\n" "$out"; exit 1; }'
+# Every test that bounds its own running time is marked `timing` (scripts/check_timing_tests.py).
+def py   python,python-static               "check_timing_tests"                 'cd "$CDK" && "$PYTHON_BIN" scripts/check_timing_tests.py'
+# pytest-xdist; `loadgroup` keeps @pytest.mark.xdist_group tests on one worker.
+# Coverage is gated per file (docs/coverage-gate.md): the check runs after the suite.
+# Tests marked `timing` (they bound their own running time) are left out of that parallel, traced run and
+# run after it in ONE process, untraced, so neither the tracer nor the other workers decide their result.
+def py   python,python-tests                "pytest"                             'cd "$CDK" && mkdir -p "$ROOT/.cache/coverage" && rm -f "$ROOT"/.cache/coverage/python.coverage* "$ROOT/.cache/coverage/python.json" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -n "$VALIDATE_PYTEST_WORKERS" --dist loadgroup -m "not timing" --cov-config="$ROOT/scripts/coverage/python.coveragerc" --cov-report=term-missing:skip-covered --cov-report=html:"$ROOT/.cache/coverage/python-html" --cov-report=json:"$ROOT/.cache/coverage/python.json" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite python && cd "$CDK" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -p no:xdist --no-cov -m timing'
+
+# Release bookkeeping: CHANGELOG.md's newest release = the version in every platform package.json.
+def tsc  repo                               "version: CHANGELOG ↔ package.json"  'cd "$ROOT" && node --test scripts/check-version.test.mjs scripts/validate-affected.test.mjs && node scripts/check-version.mjs'
+# The repo scripts' own tests: the coverage gate, the PR description check, the dependency audit and
+# scheduled-failure watch, and the pre-push hook's verdict parsing.
+def tsc  repo                               "node: coverage gate tests"          'cd "$ROOT" && node --test scripts/coverage/check-per-file-coverage.test.mjs'
+def tsc  repo                               "node: PR description check"         'cd "$ROOT" && node --test scripts/pr-checks/*.test.mjs'
+def tsc  repo                               "node: AI review tests"              'cd "$ROOT" && node --test scripts/ai-review/*.test.mjs'
+# Two reviews of the change since origin/main by the developer's OWN coding agent (kiro-cli, else claude;
+# scripts/ai-review/review.mjs): against TENETS.md, and a whole-change review like the GitHub PR review, so its
+# findings are fixed before the push. No credential lives in the repository: neither CLI installed, not signed in,
+# or CI = skipped with a notice. A complete VIOLATION / MUST-FIX fails; AI_REVIEW=off skips both. Their own groups
+# (`tenets`, `commit`), so validate-affected.sh never spends a model call; they run in the full gate, once per release.
+def tsc  tenets                             "tenets: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind tenets'
+def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
+def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/scheduled-failure-watch.test.mjs'
+def tsc  repo                               "node: pre-push hook parsing"        'cd "$ROOT" && node --test scripts/git-hooks/pre-push.test.mjs'
+def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
+# Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
+# output and dependencies allowlisted by path; .gitleaksignore for reviewed fingerprints).
+def lint repo                               "gitleaks: working tree"             'cd "$ROOT" && bash scripts/gitleaks-tree.sh'
+# CodeQL security-and-quality over JS/TS and Python, zero errors AND warnings (scripts/codeql.sh,
+# accepted findings in scripts/codeql-summary.mjs). Its own lane: ~5 min on half the cores. Skipped on
+# GitHub Actions, where the repository's CodeQL code scanning runs the same analysis on every PR;
+# locally a missing CLI fails (brew install codeql). VALIDATE_SKIP_CODEQL=1 skips it on purpose.
+def sec  codeql                             "codeql: security and quality"       'cd "$ROOT" && if [ -n "${GITHUB_ACTIONS:-}" ] || [ "${VALIDATE_SKIP_CODEQL:-0}" = 1 ]; then echo "codeql: skipped (GitHub code scanning / VALIDATE_SKIP_CODEQL)"; else CODEQL_STRICT=1 CODEQL_THREADS="${CODEQL_THREADS:-$(( CPUS / 2 > 1 ? CPUS / 2 : 1 ))}" bash scripts/codeql.sh; fi'
+# TypeScript. `tsc -b` gets --force: its up-to-date check trusts the shared node_modules/.tmp buildinfo.
+def tsc  frontend,frontend-static           "tsc: frontend app + node configs"   'cd "$FRONTEND" && npx tsc -b --noEmit --force'
+def tsc  frontend,frontend-static           "tsc: frontend specs"                'cd "$FRONTEND" && npx tsc -p tsconfig.test.json --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/frontend-specs.tsbuildinfo"'
+def tsc  stream,stream-static               "tsc: stream Lambda"                 'cd "$STREAM" && npx tsc --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/stream.tsbuildinfo"'
+def tsc  cdk,cdk-static                     "tsc: CDK app"                       'cd "$CDK" && npx tsc -p tsconfig.json --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/cdk.tsbuildinfo"'
+def tsc  cdk,cdk-static                     "tsc: CDK scripts + configs"         'cd "$CDK" && npx tsc -p tsconfig.tools.json'
+def lint cdk,cdk-static                     "eslint: CDK app"                    'cd "$CDK" && npx eslint . --max-warnings 0 --concurrency auto'
+def lint frontend,frontend-static           "eslint: frontend"                   'cd "$FRONTEND" && npx eslint . --max-warnings 0 --concurrency auto'
+def lint stream,stream-static               "eslint: stream Lambda"              'cd "$STREAM" && npx eslint . --max-warnings 0 --concurrency auto'
+# The gate code itself (eslint-rules/eslint.config.mjs): no package config can reach outside its directory.
+def lint repo,cdk,cdk-static                 "eslint: gate rules (eslint-rules/)"  'cd "$ROOT/eslint-rules" && "$CDK/node_modules/.bin/eslint" . --max-warnings 0'
+def tsc  cdk,cdk-static                     "knip: CDK app"                      'cd "$CDK" && npx knip --no-progress'
+def tsc  cdk,cdk-static                     "knip --production: CDK app"         'cd "$CDK" && npx knip --no-progress --config "$KNIP_PROD" --production --strict'
+def tsc  frontend,frontend-static           "knip: frontend"                     'cd "$FRONTEND" && npx knip --no-progress'
+def tsc  frontend,frontend-static           "knip --production: frontend"        'cd "$FRONTEND" && npx knip --no-progress --config "$KNIP_PROD" --production --strict'
+def tsc  stream,stream-static               "knip: stream Lambda"                'cd "$STREAM" && npx knip --no-progress'
+def tsc  stream,stream-static               "knip --production: stream Lambda"   'cd "$STREAM" && npx knip --no-progress --config "$KNIP_PROD" --production --strict'
+def tsc  frontend,frontend-static           "node: frontend i18n script tests"   'cd "$FRONTEND" && node scripts/i18n-check.test.mjs && node --test scripts/set-nested.test.mjs scripts/fix-i18n-helpers.test.mjs'
+# Every key the source uses exists in English, and no locale misses/adds keys (untranslated values only warn).
+def tsc  frontend,frontend-static           "node: frontend i18n audit"          'cd "$FRONTEND" && { out="$(node scripts/i18n-check.mjs)" || { printf "%s\n" "$out"; exit 1; }; }'
+# Every fetchApi call site in the SPA has a dev-mock route that answers it (frontend/mock-coverage.json).
+def tsc  frontend,frontend-static           "node: frontend mock coverage"       'cd "$FRONTEND" && node --test scripts/check-mock-coverage.test.mjs scripts/mock-corpus.test.mjs scripts/mock-faceted-scope.test.mjs scripts/mock-scope.test.mjs scripts/mock-edit-stamp.test.mjs scripts/mock-reprocess.test.mjs scripts/mock-methodology.test.mjs && node scripts/check-mock-coverage.mjs'
+# Duplication across code and tests, whole repo (.jscpd.json: threshold 0). The SPA imports the modules it
+# shares with the stream Lambda through @stream (frontend/streamSource.ts), so there is no mirror to exclude.
+def lint repo                               "jscpd"                              'cd "$ROOT" && npx jscpd --fail-on-empty --reporters console --silent'
+# GitHub Actions workflows: pinned actionlint (+ shellcheck) and zizmor --offline, every finding fails.
+def lint repo                               "actions: actionlint + zizmor"       'cd "$ROOT" && node --test scripts/actions-lint.test.mjs && bash scripts/actions-lint.sh'
+def tsc  bridge                             "node: kiro-acp-bridge tests"        'cd "$ROOT/tools/kiro-acp-bridge" && node --test test/*.test.mjs'
+
+# Tests that need the built SPA: the CDK stacks stage frontend/dist as an asset. Built once per run. Its groups
+# include those of every step that synthesizes the app (audit-py-synth, audit-tools), so `--only <group>` builds it too.
+def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth,audit-tools "vite build: frontend" 'cd "$FRONTEND" && npx vite build --logLevel warn'
+# Code audit (the detectors are described below): the CDK-contract and bundle-aware detectors share one offline synth,
+# cached in .cache/audit/ (py_assembly.py). They run in ONE step, one after another (every one runs; the
+# worst exit wins), so the cache is built once and no two synths ever write it at the same time. The synth
+# stages frontend/dist (VocApiStack's website asset), so the step follows the vite build, which carries its
+# group for that reason, and comes before the vitest suites so a failing suite cannot leave it unrun.
+def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function" 'cd "$ROOT" && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py scripts/audit/py_layers.py scripts/audit/py_sfn_errors.py scripts/audit/py_shared_constants.py scripts/audit/py_doc_refs.py "scripts/audit/clones_struct.py --kind function"; do "$PYTHON_BIN" $d || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
+# The detector tests synth the app too (test_py_reachability, test_py_sfn_errors, test_py_shared_constants
+# read the real tree), so they run in this lane after the vite build, never where frontend/dist is missing.
+def test audit,audit-tools                  "audit: detector tests"              'cd "$ROOT" && "$PYTHON_BIN" -m pytest -c scripts/audit/pytest.ini scripts/audit && node --test scripts/audit/*.test.mjs'
+def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --hookTimeout "$VALIDATE_VITEST_TIMEOUT_MS"'
+def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && rm -rf "$ROOT/.cache/coverage/stream" && npx vitest run --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/stream" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite stream'
+def web  frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && rm -rf "$ROOT/.cache/coverage/frontend" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/frontend" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite frontend'
+
+# Code-audit detectors (scripts/audit/, docs/code-audit.md): dead code, renamed clones and re-implemented
+# helpers the gates above cannot see. Each exits 0 clean, 1 findings, 2 cannot run, and any non-zero exit
+# fails its step. A finding is fixed, or allowlisted WITH a reason in scripts/audit/allowlists/<tool>.json.
+# Lanes: the tsc lane finishes minutes before the py, lint and test lanes, so most run there; the slowest,
+# ts_reachability, runs at the end of the lint lane, and the synth step in the test lane (above, right
+# after the vite build).
+# Their groups (audit = every one) let validate-affected.sh run only the detectors whose inputs changed.
+def tsc  audit,audit-callers                "audit: py_route_callers"            'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/py_route_callers.py'
+def tsc  audit,audit-callers                "audit: py_stored_attrs"             'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/py_stored_attrs.py'
+def tsc  audit,audit-patterns               "audit: patterns"                    'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/patterns.py'
+def tsc  audit,audit-clones-py              "audit: clones_struct.py"            'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/clones_struct.py'
+def tsc  audit,audit-clones-py              "audit: py_dead_params"              'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/py_dead_params.py'
+def lint audit,audit-ts                     "audit: ts_reachability"             'cd "$ROOT" && node scripts/audit/ts_reachability.mjs'
+def tsc  audit,audit-ts                     "audit: ts_api_callers"              'cd "$ROOT" && node scripts/audit/ts_api_callers.mjs'
+def tsc  audit,audit-unions                 "audit: ts_union_members"            'cd "$ROOT" && node scripts/audit/ts_union_members.mjs'
+def tsc  audit,audit-locale                 "audit: ts_locale_keys"              'cd "$ROOT" && node scripts/audit/ts_locale_keys.mjs'
+def tsc  audit,audit-clones-ts              "audit: clones_struct.mjs"           'cd "$ROOT" && node scripts/audit/clones_struct.mjs'
+def tsc  audit,repo                         "audit: stack_outputs"               'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/stack_outputs.py'
+def tsc  audit,repo                         "audit: repo_contracts"              'cd "$ROOT" && node scripts/audit/repo_contracts.mjs'
+def tsc  audit,repo                         "audit: doc_contract"                'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/doc_contract.py'
+def tsc  audit,audit-ts                     "audit: ts_prop_usage"               'cd "$ROOT" && node scripts/audit/ts_prop_usage.mjs'
+def tsc  audit,audit-ts                     "audit: ts_css_tokens"               'cd "$ROOT" && node scripts/audit/ts_css_tokens.mjs'
+def tsc  audit,audit-ts                     "audit: ts_mock_routes"              'cd "$ROOT" && node scripts/audit/ts_mock_routes.mjs'
+def tsc  audit,audit-ts                     "audit: ts_stale_refs"               'cd "$ROOT" && node scripts/audit/ts_stale_refs.mjs'
+def tsc  audit,audit-clones-ts              "audit: ts_name_twins"               'cd "$ROOT" && node scripts/audit/ts_name_twins.mjs'
+def tsc  audit,audit-ts                     "audit: ts_query_keys"               'cd "$ROOT" && node scripts/audit/ts_query_keys.mjs'
+# The detectors' own tests and lint (root package.json test:audit / lint:audit), and a check that every
+# detector run-all.sh discovers has a step above, so a new detector cannot land outside the gate.
+def tsc  audit,audit-tools                  "audit: detector lint (ruff + pyright)" 'cd "$CDK" && ruff check --config ruff.toml ../scripts/audit && cd "$ROOT" && npx pyright --pythonpath "$PYTHON_BIN" -p scripts/audit/pyrightconfig.json'
+def tsc  audit,audit-tools                  "audit: every detector has a step"   'cd "$ROOT" && missing="" && defs="$(grep "^def " scripts/validate.sh)" && for d in $(bash scripts/audit/run-all.sh --list); do grep -qF "$d" <<<"$defs" || missing="$missing $d"; done && [ -z "$missing" ] || { echo "detectors with no scripts/validate.sh step:$missing"; exit 1; }'
+
+# ---- Selection ----
+# The lane each step is defined in: --lane selects by it, also after --serial / --pytest-first move steps.
+S_HOME=("${S_LANE[@]}")
+selected() {  # step index -> 0 when it runs in this invocation
+  local want have
+  if [[ -n "$LANE_ONLY" ]]; then
+    local in_lane=1
+    for want in ${LANE_ONLY//,/ }; do [[ "$want" == "${S_HOME[$1]}" ]] && in_lane=0; done
+    [[ "$in_lane" -eq 0 ]] || return 1
+  fi
+  if [[ "$FAILED_ONLY" -eq 1 ]]; then
+    grep -qxF "${S_NAME[$1]}" <<<"$RERUN" || return 1
+  fi
+  [[ -z "$ONLY" ]] && return 0
+  for want in ${ONLY//,/ }; do
+    for have in ${S_GROUPS[$1]//,/ }; do [[ "$want" == "$have" ]] && return 0; done
+  done
+  return 1
+}
+if [[ -n "$ONLY" ]]; then
+  for want in ${ONLY//,/ }; do
+    case "$want" in python|frontend|cdk|stream|tenets|commit|python-static|frontend-static|cdk-static|stream-static|python-tests|frontend-tests|cdk-tests|stream-tests|bridge|repo|codeql|audit|audit-py-synth|audit-callers|audit-patterns|audit-clones-py|audit-clones-ts|audit-ts|audit-unions|audit-locale|audit-tools) ;; *) printf 'validate: unknown group %s\n' "$want" >&2; exit 2 ;; esac
+  done
+fi
+# --failed: the step names whose last status was not ok, from the newest earlier run's timings.tsv. That run's own
+# selection is the scope: a step it did not select is not re-run, and a narrower run in between (an --only of one
+# group) is the newest one, so it hides the failures of the full run before it. Steps that passed stay passed only as far as the
+# fix did not touch them: the full run before the push is still the gate.
+LOG_ROOT="${VALIDATE_LOG_ROOT:-$ROOT/.cache/validate/logs}"
+RERUN=""
+if [[ "$FAILED_ONLY" -eq 1 ]]; then
+  # A dry run (marker file `dry-run`) never counts; an interrupted run writes no timings.tsv, so the run before it
+  # is used, and the banner below names it and its age.
+  LAST_RUN=""
+  while IFS= read -r t; do
+    [[ -e "${t%/timings.tsv}/dry-run" && "$DRY_RUN" -eq 0 ]] && continue
+    LAST_RUN="${t%/timings.tsv}"; break
+  done < <(ls -1t "$LOG_ROOT"/*/timings.tsv 2>/dev/null || true)
+  if [[ -z "$LAST_RUN" ]]; then
+    printf 'validate: --failed needs an earlier run (none under %s)\n' "$LOG_ROOT" >&2; exit 2
+  fi
+  RERUN="$(awk -F'\t' '$1 != "ok" { print $4 }' "$LAST_RUN/timings.tsv")"
+  if [[ -z "$RERUN" ]]; then
+    printf 'validate: every step of the last run (%s) passed; nothing to re-run\n' "$LAST_RUN"; exit 0
+  fi
+  AGE_MIN="$(node -e 'console.log(Math.floor((Date.now() - require("fs").statSync(process.argv[1]).mtimeMs) / 60000))' "$LAST_RUN/timings.tsv")"
+  printf 'validate: re-running the %s step(s) that did not pass in %s (finished %s min ago)\n' "$(printf '%s\n' "$RERUN" | wc -l | tr -d ' ')" "$LAST_RUN" "$AGE_MIN"
+fi
+if [[ -n "$LANE_ONLY" ]]; then
+  for want in ${LANE_ONLY//,/ }; do
+    case "$want" in py|tsc|lint|test|web|sec) ;; *) printf 'validate: unknown lane %s\n' "$want" >&2; exit 2 ;; esac
+  done
+fi
+if [[ "$LIST" -eq 1 ]]; then
+  for i in "${!S_NAME[@]}"; do
+    selected "$i" && printf '%-5s %-42s %s\n' "${S_LANE[$i]}" "${S_GROUPS[$i]}" "${S_NAME[$i]}"
+  done
+  exit 0
+fi
+[[ "$SERIAL" -eq 1 ]] && for i in "${!S_LANE[@]}"; do S_LANE[$i]=serial; done
+# --pytest-first: the pytest step gets a lane of its own that runs to the end before any other lane starts.
+# Why (5.55.01): some tests bound their own CPU time (docs/coverage-gate.md), and on CI's 4-vCPU runner the
+# four other lanes running beside pytest pushed one of them over its bound. Run alone, nothing competes.
+FIRST_LANE=first
+if [[ "$PYTEST_FIRST" -eq 1 ]]; then
+  for i in "${!S_NAME[@]}"; do [[ "${S_NAME[$i]}" == pytest ]] && S_LANE[$i]="$FIRST_LANE"; done
+fi
+# --dry-run: the same scheduling, lanes and report, with every command replaced by a no-op (tests the runner).
+# VALIDATE_DRY_RUN_FAIL=<step name> makes that one step exit 1 instead, so a test can drive the failure paths.
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  for i in "${!S_CMD[@]}"; do
+    if [[ "${S_NAME[$i]}" == "${VALIDATE_DRY_RUN_FAIL:-}" ]]; then S_CMD[$i]='exit 1'; else S_CMD[$i]=':'; fi
+  done
+fi
+
+# ---- Run ----
+LOG_DIR="${VALIDATE_LOG_DIR:-$LOG_ROOT/$(date +%Y%m%d-%H%M%S)}"
+mkdir -p "$LOG_DIR" "$TSC_CACHE"
+[[ "$DRY_RUN" -eq 1 ]] && : > "$LOG_DIR/dry-run"   # --failed ignores dry runs (outside a dry run itself)
+RESULTS="$LOG_DIR/results.tsv"   # index \t exit code \t seconds
+STARTED="$LOG_DIR/started.tsv"   # index
+: > "$RESULTS"; : > "$STARTED"
+step_log() { printf '%s/%02d-%s.log' "$LOG_DIR" "$1" "$(printf '%s' "${S_NAME[$1]}" | tr -cs 'A-Za-z0-9' '-' | sed 's/-$//')"; }
+exec 3>&1   # progress lines go to the console from every lane
+
+run_lane() {
+  local lane="$1" i rc t0 dur
+  for i in "${!S_NAME[@]}"; do
+    [[ "${S_LANE[$i]}" == "$lane" ]] && selected "$i" || continue
+    printf '%s\n' "$i" >> "$STARTED"
+    printf '%s  [%-6s] start  %s\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" >&3
+    t0=$(date +%s)
+    rc=0
+    bash -euo pipefail -c "${S_CMD[$i]}" > "$(step_log "$i")" 2>&1 < /dev/null || rc=$?
+    dur=$(( $(date +%s) - t0 ))
+    printf '%s\t%s\t%s\n' "$i" "$rc" "$dur" >> "$RESULTS"
+    if [[ "$rc" -ne 0 ]]; then
+      printf '%s  [%-6s] FAIL   %s (%ss, exit %s)\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" "$dur" "$rc" >&3
+      return 1
+    fi
+    printf '%s  [%-6s] ok     %s (%ss)\n' "$(date +%T)" "$lane" "${S_NAME[$i]}" "$dur" >&3
+  done
+}
+
+tree_pids() {  # a pid, then every descendant (parents before children)
+  local child
+  printf '%s\n' "$1"
+  for child in $(pgrep -P "$1" 2>/dev/null || true); do tree_pids "$child"; done
+}
+kill_tree() {  # a lane and every process it started (never anything else)
+  # The whole tree is listed first, then killed lane-first, so a lane cannot record its dying
+  # step as a failure of its own.
+  local p
+  for p in $(tree_pids "$1"); do kill "$p" 2>/dev/null || true; done
+}
+
+LANES=()
+HAS_FIRST=0
+for lane in $(printf '%s\n' "${S_LANE[@]}" | awk '!seen[$0]++'); do
+  for i in "${!S_NAME[@]}"; do
+    if [[ "${S_LANE[$i]}" == "$lane" ]] && selected "$i"; then
+      if [[ "$lane" == "$FIRST_LANE" ]]; then HAS_FIRST=1; else LANES+=("$lane"); fi
+      break
+    fi
+  done
+done
+if [[ "${#LANES[@]}" -eq 0 && "$HAS_FIRST" -eq 0 ]]; then
+  printf 'validate: no step matches%s%s\n' "${ONLY:+ --only $ONLY}" "${LANE_ONLY:+ --lane $LANE_ONLY}" >&2; exit 2
+fi
+T_ALL=$(date +%s)
+FIRST_NOTE=""; [[ "$HAS_FIRST" -eq 1 ]] && FIRST_NOTE=" after pytest alone"
+COVERAGE_NOTE="coverage baseline strict (CI)"; [[ -n "$COVERAGE_PRUNE" ]] && COVERAGE_NOTE="coverage baseline: graduated rows pruned (local)"
+printf 'validate: %s lane(s) [%s]%s, pytest workers %s, %s, logs in %s\n' "${#LANES[@]}" "${LANES[*]:-}" "$FIRST_NOTE" "$VALIDATE_PYTEST_WORKERS" "$COVERAGE_NOTE" "$LOG_DIR"
+PIDS=(); DONE=()
+stop_all() { local p; for p in "${PIDS[@]+"${PIDS[@]}"}"; do kill_tree "$p"; done; }   # bash 3.2 + set -u: empty-safe
+FAILED=0; STOPPED=0
+if [[ "$HAS_FIRST" -eq 1 ]]; then
+  run_lane "$FIRST_LANE" &
+  PIDS+=("$!")
+  trap 'stop_all; exit 130' INT TERM
+  rc=0; wait "${PIDS[0]}" || rc=$?
+  trap - INT TERM
+  PIDS=()
+  if [[ "$rc" -ne 0 ]]; then
+    FAILED=1
+    if [[ "$FAIL_FAST" -eq 1 && "${#LANES[@]}" -gt 0 ]]; then
+      printf '%s  validate: pytest failed; the other lanes do not start (--keep-going to run them anyway)\n' "$(date +%T)"
+      LANES=()
+    fi
+  fi
+fi
+for lane in "${LANES[@]+"${LANES[@]}"}"; do
+  run_lane "$lane" &
+  PIDS+=("$!"); DONE+=(0)
+done
+trap 'stop_all; exit 130' INT TERM
+
+remaining=${#PIDS[@]}
+while [[ "$remaining" -gt 0 ]]; do
+  for k in "${!PIDS[@]}"; do
+    [[ "${DONE[$k]}" -eq 0 ]] || continue
+    kill -0 "${PIDS[$k]}" 2>/dev/null && continue
+    rc=0; wait "${PIDS[$k]}" || rc=$?
+    DONE[$k]=1; remaining=$(( remaining - 1 ))
+    if [[ "$rc" -ne 0 ]]; then
+      FAILED=1
+      if [[ "$FAIL_FAST" -eq 1 && "$STOPPED" -eq 0 && "$remaining" -gt 0 ]]; then
+        STOPPED=1
+        printf '%s  validate: lane %s failed; stopping the other lanes (--keep-going to let them finish)\n' "$(date +%T)" "${LANES[$k]}"
+        stop_all
+      fi
+    fi
+  done
+  [[ "$remaining" -gt 0 ]] && sleep 1
+done
+trap - INT TERM
+TOTAL=$(( $(date +%s) - T_ALL ))
+
+# ---- Report ----
+result_of() { awk -F'\t' -v i="$1" '$1 == i { print $2 "\t" $3 }' "$RESULTS"; }
+printf '\n%-8s %6s  %-6s %s\n' STATUS SECONDS LANE STEP
+for i in "${!S_NAME[@]}"; do
+  selected "$i" || continue
+  r="$(result_of "$i")"
+  if [[ -n "$r" ]]; then
+    rc="${r%%$'\t'*}"; dur="${r##*$'\t'}"
+    if [[ "$rc" -eq 0 ]]; then status=ok
+    elif [[ "$STOPPED" -eq 1 && ( "$rc" -eq 143 || "$rc" -eq 137 ) ]]; then status=stopped
+    else status=FAIL
+    fi
+  elif grep -qx "$i" "$STARTED"; then status=stopped; dur=-
+  else status=not-run; dur=-
+  fi
+  printf '%-8s %6s  %-6s %s\n' "$status" "$dur" "${S_LANE[$i]}" "${S_NAME[$i]}"
+  printf '%s\t%s\t%s\t%s\n' "$status" "$dur" "${S_LANE[$i]}" "${S_NAME[$i]}" >> "$LOG_DIR/timings.tsv"
+done
+printf '%-8s %6s  wall clock\n' total "$TOTAL"
+# A local run may have deleted graduated coverage-baseline rows (--prune-graduated): say so where it is read, at the
+# end. Read from THIS run's step logs (the line check-per-file-coverage.mjs prints when it deletes), not from git.
+PRUNED="$(awk '/graduated row\(s\) from/ { keep = 1; print; next } keep && /^  / { print; next } { keep = 0 }' "$LOG_DIR"/*.log 2>/dev/null || true)"
+if [[ -n "$PRUNED" ]]; then
+  printf '\nvalidate: COMMIT the pruned coverage baseline (CI fails without it):\n%s\n' "$PRUNED"
+fi
+
+if [[ "$FAILED" -ne 0 ]]; then
+  while IFS=$'\t' read -r i rc _dur; do
+    [[ "$rc" -eq 0 ]] && continue
+    [[ "$STOPPED" -eq 1 && ( "$rc" -eq 143 || "$rc" -eq 137 ) ]] && continue   # stopped, not failed
+    log="$(step_log "$i")"
+    printf '\n======== FAILED: %s (exit %s) — last 80 lines of %s ========\n' "${S_NAME[$i]}" "$rc" "$log"
+    tail -n 80 "$log"
+    printf '======== end of %s ========\n' "${S_NAME[$i]}"
+  done < "$RESULTS"
+  printf '\nvalidate: FAILED (logs in %s)\n' "$LOG_DIR"
+  exit 1
+fi
+printf '\nvalidate: every gate passed (logs in %s)\n' "$LOG_DIR"

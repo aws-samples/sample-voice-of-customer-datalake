@@ -1,9 +1,8 @@
 /**
- * @fileoverview Tests for criterion 7: the per-document "Copy to Kiro" output
- * begins with the same effective instructions as the steering file.
- *
- * "Both consumers must agree" — the prompt used in Copy to Kiro must match
- * what _build_steering_file produces server-side.
+ * @fileoverview "Copy to Kiro" pastes the server's Kiro instructions
+ * (`kiro_default_export_prompt`) ahead of the document. Since 3.00.00 a project's
+ * stored per-project `kiro_export_prompt` (no longer editable anywhere) is never
+ * read, even when a stale payload still carries it.
  *
  * Clipboard note: `userEvent.setup()` installs its own `navigator.clipboard` stub
  * to back `user.copy()`/`user.paste()`, and testing-library's `cleanup()` (run by
@@ -21,30 +20,21 @@ import {
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import DocumentExportMenu from './DocumentExportMenu'
-import type { ProjectDocument, Project } from '../../api/types'
+import { exportProject, prdDocument } from './documentExport-fixtures'
+import type { ProjectDocument } from '../../api/types'
+import type { Project } from '../../api/projectTypes'
+import { at } from '@test/defined'
 
-// Mock printUtils (required by DocumentExportMenu)
-vi.mock('../../utils/printUtils', () => ({
-  openPrintWindow: vi.fn().mockReturnValue({ print: vi.fn() }),
-}))
-vi.mock('react-markdown', () => ({
-  default: ({ children }: { children: string }) => children,
-}))
-vi.mock('remark-gfm', () => ({ default: vi.fn() }))
+// No print or markdown mocks: these cases never open the PDF export, so neither
+// the print window nor the markdown renderer is ever reached.
 
-// A sentinel, not a copy of the real backend wording — see the rationale in
-// pages/ProjectDetail/KiroExportSettings.test.tsx. What matters here is that the
+// A sentinel, not a copy of the real backend wording: pinning the real text here
+// would fail on every copy edit and prove nothing. What matters is that the
 // copied payload carries whatever `kiro_default_export_prompt` holds.
 const DEFAULT_TEXT = 'SENTINEL backend default instructions'
 const CUSTOM_TEXT = 'Use only TypeScript. Strict mode required.'
 
-const mockDoc: ProjectDocument = {
-  document_id: 'doc-1',
-  document_type: 'prd',
-  title: 'Test PRD',
-  content: '# Overview\n\nTest content.',
-  created_at: '2025-01-01T00:00:00Z',
-}
+const mockDoc = prdDocument()
 
 const mockPrfaqDoc: ProjectDocument = {
   ...mockDoc,
@@ -53,27 +43,20 @@ const mockPrfaqDoc: ProjectDocument = {
   title: 'Test PRFAQ',
 }
 
-const projectWithDefault: Project = {
-  project_id: 'proj-1',
-  name: 'Test Project',
-  description: 'desc',
-  status: 'active',
-  created_at: '2025-01-01T00:00:00Z',
-  updated_at: '2025-01-01T00:00:00Z',
-  persona_count: 0,
-  document_count: 0,
-  kiro_export_prompt: '',
+const projectWithDefault = exportProject({
   kiro_default_export_prompt: DEFAULT_TEXT,
-}
+})
 
-const projectWithCustom: Project = {
+// A pre-3.00.00 payload: the retired field is not on `Project` any more, so it
+// rides in through a spread the way a loose wire object would.
+const staleStoredPrompt: Record<string, unknown> = { kiro_export_prompt: CUSTOM_TEXT }
+const projectWithStaleCustom: Project = {
   ...projectWithDefault,
-  kiro_export_prompt: CUSTOM_TEXT,
+  ...staleStoredPrompt,
 }
 
 const projectWithNeither: Project = {
   ...projectWithDefault,
-  kiro_export_prompt: '',
   kiro_default_export_prompt: '',
 }
 
@@ -90,53 +73,40 @@ async function copyToKiro(doc: ProjectDocument, project: Project): Promise<strin
   await user.click(screen.getByRole('button', { name: /download options/i }))
   await user.click(screen.getByRole('menuitem', { name: /copy to kiro/i }))
 
-  expect(writeTextSpy).toHaveBeenCalledOnce()
-  return writeTextSpy.mock.calls[0][0]
+  expect(writeTextSpy).toHaveBeenCalledExactlyOnceWith(expect.any(String))
+  return at(writeTextSpy.mock.calls, 0)[0]
 }
 
-describe('DocumentExportMenu — criterion 7: Copy to Kiro uses effective instructions', () => {
-  it('uses the default text when the project has no stored prompt', async () => {
-    expect(await copyToKiro(mockDoc, projectWithDefault)).toContain(DEFAULT_TEXT)
-  })
-
-  it('uses the project\'s own text when it has a stored prompt', async () => {
-    expect(await copyToKiro(mockDoc, projectWithCustom)).toContain(CUSTOM_TEXT)
-  })
-
-  it('does NOT use the default text when the project has its own stored prompt', async () => {
-    expect(await copyToKiro(mockDoc, projectWithCustom)).not.toContain(DEFAULT_TEXT)
-  })
-
-  it('copies just the document when no effective prompt is available', async () => {
-    const copiedText = await copyToKiro(mockDoc, projectWithNeither)
-    expect(copiedText).toContain('# Test PRD')
-    expect(copiedText).not.toContain(DEFAULT_TEXT)
-  })
-
-  it('effective prompt for default project matches what _build_steering_file uses', async () => {
-    // Both consumers must agree: the "Copy to Kiro" clipboard content must START
-    // with the same effective instructions that _build_steering_file embeds in
-    // the steering file. When the project follows the default (kiro_export_prompt
-    // is empty), both must use kiro_default_export_prompt.
+describe('DocumentExportMenu — Copy to Kiro uses the server instructions', () => {
+  it('starts with the default text', async () => {
     const copiedText = await copyToKiro(mockDoc, projectWithDefault)
+    expect(copiedText.startsWith(`${DEFAULT_TEXT}\n\n---\n\n## PRD Document\n\n# Test PRD`)).toBe(true)
+  })
+
+  it('never prefixes a stale stored per-project prompt', async () => {
+    // Regression (3.00.00): the saved per-project prompt still prefixed the copy
+    // although nothing could edit it any more.
+    const copiedText = await copyToKiro(mockDoc, projectWithStaleCustom)
+    expect(copiedText).not.toContain(CUSTOM_TEXT)
     expect(copiedText.startsWith(DEFAULT_TEXT)).toBe(true)
   })
 
-  it('effective prompt for custom project matches what _build_steering_file uses', async () => {
-    const copiedText = await copyToKiro(mockDoc, projectWithCustom)
-    expect(copiedText.startsWith(CUSTOM_TEXT)).toBe(true)
+  it('copies just the document when no prompt is available', async () => {
+    const copiedText = await copyToKiro(mockDoc, projectWithNeither)
+    expect(copiedText).toContain('# Test PRD')
+    expect(copiedText).not.toContain(DEFAULT_TEXT)
   })
 })
 
 describe('DocumentExportMenu — section heading matches document type', () => {
   it('uses "PRD Document" heading for prd document type', async () => {
-    const copiedText = await copyToKiro(mockDoc, projectWithCustom)
+    const copiedText = await copyToKiro(mockDoc, projectWithDefault)
     expect(copiedText).toContain('## PRD Document')
     expect(copiedText).not.toContain('## PR/FAQ Document')
   })
 
   it('uses "PR/FAQ Document" heading for prfaq document type', async () => {
-    const copiedText = await copyToKiro(mockPrfaqDoc, projectWithCustom)
+    const copiedText = await copyToKiro(mockPrfaqDoc, projectWithDefault)
     expect(copiedText).toContain('## PR/FAQ Document')
     expect(copiedText).not.toContain('## PRD Document')
   })
@@ -148,5 +118,16 @@ describe('DocumentExportMenu — menu renders for kiro-capable documents', () =>
     render(<DocumentExportMenu document={mockDoc} project={projectWithDefault} />)
     await user.click(screen.getByRole('button', { name: /download options/i }))
     expect(screen.getByRole('menuitem', { name: /copy to kiro/i })).toBeInTheDocument()
+  })
+
+  it('shows no tip pointing at the removed Export / MCP tab, even with no prompt at all', async () => {
+    // The tip used to say "Configure Kiro prompt in the Export / MCP tab"; that tab
+    // is gone (global MCP lives on /connect), so the hint would send people nowhere.
+    const user = userEvent.setup()
+    render(<DocumentExportMenu document={mockDoc} project={projectWithNeither} />)
+    await user.click(screen.getByRole('button', { name: /download options/i }))
+    expect(screen.getByRole('menuitem', { name: /copy to kiro/i })).toBeInTheDocument()
+    expect(screen.queryByText(/Export \/ MCP/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Configure Kiro prompt/i)).not.toBeInTheDocument()
   })
 })

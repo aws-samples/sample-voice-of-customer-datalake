@@ -4,9 +4,12 @@ Google Play Store review client using google-play-scraper.
 Wraps the library with pagination, error handling, and structured output.
 """
 
-from google_play_scraper import Sort, reviews
-from _shared.base_ingestor import logger
+import functools
 
+from google_play_scraper import Sort, reviews
+
+from _shared.app_reviews_health import StorefrontFetch, failure_cause
+from _shared.base_ingestor import logger
 
 SORT_MAP = {
     "newest": Sort.NEWEST,
@@ -18,17 +21,17 @@ SORT_MAP = {
 # until we hit `count` or the token runs out (i.e. all text reviews collected).
 _PAGE_SIZE = 200
 # Backstop so a runaway token loop can't spin forever (well above any real
-# app's text-review count; e.g. Gangnamunni has ~2,376 in ko/kr).
+# app's text-review count; a large app has a few thousand in one storefront).
 _MAX_ROUNDS = 200
 
 
 def fetch_reviews_for_country(
     package_name: str,
     country: str,
-    count: int = 100,
-    sort_by: str = "newest",
-    lang: str = "en",
-) -> list[dict]:
+    count: int,
+    sort_by: str,
+    lang: str,
+) -> StorefrontFetch:
     """
     Fetch up to `count` reviews for a single app in a single country.
 
@@ -36,37 +39,42 @@ def fetch_reviews_for_country(
     Google Play returns no more reviews. A single reviews() call only returns one
     page (~200), so without this loop large apps were silently truncated.
 
-    Returns list of dicts with keys: reviewId, at, userName, score, content,
-    reviewCreatedVersion, replyContent, repliedAt, thumbsUpCount.
+    `reviews` holds dicts with keys: reviewId, at, userName, score, content,
+    reviewCreatedVersion, replyContent, repliedAt, thumbsUpCount. `failure` is the
+    short cause (exception type / HTTP status) when the locale raised before any
+    review was collected; a partial result is kept and is not a failure.
     """
-    sort_order = SORT_MAP.get(sort_by, Sort.NEWEST)
+    fetch_page = functools.partial(reviews, package_name, lang=lang, country=country,
+                                   sort=SORT_MAP.get(sort_by, Sort.NEWEST))
     collected: list[dict] = []
+    # The library's own token type (inferred from `reviews`), or None before the first page.
     token = None
 
     try:
         for _ in range(_MAX_ROUNDS):
             remaining = count - len(collected)
             if remaining <= 0:
-                break
-            result, token = reviews(
-                package_name,
-                lang=lang,
-                country=country,
-                sort=sort_order,
-                count=min(_PAGE_SIZE, remaining),
-                continuation_token=token,
-            )
+                # `continue` here would only idle out the remaining rounds; same result.
+                break  # pragma: no mutate
+            page_size = min(_PAGE_SIZE, remaining)
+            # The first page is asked without a token: the library's parameter is typed as its token
+            # class with a None default, so None is its first-page value but not a value of its type.
+            result, token = (fetch_page(count=page_size) if token is None
+                             else fetch_page(count=page_size, continuation_token=token))
             if not result:
                 break
             collected.extend(result)
-            # No further pages — all available reviews collected.
-            if token is None:
+            # No further pages: the library hands back a token whose own `token` is None.
+            if token.token is None:
                 break
-        return collected[:count]
+        return StorefrontFetch(reviews=collected[:count])
     except Exception as e:
-        logger.warning(
-            f"Failed to fetch Android reviews for {package_name} in {country}: {e}"
+        # Log text is not behaviour; the mutant that rewrites it is equivalent.
+        logger.exception(
+            f"Failed to fetch Android reviews for {package_name} in {country}: {e}"  # pragma: no mutate
         )
         # Return whatever we managed to collect before the error rather than
         # dropping a partial-but-useful result.
-        return collected[:count]
+        return StorefrontFetch(
+            reviews=collected[:count], failure=None if collected else failure_cause(e),
+        )

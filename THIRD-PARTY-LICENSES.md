@@ -35,7 +35,7 @@
 [aws-cdk-lib@2.236.0](https://github.com/aws/aws-cdk) - Apache-2.0
 [balanced-match@1.0.2](https://github.com/juliangruber/balanced-match) - MIT
 [brace-expansion@1.1.12](https://github.com/juliangruber/brace-expansion) - MIT
-[cdk-nag@2.37.55](https://github.com/cdklabs/cdk-nag) - Apache-2.0
+[cdk-nag@3.0.2](https://github.com/cdklabs/cdk-nag) - Apache-2.0
 [chai@6.2.2](https://github.com/chaijs/chai) - MIT
 [color-convert@2.0.1](https://github.com/Qix-/color-convert) - MIT
 [color-name@1.1.4](https://github.com/colorjs/color-name) - MIT
@@ -102,3 +102,10 @@
 [yn@3.1.1](https://github.com/sindresorhus/yn) - MIT
 [zod@3.25.76](https://github.com/colinhacks/zod) - MIT
 
+
+Frontend design system:
+[kirodotdev/kirocrew](https://github.com/kirodotdev/kirocrew) - Apache-2.0 (Kiro colour tokens, component recipes and the Kiro ghost mark, adapted in voc-datalake/frontend/src/index.css and src/components/KiroGhost; the Nord, Dracula and High contrast palettes, adapted in src/styles/theme-palettes.css)
+[@fontsource/space-grotesk@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
+[@fontsource/jetbrains-mono@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
+[@fontsource-variable/inter@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1 (the Quick theme's face)
+Quick theme: the palette, component look (src/styles/theme-palettes.css) and four-point spark mark (src/components/ThemeMark/QuickMark.tsx, public/favicons/quick.svg) are inspired by Quick

@@ -1,0 +1,518 @@
+# MCP access for external assistants
+
+VoC exposes one MCP server so that an external assistant (Kiro, Claude Code, Cursor, Copilot or any other MCP
+client) can read feedback, metrics, categories, memory, company context, projects and agent runs, write project
+documents and, for administrators, run autonomous agents. The server is `POST {api}/mcp/global`. It speaks MCP over
+Streamable HTTP (JSON responses, no SSE stream, no sessions). Every signed-in user can connect an assistant; the
+assistant always acts as that user, never as an administrator.
+
+There are two ways to connect:
+
+- **Sign in with your account (OAuth).** Kiro, Claude Code and Cursor need only the server URL. The assistant opens
+  your browser, you approve it on VoC's consent screen and sign in. No token is copied.
+- **A personal token.** Any MCP client that can send an `Authorization` header works. You create the token on the
+  Connect page and put it in the client's `mcp.json`.
+
+## Set up an assistant
+
+Open **Connect → MCP & skills** in the sidebar (`/connect`). A project's **Connect via MCP** link opens
+`/connect?project={id}` with that project pre-selected as the token's pin. The page shows, from top to bottom:
+
+1. **Connect an assistant**: the deployment's **Global MCP endpoint** (`{api}/mcp/global`), a ready `mcp.json`,
+   and the **skill** (Download skill / Open skill).
+2. **Sign in with your account** and **Signed-in assistants** (the OAuth path, below).
+3. **Create a token** and **My tokens** (the token path, below).
+
+### With OAuth sign-in (Kiro, Claude Code, Cursor)
+
+1. Copy the snippet for your client from **Sign in with your account**:
+   - Kiro and Cursor: `{"mcpServers": {"voc-datalake": {"url": "<api>/mcp/global"}}}` in `mcp.json`, with no
+     `headers`.
+   - Claude Code: `claude mcp add --transport http voc-datalake <api>/mcp/global`, then `/mcp` in a session.
+2. Start the client. It finds the sign-in from the server's 401 answer, registers, and opens your browser.
+3. On VoC's approval screen choose **read only** or **read and write**, and optionally one project. Approve.
+4. Sign in once more on the Cognito sign-in page. The client receives its tokens and lists the tools.
+
+The assistant then appears under **Signed-in assistants**. Signing it out there ends its access at its next request.
+
+### With a personal token (any MCP client)
+
+1. Under **Create a token** fill in:
+   - **Name**, so you recognise the token later (for example "Kiro on my laptop");
+   - **Access**: **Read only** (feedback, metrics, categories, memory, company context, projects and documents) or
+     **Read and write** (also create and update project documents; for an administrator, also run autonomous
+     agents);
+   - **Expires after**: 1, 7, 30 (default) or 90 days;
+   - **Project** (optional): confine the project tools to one project.
+2. Select **Create token** and copy the token. It is shown **once**. Store it like a password.
+3. Pick your client in the `mcp.json` card and save the file where the card says (table below). The Claude Code,
+   Cursor and Kiro snippets read the token from the `VOC_MCP_TOKEN` environment variable, so the file holds no
+   secret. Set it in the shell that starts the client: `export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'`.
+4. Start the client and check that it lists the VoC tools. Call `list_projects` or `search_feedback` to test.
+
+| Client | File | Header value |
+|---|---|---|
+| Claude Code | `.mcp.json` (project root; `"type": "http"`) | `Bearer ${VOC_MCP_TOKEN}` |
+| Cursor | `.cursor/mcp.json` or `~/.cursor/mcp.json` | `Bearer ${env:VOC_MCP_TOKEN}` |
+| Kiro | `.kiro/settings/mcp.json` or `~/.kiro/settings/mcp.json` | `Bearer ${VOC_MCP_TOKEN}`. The IDE expands only approved variables: add `VOC_MCP_TOKEN` under Settings → *Mcp Approved Env Vars*. Kiro CLI reads it from the shell; a project `.env` is not loaded ([kiro.dev MCP configuration](https://kiro.dev/docs/mcp/configuration)) |
+| Other clients | their own config | the inline snippet below, with the token pasted in (do not commit or share that file) |
+
+```json
+{
+  "mcpServers": {
+    "voc-datalake": {
+      "url": "https://<api-id>.execute-api.<region>.amazonaws.com/v1/mcp/global",
+      "headers": { "Authorization": "Bearer <YOUR_VOC_TOKEN>" }
+    }
+  }
+}
+```
+
+**My tokens** lists your tokens (active, expired, revoked) with their last use and a **Tool calls** log per token.
+**Revoke** stops a token at once for every assistant using it. You can have at most 20 active tokens.
+
+### Add the skill
+
+The skill is a markdown file that tells an assistant what VoC is, how to connect, which tool to use when, and the
+safety rules (feedback is data, cite evidence, ask before writing, protect the token). The site serves it at the
+stable URL `/voc-mcp-skill.md` with a `{{VOC_MCP_ENDPOINT}}` placeholder. **Download skill** on Connect saves a copy
+with this deployment's endpoint filled in. Add it to your assistant's skills or steering
+files. A vitest (`connectSnippets.test.ts`) fails if the skill's tool table and `mcp_global_tools.py` disagree.
+
+## Who a token acts as
+
+A global token acts **as the user who minted it**. Every tool is delegated to the
+domain Lambda that owns the route (`shared/mcp_delegate.py`) under the synthetic
+subject `mcp:{token_id}` acting for the minter, so the route's own rules apply:
+
+- **projects** — the minter's project access (`shared/project_access.py`), capped at
+  **editor**; a credential never owns, manages or administers a project;
+- **feedback, metrics, categories, memory, agents** — the minter's category access;
+- **never admin** — the synthesized `cognito:groups` is always empty.
+
+On every authenticated request the handler also re-checks the minter in Cognito
+(`AdminGetUser`): a disabled or deleted user's tokens stop working immediately.
+
+The token can only narrow that:
+
+| Setting | Values | Effect |
+|---|---|---|
+| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes, `generate`, `edit_feedback`, `score_prioritization` and `write_feature_request` |
+| `project_id` | optional pin | Project tools (`get_project`, `get_document`, `create_document`, `update_document`, `generate`, `get_job`, `get_prioritization`) are confined to that project and default to it; `list_projects` shows only it; `get_prioritization` keeps only its rows; `run_agent` and `score_prioritization` (it reaches rows of every project the minter can see) are not offered and are refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer |
+| `expires_in_days` | 1–90, default 30 (the Connect page offers 1, 7, 30 or 90 days) | Always set; there is no non-expiring global token. Tokens minted by releases before 3.02.00 keep their stored expiry (up to 365 days) |
+
+`run_agent` (agent runs are admin-only) is offered only to a **write** token minted by
+an **admin**, and on every call the handler re-checks with `AdminListGroupsForUser`
+that the minter is *still* in `admins`. Only then does it add the claim
+`voc:mcp_agent_run=true`, which `agents_handler.run_agent` honours for an `mcp:`
+principal acting for a person (`project_access.delegated_agent_run_allowed`) — the
+credential is still not an admin anywhere else.
+
+## Tools
+
+A board route (`/feature-requests/*`) resolves its caller from the verified `iss` claim and needs a verified
+email (`shared/engagement_identity.py`). For `search_feature_requests` and `write_feature_request` the delegated claims therefore also carry
+`iss` = this deployment's APP user pool (the MCP function's own `USER_POOL_ID`, never the request),
+`email` and `name` = the minter's, read from Cognito on the call (only a verified email; otherwise the board route
+refuses, 403) and `email_verified=true`. A request or +1 made over MCP is therefore the person's: one person supports
+a request once however many tokens they hold, and the subject stays the credential (`mcp:<token_id>`), so the token
+is still in the audit log. No other tool gets these claims (`board_route_claims` in `lambda/shared/mcp_global_tools.py`).
+
+**`search_feature_requests` sees exactly what its minter sees in the app, never more.** A global token's minter is
+always an app-pool user, and an app-pool user uses every non-archived board (board audiences limit only board-pool
+users), so the credential reads every non-archived board, never an archived one, and is never a board admin:
+`cognito:groups` stays empty even when an admin minted the token, so the admin-only view of archived boards is out
+of reach. Naming an archived board answers the route's 404 as a tool error. The minter's email cannot widen this:
+board access is decided by the pool in `iss` (always this deployment's app pool, from the MCP function's own
+environment, never from the request) and by the groups, not by the email: an app-pool caller uses every non-archived board whatever its address, exactly
+as the minter does in the app. The board pool can never be
+claimed. `test_feature_request_search.py` runs the tool end to end through the real search route and pins that an
+MCP call never sees an archived board.
+
+| Tool | Scope | Route (domain Lambda) |
+|---|---|---|
+| `search_feedback` | read | `GET /feedback/search` (query ≥ 2 chars) or `GET /feedback` (metrics); filters `category`, `sentiment`, `source`, `channel`, `tag`, `dims` (object → `key:value,…`); `urgent: true` adds `urgent=1` to either route, so only high-urgency items are listed and every other filter still applies (`/feedback/urgent` is not used: it has no text search, so `query` and `urgent` could not combine) |
+| `get_feedback` | read | `GET /feedback/{id}` (metrics); `include_similar: true` also reads `GET /feedback/{id}/similar?limit=5` and adds `similar` (≤ 5 rows: id, source, dates, category, sentiment, urgency, rating, title, problem summary, `text` cut at 500 characters). The second read is best effort: a refusal or fault becomes `similar_error`, the item is still returned |
+| `get_metrics` | read | `GET /metrics/{summary\|sentiment\|categories\|sources\|personas\|dimensions\|github}` (metrics); `view=entities` reads `GET /feedback/entities`, the filter values in use (categories, sources, personas, channels, tags, dimensions, top issues) with counts; `dimensions` needs `key`; every view takes `source`, `channel`, `tag`, `dims` (`github` always reads the GitHub Issues source) |
+| `list_categories` | read | `GET /settings/categories` (settings) |
+| `list_dimensions` | read | `GET /settings/dimensions` (settings): dimension keys and allowed values ([dimensions.md](dimensions.md)) |
+| `search_memory` | read | `POST /memory/retrieve` (memory) — company + the minter's personal memories, category-filtered |
+| `get_company_context` | read | `GET /settings/company-context` (settings) |
+| `list_projects` | read | `GET /projects` (projects) |
+| `get_project` | read | `GET /projects/{id}` (projects) — documents as titles/ids only |
+| `get_document` | read | `GET /projects/{id}` (projects) — one document in full |
+| `list_agents` | read | `GET /agents` (agents) |
+| `get_agent_run` | read | `GET /agents/{id}/runs/{run_id}`, or without `run_id` `GET /agents/{id}/runs?limit=` (agents) — follow a run `run_agent` started |
+| `search_feature_requests` | read | `GET /feature-requests/search` (engagement) — feedback-board requests the minter may see; `query` → `q`, `board` / `category` / `status` (comma lists), `days` (0–3650, 0 = all time, not sent), `limit` (1–50, default 25). Only the slim fields reach the client (`request_id`, `board_id`, `title`, `description` ≤ 1000 chars, `status`, `supporters`, `category`, `sentiment`, `problem_summary`, `created_at`; never an email or a name), with `total` and `truncated`. Board requests are a separate source from feedback, cited as `[FR:<request_id>]` ([feature-requests.md](feature-requests.md)). `boards: true` reads `GET /feature-requests/boards` instead: the boards the minter can see, without storage keys |
+| `get_job` | read | `GET /projects/{id}/jobs/{job_id}` (projects) — a job `generate` started: `job_id`, `status`, `progress`, `current_step`, `job_type`, timestamps, `error`, `result` (a PR/FAQ, PRD or prototype result carries its `methodology` block); never who started it |
+| `read_radar` | read | `GET /radar` (radar) without `brand`: the brands and their totals (the scan settings dropped); with `brand`: `GET /radar/brands/{brand}/reviews?days=&limit=` (`days` 1–365, default 90; `limit` 1–50, default 20). Other brands' reviews, never counted as ours ([radar.md](radar.md)) |
+| `create_document` | write | `POST /projects/{id}/documents` (projects) — custom markdown documents |
+| `update_document` | write | `PUT /projects/{id}/documents/{doc}` (projects); a PR/FAQ or PRD only when the minter (and the project owner) work AI-driven, else denied ([ways-of-working.md](ways-of-working.md)) |
+| `generate` | write, project | One methodology step, through the route the web app calls (projects): `step: personas` → `POST /projects/{id}/personas/generate` (`count` 1–10, default 3, always `keep_existing_personas: true`), `research` → `POST /projects/{id}/research` (`brief` = the question), `prfaq` / `prd` → `POST /projects/{id}/document` (`brief` = `feature_idea`; feedback read by default), `prototype` → `POST /projects/{id}/build-prototype`. Answers `step`, `job_id`, `status`, `message` and the route's `methodology` block (absent for personas). The route's own refusals answer as tool errors: the way of working for a PR/FAQ / PRD (an MCP token is an autonomous caller: the minter and the project owner must work AI-driven, [ways-of-working.md](ways-of-working.md)) and the 409 of a prototype with no PRD or PR/FAQ ([project-workspace.md → Methodology](project-workspace.md#methodology)) |
+| `get_feedback_catalogue` | read | `GET /feedback/catalogue` (metrics): every stored attribute of a feedback item, with type, meaning, setting step, PII class, `redact` / `summary_only` effect and allowed values ([data-catalogue.md](data-catalogue.md)). `sources: true` reads `GET /sources/status` (integrations) instead: each source's schedule (`enabled`, `schedule`) and circuit breaker, never its last error (admins only). Enabling, disabling, resetting and running a source are admin-only routes: no tool |
+| `get_prioritization` | read, project | `GET /projects/prioritization` (projects): the rows whose project the minter can view, the minter's own `scores`, the team `aggregates`, the scoring `axes` and `config_version`. With a project (the argument or the pin) only that project's rows, scores and aggregates |
+| `edit_feedback` | write | `PUT /feedback/{id}/category` (`category` + optional `subcategory`) or `PUT /feedback/{id}/dimensions` (`dimensions` key → value or null, `tags`), never both in one call (feedback edit); the route's category and source access apply |
+| `score_prioritization` | write, not pinned | `PATCH /projects/prioritization` (projects) with `{scores: {row_id: {axis: 1–5}}}` for one row: the route's validation (the active axes), its VIEW check on the row's project (a hidden row is 404) and its frozen-row rules apply. The ballot is the **minter's own**: the route keys a delegated `mcp:` ballot on the minter (`voc:acting_subject`), so a person never votes twice, and a token that acts for nobody is refused (403). The axes (`PUT /projects/prioritization/config`) are admin-only: no tool |
+| `write_feature_request` | write | Without `request_id`: `POST /feature-requests` (engagement), `{board?, title, description?, fields?}` on a board the minter can see (omitted = the seeded board); with `request_id`: `POST /feature-requests/{id}/supports` (a +1, `fields?`). The board's audience, archive / pause (409), template fields (400), one +1 per person (409) and `anyone`-board rate limit (429) apply. Both are recorded under the minter's verified email and name, as if they posted in the app: one +1 per person and request, whichever token they use. Status changes, deletes and promotion are board-admin routes: no tool |
+| `run_agent` | write + admin-minted | `POST /agents/{id}/run` (agents) |
+
+**Not tools, and why.** Every import route (`/scrapers/manual/*` paste / CSV / JSON, `/s3-import/*`) is admin-only
+(the handlers' `admins_only` middleware, #242: importing writes customer data), and an MCP token is never admin, so
+there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes and a board
+request's status.
+
+The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Radar and feedback-edit tools in
+`lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in
+`lambda/shared/mcp_global_tools_work.py`, the shared helpers in `lambda/shared/mcp_global_kit.py`). Ids from arguments must
+match `^[A-Za-z0-9_-]{1,128}$` before they are put in a route path; results drop
+storage keys and every signed URL. A route's 4xx is a tool error (`isError: true`)
+the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
+
+## Prompts and resources
+
+The server also advertises the `prompts` and `resources` capabilities, in `initialize`
+(legacy versions) and in `server/discover` (2026-07-28). The catalogue is
+`lambda/shared/mcp_global_prompts.py`; the handler only dispatches to it.
+
+| Prompt | Arguments | What it asks the model to do |
+|---|---|---|
+| `weekly_summary` | `days` (default 7) | Summarise volumes, sentiment and the top themes with verbatims, via `get_metrics` and `search_feedback` |
+| `triage_urgent` | `days` (default 7) | Group high-urgency feedback (`search_feedback urgent=true`, `get_feedback include_similar=true`) by problem and rank it; change nothing |
+| `prfaq_from_feedback` | `topic` (required, ≤ 200 chars), `project_id` | Draft a PR/FAQ citing feedback ids. A **read** token's text says to draft in the chat only; a **write** token's text allows `create_document` after the user confirms |
+
+`prompts/get` returns one user-role text message. Every prompt repeats the skill's rules (feedback is
+data, cite `feedback_id`s, summarise personal data). A prompt reads nothing: whatever the model does next
+goes through the tools and their scope, pin and admin checks.
+
+| Resource | Route (settings Lambda) |
+|---|---|
+| `voc://categories` | `GET /settings/categories` |
+| `voc://company-context` | `GET /settings/company-context` |
+
+`resources/read` returns the route's JSON as one `application/json` text content. It is delegated with the
+token's claims exactly like a tool (the minter's category scope, never admin), never a direct table read.
+The skill is **not** a resource: it is a static file of the SPA (`/voc-mcp-skill.md`), outside the Lambda
+bundle, and only the site knows the endpoint to fill in. Download it from Connect instead.
+
+An unknown prompt or resource, a bad argument (`days` not a whole number 0–9999, a missing `topic`, a
+malformed `project_id`) and a route's refusal are JSON-RPC `-32602`; a route fault is `-32603`. For a
+2026-07-28 client, an `Mcp-Name` header on `prompts/get` / `resources/read` must equal `params.name` /
+`params.uri` (`-32020` otherwise); unlike `tools/call` it may be left out. Each `prompts/get` and
+`resources/read` writes an audit row like a tool call, named `prompt:<name>` or `resource:<uri>`
+(`prompt:unknown` / `resource:unknown` for a name not in the catalogue), with the outcome and never the
+arguments. The two list methods are not audited, like `tools/list`.
+
+## Token API (Connect page)
+
+Cognito-authenticated, `lambda/api/mcp_tokens_handler.py` (`voc-mcp-tokens-api`).
+Each user manages only their own tokens; somebody else's token is a 404.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/connect/tokens` | My tokens (active, expired, revoked), the endpoint path, limits |
+| POST | `/connect/tokens` | Mint `{name, scope, expires_in_days?, project_id?}` → the raw token, **once** |
+| GET | `/connect/tokens/{token_id}` | The token + a page of its audit log (`?cursor=`) |
+| DELETE | `/connect/tokens/{token_id}` | Revoke (soft: the row and its audit stay listable) |
+
+Secrets use one credential scheme (`shared/mcp_tokens.py`, `shared/mcp_global_tokens.py`):
+`voc_tok_<16 hex>_<64 hex>`, only the secret half SHA-256-hashed, constant-time
+comparison. At most 20 active tokens per user.
+
+**Rate limit.** Each token may make at most **120 authenticated requests per UTC minute**
+(2 rps on average; `RATE_LIMIT_PER_MINUTE` in `mcp_global_handler.py`), counted with one conditional write on
+the token row that also stamps `last_used_at`. Past it, `/mcp/global` answers **429** with
+JSON-RPC error `-32002` and `Retry-After` (seconds to the next minute); the stage throttle
+(20 rps / 40, shared by every token) still applies on top. A fault in the counter's store
+admits the request (logged) rather than locking every assistant out. Refusals count in the
+`RateLimited` metric (namespace `VoC-MCP-Global`).
+
+**Secret scanning.** `/.gitleaks.toml` extends the default gitleaks rules with
+`voc-mcp-token` (`\bvoc_tok_[0-9a-f]{16}_[0-9a-f]{64}\b`), so a token pasted into a commit
+is reported; `lambda/shared/test/test_mcp_tokens_secret_scanning.py` keeps the pattern in
+step with the format. To catch tokens in other repositories too, add the same regex as a
+GitHub secret-scanning custom pattern for the organisation. A leaked token is revoked on
+Connect.
+
+**Listing "my tokens".** Each mint writes, in the same transaction as the token row,
+a keys-only pointer row `CREATOR#{sub}#TOKEN#{token_id}` in the `MCPGTOKEN`
+partition. `GET /connect/tokens` (and the 20-token cap check) is a key-condition
+Query on the caller's prefix plus a consistent BatchGetItem of the token rows — it
+never reads other users' rows. Authentication at `/mcp/global` is unchanged (one
+GetItem on `TOKEN#{token_id}`), as are revoke (`revoked_at` on the token row) and
+`last_used_at`. Tokens minted before the creator index have no pointer: until the backfill marker
+`MIGRATION#creator-index` exists, the list also reads the old layout and merges.
+After deploying, run once per deployment:
+
+```bash
+cd voc-datalake
+.venv/bin/python scripts/mcp_tokens/backfill_creator_index.py            # dry run (default)
+.venv/bin/python scripts/mcp_tokens/backfill_creator_index.py --apply    # write pointers + marker
+```
+
+It reads the token rows (a Query, not a Scan), reads each pointer and writes only
+missing ones conditionally, never touches a token row, and writes the marker only
+after a complete pass; re-running is a no-op.
+
+**Audit log.** Every `tools/call` by a valid token writes one row to the jobs table
+(`MCPAUDIT#{token_id}`): tool name, time, project id and outcome (`ok`, `error`,
+`denied`, `failed`) — never the arguments or any content. An audit trail does not expire: a
+row carries no `ttl`, so the jobs table's TTL never removes it. Rows written by releases before
+audit trails stopped expiring still carry a 90-day `ttl` and expire on it.
+
+## Protocol
+
+**Protocol versions.** The server speaks `2026-07-28` and the
+legacy `2025-11-25`, `2025-06-18` and `2024-11-05` (`lambda/shared/mcp_protocol.py`):
+
+- **Legacy clients** (Kiro, Claude Code, Copilot at the time of writing) use `initialize`, then
+  requests with the negotiated `MCP-Protocol-Version` header; `ping` still answers.
+- **2026-07-28 clients** skip the handshake. Each request carries
+  `params._meta["io.modelcontextprotocol/protocolVersion"]` and mirrors it, the method and
+  (for `tools/call`) the tool name into `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name`
+  (the `=?base64?…?=` form is decoded). A missing or disagreeing header is a `HeaderMismatch`
+  (`-32020`, HTTP 400), refused before the credential is read. `server/discover` returns the
+  supported versions, capabilities and instructions (public, cacheable for an hour); every
+  result carries `resultType` and the server identity in `_meta`, and `tools/list` adds
+  `ttlMs` (5 minutes) with `cacheScope: "private"` because the list depends on the token.
+  `initialize` and `ping` are not modern methods (404).
+- **An unknown version**, in the header or in `_meta`, is an `UnsupportedProtocolVersionError`
+  (`-32022`, HTTP 400) whose `data.supported` lists all four versions and `data.requested`
+  echoes the one asked for.
+- **`GET` and `DELETE`** on the endpoint answer `405 Method Not Allowed` with
+  `Allow: POST, OPTIONS` (an API Gateway mock behind the same token authorizer, no Lambda).
+
+**Upgrading from a release before 3.00.00.** The per-project MCP server (`POST {api}/mcp`, the
+`/projects/{id}/api-tokens` routes and `GET /projects/{id}/autoseed`) no longer exists. Per-project tokens
+stay in the projects table's `MCPTOKEN` partition, unused, and the global server, whose role can read only
+`MCPGTOKEN`, answers them with a 401. Mint a global token on Connect instead
+([project-workspace.md](project-workspace.md#mcp-access)).
+
+**The 401 challenge header.** A refused credential (a token that is unknown, wrong, revoked,
+expired, per-project or whose minter is disabled; an OAuth access token that fails any check
+in [OAuth sign-in](#oauth-sign-in)) gets `401` with `WWW-Authenticate: Bearer
+realm="voc-mcp-global", resource_metadata="{api}/.well-known/oauth-protected-resource/mcp/global",
+error="invalid_token"` and the JSON-RPC error
+`{"jsonrpc": "2.0", "id": null, "error": {"code": -32001, …}}`. API Gateway REST renames a
+Lambda-proxy response's `WWW-Authenticate` to `x-amzn-Remapped-WWW-Authenticate`, so the
+refusal is not the handler's: the endpoint's token authorizer is the global MCP function
+itself (`_authorize`, the same credential check, never cached), and its Deny is answered by
+the `ACCESS_DENIED` gateway response (`lib/stacks/api-mcp.ts`), which sets the header as
+given. `id` is `null` because the gateway cannot read the request. A request with no
+`Authorization` header gets the API-wide 401, which carries
+`Bearer resource_metadata="…"` with no `error` (RFC 6750 §3.1: the request carried no
+credential); the SPA never reads that header. An OAuth client starts its sign-in from
+`resource_metadata`; a token user mints a new token on Connect. Cost: each request
+invokes the function twice (authorizer, then handler), and the handler checks again, so a
+credential revoked between the two is still refused.
+
+## OAuth sign-in
+
+An MCP client can connect without a token ([setup above](#with-oauth-sign-in-kiro-claude-code-cursor)).
+Personal `voc_tok_` tokens keep working beside it. This section is the reference for operators.
+
+**Clients.** The sign-in is tested with **Kiro**, **Claude Code** and **Cursor**.
+
+**Web assistants (Claude.ai, ChatGPT, Amazon Quick) have not been tested.** Their callbacks are not built in: an operator lists them with
+`-c mcpOAuthWebCallbacks='["https://…/callback"]'` (exact `https://` URLs, at most 10), which
+creates the `web` client; without it there is no web client at all. Reported, unverified callbacks:
+Claude.ai `https://claude.ai/api/mcp/auth_callback`, ChatGPT
+`https://chatgpt.com/connector_platform_oauth_redirect`, Amazon Quick
+`https://<region>.quicksight.aws.amazon.com/sn/oauthcallback` (as published by those vendors; not verified here). Cursor's web callback
+(`https://www.cursor.com/agents/mcp/oauth/callback`) is the default of `-c mcpOAuthCursorCallbacks`.
+
+**Same identity as a token.** An OAuth caller acts as the person who approved it exactly like a
+token acts for its minter: the grant row has the token row's fields (`created_by`,
+`created_by_username`, `minted_by_admin`, `scope`, `project_id`, `expires_at`, `revoked_at`) in the
+same `MCPGTOKEN` partition, so the handler's code after authentication is unchanged. Never admin,
+at most editor, category and source access via delegation, `AdminGetUser` on every request (a
+disabled or deleted person is refused), `run_agent` only for an administrator's write grant and
+re-checked per call, the per-minute rate limit and one audit row per tool call (partition
+`MCPAUDIT#{grant id}`).
+
+**Scopes.** The Cognito resource server's identifier is the exact MCP URL
+(`<api>/v1/mcp/global`), so the scopes are `<mcp url>/read` and `<mcp url>/write`. The consent
+screen offers read only, or read and write when the client asked for write (or for no scope), plus
+an optional project pin (the person must be able to view it). Cognito is asked for exactly the
+consented scopes; per request the grant's scope is narrowed again by the token's
+(`write` only when both say so).
+
+**No app session for an MCP client.** The MCP app clients are allowed ONLY the two MCP scopes (no
+`openid`, `email` or `profile`) and no SRP, password or custom auth flow (hosted-UI authorization
+code + refresh only), so Cognito issues them no ID token; `openid` in a client's request is accepted
+and dropped, discovery and registration do not advertise it, and the token facade never passes an
+`id_token` on in any case. The access token still carries `username` (Cognito sets it without
+`openid`); the person's groups are read from Cognito per request, never from the token. As defence in
+depth, every REST API Lambda and the assistant stream refuse, with a 401, a token issued to any app
+client other than the SPA's web client and the board pool's client (`APP_CLIENT_IDS`, set on every
+VocApiStack function; `shared/app_clients.py`, `lambda/stream/src/assistant/runtime/app-client.ts`):
+API Gateway's Cognito authorizer accepts a token of any client of the pool, so without it an MCP
+client's token would act on every REST route with the person's full rights, admin included.
+`/mcp/global` keeps its own verification (below).
+
+### How a sign-in works
+
+| Step | Route (all under the `/v1` stage) | What happens |
+|---|---|---|
+| 1 | `POST /mcp/global` without a credential | 401 + `WWW-Authenticate: Bearer resource_metadata=…` |
+| 2 | `GET /.well-known/oauth-protected-resource[/mcp/global]` | RFC 9728: `resource` = the MCP URL, `authorization_servers` = [`<api>/v1`] |
+| 3 | `GET /.well-known/oauth-authorization-server`, `/.well-known/openid-configuration` | RFC 8414 metadata of the facade: `code_challenge_methods_supported: ["S256"]`, endpoints below, Cognito's `jwks_uri` |
+| 4 | `POST /oauth/register` | DCR facade: stores nothing, answers the PRE-registered public client the redirect URIs select (loopback `/oauth/callback` = Kiro; `/callback` = Cursor when `client_name` says so, else Claude Code; an exact configured web callback = Cursor or web). Unknown web URIs are dropped, a confidential client or other grant types refused, refusals logged with the public metadata |
+| 5 | `GET /oauth/authorize?…` | Checks client + redirect (else a plain 400, never a redirect), other faults go back to the client; then 302 to the SPA `https://<frontend>/oauth/authorize?<same query>` |
+| 6 | SPA consent (`GET`/`POST /connect/oauth/consent`, Cognito) | The person approves: the grant is stored (replacing an earlier one of this person and client, which ends its tokens) with a 10-minute window for ONE new sign-in, bound to this authorize request (the SHA-256 of its `code_challenge` is stored on the grant); a loopback redirect gets a single-use relay row; the answer is Cognito's `/oauth2/authorize` with PKCE and state preserved |
+| 7 | Cognito hosted sign-in | The person signs in again (the SPA signs in with SRP, so there is no hosted-UI session) |
+| 8 | `GET /oauth/callback?code&state` | Loopback relay: consumes the relay row (state = 256-bit id, 10 min, single use), records which client and loopback URI got the code (sha256 of the code only), 302 to the client's own loopback URI, any port 1024–65535 (RFC 8252 §7.3) |
+| 9 | `POST /oauth/token` | Forwards to Cognito (`redirect_uri` put back to the relay URL after checking the code's client and loopback URI). On success it records the token's `origin_jti` (its refresh chain) on the grant, only inside the consent window and only when the `code_verifier` S256-matches the consented `code_challenge` (another authorization started meanwhile cannot take the consent over); a refresh must come from a recorded chain of an active grant. Any refusal revokes the refresh token at Cognito and answers `invalid_grant` |
+| 10 | `POST /mcp/global` with `Bearer <access token>` | Verified as below, then the token path's rules |
+
+`POST /oauth/revoke` forwards to Cognito's `/oauth2/revoke`. Every facade answer is
+`Cache-Control: no-store`; bodies are capped (register 8 KB, forms 16 KB); throttles are stage
+method settings (`MCP_OAUTH_METHOD_THROTTLE`: register 5 rps / 10, the rest 10 rps / 20). The
+anonymous routes are exactly these nine (`INTENTIONALLY_PUBLIC_OAUTH_ROUTES`, pinned by
+`api-stack.test.ts`) and have no CORS preflight: native clients call them, a browser only
+navigates to authorize and callback.
+
+**Verification on `/mcp/global`** (`shared/mcp_credentials.py`, `shared/mcp_oauth_jwt.py`, also the
+API Gateway authorizer): RS256 only (`alg` other than RS256, including `none` and HS256, is refused
+before any key), signature by a key of the pool's JWKS (fetched from the fixed issuer URL, cached
+1 h, re-read at most once a minute for an unknown `kid`; a JWKS fault is a 500, not a 401),
+`iss` = the pool, `token_use` = `access`, `client_id` ∈ the MCP clients (never the web app's),
+`exp` in the future, `iat` not, `aud` when present = the canonical MCP URL, an MCP scope, then the
+grant for (sub, client) active and the token's `origin_jti` one of its recorded chains, the
+username the grant's, and the person still current in Cognito. Tokens are never logged.
+
+**Where the consent page sends the browser** (`frontend/src/api/oauthRedirect.ts`). Before it follows
+the consent API's answer (Approve, Deny, or a refused request) the SPA checks it and shows its error state
+otherwise: the configured hosted UI (`cognito.hostedUiDomain` in `config.json`, written by the CDK deploy
+and `deploy:frontend` from VocCoreStack's `UserPoolDomain`), an RFC 8252 loopback `http://127.0.0.1`,
+`localhost` or `[::1]` with a port from 1024 to 65535 (the server relay's rule), or the exact https
+callback (origin and path) the assistant's own request named. That last check only proves the backend
+sent the browser where the request asked; it does not vet the callback itself. The control on which
+callbacks a client may use is the backend's client and redirect validation (`GET /oauth/authorize` in
+`shared/mcp_oauth_authorize.py`, and the `POST /oauth/register` facade in `shared/mcp_oauth_register.py`),
+which answers a plain 400 before the consent page for an unknown client or redirect. A `config.json`
+without the hosted UI (written by a release before 5.63.00) refuses the approval until the next deploy.
+
+**Revocation is immediate.** Connect lists the person's signed-in assistants (one per client) with
+revoke (`GET /connect/oauth/grants`, `DELETE /connect/oauth/grants/{grant_id}`). Revoking marks the
+grant and empties its chains, so the next request of every access token is a 401, even one
+refreshed at Cognito directly. **Refresh tokens are never stored** by VoC. A grant lasts 90 days;
+Cognito refresh tokens 30 days; access tokens 1 hour.
+
+**RFC 8707 `resource`.** A `resource` other than the MCP URL is refused (`invalid_target`). By
+default it is then NOT passed to Cognito: the app pool's hosted UI is the classic one and older
+pools may be on the Lite plan, where Cognito's resource binding is unavailable. The token is still
+bound to this server by its client id and URL-prefixed scopes, and `aud` is checked whenever
+Cognito sets it. On a pool known to accept it, `-c mcpOAuthResourceIndicator=true` forwards it.
+
+**Turning token minting off.** `-c mcpTokenMinting=false` makes `POST /connect/tokens` answer 403
+and Connect hide the mint form; existing tokens keep working until they expire or are revoked.
+
+**Where things live.** Grants: projects table, `MCPGTOKEN` / `TOKEN#oag_<sha256(sub, client)>`
+(`shared/mcp_oauth_grants.py`, conditional writes in `mcp_oauth_store.py`). Relay and code rows:
+jobs table `MCPOAUTH#RELAY#…` / `MCPOAUTH#CODE#…` with `ttl` (the projects table has none), consumed
+by a DeleteItem returning the old row. Routes: `voc-mcp-tokens-api` (`shared/mcp_oauth_routes.py`,
+`shared/mcp_oauth_consent_routes.py`); its role gains Put/Delete on `MCPOAUTH#*` only. Cognito
+resource server and clients: `lib/stacks/api-mcp-oauth.ts` on VocApiStack. `cryptography` (the
+signing layer) is attached to the MCP endpoint function only.
+
+### Checking a deployment
+
+After a deploy, check these against the deployed API (`<api>` = the `ApiEndpoint` output, ending in `/v1/`) with a
+test user who is NOT an administrator, then once with an administrator for `run_agent`.
+
+1. **Discovery, anonymous.** `curl -si <api>mcp/global -X POST -d '{}'` → `401` with
+   `www-authenticate: Bearer resource_metadata="<api>.well-known/oauth-protected-resource/mcp/global"`.
+   `curl -s <api>.well-known/oauth-protected-resource/mcp/global` and
+   `<api>.well-known/openid-configuration` → the two JSON documents, `code_challenge_methods_supported: ["S256"]`.
+   `curl -si -X GET <api>mcp/global` with no header → 401 (with a valid token: 405).
+2. **Kiro, headless.** Put `{"mcpServers": {"voc-datalake": {"url": "<api>mcp/global"}}}` in
+   `~/.kiro/settings/mcp.json`, start `kiro-cli chat`; it registers (201 in the tokens Lambda log,
+   `client_kind: kiro`) and prints a sign-in URL. Over ACP the client gets an `oauth_request`; open
+   the URL, approve on the consent page, sign in. Check `/mcp` lists the tools, call `list_projects`
+   and `search_feedback`; a second Kiro session (another port) signs in too.
+3. **Claude Code.** `claude mcp add --transport http voc-datalake <api>mcp/global`, `claude`, `/mcp`
+   → authenticate → approve with **read only** → `create_document` is not offered. Re-approve with
+   read and write: the first session's token is refused at once (new consent = new grant).
+4. **Cursor.** Add the same `mcp.json` entry to `~/.cursor/mcp.json`, connect, approve. Cursor may
+   sign in via its web callback: that is `-c mcpOAuthCursorCallbacks`.
+5. **Revoke.** On Connect → Signed-in assistants, revoke Kiro: its next tool call is a 401 and Kiro
+   asks to sign in again. Disable the test user in Cognito: every client of that user is refused.
+6. **Web assistants** (only if `-c mcpOAuthWebCallbacks` is set): add the URL as a custom
+   connector and sign in.
+7. **Logs.** No token, code or state in `/aws/lambda/voc-mcp-tokens-api*` or
+   `/aws/lambda/voc-mcp-global-api*` (`MCP OAuth token refused` lines name only the failed check).
+
+## Infrastructure
+
+`lib/stacks/global-mcp.ts` (a construct inside `VocApiStack`; no new stack):
+
+- `POST /mcp/global` behind the MCP token authorizer (`lib/stacks/api-mcp.ts`: the
+  global MCP function itself, results never cached, so a revoke is immediate; the
+  handler verifies the token again), throttled at **20 rps / burst 40**. `/mcp` itself has no method;
+- `/connect/tokens` routes sit behind one Cognito proxy, `/connect/{proxy+}` (the handler routes by path);
+- least-privilege roles, pinned by `lib/stacks/api-stack-mcp-global.test.ts`: the MCP
+  role reads/updates only the `MCPGTOKEN` partition, appends only `MCPAUDIT#…` rows,
+  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the nine domain
+  Lambdas (metrics, settings, memory, projects, agents, engagement, radar, feedback edit, integrations); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
+  check and queries `MCPAUDIT#…`;
+- each function has ONE API-scoped invoke permission (not two per method) because
+  `VocApiStack` is close to CloudFormation's 500-resource limit.
+
+## Alarms and concurrency
+
+**Alarms (runtime-managed).** Like every operational alert, the endpoint's alarms exist only
+while an admin has alerting on (**Administration → System → Logs → Alerts**, [deployment.md](deployment.md)):
+the logs API creates them under the deployment's `voc-alerts-<account>-<region>-` prefix and they notify the
+ops SNS topic. Each is the Sum of one custom metric (namespace `VoC-MCP-Global`, dimension
+`service=voc-mcp-global-api`) over one 5-minute period, above a named constant in
+`lambda/shared/ops_alerts.py`:
+
+| Alarm | Metric (emitted by `mcp_global_handler.py`) | Fires above | Usually means |
+|---|---|---|---|
+| `mcp-auth-denied` | `AuthDenied`: an authorizer Deny, a handler 401, or a 403 for a foreign `Origin` | 50 (`MCP_AUTH_DENIED_THRESHOLD`) | A token scan, or many clients still configured with revoked / expired tokens |
+| `mcp-tool-denied` | `ToolCall_denied`: scope, pin, admin or route-403 refusals of `tools/call` (and of a prompt or resource) | 20 (`MCP_TOOL_DENIED_THRESHOLD`) | A client probing beyond its token; check the token audit logs on Connect |
+| `mcp-tool-failed` | `ToolCall_failed`: calls a server fault stopped (`-32603`) | 5 (`MCP_TOOL_FAILED_THRESHOLD`) | A domain Lambda or the delegation is failing |
+| `mcp-rate-limited` | `RateLimited`: 429s from the per-token budget | 30 (`MCP_RATE_LIMITED_THRESHOLD`) | A client looping |
+
+The metrics carry the Powertools
+`service` dimension, which is the function's base name, not the deployment-unique one: two deployments in one
+account and region (a `deploymentPrefix` beside the default) share these metrics, so each one's alarms count
+both. Four more alarm metrics cost $0.40 a month at the list price while alerting is on.
+
+**Reserved concurrency.** `voc-mcp-global-api` reserves **20** concurrent executions
+(`GLOBAL_MCP_RESERVED_CONCURRENCY` in `lib/stacks/global-mcp.ts`, pinned by
+`api-stack-mcp-global-ops.test.ts`). The function is also its own token authorizer, so a request is two short
+invocations; at the stage ceiling (20 rps) that needs well under 20. The reservation keeps a runaway client
+from starving the account's other Lambdas and guarantees the endpoint its share. Past it, invocations are
+throttled and API Gateway answers with a 5xx. The 20 come out of the account's
+unreserved pool, which Lambda keeps at 100 or more, so the account's concurrency quota must be at least 120
+or the deploy fails. It is the only reservation in the app; `docs/lambda-sizing.md` covers memory only.
+
+`-c mcpReservedConcurrency=<n>` changes the number (a whole number, checked at synth; default 20). `0` means
+no reservation at all: the function then shares the unreserved pool like every other Lambda, which is the
+setting for an account whose quota is under 120 (new accounts can start at 10). The quota rule above becomes
+`n` + 100.
+
+## Testing
+
+`lambda/api/test/test_global_mcp_e2e.py` drives the handler as an external MCP client
+would — `initialize` → `notifications/initialized` → `tools/list` → `tools/call` over
+the REST proxy event API Gateway delivers — with tokens minted through the real token
+API and every tool delegated in-process to the real projects and agents handlers over
+moto tables. It covers a read-only token, a write token creating and updating a
+document, revoked / expired / disabled-minter / tampered tokens, a project-scoped
+token refused outside its project, and `run_agent` for non-admin, admin and demoted
+minters. `test_global_mcp_protocol.py` and `test_global_mcp_tokens_api.py` cover the
+envelope, argument validation and the token API. `lambda/shared/test/test_mcp_global_tools_budget.py`
+keeps the whole `tools/list` under an estimated 4,000 tokens (ChatGPT connectors are reported to
+refuse servers past about 5,000): a new tool or a wordy description fails there first. To stay inside it, a
+tool publishes only the annotations that differ from the MCP defaults (`readOnlyHint`, `openWorldHint: false`, and
+`destructiveHint: false` on a write tool); the display name is the top-level `title`.
+`lambda/api/test/test_mcp_global_work_tools.py` covers the catalogue, Prioritization and board-write tools (routes,
+refusals, the pin, the board claims), and `test_projects_prioritization_delegated.py` that a token's ballot is its
+minter's own.
+
+These tests run every layer between the JSON-RPC frame and the DynamoDB row except API Gateway's own token
+authorizer, Cognito (an in-memory fake at the boto3 surface) and Step Functions. To check a real client, deploy,
+mint a token on `/connect`, add the `mcp.json` to two clients, and call `initialize`, `tools/list` and one read and
+one write tool in each ([Checking a deployment](#checking-a-deployment)).

@@ -1,0 +1,74 @@
+# Persona generation: add or replace
+
+Persona generation writes a project's personas from the feedback in scope. A run either **adds** personas
+next to the project's current ones or **replaces** them. The mode is always explicit, because guessing wrong
+would destroy personas someone reviewed. `POST /projects/{id}/personas/generate` starts the run as a background
+job (the persona-generator Lambda); the project page, the AI assistant and the autonomous agents all call it.
+How to pick the feedback a run reads is in [project-workspace.md](project-workspace.md#which-feedback-a-generation-reads).
+With `include_feature_requests: true` (and optionally `feature_request_board_ids`) the run also reads the requests
+filed on the feedback boards, as a separate section the personas cite as `[FR:<request_id>]`; each persona stores
+their ids as `input_feature_request_ids`
+([feature requests as evidence](project-workspace.md#feature-requests-from-the-feedback-boards)).
+
+## The request field
+
+| `keep_existing_personas` | Mode | What happens to the current personas |
+|---|---|---|
+| absent / `false` (API default) | replace | Deleted, with their avatar objects, just before the new set is saved, so a re-run never piles up duplicates (`_clear_existing_personas`, `shared/persona_replace.py`). A **protected** persona is kept, and the model is told about it. |
+| `true` | add | Kept untouched, including any edits and avatars. The new personas are saved beside them. |
+
+Any other value is a 400 (`keep_existing_personas must be true or false, got str`). `persona_count` on the
+project is recounted from its rows after every save, so it is right in both modes.
+
+Protect a persona on its card in the project (`PUT /projects/{id}/personas/{persona_id}/protection
+{protected: true|false}`) to keep it through replace runs. Each delete is conditional on the row still being
+unprotected, so a persona protected while a run is under way survives.
+
+## Who sends what
+
+- **Project page wizard** (Generate Personas). A project that already has personas gets a choice on the
+  final step: **Add to existing personas** (selected by default) or **Replace existing personas**. A project
+  with no personas sees no choice. If Replace is chosen, the confirmation becomes a danger dialog that counts
+  the personas it deletes ("Delete and generate").
+- **AI assistant** (`generate_personas` tool). The tool takes an optional `keep_existing_personas`, which
+  defaults to adding. The model is told to send `false` only when the user explicitly asked to replace. The
+  approval card states the mode: "Adds to the N personas the project has" or, in danger colours, "Deletes
+  the project's N existing personas". An approved plan step builds the same request (`write-requests-project.ts`).
+- **Autonomous agents** always add (`lambda/agents/nodes/generate_personas.py`), see
+  [autonomous agents](autonomous-agents.md).
+- **API and scripts**: without the field a run replaces.
+
+## How additive runs avoid repeating the kept personas
+
+The model gets two blocks of quoted data (any DATA-block tag defanged), on the plan step and on every
+per-persona call:
+
+1. **Names already used** (every mode). The newest 30 names, each cut to 60 characters, which the
+   model must not reuse.
+2. **Personas this project keeps** (add mode only, `lambda/shared/persona_overlap.py`). A short
+   projection of each kept persona: name, tagline, occupation, primary goal and the first two pain points,
+   each field cut to 100 characters (names 60). It comes with an instruction to write clearly distinct
+   archetypes: a different role, primary goal and main pain point.
+
+**Prompt growth is bounded.** At most the newest 20 kept personas are projected, and the JSON list is held
+under 1,500 characters by dropping the oldest first. Extending a project many times cannot grow the prompt
+without limit. "Newest" is sort-key order: every persona id, generated or imported, starts with its UTC
+creation time (`persona_<YYYYmmddHHMMSS>_…`). In add mode both blocks come from one read of the project's
+personas.
+
+**Overlap check after generation.** The instruction is only advice, so one rule is enforced in code. A new
+persona whose name matches a kept persona is **dropped** before its avatar is made. (A name repeated inside
+one run's new set never gets this far, in either mode: the plan step keeps each name once.)
+The match ignores case and runs of whitespace. The persona is not renamed, because a suffixed "Ada Moreno 2"
+would still read as the same person in `@all` roundtables. The check compares against **every** kept name,
+not just the projected 20. The job's result reports the count as `metadata.duplicate_names_dropped`, 0 in
+replace mode, and the project's Jobs list says how many new personas were not added and why. If the kept
+personas cannot be read, the run still adds and never deletes; it just has nothing to compare against (and
+no names-to-avoid list).
+
+## Avatars and the roundtable
+
+Adding personas never touches the kept personas' rows or avatars. Avatars are made only for the new
+personas that survive the name check. `@all` in the project assistant asks the first 6 personas in project
+order ([assistant mentions](assistant-mentions.md)), so a larger set does not make a round more expensive.
+Because names never repeat, no persona answers twice.

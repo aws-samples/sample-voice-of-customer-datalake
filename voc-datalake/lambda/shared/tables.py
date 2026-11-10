@@ -4,18 +4,35 @@ Provides centralized table access with connection reuse.
 """
 
 import os
+from functools import lru_cache
+from typing import Any
+
 from shared.aws import get_dynamodb_resource
+from shared.exceptions import ConfigurationError
 
-_cache: dict[str, object] = {}
+# boto3 resources are built dynamically at runtime; typing these as the
+# mypy_boto3 `Table` stub is a cross-module migration (every caller's
+# Key/Item shapes would need TypedDicts), so they stay dynamically typed.
+_cache: dict[str, Any] = {}
 
 
-def _get_table(env_var: str):
+def _get_table(env_var: str) -> Any:
     """Get a DynamoDB table resource by env var name, with connection reuse."""
     if env_var not in _cache:
         table_name = os.environ.get(env_var, '')
         if table_name:
             _cache[env_var] = get_dynamodb_resource().Table(table_name)
     return _cache.get(env_var)
+
+
+@lru_cache(maxsize=8)
+def cached_table(resource: Any, name: str) -> Any:
+    """One ``Table`` per (resource, name): boto3 rebuilds the resource class on every ``.Table()``.
+
+    For tables read by name outside the env-var getters below (voc-radar, voc-participants,
+    voc-feature-requests); ``cache_clear()`` resets it between tests.
+    """
+    return resource.Table(name)
 
 
 def get_jobs_table():
@@ -38,11 +55,8 @@ def get_projects_table():
     return _get_table('PROJECTS_TABLE')
 
 
-def get_conversations_table():
-    """Get conversations table resource. Requires CONVERSATIONS_TABLE env var."""
-    return _get_table('CONVERSATIONS_TABLE')
-
-
-def clear_table_cache():
-    """Clear all cached table references. Useful for testing."""
-    _cache.clear()
+def configured_table(table: Any, name: str) -> Any:
+    """``table``, or a ConfigurationError (500) naming it when its env var is unset."""
+    if table is None:
+        raise ConfigurationError(f'{name} table not configured')
+    return table

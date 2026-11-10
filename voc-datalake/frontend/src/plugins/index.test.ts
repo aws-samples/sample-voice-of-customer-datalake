@@ -4,17 +4,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the manifests.json import
-vi.mock('./manifests.json', () => ({
+vi.mock('./manifests.json', () => import('./manifest-fixtures').then((fixtures) => ({
   default: [
     {
-      id: 'webscraper',
-      name: 'Web Scraper',
-      icon: '🕷️',
-      description: 'Configurable scraper for extracting feedback from websites',
-      category: 'import',
-      config: [
-        { key: 'configs', label: 'Scraper Configurations (JSON)', type: 'textarea', required: false, secret: false },
-      ],
+      ...fixtures.WEBSCRAPER_MANIFEST_CORE,
       hasIngestor: true,
       hasWebhook: false,
       hasS3Trigger: false,
@@ -24,7 +17,7 @@ vi.mock('./manifests.json', () => ({
     {
       id: 'manual_import',
       name: 'Manual Import',
-      icon: '📝',
+      icon: 'Plugin',
       description: 'Manually import feedback data',
       category: 'import',
       config: [],
@@ -37,7 +30,7 @@ vi.mock('./manifests.json', () => ({
     {
       id: 's3_import',
       name: 'S3 Bulk Import',
-      icon: '📦',
+      icon: 'Package',
       description: 'Import feedback from S3 bucket',
       category: 'import',
       config: [],
@@ -48,7 +41,7 @@ vi.mock('./manifests.json', () => ({
       enabled: true,
     },
   ],
-}));
+})));
 
 describe('Plugin Manifest Loader', () => {
   beforeEach(() => {
@@ -75,7 +68,7 @@ describe('Plugin Manifest Loader', () => {
 
       expect(webscraper).toBeDefined();
       expect(webscraper?.name).toBe('Web Scraper');
-      expect(webscraper?.icon).toBe('🕷️');
+      expect(webscraper?.icon).toBe('Web');
       expect(webscraper?.hasIngestor).toBe(true);
     });
   });
@@ -139,7 +132,7 @@ describe('Type Exports', () => {
     expect(manifest?.config).toBeDefined();
     expect(Array.isArray(manifest?.config)).toBe(true);
 
-    const configField = manifest!.config[0];
+    const configField = manifest?.config[0];
     expect(configField).toHaveProperty('key');
     expect(configField).toHaveProperty('label');
   });

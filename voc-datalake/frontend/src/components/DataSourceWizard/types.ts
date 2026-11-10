@@ -17,6 +17,25 @@ export interface ContextConfig {
   selectedPersonaIds: string[]
   selectedDocumentIds: string[]
   selectedResearchIds: string[]
+  /**
+   * Feedback-board requests as their own evidence (never mixed into the reviews); off by default.
+   * `featureRequestBoardIds` narrows them to some boards (≤ MAX_EVIDENCE_BOARDS); empty = every board.
+   */
+  useFeatureRequests: boolean
+  featureRequestBoardIds: string[]
+}
+
+/** The most boards one generation may read requests from (`feature_request_board_ids`, ≤ 20). */
+export const MAX_EVIDENCE_BOARDS = 20
+
+/**
+ * One category chip in the feedback-filters step. `value` is the category NAME
+ * (what a review stores and the backend filters on), never the config `id`;
+ * `label` is the display text.
+ */
+export interface CategoryOption {
+  readonly value: string
+  readonly label: string
 }
 
 export const defaultContextConfig: ContextConfig = {
@@ -31,4 +50,6 @@ export const defaultContextConfig: ContextConfig = {
   selectedPersonaIds: [],
   selectedDocumentIds: [],
   selectedResearchIds: [],
+  useFeatureRequests: false,
+  featureRequestBoardIds: [],
 }

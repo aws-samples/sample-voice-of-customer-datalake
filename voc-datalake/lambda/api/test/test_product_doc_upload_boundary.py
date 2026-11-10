@@ -11,7 +11,7 @@ declared size binding on S3 instead of advisory.
 everything here is new.
 """
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -75,14 +75,19 @@ class TestDeferredTypesAreRefusedWithoutLeavingARecord:
     the one that matters.
     """
 
-    def test_pdf_is_refused_with_a_client_error(self):
-        error, _ = _reject({'filename': 'spec.pdf', 'content_type': 'application/pdf',
-                            'size_bytes': 1000})
-        assert error.status_code == 400
-
     def test_pdf_writes_no_record(self):
         _, table = _reject({'filename': 'spec.pdf', 'content_type': 'application/pdf',
                             'size_bytes': 1000})
+        table.put_item.assert_not_called()
+
+    @pytest.mark.parametrize('field', ['filename', 'content_type'])
+    @pytest.mark.parametrize('value', [['image/png'], {'a': 1}, 5, None])
+    def test_a_non_string_name_or_type_is_a_client_error_not_a_crash(self, field, value):
+        """`.strip()` on a list/object/number raised AttributeError — a 500."""
+        body = {'filename': 'screen.png', 'content_type': 'image/png', 'size_bytes': 1000}
+        body[field] = value
+        error, table = _reject(body)
+        assert error.status_code == 400
         table.put_item.assert_not_called()
 
     def test_pdf_message_says_not_yet_and_names_what_is_accepted(self):
@@ -92,11 +97,6 @@ class TestDeferredTypesAreRefusedWithoutLeavingARecord:
         assert 'not supported yet' in error.message
         assert '.png' in error.message
         assert '.txt' in error.message
-
-    def test_docx_is_refused_with_a_client_error(self):
-        error, _ = _reject({'filename': 'brief.docx', 'content_type': DOCX_MIME,
-                            'size_bytes': 1000})
-        assert error.status_code == 400
 
     def test_docx_writes_no_record(self):
         _, table = _reject({'filename': 'brief.docx', 'content_type': DOCX_MIME,
@@ -407,6 +407,7 @@ class TestAHostileDeclaredSizeIsNeverMaterialised:
             _create({'filename': 'screen.png', 'content_type': 'image/png',
                      'size_bytes': 1000})
 
+    @pytest.mark.timing
     def test_a_hostile_size_is_refused_inside_a_time_budget(self):
         """Belt and braces, and it survives a rewrite that no longer routes through
         the patched name.
@@ -415,7 +416,7 @@ class TestAHostileDeclaredSizeIsNeverMaterialised:
         the exponent has to be one an unbounded implementation still finishes.
 
         THE BUDGET IS CHOSEN FOR MARGIN ON BOTH SIDES, which is why it is not
-        simply "generous". Measured on this runtime: the bounded path is ~10µs,
+        simply "generous". Measured on this runtime: the bounded path is ~10 microseconds,
         and `int(Decimal('1E+1000000'))` costs ~30s. So 5s sits ~500,000x above
         the real cost and ~6x below the failure — a contended runner cannot reach
         it without every other test in this suite timing out first, and an
@@ -435,6 +436,7 @@ class TestAHostileDeclaredSizeIsNeverMaterialised:
         assert product_context._declared_size('1E+1000000') is None
         assert time.perf_counter() - started < 5.0
 
+    @pytest.mark.timing
     def test_a_long_numeric_string_is_refused_by_the_same_bound(self):
         """The parse itself needs no length limit, which is worth recording: a
         10 MB numeric string (the API Gateway body limit, so the worst case a
@@ -531,7 +533,7 @@ class TestRejectionHappensBeforeAnyWrite:
 # ── Stalled-extraction transition ────────────────────────────────────────────
 
 def _iso_ago(seconds: int) -> str:
-    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+    return (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
 
 
 def _doc(**overrides) -> dict:
@@ -672,7 +674,7 @@ class TestMalformedTimestampsFailSafe:
         them eligible for the transition instead of stranding them at pending."""
         import product_context
 
-        naive = (datetime.now(timezone.utc)
+        naive = (datetime.now(UTC)
                  - timedelta(seconds=product_context.EXTRACTION_STALL_SECONDS + 60)
                  ).replace(tzinfo=None).isoformat()
         docs, table = _list([_doc(created_at=naive)])
@@ -714,6 +716,6 @@ class TestAllowedContentTypes:
         import product_context
         from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS
 
-        assert product_context.IMAGE_CONTENT_TYPES == set(IMAGE_CONTENT_TYPE_EXTENSIONS)
+        assert set(IMAGE_CONTENT_TYPE_EXTENSIONS) == product_context.IMAGE_CONTENT_TYPES
         for content_type, ext in IMAGE_CONTENT_TYPE_EXTENSIONS.items():
             assert product_context.ALLOWED_CONTENT_TYPES[content_type] == ext

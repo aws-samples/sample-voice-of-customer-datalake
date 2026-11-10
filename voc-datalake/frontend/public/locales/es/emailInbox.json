@@ -1,0 +1,56 @@
+{
+  "title": "Bandeja de correo",
+  "description": "Clientes, empleados y socios envían comentarios por correo a estas direcciones. Cada correo se revisa, se deduplica y se anonimiza antes de convertirse en un comentario.",
+  "on": "Activada",
+  "off": "Desactivada",
+  "loading": "Cargando la bandeja de correo…",
+  "notDeployed": "La bandeja de correo no está desplegada. Despliegue con -c inboundEmailDomain=<su dominio> (consulte docs/email-intake.md).",
+  "addresses": "Direcciones",
+  "ruleSetInactive": "El conjunto de reglas de recepción {{ruleSet}} no está activo, así que todavía no llega ningún correo. Actívelo en Amazon SES o vuelva a desplegar en el conjunto activo con -c inboundEmailRuleSet.",
+  "pii": {
+    "redact": "Los datos personales se anonimizan: nombres, direcciones de correo y teléfonos se reemplazan antes de guardarse.",
+    "allow": "Los datos personales se guardan tal como llegan (el perfil de la fuente lo permite).",
+    "summary_only": "Solo se guardan campos derivados (el perfil de la fuente es solo resumen)."
+  },
+  "dimension": {
+    "missing": "Cree la dimensión Tipo de comentario para que las direcciones ideas@, bugs@ y reviews@ y las etiquetas del asunto como [bug] clasifiquen cada elemento.",
+    "create": "Crear dimensión"
+  },
+  "today": {
+    "title": "Hoy (UTC)",
+    "accepted": "Aceptados",
+    "deduped": "Deduplicados",
+    "dropped": "Descartados",
+    "deferred": "Aplazados",
+    "modelCalls": "Llamadas al modelo"
+  },
+  "reasons": {
+    "duplicate_message": "El mismo correo entregado dos veces",
+    "seen_in_thread": "Texto ya presente en la conversación",
+    "no_new_info": "Respuesta sin información nueva",
+    "forward_duplicate": "Original ya reenviado",
+    "spam": "Veredicto de spam",
+    "virus": "Veredicto de virus",
+    "auto_reply": "Respuesta automática",
+    "bulk": "Envío masivo o lista de correo",
+    "loop_sender": "Remitente de un sistema de correo",
+    "sender_cap": "Límite por remitente alcanzado",
+    "no_text": "Sin texto",
+    "unparseable": "No legible",
+    "too_large": "Demasiado grande"
+  },
+  "caps": {
+    "title": "Límites diarios",
+    "daily_cap": "Correos por día",
+    "sender_daily_cap": "Correos por remitente y día",
+    "daily_model_calls": "Llamadas al modelo por día",
+    "range": "De {{min, number}} a {{max, number}}",
+    "save": "Guardar límites",
+    "saved": "Límites guardados"
+  },
+  "errors": {
+    "load": "No se pudo cargar el estado de la bandeja de correo.",
+    "save": "No se pudieron guardar los límites.",
+    "dimension": "No se pudo crear la dimensión."
+  }
+}

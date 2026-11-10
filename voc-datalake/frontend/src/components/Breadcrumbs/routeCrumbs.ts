@@ -47,13 +47,28 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'categories': { labelKey: 'common:breadcrumbs.categories' },
   'feedback': { labelKey: 'common:breadcrumbs.categories', path: '/categories' },
   'problems': { labelKey: 'common:breadcrumbs.problems' },
+  'radar': { labelKey: 'common:breadcrumbs.radar' },
   'chat': { labelKey: 'common:breadcrumbs.chat' },
   'projects': { labelKey: 'common:breadcrumbs.projects' },
   'prioritization': { labelKey: 'common:breadcrumbs.prioritization' },
   'data-explorer': { labelKey: 'common:breadcrumbs.dataExplorer' },
   'scrapers': { labelKey: 'common:breadcrumbs.scrapers' },
   'feedback-forms': { labelKey: 'common:breadcrumbs.feedbackForms' },
-  'settings': { labelKey: 'common:breadcrumbs.settings' },
+  'participants': { labelKey: 'common:breadcrumbs.participants' },
+  'feature-requests': { labelKey: 'common:breadcrumbs.featureRequests' },
+  'memory': { labelKey: 'common:breadcrumbs.memory' },
+  'company': { labelKey: 'common:breadcrumbs.company' },
+  'agents': { labelKey: 'common:breadcrumbs.agents' },
+  // `/agents/workflows/:id` — the library is the Workflows tab of /agents, so the crumb links there.
+  'workflows': { labelKey: 'common:breadcrumbs.workflows', path: '/agents?tab=workflows' },
+  'connect': { labelKey: 'common:breadcrumbs.connect' },
+  // `/oauth/authorize`, the MCP sign-in consent: its parent is Connect, where the sign-in is managed.
+  'oauth': { labelKey: 'common:breadcrumbs.connect', path: '/connect' },
+  'authorize': { labelKey: 'common:breadcrumbs.oauthConsent' },
+  'account': { labelKey: 'common:breadcrumbs.account' },
+  'admin': { labelKey: 'common:breadcrumbs.admin' },
+  // Redirects to /admin; labelled for the redirect's instant.
+  'settings': { labelKey: 'common:breadcrumbs.admin', path: '/admin' },
 }
 
 /**
@@ -75,6 +90,10 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
 export const RECORD_CRUMBS: Readonly<Partial<Record<string, CrumbLabel>>> = {
   'projects': { labelKey: 'common:breadcrumbs.project' },
   'feedback': { labelKey: 'common:breadcrumbs.feedbackItem' },
+  'agents': { labelKey: 'common:breadcrumbs.agent' },
+  'workflows': { labelKey: 'common:breadcrumbs.workflow' },
+  // `/feature-requests/:slug` — one feedback board, named once its page loaded it.
+  'feature-requests': { labelKey: 'common:breadcrumbs.board' },
 }
 
 export interface Crumb {
@@ -110,7 +129,8 @@ export function buildCrumbs(
         return { label: t(route.labelKey), path: route.path ?? segmentPath, isHome: false }
       }
 
-      const record = index === 0 ? undefined : RECORD_CRUMBS[pathSegments[index - 1]]
+      const parent = index === 0 ? undefined : pathSegments.at(index - 1)
+      const record = parent === undefined ? undefined : RECORD_CRUMBS[parent]
       if (record !== undefined) {
         return { label: recordName ?? t(record.labelKey), path: segmentPath, isHome: false }
       }

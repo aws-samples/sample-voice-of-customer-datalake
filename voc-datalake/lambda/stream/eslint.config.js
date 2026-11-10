@@ -8,21 +8,63 @@ import importX from 'eslint-plugin-import-x'
 import unusedImports from 'eslint-plugin-unused-imports'
 import vitest from '@vitest/eslint-plugin'
 import globals from 'globals'
+import { builtinModules } from 'node:module'
+import noReExports from '../../../eslint-rules/no-re-exports.mjs'
+import {
+  SOURCE_RULES,
+  SPEC_FILES,
+  SPEC_RULES,
+  SUPPRESSION_RULES,
+  SWALLOWED_REJECTION_SELECTORS,
+  TYPE_SAFETY_RULES,
+  TYPE_SAFETY_SPEC_RULES,
+  withPending,
+} from '../../../eslint-rules/quality-gates.mjs'
+
+// Rules of the shared quality-gate set (../../../eslint-rules/quality-gates.mjs) whose findings in
+// this package are not fixed yet, each with the setting this package enforced before ('off' when
+// it had none). Delete an entry in the change that brings its count to zero; never add one back.
+const PENDING_SOURCE = {}
+const PENDING_SPEC = {}
+const PENDING_SUPPRESSION = {}
+
+// The stream modules the SPA imports through `@stream` (frontend/streamSource.ts), and every stream file
+// those import: the `browser-safe` block below lints them. Add a file here when the SPA starts importing it.
+export const BROWSER_SAFE_FILES = [
+  'src/assistant/contract.ts',
+  'src/assistant/plan/canonical.ts',
+  'src/assistant/plan/graph.ts',
+  'src/assistant/plan/placeholders.ts',
+  'src/assistant/plan/plan-fixtures.ts',
+  'src/assistant/plan/schema.ts',
+  'src/assistant/plan/validate.ts',
+  'src/assistant/session/persona-result.ts',
+  'src/assistant/tools/agent-limits.ts',
+  'src/assistant/tools/client/allowlists.ts',
+  'src/assistant/tools/client/company-schemas.ts',
+  'src/assistant/tools/client/memory-schemas.ts',
+  'src/assistant/tools/client/radar-schemas.ts',
+  'src/assistant/tools/client/review-import-schemas.ts',
+  'src/assistant/tools/client/scraper-schemas.ts',
+  'src/assistant/tools/client/text-schemas.ts',
+  'src/assistant/tools/client/user-schemas.ts',
+  'src/assistant/tools/dimension-patterns.ts',
+  'src/assistant/tools/format.ts',
+  'src/assistant/tools/server/assist-job-values.ts',
+  'src/assistant/tools/server/memory-shape.ts',
+  'src/lib/is-record.ts',
+]
+// Node globals a browser does not have (vite defines `global` only); the browser-safe block refuses them.
+const NODE_ONLY_GLOBALS = ['process', 'Buffer', '__dirname', '__filename', 'require', 'module', 'exports', 'setImmediate', 'clearImmediate']
+const BROWSER_SAFE_MESSAGE = 'The SPA imports this module through @stream: no Node built-in, @aws-sdk or @smithy, not even as a type: the SPA type-checks it without the stream\'s node_modules.'
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', '.stryker-tmp/**', 'reports/**', 'stryker.config.mjs', 'vitest.config.ts'],
   },
   ...tseslint.configs.recommended,
   eslintComments.recommended,
-  {
-    rules: {
-      '@eslint-community/eslint-comments/no-use': [
-        'error',
-        { allow: ['eslint-disable', 'eslint-enable', 'eslint-disable-next-line'] },
-      ],
-    },
-  },
+  { rules: withPending(SUPPRESSION_RULES, PENDING_SUPPRESSION) },
   sonarjs.configs.recommended,
   pluginPromise.configs['flat/recommended'],
   pluginSecurity.configs.recommended,
@@ -37,14 +79,12 @@ export default tseslint.config(
     },
   },
 
-  // ─── Main rules for all TS files ───
+  // ─── Shared quality-gate set, for every TS file (specs included) ───
   {
     files: ['**/*.ts'],
-    ignores: ['**/*.test.ts'],
     plugins: {
       unicorn,
-      'import-x': importX,
-      'unused-imports': unusedImports,
+      custom: { rules: { 'no-re-exports': noReExports } },
     },
     languageOptions: {
       ecmaVersion: 2022,
@@ -53,6 +93,17 @@ export default tseslint.config(
         projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
+    },
+    rules: { ...withPending(SOURCE_RULES, PENDING_SOURCE), ...TYPE_SAFETY_RULES },
+  },
+
+  // ─── Main rules for all TS files ───
+  {
+    files: ['**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    plugins: {
+      'import-x': importX,
+      'unused-imports': unusedImports,
     },
     rules: {
       // ── Comments policy ──
@@ -73,25 +124,18 @@ export default tseslint.config(
           selector: 'NewExpression[callee.name="Error"]',
           message: 'Use custom error classes instead of generic Error.',
         },
+        ...SWALLOWED_REJECTION_SELECTORS,
       ],
-      'prefer-const': 'error',
-      'no-var': 'error',
       'no-negated-condition': 'error',
 
       // ── Type safety ──
-      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unsafe-assignment': 'error',
       '@typescript-eslint/no-unsafe-member-access': 'error',
       '@typescript-eslint/no-unsafe-call': 'error',
       '@typescript-eslint/no-unsafe-return': 'error',
-      '@typescript-eslint/consistent-type-assertions': [
-        'error',
-        { assertionStyle: 'never' },
-      ],
       '@typescript-eslint/no-non-null-assertion': 'error',
-      '@typescript-eslint/prefer-includes': 'error',
-      '@typescript-eslint/prefer-nullish-coalescing': 'error',
       '@typescript-eslint/prefer-optional-chain': 'error',
+      '@typescript-eslint/prefer-includes': 'error',
 
       // ── Promise best practices ──
       'promise/always-return': 'error',
@@ -114,14 +158,8 @@ export default tseslint.config(
       'unicorn/prefer-includes': 'error',
       'unicorn/prefer-number-properties': 'error',
       'unicorn/prefer-string-starts-ends-with': 'error',
-      'unicorn/no-array-for-each': 'error',
-      'unicorn/no-useless-spread': 'error',
+      'unicorn/no-for-each': 'error',
       'unicorn/no-useless-undefined': 'error',
-
-      // ── Complexity limits ──
-      'max-lines': ['error', { max: 400, skipBlankLines: true, skipComments: true }],
-      'max-depth': ['error', 3],
-      complexity: ['error', 12],
 
       // ── Naming conventions ──
       '@typescript-eslint/naming-convention': [
@@ -160,34 +198,44 @@ export default tseslint.config(
     },
   },
 
-  // ─── Test files: relaxed limits, strict test quality ───
+  // ─── Test files: shared spec rules, plus this package's own ───
   {
-    files: ['**/*.test.ts'],
+    files: SPEC_FILES,
     plugins: { vitest },
     rules: {
-      // Relax production rules for tests
-      'max-lines': ['error', { max: 700, skipBlankLines: true, skipComments: true }],
+      ...withPending(SPEC_RULES, PENDING_SPEC),
+      ...TYPE_SAFETY_SPEC_RULES,
+      // Relax production rules for tests (pre-existing; the shared set has no such relaxation)
       'no-inline-comments': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/consistent-type-assertions': 'off',
-      'no-restricted-syntax': 'off',
+      // Tests may use `let` and `new Error`, but not swallow a rejection (5.49 wave, owner-approved).
+      'no-restricted-syntax': ['error', ...SWALLOWED_REJECTION_SELECTORS],
       'security/detect-non-literal-regexp': 'off',
 
-      // Strict test quality
-      'vitest/no-conditional-expect': 'error',
-      'vitest/no-conditional-in-test': 'error',
-      'vitest/prefer-strict-equal': 'error',
       'vitest/consistent-test-it': ['error', { fn: 'it' }],
       'vitest/consistent-test-filename': ['error', { pattern: '.*\\.test\\.[tj]sx?$' }],
-      // These are integration-style suites asserting whole SSE event
-      // sequences and multi-field tool results in one behavioral scenario;
-      // 10 is the observed ceiling across the suite (issue #187). Splitting
-      // such tests fragments one behavior across several test names.
-      'vitest/max-expects': ['error', { max: 10 }],
-      'vitest/prefer-called-with': 'error',
       'vitest/prefer-to-have-length': 'error',
-      'vitest/require-to-throw-message': 'error',
       'vitest/prefer-spy-on': 'error',
+    },
+  },
+
+  // ─── Browser-safe: the modules the SPA imports through `@stream` (frontend/streamSource.ts) ───
+  // They run in the browser bundle too, so no Node built-in, AWS SDK or Smithy import (not even a type-only one:
+  // the SPA type-checks them without the stream's node_modules) and no Node-only global (`process`, `Buffer`, …,
+  // which the shared Node globals would otherwise allow). src/browser-safe.test.ts fails when the SPA imports a stream module, or a
+  // listed module imports a stream file, that this block does not cover.
+  {
+    name: 'browser-safe',
+    files: BROWSER_SAFE_FILES,
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', {
+        paths: builtinModules.filter((name) => !name.startsWith('node:')).map((name) => ({
+          name, message: BROWSER_SAFE_MESSAGE,
+        })),
+        patterns: [{ group: ['node:*', '@aws-sdk/*', '@smithy/*'], message: BROWSER_SAFE_MESSAGE }],
+      }],
+      'no-restricted-globals': ['error', ...NODE_ONLY_GLOBALS.map((name) => ({ name, message: BROWSER_SAFE_MESSAGE }))],
     },
   },
 )

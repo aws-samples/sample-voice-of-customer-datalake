@@ -1,0 +1,41 @@
+{
+  "$comment": "Clone groups of scripts/audit/clones_struct.mjs kept on purpose. A group is silenced when EVERY copy's file matches one of `files` (and, with `name`, one copy is that function). Triaged 2026-10-24 (docs/code-audit.md).",
+  "entries": [
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/FormQrCode/FormQrCode.tsx",
+        "voc-datalake/frontend/src/pages/Prioritization/SessionQrCode.tsx"
+      ],
+      "reason": "both draw through components/FormQrCode/QrPanel; what is left is each wrapper building its own URL (the API host form page vs the SPA ballot route, deliberately not one \"id + kind\" component, see SessionQrCode's header) and its own words and tones (the ballot one also prints the URL)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/stream/src/assistant/tools/server/agents.ts",
+        "voc-datalake/lambda/stream/src/assistant/tools/server/core.ts",
+        "voc-datalake/lambda/stream/src/assistant/tools/server/project.ts"
+      ],
+      "reason": "get_agent / get_project / get_product_context: the tool-definition skeleton every server tool has (toolSpec, serverTool, parseToolInput, resolveId are already shared); the description, pack, route, answer shape and side effect (projectAccess.record) differ per tool"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/Prioritization/ListEmptyState.tsx",
+        "voc-datalake/frontend/src/pages/Vote/Vote.tsx"
+      ],
+      "reason": "the prioritization list's empty card (centred, icon tile, h2) and the public ballot's recorded notice (role=status, ok-toned banner, icon beside the text): different layout, role and tone; only the 'icon + title + text' shape matches"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/DataExplorer/S3Browser.tsx",
+        "voc-datalake/frontend/src/pages/ProjectDetail/JobsSection.tsx"
+      ],
+      "reason": "the S3 empty-folder note (centred, bare icon, two lines) and the jobs section header (row with an icon tile and an h2): different layout and heading semantics; only the 'icon + two lines' shape matches"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/MetricCard/MetricCard.tsx",
+        "voc-datalake/frontend/src/pages/Home/onboarding/OnboardingBuddy.tsx"
+      ],
+      "reason": "two three-way enum -> icon switches (trend up/down/flat at 14 px, onboarding step done/pending/todo at 20 px with a spinner): different icons, sizes and classes; a shared helper would be a lookup table as long as each switch"
+    }
+  ]
+}

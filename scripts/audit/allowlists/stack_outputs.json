@@ -1,0 +1,5 @@
+{
+  "entries": [
+    {"key": "AiReviewRoleArn", "reason": "The one output of the standalone PR AI review stack (tools/ai-review-ci/ai-review-role.json, a plain CloudFormation template deployed by hand), deliberately outside the CDK app: development tooling is never deployed with the platform. The key is named for that stack so this entry cannot hide a CDK output."}
+  ]
+}

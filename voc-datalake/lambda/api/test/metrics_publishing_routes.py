@@ -1,9 +1,7 @@
 """Which `metrics_handler` routes publish `is_partial`, derived from its source.
 
-Two suites need this set and they need the SAME set:
-`test_metrics_partial_window` parametrizes its cases over it, and
-`test_mcp_delegation` asks which of those routes MCP can reach. A list in either
-file would be a copy, and the failure a stale copy produces is silence — a new
+`test_metrics_partial_window` parametrizes its cases over this set. A listed copy
+would go stale, and the failure a stale copy produces is silence — a new
 endpoint publishing the flag simply never gets tested, which is how the flag came
 to be a hardcoded `False` on six of them.
 
@@ -42,7 +40,7 @@ def _route_path(decorator: ast.expr) -> str | None:
     if decorator.func.attr not in _ROUTE_VERBS or not decorator.args:
         return None
     first = decorator.args[0]
-    return first.value if isinstance(first, ast.Constant) else None
+    return first.value if isinstance(first, ast.Constant) and isinstance(first.value, str) else None
 
 
 def _publishes_is_partial(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:

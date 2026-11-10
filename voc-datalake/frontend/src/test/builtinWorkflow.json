@@ -1,0 +1,73 @@
+{
+  "schema": "voc-workflow/1",
+  "name": "Reviews → Prototype",
+  "description": "Aggregate the reviews in scope, choose or create the project, gather personas and research, write a PR/FAQ until the personas agree, build a prototype with the company design system, review it with the personas, then a final review and hand-off.",
+  "nodes": [
+    { "id": "start", "type": "start", "position": { "x": 280, "y": 0 }, "data": { "title": "Start", "params": {} } },
+    {
+      "id": "aggregate", "type": "aggregate_reviews", "position": { "x": 280, "y": 140 },
+      "data": {
+        "title": "Aggregate reviews in scope", "params": {}, "role": "worker",
+        "instructions": "Group the reviews in scope since the last run into the top problems by category and subcategory. Cite review ids for every problem."
+      }
+    },
+    {
+      "id": "project", "type": "select_or_create_project", "position": { "x": 280, "y": 280 },
+      "data": {
+        "title": "Choose or create the project", "params": {}, "role": "orchestrator",
+        "instructions": "Reuse the project whose purpose covers these problems, or create a new one and record its purpose. Never merge, move or delete projects."
+      }
+    },
+    { "id": "personas_fixed", "type": "select_personas", "position": { "x": 0, "y": 420 }, "data": { "title": "Fixed personas", "params": {}, "role": "orchestrator" } },
+    { "id": "personas_new", "type": "generate_personas", "position": { "x": 280, "y": 420 }, "data": { "title": "Generate personas from the reviews", "params": { "max_new": 3 }, "role": "worker" } },
+    { "id": "research", "type": "deep_research", "position": { "x": 560, "y": 420 }, "data": { "title": "Deep research (with web)", "params": { "use_web_search": true }, "role": "worker" } },
+    {
+      "id": "prfaq", "type": "write_prfaq", "position": { "x": 280, "y": 560 },
+      "data": { "title": "Write the PR/FAQ", "params": {}, "role": "worker", "instructions": "Use the research, the personas and the company context." }
+    },
+    { "id": "prfaq_review", "type": "persona_review", "position": { "x": 280, "y": 700 }, "data": { "title": "Persona review of the PR/FAQ", "params": { "target": "prfaq" }, "role": "persona" } },
+    { "id": "prfaq_revise", "type": "revise_document", "position": { "x": 560, "y": 700 }, "data": { "title": "Revise the PR/FAQ", "params": { "target": "prfaq" }, "role": "worker" } },
+    {
+      "id": "prototype", "type": "build_prototype", "position": { "x": 280, "y": 840 },
+      "data": { "title": "Build the prototype", "params": {}, "role": "worker", "instructions": "Follow the company design system's tokens and guidelines." }
+    },
+    { "id": "prototype_review", "type": "persona_review", "position": { "x": 280, "y": 980 }, "data": { "title": "Persona review of the prototype", "params": { "target": "prototype" }, "role": "persona" } },
+    { "id": "prfaq_rework", "type": "revise_document", "position": { "x": 560, "y": 980 }, "data": { "title": "Rework the PR/FAQ", "params": { "target": "prfaq" }, "role": "worker" } },
+    { "id": "prototype_feedback", "type": "collect_prototype_feedback", "position": { "x": 840, "y": 980 }, "data": { "title": "Collect tester pins", "params": {}, "role": "worker" } },
+    { "id": "prototype_revise", "type": "revise_prototype", "position": { "x": 560, "y": 1120 }, "data": { "title": "Rebuild the prototype", "params": {}, "role": "worker" } },
+    {
+      "id": "final_review", "type": "final_review", "position": { "x": 280, "y": 1260 },
+      "data": { "title": "Final review", "params": {}, "role": "reviewer", "instructions": "Check the PR/FAQ and prototype against the acceptance checklist." }
+    },
+    { "id": "handoff", "type": "handoff", "position": { "x": 280, "y": 1400 }, "data": { "title": "Hand off to the owner", "params": {}, "role": "orchestrator" } },
+    { "id": "end", "type": "end", "position": { "x": 280, "y": 1540 }, "data": { "title": "Done", "params": { "status": "completed" } } },
+    { "id": "needs_human", "type": "end", "position": { "x": 560, "y": 1400 }, "data": { "title": "Needs a human", "params": { "status": "needs_human" } } }
+  ],
+  "edges": [
+    { "id": "e_start__aggregate", "source": "start", "target": "aggregate" },
+    { "id": "e_aggregate__project", "source": "aggregate", "target": "project" },
+    { "id": "e_project__personas_fixed", "source": "project", "target": "personas_fixed" },
+    { "id": "e_project__personas_new", "source": "project", "target": "personas_new" },
+    { "id": "e_project__research", "source": "project", "target": "research" },
+    { "id": "e_personas_fixed__prfaq", "source": "personas_fixed", "target": "prfaq" },
+    { "id": "e_personas_new__prfaq", "source": "personas_new", "target": "prfaq" },
+    { "id": "e_research__prfaq", "source": "research", "target": "prfaq" },
+    { "id": "e_prfaq__prfaq_review", "source": "prfaq", "target": "prfaq_review" },
+    { "id": "e_prfaq_review__prfaq_revise", "source": "prfaq_review", "target": "prfaq_revise", "label": "not_agreed" },
+    { "id": "e_prfaq_revise__prfaq_review", "source": "prfaq_revise", "target": "prfaq_review" },
+    { "id": "e_prfaq_review__prototype", "source": "prfaq_review", "target": "prototype", "label": "agreed" },
+    { "id": "e_prototype__prototype_review", "source": "prototype", "target": "prototype_review" },
+    { "id": "e_prototype_review__prfaq_rework", "source": "prototype_review", "target": "prfaq_rework", "label": "not_agreed" },
+    { "id": "e_prfaq_rework__prototype_feedback", "source": "prfaq_rework", "target": "prototype_feedback" },
+    { "id": "e_prototype_feedback__prototype_revise", "source": "prototype_feedback", "target": "prototype_revise" },
+    { "id": "e_prototype_revise__prototype_review", "source": "prototype_revise", "target": "prototype_review" },
+    { "id": "e_prototype_review__final_review", "source": "prototype_review", "target": "final_review", "label": "agreed" },
+    { "id": "e_final_review__handoff", "source": "final_review", "target": "handoff", "label": "pass" },
+    { "id": "e_final_review__needs_human", "source": "final_review", "target": "needs_human", "label": "fail" },
+    { "id": "e_handoff__end", "source": "handoff", "target": "end" }
+  ],
+  "loops": [
+    { "node_ids": ["prfaq_review", "prfaq_revise"], "until": "persona_agreement", "max_rounds": 3 },
+    { "node_ids": ["prototype_review", "prfaq_rework", "prototype_feedback", "prototype_revise"], "until": "persona_agreement", "max_rounds": 2 }
+  ]
+}

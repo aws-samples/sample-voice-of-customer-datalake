@@ -73,9 +73,8 @@ function buildCommandHint(frontendRoot: string): string {
  * Throws if `frontend/dist` is missing or older than the newest frontend source file.
  */
 export function assertFrontendBuildFresh(options: FrontendBuildCheckOptions): void {
-  const skip = options.skip || process.env.SKIP_FRONTEND_BUILD_CHECK === '1';
+  const skip = options.skip === true || process.env.SKIP_FRONTEND_BUILD_CHECK === '1';
   if (skip) {
-    // eslint-disable-next-line no-console
     console.warn(
       '⚠️  Frontend build freshness check skipped (skipFrontendBuildCheck). ' +
         'The contents of frontend/dist will be deployed as-is.'

@@ -1,0 +1,6 @@
+{
+  "entries": [
+    { "key": "frontend:src/assistant/notifications/runNotifications.ts#NotificationAccess.'granted'", "reason": "Produced by the browser: Notification.permission / requestPermission() answer 'granted'." },
+    { "key": "frontend:src/pages/ProjectDetail/overviewState.ts#OverviewStep.'remix'", "reason": "A key of the Record<OverviewStep, …> steps table (steps.remix renders the remix card); no value of OverviewStep is ever 'remix' by design, which is why RecommendableStep excludes it (the 5.28 fix)." }
+  ]
+}

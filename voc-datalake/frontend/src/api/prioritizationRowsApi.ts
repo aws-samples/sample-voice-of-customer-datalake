@@ -28,9 +28,10 @@
  *
  * @module api/prioritizationRowsApi
  */
+import { del, patch, post, put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
-import type { PrioritizationRow } from './types'
+import type { PrioritizationRow } from './projectTypes'
 
 /**
  * What a row HOLDS, as a request states it: one project, and the concrete document
@@ -51,6 +52,16 @@ import type { PrioritizationRow } from './types'
 export interface RowComposition {
   readonly project_id: string
   readonly document_ids: readonly string[]
+}
+
+/**
+ * "Keep both versions" (#399): mark a row's `Crosses generations` label as intentional,
+ * or withdraw the mark. `document_ids` is the set the reviewer was looking at; the API
+ * refuses a mark with 409 when it is not the row's stored set, so a mark can only ever
+ * describe documents somebody saw.
+ */
+export interface RowLineageAckRequest extends RowComposition {
+  readonly acknowledged: boolean
 }
 
 /**
@@ -93,10 +104,7 @@ export const prioritizationRowsApi = {
    * hold or that is not scorable, a 409 for a project already at the bound.
    */
   composePrioritizationRow: (input: RowComposition) =>
-    fetchApi<RowWriteResponse>('/projects/prioritization/rows/compose', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
+    fetchApi<RowWriteResponse>('/projects/prioritization/rows/compose', post(input)),
 
   /**
    * Change which documents an UN-BALLOTED row holds.
@@ -109,10 +117,15 @@ export const prioritizationRowsApi = {
    * the current rows) is identical.
    */
   recomposePrioritizationRow: (rowId: string, input: RowComposition) =>
-    fetchApi<RowWriteResponse>(rowPath(rowId), {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    }),
+    fetchApi<RowWriteResponse>(rowPath(rowId), patch(input)),
+
+  /**
+   * Mark (or unmark) a row's crossing as intentional. Open to anyone who may edit the
+   * row's project, frozen rows included — the mark changes no document and no ballot.
+   * The page re-reads the prioritization read afterwards, so the answer is not parsed.
+   */
+  setRowLineageAck: (rowId: string, input: RowLineageAckRequest) =>
+    fetchApi<RowWriteResponse>(`${rowPath(rowId)}/lineage-ack`, put(input)),
 
   /**
    * Delete one row TOGETHER WITH ITS BALLOTS. Admin only, server-enforced.
@@ -123,7 +136,7 @@ export const prioritizationRowsApi = {
    * that a courtesy rather than the protection.
    */
   deletePrioritizationRow: async (rowId: string): Promise<RowDeletion> => {
-    const raw = await fetchApi<unknown>(rowPath(rowId), { method: 'DELETE' })
+    const raw = await fetchApi<unknown>(rowPath(rowId), del())
     // `safeParse`, so a body that is not an object at all — a `null`, an API Gateway
     // page — cannot turn a delete the server COMPLETED into a rejected mutation the
     // page reports as a failure. The row is already gone; the only thing lost is the

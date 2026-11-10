@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { MemoryRouter, useNavigate, useSearchParams } from 'react-router-dom'
-import { useCategoryFilters } from './useCategoryFilters'
+import { attributeFiltersOf, useCategoryFilters } from './useCategoryFilters'
 
 function createWrapper(initialEntries = ['/categories']) {
   return ({ children }: { children: React.ReactNode }) => (
@@ -30,32 +30,40 @@ describe('useCategoryFilters', () => {
 
     it('initializes source from ?source=', () => {
       const { result } = renderFiltersWithUrl(['/categories?source=webscraper'])
-      expect(result.current.filters.selectedSource).toBe('webscraper')
+      expect(result.current.filters.selectedSources).toStrictEqual(['webscraper'])
+    })
+
+    it('initializes several sources, sentiments and usefulness bands from comma lists', () => {
+      const { result } = renderFiltersWithUrl(['/categories?source=webscraper,app&sentiment=negative,mixed&usefulness=high,unrated'])
+      const { selectedSources, selectedSentiments, selectedUsefulness } = result.current.filters
+      expect({ selectedSources, selectedSentiments, selectedUsefulness }).toStrictEqual({
+        selectedSources: ['webscraper', 'app'], selectedSentiments: ['negative', 'mixed'], selectedUsefulness: ['high', 'unrated'],
+      })
     })
 
     it('initializes sentiment from ?sentiment=', () => {
       const { result } = renderFiltersWithUrl(['/categories?sentiment=negative'])
-      expect(result.current.filters.sentimentFilter).toBe('negative')
+      expect(result.current.filters.selectedSentiments).toStrictEqual(['negative'])
     })
 
-    it('falls back to "all" for an invalid sentiment value', () => {
+    it('drops an invalid sentiment value (no sentiment filter)', () => {
       const { result } = renderFiltersWithUrl(['/categories?sentiment=bogus'])
-      expect(result.current.filters.sentimentFilter).toBe('all')
+      expect(result.current.filters.selectedSentiments).toStrictEqual([])
     })
 
     it('initializes a single category from ?category= (deep-link selects one row)', () => {
       const { result } = renderFiltersWithUrl(['/categories?category=delivery'])
-      expect(result.current.filters.selectedCategories).toEqual(['delivery'])
+      expect(result.current.filters.selectedCategories).toStrictEqual(['delivery'])
     })
 
     it('initializes multiple categories from comma-separated ?category=', () => {
       const { result } = renderFiltersWithUrl(['/categories?category=delivery,pricing'])
-      expect(result.current.filters.selectedCategories).toEqual(['delivery', 'pricing'])
+      expect(result.current.filters.selectedCategories).toStrictEqual(['delivery', 'pricing'])
     })
 
     it('ignores the legacy ?all=1 param (browse-all is now the default state)', () => {
       const { result } = renderFiltersWithUrl(['/categories?all=1'])
-      expect(result.current.filters.selectedCategories).toEqual([])
+      expect(result.current.filters.selectedCategories).toStrictEqual([])
       expect(result.current.searchParams.get('all')).toBeNull()
     })
   })
@@ -66,7 +74,10 @@ describe('useCategoryFilters', () => {
 
       act(() => {
         result.current.filters.setSearchText('refund')
-        result.current.filters.setSelectedSource('webscraper')
+        result.current.filters.toggleFacet('sources', 'webscraper')
+      })
+      act(() => {
+        result.current.filters.toggleFacet('usefulness', 'high')
       })
       act(() => {
         result.current.filters.toggleCategory('delivery')
@@ -76,11 +87,19 @@ describe('useCategoryFilters', () => {
       expect(result.current.searchParams.get('q')).toBe('refund')
       expect(result.current.searchParams.get('source')).toBe('webscraper')
       expect(result.current.searchParams.get('category')).toBe('delivery,pricing')
+      expect(result.current.searchParams.get('usefulness')).toBe('high')
+    })
+
+    it('keeps ?review= and reviewBrand (the review modal) when it mirrors filters', () => {
+      const { result } = renderFiltersWithUrl(['/categories?q=late&review=fb_1&reviewBrand=example-air'])
+      act(() => { result.current.filters.setSearchText('refund') })
+      expect(result.current.searchParams.get('review')).toBe('fb_1')
+      expect(result.current.searchParams.get('reviewBrand')).toBe('example-air')
     })
 
     it('omits default values from the URL', () => {
       const { result } = renderFiltersWithUrl()
-      expect([...result.current.searchParams.keys()]).toEqual([])
+      expect([...result.current.searchParams.keys()]).toStrictEqual([])
     })
   })
 
@@ -102,10 +121,10 @@ describe('useCategoryFilters', () => {
       const { result } = renderFiltersWithNavigate(['/categories'])
 
       act(() => {
-        result.current.navigate('/categories?category=pricing&q=refund')
+        void result.current.navigate('/categories?category=pricing&q=refund')
       })
 
-      expect(result.current.filters.selectedCategories).toEqual(['pricing'])
+      expect(result.current.filters.selectedCategories).toStrictEqual(['pricing'])
       expect(result.current.filters.searchText).toBe('refund')
     })
 
@@ -113,25 +132,25 @@ describe('useCategoryFilters', () => {
       const { result } = renderFiltersWithNavigate(['/categories?category=delivery&sentiment=negative'])
 
       act(() => {
-        result.current.navigate('/categories')
+        void result.current.navigate('/categories')
       })
 
-      expect(result.current.filters.selectedCategories).toEqual([])
-      expect(result.current.filters.sentimentFilter).toBe('all')
+      expect(result.current.filters.selectedCategories).toStrictEqual([])
+      expect(result.current.filters.selectedSentiments).toStrictEqual([])
     })
 
     it('restores filters on browser back navigation', () => {
       const { result } = renderFiltersWithNavigate(['/categories?category=delivery'])
 
       act(() => {
-        result.current.navigate('/categories?category=pricing')
+        void result.current.navigate('/categories?category=pricing')
       })
-      expect(result.current.filters.selectedCategories).toEqual(['pricing'])
+      expect(result.current.filters.selectedCategories).toStrictEqual(['pricing'])
 
       act(() => {
-        result.current.navigate(-1)
+        void result.current.navigate(-1)
       })
-      expect(result.current.filters.selectedCategories).toEqual(['delivery'])
+      expect(result.current.filters.selectedCategories).toStrictEqual(['delivery'])
     })
 
     it('does not reset state from its own URL mirroring', () => {
@@ -158,7 +177,7 @@ describe('useCategoryFilters', () => {
         result.current.filters.toggleCategory('delivery')
       })
 
-      expect(result.current.filters.selectedCategories).toEqual([])
+      expect(result.current.filters.selectedCategories).toStrictEqual([])
       expect(result.current.searchParams.get('category')).toBeNull()
     })
 
@@ -172,7 +191,7 @@ describe('useCategoryFilters', () => {
         result.current.filters.toggleCategory('pricing')
       })
 
-      expect(result.current.filters.selectedCategories).toEqual(['delivery', 'pricing'])
+      expect(result.current.filters.selectedCategories).toStrictEqual(['delivery', 'pricing'])
     })
   })
 
@@ -188,13 +207,16 @@ describe('useCategoryFilters', () => {
         result.current.filters.clearFilters()
       })
 
-      expect(result.current.filters.searchText).toBe('')
-      expect(result.current.filters.selectedCategories).toEqual([])
-      expect(result.current.filters.selectedSource).toBeNull()
-      expect(result.current.filters.sentimentFilter).toBe('all')
-      expect(result.current.filters.ratingFilter).toEqual({ value: 0, direction: 'up' })
-      expect(result.current.filters.showUrgentOnly).toBe(false)
-      expect([...result.current.searchParams.keys()]).toEqual([])
+      const { searchText, selectedCategories, selectedSources, selectedSentiments, ratingFilter, showUrgentOnly } = result.current.filters
+      expect({ searchText, selectedCategories, selectedSources, selectedSentiments, ratingFilter, showUrgentOnly }).toStrictEqual({
+        searchText: '',
+        selectedCategories: [],
+        selectedSources: [],
+        selectedSentiments: [],
+        ratingFilter: { value: 0, direction: 'up' },
+        showUrgentOnly: false,
+      })
+      expect([...result.current.searchParams.keys()]).toStrictEqual([])
     })
   })
 
@@ -233,4 +255,78 @@ describe('useCategoryFilters', () => {
       expect(result.current.filters.hasActiveFilters).toBe(false)
     })
   })
+
+  describe('channel / dimension / tag filters', () => {
+    it('initializes from ?channel, ?dims and ?tag, skipping a malformed dims pair', () => {
+      const { result } = renderFiltersWithUrl(['/categories?channel=review&dims=product:mobile_app,bad&tag=vip'])
+      const { channel, dimensionFilter, tag, hasActiveFilters } = result.current.filters
+      expect({ channel, dimensionFilter, tag, hasActiveFilters }).toStrictEqual({
+        channel: 'review', dimensionFilter: { product: 'mobile_app' }, tag: 'vip', hasActiveFilters: true,
+      })
+    })
+
+    it('mirrors them to the URL with dims sorted, and clears them', () => {
+      const { result } = renderFiltersWithUrl()
+      act(() => result.current.filters.setDimensionFilter({ product: 'web_shop', module: 'checkout' }))
+      act(() => result.current.filters.setTag('vip'))
+      expect(result.current.searchParams.toString()).toBe('dims=module%3Acheckout%2Cproduct%3Aweb_shop&tag=vip')
+      act(() => result.current.filters.clearFilters())
+      expect([...result.current.searchParams.keys()]).toStrictEqual([])
+    })
+  })
+
+  describe('review types', () => {
+    it('opens on every type: no pill pressed, nothing in the URL, nothing sent', () => {
+      const { result } = renderFiltersWithUrl()
+      expect([result.current.filters.types, attributeFiltersOf(result.current.filters).dims, result.current.filters.hasActiveFilters])
+        .toStrictEqual([[], undefined, false])
+    })
+
+    it('mirrors a choice to ?types and sends it inside dims after the configured dimensions, keeping untyped reviews', () => {
+      const { result } = renderFiltersWithUrl()
+      act(() => result.current.filters.setDimensionFilter({ product: 'web_shop' }))
+      act(() => result.current.filters.setTypes(['bug', 'feature_request']))
+      expect(result.current.searchParams.get('types')).toBe('bug,feature_request')
+      expect(result.current.searchParams.get('dims')).toBe('product:web_shop')
+      expect(attributeFiltersOf(result.current.filters).dims)
+        .toBe('product:web_shop,feedback_type:bug|feature_request|~unset')
+      expect(result.current.filters.hasActiveFilters).toBe(true)
+    })
+
+    it('counts a type choice alone as an active filter, so Clear filters is offered', () => {
+      const { result } = renderFiltersWithUrl()
+      act(() => result.current.filters.setTypes(['bug']))
+      expect(result.current.filters.hasActiveFilters).toBe(true)
+    })
+
+    it('reads ?types=feature_request as that one pill', () => {
+      const { result } = renderFiltersWithUrl(['/categories?types=feature_request'])
+      expect(result.current.filters.types).toStrictEqual(['feature_request'])
+    })
+
+    it("opens an old link's dims=feedback_type:<value> as that one pill, not as a dimension pair", () => {
+      const { result } = renderFiltersWithUrl(['/categories?dims=feedback_type:praise,product:web_shop'])
+      const { types, dimensionFilter } = result.current.filters
+      expect({ types, dimensionFilter }).toStrictEqual({ types: ['praise'], dimensionFilter: { product: 'web_shop' } })
+      expect(result.current.searchParams.get('types')).toBe('praise')
+      expect(result.current.searchParams.get('dims')).toBe('product:web_shop')
+    })
+
+    it("opens a dims pair in the request's own form (feedback_type:a|b|~unset) as those pills, never as every type", () => {
+      const { result } = renderFiltersWithUrl(['/categories?dims=feedback_type:bug|praise|~unset'])
+      expect([result.current.filters.types, result.current.searchParams.get('types')]).toStrictEqual([['bug', 'praise'], 'bug,praise'])
+    })
+
+    it('lets ?types win over an old feedback_type pair', () => {
+      const { result } = renderFiltersWithUrl(['/categories?types=bug&dims=feedback_type:praise'])
+      expect([result.current.filters.types, result.current.filters.dimensionFilter]).toStrictEqual([['bug'], {}])
+    })
+
+    it('Clear unpresses every pill', () => {
+      const { result } = renderFiltersWithUrl(['/categories?types=bug,praise'])
+      act(() => result.current.filters.clearFilters())
+      expect([result.current.filters.types, result.current.searchParams.get('types')]).toStrictEqual([[], null])
+    })
+  })
 })
+

@@ -11,9 +11,12 @@ page in the middle of a populated feed (e.g. kr page 4 is empty while pages
 We instead skip empty pages and only stop after several consecutive empties.
 """
 
+import urllib3
 from app_store_web_scraper import AppStoreSession
 from app_store_web_scraper._errors import AppStoreError
 from app_store_web_scraper._utils import fromisoformat_utc
+
+from _shared.app_reviews_health import StorefrontFetch, failure_cause
 from _shared.base_ingestor import logger
 
 # Apple's RSS customer-reviews feed exposes at most 10 pages (~50 each).
@@ -22,10 +25,42 @@ _MAX_PAGES = 10
 # intermittent empty page Apple sometimes returns mid-feed.
 _MAX_CONSECUTIVE_EMPTY = 3
 
+# The plugin's `sort_by` values (manifest.json, offered in the UI) mapped to the
+# RSS feed's `sortby=` path segment. Anything else falls back to the default,
+# so a misconfigured value degrades to "most recent" rather than to an error feed.
+#
+# There is deliberately no "most critical" option. Checked against the
+# public RSS feed (an app id, us, page 1, JSON): `sortby=mostrecent` and
+# `sortby=mosthelpful` answer 200 with entries, while `sortby=mostcritical`
+# answers HTTP 500 exactly like a made-up value (`sortby=bogusvalue`) — Apple
+# does not support it. Configs saved with the old `most_critical` value fall
+# back to the default below instead of failing every page.
+_DEFAULT_SORT_BY = "most_recent"
+_RSS_SORT_BY = {
+    "most_recent": "mostrecent",
+}
 
-def create_session(delay: float = 0.5, jitter: float = 0.2, retries: int = 3) -> AppStoreSession:
+
+def rss_sort_segment(sort_by: str) -> str:
+    """The `sortby=` value of the RSS path for a manifest `sort_by` option."""
+    return _RSS_SORT_BY.get(sort_by, _RSS_SORT_BY[_DEFAULT_SORT_BY])
+
+
+class FeedSession(AppStoreSession):
+    """The library's session (pooling, rate limiting, retries) with its JSON GET as a public method.
+
+    The library pages through the feed with that same GET; we page ourselves (see the module
+    docstring), so this subclass is the one place that reaches the library's own request method.
+    """
+
+    def get_json(self, path: str) -> dict:
+        """GET ``path`` on the iTunes host, rate-limited and retried; raises `AppStoreError` on HTTP >= 400."""
+        return self._get(path)
+
+
+def create_session(delay: float = 0.5, jitter: float = 0.2, retries: int = 3) -> FeedSession:
     """Create a shared session with connection pooling and rate limiting."""
-    return AppStoreSession(
+    return FeedSession(
         delay=delay,
         delay_jitter=jitter,
         retries=retries,
@@ -34,7 +69,7 @@ def create_session(delay: float = 0.5, jitter: float = 0.2, retries: int = 3) ->
     )
 
 
-def _parse_entry(entry: dict) -> dict:
+def _parse_entry(entry: dict) -> dict | None:
     """Parse one RSS feed entry into our review dict. Returns None on bad shape."""
     try:
         return {
@@ -45,67 +80,100 @@ def _parse_entry(entry: dict) -> dict:
             "title": entry["title"]["label"],
             "review": entry["content"]["label"],
             "developer_response": None,
+            # The entry as the feed served it, for the item's raw archive (_shared/raw_source.py).
+            "rss_entry": entry,
         }
     except (KeyError, TypeError, ValueError):
         return None
 
 
+def _page_entries(data: object) -> list | None:
+    """The `feed.entry` list of one RSS page, or None for an empty/blank page.
+
+    A page whose `entry` is present but not a list yields no reviews yet still
+    counts as a non-empty page (it resets the consecutive-empty counter).
+    """
+    feed = data.get("feed") if isinstance(data, dict) else None
+    entries = feed.get("entry") if isinstance(feed, dict) else None
+    if not entries:
+        return None
+    return entries if isinstance(entries, list) else []
+
+
+def _rss_path(country: str, app_id: str, page: int, sort_segment: str) -> str:
+    return f"/{country}/rss/customerreviews/page={page}/id={app_id}/sortby={sort_segment}/json"
+
+
+def _collect_pages(
+    app_id: str,
+    country: str,
+    session: FeedSession,
+    limit: int,
+    sort_segment: str,
+    reviews: list[dict],
+) -> str | None:
+    """Append parsed reviews to *reviews* page by page until *limit*, the last
+    page, or `_MAX_CONSECUTIVE_EMPTY` blank/failed pages in a row.
+
+    Returns the cause page 1 failed with (``HTTP 403`` ...), else None: a storefront
+    whose FIRST page errors is a failed storefront, not an empty one."""
+    consecutive_empty = 0
+    first_page_failure = None
+    for page in range(1, _MAX_PAGES + 1):
+        if len(reviews) >= limit or consecutive_empty >= _MAX_CONSECUTIVE_EMPTY:
+            return first_page_failure
+        try:
+            entries = _page_entries(session.get_json(_rss_path(country, app_id, page, sort_segment)))
+        except AppStoreError as e:
+            # Transient HTTP error on one page — skip it, keep paging.
+            logger.warning(f"iOS RSS page {page} failed for app {app_id} in {country}: {e}")
+            entries = None
+            if page == 1:
+                first_page_failure = failure_cause(e)
+        if entries is None:
+            # Empty or failed page — could be the real end OR an intermittent
+            # blank. Keep going until we've seen several in a row.
+            consecutive_empty += 1
+            continue
+        consecutive_empty = 0
+        for entry in entries:
+            parsed = _parse_entry(entry)
+            if parsed:
+                reviews.append(parsed)
+            if len(reviews) >= limit:
+                return first_page_failure
+    return first_page_failure
+
+
 def fetch_reviews_for_country(
     app_id: str,
     country: str,
-    session: AppStoreSession,
+    session: FeedSession,
     limit: int = 50,
-    sort_by: str = "most_recent",
-) -> list[dict]:
+    sort_by: str = _DEFAULT_SORT_BY,
+) -> StorefrontFetch:
     """
     Fetch reviews for a single app in a single country.
 
     Pages through the RSS feed directly, skipping intermittent empty pages
-    (the library would stop at the first one). Returns list of dicts with keys:
-    id, date, user_name, rating, title, review, developer_response.
+    (the library would stop at the first one). `sort_by` is the plugin's
+    `sort_by` option and selects the feed's sort order (see `_RSS_SORT_BY`).
+    `reviews` holds dicts with keys: id, date, user_name, rating, title, review,
+    developer_response. A connection failure (after the session's retries) or
+    an undecodable page ends the country early with what was collected so far.
+
+    `failure` is the short cause (``HTTP 403``, ``MaxRetryError(...)``) when the
+    storefront failed: it collected no reviews AND its page 1 errored or a
+    connection failure ended it. A partial fetch is not a failure (its WARNING
+    line is still written).
     """
     reviews: list[dict] = []
-    consecutive_empty = 0
-
+    failure = None
     try:
-        for page in range(1, _MAX_PAGES + 1):
-            if len(reviews) >= limit:
-                break
-            path = (
-                f"/{country}/rss/customerreviews/page={page}"
-                f"/id={app_id}/sortby=mostrecent/json"
-            )
-            try:
-                data = session._get(path)
-            except AppStoreError as e:
-                # Transient HTTP error on one page — skip it, keep paging.
-                logger.warning(
-                    f"iOS RSS page {page} failed for app {app_id} in {country}: {e}"
-                )
-                consecutive_empty += 1
-                if consecutive_empty >= _MAX_CONSECUTIVE_EMPTY:
-                    break
-                continue
-
-            feed = data.get("feed", {})
-            entries = feed.get("entry")
-            if not entries:
-                # Empty page — could be the real end OR an intermittent blank.
-                # Keep going until we've seen several empties in a row.
-                consecutive_empty += 1
-                if consecutive_empty >= _MAX_CONSECUTIVE_EMPTY:
-                    break
-                continue
-
-            consecutive_empty = 0
-            for entry in entries:
-                parsed = _parse_entry(entry)
-                if parsed:
-                    reviews.append(parsed)
-                if len(reviews) >= limit:
-                    break
-
-        return reviews
-    except Exception as e:
+        failure = _collect_pages(app_id, country, session, limit, rss_sort_segment(sort_by), reviews)
+    except (urllib3.exceptions.HTTPError, ValueError) as e:
         logger.warning(f"Failed to fetch iOS reviews for app {app_id} in {country}: {e}")
-        return reviews
+        if not reviews:
+            failure = failure_cause(e)
+    # A storefront whose later pages answered is not a failed one.
+    return StorefrontFetch(reviews=reviews, failure=None if reviews else failure)

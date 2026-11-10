@@ -1,15 +1,18 @@
 /**
  * @fileoverview Tests for Breadcrumbs component.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
-import type { MockInstance } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import i18n from 'i18next'
-import { TestRouter } from '../../test/test-utils'
+import { useLocale } from '../../test/i18n-locale'
+import { createTestQueryClient } from '../../test/query-client'
+import { TestRouter } from '../../test/TestRouter'
 import { routes } from '../../routes'
 import { projectsApi } from '../../api/projectsApi'
+import { featureRequestKeys } from '../../api/featureRequestsApi'
+import { workflowsKeys } from '../../api/workflowsApi'
 import { useProjectData } from '../../pages/ProjectDetail/useProjectData'
+import { contextWith, makeProject } from '../../pages/ProjectDetail/project-detail-fixtures'
 import Breadcrumbs from './Breadcrumbs'
 import { RECORD_CRUMBS, SEGMENT_CRUMBS } from './routeCrumbs'
 import deCommon from '../../../public/locales/de/common.json'
@@ -17,10 +20,6 @@ import deCommon from '../../../public/locales/de/common.json'
 const PROJECT_ID = 'proj_20260101120000'
 
 const PROJECT_NAME = 'Checkout Friction'
-
-function createQueryClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-}
 
 /**
  * @param seed populates the query cache the way the page on that route would
@@ -31,7 +30,7 @@ function renderWithRouter(
   initialEntries: string[] = ['/'],
   seed?: (client: QueryClient) => void,
 ) {
-  const queryClient = createQueryClient()
+  const queryClient = createTestQueryClient()
   seed?.(queryClient)
   return render(
     <QueryClientProvider client={queryClient}>
@@ -73,12 +72,12 @@ describe('Breadcrumbs', () => {
 
     it('displays correct label for scrapers route', () => {
       renderWithRouter(['/scrapers'])
-      expect(screen.getByText('Web Scrapers')).toBeInTheDocument()
+      expect(screen.getByText('Data sources')).toBeInTheDocument()
     })
 
-    it('displays correct label for settings route', () => {
-      renderWithRouter(['/settings'])
-      expect(screen.getByText('Settings')).toBeInTheDocument()
+    it('displays correct label for the administration route', () => {
+      renderWithRouter(['/admin'])
+      expect(screen.getByText('Administration')).toBeInTheDocument()
     })
 
     it('displays correct label for projects route', () => {
@@ -155,13 +154,13 @@ describe('Breadcrumbs', () => {
   /**
    * The seeded cases above assert the crumb against a key this file supplies, so
    * they cannot see the two things the docblock actually claims: that the header's
-   * `skipToken` observer neither issues its own request nor suppresses the page's,
+   * cache reader neither issues its own request nor suppresses the page's,
    * and that both sides agree on the key. Here the page's real hook does the
    * fetching — the only fake is the API client — so a renamed key or a swallowed
    * fetch fails, and the assertion covers TanStack semantics that are version
    * sensitive rather than ours.
    */
-  describe('handover from the page that owns the record', () => {
+  describe('hand-off from the page that owns the record', () => {
     function ProjectPageProbe() {
       const { data } = useProjectData({ id: PROJECT_ID, apiEndpoint: 'https://api.example.com' })
       return <div data-testid="page">{data?.project.name ?? 'page loading'}</div>
@@ -172,24 +171,23 @@ describe('Breadcrumbs', () => {
     // resolves to `undefined` and fails as an unrelated TypeError. Spies are
     // checked against the real signatures, and `restoreAllMocks` gives each case
     // a fresh call history without relying on the suite-wide `clearAllMocks`.
-    let getProject: MockInstance<typeof projectsApi.getProject>
-
     beforeEach(() => {
-      getProject = vi.spyOn(projectsApi, 'getProject').mockResolvedValue({
-        project: { project_id: PROJECT_ID, name: PROJECT_NAME },
+      vi.spyOn(projectsApi, 'getProject').mockResolvedValue({
+        project: makeProject({ project_id: PROJECT_ID, name: PROJECT_NAME }),
         personas: [],
         documents: [],
       })
-      vi.spyOn(projectsApi, 'getJobs').mockResolvedValue({ jobs: [] })
-      vi.spyOn(projectsApi, 'getProductContext').mockResolvedValue({ context: {} })
+      vi.spyOn(projectsApi, 'getJobs').mockResolvedValue({ success: true, jobs: [] })
+      vi.spyOn(projectsApi, 'getProductContext').mockResolvedValue({ context: contextWith() })
     })
 
     afterEach(() => {
       vi.restoreAllMocks()
     })
 
-    it("fills the crumb from the page's fetch, and adds no request of its own", async () => {
-      const queryClient = createQueryClient()
+    /** Renders the crumbs above the page probe; returns the breadcrumb nav. */
+    function renderHandover() {
+      const queryClient = createTestQueryClient()
       render(
         <QueryClientProvider client={queryClient}>
           <TestRouter initialEntries={[`/projects/${PROJECT_ID}`]}>
@@ -198,17 +196,28 @@ describe('Breadcrumbs', () => {
           </TestRouter>
         </QueryClientProvider>,
       )
-
-      // Breadcrumbs mounts first and creates the cache entry with `skipToken`;
-      // the stand-in is what it shows until the page's own fetch lands.
-      expect(screen.getByText('Project')).toBeInTheDocument()
-
       // Scoped to the nav: the probe renders the same string, so an unscoped
       // query matches twice and cannot say which of the two resolved.
-      const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+      return screen.getByRole('navigation', { name: /breadcrumb/i })
+    }
+
+    it("fills the crumb from the page's fetch, replacing the stand-in", async () => {
+      const nav = renderHandover()
+
+      // Breadcrumbs mounts first and reads an empty cache entry;
+      // the stand-in is what it shows until the page's own fetch lands.
+      expect(screen.getByText('Project')).toBeInTheDocument()
+      await waitFor(() => expect(within(nav).getByText(PROJECT_NAME)).toBeInTheDocument())
+      expect(within(nav).queryByText('Project')).not.toBeInTheDocument()
+    })
+
+    it('adds no request of its own: the page fetch is the only one', async () => {
+      const nav = renderHandover()
+
       await waitFor(() => expect(within(nav).getByText(PROJECT_NAME)).toBeInTheDocument())
       expect(screen.getByTestId('page')).toHaveTextContent(PROJECT_NAME)
-      expect(within(nav).queryByText('Project')).not.toBeInTheDocument()
+      // `spyOn` replaced the member, so the client's own property is the spy.
+      const getProject = vi.mocked(projectsApi.getProject)
       expect(getProject).toHaveBeenCalledTimes(1)
       expect(getProject).toHaveBeenCalledWith(PROJECT_ID)
     })
@@ -232,6 +241,17 @@ describe('Breadcrumbs', () => {
       renderWithRouter([`/projects/${PROJECT_ID}`])
       expect(screen.getByText('Projects')).toBeInTheDocument()
       expect(screen.getByText('Project')).toBeInTheDocument()
+    })
+
+    // Wave 4 clip pass: a long current page ended at 120 px on a phone ("Q1 Product Improv…").
+    it('wraps a long current-page label instead of cutting it', () => {
+      renderWithRouter(['/categories'])
+      const label = screen.getByText('Categories')
+      expect(label).toHaveClass('break-words')
+      const current = label.closest('[aria-current="page"]')
+      expect(current).not.toHaveClass('truncate')
+      expect(current).not.toHaveClass('max-w-[120px]')
+      expect(screen.getByRole('navigation', { name: /breadcrumb/i })).toHaveClass('flex-wrap')
     })
   })
 
@@ -262,13 +282,13 @@ describe('Breadcrumbs', () => {
       renderWithRouter(['/categories'])
       // Should have chevron between Home and Categories
       const chevrons = document.querySelectorAll('.lucide-chevron-right')
-      expect(chevrons.length).toBe(1)
+      expect(chevrons).toHaveLength(1)
     })
 
     it('renders multiple chevrons for nested routes', () => {
       renderWithRouter([`/projects/${PROJECT_ID}`])
       const chevrons = document.querySelectorAll('.lucide-chevron-right')
-      expect(chevrons.length).toBe(2)
+      expect(chevrons).toHaveLength(2)
     })
 
     it('chevrons have aria-hidden attribute', () => {
@@ -322,23 +342,7 @@ describe('Breadcrumbs', () => {
   describe('localization', () => {
     const de = deCommon.breadcrumbs
 
-    beforeAll(async () => {
-      i18n.addResourceBundle('de', 'common', deCommon)
-      await i18n.changeLanguage('de')
-    })
-
-    afterAll(async () => {
-      await i18n.changeLanguage('en')
-    })
-
-    beforeEach(() => {
-      // The i18next singleton is shared. Vitest isolates per file today, so the
-      // beforeAll switch holds — but assert it rather than assume, since a switch
-      // to a shared pool would make every case below silently vacuous: the German
-      // assertions would fail loudly, but the "no English literal" ones would pass
-      // for the wrong reason.
-      expect(i18n.language).toBe('de')
-    })
+    useLocale('de', { common: deCommon })
 
     it('translates static route labels', () => {
       renderWithRouter(['/data-explorer'])
@@ -375,7 +379,9 @@ describe('Breadcrumbs', () => {
 describe('route coverage', () => {
   const layoutRoutes = routes.find((route) => route.path === '/')?.children ?? []
   // Only routes under the layout matter: /login renders no breadcrumbs.
-  const paths = layoutRoutes.map((route) => route.path).filter((path): path is string => path != null)
+  // `*` is the not-found catch-all: it has no segment of its own to label.
+  const paths = layoutRoutes.map((route) => route.path)
+    .filter((path): path is string => path != null && path !== '*')
 
   it('finds the layout routes', () => {
     // Anti-vacuous guard: an empty list would make every case below pass.
@@ -400,5 +406,35 @@ describe('route coverage', () => {
         .map((segment) => `${path} → ${segment}`)
     })
     expect(unnamed).toStrictEqual([])
+  })
+})
+
+describe('a library workflow (/agents/workflows/:workflowId)', () => {
+  it('trails Agents › Workflows (to the library) › the workflow, named once loaded', () => {
+    renderWithRouter(['/agents/workflows/wf_1'], (client) => {
+      client.setQueryData(workflowsKeys.detail('wf_1'), { workflow: { name: 'Research flow' }, revisions: [] })
+    })
+    const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+    expect(within(nav).getByRole('link', { name: 'Workflows' })).toHaveAttribute('href', '/agents?tab=workflows')
+    expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Research flow')
+    expect(within(nav).queryByText('Agent')).not.toBeInTheDocument()
+  })
+})
+
+describe('a feedback board (/feature-requests/:slug)', () => {
+  it('trails the boards list, then the board named once its page loaded it', () => {
+    renderWithRouter(['/feature-requests/beta-feedback'], (client) => {
+      client.setQueryData(featureRequestKeys.list('app', 'beta-feedback'), { requests: [], board: { name: 'Beta feedback' } })
+    })
+    const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+    // By its link, not its words: the nav label is renamed in another change ("Feedback boards").
+    expect(nav.querySelector('a[href="/feature-requests"]')).not.toBeNull()
+    expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Beta feedback')
+  })
+
+  it('says "Board" until the board is loaded, never its slug', () => {
+    renderWithRouter(['/feature-requests/beta-feedback'])
+    const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+    expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Board')
   })
 })

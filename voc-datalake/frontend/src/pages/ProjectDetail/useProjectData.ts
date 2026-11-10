@@ -6,35 +6,32 @@ import {
 } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { designSystemApi, designSystemKey } from '../../api/designSystemApi'
 import { projectsApi } from '../../api/projectsApi'
-import { projectKey } from '../../api/projectQueryKeys'
+import { projectJobsKey, projectKey } from '../../api/projectQueryKeys'
 import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
+import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
+import { generatedDocTitle, type SeriesDocument } from './generatedDocTitle'
+import { hasRecentlyCompletedJob } from './jobCompletion'
 import type {
-  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, NoteItem,
+  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
 } from './types'
 import type {
-  ProjectPersona, ProjectDocument, ProjectJob,
+  ProjectDocument,
 } from '../../api/types'
-import type { ContextConfig } from '../../components/DataSourceWizard/exports'
-
-/**
- * Query key for a project's job list.
- *
- * Exported because the key has to be identical in three places that can drift:
- * the query itself, the wizard mutations that invalidate it, and
- * ProjectDetail's onJobStarted (which is the only thing that makes the panel
- * notice a job started outside a wizard). A typo in any of them fails silently
- * — the panel simply never updates.
- */
-export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] as const
+import type {
+  ProjectJob,
+} from '../../api/projectTypes'
+import type { ContextConfig } from '../../components/DataSourceWizard/types'
+import { documentBoardIds, featureRequestEvidenceFields } from '../../components/DataSourceWizard/featureRequestEvidence'
 
 /**
  * Query key for a project's product context.
  *
- * Exported for the same reason as the jobs key: more than one place needs it.
- * The Product tab still fetches the context itself, because it edits the record
- * field by field and owns that local state; if it is ever moved onto React Query
- * this is the key it should share.
+ * Exported for the same reason as the jobs key: more than one place needs it —
+ * this page (the Overview card), the Product tab (the form) and the assistant's
+ * `update_product_context` approval, which refreshes it so the form shows what
+ * the assistant just filled in.
  */
 export const productContextKey = (id: string | undefined) => ['product-context', id] as const
 
@@ -46,7 +43,7 @@ export const productContextKey = (id: string | undefined) => ['product-context',
  * deletes and polls them and owns that local state; if it ever moves onto React
  * Query this is the key it should share.
  */
-export const productDocsKey = (id: string | undefined) => ['product-docs', id] as const
+const productDocsKey = (id: string | undefined) => ['product-docs', id] as const
 
 /**
  * How long to keep polling the jobs list after an action reports that it started
@@ -67,12 +64,27 @@ const JOB_POLL_INTERVAL_MS = 3000
 /**
  * How long a fetched product context counts as fresh.
  *
- * Generous because the only writer is the Product tab, and it pushes its result
- * into this cache directly. Five minutes bounds the staleness if the record is
- * ever changed elsewhere (the global chat's `create_project` tool can seed five of
- * its fields) without paying a request every time the window regains focus.
+ * Generous because both writers keep this cache current: the Product tab pushes
+ * each saved field into it, and the assistant's approval card refreshes it. Five
+ * minutes bounds the staleness if the record is ever changed elsewhere (the
+ * assistant's `create_project` can seed five of its fields) without paying a
+ * request every time the window regains focus.
  */
 const PRODUCT_CONTEXT_STALE_MS = 5 * 60_000
+
+/**
+ * The one product-context query, shared by this page and the Product tab, so both
+ * read the same cache entry. `retry: false`: a failure reads as "unknown" (the
+ * Overview card shows no state, the form starts blank) and a retry storm buys nothing.
+ */
+export function productContextQuery(id: string | undefined) {
+  return {
+    queryKey: productContextKey(id),
+    queryFn: () => projectsApi.getProductContext(id ?? ''),
+    staleTime: PRODUCT_CONTEXT_STALE_MS,
+    retry: false,
+  } as const
+}
 
 /**
  * How long until the jobs list should be read again: the poll cadence while
@@ -86,12 +98,24 @@ export function jobsPollInterval(
   jobs: ReadonlyArray<Pick<ProjectJob, 'status'>>,
   jobStartedAt: number | null,
   now: number,
+  runningEveryMs = JOB_POLL_INTERVAL_MS,
 ): number {
   if (jobs.some((job) => job.status === 'running' || job.status === 'pending')) {
-    return JOB_POLL_INTERVAL_MS
+    return runningEveryMs
   }
   const withinStartWindow = jobStartedAt != null && now - jobStartedAt < JOB_START_POLL_WINDOW_MS
   return withinStartWindow ? JOB_POLL_INTERVAL_MS : 0
+}
+
+/**
+ * {@link jobsPollInterval} now, as the jobs queries use it: while push is live a running job's end arrives as a
+ * notice (useRealtimeJobRefresh), so its poll slows to the fallback (docs/realtime.md).
+ */
+export function liveJobsPollInterval(
+  jobs: ReadonlyArray<Pick<ProjectJob, 'status'>>,
+  jobStartedAt: number | null,
+): number {
+  return jobsPollInterval(jobs, jobStartedAt, Date.now(), realtimePollInterval(JOB_POLL_INTERVAL_MS))
 }
 
 interface UseProjectDataProps {
@@ -126,9 +150,10 @@ export function useProjectData({
     enabled: isEnabled,
     // Re-evaluated after every fetch, so the start window closes itself without
     // needing a re-render. 0 means no refetch (same as false).
-    refetchInterval: (query) =>
-      jobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt, Date.now()),
+    refetchInterval: (query) => liveJobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt),
   })
+  // A project job's end (shared/job_notices.py) re-reads the jobs and the project at once (docs/realtime.md).
+  useRealtimeJobRefresh({ projectId: id }, [projectJobsKey(id), projectKey(id)], isEnabled)
 
   /**
    * The product context, fetched here rather than only in the Product tab so the
@@ -140,22 +165,14 @@ export function useProjectData({
    * small extra request per project open.
    *
    * Failing is not fatal: `undefined` reaches the card as "unknown", which renders
-   * no state rather than a wrong one — hence `retry: false`, since the card is
-   * built to tolerate not knowing and a retry storm buys nothing.
+   * no state rather than a wrong one.
    *
    * `staleTime` is what keeps the cost honest. Without it the default refetch on
    * window focus makes "one request per project open" untrue for anyone who tabs
-   * away and back. The record only changes from the Product tab, which hands the
-   * new value straight into this cache (see ProjectDetail's onContextSaved), so
-   * there is nothing a background refetch would discover.
+   * away and back. The Product tab reads and writes this same cache entry
+   * (`productContextQuery`), so there is nothing a background refetch would discover.
    */
-  const { data: productContextData } = useQuery({
-    queryKey: productContextKey(id),
-    queryFn: () => projectsApi.getProductContext(id ?? ''),
-    enabled: isEnabled,
-    staleTime: PRODUCT_CONTEXT_STALE_MS,
-    retry: false,
-  })
+  const { data: productContextData } = useQuery({ ...productContextQuery(id), enabled: isEnabled })
 
   /**
    * The project's uploaded product docs, for the prototype card's visual picker.
@@ -179,15 +196,20 @@ export function useProjectData({
     retry: false,
   })
 
+  // The company design system, for the prototype build dialog's "Design system" box.
+  // Company-wide (one cached config GET shared with Knowledge → Design system, which
+  // invalidates it on save); a failure reaches the dialog as undefined, which hides
+  // the box and leaves the build on the API default.
+  const { data: designSystemData } = useQuery({
+    queryKey: designSystemKey(),
+    queryFn: designSystemApi.get,
+    enabled: isEnabled,
+    retry: false,
+  })
+
   // When a job completes, refresh project data
   useEffect(() => {
-    const jobs = jobsData?.jobs ?? []
-    const TEN_SECONDS = 10000
-    const completedRecently = jobs.some((j: ProjectJob) =>
-      j.status === 'completed' && j.completed_at != null && j.completed_at !== '' &&
-      new Date(j.completed_at).getTime() > Date.now() - TEN_SECONDS,
-    )
-    if (completedRecently) {
+    if (hasRecentlyCompletedJob(jobsData?.jobs ?? [], Date.now())) {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     }
   }, [jobsData, id, queryClient])
@@ -218,6 +240,7 @@ export function useProjectData({
     jobsData,
     productContext: productContextData?.context,
     productDocs: productDocsData?.docs,
+    designSystem: designSystemData,
     queryClient,
   }
 }
@@ -229,6 +252,8 @@ interface UseProjectMutationsProps {
   researchConfig: ResearchToolConfig
   docConfig: DocToolConfig
   mergeConfig: MergeToolConfig
+  /** The project's documents, so a generated title continues its existing series. */
+  documents?: readonly SeriesDocument[]
   onSuccess: () => void
   onError: () => void
 }
@@ -240,12 +265,26 @@ export function useProjectMutations({
   researchConfig,
   docConfig,
   mergeConfig,
+  documents = [],
   onSuccess,
   onError,
 }: UseProjectMutationsProps) {
   const queryClient = useQueryClient()
   const projectId = id ?? ''
   const { i18n } = useTranslation()
+
+  /**
+   * What every job-starting mutation does once the request is accepted: wake the
+   * jobs query (its poll is off while nothing is known to be running) and tell the
+   * caller; failures go straight to the caller.
+   */
+  const jobRequestCallbacks = {
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
+      onSuccess()
+    },
+    onError,
+  }
 
   const personaMut = useMutation({
     mutationFn: () => projectsApi.generatePersonas(projectId, {
@@ -256,16 +295,14 @@ export function useProjectMutations({
       custom_instructions: personaConfig.customInstructions,
       days: contextConfig.days,
       response_language: i18n.language,
+      keep_existing_personas: personaConfig.mode === 'add',
+      ...featureRequestEvidenceFields(contextConfig),
     }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-      onSuccess()
-    },
-    onError,
+    ...jobRequestCallbacks,
   })
 
   const docMut = useMutation({
-    // One or both of PRD / PR-FAQ may be selected. Each fires as its own async
+    // One or both of PRD / PR/FAQ may be selected. Each fires as its own async
     // job (they run in parallel server-side), so the user can request both at once.
     mutationFn: async () => {
       const types = docConfig.docTypes.length > 0 ? docConfig.docTypes : ['prfaq' as const]
@@ -277,6 +314,8 @@ export function useProjectMutations({
           personas: contextConfig.usePersonas,
           documents: contextConfig.useDocuments,
           research: contextConfig.useResearch,
+          // Only when ticked: the API's default is off, and an older body stays byte-identical.
+          ...(contextConfig.useFeatureRequests ? { feature_requests: true } : {}),
         },
         selected_persona_ids: contextConfig.selectedPersonaIds,
         selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
@@ -285,14 +324,13 @@ export function useProjectMutations({
         days: contextConfig.days,
         customer_questions: docConfig.customerQuestions.filter((q) => q.trim() !== ''),
         response_language: i18n.language,
+        ...documentBoardIds(contextConfig),
       }
-      return Promise.all(types.map((docType) => projectsApi.generateDocument(projectId, { doc_type: docType, ...base })))
+      return Promise.all(types.map((docType) => projectsApi.generateDocument(projectId, {
+        doc_type: docType, ...base, title: generatedDocTitle(base.title, docType, types.length, documents),
+      })))
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-      onSuccess()
-    },
-    onError,
+    ...jobRequestCallbacks,
   })
 
   const resMut = useMutation({
@@ -307,12 +345,9 @@ export function useProjectMutations({
       selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
       response_language: i18n.language,
       use_web_search: researchConfig.useWebSearch,
+      ...featureRequestEvidenceFields(contextConfig),
     }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-      onSuccess()
-    },
-    onError,
+    ...jobRequestCallbacks,
   })
 
   const mergeMut = useMutation({
@@ -328,11 +363,7 @@ export function useProjectMutations({
       days: contextConfig.days,
       response_language: i18n.language,
     }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-      onSuccess()
-    },
-    onError,
+    ...jobRequestCallbacks,
   })
 
   const dismissJobMut = useMutation({
@@ -349,74 +380,19 @@ export function useProjectMutations({
   }
 }
 
-interface UsePersonaMutationsProps {
-  id: string | undefined
-  selectedPersona: ProjectPersona | null
-  editingPersona: ProjectPersona | null
-  setEditingPersona: (p: ProjectPersona | null) => void
-  setSelectedPersona: (p: ProjectPersona | null) => void
+/** A custom document to create (the create mutation's variables). */
+export interface DocumentDraft {
+  title: string
+  content: string
 }
 
-export function usePersonaMutations({
-  id,
-  selectedPersona,
-  editingPersona,
-  setEditingPersona,
-  setSelectedPersona,
-}: UsePersonaMutationsProps) {
-  const queryClient = useQueryClient()
-  const projectId = id ?? ''
-
-  const updatePersonaMut = useMutation({
-    mutationFn: (data: {
-      personaId: string;
-      updates: Partial<ProjectPersona>
-    }) =>
-      projectsApi.updatePersona(projectId, data.personaId, data.updates),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      if (editingPersona?.persona_id === variables.personaId) {
-        setEditingPersona(null)
-        setSelectedPersona(null)
-      }
-    },
-  })
-
-  const deletePersonaMut = useMutation({
-    mutationFn: (personaId: string) => projectsApi.deletePersona(projectId, personaId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      setSelectedPersona(null)
-    },
-  })
-
-  const importPersonaMut = useMutation({
-    mutationFn: (data: {
-      input_type: 'image' | 'text';
-      content: string;
-      media_type?: string
-    }) =>
-      projectsApi.importPersona(projectId, data),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-    },
-  })
-
-  // Save research notes
-  const saveNotes = (notes: NoteItem[]): void => {
-    if (!selectedPersona) return
-    updatePersonaMut.mutate({
-      personaId: selectedPersona.persona_id,
-      updates: { research_notes: notes },
-    })
-  }
-
-  return {
-    updatePersonaMut,
-    deletePersonaMut,
-    importPersonaMut,
-    saveNotes,
-  }
+/** A save of an existing document (the update mutation's variables). */
+export interface DocumentUpdate {
+  docId: string
+  title?: string
+  content: string
+  /** The revision the editor loaded (documentEdit.documentRevision); absent = no stale check. */
+  expectedRevision?: number
 }
 
 interface UseDocumentMutationsProps {
@@ -434,10 +410,7 @@ export function useDocumentMutations({
   const projectId = id ?? ''
 
   const createDocMut = useMutation({
-    mutationFn: (data: {
-      title: string;
-      content: string
-    }) =>
+    mutationFn: (data: DocumentDraft) =>
       projectsApi.createDocument(projectId, {
         ...data,
         document_type: 'custom',
@@ -456,18 +429,22 @@ export function useDocumentMutations({
   })
 
   const updateDocMut = useMutation({
-    mutationFn: (data: {
-      docId: string;
-      title?: string;
-      content: string
-    }) =>
+    mutationFn: (data: DocumentUpdate) =>
       projectsApi.updateDocument(projectId, data.docId, {
         ...(data.title === undefined ? {} : { title: data.title }),
         content: data.content,
+        ...(data.expectedRevision === undefined ? {} : { expected_revision: data.expectedRevision }),
+        // A fresh id per save, so the server can tell a replayed request from a second save.
+        edit_id: crypto.randomUUID(),
       }),
-    onSuccess: (_result, variables) => {
+    onSuccess: (result, variables) => {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      if (selectedDoc?.document_id === variables.docId) {
+      if (selectedDoc?.document_id !== variables.docId) return
+      // Every edit is a new version, and a PRD / PR/FAQ version has a new id:
+      // show the version just saved (the edited one stays in Versions).
+      if (result.document !== null) {
+        setSelectedDoc(result.document)
+      } else {
         setSelectedDoc({
           ...selectedDoc,
           ...(variables.title === undefined ? {} : { title: variables.title }),

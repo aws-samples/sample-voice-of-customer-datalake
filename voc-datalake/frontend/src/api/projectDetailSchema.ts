@@ -7,8 +7,26 @@
  * the components that consume them.
  */
 import { z } from 'zod'
+import { deletedSourcesOrUndefined } from './deletedSources'
+import { optionalErasedEvidenceSchema } from './erasedEvidence'
+import { parseEach } from './lenientFields'
+import { optionalMethodologyBlock, optionalProjectMethodology } from './methodologySchema'
+import { copiedFromSchema } from './personaCopiedFrom'
+import { personaEvidenceMarkerSchema } from './personaEvidenceMarker'
+import { UserRefSchema } from './userRefSchema'
 import { asRecord } from './wireRecord'
-import type { ProjectDetail, ProjectDocument, ProjectPersona } from './types'
+import type {
+  ProjectDocument,
+} from './types'
+import type {
+  Project,
+  ProjectAccess,
+  ProjectDetail,
+  ProjectMember,
+  ProjectMemberCandidate,
+  ProjectMembersResponse,
+  ProjectPersona,
+} from './projectTypes'
 
 const optionalString = z.string().optional().catch(undefined)
 const optionalNullableString = z.string().nullable().optional().catch(undefined)
@@ -119,7 +137,23 @@ const ProjectPersonaSchema = z.looseObject({
   research_notes: optionalResearchNotesSchema,
   supporting_evidence: optionalStringArray,
   source_breakdown: z.record(z.string(), z.number()).optional().catch(undefined),
+  input_feedback_ids: optionalStringArray,
+  copied_from: copiedFromSchema,
+  /** An imported persona's input kind (`text` / `image`); absent on generated ones. */
+  imported_from: optionalString,
+  /** Imported or copied: the reviews behind it (api/personaEvidenceMarker.ts). */
+  evidence: personaEvidenceMarkerSchema,
+  evidence_feedback_ids: optionalStringArray,
+  erased_evidence: optionalErasedEvidenceSchema,
+  /** Kept by a replace regeneration (#429); only a literal true protects. */
+  protected: z.boolean().optional().catch(undefined),
 })
+
+/** One persona row, or null when it has no usable id (company library, copy answers). */
+export function normalizePersona(raw: unknown): ProjectPersona | null {
+  const parsed = ProjectPersonaSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
 
 function withLegacyManagedDocumentType(raw: unknown): unknown {
   const record = asRecord(raw)
@@ -139,6 +173,8 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   title: z.string().catch(''),
   base_title: optionalString,
   version: z.number().int().positive().optional().catch(undefined),
+  /** An unmanaged (research / custom) document's edit counter; absent = 1. */
+  revision: z.number().int().positive().optional().catch(undefined),
   // S3-backed prototypes intentionally omit inline content. Keeping content a
   // required string after this boundary lets every consumer stay honest.
   content: z.string().catch(''),
@@ -152,13 +188,63 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   source_documents: optionalStringArray,
   merge_instructions: optionalString,
   feedback_count: optionalNonnegativeInteger,
+  input_feedback_ids: optionalStringArray,
+  erased_evidence: optionalErasedEvidenceSchema,
   revised_from_id: optionalNullableString,
   revision_feedback: optionalString,
+  // A persona / document / product doc this one cited and that was later deleted: read by the
+  // transform below (api/deletedSources.ts), the key omitted when there is none.
+  deleted_sources: z.unknown().optional(),
   created_at: z.string().catch(''),
   updated_at: optionalString,
+  // What the document skipped of the methodology, and its evidence count (api/methodologySchema.ts).
+  methodology: optionalMethodologyBlock,
+  origin: optionalString,
+}).transform(({ deleted_sources: raw, ...doc }) => {
+  const deletedSources = deletedSourcesOrUndefined(raw)
+  return deletedSources === undefined ? doc : { ...doc, deleted_sources: deletedSources }
 }))
 
+// ── Sharing fields (see voc-datalake/lambda/shared/project_access.py) ──
+// A legacy payload without them is a public project the caller can view; it
+// is NOT assumed editable or manageable — the server stays the authority, so
+// a missing field can only hide controls, never grant them.
+
+const DEFAULT_PROJECT_ACCESS: ProjectAccess = Object.freeze({
+  role: null, can_view: true, can_edit: false, can_manage: false,
+})
+
+const ProjectAccessSchema = z.object({
+  role: z.enum(['owner', 'admin', 'editor', 'viewer']).nullable().catch(null),
+  can_view: z.boolean().catch(true),
+  can_edit: z.boolean().catch(false),
+  can_manage: z.boolean().catch(false),
+}).catch(() => ({ ...DEFAULT_PROJECT_ACCESS }))
+
+const ProjectOwnerSchema = UserRefSchema.nullable().catch(null)
+
+const ProjectMemberSchema = UserRefSchema.extend({
+  role: z.enum(['editor', 'viewer']).catch('viewer'),
+  added_by: optionalString,
+  added_at: optionalString,
+})
+
+const MemberCandidateSchema = UserRefSchema.extend({ name: optionalString })
+
+const VisibilitySchema = z.enum(['public', 'private']).catch('public')
+
+const optionalMembersSchema = z
+  .array(z.unknown())
+  .optional()
+  .catch(undefined)
+  .transform((items) => (items === undefined ? undefined : parseEach(ProjectMemberSchema, items)))
+
 const ProjectSchema = z.looseObject({
+  visibility: VisibilitySchema,
+  owner: ProjectOwnerSchema,
+  access: ProjectAccessSchema,
+  member_count: z.number().int().nonnegative().catch(0),
+  members: optionalMembersSchema,
   project_id: z.string().min(1),
   name: z.string().catch(''),
   description: z.string().catch(''),
@@ -168,7 +254,6 @@ const ProjectSchema = z.looseObject({
   persona_count: z.number().int().nonnegative().catch(0),
   document_count: z.number().int().nonnegative().catch(0),
   filters: z.record(z.string(), z.unknown()).optional().catch(undefined),
-  kiro_export_prompt: optionalString,
   kiro_default_export_prompt: optionalString,
 })
 
@@ -176,11 +261,16 @@ const ProjectDetailEnvelopeSchema = z.looseObject({
   project: ProjectSchema,
   personas: z.array(z.unknown()).catch(() => []),
   documents: z.array(z.unknown()).catch(() => []),
+  // The per-step upstream gaps the Overview cards render (absent from an older API).
+  methodology: optionalProjectMethodology,
 })
 
-/** Normalize one project detail response, dropping only rows with no usable identity/type. */
+/** One project detail response, dropping only rows with no usable identity/type. */
 export function normalizeProjectDetail(raw: unknown): ProjectDetail {
-  const parsed = ProjectDetailEnvelopeSchema.parse(raw)
+  return normalizedDetail(ProjectDetailEnvelopeSchema.parse(raw))
+}
+
+function normalizedDetail(parsed: z.infer<typeof ProjectDetailEnvelopeSchema>): ProjectDetail {
   const personas: ProjectPersona[] = []
   const documents: ProjectDocument[] = []
 
@@ -197,4 +287,85 @@ export function normalizeProjectDetail(raw: unknown): ProjectDetail {
   }
 
   return { ...parsed, personas, documents }
+}
+
+const ProjectDetailBatchSchema = z.looseObject({ details: z.array(z.unknown()).catch(() => []) })
+
+/**
+ * `GET /projects?ids=…`: the details the caller can view (no personas — the batch
+ * read omits them). An entry without a usable project is dropped, not fatal: one
+ * damaged record must not blank the Prioritization board.
+ */
+export function normalizeProjectDetailBatch(raw: unknown): ProjectDetail[] {
+  return ProjectDetailBatchSchema.parse(raw).details.flatMap((entry) => {
+    const parsed = ProjectDetailEnvelopeSchema.safeParse(entry)
+    return parsed.success ? [normalizedDetail(parsed.data)] : []
+  })
+}
+
+/** One document from a write answer (an edit / restore), or null when it is unusable. */
+export function normalizeProjectDocument(raw: unknown): ProjectDocument | null {
+  const parsed = ProjectDocumentSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
+
+// ── Document versions (GET /projects/{id}/documents/{doc}/versions) ──
+// A PRD / PR-FAQ version is a document row of its own (`version_id` = its
+// document_id); a research / custom version is a saved revision (`r{n}`).
+const DocumentVersionSchema = z.object({
+  version_id: z.string().min(1),
+  document_id: optionalString,
+  version: z.number().int().positive(),
+  title: z.string().catch(''),
+  content: z.string().catch(''),
+  created_at: z.string().nullable().catch(null),
+  current: z.boolean().catch(false),
+  edit_kind: z.enum(['edit', 'restore']).nullable().optional().catch(null),
+  restored_from_version: z.number().int().positive().nullable().optional().catch(null),
+})
+export type DocumentVersion = z.output<typeof DocumentVersionSchema>
+
+/** The versions list, newest first; an unusable row costs only itself. */
+export function normalizeDocumentVersions(raw: unknown): DocumentVersion[] {
+  const items = asRecord(raw)?.versions
+  if (!Array.isArray(items)) return []
+  return items.flatMap((item) => {
+    const parsed = DocumentVersionSchema.safeParse(item)
+    return parsed.success ? [parsed.data] : []
+  })
+}
+
+/** Normalize GET /projects, dropping only rows without a usable project_id. */
+export function normalizeProjectList(raw: unknown): { projects: Project[] } {
+  const record = asRecord(raw)
+  const projects = parseEach(ProjectSchema, record?.projects)
+  return { ...record, projects }
+}
+
+/** Normalize one project object (e.g. the `project` of a POST /projects response). */
+export function normalizeProject(raw: unknown): Project | null {
+  const parsed = ProjectSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
+
+/** Normalize GET /projects/{id}/members. */
+export function normalizeProjectMembers(raw: unknown): ProjectMembersResponse {
+  const record = asRecord(raw) ?? {}
+  return {
+    visibility: VisibilitySchema.parse(record.visibility),
+    owner: ProjectOwnerSchema.parse(record.owner),
+    members: parseEach(ProjectMemberSchema, record.members),
+    access: ProjectAccessSchema.parse(record.access),
+  }
+}
+
+/** Normalize one member row (POST / PUT member responses); null when unusable. */
+export function normalizeProjectMember(raw: unknown): ProjectMember | null {
+  const parsed = ProjectMemberSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
+
+/** Normalize GET /projects/{id}/members/candidates. */
+export function normalizeMemberCandidates(raw: unknown): ProjectMemberCandidate[] {
+  return parseEach(MemberCandidateSchema, asRecord(raw)?.users)
 }

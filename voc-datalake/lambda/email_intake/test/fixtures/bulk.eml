@@ -1,0 +1,14 @@
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+X-SES-SPF-Verdict: PASS
+X-SES-DKIM-Verdict: GRAY
+From: News <news@shop.example>
+To: feedback@voc.example.com
+Subject: Our spring sale
+Precedence: bulk
+List-Id: <spring.shop.example>
+Message-ID: <bulk-008@shop.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Twenty percent off everything this week.

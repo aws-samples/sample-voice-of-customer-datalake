@@ -62,6 +62,13 @@ PLUGIN_IDS = [m['id'] for m in MANIFESTS]
 # manifests CDK reads, so the two cannot drift unnoticed.
 PLUGIN_SECRET_DEFAULTS = {m['id']: dict(m.get('secrets') or {}) for m in MANIFESTS}
 
+# {plugin_id: [config keys marked secret]}: PLUGIN_SECRET_KEYS as api-data-lambdas.ts sets it
+# (lib/plugin-loader.ts secretConfigKeysByPlugin), plugins with none omitted.
+PLUGIN_SECRET_KEYS = {
+    m['id']: keys for m in MANIFESTS
+    if (keys := [field['key'] for field in m.get('config') or [] if field.get('secret')])
+}
+
 
 def freshly_deployed_secret() -> dict[str, str]:
     """The shared secret exactly as ingestion-stack.ts::createApiSecrets() seeds it.

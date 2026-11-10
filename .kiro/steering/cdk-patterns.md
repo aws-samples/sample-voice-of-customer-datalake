@@ -53,7 +53,7 @@ const table = new dynamodb.Table(this, 'MyTable', {
   encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
   encryptionKey: kmsKey,
   pointInTimeRecovery: true,
-  removalPolicy: cdk.RemovalPolicy.RETAIN,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,  // teardown deletes data; back up first (docs/deployment.md)
   timeToLiveAttribute: 'ttl',  // Enable TTL for cost control
   stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,  // If needed
 });
@@ -87,7 +87,7 @@ const fn = new lambda.Function(this, 'MyFunction', {
   layers: [dependenciesLayer],
   logGroup: new logs.LogGroup(this, 'MyFunctionLogs', {
     logGroupName: '/aws/lambda/my-function',
-    retention: logs.RetentionDays.TWO_WEEKS,
+    retention: LOG_RETENTION, // lib/utils/log-retention.ts: 30 days, every log group
     removalPolicy: cdk.RemovalPolicy.DESTROY,
   }),
   reservedConcurrentExecutions: 50,  // Cost control
@@ -146,14 +146,13 @@ const api = new apigateway.RestApi(this, 'Api', {
     loggingLevel: apigateway.MethodLoggingLevel.INFO,
     metricsEnabled: true,
   },
-  defaultCorsPreflightOptions: {
-    allowOrigins: apigateway.Cors.ALL_ORIGINS,
-    allowMethods: apigateway.Cors.ALL_METHODS,
-  },
+  // No defaultCorsPreflightOptions: it puts a MOCK OPTIONS on every path-only parent too.
+  // Add a preflight only where a browser method lives (addBrowserPreflight in api-gateway.ts).
 });
 
 const integration = new apigateway.LambdaIntegration(apiLambda);
-api.root.addResource('items').addMethod('GET', integration);
+const items = addBrowserPreflight(api.root.addResource('items'));
+items.addMethod('GET', integration);
 ```
 
 ## IAM Best Practices

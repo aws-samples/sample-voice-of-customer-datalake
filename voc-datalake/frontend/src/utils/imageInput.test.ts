@@ -12,26 +12,25 @@ import {
   IMAGE_ACCEPT_ATTR, IMAGE_EXTENSIONS_LABEL, IMAGE_MIME_EXTENSIONS, dragCarriesFiles,
   dragLeavesElement, isAcceptedImageMime, pastedImages, toArray, withSyntheticName,
 } from './imageInput'
+import type { ClipboardFiles } from './imageInput'
 
 /** A clipboard whose `items` are populated, as a copied bitmap produces. */
-function clipboardWithItems(files: readonly File[]): DataTransfer {
-  const clipboard = {
+function clipboardWithItems(files: readonly File[]): ClipboardFiles {
+  // jsdom has no DataTransfer, and only these two properties are ever read.
+  return {
     items: files.map((file) => ({ kind: 'file', type: file.type, getAsFile: () => file })),
     files: [],
   }
-  // The suite hands React a DataTransfer-shaped literal for the same reason: jsdom
-  // has no DataTransfer, and only these two properties are ever read.
-  return clipboard as unknown as DataTransfer
 }
 
 /** A clipboard whose `items` are empty and whose `files` are not. */
-function clipboardWithFilesOnly(files: readonly File[]): DataTransfer {
-  return { items: [], files } as unknown as DataTransfer
+function clipboardWithFilesOnly(files: readonly File[]): ClipboardFiles {
+  return { items: [], files }
 }
 
 describe('isAcceptedImageMime', () => {
   it('accepts exactly the four types Converse can read', () => {
-    expect(Object.keys(IMAGE_MIME_EXTENSIONS)).toEqual([
+    expect(Object.keys(IMAGE_MIME_EXTENSIONS)).toStrictEqual([
       'image/png', 'image/jpeg', 'image/gif', 'image/webp',
     ])
     for (const mime of Object.keys(IMAGE_MIME_EXTENSIONS)) {
@@ -114,7 +113,7 @@ describe('pastedImages', () => {
   it('finds a bitmap on a clipboard that populates items', () => {
     const file = new File([new Uint8Array(4)], '', { type: 'image/png' })
 
-    expect(pastedImages(clipboardWithItems([file]))).toEqual([file])
+    expect(pastedImages(clipboardWithItems([file]))).toStrictEqual([file])
   })
 
   it('falls back to files when items is empty', () => {
@@ -122,31 +121,31 @@ describe('pastedImages', () => {
     // browsers, and the loss is silent.
     const file = new File([new Uint8Array(4)], 'shot.png', { type: 'image/png' })
 
-    expect(pastedImages(clipboardWithFilesOnly([file]))).toEqual([file])
+    expect(pastedImages(clipboardWithFilesOnly([file]))).toStrictEqual([file])
   })
 
   it('ignores the text flavour a copied bitmap is often carried alongside', () => {
     const image = new File([new Uint8Array(4)], '', { type: 'image/png' })
-    const clipboard = {
+    const clipboard: ClipboardFiles = {
       items: [
         { kind: 'string', type: 'text/plain', getAsFile: () => null },
         { kind: 'file', type: 'image/png', getAsFile: () => image },
       ],
       files: [],
-    } as unknown as DataTransfer
+    }
 
-    expect(pastedImages(clipboard)).toEqual([image])
+    expect(pastedImages(clipboard)).toStrictEqual([image])
   })
 
   it('returns nothing for a text-only paste, which is what leaves it untouched', () => {
     // The caller may only preventDefault() once this has found something, so an
     // empty result here IS the "an ordinary paste still pastes" behaviour.
-    const clipboard = {
+    const clipboard: ClipboardFiles = {
       items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }],
       files: [],
-    } as unknown as DataTransfer
+    }
 
-    expect(pastedImages(clipboard)).toEqual([])
+    expect(pastedImages(clipboard)).toStrictEqual([])
   })
 
   it('passes a non-accepted IMAGE through so the caller can refuse it out loud', () => {
@@ -154,7 +153,7 @@ describe('pastedImages', () => {
     // a silently ignored BMP is indistinguishable from a missing handler.
     const bmp = new File([new Uint8Array(4)], 'shot.bmp', { type: 'image/bmp' })
 
-    expect(pastedImages(clipboardWithItems([bmp]))).toEqual([bmp])
+    expect(pastedImages(clipboardWithItems([bmp]))).toStrictEqual([bmp])
   })
 
   it('ignores a document flavour, which a Word or Finder copy attaches to text', () => {
@@ -162,12 +161,12 @@ describe('pastedImages', () => {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     })
 
-    expect(pastedImages(clipboardWithItems([doc]))).toEqual([])
-    expect(pastedImages(clipboardWithFilesOnly([doc]))).toEqual([])
+    expect(pastedImages(clipboardWithItems([doc]))).toStrictEqual([])
+    expect(pastedImages(clipboardWithFilesOnly([doc]))).toStrictEqual([])
   })
 
   it('tolerates a clipboard that is absent entirely', () => {
-    expect(pastedImages(null)).toEqual([])
+    expect(pastedImages(null)).toStrictEqual([])
   })
 })
 
@@ -176,9 +175,9 @@ describe('toArray', () => {
     // FileList and DataTransferItemList are array-LIKE, so Array.from is required
     // before any array method; and `clipboardData.items` is genuinely absent on
     // some sources rather than empty.
-    expect(toArray({ length: 2, 0: 'a', 1: 'b' })).toEqual(['a', 'b'])
-    expect(toArray(null)).toEqual([])
-    expect(toArray(undefined)).toEqual([])
+    expect(toArray({ length: 2, 0: 'a', 1: 'b' })).toStrictEqual(['a', 'b'])
+    expect(toArray(null)).toStrictEqual([])
+    expect(toArray(undefined)).toStrictEqual([])
   })
 })
 

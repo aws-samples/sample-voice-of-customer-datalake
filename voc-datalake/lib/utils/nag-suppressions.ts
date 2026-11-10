@@ -1,55 +1,31 @@
-import { NagPackSuppression } from 'cdk-nag';
+import { ArnFormat, DefaultStackSynthesizer, Stack } from 'aws-cdk-lib';
+import type * as s3 from 'aws-cdk-lib/aws-s3';
+import { AwsCustomResource } from 'aws-cdk-lib/custom-resources';
+import type { IConstruct } from 'constructs';
 
-import { bedrockFoundationModelSuppressionTargets } from './model-allowlist';
+import { COGNITO_PLUS_OPT_IN_HINT } from './cognito-plus';
+import { acknowledgeNag, type NagAck, resourceFinding } from './nag-ack';
+import { WAF_OPT_IN_HINT } from './waf';
 
 /**
- * cdk-nag suppressions for the VoC Data Lake project
- * Add suppressions here as we review and approve them
+ * cdk-nag acknowledgements for the VoC Data Lake project (applied with lib/utils/nag-ack.ts).
+ * Add acknowledgements here as we review and approve them. cdk-nag 3 acknowledges each finding by its exact
+ * id, so a list that names a resource takes that resource and renders the finding from it.
  */
 
 // CDK Custom Resource Lambdas (managed by CDK, not our code)
-export const cdkCustomResourceSuppressions: NagPackSuppression[] = [
+export const cdkCustomResourceSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-L1',
     reason: 'CDK-managed custom resource Lambda functions use CDK-controlled runtimes',
   },
 ];
 
-// DynamoDB PITR for idempotency table
-export const idempotencyTableSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-DDB3',
-    reason: 'Idempotency table has 15-minute TTL - transient data does not require point-in-time recovery',
-  },
-];
-
-// AWSLambdaBasicExecutionRole - AWS managed policy for Lambda CloudWatch logging
-export const lambdaBasicExecutionRoleSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-IAM4',
-    reason: 'AWSLambdaBasicExecutionRole is AWS-recommended managed policy for Lambda CloudWatch logging with minimal permissions',
-    appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'],
-  },
-];
-
-// AmazonAPIGatewayPushToCloudWatchLogs - AWS managed policy for API Gateway to publish logs to CloudWatch 
-export const apiGatewayPushToCloudwatchLogsRoleSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-IAM4',
-    reason: 'AmazonAPIGatewayPushToCloudWatchLogs is AWS-recommended managed policy for API Gateway to push to CloudWatch logging with minimal permissions',
-    appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs'],
-  },
-];
-
 // CloudFront distributions using default certificate
-export const cloudfrontDefaultCertSuppressions: NagPackSuppression[] = [
+export const cloudfrontDefaultCertSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-CFR1',
     reason: 'Geo restrictions not required for sample application - can be enabled based on specific compliance requirements',
-  },
-  {
-    id: 'AwsSolutions-CFR2',
-    reason: 'AWS WAF not included to minimize costs for sample deployment - recommended for production use',
   },
   {
     id: 'AwsSolutions-CFR4',
@@ -58,19 +34,47 @@ export const cloudfrontDefaultCertSuppressions: NagPackSuppression[] = [
 ];
 
 // Cognito User Pool security settings
-export const cognitoSecuritySuppressions: NagPackSuppression[] = [
+export const cognitoSecuritySuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-COG2',
-    reason: 'MFA not enforced by default to reduce friction for sample application - users can enable MFA in their account settings',
+    reason: 'MFA not enforced, to keep sign-in simple for the sample - every user is offered an opt-in passkey (phishing-resistant, WebAuthn) after sign-in; enforce MFA for production use',
   },
+];
+
+// The board pool (core-board-auth.ts): no passkey there, so its COG2 reason is its own.
+export const boardPoolMfaSuppressions: NagAck[] = [
   {
-    id: 'AwsSolutions-COG3',
-    reason: 'Cognito Advanced Security Mode not enforced to minimize costs for sample deployment ($0.05 per login attempt) - recommended for production use',
+    id: 'AwsSolutions-COG2',
+    reason: 'Board users sign in with an emailed one-time code (EMAIL_OTP with -c emailFrom, else a password-reset code) and keep no password; Cognito refuses required MFA in a pool that allows EMAIL_OTP, and a second factor would be one more thing a one-off board visitor must set up',
+  },
+];
+
+// The paid opt-ins (lib/utils/waf.ts, lib/utils/cognito-plus.ts): acknowledged ONLY while the opt-in is off; with
+// it on the rule passes and these are not applied (an unused acknowledgement fails lib/nag-suppressions.test.ts).
+// cdk-nag 2.38 replaced COG3 (advanced security mode) with COG8 (the plus feature plan that now carries it).
+export const cognitoPlusOffSuppressions: NagAck[] = [
+  {
+    id: 'AwsSolutions-COG8',
+    reason: `Cognito Plus feature plan (threat protection: compromised-credential and adaptive sign-in checks) is off by default - it raises every monthly active user's price ($0.020 per MAU with no free tier, against Essentials' $0.015 above 10,000 free); ${COGNITO_PLUS_OPT_IN_HINT}`,
+  },
+];
+
+export const cloudFrontWafOffSuppressions: NagAck[] = [
+  {
+    id: 'AwsSolutions-CFR2',
+    reason: `AWS WAF is off by default - a web ACL is a fixed monthly cost (TENETS.md tenet 7); ${WAF_OPT_IN_HINT}`,
+  },
+];
+
+export const apiWafOffSuppressions: NagAck[] = [
+  {
+    id: 'AwsSolutions-APIG3',
+    reason: `AWS WAF is off by default - a web ACL is a fixed monthly cost (TENETS.md tenet 7); the stage keeps its per-method throttles; ${WAF_OPT_IN_HINT}`,
   },
 ];
 
 // Secrets Manager rotation for API credentials
-export const apiSecretsSuppressions: NagPackSuppression[] = [
+export const apiSecretsSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-SMG4',
     reason: 'Secret contains third-party API credentials that cannot be automatically rotated by AWS - requires manual rotation through provider portals',
@@ -78,7 +82,7 @@ export const apiSecretsSuppressions: NagPackSuppression[] = [
 ];
 
 // CloudFront URL-signing key (issue #229)
-export const cdnSigningKeySuppressions: NagPackSuppression[] = [
+export const cdnSigningKeySuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-SMG4',
     reason:
@@ -92,174 +96,107 @@ export const cdnSigningKeySuppressions: NagPackSuppression[] = [
   },
 ];
 
-// DynamoDB Global Secondary Index access
-export const dynamoDbGsiSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-IAM5',
-    reason: 'Wildcard required for DynamoDB Global Secondary Index access - GSI ARNs follow pattern <TableArn>/index/* per AWS best practices',
-    appliesTo: [
-      { regex: '/Resource::<.*FeedbackTable.*\.Arn>/index/\*/' },
-      { regex: '/Resource::<.*AggregatesTable.*\.Arn>/index/\*/' },
-      { regex: '/Resource::<.*ProjectsTable.*\.Arn>/index/\*/' },
-      { regex: '/Resource::<.*JobsTable.*\.Arn>/index/\*/' },
-    ],
-  },
-];
+// The CDK grant wildcards (kms:GenerateDataKey*, kms:ReEncrypt*, s3:GetObject*, s3:GetBucket*, s3:List*,
+// s3:Abort*, s3:DeleteObject*) and `<TableArn>/index/*` are not acknowledged: lib/utils/exact-grants.ts rewrites
+// them to the exact actions and index ARNs on every identity policy, so one that reappears is reported.
 
-// KMS encryption operations - CDK grantEncryptDecrypt() uses wildcards
-export const kmsEncryptionSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-IAM5',
-    reason: 'KMS wildcard actions (GenerateDataKey*, ReEncrypt*) are generated by CDK grantEncryptDecrypt() construct - covers multiple related encryption operations',
-    appliesTo: [
-      'Action::kms:GenerateDataKey*',
-      'Action::kms:ReEncrypt*',
-    ],
-  },
-];
-
-// S3 bucket operations - CDK grantReadWrite() and grantRead() use wildcards
-export const s3BucketSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-IAM5',
-    reason: 'S3 wildcard actions are generated by CDK bucket grant methods (grantReadWrite, grantRead) - covers related S3 operations',
-    appliesTo: [
-      'Action::s3:Abort*',
-      'Action::s3:DeleteObject*',
-      'Action::s3:GetBucket*',
-      'Action::s3:GetObject*',
-      'Action::s3:List*',
-    ],
-  },
-  {
+/**
+ * Object access on a whole bucket (`bucket-arn/*`), or on the raw bucket's `raw/` prefix (the category
+ * reprocess worker's raw mode, read-only): `objectArns` are the object ARNs granted, e.g.
+ * `rawDataBucket.arnForObjects('*')`.
+ */
+export function s3ObjectSuppressions(objectArns: readonly string[]): NagAck[] {
+  return [{
     id: 'AwsSolutions-IAM5',
     reason: 'S3 object access requires wildcard on bucket ARN (bucket-arn/*) - AWS best practice for object-level permissions',
-    appliesTo: [
-      { regex: '/.*RawDataBucket.*\.Arn>/\*/' },
-      { regex: '/.*S3ImportBucket.*\.Arn>/\*/' },
-      { regex: '/.*WebsiteBucket.*\.Arn>/\*/' }
-    ],
-  },
-];
-
-// Bedrock foundation model ARNs - region wildcard required
-export const bedrockModelSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-IAM5',
-    reason: 'Bedrock foundation model ARNs require region wildcard as models are cross-region resources',
-    // DERIVED from lib/utils/model-allowlist.ts (every grantable model: the
-    // picker allowlist plus fallback safety nets) so a model added there can
-    // never leave a stale or missing suppression behind. Only the
-    // foundation-model ARNs carry a region wildcard; the inference-profile
-    // ARNs are region/account-scoped and need no suppression.
-    appliesTo: bedrockFoundationModelSuppressionTargets(),
-  },
-];
-
-// Dynamic plugin system - Lambda and EventBridge wildcards
-//
-// A FUNCTION of the deployment prefix, not a constant: the findings these
-// suppress quote the concrete resource ARN, so under `-c deploymentPrefix=stg`
-// the ARN reads `function:stg-voc-ingestor-*` and a hardcoded `voc-ingestor-`
-// regex silently stops matching — leaving a fresh AwsSolutions-IAM5 warning on
-// every prefixed synth. With no prefix the strings are unchanged.
-export function pluginSystemSuppressions(deploymentPrefix?: string): NagPackSuppression[] {
-  // Safe to interpolate into a regex: validateDeploymentPrefix() admits a
-  // leading lowercase letter followed by lowercase letters, digits and inner
-  // hyphens — none of which are regex metacharacters.
-  const p = deploymentPrefix ? `${deploymentPrefix}-` : '';
-  return [
-  {
-    id: 'AwsSolutions-IAM5',
-    reason: 'Plugin system requires wildcards for dynamic Lambda function names and EventBridge rules created at runtime',
-    appliesTo: [
-      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-ingestor-\*/` },
-      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-ingestor-webscraper-\*/` },
-      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-manual-import-processor-\*/` },
-      { regex: `/Resource::arn:aws:lambda:.*:.*:function:${p}voc-projects-api-\*/` },
-      { regex: `/Resource::arn:aws:events:.*:.*:rule.${p}voc-ingest-.*-schedule/` },
-    ],
-  },
-  {
-    id: 'AwsSolutions-IAM5',
-    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations and async job Lambda invocations',
-    appliesTo: [
-      { regex: '/Resource::<.*ResearchStepLambda.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*ModelAgreementLambda.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*PersonaGeneratorJob.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*DocumentGeneratorJob.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*DocumentMergerJob.*\.Arn>:\*/' },
-      { regex: '/Resource::<.*PersonaImporterJob.*\.Arn>:\*/' },
-    ],
-  },
-  ];
+    findings: objectArns.map(resourceFinding),
+  }];
 }
 
-// CDK deployment assets
-export const cdkAssetsSuppressions: NagPackSuppression[] = [
-  {
+/**
+ * The reviewed key prefixes of the raw data bucket, one data family each. Owners as of 5.34.00, for the
+ * reviewer: avatars/ (projects API, persona generator and importer), company-context/ (settings API),
+ * company-context/design/logo_preview_ and icons_ (design capture, logo previews and copied icons only),
+ * memory-imports/ (memory API and extractor), projects/{@literal *}/product_docs/ (projects API; extracted/ for the
+ * document generator), prototypes/ (projects API, document generator, agent nodes and persona panel),
+ * raw/github_issues/ (the GitHub webhook), raw/feedback_form/ (the feedback-form API), raw/feature_requests/ (the
+ * engagement API's board copies) and raw/email_intake/ (the opt-in email inbox), those three write-once puts only
+ * (lambda/shared/raw_copy.py); scratch/document_jobs/ and scratch/research_jobs/ (the document and research
+ * workflows' scratch space).
+ */
+export type RawDataPrefix =
+  | 'avatars/*' | 'company-context/*' | 'company-context/design/logo_preview_*' | 'company-context/design/icons_*'
+  | 'memory-imports/*' | 'projects/*/product_docs/*' | 'projects/*/product_docs/extracted/*' | 'prototypes/*'
+  | 'raw/github_issues/*' | 'raw/feedback_form/*' | 'raw/feature_requests/*' | 'raw/email_intake/*'
+  | 'scratch/document_jobs/*' | 'scratch/research_jobs/*';
+
+/** Object access scoped to the named prefixes of `rawDataBucket`; a grant on any other prefix is still reported. */
+export function rawDataPrefixSuppressions(rawDataBucket: s3.IBucket, prefixes: readonly RawDataPrefix[]): NagAck[] {
+  return [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'Object access scoped to ONE named key prefix of the raw data bucket (the data family the role owns); the trailing wildcard is the object key under that prefix, never the bucket or another prefix',
+    findings: prefixes.map((prefix) => resourceFinding(rawDataBucket.arnForObjects(prefix))),
+  }];
+}
+
+/**
+ * CDK deployment assets: the object wildcard on the stack's bootstrap file-asset bucket
+ * (`cdk-<qualifier>-assets-<account>-<region>`, DefaultStackSynthesizer's default name).
+ */
+export function cdkAssetsSuppressions(scope: IConstruct): NagAck[] {
+  const stack = Stack.of(scope);
+  const qualifier = stack.synthesizer.bootstrapQualifier ?? DefaultStackSynthesizer.DEFAULT_QUALIFIER;
+  const bucketArn = stack.formatArn({
+    service: 's3', region: '', account: '', resource: `cdk-${qualifier}-assets-${stack.account}-${stack.region}`,
+    arnFormat: ArnFormat.NO_RESOURCE_NAME,
+  });
+  return [{
     id: 'AwsSolutions-IAM5',
     reason: 'CDK bootstrap bucket wildcard required for deployment assets',
-    appliesTo: [
-      { regex: '/Resource::arn:aws:s3:::cdk-.*-assets-.*/' },
-    ],
-  },
-];
+    findings: [resourceFinding(`${bucketArn}/*`)],
+  }];
+}
 
 // Bedrock foundation model agreement APIs - account-level operations
-export const bedrockAgreementSuppressions: NagPackSuppression[] = [
+export const bedrockAgreementSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-IAM5',
     reason: 'Bedrock foundation model agreement APIs (ListFoundationModelAgreementOffers, CreateFoundationModelAgreement, GetFoundationModelAvailability, PutUseCaseForModelAccess) are account-level operations that do not support resource-level permissions',
-    appliesTo: ['Resource::*'],
+    findings: ['Resource::*'],
   },
 ];
 
 // AWS Marketplace - subscription APIs for Bedrock model access
-export const marketplaceSuppressions: NagPackSuppression[] = [
+export const marketplaceSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'AWS Marketplace subscription APIs (ViewSubscriptions, Subscribe) do not support resource-level permissions - required for Bedrock model EULA acceptance',
-    appliesTo: ['Resource::*'],
+    reason: 'AWS Marketplace subscription APIs (ViewSubscriptions, Subscribe) do not support resource-level permissions - required for Bedrock model EULA acceptance. API-stack grants (lib/stacks/api-marketplace.ts) narrow Subscribe to the image model listing with an aws-marketplace:ProductId condition (ViewSubscriptions has no condition key); the Bedrock model-access provider subscribes to the allowlisted model listings it enables',
+    findings: ['Resource::*'],
   },
 ];
 
-// AWS Comprehend - real-time text analysis APIs
-export const comprehendSuppressions: NagPackSuppression[] = [
+// Service Quotas - read the account's Bedrock token quotas (Settings model test)
+export const serviceQuotasReadSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-IAM5',
-    reason: 'Comprehend real-time detection APIs (DetectSentiment, DetectKeyPhrases, DetectDominantLanguage) do not support resource-level permissions - these are stateless analysis operations that require Resource:*',
-    appliesTo: [
-      'Resource::*',
-    ],
+    reason: 'servicequotas:ListServiceQuotas supports no resource-level permission and is read-only: the settings Lambda lists the Bedrock tokens-per-minute quotas for POST /settings/model/test and GET /settings/model/capacity (shared/model_capacity.py); it holds no quota-increase or other write action',
+    findings: ['Resource::*'],
+  },
+  {
+    id: 'AwsSolutions-IAM5',
+    reason: 'servicequotas:GetServiceQuota is read-only and scoped to this account and region\'s Bedrock quotas (bedrock/*): the settings Lambda refreshes its stored tokens-per-minute readings one quota code at a time (shared/model_quota_store.py); the codes are learned from the listing, so they cannot be enumerated in the template',
+    // The grant builds the ARN from the pseudo parameters (api-data-lambdas.ts), so the finding is the same
+    // in every account and region.
+    findings: ['Resource::arn:<AWS::Partition>:servicequotas:<AWS::Region>:<AWS::AccountId>:bedrock/*'],
   },
 ];
 
-// AWS Translate - real-time translation API
-export const translateSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-IAM5',
-    reason: 'Translate TranslateText API requires Resource:* for real-time translation without custom parallel data - parallel data ARNs only apply when using custom terminology/translation memories',
-    appliesTo: [
-      'Resource::*',
-    ],
-  },
-];
-
-// API Gateway request validation
-export const apiGatewayRequestValidationSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-APIG2',
-    reason: 'Request validation handled by Lambda functions with comprehensive input validation using Pydantic models and custom logic',
-  },
-  {
-    id: 'AwsSolutions-APIG3',
-    reason: 'AWS WAF not included to minimize costs for sample deployment - recommended for production use',
-  },
-];
+// `Resource::*` of reviewed unscopable actions (Comprehend, Translate, Step Functions log delivery, ...) is NOT
+// suppressed here any more: suppressReviewedResourceStar (nag-resource-star.ts) suppresses it per policy, only
+// where every `"*"` action is on the reviewed list in resource-star-actions.ts.
 
 // Public feedback form endpoints (intentionally unauthenticated)
-export const publicFeedbackEndpointSuppressions: NagPackSuppression[] = [
+export const publicFeedbackEndpointSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-APIG4',
     reason: 'Feedback form endpoints are intentionally public to allow anonymous customer feedback submission',
@@ -278,7 +215,7 @@ export const publicFeedbackEndpointSuppressions: NagPackSuppression[] = [
 // control here is the voting session — a ballot is accepted only against a valid
 // unguessable session token, only while that session is open and unexpired, and
 // only up to its ballot cap, enforced by a conditional atomic increment.
-export const publicBallotEndpointSuppressions: NagPackSuppression[] = [
+export const publicBallotEndpointSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-APIG4',
     reason: 'Anonymous prioritization ballots are submitted by attendees from personal phones with no account; the unguessable voting-session token, its open/closed state, its expiry and its ballot cap are the authorization',
@@ -288,3 +225,47 @@ export const publicBallotEndpointSuppressions: NagPackSuppression[] = [
     reason: 'Cognito authentication would defeat the feature - a room scores a proposal without accounts; the session record authorizes each write and closing the session revokes it',
   },
 ];
+
+// Plugin webhook receivers (intentionally unauthenticated at the gateway). Their own
+// list for the same reason as the ballot one: the control is different. The caller
+// is a third-party service (GitHub) that cannot present a Cognito token; every
+// delivery is authenticated in the handler by the provider's HMAC signature over the
+// exact body, against a secret held in Secrets Manager, before anything is parsed or
+// enqueued — and refused outright when no secret is configured.
+export const publicWebhookEndpointSuppressions: NagAck[] = [
+  {
+    id: 'AwsSolutions-APIG4',
+    reason: 'Provider webhooks (e.g. GitHub) cannot send a Cognito token; the handler verifies the provider HMAC signature (X-Hub-Signature-256, constant-time) before any processing and fails closed without a configured secret',
+  },
+  {
+    id: 'AwsSolutions-COG4',
+    reason: 'A third-party webhook sender has no Cognito identity; the shared-secret request signature is the authorization, checked in the Lambda',
+  },
+];
+
+// The public unsubscribe endpoint (intentionally unauthenticated). Its own list, like the ballot
+// one: the control differs. The caller is a mail recipient (or their mail client's RFC 8058
+// one-click POST) with no account; the only thing the request can do is mark the ONE person an
+// unguessable emailed token names as unsubscribed, and it answers the same for any token.
+export const publicUnsubscribeEndpointSuppressions: NagAck[] = [
+  {
+    id: 'AwsSolutions-APIG4',
+    reason: 'Email recipients unsubscribe without an account (RFC 8058 one-click); the unguessable per-recipient token (only its SHA-256 is stored) is the authorization, it can only unsubscribe the person it names, and the answer never reveals whether it matched',
+  },
+  {
+    id: 'AwsSolutions-COG4',
+    reason: 'A participant who received an email has no Cognito identity, and a mail client posting the one-click unsubscribe cannot present one; the emailed token is the authorization',
+  },
+];
+
+/**
+ * Acknowledge the CDK-managed runtime finding on the singleton
+ * `AwsCustomResource` provider Lambda (`AWS<uuid>` and its ServiceRole) when the
+ * stack has one. A stack without the singleton gets no acknowledgement and no error.
+ */
+export function suppressAwsCustomResourceProvider(stack: Stack): void {
+  const provider = stack.node.tryFindChild(`AWS${AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`);
+  if (provider !== undefined) {
+    acknowledgeNag(provider, cdkCustomResourceSuppressions);
+  }
+}

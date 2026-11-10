@@ -1,0 +1,10 @@
+X-SES-Spam-Verdict: FAIL
+X-SES-Virus-Verdict: PASS
+From: Prize <win@prize.example>
+To: feedback@voc.example.com
+Subject: You won
+Message-ID: <spam-009@prize.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Claim your prize now.

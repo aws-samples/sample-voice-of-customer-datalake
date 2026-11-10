@@ -1,0 +1,56 @@
+{
+  "title": "Caixa de entrada de e-mail",
+  "description": "Clientes, funcionários e parceiros enviam feedback por e-mail para estes endereços. Cada e-mail é verificado, deduplicado e anonimizado antes de virar um item de feedback.",
+  "on": "Ativada",
+  "off": "Desativada",
+  "loading": "Carregando a caixa de entrada…",
+  "notDeployed": "A caixa de entrada de e-mail não está implantada. Implante com -c inboundEmailDomain=<seu domínio> (veja docs/email-intake.md).",
+  "addresses": "Endereços",
+  "ruleSetInactive": "O conjunto de regras de recebimento {{ruleSet}} não está ativo, então nenhum e-mail chega ainda. Ative-o no Amazon SES ou implante de novo no conjunto ativo com -c inboundEmailRuleSet.",
+  "pii": {
+    "redact": "Dados pessoais são anonimizados: nomes, endereços de e-mail e telefones são substituídos antes de salvar.",
+    "allow": "Dados pessoais são mantidos como recebidos (o perfil da fonte permite).",
+    "summary_only": "Somente campos derivados são mantidos (o perfil da fonte é somente resumo)."
+  },
+  "dimension": {
+    "missing": "Crie a dimensão Tipo de feedback para que os endereços ideas@, bugs@ e reviews@ e as etiquetas do assunto como [bug] classifiquem cada item.",
+    "create": "Criar dimensão"
+  },
+  "today": {
+    "title": "Hoje (UTC)",
+    "accepted": "Aceitos",
+    "deduped": "Deduplicados",
+    "dropped": "Descartados",
+    "deferred": "Adiados",
+    "modelCalls": "Chamadas ao modelo"
+  },
+  "reasons": {
+    "duplicate_message": "Mesmo e-mail entregue duas vezes",
+    "seen_in_thread": "Texto já presente na conversa",
+    "no_new_info": "Resposta sem informação nova",
+    "forward_duplicate": "Original já encaminhado",
+    "spam": "Veredito de spam",
+    "virus": "Veredito de vírus",
+    "auto_reply": "Resposta automática",
+    "bulk": "Envio em massa ou lista de e-mail",
+    "loop_sender": "Remetente de sistema de e-mail",
+    "sender_cap": "Limite por remetente atingido",
+    "no_text": "Sem texto",
+    "unparseable": "Ilegível",
+    "too_large": "Grande demais"
+  },
+  "caps": {
+    "title": "Limites diários",
+    "daily_cap": "E-mails por dia",
+    "sender_daily_cap": "E-mails por remetente por dia",
+    "daily_model_calls": "Chamadas ao modelo por dia",
+    "range": "De {{min, number}} a {{max, number}}",
+    "save": "Salvar limites",
+    "saved": "Limites salvos"
+  },
+  "errors": {
+    "load": "Não foi possível carregar o status da caixa de entrada.",
+    "save": "Não foi possível salvar os limites.",
+    "dimension": "Não foi possível criar a dimensão."
+  }
+}

@@ -71,6 +71,16 @@ export function toArray<T>(source: ArrayLike<T> | undefined | null): readonly T[
 }
 
 /**
+ * The two parts of a clipboard `DataTransfer` these helpers read — a real
+ * `DataTransfer` satisfies it, and a spec can build one without jsdom (which
+ * has no DataTransfer).
+ */
+export interface ClipboardFiles {
+  readonly items: ArrayLike<Pick<DataTransferItem, 'kind' | 'type' | 'getAsFile'>>
+  readonly files: ArrayLike<File>
+}
+
+/**
  * Files on a clipboard whose type passes `accept`.
  *
  * Prefers `items` (the shape every browser fills for a copied bitmap) and falls
@@ -82,7 +92,7 @@ export function toArray<T>(source: ArrayLike<T> | undefined | null): readonly T[
  * bitmap in `files` when `items` yielded nothing of interest.
  */
 function clipboardFiles(
-  clipboard: DataTransfer | null,
+  clipboard: ClipboardFiles | null,
   accept: (type: string) => boolean,
 ): readonly File[] {
   if (!clipboard) return []
@@ -117,7 +127,7 @@ function isImageType(type: string): boolean {
  * never meant to send. A file DROP is unambiguous by comparison, and is still
  * refused out loud by the callers that take one.
  */
-export function pastedImages(clipboard: DataTransfer | null): readonly File[] {
+export function pastedImages(clipboard: ClipboardFiles | null): readonly File[] {
   return clipboardFiles(clipboard, isImageType)
 }
 

@@ -1,0 +1,56 @@
+{
+  "title": "이메일 받은편지함",
+  "description": "고객, 직원, 파트너가 이 주소로 피드백을 이메일로 보냅니다. 각 이메일은 확인, 중복 제거, 비식별화를 거친 뒤 피드백 항목이 됩니다.",
+  "on": "켜짐",
+  "off": "꺼짐",
+  "loading": "이메일 받은편지함을 불러오는 중…",
+  "notDeployed": "이메일 받은편지함이 배포되지 않았습니다. -c inboundEmailDomain=<도메인>으로 배포하세요(docs/email-intake.md 참고).",
+  "addresses": "주소",
+  "ruleSetInactive": "수신 규칙 세트 {{ruleSet}}이(가) 활성 상태가 아니어서 아직 이메일이 도착하지 않습니다. Amazon SES에서 활성화하거나 -c inboundEmailRuleSet으로 활성 규칙 세트에 다시 배포하세요.",
+  "pii": {
+    "redact": "개인 데이터는 비식별화됩니다. 이름, 이메일 주소, 전화번호는 저장 전에 대체됩니다.",
+    "allow": "개인 데이터는 받은 그대로 보관됩니다(소스 프로필이 허용).",
+    "summary_only": "파생 필드만 보관됩니다(소스 프로필이 요약 전용)."
+  },
+  "dimension": {
+    "missing": "피드백 유형 차원을 만들면 ideas@, bugs@, reviews@ 주소와 [bug] 같은 제목 태그로 각 항목이 분류됩니다.",
+    "create": "차원 만들기"
+  },
+  "today": {
+    "title": "오늘(UTC)",
+    "accepted": "수락됨",
+    "deduped": "중복 제거됨",
+    "dropped": "삭제됨",
+    "deferred": "연기됨",
+    "modelCalls": "모델 호출"
+  },
+  "reasons": {
+    "duplicate_message": "같은 이메일이 두 번 전달됨",
+    "seen_in_thread": "스레드에 이미 있는 텍스트",
+    "no_new_info": "새 정보가 없는 답장",
+    "forward_duplicate": "원본이 이미 전달됨",
+    "spam": "스팸 판정",
+    "virus": "바이러스 판정",
+    "auto_reply": "자동 응답",
+    "bulk": "대량 메일 또는 메일링 리스트",
+    "loop_sender": "메일 시스템 발신자",
+    "sender_cap": "발신자별 한도 도달",
+    "no_text": "본문 없음",
+    "unparseable": "읽을 수 없음",
+    "too_large": "너무 큼"
+  },
+  "caps": {
+    "title": "일일 한도",
+    "daily_cap": "하루 이메일 수",
+    "sender_daily_cap": "발신자별 하루 이메일 수",
+    "daily_model_calls": "하루 모델 호출 수",
+    "range": "{{min, number}}부터 {{max, number}}까지",
+    "save": "한도 저장",
+    "saved": "한도를 저장했습니다"
+  },
+  "errors": {
+    "load": "이메일 받은편지함 상태를 불러올 수 없습니다.",
+    "save": "한도를 저장할 수 없습니다.",
+    "dimension": "차원을 만들 수 없습니다."
+  }
+}

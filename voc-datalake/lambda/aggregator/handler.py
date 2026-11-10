@@ -5,15 +5,24 @@ deleted via Streams.
 
 Why REMOVE is handled two different ways
 ----------------------------------------
-Two TTLs meet in this file, and they have different lengths:
+NOTHING IS DELETED BY TIME ANY MORE. Feedback items carry no `ttl` (the
+processor stops stamping it, the feedback table's TTL is disabled) and the
+METRIC# rows this Lambda writes carry none either; `scripts/retention/remove_ttl.py`
+strips the attribute from rows written before that. The paragraphs below describe
+the era when both had TTLs (365 days for items, 90 for aggregate rows). The
+guards they justify stay: rows that ALREADY expired are still gone, a TTL
+deletion still in flight on an unmigrated deployment still arrives as a REMOVE,
+and the protections are free when they never trigger.
 
-* the feedback table's items are stamped `ttl = now + 365 days`
-  (`processor/handler.py`), and the table has `timeToLiveAttribute: 'ttl'`
-  (`lib/stacks/core-stack.ts`). One year after ingestion DynamoDB deletes them
+Historically, two TTLs met in this file, and they had different lengths:
+
+* the feedback table's items were stamped `ttl = now + 365 days`
+  (`processor/handler.py`), and the table had `timeToLiveAttribute: 'ttl'`
+  (`lib/stacks/core-stack.ts`). One year after ingestion DynamoDB deleted them
   en masse, and every deletion arrives here as a REMOVE record;
-* the aggregate rows this Lambda writes expire after 90 days
-  (`ttl_days=90` below), refreshed on each write. The row for date D is
-  therefore gone around D+90 — long before the raw items of date D age out.
+* the aggregate rows this Lambda wrote expired after 90 days, refreshed on each
+  write. The row for date D was therefore gone around D+90 — long before the raw
+  items of date D aged out.
 
 So a REMOVE arriving from TTL expiry is a record about a date whose aggregate row
 no longer exists, and `if_not_exists(#field, :zero) + :inc` with `:inc = -1`
@@ -112,8 +121,11 @@ Known residuals
   (`apply_arrival_once`), which closes both halves at once: a redelivery moves
   nothing, and a record that dies partway leaves no partial application for the
   retry to land on top of.
-  ⚠️ A REVERSAL (REMOVE, and the decrement half of a MODIFY) IS NOT TRANSACTED, so
-  a redelivered one still decrements a second time. Not an omission: every
+  A REVERSAL (REMOVE, and the decrement half of a MODIFY) IS NOT TRANSACTED, and
+  since 6.03.00 it is claimed once all the same: `shared/stream_claims.py` claims
+  the record's `eventID` in the idempotency table BEFORE the writes and releases
+  the claim when they fail, so a redelivered REMOVE or MODIFY moves nothing (audit
+  G1). Why that claim is not a transaction participant: every
   decrement is a CONDITIONAL write whose refusal the code above it reads —
   `_reverse_a_pre_deploy_persona_row` triggers on `ROW_ABSENT`, `_rebucket_average`
   pairs on a refused reversal — and `TransactWriteItems` reports no per-item
@@ -122,8 +134,8 @@ Known residuals
   "the edit wrote nothing at all", which silently disables the aged-out-day
   protections that exist BY observing a refusal. Closing it properly needs a
   dedupe claim that is not a transaction participant — a claim written first, then
-  compensated if the writes fail — which is new failure machinery rather than a
-  wider transaction, and it is out of scope here. What the conditions still
+  compensated if the writes fail — which is what `shared/stream_claims.py` is (its
+  residuals are in its docstring). What the conditions still
   guarantee for those paths is what they always did: no resurrected row, and no
   negative counter, with the tests in TestRedeliveryMovesACounterTwice pinning
   the reversal behaviour so this note and the code cannot drift apart.
@@ -148,10 +160,14 @@ Known residuals
   process with a jittered backoff (`TRANSACT_WRITE_ATTEMPTS`, and
   CONFLICTED_METRIC is what makes the rate visible), past that bound the stream
   redelivers, and the claim makes every one of those retries a no-op if an earlier
-  attempt landed. So contention converges rather than losing records — but if
-  CONFLICTED_METRIC climbs under import, the lever is the event source's
+  attempt landed. So contention converges rather than losing records. Since 5.47.00
+  a run of consecutive arrivals shares its transactions (see "A run of INSERTs is
+  applied together" below), which is what cut the contention a bulk import produced:
+  about two transactions on the hot rows per batch instead of one per record. If
+  CONFLICTED_METRIC still climbs under import, the lever is the event source's
   `parallelizationFactor` and `batchSize` in
-  `lib/stacks/processing-stack-consolidated.ts`, not a wider transaction.
+  `lib/stacks/processing-stack-consolidated.ts`, not putting the conditional
+  reversals into a transaction.
 * NO RECONCILIATION JOB. Nothing recomputes a stored aggregate from the feedback
   table, so drift already written stays written — the point above only stops new
   drift arriving. A rebuild has to write ABSOLUTE values rather than replay
@@ -208,22 +224,33 @@ Known residuals
   same condition (at most one count, in a row that is ageing out), self-limiting
   once the legacy rows are gone, and strictly smaller than the over-count above.
 """
+import copy
 import os
 import secrets
+import sys
 import time
+from collections import Counter
 from collections.abc import Mapping
-from datetime import datetime, timezone
-from decimal import Decimal
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
+from datetime import UTC, datetime
+from decimal import Decimal, localcontext
 from enum import Enum
-from typing import Any
-from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
-from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
-from botocore.exceptions import ClientError
+from itertools import groupby
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
-# Shared module imports
-from shared.logging import logger, tracer, metrics
+from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType
+from aws_lambda_powertools.utilities.batch.exceptions import ExceptionInfo
+from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
+from boto3.dynamodb.types import DYNAMODB_CONTEXT
+from botocore.exceptions import BotoCoreError, ClientError
+
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
-from shared.idempotency import dedupe_claim_item
+from shared.batch import batch_lambda_handler
+from shared.data_version import BatchBump, bump_data_version
+from shared.dimension_config import DIMENSION_KEY_RE, DIMENSION_VALUE_RE, MAX_DIMENSIONS, MAX_TAGS
+from shared.earliest_date import earliest_date_from_item, lower_watermark_request, parse_iso_date
+
 # The persona axis, declared in the data layer because BOTH sides of it spend the
 # same values AND the same derivation — see the note above `counter_dimensions`.
 from shared.feedback import (
@@ -233,9 +260,38 @@ from shared.feedback import (
     # re-exported here deliberately: the LEGACY_PERSONA_UNKNOWN comment's argument is
     # that the two empty-bucket spellings must differ, and a reader checking that
     # should find both names in one namespace.
-    PERSONA_UNKNOWN,  # noqa: F401
+    PERSONA_UNKNOWN,  # noqa: F401 — re-exported beside LEGACY_PERSONA_UNKNOWN (see the comment above)
     persona_bucket,
 )
+from shared.idempotency import dedupe_claim_item
+
+# Shared module imports
+from shared.logging import logger, metrics, tracer
+from shared.metric_keys import (
+    CATEGORY_PREFIX,
+    CHANNEL_PREFIX,
+    DAILY_TOTAL_PK,
+    DIMENSION_PREFIX,
+    DIMENSION_SENTIMENT_METRIC_TYPE,
+    DIMENSION_SENTIMENT_PREFIX,
+    PROFILE_METRIC_TYPES,
+    SENTIMENT_AVG_PK,
+    SENTIMENT_PREFIX,
+    SOURCE_PREFIX,
+    SUBCATEGORY_PREFIX,
+    TAG_PREFIX,
+    USEFULNESS_METRIC_TYPE,
+    USEFULNESS_PREFIX,
+)
+from shared.source_profile import profile_counter_pks
+from shared.stream_claims import claim as claim_reversal
+from shared.stream_claims import release as release_reversal
+from shared.stream_claims import reversal_key
+from shared.timestamps import now_iso
+from shared.usefulness import USEFULNESS_UNRATED, stored_band
+
+if TYPE_CHECKING:
+    from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -252,11 +308,9 @@ aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
 IDEMPOTENCY_TABLE = os.environ.get('IDEMPOTENCY_TABLE', '')
 if not IDEMPOTENCY_TABLE:
     logger.warning(
-        "IDEMPOTENCY_TABLE not configured - a redelivered stream record will move "
-        "these counters a second time"
+        "IDEMPOTENCY_TABLE not configured - a redelivered stream record will move "  # pragma: no mutate - log message
+        "these counters a second time"  # pragma: no mutate - log message
     )
-
-processor = BatchProcessor(event_type=EventType.DynamoDBStreams)
 
 # One metric name per BEHAVIOUR, not one for all three.
 #
@@ -308,17 +362,24 @@ DECLINED_METRIC = "AggregateWriteDeclined"
 REPLAYED_METRIC = "AggregateRecordReplayed"
 CONFLICTED_METRIC = "AggregateTransactionConflicted"
 
-# The two aggregate rows this module names outside `counter_dimensions`, hoisted
-# for the reason PERSONA_FIELD is named: a second unmarked copy of one of these
-# strings is what makes an argument elsewhere in the file true or false.
+# The metric partitions are declared once in `shared.metric_keys`, which every reader
+# (`/metrics/*`, the agent heartbeat, the briefing) imports too, for the reason
+# PERSONA_FIELD is named: a second unmarked copy of one of these strings is what makes an
+# argument elsewhere true or false.
 #
 # DAILY_TOTAL_PK is the sentinel `_day_has_aggregates` reads, and that read is only
 # a sound test of "is this day still here?" because this is the ONE counter every
 # item writes unconditionally — see that docstring. Spelling it twice would leave a
 # reader of the sentinel having to know that the copy in `counter_dimensions` is
 # what licenses the argument.
-DAILY_TOTAL_PK = 'METRIC#daily_total'
-SENTIMENT_AVG_PK = 'METRIC#daily_sentiment_avg'
+#
+# Per-dimension-value and per-tag daily counters: `/metrics/dimensions` reads the
+# sentiment rows of one dimension through the `metric_type` index
+# (`dim_sentiment#<key>`, see `get_metric_type`). The per-`source_channel` counter is the
+# `channel` filter's breakdown in `/feedback/entities`; tag and channel rows are on the
+# `metric_type` index too.
+SUBCATEGORY_MAX_CHARS = 64
+CHANNEL_MAX_CHARS = 64
 
 # --- Reversing an item whose INSERT ran before the persona axis moved ---------
 # 🔑 THE ONE PLACE THE OLD PERSONA AXIS IS STILL READ, and only in the direction
@@ -476,10 +537,15 @@ _RETRYABLE_CANCELLATION_REASONS = frozenset({
 #
 # Three attempts means two waits, and the jitter is one-sided — see
 # `_claimed_transaction`, where the multiplier spans [0.5, 1.0) — so the total backoff
-# is 75–150ms, at most ~150ms and never more. Nothing against a 30-second batching
+# is 75-150ms, at most ~150ms and never more. Nothing against a 30-second batching
 # window, and far less than a stream redelivery of the whole batch.
 TRANSACT_WRITE_ATTEMPTS = 3
 TRANSACT_WRITE_BACKOFF_SECONDS = 0.05
+
+# The one condition every average REVERSAL carries: `update_average` and the coalesced run.
+AVERAGE_REVERSAL_CONDITION = 'attribute_exists(pk) AND #count >= :floor'
+
+NO_REMOVE_DATE_WARNING = "REMOVE image carries no `date`; refusing to guess which day to reverse"
 
 
 class CounterWrite(Enum):
@@ -507,19 +573,19 @@ class CounterWrite(Enum):
     `_reverse_a_pre_deploy_persona_row` and the module docstring.
     """
 
-    LANDED = 'landed'
+    LANDED = 'landed'  # pragma: no mutate - members compare by identity; the value is never read or stored
     # The row exists; the floor refused this decrement because the counter is at
     # zero. An ordinary outcome of a redelivered REMOVE, and a row that exists is a
     # row a counter for this bucket already sits in — so the pre-deploy fallback must
     # not add a second `-1` for one deletion, and no legacy row is owed anything.
     # Also the outcome of a refusal whose response could not be read, because this is
     # the one no caller acts on.
-    REFUSED_AT_FLOOR = 'refused_at_floor'
+    REFUSED_AT_FLOOR = 'refused_at_floor'  # pragma: no mutate - as above
     # There is no such row: `attribute_exists(pk)` failed, and DynamoDB said so with a
     # readable response carrying no item. Either it aged out under its TTL, or this
     # item's insert never created it — and the second is what the pre-deploy persona
     # fallback triggers on.
-    ROW_ABSENT = 'row_absent'
+    ROW_ABSENT = 'row_absent'  # pragma: no mutate - as above
 
     def __bool__(self) -> bool:
         """`LANDED` is truthy, both refusals falsy.
@@ -540,11 +606,35 @@ def get_metric_type(pk: str) -> str | None:
     is BUILT would leave every persona row untagged and the dimension empty with
     every count still computed correctly.
     """
-    if pk.startswith('METRIC#daily_source#'):
+    if pk.startswith(SOURCE_PREFIX):
         return 'source'
-    elif pk.startswith(PERSONA_PREFIX):
+    if pk.startswith(PERSONA_PREFIX):
         return 'persona'
-    return None
+    if pk.startswith(DIMENSION_SENTIMENT_PREFIX):
+        key = pk.removeprefix(DIMENSION_SENTIMENT_PREFIX).split('#', 1)[0]
+        return f'{DIMENSION_SENTIMENT_METRIC_TYPE}{key}'
+    if pk.startswith(TAG_PREFIX):
+        return 'tag'
+    if pk.startswith(CHANNEL_PREFIX):
+        return 'channel'
+    if pk.startswith(USEFULNESS_PREFIX):
+        return USEFULNESS_METRIC_TYPE
+    return next((kind for prefix, kind in PROFILE_METRIC_TYPES.items() if pk.startswith(prefix)), None)
+
+
+def _error_response(error: ClientError) -> Mapping[str, Any] | None:
+    """`error.response` when it can be read, else None.
+
+    botocore-stubs type `response` as always present, but on some paths it arrives
+    as None (see `update_counter`, which is why `is_conditional_check_failure` also
+    matches by type name), so it is read as `object` and checked here, once.
+    """
+    return _as_mapping(error.response)
+
+
+def _as_mapping(value: object) -> Mapping[str, Any] | None:
+    """``value`` when it is a Mapping, else None — for values whose annotation is not trusted."""
+    return value if isinstance(value, Mapping) else None
 
 
 def _log_refusal(what: str, pk: str, sk: str):
@@ -554,7 +644,7 @@ def _log_refusal(what: str, pk: str, sk: str):
     anything?" is a question about production, not about one invocation, and
     CloudWatch is where it gets answered.
     """
-    logger.info(f"Refused {what} on {pk}/{sk}: nothing to correct")
+    logger.info(f"Refused {what} on {pk}/{sk}: nothing to correct")  # pragma: no mutate - log message
     metrics.add_metric(name=REFUSED_METRIC, unit="Count", value=1)
 
 
@@ -566,12 +656,25 @@ def _log_decline(what: str, pk: str, sk: str, because: str):
     to REFUSED_METRIC while REBUCKETED_METRIC still claimed the edit moved
     aggregates. A guard that silently declines work is one that gets debugged twice.
     """
-    logger.info(f"Declined {what} on {pk}/{sk}: {because}")
+    logger.info(f"Declined {what} on {pk}/{sk}: {because}")  # pragma: no mutate - log message
     metrics.add_metric(name=DECLINED_METRIC, unit="Count", value=1)
 
 
-def _counter_request(pk: str, sk: str, field: str, increment: int,
-                     ttl_days: int) -> dict[str, Any]:
+class _RefusalReport(TypedDict, total=False):
+    """The conditional half of a counter DEcrement — see `_counter_request`."""
+    ConditionExpression: str
+    ReturnValuesOnConditionCheckFailure: Literal['ALL_OLD']
+
+
+class _UpdateRequest(_RefusalReport):
+    """`update_item` arguments, which are also a transactional `Update` minus `TableName`."""
+    Key: dict[str, str]
+    UpdateExpression: str
+    ExpressionAttributeNames: dict[str, str]
+    ExpressionAttributeValues: dict[str, Any]
+
+
+def _counter_request(pk: str, sk: str, field: str, increment: int) -> _UpdateRequest:
     """One counter movement, as `update_item` arguments.
 
     🔑 THE ONE PLACE A COUNTER'S UPDATE EXPRESSION IS WRITTEN, spent by both issuers:
@@ -597,8 +700,7 @@ def _counter_request(pk: str, sk: str, field: str, increment: int,
     counter expression and the transactional one cannot report a per-item outcome —
     so how it was assembled is the only thing a reader has to go on.
     """
-    now = datetime.now(timezone.utc)
-    ttl = int(now.timestamp() + ttl_days * 24 * 60 * 60)
+    now = datetime.now(UTC)
 
     # Build update expression - include metric_type for GSI if applicable
     metric_type = get_metric_type(pk)
@@ -610,24 +712,23 @@ def _counter_request(pk: str, sk: str, field: str, increment: int,
     # `ReturnValuesOnConditionCheckFailure` asks for the refused item, so a refusal
     # can say WHICH half of the condition failed. Only on the conditional path: an
     # increment carries no condition and so cannot be refused.
-    conditional: dict[str, Any] = {
+    conditional: _RefusalReport = {
         'ConditionExpression': 'attribute_exists(pk) AND #field >= :floor',
         'ReturnValuesOnConditionCheckFailure': 'ALL_OLD',
-    } if increment < 0 else {}
-    floor_value = {':floor': -increment} if increment < 0 else {}
+    } if increment < 0 else {}  # pragma: no mutate - increment is +-1 at every call site; only 0 tells < from <=
+    floor_value = {':floor': -increment} if increment < 0 else {}  # pragma: no mutate - as above
 
     return {
         'Key': {'pk': pk, 'sk': sk},
         'UpdateExpression': (
-            'SET #field = if_not_exists(#field, :zero) + :inc, #ttl = :ttl, '
+            'SET #field = if_not_exists(#field, :zero) + :inc, '
             'updated_at = :now'
             + (', metric_type = :metric_type' if metric_type else '')
         ),
-        'ExpressionAttributeNames': {'#field': field, '#ttl': 'ttl'},
+        'ExpressionAttributeNames': {'#field': field},
         'ExpressionAttributeValues': {
             ':inc': increment,
             ':zero': 0,
-            ':ttl': ttl,
             ':now': now.isoformat(),
             **metric_type_values,
             **floor_value,
@@ -636,8 +737,7 @@ def _counter_request(pk: str, sk: str, field: str, increment: int,
     }
 
 
-def _average_request(pk: str, sk: str, value: Decimal, ttl_days: int,
-                     sign: int) -> dict[str, Any]:
+def _average_request(pk: str, sk: str, value: Decimal, sign: int) -> _UpdateRequest:
     """One movement of a running average, as `update_item` arguments.
 
     🔑 THE ONE PLACE THE AVERAGE'S UPDATE EXPRESSION IS WRITTEN, and the counterpart
@@ -648,11 +748,10 @@ def _average_request(pk: str, sk: str, value: Decimal, ttl_days: int,
     Both issuers spend it — `update_average`, which sends it alone and reports whether
     it landed, and `_average_transaction_item`, which wraps it for
     `TransactWriteItems`. It was spelled out twice when the arrival path became
-    transactional (issue #264), which put `#sum`/`#count`/`#ttl` in two places on
-    paths with very different test coverage: the retention lockstep compared only the
-    `ttl_days` defaults, so an attribute NAME could have drifted between the two
-    writers with nothing failing, and a transactional row writing `total` where the
-    reader looks for `sum` reads as a day with no average at all.
+    transactional (issue #264), which put `#sum`/`#count` in two places on paths
+    with very different test coverage, so an attribute NAME could have drifted
+    between the two writers with nothing failing, and a transactional row writing
+    `total` where the reader looks for `sum` reads as a day with no average at all.
 
     `sign` carries the direction, exactly as `update_average`'s does: `:val` is
     negated for a reversal and `:one` IS the count movement, so `sign=-1` subtracts
@@ -661,28 +760,25 @@ def _average_request(pk: str, sk: str, value: Decimal, ttl_days: int,
     conditional average write, and `_average_transaction_item` for why a transaction
     may not.
     """
-    now = datetime.now(timezone.utc)
-    ttl = int(now.timestamp() + ttl_days * 24 * 60 * 60)
+    now = datetime.now(UTC)
     return {
         'Key': {'pk': pk, 'sk': sk},
         'UpdateExpression': (
             'SET #sum = if_not_exists(#sum, :zero) + :val, '
             '#count = if_not_exists(#count, :zero) + :one, '
-            '#ttl = :ttl, updated_at = :now'
+            'updated_at = :now'
         ),
-        'ExpressionAttributeNames': {'#sum': 'sum', '#count': 'count', '#ttl': 'ttl'},
+        'ExpressionAttributeNames': {'#sum': 'sum', '#count': 'count'},
         'ExpressionAttributeValues': {
-            ':val': value if sign > 0 else -value,
+            ':val': value if sign > 0 else -value,  # pragma: no mutate - sign is +-1 at every call site; only 0 tells > from >=
             ':one': sign,
             ':zero': Decimal('0'),
-            ':ttl': ttl,
             ':now': now.isoformat(),
         },
     }
 
 
-def update_counter(pk: str, sk: str, field: str, increment: int = 1,
-                   ttl_days: int = 90) -> 'CounterWrite':
+def update_counter(pk: str, sk: str, field: str, increment: int = 1) -> 'CounterWrite':
     """Atomically update a counter in the aggregates table.
 
     Returns HOW the write ended, as one of the three `CounterWrite` outcomes —
@@ -740,15 +836,28 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1,
     per-item outcome to report, which is why the conditional paths still come through
     here. See `apply_counter_keys`.
     """
-    request = _counter_request(pk, sk, field, increment, ttl_days)
-    conditional = 'ConditionExpression' in request
+    request = _counter_request(pk, sk, field, increment)
+    if 'ConditionExpression' not in request:
+        aggregates_table.update_item(**request)
+        return CounterWrite.LANDED
+    outcome = _conditional_counter_write(request)
+    if outcome is not CounterWrite.LANDED:
+        _log_refusal(f'decrement of {field}', pk, sk)  # pragma: no mutate - log message
+    return outcome
 
+
+def _conditional_counter_write(request: _UpdateRequest) -> 'CounterWrite':
+    """Send one CONDITIONAL counter request and say how it ended, without logging.
+
+    `update_counter`'s refusal classification, split out so the coalesced reversal of a
+    run of REMOVEs (`_decrement_together`) reads a refusal the same way while deciding
+    for itself how many refusals to report. A non-conditional failure propagates.
+    """
     try:
         aggregates_table.update_item(**request)
     except ClientError as e:
-        if not conditional or not is_conditional_check_failure(e):
+        if not is_conditional_check_failure(e):
             raise
-        _log_refusal(f'decrement of {field}', pk, sk)
         # WHICH half of the condition failed, when the response can be read.
         #
         # 🔑 `ROW_ABSENT` REQUIRES POSITIVE EVIDENCE, not the absence of evidence. It
@@ -760,7 +869,7 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1,
         # have read as "there was no row" — the fail-OPEN direction, where open means
         # issuing a write. `_day_has_aggregates` fails open too but says so at
         # `error`; this one would have been silent.
-        response = e.response if isinstance(e.response, Mapping) else None
+        response = _error_response(e)
         if response is not None and 'Item' not in response:
             # A well-formed conditional-failure response with no item: DynamoDB is
             # saying the row was not there. The one case that is real evidence.
@@ -769,8 +878,7 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1,
     return CounterWrite.LANDED
 
 
-def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90,
-                   sign: int = 1) -> bool:
+def update_average(pk: str, sk: str, value: Decimal, sign: int = 1) -> bool:
     """Update running average in aggregates table.
 
     Returns whether the write LANDED, exactly as `update_counter` does. A refusal
@@ -810,11 +918,11 @@ def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90,
     information `_rebucket_average` reads, and a transaction has no per-item outcome to
     report it with.
     """
-    request = _average_request(pk, sk, value, ttl_days, sign)
-    conditional = sign < 0
+    request = _average_request(pk, sk, value, sign)
+    conditional = sign < 0  # pragma: no mutate - sign is +-1 at every call site; only 0 tells < from <=
     if conditional:
         # A distinct :floor rather than reusing :one, which is -1 here.
-        request['ConditionExpression'] = 'attribute_exists(pk) AND #count >= :floor'
+        request['ConditionExpression'] = AVERAGE_REVERSAL_CONDITION
         request['ExpressionAttributeValues'][':floor'] = 1
 
     try:
@@ -822,7 +930,7 @@ def update_average(pk: str, sk: str, value: Decimal, ttl_days: int = 90,
     except ClientError as e:
         if not conditional or not is_conditional_check_failure(e):
             raise
-        _log_refusal('reversal of average', pk, sk)
+        _log_refusal('reversal of average', pk, sk)  # pragma: no mutate - log message
         return False
     return True
 
@@ -861,25 +969,25 @@ def _day_has_aggregates(date: str) -> bool:
     misconfiguration, under which this guard is PERMANENTLY inert and every edit to
     an aged-out day plants the fragments the guard exists to prevent — indefinitely,
     and with `logger.warning` indistinguishable from the blip it was designed for.
-    Hence `logger.error` for anything outside `_TRANSIENT_READ_ERRORS`: the fail-open
+    Hence `logger.exception` (ERROR level, with the traceback) for anything outside `_TRANSIENT_READ_ERRORS`: the fail-open
     direction is unchanged, its cause is not silent.
     """
     try:
         response = aggregates_table.get_item(Key={'pk': DAILY_TOTAL_PK, 'sk': date})
     except ClientError as e:
-        code = e.response.get('Error', {}).get('Code', '') if isinstance(e.response, Mapping) else ''
+        code = (_error_response(e) or {}).get('Error', {}).get('Code', '')  # pragma: no mutate - the fallback is only ever logged; no code is as non-transient as an unknown one
         message = (
-            f"Could not read the daily total for {date}: {e}; treating the day as live"
+            f"Could not read the daily total for {date}: {e}; treating the day as live"  # pragma: no mutate - log message
         )
         if code in _TRANSIENT_READ_ERRORS:
             logger.warning(message)
         else:
             # Not a blip. Until this is fixed the aged-out-day guard cannot refuse
             # anything, so say so at a level an operator is alerted on.
-            logger.error(
-                f"{message}. `{code}` is not transient, so this guard is INERT until "
-                f"it is fixed and every edit to an aged-out day will plant aggregate "
-                f"fragments for it."
+            logger.exception(
+                f"{message}. `{code}` is not transient, so this guard is INERT until "  # pragma: no mutate - log message
+                f"it is fixed and every edit to an aged-out day will plant aggregate "  # pragma: no mutate - log message
+                f"fragments for it."  # pragma: no mutate - log message
             )
         return True
     return 'Item' in response
@@ -903,7 +1011,7 @@ def _image_date(item: dict) -> str:
     the day the row was created. Reversal paths read `_image_date_or_none` and skip
     rather than substitute now() — a missed `-1` beats a `-1` on the wrong day.
     """
-    return _image_date_or_none(item) or datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    return _image_date_or_none(item) or datetime.now(UTC).strftime('%Y-%m-%d')
 
 
 def _image_score(item: dict) -> Decimal:
@@ -921,10 +1029,12 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     This replaces a hardcoded `update_counter` call per dimension; an inverted copy
     of that list would have re-created the hazard on day one.
 
-    URGENCY IS THE ONLY CONDITIONAL DIMENSION. Every other item below is appended
+    URGENCY AND SUBCATEGORY ARE THE ONLY CONDITIONAL DIMENSIONS among the fixed axes (the
+    admin dimensions, tags, channel and usefulness rows at the end are conditional too, each
+    on a key-safe value / a stored band). Every other item below is appended
     unconditionally, because each read has a non-empty default — a reader asking
-    "which of these might be absent?" gets one answer, not two. So this returns SEVEN
-    dimensions for an urgent item and six otherwise; no docstring in this module states
+    "which of these might be absent?" gets one short answer. So the count varies with
+    urgency and with whether the item carries a key-safe subcategory; no docstring in this module states
     the number, deliberately, because the list below is designed to be extended and a
     count restated in prose is a fact that goes stale where nothing checks it.
 
@@ -997,7 +1107,7 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     source_platform = item.get('source_platform', 'unknown')
     category = item.get('category', 'other')
     sentiment_label = item.get('sentiment_label', 'neutral')
-    urgency = item.get('urgency', 'low')
+    urgency = item.get('urgency', 'low')  # pragma: no mutate - only ever compared with 'high'; any other default behaves the same
     # `persona_bucket`, the ONE derivation, shared with `metrics_handler`'s scan
     # path: it is what makes every row this deploy writes a member of
     # PERSONA_ARCHETYPES, which the reversal's collision guard depends on being a
@@ -1009,9 +1119,9 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
         # constant as its sentinel, and its argument for doing so is that this line
         # is unconditional. Two spellings would leave that dependency unmarked.
         (DAILY_TOTAL_PK, 'count'),
-        (f'METRIC#daily_source#{source_platform}', 'count'),
-        (f'METRIC#daily_category#{category}', 'count'),
-        (f'METRIC#daily_sentiment#{sentiment_label}', 'count'),
+        (f'{SOURCE_PREFIX}{source_platform}', 'count'),
+        (f'{CATEGORY_PREFIX}{category}', 'count'),
+        (f'{SENTIMENT_PREFIX}{sentiment_label}', 'count'),
         # PERSONA_PREFIX, not the literal: `get_metric_type` tags this row for the
         # `metric_type` GSI by the same prefix and `metrics_handler` strips it back
         # off, across two Lambdas that cannot import each other.
@@ -1025,8 +1135,112 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
 
     # Category + sentiment combo
     dimensions.append((f'METRIC#category_sentiment#{category}#{sentiment_label}', 'count'))
+    # The per-source profile (shared/source_profile.py): rating, sentiment and text-length
+    # rows, one each, for every item. Days before these rows existed have none; a decrement
+    # for such an item is refused like any absent row, so no counter goes negative.
+    dimensions.extend((pk, 'count') for pk in profile_counter_pks(item))
+
+    # Per-subcategory daily count, read by the agent heartbeat's threshold trigger.
+    # The second conditional dimension: an item with no usable subcategory has no
+    # row, in either direction — the same function decides both, so it cannot drift.
+    subcategory = subcategory_bucket(item)
+    if subcategory is not None:
+        dimensions.append((f'{SUBCATEGORY_PREFIX}{category}#{subcategory}', 'count'))
+
+    # Admin-defined dimensions and tags (docs/dimensions.md): one pk per entry,
+    # so no two share an item inside the arrival transaction.
+    dimensions.extend(_dimension_counters(item, sentiment_label))
+    dimensions.extend((f'{TAG_PREFIX}{tag}', 'count') for tag in tag_buckets(item))
+    channel = channel_bucket(item)
+    if channel is not None:
+        dimensions.append((f'{CHANNEL_PREFIX}{channel}', 'count'))
+    usefulness = usefulness_bucket(item)
+    if usefulness is not None:
+        dimensions.append((usefulness, 'count'))
 
     return dimensions
+
+
+def usefulness_bucket(item: dict) -> str | None:
+    """The item's per-source usefulness row (``METRIC#daily_usefulness#<source>#<band>``), or None.
+
+    Only a RATED item has a row (``shared.usefulness.stored_band``): an item stored before
+    the band existed is never counted here, in either direction, and `/metrics/data-quality`
+    reads it as unrated (the source's total minus its banded rows). A MODIFY that rates it
+    (a reprocess backfill) or moves its band is a symmetric difference like any other.
+    The source is the same `source_platform` (and default) the per-source row uses.
+    """
+    band = stored_band(item)
+    if band == USEFULNESS_UNRATED:
+        return None
+    source = item.get('source_platform', 'unknown')
+    return f'{USEFULNESS_PREFIX}{source}#{band}'
+
+
+def channel_bucket(item: dict) -> str | None:
+    """The item's ``source_channel`` when it is key-safe (no ``#``, at most 64 characters), else None."""
+    channel = item.get('source_channel')
+    if not isinstance(channel, str) or not channel or '#' in channel or len(channel) > CHANNEL_MAX_CHARS:
+        return None
+    return channel
+
+
+def dimension_buckets(item: dict) -> list[tuple[str, str]]:
+    """The item's key-safe ``(dimension key, value)`` pairs, at most MAX_DIMENSIONS.
+
+    Stored values come from ``shared.dimension_config.resolve_dimensions``, whose
+    key and value patterns admit no ``#``; anything else (a hand-edited row) is
+    simply not counted, in either direction.
+    """
+    stored = item.get('dimensions')
+    if not isinstance(stored, Mapping):
+        return []
+    pairs = [
+        (key, value) for key, value in sorted(stored.items())
+        if isinstance(key, str) and isinstance(value, str)
+        and DIMENSION_KEY_RE.match(key) and DIMENSION_VALUE_RE.match(value)
+    ]
+    return pairs[:MAX_DIMENSIONS]
+
+
+def tag_buckets(item: dict) -> list[str]:
+    """The item's tags lower-cased, de-duplicated and key-safe, at most MAX_TAGS."""
+    tags = item.get('tags')
+    if not isinstance(tags, list):
+        return []
+    buckets: list[str] = []
+    for tag in tags:
+        if not isinstance(tag, str):
+            continue
+        bucket = tag.strip().lower()
+        if bucket and '#' not in bucket and bucket not in buckets:
+            buckets.append(bucket)
+    return buckets[:MAX_TAGS]
+
+
+def _dimension_counters(item: dict, sentiment_label: object) -> list[tuple[str, str]]:
+    label = sentiment_label if isinstance(sentiment_label, str) and '#' not in sentiment_label else 'neutral'
+    counters: list[tuple[str, str]] = []
+    for key, value in dimension_buckets(item):
+        counters.append((f'{DIMENSION_PREFIX}{key}#{value}', 'count'))
+        counters.append((f'{DIMENSION_SENTIMENT_PREFIX}{key}#{value}#{label}', 'count'))
+    return counters
+
+
+def subcategory_bucket(item: dict) -> str | None:
+    """The subcategory an item is counted under, or None when it gets no row.
+
+    Only a key-safe value counts: the enrichment model may return free text, but
+    configured subcategory names are 1-64 characters with no whitespace or `#`
+    (`shared/category_config.py`), so anything else cannot be one a trigger names.
+    """
+    value = item.get('subcategory')
+    if not isinstance(value, str):
+        return None
+    if not value or len(value) > SUBCATEGORY_MAX_CHARS or '#' in value or any(c.isspace() for c in value):
+        return None
+    category = item.get('category', 'other')  # pragma: no mutate - the default is only tested for being a '#'-free str; any such literal behaves the same
+    return value if isinstance(category, str) and '#' not in category else None
 
 
 def counter_keys(item: dict, date: str) -> set[tuple[str, str, str]]:
@@ -1083,7 +1297,7 @@ def apply_counter_keys(
 
 def counter_transaction_items(
     keys: set[tuple[str, str, str]],
-) -> list[dict[str, Any]]:
+) -> 'list[TransactWriteItemTypeDef]':
     """Every named counter's INCREMENT, as `TransactWriteItems` entries.
 
     `apply_counter_keys`' counterpart for the transactional path, and it is a
@@ -1120,8 +1334,7 @@ def counter_transaction_items(
             for pk, date, field in sorted(keys)]
 
 
-def _counter_transaction_item(pk: str, sk: str, field: str, increment: int = 1,
-                              ttl_days: int = 90) -> dict[str, Any]:
+def _counter_transaction_item(pk: str, sk: str, field: str, increment: int = 1) -> 'TransactWriteItemTypeDef':
     """One counter INCREMENT as a `TransactWriteItems` entry.
 
     The same request `update_counter` issues on its own — `_counter_request` builds
@@ -1130,7 +1343,9 @@ def _counter_transaction_item(pk: str, sk: str, field: str, increment: int = 1,
     name added and the whole thing wrapped in the `{'Update': ...}` shape the
     transaction API takes.
 
-    `increment` defaults to 1 and every caller leaves it there. It is still a
+    `increment` defaults to 1, and only the coalesced arrival run passes more (the
+    number of records of the run that move this counter, `_summed_counter_items`). It is
+    still a
     parameter because `_counter_request` reads its SIGN to decide whether the write
     carries the floor condition, and a builder that could not express that would have
     to re-derive the condition rather than forward it — but a NEGATIVE value must not
@@ -1138,18 +1353,19 @@ def _counter_transaction_item(pk: str, sk: str, field: str, increment: int = 1,
     See `apply_arrival_once`: a decrement's refusal is information, and a transaction
     cannot report it.
 
-    `ttl_days` defaults here as it does on every other writer, and
-    `test_aggregate_retention_lockstep.py` reads the default of all four writers
-    because every one of them stamps a row's TTL from its own copy of the number.
+    No TTL: aggregate rows are never deleted. `test_aggregate_retention_lockstep.py`
+    pins that no writer stamps one.
     """
     return {'Update': {'TableName': AGGREGATES_TABLE,
-                       **_counter_request(pk, sk, field, increment, ttl_days)}}
+                       **_counter_request(pk, sk, field, increment)}}
 
 
-def _average_transaction_item(pk: str, sk: str, value: Decimal,
-                              ttl_days: int = 90) -> dict[str, Any]:
+def _average_transaction_item(pk: str, sk: str, value: Decimal, count: int = 1) -> 'TransactWriteItemTypeDef':
     """The running average's INCREMENT half as a `TransactWriteItems` entry.
 
+    `value` is the score sum and `count` the number of scored items it adds: 1 for one
+    record, more for a coalesced arrival run (`_summed_average_item`). Never below 1,
+    because this is the increment half only.
     Increment only, and that is a scope statement rather than an omission — enforced
     by taking no `sign` at all rather than by this paragraph. The transaction exists
     for the arrival path, whose average write is unconditional; every DECREMENT of the
@@ -1162,15 +1378,17 @@ def _average_transaction_item(pk: str, sk: str, value: Decimal,
 
     The expression is `update_average`'s because `_average_request` builds both: the
     `sum`/`count` attribute names are what `get_summary` reads back, so a second
-    spelling of them here would be free to drift into a row the read path cannot see —
-    the retention lockstep compares the TTL defaults and would not have noticed.
+    spelling of them here would be free to drift into a row the read path cannot see.
     `sign=1` is passed as the literal it is, since this path has no other direction.
     """
-    return {'Update': {'TableName': AGGREGATES_TABLE,
-                       **_average_request(pk, sk, value, ttl_days, 1)}}
+    if count < 1:
+        raise ValueError('an average increment adds at least one scored item')
+    request = _average_request(pk, sk, value, 1)
+    request['ExpressionAttributeValues'][':one'] = count
+    return {'Update': {'TableName': AGGREGATES_TABLE, **request}}
 
 
-def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
+def _claimed_transaction(dedupe_key: str, items: 'list[TransactWriteItemTypeDef]') -> bool:
     """Apply `items` and claim `dedupe_key`, together or not at all.
 
     🔑 THE WHOLE OF THE IDEMPOTENCY, and it is one request. The marker's `Put` carries
@@ -1233,7 +1451,7 @@ def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
     make one poison record fail every other record's writes with it.
     """
     for attempt in range(TRANSACT_WRITE_ATTEMPTS):
-        now = int(datetime.now(timezone.utc).timestamp())
+        now = int(datetime.now(UTC).timestamp())
         try:
             aggregates_table.meta.client.transact_write_items(
                 # The claim FIRST, so that a cancellation naming index 0 is the
@@ -1254,21 +1472,23 @@ def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
                 # Logged BEFORE the sleep, as `_write_ballot` logs its own: the line
                 # records the DECISION to re-attempt, and someone timing a slow record
                 # should see it at the moment the wait began rather than after it.
+                # INFO, not WARNING: a re-attempt is expected and almost always lands
+                # (CONFLICTED_METRIC is what alarms on a contention trend); only running
+                # out of attempts, below, is worth a human's attention.
                 metrics.add_metric(name=CONFLICTED_METRIC, unit="Count", value=1)
-                logger.warning(
+                logger.info(
                     f"Aggregate transaction for {dedupe_key} was cancelled for a "
                     f"transient reason (contention or throttling); retrying "
                     f"(attempt {attempt + 2} of {TRANSACT_WRITE_ATTEMPTS})"
                 )
-                delay = TRANSACT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
-                # HALF JITTER: the multiplier spans [0.5, 1.0), so the wait is 50–100%
-                # of the nominal delay above — 25–50ms, then 50–100ms — and never
-                # longer than it. Decorrelating records that collided once matters more
-                # here than the absolute wait, which is why the range is one-sided
-                # rather than the symmetric [0.5, 1.5) `randbelow(1000)` would give.
-                # `_write_ballot` jitters the same way, for the same reason.
-                time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
+                _contention_pause(attempt)
                 continue
+            if _conflicted(e):
+                logger.warning(
+                    f"Aggregate transaction for {dedupe_key} was still cancelled for a "
+                    f"transient reason after {TRANSACT_WRITE_ATTEMPTS} attempts; reporting "
+                    f"the record failed so the stream redelivers it"
+                )
             raise
         return True
     # UNREACHABLE while TRANSACT_WRITE_ATTEMPTS >= 1, and kept because falling out of
@@ -1282,6 +1502,40 @@ def _claimed_transaction(dedupe_key: str, items: list[dict[str, Any]]) -> bool:
         'TRANSACT_WRITE_ATTEMPTS is not at least 1, so no aggregate transaction was '
         'attempted. Raising rather than reporting a record that was never applied.'
     )
+
+
+def _contention_pause(attempt: int) -> None:
+    """Wait before re-attempt `attempt + 2` of a contended aggregate transaction.
+
+    Shared by the one-record transaction and the coalesced arrival run, so the two
+    back off identically.
+    """
+    delay = TRANSACT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
+    # HALF JITTER: the multiplier spans [0.5, 1.0), so the wait is 50-100% of the
+    # nominal delay above — 25-50ms, then 50-100ms — and never longer than it.
+    # Decorrelating records that collided once matters more here than the absolute
+    # wait, which is why the range is one-sided rather than the symmetric [0.5, 1.5)
+    # `randbelow(1000)` would give. `_write_ballot` jitters the same way, for the same
+    # reason.
+    time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
+
+
+def _cancellation_reasons(error: ClientError) -> list | None:
+    """The CancellationReasons of a TransactionCanceledException, or None.
+
+    None whenever the response is not a cancellation or its reasons cannot be
+    read; both predicates built on this answer False in that case (see each for
+    why that is the safe direction).
+    """
+    response = _error_response(error)
+    if response is None:
+        return None
+    if (response.get('Error') or {}).get('Code') != 'TransactionCanceledException':
+        return None
+    reasons = response.get('CancellationReasons')
+    if not isinstance(reasons, list) or not reasons:
+        return None
+    return reasons
 
 
 def _claim_was_refused(error: ClientError) -> bool:
@@ -1305,13 +1559,8 @@ def _claim_was_refused(error: ClientError) -> bool:
     so being wrong here costs nothing, whereas the other direction would drop
     aggregates on any response shape this could not parse.
     """
-    response = error.response if isinstance(error.response, Mapping) else None
-    if response is None:
-        return False
-    if (response.get('Error') or {}).get('Code') != 'TransactionCanceledException':
-        return False
-    reasons = response.get('CancellationReasons')
-    if not isinstance(reasons, list) or not reasons:
+    reasons = _cancellation_reasons(error)
+    if reasons is None:
         return False
     first = reasons[0]
     return isinstance(first, Mapping) and first.get('Code') == 'ConditionalCheckFailed'
@@ -1353,13 +1602,8 @@ def _conflicted(error: ClientError) -> bool:
     safe, so declining to retry costs a round trip, while retrying a cancellation this
     cannot name spends the invocation on a request that may fail identically.
     """
-    response = error.response if isinstance(error.response, Mapping) else None
-    if response is None:
-        return False
-    if (response.get('Error') or {}).get('Code') != 'TransactionCanceledException':
-        return False
-    reasons = response.get('CancellationReasons')
-    if not isinstance(reasons, list) or not reasons:
+    reasons = _cancellation_reasons(error)
+    if reasons is None:
         return False
     # An unreadable entry is not `NO_CANCELLATION_REASON` and not retryable, so it
     # vetoes here rather than needing its own check.
@@ -1564,7 +1808,8 @@ def apply_feedback(item: dict, sign: int, date: str):
     is about the DIMENSIONS rather than about how the writes are issued.
     """
     _, outcomes = apply_counter_keys(counter_keys(item, date), sign)
-    if sign < 0:
+    reversing = sign < 0  # pragma: no mutate - sign is +-1 at every call site; only 0 tells < from <=
+    if reversing:
         # Reversal only. Reading the old persona field on the INCREMENT path would
         # make the axis permanently dual-SOURCED to serve a path with a sunset date,
         # which this repo has rejected before; on the reversal it can only change
@@ -1577,7 +1822,7 @@ def apply_feedback(item: dict, sign: int, date: str):
     if sentiment_score:
         update_average(SENTIMENT_AVG_PK, date, sentiment_score, sign=sign)
 
-    verb = 'Updated' if sign > 0 else 'Reversed'
+    verb = 'Reversed' if reversing else 'Updated'
     logger.info(
         f"{verb} aggregates for source={item.get('source_platform', 'unknown')}, "
         f"category={item.get('category', 'other')}"
@@ -1606,6 +1851,43 @@ def process_new_feedback(item: dict, dedupe_key: str | None = None) -> bool:
     return True
 
 
+# The oldest watermark date this container has seen stored (or written). A write
+# for a date at or after it cannot win the condition, so it is skipped — after the
+# first few arrivals of a container's life, the watermark costs no write at all.
+_known_earliest_date: str | None = None
+
+
+def lower_earliest_date(date: str) -> None:
+    """Lower the earliest-data watermark to `date` if `date` is earlier.
+
+    The watermark (`shared.earliest_date`) is what turns an all-time window
+    (`days=0`) into a concrete number of days on the read side. A conditional
+    update — set when absent or when `date` is earlier — so concurrent arrivals
+    converge on the minimum. A refused condition is the common, benign outcome;
+    its `ALL_OLD` response tells this container the stored date so later arrivals
+    skip the write.
+
+    Any OTHER failure propagates: the record is then retried by the batch
+    processor, and this runs before the counters, so nothing is half-applied.
+    """
+    global _known_earliest_date
+    if parse_iso_date(date) is None:
+        return
+    if _known_earliest_date is not None and date >= _known_earliest_date:
+        return
+    request = lower_watermark_request(date, now_iso())
+    try:
+        aggregates_table.update_item(**request)
+    except ClientError as e:
+        if not is_conditional_check_failure(e):
+            raise
+        response = _error_response(e) or {}
+        stored = earliest_date_from_item(response.get('Item'))
+        _known_earliest_date = stored if stored is not None else _known_earliest_date
+        return
+    _known_earliest_date = date
+
+
 @tracer.capture_method
 def process_deleted_feedback(item: dict) -> bool:
     """Reverse the aggregates a now-deleted feedback item contributed.
@@ -1624,7 +1906,7 @@ def process_deleted_feedback(item: dict) -> bool:
     """
     date = _image_date_or_none(item)
     if date is None:
-        logger.warning("REMOVE image carries no `date`; refusing to guess which day to reverse")
+        logger.warning(NO_REMOVE_DATE_WARNING)
         return False
     apply_feedback(item, -1, date)
     return True
@@ -1723,10 +2005,9 @@ def process_modified_feedback(old_item: dict, new_item: dict) -> int | None:
         )
         return 0
 
-    writes = 0
+    decremented = 0
     if old_live:
-        landed, outcomes = apply_counter_keys(decrements, -1)
-        writes += landed
+        decremented, outcomes = apply_counter_keys(decrements, -1)
         # The same pre-deploy compatibility the REMOVE path gets, for the same
         # reason: this decrement reads an OLD IMAGE, which may be an image whose
         # insert ran before the persona axis moved. It is reached only by an edit
@@ -1751,15 +2032,17 @@ def process_modified_feedback(old_item: dict, new_item: dict) -> int | None:
             )
     elif decrements:
         logger.info(f"Not decrementing {len(decrements)} counter(s) on the aged-out {old_date}")
+    incremented = 0
     if new_live:
-        writes += apply_counter_keys(increments, 1)[0]
+        incremented = apply_counter_keys(increments, 1)[0]
     elif increments:
         # The half the `or` used to let through. These are unconditional writes, so
         # nothing but this branch stops them creating the day.
         logger.info(f"Not incrementing {len(increments)} counter(s) on the aged-out {new_date}")
 
-    if moves_the_average:
-        writes += _rebucket_average(old_date, old_score, old_live, new_date, new_score, new_live)
+    averaged = (_rebucket_average(old_date, old_score, old_live, new_date, new_score, new_live)
+                if moves_the_average else 0)
+    writes = decremented + incremented + averaged
 
     logger.info(
         f"Rebucketed aggregates: {len(decrements)} decrement(s), "
@@ -1840,21 +2123,19 @@ def _rebucket_average(
 
     Returns how many of the two writes landed.
     """
-    landed = 0
-    # The ROW whose reversal was refused, if any — not a bare flag, so a refusal on
-    # one day cannot suppress a write aimed at another. `None` means no reversal was
-    # refused: it landed, or none was attempted at all.
-    blocked_row: str | None = None
+    # Both False when no reversal was attempted at all. `refused` is read only
+    # together with the row it concerns, so a refusal on one day cannot suppress a
+    # write aimed at another.
+    reversed_, refused = False, False
     if old_score and old_live:
-        if update_average(SENTIMENT_AVG_PK, old_date, old_score, sign=-1):
-            landed += 1
-        else:
-            # Refused, whether by the floor or by the row being gone. Both mean this
-            # row cannot take the re-application on its own — see the docstring.
-            blocked_row = old_date
+        reversed_ = update_average(SENTIMENT_AVG_PK, old_date, old_score, sign=-1)
+        # Refused, whether by the floor or by the row being gone. Both mean this row
+        # cannot take the re-application on its own — see the docstring.
+        refused = not reversed_
 
+    applied = False
     if new_score and new_live:
-        if new_date == blocked_row:
+        if refused and new_date == old_date:
             # Same row, and its reversal was refused: applying alone would leave the
             # row claiming one item, at the edited score, that the day's real history
             # does not justify. Declined rather than attempted, so counted as such —
@@ -1865,34 +2146,19 @@ def _rebucket_average(
                 f'zero or expired, and applying the new score alone would leave it '
                 f'claiming an item no present feedback justifies',
             )
-        elif update_average(SENTIMENT_AVG_PK, new_date, new_score, sign=1):
-            landed += 1
-    return landed
+        else:
+            applied = update_average(SENTIMENT_AVG_PK, new_date, new_score, sign=1)
+    return int(reversed_) + int(applied)
 
 
 def deserialize_image(image: dict) -> dict:
-    """Convert a stream image to a plain dict.
+    """A copy of a stream image Powertools has already deserialized (``record.dynamodb.new_image``).
 
-    Powertools may already have deserialized it, so both formats are accepted.
+    Values are taken as they are, map and list attributes included (see CHANGELOG 5.68.01: reading
+    them as DynamoDB wire values dropped every review's ``dimensions``). The copy is deep, so no
+    later step can change the record's own image.
     """
-    item = {}
-    for key, value in image.items():
-        if isinstance(value, dict):
-            # Raw DynamoDB format
-            if 'S' in value:
-                item[key] = value['S']
-            elif 'N' in value:
-                item[key] = Decimal(value['N'])
-            elif 'M' in value:
-                item[key] = value['M']
-            elif 'L' in value:
-                item[key] = value['L']
-            elif 'BOOL' in value:
-                item[key] = value['BOOL']
-        else:
-            # Already deserialized
-            item[key] = value
-    return item
+    return copy.deepcopy(image)
 
 
 def is_ttl_expiry(record: DynamoDBRecord) -> bool:
@@ -1918,7 +2184,8 @@ def is_ttl_expiry(record: DynamoDBRecord) -> bool:
     the suite still green, because the tests build records from raw event dicts and
     so follow Powertools rather than pinning it.
     """
-    identity = record.raw_event.get('userIdentity') if isinstance(record.raw_event, Mapping) else None
+    raw_event = _as_mapping(record.raw_event)  # the Powertools annotation is what is not trusted
+    identity = raw_event.get('userIdentity') if raw_event is not None else None
     if not isinstance(identity, Mapping):
         return False
     return (identity.get('principalId') == 'dynamodb.amazonaws.com'
@@ -1982,7 +2249,7 @@ def record_handler(record: DynamoDBRecord) -> dict:
 
     INSERT adds to the aggregates, REMOVE takes back out (unless TTL did the
     deleting) and MODIFY moves an item between buckets. Counting only INSERTs is
-    what made `get_metrics_summary` (aggregates) and `search_feedback` (scan)
+    what made `get_summary` (aggregates) and `search_feedback` (scan)
     report different totals for the same window.
 
     One metric per behaviour, because the three now do materially different things
@@ -1999,46 +2266,135 @@ def record_handler(record: DynamoDBRecord) -> dict:
     if event_name not in ('INSERT', 'REMOVE', 'MODIFY'):
         logger.info(f"Skipping unrecognized event: {event_name}")
         return {"status": "skipped", "reason": "unrecognized event"}
+    # Every recognized record is a feedback-table write the read routes can see (a list
+    # shows text a counter never moves on), so the batch bumps data_version once.
+    data_changed.mark()
 
     stream = record.dynamodb
     new_image = stream.new_image if stream else None
     old_image = stream.old_image if stream else None
 
     if event_name == 'REMOVE':
-        if is_ttl_expiry(record):
-            # Ageing out is not a correction — see the module docstring.
-            logger.info("Skipping TTL-driven REMOVE: aggregates keep the historical count")
-            return {"status": "skipped", "reason": "ttl expiry"}
-        if not old_image:
-            logger.warning("No old_image in REMOVE record")
-            return {"status": "skipped", "reason": "no old image"}
-        item = deserialize_image(old_image)
-        logger.info(f"Reversing feedback: date={item.get('date')}, source={item.get('source_platform')}")
-        if not process_deleted_feedback(item):
-            return {"status": "skipped", "reason": "no date"}
-        metrics.add_metric(name=REVERSED_METRIC, unit="Count", value=1)
-        return {"status": "success"}
-
+        return _handle_remove(record, old_image)
     if event_name == 'MODIFY':
-        if not old_image or not new_image:
-            logger.warning("MODIFY record is missing an image; cannot rebucket")
-            return {"status": "skipped", "reason": "incomplete images"}
-        writes = process_modified_feedback(deserialize_image(old_image), deserialize_image(new_image))
-        if writes is None:
-            return {"status": "skipped", "reason": "no date"}
-        if writes:
-            metrics.add_metric(name=REBUCKETED_METRIC, unit="Count", value=1)
-        return {"status": "success"}
+        return _handle_modify(old_image, new_image, record)
+    return _handle_insert(record, new_image)
 
+
+# --- A reversal is claimed once per stream record (audit G1) -----------------
+# `shared/stream_claims.py`: the claim is written BEFORE the reversal's writes and
+# released when they raise, so a redelivery after a landed reversal moves nothing and
+# a failed one is retried as before. Only with the dedupe table configured, like the
+# INSERT claim; without it a reversal runs unclaimed, exactly as before.
+
+def _reversal_claim_key(record: DynamoDBRecord) -> str | None:
+    """The record's reversal claim key, or None when claims are off or it has no `eventID`."""
+    raw = getattr(record, 'raw_event', None)
+    if not IDEMPOTENCY_TABLE or not isinstance(raw, Mapping):
+        return None
+    return reversal_key(raw.get('eventID'))
+
+
+def _idempotency_table() -> Any:
+    # A Table resource is a cheap handle over the module-level client (no network call to build it).
+    return dynamodb.Table(IDEMPOTENCY_TABLE)
+
+
+def _claim_once(key: str | None) -> bool:
+    """Claim a reversal; False (with REPLAYED_METRIC) when an earlier delivery reversed it."""
+    if key is None or claim_reversal(_idempotency_table(), key, int(time.time())):
+        return True
+    logger.info(f"Stream record {key} was already reversed; leaving its aggregate writes alone")
+    metrics.add_metric(name=REPLAYED_METRIC, unit="Count", value=1)
+    return False
+
+
+def _release(key: str | None) -> None:
+    if key is not None:
+        release_reversal(_idempotency_table(), key, int(time.time()))
+
+
+_ALREADY_REVERSED = {"status": "skipped", "reason": "already applied"}
+
+
+def _handle_remove(record: DynamoDBRecord, old_image: dict[str, Any] | None) -> dict:
+    """REMOVE: take the item back out of the aggregates, unless TTL did the deleting."""
+    item = _removal_to_reverse(record, old_image)
+    if isinstance(item, _Skipped):
+        return item.result
+    key = _reversal_claim_key(record)
+    if not _claim_once(key):
+        return dict(_ALREADY_REVERSED)
+    try:
+        reversed_ = process_deleted_feedback(item)
+    except Exception:
+        _release(key)
+        raise
+    if not reversed_:
+        return {"status": "skipped", "reason": "no date"}
+    metrics.add_metric(name=REVERSED_METRIC, unit="Count", value=1)
+    return {"status": "success"}
+
+
+@dataclass(frozen=True)
+class _Skipped:
+    """The result a record ends with when it writes nothing."""
+    result: dict
+
+
+def _removal_to_reverse(record: DynamoDBRecord, old_image: dict[str, Any] | None) -> 'dict | _Skipped':
+    """The deserialized image a REMOVE reverses, or the skip result it ends with instead.
+
+    Shared by the one-record path (`_handle_remove`) and the coalesced run
+    (`_plan_removal`), so the two cannot disagree about which REMOVE is reversed.
+    """
+    if is_ttl_expiry(record):
+        # Ageing out is not a correction — see the module docstring.
+        logger.info("Skipping TTL-driven REMOVE: aggregates keep the historical count")
+        return _Skipped({"status": "skipped", "reason": "ttl expiry"})
+    if not old_image:
+        logger.warning("No old_image in REMOVE record")
+        return _Skipped({"status": "skipped", "reason": "no old image"})
+    item = deserialize_image(old_image)
+    logger.info(f"Reversing feedback: date={item.get('date')}, source={item.get('source_platform')}")
+    return item
+
+
+def _handle_modify(
+    old_image: dict[str, Any] | None, new_image: dict[str, Any] | None, record: DynamoDBRecord,
+) -> dict:
+    """MODIFY: move the item between buckets, once per stream record; REBUCKETED_METRIC only when a write landed."""
+    if not old_image or not new_image:
+        logger.warning("MODIFY record is missing an image; cannot rebucket")
+        return {"status": "skipped", "reason": "incomplete images"}
+    if not _claim_once(key := _reversal_claim_key(record)):
+        return dict(_ALREADY_REVERSED)
+    try:
+        writes = process_modified_feedback(deserialize_image(old_image), deserialize_image(new_image))
+    except Exception:
+        _release(key)
+        raise
+    if writes is None:
+        return {"status": "skipped", "reason": "no date"}
+    if writes:
+        metrics.add_metric(name=REBUCKETED_METRIC, unit="Count", value=1)
+    return {"status": "success"}
+
+
+def _handle_insert(record: DynamoDBRecord, new_image: dict[str, Any] | None) -> dict:
+    """INSERT: add the item to the aggregates, at most once per stream record."""
     if not new_image:
         logger.warning("No new_image in record")
         return {"status": "skipped", "reason": "no new image"}
 
-    logger.info(f"new_image keys: {list(new_image.keys()) if new_image else 'None'}")
+    logger.info(f"new_image keys: {list(new_image.keys())}")
 
     item = deserialize_image(new_image)
 
     logger.info(f"Processing feedback: date={item.get('date')}, source={item.get('source_platform')}")
+    # Before the counters, and idempotent by construction (it only ever moves
+    # EARLIER), so a redelivery or a retry after a failure re-runs it harmlessly.
+    lower_earliest_date(_image_date(item))
     if not process_new_feedback(item, _dedupe_key(record)):
         # Already applied by an earlier delivery of this same record. A SUCCESS, and
         # emphatically not a failure: reporting it failed under
@@ -2046,16 +2402,539 @@ def record_handler(record: DynamoDBRecord) -> dict:
         # stream, and Streams preserve per-shard order, so that record would block its
         # partition. UPDATED_METRIC is not emitted either — nothing was updated, and a
         # metric claiming otherwise is what made the original bug invisible.
+        return _insert_result(applied=False)
+    return _insert_result(applied=True)
+
+
+def _insert_result(*, applied: bool) -> dict:
+    """An INSERT's result: success with UPDATED_METRIC, or the redelivery skip (no metric)."""
+    if not applied:
         return {"status": "skipped", "reason": "already applied"}
     metrics.add_metric(name=UPDATED_METRIC, unit="Count", value=1)
-
     return {"status": "success"}
 
 
-@logger.inject_lambda_context
-@tracer.capture_lambda_handler
-@metrics.log_metrics(capture_cold_start_metric=True)
-@batch_processor(record_handler=record_handler, processor=processor)
-def lambda_handler(event: dict, context: Any) -> dict:
-    """Main Lambda handler for DynamoDB Streams."""
-    return processor.response()
+# --- A run of REMOVEs is reversed together ----------------------------------
+# 🔑 CPU, NOT SEMANTICS. A REMOVE is one conditional `update_item` per counter
+# dimension plus the average, about ten requests, and a bulk delete delivers batches
+# of 100 of them: ~1,000 requests whose botocore build/sign/parse is ~97 % of this
+# function's CPU (cProfile, docs/lambda-sizing.md). The records of one batch hit the
+# SAME rows over and over (every item of a day decrements `METRIC#daily_total` for
+# that day), so a run of consecutive REMOVEs sends ONE request per distinct counter,
+# `-n` under `#field >= :n`, and one per day for the average — 852 counter writes
+# became 183 on a batch copied from production.
+#
+# The aggregate rows end EXACTLY where the one-at-a-time path leaves them, because a
+# coalesced write is only kept when its outcome IS every record's outcome:
+#   * LANDED — the row held at least `n`, so each `-1` would have landed;
+#   * ROW_ABSENT — there is no row, and a refused decrement creates nothing, so each
+#     `-1` would have been refused the same way (each is still logged and counted as
+#     its own refusal, and each record's persona compatibility still sees it);
+#   * anything else — the row sits below `n` (some would land, some not), or the
+#     request failed — and then the run falls back to one `-1` per record, in record
+#     order: the old path, outcome for outcome.
+# Only CONSECUTIVE REMOVEs are joined. A reversal reads nothing and only ever
+# decrements, so the order of its writes cannot change any of them; an INSERT or a
+# MODIFY between two REMOVEs could (it can create the row the next one refuses on),
+# so it ends the run and goes through `record_handler` alone, as every record did.
+# test_removal_run.py pins the equivalence against moto.
+
+# What a record of a coalesced run fails WITH, in place of Powertools' own
+# `except Exception` around `record_handler`: the failures a write or the shaping of
+# a request meets on the one-record path (a throttle that outlived botocore's
+# retries, a connection error, a score that cannot be negated). Anything else is a
+# bug; it fails the invocation and `bisectBatchOnError` isolates the record.
+_RECORD_FAILURES = (ClientError, BotoCoreError, ArithmeticError, TypeError, ValueError, KeyError, AttributeError)
+
+
+@dataclass
+class _PlannedReversal:
+    """One REMOVE of a coalesced run: what it reverses, and how it ended."""
+    raw: dict
+    record: DynamoDBRecord
+    item: dict | None = None
+    date: str = ''
+    result: dict | None = None
+    error: ExceptionInfo | None = None
+    outcomes: dict[tuple[str, str, str], CounterWrite] = dataclass_field(default_factory=dict)
+
+    def fail(self) -> None:
+        """Record the exception being handled; the record is reported failed and writes nothing more."""
+        self.error = sys.exc_info()
+
+
+def _pending(plans: list[_PlannedReversal]):
+    """The plans still to be written (planned, not failed), with their image."""
+    for plan in plans:
+        if plan.item is not None and plan.error is None:
+            yield plan, plan.item
+
+
+def _plan_removal(plan: _PlannedReversal) -> None:
+    """`record_handler` + `_handle_remove` for one REMOVE, up to its first write."""
+    record = plan.record
+    logger.info("Processing record: event_name=REMOVE")
+    data_changed.mark()
+    stream = record.dynamodb
+    item = _removal_to_reverse(record, stream.old_image if stream else None)
+    if isinstance(item, _Skipped):
+        plan.result = item.result
+        return
+    date = _image_date_or_none(item)
+    if date is None:
+        logger.warning(NO_REMOVE_DATE_WARNING)
+        plan.result = {"status": "skipped", "reason": "no date"}
+        return
+    plan.item, plan.date = item, date
+
+
+def _claim_run(plans: list[_PlannedReversal]) -> list[tuple[_PlannedReversal, str]]:
+    """Claim each planned reversal of a run; a refused one leaves the run as already applied."""
+    claimed: list[tuple[_PlannedReversal, str]] = []
+    for plan, _item in list(_pending(plans)):
+        key = _reversal_claim_key(plan.record)
+        if not _claim_once(key):
+            plan.item, plan.result = None, dict(_ALREADY_REVERSED)
+        elif key is not None:
+            claimed.append((plan, key))
+    return claimed
+
+
+@tracer.capture_method
+def reverse_removals(plans: list[_PlannedReversal]) -> None:
+    """Apply a run's planned reversals: the counters, the persona compatibility, the average.
+
+    The order `apply_feedback` applies one record's writes in, phase by phase, and a
+    record that fails in one phase writes nothing in the later ones — as it would
+    have stopped at its failing write on the one-record path.
+    """
+    _reverse_counters_together(plans)
+    for plan, item in _pending(plans):
+        try:
+            _reverse_a_pre_deploy_persona_row(item, plan.outcomes)
+        except _RECORD_FAILURES:
+            plan.fail()
+    _reverse_averages_together(plans)
+    for plan, item in _pending(plans):
+        logger.info(
+            f"Reversed aggregates for source={item.get('source_platform', 'unknown')}, "
+            f"category={item.get('category', 'other')}"
+        )
+        metrics.add_metric(name=REVERSED_METRIC, unit="Count", value=1)
+        plan.result = {"status": "success"}
+
+
+def _reverse_counters_together(plans: list[_PlannedReversal]) -> None:
+    """Every counter the run decrements, in the sorted order each record wrote its own."""
+    demand: dict[tuple[str, str, str], list[_PlannedReversal]] = {}
+    for plan, item in _pending(plans):
+        for key in counter_keys(item, plan.date):
+            demand.setdefault(key, []).append(plan)
+    keys = set(demand)
+    for pk, date, field in sorted(keys):
+        # A record that failed on an earlier key stops there, as it did alone.
+        waiting = [plan for plan in demand[(pk, date, field)] if plan.error is None]
+        _decrement_for_each(pk, date, field, waiting)
+
+
+def _decrement_for_each(pk: str, date: str, field: str, plans: list[_PlannedReversal]) -> None:
+    """One `-1` per record on one counter: one request when its outcome is every record's."""
+    together = _decrement_together(pk, date, field, len(plans)) if len(plans) > 1 else None
+    if together is not None:
+        for plan in plans:
+            plan.outcomes[(pk, date, field)] = together
+        return
+    for plan in plans:
+        try:
+            plan.outcomes[(pk, date, field)] = update_counter(pk, date, field, increment=-1)
+        except _RECORD_FAILURES:
+            plan.fail()
+
+
+def _decrement_together(pk: str, date: str, field: str, count: int) -> 'CounterWrite | None':
+    """`count` decrements of one counter as ONE conditional request, or None to send them one by one.
+
+    LANDED and ROW_ABSENT are every decrement's outcome (see the section comment);
+    a row below `count`, or a failed request, is not, so the caller falls back.
+    """
+    try:
+        outcome = _conditional_counter_write(_counter_request(pk, date, field, -count))
+    except (ClientError, BotoCoreError):
+        return None
+    if outcome is CounterWrite.REFUSED_AT_FLOOR:
+        return None
+    if outcome is CounterWrite.ROW_ABSENT:
+        for _ in range(count):
+            _log_refusal(f'decrement of {field}', pk, date)  # pragma: no mutate - log message
+    return outcome
+
+
+def _reverse_averages_together(plans: list[_PlannedReversal]) -> None:
+    """Each scored record's average reversal, grouped by the day's row."""
+    by_day: dict[str, list[tuple[_PlannedReversal, Decimal]]] = {}
+    for plan, item in _pending(plans):
+        score = _image_score(item)
+        if not score:
+            continue
+        try:
+            # Shapes the request the one-record path would send, so a score it
+            # cannot negate fails this record exactly as it failed there.
+            _average_request(SENTIMENT_AVG_PK, plan.date, score, -1)
+        except _RECORD_FAILURES:
+            plan.fail()
+            continue
+        by_day.setdefault(plan.date, []).append((plan, score))
+    for group in by_day.values():
+        _reverse_average_group(group[0][0].date, group)
+
+
+def _reverse_average_group(date: str, group: list[tuple[_PlannedReversal, Decimal]]) -> None:
+    """One day's average reversals: one request when the row holds them all, else one by one."""
+    if len(group) > 1 and _reverse_average_together(date, [score for _, score in group]):
+        return
+    for plan, score in group:
+        try:
+            update_average(SENTIMENT_AVG_PK, date, score, sign=-1)
+        except _RECORD_FAILURES:
+            plan.fail()
+
+
+def _reverse_average_together(date: str, scores: list[Decimal]) -> bool:
+    """Subtract every score and the count in ONE conditional request; False if nothing was written.
+
+    Kept only when the row holds at least `len(scores)` items, i.e. when each
+    one-at-a-time reversal would have landed. The sum is taken in DynamoDB's own
+    decimal context, which traps rounding, so it is exactly what the row would have
+    reached one score at a time; a sum it cannot hold exactly goes one by one.
+    """
+    try:
+        with localcontext(DYNAMODB_CONTEXT):
+            total = sum(scores, Decimal(0))
+    except ArithmeticError:
+        return False
+    request = _average_request(SENTIMENT_AVG_PK, date, total, -1)
+    request['ConditionExpression'] = AVERAGE_REVERSAL_CONDITION
+    request['ExpressionAttributeValues'][':one'] = -len(scores)
+    request['ExpressionAttributeValues'][':floor'] = len(scores)
+    try:
+        aggregates_table.update_item(**request)
+    except (ClientError, BotoCoreError):
+        return False
+    return True
+
+
+# --- A run of INSERTs is applied together -----------------------------------
+# 🔑 CONTENTION, NOT SEMANTICS. One arrival is one `TransactWriteItems`: its dedupe
+# claim plus one increment per counter dimension plus the average, ~10 aggregate rows.
+# Every arrival of a day writes the SAME hot rows (`METRIC#daily_total`, the day's
+# sentiment average, its sentiment and category counters), and a bulk import spreads
+# over many stream shards, each with its own concurrent invocation walking its batch
+# of 100 one transaction at a time. Two transactions touching one item at once cancel
+# with `TransactionConflict`, so the conflict rate grows with (shards x transactions
+# per second per shard), and on 2026-10-23 968 records ran out of their three
+# attempts during one import. Joining the run cuts the transactions on a hot row from
+# one per record to one per GROUP (up to `TRANSACT_WRITE_MAX_ITEMS` items: one claim
+# per record plus one summed increment per distinct counter), about two per batch of
+# 100 same-day records instead of 100 — test_arrival_run.py prints the numbers.
+#
+# EXACTLY ONCE STILL HOLDS: every record's claim travels in the same transaction as
+# the summed increments that include its contribution, so they commit or not together.
+# A cancellation names its refused claims (`ConditionalCheckFailed` at their index):
+# those records were applied by an earlier delivery, so they leave the group and the
+# rest is re-sent. Contention backs off as `_claimed_transaction` does. Anything else
+# (a validation error, contention past the bound, a sum DynamoDB cannot hold exactly)
+# applies the group's records one at a time through `process_new_feedback`, which is
+# the old path outcome for outcome — a poison record still fails alone. A record with
+# no dedupe key or an unusual score is applied alone up front for the same reason.
+# Increments are unconditional, so the order of a run's writes cannot change any of
+# them; only CONSECUTIVE INSERTs are joined, like the removal run above.
+
+# DynamoDB's limit on the items of one `TransactWriteItems`.
+TRANSACT_WRITE_MAX_ITEMS = 100
+
+
+@dataclass
+class _PlannedArrival:
+    """One INSERT of a coalesced run: what it adds, and how it ended."""
+    raw: dict
+    record: DynamoDBRecord
+    item: dict | None = None
+    date: str = ''
+    dedupe_key: str = ''
+    keys: frozenset[tuple[str, str, str]] = frozenset()
+    # `object`, not Decimal: an image can carry a score of another type (text), and
+    # such a record must go through the one-record path, which fails it alone.
+    score: object = Decimal('0')
+    result: dict | None = None
+    error: ExceptionInfo | None = None
+
+    def fail(self) -> None:
+        """Record the exception being handled; the record is reported failed."""
+        self.error = sys.exc_info()
+
+
+def _plan_arrival(plan: _PlannedArrival) -> None:
+    """`record_handler` + `_handle_insert` for one INSERT, up to its writes."""
+    record = plan.record
+    logger.info("Processing record: event_name=INSERT")
+    data_changed.mark()
+    stream = record.dynamodb
+    new_image = stream.new_image if stream else None
+    if not new_image:
+        logger.warning("No new_image in record")
+        plan.result = {"status": "skipped", "reason": "no new image"}
+        return
+    item = deserialize_image(new_image)
+    logger.info(f"Processing feedback: date={item.get('date')}, source={item.get('source_platform')}")
+    date = _image_date(item)
+    lower_earliest_date(date)
+    plan.item, plan.date = item, date
+    plan.dedupe_key = _dedupe_key(record) or ''
+    plan.keys = frozenset(counter_keys(item, date))
+    plan.score = _image_score(item)
+
+
+def _summable_score(plan: _PlannedArrival) -> Decimal | None:
+    """The arrival's score as a Decimal, or None when it is not a number a sum can take."""
+    score = plan.score
+    if isinstance(score, bool) or not isinstance(score, (Decimal, int)):
+        return None
+    return Decimal(score)
+
+
+def _joins_a_group(plan: _PlannedArrival) -> bool:
+    """Can this arrival share a transaction? Needs a claim and a score DynamoDB can sum."""
+    return bool(plan.dedupe_key) and _summable_score(plan) is not None
+
+
+def _arrival_rows(plan: _PlannedArrival) -> set[tuple[str, str, str]]:
+    """The aggregate rows one arrival moves, the average included when it is scored."""
+    rows = set(plan.keys)
+    if plan.score:
+        rows.add((SENTIMENT_AVG_PK, plan.date, 'sum'))
+    return rows
+
+
+def _arrival_groups(plans: list[_PlannedArrival]) -> list[list[_PlannedArrival]]:
+    """Consecutive arrivals packed so each group's claims plus distinct rows fit one transaction."""
+    groups: list[list[_PlannedArrival]] = []
+    current: list[_PlannedArrival] = []
+    rows: set[tuple[str, str, str]] = set()
+    for plan in plans:
+        needed = rows | _arrival_rows(plan)
+        if current and len(current) + 1 + len(needed) > TRANSACT_WRITE_MAX_ITEMS:
+            groups.append(current)
+            current, needed = [], _arrival_rows(plan)
+        current.append(plan)
+        rows = needed
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _summed_counter_items(counts: Counter[tuple[str, str, str]]) -> 'list[TransactWriteItemTypeDef]':
+    """One increment per distinct counter, by the number of the group's records that move it."""
+    keys = set(counts)
+    return [_counter_transaction_item(pk, date, field, counts[(pk, date, field)])
+            for pk, date, field in sorted(keys)]
+
+
+def _summed_average_item(date: str, scores: list[Decimal]) -> 'TransactWriteItemTypeDef':
+    """One day's scores as ONE average increment, summed in DynamoDB's own decimal context.
+
+    That context traps rounding, so the sum is exactly what the row would reach one score
+    at a time; a sum it cannot hold exactly raises, and the group goes one by one.
+    """
+    with localcontext(DYNAMODB_CONTEXT):
+        total = sum(scores, Decimal(0))
+    return _average_transaction_item(SENTIMENT_AVG_PK, date, total, count=len(scores))
+
+
+def _arrival_group_items(group: list[_PlannedArrival]) -> 'list[TransactWriteItemTypeDef]':
+    """The group's transaction: every claim FIRST (so index i is record i), then the summed rows."""
+    now = int(datetime.now(UTC).timestamp())
+    claims = [dedupe_claim_item(IDEMPOTENCY_TABLE, plan.dedupe_key, now) for plan in group]
+    counts: Counter[tuple[str, str, str]] = Counter(key for plan in group for key in plan.keys)
+    scores_by_day: dict[str, list[Decimal]] = {}
+    for plan in group:
+        score = _summable_score(plan)
+        if score:
+            scores_by_day.setdefault(plan.date, []).append(score)
+    averages = [_summed_average_item(day, scores) for day, scores in sorted(scores_by_day.items())]
+    return [*claims, *_summed_counter_items(counts), *averages]
+
+
+def _refused_claims(error: ClientError, claims: int) -> set[int]:
+    """The indexes of the claims this cancellation refused: records an earlier delivery applied.
+
+    Only a claim carries a condition in this transaction, so `ConditionalCheckFailed` at
+    an index below `claims` is that record's claim and nothing else. Unreadable reasons
+    answer the empty set, which sends the group one record at a time (each re-checks its
+    own claim) rather than calling anything applied.
+    """
+    reasons = _cancellation_reasons(error) or []
+    return {index for index, reason in enumerate(reasons[:claims])
+            if isinstance(reason, Mapping) and reason.get('Code') == 'ConditionalCheckFailed'}
+
+
+def _arrival_applied(plan: _PlannedArrival) -> None:
+    item = plan.item or {}
+    logger.info(
+        f"Updated aggregates for source={item.get('source_platform', 'unknown')}, "
+        f"category={item.get('category', 'other')}"
+    )
+    plan.result = _insert_result(applied=True)
+
+
+def _arrival_replayed(plan: _PlannedArrival) -> None:
+    logger.info(f"Stream record {plan.dedupe_key} was already applied; leaving its aggregate writes alone")
+    metrics.add_metric(name=REPLAYED_METRIC, unit="Count", value=1)
+    plan.result = _insert_result(applied=False)
+
+
+def _apply_alone(plan: _PlannedArrival) -> None:
+    """The one-record path for one planned arrival, outcome for outcome."""
+    item = plan.item
+    if item is None:
+        return
+    try:
+        applied = process_new_feedback(item, plan.dedupe_key or None)
+    except _RECORD_FAILURES:
+        plan.fail()
+        return
+    plan.result = _insert_result(applied=applied)
+
+
+def _send_arrival_group(group: list[_PlannedArrival]) -> ClientError | None:
+    """Send the group's transaction; the cancellation it met, or None when it committed."""
+    try:
+        aggregates_table.meta.client.transact_write_items(TransactItems=_arrival_group_items(group))
+    except ClientError as error:
+        return error
+    return None
+
+
+def _apply_arrival_group(group: list[_PlannedArrival]) -> None:
+    """One group's records in one transaction, re-sent without its replays and past contention."""
+    pending, attempt = list(group), 0
+    while len(pending) > 1:
+        try:
+            error = _send_arrival_group(pending)
+        except (BotoCoreError, ArithmeticError):
+            break
+        if error is None:
+            for plan in pending:
+                _arrival_applied(plan)
+            return
+        refused = _refused_claims(error, len(pending))
+        if refused:
+            for index in sorted(refused):
+                _arrival_replayed(pending[index])
+            pending = [plan for index, plan in enumerate(pending) if index not in refused]
+            continue
+        if not (_conflicted(error) and attempt + 1 < TRANSACT_WRITE_ATTEMPTS):
+            break
+        metrics.add_metric(name=CONFLICTED_METRIC, unit="Count", value=1)
+        logger.info(f"Aggregate transaction for {len(pending)} arrivals was cancelled for a transient "
+                    f"reason; retrying (attempt {attempt + 2} of {TRANSACT_WRITE_ATTEMPTS})")
+        _contention_pause(attempt)
+        attempt += 1
+    if len(pending) > 1:
+        logger.info(f"Applying {len(pending)} arrivals one at a time after their joint transaction failed")
+    for plan in pending:
+        _apply_alone(plan)
+
+
+@tracer.capture_method
+def apply_arrivals(plans: list[_PlannedArrival]) -> None:
+    """Apply a run's planned arrivals: alone when they cannot share a transaction, else in groups."""
+    planned = [plan for plan in plans if plan.item is not None and plan.error is None]
+    for plan in planned:
+        if not _joins_a_group(plan):
+            _apply_alone(plan)
+    for group in _arrival_groups([plan for plan in planned if _joins_a_group(plan)]):
+        _apply_arrival_group(group)
+
+
+_COALESCED_EVENTS = ('INSERT', 'REMOVE')
+
+
+def _run_kind(raw: object) -> str | None:
+    """The event a record joins a run of (INSERT or REMOVE), or None for one handled alone."""
+    if not isinstance(raw, Mapping):
+        return None
+    name = raw.get('eventName')
+    return name if name in _COALESCED_EVENTS else None
+
+
+class _RunCoalescingProcessor(BatchProcessor):
+    """The DynamoDB Streams processor, with runs of consecutive REMOVEs and INSERTs joined.
+
+    Every other record, and an INSERT or REMOVE alone, goes through `record_handler`
+    exactly as before. INSERT runs are joined only when the dedupe table is configured
+    (their exactly-once claim is what the joint transaction carries). A run reports each
+    record as the one-record path would: success with the same result dict, or failure
+    with the exception that stopped it.
+    """
+
+    def process(self) -> list[tuple]:
+        results: list[tuple] = []
+        for kind, group in groupby(self.records, key=_run_kind):
+            run = list(group)
+            if kind == 'REMOVE' and len(run) > 1:
+                results.extend(self._reverse_run(run))
+            elif kind == 'INSERT' and len(run) > 1 and IDEMPOTENCY_TABLE:
+                results.extend(self._arrival_run(run))
+            else:
+                results.extend(self._process_record(record) for record in run)
+        return results
+
+    def _reverse_run(self, run: list[dict]) -> list[tuple]:
+        plans = [_PlannedReversal(raw, DynamoDBRecord(raw)) for raw in run]
+        for plan in plans:
+            try:
+                _plan_removal(plan)
+            except _RECORD_FAILURES:
+                plan.fail()
+        claimed = _claim_run(plans)
+        try:
+            reverse_removals(plans)
+        except Exception:
+            # An error outside the per-record failures (the whole batch is retried): release every claim of
+            # the run first, or the retry would skip reversals that never ran and leave counters too high.
+            for _plan, key in claimed:
+                _release(key)
+            raise
+        for plan, key in claimed:
+            if plan.error is not None:
+                _release(key)
+        return [self._report(plan) for plan in plans]
+
+    def _arrival_run(self, run: list[dict]) -> list[tuple]:
+        plans = [_PlannedArrival(raw, DynamoDBRecord(raw)) for raw in run]
+        for plan in plans:
+            try:
+                _plan_arrival(plan)
+            except _RECORD_FAILURES:
+                plan.fail()
+        apply_arrivals(plans)
+        return [self._report(plan) for plan in plans]
+
+    def _report(self, plan: '_PlannedReversal | _PlannedArrival') -> tuple:
+        if plan.error is not None:
+            return self.failure_handler(record=plan.record, exception=plan.error)
+        return self.success_handler(record=plan.raw, result=plan.result)
+
+
+processor = _RunCoalescingProcessor(event_type=EventType.DynamoDBStreams)
+
+# One data_version bump per stream batch that carried a feedback write (docs/caching.md).
+data_changed = BatchBump(bump_data_version)
+
+
+def _bump_after_batch() -> None:
+    data_changed.flush(aggregates_table)
+
+
+# Main Lambda handler (DynamoDB Streams); the decorator stack lives in `shared.batch`.
+lambda_handler = batch_lambda_handler(record_handler, processor, after_batch=_bump_after_batch)

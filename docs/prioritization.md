@@ -1,0 +1,155 @@
+# Prioritization
+
+The Prioritization page (`/prioritization`) ranks proposals from every project against each other. A **row** is
+one project's concrete set of scorable documents (for example a PR/FAQ, a PRD and a prototype). Everyone on the team
+scores rows on the same metrics, and the page shows each row's team score. Administrators choose the metrics, once
+for the whole workspace: per-person metrics could not add up to a team score, so there are none (the model most
+product-discovery tools use).
+
+## Using the page
+
+- **Score a row.** Open a row, preview its documents and the collected feedback, set each metric from 1 to 5, add
+  notes, and press **Save Scores**. Scoring needs view access to the row's project. The board hides rows whose
+  project you cannot view (admins see every row).
+- **Compose rows.** **Add row** picks the documents a new row holds; **Edit documents** changes a row. Both need edit
+  access to the project. A row is locked once its first score lands, so later regeneration cannot change what
+  reviewers scored: add another row to score a different combination. A project's only default row cannot be deleted.
+  An admin can delete a row with at most 98 ballots; the row and its ballots go together.
+- **Run a room vote.** **Open a room vote** (edit access) puts a public link and QR code on screen. Everyone in the
+  room submits one anonymous ballot from their phone, with an optional name, at `/vote/{session_id}`; the ballots count
+  toward the team score. A vote accepts up to 200 ballots, expires on its own, and ends with **Close the vote**. While
+  a vote is open, opening another for the same row returns the open one.
+- **Lineage labels.** A row shows whether its documents form one coherent chain, have missing lineage, or cross
+  generations ([Keep both versions](#keep-both-versions-lineage-acknowledgement)). A locked row may be marked stale
+  when a newer combination of the same document types exists; it stays scorable.
+- **Scoring setup.** **Scoring setup** (admins) edits the metrics; everyone else sees **How scoring works**.
+
+## The model
+
+Each metric (an *axis*) is scored on a fixed **1–5 scale**; **0 means "not scored"**. Only names,
+weights and directions are configurable.
+
+On the page, an axis your saved ballot leaves unscored starts on its own **Not scored** stop, below
+1 (shown as text and announced as "Not scored"), so any choice, 3 included, counts as a score.
+**Clear** (or Home on the keyboard) takes an unsaved choice back to Not scored. An axis you already
+saved runs 1–5 with no Not scored stop: a save never un-scores a stored axis (it reads 0 as "leave
+unchanged").
+
+| Field | Meaning |
+|---|---|
+| `id` | `^[a-z][a-z0-9_]{1,31}$`, minted by the server from the name, never changes |
+| `builtin` | One of the four original metrics: `impact`, `time_to_market`, `strategic_fit`, `confidence` |
+| `label` | Name, at most 40 characters. `null` on a built-in = the translated name |
+| `description` | At most 160 characters. `null` on a built-in = the translated hint |
+| `weight` | Whole number 0–100, relative: the composite divides by the sum of the weights used |
+| `direction` | `higher_better` or `lower_better` (for example Effort: a 1 is good) |
+| `low_label`, `high_label` | What 1 and 5 mean, at most 24 characters each; `null` = default words |
+| `archived` | Kept, not shown, not scored, not counted. Metrics are archived, never deleted |
+
+Ids that are never used (they would collide with ballot or aggregate fields): `notes`, `row_id`,
+`reviewer`, `updated_at`, `voting_session`, `display_name`, `ballot_id`, `document_id`, `ttl`, `pk`,
+`sk`, `score`, `scores`, `composite`, `reviewer_count`, `score_spread`, `axis_counts`, `axes`,
+`config_version`, `rows`, `aggregates`. A name that slugs to one of them, or to an id already taken,
+gets `_2`, `_3`… (`"Notes"` → `notes_2`; a name with no Latin letters → `metric`).
+
+### The default setup
+
+No stored setup means the four built-ins with the weights the page always used: impact 40, time to
+market 30, strategic fit 20, confidence 10, all higher-is-better (`config_version` 0). The ids are
+the ones existing ballots already carry, so **no ballot needs a migration**. The default lives in
+`voc-datalake/schemas/prioritization-default-axes.json` (the frontend's offline default) and in
+`lambda/shared/prioritization_axes.py` (`DEFAULT_AXES`); `test_prioritization_default_axes_lockstep.py`
+keeps them identical.
+
+## The composite
+
+One ballot:
+
+```
+composite = Σ w · v' / Σ w     over the active metrics the ballot scored
+v' = v            for higher_better
+v' = 6 − v        for lower_better
+```
+
+An unscored metric (absent or 0) is left out of **both** sums, so a partial ballot is the score of
+what it said, on the same 1–5 scale. A row's **team composite** is the same formula over the team's
+per-metric means, each mean over the reviewers who scored that metric, so every vote counts —
+a partial ballot (the owner's own, say) beside a full room ballot is not dropped. For fully scored
+ballots this equals the mean of their composites. `score_spread` is the range of the *fully scored*
+ballots' composites (every active metric with a weight above 0 scored; 0 below two of them). The server computes it
+(`shared/prioritization_axes.composite`); the page uses the same arithmetic.
+
+## Templates (in the editor)
+
+Frontend-only presets on the same 1–5 scale. Applying one **archives** current metrics that are not
+in it and adds or restores its own (reusing `impact` and `confidence` where they match). Nothing is
+saved until the admin presses Save.
+
+| Template | Metrics (weight) |
+|---|---|
+| Current default | impact 40, time to market 30, strategic fit 20, confidence 10 |
+| RICE | reach 30, impact 30, confidence 20, effort 20 (lower is better) |
+| ICE | impact 40, confidence 30, ease 30 |
+| Value vs Effort | value 60, effort 40 (lower is better) |
+
+## Storage
+
+voc-aggregates, partition `PRIORITIZATION`:
+
+- `sk=CONFIG`: `{axes: [Axis], config_version, updated_at, updated_by}` (`updated_by` = the
+  admin's name or username, never the email).
+- Ballots: `sk=BALLOT#{row}#user:{sub}` or `BALLOT#{row}#anon:{id}`, each metric a
+  top-level number named by its id. An archived metric's values stay on the ballot.
+- A row (`sk=ROW#{row}`) may carry `lineage_ack = {document_ids (sorted), acknowledged_at,
+  acknowledged_by}`: "Keep both versions", below. `acknowledged_by` is never published.
+
+## Routes
+
+| Method | Path | Who | Answers |
+|---|---|---|---|
+| GET | `/projects/prioritization` | signed-in | adds `axes` (as configured, archived ones included with `archived: true`) and `config_version`; `scores` and `aggregates` carry active metrics only; each aggregate has the per-metric means (top-level, keyed by id), `axis_counts`, `reviewer_count`, `score_spread`, `composite` (`null` when nothing weighted was scored) |
+| GET | `/projects/prioritization/config` | signed-in | `{axes, config_version, updated_at, updated_by}` |
+| PUT | `/projects/prioritization/config` | **admins** | body `{axes: AxisInput[], base_version}` (an axis without `builtin`; a new one without `id`) → 200 `{success, axes, config_version, updated_at, updated_by}`; 400 with a plain message (1–8 metrics in use, at least one with a weight above 0, at most 20 including archived, unknown id, a metric left out — "archive it instead", a name missing or too long, a bad weight or direction); 403 for a non-admin; 409 when `base_version` is not the stored version (someone else saved: reload) |
+| PATCH | `/projects/prioritization` | signed-in | scores active metric ids only (1–5, clamped; 0/null = leave unchanged); an archived or unknown metric id → 400 |
+| GET | `/voting-sessions/{id}/config` | public | adds `axes: [{id, label, description, low_label, high_label, direction, builtin}]` — active metrics, no weights (`[]` for a closed or unknown room) |
+| POST | `/voting-sessions/{id}/submit` | public | scores active metric ids only; an archived or unknown id → 400 `reason: invalid` |
+
+## Keep both versions (lineage acknowledgement)
+
+A row holding two versions of one document type (PRD v1 + PRD v2), or a document built from another
+version of a type the row also holds, is labelled **Crosses generations**. The label is advisory and the
+row stays scorable. When the row is composed that way on purpose, anyone who may edit its project can open
+the row and press **Keep both versions**: the row then shows a neutral **Kept on purpose** label instead of
+the warning, and **Undo** brings the warning back. Balloted (locked) rows can be marked too, because the
+mark changes no document and no ballot.
+
+`PUT /projects/prioritization/rows/{row_id}/lineage-ack` with `{project_id, acknowledged, document_ids}`
+(edit access on the project). `document_ids` is the set the reviewer was looking at: a mark is refused
+with **409** unless it equals the row's stored set (also when a recompose races the request), so a mark
+always describes documents somebody saw. `acknowledged: false` removes the mark. 400 for a malformed body,
+404 for a row that does not exist or belongs to another project. The row payload (`GET
+/projects/prioritization`, every row write) carries `lineage_ack: {document_ids, acknowledged_at} | null`.
+
+**The mark lapses on its own.** It names the document set it was given for, and the page applies it only
+while the row holds exactly that set (`frontend/src/pages/Prioritization/lineageAck.ts`). Recompose the
+row and the warning comes back, without anything clearing the stored record. Server half:
+`lambda/shared/row_lineage_ack.py`.
+
+Because the mark is about a set, it applies again if the row is later recomposed back to exactly that
+set: the same documents were already marked as kept together on purpose, so nobody has to mark them a
+second time. Press **Undo** to withdraw it for good. A row holding a document the project no longer has
+cannot be marked (the documents on screen are not the row's stored set), and says so instead of offering
+the button; an existing mark on such a row can still be undone. Withdrawing a mark from a row that holds
+none changes nothing. The control is shown only to a caller who can edit the row's project (the project
+list's `access.can_edit`; the route refuses anyone else with 403), so a viewer sees the row's lineage
+label (**Kept on purpose** on a marked row) but no button.
+
+**A room vote ends with its row or project.** Deleting a row (`DELETE /projects/prioritization/rows/{id}`)
+or a project (`DELETE /projects/{id}`) closes the row's open session (`shared/voting_session_close.py`,
+best effort). Whatever the close did, `GET /voting-sessions/{id}/config` and `POST .../submit` refuse a
+session whose row or project is gone with **410** `reason: gone` (the ballot page says the proposal was
+deleted), also when that session is closed or expired, and the facilitator `GET /voting-sessions/{id}` answers 404.
+
+Saving the setup also bumps the read-cache config version (`docs/caching.md`). The AI assistant's
+`get_prioritization` tool reads the setup from the GET and describes the active metrics by name,
+share of the composite and direction.

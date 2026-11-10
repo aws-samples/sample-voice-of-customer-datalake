@@ -1,14 +1,14 @@
 /**
  * @fileoverview Resolution-key building for Problem Analysis (issue #66).
  *
- * Problems have no server-side identity — they are grouped client-side from
- * feedback items by category → subcategory → similar problem text. Resolved
+ * Problems have no stored identity — the server groups them from feedback by
+ * category → subcategory → similar problem text on every read. Resolved
  * status is persisted under a normalized composite key so it survives
  * reloads and is shared across users.
  * @module pages/ProblemAnalysis/problemResolution
  */
 import { z } from 'zod'
-import type { FeedbackItem } from '../../api/client'
+import type { CategoryGroup, ProblemGroup, SubcategoryGroup } from '../../api/problemsApi'
 
 /** Map of resolution keys to their resolution metadata, as stored server-side. */
 export type ResolvedProblemsMap = Record<string, { resolved_at: string }>
@@ -29,35 +29,6 @@ export function parseResolvedProblemsResponse(payload: unknown): { resolved: Res
     return { resolved: {} }
   }
   return parsed.data
-}
-
-/**
- * Shared shape of the client-side problem tree (issue #66 review feedback:
- * previously duplicated across ProblemAnalysis/ProblemRow/SubcategoryRow —
- * a field added to one copy would silently type-check).
- */
-export interface ProblemGroup {
-  problem: string
-  similarProblems: string[]
-  rootCause: string | null
-  items: FeedbackItem[]
-  avgSentiment: number
-  urgentCount: number
-  resolved?: boolean
-}
-
-export interface SubcategoryGroup {
-  subcategory: string
-  problems: ProblemGroup[]
-  totalItems: number
-  urgentCount: number
-}
-
-export interface CategoryGroup {
-  category: string
-  subcategories: SubcategoryGroup[]
-  totalItems: number
-  urgentCount: number
 }
 
 // Server-side caps on stored keys (settings_handler.py): stay in lockstep.
@@ -126,13 +97,19 @@ function annotateProblems(
   }))
 }
 
+/**
+ * The subcategory without its resolved problems. Totals are the server's minus the
+ * resolved ones (not a sum of the listed problems): the server may list only the
+ * largest problems while its totals cover every one.
+ */
 function withoutResolved(subcategoryGroup: SubcategoryGroup): SubcategoryGroup {
-  const problems = subcategoryGroup.problems.filter((problemGroup) => !problemGroup.resolved)
+  const resolved = subcategoryGroup.problems.filter((problemGroup) => problemGroup.resolved)
   return {
     ...subcategoryGroup,
-    problems,
-    totalItems: problems.reduce((sum, p) => sum + p.items.length, 0),
-    urgentCount: problems.reduce((sum, p) => sum + p.urgentCount, 0),
+    problems: subcategoryGroup.problems.filter((problemGroup) => !problemGroup.resolved),
+    problemCount: subcategoryGroup.problemCount - resolved.length,
+    totalItems: subcategoryGroup.totalItems - resolved.reduce((sum, p) => sum + p.count, 0),
+    urgentCount: subcategoryGroup.urgentCount - resolved.reduce((sum, p) => sum + p.urgentCount, 0),
   }
 }
 
@@ -174,7 +151,7 @@ export function applyResolution(
     .map((categoryGroup) => {
       const subcategories = categoryGroup.subcategories
         .map((subcategoryGroup) => withoutResolved(subcategoryGroup))
-        .filter((subcategoryGroup) => subcategoryGroup.problems.length > 0)
+        .filter((subcategoryGroup) => subcategoryGroup.problemCount > 0)
       return {
         ...categoryGroup,
         subcategories,

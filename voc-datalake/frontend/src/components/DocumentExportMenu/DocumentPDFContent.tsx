@@ -6,6 +6,9 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ProjectDocument } from '../../api/types'
+import { documentText } from './documentText'
+import { PDF_REPORT_LOCALE } from '../PdfParts/pdfParts'
+import { formatDate } from '../../utils/dateUtils'
 
 interface DocumentPDFContentProps { readonly document: ProjectDocument }
 
@@ -18,7 +21,7 @@ const markdownComponents = {
     <h1 style={{
       fontSize: '20px',
       fontWeight: 'bold',
-      color: '#111827',
+      color: '#19161d',
       marginTop: '16px',
       marginBottom: '8px',
     }}>{children}</h1>
@@ -27,7 +30,7 @@ const markdownComponents = {
     <h2 style={{
       fontSize: '17px',
       fontWeight: '600',
-      color: '#1f2937',
+      color: '#19161d',
       marginTop: '14px',
       marginBottom: '6px',
     }}>{children}</h2>
@@ -36,7 +39,7 @@ const markdownComponents = {
     <h3 style={{
       fontSize: '15px',
       fontWeight: '600',
-      color: '#374151',
+      color: '#4a464f',
       marginTop: '12px',
       marginBottom: '4px',
     }}>{children}</h3>
@@ -45,7 +48,7 @@ const markdownComponents = {
     <p style={{
       marginTop: '8px',
       marginBottom: '8px',
-      color: '#374151',
+      color: '#4a464f',
     }}>{children}</p>
   ),
   ul: ({ children }: MarkdownComponentProps) => (
@@ -68,13 +71,13 @@ const markdownComponents = {
     <li style={{
       marginTop: '4px',
       marginBottom: '4px',
-      color: '#374151',
+      color: '#4a464f',
     }}>{children}</li>
   ),
   strong: ({ children }: MarkdownComponentProps) => (
     <strong style={{
       fontWeight: '600',
-      color: '#111827',
+      color: '#19161d',
     }}>{children}</strong>
   ),
   em: ({ children }: MarkdownComponentProps) => (
@@ -82,7 +85,7 @@ const markdownComponents = {
   ),
   code: ({ children }: MarkdownComponentProps) => (
     <code style={{
-      backgroundColor: '#f3f4f6',
+      backgroundColor: '#f5f5f5',
       padding: '2px 6px',
       borderRadius: '4px',
       fontSize: '12px',
@@ -91,8 +94,8 @@ const markdownComponents = {
   ),
   pre: ({ children }: MarkdownComponentProps) => (
     <pre style={{
-      backgroundColor: '#1f2937',
-      color: '#f9fafb',
+      backgroundColor: '#19161d',
+      color: '#f5f5f5',
       padding: '12px',
       borderRadius: '8px',
       overflow: 'auto',
@@ -103,10 +106,10 @@ const markdownComponents = {
   ),
   blockquote: ({ children }: MarkdownComponentProps) => (
     <blockquote style={{
-      borderLeft: '4px solid #93c5fd',
+      borderLeft: '4px solid #d7bfff',
       paddingLeft: '12px',
       fontStyle: 'italic',
-      color: '#4b5563',
+      color: '#4a464f',
       marginTop: '8px',
       marginBottom: '8px',
     }}>{children}</blockquote>
@@ -121,8 +124,8 @@ const markdownComponents = {
   ),
   th: ({ children }: MarkdownComponentProps) => (
     <th style={{
-      border: '1px solid #e5e7eb',
-      backgroundColor: '#f9fafb',
+      border: '1px solid #e4e4e7',
+      backgroundColor: '#f5f5f5',
       padding: '8px',
       textAlign: 'left',
       fontWeight: '600',
@@ -131,7 +134,7 @@ const markdownComponents = {
   ),
   td: ({ children }: MarkdownComponentProps) => (
     <td style={{
-      border: '1px solid #e5e7eb',
+      border: '1px solid #e4e4e7',
       padding: '8px',
       fontSize: '12px',
     }}>{children}</td>
@@ -140,7 +143,7 @@ const markdownComponents = {
     href, children,
   }: LinkProps) => (
     <a href={href} style={{
-      color: '#2563eb',
+      color: '#723acc',
       textDecoration: 'underline',
     }}>{children}</a>
   ),
@@ -156,30 +159,30 @@ export default function DocumentPDFContent({ document: doc }: DocumentPDFContent
         fontSize: '24px',
         fontWeight: 'bold',
         marginBottom: '8px',
-        color: '#111827',
+        color: '#19161d',
       }}>
         {doc.title}
       </h1>
       <p style={{
-        color: '#6b7280',
+        color: '#5e5966',
         fontSize: '12px',
         marginBottom: '24px',
       }}>
-        Type: {doc.document_type.toUpperCase()} | Generated: {new Date(doc.created_at).toLocaleDateString()}
+        Type: {doc.document_type.toUpperCase()} | Generated: {formatDate(doc.created_at, PDF_REPORT_LOCALE)}
       </p>
       <hr style={{
         border: 'none',
-        borderTop: '2px solid #e5e7eb',
+        borderTop: '2px solid #e4e4e7',
         marginBottom: '24px',
       }} />
 
       <div style={{
         fontSize: '13px',
         lineHeight: '1.7',
-        color: '#1f2937',
+        color: '#19161d',
       }}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-          {doc.content ?? ''}
+          {documentText(doc)}
         </ReactMarkdown>
       </div>
     </div>

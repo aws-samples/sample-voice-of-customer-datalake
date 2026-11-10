@@ -29,8 +29,8 @@ import re
 from pathlib import Path
 
 import pytest
-from api.product_context import PRODUCT_DOC_STATUSES, STALLABLE_STATUSES
 
+from api.product_context import PRODUCT_DOC_STATUSES, STALLABLE_STATUSES
 from product_doc_extractor.handler import NON_TERMINAL_STATUSES, TERMINAL_STATUSES
 
 TYPES_SOURCE = 'frontend/src/api/types.ts'
@@ -118,9 +118,9 @@ class TestStatusPartitionLockstep:
         condition unsatisfiable, so every extraction result is silently discarded.
         Both are exactly the bugs above, and neither would disturb the equality
         test if the canonical tuple were emptied along with them."""
-        assert NON_TERMINAL_STATUSES
-        assert TERMINAL_STATUSES
-        assert PRODUCT_DOC_STATUSES
+        assert len(NON_TERMINAL_STATUSES) > 0
+        assert len(TERMINAL_STATUSES) > 0
+        assert len(PRODUCT_DOC_STATUSES) > 0
 
     def test_every_stallable_status_is_one_the_extractor_may_still_write(self):
         """The direction that matters between the two modules: if the API can fail

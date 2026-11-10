@@ -1,7 +1,7 @@
 """Every field the API publishes on a row must be one the page declares.
 
 `_row_payload` in `projects_handler.py` is the row as it goes on the wire, and
-`RowSchema` in `prioritizationUtils.ts` is the row as the page accepts it. The
+`RowSchema` in `ownRead.ts` is the row as the page accepts it. The
 schema is a `z.object`, and zod's default object STRIPS an undeclared key rather
 than failing on it — so a field the API adds and the page does not declare is
 discarded silently at the boundary. Nothing breaks, nothing logs, and the page
@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-FRONTEND_SOURCE = 'frontend/src/pages/Prioritization/prioritizationUtils.ts'
+FRONTEND_SOURCE = 'frontend/src/pages/Prioritization/ownRead.ts'
 
 # The `RowSchema = z.object({ ... })` literal, and then the field names declared
 # inside it. Matched as a block rather than by scanning the whole file, so a `row_id:`

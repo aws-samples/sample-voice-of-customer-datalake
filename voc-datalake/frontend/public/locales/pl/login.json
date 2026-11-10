@@ -1,0 +1,77 @@
+{
+  "contactAdmin": "Jeśli potrzebujesz dostępu, skontaktuj się z administratorem.",
+  "enterPassword": "Wpisz hasło",
+  "enterUsername": "Wpisz nazwę użytkownika",
+  "errors": {
+    "failedNewPassword": "Nie udało się ustawić nowego hasła",
+    "failedResetPassword": "Nie udało się zresetować hasła",
+    "failedSendCode": "Nie udało się wysłać kodu weryfikacyjnego",
+    "loginFailed": "Logowanie nie powiodło się",
+    "passwordResetSuccess": "Hasło zostało zresetowane. Zaloguj się ponownie.",
+    "passwordsDoNotMatch": "Hasła nie są zgodne",
+    "passwordTooShort": "Hasło musi mieć co najmniej 8 znaków",
+    "sessionExpired": "Sesja wygasła. Zaloguj się ponownie.",
+    "verificationCodeSent": "Kod weryfikacyjny został wysłany na Twój adres e-mail"
+  },
+  "forgotPassword": "Nie pamiętasz hasła?",
+  "newPassword": {
+    "confirmLabel": "Potwierdź hasło",
+    "confirmPlaceholder": "Potwierdź nowe hasło",
+    "description": "Musisz ustawić nowe hasło do swojego konta.",
+    "label": "Nowe hasło",
+    "placeholder": "Wpisz nowe hasło",
+    "settingPassword": "Ustawianie hasła...",
+    "showPassword": "Pokaż hasło",
+    "submit": "Ustaw hasło",
+    "title": "Ustaw nowe hasło"
+  },
+  "password": "Hasło",
+  "resetPassword": {
+    "backToLogin": "Wróć do logowania",
+    "description": "Wpisz nazwę użytkownika, aby otrzymać kod weryfikacyjny.",
+    "sendCode": "Wyślij kod",
+    "sendingCode": "Wysyłanie kodu...",
+    "title": "Resetuj hasło"
+  },
+  "signIn": "Zaloguj się",
+  "signingIn": "Logowanie...",
+  "usernameOrEmail": "Nazwa użytkownika lub e-mail",
+  "verifyCode": {
+    "description": "Sprawdź swoją skrzynkę e-mail, aby znaleźć kod weryfikacyjny.",
+    "label": "Kod weryfikacyjny",
+    "placeholder": "Wpisz kod",
+    "resettingPassword": "Resetowanie hasła...",
+    "submit": "Resetuj hasło",
+    "title": "Wpisz kod weryfikacyjny"
+  },
+  "showPassword": "Pokaż hasło",
+  "hidePassword": "Ukryj hasło",
+  "passkey": {
+    "add": "Dodaj passkey",
+    "signIn": "Zaloguj się passkey",
+    "offer": {
+      "title": "Logowanie szybciej dzięki passkey",
+      "body": "Passkey pozwala logować się na tym urządzeniu za pomocą odcisku palca, rozpoznawania twarzy lub blokady ekranu zamiast hasła. Nie da się go wyłudzić ani ponownie użyć na innej stronie.",
+      "notNow": "Nie teraz"
+    },
+    "section": {
+      "title": "Passkey",
+      "intro": "Loguj się na tym urządzeniu za pomocą odcisku palca, rozpoznawania twarzy lub blokady ekranu zamiast hasła. Twoje hasło nadal będzie działać.",
+      "added": "Dodano passkey. Następnym razem możesz zalogować się przy jego użyciu.",
+      "none": "Na tym koncie nie ma jeszcze żadnego passkey.",
+      "unnamed": "Passkey",
+      "addedOn": "Dodano {{date}}",
+      "remove": "Usuń {{name}}",
+      "removeTitle": "Usunąć ten passkey?",
+      "removeBody": "Nie będzie już można się nim zalogować na żadnym urządzeniu, na którym jest zapisany. Hasło i pozostałe passkey nadal będą działać.",
+      "removeConfirm": "Usuń"
+    },
+    "errors": {
+      "needUsername": "Najpierw wpisz nazwę użytkownika lub adres e-mail, a następnie wybierz opcję „Zaloguj się passkey”.",
+      "cancelled": "Żądanie passkey zostało anulowane lub przekroczyło limit czasu. Spróbuj ponownie, gdy będziesz gotowy.",
+      "no_passkey": "Na tym urządzeniu nie skonfigurowano passkey dla tego konta. Zaloguj się hasłem, a następnie dodaj passkey.",
+      "unsupported": "Ta przeglądarka nie obsługuje passkey. Zaloguj się hasłem.",
+      "unknown": "Nie udało się wykonać kroku z passkey. Spróbuj ponownie lub zaloguj się hasłem."
+    }
+  }
+}

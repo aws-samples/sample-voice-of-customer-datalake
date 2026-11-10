@@ -7,7 +7,7 @@
  * New keys are added with empty values for non-English locales.
  */
 export default {
-  locales: ['en', 'es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh'],
+  locales: ['en', 'es', 'fr', 'de', 'ko', 'pt', 'ja', 'zh', 'pl'],
   output: 'public/locales/$LOCALE/$NAMESPACE.json',
   input: ['src/**/*.{ts,tsx}'],
   defaultNamespace: 'common',

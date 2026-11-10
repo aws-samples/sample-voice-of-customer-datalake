@@ -9,6 +9,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom'
 import RouteErrorBoundary from './index'
+import NotFound from './NotFound'
 import { describeRouteError } from './describeRouteError'
 
 function TestLayout() {
@@ -33,6 +34,7 @@ function renderRouterAt(initialPath: string) {
         children: [
           { index: true, element: <div data-testid="home-page">healthy home</div> },
           { path: 'broken', element: <BrokenPage />, errorElement: <RouteErrorBoundary /> },
+          { path: '*', element: <NotFound /> },
         ],
       },
     ],
@@ -46,12 +48,39 @@ describe('RouteErrorBoundary (issue #173)', () => {
   // react-router/React report the caught error too; silence the noise while
   // keeping the spy available for the reporting assertion.
   beforeEach(() => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('renders "Page not found" inside the layout for an unknown URL', () => {
+    renderRouterAt('/does-not-exist')
+
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
+    expect(screen.getByText('/does-not-exist')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar')).toBeInTheDocument()
+  })
+
+  it('offers home, not a reload, for an unknown URL', () => {
+    renderRouterAt('/does-not-exist')
+
+    // A reload cannot fix a URL that does not exist.
+    expect(screen.queryByRole('button', { name: 'Reload page' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to home' })).toHaveAttribute('href', '/')
+  })
+
+  it('shows the not-found state, not "Something went wrong", for a 404 route error', () => {
+    const router = createMemoryRouter(
+      [{ path: '/known', element: <div />, errorElement: <RouteErrorBoundary /> }],
+      { initialEntries: ['/unknown'] },
+    )
+    render(<RouterProvider router={router} />)
+
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument()
   })
 
   it('replaces only the failing route content — the layout survives', () => {
@@ -95,7 +124,9 @@ describe('RouteErrorBoundary (issue #173)', () => {
     const reload = vi.fn()
     // jsdom's Location is non-configurable; stubGlobal swaps the whole
     // object (cast-free) so the component's reload call lands on the spy.
-    vi.stubGlobal('location', { ...window.location, reload })
+    // The URL parts, copied by name: a spread of a Location copies its values by accident of jsdom's own-property layout.
+    const { href, origin, protocol, host, hostname, port, pathname, search, hash } = window.location
+    vi.stubGlobal('location', { href, origin, protocol, host, hostname, port, pathname, search, hash, reload })
 
     const user = userEvent.setup()
     renderRouterAt('/broken')

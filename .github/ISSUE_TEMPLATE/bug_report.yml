@@ -13,7 +13,7 @@ body:
     attributes:
       label: URL / Page
       description: Which page is affected?
-      placeholder: "e.g., https://d451uzybnj2c8.cloudfront.net/feedback"
+      placeholder: "e.g., https://d111111abcdef8.cloudfront.net/feedback"
     validations:
       required: false
 

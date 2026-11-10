@@ -5,13 +5,15 @@
 
 import { useMutation } from '@tanstack/react-query'
 import {
-  Pencil, Loader2, AlertCircle,
+  Pencil, AlertCircle,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
-import { useEscapeKey } from '../../hooks/useEscapeKey'
+import ModalShell from '../ModalShell/ModalShell'
+import { useUnsavedChangesGuard } from '../UnsavedChangesGuard/useUnsavedChangesGuard'
 import NameFields from './NameFields'
+import UserDialogFooter from './UserDialogFooter'
 import type { CognitoUser } from '../../api/types'
 
 interface EditUserModalProps {
@@ -49,22 +51,15 @@ function useEditUserMutation(opts: {
 }
 
 function EditUserForm({
-  user, givenName, familyName, error,
-  onGivenNameChange, onFamilyNameChange, onSubmit, isPending,
+  givenName, familyName, error,
+  onGivenNameChange, onFamilyNameChange,
 }: {
-  readonly user: CognitoUser
   readonly givenName: string
   readonly familyName: string
   readonly error: string
   readonly onGivenNameChange: (v: string) => void
   readonly onFamilyNameChange: (v: string) => void
-  readonly onSubmit: () => void
-  readonly isPending: boolean
 }) {
-  const { t } = useTranslation('components')
-  const hasChanges = givenName !== (user.given_name ?? '') || familyName !== (user.family_name ?? '')
-  const hasName = givenName.trim() !== '' || familyName.trim() !== ''
-
   return (
     <div className="space-y-4">
       <NameFields
@@ -76,26 +71,11 @@ function EditUserForm({
       />
 
       {error === '' ? null : (
-        <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+        <div className="flex items-center gap-2 text-sm text-danger bg-danger-subtle p-3 rounded-lg">
           <AlertCircle size={16} className="flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
-
-      <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
-        <button
-          onClick={onSubmit}
-          disabled={!hasChanges || !hasName || isPending}
-          className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
-        >
-          {isPending ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Pencil size={16} />
-          )}
-          {t('userAdmin.saveChanges')}
-        </button>
-      </div>
     </div>
   )
 }
@@ -111,6 +91,7 @@ function EditUserModalContent({
   const [givenName, setGivenName] = useState(user.given_name ?? '')
   const [familyName, setFamilyName] = useState(user.family_name ?? '')
   const [error, setError] = useState('')
+  const titleId = useId()
 
   const updateMutation = useEditUserMutation({
     user,
@@ -120,43 +101,54 @@ function EditUserModalContent({
     onClose,
     setError,
   })
+  const hasChanges = givenName !== (user.given_name ?? '') || familyName !== (user.family_name ?? '')
+  const hasName = givenName.trim() !== '' || familyName.trim() !== ''
+  const guard = useUnsavedChangesGuard({
+    dirty: hasChanges,
+    canSave: hasName,
+    onSave: async () => (await updateMutation.mutateAsync()).success,
+  })
+  // Escape, the backdrop and Cancel ask first when the name was edited.
+  const close = () => guard.requestLeave(onClose)
 
+  // ModalShell (E2E F5 audit): this dialog was a bare overlay with no
+  // role="dialog", no name and no focus trap; Escape came from useEscapeKey.
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4 sm:p-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Pencil size={20} className="text-blue-600" />
-          {t('userAdmin.editUser')}
-        </h3>
-
-        <p className="text-sm text-gray-500 mb-4">{user.email}</p>
-
-        <EditUserForm
-          user={user}
-          givenName={givenName}
-          familyName={familyName}
-          error={error}
-          onGivenNameChange={setGivenName}
-          onFamilyNameChange={setFamilyName}
-          onSubmit={() => updateMutation.mutate()}
-          isPending={updateMutation.isPending}
-        />
-
-        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-2">
-          <button onClick={onClose} className="btn btn-secondary w-full sm:w-auto">
-            {t('userAdmin.cancel')}
-          </button>
+    <ModalShell isOpen onClose={close} ariaLabelledBy={titleId} panelClassName="max-w-md max-h-[90vh]">
+        <div className="dialog-header">
+          <Pencil size={20} className="text-accent shrink-0" aria-hidden="true" />
+          <div className="min-w-0">
+            <h3 id={titleId} className="dialog-title">{t('userAdmin.editUser')}</h3>
+            <p className="dialog-description truncate">{user.email}</p>
+          </div>
         </div>
-      </div>
-    </div>
+
+        <div className="dialog-body">
+          <EditUserForm
+            givenName={givenName}
+            familyName={familyName}
+            error={error}
+            onGivenNameChange={setGivenName}
+            onFamilyNameChange={setFamilyName}
+          />
+        </div>
+
+        <UserDialogFooter
+          onCancel={close}
+          onConfirm={() => updateMutation.mutate()}
+          confirmLabel={t('userAdmin.saveChanges')}
+          confirmIcon={<Pencil size={16} />}
+          isPending={updateMutation.isPending}
+          disabled={!hasChanges || !hasName || updateMutation.isPending}
+        />
+        {guard.dialog}
+    </ModalShell>
   )
 }
 
 export default function EditUserModal({
   isOpen, user, onClose, onSuccess,
 }: EditUserModalProps) {
-  useEscapeKey(isOpen, onClose)
-
   if (!isOpen || !user) return null
 
   return (

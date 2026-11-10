@@ -15,22 +15,33 @@
  * The step order below is the dependency order, which is NOT the order the cards
  * used to appear in. Personas are built from feedback alone; research can
  * additionally read personas; the document generators can read feedback,
- * personas, research and documents. The old grid put PRD/PR-FAQ *before*
+ * personas, research and documents. The old grid put PRD/PR/FAQ *before*
  * research, so a user following it produced documents with neither research nor a
  * deliberate persona selection.
  */
 import type {
-  ProductContext, ProductDoc, ProductDocStatus, ProjectDocument, ProjectPersona,
+  ProductDocStatus,
+  ProjectDocument,
 } from '../../api/types'
+import type {
+  ProductContext,
+  ProductDoc,
+  ProjectPersona,
+} from '../../api/projectTypes'
 import {
   PRODUCT_CONTEXT_FIELD_COUNT, countFilledProductContextFields,
 } from './productContextFields'
+import { serverMissing } from '../../api/methodologySchema'
+import type { ProjectMethodology } from '../../api/methodologySchema'
 
 /** The six Overview steps, in dependency order. */
-export type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | 'prototype' | 'remix'
+type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | 'prototype' | 'remix'
+
+/** A step the overview can recommend: every step but `remix`, which has no detectable output. */
+export type RecommendableStep = Exclude<OverviewStep, 'remix'>
 
 /** Remix needs two documents to combine; below that its card stays disabled. */
-export const REMIX_MIN_DOCUMENTS = 2
+const REMIX_MIN_DOCUMENTS = 2
 
 /**
  * How many research reports one prototype build may name.
@@ -83,7 +94,7 @@ export interface OverviewStepState {
    * True once this step has produced something detectable.
    *
    * False on `remix` always, and that is a limitation rather than a fact: a
-   * remixed document is stored as an ordinary PRD or PR-FAQ, so there is nothing
+   * remixed document is stored as an ordinary PRD or PR/FAQ, so there is nothing
    * to distinguish it from a generated one. Nothing recommends remix or reports
    * it as outstanding, so the limitation stays invisible.
    */
@@ -95,17 +106,24 @@ export interface OverviewStepState {
   readonly count?: number
   /**
    * True when the step's input is missing: research without personas, documents
-   * without either, prototype without a PRD or PR-FAQ, remix without two
+   * without either, prototype without a PRD or PR/FAQ, remix without two
    * documents to combine.
    *
    * For the three *generators* this is a hint and never a gate — they all work
    * without their optional inputs, just less well. For `prototype` and `remix` it
    * IS a hard block, because neither has anything to operate on: remix has no
    * second document to combine, and the prototype backend reads the latest PRD
-   * and/or PR-FAQ, so with neither present there is no source at all. The
+   * and/or PR/FAQ, so with neither present there is no source at all. The
    * component decides which reading applies, per card.
    */
   readonly missingUpstream: boolean
+  /**
+   * Research and documents only: the upstream steps the SERVER says are missing
+   * (`GET /projects/{id}` → `methodology`), in methodology order, which the card's
+   * hint names. Undefined when the API did not say (an older API): the hint then
+   * falls back to the local reading of `missingUpstream`.
+   */
+  readonly missingSteps?: readonly string[]
 }
 
 /** One document a prototype build could be aimed at. */
@@ -146,7 +164,7 @@ export interface PrototypeVisualOption {
  * default selection and the backend's latest-of-type must name the same document,
  * or the dialog would state one thing and the build do another.
  */
-export interface PrototypeSources {
+interface PrototypeSources {
   readonly hasPrd: boolean
   readonly hasPrfaq: boolean
   readonly prdOptions: ReadonlyArray<PrototypeSourceOption>
@@ -209,7 +227,7 @@ export interface OverviewState {
    * The first step with no output, in dependency order — so it only ever points
    * at work whose own inputs are ready.
    */
-  readonly nextStep: OverviewStep | null
+  readonly nextStep: RecommendableStep | null
   readonly prototypeSources: PrototypeSources
 }
 
@@ -233,10 +251,16 @@ interface DeriveInput {
    * A failed list must not cost the other five cards their state.
    */
   readonly productDocs?: ReadonlyArray<ProductDoc>
+  /**
+   * The server's per-step gaps (`GET /projects/{id}` → `methodology`, lambda/shared/methodology.py).
+   * When present, the three `missingUpstream` answers are the server's, so every client shows the
+   * same gaps; the local reading below is only the fallback for an older API.
+   */
+  readonly methodology?: ProjectMethodology
 }
 
 export function deriveOverviewState({
-  personas, documents, productContext, productDocs = [],
+  personas, documents, productContext, productDocs = [], methodology,
 }: DeriveInput): OverviewState {
   const filled = productContext == null ? undefined : countFilledProductContextFields(productContext)
   const researchOptions = sourceOptions(documents, 'research')
@@ -267,13 +291,14 @@ export function deriveOverviewState({
       count: researchCount,
       // Research is the one step that can read personas, which is the whole
       // reason personas now come first.
-      missingUpstream: personas.length === 0,
+      ...upstreamGaps(methodology, ['research'], personas.length === 0),
     },
     documents: {
       position: 4,
       hasOutput: prdCount + prfaqCount > 0,
       count: prdCount + prfaqCount,
-      missingUpstream: personas.length === 0 && researchCount === 0,
+      // The card covers both documents: the PR/FAQ's gaps and the PRD's (its PR/FAQ).
+      ...upstreamGaps(methodology, ['prfaq', 'prd'], personas.length === 0 && researchCount === 0),
     },
     prototype: {
       position: 5,
@@ -283,9 +308,9 @@ export function deriveOverviewState({
       hasOutput: prototypeCount > 0,
       count: prototypeCount,
       // A hard block, not a hint. The backend builds from the latest PRD and/or
-      // PR-FAQ, so with neither present there is no source — the same condition
+      // PR/FAQ, so with neither present there is no source — the same condition
       // the control has always enforced, just derived in one place now.
-      missingUpstream: prdCount === 0 && prfaqCount === 0,
+      missingUpstream: methodology?.steps.prototype?.blocked ?? (prdCount === 0 && prfaqCount === 0),
     },
     remix: {
       position: 6,
@@ -311,6 +336,19 @@ export function deriveOverviewState({
       visualsFailed: countVisuals(productDocs, (s) => s === 'failed'),
     },
   }
+}
+
+/**
+ * The server's gaps for `methodologySteps` (deduplicated, first-seen order) when it gave them,
+ * else the local fallback with no list.
+ */
+function upstreamGaps(
+  methodology: ProjectMethodology | undefined, methodologySteps: readonly string[], fallback: boolean,
+): Pick<OverviewStepState, 'missingUpstream' | 'missingSteps'> {
+  const answers = methodologySteps.map((step) => serverMissing(methodology, step))
+  if (answers.some((missing) => missing === undefined)) return { missingUpstream: fallback }
+  const missingSteps = [...new Set(answers.flatMap((missing) => missing ?? []))]
+  return { missingUpstream: missingSteps.length > 0, missingSteps }
 }
 
 /**
@@ -369,7 +407,7 @@ function countVisuals(
  * itself once one exists.
  *
  * Prototype can never be recommended while its own gate is closed, and this is
- * an invariant rather than a coincidence: the gate is "no PRD and no PR-FAQ",
+ * an invariant rather than a coincidence: the gate is "no PRD and no PR/FAQ",
  * which is exactly `documents.hasOutput === false`, and `documents` is earlier in
  * the list — so it is returned first. Keep prototype after documents.
  *
@@ -380,8 +418,8 @@ function countVisuals(
 function pickNextStep(
   steps: Readonly<Record<OverviewStep, OverviewStepState>>,
   filled: number | undefined,
-): OverviewStep | null {
-  const candidates: ReadonlyArray<OverviewStep> = filled == null
+): RecommendableStep | null {
+  const candidates: ReadonlyArray<RecommendableStep> = filled == null
     ? ['personas', 'research', 'documents', 'prototype']
     : ['product', 'personas', 'research', 'documents', 'prototype']
   return candidates.find((step) => !steps[step].hasOutput) ?? null

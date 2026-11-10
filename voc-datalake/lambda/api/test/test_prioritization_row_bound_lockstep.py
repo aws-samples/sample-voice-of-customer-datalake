@@ -2,7 +2,7 @@
 
 `POST /projects/prioritization/rows` TRUNCATES a composition at
 `MAX_ROW_DOCUMENT_IDS`, so no row the API writes is longer than that. The page
-validates the rows it reads (`RowSchema` in `prioritizationUtils.ts`) and states
+validates the rows it reads (`RowSchema` in `ownRead.ts`) and states
 the same bound, so the two boundaries describe one contract: a row longer than the
 API can produce is a response nothing on the server wrote, and a schema whose whole
 purpose is to say what it accepts should refuse it.
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-FRONTEND_SOURCE = 'frontend/src/pages/Prioritization/prioritizationUtils.ts'
+FRONTEND_SOURCE = 'frontend/src/pages/Prioritization/ownRead.ts'
 
 # `export const MAX_ROW_DOCUMENT_IDS = 25`, tolerating the formatting variations a
 # linter could introduce but not a different name.
@@ -65,7 +65,7 @@ class TestPrioritizationRowBoundLockstep:
             'a row composition at that length, so the page has to state the same '
             'bound for its row schema to describe what the API can send.'
         )
-        assert projects_handler.MAX_ROW_DOCUMENT_IDS == int(match.group(1)), (
+        assert int(match.group(1)) == projects_handler.MAX_ROW_DOCUMENT_IDS, (
             'MAX_ROW_DOCUMENT_IDS disagrees between projects_handler.py and '
             f'{FRONTEND_SOURCE}. A higher page bound accepts a row the API cannot '
             'write; a lower one silently drops rows the API did write, and a dropped '

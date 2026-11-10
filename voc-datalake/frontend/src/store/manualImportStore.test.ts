@@ -2,25 +2,13 @@
  * @fileoverview Tests for manualImportStore Zustand store.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useManualImportStore } from './manualImportStore'
-
-const initialState = {
-  sourceUrl: '',
-  rawText: '',
-  parsedReviews: [],
-  unparsedSections: [],
-  jobId: null,
-  sourceOrigin: null,
-  lastUpdated: null,
-  isModalOpen: false,
-  isProcessing: false,
-  processingError: null,
-  step: 'input' as const,
-}
+import { MANUAL_IMPORT_MAX_CHARACTERS, useManualImportStore } from './manualImportStore'
+import { at } from '@test/defined'
 
 describe('manualImportStore', () => {
   beforeEach(() => {
-    useManualImportStore.setState(initialState)
+    // The store's own initial state (zustand v5), so the reset cannot drift from it.
+    useManualImportStore.setState(useManualImportStore.getInitialState())
   })
 
   describe('setSourceUrl', () => {
@@ -57,7 +45,7 @@ describe('manualImportStore', () => {
       setParsedReviews(reviews)
 
       const state = useManualImportStore.getState()
-      expect(state.parsedReviews).toEqual(reviews)
+      expect(state.parsedReviews).toStrictEqual(reviews)
     })
   })
 
@@ -71,8 +59,8 @@ describe('manualImportStore', () => {
       updateReview(0, { text: 'Updated', rating: 5 })
 
       const state = useManualImportStore.getState()
-      expect(state.parsedReviews[0].text).toBe('Updated')
-      expect(state.parsedReviews[0].rating).toBe(5)
+      expect(at(state.parsedReviews, 0).text).toBe('Updated')
+      expect(at(state.parsedReviews, 0).rating).toBe(5)
     })
 
     it('preserves other review fields when updating', () => {
@@ -84,9 +72,20 @@ describe('manualImportStore', () => {
       updateReview(0, { rating: 5 })
 
       const state = useManualImportStore.getState()
-      expect(state.parsedReviews[0].text).toBe('Original')
-      expect(state.parsedReviews[0].author).toBe('John')
-      expect(state.parsedReviews[0].rating).toBe(5)
+      expect(at(state.parsedReviews, 0).text).toBe('Original')
+      expect(at(state.parsedReviews, 0).author).toBe('John')
+      expect(at(state.parsedReviews, 0).rating).toBe(5)
+    })
+
+    it('ignores an out-of-range index instead of inserting a partial review', () => {
+      const { setParsedReviews, updateReview } = useManualImportStore.getState()
+      const reviews = [{ text: 'Only', rating: 3, author: null, date: null, title: null }]
+      setParsedReviews(reviews)
+
+      updateReview(1, { text: 'Ghost' })
+      updateReview(-1, { text: 'Ghost' })
+
+      expect(useManualImportStore.getState().parsedReviews).toStrictEqual(reviews)
     })
   })
 
@@ -102,7 +101,7 @@ describe('manualImportStore', () => {
 
       const state = useManualImportStore.getState()
       expect(state.parsedReviews).toHaveLength(1)
-      expect(state.parsedReviews[0].text).toBe('Review 2')
+      expect(at(state.parsedReviews, 0).text).toBe('Review 2')
     })
   })
 
@@ -114,7 +113,7 @@ describe('manualImportStore', () => {
 
       const state = useManualImportStore.getState()
       expect(state.parsedReviews).toHaveLength(1)
-      expect(state.parsedReviews[0]).toEqual({
+      expect(state.parsedReviews[0]).toStrictEqual({
         text: '',
         rating: null,
         author: null,
@@ -133,8 +132,8 @@ describe('manualImportStore', () => {
 
       const state = useManualImportStore.getState()
       expect(state.parsedReviews).toHaveLength(2)
-      expect(state.parsedReviews[0].text).toBe('Existing')
-      expect(state.parsedReviews[1].text).toBe('')
+      expect(at(state.parsedReviews, 0).text).toBe('Existing')
+      expect(at(state.parsedReviews, 1).text).toBe('')
     })
   })
 
@@ -145,14 +144,6 @@ describe('manualImportStore', () => {
       setIsModalOpen(true)
 
       expect(useManualImportStore.getState().isModalOpen).toBe(true)
-    })
-
-    it('sets processing state', () => {
-      const { setIsProcessing } = useManualImportStore.getState()
-
-      setIsProcessing(true)
-
-      expect(useManualImportStore.getState().isProcessing).toBe(true)
     })
 
     it('sets processing error', () => {
@@ -183,13 +174,14 @@ describe('manualImportStore', () => {
 
       state.clearDraft()
 
-      const newState = useManualImportStore.getState()
-      expect(newState.sourceUrl).toBe('')
-      expect(newState.rawText).toBe('')
-      expect(newState.parsedReviews).toEqual([])
-      expect(newState.jobId).toBeNull()
-      expect(newState.sourceOrigin).toBeNull()
-      expect(newState.lastUpdated).toBeNull()
+      expect(useManualImportStore.getState()).toMatchObject({
+        sourceUrl: '',
+        rawText: '',
+        parsedReviews: [],
+        jobId: null,
+        sourceOrigin: null,
+        lastUpdated: null,
+      })
     })
   })
 
@@ -197,7 +189,6 @@ describe('manualImportStore', () => {
     it('resets modal UI state', () => {
       const state = useManualImportStore.getState()
       state.setIsModalOpen(true)
-      state.setIsProcessing(true)
       state.setProcessingError('Error')
       state.setStep('preview')
 
@@ -205,9 +196,32 @@ describe('manualImportStore', () => {
 
       const newState = useManualImportStore.getState()
       expect(newState.isModalOpen).toBe(false)
-      expect(newState.isProcessing).toBe(false)
       expect(newState.processingError).toBeNull()
       expect(newState.step).toBe('input')
     })
+  })
+})
+
+/**
+ * Wave 4 live finding: "Paste reviews" opened with "your draft was longer than 10,000
+ * characters, so it was cleared" — for a draft stored in an earlier session. An
+ * over-limit text is no longer stored, and one already stored is dropped on load
+ * without a notice; the notice is only for a clear made in this session.
+ */
+describe('manualImportStore over-limit drafts', () => {
+  const tooLong = 'x'.repeat(MANUAL_IMPORT_MAX_CHARACTERS + 1)
+  const options = () => useManualImportStore.persist.getOptions()
+
+  it('never stores a text over the limit, but keeps one within it', () => {
+    const state = useManualImportStore.getState()
+    const partialize = options().partialize
+    expect(partialize?.({ ...state, rawText: tooLong })).toMatchObject({ rawText: '' })
+    expect(partialize?.({ ...state, rawText: 'Great shop' })).toMatchObject({ rawText: 'Great shop' })
+  })
+
+  it('drops a stored over-limit draft on load, with no notice', () => {
+    const current = useManualImportStore.getState()
+    const merged = options().merge?.({ rawText: tooLong, sourceUrl: 'https://shop.example.com' }, current)
+    expect(merged).toMatchObject({ rawText: '', sourceUrl: '', draftDropped: false })
   })
 })

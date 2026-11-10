@@ -18,6 +18,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+from handler_events_fixtures import project_meta_table
 
 
 def _import_event(api_gateway_event, body: dict | None):
@@ -38,7 +39,8 @@ def _post_import(api_gateway_event, lambda_context, body: dict | None):
     from projects_handler import lambda_handler
 
     with patch('projects_handler.create_job') as create_job, \
-         patch('projects_handler.invoke_lambda_async') as invoke:
+         patch('projects_handler.invoke_lambda_async') as invoke, \
+         patch('projects_handler.get_projects_table', return_value=project_meta_table('proj-1')):
         create_job.return_value = ('job_test123', '2026-01-01T00:00:00+00:00')
         response = lambda_handler(_import_event(api_gateway_event, body), lambda_context)
 
@@ -82,35 +84,17 @@ class TestDeferredPdfImport:
         create_job.assert_not_called()
         invoke.assert_not_called()
 
-    def test_pdf_message_is_distinguishable_from_the_unsupported_message(
-        self, api_gateway_event, lambda_context
-    ):
-        """"Not yet" and "never" have to read as different answers.
 
-        A caller (and a user) needs to be able to tell a type this platform intends
-        to support from one it does not recognise at all — the same distinction
-        product_context.DEFERRED_CONTENT_TYPES draws for uploaded product docs. If
-        the two messages were one string, the PDF path would be indistinguishable
-        from a typo'd input type.
-        """
-        _, pdf_body, _, _ = _post_import(
-            api_gateway_event, lambda_context, {'input_type': 'pdf', 'content': 'x'},
-        )
-        _, other_body, _, _ = _post_import(
-            api_gateway_event, lambda_context, {'input_type': 'spreadsheet', 'content': 'x'},
-        )
+def _assert_refused_as_unsupported(api_gateway_event, lambda_context, raw) -> None:
+    """`input_type: raw` answers 400 'Unsupported import type' and starts nothing."""
+    status, body, create_job, invoke = _post_import(
+        api_gateway_event, lambda_context, {'input_type': raw, 'content': 'x'},
+    )
 
-        pdf_error = pdf_body['error']
-        other_error = other_body['error']
-
-        assert 'not supported yet' in pdf_error
-        assert 'PDF' in pdf_error
-        assert 'Unsupported import type' in other_error
-        assert pdf_error != other_error
-        # Both name what IS accepted, so neither is a dead end.
-        for error in (pdf_error, other_error):
-            assert 'text' in error
-            assert 'image' in error
+    assert status == 400
+    assert 'Unsupported import type' in body['error']
+    create_job.assert_not_called()
+    invoke.assert_not_called()
 
 
 class TestUnsupportedImportTypes:
@@ -120,14 +104,7 @@ class TestUnsupportedImportTypes:
     def test_unknown_type_is_refused_with_no_side_effects(
         self, api_gateway_event, lambda_context, raw
     ):
-        status, body, create_job, invoke = _post_import(
-            api_gateway_event, lambda_context, {'input_type': raw, 'content': 'x'},
-        )
-
-        assert status == 400
-        assert 'Unsupported import type' in body['error']
-        create_job.assert_not_called()
-        invoke.assert_not_called()
+        _assert_refused_as_unsupported(api_gateway_event, lambda_context, raw)
 
     @pytest.mark.parametrize('raw', [123, True, ['pdf'], {'type': 'pdf'}, 1.5])
     def test_non_string_type_is_refused_rather_than_coerced(
@@ -140,14 +117,7 @@ class TestUnsupportedImportTypes:
         malformed request. `str(123)` would be just as wrong the other way: the
         caller never asked for a type called "123".
         """
-        status, body, create_job, invoke = _post_import(
-            api_gateway_event, lambda_context, {'input_type': raw, 'content': 'x'},
-        )
-
-        assert status == 400
-        assert 'Unsupported import type' in body['error']
-        create_job.assert_not_called()
-        invoke.assert_not_called()
+        _assert_refused_as_unsupported(api_gateway_event, lambda_context, raw)
 
 
 class TestSupportedImportTypesStillWork:

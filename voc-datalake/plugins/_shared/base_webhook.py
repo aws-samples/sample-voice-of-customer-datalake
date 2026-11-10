@@ -6,26 +6,32 @@ import json
 import os
 import sys
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 from typing import Any
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.logging import logger, tracer, metrics
-from shared.aws import clear_secret_cache, get_sqs_client, get_secret
+from shared.aws import clear_secret_cache, get_s3_client, get_secret, get_sqs_client
+from shared.logging import logger, metrics, tracer
+from shared.source_profiles import SourceProfilesUnavailable
 
 from .audit import emit_audit_event
+from .normalized_item import normalized_item_fields
 from .plugin_secrets import filter_plugin_secrets
+from .raw_archive import WEBHOOK, archive_raw_item
+from .raw_source import pop_raw_source
+from .source_policy_gate import policy_messages
 from .sqs_utils import send_messages_to_queue
 
-__all__ = ["BaseWebhook", "logger", "tracer", "metrics"]
+__all__ = ["BaseWebhook", "logger", "metrics", "tracer"]
 
 # Configuration from environment
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 BRAND_NAME = os.environ.get("BRAND_NAME", "")
 SOURCE_PLATFORM = os.environ.get("SOURCE_PLATFORM", "")
+# The raw archive (``raw/<plugin>/…``, ``_shared/raw_archive.py``): every webhook archives what it receives.
+RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 
 
 class BaseWebhook(ABC):
@@ -36,6 +42,7 @@ class BaseWebhook(ABC):
         self.brand_name = BRAND_NAME
         self.secrets = self._load_secrets()
         self._sqs = get_sqs_client()
+        self._s3 = get_s3_client()
 
     def _load_secrets(self) -> dict:
         """Load this plugin's secrets from the shared secret, prefix stripped.
@@ -47,9 +54,9 @@ class BaseWebhook(ABC):
         Cognito authorizer in front of it.
 
         The identity comes from ``SOURCE_PLATFORM``, which ``createWebhookLambda``
-        sets alongside ``PLUGIN_ID`` — it previously set only the latter, so this
-        read saw ``''`` and every delivery would have died on a message about a
-        malformed identity rather than the missing variable. Pinned by
+        sets (it once set only a ``PLUGIN_ID`` nothing read, so this read saw ``''``
+        and every delivery would have died on a message about a malformed identity
+        rather than the missing variable). Pinned by
         'SOURCE_PLATFORM' in ``lib/stacks/api-stack-webhook-env.test.ts``.
         """
         if not SECRETS_ARN:
@@ -72,36 +79,46 @@ class BaseWebhook(ABC):
     def parse_webhook_payload(self, body: dict, headers: dict) -> list[dict]:
         """
         Parse the webhook payload and return a list of items to process.
-        
+
         Must be implemented by subclasses.
-        
+
         Args:
             body: The parsed JSON body of the webhook request
             headers: The request headers
-            
+
         Returns:
             List of normalized items ready for the processing queue
         """
-        pass
 
-    def normalize_item(self, item: dict) -> dict:
-        """Normalize item to common schema."""
-        return {
-            "id": item.get("id", ""),
-            "source_platform": self.source_platform,
-            "source_channel": item.get("channel", "webhook"),
-            "url": item.get("url", ""),
-            "text": item.get("text", ""),
-            "rating": item.get("rating"),
-            "created_at": item.get(
-                "created_at", datetime.now(timezone.utc).isoformat()
+    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
+        """Archive the delivered item (and the provider's own payload, *raw_content*) and normalize it.
+
+        Same archive as every ingestor (``archive_raw_item``, connector ``webhook_<plugin>``):
+        write-once, skipped for a redact / summary-only source. The item travels inline
+        (``raw_data``) only when the archive write failed or was not allowed, and the
+        source policy drops that copy for a non-allow source (``shared/source_policy.py``). The
+        provider payload a plugin left on the item (``_shared/raw_source.py``) is popped here and
+        archived as ``raw_content`` unless one was passed.
+        """
+        source_payload = pop_raw_source(item)
+        if raw_content is None:
+            raw_content = source_payload
+        uri = archive_raw_item(
+            self._s3, RAW_DATA_BUCKET, self.source_platform, item, raw_content, transport=WEBHOOK,
+        )
+        normalized = {
+            **normalized_item_fields(
+                item,
+                source_platform=self.source_platform,
+                default_channel="webhook",
+                brand_name=self.brand_name,
             ),
-            "ingested_at": datetime.now(timezone.utc).isoformat(),
-            "brand_name": self.brand_name,
-            "brand_handles_matched": item.get("brand_handles_matched", []),
             "is_webhook": True,
-            "raw_data": item,
+            "raw_data": None if uri else item,
         }
+        if uri:
+            normalized["s3_raw_uri"] = uri
+        return normalized
 
     def send_to_queue(self, items: list[dict]) -> int:
         """Send items to SQS processing queue.
@@ -132,7 +149,7 @@ class BaseWebhook(ABC):
         return send_messages_to_queue(
             self._sqs,
             PROCESSING_QUEUE_URL,
-            items,
+            policy_messages(items),
             metric_name="WebhookItemsIngested",
             log_label="webhook",
         )
@@ -147,11 +164,13 @@ class BaseWebhook(ABC):
     def handle(self, event: dict, context: Any) -> dict:
         """
         Main webhook handler method.
-        
-        This should be called from the Lambda handler after signature verification.
+
+        Performs NO authentication itself: the plugin's Lambda handler must verify
+        the request (e.g. github_issues checks `X-Hub-Signature-256` with
+        `hmac.compare_digest`) and call this only for a request that passed.
         """
         client_ip = self._extract_client_ip(event)
-        
+
         emit_audit_event("webhook.received", self.source_platform, True, {
             "ip_address": client_ip,
         })
@@ -162,7 +181,7 @@ class BaseWebhook(ABC):
             if event.get("isBase64Encoded"):
                 import base64
                 body = base64.b64decode(body).decode("utf-8")
-            
+
             if isinstance(body, str):
                 body = json.loads(body)
 
@@ -170,7 +189,7 @@ class BaseWebhook(ABC):
 
             # Parse webhook payload
             items = self.parse_webhook_payload(body, headers)
-            
+
             if not items:
                 logger.info("No items to process from webhook")
                 return {
@@ -199,7 +218,7 @@ class BaseWebhook(ABC):
             }
 
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in webhook body: {e}")
+            logger.exception(f"Invalid JSON in webhook body: {e}")
             emit_audit_event("webhook.rejected", self.source_platform, False, {
                 "reason": "invalid_json",
                 "ip_address": client_ip,
@@ -207,6 +226,19 @@ class BaseWebhook(ABC):
             return {
                 "statusCode": 400,
                 "body": json.dumps({"error": "Invalid JSON"}),
+            }
+        except SourceProfilesUnavailable as e:
+            # Fail closed: nothing was queued under the allow default; the
+            # provider re-delivers on a 5xx.
+            logger.warning("Webhook deferred: source policy unreadable")
+            metrics.add_metric(name="WebhookErrors", unit="Count", value=1)
+            emit_audit_event("webhook.rejected", self.source_platform, False, {
+                "reason": "source_policy_unavailable",
+                "ip_address": client_ip,
+            })
+            return {
+                "statusCode": 503,
+                "body": json.dumps({"error": e.message}),
             }
         except Exception as e:
             logger.exception(f"Webhook processing failed: {e}")

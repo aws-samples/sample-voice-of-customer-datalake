@@ -1,0 +1,52 @@
+/**
+ * The whole-app rewrites of the deployed templates, in one place: bin/voc-datalake.ts applies them to the app
+ * once every stack is built, and every per-stack test fixture (lib/test-support/*-fixture.ts,
+ * api-stack-template.ts) applies them to its own app, so a per-stack test asserts the template that deploys.
+ *
+ * In this order (registration order is the order the aspects visit a construct in):
+ *
+ *   0. the audit-row Denies (audit-row-guard.ts) on every role that writes one of the `auditRowTables` option (the
+ *      tables holding `AUDIT#*` rows: pass VocCoreStack, or a fixture's dependency props; `{}` when the scope has none).
+ *      Not an aspect: it reads the grants that exist when it is called, so before the exact-grants rewrite;
+ *   1. every Lambda logs to its own retained log group and its role writes only that group (log-retention.ts);
+ *   2. `protectData` (on unless `-c protectData=false`): every log group is retained on stack deletion;
+ *   3. `-c inferenceScope=eu`: the EU inference env on every Lambda (inference-scope.ts; a no-op for `global`);
+ *   4. CDK grant wildcards become the exact actions and index ARNs (exact-grants.ts). Not an aspect: it wraps
+ *      the policies that exist when it is called, so call this once, after every stack is built.
+ *
+ * Both switches are read from the scope's context, like bin/ reads them. The cdk-nag plugin and the reviewed
+ * acknowledgements (bin/voc-datalake.ts) are NOT here: they judge the template rather than shape it, and the
+ * fixtures' nag cases run without them on purpose, so that every rule can still fail there.
+ */
+import type { IConstruct } from 'constructs';
+import { applyAuditRowGuard, auditRowGuardFor, type AuditRowTables } from './audit-row-guard';
+import { shouldProtectData } from './data-protection';
+import { applyExactGrants } from './exact-grants';
+import { applyInferenceScopeEnv } from './inference-scope';
+import { applyLambdaLogRetention, applyProtectedLogRetention } from './log-retention';
+
+/** The scopes the rewrites were applied to: a second application over the same constructs would double-wrap. */
+const applied = new WeakSet<IConstruct>();
+
+/**
+ * Apply every whole-app rewrite to `scope` (an app, or a fixture's stack): see the module comment. Once per tree:
+ * `applyExactGrants` wraps the policies it finds, so a scope that is, contains or sits inside an already rewritten
+ * scope is refused (a fixture that builds through a helper which already applied them, then applies them again).
+ */
+interface AppAspectsOptions {
+  /** The tables holding `AUDIT#*` rows (step 0): VocCoreStack, a fixture's dependency props, or `{}`. */
+  readonly auditRowTables: AuditRowTables;
+}
+
+export function applyAppAspects(scope: IConstruct, { auditRowTables }: AppAspectsOptions): void {
+  const overlapping = [...scope.node.scopes, ...scope.node.findAll()].find((node) => applied.has(node));
+  if (overlapping !== undefined) {
+    throw new Error(`applyAppAspects: ${scope.node.path || '<app>'} overlaps ${overlapping.node.path || '<app>'}, already rewritten`);
+  }
+  applied.add(scope);
+  applyAuditRowGuard(scope, auditRowGuardFor(auditRowTables));
+  applyLambdaLogRetention(scope);
+  applyProtectedLogRetention(scope, shouldProtectData(scope.node.tryGetContext('protectData')));
+  applyInferenceScopeEnv(scope);
+  applyExactGrants(scope);
+}

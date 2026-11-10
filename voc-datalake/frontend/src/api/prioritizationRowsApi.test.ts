@@ -12,23 +12,25 @@ import {
   describe, it, expect, vi, beforeEach,
 } from 'vitest'
 
-const mockFetchApi = vi.fn()
-vi.mock('./client', () => ({
-  fetchApi: (path: string, init?: RequestInit) => mockFetchApi(path, init),
-}))
+vi.mock('./client', () => ({ fetchApi: vi.fn() }))
 
+import { fetchApi } from './client'
 import { prioritizationRowsApi } from './prioritizationRowsApi'
+import { at } from '@test/defined'
+
+/** The request function the client modules call, as a spy. */
+const mockFetchApi = vi.mocked(fetchApi)
 
 /** The body of the request the client last made, as the route will read it. */
 function sentBody(): unknown {
-  const init: unknown = mockFetchApi.mock.calls[0][1]
+  const init: unknown = at(mockFetchApi.mock.calls, 0)[1]
   const body = init instanceof Object && 'body' in init ? init.body : undefined
   return typeof body === 'string' ? JSON.parse(body) : undefined
 }
 
 /** The method the request declared, or undefined for a plain GET. */
 function sentMethod(): unknown {
-  const init: unknown = mockFetchApi.mock.calls[0][1]
+  const init: unknown = at(mockFetchApi.mock.calls, 0)[1]
   return init instanceof Object && 'method' in init ? init.method : undefined
 }
 
@@ -44,7 +46,7 @@ describe('composing another row', () => {
       project_id: 'p1', document_ids: ['d1', 'd2'],
     })
 
-    expect(mockFetchApi.mock.calls[0][0]).toBe('/projects/prioritization/rows/compose')
+    expect(at(mockFetchApi.mock.calls, 0)[0]).toBe('/projects/prioritization/rows/compose')
     expect(sentMethod()).toBe('POST')
     // The EXACT shape the route reads: `project_id` and `document_ids`, and nothing
     // else. A body carrying a `row_id` would be a caller choosing a key the API mints
@@ -62,7 +64,7 @@ describe('changing an un-balloted row composition', () => {
       project_id: 'p1', document_ids: ['d2'],
     })
 
-    expect(mockFetchApi.mock.calls[0][0]).toBe('/projects/prioritization/rows/row_p1_default')
+    expect(at(mockFetchApi.mock.calls, 0)[0]).toBe('/projects/prioritization/rows/row_p1_default')
     expect(sentMethod()).toBe('PATCH')
     // `project_id` is in the body deliberately: the API validates the ids against
     // that project's own documents and asserts it in the write's condition, so a
@@ -80,7 +82,7 @@ describe('changing an un-balloted row composition', () => {
     // Not `/projects/prioritization/rows/row/../other?x=1`, which is a different
     // route with a query string. The ids the product mints need no escaping; this is
     // a path segment built from a value read off a response.
-    expect(mockFetchApi.mock.calls[0][0])
+    expect(at(mockFetchApi.mock.calls, 0)[0])
       .toBe('/projects/prioritization/rows/row%2F..%2Fother%3Fx%3D1')
   })
 })
@@ -91,7 +93,7 @@ describe('deleting a row with its ballots', () => {
 
     const deletion = await prioritizationRowsApi.deletePrioritizationRow('row-1')
 
-    expect(mockFetchApi.mock.calls[0][0]).toBe('/projects/prioritization/rows/row-1')
+    expect(at(mockFetchApi.mock.calls, 0)[0]).toBe('/projects/prioritization/rows/row-1')
     expect(sentMethod()).toBe('DELETE')
     expect(deletion.ballots_deleted).toBe(4)
   })

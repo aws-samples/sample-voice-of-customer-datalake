@@ -1,0 +1,142 @@
+# Runs scripts/validate.sh, every quality gate in the repo, on each pull request and on pushes to
+# main. CI calls that script and nothing else, so a green local `npm run validate` is a
+# green run here. Gates not enforced yet are counted by scripts/quality-baseline.sh instead.
+#
+# One job per validate.sh lane (`--lane <name>`; validate.sh's six lanes partition every step), so the lanes run
+# on separate runners instead of sharing one 4-vCPU machine: the run takes as long as its slowest lane
+# (~25 min) instead of the sum (~50 min). The `sec` lane (CodeQL) is not run here: its one step already skipped
+# itself on GitHub Actions (`GITHUB_ACTIONS` set; no CodeQL CLI on the runner), and the repository's
+# CodeQL code scanning covers it. The last job keeps the single `scripts/validate.sh` check.
+name: quality gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lane:
+    name: validate (${{ matrix.lane }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      # Every lane reports, so one run shows every failing gate.
+      fail-fast: false
+      matrix:
+        lane: [py, tsc, lint, test, web]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, tags, or calls the API (same reason as the other workflows).
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            voc-datalake/package-lock.json
+            voc-datalake/frontend/package-lock.json
+            voc-datalake/lambda/stream/package-lock.json
+            tools/kiro-acp-bridge/package-lock.json
+
+      # The gates type-check and test against 3.12, the ruff and pyright target (the Lambdas run 3.14, lib/stacks).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Node dependencies (five packages, each with its own lockfile)
+        run: |
+          npm ci
+          npm ci --prefix voc-datalake
+          npm ci --prefix voc-datalake/frontend
+          npm ci --prefix voc-datalake/lambda/stream
+          npm ci --prefix tools/kiro-acp-bridge
+
+      - name: Install Python dependencies into voc-datalake/.venv
+        working-directory: voc-datalake
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --disable-pip-version-check -q \
+            -r requirements-dev.txt \
+            -r lambda/layers/ingestion-deps/requirements.txt \
+            -r lambda/layers/processing-deps/requirements.txt \
+            -r lambda/layers/signing-deps/requirements.txt \
+            -r lambda/layers/email-intake-deps/requirements.txt
+
+      - name: Install gitleaks (the working-tree secret scan, scripts/gitleaks-tree.sh)
+        if: ${{ matrix.lane == 'lint' }}
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          # Committed digest (release checksums file and GitHub's asset digest agree); bump with the version.
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "/tmp/${tarball}" "${base}/${tarball}"
+          echo "${GITLEAKS_SHA256}  /tmp/${tarball}" | sha256sum --check --strict -
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "/tmp/${tarball}" -C "$HOME/.local/bin" gitleaks
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Pinned binaries for scripts/actions-lint.sh, verified against digests committed HERE (not a checksum
+      # file fetched from the same release, which an attacker able to replace the asset could replace too).
+      # Bump: update the version + digest together, and ACTIONLINT_VERSION / ZIZMOR_VERSION in the script.
+      - name: Install actionlint + zizmor (GitHub Actions lint, scripts/actions-lint.sh)
+        if: ${{ matrix.lane == 'lint' }}
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          ZIZMOR_VERSION: 1.31.1
+          ZIZMOR_SHA256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          al="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "/tmp/${al}" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${al}"
+          echo "${ACTIONLINT_SHA256}  /tmp/${al}" | sha256sum --check --strict -
+          tar -xzf "/tmp/${al}" -C "$HOME/.local/bin" actionlint
+          zz="zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          curl -sSfL -o "/tmp/${zz}" "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/${zz}"
+          echo "${ZIZMOR_SHA256}  /tmp/${zz}" | sha256sum --check --strict -
+          tar -xzf "/tmp/${zz}" -C "$HOME/.local/bin" zizmor
+
+      # One lane per job: pytest has the py job's runner to itself (its lane runs one step at a time), which is
+      # why --pytest-first is no longer needed here (docs/coverage-gate.md); so the py job gives it every vCPU.
+      - name: Validate (one lane)
+        env:
+          LANE: ${{ matrix.lane }}
+          VALIDATE_PYTEST_WORKERS: '4'
+        run: bash scripts/validate.sh --lane "$LANE"
+
+      # The pending gates' counts (scripts/quality-baseline.sh), so a PR that raises one shows it in its
+      # own log. A measurement, not a gate: it never fails the job, and it runs even when Validate failed.
+      - name: Quality baseline (informational)
+        if: ${{ !cancelled() && matrix.lane == 'tsc' }}
+        continue-on-error: true
+        run: |
+          bash scripts/quality-baseline.sh | tee "$RUNNER_TEMP/baseline.txt"
+          { echo '```text'; cat "$RUNNER_TEMP/baseline.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  # The one check a PR shows for the gate (and the name branch rules and scripts read): green only when every lane is.
+  validate:
+    name: scripts/validate.sh
+    needs: lane
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every lane passed
+        env:
+          LANES_RESULT: ${{ needs.lane.result }}
+        run: |
+          echo "lanes: $LANES_RESULT (each lane's own result is its validate (<lane>) check above)"
+          test "$LANES_RESULT" = success

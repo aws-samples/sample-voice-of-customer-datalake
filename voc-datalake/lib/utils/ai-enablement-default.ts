@@ -3,11 +3,11 @@ import type { AnthropicUseCaseConfig } from '../stacks/bedrock-access-stack';
 /**
  * Guard for the us-east-1 AI-enablement stack (VocWebSearchStack), which hosts
  * two independently switchable halves: the web-search AgentCore Gateway and
- * Bedrock model access.
+ * the Anthropic use-case form submission.
  *
- * Both halves off is a REACHABLE combination in the normal deploy path — an
- * account that already has Bedrock access omits `anthropicUseCase` from
- * cdk.context.json, and an operator who does not want web search passes
+ * Both halves off is a REACHABLE combination in the normal deploy path, and the
+ * one that keeps a deployment out of us-east-1: `anthropicUseCase` is unset by
+ * default (or skipped), and an operator who does not want web search passes
  * `-c enableWebSearch=false`. Constructing the stack in that case produces a
  * stack with no resources, and `scripts/convert-template.mjs` strips
  * CDKMetadata, so the workshop artifact would be an invalid `Resources: {}`.
@@ -19,6 +19,8 @@ import type { AnthropicUseCaseConfig } from '../stacks/bedrock-access-stack';
 export function shouldDeployAiEnablement(
   deployWebSearch: boolean,
   anthropicUseCase: AnthropicUseCaseConfig | undefined,
+  cloudFrontWebAcl = false,
 ): boolean {
-  return deployWebSearch || anthropicUseCase !== undefined;
+  // The opt-in CloudFront web ACL (lib/utils/waf.ts) must live in us-east-1 too, so it is a third reason.
+  return deployWebSearch || anthropicUseCase !== undefined || cloudFrontWebAcl;
 }

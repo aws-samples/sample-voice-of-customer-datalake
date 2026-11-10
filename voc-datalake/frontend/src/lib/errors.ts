@@ -29,3 +29,14 @@ export class ApiError extends Error {
     this.status = status
   }
 }
+
+/**
+ * The server's own reason a request failed — the `error`/`message` of its 4xx
+ * body, e.g. "No feedback data found for the given filters" — or null when it
+ * sent none (the ApiError then carries only its default `API Error: {status}`)
+ * or the failure is not an ApiError at all (no answer, a bug).
+ */
+export function serverReason(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null
+  return error.message === new ApiError(error.status).message ? null : error.message
+}

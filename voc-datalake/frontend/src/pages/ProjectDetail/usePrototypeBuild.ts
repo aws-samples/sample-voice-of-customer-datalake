@@ -9,7 +9,7 @@
  *
  * What this hook does NOT own, deliberately:
  * - **Whether the step is available.** That is `overviewState`'s
- *   `steps.prototype.missingUpstream` (no PRD and no PR-FAQ), derived in one place
+ *   `steps.prototype.missingUpstream` (no PRD and no PR/FAQ), derived in one place
  *   for the card's disabled state. `runBuild` re-checks it as a guard rather than
  *   as the source of truth, so calling this hook from a control that forgot to
  *   disable itself cannot start a sourceless build.
@@ -19,7 +19,7 @@
  *   await-in-component version reported a still-running build as failed at the
  *   five-minute mark. Only a failure to *start* surfaces here.
  *
- * The backend references the project's latest PRD *and* PR-FAQ: both if both
+ * The backend references the project's latest PRD *and* PR/FAQ: both if both
  * exist, otherwise whichever one does. So one document is enough to build, and
  * when only one is present the user is told which before it runs.
  */
@@ -27,8 +27,11 @@ import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
 import { MAX_SELECTED_PRODUCT_DOC_IDS, MAX_SELECTED_RESEARCH_IDS } from './overviewState'
+import { usePrototypeDesignSystem } from './usePrototypeDesignSystem'
 import { useTransientFlag } from './useTransientFlag'
 import type { PrototypeSourceOption, PrototypeVisualOption } from './overviewState'
+import type { PrototypeDesignSystemOption } from './usePrototypeDesignSystem'
+import type { DesignSystem } from '../../api/designSystemApi'
 
 /** Exactly one of the two source documents exists, so the build needs a confirm. */
 function hasOnlyOneDoc(hasPrd: boolean, hasPrfaq: boolean): boolean {
@@ -131,7 +134,7 @@ export interface PrototypeBuildControl {
    * flag-and-list pair, and the visual list (which has no flag — see
    * `selectedVisualIds`).
    *
-   * These live in the build wizard, beside the PRD/PR-FAQ pickers, so one panel
+   * These live in the build wizard, beside the PRD/PR/FAQ pickers, so one panel
    * answers the whole "what should this build read?" question and the card keeps
    * the single button its five siblings have.
    *
@@ -196,13 +199,19 @@ export interface PrototypeBuildControl {
      * the count above because waiting fixes one and never fixes the other.
      */
     readonly visualsFailed: number
+    /**
+     * The company design system: ticked by default when one exists, disabled when none
+     * does. Sent as `use_design_system` only when one exists; omitted otherwise, so the
+     * API's default (read it when configured) applies — see `usePrototypeDesignSystem`.
+     */
+    readonly designSystem: PrototypeDesignSystemOption
   }
 }
 
 export function usePrototypeBuild({
   projectId, hasPrd, hasPrfaq, hasExistingPrototype, prdOptions = [], prfaqOptions = [],
   researchOptions = [], visualOptions = [], visualsExtracting = 0, visualsFailed = 0,
-  onJobStarted,
+  design, onJobStarted,
 }: {
   readonly projectId: string
   readonly hasPrd: boolean
@@ -241,6 +250,12 @@ export function usePrototypeBuild({
    */
   readonly visualsExtracting?: number
   readonly visualsFailed?: number
+  /**
+   * The company design system, or undefined while it is not known (loading, failed,
+   * or a caller that offers no design-system choice) — the request then omits
+   * `use_design_system` and the API default applies.
+   */
+  readonly design?: DesignSystem
   /**
    * The project already has a prototype, so this build makes an additional one.
    *
@@ -286,6 +301,7 @@ export function usePrototypeBuild({
   // Whether the build wizard is on screen. A bare boolean is correct here, unlike
   // in the dialog this replaces — the reasoning is at the `wizard` return value.
   const [isOpen, setIsOpen] = useState(false)
+  const designSystem = usePrototypeDesignSystem(design)
 
   // The effective choice: what the user picked if that document is still offered,
   // otherwise the newest of the type. A selection whose document has been deleted
@@ -363,7 +379,7 @@ export function usePrototypeBuild({
     ))
   }, [visualOptions])
 
-  // THREE things worth saying before a build runs: only one of PRD/PR-FAQ exists, a
+  // THREE things worth saying before a build runs: only one of PRD/PR/FAQ exists, a
   // prototype already does (so this one costs money for a duplicate), or a type has
   // several documents so "the latest" is a decision. Null means none applies.
   //
@@ -377,7 +393,7 @@ export function usePrototypeBuild({
   // Only the *start* call is reported here.
   const runBuild = useCallback(async () => {
     // Not reachable through the card, which is disabled on the same condition —
-    // but a build with no PRD and no PR-FAQ has no source, so refuse rather than
+    // but a build with no PRD and no PR/FAQ has no source, so refuse rather than
     // queue a job that can only fail. Verified load-bearing: with the card's
     // disabled state removed, this is the only thing that still stops a billable
     // build with nothing to build from.
@@ -412,6 +428,10 @@ export function usePrototypeBuild({
         // as it stands. Empty is the request this hook made before visuals
         // existed — the backend reads [] as "no visuals selected".
         selected_product_doc_ids: [...selectedVisualIds],
+        // Only when there is one to read: with none (or not known yet) the field is
+        // omitted, so the build records nothing rather than "turned off", and a later
+        // revision follows the design system once it is set up.
+        ...(designSystem.available ? { use_design_system: designSystem.use } : {}),
       })
       started.set()
       onJobStarted?.()
@@ -421,7 +441,8 @@ export function usePrototypeBuild({
       setBusy(false)
     }
   }, [projectId, hasPrd, hasPrfaq, prdId, prfaqId, useProductContext, useResearch,
-      selectedResearchIds, selectedVisualIds, i18n.language, onJobStarted, started])
+      selectedResearchIds, selectedVisualIds, designSystem.available, designSystem.use, i18n.language,
+      onJobStarted, started])
 
   // Opening is now the card's whole job: no build starts from the card, so this
   // never spends money.
@@ -483,6 +504,7 @@ export function usePrototypeBuild({
       maxVisualIds: MAX_SELECTED_PRODUCT_DOC_IDS,
       visualsExtracting,
       visualsFailed,
+      designSystem,
     },
   }
 }

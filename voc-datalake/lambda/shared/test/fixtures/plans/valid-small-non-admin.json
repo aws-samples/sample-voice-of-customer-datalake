@@ -1,0 +1,61 @@
+{
+  "description": "valid small non admin",
+  "ctx": {
+    "isAdmin": false,
+    "packsAllowed": [
+      "core",
+      "insights",
+      "project",
+      "forms",
+      "prioritization",
+      "scrapers",
+      "memory",
+      "agents",
+      "company"
+    ]
+  },
+  "plan": {
+    "schema": "voc-plan/1",
+    "goal": "Create a checkout project and derive personas",
+    "steps": [
+      {
+        "id": "s1",
+        "pack": "core",
+        "kind": "write",
+        "title": "Create the project",
+        "write": {
+          "tool": "create_project",
+          "args": {
+            "name": "Checkout"
+          }
+        },
+        "produces": [
+          "project_id"
+        ]
+      },
+      {
+        "id": "s2",
+        "pack": "project",
+        "kind": "write",
+        "after": [
+          "s1"
+        ],
+        "title": "Generate personas",
+        "write": {
+          "tool": "generate_personas",
+          "args": {
+            "project_id": "{{s1.project_id}}",
+            "persona_count": 3,
+            "custom_instructions": "Checkout customers, from their checkout reviews only"
+          }
+        },
+        "produces": [
+          "job_id"
+        ]
+      }
+    ]
+  },
+  "valid": true,
+  "errors": [],
+  "needs_args_schema": false
+}

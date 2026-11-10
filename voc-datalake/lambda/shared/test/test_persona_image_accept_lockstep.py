@@ -24,15 +24,10 @@ Converse ``format`` strings there) and that divergence is pinned below, the same
 way ``TestTheTwoImageMapsStayDeliberate`` pins the server's own two maps.
 """
 import re
-from pathlib import Path
 
 import pytest
 
-
-def _repo_root() -> Path:
-    # lambda/shared/test/ -> voc-datalake/
-    return Path(__file__).resolve().parents[3]
-
+from shared.test.repo_paths import repo_root
 
 FRONTEND_SOURCE = 'frontend/src/utils/imageInput.ts'
 
@@ -49,7 +44,7 @@ def _frontend_mime_map(name: str, source: str = FRONTEND_SOURCE) -> dict[str, st
     fail loudly, otherwise the test keeps passing while comparing against a value
     nobody is reading any more.
     """
-    path = _repo_root() / source
+    path = repo_root() / source
     if not path.is_file():
         # A backend test reaching into the frontend tree. Where only the lambda
         # sources are present (packaging, a partial checkout) there is nothing to

@@ -1,0 +1,66 @@
+{
+  "description": "invalid goal too long",
+  "ctx": {
+    "isAdmin": true,
+    "packsAllowed": [
+      "core",
+      "insights",
+      "project",
+      "forms",
+      "prioritization",
+      "scrapers",
+      "settings",
+      "memory",
+      "agents",
+      "company"
+    ]
+  },
+  "plan": {
+    "schema": "voc-plan/1",
+    "goal": "ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+    "steps": [
+      {
+        "id": "s1",
+        "pack": "core",
+        "kind": "write",
+        "title": "Create the project",
+        "write": {
+          "tool": "create_project",
+          "args": {
+            "name": "Checkout"
+          }
+        },
+        "produces": [
+          "project_id"
+        ]
+      },
+      {
+        "id": "s2",
+        "pack": "project",
+        "kind": "write",
+        "after": [
+          "s1"
+        ],
+        "title": "Generate personas",
+        "write": {
+          "tool": "generate_personas",
+          "args": {
+            "project_id": "{{s1.project_id}}",
+            "persona_count": 3,
+            "custom_instructions": "Checkout customers, from their checkout reviews only"
+          }
+        },
+        "produces": [
+          "job_id"
+        ]
+      }
+    ]
+  },
+  "valid": false,
+  "errors": [
+    {
+      "field": "goal"
+    }
+  ],
+  "needs_args_schema": false
+}

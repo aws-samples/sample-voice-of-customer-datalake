@@ -1,0 +1,41 @@
+{
+  "description": "invalid admin pack for user",
+  "ctx": {
+    "isAdmin": false,
+    "packsAllowed": [
+      "core",
+      "insights",
+      "project",
+      "forms",
+      "prioritization",
+      "scrapers",
+      "settings",
+      "memory",
+      "agents",
+      "company"
+    ]
+  },
+  "plan": {
+    "schema": "voc-plan/1",
+    "goal": "Brand",
+    "steps": [
+      {
+        "id": "s1",
+        "pack": "settings",
+        "kind": "think",
+        "title": "Read the brand",
+        "think": {
+          "brief": "Summarise the brand settings."
+        }
+      }
+    ]
+  },
+  "valid": false,
+  "errors": [
+    {
+      "step": "s1",
+      "field": "pack"
+    }
+  ],
+  "needs_args_schema": false
+}

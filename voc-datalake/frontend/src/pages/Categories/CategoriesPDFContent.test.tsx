@@ -18,7 +18,7 @@ function makeProps(overrides: Partial<CategoriesPDFProps> = {}): CategoriesPDFPr
 describe('CategoriesPDFContent', () => {
   it('renders category names from categoryData', () => {
     render(<CategoriesPDFContent {...makeProps()} />)
-    expect(screen.getByText('delivery')).toBeInTheDocument()
+    expect(screen.getByText('Delivery')).toBeInTheDocument()
   })
 
   it('renders keyword cloud words', () => {
@@ -29,6 +29,12 @@ describe('CategoriesPDFContent', () => {
   it('renders the total issues count', () => {
     render(<CategoriesPDFContent {...makeProps({ totalIssues: 99 })} />)
     expect(screen.getByText('99')).toBeInTheDocument()
+  })
+
+  it('groups a large total issues count in the app language ("26,622", not "26622")', () => {
+    render(<CategoriesPDFContent {...makeProps({ totalIssues: 26_622 })} />)
+    expect(screen.getByText('26,622')).toBeInTheDocument()
+    expect(screen.queryByText('26622')).not.toBeInTheDocument()
   })
 
   it('renders the selected source label when provided', () => {

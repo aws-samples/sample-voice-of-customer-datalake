@@ -5,10 +5,16 @@ The handler lives as an inline Python string inside
 has no import path of its own. These tests extract that string and ``exec`` it
 with a stubbed boto3, which is the only way to exercise its branches.
 
-Fail-on-revert intent: a Private-Marketplace ``AccessDeniedException`` on
-CreateFoundationModelAgreement must NOT fail the stack (the whole point of the
-non-fatal branch), while every other error must still raise. Reverting either
-half turns one of these red.
+Fail-on-revert intent, in two parts:
+
+- Strict mode (a resource without ``bestEffort``): a Private-Marketplace
+  ``AccessDeniedException`` on CreateFoundationModelAgreement and a transient
+  network failure must NOT fail the stack, while every other error must still
+  raise.
+- Best-effort mode (``bestEffort: 'true'``, which every agreement the app creates
+  sets, BedrockModelAgreements in VocCoreStack): NO error fails the deploy, since
+  a raise there rolls back the stack holding every table. Every error class is
+  reported as UNAVAILABLE with its code. (Ported from PR #429 by @aws-bryan.)
 
 Precedent for reading a TS file from a Python test:
 ``test_avatar_image_model_lockstep.py``.
@@ -16,19 +22,17 @@ Precedent for reading a TS file from a Python test:
 import re
 import sys
 import types
-from pathlib import Path
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
-
-def _repo_root() -> Path:
-    # …/voc-datalake/lambda/shared/test/this_file.py -> …/voc-datalake
-    return Path(__file__).resolve().parents[3]
+from shared.test.repo_paths import repo_root
 
 
 def _handler_source() -> str:
     """Extract the inline handler body from the CDK stack."""
-    ts = (_repo_root() / 'lib' / 'stacks' / 'bedrock-access-stack.ts').read_text(encoding='utf-8')
+    ts = (repo_root() / 'lib' / 'stacks' / 'bedrock-access-stack.ts').read_text(encoding='utf-8')
     match = re.search(
         r'private getModelAgreementLambdaCode\(\): string \{\s*return `(.*?)`;\s*\}',
         ts,
@@ -48,6 +52,42 @@ class _FakeClientError(Exception):
         self.response = {'Error': {'Code': code, 'Message': message}}
 
 
+class _FakeBotoCoreError(Exception):
+    """Stand-in for botocore BotoCoreError: a connection-level failure with no .response."""
+
+
+class _FakeEndpointConnectionError(_FakeBotoCoreError):
+    """Stand-in for botocore EndpointConnectionError (a BotoCoreError subclass)."""
+
+
+class _FakeConnectTimeoutError(_FakeBotoCoreError):
+    """Stand-in for botocore ConnectTimeoutError."""
+
+
+class _FakeReadTimeoutError(_FakeBotoCoreError):
+    """Stand-in for botocore ReadTimeoutError."""
+
+
+class _FakeConnectionClosedError(_FakeBotoCoreError):
+    """Stand-in for botocore ConnectionClosedError."""
+
+
+_TRANSIENT_STAND_INS = {
+    'EndpointConnectionError': _FakeEndpointConnectionError,
+    'ConnectTimeoutError': _FakeConnectTimeoutError,
+    'ReadTimeoutError': _FakeReadTimeoutError,
+    'ConnectionClosedError': _FakeConnectionClosedError,
+}
+
+
+class _FakeParamValidationError(_FakeBotoCoreError):
+    """Stand-in for botocore ParamValidationError: a BotoCoreError that is OUR bug (a bad model id)."""
+
+
+class _FakeNoCredentialsError(_FakeBotoCoreError):
+    """Stand-in for botocore NoCredentialsError: a BotoCoreError that is a broken role, not the network."""
+
+
 class _FakeConflict(_FakeClientError):
     """Stand-in for bedrock's ConflictException.
 
@@ -63,39 +103,72 @@ class _FakeConflict(_FakeClientError):
         super().__init__('ConflictException', message)
 
 
+class _FakeBoto3(types.ModuleType):
+    """The `boto3` module as the exec'd handler sees it: only `client`."""
+
+    client: Callable[..., Any]
+
+
+class _FakeBotocoreExceptions(types.ModuleType):
+    """`botocore.exceptions`, carrying the stand-in `ClientError` and `BotoCoreError`."""
+
+    ClientError: type[Exception]
+    BotoCoreError: type[Exception]
+
+
+class _FakeBotocore(types.ModuleType):
+    """`botocore`, carrying only its `exceptions` submodule."""
+
+    exceptions: _FakeBotocoreExceptions
+
+
 def _load_handler(*, create_raises: Exception | None = None,
                   availability_raises: Exception | None = None,
-                  offers_raises: Exception | None = None):
+                  offers_raises: Exception | None = None,
+                  offer_list: list | None = None):
     """exec the extracted handler with boto3/botocore stubbed out."""
     calls: dict[str, int] = {'create': 0}
 
-    class _Bedrock:
-        class exceptions:  # noqa: N801 — mirrors botocore's client.exceptions
-            ConflictException = _FakeConflict
-            AccessDeniedException = _FakeClientError
+    # The exec'd handler calls these by boto3's API names, which no Python source
+    # spells out, so the fake client is assembled from keyword arguments.
+    def availability(**_kwargs):
+        if availability_raises is not None:
+            raise availability_raises
+        return {'agreementAvailability': {'status': 'NOT_AVAILABLE'}}
 
-        def get_foundation_model_availability(self, modelId):  # noqa: N803
-            if availability_raises is not None:
-                raise availability_raises
-            return {'agreementAvailability': {'status': 'NOT_AVAILABLE'}}
+    def offers(**_kwargs):
+        if offers_raises is not None:
+            raise offers_raises
+        return {'offers': [{'offerToken': 'tok'}] if offer_list is None else offer_list}
 
-        def list_foundation_model_agreement_offers(self, modelId):  # noqa: N803
-            if offers_raises is not None:
-                raise offers_raises
-            return {'offers': [{'offerToken': 'tok'}]}
+    def create(**_kwargs):
+        calls['create'] += 1
+        if create_raises is not None:
+            raise create_raises
+        return {}
 
-        def create_foundation_model_agreement(self, modelId, offerToken):  # noqa: N803
-            calls['create'] += 1
-            if create_raises is not None:
-                raise create_raises
-            return {}
+    def bedrock_client():
+        return types.SimpleNamespace(
+            # mirrors botocore's client.exceptions
+            exceptions=types.SimpleNamespace(
+                ConflictException=_FakeConflict,
+                AccessDeniedException=_FakeClientError,
+            ),
+            get_foundation_model_availability=availability,
+            list_foundation_model_agreement_offers=offers,
+            create_foundation_model_agreement=create,
+        )
 
-    fake_boto3 = types.ModuleType('boto3')
-    fake_boto3.client = lambda *a, **k: _Bedrock()
+    fake_boto3 = _FakeBoto3('boto3')
+    fake_boto3.client = lambda *_a, **_k: bedrock_client()
 
-    fake_botocore = types.ModuleType('botocore')
-    fake_exceptions = types.ModuleType('botocore.exceptions')
+    fake_botocore = _FakeBotocore('botocore')
+    fake_exceptions = _FakeBotocoreExceptions('botocore.exceptions')
     fake_exceptions.ClientError = _FakeClientError
+    fake_exceptions.BotoCoreError = _FakeBotoCoreError
+    # The transient errors the handler imports by name (TRANSIENT_ERRORS).
+    for name, stand_in in _TRANSIENT_STAND_INS.items():
+        setattr(fake_exceptions, name, stand_in)
     fake_botocore.exceptions = fake_exceptions
 
     saved = {k: sys.modules.get(k) for k in ('boto3', 'botocore', 'botocore.exceptions')}
@@ -114,9 +187,11 @@ def _load_handler(*, create_raises: Exception | None = None,
                 sys.modules[key] = value
 
 
-def _event():
-    return {'RequestType': 'Create', 'ResourceProperties': {'modelId': 'anthropic.claude-sonnet-5',
-                                                            'region': 'us-east-1'}}
+def _event(*, best_effort: bool = False):
+    properties = {'modelId': 'anthropic.claude-sonnet-5', 'region': 'us-east-1'}
+    if best_effort:
+        properties['bestEffort'] = 'true'
+    return {'RequestType': 'Create', 'ResourceProperties': properties}
 
 
 def test_access_denied_is_non_fatal_and_reported():
@@ -190,3 +265,122 @@ def test_conflict_is_still_treated_as_already_existing():
     result = handler(_event(), None)
 
     assert result['Data']['status'] == 'ALREADY_EXISTS'
+
+
+@pytest.mark.parametrize('error', [
+    _FakeEndpointConnectionError, _FakeConnectTimeoutError, _FakeReadTimeoutError, _FakeConnectionClosedError,
+])
+@pytest.mark.parametrize('stage', ['availability', 'offers', 'create'])
+def test_a_connection_failure_is_reported_instead_of_rolling_back_the_stack(stage, error):
+    """A dropped connection or a timeout is a transient property of the network,
+    not a bug in this stack: it must be reported as UNAVAILABLE like an absorbed
+    AccessDenied, not fail the custom resource and roll back VocWebSearchStack
+    (which Processing/Api import from)."""
+    handler, _ = _load_handler(**{f'{stage}_raises': error('Could not connect to the endpoint URL')})
+
+    result = handler(_event(), None)
+
+    assert result['Data']['status'] == 'UNAVAILABLE'
+    assert result['Data']['modelId'] == 'anthropic.claude-sonnet-5'
+    assert result['Data']['errorCode'] == error.__name__
+
+
+@pytest.mark.parametrize('error', [_FakeParamValidationError, _FakeNoCredentialsError, _FakeBotoCoreError])
+@pytest.mark.parametrize('stage', ['availability', 'offers', 'create'])
+def test_any_other_botocore_error_still_fails_the_deploy(stage, error):
+    """A bad model id (ParamValidationError), missing credentials or region are
+    BotoCoreErrors too, but they are a broken stack, not the network: reporting
+    them as UNAVAILABLE would turn a real fault into a green deploy."""
+    handler, _ = _load_handler(**{f'{stage}_raises': error('bad')})
+
+    with pytest.raises(error):
+        handler(_event(), None)
+
+
+@pytest.mark.parametrize('offer_list', [[], [{}], [{'offerToken': ''}]])
+@pytest.mark.parametrize('best_effort', [False, True])
+def test_no_usable_offer_is_reported_without_attempting_the_agreement(offer_list, best_effort):
+    """An offer without a token is as unusable as no offer: NO_OFFERS, never a raise."""
+    handler, calls = _load_handler(offer_list=offer_list)
+
+    result = handler(_event(best_effort=best_effort), None)
+
+    assert calls['create'] == 0
+    assert result['Data']['status'] == 'NO_OFFERS'
+
+
+# ── Best effort: every agreement in VocCoreStack ─────────────────────────────────────────────
+
+_BEST_EFFORT_FAILURES = [
+    # (stage, error, the errorCode reported)
+    ('create', _FakeClientError('AccessDeniedException', 'private marketplace'), 'AccessDeniedException'),
+    ('availability', _FakeClientError('AccessDeniedException', 'own role'), 'AccessDeniedException'),
+    ('offers', _FakeClientError('AccessDeniedException', 'own role'), 'AccessDeniedException'),
+    ('create', _FakeClientError('ThrottlingException', 'slow down'), 'ThrottlingException'),
+    ('availability', _FakeClientError('ThrottlingException', 'slow down'), 'ThrottlingException'),
+    ('availability', _FakeClientError('ValidationException', 'model not supported in this region'),
+     'ValidationException'),
+    ('create', _FakeClientError('ResourceNotFoundException', 'no such model'), 'ResourceNotFoundException'),
+    ('create', _FakeEndpointConnectionError('Could not connect'), '_FakeEndpointConnectionError'),
+    ('availability', _FakeReadTimeoutError('timed out'), '_FakeReadTimeoutError'),
+    ('offers', _FakeParamValidationError('bad model id'), '_FakeParamValidationError'),
+    ('create', _FakeNoCredentialsError('no credentials'), '_FakeNoCredentialsError'),
+]
+
+
+@pytest.mark.parametrize(('stage', 'error', 'code'), _BEST_EFFORT_FAILURES)
+def test_best_effort_reports_every_error_class_instead_of_rolling_back_core(stage, error, code):
+    """Access denied, throttling, a model not in the region, a dropped connection, even a
+    broken role: in VocCoreStack each is reported, never raised."""
+    handler, _ = _load_handler(**{f'{stage}_raises': error})
+
+    result = handler(_event(best_effort=True), None)
+
+    assert result['Data'] == {'status': 'UNAVAILABLE', 'modelId': 'anthropic.claude-sonnet-5', 'errorCode': code}
+    assert result['PhysicalResourceId'] == 'model-agreement-anthropic.claude-sonnet-5'
+
+
+@pytest.mark.parametrize(('stage', 'error', 'code'), [
+    ('create', _FakeClientError('ThrottlingException', 'slow down'), 'ThrottlingException'),
+    ('availability', _FakeClientError('AccessDeniedException', 'own role'), 'AccessDeniedException'),
+])
+def test_the_same_errors_still_raise_without_best_effort(stage, error, code):
+    """The flag is what absorbs them: a resource without it keeps the strict rules."""
+    handler, _ = _load_handler(**{f'{stage}_raises': error})
+
+    with pytest.raises(_FakeClientError) as raised:
+        handler(_event(), None)
+
+    assert raised.value.response['Error']['Code'] == code
+
+
+@pytest.mark.parametrize('best_effort', [False, True])
+def test_best_effort_keeps_the_success_statuses(best_effort):
+    """Best effort only changes what a failure does: created and existing agreements read the same."""
+    created, _ = _load_handler()
+    existing, _ = _load_handler(create_raises=_FakeConflict())
+
+    assert created(_event(best_effort=best_effort), None)['Data']['status'] == 'CREATED'
+    assert existing(_event(best_effort=best_effort), None)['Data']['status'] == 'ALREADY_EXISTS'
+
+
+def test_a_delete_leaves_the_accounts_agreement_in_place():
+    """Moving the agreements from VocWebSearchStack to VocCoreStack deletes the old resources;
+    a Delete must leave the account's agreement in place."""
+    handler, calls = _load_handler()
+
+    result = handler({**_event(best_effort=True), 'RequestType': 'Delete'}, None)
+
+    assert result['Data']['status'] == 'SKIPPED'
+    assert calls['create'] == 0
+
+
+def test_an_update_attempts_the_agreement_again():
+    """CloudFormation sends an Update only when a property changed (`-c modelAgreementRetry`): that is
+    the lever to retry an agreement that was refused on the first deploy."""
+    handler, calls = _load_handler()
+
+    result = handler({**_event(best_effort=True), 'RequestType': 'Update'}, None)
+
+    assert result['Data']['status'] == 'CREATED'
+    assert calls['create'] == 1

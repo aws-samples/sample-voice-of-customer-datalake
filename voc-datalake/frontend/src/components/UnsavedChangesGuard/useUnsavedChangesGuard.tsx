@@ -1,0 +1,199 @@
+/**
+ * @fileoverview The ONE unsaved-changes guard every editor uses (E2E F6).
+ *
+ * An editor calls the hook with its dirty flag and its own save, and renders
+ * `guard.dialog`. While dirty, the guard catches:
+ *
+ * - in-app route changes (react-router `useBlocker`; `shouldBlock` narrows it,
+ *   e.g. to let a page switch between tabs that share the same draft),
+ * - tab close / reload (`beforeunload`, the browser's own prompt — the only one
+ *   a page may show there), registered only while dirty,
+ * - anything else routed through `guard.requestLeave(action)` (closing an
+ *   editor dialog, a page's local-state tabs via `useGuardedAction`).
+ *
+ * Each opens the same `UnsavedChangesDialog`: Save runs the editor's save and
+ * proceeds only when it resolves true; Discard runs `onDiscard` and proceeds;
+ * Cancel (or Escape) stays with the edits intact.
+ *
+ * `useBlocker` needs a data router. Page tests that render under a plain
+ * `MemoryRouter` still get the dialog for `requestLeave` and `beforeunload` —
+ * the blocker is a child component mounted only when a data router is present,
+ * so the hook never calls `useBlocker` conditionally.
+ *
+ * @module components/UnsavedChangesGuard/useUnsavedChangesGuard
+ */
+import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { UNSAFE_DataRouterContext } from 'react-router-dom'
+import RouterBlocker from './RouterBlocker'
+import UnsavedChangesDialog from './UnsavedChangesDialog'
+import { anyGuardAsks, blockerOwner, registerGuard, runGuarded, subscribeBlockerOwner, wantBlocker } from './guardRegistry'
+import type { RegisteredGuard } from './guardRegistry'
+import { pathOrQueryChanged } from './pathOrQueryChanged'
+import type { ReactNode } from 'react'
+import type { Location } from 'react-router-dom'
+import type { PendingLeave as Pending } from './RouterBlocker'
+import { noCleanup } from '../../hooks/noCleanup'
+
+export interface UnsavedChangesGuardOptions {
+  /** The editor holds edits that are not saved. */
+  readonly dirty: boolean
+  /** The editor's own save. Resolve true on success; false or a rejection keeps the user here. */
+  readonly onSave: () => Promise<boolean>
+  /** Throw the edits away (optional: a route change unmounts the editor anyway). */
+  readonly onDiscard?: () => void
+  /** False when the draft cannot be saved as it stands (invalid): Save is disabled. */
+  readonly canSave?: boolean
+  /** Which route changes need the dialog. Default: any change of path or query. */
+  readonly shouldBlock?: (current: Location, next: Location) => boolean
+}
+
+export interface UnsavedChangesGuard {
+  /** Run `action` now when clean, or after Save/Discard in the dialog. */
+  readonly requestLeave: (action: () => void) => void
+  /** Render once, anywhere in the editor. */
+  readonly dialog: ReactNode
+}
+
+function useBeforeUnload(active: boolean): void {
+  useEffect(() => {
+    if (!active) return noCleanup
+    // preventDefault is what current browsers need for their own "Leave site?" prompt.
+    const handler = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [active])
+}
+
+/** The host's save; a rejection reads as a failed save, which the dialog then shows. */
+async function saveSucceeded(onSave: () => Promise<boolean>): Promise<boolean> {
+  try {
+    return await onSave()
+  } catch {
+    return false
+  }
+}
+
+export function useUnsavedChangesGuard({
+  dirty, onSave, onDiscard, canSave = true, shouldBlock = pathOrQueryChanged,
+}: UnsavedChangesGuardOptions): UnsavedChangesGuard {
+  const inDataRouter = useContext(UNSAFE_DataRouterContext) !== null
+  const [pending, setPending] = useState<Pending | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+  // This editor's blocker caught a route change that other dirty editors are still asking about.
+  const [holding, setHolding] = useState(false)
+  // Read at decision time, so the blocker and the registry never act on a stale render.
+  const latest = useRef({ dirty, onSave, onDiscard, shouldBlock })
+  useEffect(() => {
+    latest.current = { dirty, onSave, onDiscard, shouldBlock }
+  })
+
+  useBeforeUnload(dirty)
+
+  const open = useCallback((next: Pending) => {
+    setSaveFailed(false)
+    setPending(next)
+  }, [])
+  const requestLeave = useCallback((action: () => void, stay: () => void = () => {}) => {
+    if (!latest.current.dirty) action()
+    else open({ proceed: action, stay })
+  }, [open])
+
+  const self = useRef<RegisteredGuard | null>(null)
+  useEffect(() => {
+    const guard: RegisteredGuard = {
+      isDirty: () => latest.current.dirty,
+      requestLeave,
+      blocksRoute: (current, next) => latest.current.shouldBlock(current, next),
+    }
+    self.current = guard
+    const unregister = registerGuard(guard)
+    return () => { wantBlocker(guard, false); unregister() }
+  }, [requestLeave])
+
+  // One route blocker for the whole page (guardRegistry): this editor asks for it while it has
+  // edits, a dialog open or a change held, and renders it only while it owns it.
+  const wantsBlocker = dirty || pending !== null || holding
+  useEffect(() => {
+    if (self.current !== null) wantBlocker(self.current, wantsBlocker)
+  }, [wantsBlocker, requestLeave])
+  const ownsBlocker = useSyncExternalStore(subscribeBlockerOwner, () => blockerOwner() === self.current && self.current !== null)
+
+  // A chained dialog (asked on behalf of another editor's held route change) that unmounts
+  // unanswered, e.g. its card is switched away, resets that change instead of leaving the
+  // router blocked with no dialog. Its own held change (`route`) is react-router's to drop.
+  const pendingNow = useRef<Pending | null>(null)
+  useEffect(() => { pendingNow.current = pending })
+  useEffect(() => () => {
+    const unanswered = pendingNow.current
+    if (unanswered !== null && unanswered.route === undefined) unanswered.stay()
+  }, [])
+
+  // react-router consults only the LAST registered blocker, so whichever editor's blocker is
+  // live holds a change that ANY dirty editor would lose, not only its own.
+  const blockWhen = useCallback(
+    (current: Location, next: Location) => anyGuardAsks({ route: { current, next } }),
+    [],
+  )
+
+  // Hold the caught change while every dirty editor it would lose asks in turn (each once,
+  // `answered` already skipped); then the held navigation itself proceeds (a Back or a replace
+  // stays one), or Cancel resets it. `holding` keeps this blocker mounted meanwhile.
+  const chain = useCallback((held: Pending, route: NonNullable<Pending['route']>, answered: ReadonlySet<RegisteredGuard>) => {
+    setHolding(true)
+    runGuarded(
+      () => { setHolding(false); held.proceed() },
+      { answered, route, stay: () => { setHolding(false); held.stay() } },
+    )
+  }, [])
+
+  // A change this editor would not lose itself (another editor's edits) goes straight to the chain.
+  const onBlocked = useCallback((held: Pending) => {
+    const { route } = held
+    const me = self.current
+    const mine = route === undefined || (latest.current.dirty && latest.current.shouldBlock(route.current, route.next))
+    if (mine || me === null) open(held)
+    else chain(held, route, new Set([me]))
+  }, [open, chain])
+
+  const close = (leave: boolean) => {
+    if (pending === null) return
+    setPending(null)
+    const route = pending.route
+    const answered = new Set(self.current === null ? [] : [self.current])
+    if (!leave) pending.stay()
+    else if (route === undefined || !anyGuardAsks({ answered, route })) pending.proceed()
+    else chain(pending, route, answered)
+  }
+  const save = async () => {
+    setSaving(true)
+    setSaveFailed(false)
+    const ok = await saveSucceeded(latest.current.onSave)
+    setSaving(false)
+    if (ok) close(true)
+    else setSaveFailed(true)
+  }
+  const discard = () => {
+    latest.current.onDiscard?.()
+    close(true)
+  }
+
+  return {
+    requestLeave,
+    dialog: (
+      <>
+        {/* A router supports ONE blocker at a time: only the editor that owns it renders it. */}
+        {inDataRouter && ownsBlocker && <RouterBlocker when={blockWhen} onBlocked={onBlocked} />}
+        <UnsavedChangesDialog
+          isOpen={pending !== null}
+          saving={saving}
+          saveFailed={saveFailed}
+          canSave={canSave}
+          onSave={() => { void save() }}
+          onDiscard={discard}
+          onCancel={() => close(false)}
+        />
+      </>
+    ),
+  }
+}

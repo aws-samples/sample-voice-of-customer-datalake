@@ -1,0 +1,16 @@
+{
+  "description": "Review text as a person reads it: markdown escapes and bold markers some sources leave in (Web Reviews, 5.34.00) removed, a sentence the escape glued to the next one given its space back. ONE rule set, three implementations pinned by these cases: plugins/web_reviews/ingestor/extract.py (clean at extraction), frontend/src/utils/cleanReviewText.ts (display), lambda/stream/src/tools/review-text.ts (assistant tool output).",
+  "cases": [
+    { "input": "Rebooked in a stressful situation\\.On the next flight all was fine\\.", "output": "Rebooked in a stressful situation. On the next flight all was fine." },
+    { "input": "**Great crew** and a smooth flight", "output": "Great crew and a smooth flight" },
+    { "input": "**Late** again\\!Never booking this route", "output": "Late again! Never booking this route" },
+    { "input": "Seat 12\\-B, row \\#4 \\(window\\) \\[ok\\]", "output": "Seat 12-B, row #4 (window) [ok]" },
+    { "input": "Price was 5\\.99 per bag", "output": "Price was 5.99 per bag" },
+    { "input": "A path like C:\\Users stays", "output": "A path like C:\\Users stays" },
+    { "input": "Rated 5* overall, 2 * 3 seats", "output": "Rated 5* overall, 2 * 3 seats" },
+    { "input": "**Stray marker and 5\\* service", "output": "Stray marker and 5* service" },
+    { "input": "Plain text. Nothing to change.", "output": "Plain text. Nothing to change." },
+    { "input": "Zażółć gęślą\\.Ósma rano", "output": "Zażółć gęślą. Ósma rano" },
+    { "input": "", "output": "" }
+  ]
+}

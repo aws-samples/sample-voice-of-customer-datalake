@@ -23,7 +23,6 @@ approach `test_default_model_lockstep.py` takes for the model default, which is
 why the pattern is already established next door.
 """
 from api.product_context import ALLOWED_CONTENT_TYPES
-
 from product_doc_extractor.handler import CONVERSE_IMAGE_FORMATS, TEXT_CONTENT_TYPES
 
 

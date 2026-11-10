@@ -38,6 +38,8 @@ import {
   SYNTH_TIMEOUT_MS,
   type Baseline,
 } from './test-support/synth-app';
+import { byCodeUnit } from './utils/compare';
+import { valueAt } from './test-support/guards';
 
 const PROJECT_ROOT = join(__dirname, '..');
 
@@ -64,6 +66,11 @@ function loadBaseline(): Baseline {
   const raw: unknown = JSON.parse(readFileSync(join(PROJECT_ROOT, BASELINE_PATH), 'utf8'));
   return BaselineSchema.parse(raw);
 }
+
+/** The part of the cloud assembly's manifest.json the deploy-order case reads. */
+const ManifestSchema = z.object({
+  artifacts: z.record(z.string(), z.object({ dependencies: z.array(z.string()).optional() })),
+});
 
 /**
  * A name carrying a deployment prefix ahead of the `voc` stem.
@@ -95,7 +102,25 @@ afterAll(cleanupAssemblyDirs);
 
 describe('the default (no deploymentPrefix) synth', () => {
   it('produces exactly the stacks the baseline recorded', () => {
-    expect(synthed.stackNames).toEqual(Object.keys(baseline.stacks).sort());
+    expect(synthed.stackNames).toStrictEqual(Object.keys(baseline.stacks).sort(byCodeUnit));
+  });
+
+  it('keeps the stack deploy order (bin/voc-datalake.ts addStackDependency + the web-search imports)', () => {
+    // The order lives in the assembly manifest, not in any template, so neither the
+    // inventory nor the hashes below would notice a dropped dependency (5.48.04 renamed
+    // addDependency to addStackDependency for aws-cdk-lib 2.275).
+    const manifest = ManifestSchema.parse(JSON.parse(readFileSync(join(synthed.outdir, 'manifest.json'), 'utf8')));
+    const stackDependencies = Object.fromEntries(synthed.stackNames.map((name) => [
+      name,
+      (manifest.artifacts[name]?.dependencies ?? []).filter((dep) => !dep.endsWith('.assets')).sort(byCodeUnit),
+    ]));
+    expect(stackDependencies).toStrictEqual({
+      VocApiStack: ['VocCoreStack', 'VocIngestionStack', 'VocProcessingStack', 'VocWebSearchStack'],
+      VocCoreStack: [],
+      VocIngestionStack: ['VocCoreStack'],
+      VocProcessingStack: ['VocCoreStack', 'VocIngestionStack', 'VocWebSearchStack'],
+      VocWebSearchStack: [],
+    });
   });
 
   it.each(Object.keys(baseline.stacks))(
@@ -105,8 +130,9 @@ describe('the default (no deploymentPrefix) synth', () => {
       // file fails, the message should say which name moved, not just that a
       // digest did. The hash then catches everything the inventory does not
       // model (resource shape, policy actions, output values).
+      const expected = valueAt(baseline.stacks, stackName);
       const names = nameInventory(synthed.template(stackName));
-      expect(names).toEqual(baseline.stacks[stackName].names);
+      expect(names).toStrictEqual(expected.names);
 
       const sha = createHash('sha256').update(synthed.canonicalTemplate(stackName)).digest('hex');
       expect(
@@ -114,7 +140,7 @@ describe('the default (no deploymentPrefix) synth', () => {
         `${stackName}.template.json changed against ${BASELINE_PATH}. If that is intended, ` +
           'regenerate with `npx ts-node scripts/generate-baseline.ts` AND review the diff: ' +
           'renaming a table, bucket or user pool is a CloudFormation REPLACEMENT.',
-      ).toBe(baseline.stacks[stackName].templateSha256);
+      ).toBe(expected.templateSha256);
     },
   );
 
@@ -133,7 +159,7 @@ describe('the default (no deploymentPrefix) synth', () => {
         `${stackName}: these render to a VoC name but no inventory watches them. Add the ` +
           'CloudFormation property name to NAME_PROPERTIES in lib/test-support/name-inventory.ts ' +
           '(and regenerate the baseline), or establish that it is not a physical name.',
-      ).toEqual([]);
+      ).toStrictEqual([]);
     }
   });
 
@@ -147,14 +173,14 @@ describe('the default (no deploymentPrefix) synth', () => {
       },
     };
     expect(unlistedNameProperties(template))
-      .toEqual(['AWS::Service::Thing ThingName = voc-thing-not-in-the-list']);
+      .toStrictEqual(['AWS::Service::Thing ThingName = voc-thing-not-in-the-list']);
     // ...and a listed property, or a property with no VoC name, is not flagged.
     expect(unlistedNameProperties({
       Resources: {
         Table: { Type: 'AWS::DynamoDB::Table', Properties: { TableName: 'voc-feedback' } },
         Other: { Type: 'AWS::Service::Thing', Properties: { ThingName: 'unrelated' } },
       },
-    })).toEqual([]);
+    })).toStrictEqual([]);
     // ...and something established NOT to be a physical name can be exempted
     // without adding it to NAME_PROPERTIES, which would feed a non-name into the
     // baseline inventory and the prefix mapping. Nothing in the app needs this
@@ -163,7 +189,7 @@ describe('the default (no deploymentPrefix) synth', () => {
       Resources: {
         Thing: { Type: 'AWS::Service::Thing', Properties: { Description: 'the voc-feedback table' } },
       },
-    }, ['Description'])).toEqual([]);
+    }, ['Description'])).toStrictEqual([]);
   });
 
   it('carries no deployment prefix anywhere in a name', () => {
@@ -184,16 +210,24 @@ describe('the default (no deploymentPrefix) synth', () => {
     // earlier in this file would still have caught a genuine leak, but this
     // assertion exists precisely so the invariant does not depend on reading a
     // hash, and half-doing that is worse than not doing it.
-    expect('AWS::DynamoDB::Table TableName = team-a-voc-feedback-123456789012-us-east-1').toMatch(PREFIXED_NAME);
-    expect('AWS::Logs::LogGroup LogGroupName = /aws/lambda/team-a-voc-x').toMatch(PREFIXED_NAME);
-    expect('AWS::DynamoDB::Table TableName = stg-voc-feedback-123456789012-us-east-1').toMatch(PREFIXED_NAME);
+    const prefixed = [
+      'AWS::DynamoDB::Table TableName = team-a-voc-feedback-123456789012-us-east-1',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/team-a-voc-x',
+      'AWS::DynamoDB::Table TableName = stg-voc-feedback-123456789012-us-east-1',
+    ];
+    expect(prefixed.filter((entry) => !PREFIXED_NAME.test(entry)), 'prefixed names the pattern misses')
+      .toStrictEqual([]);
 
     // ...and does not fire on the unprefixed names the app really produces,
     // including the ones whose own base name contains a hyphen.
-    expect('AWS::DynamoDB::Table TableName = voc-feedback-123456789012-us-east-1').not.toMatch(PREFIXED_NAME);
-    expect('AWS::S3::Bucket BucketName = voc-access-logs-123456789012-us-east-1').not.toMatch(PREFIXED_NAME);
-    expect('AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-webscraper').not.toMatch(PREFIXED_NAME);
-    expect('Outputs Export.Name = VocCoreStack:ExportsOutputRefFeedbackTable').not.toMatch(PREFIXED_NAME);
+    const unprefixed = [
+      'AWS::DynamoDB::Table TableName = voc-feedback-123456789012-us-east-1',
+      'AWS::S3::Bucket BucketName = voc-access-logs-123456789012-us-east-1',
+      'AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ingestor-webscraper',
+      'Outputs Export.Name = VocCoreStack:ExportsOutputRefFeedbackTable',
+    ];
+    expect(unprefixed.filter((entry) => PREFIXED_NAME.test(entry)), 'unprefixed names the pattern flags')
+      .toStrictEqual([]);
   });
 
   it('synthesizes with zero warnings', () => {
@@ -204,7 +238,7 @@ describe('the default (no deploymentPrefix) synth', () => {
     // (lib/test-support/synth-app.test.ts pins the collector itself).
     expect(synthed.readsRealAnnotations, 'the annotation collector found nothing at all').toBe(true);
     const found = diagnostics(synthed);
-    expect(found, JSON.stringify(found, null, 2)).toEqual([]);
+    expect(found, JSON.stringify(found, null, 2)).toStrictEqual([]);
   });
 // SYNTH_TIMEOUT_MS rather than a global testTimeout: only the suites that
 // synthesize the whole app out of process need longer than vitest's 5s default,

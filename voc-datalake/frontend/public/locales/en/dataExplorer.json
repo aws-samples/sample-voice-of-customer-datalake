@@ -1,17 +1,5 @@
 {
-  "categories": {
-    "errorLoading": "Error loading categories",
-    "noCategories": "No categories",
-    "summary": "{{count}} categories • {{total}} items • Last {{days}} days",
-    "summary_one": "{{count}} category • {{total}} items • Last {{days}} days",
-    "summary_other": "{{count}} categories • {{total}} items • Last {{days}} days"
-  },
-  "deleteConfirm": {
-    "deleteFeedback": "Delete Feedback",
-    "deleteS3File": "Delete S3 File",
-    "message": "Are you sure? This cannot be undone."
-  },
-  "description": "Browse, edit, and sync raw S3 data and processed DynamoDB records",
+  "description": "Browse raw S3 data and processed DynamoDB records. Nothing here is ever deleted, and stored raw files are read-only.",
   "editModal": {
     "cancel": "Cancel",
     "close": "Close",
@@ -24,36 +12,47 @@
     "key": "Key",
     "save": "Save",
     "syncToDynamo": "Also update DynamoDB",
-    "syncToS3": "Also update S3",
     "type": "Type",
     "viewFeedback": "View Feedback",
-    "viewS3File": "View S3 File"
+    "viewS3File": "View S3 File",
+    "content": "File content",
+    "staleRecord": "This record changed after you opened it. Close the editor and open it again to see the current version."
   },
   "feedback": {
     "category": "Category: {{category}}",
-    "delete": "Delete",
     "edit": "Edit",
-    "errorLoading": "Error loading feedback",
     "noFeedback": "No feedback found",
-    "showingRecords": "Showing {{filtered}} of {{total}} records",
+    "showingRecords": "Showing {{filtered, number}} of {{total, number}} records",
     "urgent": "Urgent",
-    "view": "View"
+    "view": "View",
+    "noFeedbackHint": "Try another source or a wider time range.",
+    "showDetails": "Show details",
+    "hideDetails": "Hide details",
+    "showingRecordsAtLeast": "{{filtered, number}} shown, more available",
+    "showingRecordsShown": "{{filtered, number}} shown",
+    "loadMore": "Load more",
+    "loadingMore": "Loading…"
   },
   "filters": {
     "allSources": "All Sources",
-    "searchPlaceholder": "Search..."
+    "searchPlaceholder": "Search...",
+    "bucket": "Bucket",
+    "source": "Source",
+    "search": "Search feedback"
   },
   "newFile": "New File",
-  "notConfigured": "Configure API endpoint in Settings to explore data",
+  "notConfigured": "Configure API endpoint in Administration → General to explore data",
   "refresh": "Refresh",
   "s3Browser": {
     "back": "Back",
-    "delete": "Delete",
     "download": "Download",
     "edit": "Edit",
-    "errorLoading": "Error loading files",
     "noFiles": "No files found",
-    "view": "View"
+    "view": "View",
+    "path": "Folder path",
+    "noFilesHint": "This folder is empty. Create a file here, or ingest data from Data Sources.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
   },
   "tabs": {
     "categories": "Categories",
@@ -61,7 +60,111 @@
     "feedbackShort": "Feedback",
     "processedFeedback": "Processed Feedback",
     "s3RawData": "S3 Raw Data",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "Data view"
   },
-  "title": "Data Explorer"
+  "title": "Data Explorer",
+  "details": {
+    "title": "Title",
+    "text": "Review",
+    "source": "Source",
+    "date": "Date",
+    "category": "Category",
+    "rating": "Rating",
+    "language": "Language",
+    "author": "Author",
+    "problem": "Problem",
+    "persona": "Persona",
+    "showRaw": "Show raw JSON",
+    "hideRaw": "Hide raw JSON"
+  },
+  "dataQuality": {
+    "title": "Data quality",
+    "description": "How useful each source's feedback is: a rule-based band from its length, specifics (numbers, product terms) and whether it names a concrete issue or request. A source with mostly low feedback often means a misconfigured scraper or a skipped form field.",
+    "loading": "Loading data quality…",
+    "empty": "No feedback in this time range.",
+    "unratedShare": "{{share}} of the feedback in this range is not rated yet.",
+    "backfillHint": "Feedback stored before ratings existed has no band; a category reprocess (Administration → Taxonomy) rates it.",
+    "chartTop_one": "The chart shows the busiest source; the table lists every source.",
+    "chartTop_other": "The chart shows the {{count, number}} busiest sources; the table lists every source.",
+    "partial": "Some data could not be read in time, so these counts may be lower than the real numbers.",
+    "tableCaption": "Feedback usefulness per source",
+    "allSources": "All sources",
+    "columns": {
+      "source": "Source",
+      "total": "Total"
+    },
+    "bands": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "unrated": "Not rated"
+    },
+    "profile": {
+      "title": "Source profile",
+      "description": "What each source's feedback looks like: how it is rated, its sentiment and how long its text is.",
+      "notProfiled": "{{share}} of the feedback in this range was stored before the profile was counted and is not included. Rebuilding the aggregates for the range adds it.",
+      "facetGroup": "Profile to show",
+      "tableCaption": "{{facet}} per source",
+      "profiled": "Profiled",
+      "facets": {
+        "rating": "Rating",
+        "sentiment": "Sentiment",
+        "length": "Text length"
+      },
+      "rating": {
+        "5": "5 stars",
+        "4": "4 stars",
+        "3": "3 stars",
+        "2": "2 stars",
+        "1": "1 star",
+        "none": "No rating"
+      },
+      "sentiment": {
+        "positive": "Positive",
+        "neutral": "Neutral",
+        "mixed": "Mixed",
+        "negative": "Negative",
+        "other": "Other"
+      },
+      "length": {
+        "short": "Under 50 characters",
+        "medium": "50–199 characters",
+        "long": "200–999 characters",
+        "very_long": "1,000+ characters"
+      }
+    }
+  },
+  "fields": {
+    "title": "Fields",
+    "description": "What each stored field of a feedback item means: its type, which step sets it, whether it holds personal data, what a redact or summary-only source policy does to it, and its allowed values. The meanings are in English.",
+    "loading": "Loading the fields…",
+    "empty": "The API answered no fields.",
+    "caption": "Fields of a feedback item ({{table}})",
+    "keyBadge": "key",
+    "redact": "Redact: {{effect}}",
+    "summaryOnly": "Summary only: {{effect}}",
+    "columns": {
+      "field": "Field",
+      "type": "Type",
+      "meaning": "Meaning",
+      "setBy": "Set by",
+      "personalData": "Personal data",
+      "policies": "Under redact / summary only",
+      "values": "Values"
+    },
+    "pii": {
+      "customer_text": "Customer text",
+      "personal": "Personal data",
+      "derived_text": "Derived from customer text",
+      "none": "None"
+    },
+    "effects": {
+      "kept": "kept",
+      "redacted": "redacted",
+      "dropped": "dropped",
+      "from_redacted": "derived from the redacted text",
+      "replaced": "replaced"
+    }
+  }
 }

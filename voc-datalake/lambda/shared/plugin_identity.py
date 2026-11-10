@@ -40,7 +40,7 @@ use `re.fullmatch`, so no anchors are needed in the pattern.
 
 import re
 
-__all__ = ["PLUGIN_IDENTIFIER_RE", "PLUGIN_IDENTIFIER_RULES", "is_valid_plugin_identifier"]
+__all__ = ["PLUGIN_IDENTIFIER_RULES", "is_valid_plugin_identifier"]
 
 PLUGIN_IDENTIFIER_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')
 
@@ -49,7 +49,7 @@ PLUGIN_IDENTIFIER_RE = re.compile(r'[a-z0-9](?:[a-z0-9_]{0,62}[a-z0-9])?')
 # constraint identically.
 PLUGIN_IDENTIFIER_RULES = (
     "must contain only lowercase letters, digits, and underscores, must start "
-    "and end with a letter or digit, and must be 1–64 characters long"
+    "and end with a letter or digit, and must be 1 to 64 characters long"
 )
 
 

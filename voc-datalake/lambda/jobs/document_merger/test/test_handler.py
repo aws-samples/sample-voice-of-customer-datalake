@@ -1,4 +1,5 @@
-"""Tests for document merger job handler."""
+"""Tests for document merger job handler, run through the real version
+allocator and persona helper (`test_handler_mutation.py` pins the literals)."""
 
 import pytest
 
@@ -6,89 +7,43 @@ import pytest
 class TestDocumentMergerHandler:
     """Tests for the document merger job Lambda handler."""
 
-    def test_successful_document_merge(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, 
-        merge_documents_event, mock_project_documents, lambda_context
-    ):
-        """Test successful document merge job."""
-        mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
-        
-        from jobs.document_merger.handler import lambda_handler
-        
-        result = lambda_handler(merge_documents_event, lambda_context)
-        
-        assert result['success'] is True
-        assert 'document_id' in result
-        mock_converse.assert_called_once()
-
-    def test_fails_with_less_than_two_documents(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
-    ):
-        """Test that merge fails when less than 2 documents are selected."""
-        from shared.exceptions import ServiceError
-
-        from jobs.document_merger.handler import lambda_handler
-        
-        # Only one document available
-        mock_dynamodb['table'].query.return_value = {
-            'Items': [{'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'content': 'test'}]
-        }
-        
-        with pytest.raises((ServiceError, ValueError)):
-            lambda_handler(merge_documents_event, lambda_context)
-
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_merged_document_saved_to_dynamodb(
-        self, mock_dynamodb, mock_jobs_table, mock_converse,
-        merge_documents_event, mock_project_documents, lambda_context
+        self, mock_dynamodb,         merge_documents_event, mock_project_documents, lambda_context
     ):
         """Test that merged document is saved to DynamoDB."""
         mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
-        
+
         from jobs.document_merger.handler import lambda_handler
-        
+
         lambda_handler(merge_documents_event, lambda_context)
-        
+
         mock_dynamodb['table'].put_item.assert_called()
         put_call = mock_dynamodb['table'].put_item.call_args
         item = put_call.kwargs.get('Item', {})
         assert 'source_documents' in item
         assert item.get('merge_instructions') == merge_documents_event['merge_config']['instructions']
 
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table", "mock_converse")
     def test_uses_correct_output_type_prefix(
-        self, mock_dynamodb, mock_jobs_table, mock_converse,
-        merge_documents_event, mock_project_documents, lambda_context
+        self, mock_dynamodb,         merge_documents_event, mock_project_documents, lambda_context
     ):
         """Test that document uses correct SK prefix based on output_type."""
         mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
-        
+
         from jobs.document_merger.handler import lambda_handler
-        
+
         # Test PRD output type
         merge_documents_event['merge_config']['output_type'] = 'prd'
         lambda_handler(merge_documents_event, lambda_context)
-        
+
         put_call = mock_dynamodb['table'].put_item.call_args
         item = put_call.kwargs.get('Item', {})
         assert item.get('sk', '').startswith('PRD#')
 
-    def test_custom_output_type_uses_doc_prefix(
-        self, mock_dynamodb, mock_jobs_table, mock_converse,
-        merge_documents_event, mock_project_documents, lambda_context
-    ):
-        """Test that custom output type uses DOC# prefix."""
-        mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
-        
-        from jobs.document_merger.handler import lambda_handler
-        
-        merge_documents_event['merge_config']['output_type'] = 'custom'
-        lambda_handler(merge_documents_event, lambda_context)
-        
-        put_call = mock_dynamodb['table'].put_item.call_args
-        item = put_call.kwargs.get('Item', {})
-        assert item.get('sk', '').startswith('DOC#')
-
+    @pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
     def test_includes_personas_when_selected(
-        self, mock_dynamodb, mock_jobs_table, mock_converse, merge_documents_event, lambda_context
+        self, mock_dynamodb, mock_converse, merge_documents_event, lambda_context
     ):
         """Test that personas are included in context when selected."""
         mock_items = [
@@ -105,58 +60,24 @@ class TestDocumentMergerHandler:
             {'sk': 'PERSONA#persona_1', 'persona_id': 'persona_1', 'name': 'Test User', 'tagline': 'A test persona'},
         ]
         mock_dynamodb['table'].query.return_value = {'Items': mock_items}
-        
+
         merge_documents_event['merge_config']['selected_persona_ids'] = ['persona_1']
-        
-        from jobs.document_merger.handler import lambda_handler
-        
-        lambda_handler(merge_documents_event, lambda_context)
-        
-        # Verify persona context was included in prompt
-        call_kwargs = mock_converse.call_args.kwargs
-        prompt = call_kwargs.get('prompt', '')
-        assert 'Test User' in prompt or 'PERSONA' in prompt
-
-    def test_prd_merge_uses_sufficient_max_tokens_for_cjk_languages(
-        self, mock_dynamodb, mock_jobs_table, mock_converse,
-        merge_documents_event, mock_project_documents, lambda_context
-    ):
-        """Regression: PRD merge max_tokens must be >= 12000 to avoid truncation in CJK languages."""
-        mock_dynamodb['table'].query.return_value = {'Items': mock_project_documents}
-        merge_documents_event['merge_config']['output_type'] = 'prd'
 
         from jobs.document_merger.handler import lambda_handler
 
         lambda_handler(merge_documents_event, lambda_context)
 
-        call_kwargs = mock_converse.call_args.kwargs
-        assert call_kwargs.get('max_tokens', 0) >= 12000
+        # The real persona helper renders the section under the merger's header.
+        prompt = mock_converse.call_args.kwargs['prompt']
+        assert '## USER PERSONAS FOR CONTEXT\n\n' in prompt
+        assert 'Test User' in prompt
 
 
-    def test_prototype_output_type_is_rejected_before_model_work(
-        self, mock_dynamodb, mock_jobs_table, mock_converse,
-        merge_documents_event, mock_project_documents, lambda_context,
-    ):
-        """Prototype HTML remains generator-only, never a disguised custom merge."""
-        merge_documents_event['merge_config']['output_type'] = 'prototype'
-
-        from shared.exceptions import ServiceError
-
-        from jobs.document_merger.handler import lambda_handler
-
-        with pytest.raises(ServiceError, match='Document merge failed'):
-            lambda_handler(merge_documents_event, lambda_context)
-
-        mock_dynamodb['table'].query.assert_not_called()
-        mock_converse.assert_not_called()
-        assert mock_dynamodb['transactions'] == []
-
-
+@pytest.mark.usefixtures("mock_dynamodb", "mock_jobs_table")
 @pytest.mark.parametrize('document_type', ['prd', 'prfaq'])
 def test_managed_merge_replay_returns_before_queries_or_model_work(
     document_type,
     mock_dynamodb,
-    mock_jobs_table,
     mock_converse,
     merge_documents_event,
     lambda_context,

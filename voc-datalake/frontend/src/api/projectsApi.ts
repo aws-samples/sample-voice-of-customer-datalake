@@ -1,46 +1,155 @@
 // Projects API - extracted from client.ts to reduce file size
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
+import { del, post, put } from './requestKit'
 import { fetchApi } from './client'
 import { getDateBasisBodyParams } from './baseUrl'
-import { normalizeProjectDetail } from './projectDetailSchema'
+import {
+  normalizeDocumentVersions, normalizeMemberCandidates, normalizeProject, normalizeProjectDetail,
+  normalizeProjectDetailBatch, normalizeProjectDocument, normalizeProjectList, normalizeProjectMember,
+  normalizeProjectMembers,
+} from './projectDetailSchema'
+import type { DocumentVersion } from './projectDetailSchema'
+import { asRecord } from './wireRecord'
+import { isAssistJobType, runAssistJob } from './assistJobs'
+import {
+  parseDocumentBrief, parsePrfaqAnswers, parseRegeneratedAvatar, parseResearchSuggestions,
+} from './assistResults'
+import { normalizeAddPersonaNoteResponse } from './personaNoteSchema'
+import { normalizeFeedbackPreview } from './feedbackPreviewSchema'
+import type { FeedbackPreview, FeedbackPreviewMode, FeedbackPreviewPurpose } from './feedbackPreviewSchema'
+import type { AddPersonaNoteResponse } from './personaNoteSchema'
+import type { AiDraftFilters } from './aiDraft'
 import type {
-  Project, ProjectDetail, ProjectPersona, ProjectDocument, ProjectJob,
-  ProductContext, ProductDoc, ProductInterviewTurnResponse,
+  ProjectDocument,
   // The document-generation request body; see its declaration for why it is a
   // named type rather than an object literal spelled out here. `BothWays` comes with
   // it for the signature pin at the foot of this file.
-  GenerateDocumentBody, BothWays,
+  GenerateDocumentBody,
+  BothWays,
 } from './types'
+import type {
+  Project,
+  ProjectDetail,
+  ProjectPersona,
+  ProjectJob,
+  ProductContext,
+  ProductDoc,
+  ProjectVisibility,
+  ProjectMemberRole,
+  ProjectMembersResponse,
+  ProjectMemberCandidate,
+  CreateProjectBody,
+} from './projectTypes'
+
+/** = MAX_PROJECT_DETAIL_BATCH in lambda/api/projects.py (the server answers 400 above it). */
+export const MAX_PROJECT_DETAIL_BATCH = 200
+
+/** A JSON POST's request init (`post(...)` is what check-mock-coverage reads as POST). */
+
+/**
+ * A project assist job (api/assistJobs): `start` POSTs and gets 202 + a job id,
+ * polled through the project job read (`getJobStatus`, validated by the poller);
+ * the job's `result` is the body the route used to answer synchronously, read by
+ * `parse`.
+ */
+function projectAssist<T>(projectId: string, start: () => Promise<unknown>, parse: (result: unknown) => T): Promise<T> {
+  return runAssistJob(start, (jobId) => projectsApi.getJobStatus(projectId, jobId), parse)
+}
+
+/** The jobs list without assist jobs (the API leaves them out; this is the belt to that). */
+function withoutAssistJobs(answer: { success: boolean; jobs: ProjectJob[] }) {
+  return Array.isArray(answer.jobs)
+    ? { ...answer, jobs: answer.jobs.filter((job) => !isAssistJobType(job.job_type)) }
+    : answer
+}
+
+/**
+ * Feedback-board requests as their own evidence in a persona / research run (never in the `feedback-preview`
+ * body, which counts reviews only):
+ * absent = off; `feature_request_board_ids` (≤ 20) narrows them, absent = every board.
+ */
+export interface FeatureRequestEvidenceBody {
+  readonly include_feature_requests?: boolean
+  readonly feature_request_board_ids?: readonly string[]
+}
+
+/** The feedback filters a wizard's live count reads (the generation request's own fields). */
+export interface FeedbackPreviewBody {
+  readonly sources: readonly string[]
+  readonly categories: readonly string[]
+  readonly sentiments: readonly string[]
+  readonly days: number
+}
 
 export const projectsApi = {
-  getProjects: () => fetchApi<{ projects: Project[] }>('/projects'),
+  getProjects: async (): Promise<{ projects: Project[] }> => {
+    const raw = await fetchApi<unknown>('/projects')
+    return normalizeProjectList(raw)
+  },
 
-  createProject: (data: {
-    name: string;
-    description?: string;
-    filters?: Record<string, unknown>
-  }) =>
-    fetchApi<{
-      success: boolean;
-      project: Project
-    }>('/projects', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+  createProject: async (data: CreateProjectBody): Promise<{ success: boolean; project: Project | null }> => {
+    const raw = await fetchApi<unknown>('/projects', post(data))
+    const record = asRecord(raw)
+    return { success: record?.success === true, project: normalizeProject(record?.project) }
+  },
 
   getProject: async (id: string): Promise<ProjectDetail> => {
     const raw = await fetchApi<unknown>(`/projects/${id}`)
     return normalizeProjectDetail(raw)
   },
 
+  /**
+   * Many projects' details (without personas) in one `GET /projects?ids=…` per
+   * MAX_PROJECT_DETAIL_BATCH ids — one request for any board one team prioritises.
+   * Only projects the caller can view come back; the rest are simply absent.
+   */
+  getProjectDetails: async (ids: readonly string[]): Promise<ProjectDetail[]> => {
+    const chunks = Array.from(
+      { length: Math.ceil(ids.length / MAX_PROJECT_DETAIL_BATCH) },
+      (_, index) => ids.slice(index * MAX_PROJECT_DETAIL_BATCH, (index + 1) * MAX_PROJECT_DETAIL_BATCH),
+    )
+    const pages = await Promise.all(chunks.map(async (chunk) => {
+      const query = new URLSearchParams({ ids: chunk.join(',') })
+      return normalizeProjectDetailBatch(await fetchApi<unknown>(`/projects?${query.toString()}`))
+    }))
+    return pages.flat()
+  },
+
   updateProject: (id: string, data: Partial<Project>) =>
-    fetchApi<{ success: boolean }>(`/projects/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ success: boolean }>(`/projects/${id}`, put(data)),
 
   deleteProject: (id: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${id}`, del()),
+
+  // ── Sharing (see the HTTP contract in lambda/shared/project_access.py) ──
+  setVisibility: (id: string, visibility: ProjectVisibility) =>
+    fetchApi<{ success: boolean; visibility: ProjectVisibility }>(`/projects/${id}/visibility`, put({ visibility })),
+
+  getMembers: async (id: string): Promise<ProjectMembersResponse> => {
+    const raw = await fetchApi<unknown>(`/projects/${id}/members`)
+    return normalizeProjectMembers(raw)
+  },
+
+  searchMemberCandidates: async (id: string, q: string): Promise<ProjectMemberCandidate[]> => {
+    const raw = await fetchApi<unknown>(`/projects/${id}/members/candidates?${new URLSearchParams({ q })}`)
+    return normalizeMemberCandidates(raw)
+  },
+
+  addMember: async (id: string, sub: string, role: ProjectMemberRole) => {
+    const raw = await fetchApi<unknown>(`/projects/${id}/members`, post({ sub, role }))
+    return { member: normalizeProjectMember(asRecord(raw)?.member) }
+  },
+
+  updateMemberRole: async (id: string, sub: string, role: ProjectMemberRole) => {
+    const raw = await fetchApi<unknown>(`/projects/${id}/members/${encodeURIComponent(sub)}`, put({ role }))
+    return { member: normalizeProjectMember(asRecord(raw)?.member) }
+  },
+
+  removeMember: (id: string, sub: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${id}/members/${encodeURIComponent(sub)}`, del()),
+
+  transferOwnership: (id: string, sub: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${id}/owner`, post({ sub })),
 
   generatePersonas: (projectId: string, filters?: {
     sources?: string[]
@@ -50,7 +159,9 @@ export const projectsApi = {
     custom_instructions?: string
     days?: number
     response_language?: string
-  }) =>
+    /** true adds next to the project's personas; false/absent replaces them (#353). */
+    keep_existing_personas?: boolean
+  } & FeatureRequestEvidenceBody) =>
     // Async since the work moved to the persona-generator Lambda: the route answers
     // with a job id and the UI polls the jobs list. It has not returned `personas`
     // (or an `analysis` blob) for some time — the old synchronous shape lingered here
@@ -60,28 +171,44 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string;
-    }>(`/projects/${projectId}/personas/generate`, {
-      method: 'POST',
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...(filters ?? {}) }),
-    }),
+    }>(`/projects/${projectId}/personas/generate`, post({ ...getDateBasisBodyParams(), ...filters })),
 
-  createPersona: (projectId: string, persona: Omit<ProjectPersona, 'persona_id' | 'created_at'>) =>
-    fetchApi<{
-      success: boolean;
-      persona: ProjectPersona
-    }>(`/projects/${projectId}/personas`, {
-      method: 'POST',
-      body: JSON.stringify(persona),
-    }),
+  /**
+   * How many reviews a persona / research run with these filters would read (the wizards'
+   * live count). Built like `generatePersonas`' body, so the count is the run's own read.
+   */
+  previewFeedback: async (projectId: string, body: FeedbackPreviewBody, mode: FeedbackPreviewMode,
+    purpose: FeedbackPreviewPurpose): Promise<FeedbackPreview> => normalizeFeedbackPreview(
+    await fetchApi<unknown>(`/projects/${encodeURIComponent(projectId)}/feedback-preview`,
+      post({ ...getDateBasisBodyParams(), ...body, mode, purpose })),
+  ),
+
+  /** Protect a persona (or release it): a replace regeneration keeps a protected one (#429). */
+  setPersonaProtected: (projectId: string, personaId: string, isProtected: boolean) =>
+    fetchApi<unknown>(
+      `/projects/${encodeURIComponent(projectId)}/personas/${encodeURIComponent(personaId)}/protection`,
+      put({ protected: isProtected }),
+    ),
 
   updatePersona: (projectId: string, personaId: string, data: Partial<Omit<ProjectPersona, 'persona_id' | 'created_at'>>) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, put(data)),
 
   deletePersona: (projectId: string, personaId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, del()),
+
+  /**
+   * A new avatar image for one persona (an assist job: the image model can take
+   * longer than the gateway allows). Each image is stored under its own key, so
+   * the answer's signed URL is never the cached old one. `avatar_url` is null
+   * when the answer carries none (signing unavailable).
+   */
+  regeneratePersonaAvatar: (projectId: string, personaId: string): Promise<{ avatar_url: string | null }> =>
+    projectAssist(projectId, () => fetchApi<unknown>(`/projects/${projectId}/personas/${personaId}/regenerate-avatar`, post()), parseRegeneratedAvatar),
+
+  addPersonaNote: async (projectId: string, personaId: string, body: { text: string; author?: string }): Promise<AddPersonaNoteResponse> => {
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/personas/${personaId}/notes`, post(body))
+    return normalizeAddPersonaNoteResponse(raw)
+  },
 
   importPersona: (projectId: string, data: {
     // No 'pdf': the API refuses it (nothing extracts PDF text), so advertising it
@@ -95,10 +222,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/personas/import`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    }>(`/projects/${projectId}/personas/import`, post(data)),
 
   runResearch: (projectId: string, data: {
     question: string
@@ -111,16 +235,13 @@ export const projectsApi = {
     selected_document_ids?: string[]
     response_language?: string
     use_web_search?: boolean
-  }) =>
+  } & FeatureRequestEvidenceBody) =>
     fetchApi<{
       success: boolean;
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/research`, {
-      method: 'POST',
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
-    }),
+    }>(`/projects/${projectId}/research`, post({ ...getDateBasisBodyParams(), ...data })),
 
   // Keep this signature on ONE line, and keep `data` taking the shared type by name:
   // test_doc_type_lockstep.py matches it as exact text, and requires EVERY declaration
@@ -135,14 +256,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/document`, {
-      method: 'POST',
-      // `data` is only spread into the body — nothing here constrains its type. What
-      // stops the annotation above being widened is
-      // `GenerateDocumentTakesTheSharedBody` at the foot of this file; see there for
-      // why it is a type-level comparison and not a clause on this object (#381).
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
-    }),
+    }>(`/projects/${projectId}/document`, post({ ...getDateBasisBodyParams(), ...data })),
 
   mergeDocuments: (projectId: string, data: {
     output_type: 'prd' | 'prfaq' | 'custom'
@@ -161,10 +275,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/documents/merge`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    }>(`/projects/${projectId}/documents/merge`, post(data)),
 
   getJobStatus: (projectId: string, jobId: string) =>
     fetchApi<ProjectJob>(`/projects/${projectId}/jobs/${jobId}`),
@@ -173,10 +284,10 @@ export const projectsApi = {
     fetchApi<{
       success: boolean;
       jobs: ProjectJob[]
-    }>(`/projects/${projectId}/jobs`),
+    }>(`/projects/${projectId}/jobs`).then(withoutAssistJobs),
 
   dismissJob: (projectId: string, jobId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/jobs/${jobId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/jobs/${jobId}`, del()),
 
   createDocument: (projectId: string, data: {
     title: string;
@@ -186,22 +297,56 @@ export const projectsApi = {
     fetchApi<{
       success: boolean;
       document: ProjectDocument
-    }>(`/projects/${projectId}/documents`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    }>(`/projects/${projectId}/documents`, post(data)),
 
-  updateDocument: (projectId: string, documentId: string, data: {
-    title?: string;
-    content?: string
+  /**
+   * A PR/FAQ or PRD written by hand: the next version of its series, `origin: human`
+   * (docs/ways-of-working.md). No `content` = the server's blank template; `create_id`
+   * makes a retried click one document.
+   */
+  startHandWrittenDocument: (projectId: string, data: {
+    document_type: 'prfaq' | 'prd';
+    title: string;
+    create_id: string;
   }) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{
+      success: boolean;
+      document: ProjectDocument
+    }>(`/projects/${projectId}/documents`, post(data)),
+
+  /**
+   * Save an edit. It is a NEW version (a PRD / PR-FAQ edit is the next version of
+   * its series, with a new id); the answer's `document` is the saved one. Pass a
+   * fresh `edit_id` per save so a retried request replays instead of duplicating,
+   * and the `expected_revision` the editor loaded (`documentRevision`) so a save
+   * over someone else's newer one is a 409 rather than a silent overwrite.
+   */
+  updateDocument: async (projectId: string, documentId: string, data: {
+    title?: string;
+    content?: string;
+    edit_id?: string;
+    expected_revision?: number
+  }): Promise<{ success: boolean; document: ProjectDocument | null }> => {
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, put(data))
+    const record = asRecord(raw)
+    return { success: record?.success === true, document: normalizeProjectDocument(record?.document) }
+  },
+
+  /** Every version of a document, newest first, with content (open / compare). */
+  getDocumentVersions: async (projectId: string, documentId: string): Promise<DocumentVersion[]> =>
+    normalizeDocumentVersions(await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}/versions`)),
+
+  /** Restore = a NEW version carrying `versionId`'s content; nothing is rewritten. */
+  restoreDocumentVersion: async (projectId: string, documentId: string, versionId: string, editId: string): Promise<ProjectDocument | null> => {
+    const raw = await fetchApi<unknown>(
+      `/projects/${projectId}/documents/${documentId}/versions/${encodeURIComponent(versionId)}/restore`,
+      post({ edit_id: editId }),
+    )
+    return normalizeProjectDocument(asRecord(raw)?.document)
+  },
 
   deleteDocument: (projectId: string, documentId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, del()),
 
   // ── Product/Service description input ──
 
@@ -209,40 +354,24 @@ export const projectsApi = {
     fetchApi<{ context: ProductContext }>(`/projects/${projectId}/product-context`),
 
   updateProductContext: (projectId: string, patch: Partial<ProductContext>) =>
-    fetchApi<{ context: ProductContext }>(`/projects/${projectId}/product-context`, {
-      method: 'PUT',
-      body: JSON.stringify(patch),
-    }),
+    fetchApi<{ context: ProductContext }>(`/projects/${projectId}/product-context`, put(patch)),
 
-  productContextInterview: (projectId: string, body: {
-    message: string;
-    history?: { role: 'user' | 'assistant'; content: string }[]
-    response_language?: string
-  }) =>
-    fetchApi<ProductInterviewTurnResponse>(`/projects/${projectId}/product-context/interview`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  // Async: returns a job_id that the caller polls via getJobStatus.
+  // An assist job like the helpers below: the route answers 202 with a job id and
+  // this polls the project job read until the answers (the job's `result`) are in.
+  // `title`, `feature_idea` and `answers` are what the author typed: the route keeps
+  // them as their intent (rewrites typed answers, drafts the empty ones). Caps → 400:
+  // AI_DRAFT_LIMITS (lambda/shared/draft_intent.py).
   autofillPrfaqQuestions: (projectId: string, body: {
     feature_idea?: string;
     title?: string;
+    answers?: string[];
+    filters?: AiDraftFilters;
     response_language?: string
-  }) =>
-    fetchApi<{ answers: string[] }>(`/projects/${projectId}/prfaq-autofill`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+  }): Promise<{ answers: string[] }> =>
+    projectAssist(projectId, () => fetchApi<unknown>(`/projects/${projectId}/prfaq-autofill`, post(body)), parsePrfaqAnswers),
 
-  suggestResearchQuestions: (projectId: string, body: { response_language?: string } = {}) =>
-    fetchApi<{ suggestions: Array<{ title: string; question: string }> }>(
-      `/projects/${projectId}/research/suggest-questions`,
-      {
-        method: 'POST',
-        body: JSON.stringify(body),
-      },
-    ),
+  suggestResearchQuestions: (projectId: string, body: { response_language?: string } = {}): Promise<{ suggestions: Array<{ title: string; question: string }> }> =>
+    projectAssist(projectId, () => fetchApi<unknown>(`/projects/${projectId}/research/suggest-questions`, post(body)), parseResearchSuggestions),
 
   // NOT `DocType`, and its agreement with that union today is coincidence rather
   // than a floor: this is a DIFFERENT route (.../documents/suggest-brief) whose
@@ -252,14 +381,18 @@ export const projectsApi = {
   // a new type's name, not a refused request. Binding it to `GENERATED_DOC_TYPES`
   // would instead make widening THIS route fail a test named after the other one.
   // If it is ever pinned it wants its own constant and its own rationale (#381).
-  suggestDocumentBrief: (projectId: string, body: { doc_type?: 'prd' | 'prfaq'; response_language?: string } = {}) =>
-    fetchApi<{ title: string; feature_idea: string }>(
-      `/projects/${projectId}/documents/suggest-brief`,
-      {
-        method: 'POST',
-        body: JSON.stringify(body),
-      },
-    ),
+  //
+  // `title` / `feature_idea` are what the author typed: non-empty text is rewritten and
+  // expanded, never replaced; both empty drafts from the feedback (`filters`, else the
+  // project's saved filters).
+  suggestDocumentBrief: (projectId: string, body: {
+    doc_type?: 'prd' | 'prfaq';
+    title?: string;
+    feature_idea?: string;
+    filters?: AiDraftFilters;
+    response_language?: string
+  } = {}): Promise<{ title: string; feature_idea: string }> =>
+    projectAssist(projectId, () => fetchApi<unknown>(`/projects/${projectId}/documents/suggest-brief`, post(body)), parseDocumentBrief),
 
   buildPrototype: (projectId: string, body: {
     response_language?: string;
@@ -286,6 +419,10 @@ export const projectsApi = {
     // against `RESEARCH#{id}` in this project; one that names nothing is a 4xx.
     use_research?: boolean;
     selected_research_ids?: string[];
+    // The company design system (Knowledge → Company → Design system). Omitted means
+    // ON — the generator always read it before the build dialog offered the choice —
+    // so only `false` leaves it out of the prompt.
+    use_design_system?: boolean;
     // Visual grounding: uploaded IMAGE product docs whose extracted design
     // description the generator injects, so the prototype takes its palette and
     // layout from the mockup instead of the default theme.
@@ -306,10 +443,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/build-prototype`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    }>(`/projects/${projectId}/build-prototype`, post(body)),
 
   generateProductReport: (projectId: string, body: { response_language?: string; title?: string }) =>
     fetchApi<{
@@ -317,10 +451,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/product-report`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    }>(`/projects/${projectId}/product-report`, post(body)),
 
   listProductDocs: (projectId: string) =>
     fetchApi<{ docs: ProductDoc[] }>(`/projects/${projectId}/product-docs`),
@@ -334,41 +465,10 @@ export const projectsApi = {
       doc_id: string;
       presigned_url: string;
       headers: Record<string, string>
-    }>(`/projects/${projectId}/product-docs/upload-url`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    }>(`/projects/${projectId}/product-docs/upload-url`, post(body)),
 
   deleteProductDoc: (projectId: string, docId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/product-docs/${docId}`, { method: 'DELETE' }),
-
-  /**
-   * GET /projects/{project_id}/autoseed
-   *
-   * Returns the same autoseed payload as the Bearer-token MCP route, but is
-   * authorised by the user's existing Cognito session — so it requires no API
-   * token. Card 1 ("Export") in the Export / MCP tab wires its copy button to
-   * this route.
-   *
-   * The backend helper _build_steering_file already injects the project's
-   * kiro_export_prompt into the payload as a "## Custom Instructions" section,
-   * server-side, so the response already has the template baked in.
-   */
-  autoseedProject: (projectId: string, params: {
-    personaIds?: string[]
-    documentIds?: string[]
-  } = {}) => {
-    const searchParams = new URLSearchParams()
-    if ((params.personaIds?.length ?? 0) > 0) {
-      searchParams.set('persona_ids', (params.personaIds ?? []).join(','))
-    }
-    if ((params.documentIds?.length ?? 0) > 0) {
-      searchParams.set('document_ids', (params.documentIds ?? []).join(','))
-    }
-    const qs = searchParams.toString()
-    const path = qs === '' ? `/projects/${projectId}/autoseed` : `/projects/${projectId}/autoseed?${qs}`
-    return fetchApi<{ project: Record<string, unknown>; files: Array<{ path: string; content: string }> }>(path)
-  },
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/product-docs/${docId}`, del()),
 }
 
 // 🔑 The pin on `generateDocument`'s request-body parameter: it must admit EXACTLY
@@ -415,6 +515,7 @@ export const projectsApi = {
 // error, so dropping `extends true` makes each `@ts-expect-error` unused (TS2578)
 // instead of silently disabling every control at once.
 type SignatureMustMatch<Verdict extends true> = Verdict
+/** @public A compile-time pin, exported so noUnusedLocals keeps it (knip's tag for an export nothing imports on purpose). */
 export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody>>
 // The non-vacuity controls. `SignatureMustMatch<BothWays<...>>` is also satisfied by a
 // `BothWays` that degenerates to `true` or collapses to one-way, each of which reports
@@ -424,6 +525,7 @@ export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<BothWays<Par
 // the directive unused.
 //
 // WIDENED side — a body with one extra member must NOT compare equal.
+/** @public A compile-time control, exported like the pin above. */
 // @ts-expect-error the declared parameter must NOT equal a body with an extra member
 export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody & { not_in_the_body: true }>>
 // NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
@@ -440,5 +542,6 @@ export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustMatch<BothW
 // and deleting it left the collapse detected only by the other file. `Partial<...>` is
 // derived from the body, so it names no member and cannot go stale when the contract is
 // widened.
+/** @public A compile-time control, exported like the pin above. */
 // @ts-expect-error the declared parameter must NOT equal a body of optional members
 export type GenerateDocumentSignaturePinWouldSeeNarrowing = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], Partial<GenerateDocumentBody>>>

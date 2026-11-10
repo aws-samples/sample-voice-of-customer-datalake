@@ -1,0 +1,56 @@
+{
+  "title": "メール受信箱",
+  "description": "顧客、社員、パートナーはこれらのアドレスにフィードバックをメールで送れます。各メールは確認、重複排除、匿名化されてからフィードバック項目になります。",
+  "on": "オン",
+  "off": "オフ",
+  "loading": "メール受信箱を読み込み中…",
+  "notDeployed": "メール受信箱はデプロイされていません。-c inboundEmailDomain=<ドメイン> でデプロイしてください（docs/email-intake.md を参照）。",
+  "addresses": "アドレス",
+  "ruleSetInactive": "受信ルールセット {{ruleSet}} が有効ではないため、まだメールは届きません。Amazon SES で有効にするか、-c inboundEmailRuleSet で有効なルールセットに再デプロイしてください。",
+  "pii": {
+    "redact": "個人データは匿名化されます。名前、メールアドレス、電話番号は保存前に置き換えられます。",
+    "allow": "個人データは受信したまま保持されます（ソースプロファイルで許可）。",
+    "summary_only": "派生フィールドのみ保持されます（ソースプロファイルは要約のみ）。"
+  },
+  "dimension": {
+    "missing": "フィードバック種別ディメンションを作成すると、ideas@、bugs@、reviews@ のアドレスと [bug] などの件名タグで各項目が分類されます。",
+    "create": "ディメンションを作成"
+  },
+  "today": {
+    "title": "今日（UTC）",
+    "accepted": "受理",
+    "deduped": "重複排除",
+    "dropped": "破棄",
+    "deferred": "延期",
+    "modelCalls": "モデル呼び出し"
+  },
+  "reasons": {
+    "duplicate_message": "同じメールが2回配信された",
+    "seen_in_thread": "スレッドに既にあるテキスト",
+    "no_new_info": "新しい情報のない返信",
+    "forward_duplicate": "元のメールは転送済み",
+    "spam": "スパム判定",
+    "virus": "ウイルス判定",
+    "auto_reply": "自動返信",
+    "bulk": "一斉送信またはメーリングリスト",
+    "loop_sender": "メールシステムの送信者",
+    "sender_cap": "送信者ごとの上限に到達",
+    "no_text": "本文なし",
+    "unparseable": "読み取れない",
+    "too_large": "大きすぎる"
+  },
+  "caps": {
+    "title": "1日の上限",
+    "daily_cap": "1日あたりのメール数",
+    "sender_daily_cap": "送信者ごとの1日あたりのメール数",
+    "daily_model_calls": "1日あたりのモデル呼び出し数",
+    "range": "{{min, number}}から{{max, number}}まで",
+    "save": "上限を保存",
+    "saved": "上限を保存しました"
+  },
+  "errors": {
+    "load": "メール受信箱の状態を読み込めませんでした。",
+    "save": "上限を保存できませんでした。",
+    "dimension": "ディメンションを作成できませんでした。"
+  }
+}

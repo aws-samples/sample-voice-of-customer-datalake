@@ -32,3 +32,16 @@ export function scraperDomainLabel(baseUrl: string | undefined, notConfigured: s
     return raw
   }
 }
+
+/**
+ * True for an absolute http(s) URL with a host. `new URL` alone accepts `mailto:x`
+ * and `javascript:…`, so the protocol is checked too.
+ */
+export function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim())
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname !== ''
+  } catch {
+    return false
+  }
+}

@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 public/config.json
+
+# fix-i18n.mjs request/answer scratch (Bedrock bodies)
+.i18n-tmp/

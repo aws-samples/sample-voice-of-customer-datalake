@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {"key": "context:acknowledged-issue-numbers", "kind": "context-unread", "reason": "Written and read by the CDK CLI itself (`cdk acknowledge <id>` silences a CDK notice); the app never reads it, by design."},
+    {"key": "voc-datalake/package.json::watch", "kind": "script-uncalled", "reason": "Developer shortcut typed by hand (`tsc -w` while editing the CDK app); not a gate step, so it cannot drift from one."},
+    {"key": "voc-datalake/package.json::synth", "kind": "script-uncalled", "reason": "Developer shortcut typed by hand (`cdk synth` from voc-datalake/); read-only, no deploy, so it skips nothing."},
+    {"key": "voc-datalake/package.json::diff", "kind": "script-uncalled", "reason": "Developer shortcut typed by hand (`cdk diff`, the preview step of the deployment workflow); read-only."},
+    {"key": "voc-datalake/frontend/package.json::test:ui", "kind": "script-uncalled", "reason": "Developer shortcut typed by hand (the Vitest browser UI); interactive, so no gate or CI can call it."},
+    {"key": "voc-datalake/frontend/package.json::i18n:extract", "kind": "script-uncalled", "reason": "Authoring tool named in the deployment steering (it REWRITES the locale files with i18next-parser), so it is run by hand, never by the gate."},
+    {"key": "voc-datalake/frontend/package.json::i18n:validate", "kind": "script-uncalled", "reason": "Authoring tool named in the deployment steering (i18next-parser rewrite, then the i18n check); run by hand, the gate runs the read-only check."}
+  ]
+}

@@ -9,11 +9,14 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-describe('loadRuntimeConfig env fallback', () => {
+/**
+ * A fresh `./runtimeConfig` module per test (it holds the loaded config in a
+ * module-level singleton), with the fallback paths' expected console noise
+ * silenced and every env/global stub undone afterwards.
+ */
+function useFreshRuntimeConfigModule(): void {
   beforeEach(() => {
-    // Reset the module-level config singleton between tests.
     vi.resetModules()
-    // Silence expected warn/error noise from the fallback paths.
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
@@ -23,72 +26,75 @@ describe('loadRuntimeConfig env fallback', () => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
+}
 
-  it('keeps a valid VITE_API_ENDPOINT when cognito vars are missing', async () => {
-    vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+/** The cognito block a current deployment writes (and the env fallback builds). */
+const COGNITO = { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1' }
 
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
+/** `fetch('/config.json')` answers `config`. */
+function serveConfigJson(config: Record<string, unknown>): void {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(config) }))
+}
 
-    expect(config.apiEndpoint).toBe('http://localhost:9999')
-  })
+/** `fetch('/config.json')` fails, so the env fallback runs. */
+function noConfigJson(): void {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+}
 
-  it('falls back to the documented mock port when no endpoint is configured', async () => {
-    vi.stubEnv('VITE_API_ENDPOINT', '')
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+/** Load the config through a fresh module (see useFreshRuntimeConfigModule). */
+async function loadFreshConfig() {
+  const { loadRuntimeConfig } = await import('./runtimeConfig')
+  return loadRuntimeConfig()
+}
 
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
+describe('loadRuntimeConfig: config.json and the env fallback', () => {
+  useFreshRuntimeConfigModule()
 
-    expect(config.apiEndpoint).toBe('http://localhost:3001')
-  })
+  it.each([
+    ['keeps a valid VITE_API_ENDPOINT when cognito vars are missing', 'http://localhost:9999', 'http://localhost:9999'],
+    ['falls back to the documented mock port when no endpoint is configured', '', 'http://localhost:3001'],
+    ['falls back to the documented mock port for a malformed endpoint', 'not-a-url', 'http://localhost:3001'],
+  ])('%s', async (_title, envEndpoint, expected) => {
+    vi.stubEnv('VITE_API_ENDPOINT', envEndpoint)
+    noConfigJson()
 
-  it('falls back to the documented mock port for a malformed endpoint', async () => {
-    vi.stubEnv('VITE_API_ENDPOINT', 'not-a-url')
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+    const config = await loadFreshConfig()
 
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
-
-    expect(config.apiEndpoint).toBe('http://localhost:3001')
+    expect(config.apiEndpoint).toBe(expected)
   })
 
   it('prefers a valid config.json over env vars', async () => {
     vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        apiEndpoint: 'https://real-api.example.com',
-        cognito: {
-          userPoolId: 'us-east-1_pool',
-          clientId: 'client123',
-          region: 'us-east-1',
-          identityPoolId: 'us-east-1:identity',
-        },
-      }),
-    }))
+    serveConfigJson({ apiEndpoint: 'https://real-api.example.com', cognito: COGNITO })
 
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
+    const config = await loadFreshConfig()
 
     expect(config.apiEndpoint).toBe('https://real-api.example.com')
+  })
+
+  it('loads a config.json from a deployment that still writes identityPoolId (the key is ignored)', async () => {
+    serveConfigJson({ apiEndpoint: 'https://real-api.example.com', cognito: { ...COGNITO, identityPoolId: 'us-east-1:old' } })
+
+    const config = await loadFreshConfig()
+
+    expect(config.cognito).toStrictEqual(COGNITO)
+  })
+
+  it('accepts the env config without VITE_IDENTITY_POOL_ID', async () => {
+    vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
+    vi.stubEnv('VITE_COGNITO_USER_POOL_ID', COGNITO.userPoolId)
+    vi.stubEnv('VITE_COGNITO_CLIENT_ID', COGNITO.clientId)
+    noConfigJson()
+
+    const config = await loadFreshConfig()
+
+    expect(config.cognito).toStrictEqual(COGNITO)
   })
 })
 
 
 describe('isWebSearchAvailable', () => {
-  beforeEach(() => {
-    vi.resetModules()
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-  })
-
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
-  })
+  useFreshRuntimeConfigModule()
 
   const baseConfig = {
     apiEndpoint: 'https://real-api.example.com',
@@ -96,7 +102,6 @@ describe('isWebSearchAvailable', () => {
       userPoolId: 'us-east-1_pool',
       clientId: 'client123',
       region: 'us-east-1',
-      identityPoolId: 'us-east-1:identity',
     },
   }
 
@@ -143,7 +148,6 @@ describe('isWebSearchAvailable', () => {
     vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
     vi.stubEnv('VITE_COGNITO_USER_POOL_ID', 'us-east-1_pool')
     vi.stubEnv('VITE_COGNITO_CLIENT_ID', 'client123')
-    vi.stubEnv('VITE_IDENTITY_POOL_ID', 'us-east-1:identity')
     vi.stubEnv('VITE_ENABLE_WEB_SEARCH', 'true')
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
 
@@ -166,4 +170,104 @@ describe('isWebSearchAvailable', () => {
     expect(config.apiEndpoint).toBe('http://localhost:3001')
     expect(isWebSearchAvailable()).toBe(true)
   })
+})
+
+describe('board pool and email capability', () => {
+  useFreshRuntimeConfigModule()
+
+  const baseConfig = {
+    apiEndpoint: 'https://real-api.example.com',
+    cognito: { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'eu-west-1' },
+  }
+  const stubConfigJson = (config: Record<string, unknown>) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(config) }))
+  }
+
+  it('reports no board before the config loads', async () => {
+    const { getBoardPoolConfig } = await import('./runtimeConfig')
+    expect(getBoardPoolConfig()).toBeNull()
+  })
+
+  it('exposes the board pool with the deployment region when config.json carries it', async () => {
+    stubConfigJson({ ...baseConfig, board: { userPoolId: 'eu-west-1_board', clientId: 'boardclient' }, features: { email: true } })
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(getBoardPoolConfig()).toStrictEqual({ userPoolId: 'eu-west-1_board', clientId: 'boardclient', region: 'eu-west-1', signIn: 'email_otp' })
+    expect(config.features?.email).toBe(true)
+  })
+
+  it('carries the Cognito-email sign-in mode of a pool without SES', async () => {
+    stubConfigJson({ ...baseConfig, board: { userPoolId: 'eu-west-1_board', clientId: 'boardclient', signIn: 'code' } })
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    await loadRuntimeConfig()
+
+    expect(getBoardPoolConfig()?.signIn).toBe('code')
+  })
+
+  it('reads an unknown sign-in mode as EMAIL_OTP rather than dropping the pool', async () => {
+    stubConfigJson({ ...baseConfig, board: { userPoolId: 'eu-west-1_board', clientId: 'boardclient', signIn: 'magic' } })
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    await loadRuntimeConfig()
+
+    expect(getBoardPoolConfig()).toMatchObject({ userPoolId: 'eu-west-1_board', signIn: 'email_otp' })
+  })
+
+  it('reads a deployment without the board pool as no board, keeping the rest of the config', async () => {
+    stubConfigJson(baseConfig)
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(config.apiEndpoint).toBe('https://real-api.example.com')
+    expect(getBoardPoolConfig()).toBeNull()
+    expect(config.features?.email).toBeUndefined()
+  })
+
+  it('treats a malformed board block as no board instead of discarding config.json', async () => {
+    stubConfigJson({ ...baseConfig, board: { userPoolId: '', clientId: 7 } })
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(config.cognito.userPoolId).toBe('us-east-1_pool')
+    expect(getBoardPoolConfig()).toBeNull()
+  })
+})
+
+describe('the Cognito hosted UI (MCP OAuth consent redirects)', () => {
+  useFreshRuntimeConfigModule()
+
+  const cognito = { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1', identityPoolId: 'us-east-1:identity' }
+  const load = async (hostedUiDomain: unknown) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, json: () => Promise.resolve({ apiEndpoint: 'https://real-api.example.com', cognito: { ...cognito, hostedUiDomain } }),
+    }))
+    const module = await import('./runtimeConfig')
+    const config = await module.loadRuntimeConfig()
+    return { origin: module.getHostedUiOrigin(), config }
+  }
+
+  it('is null before the config loads', async () => {
+    const { getHostedUiOrigin } = await import('./runtimeConfig')
+    expect(getHostedUiOrigin()).toBeNull()
+  })
+
+  it('answers the https origin of the configured host', async () => {
+    const { origin } = await load('voc-example.auth.us-east-1.amazoncognito.com')
+    expect(origin).toBe('https://voc-example.auth.us-east-1.amazoncognito.com')
+  })
+
+  // Refused, not normalised: a bare domain prefix (no dots), a scheme, a trailing slash or a path.
+  it.each([undefined, '', 'voc-example', 'https://voc.auth.us-east-1.amazoncognito.com', 'voc.auth.us-east-1.amazoncognito.com/', 'evil.example.com/path', 7])(
+    'reads %s as no hosted UI, keeping the rest of config.json',
+    async (value) => {
+      const { origin, config } = await load(value)
+      expect(origin).toBeNull()
+      expect(config.cognito.userPoolId).toBe('us-east-1_pool')
+    },
+  )
 })

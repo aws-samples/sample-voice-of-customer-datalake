@@ -5,8 +5,8 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 ## Prerequisites
 
 - **AWS CLI** configured with appropriate credentials
-- **Node.js** 18+ and npm
-- **Python** 3.12+ (for Lambda functions)
+- **Node.js** 22.22.2+ (or 24.15+) and npm (jsdom 30, ESLint 10 and its Babel dependency need it; CI runs Node 24, matching the `nodejs24.x` Lambda runtime; the 22 line is supported but not tested in CI)
+- **Python** 3.14+ (for Lambda functions)
 - **AWS CDK** CLI installed (`npm install -g aws-cdk`)
 
 ## Project Structure
@@ -43,7 +43,20 @@ npm run deploy:all   # Deploys all CDK stacks + frontend
 
 ## Quality Checks
 
-Always run quality checks before deploying:
+> **The gate process: validate ONCE per release** (the full gate is slow, so it runs once, on the release branch). Agents and track branches
+> fix things WITHOUT the full gate: they run the single tool they need while iterating and
+> `bash scripts/validate-affected.sh [<base>]` (only the `validate.sh` steps for the paths they changed;
+> `--explain` shows the mapping) before handing their branch on. The full `bash scripts/validate.sh` runs ONCE, on the
+> release branch (cut from `main`, see changelog.md → Branches and PRs), just before it is pushed for its PR —
+> never skipped; CI runs it again on the PR. It runs its steps in six parallel lanes (CI: one job per lane), stops at the first failure
+> (printing that step's log tail; full logs in
+> `.cache/validate/logs/<run>/`) and ends with a per-step timing table. It needs gitleaks 8.30+ installed
+> (`brew install gitleaks`). Details: CONTRIBUTING.md → Quality gates.
+>
+> The code-audit detectors (`scripts/audit/`: dead code, renamed clones, re-implemented helpers) are gate steps
+> (`audit: …`): fix a finding or allowlist it with a reason — [docs/code-audit.md → In the gate](../../docs/code-audit.md#in-the-gate).
+
+The narrower npm scripts below are for iterating on one area:
 
 ```bash
 # From project root ONLY — voc-datalake/package.json has no `lint` script
@@ -51,27 +64,32 @@ npm run lint         # frontend + stream ESLint, and ruff over lambda/ + plugins
 npm run typecheck    # frontend ONLY (use typecheck:all for frontend + CDK + stream)
 npm run test         # frontend ONLY
 
-npm run check        # lint && typecheck:all && test && test:cdk && test:stream && test:backend
+npm run check:mock   # every frontend API call has a dev-mock route (starts the mock on a free port)
+npm run check:i18n   # i18n audit: no missing/extra/empty locale keys, every source key exists (read-only)
+
+npm run check        # lint && typecheck:all && test && check:mock && check:i18n && build && test:cdk && test:stream && test:backend
 ```
 
 ### What Each Check Does
 
 | Command | Covers |
 |---------|--------|
-| `npm run lint` | `lint:frontend` + `lint:stream` (ESLint) + `lint:python` (ruff over `lambda/`, `plugins/`) |
+| `npm run lint` | `lint:cdk` + `lint:frontend` + `lint:stream` + `lint:gates` (ESLint; `lint:gates` lints `eslint-rules/` itself) + `lint:python` (ruff over `lambda/`, `plugins/`) |
 | `npm run typecheck` | Frontend only |
 | `npm run typecheck:all` | Frontend + CDK (`typecheck:cdk`) + stream |
 | `npm run test` | Frontend Vitest |
+| `npm run check:mock` | Every `fetchApi` call site (and every raw `fetch` of the API base, `` fetch(`${getBaseUrl()}…`) ``) is listed in `frontend/mock-coverage.json` and its probes reach a real mock route |
+| `npm run check:i18n` | The i18n audit (`frontend/scripts/i18n-check.mjs`, after its own regression tests): every key the source uses exists in English, and no locale has missing, extra or empty keys (untranslated values and unused keys only warn). It never writes files. The frontend's `i18n:validate` / `i18n:extract` run `i18next-parser`, which REWRITES the locale files (re-sorted, new keys empty), so they are an authoring tool, not a gate |
 | `npm run test:cdk` / `test:stream` / `test:backend` | CDK Vitest / stream Vitest / pytest via `.venv/bin/python` |
-| `npm run check` | All of the above, chained with `&&` |
+| `npm run check` | All of the above, chained with `&&`; it runs `npm run build` (the SPA) before `test:cdk`, whose synth needs `frontend/dist` |
 
 **Two traps when using `check` as a gate:**
 
 - **It chains with `&&`, so the first failure hides every later step.** A
   `lint:python` failure means you never learn whether the CDK or backend tests
   pass. When triaging, run the individual scripts.
-- **There is no ESLint leg for the CDK TypeScript.** `bin/` and `lib/` are covered
-  only by `typecheck:cdk` — "lint is clean" says nothing about the CDK app.
+- **`test:cdk` alone needs a built SPA.** The API stack deploys `frontend/dist`; without
+  it the synth fails with `CannotFindAsset`. Run `npm run build` first (`check` does).
 
 ## CDK Stacks
 
@@ -94,14 +112,27 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
-| `VocApiStack` | API Gateway, API Lambdas, Webhooks, WAF | Core, Ingestion, Processing |
+| `VocApiStack` | API Gateway (per-method throttles; AWS WAF opt-in with `-c enableWaf=true`), API Lambdas, Webhooks | Core, Ingestion, Processing |
 | `VocWebSearchStack` (AI enablement, always us-east-1) | Two independently switchable halves: AgentCore web-search gateway (default-on, `-c enableWebSearch=false` opts out) + Bedrock model access / Anthropic use case (only when `anthropicUseCase` is set). Not created when both are off | None |
 
 ### Deploy All Stacks
 
 ```bash
-npm run deploy:infra    # Deploy all CDK stacks
+npm run deploy:infra    # Deploy all CDK stacks, then refresh the API stage
 ```
+
+> ### ⚠️ Every deploy that can touch VocApiStack must end with the stage refresh
+>
+> `scripts/cdk-deploy.sh` (behind `deploy:infra`, `deploy`, `deploy:api`) runs
+> `cdk deploy <args>` and then `scripts/refresh-api-stage.sh` (one
+> `apigateway create-deployment` of stage `v1`). CloudFormation snapshots the new
+> API Deployment BEFORE its cleanup phase deletes removed methods, so without the
+> refresh a route removed from `api-routes.ts` stays live on the stage (3.00.00 R1:
+> `POST /mcp` answered 500). A bare `cdk deploy` must be followed by
+> `bash scripts/refresh-api-stage.sh` (`API_STACK=<p>-VocApiStack` for a prefixed
+> deployment). `lib/utils/deploy-scripts.test.ts` pins the wiring;
+> `e2e/tests/ops-postdeploy.spec.ts` fails when the stage serves a method the API
+> definition no longer has. See docs/deployment.md.
 
 ### Deploy Individual Stacks
 
@@ -111,13 +142,13 @@ cd voc-datalake
 # Deploy specific stack
 cdk deploy VocCoreStack
 cdk deploy VocIngestionStack
-cdk deploy VocApiStack
+npm run deploy:api      # VocApiStack + the stage refresh
 
 # Deploy multiple stacks
 cdk deploy VocCoreStack VocIngestionStack
 
-# Deploy with auto-approve (no confirmation prompts)
-cdk deploy --all --require-approval never
+# Deploy with auto-approve (no confirmation prompts), then refresh the stage
+cdk deploy --all --require-approval never && bash scripts/refresh-api-stage.sh
 ```
 
 ### Stack Deployment Order
@@ -155,7 +186,7 @@ Deploy all stacks including frontend infrastructure:
 
 ```bash
 cd voc-datalake
-cdk deploy --all
+npm run deploy    # cdk deploy --all + the API stage refresh
 ```
 
 ### Frontend Build Process
@@ -173,6 +204,16 @@ npm run build
 ```
 
 ## Configuration
+
+### Production data protection
+
+Customer data is kept when the stacks are deleted, by default (`protectData` is on since
+5.74.00): data resources are kept on stack deletion and replacement, tables and the user
+pool get deletion protection, and the raw bucket has no auto-delete provider. **Demos and
+temporary environments deploy with `-c protectData=false`** (or `"protectData": false` in
+`cdk.context.json`), and must deploy that value BEFORE `cdk destroy`, or the retained
+resources stay (and block a redeploy of the same names). See docs/deployment.md
+"Production: protectData" (single source of truth: `lib/utils/data-protection.ts`).
 
 ### Plugin Status
 
@@ -215,15 +256,15 @@ The frontend fetches configuration from CloudFormation outputs:
 - `VITE_COGNITO_USER_POOL_ID` - Cognito User Pool ID
 - `VITE_COGNITO_CLIENT_ID` - Cognito Client ID
 - `VITE_COGNITO_REGION` - AWS Region
-- `VITE_IDENTITY_POOL_ID` - Cognito Identity Pool ID
 
-> These names must match `frontend/src/runtimeConfig.ts` exactly. All five are
-> **required**: `RuntimeConfigSchema` rejects an empty `identityPoolId`, and the
-> fallback then blanks every Cognito value — the login screen shows
-> "Cognito not configured" even when the user pool and client id resolved fine.
+> These names must match `frontend/src/runtimeConfig.ts` exactly. The API endpoint,
+> user pool id and client id are **required**: `RuntimeConfigSchema` rejects an empty
+> one, and the fallback then blanks every Cognito value — the login screen shows
+> "Cognito not configured". There is no identity-pool variable since 5.64.00 (the
+> SPA uses no AWS credentials).
 
 **Local dev cannot use the deployed API.** `ALLOWED_ORIGIN` on the deployed API
-Lambdas is `https://<frontendDomain>` (`allowedOrigin = isDev ? '*' : ...` in
+Lambdas is `https://<the CloudFront domain>` (`coreStack.frontendDomainName`; `allowedOrigin = isDev ? '*' : ...` in
 api-stack.ts), so a dev server on `localhost:5173` is refused by CORS. For local
 work run `npm run mock` (localhost:3001) and accept that it exercises the UI
 only; real UI-plus-API integration is testable only against the deployed site.
@@ -243,8 +284,8 @@ npm run check
 cd voc-datalake
 cdk diff
 
-# 4. Deploy
-cdk deploy --all
+# 4. Deploy (then refresh the API stage)
+cdk deploy --all && bash scripts/refresh-api-stage.sh
 ```
 
 ### For Frontend Changes
@@ -350,7 +391,7 @@ aws cloudformation describe-stacks \
 |---------|-------------|
 | `npm run check` | Run all quality checks |
 | `npm run deploy:all` | Deploy infrastructure + frontend |
-| `npm run deploy:infra` | Deploy CDK stacks only |
+| `npm run deploy:infra` | Deploy CDK stacks only (+ the API stage refresh) |
 | `npm run deploy:frontend` | Deploy frontend only |
 | `npm run generate:config` | Regenerate plugin/menu config |
 | `npm run dev` | Start frontend dev server |

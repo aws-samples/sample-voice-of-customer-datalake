@@ -1,0 +1,56 @@
+{
+  "title": "Email inbox",
+  "description": "Customers, staff and partners email feedback to these addresses. Each email is checked, deduplicated and redacted before it becomes a feedback item.",
+  "on": "On",
+  "off": "Off",
+  "loading": "Loading the email inbox…",
+  "notDeployed": "The email inbox is not deployed. Deploy with -c inboundEmailDomain=<your domain> (see docs/email-intake.md).",
+  "addresses": "Addresses",
+  "ruleSetInactive": "The receipt rule set {{ruleSet}} is not active, so no email arrives yet. Activate it in Amazon SES, or redeploy into the active rule set with -c inboundEmailRuleSet.",
+  "pii": {
+    "redact": "Personal data is redacted: names, email addresses and phone numbers are replaced before storage.",
+    "allow": "Personal data is kept as received (the source profile allows it).",
+    "summary_only": "Only derived fields are kept (the source profile is summary only)."
+  },
+  "dimension": {
+    "missing": "Create the Feedback type dimension so the ideas@, bugs@ and reviews@ addresses and subject tags such as [bug] label each item.",
+    "create": "Create dimension"
+  },
+  "today": {
+    "title": "Today (UTC)",
+    "accepted": "Accepted",
+    "deduped": "Deduplicated",
+    "dropped": "Dropped",
+    "deferred": "Deferred",
+    "modelCalls": "Model calls"
+  },
+  "reasons": {
+    "duplicate_message": "Same email delivered twice",
+    "seen_in_thread": "Text already in the thread",
+    "no_new_info": "Reply without new information",
+    "forward_duplicate": "Original already forwarded",
+    "spam": "Spam verdict",
+    "virus": "Virus verdict",
+    "auto_reply": "Automatic reply",
+    "bulk": "Bulk or mailing list",
+    "loop_sender": "Mail system sender",
+    "sender_cap": "Sender limit reached",
+    "no_text": "No text",
+    "unparseable": "Not readable",
+    "too_large": "Too large"
+  },
+  "caps": {
+    "title": "Daily limits",
+    "daily_cap": "Emails per day",
+    "sender_daily_cap": "Emails per sender per day",
+    "daily_model_calls": "Model calls per day",
+    "range": "From {{min, number}} to {{max, number}}",
+    "save": "Save limits",
+    "saved": "Limits saved"
+  },
+  "errors": {
+    "load": "The email inbox status could not be loaded.",
+    "save": "The limits could not be saved.",
+    "dimension": "The dimension could not be created."
+  }
+}

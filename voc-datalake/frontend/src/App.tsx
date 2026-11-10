@@ -1,22 +1,32 @@
 import { useEffect, useState } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import PageLoader from './components/PageLoader'
+import { QueryClientProvider } from '@tanstack/react-query'
+import PageLoader from './components/PageLoader/PageLoader'
 import { routes } from './routes'
 import { loadRuntimeConfig, isConfigLoaded } from './runtimeConfig'
 import { useConfigStore } from './store/configStore'
 import { configureAmplify } from './lib/amplify-config'
+import { useThemeSync } from './theme/useThemeSync'
+import { createAppQueryClient } from './api/queryPolicies'
+import { watchFeedbackJobs } from './api/feedbackDataWatch'
+import { bindQueryCacheToUser } from './api/userCacheScope'
+import { watchRealtimeSession } from './realtime/session'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30000,
-      retry: 1,
-    },
-  },
-})
+// Caching policy per key family (api/queryPolicies.ts); app-lifetime watchers,
+// so their unsubscribes are deliberately not kept.
+const queryClient = createAppQueryClient()
+watchFeedbackJobs(queryClient)
+bindQueryCacheToUser(queryClient)
 
 const router = createBrowserRouter(routes)
+
+/** Push notifications (docs/realtime.md) are bound once, after the runtime config names the Event API. */
+const realtimeWatch = { started: false }
+function startRealtimeWatch(): void {
+  if (realtimeWatch.started) return
+  realtimeWatch.started = true
+  watchRealtimeSession(queryClient)
+}
 
 /**
  * App wrapper that loads runtime config before rendering.
@@ -25,6 +35,7 @@ export default function App() {
   const [configReady, setConfigReady] = useState(isConfigLoaded())
   const [error, setError] = useState<string | null>(null)
   const syncWithRuntimeConfig = useConfigStore((state) => state.syncWithRuntimeConfig)
+  useThemeSync()
 
   useEffect(() => {
     if (!configReady) {
@@ -36,10 +47,11 @@ export default function App() {
           
           // Configure Amplify after runtime config is loaded
           configureAmplify()
-          
+          startRealtimeWatch()
+
           setConfigReady(true)
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           console.error('Failed to load config:', err)
           setError('Failed to load application configuration')
         })
@@ -48,13 +60,13 @@ export default function App() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-bg">
         <div className="text-center">
-          <h1 className="text-xl font-semibold text-red-600 mb-2">Configuration Error</h1>
-          <p className="text-gray-600">{error}</p>
+          <h1 className="text-xl font-semibold text-danger mb-2">Configuration Error</h1>
+          <p className="text-muted">{error}</p>
           <button 
             onClick={() => window.location.reload()} 
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="btn btn-primary mt-4"
           >
             Retry
           </button>

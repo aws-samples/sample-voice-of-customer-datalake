@@ -15,7 +15,8 @@
  * @module api/feedbackPagination
  */
 
-import type { FeedbackItem } from './client'
+import { z } from 'zod'
+import type { FeedbackItem } from './types'
 
 /**
  * Page size for `/feedback`, equal to the endpoint's server-side maximum.
@@ -97,4 +98,41 @@ export function nextPageOffset(
   const loaded = allPages.reduce((sum, page) => sum + pageLength(page), 0)
   const total = lastPage.total ?? loaded
   return loaded < total ? loaded : undefined
+}
+
+/**
+ * The cursor fields `/feedback/urgent` and `/feedback/search` return, read
+ * leniently: a route (or mock) that omits one degrades to "no more pages",
+ * never to a crash or an endless walk.
+ *
+ * - `total` is the window's match count; `null` when the route could not count
+ *   it for free (urgent with a post-query filter beyond the first page).
+ * - `next_token` is opaque: hand it back unchanged as `next_token`.
+ */
+const CursorFieldsSchema = z.object({
+  total: z.number().int().nonnegative().nullable().catch(null),
+  has_more: z.boolean().catch(false),
+  next_token: z.string().min(1).nullable().catch(null),
+})
+
+export type CursorFields = z.infer<typeof CursorFieldsSchema>
+
+const NO_CURSOR: CursorFields = { total: null, has_more: false, next_token: null }
+
+/** The cursor fields of a raw cursor-paged response (each absent or malformed field takes its default). */
+export function cursorFieldsOf(raw: unknown): CursorFields {
+  const parsed = CursorFieldsSchema.safeParse(raw)
+  return parsed.success ? parsed.data : NO_CURSOR
+}
+
+/** A cursor-paged response page as the client hands it to callers. */
+export interface CursorPage extends CursorFields {
+  count?: number
+  items?: FeedbackItem[]
+  is_partial_window?: boolean
+}
+
+/** The `next_token` for the page after `lastPage`, or `undefined` on the last page. */
+export function nextPageToken(lastPage: CursorFields): string | undefined {
+  return lastPage.has_more && lastPage.next_token ? lastPage.next_token : undefined
 }

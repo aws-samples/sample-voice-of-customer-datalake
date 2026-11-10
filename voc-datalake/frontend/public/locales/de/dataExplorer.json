@@ -1,17 +1,5 @@
 {
-  "categories": {
-    "errorLoading": "Fehler beim Laden der Kategorien",
-    "noCategories": "Keine Kategorien",
-    "summary": "{{count}} Kategorien • {{total}} Einträge • Letzte {{days}} Tage",
-    "summary_one": "{{count}} Kategorien • {{total}} Elemente • Letzte {{days}} Tage",
-    "summary_other": "{{count}} Kategorien • {{total}} Elemente • Letzte {{days}} Tage"
-  },
-  "deleteConfirm": {
-    "deleteFeedback": "Feedback löschen",
-    "deleteS3File": "S3-Datei löschen",
-    "message": "Sind Sie sicher? Dies kann nicht rückgängig gemacht werden."
-  },
-  "description": "Rohe S3-Daten und verarbeitete DynamoDB-Datensätze durchsuchen, bearbeiten und synchronisieren",
+  "description": "Rohdaten in S3 und verarbeitete DynamoDB-Datensätze durchsuchen. Hier wird nie etwas gelöscht, und gespeicherte Rohdateien sind schreibgeschützt.",
   "editModal": {
     "cancel": "Abbrechen",
     "close": "Schließen",
@@ -24,36 +12,47 @@
     "key": "Schlüssel",
     "save": "Speichern",
     "syncToDynamo": "Auch DynamoDB aktualisieren",
-    "syncToS3": "Auch S3 aktualisieren",
     "type": "Typ",
     "viewFeedback": "Feedback anzeigen",
-    "viewS3File": "S3-Datei anzeigen"
+    "viewS3File": "S3-Datei anzeigen",
+    "content": "Dateiinhalt",
+    "staleRecord": "Dieser Datensatz wurde geändert, nachdem Sie ihn geöffnet haben. Schließen Sie den Editor und öffnen Sie ihn erneut, um die aktuelle Version zu sehen."
   },
   "feedback": {
     "category": "Kategorie: {{category}}",
-    "delete": "Löschen",
     "edit": "Bearbeiten",
-    "errorLoading": "Fehler beim Laden des Feedbacks",
     "noFeedback": "Kein Feedback gefunden",
-    "showingRecords": "{{filtered}} von {{total}} Datensätzen",
+    "showingRecords": "{{filtered, number}} von {{total, number}} Datensätzen",
     "urgent": "Dringend",
-    "view": "Anzeigen"
+    "view": "Anzeigen",
+    "noFeedbackHint": "Versuchen Sie eine andere Quelle oder einen größeren Zeitraum.",
+    "showDetails": "Details anzeigen",
+    "hideDetails": "Details ausblenden",
+    "showingRecordsAtLeast": "{{filtered, number}} angezeigt, weitere verfügbar",
+    "showingRecordsShown": "{{filtered, number}} angezeigt",
+    "loadMore": "Mehr laden",
+    "loadingMore": "Wird geladen…"
   },
   "filters": {
     "allSources": "Alle Quellen",
-    "searchPlaceholder": "Suchen..."
+    "searchPlaceholder": "Suchen...",
+    "bucket": "S3-Bucket",
+    "source": "Quelle",
+    "search": "Feedback durchsuchen"
   },
   "newFile": "Neue Datei",
-  "notConfigured": "API-Endpunkt in den Einstellungen konfigurieren, um Daten zu erkunden",
+  "notConfigured": "API-Endpunkt unter Administration → Allgemein konfigurieren, um Daten zu erkunden",
   "refresh": "Aktualisieren",
   "s3Browser": {
     "back": "Zurück",
-    "delete": "Löschen",
     "download": "Herunterladen",
     "edit": "Bearbeiten",
-    "errorLoading": "Fehler beim Laden der Dateien",
     "noFiles": "Keine Dateien gefunden",
-    "view": "Anzeigen"
+    "view": "Anzeigen",
+    "path": "Ordnerpfad",
+    "noFilesHint": "Dieser Ordner ist leer. Erstellen Sie hier eine Datei oder importieren Sie Daten über Datenquellen.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
   },
   "tabs": {
     "categories": "Kategorien",
@@ -61,7 +60,111 @@
     "feedbackShort": "Rückmeldungen",
     "processedFeedback": "Verarbeitetes Feedback",
     "s3RawData": "S3-Rohdaten",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "Datenansicht"
   },
-  "title": "Daten-Explorer"
+  "title": "Daten-Explorer",
+  "details": {
+    "title": "Titel",
+    "text": "Bewertung",
+    "source": "Quelle",
+    "date": "Datum",
+    "category": "Kategorie",
+    "rating": "Bewertung (Sterne)",
+    "language": "Sprache",
+    "author": "Verfasser",
+    "problem": "Problem",
+    "persona": "Persona",
+    "showRaw": "Roh-JSON anzeigen",
+    "hideRaw": "Roh-JSON ausblenden"
+  },
+  "dataQuality": {
+    "title": "Datenqualität",
+    "description": "Wie nützlich das Feedback jeder Quelle ist: eine regelbasierte Stufe aus Länge, Details (Zahlen, Produktbegriffe) und ob ein konkretes Problem oder ein konkreter Wunsch genannt wird. Eine Quelle mit überwiegend niedrigem Feedback deutet oft auf einen falsch konfigurierten Scraper oder ein übersprungenes Formularfeld hin.",
+    "loading": "Datenqualität wird geladen…",
+    "empty": "Kein Feedback in diesem Zeitraum.",
+    "unratedShare": "{{share}} des Feedbacks in diesem Zeitraum ist noch nicht bewertet.",
+    "backfillHint": "Feedback, das vor der Bewertung gespeichert wurde, hat keine Stufe; eine Neuverarbeitung der Kategorien (Administration → Taxonomie) bewertet es.",
+    "chartTop_one": "Das Diagramm zeigt die aktivste Quelle; die Tabelle listet alle Quellen.",
+    "chartTop_other": "Das Diagramm zeigt die {{count, number}} aktivsten Quellen; die Tabelle listet alle Quellen.",
+    "partial": "Einige Daten konnten nicht rechtzeitig gelesen werden, daher können diese Zahlen niedriger als die tatsächlichen sein.",
+    "tableCaption": "Nützlichkeit des Feedbacks pro Quelle",
+    "allSources": "Alle Quellen",
+    "columns": {
+      "source": "Quelle",
+      "total": "Gesamt"
+    },
+    "bands": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Niedrig",
+      "unrated": "Nicht bewertet"
+    },
+    "profile": {
+      "title": "Quellenprofil",
+      "description": "Wie das Feedback jeder Quelle aussieht: wie es bewertet ist, seine Stimmung und wie lang sein Text ist.",
+      "notProfiled": "{{share}} des Feedbacks in diesem Zeitraum wurde gespeichert, bevor das Profil gezählt wurde, und ist nicht enthalten. Ein Neuaufbau der Aggregate für den Zeitraum ergänzt es.",
+      "facetGroup": "Angezeigtes Profil",
+      "tableCaption": "{{facet}} pro Quelle",
+      "profiled": "Erfasst",
+      "facets": {
+        "rating": "Bewertung",
+        "sentiment": "Stimmung",
+        "length": "Textlänge"
+      },
+      "rating": {
+        "5": "5 Sterne",
+        "4": "4 Sterne",
+        "3": "3 Sterne",
+        "2": "2 Sterne",
+        "1": "1 Stern",
+        "none": "Keine Bewertung"
+      },
+      "sentiment": {
+        "positive": "Positiv",
+        "neutral": "Neutral",
+        "mixed": "Gemischt",
+        "negative": "Negativ",
+        "other": "Sonstige"
+      },
+      "length": {
+        "short": "Unter 50 Zeichen",
+        "medium": "50–199 Zeichen",
+        "long": "200–999 Zeichen",
+        "very_long": "1.000 Zeichen oder mehr"
+      }
+    }
+  },
+  "fields": {
+    "title": "Felder",
+    "description": "Was jedes gespeicherte Feld eines Feedback-Eintrags bedeutet: sein Typ, welcher Schritt es setzt, ob es personenbezogene Daten enthält, was eine Quellrichtlinie „Schwärzen“ oder „Nur Zusammenfassung“ damit macht, und seine zulässigen Werte. Die Bedeutungen sind auf Englisch.",
+    "loading": "Felder werden geladen…",
+    "empty": "Die API hat keine Felder geliefert.",
+    "caption": "Felder eines Feedback-Eintrags ({{table}})",
+    "keyBadge": "Schlüssel",
+    "redact": "Schwärzen: {{effect}}",
+    "summaryOnly": "Nur Zusammenfassung: {{effect}}",
+    "columns": {
+      "field": "Feld",
+      "type": "Typ",
+      "meaning": "Bedeutung",
+      "setBy": "Gesetzt von",
+      "personalData": "Personenbezogene Daten",
+      "policies": "Bei Schwärzen / nur Zusammenfassung",
+      "values": "Werte"
+    },
+    "pii": {
+      "customer_text": "Kundentext",
+      "personal": "Personenbezogene Daten",
+      "derived_text": "Aus Kundentext abgeleitet",
+      "none": "Keine"
+    },
+    "effects": {
+      "kept": "beibehalten",
+      "redacted": "geschwärzt",
+      "dropped": "entfernt",
+      "from_redacted": "aus dem geschwärzten Text abgeleitet",
+      "replaced": "ersetzt"
+    }
+  }
 }

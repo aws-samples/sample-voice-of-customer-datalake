@@ -59,11 +59,32 @@ COGNITO_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="U
 COGNITO_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolClientId") | .OutputValue')
 COGNITO_REGION=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoRegion") | .OutputValue // "us-west-2"')
 IDENTITY_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="IdentityPoolId") | .OutputValue')
+# The hosted-UI host the MCP OAuth consent page may navigate to (empty: the SPA refuses that redirect).
+HOSTED_UI_DOMAIN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolDomain") | .OutputValue // empty')
+# The host lib/stacks/api-mcp-oauth.ts cognitoHostedUiHost builds (lib/utils/deploy-scripts.test.ts pins this pattern).
+HOSTED_UI_HOST_PATTERN='^[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.com$'
+if ! [[ "$HOSTED_UI_DOMAIN" =~ $HOSTED_UI_HOST_PATTERN ]]; then
+  echo "" >&2
+  echo "WARNING: VocCoreStack output UserPoolDomain is ${HOSTED_UI_DOMAIN:-missing}, not a <prefix>.auth.<region>.amazoncognito.com host." >&2
+  echo "WARNING: the MCP OAuth consent page will refuse every approval until VocCoreStack is redeployed (cdk deploy). Deploying the frontend anyway." >&2
+  echo "" >&2
+fi
 API_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
-STREAM_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ChatStreamUrl") | .OutputValue // empty')
-AVATARS_CDN_URL=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="AvatarsCdnUrl") | .OutputValue // empty')
 # "true" when the AgentCore web search gateway is deployed (drives the UI toggles)
 WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WebSearchAvailable") | .OutputValue // "false"')
+# Only a deployment with -c emailFrom emits EmailAvailable (participant email). The board pool
+# (boards and review links) exists on every deployment since 5.45.00; an older stack without it
+# leaves the board block out of config.json. BoardSignInMode: email_otp (SES) or code.
+EMAIL_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EmailAvailable") | .OutputValue // "false"')
+# "true" when the app user pool allows passkeys (5.65.00); an older stack has no output.
+PASSKEY_AVAILABLE=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="PasskeyAvailable") | .OutputValue // "false"')
+BOARD_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolId") | .OutputValue // empty')
+BOARD_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolClientId") | .OutputValue // empty')
+BOARD_SIGN_IN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardSignInMode") | .OutputValue // "email_otp"')
+# The AppSync Events hosts for push notifications (docs/realtime.md, 6.04.00: VocCoreStack's Event API); an
+# older stack has none, and the SPA then polls exactly as before.
+REALTIME_HTTP_DNS=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="RealtimeHttpDns") | .OutputValue // empty')
+REALTIME_DNS=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="RealtimeDns") | .OutputValue // empty')
 
 # Validate required values
 if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "null" ]; then
@@ -81,6 +102,12 @@ if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "null" ]; then
   exit 1
 fi
 
+# TRANSITIONAL (5.64.00): an empty value would break a cached pre-5.64 page just like a missing key.
+if [ -z "$IDENTITY_POOL_ID" ] || [ "$IDENTITY_POOL_ID" = "null" ]; then
+  echo "Error: Could not fetch IdentityPoolId from $CORE_STACK"
+  exit 1
+fi
+
 echo "  Bucket: $BUCKET_NAME"
 echo "  Distribution: $DISTRIBUTION_ID"
 echo "  API Endpoint: $API_ENDPOINT"
@@ -88,8 +115,9 @@ echo "  Cognito Pool: $COGNITO_USER_POOL_ID"
 echo "  Cognito Client: $COGNITO_CLIENT_ID"
 echo "  Cognito Region: $COGNITO_REGION"
 echo "  Identity Pool: $IDENTITY_POOL_ID"
-echo "  Stream Endpoint: $STREAM_ENDPOINT"
-echo "  Avatars CDN: $AVATARS_CDN_URL"
+echo "  Email: $EMAIL_AVAILABLE"
+echo "  Board Pool: ${BOARD_USER_POOL_ID:-none}"
+echo "  Realtime: ${REALTIME_DNS:-none}"
 
 # Step 2: Build the frontend
 echo ""
@@ -100,30 +128,52 @@ npm run build
 echo ""
 echo "Step 3: Generating runtime config.json..."
 
-# Use jq to properly escape values and generate valid JSON
+# cognito.identityPoolId is TRANSITIONAL (5.64.00): the SPA ignores it, but a cached pre-5.64 bundle
+# still requires it. It goes with the identity pool (lib/utils/deploy-scripts.test.ts).
+# Use jq to properly escape values and generate valid JSON. The same shape the
+# CDK deploy writes (VocApiStack runtimeConfig) and RuntimeConfigSchema reads
+# (frontend/src/runtimeConfig.ts); lib/utils/deploy-scripts.test.ts pins the three.
 jq -n \
   --arg apiEndpoint "$API_ENDPOINT" \
-  --arg streamEndpoint "$STREAM_ENDPOINT" \
-  --arg avatarsCdnUrl "$AVATARS_CDN_URL" \
   --arg userPoolId "$COGNITO_USER_POOL_ID" \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
   --arg identityPoolId "$IDENTITY_POOL_ID" \
+  --arg hostedUiDomain "$HOSTED_UI_DOMAIN" \
   --argjson webSearch "$([ "$WEB_SEARCH_AVAILABLE" = "true" ] && echo true || echo false)" \
+  --argjson email "$([ "$EMAIL_AVAILABLE" = "true" ] && echo true || echo false)" \
+  --argjson passkey "$([ "$PASSKEY_AVAILABLE" = "true" ] && echo true || echo false)" \
+  --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
+  --arg boardClientId "$BOARD_CLIENT_ID" \
+  --arg boardSignIn "$BOARD_SIGN_IN" \
+  --arg realtimeHttpDns "$REALTIME_HTTP_DNS" \
+  --arg realtimeDns "$REALTIME_DNS" \
   '{
     apiEndpoint: $apiEndpoint,
-    streamEndpoint: $streamEndpoint,
-    avatarsCdnUrl: $avatarsCdnUrl,
     cognito: {
       userPoolId: $userPoolId,
       clientId: $clientId,
       region: $region,
-      identityPoolId: $identityPoolId
+      identityPoolId: $identityPoolId,
+      hostedUiDomain: $hostedUiDomain
     },
     features: {
-      webSearch: $webSearch
+      webSearch: $webSearch,
+      email: $email,
+      passkey: $passkey
     }
-  }' > dist/config.json
+  } + (if $boardUserPoolId != "" and $boardClientId != "" then {
+    board: {
+      userPoolId: $boardUserPoolId,
+      clientId: $boardClientId,
+      signIn: $boardSignIn
+    }
+  } else {} end) + (if $realtimeHttpDns != "" and $realtimeDns != "" then {
+    realtime: {
+      httpDns: $realtimeHttpDns,
+      realtimeDns: $realtimeDns
+    }
+  } else {} end)' > dist/config.json
 
 echo "  ✓ config.json generated with CloudFormation values"
 

@@ -1,5 +1,5 @@
 /**
- * @fileoverview The form half of the anonymous ballot page: four things to rate,
+ * @fileoverview The form half of the anonymous ballot page: the configured metrics to rate,
  * an optional note, an optional display name, submit.
  *
  * Split from `Vote.tsx` so the page owns the session's STATE (open, closed,
@@ -17,6 +17,8 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MAX_BALLOT_DISPLAY_NAME_LENGTH, MAX_BALLOT_NOTE_LENGTH } from './ballotBounds'
 import type { AnonymousBallot } from '../../api/votingSessionsApi'
+import type { ScoringAxis } from '../../api/prioritizationAxes'
+import { axisText } from '../Prioritization/axisText'
 import type { ReactElement } from 'react'
 
 /**
@@ -33,35 +35,32 @@ import type { ReactElement } from 'react'
  */
 const NEUTRAL = 3
 
-/** The four axes a ballot scores — the same four the signed-in page scores, so an
- *  anonymous ballot enters the aggregate as one more reviewer rather than as a
- *  differently-shaped record. */
-type AxisField = 'impact' | 'time_to_market' | 'strategic_fit' | 'confidence'
-
-const INITIAL_AXES: Record<AxisField, number> = {
-  impact: NEUTRAL,
-  time_to_market: NEUTRAL,
-  strategic_fit: NEUTRAL,
-  confidence: NEUTRAL,
-}
+/** Every configured metric starts at the neutral middle. */
+const initialValues = (axes: readonly ScoringAxis[]): Record<string, number> => (
+  Object.fromEntries(axes.map((axis) => [axis.id, NEUTRAL]))
+)
 
 function BallotSlider({
-  label, hint, value, onChange,
+  label, hint, lowLabel, highLabel, value, onChange,
 }: {
   readonly label: string
   readonly hint: string
+  /** What 1 and 5 mean, so "5" on a lower-is-better metric (Effort) is not misread. */
+  readonly lowLabel: string
+  readonly highLabel: string
   readonly value: number
   readonly onChange: (next: number) => void
 }): ReactElement {
   const inputId = useId()
+  const labelId = useId()
   const hintId = useId()
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between gap-3">
-        <label htmlFor={inputId} className="font-medium text-gray-900">{label}</label>
-        <span className="text-lg font-bold text-blue-700 tabular-nums">{value}</span>
+        <label id={labelId} htmlFor={inputId} className="font-medium text-text-strong">{label}</label>
+        <span className="text-lg font-bold font-mono text-accent-text tabular-nums">{value}</span>
       </div>
-      <p id={hintId} className="text-sm text-gray-600">{hint}</p>
+      {hint === '' ? null : <p id={hintId} className="text-sm text-muted">{hint}</p>}
       {/* `h-8` rather than the default track height: this is operated with a thumb
           on a phone held at arm's length, and the hit area is the whole control. */}
       <input
@@ -71,10 +70,15 @@ function BallotSlider({
         max={5}
         step={1}
         value={value}
-        aria-describedby={hintId}
+        aria-labelledby={labelId}
+        aria-describedby={hint === '' ? undefined : hintId}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-8 accent-blue-600"
+        className="range"
       />
+      <div className="flex justify-between text-xs text-muted" aria-hidden="true">
+        <span>{lowLabel}</span>
+        <span>{highLabel}</span>
+      </div>
     </div>
   )
 }
@@ -89,13 +93,15 @@ function BallotSlider({
  *   slot of the session's cap.
  */
 export default function BallotForm({
-  onSubmit, isSubmitting,
+  axes, onSubmit, isSubmitting,
 }: {
+  /** The ACTIVE metrics of the workspace scoring setup, from the public config. */
+  readonly axes: readonly ScoringAxis[]
   readonly onSubmit: (ballot: AnonymousBallot) => void
   readonly isSubmitting: boolean
 }): ReactElement {
   const { t } = useTranslation('prioritization')
-  const [axes, setAxes] = useState<Record<AxisField, number>>(INITIAL_AXES)
+  const [values, setValues] = useState<Record<string, number>>(() => initialValues(axes))
   const [notes, setNotes] = useState('')
   const [displayName, setDisplayName] = useState('')
   const notesId = useId()
@@ -104,7 +110,7 @@ export default function BallotForm({
 
   return (
     <form
-      className="space-y-6"
+      className="card p-4 sm:p-5 space-y-6"
       onSubmit={(e) => {
         e.preventDefault()
         // Every axis is sent, because every slider has a position the submitter
@@ -113,7 +119,8 @@ export default function BallotForm({
         // an absent axis as "say nothing" — so an unmoved slider showing 3 would
         // silently not count.
         onSubmit({
-          ...axes,
+          // Only the metrics on screen, each under its id — never a stale one.
+          ...Object.fromEntries(axes.map((axis) => [axis.id, values[axis.id] ?? NEUTRAL])),
           // Trimmed to nothing rather than sent as blanks: the API stores what it
           // is given, and '' is not a note or a name.
           ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -121,38 +128,26 @@ export default function BallotForm({
         })
       }}
     >
-      {/* Four sliders written out rather than mapped over a list of key names,
-          because `scripts/i18n-check.mjs` only sees a key it reads VERBATIM: keys
-          held in a lookup table are reported unused and become deletion
-          candidates in a cleanup pass, leaving a room looking at raw key paths.
-          Same trap `SCORABLE_TYPE_META` and `unscoredLabel` document. */}
-      <BallotSlider
-        label={t('ballot.axes.impact')}
-        hint={t('ballot.axes.impactHint')}
-        value={axes.impact}
-        onChange={(next) => setAxes((prev) => ({ ...prev, impact: next }))}
-      />
-      <BallotSlider
-        label={t('ballot.axes.timeToMarket')}
-        hint={t('ballot.axes.timeToMarketHint')}
-        value={axes.time_to_market}
-        onChange={(next) => setAxes((prev) => ({ ...prev, time_to_market: next }))}
-      />
-      <BallotSlider
-        label={t('ballot.axes.strategicFit')}
-        hint={t('ballot.axes.strategicFitHint')}
-        value={axes.strategic_fit}
-        onChange={(next) => setAxes((prev) => ({ ...prev, strategic_fit: next }))}
-      />
-      <BallotSlider
-        label={t('ballot.axes.confidence')}
-        hint={t('ballot.axes.confidenceHint')}
-        value={axes.confidence}
-        onChange={(next) => setAxes((prev) => ({ ...prev, confidence: next }))}
-      />
+      {/* One slider per configured metric. Built-in names and hints come from the
+          catalogues through namespace-qualified keys (`axisText`), so i18n-check sees
+          them; a custom metric shows the name an admin gave it. */}
+      {axes.map((axis) => {
+        const text = axisText(axis, t, 'ballot')
+        return (
+          <BallotSlider
+            key={axis.id}
+            label={text.name}
+            hint={text.description}
+            lowLabel={text.lowLabel}
+            highLabel={text.highLabel}
+            value={values[axis.id] ?? NEUTRAL}
+            onChange={(next) => setValues((prev) => ({ ...prev, [axis.id]: next }))}
+          />
+        )
+      })}
 
       <div className="space-y-1">
-        <label htmlFor={notesId} className="font-medium text-gray-900">{t('ballot.notes.label')}</label>
+        <label htmlFor={notesId} className="font-medium text-text-strong">{t('ballot.notes.label')}</label>
         {/* Bounded by the same number the API refuses past, so this page cannot
             compose a body that comes back 400 with a reason it could not show.
             `maxLength` counts UTF-16 code units where the API counts code points,
@@ -166,17 +161,17 @@ export default function BallotForm({
           rows={3}
           maxLength={MAX_BALLOT_NOTE_LENGTH}
           placeholder={t('ballot.notes.placeholder')}
-          className="w-full px-3 py-2 border rounded-lg"
+          className="input"
         />
       </div>
 
       <div className="space-y-1">
-        <label htmlFor={nameId} className="font-medium text-gray-900">{t('ballot.displayName.label')}</label>
+        <label htmlFor={nameId} className="font-medium text-text-strong">{t('ballot.displayName.label')}</label>
         {/* Says plainly that this is the ONE field that could identify the
             submitter, and that leaving it blank is the normal thing to do. A
             room's vote is anonymous; an optional name is a courtesy, not the
             price of voting. */}
-        <p id={nameHintId} className="text-sm text-gray-600">{t('ballot.displayName.hint')}</p>
+        <p id={nameHintId} className="text-sm text-muted">{t('ballot.displayName.hint')}</p>
         <input
           id={nameId}
           type="text"
@@ -185,14 +180,14 @@ export default function BallotForm({
           maxLength={MAX_BALLOT_DISPLAY_NAME_LENGTH}
           aria-describedby={nameHintId}
           autoComplete="off"
-          className="w-full px-3 py-2 border rounded-lg"
+          className="input"
         />
       </div>
 
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full px-4 py-3 rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500"
+        className="btn btn-primary w-full py-3"
       >
         {isSubmitting ? t('ballot.submit.pending') : t('ballot.submit.label')}
       </button>

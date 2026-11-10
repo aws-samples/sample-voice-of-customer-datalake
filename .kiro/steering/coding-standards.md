@@ -7,6 +7,10 @@
 3. **Idempotent**: All operations should be safe to retry
 4. **Observable**: Include logging, tracing, and metrics in all Lambda functions
 5. **Lambda IAM Policy Size Limit**: AWS has a 20KB limit on Lambda execution role policies - split Lambdas by concern to avoid hitting this limit
+6. **Quality gates are human-owned (read-only for agents)**: `eslint-rules/quality-gates.mjs` and every gate setting
+   (`max-lines` = 400 for production files, 750 for specs; complexity; ruff/pyright/jscpd/knip thresholds) are never
+   raised, relaxed, pended or suppressed to make a change pass. Fix the code instead: split the file, extract a helper,
+   simplify. A change to a gate value needs the human owner's explicit approval first.
 
 ## Python (Lambda Functions)
 
@@ -89,7 +93,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 ### SQS Batch Processing Pattern
 
 ```python
-from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
+from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, process_partial_response
 
 processor = BatchProcessor(event_type=EventType.SQS)
 
@@ -98,9 +102,9 @@ def record_handler(record: SQSRecord) -> dict:
     # Process record...
     return {"status": "success"}
 
-@batch_processor(record_handler=record_handler, processor=processor)
+# `@batch_processor` is deprecated (pyright reportDeprecated is an error).
 def lambda_handler(event: dict, context: Any) -> dict:
-    return processor.response()
+    return process_partial_response(event=event, record_handler=record_handler, processor=processor, context=context)
 ```
 
 ### Bedrock Invocation
@@ -108,7 +112,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 Never hardcode model ids — resolution goes through
 `shared/model_config.py` (the admin model picker's per-surface overrides
 apply automatically), and `shared/converse.py` shapes requests per model
-capability (Sonnet 5 / both Opus generations reject `temperature`; they also reject an
+capability (Sonnet 5 / 5.5, Haiku 5.5 and every Opus generation reject `temperature`; they also reject an
 explicit thinking budget). Pass a `surface` and let the helper resolve:
 
 ```python
@@ -138,46 +142,71 @@ AWS Lambda execution roles have a **20KB policy size limit**. When a single Lamb
 3. **Minimal permissions** - Each Lambda only gets IAM permissions for resources it actually uses
 4. **Naming convention** - Use `{domain}_handler.py` naming (e.g., `metrics_handler.py`, `chat_handler.py`)
 
-**Current API Lambda Structure (12 handlers):**
+**Current API Lambda Structure (20 handlers):**
 
 ```
 lambda/api/
-├── metrics_handler.py       # /feedback/*, /metrics/* (read-only)
-├── chat_handler.py          # /chat/*
-├── (streaming chat: lambda/stream — TypeScript, SSE at /chat/stream)
-├── integrations_handler.py  # /integrations/*, /sources/*
-├── scrapers_handler.py      # /scrapers/*
-├── settings_handler.py      # /settings/*
-├── projects_handler.py      # /projects/*
-├── users_handler.py         # /users/* (Cognito admin)
-├── feedback_form_handler.py # /feedback-forms/*
-├── data_explorer_handler.py # /data-explorer/* (S3 raw data & DynamoDB browser)
-└── projects.py              # Shared business logic for projects
+├── metrics_handler.py        # /feedback/*, /metrics/* (read-only)
+├── feedback_edit_handler.py  # PUT /feedback/{id}/category|dimensions (voc-feedback-edit-api)
+├── chat_handler.py           # /chat/* (conversations)
+├── (AI assistant: lambda/stream — TypeScript, AG-UI 1.0 SSE at /chat/stream)
+├── integrations_handler.py   # /integrations/*, /sources/*
+├── scrapers_handler.py       # /scrapers/*
+├── manual_import_handler.py  # /scrapers/manual/* (admin-only import)
+├── s3_import_handler.py      # /s3-import/* (admin-only import bucket explorer)
+├── settings_handler.py       # /settings/*
+├── projects_handler.py       # /projects/*
+├── users_handler.py          # /users/* (Cognito admin)
+├── feedback_form_handler.py  # /feedback-forms/*
+├── data_explorer_handler.py  # /data-explorer/* (S3 raw data & DynamoDB browser)
+├── logs_handler.py           # /logs/*
+├── memory_handler.py         # /memory/*
+├── agents_handler.py         # /agents/*, /workflows/*
+├── mcp_global_handler.py     # POST /mcp/global
+├── mcp_tokens_handler.py     # /connect/tokens/*
+├── engagement_handler.py     # /participants/*, /feature-requests/*, POST /unsubscribe
+├── ballots_handler.py        # /voting-sessions/*
+├── radar_handler.py          # /radar/*
+└── projects.py               # Shared business logic for projects
+
+lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (async, Processing stack)
 ```
 
-**Domain-to-Permission Mapping (12 handlers):**
+**Domain-to-Permission Mapping (20 handlers; the full per-Lambda grants are in tech.md "API Lambda Split"):**
 
 | Domain | Handler | AWS Permissions |
 |--------|---------|-----------------|
 | Metrics | `metrics_handler.py` | DynamoDB read (feedback, aggregates) |
-| Chat | `chat_handler.py` | DynamoDB RW (conversations), Bedrock |
-| Chat Stream | `lambda/stream` (TypeScript) | DynamoDB read, Bedrock streaming |
+| Feedback Edit (`voc-feedback-edit-api`) | `feedback_edit_handler.py` | DynamoDB RW (feedback), read (aggregates) |
+| Chat | `chat_handler.py` | DynamoDB RW (conversations) |
+| Chat Stream (AI assistant) | `lambda/stream` (TypeScript) | DynamoDB read (feedback, aggregates), Bedrock streaming, invoke ProjectsApi/MetricsApi/FeedbackFormApi/SettingsApi/ScrapersApi/MemoryApi/AgentsApi/UsersApi/EngagementApi (users: admin-only directory reads), conversations GetItem/PutItem (the caller's own session only, partition enforced in code) — no projects table, no business-data writes |
 | Integrations | `integrations_handler.py` | Secrets Manager, EventBridge |
 | Scrapers | `scrapers_handler.py` | Secrets Manager, Lambda invoke, Bedrock |
+| Manual Import | `manual_import_handler.py` | DynamoDB, SQS, S3 |
+| S3 Import | `s3_import_handler.py` | S3 import bucket RW, KMS; reprocess: invoke the `s3_import` ingestor, aggregates `SOURCE_RUN#s3_import` rows only |
 | Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
 | Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock, S3 |
 | Users | `users_handler.py` | Cognito admin |
 | Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |
 | Data Explorer | `data_explorer_handler.py` | S3, DynamoDB (feedback) |
+| Logs | `logs_handler.py` | CloudWatch Logs read, its own CloudWatch alarms, the ops SNS topic |
+| Memory | `memory_handler.py` | DynamoDB (memory, aggregates read), SQS memory-extract, S3 `memory-imports/*`, Bedrock |
+| Agents | `agents_handler.py` | DynamoDB (agents, aggregates read), Step Functions `voc-agent-run` |
+| Global MCP | `mcp_global_handler.py` | DynamoDB (projects tokens, jobs audit), Cognito read, invoke nine domain APIs (metrics, settings, memory, projects, agents, engagement, radar, feedback edit, integrations) |
+| MCP tokens | `mcp_tokens_handler.py` | DynamoDB (projects tokens, jobs audit) |
+| Engagement | `engagement_handler.py` | DynamoDB (participants, feature requests RW; projects, aggregates read), KMS, SES (with `-c emailFrom`), self-invoke |
+| Ballots | `ballots_handler.py` | DynamoDB (aggregates Get/Put/Update, projects GetItem), KMS |
+| Radar | `radar_handler.py` | DynamoDB (radar RW, aggregates read), KMS, invoke the Radar scan worker |
+| Category Reprocess worker (`voc-category-reprocess`) | `jobs/category_reprocess/handler.py` | DynamoDB (feedback Scan/Get/Update, aggregates), S3 read (`raw/*`), KMS, Bedrock, Comprehend, Translate, self-invoke |
 
 **When adding new API endpoints:**
 
 1. Identify which domain the endpoint belongs to
 2. Add the route to the appropriate existing handler
 3. If creating a new domain, create a new `{domain}_handler.py` file
-4. Update `api-stack.ts` to create the Lambda and wire API Gateway routes
+4. Create the Lambda in the matching `lib/stacks/api-*-lambdas.ts` builder and wire its routes in `api-routes.ts`
 5. Grant only the minimum required permissions
-
+6. If the frontend calls it, mock it for local dev and add it to `frontend/mock-coverage.json` (see "Every frontend API call must be mocked" in tech.md); `npm run check:mock` gates this
 **Example - Adding a new endpoint to existing domain:**
 
 ```python
@@ -274,7 +303,7 @@ export class MyStack extends cdk.Stack {
 
 AWS Lambda execution roles have a **20KB policy size limit**. The CDK stack must create separate Lambdas for each domain with isolated permissions.
 
-**Current Lambda Architecture in `api-stack.ts`:**
+**Current Lambda Architecture (the `lib/stacks/api-*-lambdas.ts` builders composed by `api-stack.ts`):**
 
 ```typescript
 // 1. Metrics Lambda - read-only feedback/metrics queries
@@ -290,8 +319,7 @@ const chatLambda = new lambda.Function(this, 'ChatApi', {
   handler: 'chat_handler.lambda_handler',
   // ...
 });
-conversationsTable.grantReadWriteData(chatRole);
-// + Bedrock permissions
+grantReadAndWrites(conversationsTable, chatRole, ['PutItem', 'UpdateItem', 'DeleteItem']); // lib/utils/table-write-grants.ts
 
 // 3. Integrations Lambda - credentials and source schedules
 const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
@@ -312,7 +340,8 @@ const settingsLambda = new lambda.Function(this, 'SettingsApi', {
   handler: 'settings_handler.lambda_handler',
   // ...
 });
-aggregatesTable.grantReadWriteData(settingsRole);
+grantReadAndWrites(aggregatesTable, settingsRole, ['PutItem', 'UpdateItem']);
+grantKeyScopedWrites(aggregatesTable, settingsRole, ['DeleteItem'], ['BRIEFSUB']); // its one delete, by partition
 // + Bedrock for category generation
 
 // 6. Projects Lambda - research projects
@@ -320,9 +349,9 @@ const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
   handler: 'projects_handler.lambda_handler',
   // ...
 });
-projectsTable.grantReadWriteData(projectsRole);
+projectsTable.grantReadWriteData(projectsRole); // workspace deletes: every write, batches included
 jobsTable.grantReadWriteData(projectsRole);
-// + Step Functions + Bedrock + S3 (avatars)
+// + Step Functions + Bedrock + S3 (avatars; every version of a deleted object, lib/utils/workspace-object-deletes.ts)
 
 // 7. Users Lambda - Cognito user administration
 const usersLambda = new lambda.Function(this, 'UsersApi', {
@@ -336,7 +365,8 @@ const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
   handler: 'feedback_form_handler.lambda_handler',
   // ...
 });
-aggregatesTable.grantReadWriteData(feedbackFormRole);
+grantReadAndWrites(aggregatesTable, feedbackFormRole, ['PutItem', 'UpdateItem']);
+grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], ['FEEDBACK_FORM']);
 // + SQS for processing queue
 
 // 9. Data Explorer Lambda - S3 raw data and DynamoDB browser
@@ -345,7 +375,8 @@ const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
   // ...
 });
 rawDataBucket.grantRead(dataExplorerRole);
-feedbackTable.grantReadWriteData(dataExplorerRole);
+feedbackTable.grantReadData(dataExplorerRole);
+feedbackTable.grant(dataExplorerRole, 'dynamodb:UpdateItem'); // in-place edit only, no delete
 // S3 + DynamoDB permissions
 ```
 
@@ -381,7 +412,12 @@ feedbackFormSubmitResource.addMethod('POST', feedbackFormIntegration);
 2. Create new Lambda Function with domain-specific handler
 3. Create LambdaIntegration
 4. Add API Gateway routes pointing to the new integration
-5. Grant only required table/service permissions to the role
+5. Grant only required table/service permissions to the role: `grantReadData` for reads, the exact writes the code
+   calls with `grantReadAndWrites` / `grantKeyScopedWrites` (`lib/utils/table-write-grants.ts`), never
+   `grantReadWriteData` on a table the role does not delete in. A delete of operational rows in a shared table is
+   pinned by `dynamodb:LeadingKeys`; every deleter is listed in `lib/customer-data-deletes.test.ts`, and the
+   `AUDIT#*` rows are denied to every writer but their own (`lib/utils/audit-row-guard.ts`, applied by
+   `applyAppAspects`): a new code path that writes an audit row names its role in `AUDIT_WRITERS` there
 
 **Benefits:**
 - Each Lambda stays under 20KB policy limit
@@ -448,9 +484,9 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
 export const api = {
   getFeedback: (params) => fetchApi<{ count: number; items: FeedbackItem[] }>(`/feedback?${new URLSearchParams(params)}`),
   getSummary: (days: number) => fetchApi<MetricsSummary>(`/metrics/summary?days=${days}`),
-  chat: (message: string) => fetchApi<{ response: string }>('/chat', {
-    method: 'POST',
-    body: JSON.stringify({ message })
+  saveBrandSettings: (settings: BrandSettings) => fetchApi<{ success: boolean }>('/settings/brand', {
+    method: 'PUT',
+    body: JSON.stringify(settings)
   }),
 }
 ```
@@ -592,8 +628,7 @@ GET  /metrics/sources             # Source breakdown
 GET  /metrics/personas            # Persona breakdown
 
 # Chat
-POST /chat                        # AI chat endpoint
-POST /chat/stream                 # Streaming chat (SSE via API Gateway)
+POST /chat/stream                 # Unified AI assistant (AG-UI RunAgentInput in, AG-UI SSE events out)
 
 # Scrapers
 GET  /scrapers                    # List scraper configs
@@ -609,7 +644,7 @@ POST /projects                    # Create project
 GET  /projects/{id}               # Get project with personas/documents
 POST /projects/{id}/personas/generate  # Generate personas from feedback
 POST /projects/{id}/research      # Run research job (Step Functions)
-POST /projects/{id}/chat          # Project-scoped chat
+# (project chat → POST /chat/stream with forwardedProps.page.projectId)
 ```
 
 ### Response Format
@@ -656,11 +691,11 @@ All Lambdas use ARM64 (Graviton) architecture for better price/performance.
 **ALWAYS validate API endpoints after deployment** using the test script:
 
 ```bash
-# Run full API validation (includes streaming API)
+# Run full API validation (includes the streaming API at {api}/chat/stream)
 ./scripts/test-api.sh
 
-# Or with custom endpoints
-./scripts/test-api.sh "https://your-api.execute-api.us-west-2.amazonaws.com/v1" "https://your-stream.lambda-url.us-west-2.on.aws"
+# Or against a given API endpoint
+./scripts/test-api.sh "https://your-api.execute-api.us-west-2.amazonaws.com/v1"
 ```
 
 ### Bash Scripting - Special Character Escaping
@@ -669,10 +704,10 @@ All Lambdas use ARM64 (Graviton) architecture for better price/performance.
 
 ```bash
 # ❌ WRONG - bash will try to expand !2025 as history reference
-PASSWORD="DeployTest!2025"
+PASSWORD="Example!2025"
 
 # ✅ CORRECT - single quotes prevent expansion
-PASSWORD='DeployTest!2025'
+PASSWORD='Example!2025'
 
 # ✅ CORRECT - for AWS CLI auth-parameters with special chars
 aws cognito-idp initiate-auth \
@@ -692,12 +727,12 @@ CLIENT_ID=$(aws cloudformation describe-stacks --stack-name VocCoreStack \
 API_URL=$(aws cloudformation describe-stacks --stack-name VocApiStack \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
 
-# Get Cognito token (use single quotes for password with !)
+# Get Cognito token. The password is your test user's own, from the environment: never commit one.
 # Note: Create test user first with aws cognito-idp admin-create-user
 TOKEN=$(aws cognito-idp initiate-auth \
   --client-id "$CLIENT_ID" \
   --auth-flow USER_PASSWORD_AUTH \
-  --auth-parameters 'USERNAME=deployment-test,PASSWORD=DeployTest!2025' \
+  --auth-parameters "USERNAME=deployment-test,PASSWORD=$VOC_TEST_PASS" \
   --query 'AuthenticationResult.IdToken' \
   --output text)
 
@@ -712,13 +747,17 @@ curl -N -X POST "${API_URL%/}/chat/stream" \
 ### Deployment Checklist
 
 1. Build Lambda layers with Docker: `./scripts/build-layers.sh`
-2. Deploy stacks: `npx cdk deploy --all --context frontendDomain=<domain>`
+2. Deploy stacks: `npm run deploy:infra` (from the repo root;
+   it ends with `scripts/refresh-api-stage.sh` — after a bare `npx cdk deploy --all` run
+   `bash voc-datalake/scripts/refresh-api-stage.sh` yourself, or removed routes stay live)
    — a clean synth/deploy prints **zero warnings**; treat new warnings as
    regressions. Pre-#105 environments additionally need
    `-c omitUserPoolUsernameConfiguration=true` (see docs/deployment.md
    troubleshooting).
-3. Validate API endpoints: `./scripts/test-api.sh <api_url> "Bearer <token>"`
-4. Check Lambda logs if any endpoint fails: `aws logs tail /aws/lambda/<function-name> --since 5m`
+3. Validate API endpoints: `./scripts/test-api.sh <api_url>`
+4. Check Lambda logs if any endpoint fails: `aws logs tail /aws/lambda/<function-name> --since 5m`. When sweeping
+   logs for errors, exclude e2e test traffic by its tag (`userAgent` / `test_run`, see testing.md → "Production E2E
+   Traffic and Log Sweeps")
 
 ### Common Deployment Issues
 

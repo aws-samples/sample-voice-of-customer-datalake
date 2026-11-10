@@ -11,6 +11,7 @@
 
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
+import { keywordFontPx } from './keywordSize'
 import type { WordCloudItem } from './types'
 
 interface WordCloudCardProps {
@@ -26,22 +27,25 @@ export function WordCloudCard({ wordCloudData, searchText, onSearchChange }: Wor
 
   return (
     <div className="card">
-      <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">{t('trendingKeywords')}</h2>
+      <h2 className="text-base sm:text-lg font-semibold tracking-tight text-text-strong mb-3 sm:mb-4">{t('trendingKeywords')}</h2>
       <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center items-center min-h-[150px] sm:min-h-[200px]">
         {wordCloudData.map(({ word, count }) => {
-          const size = 0.65 + (count / maxCount) * 0.6
+          const size = keywordFontPx(count, maxCount)
           const isActive = searchText === word
           return (
             <button
               key={word}
+              type="button"
               onClick={() => onSearchChange(isActive ? '' : word)}
+              aria-pressed={isActive}
               className={clsx(
-                'px-1.5 sm:px-2 py-0.5 sm:py-1 rounded transition-all cursor-pointer active:scale-95',
+                'px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md transition-colors cursor-pointer active:scale-95 focus-ring',
+                // Hover only paints (design-system rule 6: no hover scale).
                 isActive
-                  ? 'bg-blue-600 text-white ring-2 ring-blue-300 shadow-md'
-                  : 'bg-blue-100 text-blue-800 hover:bg-blue-200 sm:hover:scale-105'
+                  ? 'bg-accent text-accent-fg'
+                  : 'bg-accent-subtle text-accent-text hover:bg-accent/25'
               )}
-              style={{ fontSize: `${size}rem` }}
+              style={{ fontSize: `${size}px` }}
               title={t('mentionsTooltip', { count })}
             >
               {word}
@@ -49,7 +53,7 @@ export function WordCloudCard({ wordCloudData, searchText, onSearchChange }: Wor
           )
         })}
         {wordCloudData.length === 0 && (
-          <p className="text-gray-400 text-xs sm:text-sm">{t('noKeywordData')}</p>
+          <p className="text-muted text-xs sm:text-sm">{t('noKeywordData')}</p>
         )}
       </div>
     </div>

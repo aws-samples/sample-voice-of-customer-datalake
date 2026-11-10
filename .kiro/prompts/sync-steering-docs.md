@@ -13,17 +13,17 @@ Ensure steering documentation accurately reflects the current state of the codeb
 Generate directory trees for key areas:
 
 ```bash
-# Lambda functions
-find voc-datalake/lambda -type f -name "*.py" | head -50
+# Lambda functions and stacks (tracked files only)
+git ls-files voc-datalake/lambda/api voc-datalake/lib/stacks | grep -v test
 
-# Frontend components
-find voc-datalake/frontend/src -type f \( -name "*.tsx" -o -name "*.ts" \) | head -80
+# Plugins (data source connectors)
+ls voc-datalake/plugins
 
-# Infrastructure
-ls -la voc-datalake/lib/stacks/
+# Frontend components and pages (one folder each, index.tsx entry)
+ls voc-datalake/frontend/src/components voc-datalake/frontend/src/pages
 
 # Scripts
-ls -la voc-datalake/scripts/
+ls voc-datalake/scripts
 ```
 
 ### Step 2: Read Key Files
@@ -31,12 +31,12 @@ ls -la voc-datalake/scripts/
 Read these files to extract accurate technical details:
 
 **Infrastructure (for tech.md and structure.md):**
-- `voc-datalake/lib/stacks/*.ts` - All AWS resources, Lambda configs, DynamoDB tables
+- `voc-datalake/bin/voc-datalake.ts` - The five stacks
+- `voc-datalake/lib/stacks/*.ts` - All AWS resources, Lambda configs, DynamoDB tables (`core-stack.ts`, S3 in `core-buckets.ts`)
 
 **Lambda Functions (for structure.md):**
-- List all files in `voc-datalake/lambda/api/`
-- List all files in `voc-datalake/lambda/ingestors/`
-- Check other lambda subdirectories
+- List all files in `voc-datalake/lambda/api/` and `voc-datalake/plugins/`
+- Check the other lambda subdirectories (`processor`, `aggregator`, `research`, `jobs`, `memory`, `agents`, `stream`, `shared`)
 
 **Frontend Dashboard (for structure.md):**
 - `voc-datalake/frontend/src/App.tsx` - Main app structure
@@ -53,7 +53,7 @@ Read these files to extract accurate technical details:
 For each steering file, check:
 
 #### structure.md
-- [ ] Lambda function list matches actual files in `lambda/api/` and `lambda/ingestors/`
+- [ ] Lambda function list matches actual files in `lambda/api/` and `plugins/`
 - [ ] Frontend component structure matches actual files in `frontend/src/components/`
 - [ ] Pages list matches actual files in `frontend/src/pages/`
 - [ ] DynamoDB tables match CDK stack definitions
@@ -89,22 +89,18 @@ Run these checks to verify accuracy:
 
 ```bash
 # Count Lambda API handlers
-ls voc-datalake/lambda/api/*.py | wc -l
+ls voc-datalake/lambda/api/*_handler.py | wc -l
 
-# Count frontend components
-ls voc-datalake/frontend/src/components/*.tsx | wc -l
+# Count frontend components and pages (folders)
+ls -d voc-datalake/frontend/src/components/*/ | wc -l
+ls -d voc-datalake/frontend/src/pages/*/ | wc -l
 
-# Count frontend pages
-ls voc-datalake/frontend/src/pages/*.tsx | wc -l
+# Count plugins (excluding _shared and _template)
+ls -d voc-datalake/plugins/[!_]*/ | wc -l
 
-# Count ingestors
-ls -d voc-datalake/lambda/ingestors/*/ | wc -l
-
-# Check DynamoDB tables in CDK
-grep -c "new dynamodb.Table" voc-datalake/lib/stacks/storage-stack.ts
-
-# Check S3 buckets in CDK
-grep -c "new s3.Bucket" voc-datalake/lib/stacks/storage-stack.ts
+# Check DynamoDB tables and S3 buckets in CDK
+grep -n "dynamodb.Table" voc-datalake/lib/stacks/core-stack.ts
+grep -rn "new s3.Bucket" voc-datalake/lib/stacks --include='*.ts' --exclude='*.test.ts'
 ```
 
 ## What to Check in Each File
@@ -115,7 +111,7 @@ For each `.py` file in `lambda/api/`:
 - API endpoint it handles
 - DynamoDB tables it accesses
 
-For `lambda/ingestors/`:
+For each plugin in `plugins/`:
 - Data source it ingests from
 - Authentication method
 - Schedule frequency

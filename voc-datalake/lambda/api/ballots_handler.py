@@ -6,7 +6,7 @@ proposal rather than whichever of its documents a QR happened to sit on.
 
 WHY THIS IS ITS OWN HANDLER, AND ITS OWN API GATEWAY RESOURCE
 ------------------------------------------------------------
-Two of the five routes below are served WITHOUT credentials, which is the whole
+Two of the six routes below are served WITHOUT credentials, which is the whole
 risk of this feature. They are therefore not carved out of the authenticated
 `/projects/{proxy+}`: that proxy applies the Cognito authorizer to everything
 beneath it, and a public exception inside it is the exact shape that once left
@@ -89,10 +89,9 @@ room — a row carrying nothing but real anonymous votes staying recomposable, a
 room ballot landing during a delete being orphaned by it — which would have failed
 precisely where the votes are least attributable and hardest to reconstruct.
 
-Those two attribute names are duplicated from `projects_handler` (the bundles cannot
-import each other) and pinned by `test_anon_row_mark_lockstep.py`, because a drift is
-a freeze that does not freeze and a fence that does not fence, and neither failure is
-loud.
+Those two attribute names come from `shared.prioritization_keys`, the one definition
+`projects_handler` reads too, because a drift between the two writers would be a freeze
+that does not freeze and a fence that does not fence, and neither failure is loud.
 
 The row record is also what makes CONTENTION ordinary here rather than exceptional:
 every ballot of a session updates the same one, so a room submitting together
@@ -101,23 +100,27 @@ it, because by then the submission's cap slot is already spent and the page offe
 voter no way to try again.
 """
 import json
-import math
-import os
 import re
 import secrets
 import time
 import unicodedata
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import ClientError
+
+from shared import prioritization_axes as axes_mod
+from shared import project_access, project_gate
 from shared.api import (
     api_handler,
     create_api_resolver,
     get_caller_subject,
     validate_int,
 )
+from shared.aws import get_dynamodb_resource
 from shared.exceptions import (
     ApiError,
     ConfigurationError,
@@ -126,10 +129,35 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
-from shared.tables import get_aggregates_table
+from shared.prioritization_keys import (
+    BALLOT_SK_PREFIX,
+    BALLOT_TRANSACT_ROW_INDEX,
+    PRIORITIZATION_PK,
+    ROW_BALLOT_WRITES_FIELD,
+    ROW_FROZEN_AT_FIELD,
+    ROW_SK_PREFIX,
+)
+from shared.project_writes import is_project_tombstone
+from shared.request_body import json_object_body, validated_text
+from shared.row_ids import is_clampable_number, validated_row_id
+from shared.tables import get_aggregates_table, get_projects_table
+from shared.voting_session_close import (  # the session keys, declared once for both bundles
+    SESSION_SK_PREFIX,
+    STATUS_CLOSED,
+    STATUS_OPEN,
+    VOTING_SESSION_PK,
+    open_row_session_key,
+)
+from shared.warm_init import warm_at_init
 
-ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', 'http://localhost:5173')
-app = create_api_resolver(ALLOWED_ORIGIN)
+if TYPE_CHECKING:
+    from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
+
+_MISSING_ROW_MESSAGE = (
+    'that prioritization row does not exist; reload the page and reopen the vote'
+)
+
+app = create_api_resolver()
 
 
 # ============================================
@@ -137,17 +165,13 @@ app = create_api_resolver(ALLOWED_ORIGIN)
 # ============================================
 #
 # Its own partition, beside the feedback-form configurations it is modelled on
-# (pk='FEEDBACK_FORM', sk='FORM#{id}'):
-#
-#     pk = 'VOTING_SESSION'
-#     sk = 'SESSION#{session_id}'
+# (pk='FEEDBACK_FORM', sk='FORM#{id}'): the partition key is 'VOTING_SESSION' and
+# the sort key is 'SESSION#{session_id}'.
 #
 # Deliberately NOT in the 'PRIORITIZATION' partition. That partition is read whole
 # on every page load and has a documented scale ceiling (ballots grow as documents
 # x reviewers); session records would be read on every one of those loads for no
 # reader's benefit and would count against the same page budget.
-VOTING_SESSION_PK = 'VOTING_SESSION'
-SESSION_SK_PREFIX = 'SESSION#'
 
 # The session id IS the unguessable token the QR encodes — 128 bits from
 # `secrets`, which is what makes the URL alone insufficient to guess and the
@@ -156,10 +180,20 @@ SESSION_SK_PREFIX = 'SESSION#'
 # anything that is not one of ours before it reaches DynamoDB.
 SESSION_ID_PREFIX = 'vs_'
 SESSION_ID_BYTES = 16
-_SESSION_ID_PATTERN = re.compile(rf'^{SESSION_ID_PREFIX}[0-9a-f]{{{SESSION_ID_BYTES * 2}}}$')
+_SESSION_ID_PATTERN = re.compile(rf'^{SESSION_ID_PREFIX}[0-9a-f]{{{SESSION_ID_BYTES * 2}}}\Z')
 
-STATUS_OPEN = 'open'
-STATUS_CLOSED = 'closed'
+
+# Which session a ROW's open vote is — so a facilitator who reloads the page finds
+# the vote they opened, and can close it, instead of being offered "Open a room
+# vote" while the old link keeps accepting ballots.
+#
+# A POINTER ITEM per row, read with one `get_item`, rather than a Query over the
+# session partition: this role is deliberately limited to Get/Put/Update (it is the
+# one function two anonymous routes reach, and it must not be able to list the
+# table), and a pointer keeps it there. Its own partition, so nothing that counts
+# or walks the session partition sees it. It carries the session's `ttl`, so it
+# cleans itself up with the session; a pointer naming a closed, expired or missing
+# session simply reads as "no open vote".
 
 # How long a session may accept ballots for. A prioritization meeting is an hour
 # or two, so three hours is generous while still bounding a link that leaks: the
@@ -179,35 +213,29 @@ MAX_BALLOT_CAP = 200
 
 
 # ============================================
-# Ballot record — the key shape projects_handler owns
+# Ballot record — the key shape shared with projects_handler
 # ============================================
 #
-# Duplicated here rather than imported because the two handlers are packaged as
-# separate Lambda bundles and neither may import the other. The duplication is
-# PINNED by `lambda/api/test/test_anon_ballot_key_lockstep.py`: a ballot written
-# under a drifted key is unreadable to the page and, worse, a drifted KIND
-# namespace could land on a signed-in reviewer's key and destroy their vote.
+# The partition, ballot and row prefixes come from `shared.prioritization_keys`: the two
+# handlers are separate Lambda bundles that cannot import each other, but both ship
+# `lambda/shared`. The KIND namespace stays per handler ('anon' here, 'user' there) and
+# `lambda/api/test/test_anon_ballot_key_lockstep.py` pins that the two never meet: a
+# drifted kind could land on a signed-in reviewer's key and destroy their vote.
 #
 # The first half of the key is a ROW id — a prioritization row, which is one
 # project's set of documents. This handler never reads a row record: it has no
 # need to know what a row contains, only which one the facilitator opened the vote
 # for, and a row's composition is `projects_handler`'s business. What that buys is
-# that a room scores the whole proposal rather than one of its documents.
-PRIORITIZATION_PK = 'PRIORITIZATION'
-BALLOT_SK_PREFIX = 'BALLOT#'
-# The row-record prefix `projects_handler.ROW_SK_PREFIX` writes. Read here for one
-# purpose only: to check, at session creation, that the row the facilitator names
-# exists (`_row_exists`). This module still never composes or interprets a row.
-ROW_SK_PREFIX = 'ROW#'
+# that a room scores the whole proposal rather than one of its documents. The row
+# record (`ROW_SK_PREFIX`) is read here for one purpose only: to check, at session
+# creation, that the row the facilitator names exists (`_existing_row`). This module
+# still never composes or interprets a row.
 REVIEWER_KIND_ANON = 'anon'
 
-# The two attributes a ballot stamps on its ROW, spelled exactly as
-# `projects_handler` spells them (ROW_FROZEN_AT_FIELD, ROW_BALLOT_WRITES_FIELD) and
-# duplicated here for the same reason the key prefixes are: the two handlers are
-# separate Lambda bundles and neither may import the other.
-#
-# WHAT A DRIFT HERE WOULD COST, and why it is pinned by
-# `test_anon_row_mark_lockstep.py` rather than trusted to this comment:
+# The two attributes a ballot stamps on its ROW (ROW_FROZEN_AT_FIELD,
+# ROW_BALLOT_WRITES_FIELD, from `shared.prioritization_keys`, so both writers name the
+# same ones). What stamping the wrong one would cost, and why
+# `test_anon_row_mark_lockstep.py` pins how they are written:
 #
 # * `first_ballot_at` under another name is a FREEZE THAT DOES NOT FREEZE. The
 #   recompose route asserts `attribute_not_exists(first_ballot_at)`, so a row whose
@@ -219,15 +247,11 @@ REVIEWER_KIND_ANON = 'anon'
 #   that committed anyway.
 #
 # Neither failure is loud. Both are the invariants #339 and #342 are about.
-ROW_FROZEN_AT_FIELD = 'first_ballot_at'
-ROW_BALLOT_WRITES_FIELD = 'ballot_writes'
-
-# Where the ROW's write sits in the ballot transaction, and so which
-# `CancellationReasons` entry says whether the row is what refused.
 #
-# The ballot's own half carries no condition, so a cancellation reported against
-# index 0 is not a fact about the row — see `_row_condition_failed`.
-BALLOT_TRANSACT_ROW_INDEX = 1
+# `BALLOT_TRANSACT_ROW_INDEX` is where the ROW's write sits in the ballot transaction,
+# and so which `CancellationReasons` entry says whether the row is what refused. The
+# ballot's own half carries no condition, so a cancellation reported against index 0
+# is not a fact about the row — see `_row_condition_failed`.
 
 # How many times the ballot's transaction is attempted before its failure is
 # reported, and how long the wait between attempts starts at.
@@ -267,11 +291,14 @@ BALLOT_WRITE_BACKOFF_SECONDS = 0.05
 
 # Minted here, never accepted from a caller — see `_minted_ballot_id`.
 BALLOT_ID_BYTES = 16
-_BALLOT_ID_PATTERN = re.compile(rf'^[0-9a-f]{{{BALLOT_ID_BYTES * 2}}}$')
+_BALLOT_ID_PATTERN = re.compile(rf'^[0-9a-f]{{{BALLOT_ID_BYTES * 2}}}\Z')
 
-SCORE_AXES = ('impact', 'time_to_market', 'confidence', 'strategic_fit')
+# Which axes a phone may score is the workspace's scoring setup
+# (`shared/prioritization_axes.py`), read per request; only ACTIVE axes are accepted.
 MIN_AXIS_VALUE = 0
 MAX_AXIS_VALUE = 5
+# The body fields a submission carries beside the axes.
+SUBMISSION_FIELDS = ('notes', 'display_name', 'ballot_id')
 
 # The same bound `projects_handler` enforces on a signed-in reviewer's note, and
 # for the same reason: the note is stored verbatim and read back on every page
@@ -295,13 +322,6 @@ MAX_DISPLAY_NAME_LEN = 60
 # what a ballot is keyed to; a field called `document_title` naming a row would
 # be the wrong claim in the one place a public reader looks.
 MAX_ROW_TITLE_LEN = 200
-
-# A DynamoDB sort key is capped at 1024 bytes; the same bound `projects_handler`
-# holds every id that becomes half of a key to, so an absurd row id is a 400 naming
-# the field rather than a ValidationException surfacing as a 500. Named for the key
-# SEGMENT, not for a document: what it bounds here is a row id.
-MAX_KEY_SEGMENT_ID_LEN = 256
-
 
 # ============================================
 # Refusals a public caller has to be able to tell apart
@@ -328,6 +348,10 @@ REASON_CAP_REACHED = 'cap_reached'
 # as `unknown` and was rendered as "try again in a moment", which is advice that
 # can never work.
 REASON_INVALID = 'invalid'
+# The session's ROW was deleted, or its PROJECT was. PERMANENT and distinct from
+# not_found ("this link is not a vote"): the link WAS a vote, about a proposal that
+# no longer exists, and the room should be told that rather than to rescan.
+REASON_GONE = 'gone'
 
 _REFUSAL_STATUS = {
     REASON_NOT_FOUND: 404,
@@ -339,6 +363,7 @@ _REFUSAL_STATUS = {
     # for a page that shows different words for each.
     REASON_CAP_REACHED: 429,
     REASON_INVALID: 400,
+    REASON_GONE: 410,
 }
 
 _REFUSAL_MESSAGE = {
@@ -347,6 +372,7 @@ _REFUSAL_MESSAGE = {
     REASON_EXPIRED: 'This voting session has expired',
     REASON_CAP_REACHED: 'This voting session has reached its ballot limit',
     REASON_INVALID: 'This ballot could not be read',
+    REASON_GONE: 'The proposal this vote was about has been deleted',
 }
 
 
@@ -383,30 +409,7 @@ def _table():
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _json_object_body() -> dict:
-    """The request body as a JSON object, or a ValidationError.
-
-    Every route here reads its body through this, because `json_body` alone is two
-    unhandled failures on a route a stranger can reach: unparseable JSON raises
-    `JSONDecodeError`, and a body that parses to a LIST or a string passes the
-    `or {}` guard truthy and then dies on `.get` — both of which surface as a bare
-    500 with nothing the page can say. A `ValidationError` instead becomes the
-    caller's own refusal reason (see `REASON_INVALID`).
-    """
-    try:
-        body = app.current_event.json_body
-    except ValueError as e:
-        # json.JSONDecodeError is a ValueError; a body that is not JSON at all is
-        # the caller's mistake, not this service's.
-        raise ValidationError('the request body must be JSON') from e
-    if body is None:
-        return {}
-    if not isinstance(body, dict):
-        raise ValidationError('the request body must be a JSON object')
-    return body
+    return datetime.now(UTC)
 
 
 def _session_sk(session_id: str) -> str:
@@ -426,14 +429,12 @@ def _session_sk(session_id: str) -> str:
 SESSION_LOG_REF_CHARS = 8
 
 
-def _session_ref(session_id: Any) -> str:
+def _session_ref(session_id: str) -> str:
     """A session id in a form that is safe to log.
 
-    Every log line in this module goes through this. The truncation is the point:
-    see `SESSION_LOG_REF_CHARS`.
+    Every log line in this module goes through this, and every caller hands it a
+    validated id. The truncation is the point: see `SESSION_LOG_REF_CHARS`.
     """
-    if not isinstance(session_id, str):
-        return '<none>'
     return session_id[:len(SESSION_ID_PREFIX) + SESSION_LOG_REF_CHARS] + '...'
 
 
@@ -442,7 +443,7 @@ def _ballot_sk(row_id: str, ballot_id: str) -> str:
     land on a signed-in reviewer's key.
 
     Both halves are known not to contain '#': the row id is checked on the
-    way in (`_validated_row_id`) and the ballot id is minted here as hex.
+    way in (`validated_row_id`) and the ballot id is minted here as hex.
     That is what keeps `BALLOT#{id}#{kind}:{subject}` splittable by the read.
     """
     return f'{BALLOT_SK_PREFIX}{row_id}#{REVIEWER_KIND_ANON}:{ballot_id}'
@@ -473,49 +474,10 @@ def _validated_session_id(raw: Any) -> str | None:
     if not isinstance(raw, str):
         return None
     session_id = raw.strip()
-    return session_id if _SESSION_ID_PATTERN.match(session_id) else None
+    return session_id if _SESSION_ID_PATTERN.fullmatch(session_id) else None
 
 
-def _validated_row_id(raw: Any) -> str:
-    """Check that a facilitator-supplied ROW id can be a ballot sort key.
-
-    The same three rules `projects_handler._validated_ballot_row_id` applies,
-    for the same reasons: '#' is the sort-key delimiter and would make the key
-    ambiguous to the read, and an absurd length is a 400 naming the field rather
-    than a DynamoDB ValidationException surfacing as a 500. Neither message echoes
-    the value, which is unbounded caller input.
-
-    The SHAPE only; existence is the route's check (`_row_exists`), because this
-    function has one key in hand and no table. The route CAN check existence
-    honestly — one `get_item` on the aggregates table, which is exactly the
-    read this Lambda's role already grants — and it must (#342): a session
-    opened for a row that does not resolve collects a room's ballots that the
-    page then discards on read, and a room's votes are unrepeatable.
-
-    That read is at session CREATION and is not the whole of the story, because a
-    row CAN now be deleted (`projects_handler.api_delete_prioritization_row`) and a
-    room can vote an hour after the facilitator opened the vote. Submit does not
-    repeat the read — it takes the row id from the STORED SESSION, never from the
-    body, so a session that named a real row cannot start naming a different one, and
-    the public path keeps its current cost. What closes the remaining window is a
-    CONDITION ON THE WRITE rather than another read: `_write_ballot`'s transaction
-    asserts `attribute_exists(sk)` on the row, so a ballot on a row deleted in the
-    meantime is refused instead of being orphaned — and refused without resurrecting
-    the row, which `update_item`'s upsert would otherwise do.
-    """
-    if not isinstance(raw, str) or not raw.strip():
-        raise ValidationError('row_id is required')
-    row_id = raw.strip()
-    if '#' in row_id:
-        raise ValidationError("row_id must not contain '#', the sort-key delimiter")
-    if len(row_id) > MAX_KEY_SEGMENT_ID_LEN:
-        raise ValidationError(
-            f'row_id must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'
-        )
-    return row_id
-
-
-def _row_exists(row_id: str) -> bool:
+def _existing_row(row_id: str) -> dict | None:
     """Does a row record exist for this id — the check a session must pass to open.
 
     One `get_item`, the read this role already grants. A FAILED read raises
@@ -537,7 +499,119 @@ def _row_exists(row_id: str) -> bool:
     except Exception as e:
         logger.exception(f'Failed to read a prioritization row before opening a session: {e}')
         raise ServiceError('Failed to open the voting session') from e
-    return isinstance(response.get('Item'), dict)
+    item = response.get('Item')
+    return item if isinstance(item, dict) else None
+
+
+def _require_project_level(project_id: Any, level: str, missing_message: str) -> None:
+    """The caller's access to ``project_id`` at ``level``, or the contract's refusal.
+
+    A caller who cannot even VIEW the project gets ``missing_message`` as a 404 —
+    the same answer as for a missing row or session, so the refusal confirms the
+    existence of nothing. A missing or unreadable project id means the record
+    predates project scoping and has nothing to guard.
+    """
+    if not isinstance(project_id, str) or not project_id:
+        return
+    caller = project_gate.caller_from_event(app.current_event.raw_event)
+
+    def read_meta() -> dict | None:
+        projects = get_projects_table()
+        if not projects:
+            raise ConfigurationError('Projects table not configured')
+        return project_gate.read_gate_meta(projects, project_id)
+
+    project_gate.require_project_level(read_meta, caller, level, missing_message=missing_message)
+
+
+def _require_row_project_edit(row: dict) -> None:
+    """Only someone who may EDIT the row's project may open a public vote on it.
+
+    A session is a public write window onto a project's row, so it is gated like
+    any other project write (`shared.project_access`). A caller who cannot even
+    VIEW the project gets the same 404 as a missing row — no existence leak.
+    Rows without a project id predate project scoping and have nothing to guard.
+    """
+    _require_project_level(row.get('project_id'), project_access.LEVEL_EDIT, _MISSING_ROW_MESSAGE)
+
+
+def _session_project_id(item: dict) -> str | None:
+    """The project a session's row belongs to, for the facilitator routes' gate.
+
+    Read off the SESSION first: `create_voting_session` copies the row's
+    `project_id` onto the record, so the gate holds even after the row itself is
+    deleted (a session is still readable and closable then, and still the
+    project's business). A session written before that field existed falls back
+    to the row record — one `get_item` on the table this role already reads —
+    and a session naming no resolvable row has nothing to guard, the same reading
+    an unscoped row gets.
+    """
+    project_id = item.get('project_id')
+    if isinstance(project_id, str) and project_id:
+        return project_id
+    row_id = _session_row_id(item)
+    row = _existing_row(row_id) if row_id else None
+    row_project_id = row.get('project_id') if row else None
+    return row_project_id if isinstance(row_project_id, str) and row_project_id else None
+
+
+def _require_session_project_level(item: dict, level: str) -> None:
+    """Gate a facilitator route on the session's project: VIEW to read status, EDIT to close.
+
+    A session id is 128 bits of entropy, but it is also printed on a screen in
+    front of a room, so it is not a secret from anybody who was in the meeting.
+    Without this, any signed-in user who saw the QR could read the session's
+    ballot count or close the vote; with it, the facilitator routes follow the
+    row's project exactly as opening the session does. A caller without view
+    gets the same 404 as a missing session.
+    """
+    _require_project_level(_session_project_id(item), level, 'Voting session not found')
+
+
+def _project_gone(project_id: Any) -> bool:
+    """Whether the project a session belongs to was deleted (META gone or tombstoned).
+
+    A missing project id is a session or row from before project scoping: nothing to
+    check. A failed read raises (500) rather than answering either way.
+    """
+    if not isinstance(project_id, str) or not project_id:
+        return False
+    projects = get_projects_table()
+    if not projects:
+        raise ConfigurationError('Projects table not configured')
+    meta = project_gate.read_gate_meta(projects, project_id)
+    return meta is None or is_project_tombstone(meta)
+
+
+def _status_row_gone(item: dict) -> bool:
+    """Whether the facilitator status read's session lost its ROW.
+
+    Only the row: the project gate before it already refuses a non-admin a deleted
+    project (a tombstone is a 404 there), and a project delete closes the project's
+    sessions (`shared.voting_session_close`), so an admin reading one sees it closed.
+    """
+    row_id = _session_row_id(item)
+    return bool(row_id) and _existing_row(row_id) is None
+
+
+def _session_target_gone(item: dict) -> bool:
+    """Whether the row a session scores, or that row's project, has been deleted.
+
+    Asked on the routes that would otherwise present the session as a live vote,
+    because deleting a row or a project closes its session only best-effort
+    (`shared.voting_session_close`) — this read is the guarantee. A session naming no
+    row (one from the deployment before rows) is not "gone": `_session_state` already
+    reads it as closed. `submit_ballot` asks it before refusing a closed or expired
+    session (gone wins, as here); for an open one it asks only `_project_gone`, because
+    its ballot write already asserts the row exists (`_RowIsGone`).
+    """
+    row_id = _session_row_id(item)
+    if not row_id:
+        return False
+    row = _existing_row(row_id)
+    if row is None:
+        return True
+    return _project_gone(item.get('project_id') or row.get('project_id'))
 
 
 def _sanitized_text(raw: Any, max_length: int) -> str:
@@ -580,41 +654,14 @@ def _validated_note(raw: Any) -> str | None:
     when it is doing the most work. The bound is pinned against that path by
     `test_anon_ballot_key_lockstep.py`, so the two cannot drift.
     """
-    if raw is None:
-        return None
-    if not isinstance(raw, str):
-        raise ValidationError('notes must be a string')
-    note = raw.strip()
-    if not note:
-        return None
-    if len(note) > MAX_BALLOT_NOTE_LEN:
-        raise ValidationError(f'notes must be at most {MAX_BALLOT_NOTE_LEN} characters')
-    return note
+    return validated_text(raw, 'notes', MAX_BALLOT_NOTE_LEN) or None
 
 
-def _is_clampable_number(value: Any) -> bool:
-    """Whether an axis value is a number this route may clamp into 0-5.
+def _validated_axes(body: dict, axes: Iterable[dict] = axes_mod.DEFAULT_AXES) -> dict[str, int]:
+    """The ACTIVE axes of the scoring setup this ballot scored, clamped into range.
 
-    The same reading `projects_handler._is_clampable_number` documents at length:
-    clamp a number, refuse a non-number. A `bool` is refused although
-    `isinstance(True, int)` holds (a flag is not a slider position), and a
-    non-finite float is refused because `int(float('inf'))` raises `OverflowError`
-    — reachable over the wire, since a JSON body is parsed non-strictly and
-    accepts the `Infinity` literal.
-    """
-    if isinstance(value, bool):
-        return False
-    if isinstance(value, float) and not math.isfinite(value):
-        return False
-    try:
-        int(value)
-    except (ValueError, TypeError, OverflowError):
-        return False
-    return True
-
-
-def _validated_axes(body: dict) -> dict[str, int]:
-    """The axes this ballot scored, clamped into range.
+    An archived metric, or an id-shaped key that is no metric, carrying a value is
+    refused: the room's page was loaded before an admin changed the setup.
 
     At least one is REQUIRED, which is stricter than the signed-in PATCH — and
     deliberately so. That route is a patch of a durable ballot a reviewer may
@@ -627,26 +674,31 @@ def _validated_axes(body: dict) -> dict[str, int]:
     `validate_int`'s fallback would store an INVENTED 0 that the aggregate cannot
     tell from a deliberate lowest score.
     """
-    axes: dict[str, int] = {}
-    for axis in SCORE_AXES:
+    if axes_mod.refused_ballot_keys(body, axes, SUBMISSION_FIELDS):
+        raise ValidationError(
+            'this ballot names a metric that is archived or does not exist; reload the page'
+        )
+    active_ids = axes_mod.active_axis_ids(axes)
+    scored: dict[str, int] = {}
+    for axis in active_ids:
         value = body.get(axis)
         if value is None:
             continue
-        if not _is_clampable_number(value):
+        if not is_clampable_number(value):
             raise ValidationError(
                 f'{axis} must be a number between {MIN_AXIS_VALUE} and {MAX_AXIS_VALUE}'
             )
-        axes[axis] = validate_int(
+        scored[axis] = validate_int(
             value,
             default=MIN_AXIS_VALUE,
             min_val=MIN_AXIS_VALUE,
             max_val=MAX_AXIS_VALUE,
         )
-    if not axes:
+    if not scored:
         raise ValidationError(
-            'a ballot must score at least one of: ' + ', '.join(SCORE_AXES)
+            'a ballot must score at least one of: ' + ', '.join(active_ids)
         )
-    return axes
+    return scored
 
 
 # ============================================
@@ -708,13 +760,15 @@ def _session_state(item: dict, now: datetime) -> str:
     """
     if item.get('status') != STATUS_OPEN or not _session_row_id(item):
         return REASON_CLOSED
+    # A session with no readable deadline is treated as expired, i.e. fails
+    # CLOSED. A missing bound on the one unauthenticated write path is not
+    # something to interpret generously.
     expires_at = item.get('ttl')
+    if not isinstance(expires_at, (int, float, Decimal, str)):
+        return REASON_EXPIRED
     try:
         deadline = float(expires_at)
-    except (TypeError, ValueError):
-        # A session with no readable deadline is treated as expired, i.e. fails
-        # CLOSED. A missing bound on the one unauthenticated write path is not
-        # something to interpret generously.
+    except ValueError:
         return REASON_EXPIRED
     return STATUS_OPEN if deadline > now.timestamp() else REASON_EXPIRED
 
@@ -754,6 +808,46 @@ def _session_payload(item: dict, now: datetime) -> dict:
     }
 
 
+def _open_session_for_row(row_id: str, now: datetime) -> dict | None:
+    """The row's session that still ACCEPTS BALLOTS, or None.
+
+    Follows the row's pointer and then reads the session itself, because the session
+    record is the only authority on whether it is open: a pointer outlives a close
+    (closing writes nothing here) and may name a session whose record is gone.
+    Checking `row_id` again guards against a pointer that names another row's
+    session, which no write produces but which would show one row another's QR.
+    """
+    try:
+        response = _table().get_item(Key=open_row_session_key(row_id), ConsistentRead=True)
+    except ApiError:
+        raise
+    except Exception as e:
+        logger.exception(f'Failed to read the open voting session of row {row_id}: {e}')
+        raise ServiceError('Failed to read the voting session') from e
+    pointer = response.get('Item')
+    session_id = _validated_session_id(pointer.get('session_id')) if isinstance(pointer, dict) else None
+    session = _load_session(session_id) if session_id else None
+    if not session or _session_row_id(session) != row_id:
+        return None
+    return session if _session_state(session, now) == STATUS_OPEN else None
+
+
+def _point_row_at_session(row_id: str, session_id: str, expires: datetime, now: datetime) -> None:
+    """Record ``session_id`` as the row's open vote.
+
+    Written BEFORE the session itself, so a failure between the two leaves a pointer
+    to nothing (which reads as "no open vote") rather than an open public vote that
+    no page can find and therefore nobody can close from the UI.
+    """
+    _table().put_item(Item={
+        **open_row_session_key(row_id),
+        'session_id': session_id,
+        'updated_at': now.isoformat(),
+        # The session's own deadline: the pointer is worthless once it has passed.
+        'ttl': int(expires.timestamp()),
+    })
+
+
 # ============================================
 # Facilitator routes (Cognito-authenticated)
 # ============================================
@@ -774,23 +868,30 @@ def create_voting_session():
 
     The row is named, not composed, here: this Lambda has no access to the projects
     table by design and never interprets a row record. It does now check that one
-    EXISTS (`_row_exists`, #342): a session is a public write window onto that row,
+    EXISTS (`_existing_row`, #342): a session is a public write window onto that row,
     and one opened for a row nothing describes collects a room's ballots that the
     page then discards — votes that cannot be recast. `row_title` is still copied
     onto the session so the public page can say what is being scored without
     reading anything.
     """
-    body = _json_object_body()
-    row_id = _validated_row_id(body.get('row_id'))
-    if not _row_exists(row_id):
+    body = json_object_body(app)
+    row_id = validated_row_id(body.get('row_id'))
+    row = _existing_row(row_id)
+    if row is None:
         # 404 about the world, not 400 about the request: the id is well-formed
         # and the page sent one it was shown — a row created moments ago in
         # another tab, or a stale tab after this deployment re-keyed rows. The
         # id is not echoed (unbounded caller input, the module's standing rule).
-        raise NotFoundError(
-            'that prioritization row does not exist; reload the page and '
-            'reopen the vote'
-        )
+        raise NotFoundError(_MISSING_ROW_MESSAGE)
+    _require_row_project_edit(row)
+    now = _now()
+    existing = _open_session_for_row(row_id, now)
+    if existing is not None:
+        # ONE OPEN VOTE PER ROW. A second tab, a second facilitator or a double
+        # click gets the vote already running rather than a second live public link
+        # that only the first one's pointer could find again.
+        logger.info(f'Row {row_id} already has an open voting session; returning it')
+        return {'success': True, 'session': _session_payload(existing, now), 'existing': True}
     row_title = _sanitized_text(body.get('row_title'), MAX_ROW_TITLE_LEN)
     ballot_cap = validate_int(
         body.get('ballot_cap'),
@@ -810,7 +911,6 @@ def create_voting_session():
     # window.
     creator = get_caller_subject(app.current_event.raw_event)
 
-    now = _now()
     expires = now + timedelta(minutes=minutes)
     session_id = SESSION_ID_PREFIX + secrets.token_hex(SESSION_ID_BYTES)
     item = {
@@ -831,8 +931,16 @@ def create_voting_session():
         # carries it — see the module docstring.
         'ttl': int(expires.timestamp()),
     }
+    row_project_id = row.get('project_id')
+    if isinstance(row_project_id, str) and row_project_id:
+        # Copied off the ROW so the facilitator routes can gate on the project
+        # without re-reading the row, and still after the row is deleted. Absent
+        # for a row that predates project scoping — `_session_project_id` then
+        # has nothing to guard, exactly as `_require_row_project_edit` had nothing.
+        item['project_id'] = row_project_id
 
     try:
+        _point_row_at_session(row_id, session_id, expires, now)
         _table().put_item(Item=item)
     except ApiError:
         raise
@@ -850,6 +958,29 @@ def create_voting_session():
     return {'success': True, 'session': _session_payload(item, now)}
 
 
+@app.get('/voting-sessions')
+@tracer.capture_method
+def find_open_voting_session():
+    """The open vote of ONE ROW, so a reloaded page can show its link and close it.
+
+    `?row_id=` names the row. Gated like the status read (`GET /voting-sessions/{id}`):
+    VIEW on the row's project, and a caller without it gets the same 404 a missing
+    row gets, so the answer confirms nothing about a project they cannot see.
+    Answers `session: null` when the row has no vote accepting ballots — a closed or
+    expired vote is not "the row's open vote", and showing it would offer a Close
+    button for something already shut.
+    """
+    params = app.current_event.query_string_parameters or {}
+    row_id = validated_row_id(params.get('row_id'))
+    row = _existing_row(row_id)
+    if row is None:
+        raise NotFoundError(_MISSING_ROW_MESSAGE)
+    _require_project_level(row.get('project_id'), project_access.LEVEL_VIEW, _MISSING_ROW_MESSAGE)
+    now = _now()
+    session = _open_session_for_row(row_id, now)
+    return {'success': True, 'session': _session_payload(session, now) if session else None}
+
+
 @app.get('/voting-sessions/<session_id>')
 @tracer.capture_method
 def get_voting_session(session_id: str):
@@ -859,6 +990,10 @@ def get_voting_session(session_id: str):
         raise NotFoundError('Voting session not found')
     item = _load_session(validated)
     if not item:
+        raise NotFoundError('Voting session not found')
+    _require_session_project_level(item, project_access.LEVEL_VIEW)
+    if _status_row_gone(item):
+        # Its row or project was deleted: there is no vote here to watch any more.
         raise NotFoundError('Voting session not found')
     return {'success': True, 'session': _session_payload(item, _now())}
 
@@ -875,10 +1010,19 @@ def close_voting_session(session_id: str):
     Conditional on the record EXISTING rather than on its state, because
     `update_item` is an upsert: without that, closing a session id that never
     existed would create a bare `{pk, sk, status: closed}` stub.
+
+    Gated on EDIT of the session's project, so closing follows the same policy as
+    opening: the read that precedes the write exists for the gate, and the
+    condition on the write keeps the 404 honest if the record vanishes between
+    the two.
     """
     validated = _validated_session_id(session_id)
     if not validated:
         raise NotFoundError('Voting session not found')
+    item = _load_session(validated)
+    if not item:
+        raise NotFoundError('Voting session not found')
+    _require_session_project_level(item, project_access.LEVEL_EDIT)
     now = _now()
     try:
         response = _table().update_item(
@@ -930,20 +1074,41 @@ def get_ballot_config(session_id: str):
     if not item:
         return {
             'success': True,
-            'session': {'open': False, 'reason': REASON_NOT_FOUND, 'row_title': ''},
+            'session': {'open': False, 'reason': REASON_NOT_FOUND, 'row_title': '', 'axes': []},
         }
+    if _session_target_gone(item):
+        # Refused rather than described: its row title is about a deleted proposal
+        # and is not this public route's to keep publishing.
+        return _refusal(REASON_GONE)
     state = _session_state(item, _now())
+    is_open = state == STATUS_OPEN
     return {
         'success': True,
         'session': {
-            'open': state == STATUS_OPEN,
-            'reason': None if state == STATUS_OPEN else state,
+            'open': is_open,
+            'reason': None if is_open else state,
             # Names the ROW — a project's set of documents — so the sentence a
             # phone reads is about the proposal it is scoring. Copied off the
             # session, which is what the facilitator put on screen.
             'row_title': _session_row_title(item),
+            # What the phone scores: the ACTIVE metrics of the workspace's setup,
+            # names and scale ends only — weights are the team's business, not a
+            # stranger's. Read only for an open room; a closed one shows no form.
+            'axes': axes_mod.public_axes(_scoring_axes()) if is_open else [],
         },
     }
+
+
+def _scoring_axes() -> list[dict]:
+    """The workspace's scoring setup (one keyed read). A failed read is a 500:
+    a ballot checked against a guessed setup could store an archived metric."""
+    try:
+        return axes_mod.read_config(_table())['axes']
+    except ApiError:
+        raise
+    except Exception as e:
+        logger.exception(f'Failed to read the prioritization scoring setup: {e}')
+        raise ServiceError('Failed to read the scoring setup') from e
 
 
 def _existing_ballot(row_id: str, session_id: str, raw_ballot_id: Any) -> str | None:
@@ -1037,7 +1202,6 @@ def _hold_open_session(session_id: str, now: datetime, *, claim_slot: bool) -> b
             ExpressionAttributeNames={'#status': 'status', '#ttl': 'ttl'},
             ExpressionAttributeValues=values,
         )
-        return True
     except ClientError as e:
         if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
             return False
@@ -1046,6 +1210,8 @@ def _hold_open_session(session_id: str, now: datetime, *, claim_slot: bool) -> b
     except Exception as e:
         logger.exception(f'Failed to claim a ballot slot on session {_session_ref(session_id)}: {e}')
         raise ServiceError('Failed to record the ballot') from e
+    else:
+        return True
 
 
 class _RowIsGone(Exception):
@@ -1088,10 +1254,18 @@ def _row_condition_failed(e: ClientError) -> bool:
     handled as the transient failure it might be rather than the fact it might not be.
     """
     reasons = e.response.get('CancellationReasons')
-    if not isinstance(reasons, list) or BALLOT_TRANSACT_ROW_INDEX >= len(reasons):
+    if not isinstance(reasons, list) or len(reasons) <= BALLOT_TRANSACT_ROW_INDEX:
         return False
-    reason = reasons[BALLOT_TRANSACT_ROW_INDEX]
-    return isinstance(reason, dict) and reason.get('Code') == 'ConditionalCheckFailed'
+    return _reason_code(reasons[BALLOT_TRANSACT_ROW_INDEX]) == 'ConditionalCheckFailed'
+
+
+def _reason_code(reason: object) -> object:
+    """A cancellation reason's `Code`, or None for an entry that is not a mapping.
+
+    Taken as `object`: the stubs promise a list of dicts, but this is a wire answer,
+    and `_row_condition_failed` is about the answer that is not one.
+    """
+    return reason.get('Code') if isinstance(reason, dict) else None
 
 
 def _write_ballot(
@@ -1127,17 +1301,15 @@ def _write_ballot(
       enumerated the row's ballots. An anonymous ballot landing in that gap that
       did not move it left the delete free to commit — and leave that ballot
       orphaned, which is the #342 fault the fence exists to close.
-    * ASSERT THE ROW STILL EXISTS. `_row_exists` is checked when the session is
+    * ASSERT THE ROW STILL EXISTS. `_existing_row` is checked when the session is
       OPENED, which can be an hour before the room votes; `attribute_exists(sk)`
       on the write is what makes a ballot on a row deleted in between fail instead
       of resurrecting the row as a bare record.
 
-    Every one of those is spelled here the way `projects_handler` spells it, and
-    `test_anon_row_mark_lockstep.py` pins the two attribute names and the reason
-    index across the two bundles — the same protection
-    `test_anon_ballot_key_lockstep.py` gives the sort key (including this row key's
-    `ROW_SK_PREFIX`), and for the same reason: a drifted name here is a freeze that
-    does not freeze and a fence that does not fence, with nothing failing loudly.
+    Every one of those names (the two attributes, the reason index, this row key's
+    `ROW_SK_PREFIX`) is the `shared.prioritization_keys` definition `projects_handler`
+    uses too, because a drifted name here would be a freeze that does not freeze and a
+    fence that does not fence, with nothing failing loudly.
 
     A CORRECTION TAKES THIS PATH TOO, and stamps the same marks. `first_ballot_at`
     is `if_not_exists`, so a correction cannot move a freeze instant that a first
@@ -1205,7 +1377,7 @@ def _write_ballot(
         values[':display_name'] = display_name
 
     table = _table()
-    transact_items = [
+    transact_items: list[TransactWriteItemTypeDef] = [
         {'Update': {
             'TableName': table.name,
             'Key': {'pk': PRIORITIZATION_PK, 'sk': _ballot_sk(row_id, ballot_id)},
@@ -1234,7 +1406,6 @@ def _write_ballot(
     for attempt in range(BALLOT_WRITE_ATTEMPTS):
         try:
             table.meta.client.transact_write_items(TransactItems=transact_items)
-            return
         except ClientError as e:
             cancelled = (
                 e.response.get('Error', {}).get('Code')
@@ -1287,6 +1458,8 @@ def _write_ballot(
         except Exception as e:
             logger.exception(f'Failed to write an anonymous ballot for session {_session_ref(session_id)}: {e}')
             raise ServiceError('Failed to record the ballot') from e
+        else:
+            return
     # UNREACHABLE while BALLOT_WRITE_ATTEMPTS >= 1, and kept because falling out of
     # this loop is INDISTINGUISHABLE FROM SUCCESS: this function signals a written
     # ballot by returning None, so a bound of 0 would make `range` yield nothing, log
@@ -1294,7 +1467,7 @@ def _write_ballot(
     # at all — a silent false success on a public vote-recording write. The bound is a
     # tuning number, exactly the kind a later change lowers or reads from the
     # environment, so the assumption is stated as a raise rather than left to hold.
-    # `test_the_write_attempts_bound_leaves_at_least_one_attempt` pins the bound
+    # `test_the_constants_themselves` (test_ballots_handler_mutation.py) pins the bound
     # itself, the way `MAX_ROW_BALLOTS_PER_DELETE + 2 <= 100` pins the delete's
     # reservation; this is the guard for the case where it stops holding anyway.
     #
@@ -1311,6 +1484,27 @@ def _write_ballot(
         'ballot that was never written.'
     )
     raise ServiceError('Failed to record the ballot')
+
+
+def _reason_the_hold_was_refused(session_id: str, now: datetime, corrected: bool) -> str:
+    """Name why `_hold_open_session` refused a submission.
+
+    The condition is the authority, and it does not say which conjunct failed.
+    Re-read to name the reason: by now the session may have been closed, may have
+    expired, or may be full, and the room deserves the right sentence.
+    """
+    refreshed = _load_session(session_id)
+    if not refreshed:
+        return REASON_NOT_FOUND
+    state = _session_state(refreshed, now)
+    if state != STATUS_OPEN:
+        return state
+    # It reads open, so the conjunct that refused is one the read cannot see —
+    # the cap, which is the only conjunct a claiming submission has and a
+    # correction does not. A correction reaching here would mean the session
+    # was shut between the two calls and re-opened, which no route can do, so
+    # it answers CLOSED: the fail-closed reading of a refusal nothing explains.
+    return REASON_CAP_REACHED if not corrected else REASON_CLOSED
 
 
 @app.post('/voting-sessions/<session_id>/submit')
@@ -1341,17 +1535,21 @@ def submit_ballot(session_id: str):
     resubmit, so a conflict the room caused simply by voting together would otherwise
     cost a ballot AND its slot (see `_write_ballot`).
 
-    A row that went away between steps 4 and 5 is answered as a refusal carrying
-    `REASON_NOT_FOUND`, not as a 500 and not as a bare 404: the page dispatches on
+    A session whose row or project was deleted is refused with `REASON_GONE` (410)
+    after step 2 — also when it is closed or expired, as `/config` answers — and a row that went away between steps 4 and 5 gets the same
+    refusal, not a 500 and not a bare 404: the page dispatches on
     the reason, and this is a permanent fact rather than something to retry.
 
     The row id comes from the SESSION, never from the body — a public caller
     does not get to choose which proposal it is scoring.
     """
     validated_session = _validated_session_id(session_id)
+    # A malformed link costs no database read (it is refused as not_found below);
+    # its body is still checked, against the default setup.
+    setup_axes = _scoring_axes() if validated_session else axes_mod.default_axes()
     try:
-        body = _json_object_body()
-        axes = _validated_axes(body)
+        body = json_object_body(app)
+        axes = _validated_axes(body, setup_axes)
         note = _validated_note(body.get('notes'))
     except ValidationError as e:
         # Answered as a REFUSAL rather than left to the shared `ValidationError`
@@ -1370,7 +1568,12 @@ def submit_ballot(session_id: str):
     now = _now()
     state = _session_state(item, now)
     if state != STATUS_OPEN:
-        return _refusal(state)
+        # Gone before closed, as `/config` answers (5.35.03, e2e 5.35.02: a closed vote whose
+        # row or project was deleted answered 409 `closed` here and 410 `gone` there). Asked
+        # only on this refusal path; an open session's row is asserted by the ballot write.
+        return _refusal(REASON_GONE if _session_target_gone(item) else state)
+    if _project_gone(item.get('project_id')):
+        return _refusal(REASON_GONE)
 
     row_id = _session_row_id(item)
     if not row_id:
@@ -1392,22 +1595,7 @@ def submit_ballot(session_id: str):
     # new ballot is. Checking the session only at the read above would let a device
     # amend its vote after the facilitator closed the room.
     if not _hold_open_session(validated_session, now, claim_slot=not corrected):
-        # The condition is the authority, and it does not say which conjunct
-        # failed. Re-read to name the reason: by now the session may have been
-        # closed, may have expired, or may be full, and the room deserves the
-        # right sentence.
-        refreshed = _load_session(validated_session)
-        if not refreshed:
-            return _refusal(REASON_NOT_FOUND)
-        state = _session_state(refreshed, now)
-        if state != STATUS_OPEN:
-            return _refusal(state)
-        # It reads open, so the conjunct that refused is one the read cannot see —
-        # the cap, which is the only conjunct a claiming submission has and a
-        # correction does not. A correction reaching here would mean the session
-        # was shut between the two calls and re-opened, which no route can do, so
-        # it answers CLOSED: the fail-closed reading of a refusal nothing explains.
-        return _refusal(REASON_CAP_REACHED if not corrected else REASON_CLOSED)
+        return _refusal(_reason_the_hold_was_refused(validated_session, now, corrected))
 
     if ballot_id is None:
         ballot_id = _minted_ballot_id()
@@ -1416,12 +1604,11 @@ def submit_ballot(session_id: str):
         _write_ballot(row_id, ballot_id, validated_session, axes, note, display_name,
                       now)
     except _RowIsGone:
-        # Answered with the same `reason` a vanished SESSION is, because from the
-        # phone's side it is the same fact: there is nothing here to score any more.
-        # As a refusal rather than a raise, so the body carries that reason — the page
-        # reads only the reason, and a 404 without one renders as "try again in a
-        # moment" about a row that will never be back.
-        return _refusal(REASON_NOT_FOUND, 'That proposal no longer exists')
+        # The row went between the gone-check above and this write: answered with
+        # the same `gone` reason. As a refusal rather than a raise, so the body
+        # carries that reason — the page reads only the reason, and a bare error
+        # renders as "try again in a moment" about a row that will never be back.
+        return _refusal(REASON_GONE)
 
     # The ballot id is the device's own credential for correcting its vote, so it
     # is never logged; nor is the note or the display name.
@@ -1435,6 +1622,10 @@ def submit_ballot(session_id: str):
         'corrected': corrected,
         'row_title': _session_row_title(item),
     }
+
+
+# Build the AWS clients during INIT, not on the first request (shared/warm_init.py).
+warm_at_init(get_dynamodb_resource)
 
 
 @api_handler

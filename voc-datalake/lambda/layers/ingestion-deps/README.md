@@ -1,6 +1,7 @@
 # ingestion-deps layer
 
-Dependencies for the ingestion plugin Lambdas (ARM64/Graviton).
+Dependencies for the ingestion plugin Lambdas (ARM64/Graviton). lxml, which
+only the inbound-email intake uses, is in `../email-intake-deps`.
 
 Only `requirements.txt` matters here. The deployed layer contains ONLY what
 pip installs from it — via `lib/utils/python-layer-bundling.ts` at CDK synth
@@ -15,7 +16,12 @@ Notes:
 
 - `python/` is local build output from `scripts/build-layers.sh`; it is
   excluded from the CDK asset and can be deleted at any time.
-- boto3/botocore are stripped from the built layer on purpose — the Lambda
-  runtime provides a matched pair, and shipping a transitive botocore
-  shadows it (issue #194). If you ever need a newer SDK than the runtime
-  ships, vendor boto3 AND botocore together and remove the strip.
+- The bundling strips what the Lambda runtime already ships (boto3, botocore,
+  s3transfer, jmespath, python-dateutil, six, urllib3: a layer copy would
+  shadow the runtime's, issue #194) and what never runs in Lambda (`bin/`,
+  `*.pyi`, `*-stubs`, packaged `tests/`): `LAYER_STRIP` in
+  `lib/utils/python-layer-bundling.ts`. If you ever need a newer SDK than the
+  runtime ships, vendor boto3 AND botocore together and remove that strip.
+- `scripts/audit/py_layers.py` (a gate step) reports a library no attached
+  function reaches, one only a few of them reach, and a function that imports
+  a library none of its layers ships (docs/code-audit.md).

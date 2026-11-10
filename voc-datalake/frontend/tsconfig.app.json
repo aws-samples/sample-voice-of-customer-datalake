@@ -9,9 +9,11 @@
     "skipLibCheck": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@test/*": ["./src/test/*"]
+      "@test/*": ["./src/test/*"],
+      "@stream/*": ["../lambda/stream/src/*"],
+      "zod": ["./node_modules/zod"],
+      "zod/*": ["./node_modules/zod/*"]
     },
-    "baseUrl": ".",
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -23,10 +25,15 @@
 
     /* Linting */
     "strict": true,
+    "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "noImplicitReturns": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
     "noUncheckedSideEffectImports": true
   },
   "include": ["src"],

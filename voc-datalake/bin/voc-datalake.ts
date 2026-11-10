@@ -1,18 +1,26 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { Tags, Aspects } from 'aws-cdk-lib';
-import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
+import { Tags, Validations } from 'aws-cdk-lib';
+import { z } from 'zod';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { VocCoreStack } from '../lib/stacks/core-stack';
 import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
-import { AnthropicUseCaseSchema, AnthropicUseCaseConfig } from '../lib/stacks/bedrock-access-stack';
-import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, translateSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
-import { shouldDeployWebSearch } from '../lib/utils/web-search-default';
+import {
+  AnthropicUseCaseSchema, AnthropicUseCaseConfig, BedrockModelAgreements, ModelAgreementRetrySchema,
+} from '../lib/stacks/bedrock-access-stack';
+import { acknowledgeStackFindings } from '../lib/utils/nag-stack-acknowledgements';
+import { suppressReviewedResourceStar } from '../lib/utils/nag-resource-star';
+import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
+import { inferenceScopeOf } from '../lib/utils/inference-scope';
+import { applyAppAspects } from '../lib/utils/app-aspects';
 import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
 import { validateDeploymentPrefix } from '../lib/utils/naming';
+import { recordOrEmpty, stringOr } from '../lib/utils/context';
+import { wafEnabled } from '../lib/utils/waf';
 
 const app = new cdk.App();
 
@@ -37,39 +45,42 @@ const deploymentPrefix = validateDeploymentPrefix(app.node.tryGetContext('deploy
  */
 const stackId = (id: string): string => (deploymentPrefix ? `${deploymentPrefix}-${id}` : id);
 
-// Cost allocation tag helper
+// Cost allocation tag helper. `Environment` reads the same `environment` context key the
+// API stack uses for its CORS mode (cdk.context.json, default production), so the tag can
+// never say dev on a stack that serves production origins. CDK_ENV still overrides it.
+const environmentName = stringOr(process.env.CDK_ENV, stringOr(app.node.tryGetContext('environment'), 'production'));
+
 function tagStack(stack: cdk.Stack, feature: string) {
   Tags.of(stack).add('Project', 'VoC-DataLake');
   Tags.of(stack).add('Feature', feature);
-  Tags.of(stack).add('Environment', process.env.CDK_ENV || 'dev');
+  Tags.of(stack).add('Environment', environmentName);
   Tags.of(stack).add('ManagedBy', 'CDK');
 }
 
 // Derive enabled sources from pluginStatus
-const pluginStatus: Record<string, boolean> = app.node.tryGetContext('pluginStatus') || {};
+const pluginStatus = recordOrEmpty(app.node.tryGetContext('pluginStatus'));
 const enabledSources = Object.entries(pluginStatus)
   .filter(([, enabled]) => enabled === true)
   .map(([pluginId]) => pluginId);
 
 // Configuration
 const config = {
-  brandName: app.node.tryGetContext('brandName') || 'MyBrand',
-  brandHandles: app.node.tryGetContext('brandHandles') || ['@mybrand'],
-  primaryLanguage: app.node.tryGetContext('primaryLanguage') || 'en',
+  brandName: stringOr(app.node.tryGetContext('brandName'), 'MyBrand'),
+  primaryLanguage: stringOr(app.node.tryGetContext('primaryLanguage'), 'en'),
   enabledSources,
 };
 
 const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
+  region: stringOr(process.env.CDK_DEFAULT_REGION, 'us-east-1'),
 };
 
 // ============================================
 // Stack 0: VocWebSearchStack — the us-east-1 AI-enablement stack
 // ============================================
 // Two independently switchable halves in ONE stack, because they are one
-// deployment unit: both must live in us-east-1 (the web-search connector
-// exists only there; PutUseCaseForModelAccess works only there), both are
+// deployment unit: both run in us-east-1 (the web-search connector exists only
+// there; the use-case form has only ever been submitted there), both are
 // one-shot account enablement, and neither depends on the core stack chain.
 // They used to be two stacks, which put the app at six CloudFormation
 // templates — one over Workshop Studio's ceiling of five.
@@ -80,17 +91,25 @@ const env = {
 //           lib/utils/web-search-default.ts (single source of truth).
 //           Per-request search stays opt-in in both UIs ($7/1k queries; the
 //           gateway itself has no standing cost).
-//   half 2: Bedrock model access — Anthropic use-case submission plus the
-//           model agreements. Skipped entirely when `anthropicUseCase` is
-//           absent, e.g. for an account that already has access.
+//   half 2: Anthropic use-case form submission. Opt-in: only when the
+//           deployer passes their own `anthropicUseCase` block (-c or a local
+//           context file) and `skipUseCaseSubmission` is not set. Unset by
+//           default, so the form is filed in the Bedrock console instead.
+//
+// The model agreements are NOT here: VocCoreStack creates them in the app's
+// region on every deploy (BedrockModelAgreements). So with web search off and
+// no form to submit, this stack is not created and nothing goes to us-east-1.
 //
 // The BASE id stays `VocWebSearchStack` deliberately: it determines the
 // CloudFormation export names VocProcessingStack and VocApiStack import. It goes
 // through stackId() like every other stack, so a prefixed deployment namespaces
 // the exports and both importers in lockstep — which is what keeps two copies
 // from importing each other's gateway.
+// Where Bedrock inference may run: `global` (default) or `eu` (docs/eu-deployment.md).
+// Validated here, before any stack is built, so a typo fails the synth up front.
+const inferenceScope = inferenceScopeOf(app);
 const webSearchContextRaw = app.node.tryGetContext('enableWebSearch');
-const deployWebSearch = shouldDeployWebSearch(webSearchContextRaw);
+const deployWebSearch = shouldDeployWebSearchInScope(webSearchContextRaw, inferenceScope);
 const webSearchCrossRegion = deployWebSearch && env.region !== 'us-east-1';
 
 // Accept either boolean true (from cdk.context.json) or string "true"
@@ -107,13 +126,21 @@ if (anthropicUseCaseRaw) {
     anthropicUseCase = parseResult.data;
   } else {
     console.warn('⚠️  Invalid anthropicUseCase config in cdk.context.json:');
-    console.warn(parseResult.error.format());
-    console.warn('Skipping Bedrock model access. See cdk.context.example.json for the required format.');
+    console.warn(z.prettifyError(parseResult.error));
+    console.warn('Skipping the use case submission. See "Bedrock model access" in docs/deployment.md for the required format.');
   }
 }
 
+// What half 2 submits, if anything. Skipping applies here, so a skipped
+// submission with web search off leaves no reason to create the stack.
+const useCaseToSubmit = skipUseCaseSubmission ? undefined : anthropicUseCase;
+
+// Opt-in AWS WAF (`-c enableWaf=true` / performanceTier, lib/utils/waf.ts): the SPA distribution's CLOUDFRONT-scope
+// web ACL must be in us-east-1, so it lives in this stack and VocCoreStack reads its ARN cross-region.
+const deployWaf = wafEnabled(app);
+
 let webSearchStack: VocWebSearchStack | undefined;
-if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
+if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit, deployWaf)) {
   webSearchStack = new VocWebSearchStack(app, stackId('VocWebSearchStack'), {
     env: { account: env.account, region: 'us-east-1' },
     deploymentPrefix,
@@ -121,13 +148,19 @@ if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
     // it was its own us-east-1 stack. CDK only emits the SSM cross-region
     // machinery when the regions actually differ, so this only *permits* it.
     crossRegionReferences: true,
-    description: 'VoC Data Lake - AI Enablement (web search gateway, Bedrock model access) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
+    description: 'VoC Data Lake - AI Enablement and us-east-1 resources (web search gateway, Anthropic use-case form, opt-in CloudFront web ACL) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
     deployWebSearch,
-    anthropicUseCase,
-    modelRegion: env.region, // Create model agreements in the same region as other stacks
-    skipUseCaseSubmission,
+    anthropicUseCase: useCaseToSubmit,
+    cloudFrontWebAcl: deployWaf,
   });
   tagStack(webSearchStack, 'AiEnablement');
+  if (inferenceScope === 'eu') {
+    // Only the use-case half and the opt-in CloudFront web ACL can be here (web search is never deployed for eu).
+    cdk.Annotations.of(webSearchStack).addInfo(
+      'inferenceScope=eu: VocWebSearchStack carries only account-level items in us-east-1 (the Anthropic use-case ' +
+      'form, the opt-in CloudFront web ACL). No inference and no customer data go through it.',
+    );
+  }
   if (webSearchCrossRegion) {
     // Upgrade hint (issue #205): web search now deploys by default, and a
     // non-us-east-1 app needs a us-east-1 bootstrap for the cross-region
@@ -147,10 +180,32 @@ if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
 const coreStack = new VocCoreStack(app, stackId('VocCoreStack'), {
   env,
   deploymentPrefix,
+  // Only the opt-in WAF reads from VocWebSearchStack; SSM-backed only when the app region is not us-east-1.
+  crossRegionReferences: deployWaf && env.region !== 'us-east-1',
+  frontendWebAclArn: webSearchStack?.frontendWebAclArn,
   description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting) (uksb-0q2jyqfvlm)(tag:VocCoreStack)',
-  brandName: config.brandName,
 });
 tagStack(coreStack, 'Core');
+// The Bedrock model agreements / Marketplace subscriptions, on every deployment
+// (no flag), best effort: every allowlisted Claude model in the app region, and
+// the persona-avatar image model. Hosted by Core because it always exists, deploys
+// first and runs in the app region. The id is the construct's earlier name
+// (image agreement only), kept so that resource keeps its logical id.
+// `-c modelAgreementRetry=<value>` re-attempts every agreement on the next deploy (a new value
+// each time; docs/deployment.md → "Retry a refused agreement").
+const modelAgreementRetry = ModelAgreementRetrySchema.safeParse(app.node.tryGetContext('modelAgreementRetry'));
+if (!modelAgreementRetry.success) {
+  cdk.Annotations.of(coreStack).addWarningV2('voc:modelAgreementRetry',
+    'modelAgreementRetry must be 1-64 letters, digits, dots, dashes or underscores; ignored');
+}
+BedrockModelAgreements.addTo(coreStack, 'ImageModelAccess',
+  { retry: modelAgreementRetry.success ? modelAgreementRetry.data : undefined });
+// The form goes in before Core's agreements are attempted, as it did when both
+// lived in one construct. Only when there IS a form: otherwise Core must not wait
+// on (or, with `cdk deploy VocCoreStack`, drag in) a us-east-1 stack.
+if (webSearchStack && useCaseToSubmit) {
+  coreStack.addStackDependency(webSearchStack);
+}
 
 // ============================================
 // Stack 2: VocIngestionStack
@@ -160,7 +215,6 @@ const ingestionStack = new VocIngestionStack(app, stackId('VocIngestionStack'), 
   env,
   deploymentPrefix,
   description: 'VoC Data Lake - Ingestion Layer (Lambda, EventBridge, SQS) (uksb-0q2jyqfvlm)(tag:VocIngestionStack)',
-  feedbackTable: coreStack.feedbackTable,
   watermarksTable: coreStack.watermarksTable,
   aggregatesTable: coreStack.aggregatesTable,
   rawDataBucket: coreStack.rawDataBucket,
@@ -168,8 +222,9 @@ const ingestionStack = new VocIngestionStack(app, stackId('VocIngestionStack'), 
   kmsKey: coreStack.kmsKey,
   config,
   frontendDomain: coreStack.frontendDomainName,
+  realtime: coreStack.realtime,
 });
-ingestionStack.addDependency(coreStack);
+ingestionStack.addStackDependency(coreStack);
 tagStack(ingestionStack, 'Ingestion');
 
 // ============================================
@@ -186,15 +241,23 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
   projectsTable: coreStack.projectsTable,
   jobsTable: coreStack.jobsTable,
   idempotencyTable: coreStack.idempotencyTable,
+  memoryTable: coreStack.memoryTable,
+  agentsTable: coreStack.agentsTable,
+  radarTable: coreStack.radarTable,
+  featureRequestsTable: coreStack.featureRequestsTable,
+  conversationsTable: coreStack.conversationsTable,
+  userPool: coreStack.userPool,
+  realtime: coreStack.realtime,
   processingQueue: ingestionStack.processingQueue,
   kmsKey: coreStack.kmsKey,
+  rawDataBucket: coreStack.rawDataBucket,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,
   webSearchGatewayArn: webSearchStack?.gatewayArn,
   webSearchToolName: webSearchStack?.toolName,
   config,
 });
-processingStack.addDependency(coreStack);
-processingStack.addDependency(ingestionStack);
+processingStack.addStackDependency(coreStack);
+processingStack.addStackDependency(ingestionStack);
 tagStack(processingStack, 'Processing');
 
 // ============================================
@@ -211,6 +274,12 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   projectsTable: coreStack.projectsTable,
   jobsTable: coreStack.jobsTable,
   conversationsTable: coreStack.conversationsTable,
+  memoryTable: coreStack.memoryTable,
+  agentsTable: coreStack.agentsTable,
+  radarTable: coreStack.radarTable,
+  participantsTable: coreStack.participantsTable,
+  featureRequestsTable: coreStack.featureRequestsTable,
+  designIntegrationsSecretArn: coreStack.designIntegrationsSecretArn,
   kmsKey: coreStack.kmsKey,
   rawDataBucket: coreStack.rawDataBucket,
   avatarsCdnUrl: coreStack.avatarsCdnUrl,
@@ -223,38 +292,44 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   userPool: coreStack.userPool,
   userPoolClient: coreStack.userPoolClient,
   identityPool: coreStack.identityPool,
-  authenticatedRole: coreStack.authenticatedRole,
+  boardUserPool: coreStack.boardUserPool,
+  boardUserPoolClient: coreStack.boardUserPoolClient,
+  userPoolDomainPrefix: coreStack.userPoolDomainPrefix,
+  realtime: coreStack.realtime,
   processingQueueUrl: ingestionStack.processingQueue.queueUrl,
   processingQueueArn: ingestionStack.processingQueue.queueArn,
   secretsArn: ingestionStack.secretsArn,
   s3ImportBucket: ingestionStack.s3ImportBucket,
   researchStateMachine: processingStack.researchStateMachine,
+  agentRunStateMachine: processingStack.agentRunStateMachine,
+  memoryExtractQueueUrl: processingStack.memoryExtractQueue.queueUrl,
+  memoryExtractQueueArn: processingStack.memoryExtractQueue.queueArn,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,
   webSearchGatewayArn: webSearchStack?.gatewayArn,
   webSearchToolName: webSearchStack?.toolName,
   brandName: config.brandName,
   enabledSources,
 });
-apiStack.addDependency(coreStack);
-apiStack.addDependency(ingestionStack);
-apiStack.addDependency(processingStack);
+apiStack.addStackDependency(coreStack);
+apiStack.addStackDependency(ingestionStack);
+apiStack.addStackDependency(processingStack);
 tagStack(apiStack, 'Api');
 
-// Apply cdk-nag checks
-Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
+// The whole-app rewrites (lib/utils/app-aspects.ts; the per-stack test fixtures apply the same ones): each Lambda
+// logs to its own retained group, protectData retains every log group, inferenceScope=eu sets the EU inference env,
+// and CDK grant wildcards become exact actions and index ARNs. After every stack is built. First of them, the
+// audit-row Denies on the tables VocCoreStack holds AUDIT# rows in (lib/utils/audit-row-guard.ts).
+applyAppAspects(app, { auditRowTables: coreStack });
 
-// Global suppressions.
-// VocWebSearchStack deliberately gets NONE: the gateway half has always passed
-// cdk-nag unsuppressed (its IAM is scoped to the concrete gateway ARN), and the
-// model-access half carries its own resource-scoped suppressions inside
-// BedrockModelAccess. The plugin/Comprehend/Translate sets that used to be
-// applied to BedrockAccessStack at stack level were copy-paste — that stack
-// calls neither service — so they are dropped rather than inherited by the
-// gateway resources.
-NagSuppressions.addStackSuppressions(coreStack, [...lambdaBasicExecutionRoleSuppressions, ...cdkAssetsSuppressions], true);
-// Apply stack-level suppressions
-NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions], true);
-NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(deploymentPrefix), ...comprehendSuppressions, ...translateSuppressions], true);
-NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(deploymentPrefix), ...cdkAssetsSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
+// cdk-nag (AwsSolutions) runs as a policy-validation plugin after synthesis: an unacknowledged finding,
+// error or warning, fails `cdk synth` and is listed in the assembly's validation report.
+Validations.of(app).addPlugins(new AwsSolutionsChecks(app, { verbose: true }));
+
+// Stack-wide acknowledgements (lib/utils/nag-stack-acknowledgements.ts); VocWebSearchStack gets none.
+acknowledgeStackFindings({ core: coreStack, ingestion: ingestionStack, processing: processingStack, api: apiStack });
+// `Resource::*` is suppressed per POLICY, never stack-wide: only a policy whose every "*" action is on the
+// reviewed list (lib/utils/resource-star-actions.ts) gets it, so a new unscoped grant elsewhere is reported.
+// After every stack is built, so each policy document is complete when it is read.
+for (const stack of [ingestionStack, processingStack, apiStack]) suppressReviewedResourceStar(stack);
 
 app.synth();

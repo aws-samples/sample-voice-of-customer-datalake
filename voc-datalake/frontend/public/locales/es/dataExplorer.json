@@ -1,18 +1,5 @@
 {
-  "categories": {
-    "errorLoading": "Error al cargar categorías",
-    "noCategories": "Sin categorías",
-    "summary": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días",
-    "summary_one": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días",
-    "summary_many": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días",
-    "summary_other": "{{count}} categorías • {{total}} elementos • Últimos {{days}} días"
-  },
-  "deleteConfirm": {
-    "deleteFeedback": "Eliminar Comentario",
-    "deleteS3File": "Eliminar Archivo S3",
-    "message": "¿Estás seguro? Esto no se puede deshacer."
-  },
-  "description": "Explora, edita y sincroniza datos S3 sin procesar y registros DynamoDB procesados",
+  "description": "Explora los datos sin procesar de S3 y los registros procesados de DynamoDB. Aquí nunca se elimina nada y los archivos sin procesar guardados son de solo lectura.",
   "editModal": {
     "cancel": "Cancelar",
     "close": "Cerrar",
@@ -25,36 +12,47 @@
     "key": "Clave",
     "save": "Guardar",
     "syncToDynamo": "También actualizar DynamoDB",
-    "syncToS3": "También actualizar S3",
     "type": "Tipo",
     "viewFeedback": "Ver Comentario",
-    "viewS3File": "Ver Archivo S3"
+    "viewS3File": "Ver Archivo S3",
+    "content": "Contenido del archivo",
+    "staleRecord": "Este registro cambió después de abrirlo. Cierre el editor y vuelva a abrirlo para ver la versión actual."
   },
   "feedback": {
     "category": "Categoría: {{category}}",
-    "delete": "Eliminar",
     "edit": "Editar",
-    "errorLoading": "Error al cargar comentarios",
     "noFeedback": "No se encontraron comentarios",
-    "showingRecords": "Mostrando {{filtered}} de {{total}} registros",
+    "showingRecords": "Mostrando {{filtered, number}} de {{total, number}} registros",
     "urgent": "Urgente",
-    "view": "Ver"
+    "view": "Ver",
+    "noFeedbackHint": "Prueba otra fuente o un intervalo de tiempo más amplio.",
+    "showDetails": "Mostrar detalles",
+    "hideDetails": "Ocultar detalles",
+    "showingRecordsAtLeast": "{{filtered, number}} mostrados, hay más disponibles",
+    "showingRecordsShown": "{{filtered, number}} mostrados",
+    "loadMore": "Cargar más",
+    "loadingMore": "Cargando…"
   },
   "filters": {
     "allSources": "Todas las Fuentes",
-    "searchPlaceholder": "Buscar..."
+    "searchPlaceholder": "Buscar...",
+    "bucket": "Bucket de S3",
+    "source": "Fuente",
+    "search": "Buscar comentarios"
   },
   "newFile": "Nuevo Archivo",
-  "notConfigured": "Configura el endpoint de API en Configuración para explorar datos",
+  "notConfigured": "Configura el endpoint de API en Administración → Configuración general para explorar datos",
   "refresh": "Actualizar",
   "s3Browser": {
     "back": "Atrás",
-    "delete": "Eliminar",
     "download": "Descargar",
     "edit": "Editar",
-    "errorLoading": "Error al cargar archivos",
     "noFiles": "No se encontraron archivos",
-    "view": "Ver"
+    "view": "Ver",
+    "path": "Ruta de la carpeta",
+    "noFilesHint": "Esta carpeta está vacía. Crea un archivo aquí o ingiere datos desde Fuentes de datos.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
   },
   "tabs": {
     "categories": "Categorías",
@@ -62,7 +60,112 @@
     "feedbackShort": "Comentarios",
     "processedFeedback": "Comentarios Procesados",
     "s3RawData": "Datos S3 Sin Procesar",
-    "s3Short": "S3"
+    "s3Short": "S3",
+    "label": "Vista de datos"
   },
-  "title": "Explorador de Datos"
+  "title": "Explorador de Datos",
+  "details": {
+    "title": "Título",
+    "text": "Reseña",
+    "source": "Fuente",
+    "date": "Fecha",
+    "category": "Categoría",
+    "rating": "Valoración",
+    "language": "Idioma",
+    "author": "Autor",
+    "problem": "Problema",
+    "persona": "Persona",
+    "showRaw": "Mostrar JSON original",
+    "hideRaw": "Ocultar JSON original"
+  },
+  "dataQuality": {
+    "title": "Calidad de los datos",
+    "description": "Lo útiles que son los comentarios de cada fuente: una banda basada en reglas según su longitud, sus detalles (números, términos de producto) y si nombran un problema o una petición concretos. Una fuente con comentarios mayoritariamente bajos suele indicar un scraper mal configurado o un campo de formulario que se omite.",
+    "loading": "Cargando la calidad de los datos…",
+    "empty": "No hay comentarios en este periodo.",
+    "unratedShare": "El {{share}} de los comentarios de este periodo aún no está valorado.",
+    "backfillHint": "Los comentarios guardados antes de que existieran las valoraciones no tienen banda; un reprocesado de categorías (Administración → Taxonomía) los valora.",
+    "chartTop_one": "El gráfico muestra la fuente con más actividad; la tabla incluye todas las fuentes.",
+    "chartTop_other": "El gráfico muestra las {{count, number}} fuentes con más actividad; la tabla incluye todas las fuentes.",
+    "chartTop_many": "El gráfico muestra las {{count, number}} fuentes más activas; la tabla enumera todas las fuentes.",
+    "partial": "Algunos datos no se pudieron leer a tiempo, así que estas cifras pueden ser menores que las reales.",
+    "tableCaption": "Utilidad de los comentarios por fuente",
+    "allSources": "Todas las fuentes",
+    "columns": {
+      "source": "Fuente",
+      "total": "Total"
+    },
+    "bands": {
+      "high": "Alta",
+      "medium": "Media",
+      "low": "Baja",
+      "unrated": "Sin valorar"
+    },
+    "profile": {
+      "title": "Perfil de la fuente",
+      "description": "Cómo son los comentarios de cada fuente: su valoración, su sentimiento y la longitud de su texto.",
+      "notProfiled": "El {{share}} de los comentarios de este periodo se guardó antes de que se contara el perfil y no está incluido. Reconstruir los agregados del periodo lo añade.",
+      "facetGroup": "Perfil que se muestra",
+      "tableCaption": "{{facet}} por fuente",
+      "profiled": "Con perfil",
+      "facets": {
+        "rating": "Valoración",
+        "sentiment": "Sentimiento",
+        "length": "Longitud del texto"
+      },
+      "rating": {
+        "5": "5 estrellas",
+        "4": "4 estrellas",
+        "3": "3 estrellas",
+        "2": "2 estrellas",
+        "1": "1 estrella",
+        "none": "Sin valoración"
+      },
+      "sentiment": {
+        "positive": "Positivo",
+        "neutral": "Neutral",
+        "mixed": "Mixto",
+        "negative": "Negativo",
+        "other": "Otro"
+      },
+      "length": {
+        "short": "Menos de 50 caracteres",
+        "medium": "50–199 caracteres",
+        "long": "200–999 caracteres",
+        "very_long": "1000 caracteres o más"
+      }
+    }
+  },
+  "fields": {
+    "title": "Campos",
+    "description": "Qué significa cada campo guardado de un comentario: su tipo, qué paso lo establece, si contiene datos personales, qué le hace una política de origen de ocultación o de solo resumen y sus valores permitidos. Los significados están en inglés.",
+    "loading": "Cargando los campos…",
+    "empty": "La API no devolvió ningún campo.",
+    "caption": "Campos de un comentario ({{table}})",
+    "keyBadge": "clave",
+    "redact": "Ocultar: {{effect}}",
+    "summaryOnly": "Solo resumen: {{effect}}",
+    "columns": {
+      "field": "Campo",
+      "type": "Tipo",
+      "meaning": "Significado",
+      "setBy": "Lo establece",
+      "personalData": "Datos personales",
+      "policies": "Con ocultación / solo resumen",
+      "values": "Valores"
+    },
+    "pii": {
+      "customer_text": "Texto del cliente",
+      "personal": "Datos personales",
+      "derived_text": "Derivado del texto del cliente",
+      "none": "Ninguno"
+    },
+    "effects": {
+      "kept": "se conserva",
+      "redacted": "se oculta",
+      "dropped": "se elimina",
+      "from_redacted": "se deriva del texto ocultado",
+      "replaced": "se sustituye"
+    }
+  }
 }

@@ -25,7 +25,7 @@ function rawItem(overrides: Record<string, unknown> = {}): Record<string, unknow
 describe('normalizeFeedbackItem', () => {
   it('coerces a string sentiment_score to a number', () => {
     const item = normalizeFeedbackItem(rawItem({ sentiment_score: '0.9' }))
-    expect(item.sentiment_score).toBe(0.9)
+    expect(item.sentiment_score).toBeCloseTo(0.9, 10)
     expect(typeof item.sentiment_score).toBe('number')
     // The coerced value is now safe for numeric operations like .toFixed().
     expect(item.sentiment_score.toFixed(2)).toBe('0.90')
@@ -82,7 +82,37 @@ describe('normalizeFeedbackItems', () => {
       rawItem({ feedback_id: 'a', sentiment_score: '0.9', rating: '5' }),
       rawItem({ feedback_id: 'b', sentiment_score: 0, rating: 4 }),
     ])
-    expect(items.map((i) => i.sentiment_score)).toEqual([0.9, 0])
-    expect(items.map((i) => i.rating)).toEqual([5, 4])
+    expect(items.map((i) => i.sentiment_score)).toStrictEqual([0.9, 0])
+    expect(items.map((i) => i.rating)).toStrictEqual([5, 4])
+  })
+})
+
+describe('dimensions, tags and policy fields', () => {
+  it('keeps dimensions, their sources, tags, author/title and a known pii policy', () => {
+    const item = normalizeFeedbackItem(rawItem({
+      dimensions: { product: 'app', bad: 3 }, dimension_sources: { product: 'ai' },
+      tags: ['vip', ''], author: 'Ana', title: 'Login', pii_policy: 'redact',
+    }))
+    expect(item.dimensions).toStrictEqual({ product: 'app' })
+    expect(item.dimension_sources).toStrictEqual({ product: 'ai' })
+    expect([item.tags, item.author, item.title]).toStrictEqual([['vip'], 'Ana', 'Login'])
+    expect(item.pii_policy).toBe('redact')
+  })
+
+  it('reads empty maps, empty tags and an unknown policy as absent', () => {
+    const item = normalizeFeedbackItem(rawItem({ dimensions: {}, tags: [], pii_policy: 'secret' }))
+    expect([item.dimensions, item.tags, item.pii_policy]).toStrictEqual([undefined, undefined, undefined])
+  })
+})
+
+describe('the change stamp', () => {
+  it('keeps updated_at, which the Data Explorer editor sends back (a stale save is a 409)', () => {
+    const item = normalizeFeedbackItem({ feedback_id: 'f1', updated_at: '2026-11-01T00:00:00+00:00' })
+    expect(item.updated_at).toBe('2026-11-01T00:00:00+00:00')
+  })
+
+  it('reads a missing or junk stamp as absent (an item never edited)', () => {
+    expect(normalizeFeedbackItem({ feedback_id: 'f1' }).updated_at).toBeUndefined()
+    expect(normalizeFeedbackItem({ feedback_id: 'f1', updated_at: 7 }).updated_at).toBeUndefined()
   })
 })

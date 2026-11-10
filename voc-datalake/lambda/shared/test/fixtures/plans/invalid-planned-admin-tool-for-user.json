@@ -1,0 +1,46 @@
+{
+  "description": "invalid planned admin tool for user",
+  "ctx": {
+    "isAdmin": false,
+    "packsAllowed": [
+      "core",
+      "insights",
+      "project",
+      "forms",
+      "prioritization",
+      "scrapers",
+      "memory",
+      "agents",
+      "company"
+    ]
+  },
+  "plan": {
+    "schema": "voc-plan/1",
+    "goal": "Import",
+    "steps": [
+      {
+        "id": "s2",
+        "pack": "scrapers",
+        "kind": "write",
+        "title": "Import the iOS reviews",
+        "write": {
+          "tool": "run_source",
+          "args": {
+            "source": "app_reviews_ios"
+          }
+        },
+        "produces": [
+          "execution_id"
+        ]
+      }
+    ]
+  },
+  "valid": false,
+  "errors": [
+    {
+      "step": "s2",
+      "field": "write.tool"
+    }
+  ],
+  "needs_args_schema": false
+}

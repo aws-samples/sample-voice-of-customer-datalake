@@ -14,11 +14,14 @@
 
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronRight, Home } from 'lucide-react'
-import { skipToken, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 import clsx from 'clsx'
+import { agentsKeys } from '../../api/agentsApi'
+import { workflowsKeys } from '../../api/workflowsApi'
 import { projectKey } from '../../api/projectQueryKeys'
+import { featureRequestKeys } from '../../api/featureRequestsApi'
+import { useCachedQueryData } from '../../hooks/useCachedQueryData'
 import { buildCrumbs } from './routeCrumbs'
 
 /**
@@ -31,23 +34,51 @@ const ProjectNameSchema = z.object({
   project: z.object({ name: z.string().trim().min(1) }),
 })
 
+/** Same idea for an autonomous agent (`/agents/:id`). */
+const AgentNameSchema = z.object({ name: z.string().trim().min(1) })
+
+/** And for a library workflow (`/agents/workflows/:workflowId`, the editor's workflowsKeys.detail entry). */
+const WorkflowNameSchema = z.object({ workflow: z.object({ name: z.string().trim().min(1) }) })
+
+/** And a feedback board (`/feature-requests/:slug`, the board page's own list entry `{requests, board}`). */
+const BoardNameSchema = z.object({ board: z.object({ name: z.string().trim().min(1) }) })
+
+/** Which record the path addresses: a project, an agent, a library workflow (`/agents/workflows/:id`) or a board. */
+function recordIds(pathSegments: readonly string[]): { projectId?: string; agentId?: string; workflowId?: string; boardRef?: string } {
+  const [first, second, third] = pathSegments
+  if (first === 'projects') return { projectId: second }
+  if (first === 'feature-requests') return { boardRef: second }
+  if (first !== 'agents') return {}
+  return second === 'workflows' ? { workflowId: third } : { agentId: second }
+}
+
 /**
  * The display name for the record the current route addresses, if the page has
  * already loaded it. At most one record route is active at a time, so a single
  * name covers them all.
  *
- * Projects are the only record with a name to show: a feedback item has no title
+ * Projects, agents and library workflows are the records with a name to show: a feedback item has no title
  * field (see FeedbackItem), so `/feedback/:id` keeps its generic label.
  *
  * The entry is ProjectDetail's, via useProjectData — hence the shared `projectKey`
- * — and it is observed with `skipToken`, i.e. read-only: the header must not issue
- * a request of its own, nor race that page for one. The subscription is live
- * either way, so the crumb fills in the moment the page's own query resolves.
+ * — and it is READ from the cache (`useCachedQueryData`), never observed: the header
+ * must not issue a request of its own, nor race that page for one, nor (as a
+ * fetch-less TanStack skip-token observer did) replace the page's `queryFn` so its invalidations stop
+ * refetching. The cache subscription is live, so the crumb fills in the moment the
+ * page's own query resolves.
  */
 function useRecordName(pathSegments: readonly string[]): string | undefined {
-  const projectId = pathSegments[0] === 'projects' ? pathSegments[1] : undefined
-  const { data } = useQuery({ queryKey: projectKey(projectId), queryFn: skipToken })
+  const { projectId, agentId, workflowId, boardRef } = recordIds(pathSegments)
+  const data = useCachedQueryData(projectKey(projectId), projectId !== undefined)
+  // AgentDetail's own entry (agentsKeys.detail), read like the project one.
+  const agent = useCachedQueryData(agentsKeys.detail(agentId ?? ''), agentId !== undefined)
+  const workflow = useCachedQueryData(workflowsKeys.detail(workflowId ?? ''), workflowId !== undefined)
+  // Keyed like the page's list (its `useParams` slug); slugs and board ids need no URL encoding.
+  const board = useCachedQueryData(featureRequestKeys.list('app', boardRef ?? ''), boardRef !== undefined)
   return ProjectNameSchema.safeParse(data).data?.project.name
+    ?? AgentNameSchema.safeParse(agent).data?.name
+    ?? WorkflowNameSchema.safeParse(workflow).data?.workflow.name
+    ?? BoardNameSchema.safeParse(board).data?.board.name
 }
 
 export default function Breadcrumbs() {
@@ -65,29 +96,34 @@ export default function Breadcrumbs() {
 
   return (
     <nav 
-      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-600 overflow-x-auto scrollbar-hide"
+      className="flex flex-wrap items-center gap-x-1.5 sm:gap-x-2 gap-y-0.5 text-xs sm:text-sm text-text"
       aria-label="Breadcrumb"
     >
       {breadcrumbs.map((crumb, index) => {
         const isLast = index === breadcrumbs.length - 1
+        // Below `sm` only Home and the current page fit. An intermediate crumb
+        // collapses entirely — separator included — instead of leaving an
+        // empty link between two chevrons ("⌂ > > Page").
+        const isMiddle = !isLast && !crumb.isHome
         
         return (
-          <div key={crumb.path} className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <div key={crumb.path} className={clsx('items-center gap-1.5 sm:gap-2', isLast ? 'min-w-0' : 'flex-shrink-0', isMiddle ? 'hidden sm:flex' : 'flex')}>
             {index > 0 && (
               <ChevronRight 
                 size={14} 
-                className="text-gray-400 flex-shrink-0" 
+                className="text-muted-strong flex-shrink-0" 
                 aria-hidden="true" 
               />
             )}
             
             {isLast ? (
+              // Wraps, never cut: a long project name used to end at 120 px ("Q1 Product Improv…").
               <span 
-                className="text-gray-900 font-medium flex items-center gap-1 sm:gap-1.5 max-w-[120px] sm:max-w-none truncate"
+                className="text-text-strong font-medium flex items-center gap-1 sm:gap-1.5 min-w-0"
                 aria-current="page"
               >
                 {crumb.isHome && <Home size={14} className="flex-shrink-0" aria-hidden="true" />}
-                <span className="truncate">{crumb.label}</span>
+                <span className="min-w-0 break-words">{crumb.label}</span>
               </span>
             ) : (
               <Link
@@ -97,8 +133,8 @@ export default function Breadcrumbs() {
                 // at all on a phone.
                 aria-label={crumb.label}
                 className={clsx(
-                  'hover:text-blue-600 active:text-blue-700 transition-colors flex items-center gap-1 sm:gap-1.5 py-1',
-                  crumb.isHome && 'text-gray-500'
+                  'hover:text-accent-text active:text-accent-hover transition-colors flex items-center gap-1 sm:gap-1.5 py-1',
+                  crumb.isHome && 'text-muted'
                 )}
               >
                 {crumb.isHome && <Home size={14} className="flex-shrink-0" aria-hidden="true" />}

@@ -7,13 +7,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const mockFetchApi = vi.fn()
+vi.mock('./client', () => ({ fetchApi: vi.fn() }))
 
-vi.mock('./client', () => ({
-  fetchApi: (...args: unknown[]) => mockFetchApi(...args),
-}))
-
+import { fetchApi } from './client'
 import { scrapersApi } from './scrapersApi'
+import { at } from '@test/defined'
+
+const mockFetchApi = vi.mocked(fetchApi)
 
 describe('scrapersApi.getScrapers base_url normalization', () => {
   beforeEach(() => {
@@ -30,8 +30,8 @@ describe('scrapersApi.getScrapers base_url normalization', () => {
 
     const { scrapers } = await scrapersApi.getScrapers()
 
-    expect(scrapers[0].base_url).toBe('')
-    expect(scrapers[1].base_url).toBe('https://example.com/reviews')
+    expect(at(scrapers, 0).base_url).toBe('')
+    expect(at(scrapers, 1).base_url).toBe('https://example.com/reviews')
   })
 
   it('tolerates a payload without a scrapers array', async () => {
@@ -39,7 +39,7 @@ describe('scrapersApi.getScrapers base_url normalization', () => {
 
     const { scrapers } = await scrapersApi.getScrapers()
 
-    expect(scrapers).toEqual([])
+    expect(scrapers).toStrictEqual([])
   })
 
   it('defaults a missing frequency so the card can never render undefinedm (issue #169)', async () => {
@@ -47,9 +47,9 @@ describe('scrapersApi.getScrapers base_url normalization', () => {
 
     const { scrapers } = await scrapersApi.getScrapers()
 
-    expect(scrapers[0].frequency_minutes).toBe(0)
-    expect(scrapers[0].urls).toEqual([])
-    expect(scrapers[0].pagination.enabled).toBe(false)
+    expect(at(scrapers, 0).frequency_minutes).toBe(0)
+    expect(at(scrapers, 0).urls).toStrictEqual([])
+    expect(at(scrapers, 0).pagination.enabled).toBe(false)
   })
 })
 
@@ -67,6 +67,6 @@ describe('scrapersApi.getScraperStatus normalization (issue #169)', () => {
 
     expect(status.pages_scraped).toBe(0)
     expect(status.items_found).toBe(0)
-    expect(status.errors).toEqual([])
+    expect(status.errors).toStrictEqual([])
   })
 })

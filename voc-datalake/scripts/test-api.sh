@@ -5,7 +5,7 @@
 # Usage: test-api.sh [API_URL] [STREAM_URL]
 #
 # Environment:
-#   VOC_TEST_USER / VOC_TEST_PASS - Cognito test creds (default: deployment-test / DeployTest!2025)
+#   VOC_TEST_USER / VOC_TEST_PASS - Cognito test creds (user default: deployment-test; the password is required)
 #   RUN_SYNTHETIC=1               - also fire a synthetic_reviews generation run (SIDE EFFECTS:
 #                                   writes synthetic feedback + incurs Bedrock cost). Off by default.
 #
@@ -46,29 +46,24 @@ DEFAULT_API=$(aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
   --output text 2>/dev/null)
 
-# Legacy: a dedicated chat-stream Function URL. Newer deployments serve streaming
-# from the main API Gateway at /chat/stream, so this output may not exist.
-DEFAULT_STREAM_URL=$(aws cloudformation describe-stacks \
-  --stack-name VocApiStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`ChatStreamUrl`].OutputValue' \
-  --output text 2>/dev/null)
-
-# Test credentials - should be created in Cognito for deployment testing
+# Test credentials - a Cognito user created for deployment testing
 # Create with: aws cognito-idp admin-create-user --user-pool-id <pool-id> --username deployment-test
+# and give it your own password. There is no default (OPS-4): a password in this public repo would
+# let anyone sign in to every deployment that followed it. Disable or delete the user after validating.
 DEPLOY_USER="${VOC_TEST_USER:-deployment-test}"
-# NOTE: Use single quotes for password to prevent bash history expansion of '!'
-DEPLOY_PASS="${VOC_TEST_PASS:-DeployTest!2025}"
+DEPLOY_PASS="${VOC_TEST_PASS:-}"
+if [ -z "$DEPLOY_PASS" ]; then
+  echo "❌ Set VOC_TEST_PASS to the test user's password, e.g.  read -rs VOC_TEST_PASS && export VOC_TEST_PASS"
+  exit 1
+fi
 
 # Allow override via command line arguments
 API="${1:-$DEFAULT_API}"
 API="${API%/}"
-STREAM_URL="${2:-$DEFAULT_STREAM_URL}"
+# Streaming is served by the main API Gateway at /chat/stream; the optional
+# second argument points the stream checks at another base URL.
+STREAM_URL="${2:-$API}"
 STREAM_URL="${STREAM_URL%/}"
-# Fall back to the main API Gateway for streaming (/chat/stream) when there is no
-# dedicated Function URL output.
-if [ -z "$STREAM_URL" ] || [ "$STREAM_URL" = "None" ]; then
-  STREAM_URL="$API"
-fi
 
 if [ -z "$API" ] || [ "$API" = "None" ]; then
   echo "❌ Could not find API endpoint. Is VocApiStack deployed?"
@@ -156,7 +151,6 @@ print(items[0].get('id','') if items else '')" 2>/dev/null || echo "")
   fi
 
   echo -e "\n${BLUE}Chat API${NC}"
-  tpost "/chat" '{"message":"test"}'
 
   echo -e "\n${BLUE}Integrations API${NC}"
   tget "/integrations/status"
@@ -172,7 +166,6 @@ print(items[0].get('id','') if items else '')" 2>/dev/null || echo "")
 
   echo -e "\n${BLUE}Projects API${NC}"
   tget "/projects"
-  tget "/projects/config"
   tget "/projects/prioritization"
 
   # PR #131: document-generation (Step Functions) + product-context workspace.
@@ -197,7 +190,6 @@ print(items[0].get('id','') if items else '')" 2>/dev/null || echo "")
   echo -e "\n${BLUE}Data Explorer API${NC}"
   tget "/data-explorer/s3"
   tget "/data-explorer/buckets"
-  tget "/data-explorer/stats"
 
   echo -e "\n${BLUE}Users API (Admin)${NC}"
   tget "/users"

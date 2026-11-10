@@ -1,0 +1,1858 @@
+{
+  "ask_create": {
+    "ask": {
+      "ask_id": "ask_8904d1ce97b9e263",
+      "counts": {
+        "failed": 0,
+        "recipients": 2,
+        "responded": 0,
+        "sent": 0,
+        "skipped": 0
+      },
+      "created_at": "2026-10-29T12:59:36.424779+00:00",
+      "created_by": "admin-sub",
+      "link": {
+        "form_id": "form-1",
+        "kind": "form",
+        "url": "https://abc123.execute-api.us-east-1.amazonaws.com/v1/feedback-forms/form-1/iframe"
+      },
+      "message": "We changed how seats are chosen.",
+      "project_id": "proj-public",
+      "status": "queued",
+      "subject": "Two minutes on seat choice",
+      "updated_at": "2026-10-29T12:59:36.424779+00:00"
+    }
+  },
+  "ask_detail": {
+    "ask": {
+      "ask_id": "ask_8904d1ce97b9e263",
+      "counts": {
+        "failed": 0,
+        "recipients": 2,
+        "responded": 0,
+        "sent": 2,
+        "skipped": 0
+      },
+      "created_at": "2026-10-29T12:59:36.424779+00:00",
+      "created_by": "admin-sub",
+      "link": {
+        "form_id": "form-1",
+        "kind": "form",
+        "url": "https://abc123.execute-api.us-east-1.amazonaws.com/v1/feedback-forms/form-1/iframe"
+      },
+      "message": "We changed how seats are chosen.",
+      "project_id": "proj-public",
+      "status": "sent",
+      "subject": "Two minutes on seat choice",
+      "updated_at": "2026-10-29T12:59:36.450153+00:00"
+    },
+    "recipients": [
+      {
+        "email": "lee@acme.example",
+        "error": null,
+        "name": "Lee",
+        "person_id": "per_0da8cbd4c7af52db",
+        "responded_at": null,
+        "sent_at": "2026-10-29T12:59:36.440282+00:00",
+        "status": "sent"
+      },
+      {
+        "email": "pat@example.com",
+        "error": null,
+        "name": "Pat",
+        "person_id": "per_eb1801c628efbec5",
+        "responded_at": null,
+        "sent_at": "2026-10-29T12:59:36.446867+00:00",
+        "status": "sent"
+      }
+    ]
+  },
+  "asks": {
+    "asks": [
+      {
+        "ask_id": "ask_8904d1ce97b9e263",
+        "counts": {
+          "failed": 0,
+          "recipients": 2,
+          "responded": 0,
+          "sent": 2,
+          "skipped": 0
+        },
+        "created_at": "2026-10-29T12:59:36.424779+00:00",
+        "created_by": "admin-sub",
+        "link": {
+          "form_id": "form-1",
+          "kind": "form",
+          "url": "https://abc123.execute-api.us-east-1.amazonaws.com/v1/feedback-forms/form-1/iframe"
+        },
+        "message": "We changed how seats are chosen.",
+        "project_id": "proj-public",
+        "status": "sent",
+        "subject": "Two minutes on seat choice",
+        "updated_at": "2026-10-29T12:59:36.450153+00:00"
+      }
+    ]
+  },
+  "board_create": {
+    "board": {
+      "archived": false,
+      "audience": {
+        "domains": [
+          "partner.example"
+        ],
+        "emails": [
+          "kim@acme.example"
+        ],
+        "mode": "list"
+      },
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.275851+00:00",
+      "created_by": "admin-sub",
+      "description": "Early access builds",
+      "fields": {
+        "request": {
+          "affected_count": {
+            "enabled": false,
+            "required": false
+          },
+          "amount_usd": {
+            "enabled": false,
+            "required": false
+          },
+          "area": {
+            "enabled": true,
+            "required": true
+          },
+          "contact_email": {
+            "enabled": false,
+            "required": false
+          },
+          "customer": {
+            "enabled": false,
+            "required": false
+          },
+          "deal": {
+            "enabled": false,
+            "required": false
+          },
+          "impact": {
+            "enabled": false,
+            "required": false
+          },
+          "kind": {
+            "enabled": false,
+            "required": false
+          },
+          "link": {
+            "enabled": true,
+            "required": false
+          },
+          "outcome": {
+            "enabled": true,
+            "required": true
+          },
+          "rating": {
+            "enabled": true,
+            "required": false
+          },
+          "reference": {
+            "enabled": false,
+            "required": false
+          },
+          "severity": {
+            "enabled": false,
+            "required": false
+          },
+          "steps": {
+            "enabled": false,
+            "required": false
+          }
+        },
+        "support": {
+          "amount_usd": {
+            "enabled": false,
+            "required": false
+          },
+          "contact_email": {
+            "enabled": false,
+            "required": false
+          },
+          "customer": {
+            "enabled": false,
+            "required": false
+          },
+          "deal": {
+            "enabled": false,
+            "required": false
+          },
+          "impact": {
+            "enabled": false,
+            "required": false
+          },
+          "note": {
+            "enabled": true,
+            "required": false
+          }
+        }
+      },
+      "name": "Beta feedback",
+      "paused": false,
+      "request_count": 0,
+      "share_url": "https://voc.example.com/board/beta-feedback",
+      "slug": "beta-feedback",
+      "statuses": [
+        {
+          "key": "new",
+          "label": "New"
+        },
+        {
+          "key": "seen",
+          "label": "Seen"
+        },
+        {
+          "key": "fixed",
+          "label": "Fixed"
+        }
+      ],
+      "template": "beta",
+      "updated_at": "2026-10-29T12:59:36.275851+00:00"
+    }
+  },
+  "board_delete": {
+    "deleted": 0,
+    "done": true,
+    "remaining": 0,
+    "success": true
+  },
+  "board_get": {
+    "board": {
+      "archived": false,
+      "audience": {
+        "mode": "list"
+      },
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.275851+00:00",
+      "description": "Early access builds",
+      "fields": {
+        "request": {
+          "affected_count": {
+            "enabled": false,
+            "required": false
+          },
+          "amount_usd": {
+            "enabled": false,
+            "required": false
+          },
+          "area": {
+            "enabled": true,
+            "required": true
+          },
+          "contact_email": {
+            "enabled": false,
+            "required": false
+          },
+          "customer": {
+            "enabled": false,
+            "required": false
+          },
+          "deal": {
+            "enabled": false,
+            "required": false
+          },
+          "impact": {
+            "enabled": false,
+            "required": false
+          },
+          "kind": {
+            "enabled": false,
+            "required": false
+          },
+          "link": {
+            "enabled": true,
+            "required": false
+          },
+          "outcome": {
+            "enabled": true,
+            "required": true
+          },
+          "rating": {
+            "enabled": true,
+            "required": false
+          },
+          "reference": {
+            "enabled": false,
+            "required": false
+          },
+          "severity": {
+            "enabled": false,
+            "required": false
+          },
+          "steps": {
+            "enabled": false,
+            "required": false
+          }
+        },
+        "support": {
+          "amount_usd": {
+            "enabled": false,
+            "required": false
+          },
+          "contact_email": {
+            "enabled": false,
+            "required": false
+          },
+          "customer": {
+            "enabled": false,
+            "required": false
+          },
+          "deal": {
+            "enabled": false,
+            "required": false
+          },
+          "impact": {
+            "enabled": false,
+            "required": false
+          },
+          "note": {
+            "enabled": true,
+            "required": false
+          }
+        }
+      },
+      "name": "Beta feedback",
+      "paused": false,
+      "request_count": 0,
+      "share_url": "https://voc.example.com/board/beta-feedback",
+      "slug": "beta-feedback",
+      "statuses": [
+        {
+          "key": "new",
+          "label": "New"
+        },
+        {
+          "key": "seen",
+          "label": "Seen"
+        },
+        {
+          "key": "fixed",
+          "label": "Fixed"
+        }
+      ],
+      "template": "beta",
+      "updated_at": "2026-10-29T12:59:36.275851+00:00"
+    }
+  },
+  "board_update": {
+    "board": {
+      "archived": false,
+      "audience": {
+        "domains": [
+          "partner.example"
+        ],
+        "emails": [
+          "kim@acme.example"
+        ],
+        "mode": "list"
+      },
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.275851+00:00",
+      "created_by": "admin-sub",
+      "description": "Early access builds",
+      "fields": {
+        "request": {
+          "affected_count": {
+            "enabled": false,
+            "required": false
+          },
+          "amount_usd": {
+            "enabled": false,
+            "required": false
+          },
+          "area": {
+            "enabled": true,
+            "required": true
+          },
+          "contact_email": {
+            "enabled": false,
+            "required": false
+          },
+          "customer": {
+            "enabled": false,
+            "required": false
+          },
+          "deal": {
+            "enabled": false,
+            "required": false
+          },
+          "impact": {
+            "enabled": false,
+            "required": false
+          },
+          "kind": {
+            "enabled": false,
+            "required": false
+          },
+          "link": {
+            "enabled": true,
+            "required": false
+          },
+          "outcome": {
+            "enabled": true,
+            "required": true
+          },
+          "rating": {
+            "enabled": true,
+            "required": false
+          },
+          "reference": {
+            "enabled": false,
+            "required": false
+          },
+          "severity": {
+            "enabled": false,
+            "required": false
+          },
+          "steps": {
+            "enabled": false,
+            "required": false
+          }
+        },
+        "support": {
+          "amount_usd": {
+            "enabled": false,
+            "required": false
+          },
+          "contact_email": {
+            "enabled": false,
+            "required": false
+          },
+          "customer": {
+            "enabled": false,
+            "required": false
+          },
+          "deal": {
+            "enabled": false,
+            "required": false
+          },
+          "impact": {
+            "enabled": false,
+            "required": false
+          },
+          "note": {
+            "enabled": true,
+            "required": false
+          }
+        }
+      },
+      "name": "Beta 2",
+      "paused": false,
+      "request_count": 0,
+      "share_url": "https://voc.example.com/board/beta-feedback",
+      "slug": "beta-feedback",
+      "statuses": [
+        {
+          "key": "new",
+          "label": "New"
+        },
+        {
+          "key": "seen",
+          "label": "Seen"
+        },
+        {
+          "key": "fixed",
+          "label": "Fixed"
+        }
+      ],
+      "template": "beta",
+      "updated_at": "2026-10-29T12:59:36.298644+00:00"
+    }
+  },
+  "boards_list": {
+    "boards": [
+      {
+        "archived": false,
+        "audience": {
+          "mode": "company"
+        },
+        "board_id": "brd_sales",
+        "created_at": "2026-10-29T12:59:36.120996+00:00",
+        "description": "",
+        "fields": {
+          "request": {
+            "affected_count": {
+              "enabled": false,
+              "required": false
+            },
+            "amount_usd": {
+              "enabled": true,
+              "required": false
+            },
+            "area": {
+              "enabled": false,
+              "required": false
+            },
+            "contact_email": {
+              "enabled": true,
+              "required": false
+            },
+            "customer": {
+              "enabled": true,
+              "required": true
+            },
+            "deal": {
+              "enabled": true,
+              "required": false
+            },
+            "impact": {
+              "enabled": true,
+              "required": true
+            },
+            "kind": {
+              "enabled": false,
+              "required": false
+            },
+            "link": {
+              "enabled": false,
+              "required": false
+            },
+            "outcome": {
+              "enabled": false,
+              "required": false
+            },
+            "rating": {
+              "enabled": false,
+              "required": false
+            },
+            "reference": {
+              "enabled": false,
+              "required": false
+            },
+            "severity": {
+              "enabled": false,
+              "required": false
+            },
+            "steps": {
+              "enabled": false,
+              "required": false
+            }
+          },
+          "support": {
+            "amount_usd": {
+              "enabled": true,
+              "required": false
+            },
+            "contact_email": {
+              "enabled": true,
+              "required": false
+            },
+            "customer": {
+              "enabled": true,
+              "required": true
+            },
+            "deal": {
+              "enabled": true,
+              "required": false
+            },
+            "impact": {
+              "enabled": true,
+              "required": true
+            },
+            "note": {
+              "enabled": true,
+              "required": false
+            }
+          }
+        },
+        "name": "Sales feature requests",
+        "paused": false,
+        "request_count": 1,
+        "share_url": "https://voc.example.com/board/sales-feature-requests",
+        "slug": "sales-feature-requests",
+        "statuses": [
+          {
+            "key": "new",
+            "label": "New"
+          },
+          {
+            "key": "under_review",
+            "label": "Under review"
+          },
+          {
+            "key": "planned",
+            "label": "Planned"
+          },
+          {
+            "key": "shipped",
+            "label": "Shipped"
+          },
+          {
+            "key": "declined",
+            "label": "Declined"
+          }
+        ],
+        "template": "sales",
+        "updated_at": "2026-10-29T12:59:36.120996+00:00"
+      }
+    ],
+    "viewer": {
+      "email": "sam@acme.example",
+      "is_admin": false,
+      "name": "",
+      "pool": "board"
+    }
+  },
+  "boards_list_admin": {
+    "boards": [
+      {
+        "archived": false,
+        "audience": {
+          "domains": [],
+          "emails": [],
+          "mode": "company"
+        },
+        "board_id": "brd_sales",
+        "created_at": "2026-10-29T12:59:36.120996+00:00",
+        "created_by": "system",
+        "description": "",
+        "fields": {
+          "request": {
+            "affected_count": {
+              "enabled": false,
+              "required": false
+            },
+            "amount_usd": {
+              "enabled": true,
+              "required": false
+            },
+            "area": {
+              "enabled": false,
+              "required": false
+            },
+            "contact_email": {
+              "enabled": true,
+              "required": false
+            },
+            "customer": {
+              "enabled": true,
+              "required": true
+            },
+            "deal": {
+              "enabled": true,
+              "required": false
+            },
+            "impact": {
+              "enabled": true,
+              "required": true
+            },
+            "kind": {
+              "enabled": false,
+              "required": false
+            },
+            "link": {
+              "enabled": false,
+              "required": false
+            },
+            "outcome": {
+              "enabled": false,
+              "required": false
+            },
+            "rating": {
+              "enabled": false,
+              "required": false
+            },
+            "reference": {
+              "enabled": false,
+              "required": false
+            },
+            "severity": {
+              "enabled": false,
+              "required": false
+            },
+            "steps": {
+              "enabled": false,
+              "required": false
+            }
+          },
+          "support": {
+            "amount_usd": {
+              "enabled": true,
+              "required": false
+            },
+            "contact_email": {
+              "enabled": true,
+              "required": false
+            },
+            "customer": {
+              "enabled": true,
+              "required": true
+            },
+            "deal": {
+              "enabled": true,
+              "required": false
+            },
+            "impact": {
+              "enabled": true,
+              "required": true
+            },
+            "note": {
+              "enabled": true,
+              "required": false
+            }
+          }
+        },
+        "name": "Sales feature requests",
+        "paused": false,
+        "request_count": 1,
+        "share_url": "https://voc.example.com/board/sales-feature-requests",
+        "slug": "sales-feature-requests",
+        "statuses": [
+          {
+            "key": "new",
+            "label": "New"
+          },
+          {
+            "key": "under_review",
+            "label": "Under review"
+          },
+          {
+            "key": "planned",
+            "label": "Planned"
+          },
+          {
+            "key": "shipped",
+            "label": "Shipped"
+          },
+          {
+            "key": "declined",
+            "label": "Declined"
+          }
+        ],
+        "template": "sales",
+        "updated_at": "2026-10-29T12:59:36.120996+00:00"
+      }
+    ],
+    "viewer": {
+      "email": "ada@example.com",
+      "is_admin": true,
+      "name": "Ada Admin",
+      "pool": "app"
+    }
+  },
+  "error": {
+    "error": "A person with this email already exists",
+    "success": false
+  },
+  "fr_create": {
+    "request": {
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
+      "description": "Needed for the enterprise tier",
+      "fields": {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "impact": "at_risk"
+      },
+      "reporter_email": "sam@acme.example",
+      "reporter_name": "Sam Seller",
+      "request_id": "fr_09dde6edea0f8982",
+      "status": "new",
+      "title": "SSO with SAML",
+      "totals": {
+        "at_risk_usd": 120000,
+        "committed_usd": 0,
+        "customers": 1,
+        "supporters": 1
+      },
+      "updated_at": "2026-10-29T12:59:36.132357+00:00"
+    },
+    "supports": [
+      {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "created_at": "2026-10-29T12:59:36.132362+00:00",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "email": "sam@acme.example",
+        "fields": {
+          "amount_usd": 120000,
+          "contact_email": "cio@acme.example",
+          "customer": "Acme",
+          "deal": "Acme renewal",
+          "impact": "at_risk",
+          "note": "Their IT asks every week"
+        },
+        "impact": "at_risk",
+        "is_reporter": true,
+        "name": "Sam Seller",
+        "note": "Their IT asks every week",
+        "request_id": "fr_09dde6edea0f8982",
+        "support_id": "sup_a93b6f465bb8f233",
+        "updated_at": "2026-10-29T12:59:36.132362+00:00"
+      }
+    ]
+  },
+  "fr_create_fields": {
+    "request": {
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.310166+00:00",
+      "description": "",
+      "fields": {
+        "area": "Seat map",
+        "link": "https://example.com/b",
+        "outcome": "broken",
+        "rating": 2
+      },
+      "reporter_email": "kim@acme.example",
+      "reporter_name": "",
+      "request_id": "fr_2febd42fa1227fff",
+      "status": "new",
+      "title": "Seat map is slow",
+      "totals": {
+        "avg_rating": 2,
+        "supporters": 1
+      },
+      "updated_at": "2026-10-29T12:59:36.310166+00:00"
+    },
+    "supports": [
+      {
+        "created_at": "2026-10-29T12:59:36.310170+00:00",
+        "email": "kim@acme.example",
+        "fields": {},
+        "is_reporter": true,
+        "name": "",
+        "request_id": "fr_2febd42fa1227fff",
+        "support_id": "sup_f4ae650246444937",
+        "updated_at": "2026-10-29T12:59:36.310170+00:00"
+      }
+    ]
+  },
+  "fr_detail": {
+    "request": {
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
+      "description": "Needed for the enterprise tier",
+      "fields": {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "impact": "at_risk"
+      },
+      "list_id": "lst_6c4492cf3de63461",
+      "project_id": "proj-public",
+      "reporter_email": "sam@acme.example",
+      "reporter_name": "Sam Seller",
+      "request_id": "fr_09dde6edea0f8982",
+      "status": "planned",
+      "title": "SSO with SAML and OIDC",
+      "totals": {
+        "at_risk_usd": 120000,
+        "committed_usd": 60000,
+        "customers": 2,
+        "supporters": 2
+      },
+      "updated_at": "2026-10-29T12:59:36.223568+00:00"
+    },
+    "supports": [
+      {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "created_at": "2026-10-29T12:59:36.132362+00:00",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "email": "sam@acme.example",
+        "fields": {
+          "amount_usd": 120000,
+          "contact_email": "cio@acme.example",
+          "customer": "Acme",
+          "deal": "Acme renewal",
+          "impact": "at_risk",
+          "note": "Their IT asks every week"
+        },
+        "impact": "at_risk",
+        "is_reporter": true,
+        "name": "Sam Seller",
+        "note": "Their IT asks every week",
+        "request_id": "fr_09dde6edea0f8982",
+        "support_id": "sup_a93b6f465bb8f233",
+        "updated_at": "2026-10-29T12:59:36.132362+00:00"
+      },
+      {
+        "amount_usd": 60000,
+        "contact_email": "ops@example.com",
+        "created_at": "2026-10-29T12:59:36.144824+00:00",
+        "customer": "Example Air",
+        "deal": "Example Air fleet",
+        "email": "kim@acme.example",
+        "fields": {
+          "amount_usd": 60000,
+          "contact_email": "ops@example.com",
+          "customer": "Example Air",
+          "deal": "Example Air fleet",
+          "impact": "committed",
+          "note": "Blocks the renewal"
+        },
+        "impact": "committed",
+        "is_reporter": false,
+        "name": "Kim",
+        "note": "Blocks the renewal",
+        "request_id": "fr_09dde6edea0f8982",
+        "support_id": "sup_c3f4d8dc8705229b",
+        "updated_at": "2026-10-29T12:59:36.159393+00:00"
+      }
+    ]
+  },
+  "fr_list": {
+    "board": {
+      "archived": false,
+      "audience": {
+        "mode": "company"
+      },
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.120996+00:00",
+      "description": "",
+      "fields": {
+        "request": {
+          "affected_count": {
+            "enabled": false,
+            "required": false
+          },
+          "amount_usd": {
+            "enabled": true,
+            "required": false
+          },
+          "area": {
+            "enabled": false,
+            "required": false
+          },
+          "contact_email": {
+            "enabled": true,
+            "required": false
+          },
+          "customer": {
+            "enabled": true,
+            "required": true
+          },
+          "deal": {
+            "enabled": true,
+            "required": false
+          },
+          "impact": {
+            "enabled": true,
+            "required": true
+          },
+          "kind": {
+            "enabled": false,
+            "required": false
+          },
+          "link": {
+            "enabled": false,
+            "required": false
+          },
+          "outcome": {
+            "enabled": false,
+            "required": false
+          },
+          "rating": {
+            "enabled": false,
+            "required": false
+          },
+          "reference": {
+            "enabled": false,
+            "required": false
+          },
+          "severity": {
+            "enabled": false,
+            "required": false
+          },
+          "steps": {
+            "enabled": false,
+            "required": false
+          }
+        },
+        "support": {
+          "amount_usd": {
+            "enabled": true,
+            "required": false
+          },
+          "contact_email": {
+            "enabled": true,
+            "required": false
+          },
+          "customer": {
+            "enabled": true,
+            "required": true
+          },
+          "deal": {
+            "enabled": true,
+            "required": false
+          },
+          "impact": {
+            "enabled": true,
+            "required": true
+          },
+          "note": {
+            "enabled": true,
+            "required": false
+          }
+        }
+      },
+      "name": "Sales feature requests",
+      "paused": false,
+      "request_count": 1,
+      "share_url": "https://voc.example.com/board/sales-feature-requests",
+      "slug": "sales-feature-requests",
+      "statuses": [
+        {
+          "key": "new",
+          "label": "New"
+        },
+        {
+          "key": "under_review",
+          "label": "Under review"
+        },
+        {
+          "key": "planned",
+          "label": "Planned"
+        },
+        {
+          "key": "shipped",
+          "label": "Shipped"
+        },
+        {
+          "key": "declined",
+          "label": "Declined"
+        }
+      ],
+      "template": "sales",
+      "updated_at": "2026-10-29T12:59:36.120996+00:00"
+    },
+    "requests": [
+      {
+        "board_id": "brd_sales",
+        "created_at": "2026-10-29T12:59:36.132357+00:00",
+        "description": "Needed for the enterprise tier",
+        "fields": {
+          "amount_usd": 120000,
+          "contact_email": "cio@acme.example",
+          "customer": "Acme",
+          "deal": "Acme renewal",
+          "impact": "at_risk"
+        },
+        "list_id": "lst_6c4492cf3de63461",
+        "project_id": "proj-public",
+        "reporter_email": "sam@acme.example",
+        "reporter_name": "Sam Seller",
+        "request_id": "fr_09dde6edea0f8982",
+        "status": "planned",
+        "title": "SSO with SAML and OIDC",
+        "totals": {
+          "at_risk_usd": 120000,
+          "committed_usd": 60000,
+          "customers": 2,
+          "supporters": 2
+        },
+        "updated_at": "2026-10-29T12:59:36.223568+00:00"
+      }
+    ],
+    "viewer": {
+      "email": "sam@acme.example",
+      "is_admin": false,
+      "name": "",
+      "pool": "board"
+    }
+  },
+  "fr_list_board": {
+    "board": {
+      "archived": false,
+      "audience": {
+        "mode": "list"
+      },
+      "board_id": "brd_78c5116f",
+      "created_at": "2026-10-29T12:59:36.275851+00:00",
+      "description": "Early access builds",
+      "fields": {
+        "request": {
+          "affected_count": {
+            "enabled": false,
+            "required": false
+          },
+          "amount_usd": {
+            "enabled": false,
+            "required": false
+          },
+          "area": {
+            "enabled": true,
+            "required": true
+          },
+          "contact_email": {
+            "enabled": false,
+            "required": false
+          },
+          "customer": {
+            "enabled": false,
+            "required": false
+          },
+          "deal": {
+            "enabled": false,
+            "required": false
+          },
+          "impact": {
+            "enabled": false,
+            "required": false
+          },
+          "kind": {
+            "enabled": false,
+            "required": false
+          },
+          "link": {
+            "enabled": true,
+            "required": false
+          },
+          "outcome": {
+            "enabled": true,
+            "required": true
+          },
+          "rating": {
+            "enabled": true,
+            "required": false
+          },
+          "reference": {
+            "enabled": false,
+            "required": false
+          },
+          "severity": {
+            "enabled": false,
+            "required": false
+          },
+          "steps": {
+            "enabled": false,
+            "required": false
+          }
+        },
+        "support": {
+          "amount_usd": {
+            "enabled": false,
+            "required": false
+          },
+          "contact_email": {
+            "enabled": false,
+            "required": false
+          },
+          "customer": {
+            "enabled": false,
+            "required": false
+          },
+          "deal": {
+            "enabled": false,
+            "required": false
+          },
+          "impact": {
+            "enabled": false,
+            "required": false
+          },
+          "note": {
+            "enabled": true,
+            "required": false
+          }
+        }
+      },
+      "name": "Beta 2",
+      "paused": false,
+      "request_count": 1,
+      "share_url": "https://voc.example.com/board/beta-feedback",
+      "slug": "beta-feedback",
+      "statuses": [
+        {
+          "key": "new",
+          "label": "New"
+        },
+        {
+          "key": "seen",
+          "label": "Seen"
+        },
+        {
+          "key": "fixed",
+          "label": "Fixed"
+        }
+      ],
+      "template": "beta",
+      "updated_at": "2026-10-29T12:59:36.298644+00:00"
+    },
+    "requests": [
+      {
+        "board_id": "brd_78c5116f",
+        "created_at": "2026-10-29T12:59:36.310166+00:00",
+        "description": "",
+        "fields": {
+          "area": "Seat map",
+          "link": "https://example.com/b",
+          "outcome": "broken",
+          "rating": 2
+        },
+        "reporter_email": "kim@acme.example",
+        "reporter_name": "",
+        "request_id": "fr_2febd42fa1227fff",
+        "status": "new",
+        "title": "Seat map is slow",
+        "totals": {
+          "avg_rating": 2,
+          "supporters": 1
+        },
+        "updated_at": "2026-10-29T12:59:36.310166+00:00"
+      }
+    ],
+    "viewer": {
+      "email": "kim@acme.example",
+      "is_admin": false,
+      "name": "",
+      "pool": "board"
+    }
+  },
+  "fr_promote": {
+    "added": 4,
+    "list": {
+      "created_at": "2026-10-29T12:59:36.191865+00:00",
+      "created_by": "admin-sub",
+      "description": "",
+      "feature_request_id": "fr_09dde6edea0f8982",
+      "kind": "requesters",
+      "list_id": "lst_6c4492cf3de63461",
+      "member_count": 4,
+      "name": "Requests: SSO with SAML and OIDC",
+      "updated_at": "2026-10-29T12:59:36.191865+00:00"
+    },
+    "request": {
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
+      "description": "Needed for the enterprise tier",
+      "fields": {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "impact": "at_risk"
+      },
+      "list_id": "lst_6c4492cf3de63461",
+      "project_id": "proj-public",
+      "reporter_email": "sam@acme.example",
+      "reporter_name": "Sam Seller",
+      "request_id": "fr_09dde6edea0f8982",
+      "status": "planned",
+      "title": "SSO with SAML and OIDC",
+      "totals": {
+        "at_risk_usd": 120000,
+        "committed_usd": 60000,
+        "customers": 2,
+        "supporters": 2
+      },
+      "updated_at": "2026-10-29T12:59:36.223568+00:00"
+    },
+    "skipped": []
+  },
+  "fr_status": {
+    "request": {
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
+      "description": "Needed for the enterprise tier",
+      "fields": {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "impact": "at_risk"
+      },
+      "reporter_email": "sam@acme.example",
+      "reporter_name": "Sam Seller",
+      "request_id": "fr_09dde6edea0f8982",
+      "status": "under_review",
+      "title": "SSO with SAML and OIDC",
+      "totals": {
+        "at_risk_usd": 120000,
+        "committed_usd": 60000,
+        "customers": 2,
+        "supporters": 2
+      },
+      "updated_at": "2026-10-29T12:59:36.181193+00:00"
+    }
+  },
+  "fr_support_create": {
+    "request": {
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
+      "description": "Needed for the enterprise tier",
+      "fields": {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "impact": "at_risk"
+      },
+      "reporter_email": "sam@acme.example",
+      "reporter_name": "Sam Seller",
+      "request_id": "fr_09dde6edea0f8982",
+      "status": "new",
+      "title": "SSO with SAML",
+      "totals": {
+        "at_risk_usd": 120000,
+        "committed_usd": 50000,
+        "customers": 2,
+        "supporters": 2
+      },
+      "updated_at": "2026-10-29T12:59:36.148314+00:00"
+    },
+    "support": {
+      "amount_usd": 50000,
+      "contact_email": "ops@example.com",
+      "created_at": "2026-10-29T12:59:36.144824+00:00",
+      "customer": "Example Air",
+      "deal": "Example Air fleet",
+      "email": "kim@acme.example",
+      "fields": {
+        "amount_usd": 50000,
+        "contact_email": "ops@example.com",
+        "customer": "Example Air",
+        "deal": "Example Air fleet",
+        "impact": "committed",
+        "note": "Blocks the renewal"
+      },
+      "impact": "committed",
+      "is_reporter": false,
+      "name": "Kim",
+      "note": "Blocks the renewal",
+      "request_id": "fr_09dde6edea0f8982",
+      "support_id": "sup_c3f4d8dc8705229b",
+      "updated_at": "2026-10-29T12:59:36.144824+00:00"
+    }
+  },
+  "fr_support_delete": {
+    "request": {
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
+      "description": "Needed for the enterprise tier",
+      "fields": {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "impact": "at_risk"
+      },
+      "list_id": "lst_6c4492cf3de63461",
+      "project_id": "proj-public",
+      "reporter_email": "sam@acme.example",
+      "reporter_name": "Sam Seller",
+      "request_id": "fr_09dde6edea0f8982",
+      "status": "planned",
+      "title": "SSO with SAML and OIDC",
+      "totals": {
+        "at_risk_usd": 120000,
+        "committed_usd": 0,
+        "customers": 1,
+        "supporters": 1
+      },
+      "updated_at": "2026-10-29T12:59:36.254459+00:00"
+    }
+  },
+  "fr_support_update": {
+    "request": {
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
+      "description": "Needed for the enterprise tier",
+      "fields": {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "impact": "at_risk"
+      },
+      "reporter_email": "sam@acme.example",
+      "reporter_name": "Sam Seller",
+      "request_id": "fr_09dde6edea0f8982",
+      "status": "new",
+      "title": "SSO with SAML",
+      "totals": {
+        "at_risk_usd": 120000,
+        "committed_usd": 60000,
+        "customers": 2,
+        "supporters": 2
+      },
+      "updated_at": "2026-10-29T12:59:36.163556+00:00"
+    }
+  },
+  "fr_update": {
+    "request": {
+      "board_id": "brd_sales",
+      "created_at": "2026-10-29T12:59:36.132357+00:00",
+      "description": "Needed for the enterprise tier",
+      "fields": {
+        "amount_usd": 120000,
+        "contact_email": "cio@acme.example",
+        "customer": "Acme",
+        "deal": "Acme renewal",
+        "impact": "at_risk"
+      },
+      "reporter_email": "sam@acme.example",
+      "reporter_name": "Sam Seller",
+      "request_id": "fr_09dde6edea0f8982",
+      "status": "new",
+      "title": "SSO with SAML and OIDC",
+      "totals": {
+        "at_risk_usd": 120000,
+        "committed_usd": 60000,
+        "customers": 2,
+        "supporters": 2
+      },
+      "updated_at": "2026-10-29T12:59:36.172690+00:00"
+    }
+  },
+  "list_create": {
+    "list": {
+      "created_at": "2026-10-29T12:59:36.358963+00:00",
+      "created_by": "admin-sub",
+      "description": "Early access",
+      "kind": "beta",
+      "list_id": "lst_4cd54fe431509e1f",
+      "member_count": 0,
+      "name": "Beta customers",
+      "updated_at": "2026-10-29T12:59:36.358963+00:00"
+    }
+  },
+  "list_detail": {
+    "list": {
+      "created_at": "2026-10-29T12:59:36.358963+00:00",
+      "created_by": "admin-sub",
+      "description": "Early access 2027",
+      "kind": "beta",
+      "list_id": "lst_4cd54fe431509e1f",
+      "member_count": 2,
+      "name": "Beta customers",
+      "updated_at": "2026-10-29T12:59:36.360156+00:00"
+    },
+    "members": [
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.378146+00:00",
+        "created_by": "admin-sub",
+        "email": "lee@acme.example",
+        "list_ids": [
+          "lst_4cd54fe431509e1f"
+        ],
+        "name": "Lee",
+        "notes": "",
+        "origin": "manual",
+        "person_id": "per_0da8cbd4c7af52db",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.378146+00:00"
+      },
+      {
+        "company": "Example Air",
+        "created_at": "2026-10-29T12:59:36.365303+00:00",
+        "created_by": "admin-sub",
+        "email": "pat@example.com",
+        "list_ids": [
+          "lst_4cd54fe431509e1f"
+        ],
+        "name": "Pat",
+        "notes": "Met at a fair",
+        "origin": "manual",
+        "person_id": "per_eb1801c628efbec5",
+        "status": "unsubscribed",
+        "tags": [
+          "pilot"
+        ],
+        "title": "Captain",
+        "unsubscribed_at": "2026-10-29T12:59:36.451993+00:00",
+        "updated_at": "2026-10-29T12:59:36.451993+00:00"
+      }
+    ]
+  },
+  "list_members_add": {
+    "added": 1,
+    "already": 1,
+    "created": 1,
+    "rejected": [
+      {
+        "email": "nope",
+        "reason": "invalid_email"
+      }
+    ]
+  },
+  "list_update": {
+    "list": {
+      "created_at": "2026-10-29T12:59:36.358963+00:00",
+      "created_by": "admin-sub",
+      "description": "Early access 2027",
+      "kind": "beta",
+      "list_id": "lst_4cd54fe431509e1f",
+      "member_count": 0,
+      "name": "Beta customers",
+      "updated_at": "2026-10-29T12:59:36.360156+00:00"
+    }
+  },
+  "lists": {
+    "lists": [
+      {
+        "created_at": "2026-10-29T12:59:36.358963+00:00",
+        "created_by": "admin-sub",
+        "description": "Early access 2027",
+        "kind": "beta",
+        "list_id": "lst_4cd54fe431509e1f",
+        "member_count": 2,
+        "name": "Beta customers",
+        "updated_at": "2026-10-29T12:59:36.360156+00:00"
+      },
+      {
+        "created_at": "2026-10-29T12:59:36.191865+00:00",
+        "created_by": "admin-sub",
+        "description": "",
+        "feature_request_id": "fr_09dde6edea0f8982",
+        "kind": "requesters",
+        "list_id": "lst_6c4492cf3de63461",
+        "member_count": 4,
+        "name": "Requests: SSO with SAML and OIDC",
+        "updated_at": "2026-10-29T12:59:36.191865+00:00"
+      }
+    ]
+  },
+  "people": {
+    "people": [
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.389905+00:00",
+        "created_by": "admin-sub",
+        "email": "ana@example.com",
+        "list_ids": [],
+        "name": "Ana",
+        "notes": "",
+        "origin": "manual",
+        "person_id": "per_b760d7b55f7051cd",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.389905+00:00"
+      },
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.202097+00:00",
+        "created_by": "admin-sub",
+        "email": "cio@acme.example",
+        "list_ids": [
+          "lst_6c4492cf3de63461"
+        ],
+        "name": "",
+        "notes": "",
+        "origin": "feature_request",
+        "person_id": "per_ccb45bb4fe47117c",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.202097+00:00"
+      },
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.208665+00:00",
+        "created_by": "admin-sub",
+        "email": "kim@acme.example",
+        "list_ids": [
+          "lst_6c4492cf3de63461"
+        ],
+        "name": "Kim",
+        "notes": "",
+        "origin": "feature_request",
+        "person_id": "per_2f3713ebe68eef2d",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.208665+00:00"
+      },
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.378146+00:00",
+        "created_by": "admin-sub",
+        "email": "lee@acme.example",
+        "list_ids": [
+          "lst_4cd54fe431509e1f"
+        ],
+        "name": "Lee",
+        "notes": "",
+        "origin": "manual",
+        "person_id": "per_0da8cbd4c7af52db",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.378146+00:00"
+      },
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.215269+00:00",
+        "created_by": "admin-sub",
+        "email": "ops@example.com",
+        "list_ids": [
+          "lst_6c4492cf3de63461"
+        ],
+        "name": "",
+        "notes": "",
+        "origin": "feature_request",
+        "person_id": "per_ef4a54af22bc3809",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.215269+00:00"
+      },
+      {
+        "company": "Example Air",
+        "created_at": "2026-10-29T12:59:36.365303+00:00",
+        "created_by": "admin-sub",
+        "email": "pat@example.com",
+        "list_ids": [
+          "lst_4cd54fe431509e1f"
+        ],
+        "name": "Pat",
+        "notes": "Met at a fair",
+        "origin": "manual",
+        "person_id": "per_eb1801c628efbec5",
+        "status": "unsubscribed",
+        "tags": [
+          "pilot"
+        ],
+        "title": "Captain",
+        "unsubscribed_at": "2026-10-29T12:59:36.451993+00:00",
+        "updated_at": "2026-10-29T12:59:36.451993+00:00"
+      },
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.195041+00:00",
+        "created_by": "admin-sub",
+        "email": "sam@acme.example",
+        "list_ids": [
+          "lst_6c4492cf3de63461"
+        ],
+        "name": "Sam Seller",
+        "notes": "",
+        "origin": "feature_request",
+        "person_id": "per_6cac3823c9f78344",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.195041+00:00"
+      }
+    ]
+  },
+  "person_create": {
+    "person": {
+      "company": "Example Air",
+      "created_at": "2026-10-29T12:59:36.365303+00:00",
+      "created_by": "admin-sub",
+      "email": "pat@example.com",
+      "list_ids": [
+        "lst_4cd54fe431509e1f"
+      ],
+      "name": "Pat",
+      "notes": "Met at a fair",
+      "origin": "manual",
+      "person_id": "per_eb1801c628efbec5",
+      "status": "active",
+      "tags": [
+        "pilot"
+      ],
+      "title": "Pilot",
+      "updated_at": "2026-10-29T12:59:36.365303+00:00"
+    }
+  },
+  "person_detail": {
+    "asks": [
+      {
+        "ask_id": "ask_8904d1ce97b9e263",
+        "responded_at": null,
+        "sent_at": "2026-10-29T12:59:36.446867+00:00",
+        "status": "sent",
+        "subject": "Two minutes on seat choice"
+      }
+    ],
+    "lists": [
+      {
+        "created_at": "2026-10-29T12:59:36.358963+00:00",
+        "created_by": "admin-sub",
+        "description": "Early access 2027",
+        "kind": "beta",
+        "list_id": "lst_4cd54fe431509e1f",
+        "member_count": 2,
+        "name": "Beta customers",
+        "updated_at": "2026-10-29T12:59:36.360156+00:00"
+      }
+    ],
+    "person": {
+      "company": "Example Air",
+      "created_at": "2026-10-29T12:59:36.365303+00:00",
+      "created_by": "admin-sub",
+      "email": "pat@example.com",
+      "list_ids": [
+        "lst_4cd54fe431509e1f"
+      ],
+      "name": "Pat",
+      "notes": "Met at a fair",
+      "origin": "manual",
+      "person_id": "per_eb1801c628efbec5",
+      "status": "unsubscribed",
+      "tags": [
+        "pilot"
+      ],
+      "title": "Captain",
+      "unsubscribed_at": "2026-10-29T12:59:36.451993+00:00",
+      "updated_at": "2026-10-29T12:59:36.451993+00:00"
+    }
+  },
+  "person_update": {
+    "person": {
+      "company": "Example Air",
+      "created_at": "2026-10-29T12:59:36.365303+00:00",
+      "created_by": "admin-sub",
+      "email": "pat@example.com",
+      "list_ids": [
+        "lst_4cd54fe431509e1f"
+      ],
+      "name": "Pat",
+      "notes": "Met at a fair",
+      "origin": "manual",
+      "person_id": "per_eb1801c628efbec5",
+      "status": "active",
+      "tags": [
+        "pilot"
+      ],
+      "title": "Captain",
+      "updated_at": "2026-10-29T12:59:36.371282+00:00"
+    }
+  },
+  "project_get": {
+    "lists": [
+      {
+        "created_at": "2026-10-29T12:59:36.358963+00:00",
+        "created_by": "admin-sub",
+        "description": "Early access 2027",
+        "kind": "beta",
+        "list_id": "lst_4cd54fe431509e1f",
+        "member_count": 2,
+        "name": "Beta customers",
+        "updated_at": "2026-10-29T12:59:36.360156+00:00"
+      },
+      {
+        "created_at": "2026-10-29T12:59:36.191865+00:00",
+        "created_by": "admin-sub",
+        "description": "",
+        "feature_request_id": "fr_09dde6edea0f8982",
+        "kind": "requesters",
+        "list_id": "lst_6c4492cf3de63461",
+        "member_count": 4,
+        "name": "Requests: SSO with SAML and OIDC",
+        "updated_at": "2026-10-29T12:59:36.191865+00:00"
+      }
+    ],
+    "people": [
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.389905+00:00",
+        "created_by": "admin-sub",
+        "email": "ana@example.com",
+        "list_ids": [],
+        "name": "Ana",
+        "notes": "",
+        "origin": "manual",
+        "person_id": "per_b760d7b55f7051cd",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.389905+00:00"
+      }
+    ],
+    "reach": 7
+  },
+  "project_link": {
+    "created": 1,
+    "lists": [
+      {
+        "created_at": "2026-10-29T12:59:36.358963+00:00",
+        "created_by": "admin-sub",
+        "description": "Early access 2027",
+        "kind": "beta",
+        "list_id": "lst_4cd54fe431509e1f",
+        "member_count": 2,
+        "name": "Beta customers",
+        "updated_at": "2026-10-29T12:59:36.360156+00:00"
+      },
+      {
+        "created_at": "2026-10-29T12:59:36.191865+00:00",
+        "created_by": "admin-sub",
+        "description": "",
+        "feature_request_id": "fr_09dde6edea0f8982",
+        "kind": "requesters",
+        "list_id": "lst_6c4492cf3de63461",
+        "member_count": 4,
+        "name": "Requests: SSO with SAML and OIDC",
+        "updated_at": "2026-10-29T12:59:36.191865+00:00"
+      }
+    ],
+    "people": [
+      {
+        "company": "",
+        "created_at": "2026-10-29T12:59:36.389905+00:00",
+        "created_by": "admin-sub",
+        "email": "ana@example.com",
+        "list_ids": [],
+        "name": "Ana",
+        "notes": "",
+        "origin": "manual",
+        "person_id": "per_b760d7b55f7051cd",
+        "status": "active",
+        "tags": [],
+        "title": "",
+        "updated_at": "2026-10-29T12:59:36.389905+00:00"
+      }
+    ],
+    "reach": 7,
+    "rejected": [
+      {
+        "email": "nope",
+        "reason": "invalid_email"
+      }
+    ]
+  },
+  "settings_get": {
+    "board_enabled": true,
+    "board_url": "https://voc.example.com/board",
+    "email_enabled": true,
+    "settings": {
+      "allow_external_people": true,
+      "company_domains": [
+        "example.com",
+        "acme.example"
+      ],
+      "daily_send_cap": 100,
+      "sender_name": "Example Air research",
+      "updated_at": "2026-10-29T12:59:36.111939+00:00",
+      "updated_by": "admin-sub"
+    }
+  },
+  "settings_put": {
+    "settings": {
+      "allow_external_people": true,
+      "company_domains": [
+        "example.com",
+        "acme.example"
+      ],
+      "daily_send_cap": 100,
+      "sender_name": "Example Air research",
+      "updated_at": "2026-10-29T12:59:36.111939+00:00",
+      "updated_by": "admin-sub"
+    }
+  },
+  "success": {
+    "success": true
+  },
+  "unsubscribe": {
+    "success": true
+  }
+}

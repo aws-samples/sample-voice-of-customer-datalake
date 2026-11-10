@@ -1,0 +1,45 @@
+{
+  "entries": [
+    {
+      "files": [
+        "voc-datalake/lambda/api/*_handler.py",
+        "voc-datalake/plugins/**/handler.py",
+        "voc-datalake/lambda/jobs/*/handler.py"
+      ],
+      "name": "lambda_handler",
+      "reason": "the Lambda entry point every handler module must define (`return app.resolve(event, context)` / `handle_event`); it is the deployed handler string, not a helper"
+    },
+    {
+      "files": [
+        "voc-datalake/plugins/_shared/base_ingestor.py",
+        "voc-datalake/plugins/_shared/base_webhook.py"
+      ],
+      "name": "_load_secrets",
+      "reason": "the filtering is already one implementation (plugin_secrets.filter_plugin_secrets); the read-and-evict wrapper stays per base class because the secret-isolation tests patch each module's get_secret / clear_secret_cache / SECRETS_ARN"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/agents/context_blocks.py",
+        "voc-datalake/lambda/jobs/document_generator/handler.py"
+      ],
+      "name": "_aggregates_table",
+      "reason": "per-module optional-table getter that each module's tests patch (None when the Lambda has no AGGREGATES_TABLE)"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/ballots_handler.py",
+        "voc-datalake/lambda/api/projects_handler.py",
+        "voc-datalake/lambda/api/settings_handler.py",
+        "voc-datalake/lambda/api/users_handler.py"
+      ],
+      "reason": "per-handler required-table getters (ConfigurationError when the env is unset); each is the seam its handler's tests patch, so merging them is a test redesign, not a clean-up"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/api/scrapers_handler.py",
+        "voc-datalake/lambda/api/settings_handler.py"
+      ],
+      "reason": "the poll routes of two Lambdas (GET /scrapers/jobs/<id>, GET /settings/jobs/<id>): each Lambda must register its own route, and the body is already one call into shared.assist_jobs; the route inventories that classify every route (test_scrapers_security, test_route_admin_gates, the tracer ROUTES lists) read each handler's own decorated functions"
+    }
+  ]
+}

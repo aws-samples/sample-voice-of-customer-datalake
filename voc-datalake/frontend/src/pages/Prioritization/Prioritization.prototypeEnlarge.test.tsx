@@ -43,85 +43,17 @@
  * Prioritization.prototypeRefresh.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import i18n from 'i18next'
+import './prioritization-mock-fixtures'
+import {
+  stubOneRowProject, stubProjectHolding, stubFreshlySignedPrototype, legacyPrototypeDoc, lapsedPrototypeDoc, ROW_TITLE, PROTOTYPE_TITLE, escapeRegExp,
+} from './prioritization-fixtures'
+import { renderPrioritization, openRow, expectScoresPanelShown } from './prioritization-render-fixtures'
+import { required } from '../../components/component-spec-fixtures'
 
-const mockGetProjects = vi.fn()
-const mockGetProject = vi.fn()
-const mockGetPrioritizationScores = vi.fn()
-const mockCreatePrioritizationRow = vi.fn()
-const mockGetFeedbackForms = vi.fn()
-
-vi.mock('../../api/projectsApi', () => ({
-  projectsApi: {
-    getProjects: () => mockGetProjects(),
-    getProject: (id: string) => mockGetProject(id),
-  },
-}))
-
-vi.mock('../../api/client', () => ({
-  api: {
-    getPrioritizationScores: () => mockGetPrioritizationScores(),
-    createPrioritizationRow: (id: string) => mockCreatePrioritizationRow(id),
-    patchPrioritizationScores: () => Promise.resolve({ success: true }),
-    getFeedbackForms: () => mockGetFeedbackForms(),
-    getFeedbackFormStats: () => Promise.resolve({ success: true, stats: null }),
-  },
-}))
-
-vi.mock('../../store/configStore', () => ({
-  useConfigStore: () => ({ config: { apiEndpoint: 'https://api.example.com' } }),
-}))
-
-vi.mock('react-markdown', () => ({
-  default: ({ children }: { children: string }) => <div>{children}</div>,
-}))
-
-import Prioritization from './Prioritization'
 
 const { t } = i18n
-const HOUR_MS = 60 * 60_000
-const PROTOTYPE_PATH = 'https://d111.cloudfront.net/prototypes/p1/proto-1.html'
-const ROW_TITLE = 'Feature A PR/FAQ'
-const PROTOTYPE_TITLE = 'Feature A prototype'
-
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-const signedUrl = (expiresAtMs: number, signature: string) =>
-  `${PROTOTYPE_PATH}?Expires=${Math.floor(expiresAtMs / 1000)}&Signature=${signature}&Key-Pair-Id=K1`
-
-const project = {
-  project_id: 'p1', name: 'Project 1', status: 'active',
-  created_at: '2025-01-01', updated_at: '2025-01-01', persona_count: 0, document_count: 2,
-}
-
-const prfaq = {
-  document_id: 'doc_prfaq', document_type: 'prfaq', title: ROW_TITLE,
-  content: '# Feature A', created_at: '2025-01-01',
-}
-
-/** The project's one row. `prototype_id` empty, so it falls back to the latest prototype. */
-const row = {
-  row_id: 'row_p1_default',
-  project_id: 'p1',
-  document_ids: ['doc_prfaq'],
-  prototype_id: '',
-  is_default: true,
-  created_at: '2025-01-01',
-}
-
-const prototypeDoc = (prototypeUrl?: string) => ({
-  document_id: 'proto-1',
-  document_type: 'prototype',
-  title: PROTOTYPE_TITLE,
-  content: '',
-  prototype_format: 'html',
-  prototype_url: prototypeUrl,
-  created_at: '2025-01-03',
-})
 
 const SPEC_SCREEN_LABEL = 'Signup'
 const SPEC_HEADING = 'Create your account'
@@ -149,27 +81,6 @@ const specPrototypeDoc = () => ({
   created_at: '2025-01-03',
 })
 
-function renderPrioritization() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const router = createMemoryRouter([{ path: '/', element: <Prioritization /> }])
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  )
-}
-
-/** Render the page and open the row — the prototype panel is expand-only. */
-async function expandRow() {
-  const user = userEvent.setup()
-  renderPrioritization()
-  await waitFor(() => {
-    expect(screen.getByText(ROW_TITLE)).toBeInTheDocument()
-  })
-  await user.click(screen.getByText(ROW_TITLE))
-  return user
-}
-
 const enlargeName = new RegExp(escapeRegExp(t('prioritization:preview.enlarge')), 'i')
 const closeName = new RegExp(escapeRegExp(t('common:actions.close')), 'i')
 const openLinkName = new RegExp(escapeRegExp(t('components:prototypeLink.openNewTab')), 'i')
@@ -183,19 +94,29 @@ const lapsedNote = new RegExp(escapeRegExp(t('components:prototypeLink.linkExpir
  * loaded — the thing a reviewer is clicking around in.
  *
  * jsdom does not fetch a frame's `src`, so its document arrives empty and stays
- * `readyState: 'loading'` forever. `write()` gives it the body a real load would,
+ * `readyState: 'loading'` forever. `open()`/`close()` completes it and the built
+ * `<html><body>` is the body a real load would give it,
  * and the `load` event afterwards is the signal a browser raises at that moment and
  * the one `ModalShell` re-scans on. Dispatching it is not a shortcut past the
  * behaviour under test: without a `load` (or the mutation that added the frame) the
  * shell has nothing to tell it a document now exists to listen to.
  */
+/** A frame's document, failing loudly when it has none or no body yet. */
+function loadedDocumentOf(frame: HTMLIFrameElement): Document {
+  const doc = frame.contentDocument
+  if (!doc?.body) throw new Error('the embedded frame has no document')
+  return doc
+}
+
 function prototypeDocumentIn(dialog: HTMLElement): Document {
   const frame = within(dialog).getByTitle(PROTOTYPE_TITLE)
   const doc = frame instanceof HTMLIFrameElement ? frame.contentDocument : null
   if (doc === null) throw new Error('the enlarged prototype is not a frame with a document')
   doc.open()
-  doc.write('<html><body></body></html>')
   doc.close()
+  const html = doc.createElement('html')
+  html.append(doc.createElement('head'), doc.createElement('body'))
+  doc.replaceChildren(html)
   frame.dispatchEvent(new Event('load'))
   return doc
 }
@@ -216,22 +137,21 @@ function pressInside(doc: Document, key: string) {
 
 /** Open the row, then the overlay, returning the trigger and the dialog. */
 async function openOverlay() {
-  const user = await expandRow()
+  const user = await openRow()
   const trigger = await screen.findByRole('button', { name: enlargeName })
   await user.click(trigger)
   return { user, trigger, dialog: screen.getByRole('dialog') }
 }
 
+/** Enlarge is offered and "Open in new tab" is not: a prototype with no address to open. */
+async function expectEnlargeWithoutOpenLink() {
+  expect(await screen.findByRole('button', { name: enlargeName })).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: openLinkName })).not.toBeInTheDocument()
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  mockGetProjects.mockResolvedValue({ projects: [project] })
-  mockGetPrioritizationScores.mockResolvedValue({ scores: {}, rows: { [row.row_id]: row } })
-  mockCreatePrioritizationRow.mockResolvedValue({ success: true, created: false, row })
-  mockGetFeedbackForms.mockResolvedValue({ forms: [] })
-  mockGetProject.mockResolvedValue({
-    project_id: 'p1',
-    documents: [prfaq, prototypeDoc(signedUrl(Date.now() + HOUR_MS, 'sig-1'))],
-  })
+  stubOneRowProject()
 })
 
 describe('offering to enlarge a row\'s prototype', () => {
@@ -247,15 +167,13 @@ describe('offering to enlarge a row\'s prototype', () => {
   })
 
   it('offers no enlarge control for a row whose project has no prototype', async () => {
-    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq] })
+    stubProjectHolding()
 
-    await expandRow()
+    await openRow()
 
     // Wait for the expansion itself, so the absence below is an absence in a
     // rendered panel rather than in a panel that has not arrived.
-    await waitFor(() => {
-      expect(screen.getByText(t('prioritization:scores.title'))).toBeInTheDocument()
-    })
+    await expectScoresPanelShown()
     expect(screen.queryByRole('button', { name: enlargeName })).not.toBeInTheDocument()
     expect(screen.queryByText(enlargeName)).not.toBeInTheDocument()
   })
@@ -265,25 +183,20 @@ describe('offering to enlarge a row\'s prototype', () => {
     // nothing to open in a tab — but enlarging re-renders the pane the row already
     // shows, which needs no address. The two affordances answer the same question
     // and this is the row where only one of them can.
-    mockGetProject.mockResolvedValue({
-      project_id: 'p1',
-      documents: [prfaq, { ...prototypeDoc(undefined), content: '<html><body>legacy</body></html>' }],
-    })
+    stubProjectHolding(legacyPrototypeDoc())
 
-    await expandRow()
+    await openRow()
 
-    expect(await screen.findByRole('button', { name: enlargeName })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: openLinkName })).not.toBeInTheDocument()
+    await expectEnlargeWithoutOpenLink()
   })
 
   it('leaves opening in a new tab a plain anchor beside the enlarge control', async () => {
     // A button now sits next to the anchor, and the temptation is to make the pair
     // consistent by turning the anchor into a button too. That trades a 403 for a
     // popup blocker — see components/prototypeLinkLifetime.
-    const url = signedUrl(Date.now() + HOUR_MS, 'sig-1')
-    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, prototypeDoc(url)] })
+    const url = stubFreshlySignedPrototype()
 
-    await expandRow()
+    await openRow()
 
     expect(await screen.findByRole('link', { name: openLinkName })).toHaveAttribute('href', url)
     expect(screen.queryByRole('button', { name: openLinkName })).not.toBeInTheDocument()
@@ -293,14 +206,14 @@ describe('offering to enlarge a row\'s prototype', () => {
   })
 
   it('shows the canonical prototype title in the expanded panel', async () => {
-    await expandRow()
+    await openRow()
 
     expect(await screen.findByRole('heading', { level: 4, name: PROTOTYPE_TITLE }))
       .toBeInTheDocument()
   })
 
   it('renders nothing enlarged until the control is used', async () => {
-    await expandRow()
+    await openRow()
 
     await screen.findByRole('button', { name: enlargeName })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -329,7 +242,7 @@ describe('the enlarged prototype', () => {
     // `aria-haspopup="dialog"` is what lets a screen-reader user CHOOSE to open the
     // overlay rather than discover they did once focus has moved. Comment-only
     // otherwise, and the class of attribute that gets dropped in a restyle.
-    await expandRow()
+    await openRow()
 
     expect(await screen.findByRole('button', { name: enlargeName }))
       .toHaveAttribute('aria-haspopup', 'dialog')
@@ -340,8 +253,7 @@ describe('the enlarged prototype', () => {
     // is an iframe loading the same signed URL the row's pane does, and there are
     // now two of them for the one document. A bespoke overlay renderer — a fetch, a
     // blob, a rebuilt URL — fails this.
-    const url = signedUrl(Date.now() + HOUR_MS, 'sig-1')
-    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, prototypeDoc(url)] })
+    const url = stubFreshlySignedPrototype()
 
     const { dialog } = await openOverlay()
 
@@ -362,7 +274,7 @@ describe('the enlarged prototype', () => {
     // `PrototypeRenderer` caps itself at a readable column, so a viewport-wide
     // dialog would otherwise be a 672px column in an empty panel — height gained,
     // width not, contrary to what the panel's own comment promises.
-    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, specPrototypeDoc()] })
+    stubProjectHolding(specPrototypeDoc())
 
     const { dialog } = await openOverlay()
 
@@ -376,28 +288,26 @@ describe('the enlarged prototype', () => {
     const measureOf = (heading: HTMLElement) => heading.closest('div.mx-auto')?.className ?? ''
     expect(measureOf(enlarged)).toContain('max-w-5xl')
     const inRow = screen.getAllByRole('heading', { name: SPEC_HEADING }).filter((h) => !dialog.contains(h))
+    const [inRowHeading] = inRow
     expect(inRow).toHaveLength(1)
-    expect(measureOf(inRow[0])).toContain('max-w-2xl')
+    expect(measureOf(required(inRowHeading, 'the in-row spec heading'))).toContain('max-w-2xl')
   })
 
   it('offers the enlarge control for a JSON spec, which has no address to open', async () => {
     // Same asymmetry the legacy-HTML case pins, on the other format: a spec has no
     // signed URL, so "Open in new tab" cannot appear and "Enlarge" still must.
-    mockGetProject.mockResolvedValue({ project_id: 'p1', documents: [prfaq, specPrototypeDoc()] })
+    stubProjectHolding(specPrototypeDoc())
 
-    await expandRow()
+    await openRow()
 
-    expect(await screen.findByRole('button', { name: enlargeName })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: openLinkName })).not.toBeInTheDocument()
+    await expectEnlargeWithoutOpenLink()
   })
 
   it('reports a lapsed link inside the overlay rather than showing a broken pane', async () => {
     // Same degradation the row's pane gets, and the reason the overlay reuses the
     // row's frame: an expired signature is announced by `HtmlPrototypeFrame`'s own
     // handling, so the overlay inherits it instead of re-deciding it.
-    mockGetProject.mockResolvedValue({
-      project_id: 'p1', documents: [prfaq, prototypeDoc(signedUrl(Date.now() - HOUR_MS, 'sig-old'))],
-    })
+    stubProjectHolding(lapsedPrototypeDoc())
 
     const { dialog } = await openOverlay()
 
@@ -511,8 +421,7 @@ describe('getting back to the row', () => {
     const embedded = frameDoc.createElement('iframe')
     embedded.title = 'A map the prototype embeds'
     frameDoc.body.append(embedded)
-    const embeddedDoc = embedded.contentDocument
-    if (!embeddedDoc?.body) throw new Error('the embedded frame has no document')
+    const embeddedDoc = loadedDocumentOf(embedded)
     embeddedDoc.body.innerHTML = '<button id="pin">A pin on the map</button>'
     embeddedDoc.getElementById('pin')?.focus()
 

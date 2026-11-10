@@ -7,7 +7,7 @@
  * field list would be a list that can drift, and the drift would be silent —
  * so both go through here.
  */
-import type { ProductContext } from '../../api/types'
+import type { ProductContext } from '../../api/projectTypes'
 
 /**
  * The only member of `ProductContext` the user does not author. Constrained to
@@ -58,10 +58,10 @@ function authoredValues(context: ProductContext): string[] {
     success_metrics: context.success_metrics,
     free_form_notes: context.free_form_notes,
   }
-  // `?? ''` is not dead despite the non-nullable annotation: these values come
+  // Read as `unknown`, not trusted to the non-nullable annotation: these values come
   // from JSON, where a cleared field can arrive as null, and the spread over
   // emptyProductContext() at the fetch site only fills keys that are *absent*.
-  return Object.values(authored).map((value) => value ?? '')
+  return Object.values(authored).map((value: unknown) => (typeof value === 'string' ? value : ''))
 }
 
 /**

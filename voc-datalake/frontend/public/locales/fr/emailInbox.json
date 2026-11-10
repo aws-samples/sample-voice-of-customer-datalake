@@ -1,0 +1,56 @@
+{
+  "title": "Boîte de réception e-mail",
+  "description": "Clients, collaborateurs et partenaires envoient leurs retours par e-mail à ces adresses. Chaque e-mail est vérifié, dédoublonné et anonymisé avant de devenir un retour.",
+  "on": "Activée",
+  "off": "Désactivée",
+  "loading": "Chargement de la boîte de réception…",
+  "notDeployed": "La boîte de réception e-mail n'est pas déployée. Déployez avec -c inboundEmailDomain=<votre domaine> (voir docs/email-intake.md).",
+  "addresses": "Adresses",
+  "ruleSetInactive": "Le jeu de règles de réception {{ruleSet}} n'est pas actif : aucun e-mail n'arrive encore. Activez-le dans Amazon SES ou redéployez dans le jeu actif avec -c inboundEmailRuleSet.",
+  "pii": {
+    "redact": "Les données personnelles sont anonymisées : noms, adresses e-mail et numéros de téléphone sont remplacés avant l'enregistrement.",
+    "allow": "Les données personnelles sont conservées telles quelles (le profil de la source l'autorise).",
+    "summary_only": "Seuls les champs dérivés sont conservés (le profil de la source est en résumé seulement)."
+  },
+  "dimension": {
+    "missing": "Créez la dimension Type de retour pour que les adresses ideas@, bugs@ et reviews@ et les étiquettes d'objet comme [bug] classent chaque élément.",
+    "create": "Créer la dimension"
+  },
+  "today": {
+    "title": "Aujourd'hui (UTC)",
+    "accepted": "Acceptés",
+    "deduped": "Dédoublonnés",
+    "dropped": "Écartés",
+    "deferred": "Reportés",
+    "modelCalls": "Appels au modèle"
+  },
+  "reasons": {
+    "duplicate_message": "Même e-mail reçu deux fois",
+    "seen_in_thread": "Texte déjà dans la conversation",
+    "no_new_info": "Réponse sans information nouvelle",
+    "forward_duplicate": "Original déjà transféré",
+    "spam": "Verdict spam",
+    "virus": "Verdict virus",
+    "auto_reply": "Réponse automatique",
+    "bulk": "Envoi en masse ou liste de diffusion",
+    "loop_sender": "Expéditeur système de messagerie",
+    "sender_cap": "Limite par expéditeur atteinte",
+    "no_text": "Aucun texte",
+    "unparseable": "Illisible",
+    "too_large": "Trop volumineux"
+  },
+  "caps": {
+    "title": "Limites quotidiennes",
+    "daily_cap": "E-mails par jour",
+    "sender_daily_cap": "E-mails par expéditeur et par jour",
+    "daily_model_calls": "Appels au modèle par jour",
+    "range": "De {{min, number}} à {{max, number}}",
+    "save": "Enregistrer les limites",
+    "saved": "Limites enregistrées"
+  },
+  "errors": {
+    "load": "Impossible de charger l'état de la boîte de réception.",
+    "save": "Impossible d'enregistrer les limites.",
+    "dimension": "Impossible de créer la dimension."
+  }
+}

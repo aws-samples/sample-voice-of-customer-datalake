@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { pythonLayerCode } from './python-layer-bundling';
+import { BUILD_VENV, BUILD_VENV_SETUP, LAYER_BUILD_STAMP, LAYER_STRIP, layerStripSteps, pythonLayerCode } from './python-layer-bundling';
 
 // AssetCode keeps its constructor args in TypeScript-private fields, which
 // still exist at runtime; parse them with Zod instead of reaching in with
@@ -49,10 +49,15 @@ describe('pythonLayerCode', () => {
 
   it('targets ARM64 and installs from requirements.txt via a throwaway venv', () => {
     expect(parsed.options.bundling.platform).toBe('linux/arm64');
-    expect(command).toContain('/tmp/buildenv/bin/pip install -r requirements.txt');
+    expect(command).toContain(`${BUILD_VENV}/bin/pip install -r requirements.txt`);
     for (const token of REQUIRED_RECIPE_TOKENS) {
       expect(command).toContain(token);
     }
+  });
+
+  it('builds the venv in a private mktemp dir, never a fixed world-writable path', () => {
+    expect(command).toContain(`${BUILD_VENV_SETUP} && python -m venv ${BUILD_VENV}`);
+    expect(command).not.toMatch(/\/tmp\//);
   });
 
   it('strips boto3/botocore so the runtime-provided matched pair wins', () => {
@@ -62,8 +67,27 @@ describe('pythonLayerCode', () => {
     expect(command).toContain('/python/botocore-*');
   });
 
+  it('strips the whole runtime-provided SDK closure, so no layer copy shadows the runtime\'s', () => {
+    // The Lambda Python 3.14 runtime's own site-packages (scripts/audit/layer_dists.py RUNTIME_PROVIDED).
+    for (const entry of ['s3transfer', 'jmespath', 'dateutil', 'python_dateutil-*', 'six.py', 'six-*', 'urllib3', 'urllib3-*']) {
+      expect(command).toContain(`/asset-output/python/${entry} `);
+    }
+  });
+
+  it('drops what never runs in Lambda: console scripts, type stubs, packaged tests', () => {
+    expect(command).toContain(layerStripSteps('/asset-output/python'));
+    expect(command).toContain('-name "*.pyi" -type f -delete');
+    expect(command).toContain('-mindepth 2 -type d -name tests -prune');
+    expect(LAYER_STRIP.filter((entry) => entry === 'bin' || entry === '*-stubs')).toStrictEqual(['bin', '*-stubs']);
+  });
+
+  it('keeps bytecode and package metadata', () => {
+    expect(command).not.toMatch(/\.pyc|dist-info|__pycache__/);
+  });
+
   it('excludes local build output so deploys never ship a stale nested copy', () => {
     expect(parsed.options.exclude).toContain('python');
+    expect(parsed.options.exclude).toContain(LAYER_BUILD_STAMP);
     expect(parsed.options.exclude).toContain('**/.DS_Store');
   });
 });
@@ -72,9 +96,25 @@ describe('lockstep with scripts/build-layers.sh', () => {
   const script = fs.readFileSync(path.join(process.cwd(), 'scripts', 'build-layers.sh'), 'utf8');
 
   it('manual builds use the same venv + flags recipe', () => {
-    for (const token of [...REQUIRED_RECIPE_TOKENS, '/tmp/buildenv/bin/pip install']) {
+    for (const token of [...REQUIRED_RECIPE_TOKENS, BUILD_VENV_SETUP, `${BUILD_VENV}/bin/pip install`]) {
       expect(script).toContain(token);
     }
+  });
+
+  it('manual builds never use a fixed path under /tmp either', () => {
+    expect(script).not.toMatch(/\/tmp\//);
+  });
+
+  it('manual builds run the identical strip steps', () => {
+    expect(script).toContain(layerStripSteps('/var/task/python'));
+  });
+
+  it('manual builds build every layer dir, the split ones included', () => {
+    expect(script).toContain('for layer_dir in "$LAYERS_DIR"/*/; do');
+  });
+
+  it('manual builds write the stamp the CDK asset excludes', () => {
+    expect(script).toContain(`STAMP_NAME="${LAYER_BUILD_STAMP}"`);
   });
 
   it('manual builds strip boto3/botocore too', () => {
@@ -88,14 +128,14 @@ describe('lockstep with scripts/build-layers.sh', () => {
 describe('layer source dirs', () => {
   // pythonLayerCode() deploys ONLY pip-installed dependencies. Anything else
   // placed in a layer dir would silently not ship — fail loudly instead.
-  const allowedEntries = new Set(['requirements.txt', 'python', 'README.md', '.DS_Store']);
+  const allowedEntries = new Set(['requirements.txt', 'python', LAYER_BUILD_STAMP, 'README.md', '.DS_Store']);
   const layersRoot = path.join(process.cwd(), 'lambda', 'layers');
 
   for (const layerDir of fs.readdirSync(layersRoot).filter((entry) => !entry.startsWith('.'))) {
     it(`${layerDir} contains no first-party files that would silently not deploy`, () => {
       const entries = fs.readdirSync(path.join(layersRoot, layerDir));
       const unexpected = entries.filter((entry) => !allowedEntries.has(entry));
-      expect(unexpected).toEqual([]);
+      expect(unexpected).toStrictEqual([]);
     });
   }
 });
@@ -108,6 +148,6 @@ describe('stacks use the shared helper', () => {
       // stack test may legitimately mention "pip install" in a string.
       .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
       .filter((file) => fs.readFileSync(path.join(stacksDir, file), 'utf8').includes('pip install'));
-    expect(offenders).toEqual([]);
+    expect(offenders).toStrictEqual([]);
   });
 });

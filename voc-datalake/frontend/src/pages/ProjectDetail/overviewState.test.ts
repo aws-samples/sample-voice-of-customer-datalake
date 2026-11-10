@@ -8,27 +8,19 @@
 import { describe, it, expect } from 'vitest'
 import { deriveOverviewState } from './overviewState'
 import { emptyProductContext, PRODUCT_CONTEXT_FIELD_COUNT } from './productContextFields'
-import type { ProductContext, ProjectDocument, ProjectPersona } from '../../api/types'
+import {
+  contextWith as filledContext, overviewDoc as doc, overviewPersona as persona,
+} from './project-detail-fixtures'
+import type { ProjectDocument } from '../../api/types'
 
-const persona = (id: string): ProjectPersona => ({
-  persona_id: id,
-  name: `Persona ${id}`,
-  tagline: '',
-  created_at: '',
-})
-
-const doc = (id: string, type: ProjectDocument['document_type']): ProjectDocument => ({
-  document_id: id,
-  document_type: type,
-  title: `Doc ${id}`,
-  content: '',
-  created_at: '',
-})
-
-const filledContext = (fields: Partial<ProductContext>): ProductContext => ({
-  ...emptyProductContext(),
-  ...fields,
-})
+/** The state of a described project with one persona and exactly `documents`. */
+function stateAfterPersonas(documents: ProjectDocument[]) {
+  return deriveOverviewState({
+    personas: [persona('p1')],
+    documents,
+    productContext: filledContext({ product_name: 'VoC' }),
+  })
+}
 
 describe('deriveOverviewState', () => {
   describe('card order', () => {
@@ -37,16 +29,18 @@ describe('deriveOverviewState', () => {
       // can read personas, personas cannot read research.
       //
       // Prototype before remix: both depend on documents, but prototype needs one
-      // of PRD/PR-FAQ where remix needs two documents, and prototype produces a
+      // of PRD/PR/FAQ where remix needs two documents, and prototype produces a
       // new artifact where remix revises existing ones.
       const { steps } = deriveOverviewState({ personas: [], documents: [] })
 
-      expect(steps.product.position).toBe(1)
-      expect(steps.personas.position).toBe(2)
-      expect(steps.research.position).toBe(3)
-      expect(steps.documents.position).toBe(4)
-      expect(steps.prototype.position).toBe(5)
-      expect(steps.remix.position).toBe(6)
+      expect({
+        product: steps.product.position,
+        personas: steps.personas.position,
+        research: steps.research.position,
+        documents: steps.documents.position,
+        prototype: steps.prototype.position,
+        remix: steps.remix.position,
+      }).toStrictEqual({ product: 1, personas: 2, research: 3, documents: 4, prototype: 5, remix: 6 })
     })
   })
 
@@ -84,9 +78,9 @@ describe('deriveOverviewState', () => {
       expect(steps.documents.count).toBe(2)
     })
 
-    it('ignores document types that are not research, PRD or PR-FAQ', () => {
+    it('ignores document types that are not research, PRD or PR/FAQ', () => {
       // A prototype or a product report is an artifact of a different step, so it
-      // must not make the PRD/PR-FAQ card claim output it does not have.
+      // must not make the PRD/PR/FAQ card claim output it does not have.
       const { steps } = deriveOverviewState({
         personas: [],
         documents: [doc('d1', 'prototype'), doc('d2', 'product_report'), doc('d3', 'custom')],
@@ -189,20 +183,12 @@ describe('deriveOverviewState', () => {
     })
 
     it('recommends research once personas exist and none has been run', () => {
-      const state = deriveOverviewState({
-        personas: [persona('p1')],
-        documents: [],
-        productContext: filledContext({ product_name: 'VoC' }),
-      })
+      const state = stateAfterPersonas([])
       expect(state.nextStep).toBe('research')
     })
 
     it('recommends documents once research exists', () => {
-      const state = deriveOverviewState({
-        personas: [persona('p1')],
-        documents: [doc('d1', 'research')],
-        productContext: filledContext({ product_name: 'VoC' }),
-      })
+      const state = stateAfterPersonas([doc('d1', 'research')])
       expect(state.nextStep).toBe('documents')
     })
 
@@ -211,33 +197,21 @@ describe('deriveOverviewState', () => {
       // Prototype IS, which is the difference between the two hard-gated steps —
       // so this fixture needs a prototype document or the recommendation would
       // correctly still point at one.
-      const state = deriveOverviewState({
-        personas: [persona('p1')],
-        documents: [doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype')],
-        productContext: filledContext({ product_name: 'VoC' }),
-      })
+      const state = stateAfterPersonas([doc('d1', 'research'), doc('d2', 'prd'), doc('d3', 'prototype')])
       expect(state.nextStep).toBeNull()
     })
 
     it('recommends the prototype once documents exist but none has been built', () => {
-      const state = deriveOverviewState({
-        personas: [persona('p1')],
-        documents: [doc('d1', 'research'), doc('d2', 'prd')],
-        productContext: filledContext({ product_name: 'VoC' }),
-      })
+      const state = stateAfterPersonas([doc('d1', 'research'), doc('d2', 'prd')])
       expect(state.nextStep).toBe('prototype')
     })
 
     it('never recommends the prototype while it has nothing to build from', () => {
       // The invariant that lets prototype be both recommendable and hard-gated:
-      // its gate is "no PRD and no PR-FAQ", which is exactly documents having no
+      // its gate is "no PRD and no PR/FAQ", which is exactly documents having no
       // output — and documents is earlier in the list, so it wins. A reorder that
       // put prototype first would advise work whose own button is disabled.
-      const state = deriveOverviewState({
-        personas: [persona('p1')],
-        documents: [doc('d1', 'research')],
-        productContext: filledContext({ product_name: 'VoC' }),
-      })
+      const state = stateAfterPersonas([doc('d1', 'research')])
 
       expect(state.steps.prototype.missingUpstream).toBe(true)
       expect(state.nextStep).toBe('documents')

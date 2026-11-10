@@ -14,13 +14,9 @@
  * tool result embeds markdown links and the handler forwards `webSources`
  * so the UI can render citations even if the model omits them.
  */
-import { createHash, createHmac } from 'node:crypto';
-import { defaultProvider } from '@aws-sdk/credential-provider-node';
-import { HttpRequest } from '@smithy/protocol-http';
-import { SignatureV4 } from '@smithy/signature-v4';
-import type { SourceData } from '@smithy/types';
 import { z } from 'zod';
 import { ServiceError } from '../lib/errors.js';
+import { signedPost } from '../lib/sigv4.js';
 
 // The web-search connector caps queries at 200 characters.
 const MAX_QUERY_LENGTH = 200;
@@ -52,71 +48,17 @@ function regionFromGatewayUrl(url: string): string {
   return match?.[1] ?? process.env.AWS_REGION ?? 'us-east-1';
 }
 
-// ── SigV4 signing (node:crypto adapter keeps this dependency-free) ──
+// ── SigV4 signing (lib/sigv4.ts) ──
 
-/** Normalize the SDK's SourceData union into bytes for node:crypto
- * (strings are encoded as UTF-8, matching node's default). */
-function toBinary(data: SourceData): Uint8Array {
-  if (typeof data === 'string') return new TextEncoder().encode(data);
-  if (data instanceof Uint8Array) return data;
-  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  return new Uint8Array(data);
-}
-
-class NodeSha256 {
-  private readonly parts: Uint8Array[] = [];
-  private readonly secret?: Uint8Array;
-
-  constructor(secret?: SourceData) {
-    this.secret = secret === undefined ? undefined : toBinary(secret);
-  }
-
-  update(chunk: SourceData): void {
-    this.parts.push(toBinary(chunk));
-  }
-
-  digest(): Promise<Uint8Array> {
-    const hasher = this.secret === undefined
-      ? createHash('sha256')
-      : createHmac('sha256', this.secret);
-    for (const part of this.parts) hasher.update(part);
-    return Promise.resolve(new Uint8Array(hasher.digest()));
-  }
-
-  reset(): void {
-    this.parts.length = 0;
-  }
-}
-
-async function signedFetch(url: string, body: string): Promise<Response> {
-  const parsed = new URL(url);
-  const signer = new SignatureV4({
+function signedFetch(url: string, body: string): Promise<Response> {
+  return signedPost({
+    url,
+    body,
     service: 'bedrock-agentcore',
     region: regionFromGatewayUrl(url),
-    credentials: defaultProvider(),
-    sha256: NodeSha256,
-  });
-
-  const request = new HttpRequest({
-    method: 'POST',
-    protocol: parsed.protocol,
-    hostname: parsed.hostname,
-    path: parsed.pathname,
-    headers: {
-      host: parsed.hostname,
-      'content-type': 'application/json',
-      // Streamable-HTTP MCP servers may answer either plain JSON or SSE.
-      accept: 'application/json, text/event-stream',
-    },
-    body,
-  });
-
-  const signed = await signer.sign(request);
-  return fetch(url, {
-    method: 'POST',
-    headers: signed.headers,
-    body,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    // Streamable-HTTP MCP servers may answer either plain JSON or SSE.
+    headers: { accept: 'application/json, text/event-stream' },
+    timeoutMs: REQUEST_TIMEOUT_MS,
   });
 }
 
@@ -124,8 +66,8 @@ async function signedFetch(url: string, body: string): Promise<Response> {
 
 const jsonRpcResponseSchema = z.object({
   result: z.unknown().optional(),
-  error: z.object({ message: z.string().optional() }).passthrough().optional(),
-}).passthrough();
+  error: z.object({ message: z.string().optional() }).loose().optional(),
+}).loose();
 
 /** JSON-RPC responses may arrive as plain JSON or as an SSE frame
  * (`data: {...}`) depending on how the gateway answers. */
@@ -186,8 +128,8 @@ export function resetToolNameCacheForTesting(): void {
 }
 
 const toolsListSchema = z.object({
-  tools: z.array(z.object({ name: z.string() }).passthrough()).optional(),
-}).passthrough();
+  tools: z.array(z.object({ name: z.string() }).loose()).optional(),
+}).loose();
 
 /** Reads only the first page: MCP tools/list can paginate via nextCursor,
  * but this gateway exposes a single connector target with one tool. */
@@ -228,19 +170,19 @@ async function callWebSearchTool(query: string, maxResults: number): Promise<unk
 
 const toolCallResultSchema = z.object({
   isError: z.boolean().optional(),
-  content: z.array(z.object({ type: z.string().optional(), text: z.string().optional() }).passthrough()).optional(),
-}).passthrough();
+  content: z.array(z.object({ type: z.string().optional(), text: z.string().optional() }).loose()).optional(),
+}).loose();
 
 const webResultSchema = z.object({
   title: z.string().nullable().optional(),
   url: z.string().nullable().optional(),
   text: z.string(),
   publishedDate: z.string().nullable().optional(),
-}).passthrough();
+}).loose();
 
 const searchPayloadSchema = z.object({
   results: z.array(z.unknown()).optional(),
-}).passthrough();
+}).loose();
 
 export interface WebSource {
   title: string;
@@ -306,7 +248,7 @@ function formatResults(sources: WebSource[]): string {
 const webSearchInputSchema = z.object({
   query: z.string().optional(),
   max_results: z.number().optional(),
-}).passthrough();
+}).loose();
 
 export async function executeWebSearch(
   toolInput: unknown,

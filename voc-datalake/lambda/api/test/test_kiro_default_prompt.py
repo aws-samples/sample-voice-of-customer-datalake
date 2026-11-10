@@ -1,16 +1,18 @@
-"""Tests for the Kiro default export prompt feature.
+"""The Kiro export prompt "Copy to Kiro" pastes ahead of a document.
 
-Covers acceptance criteria 1–5 and 8–9 from the task specification:
- 1. Steering file contains the default for a project with empty/absent/whitespace
-    kiro_export_prompt.
- 2. A project with its own non-empty value gets that value, not the default.
- 3. The default text exists in exactly one place in the codebase.
- 4. Project creation still stores an empty value (default applied at read time).
- 5. get_project response exposes both the stored value and the default.
- 8. Clearing the field returns the project to following the default.
+Since 3.00.00 there is ONE prompt, ``KIRO_DEFAULT_EXPORT_PROMPT``, served by
+get_project as ``kiro_default_export_prompt``. A project's stored
+``kiro_export_prompt`` (editable only on the removed Export / MCP tab) is never
+read: create/update no longer write it and get_project does not return it. The
+stored attribute stays in place, unused.
 """
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+from shared.project_access import Caller
+
+# A signed-in workspace admin, the identity the handler fixture carries.
+ADMIN_CALLER = Caller(subject='test-user-id', is_admin=True)
 
 # The first sentence of KIRO_DEFAULT_EXPORT_PROMPT — distinctive enough to spot a
 # copy of the text, and insensitive to reflowed whitespace. Defined once so the
@@ -35,7 +37,7 @@ def _repo_root() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Criterion 3 — The default text exists in exactly one place in the codebase
+# The default text exists in exactly one place in the codebase
 # ---------------------------------------------------------------------------
 
 class TestKiroDefaultPromptIsUnique:
@@ -112,234 +114,40 @@ class TestKiroDefaultPromptIsUnique:
 
 
 # ---------------------------------------------------------------------------
-# Criterion 1 — Default used when kiro_export_prompt is empty/absent/whitespace
+# The stored per-project prompt is no longer written or read
 # ---------------------------------------------------------------------------
 
-class TestBuildSteeringFileUsesDefault:
-    """_build_steering_file falls back to KIRO_DEFAULT_EXPORT_PROMPT."""
-
-    def test_empty_kiro_export_prompt_uses_default(self):
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
-        project = {'name': 'Test', 'kiro_export_prompt': ''}
-        result = _build_steering_file(project, [], [])
-        assert KIRO_DEFAULT_EXPORT_PROMPT in result
-
-    def test_absent_kiro_export_prompt_uses_default(self):
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
-        project = {'name': 'Test'}
-        result = _build_steering_file(project, [], [])
-        assert KIRO_DEFAULT_EXPORT_PROMPT in result
-
-    def test_whitespace_only_kiro_export_prompt_uses_default(self):
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
-        project = {'name': 'Test', 'kiro_export_prompt': '   \n\t  '}
-        result = _build_steering_file(project, [], [])
-        assert KIRO_DEFAULT_EXPORT_PROMPT in result
-
-    def test_none_kiro_export_prompt_uses_default(self):
-        """Stored None (DynamoDB NULL) must use the default, not raise AttributeError."""
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
-        project = {'name': 'Test', 'kiro_export_prompt': None}
-        # Must not raise AttributeError: 'NoneType' object has no attribute 'strip'
-        result = _build_steering_file(project, [], [])
-        assert KIRO_DEFAULT_EXPORT_PROMPT in result
-
-    def test_steering_file_always_has_custom_instructions_section(self):
-        """The ## Custom Instructions section is always present now."""
-        from projects import _build_steering_file
-        project = {'name': 'Test', 'kiro_export_prompt': ''}
-        result = _build_steering_file(project, [], [])
-        assert '## Custom Instructions' in result
+def _meta(**fields) -> dict:
+    return {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'Test', **fields}
 
 
-class TestSteeringTextReferencesNoFilePaths:
-    """The steering text must describe content, never a `.kiro/` file layout.
-
-    It is delivered three ways and only one has files. `autoseed_project` writes
-    it to `.kiro/steering/` alongside real persona/document files, but the Export
-    card concatenates file *contents* into one clipboard blob (paths discarded)
-    and "Copy to Kiro" on a single document pastes it with no personas at all.
-    A path reference is a dangling pointer in the latter two.
-    """
-
-    def test_default_prompt_has_no_kiro_path_reference(self):
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT
-        assert '.kiro' not in KIRO_DEFAULT_EXPORT_PROMPT, (
-            'The default prompt must not reference a .kiro/ path: it is pasted as '
-            'flat text by "Copy to Kiro", where no such folder exists.'
-        )
-
-    def test_generated_steering_file_has_no_kiro_path_reference(self):
-        """Covers the generated Personas/Documents prose, not just the constant."""
-        from projects import _build_steering_file
-        project = {'name': 'Test', 'description': 'Desc', 'kiro_export_prompt': ''}
-        personas = [{'name': 'Ada', 'tagline': 'Engineer'}]
-        documents = [{'title': 'Spec', 'document_type': 'prd'}]
-        result = _build_steering_file(project, personas, documents)
-        assert '.kiro' not in result, (
-            f'Steering text leaks a .kiro/ path. The autoseed prompt describes the '
-            f'file layout; this text must describe only content. Got:\n{result}'
-        )
-
-    def test_autoseed_still_writes_kiro_paths(self):
-        """The FILE PATHS are unaffected — only the prose stopped naming them.
-
-        Guards against over-applying the fix: autoseed genuinely creates these
-        files, and its own prompt tells Kiro where they go.
-        """
-        with patch('projects.projects_table') as mock_table:
-            mock_table.query.return_value = {
-                'Items': [
-                    {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'Test',
-                     'kiro_export_prompt': ''},
-                    {'pk': 'PROJECT#p1', 'sk': 'PERSONA#x', 'persona_id': 'x', 'name': 'Ada'},
-                ]
-            }
-            from projects import autoseed_project
-            payload = autoseed_project('p1')
-        paths = [f['path'] for f in payload['files']]
-        assert any(p.startswith('.kiro/steering/') for p in paths), paths
-        assert any(p.startswith('.kiro/personas/') for p in paths), paths
-
-
-# ---------------------------------------------------------------------------
-# Criterion 2 — Project's own value is used instead of the default
-# ---------------------------------------------------------------------------
-
-class TestBuildSteeringFileUsesCustomPrompt:
-    """A non-empty kiro_export_prompt is used and the default is not."""
-
-    def test_custom_prompt_appears_in_steering_file(self):
-        from projects import _build_steering_file
-        custom = 'Use only TypeScript. No classes. Pure functions only.'
-        project = {'name': 'Test', 'kiro_export_prompt': custom}
-        result = _build_steering_file(project, [], [])
-        assert custom in result
-
-    def test_default_not_used_when_custom_prompt_set(self):
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
-        custom = 'Use only TypeScript. No classes. Pure functions only.'
-        project = {'name': 'Test', 'kiro_export_prompt': custom}
-        result = _build_steering_file(project, [], [])
-        assert KIRO_DEFAULT_EXPORT_PROMPT not in result
-
-
-# ---------------------------------------------------------------------------
-# Criterion 4 — Project creation stores an empty value
-# ---------------------------------------------------------------------------
-
-class TestCreateProjectStoresEmptyPrompt:
-    """create_project must store kiro_export_prompt as '' (not the default)."""
-
-    @patch('projects.projects_table')
-    def test_create_project_stores_empty_kiro_export_prompt(self, mock_table):
+class TestStoredPromptIsUnused:
+    @patch('projects.projects_table', new=MagicMock())
+    def test_create_project_no_longer_stores_a_prompt(self):
         from projects import create_project
-        result = create_project({'name': 'New Project'})
-        item = result['project']
-        assert 'kiro_export_prompt' in item
-        assert item['kiro_export_prompt'] == '', (
-            'kiro_export_prompt must default to empty at creation time so that '
-            'future changes to the default wording reach this project.'
-        )
+        item = create_project({'name': 'New Project', 'kiro_export_prompt': 'Use Rust.'}, ADMIN_CALLER)['project']
+        assert 'kiro_export_prompt' not in item
 
-    @patch('projects.projects_table')
-    def test_create_project_does_not_seed_default_text(self, mock_table):
-        """The default text must never be written into the stored record."""
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, create_project
-        result = create_project({'name': 'New Project'})
-        item = result['project']
-        assert item.get('kiro_export_prompt', '') != KIRO_DEFAULT_EXPORT_PROMPT, (
-            'The default text must not be written into new project records. '
-            'Doing so would freeze today\'s wording and hide future improvements.'
-        )
-
-
-# ---------------------------------------------------------------------------
-# Criterion 5 — get_project exposes both stored value and the default
-# ---------------------------------------------------------------------------
-
-class TestGetProjectExposesDefault:
-    """get_project response carries kiro_default_export_prompt."""
-
-    @patch('projects.projects_table')
-    def test_get_project_includes_kiro_default_export_prompt(self, mock_table):
-        mock_table.query.return_value = {
-            'Items': [
-                {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'Test',
-                 'kiro_export_prompt': ''},
-            ]
-        }
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, get_project
-        result = get_project('p1')
-        project = result['project']
-        assert 'kiro_default_export_prompt' in project, (
-            'get_project must return kiro_default_export_prompt so the frontend '
-            'can distinguish "no override" from "custom override".'
-        )
-        assert project['kiro_default_export_prompt'] == KIRO_DEFAULT_EXPORT_PROMPT
-
-    @patch('projects.projects_table')
-    def test_get_project_preserved_stored_empty_value(self, mock_table):
-        """The stored empty value is NOT replaced by the default in the response."""
-        mock_table.query.return_value = {
-            'Items': [
-                {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'Test',
-                 'kiro_export_prompt': ''},
-            ]
-        }
-        from projects import get_project
-        result = get_project('p1')
-        project = result['project']
-        # The stored field stays empty so the caller can tell the difference.
-        assert project.get('kiro_export_prompt', None) == '', (
-            'The stored kiro_export_prompt must not be overwritten in the response. '
-            'The frontend needs the empty value to know this project follows the default.'
-        )
-
-    @patch('projects.projects_table')
-    def test_get_project_custom_prompt_alongside_default(self, mock_table):
-        """A project with its own prompt exposes both the custom and the default."""
-        custom = 'Use Rust only.'
-        mock_table.query.return_value = {
-            'Items': [
-                {'pk': 'PROJECT#p1', 'sk': 'META', 'project_id': 'p1', 'name': 'Test',
-                 'kiro_export_prompt': custom},
-            ]
-        }
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, get_project
-        result = get_project('p1')
-        project = result['project']
-        assert project['kiro_export_prompt'] == custom
-        assert project['kiro_default_export_prompt'] == KIRO_DEFAULT_EXPORT_PROMPT
-
-
-# ---------------------------------------------------------------------------
-# Criterion 8 — Clearing the field returns the project to the default
-# ---------------------------------------------------------------------------
-
-class TestClearingPromptReturnsToDefault:
-    """After clearing kiro_export_prompt the steering file uses the default again."""
-
-    def test_cleared_prompt_uses_default_in_steering_file(self):
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT, _build_steering_file
-        # Simulate a project that previously had a custom prompt, then it was cleared.
-        project = {'name': 'Test', 'kiro_export_prompt': ''}
-        result = _build_steering_file(project, [], [])
-        assert KIRO_DEFAULT_EXPORT_PROMPT in result
-
-    def test_cleared_prompt_does_not_store_default_text(self):
-        """Clearing is represented as empty string, not the default text written in."""
-        from projects import KIRO_DEFAULT_EXPORT_PROMPT
-        # The update path passes '' when clearing — verify update_project accepts it.
+    def test_update_project_ignores_the_prompt(self):
         with patch('projects.projects_table') as mock_table:
             from projects import update_project
-            result = update_project('p1', {'kiro_export_prompt': ''})
-            assert result['success'] is True
-            # Verify the empty string was written, not the default
+            assert update_project('p1', {'name': 'Renamed', 'kiro_export_prompt': 'Use Rust.'})['success'] is True
             call_kwargs = mock_table.update_item.call_args[1]
-            stored_value = call_kwargs['ExpressionAttributeValues'][':kiro_prompt']
-            assert stored_value == '', (
-                'Clearing kiro_export_prompt must store empty string, '
-                'not the default text. The default is applied at read time only.'
-            )
-            assert stored_value != KIRO_DEFAULT_EXPORT_PROMPT
+            assert 'kiro_export_prompt' not in call_kwargs['UpdateExpression']
+            assert 'Use Rust.' not in call_kwargs['ExpressionAttributeValues'].values()
+
+    @patch('projects.projects_table')
+    def test_get_project_serves_the_default_and_drops_a_stored_prompt(self, mock_table):
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, get_project
+        mock_table.query.return_value = {'Items': [_meta(kiro_export_prompt='Use Rust only.')]}
+        project = get_project('p1')['project']
+        assert project['kiro_default_export_prompt'] == KIRO_DEFAULT_EXPORT_PROMPT
+        assert 'kiro_export_prompt' not in project
+
+    @patch('projects.projects_table')
+    def test_get_project_without_a_stored_prompt(self, mock_table):
+        from projects import KIRO_DEFAULT_EXPORT_PROMPT, get_project
+        mock_table.query.return_value = {'Items': [_meta()]}
+        project = get_project('p1')['project']
+        assert project['kiro_default_export_prompt'] == KIRO_DEFAULT_EXPORT_PROMPT
+        assert 'kiro_export_prompt' not in project

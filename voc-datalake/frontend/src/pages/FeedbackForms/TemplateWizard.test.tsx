@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { at } from '@test/defined'
 import TemplateWizard from './TemplateWizard'
 
 const onSelect = vi.fn()
@@ -70,11 +71,12 @@ describe('TemplateWizard dialog semantics (ModalShell adoption)', () => {
     )
 
     const dialogs = screen.getAllByRole('dialog')
-    // Asserted before destructuring so a regression to a single dialog fails here
-    // rather than as a TypeError on the second element.
+    // Asserted before reading the elements so a regression to a single dialog fails
+    // here, on the count, rather than as an out-of-range read of the second.
     expect(dialogs).toHaveLength(2)
 
-    const [first, second] = dialogs
+    const first = at(dialogs, 0)
+    const second = at(dialogs, 1)
     // Coalesce at the read so the ids are `string`, not `string | null` — the
     // truthiness assertions below are the real check, and `getElementById` then
     // needs no inline fallback.
@@ -82,10 +84,11 @@ describe('TemplateWizard dialog semantics (ModalShell adoption)', () => {
     const firstId = labelId(first)
     const secondId = labelId(second)
 
-    expect(firstId).toBeTruthy()
-    expect(secondId).toBeTruthy()
+    expect([firstId, secondId].every((id) => id !== '')).toBe(true)
     expect(firstId).not.toBe(secondId)
-    expect(first.contains(document.getElementById(firstId))).toBe(true)
-    expect(second.contains(document.getElementById(secondId))).toBe(true)
+    expect([
+      first.contains(document.getElementById(firstId)),
+      second.contains(document.getElementById(secondId)),
+    ]).toStrictEqual([true, true])
   })
 })

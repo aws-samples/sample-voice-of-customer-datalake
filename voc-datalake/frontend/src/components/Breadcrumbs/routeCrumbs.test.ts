@@ -40,17 +40,17 @@ describe('buildCrumbs', () => {
 
   /**
    * The precedence that matters: a labelled child of a record parent is a route,
-   * not a record. Resolving RECORD_CRUMBS first would label `/projects/settings`
-   * "Project" even with a correct entry for `settings` — and the route-coverage
+   * not a record. Resolving RECORD_CRUMBS first would label `/projects/admin`
+   * "Project" even with a correct entry for `admin` — and the route-coverage
    * test could not catch it, because adding that entry is exactly what it asks
    * for. No such route exists today; this pins the rule before one does.
    */
   it('prefers a segment\'s own label over its parent\'s record stand-in', () => {
-    expect(labels('/projects/settings')).toStrictEqual(['Home', 'Projects', 'Settings'])
+    expect(labels('/projects/admin')).toStrictEqual(['Home', 'Projects', 'Administration'])
   })
 
   it('keeps resolving past a record id in a deeper path', () => {
-    expect(labels('/projects/proj_1/settings')).toStrictEqual(['Home', 'Projects', 'Project', 'Settings'])
+    expect(labels('/projects/proj_1/admin')).toStrictEqual(['Home', 'Projects', 'Project', 'Administration'])
   })
 
   // /feedback only redirects to /categories since the list page was consolidated

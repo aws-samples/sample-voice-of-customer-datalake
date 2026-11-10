@@ -11,19 +11,20 @@
  * The load-bearing one is the namespace list. A page that calls
  * `useTranslation('somewhere')` for a namespace absent from `ns` does not throw —
  * i18next resolves nothing and the page renders raw key paths. That is the same
- * failure this module's history is made of, and `scripts/i18n-check.mjs` cannot
- * catch it: its own `NAMESPACES` array is a separate hardcoded copy, so it
- * validates keys against the namespaces IT knows, never against the ones the app
- * registers.
+ * failure this module's history is made of. `scripts/i18n-check.mjs` reads its
+ * namespaces from the `en` catalogue directory, so it audits every shipped one,
+ * but it never sees the list the app REGISTERS — this spec does.
  *
  * The reference for "which namespaces exist" is the shipped catalogue files, not
- * any of the four hardcoded lists — a namespace IS a catalogue.
+ * any of the three hardcoded lists — a namespace IS a catalogue.
  */
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, extname, basename } from 'node:path'
 import i18n from 'i18next'
 import { I18N_INIT_OPTIONS } from './options'
+import { sortedStrings, stringList } from '@test/stringLists'
+import { at } from '@test/defined'
 
 const SRC = join(__dirname, '..')
 const FRONTEND = join(SRC, '..')
@@ -33,10 +34,9 @@ const SCRIPTS = join(FRONTEND, 'scripts')
 
 /** Catalogue names in one locale directory. */
 function cataloguesIn(dir: string): string[] {
-  return readdirSync(dir)
+  return sortedStrings(readdirSync(dir)
     .filter((f) => extname(f) === '.json')
-    .map((f) => basename(f, '.json'))
-    .sort()
+    .map((f) => basename(f, '.json')))
 }
 
 /** The namespaces actually shipped: one catalogue file each, per `en`. */
@@ -46,7 +46,7 @@ function shippedNamespaces(): string[] {
 
 /** The locales the app declares support for — what the detector will accept. */
 function supportedLocales(): string[] {
-  return [...(I18N_INIT_OPTIONS.supportedLngs as string[])].sort()
+  return sortedStrings(stringList(I18N_INIT_OPTIONS.supportedLngs, 'supportedLngs'))
 }
 
 /**
@@ -62,10 +62,9 @@ function isIgnoredLocaleDir(name: string): boolean {
 
 /** Locale directories present on disk, ignoring non-locale infrastructure. */
 function localeDirsOnDisk(): string[] {
-  return readdirSync(LOCALES, { withFileTypes: true })
+  return sortedStrings(readdirSync(LOCALES, { withFileTypes: true })
     .filter((e) => e.isDirectory() && !isIgnoredLocaleDir(e.name))
-    .map((e) => e.name)
-    .sort()
+    .map((e) => e.name))
 }
 
 /**
@@ -78,9 +77,9 @@ function arrayLiteral(file: string, variable: string): string[] {
   const text = readFileSync(file, 'utf-8')
   const match = new RegExp(`${variable}\\s*=\\s*\\[([^\\]]*)\\]`, 's').exec(text)
   if (!match) throw new Error(`${basename(file)}: could not find the ${variable} array`)
-  const items = [...match[1].matchAll(/['"](\w+)['"]/g)].map((m) => m[1])
+  const items = [...at(match, 1).matchAll(/['"](\w+)['"]/g)].map((m) => at(m, 1))
   if (items.length === 0) throw new Error(`${basename(file)}: ${variable} parsed as empty`)
-  return items.sort()
+  return sortedStrings(items)
 }
 
 /**
@@ -99,15 +98,15 @@ function arrayLiteral(file: string, variable: string): string[] {
 function stripComments(source: string): string {
   const lines = source.split('\n')
   const kept: string[] = []
-  let inBlock = false
+  const state = { inBlock: false }
   for (const line of lines) {
     const trimmed = line.trim()
-    if (inBlock) {
-      if (trimmed.includes('*/')) inBlock = false
+    if (state.inBlock) {
+      if (trimmed.includes('*/')) state.inBlock = false
       continue
     }
     if (trimmed.startsWith('/*')) {
-      if (!trimmed.includes('*/')) inBlock = true
+      if (!trimmed.includes('*/')) state.inBlock = true
       continue
     }
     if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue
@@ -156,41 +155,47 @@ function scanSource(): { namespaces: Set<string>; filesScanned: number } {
   const namespaces = new Set<string>()
   const files = sourceFiles(SRC)
   for (const file of files) {
-    const source = stripComments(readFileSync(file, 'utf-8'))
-    for (const [, ns] of source.matchAll(/useTranslation\(\s*['"](\w+)['"]/g)) namespaces.add(ns)
-    for (const [, list] of source.matchAll(/useTranslation\(\s*\[([^\]]*)\]/g)) {
-      for (const [, ns] of list.matchAll(/['"](\w+)['"]/g)) namespaces.add(ns)
-    }
-    for (const [, ns] of source.matchAll(/\b\w*[Kk]ey:\s*['"](\w+):[\w.]+['"]/g)) namespaces.add(ns)
-
-    // `t` plus every name `t` was renamed to in this file, so a qualified key
-    // reached through an alias is not invisible.
-    //
-    // Brace-scoped, which drops bare `(t: number)` parameters. It does NOT
-    // distinguish a destructuring from a type literal — `{ t: TFunction }` still
-    // contributes `TFunction` — and that is fine rather than fixed, because the
-    // two directions are not symmetric: an extra caller name matches no call site
-    // and changes nothing, while a MISSED alias is the silent blind spot this
-    // whole scan exists to avoid. So the regex is deliberately generous.
-    //
-    // Caveat worth knowing: `[^{}]*` cannot cross a nested object, so a future
-    // `const { data: { x }, t: tr }` would drop out of the caller set. Unused today.
-    //
-    // The negated class spans newlines, which it must — Chat.tsx's rename is in a
-    // multi-line destructuring.
-    const callers = new Set(['t'])
-    for (const [, alias] of source.matchAll(/\{[^{}]*\bt\s*:\s*(\w+)/g)) callers.add(alias)
-    for (const caller of callers) {
-      const qualified = new RegExp(`\\b${caller}\\(\\s*['"](\\w+):`, 'g')
-      for (const [, ns] of source.matchAll(qualified)) namespaces.add(ns)
-    }
+    for (const ns of namespacesIn(stripComments(readFileSync(file, 'utf-8')))) namespaces.add(ns)
   }
   return { namespaces, filesScanned: files.length }
 }
 
+/** The namespaces one (comment-stripped) source file names, in every form `scanSource` lists. */
+function namespacesIn(source: string): Set<string> {
+  const namespaces = new Set<string>()
+  for (const m of source.matchAll(/useTranslation\(\s*['"](\w+)['"]/g)) namespaces.add(at(m, 1))
+  for (const listMatch of source.matchAll(/useTranslation\(\s*\[([^\]]*)\]/g)) {
+    for (const m of at(listMatch, 1).matchAll(/['"](\w+)['"]/g)) namespaces.add(at(m, 1))
+  }
+  for (const m of source.matchAll(/\b\w*[Kk]ey:\s*['"](\w+):[\w.]+['"]/g)) namespaces.add(at(m, 1))
+
+  // `t` plus every name `t` was renamed to in this file, so a qualified key
+  // reached through an alias is not invisible.
+  //
+  // Brace-scoped, which drops bare `(t: number)` parameters. It does NOT
+  // distinguish a destructuring from a type literal — `{ t: TFunction }` still
+  // contributes `TFunction` — and that is fine rather than fixed, because the
+  // two directions are not symmetric: an extra caller name matches no call site
+  // and changes nothing, while a MISSED alias is the silent blind spot this
+  // whole scan exists to avoid. So the regex is deliberately generous.
+  //
+  // Caveat worth knowing: `[^{}]*` cannot cross a nested object, so a future
+  // `const { data: { x }, t: tr }` would drop out of the caller set. Unused today.
+  //
+  // The negated class spans newlines, which it must — Chat.tsx's rename is in a
+  // multi-line destructuring.
+  const callers = new Set(['t'])
+  for (const m of source.matchAll(/\{[^{}]*\bt\s*:\s*(\w+)/g)) callers.add(at(m, 1))
+  for (const caller of callers) {
+    const qualified = new RegExp(`\\b${caller}\\(\\s*['"](\\w+):`, 'g')
+    for (const m of source.matchAll(qualified)) namespaces.add(at(m, 1))
+  }
+  return namespaces
+}
+
 describe('I18N_INIT_OPTIONS', () => {
   it('registers every namespace the app actually asks for', () => {
-    const registered = new Set(I18N_INIT_OPTIONS.ns as string[])
+    const registered = new Set(stringList(I18N_INIT_OPTIONS.ns, 'ns'))
     const { namespaces, filesScanned } = scanSource()
 
     // Liveness, structural rather than by name: a walk that silently returns
@@ -212,7 +217,7 @@ describe('I18N_INIT_OPTIONS', () => {
       unregistered,
       'used in source but absent from I18N_INIT_OPTIONS.ns — i18next resolves '
       + 'nothing for these and the UI renders raw key paths',
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
   it('sees every form the source uses to name a namespace', () => {
@@ -227,7 +232,7 @@ describe('I18N_INIT_OPTIONS', () => {
     for (const file of sourceFiles(SRC)) {
       const source = stripComments(readFileSync(file, 'utf-8'))
       for (const match of source.matchAll(/useTranslation\(\s*([^)]{0,40})/g)) {
-        const arg = match[1].trim()
+        const arg = at(match, 1).trim()
         if (arg === '') continue                             // useTranslation()
         if (/^['"[]/.test(arg)) continue                     // literal or array
         offenders.push(`${file}: useTranslation(${arg.slice(0, 24)}…)`)
@@ -237,39 +242,43 @@ describe('I18N_INIT_OPTIONS', () => {
       offenders,
       'a namespace passed as a variable or template literal cannot be resolved '
       + 'statically, so the gate above would silently stop covering it',
-    ).toEqual([])
+    ).toStrictEqual([])
   })
 
-  it('keeps all four copies of the namespace list in step with the shipped catalogues', () => {
-    // The root cause the previous test only mitigates: the list is duplicated four
-    // times. The shipped catalogue files are the reference — a namespace IS a
-    // catalogue — so each copy is compared against them rather than against each
-    // other, which would let all four drift together.
-    const shipped = shippedNamespaces()
-    expect(shipped.length, 'no catalogues found — wrong locales path').toBeGreaterThan(5)
+  // The root cause the previous test only mitigates: the list is duplicated three
+  // times. The shipped catalogue files are the reference — a namespace IS a
+  // catalogue — so each copy is compared against them rather than against each
+  // other, which would let all three drift together.
+  it('finds the shipped catalogues the copies are compared against', () => {
+    expect(shippedNamespaces().length, 'no catalogues found — wrong locales path').toBeGreaterThan(5)
+  })
 
-    expect([...(I18N_INIT_OPTIONS.ns as string[])].sort(), 'src/i18n/options.ts').toEqual(shipped)
-    expect(arrayLiteral(join(SCRIPTS, 'i18n-check.mjs'), 'NAMESPACES'), 'scripts/i18n-check.mjs')
-      .toEqual(shipped)
-    expect(arrayLiteral(join(SCRIPTS, 'fix-i18n.mjs'), 'NAMESPACES'), 'scripts/fix-i18n.mjs')
-      .toEqual(shipped)
-    // The fourth copy is src/test/setup.ts's `namespaceResources`; the harness has
+  it.each([
+    ['src/i18n/options.ts', () => sortedStrings(stringList(I18N_INIT_OPTIONS.ns, 'ns'))],
+    ['scripts/fix-i18n.mjs', () => arrayLiteral(join(SCRIPTS, 'fix-i18n.mjs'), 'NAMESPACES')],
+    // The third copy is src/test/setup.ts's `namespaceResources`; the harness has
     // already initialised i18next from it, so read the live value instead of
     // re-parsing the file.
-    expect([...(i18n.options.ns as string[])].sort(), 'src/test/setup.ts').toEqual(shipped)
+    ['src/test/setup.ts', () => sortedStrings(stringList(i18n.options.ns, 'i18n.options.ns'))],
+  ])('keeps the namespace list in %s in step with the shipped catalogues', (label, copy) => {
+    expect(copy(), label).toStrictEqual(shippedNamespaces())
   })
 
-  it('ships the same catalogue set in every locale', () => {
+  it('lets scripts/i18n-check.mjs read its namespaces from the en catalogues instead of keeping a copy', () => {
+    const audit = readFileSync(join(SCRIPTS, 'i18n-check.mjs'), 'utf8')
+    expect(/^const NAMESPACES = localeNamespaces\(SOURCE_LANG\)$/m.test(audit), 'i18n-check.mjs NAMESPACES').toBe(true)
+    expect(/^const SOURCE_LANG = 'en'$/m.test(audit), 'i18n-check.mjs SOURCE_LANG').toBe(true)
+  })
+
+  it('ships a locale directory for exactly the supported locales', () => {
     // Because the check above uses `en` as the reference, an orphan catalogue in
     // another locale (`fr/feedback.json`) would satisfy every list while belonging
     // to no namespace — and now that `fix-i18n.mjs` iterates the registered list, it
     // would skip that file forever. The reverse, a locale missing a catalogue `en`
     // ships, means that whole page falls back to English with no other signal.
-    const shipped = shippedNamespaces()
+    // (The per-locale catalogue comparison is the `it.each` below.)
     const locales = supportedLocales()
     expect(locales, 'supportedLngs must include the reference locale').toContain('en')
-    expect(locales.length, 'only one locale supported; parity across locales is untested')
-      .toBeGreaterThan(1)
 
     // Both directions, because deriving the loop from `supportedLngs` alone would
     // quietly shrink this gate: a shipped directory absent from `supportedLngs`
@@ -281,30 +290,39 @@ describe('I18N_INIT_OPTIONS', () => {
       + 'Extra on disk = translations shipped that the detector will never select. '
       + 'Extra in supportedLngs = a locale the detector accepts with no catalogues '
       + 'to load.',
-    ).toEqual(locales)
+    ).toStrictEqual(locales)
 
-    for (const locale of locales) {
-      expect(cataloguesIn(join(LOCALES, locale)), `locale ${locale}`).toEqual(shipped)
-    }
   })
 
-  it('keeps the options that are load-bearing rather than cosmetic', () => {
-    // One assertion per behaviour, with the behaviour named: a snapshot of this
-    // object would fail on any edit without saying what broke.
+  it.each(supportedLocales())('ships the en catalogue set in locale %s', (locale) => {
+    expect(cataloguesIn(join(LOCALES, locale)), `locale ${locale}`).toStrictEqual(shippedNamespaces())
+  })
+
+  it('supports more than one locale, so the parity check above compares something', () => {
+    expect(supportedLocales().length, 'only one locale supported; parity across locales is untested')
+      .toBeGreaterThan(1)
+  })
+
+  // One assertion per behaviour, with the behaviour named: a snapshot of this
+  // object would fail on any edit without saying what broke.
+  it('keeps the language-selection options that are load-bearing rather than cosmetic', () => {
     expect(I18N_INIT_OPTIONS.fallbackLng, 'first visit must land on English').toBe('en')
     expect(
       I18N_INIT_OPTIONS.nonExplicitSupportedLngs,
       'must stay false, or a regional variant we do not ship can be selected',
     ).toBe(false)
     expect(
-      (I18N_INIT_OPTIONS.supportedLngs as string[] | undefined)?.length,
+      stringList(I18N_INIT_OPTIONS.supportedLngs, 'supportedLngs').length,
       'without supportedLngs a stale localStorage value selects an unshipped locale',
     ).toBeGreaterThan(1)
+  })
+
+  it('keeps the detection and interpolation options that are load-bearing rather than cosmetic', () => {
     expect(
       I18N_INIT_OPTIONS.detection?.order,
       "detection must read ONLY the user's stored choice — 'navigator' is "
       + 'deliberately absent so a non-English browser still gets English',
-    ).toEqual(['localStorage'])
+    ).toStrictEqual(['localStorage'])
     expect(I18N_INIT_OPTIONS.detection?.lookupLocalStorage).toBe('voc-language')
     expect(
       I18N_INIT_OPTIONS.interpolation?.escapeValue,

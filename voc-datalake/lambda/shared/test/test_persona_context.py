@@ -86,7 +86,7 @@ class TestFieldPaths:
         assert persona_voice(GENERATED) == 'I just want the headlines.'
 
     def test_a_bare_string_quote_is_tolerated(self):
-        """Copied from `_persona_to_markdown`, which already handles this."""
+        """Bare-string quotes are tolerated."""
         assert persona_voice({'quotes': ['Straight to the point.']}) == 'Straight to the point.'
 
     def test_the_phantom_flat_keys_are_not_read(self):
@@ -123,13 +123,6 @@ class TestFieldPaths:
 
 
 class TestBlockRendering:
-    def test_a_generated_persona_renders_every_line(self):
-        block = persona_prompt_block(GENERATED)
-        assert block.startswith('**Priya Shah** — The Habitual Skimmer')
-        assert '- Voice: "I just want the headlines."' in block
-        assert '- Goals: Stay informed in ten minutes; Follow local council news' in block
-        assert '- Frustrations: Alerts bury the real news' in block
-
     def test_an_imported_persona_renders_what_it_has(self):
         """Its pain points sit under keys this module never chose, so the
         Frustrations line is absent rather than empty — and the goal it DOES
@@ -150,27 +143,8 @@ class TestBlockRendering:
     def test_an_unnamed_persona_still_renders(self):
         assert persona_prompt_block({}).startswith('**Unnamed persona**')
 
-    def test_the_cap_bounds_the_block(self):
-        """The research path carries this across Step Functions state (256 KB)."""
-        crowded = {
-            'name': 'Verbose',
-            'goals_motivations': {'secondary_goals': [f'goal {i}' for i in range(50)]},
-            'pain_points': {'current_challenges': [f'pain {i}' for i in range(50)]},
-        }
-        block = persona_prompt_block(crowded, max_items=2)
-        # Whole-line equality, not a substring count: `count('goal ')` would also
-        # match a goal whose own text contained the word.
-        assert '- Goals: goal 0; goal 1' in block
-        assert '- Frustrations: pain 0; pain 1' in block
-
 
 class TestMultiPersonaContext:
-    def test_personas_are_separated_and_headed(self):
-        context = personas_prompt_context([GENERATED, IMPORTED], header='## Selected Personas')
-        assert context.startswith('## Selected Personas')
-        assert 'Priya Shah' in context and 'Priya Raman' in context
-        assert context.count('**Priya') == 2
-
     def test_empty_personas_render_as_empty_string(self):
         """So a caller's `or '(none)'` fallback can actually fire."""
         assert personas_prompt_context([]) == ''

@@ -1,0 +1,18 @@
+{
+  "$comment": "Comment references of scripts/audit/ts_stale_refs.mjs that are not stale. Triaged 5.34 (docs/code-audit.md).",
+  "entries": [
+    { "key": "voc-datalake/frontend/src/components/ModalShell/ModalShell.tsx::initialFocusRef", "reason": "names a prop the component deliberately does not have (why it is absent)" },
+    { "key": "voc-datalake/frontend/src/components/ThemeToggle/ThemeToggle.tsx::cycleMode", "reason": "a function of the KiroCrew website, the design source the cycle order follows (another repository)" },
+    { "key": "voc-datalake/frontend/src/services/sessionExpiry.ts::ForTests", "reason": "a naming suffix the comment explains, not an identifier" },
+    { "key": "voc-datalake/frontend/src/services/sessionExpiry.ts::streamChat", "reason": "history: the pre-module assistant client the fileoverview contrasts with" },
+    { "key": "voc-datalake/frontend/src/utils/displayLabels.ts::*_*", "reason": "sample slugged hostnames (`www_trustpilot_com`, `co_uk`) the helper parses, not identifiers" },
+    { "key": "voc-datalake/frontend/mock-design-extract.js::*.css", "reason": "theme files of an arbitrary GitHub repository the design-extract mock pretends to read" },
+    { "key": "voc-datalake/frontend/src/i18n/loadPath.ts::vite-env.d.ts", "reason": "explains why the declaration is NOT in vite-env.d.ts (the root .gitignore drops *.d.ts)" },
+    { "key": "voc-datalake/frontend/src/i18n/options.test.ts::fr/feedback.json", "reason": "a hypothetical file the spec explains it must not be satisfied by" },
+    { "key": "voc-datalake/frontend/src/pages/Settings/changelog.ts::docs/x.md", "reason": "an example link shape (`docs/x.md#y`) of the CHANGELOG renderer" },
+    { "key": "voc-datalake/frontend/src/publicAssets.test.ts::*", "reason": "example public/ paths the public-asset spec reasons about (planted names, allowlist shapes)" },
+    { "key": "voc-datalake/frontend/src/test/appSources.ts::path/from/src.tsx", "reason": "a placeholder for the `at` field's format" },
+    { "key": "voc-datalake/frontend/src/theme/*.test.ts::website/src/index.css", "reason": "the KiroCrew website's stylesheet the palette specs cite as their source (another repository)" },
+    { "key": "voc-datalake/lambda/stream/src/assistant/*::*inputSchema.json", "reason": "the Bedrock tool spec field path `toolSpec.inputSchema.json`, not a file" }
+  ]
+}

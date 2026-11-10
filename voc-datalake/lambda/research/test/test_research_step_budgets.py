@@ -12,7 +12,7 @@ loader can't make the handler and the expectation drift together.
 """
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -30,21 +30,6 @@ PRE_FIX_VALIDATION_BUDGET = 3000
 
 def _step(step_name: str) -> dict:
     return json.loads(RESEARCH_PROMPTS.read_text(encoding='utf-8'))['steps'][step_name]
-
-
-@pytest.fixture
-def mock_tables():
-    mock_fb = MagicMock()
-    mock_proj = MagicMock()
-    with patch('research_step_handler._get_feedback_table', return_value=mock_fb), \
-         patch('research_step_handler._get_projects_table', return_value=mock_proj):
-        yield {'feedback': mock_fb, 'projects': mock_proj}
-
-
-@pytest.fixture
-def mock_job_status():
-    with patch('research_step_handler.update_job_status') as m:
-        yield m
 
 
 @pytest.fixture
@@ -80,25 +65,29 @@ def _validate_event(**config):
 class TestBudgetsComeFromConfig:
     """Each step's max_tokens must equal what the shared config declares."""
 
-    def test_analysis_uses_the_configured_budget(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_analysis_uses_the_configured_budget(self, mock_converse):
         from research_step_handler import step_analyze
 
         step_analyze(_analyze_event())
         assert mock_converse.call_args.kwargs['max_tokens'] == _step('data_analysis')['max_tokens']
 
-    def test_synthesis_uses_the_configured_budget(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_synthesis_uses_the_configured_budget(self, mock_converse):
         from research_step_handler import step_synthesize
 
         step_synthesize(_synthesize_event())
         assert mock_converse.call_args.kwargs['max_tokens'] == _step('synthesis')['max_tokens']
 
-    def test_validation_uses_the_configured_budget(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_validation_uses_the_configured_budget(self, mock_converse):
         from research_step_handler import step_validate
 
         step_validate(_validate_event())
         assert mock_converse.call_args.kwargs['max_tokens'] == _step('validation')['max_tokens']
 
-    def test_each_step_reports_the_name_the_config_declares(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_each_step_reports_the_name_the_config_declares(self, mock_converse):
         """converse() logs step_name; all three steps used to log 'unknown', so
         live logs could not tell which step made a call.
 
@@ -120,7 +109,8 @@ class TestBudgetsComeFromConfig:
             expected = _step(key).get('name', key)
             assert mock_converse.call_args.kwargs['step_name'] == expected
 
-    def test_configured_thinking_budget_reaches_bedrock(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_configured_thinking_budget_reaches_bedrock(self, mock_converse):
         """data_analysis declares a thinking budget; it must be forwarded.
 
         converse() drops it for adaptive-thinking models on its own, so passing
@@ -151,19 +141,22 @@ class TestSystemPromptsComeFromConfig:
     """The system prompts were duplicated between this module and the config.
     Pin them to the config so the two paths can't drift."""
 
-    def test_analysis_system_prompt_matches_config(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_analysis_system_prompt_matches_config(self, mock_converse):
         from research_step_handler import step_analyze
 
         step_analyze(_analyze_event())
         assert mock_converse.call_args.kwargs['system_prompt'] == _step('data_analysis')['system_prompt']
 
-    def test_synthesis_system_prompt_matches_config(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_synthesis_system_prompt_matches_config(self, mock_converse):
         from research_step_handler import step_synthesize
 
         step_synthesize(_synthesize_event())
         assert mock_converse.call_args.kwargs['system_prompt'] == _step('synthesis')['system_prompt']
 
-    def test_validation_system_prompt_matches_config(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_validation_system_prompt_matches_config(self, mock_converse):
         from research_step_handler import step_validate
 
         step_validate(_validate_event())
@@ -174,7 +167,8 @@ class TestLanguageInstructionStillApplies:
     """Sourcing the prompt from config must not drop the per-request language
     instruction, which is appended on top of it."""
 
-    def test_analysis_appends_language_instruction(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_analysis_appends_language_instruction(self, mock_converse):
         from research_step_handler import step_analyze
 
         step_analyze(_analyze_event(response_language='es'))
@@ -182,19 +176,22 @@ class TestLanguageInstructionStillApplies:
         assert system_prompt.startswith(_step('data_analysis')['system_prompt'])
         assert 'Spanish' in system_prompt
 
-    def test_synthesis_appends_language_instruction(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_synthesis_appends_language_instruction(self, mock_converse):
         from research_step_handler import step_synthesize
 
         step_synthesize(_synthesize_event(response_language='ko'))
         assert 'Korean' in mock_converse.call_args.kwargs['system_prompt']
 
-    def test_validation_appends_language_instruction(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_validation_appends_language_instruction(self, mock_converse):
         from research_step_handler import step_validate
 
         step_validate(_validate_event(response_language='ja'))
         assert 'Japanese' in mock_converse.call_args.kwargs['system_prompt']
 
-    def test_no_language_leaves_the_config_prompt_untouched(self, mock_tables, mock_job_status, mock_converse):
+    @pytest.mark.usefixtures("mock_tables", "mock_job_status")
+    def test_no_language_leaves_the_config_prompt_untouched(self, mock_converse):
         from research_step_handler import step_analyze
 
         step_analyze(_analyze_event())

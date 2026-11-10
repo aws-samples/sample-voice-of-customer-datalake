@@ -19,22 +19,10 @@
  *
  * @module pages/Prioritization/SessionQrCode
  */
-import { QRCodeSVG } from 'qrcode.react'
 import { useTranslation } from 'react-i18next'
 import { ballotPageUrl } from '../../api/ballotPageUrl'
 import type { ReactElement } from 'react'
-
-/** Intrinsic edge in CSS pixels, and the widest this is drawn. Sized for a phone
- *  a few metres from a projector; `w-full h-auto` lets a narrower container scale
- *  it down losslessly via the SVG's viewBox. */
-const QR_SIZE_PX = 384
-
-/** The specification's 4-module quiet zone, which the library defaults to 0.
- *  Without it a scanner cannot find the symbol's edges against a slide. */
-const QR_MARGIN_MODULES = 4
-
-/** ~15% recoverable. The realistic failure is glare and heads in the way. */
-const QR_ERROR_CORRECTION = 'M'
+import QrPanel from '../../components/FormQrCode/QrPanel'
 
 /**
  * @param sessionId the session token the room scans. It is the whole of what the
@@ -54,25 +42,16 @@ export default function SessionQrCode({
   // a prop would invite a caller to pass the API endpoint — which is a different
   // host, on which `/vote/x` is a 403.
   const url = ballotPageUrl(window.location.origin, sessionId)
-  if (url === null) {
-    return <p className="text-sm text-indigo-800">{t('roomVote.qrUnavailable')}</p>
-  }
   return (
-    <div className="flex flex-col items-center gap-2">
-      <QRCodeSVG
-        value={url}
-        size={QR_SIZE_PX}
-        level={QR_ERROR_CORRECTION}
-        marginSize={QR_MARGIN_MODULES}
-        // Becomes the SVG's <title>, which is what assistive tech announces for
-        // its role="img".
-        title={t('roomVote.qrAccessibleName', { title: rowTitle })}
-        className="bg-white w-full h-auto"
-      />
+    <QrPanel
+      url={url}
+      title={t('roomVote.qrAccessibleName', { title: rowTitle })}
+      unavailable={<p className="text-sm text-text">{t('roomVote.qrUnavailable')}</p>}
+    >
       {/* The address in text under the symbol: a phone whose camera will not
           focus, or a remote attendee on a video call, still needs a way in. */}
-      <p className="text-xs text-indigo-800 text-center break-all">{url}</p>
-      <p className="text-xs text-indigo-800 text-center">{t('roomVote.qrCaption')}</p>
-    </div>
+      <p className="text-xs text-text text-center break-all">{url}</p>
+      <p className="text-xs text-text text-center">{t('roomVote.qrCaption')}</p>
+    </QrPanel>
   )
 }

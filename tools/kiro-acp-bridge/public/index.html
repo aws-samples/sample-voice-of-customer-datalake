@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kiro ACP bridge</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Kiro ACP bridge</h1>
+        <p class="muted">
+          Sends work to the <code>kiro-cli acp</code> agent on this machine. Every tool call needs your approval.
+        </p>
+        <p class="muted">Workspace: <code id="workspace">loading…</code></p>
+      </header>
+
+      <form id="connect-form" aria-labelledby="connect-heading">
+        <h2 id="connect-heading">Connect</h2>
+        <label for="token">One-time token (printed in the bridge terminal)</label>
+        <div class="row">
+          <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" required />
+          <button id="connect" type="submit">Connect</button>
+        </div>
+      </form>
+
+      <p id="status" role="status" aria-live="polite">Disconnected</p>
+
+      <section aria-labelledby="transcript-heading">
+        <h2 id="transcript-heading">Transcript</h2>
+        <ol id="transcript" aria-live="polite"></ol>
+      </section>
+
+      <form id="prompt-form" aria-labelledby="prompt-heading">
+        <h2 id="prompt-heading">Send work</h2>
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt" name="prompt" rows="4" required disabled></textarea>
+        <label for="images">Images (optional; you can also paste into the prompt)</label>
+        <input id="images" name="images" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple disabled />
+        <p class="muted" id="image-limits"></p>
+        <ul id="attachments" aria-label="Attached images"></ul>
+        <div class="row">
+          <button id="send" type="submit" disabled>Send</button>
+          <button id="cancel" type="button" disabled>Cancel turn</button>
+        </div>
+      </form>
+
+      <fieldset>
+        <legend>Notifications</legend>
+        <label class="inline" for="notify">
+          <input id="notify" type="checkbox" checked />
+          Notify me when Kiro needs approval or finishes, while this tab is in the background
+        </label>
+        <p class="muted" id="notify-status"></p>
+      </fieldset>
+    </main>
+
+    <dialog id="permission-dialog" aria-labelledby="permission-title">
+      <h2 id="permission-title">Kiro wants to run a tool</h2>
+      <p><strong>Tool:</strong> <span id="permission-tool"></span></p>
+      <p><strong>Kind:</strong> <span id="permission-kind"></span></p>
+      <p><strong>Exact request (from the agent):</strong></p>
+      <pre id="permission-detail"></pre>
+      <p class="muted" id="permission-countdown"></p>
+      <div class="row" id="permission-options"></div>
+    </dialog>
+  </body>
+</html>

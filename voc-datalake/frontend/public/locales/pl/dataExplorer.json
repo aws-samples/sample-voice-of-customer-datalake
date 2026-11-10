@@ -1,0 +1,172 @@
+{
+  "editModal": {
+    "cancel": "Anuluj",
+    "close": "Zamknij",
+    "create": "Utwórz",
+    "createNewFile": "Utwórz nowy plik",
+    "editFeedback": "Edytuj opinię",
+    "editS3File": "Edytuj plik S3",
+    "id": "ID",
+    "invalidJson": "Nieprawidłowy JSON: {{error}}",
+    "key": "Klucz",
+    "save": "Zapisz",
+    "syncToDynamo": "Zaktualizuj także DynamoDB",
+    "type": "Typ",
+    "viewFeedback": "Podgląd opinii",
+    "viewS3File": "Podgląd pliku S3",
+    "content": "Zawartość pliku",
+    "staleRecord": "Ten rekord zmienił się po jego otwarciu. Zamknij edytor i otwórz go ponownie, aby zobaczyć bieżącą wersję."
+  },
+  "feedback": {
+    "category": "Kategoria: {{category}}",
+    "edit": "Edytuj",
+    "noFeedback": "Nie znaleziono opinii",
+    "showingRecords": "Wyświetlono {{filtered, number}} z {{total, number}} rekordów",
+    "urgent": "Pilne",
+    "view": "Podgląd",
+    "noFeedbackHint": "Spróbuj innego źródła lub szerszego zakresu czasu.",
+    "showDetails": "Pokaż szczegóły",
+    "hideDetails": "Ukryj szczegóły",
+    "showingRecordsAtLeast": "Wyświetlono {{filtered, number}}, dostępne więcej",
+    "showingRecordsShown": "Wyświetlono {{filtered, number}}",
+    "loadMore": "Załaduj więcej",
+    "loadingMore": "Ładowanie…"
+  },
+  "filters": {
+    "allSources": "Wszystkie źródła",
+    "searchPlaceholder": "Szukaj...",
+    "bucket": "Bucket",
+    "source": "Źródło",
+    "search": "Szukaj opinii"
+  },
+  "s3Browser": {
+    "back": "Wstecz",
+    "download": "Pobierz",
+    "edit": "Edytuj",
+    "noFiles": "Nie znaleziono plików",
+    "view": "Podgląd",
+    "path": "Ścieżka folderu",
+    "noFilesHint": "Ten folder jest pusty. Utwórz tutaj plik lub zaimportuj dane ze Źródeł danych.",
+    "personaFolder": "Persona {{n, number}} · {{date}}",
+    "personaFolderDated": "Persona · {{date}}"
+  },
+  "tabs": {
+    "categories": "Kategorie",
+    "categoriesShort": "Kategorie",
+    "feedbackShort": "Opinie",
+    "processedFeedback": "Przetworzone opinie",
+    "s3RawData": "Surowe dane S3",
+    "s3Short": "S3",
+    "label": "Widok danych"
+  },
+  "details": {
+    "title": "Tytuł",
+    "text": "Recenzja",
+    "source": "Źródło",
+    "date": "Data",
+    "category": "Kategoria",
+    "rating": "Ocena",
+    "language": "Język",
+    "author": "Autor",
+    "problem": "Problem",
+    "persona": "Persona",
+    "showRaw": "Pokaż surowy JSON",
+    "hideRaw": "Ukryj surowy JSON"
+  },
+  "description": "Przeglądaj surowe dane S3 i przetworzone rekordy DynamoDB. Nic stąd nigdy nie jest usuwane, a zapisane surowe pliki są tylko do odczytu.",
+  "newFile": "Nowy plik",
+  "notConfigured": "Skonfiguruj endpoint API w Administracja → Ogólne, aby przeglądać dane",
+  "refresh": "Odśwież",
+  "title": "Eksplorator danych",
+  "dataQuality": {
+    "title": "Jakość danych",
+    "description": "Na ile przydatne są opinie z każdego źródła: poziom wyznaczany regułami na podstawie długości, szczegółów (liczby, nazwy produktów) i tego, czy opisują konkretny problem lub prośbę. Źródło z przewagą niskich opinii często oznacza źle skonfigurowany scraper lub pomijane pole formularza.",
+    "loading": "Wczytywanie jakości danych…",
+    "empty": "Brak opinii w tym okresie.",
+    "unratedShare": "{{share}} opinii z tego okresu nie ma jeszcze oceny.",
+    "backfillHint": "Opinie zapisane przed wprowadzeniem ocen nie mają poziomu; ponowne przetworzenie kategorii (Administracja → Taksonomia) je oceni.",
+    "chartTop_one": "Wykres pokazuje najbardziej aktywne źródło; tabela zawiera wszystkie źródła.",
+    "chartTop_few": "Wykres pokazuje {{count, number}} najbardziej aktywne źródła; tabela zawiera wszystkie źródła.",
+    "chartTop_many": "Wykres pokazuje {{count, number}} najbardziej aktywnych źródeł; tabela zawiera wszystkie źródła.",
+    "chartTop_other": "Wykres pokazuje {{count, number}} najbardziej aktywnego źródła; tabela zawiera wszystkie źródła.",
+    "partial": "Części danych nie udało się odczytać na czas, więc te liczby mogą być niższe od rzeczywistych.",
+    "tableCaption": "Przydatność opinii według źródła",
+    "allSources": "Wszystkie źródła",
+    "columns": {
+      "source": "Źródło",
+      "total": "Razem"
+    },
+    "bands": {
+      "high": "Wysoka",
+      "medium": "Średnia",
+      "low": "Niska",
+      "unrated": "Bez oceny"
+    },
+    "profile": {
+      "title": "Profil źródła",
+      "description": "Jak wyglądają opinie z każdego źródła: jak są oceniane, jaki mają wydźwięk i jak długi jest ich tekst.",
+      "notProfiled": "{{share}} opinii z tego okresu zapisano, zanim profil był liczony, więc nie są uwzględnione. Odbudowanie agregatów dla tego okresu je dodaje.",
+      "facetGroup": "Wyświetlany profil",
+      "tableCaption": "{{facet}} według źródła",
+      "profiled": "Z profilem",
+      "facets": {
+        "rating": "Ocena",
+        "sentiment": "Wydźwięk",
+        "length": "Długość tekstu"
+      },
+      "rating": {
+        "5": "5 gwiazdek",
+        "4": "4 gwiazdki",
+        "3": "3 gwiazdki",
+        "2": "2 gwiazdki",
+        "1": "1 gwiazdka",
+        "none": "Bez oceny"
+      },
+      "sentiment": {
+        "positive": "Pozytywny",
+        "neutral": "Neutralny",
+        "mixed": "Mieszany",
+        "negative": "Negatywny",
+        "other": "Inny"
+      },
+      "length": {
+        "short": "Poniżej 50 znaków",
+        "medium": "50–199 znaków",
+        "long": "200–999 znaków",
+        "very_long": "1000 znaków lub więcej"
+      }
+    }
+  },
+  "fields": {
+    "title": "Pola",
+    "description": "Co oznacza każde zapisane pole opinii: jego typ, który krok je ustawia, czy zawiera dane osobowe, co robi z nim zasada źródła „zamaskuj” lub „tylko podsumowanie” oraz jego dozwolone wartości. Znaczenia są po angielsku.",
+    "loading": "Wczytywanie pól…",
+    "empty": "API nie zwróciło żadnych pól.",
+    "caption": "Pola opinii ({{table}})",
+    "keyBadge": "klucz",
+    "redact": "Maskowanie: {{effect}}",
+    "summaryOnly": "Tylko podsumowanie: {{effect}}",
+    "columns": {
+      "field": "Pole",
+      "type": "Typ",
+      "meaning": "Znaczenie",
+      "setBy": "Ustawia",
+      "personalData": "Dane osobowe",
+      "policies": "Przy maskowaniu / tylko podsumowaniu",
+      "values": "Wartości"
+    },
+    "pii": {
+      "customer_text": "Tekst klienta",
+      "personal": "Dane osobowe",
+      "derived_text": "Wywiedzione z tekstu klienta",
+      "none": "Brak"
+    },
+    "effects": {
+      "kept": "zachowane",
+      "redacted": "zamaskowane",
+      "dropped": "usunięte",
+      "from_redacted": "wywiedzione z zamaskowanego tekstu",
+      "replaced": "zastąpione"
+    }
+  }
+}

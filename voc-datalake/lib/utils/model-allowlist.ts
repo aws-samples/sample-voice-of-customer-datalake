@@ -8,22 +8,51 @@
  *
  * A model that is selectable but not invocable AccessDenies the whole surface,
  * so every bedrock:InvokeModel* grant across the stacks (api, processing,
- * ingestion) is built from allowlistedModelArns(), the BedrockAccessStack
- * agreements from ALLOWED_FOUNDATION_MODEL_IDS, and the cdk-nag suppressions
- * from bedrockFoundationModelSuppressionTargets() — all derived from the one
+ * ingestion) is built from allowlistedModelArns() (by lib/utils/claude-model-grant.ts,
+ * with no Region wildcard, so no cdk-nag acknowledgement) and the BedrockAccessStack
+ * agreements from ALLOWED_FOUNDATION_MODEL_IDS — both derived from the one
  * list below.
  *
- * Note on Opus 4.8: it is a selectable model in its own right AND the model
- * Opus 5 automatically falls back to when its safety classifiers decline a
- * higher-risk request. Both roles need the same grant, so no separate tier is
- * required here. (repo-review takes the opposite stance — see its
+ * Note on Opus 5 and Opus 4.8: each is a selectable model in its own right AND
+ * a safety-fallback target — Opus 5.5 re-runs a request its classifiers decline
+ * on Opus 5, and Opus 5 on Opus 4.8. Both roles need the same grant, so no
+ * separate tier is required here. (repo-review takes the opposite stance — see its
  * `fallbackModelIds`, where 4.8 is granted for fallback but may never be
  * configured as the primary model.)
  */
 
+import * as cdk from 'aws-cdk-lib';
+import { RegionInfo } from 'aws-cdk-lib/region-info';
+import type { IConstruct } from 'constructs';
+
+import { inferenceScopeOf, type InferenceScope } from './inference-scope';
+
+/**
+ * The ARN partition (`aws`, `aws-cn`, `aws-us-gov`, ...) of `region`, so no ARN hardcodes `arn:aws:`.
+ * A concrete region gives its literal partition from RegionInfo, so the commercial-partition template is
+ * byte-identical to a hardcoded `arn:aws:`; an unresolved (token) region, or one RegionInfo does not
+ * know, falls back to the `AWS::Partition` pseudo parameter. Unlike `Stack.partition`, it does not depend
+ * on the `@aws-cdk/core:enablePartitionLiterals` flag (absent from the specs' synth context). Added 5.49
+ * wave (the CDK partition lint rule); also used by api-routes.ts.
+ */
+export function partitionOf(region: string): string {
+  if (cdk.Token.isUnresolved(region)) return cdk.Aws.PARTITION;
+  return RegionInfo.get(region).partition ?? cdk.Aws.PARTITION;
+}
+
 /** Strip the `global.` cross-region prefix to get the foundation-model id. */
-function toFoundationModelId(inferenceProfileId: string): string {
+export function toFoundationModelId(inferenceProfileId: string): string {
   return inferenceProfileId.replace(/^global\./, '');
+}
+
+/**
+ * The inference-profile id actually invoked under `scope`: the canonical
+ * `global.` id, or its `eu.` twin (docs/eu-deployment.md). Mirrored at call time
+ * by shared/model_config.py::invocation_model_id and the stream Lambda's
+ * invocationModelId.
+ */
+export function scopedModelId(canonicalId: string, scope: InferenceScope): string {
+  return scope === 'eu' ? `eu.${toFoundationModelId(canonicalId)}` : canonicalId;
 }
 
 /**
@@ -31,48 +60,130 @@ function toFoundationModelId(inferenceProfileId: string): string {
  * passes to Bedrock as `modelId`, and what the picker stores/validates.
  */
 export const ALLOWED_MODEL_IDS: readonly string[] = [
+  'global.anthropic.claude-opus-5-5',
+  'global.anthropic.claude-sonnet-5-5',
   'global.anthropic.claude-sonnet-5',
   'global.anthropic.claude-sonnet-4-6',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-haiku-5-5',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0',
 ];
 
 /**
  * Underlying foundation-model IDs. Used for Bedrock model-access agreements —
  * a model without its agreement cannot be invoked at all, which includes being
- * reached via an Opus 5 safety fallback.
+ * reached via an Opus 5.5 / Opus 5 safety fallback.
  */
 export const ALLOWED_FOUNDATION_MODEL_IDS: readonly string[] =
   ALLOWED_MODEL_IDS.map(toFoundationModelId);
 
 /**
- * IAM resource ARNs granting bedrock:InvokeModel* on every allowlisted model:
- * the region/account-scoped global inference-profile ARN plus the cross-region
- * foundation-model ARN each profile can route to.
+ * Allowlisted models verified to have an `eu.` inference profile (checked with
+ * `aws bedrock list-inference-profiles --region eu-central-1` and eu-west-1 on
+ * 2026-11, docs/eu-deployment.md; Opus 5.5 and Haiku 5.5 in eu-central-1 on
+ * 2026-10-08). Every allowlisted model is here today.
  *
- * The foundation-model ARN keeps a region wildcard (models are cross-region
- * resources) — see bedrockModelSuppressions in lib/utils/nag-suppressions.ts,
- * which derives its targets from this same list.
+ * DECISION for a future model WITHOUT an `eu.` profile: it is excluded from the
+ * EU picker (not silently routed to an in-region foundation id, whose quotas and
+ * feature set differ). model-allowlist.test.ts fails when a model is added to
+ * ALLOWED_MODEL_IDS without being listed here, forcing that decision.
  */
-export function allowlistedModelArns(region: string, account: string): string[] {
-  const arns: string[] = [];
-  for (const id of ALLOWED_MODEL_IDS) {
-    arns.push(`arn:aws:bedrock:${region}:${account}:inference-profile/${id}`);
-    arns.push(`arn:aws:bedrock:*::foundation-model/${toFoundationModelId(id)}`);
+export const EU_PROFILE_MODEL_IDS: readonly string[] = [
+  'global.anthropic.claude-opus-5-5',
+  'global.anthropic.claude-sonnet-5-5',
+  'global.anthropic.claude-sonnet-5',
+  'global.anthropic.claude-sonnet-4-6',
+  'global.anthropic.claude-opus-5',
+  'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-haiku-5-5',
+  'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+];
+
+/**
+ * Destination Regions of the `eu.` inference profiles, by SOURCE Region (the region the app deploys to).
+ *
+ * Source: the "Geo: EU" table on each allowlisted model's card in the Bedrock user guide
+ * (https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-<model>.html, read
+ * 2026-11 for all eight models; the table was identical for every one, so ONE table serves the allowlist).
+ * Geographic cross-Region inference authorizes the foundation model in EVERY destination Region
+ * (https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html), so a
+ * destination AWS adds later is an AccessDenied on the calls routed there until it is listed here.
+ * Confirmed 2026-11-02 with `aws bedrock get-inference-profile --region <source> --inference-profile-identifier
+ * eu.<model>` (`models[].modelArn`) for all eight models from every source Region below except the opt-in
+ * eu-south-1 / eu-south-2 (not enabled in the test account; they rest on the model cards). A geographic
+ * profile's destination list does not change (inference-profiles-support.html). A model whose table differs needs its own entry before it is added
+ * to EU_PROFILE_MODEL_IDS.
+ */
+const EU_CORE_DESTINATIONS = ['eu-central-1', 'eu-north-1', 'eu-south-1', 'eu-south-2', 'eu-west-1', 'eu-west-3'] as const;
+export const EU_PROFILE_DESTINATION_REGIONS: Readonly<Record<string, readonly string[]>> = {
+  'eu-central-1': EU_CORE_DESTINATIONS,
+  'eu-central-2': [...EU_CORE_DESTINATIONS, 'eu-central-2'],
+  'eu-north-1': EU_CORE_DESTINATIONS,
+  'eu-south-1': EU_CORE_DESTINATIONS,
+  'eu-south-2': EU_CORE_DESTINATIONS,
+  'eu-west-1': EU_CORE_DESTINATIONS,
+  'eu-west-2': [...EU_CORE_DESTINATIONS, 'eu-west-2'],
+  'eu-west-3': EU_CORE_DESTINATIONS,
+};
+
+/** The `eu.` profiles' destination Regions from `region`; throws for a region with no `eu.` profiles (or a token). */
+export function euProfileDestinations(region: string): readonly string[] {
+  const destinations = cdk.Token.isUnresolved(region) ? undefined : EU_PROFILE_DESTINATION_REGIONS[region];
+  if (destinations === undefined) {
+    throw new Error(
+      `-c inferenceScope=eu needs the app deployed to an EU source Region of the eu. inference profiles `
+      + `(${Object.keys(EU_PROFILE_DESTINATION_REGIONS).join(', ')}); got ${cdk.Token.isUnresolved(region) ? 'an unresolved region' : region}. `
+      + 'See docs/eu-deployment.md.',
+    );
   }
-  return arns;
+  return destinations;
 }
 
 /**
- * cdk-nag `appliesTo` entries for the wildcard-region foundation-model ARNs
- * produced by allowlistedModelArns(). Derived rather than hand-listed so a
- * model added above can't leave a stale or missing suppression behind.
+ * The IAM resources one allowlisted Claude model needs under `scope`, in the three parts AWS documents for
+ * cross-Region inference (global: .../global-cross-region-inference.html; eu: .../geographic-cross-region-inference.html):
+ *  - `profile`: the inference profile in the app region, the `modelId` the code sends (global: with
+ *    `aws:RequestedRegion` = `requestingRegion`; no profile condition either way);
+ *  - `regionalModels`: the foundation model in the app region (global) or in every destination Region of
+ *    the `eu.` profile (eu), granted only with `bedrock:InferenceProfileArn` = `profile` (global: and
+ *    `aws:RequestedRegion` = `requestingRegion`);
+ *  - `globalModel`: the Region-agnostic `arn:…:bedrock:::foundation-model/<model>` (global only), granted with
+ *    `aws:RequestedRegion` = `unspecified` and the same profile condition.
+ * Global follows the global-cross-region-inference.html example condition for condition; eu follows the
+ * geographic-cross-region-inference.html example, which has no `aws:RequestedRegion` (the destination
+ * evaluations carry the destination Region). No Region wildcard anywhere.
  */
-export function bedrockFoundationModelSuppressionTargets(): string[] {
-  return ALLOWED_FOUNDATION_MODEL_IDS.map(
-    (id) => `Resource::arn:aws:bedrock:*::foundation-model/${id}`,
-  );
+export interface ClaudeModelArns {
+  readonly profile: string;
+  readonly regionalModels: readonly string[];
+  readonly globalModel?: string;
+  /** Global only: the app region, the `aws:RequestedRegion` value of the profile and in-Region model parts. */
+  readonly requestingRegion?: string;
+}
+
+/** {@link ClaudeModelArns} for every allowlisted model (eu: only those with a verified `eu.` profile). */
+export function allowlistedModelArns(region: string, account: string, scope: InferenceScope): ClaudeModelArns[] {
+  const models = scope === 'eu' ? ALLOWED_MODEL_IDS.filter((id) => EU_PROFILE_MODEL_IDS.includes(id)) : ALLOWED_MODEL_IDS;
+  const partition = partitionOf(region);
+  const modelRegions = scope === 'eu' ? euProfileDestinations(region) : [region];
+  return models.map((id) => {
+    const model = toFoundationModelId(id);
+    const profile = `arn:${partition}:bedrock:${region}:${account}:inference-profile/${scopedModelId(id, scope)}`;
+    const regionalModels = modelRegions.map((r) => `arn:${partition}:bedrock:${r}::foundation-model/${model}`);
+    return scope === 'eu'
+      ? { profile, regionalModels }
+      : { profile, regionalModels, globalModel: `arn:${partition}:bedrock:::foundation-model/${model}`, requestingRegion: region };
+  });
+}
+
+/**
+ * {@link allowlistedModelArns} for the stack `scope` lives in, under the app's inference scope
+ * (`-c inferenceScope`). The grant itself is built by lib/utils/claude-model-grant.ts.
+ */
+export function stackModelArns(scope: IConstruct): ClaudeModelArns[] {
+  const stack = cdk.Stack.of(scope);
+  return allowlistedModelArns(stack.region, stack.account, inferenceScopeOf(stack));
 }
 
 /**
@@ -110,6 +221,18 @@ export function bedrockFoundationModelSuppressionTargets(): string[] {
  */
 export const IMAGE_MODEL_ID = 'stability.stable-image-core-v1:1';
 
+/**
+ * AWS Marketplace product id of IMAGE_MODEL_ID — the `aws-marketplace:ProductId`
+ * value that scopes the `aws-marketplace:Subscribe` grant to this one listing.
+ * MUST change together with IMAGE_MODEL_ID (model-allowlist.test.ts pins the pair).
+ *
+ * Source: the "Stable Image Core 1.0" row of
+ * https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-product-ids.html
+ * (`aws bedrock get-foundation-model --model-identifier <IMAGE_MODEL_ID>
+ * --region us-west-2` reports modelName "Stable Image Core 1.0").
+ */
+export const IMAGE_MODEL_MARKETPLACE_PRODUCT_ID = 'prod-eacdrmv7zfc5e';
+
 /** Image generators are region-limited; the avatar client pins this one. */
 export const IMAGE_MODEL_REGION = 'us-west-2';
 
@@ -120,16 +243,34 @@ export const IMAGE_MODEL_REGION = 'us-west-2';
  * suppression.
  */
 export function imageModelArn(): string {
-  return `arn:aws:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`;
+  return `arn:${partitionOf(IMAGE_MODEL_REGION)}:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`;
+}
+
+/**
+ * ── Memory embedding model ────────────────────────────────────────────────────
+ *
+ * Titan Text Embeddings V2 (1024 dims) — memory dedup (cosine ≥ 0.86) and
+ * retrieval. Like the image model it is NOT a picker choice: embeddings stored
+ * in voc-memory are only comparable when they come from one model, so letting
+ * an admin repoint it would silently break every stored vector. Region-scoped
+ * (invoked in the stack's own region), so the grant needs no cdk-nag
+ * suppression. Mirrored by the memory Lambdas' model constant.
+ */
+export const EMBEDDING_MODEL_ID = 'amazon.titan-embed-text-v2:0';
+
+/** IAM resource ARN for {@link EMBEDDING_MODEL_ID} in `region`. */
+export function embeddingModelArn(region: string): string {
+  return `arn:${partitionOf(region)}:bedrock:${region}::foundation-model/${EMBEDDING_MODEL_ID}`;
 }
 
 /**
  * ── Image limits for visual grounding ─────────────────────────────────────────
  *
- * Caps for any image this platform sends to Bedrock as part of a prompt. Mirrored
- * in `lambda/shared/image_limits.py`; a lockstep test
- * (`lambda/shared/test/test_image_limits_lockstep.py`) reads this file as source
- * text and fails on drift.
+ * Caps for any image this platform sends to Bedrock as part of a prompt.
+ * `MAX_IMAGE_BYTES` is mirrored in `lambda/shared/image_limits.py`, and a lockstep
+ * test (`lambda/shared/test/test_image_limits_lockstep.py`) reads this file as
+ * source text and fails on drift. `MAX_IMAGE_DIMENSION_PX` reaches the extractor
+ * through its Lambda environment instead.
  *
  * WHY HARDCODED NUMBERS ARE SAFE HERE, given the admin model picker:
  *
@@ -158,13 +299,3 @@ export const MAX_IMAGE_BYTES = 3_750_000;
 
 /** Max pixels on either side of an image in a Converse message. */
 export const MAX_IMAGE_DIMENSION_PX = 8000;
-
-/**
- * Max images in a single Converse message.
- *
- * Not load-bearing yet — the extractor attaches one image per call, so nothing
- * currently counts against this. It is defined now so that a later rung putting
- * several visuals into one prompt reaches for this constant instead of inventing
- * its own number next to the other two.
- */
-export const MAX_IMAGES_PER_MESSAGE = 20;

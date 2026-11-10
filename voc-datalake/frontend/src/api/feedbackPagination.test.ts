@@ -1,7 +1,8 @@
 /**
  * @fileoverview Tests for shared /feedback offset pagination (U5b).
  */
-import { FEEDBACK_PAGE_LIMIT, nextPageOffset } from './feedbackPagination'
+import { FEEDBACK_PAGE_LIMIT, cursorFieldsOf, nextPageOffset, nextPageToken } from './feedbackPagination'
+import { at } from '@test/defined'
 
 describe('FEEDBACK_PAGE_LIMIT', () => {
   // Pins the client page size to the server's `max_val`. /feedback clamps a
@@ -27,7 +28,7 @@ describe('nextPageOffset', () => {
 
   it('returns undefined once the loaded rows cover the total', () => {
     const pages = [page(100, 250), page(100, 250), page(50, 250)]
-    expect(nextPageOffset(pages[2], pages)).toBeUndefined()
+    expect(nextPageOffset(at(pages, 2), pages)).toBeUndefined()
   })
 
   it('treats a full page as the last one when it completes the total', () => {
@@ -47,7 +48,7 @@ describe('nextPageOffset', () => {
     // Anti-spin guard: a server reporting `total > loaded` while returning no
     // rows must not keep the caller asking forever.
     const pages = [page(100, 500), page(0, 500)]
-    expect(nextPageOffset(pages[1], pages)).toBeUndefined()
+    expect(nextPageOffset(at(pages, 1), pages)).toBeUndefined()
   })
 
   it('falls back to the item count when the response omits count', () => {
@@ -66,14 +67,39 @@ describe('nextPageOffset', () => {
     // means a response that omits it pins the cursor to one page length and
     // hands back the same offset forever — an endless walk over duplicate rows.
     const pages = [page(100, 500), page(100, 500), page(100, 500)]
-    expect(nextPageOffset(pages[0], pages.slice(0, 1))).toBe(100)
-    expect(nextPageOffset(pages[1], pages.slice(0, 2))).toBe(200)
-    expect(nextPageOffset(pages[2], pages)).toBe(300)
+    expect(nextPageOffset(at(pages, 0), pages.slice(0, 1))).toBe(100)
+    expect(nextPageOffset(at(pages, 1), pages.slice(0, 2))).toBe(200)
+    expect(nextPageOffset(at(pages, 2), pages)).toBe(300)
   })
 
   it('ignores a wrong offset echo entirely', () => {
     // Even a server echoing a nonsense offset cannot misdirect the cursor.
     const first = { count: 100, total: 250, offset: 9999 }
     expect(nextPageOffset(first, [first])).toBe(100)
+  })
+})
+
+describe('cursorFieldsOf (urgent / search wire boundary)', () => {
+  it('reads the cursor fields of a page', () => {
+    expect(cursorFieldsOf({ total: 110, has_more: true, next_token: 'abc', items: [] }))
+      .toStrictEqual({ total: 110, has_more: true, next_token: 'abc' })
+  })
+
+  it.each([
+    ['a legacy page without the fields', { count: 3 }],
+    ['malformed fields', { total: -1, has_more: 'yes', next_token: '' }],
+    ['a non-object', 'oops'],
+  ])('degrades %s to "no more pages"', (_name, raw) => {
+    expect(cursorFieldsOf(raw)).toStrictEqual({ total: null, has_more: false, next_token: null })
+  })
+})
+
+describe('nextPageToken', () => {
+  it.each([
+    [{ total: null, has_more: true, next_token: 't' }, 't'],
+    [{ total: null, has_more: false, next_token: 't' }, undefined],
+    [{ total: null, has_more: true, next_token: null }, undefined],
+  ])('%o → %s', (page, expected) => {
+    expect(nextPageToken(page)).toBe(expected)
   })
 })

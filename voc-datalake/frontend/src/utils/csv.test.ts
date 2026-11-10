@@ -16,12 +16,14 @@ describe('csvField', () => {
     expect(csvField(undefined)).toBe('""')
   })
 
-  it('neutralizes spreadsheet formula injection on leading = + - @ and control chars', () => {
-    expect(csvField('=SUM(A1:A9)')).toBe('"\'=SUM(A1:A9)"')
-    expect(csvField('+1234')).toBe('"\'+1234"')
-    expect(csvField('-2+3')).toBe('"\'-2+3"')
-    expect(csvField('@cmd')).toBe('"\'@cmd"')
-    expect(csvField('\t=1+1')).toBe('"\'\t=1+1"')
+  it.each([
+    ['=SUM(A1:A9)', '"\'=SUM(A1:A9)"'],
+    ['+1234', '"\'+1234"'],
+    ['-2+3', '"\'-2+3"'],
+    ['@cmd', '"\'@cmd"'],
+    ['\t=1+1', '"\'\t=1+1"'],
+  ])('neutralizes spreadsheet formula injection: %j → %j', (input, expected) => {
+    expect(csvField(input)).toBe(expected)
   })
 
   it('leaves interior special characters untouched', () => {

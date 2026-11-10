@@ -3,6 +3,9 @@
  */
 import { describe, it, expect } from 'vitest'
 import { applyResolution, buildResolutionKey } from './problemResolution'
+import { makeProblemGroup } from './problem-analysis-fixtures'
+import type { CategoryGroup, ProblemGroup } from '../../api/problemsApi'
+import { at } from '@test/defined'
 
 describe('buildResolutionKey', () => {
   it('joins category, subcategory, and normalized problem text', () => {
@@ -46,20 +49,22 @@ describe('buildResolutionKey', () => {
     const emojiProblem = '📦🚚💥 delayed '.repeat(30)
     const key = buildResolutionKey('delivery', 'speed', emojiProblem)
     expect(new TextEncoder().encode(key).length).toBeLessThanOrEqual(255)
-    // isWellFormed is the real check: a key may legitimately END with a
+    // Well-formedness is the real check: a key may legitimately END with a
     // complete emoji (whose last code unit is a low surrogate) — only
-    // UNPAIRED surrogates make the string malformed.
-    expect(key.isWellFormed()).toBe(true)
+    // UNPAIRED surrogates make the string malformed. In a `u` regex a valid
+    // pair is one code point, so the surrogate range matches only a lone half
+    // (the `String#isWellFormed` test, without needing the ES2024 lib).
+    expect(key).not.toMatch(/[\uD800-\uDFFF]/u)
   })
 })
 
-const makeProblem = (problem: string, items: number, urgent: number) => ({
+const makeProblem = (problem: string, count: number, urgent: number): ProblemGroup => makeProblemGroup({
   problem,
-  items: Array.from({ length: items }, (_, i) => ({ id: i })),
+  count,
   urgentCount: urgent,
 })
 
-const tree = () => ([
+const tree = (): CategoryGroup[] => ([
   {
     category: 'delivery',
     totalItems: 5,
@@ -69,6 +74,7 @@ const tree = () => ([
         subcategory: 'speed',
         totalItems: 5,
         urgentCount: 3,
+        problemCount: 2,
         problems: [
           makeProblem('slow delivery', 3, 2),
           makeProblem('lost packages', 2, 1),
@@ -87,11 +93,13 @@ describe('applyResolution', () => {
     const { visible, resolvedCount } = applyResolution(tree(), resolvedMap, false)
 
     expect(resolvedCount).toBe(1)
-    expect(visible[0].subcategories[0].problems.map((p) => p.problem)).toEqual(['lost packages'])
-    expect(visible[0].subcategories[0].totalItems).toBe(2)
-    expect(visible[0].subcategories[0].urgentCount).toBe(1)
-    expect(visible[0].totalItems).toBe(2)
-    expect(visible[0].urgentCount).toBe(1)
+    const category = visible.at(0)
+    const subcategory = category?.subcategories.at(0)
+    expect({
+      problems: subcategory?.problems.map((p) => p.problem),
+      subcategoryTotals: [subcategory?.totalItems, subcategory?.urgentCount],
+      categoryTotals: [category?.totalItems, category?.urgentCount],
+    }).toStrictEqual({ problems: ['lost packages'], subcategoryTotals: [2, 1], categoryTotals: [2, 1] })
   })
 
   it('drops categories whose problems are all resolved', () => {
@@ -101,24 +109,40 @@ describe('applyResolution', () => {
     }
     const { visible, resolvedCount } = applyResolution(tree(), allResolved, false)
 
-    expect(visible).toEqual([])
+    expect(visible).toStrictEqual([])
     expect(resolvedCount).toBe(2)
   })
 
   it('keeps resolved problems annotated when showResolved is on', () => {
     const { visible, resolvedCount } = applyResolution(tree(), resolvedMap, true)
 
-    const problems = visible[0].subcategories[0].problems
+    const problems = at(at(visible, 0).subcategories, 0).problems
     expect(resolvedCount).toBe(1)
     expect(problems).toHaveLength(2)
     expect(problems.find((p) => p.problem === 'slow delivery')?.resolved).toBe(true)
     expect(problems.find((p) => p.problem === 'lost packages')?.resolved).toBe(false)
   })
 
+  it('subtracts a resolved problem from totals that cover an unlisted tail', () => {
+    // The server lists the largest problems only; its totals cover all of them.
+    const category = at(tree(), 0)
+    const sub = at(category.subcategories, 0)
+    const truncated: CategoryGroup[] = [{ ...category, subcategories: [{ ...sub, totalItems: 50, urgentCount: 9, problemCount: 12 }] }]
+    const allListedResolved = {
+      'delivery|speed|slow delivery': { resolved_at: '2026-07-01T00:00:00Z' },
+      'delivery|speed|lost packages': { resolved_at: '2026-07-01T00:00:00Z' },
+    }
+    const { visible } = applyResolution(truncated, allListedResolved, false)
+
+    const kept = at(at(visible, 0).subcategories, 0)
+    expect([kept.problems.length, kept.problemCount, kept.totalItems, kept.urgentCount]).toStrictEqual([0, 10, 45, 6])
+    expect(at(visible, 0).totalItems).toBe(45)
+  })
+
   it('is a no-op with an empty resolved map', () => {
     const { visible, resolvedCount } = applyResolution(tree(), {}, false)
 
     expect(resolvedCount).toBe(0)
-    expect(visible[0].subcategories[0].problems).toHaveLength(2)
+    expect(at(at(visible, 0).subcategories, 0).problems).toHaveLength(2)
   })
 })

@@ -38,11 +38,10 @@ import { apiErrorStatus, isPermanentRefusal } from '../../api/apiErrorStatus'
 import { prioritizationRowsApi } from '../../api/prioritizationRowsApi'
 import type { RowCompositionActions } from './RowCompositionPanel'
 import type { PrioritizationRowView } from './prioritizationUtils'
-import type { ProjectDocument } from '../../api/types'
 import type { RefObject } from 'react'
 
 /** Which of the three writes a failure is about. */
-export type RowAction = 'compose' | 'recompose' | 'delete'
+type RowAction = 'compose' | 'recompose' | 'delete'
 
 /**
  * A write that did not land, as the page states it.
@@ -126,7 +125,7 @@ export interface RowLifecycle {
    * The two halves belong in one call because they are one event: dismissing unmounts
    * the button the reader just pressed, so a keyboard reader is dropped on `<body>` at
    * the top of the document unless something claims focus in the same handler. The
-   * anchor is the control that OWNS the write (see `anchorFor`), not whatever happened
+   * anchor is the control that OWNS the write (see `anchor` below), not whatever happened
    * to be focused when the panel appeared — the picker's Save and the confirm dialog
    * both unmount as they submit, so `document.activeElement` at that moment is
    * frequently a node about to be detached.
@@ -154,13 +153,7 @@ export interface RowLifecycle {
 export function useRowLifecycle({
   candidatesByProject, rowsByProject, rowCountSettled, canDelete, fallbackFocus,
   onRowsChanged, onRowDeleted,
-}: {
-  readonly candidatesByProject: ReadonlyMap<string, readonly ProjectDocument[]>
-  /** How many rows each project has, for the delete's courtesy gate — see the panel. */
-  readonly rowsByProject: ReadonlyMap<string, number>
-  /** Whether that count may be STATED as a reason, not only acted on — see the panel. */
-  readonly rowCountSettled: boolean
-  readonly canDelete: boolean
+}: Pick<RowCompositionActions, 'candidatesByProject' | 'rowsByProject' | 'rowCountSettled' | 'canDelete'> & {
   /**
    * Somewhere on the page that OUTLIVES any row, for a dismissal whose own anchor is
    * gone — see `restoreFocus`. The page supplies its heading; anything that survives a

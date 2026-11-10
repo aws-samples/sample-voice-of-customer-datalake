@@ -7,6 +7,7 @@
  * survive, because the service generated it.
  */
 import { describe, it, expect } from 'vitest';
+import { nth } from './lib/nth-fixtures.js';
 import {
   clampHistoryToBudget,
   MAX_HISTORY_CONTENT_LENGTH,
@@ -28,7 +29,7 @@ describe('derived bounds', () => {
     // The whole point of the derivation: 4 chars/token against the model ceiling.
     expect(MAX_HISTORY_CONTENT_LENGTH).toBe(MAX_OUTPUT_TOKENS * 4);
     const longest = turn('a'.repeat(MAX_HISTORY_CONTENT_LENGTH));
-    expect(clampHistoryToBudget([longest])[0]?.content).toHaveLength(MAX_HISTORY_CONTENT_LENGTH);
+    expect(clampHistoryToBudget([longest])[0]?.content).toBe(longest.content);
   });
 
   it('leaves the aggregate ceiling above a single full-length turn', () => {
@@ -47,14 +48,15 @@ describe('clampHistoryToBudget', () => {
   });
 
   it('truncates an over-long turn to exactly the bound, marker included', () => {
-    const [entry] = clampHistoryToBudget([turn('a'.repeat(MAX_HISTORY_CONTENT_LENGTH + 1))]);
-    expect(entry?.content).toHaveLength(MAX_HISTORY_CONTENT_LENGTH);
-    expect(entry?.content.endsWith(TRUNCATION_MARKER)).toBe(true);
+    const entry = nth(clampHistoryToBudget([turn('a'.repeat(MAX_HISTORY_CONTENT_LENGTH + 1))]), 0);
+    expect(entry.content).toHaveLength(MAX_HISTORY_CONTENT_LENGTH);
+    expect(TRUNCATION_MARKER).toBe('\n\n[... truncated]');
+    expect(entry.content).toBe(`${'a'.repeat(MAX_HISTORY_CONTENT_LENGTH - TRUNCATION_MARKER.length)}${TRUNCATION_MARKER}`);
   });
 
   it('preserves the role when truncating', () => {
-    const [entry] = clampHistoryToBudget([turn('a'.repeat(MAX_HISTORY_CONTENT_LENGTH + 1), 'user')]);
-    expect(entry?.role).toBe('user');
+    const entry = nth(clampHistoryToBudget([turn('a'.repeat(MAX_HISTORY_CONTENT_LENGTH + 1), 'user')]), 0);
+    expect(entry.role).toBe('user');
   });
 
   it('keeps only the most recent turns once the count budget is spent', () => {

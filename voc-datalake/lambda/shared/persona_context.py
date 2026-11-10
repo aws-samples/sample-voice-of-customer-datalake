@@ -24,10 +24,9 @@ never received.
 
 Compact on purpose, and capped. The research path carries this string across a
 Step Functions state boundary (256 KB ceiling) and the chat paths compete with
-the history budget, so this is deliberately NOT
-`projects.py::_persona_to_markdown` — that renderer is whole-document, uncapped,
-and opens an `# H1` per persona, which would flatten the heading structure of the
-prompt it is embedded in. Its field paths are reused; its format is not.
+the history budget, so this is deliberately NOT a whole-document renderer (the
+retired Kiro autoseed export had one: uncapped, an `# H1` per persona, which would
+flatten the heading structure of the prompt it is embedded in).
 """
 from collections.abc import Sequence
 from typing import Any
@@ -82,9 +81,8 @@ def _clean_items(value: Any, limit: int) -> list[str]:
 def persona_voice(persona: dict[str, Any]) -> str:
     """The persona's representative quote, or ''.
 
-    `quotes` is a list of `{text, context}` objects. The `isinstance` tolerance is
-    copied from `_persona_to_markdown`, which already handles rows whose quotes
-    are bare strings.
+    `quotes` is a list of `{text, context}` objects; rows whose quotes are bare
+    strings are tolerated too.
     """
     quotes = persona.get('quotes')
     if not isinstance(quotes, (list, tuple)):
@@ -122,12 +120,12 @@ def persona_frustrations(persona: dict[str, Any], max_items: int = DEFAULT_MAX_I
     if not isinstance(section, dict):
         return []
     pains = _clean_items(section.get('current_challenges'), max_items)
-    if len(pains) < max_items:
+    # The slice below is the cap; this guard only skips work when the challenges
+    # already fill it, so `<=` here is indistinguishable from `<` to any caller.
+    if len(pains) < max_items:  # pragma: no mutate  equivalent: the final slice caps the result
         for blocker in _clean_items(section.get('blockers'), max_items):
             if blocker not in pains:
                 pains.append(blocker)
-            if len(pains) >= max_items:
-                break
     return pains[:max_items]
 
 

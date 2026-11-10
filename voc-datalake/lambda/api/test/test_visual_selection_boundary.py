@@ -22,9 +22,9 @@ same keyed-on-the-whole-composite-key table, same (response, config, table,
 invoke) tuple, so the two files' assertions mean the same thing.
 """
 import json
-from unittest.mock import MagicMock, patch
 
 import pytest
+from build_prototype_fixtures import build_prototype_against
 
 PROJECT = 'proj_1'
 OTHER_PROJECT = 'proj_2'
@@ -55,7 +55,6 @@ def build_prototype(api_gateway_event, lambda_context):
     def _call(body):
         from projects_handler import MAX_SELECTED_PRODUCT_DOC_IDS
 
-        table = MagicMock()
         documents = {
             # Real documents in this project, of OTHER types. `prd_1` is the
             # fixture that fails if the `PRODUCT_DOC#` prefix is ever dropped.
@@ -75,25 +74,34 @@ def build_prototype(api_gateway_event, lambda_context):
             # `doc_gone` is deliberately absent — it is the unresolvable fixture.
         }
 
-        def get_item(Key=None, **kwargs):
-            key = (Key or {})
-            item = documents.get((key.get('pk', ''), key.get('sk', '')))
-            return {'Item': item} if item else {}
-
-        table.get_item.side_effect = get_item
-
-        with patch('projects_handler.get_projects_table', return_value=table), \
-                patch('projects_handler.create_job', return_value=('job_1', {})) as create_job, \
-                patch('projects_handler.invoke_lambda_async') as invoke:
-            from projects_handler import lambda_handler
-            response = lambda_handler(
-                api_gateway_event(method='POST', path=PATH, body=body, path_params={'project_id': PROJECT}),
-                lambda_context,
-            )
-        config = create_job.call_args.args[3] if create_job.call_args else None
-        return response, config, table, invoke, create_job
+        return build_prototype_against(
+            documents, body, api_gateway_event, lambda_context, project_id=PROJECT, path=PATH,
+        )
 
     return _call
+
+
+
+def _assert_refused_before_the_job(response, status, config, invoke, create_job):
+    """Refused naming `selected_product_doc_ids`, with no job row, config or build.
+
+    Both side effects are asserted because either alone can survive a badly
+    ordered check (see `build_prototype`)."""
+    assert response['statusCode'] == status
+    assert 'selected_product_doc_ids' in json.loads(response['body'])['error']
+    create_job.assert_not_called()
+    assert config is None
+    invoke.assert_not_called()
+
+
+def _keys_read_by_a_refused_build(build_prototype, document_id):
+    """Build selecting only `document_id`, assert it is a 404 refused before the
+    job, and return the `Key` of every `get_item` the attempt made."""
+    response, config, table, invoke, create_job = build_prototype(
+        {'selected_product_doc_ids': [document_id]},
+    )
+    _assert_refused_before_the_job(response, 404, config, invoke, create_job)
+    return [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
 
 
 class TestASelectionOfVisualsIsAccepted:
@@ -157,7 +165,7 @@ class TestNotSelectingVisualsStillBuilds:
     request shape every caller sent before this field existed.
     """
 
-    @pytest.mark.parametrize('body, label', [
+    @pytest.mark.parametrize(('body', 'label'), [
         pytest.param({}, 'absent', id='absent'),
         pytest.param({'selected_product_doc_ids': None}, 'null', id='null'),
         pytest.param({'selected_product_doc_ids': []}, 'empty', id='empty'),
@@ -201,31 +209,19 @@ class TestAnUnresolvableVisualIsRejectedBeforeAnyCost:
             {'selected_product_doc_ids': ['doc_0', 'doc_gone']},
         )
 
-        assert response['statusCode'] == 404
-        assert 'selected_product_doc_ids' in json.loads(response['body'])['error']
-        create_job.assert_not_called()
-        assert config is None
-        invoke.assert_not_called()
+        _assert_refused_before_the_job(response, 404, config, invoke, create_job)
 
     def test_another_projects_visual_is_rejected(self, build_prototype):
         """`doc_other` is a real product doc, in `proj_2`. This is the fixture that
         fails the moment `pk` is dropped from the lookup — it is the difference
         between "you may not read that" and "that does not exist"."""
-        response, config, table, invoke, create_job = build_prototype(
-            {'selected_product_doc_ids': ['doc_other']},
-        )
+        keys = _keys_read_by_a_refused_build(build_prototype, 'doc_other')
 
-        assert response['statusCode'] == 404
-        assert 'selected_product_doc_ids' in json.loads(response['body'])['error']
-        create_job.assert_not_called()
-        assert config is None
-        invoke.assert_not_called()
         # Asserted on the key as well: the id never addresses another partition.
-        keys = [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
         assert keys, 'expected at least one keyed read'
         assert {k.get('pk') for k in keys} == {f'PROJECT#{PROJECT}'}
 
-    @pytest.mark.parametrize('document_id, sk_prefix', [
+    @pytest.mark.parametrize(('document_id', 'sk_prefix'), [
         pytest.param('prd_1', 'PRD#', id='a-prd'),
         pytest.param('proto_1', 'PROTOTYPE#', id='a-prototype'),
     ])
@@ -236,18 +232,10 @@ class TestAnUnresolvableVisualIsRejectedBeforeAnyCost:
         Both of these exist in THIS project — a lookup that dropped the
         `PRODUCT_DOC#` prefix, or that checked only ownership, would resolve them
         and feed a PRD's text into the slot meant for a sampled palette."""
-        response, config, table, invoke, create_job = build_prototype(
-            {'selected_product_doc_ids': [document_id]},
-        )
+        keys = _keys_read_by_a_refused_build(build_prototype, document_id)
 
-        assert response['statusCode'] == 404
-        assert 'selected_product_doc_ids' in json.loads(response['body'])['error']
-        create_job.assert_not_called()
-        assert config is None
-        invoke.assert_not_called()
         # The read that was actually attempted addressed the visual namespace, so
         # the id resolving elsewhere is exactly what did not save it.
-        keys = [call.kwargs.get('Key', {}) for call in table.get_item.call_args_list]
         assert {'pk': f'PROJECT#{PROJECT}', 'sk': f'PRODUCT_DOC#{document_id}'} in keys
         assert not any(
             str(k.get('sk', '')) == f'{sk_prefix}{document_id}' for k in keys
@@ -261,11 +249,7 @@ class TestAnUnresolvableVisualIsRejectedBeforeAnyCost:
             {'selected_product_doc_ids': ['x' * 5000]},
         )
 
-        assert response['statusCode'] == 400
-        assert 'selected_product_doc_ids' in json.loads(response['body'])['error']
-        create_job.assert_not_called()
-        assert config is None
-        invoke.assert_not_called()
+        _assert_refused_before_the_job(response, 400, config, invoke, create_job)
         # Rejected before the key was ever built.
         assert not any(
             'x' * 5000 in str(call.kwargs.get('Key', {}))
@@ -283,12 +267,8 @@ class TestTheSelectionSizeIsBoundedBeforeAnyRead:
             {'selected_product_doc_ids': [f'doc_{i}' for i in range(500)]},
         )
 
-        assert response['statusCode'] == 400
-        assert 'selected_product_doc_ids' in json.loads(response['body'])['error']
+        _assert_refused_before_the_job(response, 400, config, invoke, create_job)
         table.get_item.assert_not_called()
-        create_job.assert_not_called()
-        assert config is None
-        invoke.assert_not_called()
 
     def test_one_over_the_bound_is_already_too_many(self, build_prototype):
         """The boundary itself, paired with `test_a_selection_at_the_bound_is_accepted`:
@@ -363,11 +343,7 @@ class TestTheSelectionMustBeAList:
             {'selected_product_doc_ids': value},
         )
 
-        assert response['statusCode'] == 400
-        assert 'selected_product_doc_ids' in json.loads(response['body'])['error']
-        create_job.assert_not_called()
-        assert config is None
-        invoke.assert_not_called()
+        _assert_refused_before_the_job(response, 400, config, invoke, create_job)
         table.get_item.assert_not_called()
 
     def test_a_non_string_entry_is_a_400(self, build_prototype):
@@ -375,8 +351,4 @@ class TestTheSelectionMustBeAList:
             {'selected_product_doc_ids': ['doc_0', 7]},
         )
 
-        assert response['statusCode'] == 400
-        assert 'selected_product_doc_ids' in json.loads(response['body'])['error']
-        create_job.assert_not_called()
-        assert config is None
-        invoke.assert_not_called()
+        _assert_refused_before_the_job(response, 400, config, invoke, create_job)

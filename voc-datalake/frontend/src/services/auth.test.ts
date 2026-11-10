@@ -1,150 +1,291 @@
+/**
+ * The app pool's sign-in service against a mocked `aws-amplify/auth`: what each call hands
+ * Amplify, what reaches authStore, and how challenges, refreshes and sign-out behave.
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { SignInOutput } from 'aws-amplify/auth'
+import { fakeJwt } from '@test/fakeJwt'
 
-// Mock amazon-cognito-identity-js
-const mockAuthenticateUser = vi.fn()
-const mockGetSession = vi.fn()
-const mockRefreshSession = vi.fn()
-const mockForgotPassword = vi.fn()
-const mockConfirmPassword = vi.fn()
-const mockCompleteNewPasswordChallenge = vi.fn()
-const mockSignOut = vi.fn()
-
-// The implementations MUST be `function`, not arrow, expressions: the source calls
-// `new CognitoUserPool(...)` / `new CognitoUser(...)`, and vitest 4 honours `new` with real
-// construct semantics, which an arrow function does not support. Vitest 3 invoked the
-// implementation as a plain call even under `new`, so an arrow worked there by accident.
-vi.mock('amazon-cognito-identity-js', () => ({
-  CognitoUserPool: vi.fn().mockImplementation(function () {
-    return {
-      getCurrentUser: vi.fn().mockReturnValue({
-        getSession: mockGetSession,
-        refreshSession: mockRefreshSession,
-        signOut: mockSignOut,
-      }),
-    }
-  }),
-  CognitoUser: vi.fn().mockImplementation(function () {
-    return {
-      authenticateUser: mockAuthenticateUser,
-      forgotPassword: mockForgotPassword,
-      confirmPassword: mockConfirmPassword,
-      completeNewPasswordChallenge: mockCompleteNewPasswordChallenge,
-      getSession: mockGetSession,
-      refreshSession: mockRefreshSession,
-      signOut: mockSignOut,
-    }
-  }),
-  AuthenticationDetails: vi.fn(),
-  CognitoRefreshToken: vi.fn(),
+const amplify = vi.hoisted(() => ({
+  signIn: vi.fn(),
+  confirmSignIn: vi.fn(),
+  signOut: vi.fn(),
+  fetchAuthSession: vi.fn(),
+  resetPassword: vi.fn(),
+  confirmResetPassword: vi.fn(),
+  updatePassword: vi.fn(),
 }))
+vi.mock('aws-amplify/auth', () => amplify)
 
-// Mock config
+const cognitoConfig = vi.hoisted(() => ({ userPoolId: 'us-east-1_test123', clientId: 'testclientid123' }))
 vi.mock('../runtimeConfig', () => ({
   getRuntimeConfig: () => ({
     apiEndpoint: 'https://api.example.com',
-    cognito: {
-      userPoolId: 'us-east-1_test123',
-      clientId: 'testclientid123',
-      region: 'us-east-1',
-      identityPoolId: 'us-east-1:test-pool-id',
-    },
+    cognito: { ...cognitoConfig, region: 'us-east-1' },
   }),
   isConfigLoaded: () => true,
   loadRuntimeConfig: vi.fn(),
 }))
 
-// Mock authStore
-const mockSetUser = vi.fn()
-const mockSetTokens = vi.fn()
-const mockLogout = vi.fn()
+const configureAmplify = vi.hoisted(() => vi.fn())
+vi.mock('../lib/amplify-config', () => ({ configureAmplify }))
 
-vi.mock('../store/authStore', () => ({
-  useAuthStore: {
-    getState: () => ({
-      setUser: mockSetUser,
-      setTokens: mockSetTokens,
-      logout: mockLogout,
-      refreshToken: 'mock-refresh-token',
-    }),
-  },
-}))
+const store = vi.hoisted(() => ({ setUser: vi.fn(), setTokens: vi.fn(), logout: vi.fn(), idToken: 'stored-id' }))
+vi.mock('../store/authStore', () => ({ useAuthStore: { getState: () => store } }))
 
-import { authService } from './auth'
+import {
+  AuthChallengeError, NO_SESSION_AFTER_SIGN_IN, UNSUPPORTED_SIGN_IN_STEP, authService,
+  isNewPasswordChallenge,
+} from './auth'
 
-describe('authService', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+const ID_TOKEN = fakeJwt({ sub: 'sub-123', 'cognito:username': 'alice', email: 'a@example.com', 'cognito:groups': ['users'] })
+const ACCESS_TOKEN = fakeJwt({ token_use: 'access' })
+
+/** A `fetchAuthSession` answer holding tokens (only `toString()` is read). */
+const sessionWithTokens = () => ({ tokens: { idToken: { toString: () => ID_TOKEN }, accessToken: { toString: () => ACCESS_TOKEN } } })
+
+/** Amplify sign-in answers for the steps the service tells apart. */
+const DONE: SignInOutput = { isSignedIn: true, nextStep: { signInStep: 'DONE' } }
+const NEW_PASSWORD: SignInOutput = {
+  isSignedIn: false, nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED' },
+}
+const TOTP: SignInOutput = { isSignedIn: false, nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_TOTP_CODE' } }
+
+/** The rejection of `promise` (fails the test when it resolves). */
+async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise
+  } catch (error: unknown) {
+    return error
+  }
+  throw new Error('expected a rejection')
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  cognitoConfig.userPoolId = 'us-east-1_test123'
+  amplify.fetchAuthSession.mockResolvedValue(sessionWithTokens())
+  amplify.signOut.mockResolvedValue(undefined)
+})
+
+describe('isConfigured', () => {
+  it('is true with a user pool and client id, false without', () => {
+    expect(authService.isConfigured()).toBe(true)
+    cognitoConfig.userPoolId = ''
+    expect(authService.isConfigured()).toBe(false)
   })
+})
 
-  describe('isConfigured', () => {
-    it('returns true when Cognito is configured', () => {
-      expect(authService.isConfigured()).toBe(true)
-    })
-  })
+describe('signIn', () => {
+  it('signs in with Amplify and stores the session tokens and user', async () => {
+    amplify.signIn.mockResolvedValue(DONE)
 
-  describe('signIn', () => {
-    it('calls authenticateUser with credentials', async () => {
-      const mockSession = {
-        getIdToken: () => ({
-          getJwtToken: () => 'mock-id-token',
-        }),
-        getAccessToken: () => ({
-          getJwtToken: () => 'mock-access-token',
-        }),
-        getRefreshToken: () => ({
-          getToken: () => 'mock-refresh-token',
-        }),
-      }
+    await authService.signIn('alice', 'password123')
 
-      mockAuthenticateUser.mockImplementation((_authDetails, callbacks) => {
-        callbacks.onSuccess(mockSession)
-      })
-
-      const result = await authService.signIn('testuser', 'password123')
-
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockAuthenticateUser).toHaveBeenCalled()
-      expect(result).toBe(mockSession)
-    })
-
-    it('rejects with error on authentication failure', async () => {
-      const error = new Error('Incorrect username or password')
-      mockAuthenticateUser.mockImplementation((_authDetails, callbacks) => {
-        callbacks.onFailure(error)
-      })
-
-      await expect(authService.signIn('testuser', 'wrongpassword')).rejects.toThrow('Incorrect username or password')
-    })
-  })
-
-  describe('signOut', () => {
-    it('calls logout on authStore', () => {
-      authService.signOut()
-      expect(mockLogout).toHaveBeenCalledWith()
+    expect(amplify.signIn).toHaveBeenCalledWith({ username: 'alice', password: 'password123' })
+    expect(amplify.fetchAuthSession).toHaveBeenCalledWith({ forceRefresh: false })
+    expect(store.setTokens).toHaveBeenCalledWith({ accessToken: ACCESS_TOKEN, idToken: ID_TOKEN })
+    expect(store.setUser).toHaveBeenCalledWith({
+      username: 'alice', email: 'a@example.com', name: undefined, groups: ['users'], sub: 'sub-123',
     })
   })
 
-  describe('forgotPassword', () => {
-    it('initiates forgot password flow', async () => {
-      mockForgotPassword.mockImplementation((callbacks) => {
-        callbacks.onSuccess({})
-      })
+  it('configures Amplify before signing in, whatever ran first', async () => {
+    amplify.signIn.mockImplementation(() => {
+      expect(configureAmplify).toHaveBeenCalledWith()
+      return Promise.resolve(DONE)
+    })
 
-      await expect(authService.forgotPassword('testuser')).resolves.not.toThrow()
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockForgotPassword).toHaveBeenCalled()
+    await authService.signIn('alice', 'password123')
+
+    expect(amplify.signIn).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a DONE sign-in that left no tokens, as its own error', async () => {
+    amplify.signIn.mockResolvedValue(DONE)
+    amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined })
+
+    const error = await rejectionOf(authService.signIn('alice', 'password123'))
+
+    expect(error).toHaveProperty('code', NO_SESSION_AFTER_SIGN_IN)
+    expect(store.setTokens).not.toHaveBeenCalled()
+  })
+
+  it('rejects with the Cognito error when sign-in fails', async () => {
+    const refused = Object.assign(new Error('Incorrect username or password.'), { name: 'NotAuthorizedException' })
+    amplify.signIn.mockRejectedValue(refused)
+
+    await expect(authService.signIn('alice', 'wrong')).rejects.toBe(refused)
+    expect(store.setTokens).not.toHaveBeenCalled()
+  })
+
+  it('rejects with NewPasswordRequired for the first-login challenge, storing nothing', async () => {
+    amplify.signIn.mockResolvedValue(NEW_PASSWORD)
+
+    const error = await rejectionOf(authService.signIn('alice', 'temporary'))
+
+    expect(error).toBeInstanceOf(AuthChallengeError)
+    expect(isNewPasswordChallenge(error)).toBe(true)
+    expect(store.setTokens).not.toHaveBeenCalled()
+  })
+
+  it('refuses a step the page does not offer (MFA)', async () => {
+    amplify.signIn.mockResolvedValue(TOTP)
+
+    const error = await rejectionOf(authService.signIn('alice', 'password123'))
+
+    expect(error).toHaveProperty('code', UNSUPPORTED_SIGN_IN_STEP)
+    expect(isNewPasswordChallenge(error)).toBe(false)
+    expect(store.setTokens).not.toHaveBeenCalled()
+  })
+
+  it('signs a leftover Amplify session out, then signs in once more', async () => {
+    const already = Object.assign(new Error('There is already a signed in user.'), { name: 'UserAlreadyAuthenticatedException' })
+    amplify.signIn.mockRejectedValueOnce(already).mockResolvedValueOnce(DONE)
+
+    await authService.signIn('alice', 'password123')
+
+    expect(amplify.signOut).toHaveBeenCalledTimes(1)
+    expect(amplify.signIn).toHaveBeenCalledTimes(2)
+    expect(store.setTokens).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for a sign-out still revoking before it signs in', async () => {
+    const order: string[] = []
+    amplify.signOut.mockImplementation(async () => { await Promise.resolve(); order.push('signOut') })
+    amplify.signIn.mockImplementation(() => { order.push('signIn'); return Promise.resolve(DONE) })
+
+    authService.signOut()
+    await authService.signIn('alice', 'password123')
+
+    expect(order).toStrictEqual(['signOut', 'signIn'])
+  })
+
+  it('refuses with a ConfigError when Cognito is not configured', async () => {
+    cognitoConfig.userPoolId = ''
+    await expect(authService.signIn('alice', 'password123')).rejects.toThrow('Cognito not configured')
+    expect(amplify.signIn).not.toHaveBeenCalled()
+  })
+})
+
+describe('signInWithPasskey', () => {
+  const passkeyInput = { username: 'alice', options: { authFlowType: 'USER_AUTH', preferredChallenge: 'WEB_AUTHN' } }
+
+  it('signs in through USER_AUTH preferring WEB_AUTHN (username trimmed) and stores the session', async () => {
+    amplify.signIn.mockResolvedValue(DONE)
+    await authService.signInWithPasskey('  alice ')
+    expect(amplify.signIn).toHaveBeenCalledExactlyOnceWith(passkeyInput)
+    expect(store.setTokens).toHaveBeenCalledWith({ accessToken: ACCESS_TOKEN, idToken: ID_TOKEN })
+  })
+
+  it('is no_passkey when Cognito offers another first factor instead, abandoning that sign-in', async () => {
+    amplify.signIn.mockResolvedValue({ isSignedIn: false, nextStep: { signInStep: 'CONTINUE_SIGN_IN_WITH_FIRST_FACTOR_SELECTION', availableChallenges: ['PASSWORD'] } })
+    expect(await rejectionOf(authService.signInWithPasskey('alice'))).toHaveProperty('code', 'no_passkey')
+    expect([store.setTokens.mock.calls.length, amplify.signOut.mock.calls.length]).toStrictEqual([0, 1])
+  })
+
+  it('answers a new-password step as the password sign-in does, not as no_passkey', async () => {
+    amplify.signIn.mockResolvedValue(NEW_PASSWORD)
+    expect(isNewPasswordChallenge(await rejectionOf(authService.signInWithPasskey('alice')))).toBe(true)
+  })
+
+  it.each([
+    ['PasskeyAuthenticationCanceled', 'cancelled'],
+    ['PasskeyNotSupported', 'unsupported'],
+    ['NotAuthorizedException', 'unknown'],
+  ])('names Amplify\'s %s as %s', async (name, code) => {
+    amplify.signIn.mockRejectedValue(Object.assign(new Error('x'), { name }))
+    expect(await rejectionOf(authService.signInWithPasskey('alice'))).toHaveProperty('code', code)
+  })
+
+  it('signs a session Amplify still holds out first, then tries once more', async () => {
+    amplify.signIn
+      .mockRejectedValueOnce(Object.assign(new Error('held'), { name: 'UserAlreadyAuthenticatedException' }))
+      .mockResolvedValueOnce(DONE)
+    await authService.signInWithPasskey('alice')
+    expect([amplify.signOut.mock.calls.length, amplify.signIn.mock.calls.length]).toStrictEqual([1, 2])
+  })
+})
+
+describe('completeNewPassword', () => {
+  it('answers the challenge and stores the session', async () => {
+    amplify.confirmSignIn.mockResolvedValue(DONE)
+
+    await authService.completeNewPassword('NewPassword!1')
+
+    expect(amplify.confirmSignIn).toHaveBeenCalledWith({ challengeResponse: 'NewPassword!1' })
+    expect(store.setTokens).toHaveBeenCalledWith({ accessToken: ACCESS_TOKEN, idToken: ID_TOKEN })
+  })
+})
+
+describe('refreshSession', () => {
+  it('forces a refresh and stores the new tokens', async () => {
+    await authService.refreshSession()
+
+    expect(amplify.fetchAuthSession).toHaveBeenCalledWith({ forceRefresh: true })
+    expect(store.setTokens).toHaveBeenCalledWith({ accessToken: ACCESS_TOKEN, idToken: ID_TOKEN })
+    expect(store.logout).not.toHaveBeenCalled()
+  })
+
+  it('signs out and rejects when there is no session to refresh', async () => {
+    amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined })
+
+    await expect(authService.refreshSession()).rejects.toThrow('please sign in again')
+    expect(store.logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('signs out and rejects when the refresh fails', async () => {
+    amplify.fetchAuthSession.mockRejectedValue(new Error('Network error'))
+
+    await expect(authService.refreshSession()).rejects.toThrow('Network error')
+    expect(store.logout).toHaveBeenCalledTimes(1)
+    expect(store.setTokens).not.toHaveBeenCalled()
+  })
+})
+
+describe('signOut', () => {
+  it('clears authStore at once and signs Amplify out behind it', async () => {
+    authService.signOut()
+
+    expect(store.logout).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(amplify.signOut).toHaveBeenCalledWith())
+  })
+
+  it('swallows a failed revoke (the local tokens are cleared regardless)', async () => {
+    amplify.signOut.mockRejectedValue(new Error('offline'))
+    authService.signOut()
+    amplify.signIn.mockResolvedValue(DONE)
+
+    await expect(authService.signIn('alice', 'password123')).resolves.toBeUndefined()
+  })
+})
+
+describe('getIdToken', () => {
+  it('reads the ID token from authStore', () => {
+    expect(authService.getIdToken()).toBe('stored-id')
+  })
+})
+
+describe('password reset and change', () => {
+  it('forgotPassword emails a reset code', async () => {
+    amplify.resetPassword.mockResolvedValue({})
+    await authService.forgotPassword('alice')
+    expect(amplify.resetPassword).toHaveBeenCalledWith({ username: 'alice' })
+  })
+
+  it('confirmPassword sets the new password with the code', async () => {
+    amplify.confirmResetPassword.mockResolvedValue(undefined)
+    await authService.confirmPassword('alice', '123456', 'NewPassword!1')
+    expect(amplify.confirmResetPassword).toHaveBeenCalledWith({
+      username: 'alice', confirmationCode: '123456', newPassword: 'NewPassword!1',
     })
   })
 
-  describe('confirmPassword', () => {
-    it('confirms new password with verification code', async () => {
-      mockConfirmPassword.mockImplementation((_code, _newPassword, callbacks) => {
-        callbacks.onSuccess()
-      })
+  it('changePassword passes the Cognito refusal through (the page words "Incorrect")', async () => {
+    const refused = new Error('Incorrect username or password.')
+    amplify.updatePassword.mockRejectedValue(refused)
 
-      await expect(authService.confirmPassword('testuser', '123456', 'newpassword')).resolves.not.toThrow()
-      // eslint-disable-next-line vitest/prefer-called-with
-      expect(mockConfirmPassword).toHaveBeenCalled()
-    })
+    await expect(authService.changePassword('old', 'NewPassword!1')).rejects.toBe(refused)
+    expect(amplify.updatePassword).toHaveBeenCalledWith({ oldPassword: 'old', newPassword: 'NewPassword!1' })
   })
 })

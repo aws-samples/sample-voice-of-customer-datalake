@@ -22,7 +22,7 @@ export function pythonIntConstant(name: string, ...pathSegments: string[]): numb
   // Matches `NAME = 840`, `NAME: Final = 840` and `NAME: Final[int] = 840`, at the
   // start of a line so a mention inside a comment or an f-string cannot match.
   const pattern = new RegExp(`^${name}(?::\\s*Final(?:\\[int\\])?)?\\s*=\\s*(\\d+)`, 'm');
-  const matched = source.match(pattern)?.[1];
+  const matched = pattern.exec(source)?.[1];
   if (matched === undefined) {
     throw new Error(
       `could not read ${name} from ${pathSegments.join('/')} — it was renamed, ` +
@@ -31,6 +31,21 @@ export function pythonIntConstant(name: string, ...pathSegments: string[]): numb
     );
   }
   return Number(matched);
+}
+
+/**
+ * Read a single-quoted string constant out of a Python or TypeScript source file in this repo:
+ * `NAME = '…'`, `NAME: Final = '…'`, `const NAME = '…'` or `export const NAME = '…'`, at the start of a
+ * line. Throws, like {@link pythonIntConstant}, when the constant is absent or no longer a literal.
+ */
+export function sourceStringConstant(name: string, ...pathSegments: string[]): string {
+  const source = readFileSync(join(__dirname, '..', '..', ...pathSegments), 'utf-8');
+  const pattern = new RegExp(`^(?:export\\s+)?(?:const\\s+)?${name}(?::\\s*Final)?\\s*=\\s*'([^']+)'`, 'm');
+  const matched = pattern.exec(source)?.[1];
+  if (matched === undefined) {
+    throw new Error(`could not read ${name} from ${pathSegments.join('/')}: renamed, inlined or no longer a string literal`);
+  }
+  return matched;
 }
 
 /**

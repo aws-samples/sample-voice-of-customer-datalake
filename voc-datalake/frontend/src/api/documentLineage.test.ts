@@ -43,8 +43,8 @@ describe('ordinalByType', () => {
     // id would label the older document 2.
     const ordinals = ordinalByType([NEWER, OLDER])
 
-    expect(ordinals.get('zz_prd_old')).toEqual({ ordinal: 1, total: 2 })
-    expect(ordinals.get('aa_prd_new')).toEqual({ ordinal: 2, total: 2 })
+    expect(ordinals.get('zz_prd_old')).toStrictEqual({ ordinal: 1, total: 2 })
+    expect(ordinals.get('aa_prd_new')).toStrictEqual({ ordinal: 2, total: 2 })
   })
 
   it('keeps a document’s number when a newer sibling is added', () => {
@@ -68,7 +68,7 @@ describe('ordinalByType', () => {
       { document_id: 'prfaq_1', document_type: 'prfaq', title: 'Launch', created_at: '2026-02-01T00:00:00Z' },
     ])
 
-    expect(ordinals.get('prfaq_1')).toEqual({ ordinal: 1, total: 1 })
+    expect(ordinals.get('prfaq_1')).toStrictEqual({ ordinal: 1, total: 1 })
     expect(ordinals.get('aa_prd_new')?.total).toBe(2)
   })
 
@@ -97,7 +97,7 @@ describe('ordinalByType', () => {
   })
 
   it('skips an entry with an id but no usable type', () => {
-    // Added in review round 2: the id-less case was covered, this one was not.
+    // The id-less case is covered separately; this one needs its own test.
     // Without the type guard such records all group under '', so unrelated
     // malformed documents would share one sequence and inflate each other.
     const ordinals = ordinalByType([
@@ -128,7 +128,7 @@ describe('resolveRevision', () => {
   }
 
   it('names the document a revision was made from, and the feedback that drove it', () => {
-    expect(resolveRevision(revision, [base, revision])).toEqual({
+    expect(resolveRevision(revision, [base, revision])).toStrictEqual({
       revisedFromId: 'proto_1',
       title: 'First cut',
       resolved: true,
@@ -157,7 +157,7 @@ describe('resolveRevision', () => {
     const absent = resolveRevision(base, [base])
 
     expect(storedNull).toBeNull()
-    expect(storedNull).toEqual(absent)
+    expect(storedNull).toStrictEqual(absent)
   })
 
   it('reports a revision with no recorded feedback as an empty string', () => {
@@ -185,7 +185,7 @@ describe('resolveRevision', () => {
   })
 
   it('resolves against the supplied list only, so no documents means unresolved', () => {
-    expect(resolveRevision(revision)).toEqual({
+    expect(resolveRevision(revision)).toStrictEqual({
       revisedFromId: 'proto_1',
       title: null,
       resolved: false,

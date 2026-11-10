@@ -9,9 +9,47 @@
  */
 
 import { z } from 'zod'
+import { getEnvString } from './lib/env'
 
 // URL regex pattern for validation (replaces deprecated z.string().url())
 const urlPattern = /^https?:\/\/.+/
+// A bare DNS host (no scheme, port or path), as VocCoreStack's UserPoolDomain output writes it.
+const HOSTED_UI_HOST = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/
+
+const BoardConfigSchema = z.object({
+  userPoolId: z.string().min(1),
+  clientId: z.string().min(1),
+  /**
+   * How the pool emails its sign-in codes (lib/stacks/core-board-auth.ts): `email_otp` (SES, with
+   * `-c emailFrom`) or `code` (Cognito's own email: sign-up confirmation / password-reset codes).
+   * Absent (a config written before 5.45.00, always an SES deployment) = `email_otp`.
+   */
+  signIn: z.enum(['email_otp', 'code']).catch('email_otp').default('email_otp'),
+})
+
+type BoardSignInMode = 'email_otp' | 'code'
+
+/**
+ * The AppSync Events API the SPA subscribes to for push notifications (docs/realtime.md): both hosts,
+ * no scheme, as VocApiStack's RealtimeHttpDns / RealtimeDns outputs write them. Lenient: absent or
+ * malformed (an older deployment, the dev mock) = no push, and every view polls exactly as before.
+ */
+const RealtimeConfigSchema = z.object({
+  // A bare DNS host, the same shape as the hosted-UI host.
+  httpDns: z.string().regex(HOSTED_UI_HOST),
+  realtimeDns: z.string().regex(HOSTED_UI_HOST),
+})
+
+/** Where to connect for push notifications. */
+export type RealtimeEndpoints = z.infer<typeof RealtimeConfigSchema>
+
+/** The board pool's ids plus the region every pool of the deployment lives in. */
+export interface BoardPoolConfig {
+  readonly userPoolId: string
+  readonly clientId: string
+  readonly region: string
+  readonly signIn?: BoardSignInMode
+}
 
 // Schema for runtime configuration
 const RuntimeConfigSchema = z.object({
@@ -20,13 +58,30 @@ const RuntimeConfigSchema = z.object({
     userPoolId: z.string().min(1),
     clientId: z.string().min(1),
     region: z.string().min(1),
-    identityPoolId: z.string().min(1),
+    /**
+     * The user pool's hosted-UI host (`<prefix>.auth.<region>.amazoncognito.com`): the only origin besides
+     * a loopback or the client's own callback the MCP OAuth consent page navigates to (api/oauthRedirect.ts).
+     * Lenient: absent or malformed (an older config.json) = no hosted UI, so that redirect is refused.
+     */
+    hostedUiDomain: z.string().regex(HOSTED_UI_HOST).optional().catch(undefined),
   }),
   // Optional capability flags: deployments without a given capability omit
   // the flag (or the whole block) and the UI hides the feature.
   features: z.object({
     webSearch: z.boolean().optional(),
+    /** Participant email sending is configured (`-c emailFrom`); the UI explains it is off otherwise. */
+    email: z.boolean().optional(),
+    /** The app user pool allows passkey sign-in (5.65); older deployments omit it and the UI offers none. */
+    passkey: z.boolean().optional(),
   }).optional(),
+  /**
+   * The feature-request board's own Cognito user pool (docs/feature-requests.md), present only when
+   * the deployment created it. Lenient: a malformed block reads as "no board" rather than throwing
+   * away the whole config (which would blank the app's own sign-in).
+   */
+  board: BoardConfigSchema.optional().catch(undefined),
+  /** Push notifications (docs/realtime.md); absent = polling only. */
+  realtime: RealtimeConfigSchema.optional().catch(undefined),
 })
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
@@ -85,6 +140,43 @@ export function isWebSearchAvailable(): boolean {
   return configState.config?.features?.webSearch === true
 }
 
+/**
+ * Whether the app user pool takes passkeys (`features.passkey`, set by every deployment since 5.65).
+ * Says nothing about the browser: services/passkey.ts `passkeySupported()` checks that.
+ * Safe to call before config load (returns false).
+ */
+export function isPasskeyAvailable(): boolean {
+  const config = configState.config
+  return config?.features?.passkey === true && config.cognito.clientId !== ''
+}
+
+/**
+ * The board user pool, or null when the deployment has none (or the config is
+ * not loaded yet). The region is the app pool's: both pools live in the stack's region.
+ */
+export function getBoardPoolConfig(): BoardPoolConfig | null {
+  const board = configState.config?.board
+  if (!board) return null
+  return { ...board, region: configState.config?.cognito.region ?? 'us-east-1' }
+}
+
+/**
+ * The Event API hosts, or null when the deployment has none (the dev mock, an older stack) or the
+ * config is not loaded yet: then nothing subscribes and every view polls as before.
+ */
+export function getRealtimeEndpoints(): RealtimeEndpoints | null {
+  return configState.config?.realtime ?? null
+}
+
+/**
+ * The Cognito hosted UI's origin (`https://<host>`), or null when the config names none (local dev, an
+ * older config.json) or is not loaded yet.
+ */
+export function getHostedUiOrigin(): string | null {
+  const host = configState.config?.cognito.hostedUiDomain
+  return host ? `https://${host}` : null
+}
+
 async function fetchConfig(): Promise<RuntimeConfig> {
   try {
     const response = await fetch('/config.json', {
@@ -104,7 +196,6 @@ async function fetchConfig(): Promise<RuntimeConfig> {
       return getEnvConfig()
     }
 
-    console.log('Loaded runtime config from /config.json')
     return parsed.data
   } catch (error) {
     console.warn('Error fetching config.json, using env vars:', error)
@@ -112,9 +203,13 @@ async function fetchConfig(): Promise<RuntimeConfig> {
   }
 }
 
-function getEnvString(key: string, defaultValue = ''): string {
-  const value: unknown = import.meta.env[key]
-  return typeof value === 'string' ? value : defaultValue
+/** VITE_REALTIME_* (scripts/update-env.sh), only when both are set. */
+function envRealtime(): { realtime?: RealtimeEndpoints } {
+  const parsed = RealtimeConfigSchema.safeParse({
+    httpDns: getEnvString('VITE_REALTIME_HTTP_DNS'),
+    realtimeDns: getEnvString('VITE_REALTIME_DNS'),
+  })
+  return parsed.success ? { realtime: parsed.data } : {}
 }
 
 /**
@@ -136,9 +231,9 @@ function getEnvConfig(): RuntimeConfig {
       userPoolId: getEnvString('VITE_COGNITO_USER_POOL_ID'),
       clientId: getEnvString('VITE_COGNITO_CLIENT_ID'),
       region: getEnvString('VITE_COGNITO_REGION', 'us-east-1'),
-      identityPoolId: getEnvString('VITE_IDENTITY_POOL_ID'),
     },
     features,
+    ...envRealtime(),
   }
 
   // Validate env config
@@ -158,7 +253,6 @@ function getEnvConfig(): RuntimeConfig {
         userPoolId: '',
         clientId: '',
         region: 'us-east-1',
-        identityPoolId: '',
       },
       // Keep the feature flags: mock-only dev (no Cognito vars) is exactly
       // when this branch runs, and it's also exactly when the

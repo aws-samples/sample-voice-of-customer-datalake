@@ -1,0 +1,492 @@
+// Dimensions, tags, source profiles and erasure mock, in the wire shapes of the
+// KVD contract (shared/dimension_config.py, shared/source_profiles.py,
+// settings_handler / metrics_handler / feedback_edit_handler):
+//
+//   GET|PUT /settings/dimensions        {dimensions, updated_at} / {success, dimensions}
+//   GET|PUT /settings/sources           {sources} / {success, sources}  (the mock caller is an admin; a
+//                                       retention period needs retention_legal_basis on PUT)
+//   GET|POST /settings/erasure          {jobs, sources} / 202 {job}  (only the value's sha256 is kept;
+//                                       field 'source' = a whole source, with `confirm` repeating it;
+//                                       `legal_basis` required, mock-legal-basis.js)
+//   GET /metrics/dimensions?key=…       {key, period_days, is_partial, values, unassigned}
+//   PUT /feedback/{id}/dimensions       {success, feedback_id, dimensions, tags}
+//
+// Stateful for the life of the process. The fixtures: `product` with a child
+// `module` (parent link + parent_value), `user_type`; profiles including a
+// restricted `support_tickets` (pii redact, retention 365, saved before 6.00.00 so it has no
+// retention_legal_basis: the Sources page flags it, and a save must add one). Fixture feedback is
+// stamped by seedDimensionFixtures so filters and chips have data in dev.
+// The `channel` / `dims` / `tag` filters and the entities additions are shared
+// with mock-server.js through attributeFilterOf / entityExtras.
+// Wired into mock-server.js by handleDomainModules.
+
+import { createHash, randomBytes } from 'node:crypto';
+import { REASON_DIMENSIONS_EDIT, stampManualEdit } from './mock-edit-stamp.js';
+import { facetFilterOf } from './mock-facets.js';
+import { legalBasisError } from './mock-legal-basis.js';
+import { feedbackTypeDimension, isBuiltinDimension, stampFeedbackTypes } from './mock-feedback-types.js';
+
+const MAX_DIMENSIONS = 10;
+const MAX_VALUES = 200;
+const MAX_PROFILES = 50;
+const MAX_TAGS = 20;
+const KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;
+const VALUE_RE = /^[^\s#,:]{1,64}$/;
+const TAG_RE = /^[^\s#,:][^#,:\p{Cc}]{0,63}$/u;
+const SOURCE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+const RESERVED = new Set(['category', 'subcategory', 'source', 'channel', 'tag', 'tags', 'sentiment', 'urgency', 'days', 'limit', 'offset', 'q']);
+const PII = ['allow', 'redact', 'summary_only'];
+const ERASURE_FIELDS = ['author', 'source_id', 'csv_row_id', 'email', 'source'];
+const SENTIMENTS = ['positive', 'negative', 'neutral', 'mixed'];
+const CALLER = 'admin-demo';
+
+const now = () => new Date().toISOString();
+
+const state = {
+  // The built-in feedback_type first (mock-feedback-types.js), then the admin-defined ones.
+  dimensions: [
+    feedbackTypeDimension(),
+    {
+      key: 'product', label: 'Product', description: 'Which product the feedback is about', infer: true,
+      values: [
+        { name: 'mobile_app', label: 'Mobile app' },
+        { name: 'web_shop', label: 'Web shop' },
+        { name: 'partner_portal', label: 'Partner portal' },
+      ],
+    },
+    {
+      key: 'module', label: 'Module', infer: true, parent: 'product',
+      values: [
+        { name: 'login', label: 'Login', parent_value: 'mobile_app' },
+        { name: 'push_notifications', label: 'Push notifications', parent_value: 'mobile_app' },
+        { name: 'checkout', label: 'Checkout', parent_value: 'web_shop' },
+        { name: 'search', label: 'Search' },
+        { name: 'invoicing', label: 'Invoicing', parent_value: 'partner_portal' },
+      ],
+    },
+    {
+      key: 'user_type', label: 'User type', description: 'Who wrote it', infer: false,
+      values: [{ name: 'customer', label: 'Customer' }, { name: 'partner', label: 'Partner' }],
+    },
+  ],
+  dimensionsUpdatedAt: now(),
+  sources: [
+    { id: 'webscraper', label: 'Web scraper', pii: 'allow', retention_days: null, restricted: false, dimension_defaults: {}, tags: [] },
+    { id: 'manual_import', label: 'Manual import', pii: 'allow', retention_days: null, restricted: false, dimension_defaults: {}, tags: [] },
+    { id: 'feedback_form', label: 'Feedback forms', pii: 'allow', retention_days: null, restricted: false, dimension_defaults: { user_type: 'customer' }, tags: [] },
+    { id: 'sales_csv', label: 'Sales CSV', pii: 'allow', retention_days: null, restricted: false, dimension_defaults: { user_type: 'partner' }, tags: ['sales'] },
+    { id: 'support_tickets', label: 'Support tickets', pii: 'redact', retention_days: 365, restricted: true, dimension_defaults: {}, tags: ['support'] },
+    // A Radar source (docs/radar.md): another brand's reviews, served by mock-radar.js.
+    {
+      id: 'rival_reviews', label: 'Rival reviews', pii: 'redact', retention_days: null, restricted: false, dimension_defaults: {}, tags: [],
+      radar_brand: 'Acme', radar_domains: ['acme.example'],
+    },
+  ],
+  erasureJobs: [], // newest first
+};
+
+// ── Fixtures on the shared feedback ──────────────────────────────────────────
+
+const SEED = {
+  1: { dimensions: { product: 'web_shop', module: 'checkout', user_type: 'customer' }, sources: { product: 'ai', module: 'ai', user_type: 'profile' }, tags: ['delivery_delay'], author: 'Jordan P.' },
+  2: { dimensions: { product: 'mobile_app', module: 'login' }, sources: { product: 'source', module: 'manual' }, tags: ['vip', 'support'] },
+  3: { dimensions: { product: 'partner_portal', user_type: 'partner' }, sources: { product: 'category', user_type: 'profile' }, tags: ['sales'], pii_policy: 'redact' },
+  4: { dimensions: { product: 'mobile_app' }, sources: { product: 'ai' }, pii_policy: 'summary_only' },
+};
+
+/** Stamp the first fixture items with dimensions / tags / a policy (once, at startup). */
+export function seedDimensionFixtures(feedback) {
+  for (const item of feedback) {
+    const seed = SEED[item.feedback_id];
+    if (!seed) continue;
+    item.dimensions = { ...seed.dimensions };
+    item.dimension_sources = { ...seed.sources };
+    if (seed.tags) item.tags = [...seed.tags];
+    if (seed.author) item.author = seed.author;
+    if (seed.pii_policy) item.pii_policy = seed.pii_policy;
+  }
+  stampFeedbackTypes(feedback);
+}
+
+export const sourceProfiles = () => state.sources;
+export const dimensionsConfig = () => state.dimensions;
+
+// ── Validation (the client-safe messages of the real validators) ─────────────
+
+function validateValue(value, dimension, parent) {
+  if (!value || typeof value.name !== 'string' || !VALUE_RE.test(value.name)) return `Invalid value name in "${dimension.key}"`;
+  if (value.parent_value !== undefined && !(parent?.values || []).some((v) => v.name === value.parent_value)) {
+    return `Value "${value.name}" names a parent_value that is not in "${dimension.parent}"`;
+  }
+  return null;
+}
+
+function validateDimension(dimension, byKey) {
+  if (!dimension || typeof dimension.key !== 'string' || !KEY_RE.test(dimension.key)) return 'Dimension keys must be lowercase snake_case';
+  if (RESERVED.has(dimension.key)) return `"${dimension.key}" is a reserved name`;
+  if (!Array.isArray(dimension.values) || dimension.values.length > MAX_VALUES) return `At most ${MAX_VALUES} values per dimension`;
+  const parent = dimension.parent === undefined ? undefined : byKey.get(dimension.parent);
+  if (dimension.parent !== undefined && (!parent || parent.parent !== undefined || parent.key === dimension.key)) {
+    return `"${dimension.key}" must name another top-level dimension as its parent`;
+  }
+  const names = new Set();
+  for (const value of dimension.values) {
+    const error = validateValue(value, dimension, parent);
+    if (error) return error;
+    if (names.has(value.name)) return `Duplicate value "${value.name}" in "${dimension.key}"`;
+    names.add(value.name);
+  }
+  return null;
+}
+
+function validateDimensions(dimensions) {
+  if (!Array.isArray(dimensions) || dimensions.length > MAX_DIMENSIONS) return `At most ${MAX_DIMENSIONS} dimensions`;
+  const byKey = new Map(dimensions.filter((d) => d && typeof d.key === 'string').map((d) => [d.key, d]));
+  if (byKey.size !== dimensions.length) return 'Dimension keys must be unique';
+  for (const dimension of dimensions) {
+    const error = validateDimension(dimension, byKey);
+    if (error) return error;
+  }
+  return null;
+}
+
+function validTags(tags) {
+  return Array.isArray(tags) && tags.length <= MAX_TAGS && tags.every((t) => typeof t === 'string' && TAG_RE.test(t.trim()));
+}
+
+function resolves(key, value) {
+  const dimension = state.dimensions.find((d) => d.key === key);
+  return Boolean(dimension && dimension.values.some((v) => v.name === value));
+}
+
+function validateProfile(profile, ids) {
+  if (!profile || typeof profile.id !== 'string' || !SOURCE_ID_RE.test(profile.id)) return 'Source ids must be lowercase letters, digits, "_" or "-"';
+  if (ids.has(profile.id)) return `Duplicate source id "${profile.id}"`;
+  ids.add(profile.id);
+  if (!PII.includes(profile.pii ?? 'allow')) return 'pii must be allow, redact or summary_only';
+  const days = profile.retention_days ?? null;
+  if (days !== null && (!Number.isInteger(days) || days < 30 || days > 3650)) return 'retention_days must be null or 30-3650';
+  if (days !== null) {
+    const what = `Source "${profile.id}" retention_legal_basis`;
+    const basis = profile.retention_legal_basis;
+    if (typeof basis !== 'string' || !basis.trim()) return `${what} is required when retention_days is set`;
+    const basisError = legalBasisError(basis, what);
+    if (basisError) return basisError;
+  }
+  const defaults = profile.dimension_defaults ?? {};
+  if (Object.entries(defaults).some(([key, value]) => !resolves(key, value))) return `Unknown dimension default on "${profile.id}"`;
+  if (!validTags(profile.tags ?? [])) return `Invalid tags on "${profile.id}"`;
+  return null;
+}
+
+/** A profile's retention basis as stored: kept only with a period, like shared/source_profiles.py (null when absent). */
+function storedRetentionBasis(p) {
+  if (p.retention_days == null || typeof p.retention_legal_basis !== 'string') return null;
+  return p.retention_legal_basis.trim() || null;
+}
+
+function normalizedProfile(p) {
+  const brand = typeof p.radar_brand === 'string' ? p.radar_brand.trim() : '';
+  return {
+    id: p.id, label: typeof p.label === 'string' && p.label.trim() ? p.label.trim() : p.id,
+    pii: p.pii ?? 'allow', retention_days: p.retention_days ?? null,
+    retention_legal_basis: storedRetentionBasis(p),
+    restricted: p.restricted === true,
+    dimension_defaults: { ...(p.dimension_defaults ?? {}) }, tags: [...(p.tags ?? [])],
+    // Radar fields only on a Radar source, like shared/radar_brands.radar_profile_fields.
+    ...(brand ? { radar_brand: brand, radar_domains: [...(p.radar_domains ?? [])] } : {}),
+  };
+}
+
+// ── Filters shared with mock-server.js (/feedback, /urgent, /search, /entities, /metrics/*) ──
+
+/** A `rating_min` / `rating_max` bound: null when absent, `{error}` unless 1-5 whole stars (the real 400). */
+function starsParam(searchParams, name) {
+  const raw = (searchParams?.get(name) || '').trim();
+  if (!raw) return { value: null };
+  return /^[1-5]$/.test(raw) ? { value: Number(raw) } : { error: `${name} must be a whole number of stars from 1 to 5` };
+}
+
+/** True when `item.rating` is within the bounds; an unrated item is refused once a bound is set. */
+function ratingAdmits(item, min, max) {
+  if (min === null && max === null) return true;
+  const rating = Number(item.rating);
+  if (!Number.isFinite(rating) || rating <= 0) return false;
+  return (min === null || rating >= min) && (max === null || rating <= max);
+}
+
+/**
+ * The `channel` / `dims` / `tag` / `rating_min` / `rating_max` filter of a request
+ * as a predicate, or `{error}` for a malformed `dims` or rating (the real routes answer 400).
+ */
+// `key:a|b` accepts either value; the choice `~unset` accepts an item with no value for
+// the key (shared/item_filters.py: the Problems page keeps reviews not typed yet in view).
+const UNSET_CHOICE = '~unset';
+function dimensionAdmits(actual, wanted) {
+  const choices = [wanted, ...wanted.split('|').filter(Boolean)];
+  if (typeof actual !== 'string' || actual === '') return choices.includes(UNSET_CHOICE);
+  return choices.includes(actual);
+}
+
+// The most choices one `dims` list holds: every configured value plus `~unset` (dimension_config._MAX_DIMS_CHOICES).
+const MAX_DIMS_CHOICES = MAX_VALUES + 1;
+
+/**
+ * One `dims` pair's value: a dimension value, or a `|` list of them, each well-formed, exactly like
+ * `dimension_config._is_dims_value`: empty choices (`a||b`) are skipped, and a list holds at most
+ * MAX_DIMS_CHOICES choices.
+ */
+function isDimsValue(value) {
+  if (VALUE_RE.test(value)) return true;
+  const choices = value.split('|').filter(Boolean);
+  return choices.length > 0 && choices.length <= MAX_DIMS_CHOICES && choices.every((choice) => VALUE_RE.test(choice));
+}
+
+export function attributeFilterOf(searchParams) {
+  // source / category / subcategory / sentiment / usefulness lists (mock-facets.js).
+  const facets = facetFilterOf(searchParams);
+  if (facets.error) return { error: facets.error };
+  const channel = searchParams?.get('channel') || '';
+  const tag = (searchParams?.get('tag') || '').toLowerCase();
+  const rawDims = searchParams?.get('dims') || '';
+  const pairs = rawDims ? rawDims.split(',').map((pair) => pair.split(':')) : [];
+  if (pairs.length > MAX_DIMENSIONS || pairs.some((p) => p.length !== 2 || !KEY_RE.test(p[0]) || !isDimsValue(p[1]))) {
+    return { error: 'dims must be key:value pairs separated by commas' };
+  }
+  const min = starsParam(searchParams, 'rating_min');
+  const max = starsParam(searchParams, 'rating_max');
+  const ratingError = min.error ?? max.error;
+  if (ratingError) return { error: ratingError };
+  return {
+    admits: (item) => facets.admits(item) && (!channel || item.source_channel === channel)
+      && (!tag || (item.tags || []).some((t) => t.toLowerCase() === tag))
+      && pairs.every(([key, value]) => dimensionAdmits((item.dimensions || {})[key], value))
+      && ratingAdmits(item, min.value, max.value),
+  };
+}
+
+const countBy = (items, values) => items.reduce((acc, item) => {
+  for (const value of values(item)) if (value) acc[value] = (acc[value] || 0) + 1;
+  return acc;
+}, {});
+
+/** The contract's entities additions: channels, top-50 tags, dimensions. */
+export function entityExtras(items) {
+  const tags = Object.entries(countBy(items, (i) => i.tags || []))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 50);
+  const dimensions = Object.fromEntries(state.dimensions.map((d) => [d.key, countBy(items, (i) => [(i.dimensions || {})[d.key]])]));
+  return { channels: countBy(items, (i) => [i.source_channel]), tags: Object.fromEntries(tags), dimensions };
+}
+
+// ── Routes ──────────────────────────────────────────────────────────────────
+
+function putDimensions(body) {
+  // Built-in entries in the body are ignored, never stored (shared/dimension_config.validate_dimensions).
+  const custom = Array.isArray(body?.dimensions) ? body.dimensions.filter((d) => !isBuiltinDimension(d)) : body?.dimensions;
+  const error = validateDimensions(custom);
+  if (error) return [400, { success: false, error }];
+  state.dimensions = [
+    feedbackTypeDimension(),
+    ...custom.map((d) => ({ ...d, infer: d.infer !== false, values: d.values.map((v) => ({ ...v })) })),
+  ];
+  state.dimensionsUpdatedAt = now();
+  return [200, { success: true, dimensions: state.dimensions }];
+}
+
+function putSources(body) {
+  const sources = body?.sources;
+  if (!Array.isArray(sources) || sources.length > MAX_PROFILES) return [400, { success: false, error: `At most ${MAX_PROFILES} source profiles` }];
+  const ids = new Set();
+  for (const profile of sources) {
+    const error = validateProfile(profile, ids);
+    if (error) return [400, { success: false, error }];
+  }
+  state.sources = sources.map(normalizedProfile);
+  return [200, { success: true, sources: state.sources }];
+}
+
+/**
+ * The worker's phases, in order (lambda/jobs/retention/handler.py `_phases`): the items, the Radar
+ * reviews, the feedback boards (an erasure by email not limited to another source; the worker's boards
+ * phase, 6.02.00), the raw sweep (a whole-source erasure only), then the lineage pass, which runs only once
+ * something was deleted or de-identified. One poll walks one phase; the job keeps its last phase when it completes.
+ */
+function erasurePhases(job) {
+  const touched = job.deleted_items + job.deleted_radar_items + (job.board_items_deidentified ?? 0) > 0;
+  const boards = job.field === 'email' && (job.source === undefined || job.source === 'feature_requests');
+  return ['items', 'radar', ...(boards ? ['boards'] : []), ...(job.field === 'source' ? ['raw'] : []), ...(touched ? ['lineage'] : [])];
+}
+
+function erasedIds(job, shared) {
+  const matches = job.field === 'source'
+    ? (f) => f.source_platform === job.source
+    : (f) => f.author && job.value_hash === sha256(f.author);
+  return new Set(shared.mockFeedback.filter(matches).map((f) => f.feedback_id));
+}
+
+/** Personas and documents whose id lists name an erased item (the real pass marks them `erased_evidence`). */
+function citingArtifacts(ids, shared) {
+  const artifacts = Object.values(shared.mockProjectDetails).flatMap((d) => [...(d.personas || []), ...(d.documents || [])]);
+  return artifacts.filter((a) => [...(a.input_feedback_ids || []), ...(a.evidence_feedback_ids || [])].some((id) => ids.has(id))).length;
+}
+
+/** One phase's counts. Counted, not deleted: the shared fixtures stay intact for the other pages. */
+function runErasurePhase(job, phase, shared) {
+  const ids = erasedIds(job, shared);
+  if (phase === 'items') {
+    job.deleted_items = ids.size;
+    // An item's raw archive goes with it; a whole source's raw folder is swept in its own phase.
+    if (job.field !== 'source') job.deleted_objects = ids.size;
+  } else if (phase === 'radar') {
+    job.deleted_radar_items = 0; // the mock holds no Radar review written by a person
+  } else if (phase === 'boards') {
+    // The boards' fixtures live in mock-feature-requests.js, outside `shared`: the mock de-identifies none, and,
+    // like the worker (jobs/retention/runs.py), writes `board_items_deidentified` only once it is above 0.
+  } else if (phase === 'raw') {
+    job.deleted_objects = ids.size;
+  } else {
+    job.artifacts_marked = citingArtifacts(ids, shared);
+  }
+}
+
+/** A poll moves a live job one phase: queued → running (items) → … → completed. */
+function advanceErasure(job, shared) {
+  if (job.status !== 'queued' && job.status !== 'running') return;
+  const phases = erasurePhases(job);
+  const next = job.status === 'queued' ? phases[0] : phases[phases.indexOf(job.phase) + 1];
+  if (next === undefined) {
+    job.status = 'completed';
+    job.finished_at = now();
+    return;
+  }
+  job.status = 'running';
+  job.phase = next;
+  runErasurePhase(job, next, shared);
+}
+
+/** Profiles plus every source the fixtures hold data for (the real route reads METRIC#daily_source# rows). */
+function erasableSources(shared) {
+  const ids = new Set(state.sources.map((p) => p.id));
+  for (const item of shared.mockFeedback) if (SOURCE_ID_RE.test(item.source_platform || '')) ids.add(item.source_platform);
+  return [...ids].sort();
+}
+
+/** The whole-source checks of the real route (shared/source_erasure.py): 400s and the live-job 409. */
+function sourceErasureProblem(body, value, shared) {
+  if (!SOURCE_ID_RE.test(value)) return [400, { success: false, error: 'value must be a source id when field is source' }];
+  if (body.source !== undefined && body.source !== value) return [400, { success: false, error: 'source must equal value when field is source' }];
+  if (body.confirm !== value) return [400, { success: false, error: 'confirm must repeat the source id' }];
+  if (!erasableSources(shared).includes(value)) return [400, { success: false, error: 'Unknown source' }];
+  if (state.erasureJobs.some((j) => j.source === value && (j.status === 'queued' || j.status === 'running'))) {
+    return [409, { success: false, error: 'An erasure of this source is already running' }];
+  }
+  return null;
+}
+
+const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+
+function startErasure(body, shared) {
+  const field = body?.field;
+  const value = typeof body?.value === 'string' ? body.value.trim() : '';
+  if (!ERASURE_FIELDS.includes(field) || !value || value.length > 512) {
+    return [400, { success: false, error: 'field must be author, source_id, csv_row_id, email or source, with a value' }];
+  }
+  const basisError = legalBasisError(body?.legal_basis);
+  if (basisError) return [400, { success: false, error: basisError }];
+  const legalBasis = body.legal_basis.trim();
+  if (field === 'source') {
+    const problem = sourceErasureProblem(body, value, shared);
+    if (problem) return problem;
+    return queueErasure(field, value, value, legalBasis);
+  }
+  const source = typeof body.source === 'string' && body.source !== '' ? body.source : undefined;
+  if (source && !state.sources.some((p) => p.id === source)) return [400, { success: false, error: 'Unknown source' }];
+  if (!source && (field === 'source_id' || field === 'csv_row_id')) {
+    return [400, { success: false, error: `source is required when field is ${field}` }];
+  }
+  return queueErasure(field, value, source, legalBasis);
+}
+
+function queueErasure(field, value, source, legalBasis) {
+  const job = {
+    job_id: `er_${randomHex()}`, status: 'queued', field, source, value_hash: sha256(value), legal_basis: legalBasis,
+    deleted_items: 0, deleted_objects: 0, deleted_radar_items: 0, artifacts_marked: 0, started_by: CALLER, created_at: now(),
+  };
+  if (!source) delete job.source;
+  state.erasureJobs.unshift(job);
+  return [202, { job }];
+}
+
+const randomHex = () => randomBytes(6).toString('hex');
+
+function dimensionMetrics(url, shared) {
+  const key = url.searchParams.get('key') || '';
+  const dimension = state.dimensions.find((d) => d.key === key);
+  if (!dimension) return [400, { success: false, error: 'key must name a configured dimension' }];
+  const filter = attributeFilterOf(url.searchParams);
+  if (filter.error) return [400, { success: false, error: filter.error }];
+  const source = url.searchParams.get('source') || '';
+  const items = shared.mockFeedback.filter((f) => (!source || f.source_platform === source) && filter.admits(f));
+  const values = {};
+  let unassigned = 0;
+  for (const item of items) {
+    const value = (item.dimensions || {})[key];
+    if (!value) { unassigned += 1; continue; }
+    const bucket = values[value] ?? (values[value] = { count: 0, positive: 0, negative: 0, neutral: 0, mixed: 0 });
+    bucket.count += 1;
+    if (SENTIMENTS.includes(item.sentiment_label)) bucket[item.sentiment_label] += 1;
+  }
+  return [200, { key, period_days: Number(url.searchParams.get('days')) || 7, is_partial: false, values, unassigned }];
+}
+
+function editFeedbackDimensions(id, body, shared) {
+  const item = shared.mockFeedback.find((f) => f.feedback_id === id);
+  if (!item) return [404, { success: false, error: 'Not found' }];
+  const changes = body?.dimensions ?? {};
+  if (typeof changes !== 'object' || Array.isArray(changes)) return [400, { success: false, error: 'dimensions must be an object' }];
+  for (const [key, value] of Object.entries(changes)) {
+    if (value !== null && !resolves(key, value)) return [400, { success: false, error: `Unknown value for "${key}"` }];
+  }
+  if (body?.tags !== undefined && !validTags(body.tags)) return [400, { success: false, error: 'Invalid tags' }];
+  const dimensions = { ...(item.dimensions || {}) };
+  const sources = { ...(item.dimension_sources || {}) };
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === null) { delete dimensions[key]; delete sources[key]; } else { dimensions[key] = value; sources[key] = 'manual'; }
+  }
+  item.dimensions = dimensions;
+  item.dimension_sources = sources;
+  if (body?.tags !== undefined) item.tags = [...new Set(body.tags.map((t) => t.trim()))];
+  stampManualEdit(item, REASON_DIMENSIONS_EDIT);
+  return [200, { success: true, feedback_id: id, dimensions, tags: item.tags || [] }];
+}
+
+function route(req, url, body, shared) {
+  const key = `${req.method} ${url.pathname}`;
+  switch (key) {
+    case 'GET /settings/dimensions': return [200, { dimensions: state.dimensions, updated_at: state.dimensionsUpdatedAt }];
+    case 'PUT /settings/dimensions': return putDimensions(body);
+    case 'GET /settings/sources': return [200, { sources: state.sources }];
+    case 'PUT /settings/sources': return putSources(body);
+    case 'POST /settings/erasure': return startErasure(body, shared);
+    case 'GET /settings/erasure':
+      state.erasureJobs.forEach((job) => advanceErasure(job, shared));
+      return [200, { jobs: state.erasureJobs.slice(0, 20), sources: erasableSources(shared) }];
+    case 'GET /metrics/dimensions': return dimensionMetrics(url, shared);
+    default: break;
+  }
+  const edit = url.pathname.match(/^\/feedback\/([^/]+)\/dimensions$/);
+  if (edit && req.method === 'PUT') return editFeedbackDimensions(decodeURIComponent(edit[1]), body, shared);
+  return [405, { success: false, error: 'Method not allowed' }];
+}
+
+const ROUTE = /^\/(settings\/(dimensions|sources|erasure)|metrics\/dimensions|feedback\/[^/]+\/dimensions)$/;
+
+/** Handle this module's routes; returns true when the request was taken. */
+export function handleDimensionRoutes(req, res, url, send, shared) {
+  if (!ROUTE.test(url.pathname)) return false;
+  shared.collectJson(req, res, (body) => {
+    const [status, payload] = route(req, url, body, shared);
+    send(status, payload);
+  });
+  return true;
+}

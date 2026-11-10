@@ -1,0 +1,444 @@
+/**
+ * Unified assistant — wire contract shared by the stream Lambda and the SPA.
+ *
+ * The assistant speaks AG-UI 1.0 over `POST /chat/stream` (SSE through API
+ * Gateway). The request body is an AG-UI `RunAgentInput`; this module pins the
+ * application-specific parts of it (`forwardedProps`), the tool catalogue and
+ * its packs, and the names of the CUSTOM events and interrupt reasons.
+ *
+ * The SPA imports this module itself, through `@stream/assistant/contract`
+ * (`frontend/streamSource.ts`), so it must stay browser-safe: zod only (the
+ * `browser-safe` block of this package's eslint.config.js).
+ *
+ * Execution model
+ *   - SERVER tools are read-only and run inside the stream Lambda.
+ *   - CLIENT tools are writes. The server never executes them: it validates the
+ *     model's arguments, emits the tool call, and ends the run with an AG-UI
+ *     `interrupt` outcome (reason `tool_approval`). The SPA shows an approval
+ *     card, and only on human approval executes the write through the existing
+ *     REST API with the user's own token, then resumes the thread with a `tool`
+ *     message carrying the outcome. The assistant can therefore never exceed
+ *     the signed-in user's own permissions, and the Lambda holds no write
+ *     grants on business data.
+ */
+import { z } from 'zod';
+
+export const AGUI_PROTOCOL_VERSION = '1.0';
+
+// ── Pages ──────────────────────────────────────────────────────────────────
+
+export const PAGE_KINDS = [
+  'home',
+  'dashboard',
+  'feedback',
+  'categories',
+  'problems',
+  'chat',
+  'projects',
+  'project',
+  'prioritization',
+  'data-explorer',
+  'scrapers',
+  'feedback-forms',
+  'settings',
+  'memory',
+  'agents',
+  'agent',
+  'company',
+  /** /radar: other brands (docs/radar.md); loads the scrapers pack so "set up Radar for X" works there. */
+  'radar',
+  /** /participants: participant lists (docs/participants.md); add many people through one approval card. */
+  'participants',
+  'other',
+] as const;
+export type PageKind = (typeof PAGE_KINDS)[number];
+
+export const TOOL_PACKS = [
+  'core',
+  'insights',
+  'project',
+  'forms',
+  'prioritization',
+  'scrapers',
+  'settings',
+  'memory',
+  'agents',
+  'company',
+  'participants',
+] as const;
+export type ToolPack = (typeof TOOL_PACKS)[number];
+
+/** Which packs a page loads. `core` is always present. */
+export const PAGE_TOOL_PACKS: Record<PageKind, readonly ToolPack[]> = {
+  home: ['core', 'insights'],
+  dashboard: ['core', 'insights'],
+  feedback: ['core', 'insights'],
+  categories: ['core', 'insights'],
+  problems: ['core', 'insights'],
+  chat: ['core', 'insights'],
+  projects: ['core', 'insights'],
+  project: ['core', 'project'],
+  prioritization: ['core', 'prioritization'],
+  'data-explorer': ['core', 'insights'],
+  scrapers: ['core', 'scrapers'],
+  'feedback-forms': ['core', 'forms'],
+  settings: ['core', 'settings', 'company'],
+  memory: ['core', 'memory'],
+  agents: ['core', 'agents', 'memory'],
+  agent: ['core', 'agents', 'memory'],
+  company: ['core', 'company'],
+  radar: ['core', 'insights', 'scrapers'],
+  participants: ['core', 'participants'],
+  other: ['core', 'insights'],
+};
+
+/** Packs whose tools are only offered to callers in the `admins` group. */
+export const ADMIN_ONLY_PACKS: readonly ToolPack[] = ['settings'];
+
+/** The packs a caller actually gets on a page — the single place admin gating of packs lives. */
+export function packsForPage(kind: PageKind, isAdmin: boolean): ToolPack[] {
+  return PAGE_TOOL_PACKS[kind].filter((pack) => isAdmin || !ADMIN_ONLY_PACKS.includes(pack));
+}
+
+// ── Tools ──────────────────────────────────────────────────────────────────
+
+/** Read-only tools executed in the stream Lambda, by pack. */
+export const SERVER_TOOLS = {
+  core: [
+    'search_feedback', 'get_metrics', 'get_feedback_item', 'list_projects', 'get_project', 'suggest_navigation', 'web_search',
+    'list_categories', 'list_dimensions', 'search_memory', 'get_plan', 'plan_catalogue', 'plan_lookup',
+    'get_radar', 'search_feature_requests',
+  ],
+  insights: ['get_urgent_feedback', 'list_feedback', 'get_entities', 'get_resolved_problems'],
+  project: ['get_documents', 'get_persona', 'get_product_context', 'list_project_jobs', 'consult_personas'],
+  forms: ['list_feedback_forms', 'get_feedback_form_stats', 'get_feedback_form_submissions'],
+  prioritization: ['get_prioritization'],
+  scrapers: ['list_scrapers', 'get_scraper_status', 'analyze_scraper_url', 'get_source_run', 'find_app_store_app'],
+  settings: ['get_categories_config', 'get_brand_settings', 'list_users', 'get_user_access'],
+  memory: ['get_memory_review'],
+  agents: ['list_agents', 'get_agent', 'get_workflow', 'list_agent_runs', 'get_agent_run', 'validate_workflow'],
+  company: ['get_company_context', 'get_my_context', 'get_design_system'],
+  participants: ['list_participant_lists'],
+} as const satisfies Record<ToolPack, readonly string[]>;
+
+/** Write tools: proposed by the model, approved by a human, executed by the SPA. */
+export const CLIENT_TOOLS = {
+  core: ['create_project', 'remember', 'update_company_memory', 'propose_plan', 'cancel_plan'],
+  insights: ['set_problem_resolved', 'set_feedback_category'],
+  project: [
+    'update_document',
+    'create_document',
+    'delete_document',
+    'update_persona',
+    'add_persona_note',
+    'update_project',
+    'update_product_context',
+    'start_research',
+    'generate_document',
+    'generate_personas',
+    'merge_documents',
+    'build_prototype',
+  ],
+  forms: ['update_feedback_form'],
+  prioritization: [],
+  scrapers: ['run_scraper', 'create_scraper', 'update_scraper', 'create_app_connector', 'run_source', 'set_source_enabled', 'import_reviews', 'save_radar_brands', 'run_radar_scan'],
+  settings: ['save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access'],
+  memory: ['forget_memory', 'confirm_memory', 'merge_memories', 'resolve_memory_conflict'],
+  agents: [
+    'create_agent',
+    'update_agent',
+    'enable_agent',
+    'disable_agent',
+    'run_agent',
+    'cancel_agent_run',
+    'create_workflow',
+    'update_workflow',
+    'duplicate_workflow',
+  ],
+  company: ['update_company_context', 'update_my_context', 'update_design_system'],
+  participants: ['create_participant_list', 'add_participants'],
+} as const satisfies Record<ToolPack, readonly string[]>;
+
+export type ServerToolName = (typeof SERVER_TOOLS)[ToolPack][number];
+export type ClientToolName = (typeof CLIENT_TOOLS)[ToolPack][number];
+
+/** Client tools whose approval card must use destructive styling. */
+export const DESTRUCTIVE_CLIENT_TOOLS: readonly ClientToolName[] = ['delete_document', 'forget_memory', 'merge_memories'];
+
+/** Client tools that need the `admins` group (on top of ADMIN_ONLY_PACKS). */
+export const ADMIN_ONLY_CLIENT_TOOLS: readonly ClientToolName[] = [
+  'run_scraper',
+  'create_scraper',
+  'update_scraper',
+  'create_app_connector',
+  'run_source',
+  'set_source_enabled',
+  'import_reviews',
+  'save_radar_brands',
+  'run_radar_scan',
+  'save_brand_settings',
+  'create_user',
+  'create_users',
+  'update_user',
+  'set_user_access',
+  'create_agent',
+  'update_agent',
+  'enable_agent',
+  'disable_agent',
+  // POST /agents/{id}/run and /runs/{run_id}/cancel are admin at REST (agents_handler._require_run_permission
+  // / _require_admin): a non-admin never gets the tool, a plan step forwards admins only after the re-check.
+  'run_agent',
+  'cancel_agent_run',
+  'create_workflow',
+  'update_workflow',
+  'duplicate_workflow',
+  'update_company_context',
+  'update_design_system',
+];
+
+/**
+ * Read-only server tools that need the `admins` group: the route they wrap is
+ * admin-only (analyze-url fetches a caller-chosen URL and spends a Bedrock call;
+ * the user listings expose the directory). Dropped from a non-admin's toolset
+ * and refused when called.
+ */
+export const ADMIN_ONLY_SERVER_TOOLS: readonly ServerToolName[] = ['analyze_scraper_url', 'list_users', 'get_user_access', 'get_source_run'];
+
+/**
+ * Tools introduced for plan mode (docs/assistant-plan-mode.md → "New tools"),
+ * named here before they were implemented. Every one is now built and listed
+ * in SERVER_TOOLS / CLIENT_TOOLS (and `run_source` in ADMIN_ONLY_CLIENT_TOOLS),
+ * so the lists are empty; the export stays because the plan contract
+ * (`plan/schema.ts`, `plan_contract.json`) and the SPA read it, and a
+ * later plan-mode tool is named here first the same way.
+ */
+export const PLAN_TOOL_NAMES = {
+  server: {},
+  client: {},
+  adminOnlyClient: [],
+} as const satisfies {
+  server: Partial<Record<ToolPack, readonly string[]>>;
+  client: Partial<Record<ToolPack, readonly string[]>>;
+  adminOnlyClient: readonly string[];
+};
+
+// ── Interrupts and custom events ────────────────────────────────────────────
+
+/** `Interrupt.reason` for a write awaiting human approval. */
+export const INTERRUPT_REASON_TOOL_APPROVAL = 'tool_approval';
+/** `Interrupt.id` is `${INTERRUPT_ID_PREFIX}${toolCallId}`. */
+export const INTERRUPT_ID_PREFIX = 'approval:';
+/** Minutes an approval stays answerable (`Interrupt.expiresAt`). */
+export const INTERRUPT_TTL_MINUTES = 30;
+
+/**
+ * `Interrupt.metadata` for a tool approval:
+ *   { toolName: ClientToolName, risk: 'write' | 'destructive', projectId?: string }
+ *
+ * The `tool` message the SPA sends back (content is a JSON string):
+ *   { status: 'executed', summary: string, data?: unknown }
+ *   { status: 'failed',   error: string }
+ *   { status: 'declined', reason?: string }
+ */
+export const TOOL_OUTCOME_STATUSES = ['executed', 'failed', 'declined'] as const;
+
+/**
+ * `Interrupt.reason` for a proposed plan awaiting approval (plan mode). The
+ * planner run ends with ONE such interrupt; its `metadata` is
+ * `{ plan: VocPlan }` (`plan/schema.ts`, validated) and the same plan was sent
+ * just before in the CUSTOM `assistant.plan` event. The SPA shows the plan card;
+ * approving calls `POST /agents/plans` (the plan runs in the agent runtime, not
+ * in this stream).
+ */
+export const INTERRUPT_REASON_PLAN_APPROVAL = 'plan_approval';
+/** `Interrupt.id` of a plan proposal is `${PLAN_INTERRUPT_ID_PREFIX}${proposalId}`. */
+export const PLAN_INTERRUPT_ID_PREFIX = 'plan:';
+
+export const CUSTOM_EVENTS = {
+  /** First event after RUN_STARTED: `{ page, packs, model, webSearch }`. */
+  context: 'assistant.context',
+  /** `{ feedback: FeedbackSource[], web: WebSource[] }` — once, before RUN_FINISHED. */
+  sources: 'assistant.sources',
+  /** `{ path: string, label: string }` — rendered as a link chip. */
+  navigation: 'assistant.navigation',
+  /**
+   * `{ revision: number }` — right before RUN_FINISHED / RUN_ERROR: the
+   * revision of the server's final save of this run (session/recorder.ts). The
+   * SPA sends it back as `baseRevision` so its own save never overwrites a
+   * newer server revision.
+   */
+  session: 'assistant.session',
+  /**
+   * `{ plan: VocPlan }` — a proposed `voc-plan/1` plan (plan mode), right
+   * before the RUN_FINISHED whose interrupt has reason `plan_approval`.
+   */
+  plan: 'assistant.plan',
+  /**
+   * `{}` — right before the RUN_FINISHED of a run the user stopped (Stop in the SPA writes a
+   * cancel marker the run polls, session/cancel.ts): the answer so far is all there is.
+   */
+  stopped: 'assistant.stopped',
+} as const;
+
+/**
+ * Stored run status of a session (`run_status` on the conversations item),
+ * written by the stream Lambda while a run streams. `interrupted` = ended waiting for an
+ * approval (pending interrupts); `stopped` = the user stopped it (5.35), the partial answer kept.
+ * LOCKSTEP with chat_handler.RUN_STATUSES.
+ */
+export const SESSION_RUN_STATUSES = ['running', 'finished', 'failed', 'interrupted', 'stopped'] as const;
+
+/**
+ * A stored `running` session whose last write is older than this is dead
+ * (the stream Lambda's timeout is 900 s — 15 minutes, the API Gateway
+ * streaming maximum — and a running run writes at every tool boundary, plus a
+ * minute's margin): readers treat it as interrupted, and chat_handler lets the
+ * SPA's save through. LOCKSTEP with chat_handler.STALE_RUN_SECONDS.
+ */
+export const STALE_RUN_SECONDS = 960;
+
+// ── forwardedProps ─────────────────────────────────────────────────────────
+
+export const MAX_ID_LENGTH = 128;
+
+/** `forwardedProps.days = 0` is the all-time window (lambda/shared/api.py `ALL_TIME_DAYS`). */
+export const ALL_TIME_DAYS = 0;
+
+/**
+ * The filters a page shows, from its URL query, so the assistant sees what is on screen (5.35):
+ * Categories (`q` … `tag`, pages/Categories/useCategoryFilters.ts) and Problem Analysis
+ * (`source`, `category`, `subcategory`, `urgent`, `resolved`, `similarity`). The time range is
+ * not here: it travels as `forwardedProps.days` / `dateBasis` on every page.
+ */
+export const PAGE_FILTER_KEYS = [
+  'q', 'category', 'subcategory', 'source', 'sentiment', 'usefulness', 'rating', 'rating_dir', 'urgent', 'channel', 'dims',
+  'tag', 'resolved', 'similarity',
+] as const;
+/** Free-text and scalar filter values (`q`, `tag`, `dims`, `rating`, …): at most this many characters. */
+export const MAX_PAGE_FILTER_CHARS = 200;
+/** The comma-list facets the read routes take as any-of (shared/item_facets.py). */
+export const FACET_FILTER_KEYS = ['source', 'category', 'subcategory', 'sentiment', 'usefulness'] as const;
+const FACET_KEYS: ReadonlySet<string> = new Set(FACET_FILTER_KEYS);
+/**
+ * The longest facet value: a full list, MAX_FACET_VALUES (50) values of MAX_FACET_VALUE_CHARS (128) plus
+ * their commas (shared/item_facets.py; pinned by test_page_filter_bound_lockstep.py). A shorter bound let an
+ * on-screen list fail the contract; only the facets get it, so free text stays short in every turn's context.
+ */
+export const MAX_FACET_FILTER_CHARS = 6500;
+
+/**
+ * The value an overlong single facet value becomes: no review has it, so the floor admits nothing.
+ * Dropping the value instead would remove the user's filter from the floor (fail open).
+ */
+export const NO_MATCH_FILTER_VALUE = '~none';
+
+/**
+ * `value` within its key's bound. A facet list is cut after its last whole value (a cut inside a value
+ * could leave a shorter name that matches another category), a single overlong facet value becomes
+ * NO_MATCH_FILTER_VALUE; other values are cut at the bound.
+ */
+export function boundedFilterValue(key: (typeof PAGE_FILTER_KEYS)[number], value: string): string {
+  const max = maxFilterChars(key);
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max);
+  if (!FACET_KEYS.has(key)) return cut;
+  const lastComma = cut.lastIndexOf(',');
+  return lastComma > 0 ? cut.slice(0, lastComma) : NO_MATCH_FILTER_VALUE;
+}
+
+/** The bound of one filter key's value. */
+export function maxFilterChars(key: (typeof PAGE_FILTER_KEYS)[number]): number {
+  return FACET_KEYS.has(key) ? MAX_FACET_FILTER_CHARS : MAX_PAGE_FILTER_CHARS;
+}
+
+const facetValue = z.string().min(1).max(MAX_FACET_FILTER_CHARS).optional();
+const textValue = z.string().min(1).max(MAX_PAGE_FILTER_CHARS).optional();
+
+/** One filter set in the PAGE_FILTER_KEYS vocabulary: a page's URL filters, or the /chat panel's scope. */
+export const pageFiltersSchema = z.object({
+  q: textValue, category: facetValue, subcategory: facetValue, source: facetValue, sentiment: facetValue,
+  usefulness: facetValue, rating: textValue, rating_dir: textValue, urgent: textValue, channel: textValue,
+  dims: textValue, tag: textValue, resolved: textValue, similarity: textValue,
+}).strict();
+
+/**
+ * The /chat filter panel (docs/assistant-chat-scope.md): `filters` is a hard floor on every
+ * feedback-reading tool (the model narrows within it, never past it), and `limit` caps how many
+ * reviews one feedback read may use (default and maximum CHAT_SCOPE_MAX_ITEMS).
+ */
+export const CHAT_SCOPE_MAX_ITEMS = 1000;
+export const chatScopeSchema = z.object({
+  filters: pageFiltersSchema.optional(),
+  limit: z.number().int().min(1).max(CHAT_SCOPE_MAX_ITEMS).optional(),
+});
+export type ChatScope = z.infer<typeof chatScopeSchema>;
+
+export const pageContextSchema = z.object({
+  kind: z.enum(PAGE_KINDS),
+  /** Router pathname, e.g. `/projects/abc`. Informational only. */
+  path: z.string().max(200),
+  projectId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
+  feedbackId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
+  /** The autonomous agent on screen (`agent` page: agent detail / workflow editor / runs). */
+  agentId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
+  /** Active tab on pages that have tabs (`?tab=` or local state). */
+  tab: z.string().max(64).optional(),
+  /** Human title of the entity on screen (project name, …), ≤120 chars. */
+  title: z.string().max(120).optional(),
+  /** Active page filters (PAGE_FILTER_KEYS); user-typed values, so they reach the model as data only. */
+  filters: pageFiltersSchema.optional(),
+});
+export type PageContext = z.infer<typeof pageContextSchema>;
+
+/**
+ * `@persona`, `@all` and `#document` in the composer on a project page (docs/assistant-mentions.md).
+ * Picked from the project's personas and documents, so they travel as ids, never parsed from the
+ * message text. `personas: 'all'` = the project's personas, the first MENTION_LIMITS.maxPersonas
+ * in project order (the reply names the ones left out).
+ */
+export const MENTION_LIMITS = { maxPersonas: 6, maxDocuments: 3, maxDocumentVersion: 100_000 } as const;
+export const MENTION_ALL_PERSONAS = 'all';
+/**
+ * Tool call ids of the persona round start with this: each mentioned persona's reply is one
+ * `consult_personas` call the server makes itself before the model's turn (runtime/persona-round.ts).
+ * The SPA reads the prefix to re-ask the same personas on Regenerate.
+ */
+export const MENTION_TOOL_CALL_PREFIX = 'mention_';
+
+export const mentionsSchema = z.object({
+  personas: z.union([
+    z.literal(MENTION_ALL_PERSONAS),
+    z.array(z.string().min(1).max(MAX_ID_LENGTH)).min(1).max(MENTION_LIMITS.maxPersonas),
+  ]).optional(),
+  documents: z.array(z.object({
+    document_id: z.string().min(1).max(MAX_ID_LENGTH),
+    /** The `(vN)` the picker showed; informational (the id names the version). */
+    version: z.number().int().min(1).max(MENTION_LIMITS.maxDocumentVersion).optional(),
+  })).min(1).max(MENTION_LIMITS.maxDocuments).optional(),
+});
+export type Mentions = z.infer<typeof mentionsSchema>;
+
+export const forwardedPropsSchema = z.object({
+  page: pageContextSchema,
+  /** Personas and documents the user mentioned in THIS message (project pages only). */
+  mentions: mentionsSchema.optional(),
+  /** Global time-range picker, 0–9999 (0 = all time), default 7. 9999 = MAX_WINDOW_DAYS (pinned in server-tools.test.ts). */
+  days: z.number().int().min(ALL_TIME_DAYS).max(9999).optional(),
+  dateBasis: z.enum(['imported', 'review']).optional(),
+  /** UI language (i18n.language); unsupported values degrade to English. */
+  responseLanguage: z.string().max(16).optional(),
+  /** Opt-in public web search; ignored when the gateway is not deployed. */
+  useWebSearch: z.boolean().optional(),
+  /** The /chat filter panel's scope (chatScopeSchema); the page filters are a floor too. */
+  scope: chatScopeSchema.optional(),
+});
+export type ForwardedProps = z.infer<typeof forwardedPropsSchema>;
+
+/** Hard request bounds (the SPA reads the same object). */
+export const LIMITS = {
+  maxMessages: 300,
+  maxUserMessageChars: 8000,
+  maxToolMessageChars: 20_000,
+  maxAttachments: 5,
+  maxAttachmentBase64Chars: 2_800_000,
+} as const;

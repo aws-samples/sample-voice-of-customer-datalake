@@ -5,18 +5,16 @@ import {
   render, screen, waitFor,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import {
-  QueryClient, QueryClientProvider,
-} from '@tanstack/react-query'
+import { createQueryWrapper } from '../Categories/categories-fixtures'
 import GeneratorConfigModal from './GeneratorConfigModal'
 // Imported rather than restated — see PluginConfigModal.test.tsx for the reason.
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
 
-const mockGetIntegrationCredentials = vi.fn()
-const mockUpdateIntegrationCredentials = vi.fn()
-const mockRunSource = vi.fn()
-const mockGetSourceRunStatus = vi.fn()
+const mockGetIntegrationCredentials = vi.fn<(...args: unknown[]) => unknown>()
+const mockUpdateIntegrationCredentials = vi.fn<(...args: unknown[]) => unknown>()
+const mockRunSource = vi.fn<(...args: unknown[]) => unknown>()
+const mockGetSourceRunStatus = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -27,15 +25,12 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
-function createWrapper() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-}
+const createWrapper = () => createQueryWrapper()
 
 const plugin: PluginManifest = {
   id: 'synthetic_reviews',
   name: 'Synthetic Data Review Generator',
-  icon: '🧪',
+  icon: 'Synthetic',
   description: 'Generate realistic synthetic customer reviews with AI.',
   category: 'synthetic',
   config: [

@@ -5,8 +5,8 @@ separate Lambda bundles and must agree.
 partition; `projects_handler.py` owns it — it writes a signed-in reviewer's ballot,
 it is the only reader, and it is where a composition change and a row delete assert
 these attributes. The two are packaged as SEPARATE bundles, so neither may import
-the other and the constants are duplicated by necessity. This file is what keeps the
-copies honest, exactly as `test_anon_ballot_key_lockstep.py` does for the sort key.
+the other; both take these names from `shared.prioritization_keys` (both bundles ship
+`lambda/shared`), and this file pins that and how each writer applies them.
 
 WHAT EACH DRIFT COSTS, WHICH IS WHY THIS IS A TEST AND NOT A COMMENT
 --------------------------------------------------------------------
@@ -35,84 +35,45 @@ Neither of the first two failures is loud. Nothing errors, no log line appears: 
 room votes, every phone says thanks, and an invariant the API advertises is quietly
 not true.
 
-Every value is read as SOURCE TEXT rather than imported, for the reason
-`test_anon_ballot_key_lockstep.py` records: the assertion must not be satisfiable by
-whatever either module happens to resolve at import time.
+The handlers are read as SOURCE TEXT rather than imported: the assertion must not be
+satisfiable by whatever either module happens to resolve at import time.
 """
 import re
-from pathlib import Path
+
+# `read_source` ASSERTS a missing file rather than skipping, and the difference
+# from `test_prioritization_row_payload_lockstep.py` is deliberate. BOTH files this
+# reads are backend sources in this same tree, packaged and checked out together
+# with the test — so an absent one means the file MOVED, which is a real drift
+# this test should report rather than step around.
+#
+# The locksteps that skip reach ACROSS into the frontend tree, which can
+# legitimately be absent (packaging a lambda bundle, a partial checkout): there is
+# nothing to compare, and skipping beats a failure that says nothing about the code
+# under test. Neither policy is the general rule; which one is right follows from
+# whether a missing file is possible without anything having gone wrong.
+from lockstep_fixtures import assert_imported_not_defined, read_source
+
+from shared import prioritization_keys as keys
 
 BALLOTS_SOURCE = 'lambda/api/ballots_handler.py'
 PROJECTS_SOURCE = 'lambda/api/projects_handler.py'
 
 
-def _read(relative: str) -> str:
-    # lambda/api/test/ -> voc-datalake/
-    path = Path(__file__).resolve().parents[3] / relative
-    # ASSERTED, not skipped, and the difference from
-    # `test_prioritization_row_payload_lockstep.py` is deliberate. BOTH files this
-    # reads are backend sources in this same tree, packaged and checked out together
-    # with the test — so an absent one means the file MOVED, which is a real drift
-    # this test should report rather than step around.
-    #
-    # The locksteps that skip reach ACROSS into the frontend tree, which can
-    # legitimately be absent (packaging a lambda bundle, a partial checkout): there is
-    # nothing to compare, and skipping beats a failure that says nothing about the code
-    # under test. Neither policy is the general rule; which one is right follows from
-    # whether a missing file is possible without anything having gone wrong.
-    assert path.is_file(), (
-        f'{relative} not found — did the file move? '
-        f'If so, update the path constant in this test file.'
-    )
-    return path.read_text(encoding='utf-8')
-
-
-def _single(source: str, pattern: str, where: str, what: str) -> str:
-    """The one match for `pattern`, or a failure naming what drifted.
-
-    Exactly one is required deliberately: a second assignment of the same constant
-    is itself the drift this file exists to prevent, and taking the first match
-    would hide it.
-    """
-    matches = re.findall(pattern, source, re.MULTILINE)
-    assert len(matches) == 1, (
-        f'Expected exactly one {what} assignment in {where}; found {len(matches)}. '
-        f'A second copy is the drift this test exists to prevent — if the '
-        f'declaration was restructured, update the pattern in this test file.'
-    )
-    return matches[0]
-
-
-def _str_const(source: str, name: str, where: str) -> str:
-    return _single(source, rf"^{name}\s*=\s*'([^']*)'", where, name)
-
-
-def _int_const(source: str, name: str, where: str) -> int:
-    return int(_single(source, rf'^{name}\s*=\s*(\d+)', where, name))
-
-
 class TestTheFreezeMarkIsOneAttributeInBothBundles:
     """The mark a composition change asserts the absence of."""
 
-    def test_both_writers_name_the_same_attribute(self):
-        anon = _str_const(_read(BALLOTS_SOURCE), 'ROW_FROZEN_AT_FIELD', BALLOTS_SOURCE)
-        owner = _str_const(_read(PROJECTS_SOURCE), 'ROW_FROZEN_AT_FIELD',
-                           PROJECTS_SOURCE)
-
-        assert anon == owner, (
-            f'ROW_FROZEN_AT_FIELD is {anon!r} in {BALLOTS_SOURCE} and {owner!r} in '
-            f'{PROJECTS_SOURCE}. The recompose route asserts the absence of the '
-            f"OWNER'S spelling, so a row whose only ballots came from a room would "
-            f'stay recomposable — and those ballots would end up describing '
-            f'documents nobody who cast them ever saw. Nothing errors when this '
-            f'drifts.'
-        )
+    def test_both_writers_take_it_from_its_one_home(self):
+        """The recompose route asserts the absence of this attribute, so a room ballot stamping
+        another name would leave its row recomposable, with nothing erroring."""
+        for where in (BALLOTS_SOURCE, PROJECTS_SOURCE):
+            assert_imported_not_defined(read_source(where), 'shared.prioritization_keys',
+                                        ('ROW_FROZEN_AT_FIELD',), where)
 
     def test_the_recompose_condition_asserts_that_attribute(self):
         """That the constant AGREES is not the contract; that the refusal is built on
         it is. A condition naming the attribute literally would satisfy the assertion
         above while ignoring the constant entirely."""
-        source = _read(PROJECTS_SOURCE)
+        source = read_source(PROJECTS_SOURCE)
 
         assert re.search(
             r'attribute_not_exists\(\{?ROW_FROZEN_AT_FIELD\}?\)', source
@@ -126,7 +87,7 @@ class TestTheFreezeMarkIsOneAttributeInBothBundles:
         """`if_not_exists` is what makes the mark a FREEZE INSTANT rather than a
         last-modified stamp. A plain assignment would move it on every correction, so
         "the first ballot froze this" would name whichever phone submitted last."""
-        source = _read(BALLOTS_SOURCE)
+        source = read_source(BALLOTS_SOURCE)
 
         assert re.search(r'if_not_exists\(#frozen_at, :now\)', source), (
             f'{BALLOTS_SOURCE} does not stamp the freeze mark with `if_not_exists`. '
@@ -137,24 +98,17 @@ class TestTheFreezeMarkIsOneAttributeInBothBundles:
 class TestTheDeleteFenceIsOneAttributeInBothBundles:
     """The counter a row delete asserts has not moved."""
 
-    def test_both_writers_name_the_same_attribute(self):
-        anon = _str_const(_read(BALLOTS_SOURCE), 'ROW_BALLOT_WRITES_FIELD',
-                          BALLOTS_SOURCE)
-        owner = _str_const(_read(PROJECTS_SOURCE), 'ROW_BALLOT_WRITES_FIELD',
-                           PROJECTS_SOURCE)
-
-        assert anon == owner, (
-            f'ROW_BALLOT_WRITES_FIELD is {anon!r} in {BALLOTS_SOURCE} and {owner!r} '
-            f'in {PROJECTS_SOURCE}. The row delete fences on the OWNER\'S spelling, '
-            f'so an anonymous ballot landing between the enumeration and the delete '
-            f'would not move it — and the delete would commit, leaving that ballot '
-            f'orphaned. That is the #342 fault the fence exists to close.'
-        )
+    def test_both_writers_take_it_from_its_one_home(self):
+        """The row delete fences on this counter, so a room ballot moving another name would
+        be orphaned by a delete that commits anyway (#342)."""
+        for where in (BALLOTS_SOURCE, PROJECTS_SOURCE):
+            assert_imported_not_defined(read_source(where), 'shared.prioritization_keys',
+                                        ('ROW_BALLOT_WRITES_FIELD',), where)
 
     def test_the_anonymous_writer_moves_it_with_ADD(self):
         """`ADD` rather than a read-then-increment, so a room of phones submitting at
         once each move it and none of them reads it first."""
-        source = _read(BALLOTS_SOURCE)
+        source = read_source(BALLOTS_SOURCE)
 
         assert re.search(r'ADD #ballot_writes :one', source), (
             f'{BALLOTS_SOURCE} does not ADD to the fence counter. An increment that '
@@ -165,32 +119,20 @@ class TestTheDeleteFenceIsOneAttributeInBothBundles:
         """One name for both marks would make the freeze instant and the write count
         the same field: the freeze would be overwritten by a counter, and the fence
         would compare timestamps."""
-        source = _read(PROJECTS_SOURCE)
-        frozen = _str_const(source, 'ROW_FROZEN_AT_FIELD', PROJECTS_SOURCE)
-        writes = _str_const(source, 'ROW_BALLOT_WRITES_FIELD', PROJECTS_SOURCE)
-
-        assert frozen != writes
+        assert keys.ROW_FROZEN_AT_FIELD != keys.ROW_BALLOT_WRITES_FIELD
 
 
 class TestBothBundlesReadTheCancellationReasonAtTheSamePosition:
     """Two items each, the row's write second, in both handlers."""
 
-    def test_the_row_index_agrees(self):
-        anon = _int_const(_read(BALLOTS_SOURCE), 'BALLOT_TRANSACT_ROW_INDEX',
-                          BALLOTS_SOURCE)
-        owner = _int_const(_read(PROJECTS_SOURCE), 'BALLOT_TRANSACT_ROW_INDEX',
-                           PROJECTS_SOURCE)
-
-        assert anon == owner, (
-            f'BALLOT_TRANSACT_ROW_INDEX is {anon} in {BALLOTS_SOURCE} and {owner} in '
-            f'{PROJECTS_SOURCE}. Both read the cancellation reason at that position '
-            f'to tell a vanished row from a write conflict, so a disagreement means '
-            f'one of them answers contention as a settled 404 and drops a ballot.'
-        )
+    def test_both_writers_take_the_row_index_from_its_one_home(self):
+        """Both read the cancellation reason at that position to tell a vanished row from a
+        write conflict; a disagreement would answer contention as a settled 404."""
+        for where in (BALLOTS_SOURCE, PROJECTS_SOURCE):
+            assert_imported_not_defined(read_source(where), 'shared.prioritization_keys',
+                                        ('BALLOT_TRANSACT_ROW_INDEX',), where)
 
     def test_the_index_names_the_second_of_two_items(self):
         """Stated as a number rather than derived, so a transaction that grew a third
         participant — or reordered the two — fails here."""
-        for source, where in ((_read(BALLOTS_SOURCE), BALLOTS_SOURCE),
-                              (_read(PROJECTS_SOURCE), PROJECTS_SOURCE)):
-            assert _int_const(source, 'BALLOT_TRANSACT_ROW_INDEX', where) == 1
+        assert keys.BALLOT_TRANSACT_ROW_INDEX == 1

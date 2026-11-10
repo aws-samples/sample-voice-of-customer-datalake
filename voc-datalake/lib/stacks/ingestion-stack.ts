@@ -9,8 +9,9 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
+import { createPrivateVersionedBucket } from './core-buckets';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as fs from 'fs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import {
@@ -20,17 +21,71 @@ import {
   getPluginsWithIngestor,
   getPluginsWithS3Trigger,
   capitalize,
+  pluginDirectoryIds,
   type PluginManifest,
 } from '../plugin-loader';
-import { NagSuppressions } from 'cdk-nag';
-import { apiSecretsSuppressions, bedrockModelSuppressions } from '../utils/nag-suppressions';
-import { allowlistedModelArns } from '../utils/model-allowlist';
-import { pythonLayerCode } from '../utils/python-layer-bundling';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
+import { pluginVersion } from '../utils/connector-version';
+import { apiSecretsSuppressions } from '../utils/nag-suppressions';
+import { dependencyLayer } from '../utils/dependency-layers';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
+import { pythonLambdaAsset } from '../utils/python-lambda-asset';
+import { PII_REDACTION_ENV } from '../utils/pii-redaction';
+import { grantRealtimePublish, type RealtimePublishing } from '../utils/realtime';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
+import {
+  EMAIL_INTAKE_DLQ_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME, PROCESSING_DLQ_BASE_NAME, ingestorFunctionBaseName,
+} from './dlq-alarms';
+import { createScheduleDeadLetterQueue } from './ingestion-schedule-dlq';
+import { IngestorRoles } from './ingestion-roles';
+import { createEmailIntake } from './email-intake';
+import { createDesignCapture } from './design-capture';
+import { PROCESSING_QUEUE_VISIBILITY_TIMEOUT } from './processor-timing';
+import { DESIGN_CAPTURE_FUNCTION_BASE_NAME } from '../utils/function-names';
+import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailConfig } from '../utils/inbound-email';
+
+/**
+ * S3-import staging bucket retention. Noncurrent versions are recoverable for a
+ * week (a mistaken overwrite/delete noticed after a weekend can still be
+ * undone), then purged so versioning never grows storage unboundedly; abandoned
+ * multipart parts are dropped after a day (S3 cost best practice).
+ */
+export const IMPORT_NONCURRENT_VERSION_DAYS = 7;
+/** A staged import file (and its `processed/` copy) is deleted this many days after upload. */
+export const IMPORT_STAGED_EXPIRATION_DAYS = 90;
+export const IMPORT_ABORT_MULTIPART_DAYS = 1;
+
+/**
+ * Scheduled-ingestion delivery (#253). EventBridge invokes the ingestor
+ * asynchronously, so these govern only DELIVERY (throttled or unreachable
+ * Lambda), not the ingestor's own errors. An event older than an hour is
+ * superseded by later ticks of the same 1–30 minute schedule, and ingestion is
+ * watermark-driven, so retrying it longer buys nothing.
+ */
+export const SCHEDULE_TARGET_RETRY_ATTEMPTS = 2;
+export const SCHEDULE_TARGET_MAX_EVENT_AGE = cdk.Duration.hours(1);
+
+/**
+ * The env var naming the import bucket on an S3-triggered ingestor
+ * (plugins/s3_import/ingestor/handler.py IMPORT_BUCKET): records for any other bucket are skipped.
+ */
+export const S3_IMPORT_BUCKET_ENV = 'S3_IMPORT_BUCKET';
+
+/** Enforce SSL/TLS for queue access: deny every SQS action over plain HTTP. */
+function denyInsecureTransport(queue: sqs.Queue): void {
+  queue.addToResourcePolicy(new iam.PolicyStatement({
+    sid: 'DenyInsecureTransport',
+    effect: iam.Effect.DENY,
+    principals: [new iam.AnyPrincipal()],
+    actions: ['sqs:*'],
+    resources: [queue.queueArn],
+    conditions: {
+      Bool: { 'aws:SecureTransport': 'false' },
+    },
+  }));
+}
 
 export interface VocIngestionStackProps extends VocStackProps {
-  feedbackTable: dynamodb.Table;
   watermarksTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
   rawDataBucket: s3.Bucket;
@@ -38,11 +93,12 @@ export interface VocIngestionStackProps extends VocStackProps {
   kmsKey: kms.Key;
   config: {
     brandName: string;
-    brandHandles: string[];
-    primaryLanguage: string;
     enabledSources: string[];
   };
-  frontendDomain?: string;
+  /** The app's CloudFront domain (VocCoreStack); the S3 import bucket's CORS allows it. */
+  frontendDomain: string;
+  /** VocCoreStack's Event API (core-realtime.ts): ingestors with `jobNotices` publish on `jobs`. */
+  realtime: RealtimePublishing;
 }
 
 export class VocIngestionStack extends VocStack {
@@ -51,20 +107,22 @@ export class VocIngestionStack extends VocStack {
   public readonly secretsArn: string;
   public readonly s3ImportBucket: s3.Bucket;
 
-  // Grant targets captured in the constructor so per-plugin roles (e.g. for
-  // Bedrock-capable plugins) can be granted the same base permissions.
-  private ingestRoleGrants!: {
-    watermarksTable: dynamodb.Table;
-    aggregatesTable: dynamodb.Table;
-    rawDataBucket: s3.Bucket;
-    kmsKey: kms.Key;
-    apiSecrets: secretsmanager.Secret;
-  };
+  // Built in the constructor once the grant targets exist (see ingestion-roles.ts).
+  private ingestorRoles!: IngestorRoles;
+
+  // Created on first use, so a deployment with no scheduled plugin gets no
+  // queue it never writes to. Encrypted with the Core key (`scheduleDlqKey`).
+  private scheduleDlq?: sqs.Queue;
+  private readonly scheduleDlqKey: kms.IKey;
+  /** VocCoreStack's Event API: where an ingestor with `jobNotices` publishes (docs/realtime.md). */
+  private readonly realtime: RealtimePublishing;
 
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
 
-    const { feedbackTable, watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
+    const { watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
+    this.scheduleDlqKey = kmsKey;
+    this.realtime = props.realtime;
 
 
 
@@ -74,8 +132,8 @@ export class VocIngestionStack extends VocStack {
     const enabledPlugins = getEnabledPlugins(allPlugins, config.enabledSources);
 
     // CORS allowed origins
-    const frontendDomain = props.frontendDomain || this.node.tryGetContext('frontendDomain');
-    const corsAllowedOrigins = this.buildCorsOrigins(frontendDomain);
+    // The CloudFront domain from VocCoreStack (bin/voc-datalake.ts); there is no context override.
+    const corsAllowedOrigins = this.buildCorsOrigins(props.frontendDomain);
 
     // S3 Import Bucket
     this.s3ImportBucket = this.createS3ImportBucket(kmsKey, accessLogsBucket, corsAllowedOrigins);
@@ -87,11 +145,10 @@ export class VocIngestionStack extends VocStack {
     const dlq = this.createDLQ(kmsKey);
     this.processingQueue = this.createProcessingQueue(kmsKey, dlq);
 
-    // Grant targets reused when building per-plugin roles (e.g. Bedrock-capable plugins)
-    this.ingestRoleGrants = { watermarksTable, aggregatesTable, rawDataBucket, kmsKey, apiSecrets };
-
-    // Common Lambda execution role (shared by plugins that don't need extra permissions)
-    const ingestionRole = this.createIngestionRole();
+    // Ingestor execution roles: shared, or dedicated where a plugin needs Bedrock or a schedule
+    this.ingestorRoles = new IngestorRoles(this, {
+      watermarksTable, aggregatesTable, processingQueue: this.processingQueue, rawDataBucket, kmsKey, apiSecrets,
+    });
 
     // Common environment variables
     const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, config);
@@ -100,17 +157,12 @@ export class VocIngestionStack extends VocStack {
     const dependenciesLayer = this.createDependenciesLayer();
 
     // Create Lambda functions for each enabled plugin with ingestor.
-    // Sibling excludes derive from DISK, not the loader: a plugin dir the
-    // loader skips (malformed manifest, fresh scaffold) must still be
-    // excluded from every other ingestor's hash or it churns them all.
-    const allPluginIds = fs.readdirSync(pluginsDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
-      .map((entry) => entry.name);
+    // Sibling excludes derive from DISK, not the loader (see pluginDirectoryIds).
+    const allPluginIds = pluginDirectoryIds(pluginsDir);
     const ingestorPlugins = getPluginsWithIngestor(enabledPlugins);
     for (const plugin of ingestorPlugins) {
       this.createIngestorLambda(
         plugin,
-        ingestionRole,
         commonEnv,
         dependenciesLayer,
         aggregatesTable,
@@ -123,6 +175,16 @@ export class VocIngestionStack extends VocStack {
     for (const plugin of s3TriggerPlugins) {
       this.setupS3Trigger(plugin);
     }
+
+    // Live-website design references (docs/company-context.md): one page in the managed browser.
+    createDesignCapture(this, {
+      aggregatesTable, rawDataBucket, kmsKey, layer: dependenciesLayer, allPluginIds,
+      functionName: this.uniqueName(DESIGN_CAPTURE_FUNCTION_BASE_NAME),
+      logGroupName: this.uniqueName(`/aws/lambda/${DESIGN_CAPTURE_FUNCTION_BASE_NAME}`),
+    });
+
+    // The email inbox: only with -c inboundEmailDomain (docs/email-intake.md)
+    this.createEmailInbox({ watermarksTable, aggregatesTable, accessLogsBucket, rawDataBucket, kmsKey, layer: dependenciesLayer });
 
     // Expose secrets ARN for other stacks
     this.secretsArn = apiSecrets.secretArn;
@@ -141,12 +203,31 @@ export class VocIngestionStack extends VocStack {
   // Helper Methods
   // ============================================
 
-  private buildCorsOrigins(frontendDomain: string | undefined): string[] {
-    const devOrigins = ['http://localhost:5173', 'http://localhost:3000'];
-    if (frontendDomain) {
-      return [`https://${frontendDomain}`, ...devOrigins];
-    }
-    return devOrigins;
+  private buildCorsOrigins(frontendDomain: string): string[] {
+    // An empty or padded domain would allow `https://` or a broken origin; the stack is always given the
+    // CloudFront domain (a CDK token while synthesizing, which holds no whitespace either).
+    if (!/^\S+$/.test(frontendDomain)) throw new Error('VocIngestionStack needs the frontend (CloudFront) domain');
+    return [`https://${frontendDomain}`, 'http://localhost:5173', 'http://localhost:3000'];
+  }
+
+  private createEmailInbox(deps: {
+    watermarksTable: dynamodb.Table; aggregatesTable: dynamodb.Table; accessLogsBucket: s3.Bucket;
+    rawDataBucket: s3.Bucket; kmsKey: kms.Key; layer: lambda.LayerVersion;
+  }): void {
+    const config = inboundEmailConfig(this.node);
+    if (config === undefined) return;
+    createEmailIntake(this, {
+      ...deps, config, processingQueue: this.processingQueue, denyInsecureTransport,
+      names: {
+        bucket: this.uniqueDnsName('voc-inbound-email'),
+        queue: this.uniqueName('voc-email-intake'),
+        dlq: this.uniqueName(EMAIL_INTAKE_DLQ_BASE_NAME),
+        functionName: this.uniqueName('voc-email-intake'),
+        logGroup: this.uniqueName('/aws/lambda/voc-email-intake'),
+        rule: this.uniqueName(INBOUND_EMAIL_RULE_BASE_NAME),
+        ownRuleSet: this.uniqueName(INBOUND_EMAIL_RULE_BASE_NAME),
+      },
+    });
   }
 
   private createS3ImportBucket(
@@ -154,17 +235,16 @@ export class VocIngestionStack extends VocStack {
     accessLogsBucket: s3.Bucket,
     corsAllowedOrigins: string[]
   ): s3.Bucket {
-    return new s3.Bucket(this, 'S3ImportBucket', {
+    // Versioned (AWS S3 security best practice: recover from accidental
+    // overwrite/delete). Deletes through the API become delete markers, which
+    // list_objects_v2 hides, so the UI and ingestor see no difference. The
+    // `staging-version-hygiene` rule below keeps the cost of versioning
+    // bounded on what is only a staging bucket.
+    return createPrivateVersionedBucket(this, 'S3ImportBucket', {
       bucketName: this.uniqueDnsName('voc-import'),
-      encryption: s3.BucketEncryption.KMS,
-      encryptionKey: kmsKey,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      enforceSSL: true,
-      versioned: false,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      autoDeleteObjects: true,
-      serverAccessLogsBucket: accessLogsBucket,
-      serverAccessLogsPrefix: 's3-import-bucket/',
+      kmsKey,
+      accessLogsBucket,
+      accessLogPrefix: 's3-import-bucket/',
       cors: [
         {
           allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.GET],
@@ -180,6 +260,22 @@ export class VocIngestionStack extends VocStack {
           transitions: [
             { storageClass: s3.StorageClass.GLACIER, transitionAfter: cdk.Duration.days(30) },
           ],
+        },
+        {
+          // Retention rationale on IMPORT_NONCURRENT_VERSION_DAYS above; short
+          // because once ingested, the durable copy is the raw data lake.
+          id: 'staging-version-hygiene',
+          // Staged files are unredacted uploads outside retention and erasure (DATA-1): they expire once
+          // ingested long enough ago that the raw lake and the feedback table are the durable copy.
+          expiration: cdk.Duration.days(IMPORT_STAGED_EXPIRATION_DAYS),
+          noncurrentVersionExpiration: cdk.Duration.days(IMPORT_NONCURRENT_VERSION_DAYS),
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(IMPORT_ABORT_MULTIPART_DAYS),
+        },
+        {
+          // Separate rule: S3 rejects ExpiredObjectDeleteMarker alongside other
+          // expiration settings. Clears markers left once their versions expire.
+          id: 'remove-expired-delete-markers',
+          expiredObjectDeleteMarker: true,
         },
       ],
     });
@@ -207,32 +303,33 @@ export class VocIngestionStack extends VocStack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    NagSuppressions.addResourceSuppressions(secret, apiSecretsSuppressions);
+    acknowledgeNagOnResource(secret, apiSecretsSuppressions);
     return secret;
   }
 
   private createDLQ(kmsKey: kms.Key): sqs.Queue {
+    const queueName = this.uniqueName(PROCESSING_DLQ_BASE_NAME);
     const dlq = new sqs.Queue(this, 'ProcessingDLQ', {
-      queueName: this.uniqueName('voc-processing-dlq'),
+      queueName,
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
       retentionPeriod: cdk.Duration.days(14),
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Enforce SSL/TLS for queue access
-    dlq.addToResourcePolicy(new iam.PolicyStatement({
-      sid: 'DenyInsecureTransport',
-      effect: iam.Effect.DENY,
-      principals: [new iam.AnyPrincipal()],
-      actions: ['sqs:*'],
-      resources: [dlq.queueArn],
-      conditions: {
-        Bool: { 'aws:SecureTransport': 'false' },
-      },
-    }));
+    denyInsecureTransport(dlq);
 
     return dlq;
+  }
+
+  /** The schedule targets' dead-letter queue (#253), created on first use. */
+  private scheduleDeadLetterQueue(): sqs.Queue {
+    this.scheduleDlq ??= createScheduleDeadLetterQueue(this, {
+      queueName: this.uniqueName(INGEST_SCHEDULE_DLQ_BASE_NAME),
+      key: this.scheduleDlqKey,
+      denyInsecureTransport,
+    });
+    return this.scheduleDlq;
   }
 
   private createProcessingQueue(kmsKey: kms.Key, dlq: sqs.Queue): sqs.Queue {
@@ -240,81 +337,15 @@ export class VocIngestionStack extends VocStack {
       queueName: this.uniqueName('voc-processing-queue'),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
-      visibilityTimeout: cdk.Duration.minutes(6),
+      // 6 x the processor timeout + its batching window (AWS Lambda SQS guidance, processor-timing.ts).
+      visibilityTimeout: PROCESSING_QUEUE_VISIBILITY_TIMEOUT,
       deadLetterQueue: { queue: dlq, maxReceiveCount: 3 },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Enforce SSL/TLS for queue access
-    queue.addToResourcePolicy(new iam.PolicyStatement({
-      sid: 'DenyInsecureTransport',
-      effect: iam.Effect.DENY,
-      principals: [new iam.AnyPrincipal()],
-      actions: ['sqs:*'],
-      resources: [queue.queueArn],
-      conditions: {
-        Bool: { 'aws:SecureTransport': 'false' },
-      },
-    }));
+    denyInsecureTransport(queue);
 
     return queue;
-  }
-
-  private createIngestionRole(): iam.Role {
-    const role = new iam.Role(this, 'IngestionLambdaRole', {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      ],
-    });
-
-    this.applyBaseIngestionGrants(role);
-
-    return role;
-  }
-
-  /** Apply the standard ingestion permissions: watermarks, aggregates, queue, raw bucket, KMS, secrets. */
-  private applyBaseIngestionGrants(role: iam.Role): void {
-    const { watermarksTable, aggregatesTable, rawDataBucket, kmsKey, apiSecrets } = this.ingestRoleGrants;
-    watermarksTable.grantReadWriteData(role);
-    aggregatesTable.grantReadWriteData(role);
-    this.processingQueue.grantSendMessages(role);
-    rawDataBucket.grantReadWrite(role);
-    kmsKey.grantEncryptDecrypt(role);
-    apiSecrets.grantRead(role);
-  }
-
-  /**
-   * Build a dedicated role for a plugin that opts in via `infrastructure.ingestor.bedrock`.
-   * It gets the same base ingestion permissions PLUS a scoped bedrock:InvokeModel grant
-   * for the curated model allowlist. This keeps least-privilege intact: only opted-in
-   * plugins can reach Bedrock, rather than widening the shared role for the whole plugin
-   * fleet.
-   *
-   * The grant covers every model the per-surface picker can resolve to (issue #96),
-   * since these plugins invoke via shared/converse.py — kept in lockstep with
-   * lambda/shared/model_config.py through lib/utils/model-allowlist.ts.
-   */
-  private createBedrockIngestorRole(pluginId: string): iam.Role {
-    const role = new iam.Role(this, `IngestorRole${capitalize(pluginId)}`, {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      ],
-    });
-
-    this.applyBaseIngestionGrants(role);
-
-    role.addToPolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel'],
-      resources: allowlistedModelArns(this.region, this.account),
-    }));
-
-    // The stack-level suppressions in bin/ cover the base grants but not Bedrock,
-    // so attach the Bedrock model suppression to this dedicated role explicitly.
-    NagSuppressions.addResourceSuppressions(role, bedrockModelSuppressions, true);
-
-    return role;
   }
 
   private buildCommonEnv(
@@ -329,27 +360,19 @@ export class VocIngestionStack extends VocStack {
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       SECRETS_ARN: apiSecrets.secretArn,
       BRAND_NAME: config.brandName,
-      BRAND_HANDLES: JSON.stringify(config.brandHandles),
-      PRIMARY_LANGUAGE: config.primaryLanguage,
       POWERTOOLS_SERVICE_NAME: 'voc-ingestion',
       LOG_LEVEL: 'INFO',
-      DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID,
-      DEPLOY_REGION: cdk.Aws.REGION,
+      ...PII_REDACTION_ENV,
     };
   }
 
   private createDependenciesLayer(): lambda.LayerVersion {
-    return new lambda.LayerVersion(this, 'IngestionDepsLayer', {
-      code: pythonLayerCode('lambda/layers/ingestion-deps'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
-      compatibleArchitectures: [lambda.Architecture.ARM_64],
-      description: 'Common dependencies for ingestion lambdas (ARM64/Graviton)',
-    });
+    return dependencyLayer(this, 'IngestionDepsLayer', 'lambda/layers/ingestion-deps',
+      'Common dependencies for ingestion lambdas (ARM64/Graviton)');
   }
 
   private createIngestorLambda(
     plugin: PluginManifest,
-    ingestionRole: iam.Role,
     commonEnv: Record<string, string>,
     dependenciesLayer: lambda.LayerVersion,
     aggregatesTable: dynamodb.Table,
@@ -361,15 +384,14 @@ export class VocIngestionStack extends VocStack {
     // Parse schedule from manifest
     const schedule = this.parseSchedule(infra.schedule);
 
-    // The rule name is needed twice: on the Rule below, and — under a
-    // deployment prefix — by the circuit breaker inside the ingestor, which
-    // disables its own schedule when a plugin keeps failing. It derives the
-    // name from DEPLOY_ACCOUNT_ID/DEPLOY_REGION today, which is right without a
-    // prefix and silently wrong with one (it would call DisableRule on a name
-    // that does not exist, leaving a failing plugin hammering the source), so
-    // pass the resolved name down instead. Built only when a rule actually
-    // exists, so an unscheduled plugin cannot spend name-length budget on a
-    // rule the app never creates.
+    // ONE string names the schedule three times: on the Rule below, in the
+    // role's events:DisableRule grant, and in INGEST_SCHEDULE_RULE_NAME, which
+    // the circuit breaker inside the ingestor passes to DisableRule when the
+    // plugin keeps failing. Handing the breaker the resolved name (rather than
+    // letting it rebuild one) is what keeps all three in step under a
+    // deployment prefix too, and its absence tells the breaker there is no rule
+    // to disable. Built only when a rule actually exists, so an unscheduled
+    // plugin cannot spend name-length budget on a rule the app never creates.
     const scheduleRuleName = schedule
       ? this.uniqueName(`voc-ingest-${plugin.id}-schedule`)
       : undefined;
@@ -378,8 +400,9 @@ export class VocIngestionStack extends VocStack {
     const lambdaEnv: Record<string, string> = {
       ...commonEnv,
       SOURCE_PLATFORM: plugin.id,
-      PLUGIN_ID: plugin.id,
-      ...(scheduleRuleName ? this.prefixOnlyEnv({ INGEST_SCHEDULE_RULE_NAME: scheduleRuleName }) : {}),
+      // The connector-version on every raw object the plugin archives (plugins/_shared/raw_archive.py).
+      PLUGIN_VERSION: pluginVersion(plugin),
+      ...(scheduleRuleName ? { INGEST_SCHEDULE_RULE_NAME: scheduleRuleName } : {}),
     };
 
     // All plugins need aggregates table for run status tracking
@@ -388,11 +411,32 @@ export class VocIngestionStack extends VocStack {
     // Bundle plugin code from plugins/ directory
     const ingestorCode = this.bundlePluginCode(plugin.id, allPluginIds);
 
-    // Bedrock-capable plugins get a dedicated, scoped role; all others share the common role.
-    const role = infra.bedrock === true ? this.createBedrockIngestorRole(plugin.id) : ingestionRole;
+    // Bedrock-capable and scheduled plugins get a dedicated, scoped role; the rest share one.
+    const role = this.ingestorRoles.roleFor(plugin.id, {
+      bedrock: infra.bedrock, browser: infra.browser, scheduleRuleName, jobNotices: infra.jobNotices,
+    });
+    const functionName = this.uniqueName(ingestorFunctionBaseName(plugin.id));
+
+    // A many-app run continues in a fresh invocation of its own function when it
+    // would not fit another app before the timeout (plugins/_shared/app_reviews_parts.py):
+    // the plugin declares it in its manifest (`infrastructure.ingestor.selfInvoke`).
+    // Only on the plugin's DEDICATED role (scheduled plugins have one), and only on
+    // its own function, built from the NAME: a grant that GetAtts the function
+    // would be a cycle (the function depends on this role's policy).
+    if (infra.selfInvoke && scheduleRuleName) {
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ['lambda:InvokeFunction'],
+        resources: [this.formatArn({
+          service: 'lambda',
+          resource: 'function',
+          resourceName: functionName,
+          arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+        })],
+      }));
+    }
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
-      functionName: this.uniqueName(`voc-ingestor-${plugin.id}`),
+      functionName,
       runtime: lambda.Runtime.PYTHON_3_14,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
@@ -404,7 +448,7 @@ export class VocIngestionStack extends VocStack {
       layers: [dependenciesLayer],
       logGroup: new logs.LogGroup(this, `IngestorLogs${capitalize(plugin.id)}`, {
         logGroupName: this.uniqueName(`/aws/lambda/voc-ingestor-${plugin.id}`),
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
@@ -416,11 +460,17 @@ export class VocIngestionStack extends VocStack {
       new events.Rule(this, `Schedule${capitalize(plugin.id)}`, {
         ruleName: scheduleRuleName,
         schedule,
-        targets: [new targets.LambdaFunction(fn, { retryAttempts: 2 })],
+        targets: [new targets.LambdaFunction(fn, {
+          retryAttempts: SCHEDULE_TARGET_RETRY_ATTEMPTS,
+          maxEventAge: SCHEDULE_TARGET_MAX_EVENT_AGE,
+          deadLetterQueue: this.scheduleDeadLetterQueue(),
+        })],
         enabled: false, // Disabled by default - enable via Settings UI
       });
     }
 
+    // A run the API started tells its starter when it ends (docs/realtime.md): its dedicated role publishes on `jobs`.
+    if (infra.jobNotices) grantRealtimePublish(this.realtime, 'jobs', [fn]);
     this.ingestionLambdas.set(plugin.id, fn);
   }
 
@@ -431,24 +481,17 @@ export class VocIngestionStack extends VocStack {
     // (issue #203: GLOB's 'dir/**' leaked dot-children like cdk.out/.cache,
     // churning every ingestor hash on every deploy) and why sibling plugins
     // are excluded per-id (their edits must not redeploy THIS ingestor).
-    return lambda.Code.fromAsset('.', {
+    return pythonLambdaAsset('.', {
       exclude: rootPluginAssetExcludes(pluginId, allPluginIds),
-      ignoreMode: cdk.IgnoreMode.GIT,
-      bundling: {
-        image: lambda.Runtime.PYTHON_3_14.bundlingImage,
-        command: [
-          'bash', '-c', [
-            'mkdir -p /asset-output',
-            // Copy plugin ingestor code
-            `cp -r /asset-input/plugins/${pluginId}/ingestor/* /asset-output/`,
-            // Copy plugin shared modules
-            'cp -r /asset-input/plugins/_shared /asset-output/',
-            // Copy lambda shared modules (logging, aws, http)
-            'cp -r /asset-input/lambda/shared /asset-output/',
-          ].join(' && '),
-        ],
-        platform: 'linux/arm64',
-      },
+      copy: [
+        'mkdir -p /asset-output',
+        // Copy plugin ingestor code
+        `cp -r /asset-input/plugins/${pluginId}/ingestor/* /asset-output/`,
+        // Copy plugin shared modules
+        'cp -r /asset-input/plugins/_shared /asset-output/',
+        // Copy lambda shared modules (logging, aws, http)
+        'cp -r /asset-input/lambda/shared /asset-output/',
+      ],
     });
   }
 
@@ -456,10 +499,10 @@ export class VocIngestionStack extends VocStack {
     if (!scheduleExpr) return null;
 
     // Parse rate expressions: rate(5 minutes), rate(1 hour), etc.
-    const rateMatch = scheduleExpr.match(/^rate\((\d+)\s+(minute|minutes|hour|hours|day|days)\)$/);
+    const rateMatch = /^rate\((\d+)\s+(minute|minutes|hour|hours|day|days)\)$/.exec(scheduleExpr);
     if (rateMatch) {
-      const value = parseInt(rateMatch[1], 10);
-      const unit = rateMatch[2];
+      const [, amount = '', unit = ''] = rateMatch;
+      const value = parseInt(amount, 10);
 
       if (unit === 'minute' || unit === 'minutes') {
         return events.Schedule.rate(cdk.Duration.minutes(value));
@@ -473,7 +516,7 @@ export class VocIngestionStack extends VocStack {
     }
 
     // Parse cron expressions
-    const cronMatch = scheduleExpr.match(/^cron\((.+)\)$/);
+    const cronMatch = /^cron\((.+)\)$/.exec(scheduleExpr);
     if (cronMatch) {
       return events.Schedule.expression(scheduleExpr);
     }
@@ -493,7 +536,11 @@ export class VocIngestionStack extends VocStack {
     }
 
     // Grant S3 permissions
-    this.s3ImportBucket.grantReadWrite(fn);
+    // Read-only (IAM-13): the ingestor only head/get_objects the staged file; staging and delete are the API's.
+    this.s3ImportBucket.grantRead(fn);
+    // The ingestor reads only records naming this bucket: the API also invokes it
+    // directly (POST /s3-import/reprocess), so the bucket in an event is not trusted.
+    fn.addEnvironment(S3_IMPORT_BUCKET_ENV, this.s3ImportBucket.bucketName);
 
     // Add event notifications for each suffix
     for (const suffix of s3Trigger.suffixes) {

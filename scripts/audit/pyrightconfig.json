@@ -1,0 +1,12 @@
+{
+  "include": ["."],
+  "exclude": ["**/__pycache__", "allowlists"],
+  "pythonVersion": "3.12",
+  "extraPaths": ["."],
+  "typeCheckingMode": "standard",
+  "reportUnnecessaryIsInstance": "error",
+  "reportUnnecessaryComparison": "error",
+  "reportUnnecessaryContains": "error",
+  "reportUnnecessaryCast": "error",
+  "reportUnnecessaryTypeIgnoreComment": "error"
+}

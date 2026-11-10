@@ -2,8 +2,10 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as bedrockagentcore from 'aws-cdk-lib/aws-bedrockagentcore';
 import { Construct } from 'constructs';
-import { BedrockModelAccess, AnthropicUseCaseConfig } from './bedrock-access-stack';
+import { AnthropicUseCaseSubmission, AnthropicUseCaseConfig } from './bedrock-access-stack';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
+import { createCloudFrontWebAcl } from '../utils/waf';
+import { WEB_SEARCH_CONFIGURATION_NAME, WEB_SEARCH_CONNECTOR_ID, pinWebSearchConnector } from './web-search-connector-pin';
 
 /**
  * VocWebSearchStack — the us-east-1 AI-enablement stack. Two independent
@@ -11,15 +13,17 @@ import { VocStack, VocStackProps } from '../utils/voc-stack';
  *
  *   1. an AgentCore Gateway exposing the AWS-managed `web-search` connector
  *      as an MCP tool (`deployWebSearch`);
- *   2. Bedrock model access — the Anthropic use-case submission and the model
- *      agreements (`anthropicUseCase`).
+ *   2. the Anthropic use-case form submission (`anthropicUseCase`), opt-in.
  *
- * They live together because they are the same deployment unit: both must sit
- * in us-east-1 (the web-search connector exists only there; the
- * PutUseCaseForModelAccess API works only there), both are one-shot account
- * enablement built from custom resources, and neither depends on the core
- * stack chain. Keeping them apart put the app at six CloudFormation templates,
- * one over Workshop Studio's ceiling of five.
+ * They live together because both run in us-east-1 (the web-search connector
+ * exists only there; the form has only ever been submitted there), both are
+ * one-shot account enablement built from custom resources, and neither depends
+ * on the core stack chain. Keeping them apart put the app at six CloudFormation
+ * templates, one over Workshop Studio's ceiling of five.
+ *
+ * The model agreements are not here: VocCoreStack creates them in the app's own
+ * region on every deploy (BedrockModelAgreements). So with web search off and no
+ * form to submit, this stack is not created and nothing deploys to us-east-1.
  *
  * ⚠️ The stack is named for the web-search half only, for a deliberate reason:
  * the CDK id determines the CloudFormation export names that VocProcessingStack
@@ -56,24 +60,18 @@ export interface VocWebSearchStackProps extends VocStackProps {
   deployWebSearch: boolean;
 
   /**
-   * Create the Bedrock model-access half. Omit for accounts that already have
-   * Anthropic access; the agreements are then neither created nor needed.
+   * Submit Anthropic's use case form with these details. Omit (the default) to
+   * leave the form to the Bedrock console. bin/voc-datalake.ts also omits it
+   * under `skipUseCaseSubmission`.
    */
   anthropicUseCase?: AnthropicUseCaseConfig;
 
   /**
-   * Region the model agreements are created in — normally the app's region, not
-   * this stack's.
-   *
-   * Optional here but **required whenever `anthropicUseCase` is set**, and
-   * validated as such: a gateway-only caller has no model agreements, so
-   * forcing it to invent a value it never reads would be noise. There is
-   * deliberately no default — see BedrockModelAccessProps.
+   * Create the SPA distribution's CLOUDFRONT-scope web ACL here (it must live in us-east-1, and this is the app's
+   * us-east-1 stack): only with `-c enableWaf=true` / performanceTier (lib/utils/waf.ts). VocCoreStack reads
+   * `frontendWebAclArn` through a cross-region reference.
    */
-  modelRegion?: string;
-
-  /** @default false */
-  skipUseCaseSubmission?: boolean;
+  cloudFrontWebAcl?: boolean;
 }
 
 export class VocWebSearchStack extends VocStack {
@@ -81,6 +79,8 @@ export class VocWebSearchStack extends VocStack {
   public readonly gatewayUrl?: string;
   public readonly gatewayArn?: string;
   public readonly toolName?: string;
+  /** Undefined unless `cloudFrontWebAcl`. */
+  public readonly frontendWebAclArn?: string;
 
   constructor(scope: Construct, id: string, props: VocWebSearchStackProps) {
     super(scope, id, props);
@@ -90,32 +90,29 @@ export class VocWebSearchStack extends VocStack {
     // strips CDKMetadata, so the workshop artifact would be an invalid
     // `Resources: {}`. shouldDeployAiEnablement() decides whether to construct
     // it at all; this makes skipping that decision impossible.
-    if (!props.deployWebSearch && !props.anthropicUseCase) {
+    if (!props.deployWebSearch && !props.anthropicUseCase && props.cloudFrontWebAcl !== true) {
       throw new Error(
-        `${id}: both halves are disabled (deployWebSearch=false and no anthropicUseCase), ` +
+        `${id}: both halves are disabled (deployWebSearch=false and no anthropicUseCase) and there is no cloudFrontWebAcl, ` +
         'which would synthesize a stack with no resources. Use shouldDeployAiEnablement() ' +
         'to decide whether to construct this stack.',
       );
     }
 
+    if (props.cloudFrontWebAcl === true) {
+      this.frontendWebAclArn = createCloudFrontWebAcl(this).attrArn;
+    }
+
     if (props.anthropicUseCase) {
-      if (!props.modelRegion) {
-        throw new Error(
-          `${id}: modelRegion is required when anthropicUseCase is set — it decides where the ` +
-          'model agreements are created, and this stack is pinned to us-east-1 regardless of ' +
-          'where the app runs. Pass the app region.',
-        );
-      }
-      new BedrockModelAccess(this, 'BedrockModelAccess', {
+      // The use-case half. The id predates the split (it was BedrockModelAccess, form
+      // and agreements together) and is kept so the submission keeps its logical id.
+      AnthropicUseCaseSubmission.addTo(this, 'BedrockModelAccess', {
         anthropicUseCase: props.anthropicUseCase,
-        modelRegion: props.modelRegion,
-        skipUseCaseSubmission: props.skipUseCaseSubmission,
       });
     }
 
     if (!props.deployWebSearch) {
-      // Gateway half off. The stack still holds the model-access half — the
-      // caller is responsible for not constructing it with both halves off.
+      // Gateway half off. The stack still holds the use-case half — the guard
+      // above rules out both halves off.
       return;
     }
 
@@ -172,8 +169,8 @@ export class VocWebSearchStack extends VocStack {
         TargetConfiguration: {
           Mcp: {
             Connector: {
-              Source: { ConnectorId: 'web-search' },
-              Configurations: [{ Name: 'WebSearch', ParameterValues: {} }],
+              Source: { ConnectorId: WEB_SEARCH_CONNECTOR_ID },
+              Configurations: [{ Name: WEB_SEARCH_CONFIGURATION_NAME, ParameterValues: {} }],
             },
           },
         },
@@ -185,6 +182,8 @@ export class VocWebSearchStack extends VocStack {
     // Target provisioning exercises the service role, so make sure the
     // permissions exist before CloudFormation creates the target.
     target.node.addDependency(servicePolicy);
+    // Connector 1.2.0 (request filters for Radar's release scan): an in-place update.
+    pinWebSearchConnector(this, { gateway, target, targetName });
 
     this.gatewayUrl = gateway.attrGatewayUrl;
     this.gatewayArn = gateway.attrGatewayArn;

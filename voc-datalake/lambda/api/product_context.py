@@ -1,7 +1,8 @@
 """
 Product/service description input — per-project context that feeds PRD/PR-FAQ generation.
 
-Three pieces:
+Two pieces (the AI assistant fills the context through its
+`update_product_context` approval card, which calls `update_context`):
   1. ProductContext  — single mutable record per project (structured fields + free-form notes).
   2. ProductDoc      — internal documents uploaded by the user, turned into text by the
                        S3-triggered extractor at lambda/product_doc_extractor/.
@@ -11,40 +12,48 @@ Three pieces:
                        accepting them only produced records stuck at status=pending
                        forever, with the UI badge reading "Extracting…" indefinitely.
                        See DEFERRED_CONTENT_TYPES.
-  3. interview_turn  — one round of AI interview chat. The model uses a `update_product_context`
-                       tool to patch the structured record; the assistant text is the user-facing
-                       reply. Synchronous, returns {assistant_message, applied_patch} for simplicity.
 
-`build_product_context_block(project_id) -> str` is consumed by projects.generate_prd /
-generate_prfaq and substituted into the {product_context} placeholder.
+`build_product_context_block(project_id) -> str` is consumed by
+lambda/jobs/document_generator/handler.py (PRD / PR-FAQ generation) and
+projects.autofill_prfaq_questions, and substituted into the {product_context} placeholder.
 """
+from __future__ import annotations
+
 import os
 import secrets
-from collections.abc import Iterable
-from datetime import datetime, timezone
+from collections.abc import Iterable, Mapping
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.logging import logger, tracer
-from shared.aws import get_dynamodb_resource, get_bedrock_client
-from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS, MAX_IMAGE_BYTES
-from shared.model_config import get_active_model_id, omits_temperature
-from shared.converse import bedrock_call_with_retry
-from shared.project_writes import (
-    put_project_item,
-    put_project_item_and_increment,
-)
-from shared.exceptions import (
-    ConfigurationError, NotFoundError, ValidationError, ServiceError,
-)
-from shared.tables import get_projects_table
+from shared.delete_audit import record_delete
+from shared.deleted_sources import DeletedSource, mark_citing_documents
 from shared.derivation import DERIVATION_FIELD, build_derivation
+from shared.dynamo_paging import query_all
+from shared.exceptions import (
+    ConfigurationError,
+    NotFoundError,
+    ServiceError,
+    ValidationError,
+)
+from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS, MAX_IMAGE_BYTES
+from shared.logging import logger, tracer
+from shared.project_writes import (
+    create_counted_project_child,
+    project_pk,
+    put_project_item,
+)
+from shared.s3_versions import delete_every_version_of_keys
+from shared.tables import get_projects_table
+from shared.timestamps import now_iso
 
+if TYPE_CHECKING:
+    from mypy_boto3_dynamodb.type_defs import QueryInputTableQueryTypeDef
 
 projects_table = get_projects_table()
-dynamodb = get_dynamodb_resource()
 s3 = None
 
 
@@ -73,9 +82,10 @@ def _s3():
 
 CONTEXT_SK = 'PRODUCT_CONTEXT'
 
-# Free-text fields, each with a character cap. Lists were removed because they
+# Free-text fields, each with a character cap. There are no list fields: lists
 # read as a file-list / upload control in the UI; comment-style textareas are
-# clearer when the field is descriptive prose.
+# clearer when the field is descriptive prose. Records written under the old
+# list schema are joined into strings on read (_coerce_legacy_list).
 STRING_FIELDS = {
     'product_name': 200,
     'one_liner': 200,
@@ -92,10 +102,7 @@ STRING_FIELDS = {
 # Single-choice enum
 LIFECYCLE_STATES = {'idea', 'mvp', 'beta', 'ga', 'mature'}
 
-# (List fields removed — see note above.)
-LIST_FIELDS: dict[str, tuple[int, int]] = {}
-
-ALL_FIELDS = set(STRING_FIELDS) | set(LIST_FIELDS) | {'current_state'}
+ALL_FIELDS = set(STRING_FIELDS) | {'current_state'}
 
 # ── Upload limits ────────────────────────────────────────────────────────────
 # Kept in lockstep with the frontend and with the Converse image caps by
@@ -141,7 +148,7 @@ MAX_VISUAL_BRIEF_DOC_CHARS = 3_000
 # Across all selected visuals, and DERIVED rather than chosen — this is the fix for a
 # real defect, not a tidy-up.
 #
-# An independent number here can silently contradict the arity bound: at 4 ids × 3000
+# An independent number here can silently contradict the arity bound: at 4 ids x 3000
 # chars a hardcoded 9000 refused the FOURTH visual outright (the refusal is
 # all-or-nothing, so it is dropped whole), while the picker had offered four and its
 # limit note said four. The derivation stayed honest — it records what was used — but
@@ -228,25 +235,21 @@ UNTRUSTED_DOC_NOTICE = (
 
 def _empty_context() -> dict:
     """Default-empty context shape returned when no record exists yet."""
-    out: dict[str, object] = {f: '' for f in STRING_FIELDS}
+    out: dict[str, object] = dict.fromkeys(STRING_FIELDS, '')
     out['current_state'] = ''
-    for f in LIST_FIELDS:
-        out[f] = []
     return out
 
 
-def _coerce_legacy_list(value) -> str:
-    """Convert legacy list-field DDB values (from the prior schema) to a string."""
-    if isinstance(value, list):
-        return '\n'.join(str(v) for v in value if v).strip()
-    return value if isinstance(value, str) else ''
+def _coerce_legacy_list(value: list) -> str:
+    """Convert a legacy list-field DDB value (from the prior schema) to a string."""
+    return '\n'.join(str(v) for v in value if v).strip()
 
 
-def _validate_patch(patch: dict) -> dict:
+def _validate_patch(patch: object) -> dict:
     """
     Validate + truncate a partial product-context update.
     Unknown keys are dropped silently (the LLM sometimes invents fields).
-    Over-length strings are truncated; over-count lists are clipped.
+    Over-length strings are truncated.
     """
     if not isinstance(patch, dict):
         raise ValidationError('patch must be an object')
@@ -255,33 +258,26 @@ def _validate_patch(patch: dict) -> dict:
     for key, value in patch.items():
         if key not in ALL_FIELDS:
             continue
-
-        if key == 'current_state':
-            if value in LIFECYCLE_STATES:
-                clean[key] = value
-            continue
-
-        if key in STRING_FIELDS:
-            if value is None:
-                clean[key] = ''
-                continue
-            if not isinstance(value, str):
-                continue
-            clean[key] = value[: STRING_FIELDS[key]]
-            continue
-
-        if key in LIST_FIELDS:
-            max_items, max_len = LIST_FIELDS[key]
-            if not isinstance(value, list):
-                continue
-            cleaned_items = []
-            for item in value[:max_items]:
-                if isinstance(item, str) and item.strip():
-                    cleaned_items.append(item.strip()[:max_len])
-            clean[key] = cleaned_items
-            continue
-
+        cleaned = _clean_patch_value(key, value)
+        if cleaned is not None:
+            clean[key] = cleaned
     return clean
+
+
+def _clean_patch_value(key: str, value: Any) -> str | None:
+    """One field of `_validate_patch` (`key` is in ALL_FIELDS).
+
+    The truncated string, or None for a value the field refuses. No field can
+    legitimately be set to None (an explicit null clears a text field to ''), so
+    None is unambiguous as "drop this key".
+    """
+    if key == 'current_state':
+        # isinstance first: the model can answer a list or an object here, and an
+        # unhashable value tested against the set raises TypeError (a 500).
+        return value if isinstance(value, str) and value in LIFECYCLE_STATES else None
+    if value is None:
+        return ''
+    return value[: STRING_FIELDS[key]] if isinstance(value, str) else None
 
 
 # ── ProductContext CRUD ──────────────────────────────────────────────────────
@@ -312,13 +308,17 @@ def get_context(project_id: str) -> dict:
 
 
 @tracer.capture_method
-def update_context(project_id: str, body: dict) -> dict:
-    """Apply a validated patch to the product context. Creates the record on first PUT."""
+def update_context(project_id: str, body: object) -> dict:
+    """Apply a validated patch to the product context. Creates the record on first PUT.
+
+    ``body`` is the request body as parsed, unchecked: `_validate_patch` refuses a
+    non-object with its own 'patch must be an object'.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
     patch = _validate_patch(body or {})
-    now = datetime.now(timezone.utc).isoformat()
+    now = now_iso()
 
     # Build UpdateExpression for whatever fields are present in the patch.
     # Always set updated_at; ensure base item exists with put_item if missing.
@@ -369,180 +369,9 @@ def update_context(project_id: str, body: dict) -> dict:
     return get_context(project_id)
 
 
-# ── Interview chat (synchronous, single Bedrock turn with tool-use) ──────────
-
-INTERVIEW_TOOL_NAME = 'update_product_context'
-
-
-def _build_interview_tool() -> dict:
-    """JSON-schema for the update tool the LLM calls during the interview.
-
-    All fields are plain strings — comment-style, multi-line allowed. Each tool call
-    REPLACES the field; if the user adds to existing content the model should send
-    the merged value.
-    """
-    properties: dict = {k: {'type': 'string', 'maxLength': max_len}
-                        for k, max_len in STRING_FIELDS.items()}
-    properties['current_state'] = {
-        'type': 'string',
-        'enum': sorted(LIFECYCLE_STATES),
-    }
-    return {
-        'toolSpec': {
-            'name': INTERVIEW_TOOL_NAME,
-            'description': (
-                'Patch the structured product context with concrete information the '
-                'user just shared. Only include fields you have new information for. '
-                'Each field REPLACES the prior value — if the user is adding to an '
-                'existing field, include the merged combined text in the patch.'
-            ),
-            'inputSchema': {
-                'json': {
-                    'type': 'object',
-                    'properties': properties,
-                    'additionalProperties': False,
-                }
-            },
-        }
-    }
-
-
-def _format_context_for_prompt(ctx: dict) -> str:
-    """Render the current context for the system prompt — only filled fields."""
-    lines: list[str] = []
-    for k in ('product_name', 'one_liner', 'current_state',
-              'target_users', 'problem_solved',
-              'key_features', 'differentiators', 'known_limitations',
-              'non_goals', 'success_metrics', 'free_form_notes'):
-        v = ctx.get(k)
-        if not v:
-            continue
-        if isinstance(v, str) and len(v) > 500:
-            v = v[:500] + '...'
-        lines.append(f'{k}: {v}')
-    return '\n'.join(lines) if lines else '(empty)'
-
-
-@tracer.capture_method
-def interview_turn(project_id: str, body: dict) -> dict:
-    """
-    One round of interview. Body: {message: str, history?: [{role, content}], response_language?: str}
-    Returns: {assistant_message, applied_patch, context}
-    """
-    from shared.prompts import get_response_language_instruction
-
-    message = (body or {}).get('message', '').strip()
-    if not message:
-        raise ValidationError('message is required')
-
-    history = (body or {}).get('history') or []
-    if not isinstance(history, list):
-        history = []
-    response_language = (body or {}).get('response_language')
-
-    current_ctx = get_context(project_id)['context']
-
-    base_instructions = (
-        "You are interviewing the user about their product/service to fill a structured "
-        "context record that downstream PRD and PR/FAQ generators will consume. "
-        "Ask ONE focused question at a time, prioritizing fields that are still empty. "
-        "When the user gives concrete information, you MUST call the "
-        f"`{INTERVIEW_TOOL_NAME}` tool with a patch of just the fields you learned BEFORE "
-        "writing your reply text. Don't invent — only patch fields with information the "
-        "user actually provided. Each field REPLACES the prior value, so if the user is "
-        "adding to an existing field include the merged combined text in the patch. After "
-        "the tool call, briefly confirm what was captured and ask the next most useful question.\n\n"
-        f"CURRENT CONTEXT:\n{_format_context_for_prompt(current_ctx)}\n\n"
-        "Fields you can patch (all are free-text strings):\n"
-        f"- product_name (≤{STRING_FIELDS['product_name']} chars)\n"
-        f"- one_liner (≤{STRING_FIELDS['one_liner']} chars)\n"
-        "- target_users, problem_solved (free text)\n"
-        f"- current_state (one of: {sorted(LIFECYCLE_STATES)})\n"
-        "- key_features, differentiators, known_limitations, non_goals, success_metrics (free text comments)\n"
-        "- free_form_notes (anything that doesn't fit above)\n"
-    )
-    language_instruction = get_response_language_instruction(response_language)
-    system_prompt = (f"{base_instructions}\n\n{language_instruction}".strip()
-                     if language_instruction else base_instructions)
-
-    # Build messages: prior history + new user turn.
-    messages: list[dict] = []
-    for m in history[-12:]:
-        role = m.get('role')
-        content = m.get('content', '')
-        if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
-            messages.append({'role': role, 'content': [{'text': content}]})
-    messages.append({'role': 'user', 'content': [{'text': message}]})
-
-    client = get_bedrock_client()
-    # Product-interview chat surface. Raw client call (tool use isn't wrapped by
-    # the shared converse helper), so resolve the model and omit temperature for
-    # models that reject it (Sonnet 5 / Opus 5) exactly as converse() does.
-    model = get_active_model_id('chat')
-    inference_config: dict = {'maxTokens': 1024}
-    if not omits_temperature(model):
-        inference_config['temperature'] = 0.3
-    try:
-        # Through the shared retry policy, not bare: this raw call does not go
-        # through converse(), so without it the FIRST throttle would become a
-        # user-visible "AI interview unavailable" — the shared client makes one
-        # botocore attempt by design (see BEDROCK_READ_TIMEOUT_SECONDS).
-        resp = bedrock_call_with_retry(
-            lambda: client.converse(
-                modelId=model,
-                messages=messages,
-                system=[{'text': system_prompt}],
-                inferenceConfig=inference_config,
-                toolConfig={'tools': [_build_interview_tool()]},
-            ),
-            step_name='interview_turn',
-        )
-    except Exception as e:
-        # Covers sustained throttling too: bedrock_call_with_retry raises rather
-        # than returning None while raise_on_throttle is left at its default, so
-        # there is no empty-result case to check for below.
-        logger.exception(f'Interview Bedrock call failed: {e}')
-        raise ServiceError('AI interview unavailable. Please try again.')
-
-    output_blocks = resp.get('output', {}).get('message', {}).get('content', [])
-
-    assistant_text_parts: list[str] = []
-    raw_patch: dict | None = None
-    for block in output_blocks:
-        if 'text' in block:
-            assistant_text_parts.append(block['text'])
-        elif 'toolUse' in block:
-            tu = block['toolUse']
-            if tu.get('name') == INTERVIEW_TOOL_NAME:
-                raw_patch = tu.get('input') or {}
-
-    applied: dict = {}
-    if raw_patch is not None:
-        cleaned = _validate_patch(raw_patch)
-        if cleaned:
-            update_context(project_id, cleaned)
-            applied = cleaned
-
-    assistant_message = '\n'.join(p for p in assistant_text_parts if p).strip()
-    if not assistant_message:
-        # Tool-only turn — return a stable code; the frontend localizes it.
-        assistant_message = '__captured__' if applied else '__elaborate__'
-
-    fresh_ctx = get_context(project_id)['context']
-    return {
-        'assistant_message': assistant_message,
-        'applied_patch': applied,
-        'context': fresh_ctx,
-    }
-
-
 # ── ProductDoc — uploads, listing, deletion ──────────────────────────────────
 
 DOC_SK_PREFIX = 'PRODUCT_DOC#'
-
-
-def _doc_pk(project_id: str) -> str:
-    return f'PROJECT#{project_id}'
 
 
 def _new_doc_id() -> str:
@@ -633,23 +462,13 @@ def _declared_size(value: object) -> int | None:
 def _list_doc_items(project_id: str) -> list[dict]:
     if not projects_table:
         return []
-    items: list[dict] = []
-    last_evaluated = None
-    while True:
-        kwargs = dict(
-            KeyConditionExpression=(
-                Key('pk').eq(_doc_pk(project_id)) &
-                Key('sk').begins_with(DOC_SK_PREFIX)
-            )
+    kwargs: QueryInputTableQueryTypeDef = {
+        'KeyConditionExpression': (
+            Key('pk').eq(project_pk(project_id)) &
+            Key('sk').begins_with(DOC_SK_PREFIX)
         )
-        if last_evaluated:
-            kwargs['ExclusiveStartKey'] = last_evaluated
-        resp = projects_table.query(**kwargs)
-        items.extend(resp.get('Items', []))
-        last_evaluated = resp.get('LastEvaluatedKey')
-        if not last_evaluated:
-            break
-    return items
+    }
+    return query_all(projects_table, kwargs)
 
 
 def _doc_to_dto(item: dict) -> dict:
@@ -669,7 +488,7 @@ def _age_seconds(created_at) -> float | None:
     """Seconds since an ISO-8601 `created_at`, or None if it cannot be read.
 
     Defensive on purpose: the value is written by
-    `datetime.now(timezone.utc).isoformat()`, but a missing or malformed one must
+    `now_iso()`, but a missing or malformed one must
     NOT be treated as old. Failing safe means leaving the record alone — marking a
     document failed because its timestamp was unparseable would be a new lie in
     place of the one this transition removes.
@@ -681,8 +500,8 @@ def _age_seconds(created_at) -> float | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - parsed).total_seconds()
+        parsed = parsed.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - parsed).total_seconds()
 
 
 def _fail_if_stalled(project_id: str, item: dict) -> dict:
@@ -721,9 +540,11 @@ def _fail_if_stalled(project_id: str, item: dict) -> dict:
         'Text extraction did not complete. Please delete this document and '
         'upload it again.'
     )
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
     try:
         projects_table.update_item(
-            Key={'pk': _doc_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
             UpdateExpression='SET #status = :failed, #error = :error',
             ConditionExpression='#status = :expected',
             # `status` and `error` are both DynamoDB reserved words — same
@@ -807,6 +628,17 @@ def list_docs(project_id: str) -> dict:
     return {'docs': [_doc_to_dto(_fail_if_stalled(project_id, i)) for i in items]}
 
 
+def _body_text(body: dict | None, key: str) -> str:
+    """A stripped string field of the upload body, or '' when absent or not a string.
+
+    A list or object here would otherwise raise on `.strip()` (or, unhashable, on the
+    content-type membership tests) and surface as a 500; '' meets the ordinary
+    "filename is required" / "Unsupported file type" refusals instead.
+    """
+    value = (body or {}).get(key)
+    return value.strip() if isinstance(value, str) else ''
+
+
 @tracer.capture_method
 def create_upload_url(project_id: str, body: dict) -> dict:
     """
@@ -820,8 +652,8 @@ def create_upload_url(project_id: str, body: dict) -> dict:
     if not bucket:
         raise ConfigurationError('RAW_DATA_BUCKET not configured')
 
-    filename = (body or {}).get('filename', '').strip()
-    content_type = (body or {}).get('content_type', '').strip()
+    filename = _body_text(body, 'filename')
+    content_type = _body_text(body, 'content_type')
     size_bytes = _declared_size((body or {}).get('size_bytes'))
 
     # INVARIANT (tested): every rejection below happens BEFORE the put_item, so a
@@ -844,7 +676,9 @@ def create_upload_url(project_id: str, body: dict) -> dict:
     # everything would needlessly refuse large text documents we handle fine.
     is_image = content_type in IMAGE_CONTENT_TYPES
     max_bytes = MAX_IMAGE_BYTES if is_image else MAX_FILE_BYTES
-    if size_bytes is None or size_bytes <= 0 or size_bytes > max_bytes:
+    # `_declared_size` answers None or a size of at least 1 byte, so the lower
+    # bound needs no second check here.
+    if size_bytes is None or size_bytes > max_bytes:
         kind = 'Images' if is_image else 'Files'
         raise ValidationError(
             f'{kind} must be between 1 byte and {_human_mb(max_bytes)}.'
@@ -859,10 +693,10 @@ def create_upload_url(project_id: str, body: dict) -> dict:
     doc_id = _new_doc_id()
     ext = ALLOWED_CONTENT_TYPES[content_type]
     s3_raw_key = f'projects/{project_id}/product_docs/raw/{doc_id}.{ext}'
-    now = datetime.now(timezone.utc).isoformat()
+    now = now_iso()
 
     item = {
-        'pk': _doc_pk(project_id),
+        'pk': project_pk(project_id),
         'sk': f'{DOC_SK_PREFIX}{doc_id}',
         'doc_id': doc_id,
         'filename': filename[:255],
@@ -905,29 +739,38 @@ def create_upload_url(project_id: str, body: dict) -> dict:
 
 
 @tracer.capture_method
-def delete_doc(project_id: str, doc_id: str) -> dict:
+def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None = None) -> dict:
+    """Delete a product doc: its raw and extracted objects (every version), then the row.
+
+    The delete is recorded (``shared.delete_audit``), and a document that used it as a
+    visual says so (``shared.deleted_sources``).
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     bucket = os.environ.get('RAW_DATA_BUCKET')
 
     resp = projects_table.get_item(
-        Key={'pk': _doc_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+        Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
     item = resp.get('Item')
     if not item:
         raise NotFoundError('document not found')
 
     if bucket:
-        for key in (item.get('s3_raw_key'), item.get('s3_extracted_key')):
-            if key:
-                try:
-                    _s3().delete_object(Bucket=bucket, Key=key)
-                except Exception as e:
-                    logger.warning(f'Failed to delete s3://{bucket}/{key}: {e}')
+        keys = [key for key in (item.get('s3_raw_key'), item.get('s3_extracted_key')) if isinstance(key, str) and key]
+        try:
+            refused = delete_every_version_of_keys(_s3(), bucket, keys)
+        except (ClientError, BotoCoreError) as e:
+            logger.warning(f'Failed to delete the objects of product doc {doc_id}: {e}')
+        else:
+            if refused:
+                logger.warning(f'{refused} object version(s) of product doc {doc_id} could not be deleted')
 
     projects_table.delete_item(
-        Key={'pk': _doc_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+        Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
+    record_delete(projects_table, kind='product_doc', target={'project_id': project_id, 'doc_id': doc_id}, actor=actor)
+    mark_citing_documents(projects_table, project_id, [DeletedSource('product_doc', doc_id)], deleted_at=now_iso())
     return {'success': True}
 
 
@@ -1036,39 +879,41 @@ def generate_report(project_id: str, body: dict) -> dict:
         )
     except Exception as e:
         logger.exception(f"Product report generation failed: {e}")
-        raise ServiceError('Failed to generate report. Please try again.')
+        raise ServiceError('Failed to generate report. Please try again.') from e
 
-    now = datetime.now(timezone.utc).isoformat()
-    report_id = f"product_report_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    now_dt = datetime.now(UTC)
+    now = now_dt.isoformat()
     product_name = ctx.get('product_name') or 'Product'
     title = title_override or f"Product description: {product_name[:80]}"
 
-    item = {
-        'pk': f'PROJECT#{project_id}',
-        'sk': f'PRODUCT_REPORT#{report_id}',
-        'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-        'gsi1sk': now,
-        'document_id': report_id,
-        'document_type': 'product_report',
-        'title': title,
-        'content': content,
-        # This report is synthesized from the project's product-context block
-        # (structured fields + extracted internal documents) and nothing else —
-        # no project documents, no feedback, no personas. Recording that is what
-        # keeps it from reading as "built from nothing".
-        #
-        # DERIVED from the two inputs the block was actually built from, not
-        # asserted as True. The gate above does make the False case unreachable,
-        # so a literal would be correct today — and would still be a claim this
-        # code does not check, in the one field whose entire job is to say what a
-        # document was built from.
-        DERIVATION_FIELD: build_derivation(
-            product_context_included=_product_context_included(has_any, docs),
-        ),
-        'created_at': now,
-    }
-    put_project_item_and_increment(
-        projects_table, project_id, item, 'document_count',
+    def build(report_id: str) -> dict:
+        return {
+            'pk': f'PROJECT#{project_id}',
+            'sk': f'PRODUCT_REPORT#{report_id}',
+            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
+            'gsi1sk': now,
+            'document_id': report_id,
+            'document_type': 'product_report',
+            'title': title,
+            'content': content,
+            # This report is synthesized from the project's product-context block
+            # (structured fields + extracted internal documents) and nothing else —
+            # no project documents, no feedback, no personas. Recording that is what
+            # keeps it from reading as "built from nothing".
+            #
+            # DERIVED from the two inputs the block was actually built from, not
+            # asserted as True. The gate above does make the False case unreachable,
+            # so a literal would be correct today — and would still be a claim this
+            # code does not check, in the one field whose entire job is to say what a
+            # document was built from.
+            DERIVATION_FIELD: build_derivation(
+                product_context_included=_product_context_included(has_any, docs),
+            ),
+            'created_at': now,
+        }
+
+    item = create_counted_project_child(
+        projects_table, project_id, 'product_report', build, now=now_dt,
     )
     return {'success': True, 'document': item}
 
@@ -1140,7 +985,7 @@ def build_product_context_block(project_id: str, docs: list[dict] | None = None)
             try:
                 obj = _s3().get_object(Bucket=bucket, Key=d['s3_extracted_key'])
                 text = obj['Body'].read().decode('utf-8', errors='replace')
-            except Exception as e:
+            except (ClientError, BotoCoreError) as e:
                 logger.warning(f'Failed reading extracted text for {d.get("doc_id")}: {e}')
                 continue
             chunk = text[:budget]
@@ -1171,7 +1016,7 @@ def build_product_context_block(project_id: str, docs: list[dict] | None = None)
 # ── Visual brief — the SELECTED image documents, for the prototype prompt ─────
 
 def build_visual_brief_block(
-    project_id: str, doc_ids: Iterable[str] | None,
+    project_id: str, doc_ids: Iterable[object] | None,
 ) -> tuple[str, list[str]]:
     """The quoted descriptions of the image documents a build SELECTED.
 

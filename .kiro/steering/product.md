@@ -11,7 +11,7 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 - **Plugin architecture**: Modular data source connectors with manifest-based configuration and enable/disable via `cdk.context.json`
 - **Menu configuration**: Enable/disable dashboard menu items via `cdk.context.json`
 - **Webhook support**: Real-time ingestion via webhooks for plugins that support it
-- **LLM-powered analysis**: Amazon Bedrock (Claude; per-surface model picker, default Sonnet 5) for categorization, sentiment, persona inference, and root cause hypothesis
+- **LLM-powered analysis**: Amazon Bedrock (Claude; per-surface model picker — Claude 5.5 generation by default: Sonnet 5.5 for the AI assistant and documents, Opus 5.5 for prototypes and agent conductor/reviewer, Haiku 5.5 for enrichment and memory) for categorization, sentiment, persona inference, and root cause hypothesis
 - **Per-surface AI model picker**: admins choose the Claude model per AI surface in Settings (chat, documents, prototypes, enrichment, utilities) over a curated allowlist
 - **Opt-in public web search**: AgentCore Gateway connector for chat and research (deploy with `enableWebSearch: true`; UI hides the toggle when absent)
 - **Multi-language support**: Auto-detection via Comprehend, translation via Amazon Translate
@@ -73,7 +73,8 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 | Page | Path | Description |
 |------|------|-------------|
 | Login | `/login` | Cognito authentication |
-| Dashboard | `/` | Overview with charts, metrics, live social feed, urgent issues |
+| Home | `/` | The morning brief: what changed since the last visit |
+| Dashboard | `/dashboard` | Overview with charts, metrics, live social feed, urgent issues |
 | Feedback Detail | `/feedback/:id` | Single feedback item with full details |
 | Categories | `/categories` | Category breakdown, analysis, and consolidated feedback list (All view, search, urgent filter) |
 | Problem Analysis | `/problems` | Problem analysis dashboard |
@@ -94,7 +95,7 @@ Note: Each page is organized in its own folder under `frontend/src/pages/` with 
 - **Pay-per-use**: DynamoDB on-demand, S3 storage, Lambda per-invocation
 - **Auto-scaling**: Handles traffic spikes automatically
 - **High availability**: Multi-AZ by default
-- **Security**: KMS encryption, IAM least-privilege, Secrets Manager, Cognito auth, WAF protection
+- **Security**: KMS encryption, IAM least-privilege, Secrets Manager, Cognito auth, API Gateway per-method throttling (AWS WAF and Cognito Plus are opt-ins, `-c enableWaf=true` / `-c cognitoPlus=true`: off by default as a cost decision, recommended for production)
 - **Data Lake**: S3 raw data archival with partitioned structure for analytics
 
 ## Use Cases
@@ -103,5 +104,4 @@ Note: Each page is organized in its own folder under `frontend/src/pages/` with 
 2. **Issue Detection**: Identify urgent problems requiring immediate attention
 3. **Product Feedback Analysis**: Categorize and prioritize feature requests/complaints
 4. **Web Scraping**: Monitor reviews and feedback from any website
-5. **Support Team Enablement**: Provide suggested responses for common issues
-6. **Direct Feedback Collection**: Embed forms in websites/apps to collect customer feedback
+5. **Direct Feedback Collection**: Embed forms in websites/apps to collect customer feedback

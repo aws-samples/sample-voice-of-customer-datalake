@@ -5,11 +5,18 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { ProjectPersona, ProjectDocument } from '../../api/client'
+import type { ProjectDocument } from '../../api/types'
+import type { ProjectPersona } from '../../api/projectTypes'
 import { api } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { SOURCES as DEFAULT_SOURCES, CATEGORIES } from '../../constants/filters'
-import type { ContextConfig } from './types'
+import type { CategoryOption, ContextConfig } from './types'
+import { sourceListDays } from './sourceListWindow'
+import { categoryLabel } from '../../utils/displayLabels'
+import { useViewerScope } from '../ScopeNotice/useViewerScope'
+import { categoriesConfigKey } from '../../hooks/useCategories'
+import { ignoreRejection } from '../../lib/rejections'
+import { noCleanup } from '../../hooks/noCleanup'
 
 interface UseWizardStateProps {
   readonly personas: ReadonlyArray<ProjectPersona>
@@ -99,33 +106,47 @@ export function useWizardState({
   const { config } = useConfigStore()
 
   const { data: categoriesData, isLoading: loadingCategories } = useQuery({
-    queryKey: ['categories-config'],
+    queryKey: categoriesConfigKey(),
     queryFn: () => api.getCategoriesConfig(),
     enabled: !!config.apiEndpoint,
   })
+  const { scope } = useViewerScope()
+  // The built-in names stand in for an install with no category config — but
+  // only for someone known to see every category. For a restricted viewer an
+  // empty (scoped) config means "none of yours", and the built-in list would
+  // name categories outside their access (owner rule 2026-10-21).
+  const builtInFallback = scope?.kind === 'all'
 
-  const categories = useMemo(() => {
-    if (categoriesData?.categories && categoriesData.categories.length > 0) {
-      return categoriesData.categories.map(c => ({ id: c.id, name: c.name }))
+  // `value` is what the backend filters on: the category NAME, which is what a
+  // review stores in `category` (shared/feedback.py). A configured category's
+  // `id` is an editor key (`cat_<uuid>` for one added on the Categories page)
+  // and matches no review, so it never reaches the request.
+  const categories = useMemo<ReadonlyArray<CategoryOption>>(() => {
+    const configured = categoriesData?.categories ?? []
+    if (configured.length > 0) {
+      return configured.map(c => ({ value: c.name, label: categoryLabel(c.name, configured) }))
     }
-    return CATEGORIES.map(c => ({ 
-      id: c, 
-      name: c.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-    }))
-  }, [categoriesData])
+    return builtInFallback ? CATEGORIES.map(c => ({ value: c, label: categoryLabel(c) })) : []
+  }, [categoriesData, builtInFallback])
 
+  const listDays = sourceListDays(contextConfig.days)
   useEffect(() => {
-    if (!config.apiEndpoint) return
+    if (!config.apiEndpoint) return noCleanup
+    // The window changes with the selection, so an older, slower response must
+    // not overwrite the list for the window now selected.
+    const stale = new AbortController()
     
-    api.getSources({ days: 30 }).then(data => {
-      if (data.sources && Object.keys(data.sources).length > 0) {
-        const apiSources = Object.keys(data.sources).sort((a, b) => data.sources[b] - data.sources[a])
-        setSources(apiSources)
-      }
-    }).catch(() => {
-      // Keep default sources on error
-    })
-  }, [config.apiEndpoint])
+    api.getSources({ days: listDays }).then(data => {
+      // Busiest source first. A response without `sources` throws here and
+      // lands in the catch below, which keeps the defaults.
+      const apiSources = Object.entries(data.sources)
+        .sort(([, a], [, b]) => b - a)
+        .map(([source]) => source)
+      if (!stale.signal.aborted && apiSources.length > 0) setSources(apiSources)
+      // Keep the default sources on an error (or a malformed response).
+    }).catch(ignoreRejection)
+    return () => { stale.abort() }
+  }, [config.apiEndpoint, listDays])
 
   const researchDocs = useMemo(() => documents.filter(d => d.document_type === 'research'), [documents])
   const otherDocs = useMemo(() => documents.filter(d => d.document_type !== 'research'), [documents])

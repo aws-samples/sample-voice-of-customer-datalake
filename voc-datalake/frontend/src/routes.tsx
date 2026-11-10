@@ -4,7 +4,7 @@
  * Split from App.tsx so the table can be imported without constructing a router:
  * `createBrowserRouter` runs at App.tsx's module scope, and the breadcrumb tests
  * need the routes, not a router. Importing this module has no side effects — the
- * page imports are lazy and nothing here runs at load.
+ * pages come lazy from `lazyPages.ts` and nothing here runs at load.
  *
  * Breadcrumbs' route tables are held to this one by `route coverage` in
  * Breadcrumbs.test.tsx: every layout route needs a label and every `:param` route
@@ -14,32 +14,26 @@
  *
  * @module routes
  */
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
 import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import FeedbackRedirect from './components/FeedbackRedirect'
-import Layout from './components/Layout'
-import ProtectedRoute from './components/ProtectedRoute'
-import AdminRoute from './components/AdminRoute'
-import PageLoader from './components/PageLoader'
+import MovedRouteRedirect from './components/MovedRouteRedirect'
+import Layout from './components/Layout/Layout'
+import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
+import WorkspaceThemeSync from './theme/WorkspaceThemeSync'
+import AdminRoute from './components/AdminRoute/AdminRoute'
+import PageLoader from './components/PageLoader/PageLoader'
 import RouteErrorBoundary from './components/RouteErrorBoundary'
-import Login from './pages/Login'
-
-// Lazy load pages for better code splitting
-const Home = lazy(() => import('./pages/Home'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const FeedbackDetail = lazy(() => import('./pages/FeedbackDetail'))
-const Categories = lazy(() => import('./pages/Categories'))
-const ProblemAnalysis = lazy(() => import('./pages/ProblemAnalysis'))
-const Settings = lazy(() => import('./pages/Settings'))
-const Scrapers = lazy(() => import('./pages/Scrapers'))
-const Chat = lazy(() => import('./pages/Chat'))
-const Projects = lazy(() => import('./pages/Projects'))
-const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
-const Prioritization = lazy(() => import('./pages/Prioritization'))
-const FeedbackForms = lazy(() => import('./pages/FeedbackForms'))
-const DataExplorer = lazy(() => import('./pages/DataExplorer'))
-const Vote = lazy(() => import('./pages/Vote'))
+import NotFound from './components/RouteErrorBoundary/NotFound'
+import Login from './pages/Login/Login'
+import {
+  Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
+  Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
+  DataExplorer, Vote, Memory, Company, Agents, AgentDetail,
+  WorkflowPage, Account, Connect, OAuthConsent, Radar, Participants,
+  FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
+} from './lazyPages'
 
 // Lazy pages share the same suspense fallback and, per issue #173, a
 // route-scoped error boundary: a render error in one page replaces only
@@ -81,9 +75,37 @@ export const routes: RouteObject[] = [
     ...page(<Vote />),
   },
   {
+    /**
+     * The feedback boards for people who are NOT app users (docs/feature-requests.md), OUTSIDE
+     * `ProtectedRoute` like `/vote`: `/board` (the boards this person may use), `/board/:slug` (one
+     * board) and `/board/login`, routed inside the page. It has its own sign-in (a one-time code or
+     * link emailed by the boards' own Cognito user pool, for the emails some board's audience admits)
+     * and its own minimal shell. A board session grants only the board routes — the API's main
+     * authorizer never accepts its tokens.
+     */
+    path: '/board/*',
+    ...page(<Board />),
+  },
+  {
+    /**
+     * A PR/FAQ or PRD shared for review (docs/document-review.md), OUTSIDE `ProtectedRoute` like
+     * `/board`: a reviewer signs in with the board pool's emailed code (an app user keeps their
+     * session) and reads the newest version and comments. The API checks the link and the email.
+     */
+    path: '/review/:shareId',
+    ...page(<Review />),
+  },
+  {
+    /** One-click unsubscribe from participant emails (docs/participants.md): the emailed token is the control. */
+    path: '/unsubscribe',
+    ...page(<Unsubscribe />),
+  },
+  {
     path: '/',
     element: (
       <ProtectedRoute>
+        {/* The administrator's start theme (GET /settings/appearance), read once signed in. */}
+        <WorkspaceThemeSync />
         <Layout />
       </ProtectedRoute>
     ),
@@ -97,14 +119,38 @@ export const routes: RouteObject[] = [
       { path: 'feedback/:id', ...page(<FeedbackDetail />) },
       { path: 'categories', ...page(<Categories />) },
       { path: 'problems', ...page(<ProblemAnalysis />) },
+      { path: 'radar', ...page(<Radar />) },
       { path: 'chat', ...page(<Chat />) },
       { path: 'projects', ...page(<Projects />) },
       { path: 'projects/:id', ...page(<ProjectDetail />) },
       { path: 'prioritization', ...page(<Prioritization />) },
-      { path: 'data-explorer', ...page(<DataExplorer />) },
+      { path: 'data-explorer', ...page(<AdminRoute><DataExplorer /></AdminRoute>) },
       { path: 'scrapers', ...page(<Scrapers />) },
       { path: 'feedback-forms', ...page(<FeedbackForms />) },
-      { path: 'settings', ...page(<AdminRoute><Settings /></AdminRoute>) },
+      { path: 'participants', ...page(<Participants />) },
+      // Feedback boards: the list (an old `?request=` link opens its board), then one board by slug or id.
+      { path: 'feature-requests', ...page(<FeatureRequests />) },
+      { path: 'feature-requests/:slug', ...page(<FeatureBoardPage />) },
+      { path: 'memory', ...page(<Memory />) },
+      { path: 'company', ...page(<Company />) },
+      { path: 'agents', ...page(<Agents />) },
+      { path: 'agents/:id', ...page(<AgentDetail />) },
+      // The library itself is the Workflows tab of /agents (its "Workflows" crumb links there). Without this,
+      // a trimmed workflow URL matched `agents/:id` and fetched an agent named "workflows" (404).
+      { path: 'agents/workflows', element: <MovedRouteRedirect to="/agents?tab=workflows" />, errorElement: <RouteErrorBoundary /> },
+      // A library workflow on its own, outside any agent (Workflow library → Open / New workflow).
+      { path: 'agents/workflows/:workflowId', ...page(<WorkflowPage />) },
+      { path: 'connect', ...page(<Connect />) },
+      { path: 'oauth/authorize', ...page(<OAuthConsent />) },
+      { path: 'account', ...page(<Account />) },
+      // Administration (was Settings): admins only. The old
+      // path keeps working — links, bookmarks and `?tab=` deep links redirect.
+      { path: 'admin', ...page(<AdminRoute><Settings /></AdminRoute>) },
+      { path: 'settings', element: <MovedRouteRedirect to="/admin" />, errorElement: <RouteErrorBoundary /> },
+      // Unknown URLs render a "Page not found" state INSIDE the layout, so the
+      // sidebar stays usable. Without it React Router hands the 404 to the root
+      // errorElement, which replaces the whole shell.
+      { path: '*', element: <NotFound />, errorElement: <RouteErrorBoundary /> },
     ],
   },
 ]

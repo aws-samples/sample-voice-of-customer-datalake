@@ -10,8 +10,6 @@
  * @module pages/Login
  */
 
-import { type CognitoUser } from 'amazon-cognito-identity-js'
-import { MessageSquare } from 'lucide-react'
 import {
   useState, type SyntheticEvent,
 } from 'react'
@@ -19,21 +17,24 @@ import { useTranslation } from 'react-i18next'
 import {
   useNavigate, useLocation,
 } from 'react-router-dom'
-import { authService } from '../../services/auth'
+import ThemeMark from '../../components/ThemeMark/ThemeMark'
+import { AuthChallengeError, authService, isNewPasswordChallenge } from '../../services/auth'
+import { canUsePasskeys, passkeyAuth } from '../../services/passkeyAuth'
+import { passkeyErrorText } from '../../components/PasskeyPrompt/passkeyErrorText'
 import { isSessionExpiredRedirect } from '../../services/sessionExpiry'
+import { LANDING_STATE } from '../../utils/landing'
 import {
   LoginForm,
   NewPasswordForm,
   ForgotPasswordForm,
   ConfirmPasswordForm,
+  type LoginFormProps,
 } from './LoginForms'
 
 type AuthMode = 'login' | 'newPassword' | 'forgotPassword' | 'confirmPassword'
 
 interface CognitoError {
-  code?: string
   message?: string
-  cognitoUser?: CognitoUser
 }
 
 function isCognitoError(err: unknown): err is CognitoError {
@@ -48,31 +49,27 @@ function getFromPath(state: unknown): string {
   return '/'
 }
 
+/** Cognito's own message when it gave one; the translated fallback otherwise. */
 function extractErrorMessage(err: unknown, fallback: string): string {
+  // The service's own sign-in errors (an unsupported step, no session) carry developer English.
+  if (err instanceof AuthChallengeError) return fallback
   if (isCognitoError(err) && err.message != null && err.message !== '') {
     return err.message
   }
   return fallback
 }
 
-// Auth Form Content - renders the appropriate form based on mode
-interface AuthFormContentProps {
+// Auth Form Content - renders the appropriate form based on mode.
+// The login-form slice of these props is the LoginForm contract itself, minus
+// the two callbacks this component rewires (`onSubmit`, `onForgotPassword`).
+interface AuthFormContentProps extends Omit<LoginFormProps, 'onSubmit' | 'onForgotPassword'> {
   readonly mode: AuthMode
-  readonly username: string
-  readonly password: string
   readonly newPassword: string
   readonly confirmNewPassword: string
   readonly verificationCode: string
-  readonly showPassword: boolean
-  readonly isLoading: boolean
-  readonly error: string | null
-  readonly message: string | null
-  readonly onUsernameChange: (value: string) => void
-  readonly onPasswordChange: (value: string) => void
   readonly onNewPasswordChange: (value: string) => void
   readonly onConfirmPasswordChange: (value: string) => void
   readonly onVerificationCodeChange: (value: string) => void
-  readonly onToggleShowPassword: () => void
   readonly onSetShowPassword: (checked: boolean) => void
   readonly onLogin: (e: SyntheticEvent) => void
   readonly onNewPassword: (e: SyntheticEvent) => void
@@ -106,6 +103,7 @@ function AuthFormContent({
   onConfirmPassword,
   onSwitchToForgotPassword,
   onBackToLogin,
+  onPasskeySignIn,
 }: Readonly<AuthFormContentProps>) {
   if (mode === 'login') {
     return (
@@ -121,6 +119,7 @@ function AuthFormContent({
         onToggleShowPassword={onToggleShowPassword}
         onSubmit={onLogin}
         onForgotPassword={onSwitchToForgotPassword}
+        onPasskeySignIn={onPasskeySignIn}
       />
     )
   }
@@ -177,7 +176,8 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
   const from = getFromPath(location.state)
-
+  // Signing in to "/" is a landing: Home then honours the user's start page (utils/landing).
+  const continueAfterSignIn = () => void navigate(from, from === '/' ? { replace: true, state: LANDING_STATE } : { replace: true })
   const [mode, setMode] = useState<AuthMode>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -188,7 +188,8 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null)
+  /** A sign-in waiting for its new password (Amplify keeps the challenge itself). */
+  const [challengePending, setChallengePending] = useState(false)
 
   /*
    * Arriving here because a session died is not the same as arriving here to
@@ -208,10 +209,10 @@ export default function Login() {
 
     try {
       await authService.signIn(username, password)
-      void navigate(from, { replace: true })
+      continueAfterSignIn()
     } catch (err: unknown) {
-      if (isCognitoError(err) && err.code === 'NewPasswordRequired') {
-        setCognitoUser(err.cognitoUser ?? null)
+      if (isNewPasswordChallenge(err)) {
+        setChallengePending(true)
         setMode('newPassword')
         setError(null)
       } else {
@@ -236,7 +237,7 @@ export default function Login() {
       return
     }
 
-    if (cognitoUser == null) {
+    if (!challengePending) {
       setError(t('errors.sessionExpired'))
       setMode('login')
       return
@@ -245,8 +246,8 @@ export default function Login() {
     setIsLoading(true)
 
     try {
-      await authService.completeNewPassword(cognitoUser, newPassword)
-      void navigate(from, { replace: true })
+      await authService.completeNewPassword(newPassword)
+      continueAfterSignIn()
     } catch (err: unknown) {
       setError(extractErrorMessage(err, t('errors.failedNewPassword')))
     } finally {
@@ -297,6 +298,30 @@ export default function Login() {
     }
   }
 
+  const handlePasskeySignIn = async () => {
+    setError(null)
+    setMessage(null)
+    if (username.trim() === '') {
+      setError(t('login:passkey.errors.needUsername'))
+      return
+    }
+    setIsLoading(true)
+    try {
+      await passkeyAuth.signIn(username)
+      continueAfterSignIn()
+    } catch (err: unknown) {
+      // A first-login account must still set its password: the same form as after a password sign-in.
+      if (isNewPasswordChallenge(err)) {
+        setChallengePending(true)
+        setMode('newPassword')
+      } else {
+        setError(passkeyErrorText(t, err))
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleSwitchToForgotPassword = () => {
     setMode('forgotPassword')
     setError(null)
@@ -313,17 +338,17 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <main className="min-h-screen bg-bg flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
-            <MessageSquare className="w-8 h-8 text-white" />
+          <div className="flex justify-center mb-4">
+            <ThemeMark className="w-12 h-12 text-accent-text" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">{t('appName', { ns: 'common' })}</h1>
-          <p className="text-gray-500 mt-1">{t('appTagline', { ns: 'common' })}</p>
+          <h1 className="text-2xl font-bold tracking-tight text-text-strong">{t('appName', { ns: 'common' })}</h1>
+          <p className="text-muted mt-1">{t('appTagline', { ns: 'common' })}</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="bg-card border border-border rounded-xl shadow-2xl p-8">
           <AuthFormContent
             mode={mode}
             username={username}
@@ -348,13 +373,14 @@ export default function Login() {
             onConfirmPassword={(e) => void handleConfirmPassword(e)}
             onSwitchToForgotPassword={handleSwitchToForgotPassword}
             onBackToLogin={handleBackToLogin}
+            onPasskeySignIn={canUsePasskeys() ? () => void handlePasskeySignIn() : undefined}
           />
         </div>
 
-        <p className="text-center text-gray-500 text-sm mt-6">
+        <p className="text-center text-muted text-sm mt-6">
           {t('contactAdmin')}
         </p>
       </div>
-    </div>
+    </main>
   )
 }

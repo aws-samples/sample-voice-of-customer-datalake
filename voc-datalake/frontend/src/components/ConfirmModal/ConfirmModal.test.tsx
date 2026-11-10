@@ -11,8 +11,17 @@ describe('ConfirmModal', () => {
     isOpen: true,
     title: 'Delete Item',
     message: 'Are you sure you want to delete this item?',
+    confirmLabel: 'Delete',
     onConfirm: vi.fn(),
     onCancel: vi.fn(),
+  }
+
+  /** Mount with a fresh `onCancel` spy and a user session to drive the dismissals. */
+  function renderWithCancelSpy() {
+    const user = userEvent.setup()
+    const onCancel = vi.fn()
+    render(<ConfirmModal {...defaultProps} onCancel={onCancel} />)
+    return { user, onCancel }
   }
 
   describe('visibility', () => {
@@ -34,7 +43,7 @@ describe('ConfirmModal', () => {
       expect(screen.getByText('Are you sure you want to delete this item?')).toBeInTheDocument()
     })
 
-    it('displays default button labels', () => {
+    it('displays the confirm label and the default cancel label', () => {
       render(<ConfirmModal {...defaultProps} />)
       expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
@@ -57,19 +66,22 @@ describe('ConfirmModal', () => {
     it('applies danger variant styling by default', () => {
       render(<ConfirmModal {...defaultProps} />)
       const confirmButton = screen.getByRole('button', { name: 'Delete' })
-      expect(confirmButton).toHaveClass('bg-red-600')
+      expect(confirmButton).toHaveClass('btn', 'btn-danger-solid')
+      expect(document.querySelector('.bg-danger-subtle.text-danger')).toBeInTheDocument()
     })
 
     it('applies warning variant styling', () => {
       render(<ConfirmModal {...defaultProps} variant="warning" />)
       const confirmButton = screen.getByRole('button', { name: 'Delete' })
-      expect(confirmButton).toHaveClass('bg-amber-600')
+      expect(confirmButton).toHaveClass('btn', 'btn-primary')
+      expect(document.querySelector('.bg-warn-subtle.text-warn')).toBeInTheDocument()
     })
 
     it('applies info variant styling', () => {
       render(<ConfirmModal {...defaultProps} variant="info" />)
       const confirmButton = screen.getByRole('button', { name: 'Delete' })
-      expect(confirmButton).toHaveClass('bg-blue-600')
+      expect(confirmButton).toHaveClass('btn', 'btn-primary')
+      expect(document.querySelector('.bg-info-subtle.text-info')).toBeInTheDocument()
     })
   })
 
@@ -85,9 +97,7 @@ describe('ConfirmModal', () => {
     })
 
     it('calls onCancel when cancel button is clicked', async () => {
-      const user = userEvent.setup()
-      const onCancel = vi.fn()
-      render(<ConfirmModal {...defaultProps} onCancel={onCancel} />)
+      const { user, onCancel } = renderWithCancelSpy()
       
       await user.click(screen.getByRole('button', { name: 'Cancel' }))
       
@@ -95,16 +105,11 @@ describe('ConfirmModal', () => {
     })
 
     it('calls onCancel when backdrop is clicked', async () => {
-      const user = userEvent.setup()
-      const onCancel = vi.fn()
-      render(<ConfirmModal {...defaultProps} onCancel={onCancel} />)
+      const { user, onCancel } = renderWithCancelSpy()
       
-      // Click the backdrop (the absolute inset-0 div)
-      const backdrop = document.querySelector('.bg-black\\/50')
-      if (backdrop) {
-        await user.click(backdrop)
-        expect(onCancel).toHaveBeenCalledTimes(1)
-      }
+      await user.click(screen.getByTestId('modal-overlay'))
+
+      expect(onCancel).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -139,9 +144,7 @@ describe('ConfirmModal', () => {
     })
 
     it('cancels on Escape and on overlay click when idle', async () => {
-      const user = userEvent.setup()
-      const onCancel = vi.fn()
-      render(<ConfirmModal {...defaultProps} onCancel={onCancel} />)
+      const { user, onCancel } = renderWithCancelSpy()
 
       await user.keyboard('{Escape}')
       expect(onCancel).toHaveBeenCalledTimes(1)
@@ -159,6 +162,14 @@ describe('ConfirmModal', () => {
       await user.click(screen.getByTestId('modal-overlay'))
 
       expect(onCancel).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('confirmDisabled', () => {
+    it('keeps only the confirm button off until its condition holds', () => {
+      render(<ConfirmModal {...defaultProps} confirmDisabled />)
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
     })
   })
 })

@@ -1,21 +1,21 @@
 /**
  * @fileoverview Authentication state management using Zustand with localStorage persistence.
  *
- * Security model:
- * - Short-lived tokens (access, ID) persisted in localStorage for cross-tab UX
- * - Refresh token kept in memory only (never persisted) to limit XSS blast radius
- * - Non-secret data (user info, auth state) persisted in localStorage
+ * What it holds:
+ * - The short-lived tokens (access, ID), mirrored from Amplify's token store for synchronous reads
+ * - User info and auth state
  *
- * When a new tab opens with expired short-lived tokens, the auth service
- * falls back to Cognito's getSession() which uses Cognito's own cookies
- * for silent re-authentication — no re-login needed.
+ * The refresh token is NOT here: Amplify keeps it in its own token store (services/auth.ts) and
+ * refreshes with it, also in a new tab whose short-lived tokens have expired.
  *
  * @module store/authStore
  */
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { z } from 'zod'
 import { getRuntimeConfig, isConfigLoaded } from '../runtimeConfig'
+import { versionedPersist } from './persistVersion'
 
 /**
  * Authenticated user information extracted from Cognito ID token.
@@ -27,8 +27,13 @@ export interface User {
   email: string
   /** User's display name (fullname attribute) */
   name?: string
-  /** Cognito user groups for authorization */
+  /** Cognito groups for authorization */
   groups: string[]
+  /**
+   * Cognito `sub` (stable user id) — what project ownership and membership are
+   * keyed by. Optional so sessions persisted before it existed still load.
+   */
+  sub?: string
 }
 
 /**
@@ -41,31 +46,34 @@ interface AuthState {
   accessToken: string | null
   /** JWT ID token containing user claims */
   idToken: string | null
-  /** Refresh token for obtaining new access tokens */
-  refreshToken: string | null
   /** Whether the user is currently authenticated */
   isAuthenticated: boolean
   /** Whether the session has been validated/refreshed after page load */
   sessionReady: boolean
-  /** Loading state for async auth operations */
-  isLoading: boolean
-  /** Error message from failed auth operations */
-  error: string | null
   /** Update the current user */
   setUser: (user: User | null) => void
   /** Store all authentication tokens */
   setTokens: (tokens: {
     accessToken: string;
     idToken: string;
-    refreshToken: string
   }) => void
-  /** Set loading state */
-  setLoading: (loading: boolean) => void
-  /** Set error message */
-  setError: (error: string | null) => void
   /** Clear all auth state and tokens */
   logout: () => void
 }
+
+/** The persisted part of the store ('voc-auth'), validated on rehydrate. */
+const PersistedAuthSchema = z.object({
+  user: z.object({
+    username: z.string(),
+    email: z.string(),
+    name: z.string().optional(),
+    groups: z.array(z.string()),
+    sub: z.string().optional(),
+  }).nullable(),
+  accessToken: z.string().nullable(),
+  idToken: z.string().nullable(),
+  isAuthenticated: z.boolean(),
+}).partial()
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -73,11 +81,8 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       accessToken: null,
       idToken: null,
-      refreshToken: null,
       isAuthenticated: false,
       sessionReady: false,
-      isLoading: false,
-      error: null,
       setUser: (user) => set({
         user,
         isAuthenticated: !!user,
@@ -85,7 +90,6 @@ export const useAuthStore = create<AuthState>()(
       setTokens: (tokens) => set({
         accessToken: tokens.accessToken,
         idToken: tokens.idToken,
-        refreshToken: tokens.refreshToken,
         isAuthenticated: true,
         // Tokens only ever arrive from Cognito — sign-in, the new-password
         // challenge, or a refresh — so this is the one moment a session
@@ -95,30 +99,24 @@ export const useAuthStore = create<AuthState>()(
         // its loading state.
         sessionReady: true,
       }),
-      setLoading: (isLoading) => set({ isLoading }),
-      setError: (error) => set({ error }),
       logout: () => set({
         user: null,
         accessToken: null,
         idToken: null,
-        refreshToken: null,
         isAuthenticated: false,
         sessionReady: false,
-        error: null,
       }),
     }),
     {
       name: 'voc-auth',
       // Persist short-lived tokens + user info in localStorage for cross-tab UX.
-      // refreshToken is deliberately excluded — it stays in memory only.
-      // This limits XSS blast radius: stolen access/ID tokens expire in ~1hr,
-      // while the 30-day refresh token is never written to disk.
-      partialize: (state) => ({
+      partialize: (state): z.infer<typeof PersistedAuthSchema> => ({
         user: state.user,
         accessToken: state.accessToken,
         idToken: state.idToken,
         isAuthenticated: state.isAuthenticated,
       }),
+      ...versionedPersist(PersistedAuthSchema),
     },
   ),
 )
