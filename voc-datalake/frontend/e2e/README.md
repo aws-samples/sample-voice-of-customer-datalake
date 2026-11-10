@@ -7,17 +7,34 @@ It is a separate package (`e2e/package.json`: `@playwright/test` 1.63.0, `@axe-c
 ## Run
 
 ```bash
-set -a; . /path/to/e2e-credentials.env; set +a   # never commit this file
 cd voc-datalake/frontend
+bash e2e/scripts/e2e-users.sh enable              # test users on, env file at ~/.config/voc-e2e/suite.env
+set -a; . ~/.config/voc-e2e/suite.env; set +a     # never commit this file
 npm run e2e:prod                                  # npm ci in e2e/, then playwright test
 # subsets: cd e2e && npx playwright test -c playwright.config.ts --project=admin tests/writes.spec.ts
+bash e2e/scripts/e2e-users.sh disable             # test users off, signed out, env file deleted
 ```
+
+`e2e/scripts/e2e-users.sh enable|disable` uses the operator's AWS credentials and reads the deployment from the
+stack outputs (`UserPoolId`, `WebsiteURL`, `ApiEndpoint`; `E2E_STACK_PREFIX` for a prefixed deployment). `enable`
+adds both test users (they must exist: `E2E_ADMIN_USER`, default `e2e-admin`, in `admins`; `E2E_USER_USER`, default
+`e2e-viewer`, in `users`) to the `e2e` group, enables them, sets new random passwords and writes the env file
+(`E2E_ENV_FILE`, mode 600; a path inside a git work tree is refused). Passwords are never printed. `disable`
+disables both, signs them out everywhere and deletes the file.
 
 Chromium revision 1243 must be present (`npx --prefix e2e playwright install chromium` if it is not).
 
 ### Sharded run (~30 min)
 
 A serial run of the whole suite takes hours. `npm run e2e:prod:sharded -- 6` (or `bash e2e/scripts/run-sharded.sh 6 [playwright args]`) starts 6 Playwright shards in parallel, each with 2 workers for the writing specs (`E2E_SHARD_WRITE_WORKERS`) and 2 for the read-only ones (`E2E_SHARD_READ_WORKERS`; total `E2E_SHARD_WORKERS`, default their sum; see "Workers" below), which finishes the full production suite in about 30 minutes. Each shard has its own `E2E_OUT` (`<base>/shard<i>`, base `E2E_SHARD_OUT`, default `e2e/e2e-output/sharded-<epoch s>`), so its own saved sessions, run id, ledger and cleanup teardown: no shard reads or deletes another's data. When all shards end, their blob reports are merged (`playwright merge-reports`) into one list on the console, `<base>/results.json` and `<base>/html/`; the exit code is 1 when any shard failed. Logs per shard: `<base>/shard<i>/run.log`.
+
+`--groups <file>` (`npm run e2e:prod:sharded -- --groups e2e/shard-groups.txt`) starts one shard per named group
+instead: each line is `<name> [workers=<n>] [--<playwright flag>...] <spec file>...`. Playwright's `--shard=i/N`
+balances by test count, so the long specs (design-screens, s3) land together; `e2e/shard-groups.txt` splits the suite
+into 8 balanced groups, each under 25 min with all 8 in parallel. `workers=<n>` gives that shard n workers for both
+the writing and the read-only specs; a one-file spec spreads over them only with `--fully-parallel`.
+`unit/shard-groups.spec.ts` fails when a spec is in no group or in two (the QA-track, mock-only and teardown specs
+are listed there with their reason).
 
 | Env var | Meaning |
 |---|---|
@@ -47,7 +64,7 @@ Every request the suite sends carries the User-Agent token `voc-e2e/<run tag>` (
 filter userAgent not like /voc-e2e\//
 filter userAgent like /voc-e2e\/e2e-20261010T080000Z/
 # Lambda logs (/aws/lambda/voc-*)
-filter ispresent(test_run) = 0
+filter not ispresent(test_run)
 filter test_run = 'e2e-20261010T080000Z'
 ```
 

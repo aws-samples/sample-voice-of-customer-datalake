@@ -809,6 +809,24 @@ had traffic, run the read-only check (`voc-datalake/scripts/capacity/capacity-qu
 `E2E_OPS=1` ops specs in `frontend/e2e`). For a function the check flags, AWS Lambda Power Tuning is the next
 step; the runbook is in [lambda-sizing.md](lambda-sizing.md).
 
+### Log sweep after a deploy
+
+`voc-datalake/scripts/ops/log_sweep.py` is a read-only Logs Insights sweep of one deployment: every
+`[<prefix>-]voc-*` Lambda's real log group, the Step Functions groups and the stacks' own groups (custom
+resources, Cognito triggers). It prints the ERROR / WARNING / CRITICAL lines, tracebacks, timeouts and access
+denials, newest first, and leaves out the e2e suite's tagged lines unless `--include-tests`. Exit code 1 means
+it found lines, 0 means clean.
+
+```bash
+cd voc-datalake
+.venv/bin/python scripts/ops/log_sweep.py --hours 2                  # since the deploy
+.venv/bin/python scripts/ops/log_sweep.py --hours 24 --prefix acme   # a prefixed deployment
+.venv/bin/python scripts/ops/log_sweep.py --hours 1 --pattern '/Task timed out/'
+```
+
+One known line is expected: the board PreSignUp trigger logs `SignUpRefusedError: domain_not_allowed` as an
+ERROR when it refuses a sign-up by design.
+
 ### Reserved concurrency of the MCP endpoint (`-c mcpReservedConcurrency`)
 
 `voc-mcp-global-api` reserves 20 concurrent executions by default, taken from the account's unreserved
@@ -1381,6 +1399,11 @@ Add a test user once (admin only; the e2e suite's setup fails when a user is mis
 ```bash
 aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username '<e2e user>' --group-name e2e
 ```
+
+For a run, `bash voc-datalake/frontend/e2e/scripts/e2e-users.sh enable` (from `voc-datalake/frontend`: `bash
+e2e/scripts/e2e-users.sh enable`) does this for both test users, enables them with new random passwords and
+writes the suite's env file outside the repository; `disable` turns them off again
+([frontend/e2e/README.md → Run](../voc-datalake/frontend/e2e/README.md#run)).
 
 <a id="testing-a-model-before-saving-it-settings--ai-models"></a>
 
