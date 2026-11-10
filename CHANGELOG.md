@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.04] - 2026-11-10
+
+Workshop templates delete their data with their stacks.
+
+### Fixed
+
+- `npm run generate:workshop-artifacts` synthesizes with `-c protectData=false`, as [docs/deployment.md](docs/deployment.md#production-protectdata) asks of a workshop. Before, the Workshop Studio templates kept the DynamoDB tables (with deletion protection), both Cognito user pools, the KMS key, the raw-data and access-log buckets, the design-integrations secret and every log group when an event's stacks were deleted, so a second deploy into the same account failed with "already exists". `voc-datalake/scripts/workshop-artifacts.test.ts` pins the flag, the other workshop flags and the five converted stacks.
+
+### Upgrade notes
+
+- Nothing changes for a deployment from `npm run deploy:infra`: `protectData` stays on by default. Workshop templates published before this release keep their data on teardown; regenerate and republish them.
+
 ## [6.04.03] - 2026-11-10
 
 Operator tooling (a log sweep, an e2e users helper, a grouped e2e run), cheaper CPU for the integrations and logs APIs, and one vCPU for the settings API.
