@@ -84,6 +84,11 @@ def table() -> Iterator[MagicMock]:
 # ============================================
 
 
+
+def _answer_by_source(table, by_source: dict[str, list]) -> None:
+    """`table.query` answers each source's rows by its partition key, not by call order (parallel workers)."""
+    table.query.side_effect = lambda **kwargs: {'Items': by_source[_pk(kwargs).rsplit('#', 1)[1]]}
+
 def _pk(query_kwargs: dict) -> str:
     """The partition key value of a mocked `table.query(KeyConditionExpression=...)` call."""
     condition = query_kwargs['KeyConditionExpression']
@@ -280,8 +285,7 @@ class TestTheUnfilteredListingFansOutOverEverySource:
             'app_reviews_ios': [_validation_row('ios', '2026-03-08T00:00:00+00:00')],
             'manual_import': [_validation_row('mi', '2026-03-07T00:00:00+00:00')],
         }
-        # By partition, not call order (parallel workers).
-        table.query.side_effect = lambda **kwargs: {'Items': by_source[_pk(kwargs).rsplit('#', 1)[1]]}
+        _answer_by_source(table, by_source)
 
         _, body = _get(api_gateway_event, lambda_context, '/logs/validation', query={'limit': '3'})
 
@@ -296,8 +300,7 @@ class TestTheUnfilteredListingFansOutOverEverySource:
             'app_reviews_ios': [_validation_row('c', '2026-03-09T00:00:00+00:00')],
             'manual_import': [_validation_row('a', '2026-03-07T00:00:00+00:00')],
         }
-        # By partition, not call order (parallel workers).
-        table.query.side_effect = lambda **kwargs: {'Items': by_source[_pk(kwargs).rsplit('#', 1)[1]]}
+        _answer_by_source(table, by_source)
 
         _, body = _get(api_gateway_event, lambda_context, '/logs/validation')
 
