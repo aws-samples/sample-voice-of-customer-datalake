@@ -14,6 +14,7 @@ import threading
 from unittest.mock import patch
 
 import pytest
+from dynamodb_query_fixtures import partition_of
 from handler_events_fixtures import call_route
 
 from shared.api import clear_categories_cache
@@ -31,14 +32,6 @@ def _barrier_query(parties: int, answer):
     return query
 
 
-def _pk_of(kwargs) -> str:
-    """The partition a key condition names (`Key('pk').eq(x) & ...`)."""
-    condition = kwargs['KeyConditionExpression']
-    # `And(Equals(Key('pk'), x), Between(...))` or a bare `Equals`.
-    equals = condition.get_expression()['values'][0] if condition.expression_operator == 'AND' else condition
-    return equals.get_expression()['values'][1]
-
-
 class TestMetricsPartitionsAreReadTogether:
     @patch('metrics_handler.feedback_table')
     @patch('metrics_handler.aggregates_table')
@@ -47,7 +40,7 @@ class TestMetricsPartitionsAreReadTogether:
         agg.get_item.return_value = {}
         fb.query.return_value = {'Items': []}
         agg.query.side_effect = _barrier_query(4, lambda kw: {'Items': [
-            {'sk': '2026-10-05', 'count': counts[_pk_of(kw).rsplit('#', 1)[1]]}]})
+            {'sk': '2026-10-05', 'count': counts[partition_of(kw).rsplit('#', 1)[1]]}]})
         clear_categories_cache()
         from metrics_handler import lambda_handler
 
@@ -68,7 +61,7 @@ class TestMetricsPartitionsAreReadTogether:
         fb.query.return_value = {'Items': []}
 
         def answer(**kw):
-            truncated = _pk_of(kw).endswith('#negative')
+            truncated = partition_of(kw).endswith('#negative')
             page = {'Items': [{'sk': '2026-10-05', 'count': 1}]}
             return {**page, 'LastEvaluatedKey': {'pk': 'x'}} if truncated else page
         agg.query.side_effect = answer
@@ -89,12 +82,12 @@ class TestMetricsPartitionsAreReadTogether:
             'METRIC#urgent': [{'sk': '2026-10-05', 'count': 3}],
         }
         agg.get_item.return_value = {}
-        barrier_query = _barrier_query(3, lambda kw: {'Items': rows.get(_pk_of(kw), [])})
+        barrier_query = _barrier_query(3, lambda kw: {'Items': rows.get(partition_of(kw), [])})
 
         def query(**kwargs):
             # Only the three window reads join the barrier; any other read the
             # route makes (none today) answers immediately.
-            return barrier_query(**kwargs) if _pk_of(kwargs) in rows else {'Items': []}
+            return barrier_query(**kwargs) if partition_of(kwargs) in rows else {'Items': []}
         agg.query.side_effect = query
         fb.query.return_value = {'Items': []}
         clear_categories_cache()
@@ -118,7 +111,7 @@ class TestLogsSourcesAreReadTogether:
         sizes = {'LOGS#validation#webscraper': 2, 'LOGS#processing#webscraper': 0,
                  'LOGS#validation#manual_import': 1, 'LOGS#processing#manual_import': 4}
         # LOG_READ_WORKERS (2) reads at a time: the barrier releases each pair together.
-        agg.query.side_effect = _barrier_query(2, lambda kw: {'Count': sizes[_pk_of(kw)]})
+        agg.query.side_effect = _barrier_query(2, lambda kw: {'Count': sizes[partition_of(kw)]})
         from logs_handler import lambda_handler
 
         response, body = call_route(lambda_handler, api_gateway_event, lambda_context,
@@ -140,7 +133,7 @@ class TestLogsSourcesAreReadTogether:
         stamps = {'LOGS#validation#webscraper': ['2026-10-05T03', '2026-10-05T01'],
                   'LOGS#validation#manual_import': ['2026-10-05T02']}
         agg.query.side_effect = _barrier_query(2, lambda kw: {'Items': [
-            {'timestamp': t, 'source_platform': _pk_of(kw).rsplit('#', 1)[1]} for t in stamps[_pk_of(kw)]]})
+            {'timestamp': t, 'source_platform': partition_of(kw).rsplit('#', 1)[1]} for t in stamps[partition_of(kw)]]})
         from logs_handler import lambda_handler
 
         response, body = call_route(lambda_handler, api_gateway_event, lambda_context,
