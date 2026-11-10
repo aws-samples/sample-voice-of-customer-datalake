@@ -97,6 +97,17 @@ class TestRunningAQuery:
             sweep.run_query(logs, ['g'], 1, 2, 'q', sleep=lambda _s: None)
 
 
+class TestTheQueryDeadline:
+    def test_a_query_still_running_past_the_deadline_is_stopped_and_raises(self, sweep, monkeypatch):
+        monkeypatch.setattr(sweep, 'QUERY_DEADLINE_SECONDS', 4)
+        logs = MagicMock()
+        logs.start_query.return_value = {'queryId': 'q1'}
+        logs.get_query_results.return_value = {'status': 'Running'}
+        with pytest.raises(RuntimeError, match='still running after 4 s'):
+            sweep.run_insights(logs, ['g'], 1, 2, 'q', sleep=lambda _s: None)
+        logs.stop_query.assert_called_once_with(queryId='q1')
+
+
 class TestTheGroupsSwept:
     def test_a_function_without_a_log_group_is_skipped_and_stack_groups_are_kept(self, sweep):
         lambda_client = MagicMock()

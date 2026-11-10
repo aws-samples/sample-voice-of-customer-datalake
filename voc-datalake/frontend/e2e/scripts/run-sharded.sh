@@ -41,12 +41,15 @@ if [[ "${1:-}" == --groups ]]; then
   # `|| [[ -n "$name" ]]`: a last line without a final newline is still a group.
   while read -r name specs || [[ -n "${name:-}" ]]; do
     [[ -z "$name" || "$name" == \#* ]] && continue
-    if [[ -z "${specs:-}" ]]; then
+    # Strip a trailing comment FIRST: a line holding only a comment after the name must not select the whole suite.
+    specs="${specs:-}"
+    specs="${specs%%#*}"
+    if [[ -z "${specs// /}" ]]; then
       echo "group $name in $GROUPS_FILE names no spec file" >&2
       exit 2
     fi
     GROUP_NAMES+=("$name")
-    GROUP_SPECS+=("${specs%%#*}")
+    GROUP_SPECS+=("$specs")
   done < "$GROUPS_FILE"
   N="${#GROUP_NAMES[@]}"
   shift 2

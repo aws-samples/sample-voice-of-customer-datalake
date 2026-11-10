@@ -84,8 +84,19 @@ for user in "$ADMIN_USER" "$PLAIN_USER"; do
 done
 ADMIN_PASSWORD="$(new_password)"
 PLAIN_PASSWORD="$(new_password)"
-aws cognito-idp admin-set-user-password --user-pool-id "$POOL" --username "$ADMIN_USER" --password "$ADMIN_PASSWORD" --permanent
-aws cognito-idp admin-set-user-password --user-pool-id "$POOL" --username "$PLAIN_USER" --password "$PLAIN_PASSWORD" --permanent
+# The password goes in a mode-600 input file, never on the command line (other local users can read argv).
+set_password() { # username password
+  local input
+  input="$(mktemp)"
+  chmod 600 "$input"
+  POOL="$POOL" USER_NAME="$1" PASSWORD="$2" python3 -c 'import json, os; print(json.dumps({"UserPoolId": os.environ["POOL"], "Username": os.environ["USER_NAME"], "Password": os.environ["PASSWORD"], "Permanent": True}))' > "$input"
+  aws cognito-idp admin-set-user-password --cli-input-json "file://$input"
+  local status=$?
+  rm -f "$input"
+  return $status
+}
+set_password "$ADMIN_USER" "$ADMIN_PASSWORD"
+set_password "$PLAIN_USER" "$PLAIN_PASSWORD"
 
 umask 077
 {
