@@ -296,6 +296,17 @@ const removeIntrinsicDefaults = (template) => {
   }
 };
 
+/** Put back every string Description of `source` (template, Parameters, Outputs) into `target`. */
+const restoreStringDescriptions = (source, target) => {
+  if (typeof source.Description === 'string') target.Description = source.Description;
+  for (const section of ['Parameters', 'Outputs']) {
+    for (const [name, entry] of Object.entries(source[section] ?? {})) {
+      const restored = target[section]?.[name];
+      if (typeof entry?.Description === 'string' && restored) restored.Description = entry.Description;
+    }
+  }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
@@ -329,9 +340,10 @@ const processStack = async (stackName, basePath, templatesOutDir) => {
   let finalTemplate = region || account ? replaceHardcodedValues(template, region, account) : template;
   finalTemplate = fixFnJoinStrings(finalTemplate);
   removeIntrinsicDefaults(finalTemplate);
-  // CloudFormation accepts only a literal string as the template Description ("Every Description member must
-  // be a string"): the region/account rewrite above must not turn it into an Fn::Sub.
-  if (typeof template.Description === 'string') finalTemplate.Description = template.Description;
+  // CloudFormation accepts only a literal string as a Description ("Every Description member must be a string"):
+  // the template's own, and each Parameter's and Output's. The region/account rewrite above must not turn one into
+  // an Fn::Sub, so they are restored as synthesized.
+  restoreStringDescriptions(template, finalTemplate);
 
   const outPath = resolve(templatesOutDir, `${stackName}.json`);
   await writeJSON(finalTemplate, outPath);

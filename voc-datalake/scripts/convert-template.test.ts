@@ -14,8 +14,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 const SCRIPT = path.resolve(__dirname, 'convert-template.mjs');
+const SectionSchema = z.record(z.string(), z.object({ Description: z.unknown().optional() })).optional();
 const ConvertedSchema = z.object({
   Description: z.unknown().optional(),
+  Parameters: SectionSchema,
+  Outputs: SectionSchema,
   Resources: z.record(z.string(), z.object({ Properties: z.record(z.string(), z.unknown()) })),
 });
 
@@ -35,7 +38,8 @@ function convert(template: Record<string, unknown>): z.infer<typeof ConvertedSch
   writeFileSync(path.join(dir, 'cdk.out', 'Stack.template.json'), JSON.stringify(template));
   writeFileSync(path.join(dir, 'cdk.out', 'Stack.assets.json'), JSON.stringify({ files: {} }));
   execFileSync(process.execPath, [SCRIPT, 'Stack'], { cwd: dir, stdio: 'pipe' });
-  return ConvertedSchema.parse(JSON.parse(readFileSync(path.join(dir, 'Workshop', 'static', 'cfn', 'Stack.json'), 'utf8')));
+  const json: unknown = JSON.parse(readFileSync(path.join(dir, 'Workshop', 'static', 'cfn', 'Stack.json'), 'utf8'));
+  return ConvertedSchema.parse(json);
 }
 
 const QUEUE_ARN = 'arn:aws:sqs:us-east-1:123456789012:queue';
@@ -61,5 +65,16 @@ describe('convert-template.mjs', () => {
   it('leaves a template without a Description without one', () => {
     const converted = convert(stack());
     expect(converted.Description).toBeUndefined();
+  });
+
+  it('keeps Parameter and Output Descriptions that name the synth region as literal strings', () => {
+    const description = 'Endpoint in us-east-1';
+    const converted = convert({
+      ...stack(),
+      Parameters: { Region: { Type: 'String', Description: description } },
+      Outputs: { Url: { Description: description, Value: QUEUE_ARN } },
+    });
+    expect(converted.Parameters?.Region?.Description).toBe(description);
+    expect(converted.Outputs?.Url?.Description).toBe(description);
   });
 });
