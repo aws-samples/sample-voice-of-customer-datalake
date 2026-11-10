@@ -17,6 +17,20 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.03] - 2026-11-10
+
+Operator tooling: a log sweep after a deploy, a helper for the e2e test users, and a grouped e2e run.
+
+### Added
+
+- `voc-datalake/scripts/ops/log_sweep.py`: a read-only sweep of one deployment's Lambda, Step Functions and stack log groups for errors and warnings, without the e2e suite's lines; exit 1 when it finds any ([docs/deployment.md → Log sweep after a deploy](docs/deployment.md#log-sweep-after-a-deploy)).
+- `voc-datalake/frontend/e2e/scripts/e2e-users.sh enable|disable`: turns the two e2e test users on (the `e2e` group, new random passwords, the suite's env file written outside the repository) and off again, reading the deployment from the stack outputs ([frontend/e2e/README.md → Run](voc-datalake/frontend/e2e/README.md#run)).
+- `run-sharded.sh --groups <file>`: one shard per named group of spec files, with per-group workers and Playwright flags; `e2e/shard-groups.txt` splits the production suite into 8 balanced groups, and `unit/shard-groups.spec.ts` keeps every spec in exactly one.
+
+### Fixed
+
+- The Logs Insights filter documented for leaving out e2e traffic (`filter ispresent(test_run) = 0`, in the e2e README, `shared/e2e_tag.py` and the testing guide) does not compile; it now reads `filter not ispresent(test_run)`.
+
 ## [6.04.02] - 2026-11-09
 
 The web app's push notices reach the browser: 6.04 blocked their WebSocket with its own Content-Security-Policy.

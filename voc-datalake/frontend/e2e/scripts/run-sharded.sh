@@ -4,6 +4,13 @@
 #   set -a; . /path/to/e2e-credentials.env; set +a
 #   bash e2e/scripts/run-sharded.sh 6                 # from voc-datalake/frontend; ~30 min for the full suite
 #   E2E_SHARD_WORKERS=1 bash e2e/scripts/run-sharded.sh 4 tests/writes.spec.ts   # extra args go to playwright
+#   bash e2e/scripts/run-sharded.sh --groups e2e/shard-groups.txt                 # one shard per named group
+#
+# --groups <file>: one shard per line `<name> [workers=<n>] [--<playwright flag>...] <spec file>...` (`#` starts a
+# comment) instead of Playwright's `--shard=i/N` split, which balances by test count and leaves the long specs
+# together. `workers=<n>` gives that shard n workers for both the writing and the read-only specs (a one-file spec
+# spreads over them only with `--fully-parallel`). The repo's e2e/shard-groups.txt splits the whole suite into
+# balanced groups (unit/shard-groups.spec.ts keeps it complete).
 #
 # Each shard gets its own E2E_OUT (<base>/shard<i>), so its own saved sessions (<E2E_OUT>/.auth,
 # lib/env.ts authDirFor), its own run id, ledger (created.json) and cleanup teardown. A shard never
@@ -21,12 +28,35 @@
 set -uo pipefail
 
 MAX_SHARDS=16
-N="${1:-}"
+USAGE="usage: run-sharded.sh <shards 1-$MAX_SHARDS> | --groups <file> [playwright args...]"
+# One entry per group: its name and its spec files (space-separated); empty without --groups.
+GROUP_NAMES=()
+GROUP_SPECS=()
+if [[ "${1:-}" == --groups ]]; then
+  GROUPS_FILE="${2:-}"
+  if [[ -z "$GROUPS_FILE" || ! -f "$GROUPS_FILE" ]]; then
+    echo "$USAGE (groups file not found: ${GROUPS_FILE:-<none>})" >&2
+    exit 2
+  fi
+  while read -r name specs; do
+    [[ -z "$name" || "$name" == \#* ]] && continue
+    if [[ -z "${specs:-}" ]]; then
+      echo "group $name in $GROUPS_FILE names no spec file" >&2
+      exit 2
+    fi
+    GROUP_NAMES+=("$name")
+    GROUP_SPECS+=("${specs%%#*}")
+  done < "$GROUPS_FILE"
+  N="${#GROUP_NAMES[@]}"
+  shift 2
+else
+  N="${1:-}"
+  shift || true
+fi
 if ! [[ "$N" =~ ^[0-9]+$ ]] || (( N < 1 || N > MAX_SHARDS )); then
-  echo "usage: run-sharded.sh <shards 1-$MAX_SHARDS> [playwright args...]" >&2
+  echo "$USAGE" >&2
   exit 2
 fi
-shift
 
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE="${E2E_SHARD_OUT:-$E2E_DIR/e2e-output/sharded-$(date +%s)}"
@@ -65,12 +95,26 @@ for ((i = 1; i <= N; i++)); do
     export PLAYWRIGHT_JSON_OUTPUT_NAME="$OUT/results.json"
     # Its own blob directory: the blob reporter empties its output directory when it starts.
     export PLAYWRIGHT_BLOB_OUTPUT_DIR="$OUT/blob" PLAYWRIGHT_BLOB_OUTPUT_NAME="report-$i.zip"
-    npx playwright test -c playwright.config.ts --shard="$i/$N" --workers="$WORKERS" \
+    SHARD_WORKERS="$WORKERS"
+    SELECTION=(--shard="$i/$N")
+    if (( ${#GROUP_NAMES[@]} > 0 )); then
+      SELECTION=()
+      # shellcheck disable=SC2206 # a group's tokens are space-separated and never contain spaces
+      for token in ${GROUP_SPECS[$((i - 1))]}; do
+        if [[ "$token" =~ ^workers=([0-9]+)$ ]]; then
+          SHARD_WORKERS="${BASH_REMATCH[1]}"
+          export E2E_WRITE_WORKERS="$SHARD_WORKERS" E2E_READ_WORKERS="$SHARD_WORKERS"
+        else
+          SELECTION+=("$token")
+        fi
+      done
+    fi
+    npx playwright test -c playwright.config.ts "${SELECTION[@]}" --workers="$SHARD_WORKERS" \
       --reporter=line,json,blob "$@" > "$OUT/run.log" 2> "$OUT/stderr.log"
     echo "exit $?" >> "$OUT/run.log"
   ) &
   PIDS+=("$!")
-  echo "shard $i/$N: pid $!, run id $RUN_ID, log $OUT/run.log"
+  echo "shard $i/$N${GROUP_NAMES[$((i - 1))]+ (${GROUP_NAMES[$((i - 1))]})}: pid $!, run id $RUN_ID, log $OUT/run.log"
 done
 
 FAILED=0

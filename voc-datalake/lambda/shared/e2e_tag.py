@@ -6,7 +6,7 @@ auth tests, fake-id sweeps, GET-after-DELETE proofs). CloudWatch cannot delete s
 events, so every request the suite sends carries a User-Agent token
 `voc-e2e/<run id>` (frontend/e2e/lib/trafficTag.ts), and every log line of such an
 invocation carries `test_run=<run id>`. A query then drops them with
-`filter ispresent(test_run) = 0` (or keeps only them).
+`filter not ispresent(test_run)` (or keeps only them).
 
 The token is matched strictly (`voc-e2e/` + 1-64 of `[A-Za-z0-9._-]`, delimited by a
 space or tab, never a newline); anything else is ignored. The full User-Agent is never logged.

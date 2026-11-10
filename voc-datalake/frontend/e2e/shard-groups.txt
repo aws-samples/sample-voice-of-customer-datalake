@@ -1,0 +1,14 @@
+# The production suite split into balanced shards for `run-sharded.sh --groups e2e/shard-groups.txt` (README → Sharded
+# run). One group per line: `<name> [workers=<n>] [--<playwright flag>...] <spec file>...`. Each finished in under
+# 25 min against production with 8 shards in parallel (6.04.02). unit/shard-groups.spec.ts fails when a spec under
+# tests/ is in no group or in two; the specs that cannot run here are listed there with their reason (QA tracks
+# s1 / s2 run alone, csv-dataset-update runs on the dev mock only).
+
+design-screens  workers=6 --fully-parallel tests/design-screens.spec.ts
+design-overlays workers=4 --fully-parallel tests/design-overlays.spec.ts tests/i18n-smoke.spec.ts
+screens         workers=4 --fully-parallel tests/screens.spec.ts
+surfaces        tests/surfaces.spec.ts tests/modals.spec.ts tests/network.spec.ts tests/flows-matrix.spec.ts tests/error-states.spec.ts tests/realtime.spec.ts
+projects        tests/s3-personas-documents.spec.ts tests/prototype-enlarge.spec.ts tests/decisions.spec.ts tests/persona-avatars.spec.ts tests/product-interview.spec.ts
+ops             tests/security-probes.spec.ts tests/ops-postdeploy.spec.ts tests/ops-capacity.spec.ts tests/ops-visual-check.spec.ts tests/auth-session.spec.ts tests/api-sweep.spec.ts tests/request-counts.spec.ts tests/dashboard-data.spec.ts tests/prioritization.spec.ts tests/prioritization-requests.spec.ts tests/in-page-tabs.spec.ts tests/methodology-catalogue.spec.ts tests/mcp-tools-6x.spec.ts
+assistant       tests/unsaved-guard.spec.ts tests/assistant-bubble.spec.ts tests/assistant-notifications.spec.ts tests/home-onboarding.spec.ts tests/account.spec.ts tests/memory.spec.ts tests/connect.spec.ts tests/concurrency.spec.ts tests/features-6x.spec.ts
+writes          tests/participants.spec.ts tests/radar.spec.ts tests/writes.spec.ts tests/projects-edit.spec.ts tests/projects-mcp-removed.spec.ts tests/sharing.spec.ts tests/feedback-boards.spec.ts tests/feature-requests.spec.ts tests/board.spec.ts tests/unsubscribe.spec.ts tests/workflow-custom-arrows.spec.ts tests/workflow-history.spec.ts

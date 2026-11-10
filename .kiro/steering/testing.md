@@ -1150,7 +1150,7 @@ log events, so never try to "clean" logs: filter by the tag.
 filter isblank(userAgent) or userAgent not like /voc-e2e\//
 filter userAgent like /voc-e2e\/<run tag>/
 # API Lambda logs
-filter ispresent(test_run) = 0
+filter not ispresent(test_run)
 ```
 
 - **Hand-made probes** against production (curl, scratch scripts) should send the token too
