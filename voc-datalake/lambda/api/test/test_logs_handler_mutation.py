@@ -251,11 +251,13 @@ class TestTheUnfilteredListingFansOutOverEverySource:
         self, table, api_gateway_event, lambda_context
     ):
         _get(api_gateway_event, lambda_context, '/logs/processing', query={'limit': '100'})
-        assert table.query.call_args_list == [
+        # The reads run on parallel workers, so their order is not part of the contract: each source once, any order.
+        assert table.query.call_count == len(self.SOURCES)
+        table.query.assert_has_calls([
             call(KeyConditionExpression=Key('pk').eq(f'LOGS#processing#{source}') & Key('sk').gte(CUTOFF_7D),
                  ScanIndexForward=False, Limit=34)
             for source in self.SOURCES
-        ]
+        ], any_order=True)
 
     @pytest.mark.parametrize(('limit', 'share'), [('3', 2), ('2', 1), ('500', 167)])
     def test_the_share_is_the_floor_plus_one(self, limit, share, table, api_gateway_event, lambda_context):
@@ -379,12 +381,14 @@ class TestTheSummaryAddsUpEverySource:
         self, table, api_gateway_event, lambda_context
     ):
         _get(api_gateway_event, lambda_context, '/logs/summary')
-        assert table.query.call_args_list == [
+        # Parallel workers: each (source, type) count once, in any order.
+        assert table.query.call_count == 4
+        table.query.assert_has_calls([
             call(KeyConditionExpression=Key('pk').eq(f'LOGS#{log_type}#{source}') & Key('sk').gte(CUTOFF_7D),
                  ScanIndexForward=False, Limit=1000, Select='COUNT')
             for source in ('webscraper', 'manual_import')
             for log_type in ('validation', 'processing')
-        ]
+        ], any_order=True)
 
     def test_counts_are_per_source_and_the_totals_are_their_sums(self, table, api_gateway_event, lambda_context):
         def rows(n: int) -> dict:
