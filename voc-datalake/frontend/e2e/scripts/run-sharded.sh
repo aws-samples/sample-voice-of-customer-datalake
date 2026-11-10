@@ -38,7 +38,8 @@ if [[ "${1:-}" == --groups ]]; then
     echo "$USAGE (groups file not found: ${GROUPS_FILE:-<none>})" >&2
     exit 2
   fi
-  while read -r name specs; do
+  # `|| [[ -n "$name" ]]`: a last line without a final newline is still a group.
+  while read -r name specs || [[ -n "${name:-}" ]]; do
     [[ -z "$name" || "$name" == \#* ]] && continue
     if [[ -z "${specs:-}" ]]; then
       echo "group $name in $GROUPS_FILE names no spec file" >&2

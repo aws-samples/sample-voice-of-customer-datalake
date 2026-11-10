@@ -13,6 +13,7 @@ import json
 import threading
 from unittest.mock import patch
 
+import pytest
 from handler_events_fixtures import call_route
 
 from shared.api import clear_categories_cache
@@ -147,6 +148,25 @@ class TestLogsSourcesAreReadTogether:
 
         assert response['statusCode'] == 200, response['body']
         assert [log['timestamp'] for log in body['logs']] == ['2026-10-05T03', '2026-10-05T02', '2026-10-05T01']
+
+
+class TestLogsReadsUseTwoConnections:
+    """Both logs fan-outs run on LOG_READ_WORKERS (2): each worker is a TLS handshake after an idle gap, and 8 cost
+    the function ~80 ms of CPU against ~37 ms on 2 (6.04.03, 84 % CPU at one vCPU)."""
+
+    @pytest.mark.parametrize('path', ['/logs/summary', '/logs/validation'])
+    @patch('logs_handler.default_source_ids')
+    @patch('logs_handler.aggregates_table')
+    def test_the_fan_out_is_capped_at_two_workers(self, agg, sources, path, api_gateway_event, lambda_context):
+        import logs_handler
+        sources.return_value = ['webscraper', 'manual_import']
+        agg.query.return_value = {'Count': 0, 'Items': []}
+        with patch.object(logs_handler, 'ordered_map', wraps=logs_handler.ordered_map) as fan_out:
+            response, _body = call_route(logs_handler.lambda_handler, api_gateway_event, lambda_context,
+                                         method='GET', path=path)
+        assert response['statusCode'] == 200, response['body']
+        assert logs_handler.LOG_READ_WORKERS == 2
+        assert fan_out.call_args.kwargs == {'max_workers': logs_handler.LOG_READ_WORKERS}
 
 
 class TestUsersListingOverlapsItsCognitoReads:

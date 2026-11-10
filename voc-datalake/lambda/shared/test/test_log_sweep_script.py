@@ -109,6 +109,23 @@ class TestTheGroupsSwept:
         assert sweep.existing_groups(logs, lambda_client, None) == ['/aws/lambda/voc-metrics-api-1-r', 'VocCoreStack-BoardLogs']
 
 
+class TestTheExitCode:
+    def _run(self, sweep, monkeypatch, groups, rows):
+        boto3 = MagicMock()
+        monkeypatch.setitem(sys.modules, 'boto3', boto3)
+        monkeypatch.setattr(sweep, 'existing_groups', lambda *_a: groups)
+        monkeypatch.setattr(sweep, 'run_query', lambda *_a, **_k: rows)
+        return sweep.main(['--hours', '1'])
+
+    def test_no_log_groups_is_an_error_not_clean(self, sweep, monkeypatch, capsys):
+        assert self._run(sweep, monkeypatch, [], []) == 2
+        assert 'no log groups found' in capsys.readouterr().err
+
+    def test_matching_lines_exit_1_and_none_exit_0(self, sweep, monkeypatch):
+        assert self._run(sweep, monkeypatch, ['g'], [('t', 'g', 'boom')]) == 1
+        assert self._run(sweep, monkeypatch, ['g'], []) == 0
+
+
 class TestTheArguments:
     @pytest.mark.parametrize('argv', [['--hours', '0'], ['--limit', '0']])
     def test_a_non_positive_window_or_limit_is_refused(self, sweep, argv):
