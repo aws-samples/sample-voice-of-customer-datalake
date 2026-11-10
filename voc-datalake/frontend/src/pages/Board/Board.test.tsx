@@ -212,6 +212,17 @@ describe('an app user on /board', () => {
     expect(await screen.findByRole('button', { name: 'Single sign-on' })).toBeInTheDocument()
     expect(screen.getByText(APP_USER.email)).toBeInTheDocument()
   })
+
+  it('sends an app user on /board/login to the boards instead of looking up a board named "login"', async () => {
+    fakeAuth()
+    useAuthStore.getState().setUser({ username: 'rui', email: APP_USER.email, groups: [] })
+    const { api } = fakeBoard(BOARD_USER, [fixtureRequest('fr_1', { title: 'Single sign-on' })])
+    appBoard.api = api
+    renderAt('/board/login?request=fr_1')
+    await waitFor(() => expect(screen.getByTestId('path')).not.toHaveTextContent('/board/login'))
+    const refsAsked = [...vi.mocked(api.getBoard).mock.calls, ...vi.mocked(api.listRequests).mock.calls].flat()
+    expect(refsAsked).not.toContain('login')
+  })
 })
 
 describe('the standalone boards', () => {
