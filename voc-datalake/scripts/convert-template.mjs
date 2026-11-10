@@ -337,13 +337,15 @@ const processStack = async (stackName, basePath, templatesOutDir) => {
     console.log(`Detected region: ${region}, account: ${account}`);
   }
 
+  // Taken before any rewrite, so restoring them never depends on the rewrites leaving `template` untouched.
+  const synthesized = structuredClone({ Description: template.Description, Parameters: template.Parameters, Outputs: template.Outputs });
   let finalTemplate = region || account ? replaceHardcodedValues(template, region, account) : template;
   finalTemplate = fixFnJoinStrings(finalTemplate);
   removeIntrinsicDefaults(finalTemplate);
   // CloudFormation accepts only a literal string as a Description ("Every Description member must be a string"):
   // the template's own, and each Parameter's and Output's. The region/account rewrite above must not turn one into
   // an Fn::Sub, so they are restored as synthesized.
-  restoreStringDescriptions(template, finalTemplate);
+  restoreStringDescriptions(synthesized, finalTemplate);
 
   const outPath = resolve(templatesOutDir, `${stackName}.json`);
   await writeJSON(finalTemplate, outPath);
