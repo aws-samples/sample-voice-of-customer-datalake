@@ -945,7 +945,7 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
         r.note(`DELETE /projects/{id} -> ${res.status()}`)
         expect(res.status()).toBeLessThan(300)
       }
-      const check = await apiCall('admin', 'GET', `/projects/${projectId() ?? ''}`)
+      const check = await apiCall('admin', 'GET', `/projects/${projectId() ?? ''}`, undefined, { expect: [404] })
       r.note(`GET /projects/{id} after delete -> ${check.status}`)
       expect(check.status).toBe(404)
       const afterObjects = avatarObjects(allIds)

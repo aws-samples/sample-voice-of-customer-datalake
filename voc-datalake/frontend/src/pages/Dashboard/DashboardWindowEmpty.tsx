@@ -83,9 +83,10 @@ export default function DashboardWindowEmpty({ dateParams, apiEndpoint, loading 
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-bg-hover text-muted">
           <CalendarSearch size={24} aria-hidden="true" />
         </div>
-        <h2 id="dashboard-window-empty-title" className="mb-2 text-xl font-bold tracking-tight text-text-strong">
+        {/* The page's only heading (the Dashboard renders no title above this state): its h1. */}
+        <h1 id="dashboard-window-empty-title" className="mb-2 text-xl font-bold tracking-tight text-text-strong">
           {t('windowEmpty.heading')}
-        </h2>
+        </h1>
         <p className="mb-6 text-muted">
           {newestDay === null
             ? t('windowEmpty.bodyUnknown')

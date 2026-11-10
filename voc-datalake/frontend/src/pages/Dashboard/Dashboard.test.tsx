@@ -577,6 +577,18 @@ describe('window empty vs workspace empty (E2E F4)', () => {
     expect(screen.getByText('Nothing was collected in the selected range. Older feedback may exist.')).toBeInTheDocument()
     expect(screen.queryByText(/get your feedback flowing/i)).not.toBeInTheDocument()
   })
+
+  // Each empty state is the whole page (no title above it), so its heading must be the page's one h1
+  // (6.04 e2e flows-matrix: an empty window left the Dashboard without any level-1 heading).
+  it.each([
+    ['an empty window', ALL_TIME_SUMMARY, 'No feedback in this time range'],
+    ['an empty workspace', EMPTY_WINDOW, /get your feedback flowing/i],
+  ])('gives %s exactly one h1, its own heading', async (_label, allTime, heading) => {
+    summaryByWindow(allTime)
+    renderDashboard()
+    expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
 })
 
 describe('a restricted or regular viewer (owner rule 2026-10-21)', () => {
@@ -611,6 +623,13 @@ describe('a restricted or regular viewer (owner rule 2026-10-21)', () => {
     renderDashboard()
     expect(await screen.findByText('Customer feedback appears here once an administrator connects a source.')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /start here/i })).toBeNull()
+  })
+
+  it('gives the viewer\'s empty state the page\'s one h1', async () => {
+    mockGetSummary.mockResolvedValue(EMPTY)
+    renderDashboard()
+    await screen.findByText('You can see reviews in: Technical support. None have arrived yet.')
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
 
   it('shows the scope notice under the title when there are totals', async () => {

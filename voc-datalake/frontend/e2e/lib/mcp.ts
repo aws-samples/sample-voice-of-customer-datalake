@@ -5,7 +5,7 @@
  */
 import { apiUrl } from './env'
 import { isRecord } from './guards'
-import { e2eFetch } from './trafficTag'
+import { e2eFetch, type ExpectedStatuses } from './trafficTag'
 
 export interface McpAnswer {
   status: number
@@ -30,13 +30,13 @@ export function readMcpAnswer(status: number, body: unknown, wwwAuthenticate: st
   }
 }
 
-/** `tools/list` with `token`. */
-export async function mcpToolsList(token: string): Promise<McpAnswer> {
+/** `tools/list` with `token`. `expect`: the refusal a dead (revoked / expired) token is meant to get (401). */
+export async function mcpToolsList(token: string, options: { expect?: ExpectedStatuses } = {}): Promise<McpAnswer> {
   const response = await e2eFetch(`${apiUrl()}/mcp/global`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-  })
+  }, options)
   const text = await response.text()
   const body: unknown = (() => {
     try { return JSON.parse(text) } catch { return null }

@@ -132,7 +132,7 @@ test.describe('projects: Edit on the list', () => {
 
     test('a forced PUT on a view-only project is refused with 403', async () => {
       const id = projectIdOrSkip(NAME.viewer)
-      const forced = await apiCall('user', 'PUT', `/projects/${encodeURIComponent(id)}`, { name: `${NAME.viewer}-hijacked` })
+      const forced = await apiCall('user', 'PUT', `/projects/${encodeURIComponent(id)}`, { name: `${NAME.viewer}-hijacked` }, { expect: [403] })
       expect(forced.status).toBe(403)
       expect((await readProject('admin', id)).name).toBe(NAME.viewer)
     })

@@ -80,7 +80,7 @@ export async function expectBuiltinNotArchivable(page: Page): Promise<number> {
   await expect(row.first()).toBeVisible()
   if (builtinName !== undefined) await expect(library(page).getByRole('button', { name: `Archive ${builtinName}`, exact: true })).toHaveCount(0)
   await expect(row.getByRole('button', { name: /^Archive/ })).toHaveCount(0)
-  const refused = await apiCall('admin', 'DELETE', `/workflows/${BUILTIN_WORKFLOW_ID}`)
+  const refused = await apiCall('admin', 'DELETE', `/workflows/${BUILTIN_WORKFLOW_ID}`, undefined, { expect: [409] })
   expect(refused.status, 'the built-in workflow cannot be archived').toBe(409)
   return refused.status
 }

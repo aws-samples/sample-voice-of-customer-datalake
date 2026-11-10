@@ -109,7 +109,7 @@ test.describe('csv dataset update', () => {
     await assertStep(page, role, 'csv-dataset-api-guards', async () => {
       const unconfirmed = await apiCall(role, 'POST', '/scrapers/manual/csv-upload', {
         csv_text: CORRECTED.replace(FIXED, `${FIXED}!`), dataset_name: DATASET,
-      })
+      }, { expect: [409] })
       expect(unconfirmed.status, 'a change without apply_updates').toBe(409)
       const listed = await apiCall(role, 'GET', '/feedback?days=0&limit=500')
       const texts = listedTexts(listed.body)

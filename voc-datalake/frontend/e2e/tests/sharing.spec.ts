@@ -128,7 +128,7 @@ async function shareScenario(page: Page, userPage: Page, { publicId, viewerId, u
     await openList(userPage)
     await expect(card(userPage, NAME.viewer)).toBeVisible()
     await expect(card(userPage, NAME.viewer).getByRole('button', { name: /^Actions for / })).toHaveCount(0)
-    const forced = await apiCall('user', 'PUT', `/projects/${encodeURIComponent(viewerId)}`, { name: `${NAME.viewer}-hijacked` })
+    const forced = await apiCall('user', 'PUT', `/projects/${encodeURIComponent(viewerId)}`, { name: `${NAME.viewer}-hijacked` }, { expect: [403] })
     r.note(`forced PUT as a viewer -> ${forced.status}`)
     expect(forced.status).toBe(403)
     expect((await readProject('admin', viewerId)).name).toBe(NAME.viewer)
@@ -147,7 +147,7 @@ async function shareScenario(page: Page, userPage: Page, { publicId, viewerId, u
     await page.keyboard.press('Escape')
   })
   await step(userPage, 'user', 'share-removed-gone', async () => {
-    expect((await readProject('user', viewerId)).status).toBe(404)
+    expect((await readProject('user', viewerId, { expect: [404] })).status).toBe(404)
     await openList(userPage)
     await expect(card(userPage, NAME.public)).toBeVisible()
     await expect(card(userPage, NAME.viewer)).toHaveCount(0)

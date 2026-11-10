@@ -109,7 +109,7 @@ test.describe('connect: global MCP tokens', () => {
         await expect(tokenRow(page, name)).toContainText('Revoked')
         await expect(tokenRow(page, name).getByRole('button', { name: 'Revoke' })).toHaveCount(0)
 
-        if (!MOCK) expectRefused(await mcpToolsList(secret))
+        if (!MOCK) expectRefused(await mcpToolsList(secret, { expect: [401] }))
         r.note(MOCK ? 'dev mock: /mcp/global not served, MCP calls skipped' : 'tools/list: 200 while active, 401 after revoke')
       },
     })
@@ -137,6 +137,6 @@ test.describe('connect: global MCP tokens', () => {
     expect(revoked.status).toBe(200)
     const token = isRecord(revoked.body) && isRecord(revoked.body['token']) ? revoked.body['token'] : undefined
     expect(stringField(token, 'status')).toBe('revoked')
-    if (!MOCK) expectRefused(await mcpToolsList(secret))
+    if (!MOCK) expectRefused(await mcpToolsList(secret, { expect: [401] }))
   })
 })

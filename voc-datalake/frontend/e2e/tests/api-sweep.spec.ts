@@ -16,6 +16,7 @@ import { OUT_DIR, type Role } from '../lib/env'
 import { roleOf } from '../lib/fixtures'
 import { isRecord } from '../lib/guards'
 import { cognitoUsernameFor } from '../lib/session'
+import type { ExpectedStatuses } from '../lib/trafficTag'
 
 const FAKE = 'e2e-nonexistent-0000'
 
@@ -85,12 +86,13 @@ function probes(ids: Ids, real: Set<keyof Ids>): Probe[] {
     // github_issues is single-config: 400 "does not support multiple app configs" is its correct answer.
     { path: '/integrations/github_issues/apps', adminOnly: true, fake: true },
     { path: '/settings/brand' }, { path: '/settings/model' }, { path: '/settings/resolved-problems' }, { path: '/settings/categories' },
-    { path: '/settings/categories/reprocess' },
+    { path: '/settings/categories/reprocess', adminOnly: true },
     { path: '/settings/company-context' }, { path: '/settings/my-context' }, { path: '/settings/design-system' },
     { path: '/scrapers' }, { path: '/scrapers/templates' }, { path: `/scrapers/${ids.scraper}/status`, fake: r('scraper') },
     { path: `/scrapers/manual/parse/${FAKE}`, fake: true },
     { path: '/projects' }, { path: `/projects/${ids.project}`, fake: r('project') }, { path: `/projects/${ids.project}/members`, fake: r('project') },
-    { path: `/projects/${ids.project}/members/candidates?q=e2e`, fake: r('project') }, { path: `/projects/${ids.project}/jobs`, fake: r('project') },
+    // Manage-only (owner or admin): e2e-user is refused like on an admin-only route.
+    { path: `/projects/${ids.project}/members/candidates?q=e2e`, fake: r('project'), adminOnly: true }, { path: `/projects/${ids.project}/jobs`, fake: r('project') },
     { path: `/projects/${ids.project}/jobs/${ids.projectJob}`, fake: r('project') || r('projectJob') },
     { path: `/projects/${ids.project}/product-context`, fake: r('project') }, { path: `/projects/${ids.project}/product-docs`, fake: r('project') },
     { path: `/projects/${ids.project}/prototypes/${FAKE}/pins`, fake: true }, { path: '/projects/prioritization' },
@@ -100,7 +102,7 @@ function probes(ids: Ids, real: Set<keyof Ids>): Probe[] {
     { path: '/users', adminOnly: true }, { path: `/users/${ids.username}/category-access`, adminOnly: true },
     { path: `/logs/validation?days=7` }, { path: `/logs/processing?days=7` }, { path: `/logs/scraper/${ids.scraper}?days=7`, fake: r('scraper') },
     { path: '/logs/summary?days=7' },
-    { path: '/s3-import/sources' }, { path: '/s3-import/files' },
+    { path: '/s3-import/sources', adminOnly: true }, { path: '/s3-import/files', adminOnly: true },
     { path: '/data-explorer/buckets', adminOnly: true }, { path: '/data-explorer/s3?prefix=raw/', adminOnly: true },
     { path: `/data-explorer/s3/preview?key=raw/${FAKE}.json`, adminOnly: true, fake: true },
     { path: '/memory?scope=company' }, { path: '/memory?scope=personal' }, { path: '/memory/review' }, { path: `/memory/imports/${FAKE}`, fake: true },
@@ -125,13 +127,26 @@ function verdictOf(role: Role, probe: Probe, status: number): string {
   return `FAIL-${status}`
 }
 
+/**
+ * The refusals a probe is MEANT to get, declared for the log sweep (lib/trafficTag.ts). An admin-only route as
+ * e2e-user: the doc'd 401/403/404 (`verdictOf` accepts any 4xx there). A fake id: 404, or 400 / 403 where the route
+ * checks the id's shape or the caller first. Nothing for a probe whose test expects a 2xx: e2e-user's 403/404
+ * fallback in `verdictOf` is a tolerance, not a deliberate refusal.
+ */
+function expectedRefusalsOf(role: Role, probe: Probe): ExpectedStatuses {
+  const statuses = new Set<number>()
+  if (role === 'user' && probe.adminOnly === true) for (const s of [401, 403, 404]) statuses.add(s)
+  if (probe.fake === true) for (const s of [400, 403, 404]) statuses.add(s)
+  return [...statuses]
+}
+
 test('api sweep: every GET endpoint', async ({}, testInfo) => {
   test.setTimeout(600_000)
   const role = roleOf(testInfo)
   const { ids, real } = await resolveIds(role)
   const rows: SweepRow[] = []
   for (const probe of probes(ids, real)) {
-    const res = await apiCall(role, 'GET', probe.path)
+    const res = await apiCall(role, 'GET', probe.path, undefined, { expect: expectedRefusalsOf(role, probe) })
     const message = res.status >= 400 && isRecord(res.body) ? String(res.body['message'] ?? res.body['error'] ?? '').slice(0, 160) : ''
     rows.push({
       path: probe.path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}|[A-Za-z0-9_-]{20,}/g, '{id}'),

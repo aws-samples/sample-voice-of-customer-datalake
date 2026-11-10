@@ -811,11 +811,20 @@ step; the runbook is in [lambda-sizing.md](lambda-sizing.md).
 
 ### Log sweep after a deploy
 
-`voc-datalake/scripts/ops/log_sweep.py` is a read-only Logs Insights sweep of one deployment: every
-`[<prefix>-]voc-*` Lambda's real log group, the Step Functions groups and the stacks' own groups (custom
-resources, Cognito triggers). It prints the ERROR / WARNING / CRITICAL lines, tracebacks, timeouts and access
-denials, newest first, and leaves out the e2e suite's tagged lines unless `--include-tests`. Exit code 1 means
-it found lines, 0 means clean.
+`voc-datalake/scripts/ops/log_sweep.py` is a read-only Logs Insights sweep of one deployment, in two parts:
+
+- **Lambda and workflow logs:** every `[<prefix>-]voc-*` Lambda's real log group, the Step Functions groups and the
+  stacks' own groups (custom resources, Cognito triggers). Every ERROR / WARNING / CRITICAL line, traceback, timeout
+  and access denial is listed, newest first, **e2e test traffic included** (marked `[e2e <run>]`): a test run never
+  hides a server-side error.
+- **API access log:** requests by status class (2xx, 3xx, 4xx, 5xx) for real and for e2e traffic. Every 5xx is
+  listed. Every 4xx is listed except an e2e request that declared that exact status as expected: the suite marks
+  each call it means to be refused (a permission gate, a fake id, a GET after a DELETE) with the User-Agent token
+  `voc-e2e-expect/<status>[,<status>]` ([frontend/e2e/README.md → Test traffic tag](../voc-datalake/frontend/e2e/README.md#test-traffic-tag-538)).
+  Those are counted, not listed; a 5xx is never treated as expected.
+
+Exit code 1 means it found an error / warning line, a 5xx, or an e2e 4xx nobody declared; 0 means clean; 2 an AWS
+error or no log groups. Real traffic's 4xx (an expired session's 401) are listed but do not fail the sweep.
 
 ```bash
 cd voc-datalake

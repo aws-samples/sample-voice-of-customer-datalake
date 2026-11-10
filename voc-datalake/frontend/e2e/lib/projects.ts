@@ -8,7 +8,7 @@
  * it visible — and editable — to every signed-in user.
  */
 import type { Locator, Page } from '@playwright/test'
-import { apiCall, listOf, stringField } from './api'
+import { apiCall, listOf, stringField, type ApiCallOptions } from './api'
 import { recordCreated, runLedger } from './ledger'
 import { isRecord } from './guards'
 import { cognitoSubFor } from './session'
@@ -50,9 +50,11 @@ export async function ensureE2eProject(name: string, visibility: Visibility, des
   return id
 }
 
-/** `GET /projects/{id}` as `role`: the status and the META fields a spec compares. */
-export async function readProject(role: Role, id: string): Promise<{ status: number; name?: string; description?: string; visibility?: string }> {
-  const result = await apiCall(role, 'GET', `/projects/${encodeURIComponent(id)}`)
+/** `GET /projects/{id}` as `role`: the status and the META fields a spec compares. `options.expect` from a caller proving a refusal (404). */
+export async function readProject(
+  role: Role, id: string, options: ApiCallOptions = {},
+): Promise<{ status: number; name?: string; description?: string; visibility?: string }> {
+  const result = await apiCall(role, 'GET', `/projects/${encodeURIComponent(id)}`, undefined, options)
   const project = projectOf(result.body)
   const text = (key: string): string | undefined => {
     const value = project?.[key]

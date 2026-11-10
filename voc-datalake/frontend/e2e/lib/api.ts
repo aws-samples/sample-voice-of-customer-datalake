@@ -6,7 +6,7 @@
 import { MOCK, apiUrl, type Role } from './env'
 import { isRecord } from './guards'
 import { idTokenFor } from './session'
-import { e2eFetch } from './trafficTag'
+import { e2eFetch, type ExpectedStatuses } from './trafficTag'
 
 export interface ApiResult {
   status: number
@@ -15,14 +15,19 @@ export interface ApiResult {
   body: unknown
 }
 
-export async function apiCall(role: Role, method: string, path: string, body?: unknown): Promise<ApiResult> {
+/** `expect`: the 4xx statuses this call is MEANT to be refused with, so the log sweep counts them as expected. */
+export interface ApiCallOptions {
+  expect?: ExpectedStatuses
+}
+
+export async function apiCall(role: Role, method: string, path: string, body?: unknown, options: ApiCallOptions = {}): Promise<ApiResult> {
   const started = performance.now()
   const response = await e2eFetch(`${apiUrl()}${path}`, {
     method,
     // The dev mock has no login: it answers every caller as the admin.
     headers: MOCK ? { 'Content-Type': 'application/json' } : { Authorization: idTokenFor(role), 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  }, options)
   return resultOf(response, started)
 }
 

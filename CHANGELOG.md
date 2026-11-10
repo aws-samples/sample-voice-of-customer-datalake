@@ -23,8 +23,9 @@ Operator tooling (a log sweep, an e2e users helper, a grouped e2e run), cheaper 
 
 ### Added
 
-- `voc-datalake/scripts/ops/log_sweep.py`: a read-only sweep of one deployment's Lambda, Step Functions and stack log groups for errors and warnings, without the e2e suite's lines; exit 1 when it finds any ([docs/deployment.md → Log sweep after a deploy](docs/deployment.md#log-sweep-after-a-deploy)).
+- `voc-datalake/scripts/ops/log_sweep.py`: a read-only sweep of one deployment. It lists every Lambda, Step Functions and stack error or warning line, e2e test traffic included, and the API requests by status class; every 5xx and every 4xx is listed except an e2e call that declared that status as expected. Exit 1 when it finds any ([docs/deployment.md → Log sweep after a deploy](docs/deployment.md#log-sweep-after-a-deploy)).
 - `voc-datalake/frontend/e2e/scripts/e2e-users.sh enable|disable`: turns the two e2e test users on (the `e2e` group, new random passwords, the suite's env file written outside the repository) and off again, reading the deployment from the stack outputs ([frontend/e2e/README.md → Run](voc-datalake/frontend/e2e/README.md#run)).
+- The e2e suite declares each refusal it expects (`apiCall` / `e2eFetch` `{ expect: [<4xx>] }`, `expectRefusal` for page requests), sent as the User-Agent token `voc-e2e-expect/<status>`; `unit/expectedStatus.spec.ts` keeps assertions and declarations together.
 - `run-sharded.sh --groups <file>`: one shard per named group of spec files, with per-group workers and Playwright flags; `e2e/shard-groups.txt` splits the production suite into 8 balanced groups, and `unit/shard-groups.spec.ts` keeps every spec in exactly one.
 
 ### Changed
@@ -34,6 +35,8 @@ Operator tooling (a log sweep, an e2e users helper, a grouped e2e run), cheaper 
 
 ### Fixed
 
+- The Dashboard's full-page states (no feedback in the time range, an empty workspace, a viewer with nothing in scope) give their heading as the page's `h1`; the page had no level-1 heading in those states.
+- The e2e design track opens a project no e2e run created; it picked another shard's sharing project, which that spec deleted mid-run (a 404 on every later project screen).
 - `/board/login` for someone already signed in to the app sends them to `/board`. Before, the page took `login` as a board's name and asked the API for it (a 404 "Board not found" on every such visit).
 - The e2e `s2-agents` arrow test waits for the arrow's side panel to appear; `isVisible({ timeout })` answered at once and failed 1 run in 3. A unit check refuses that pattern in the suite.
 - The Logs Insights filter documented for leaving out e2e traffic (`filter ispresent(test_run) = 0`, in the e2e README, `shared/e2e_tag.py` and the testing guide) does not compile; it now reads `filter not ispresent(test_run)`.

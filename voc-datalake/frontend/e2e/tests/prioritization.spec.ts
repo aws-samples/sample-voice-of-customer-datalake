@@ -28,7 +28,8 @@ import { anonymousContext } from '../lib/mode'
 import { MOCK, apiUrl } from '../lib/env'
 import { isRecord } from '../lib/guards'
 import { roleOf, runStep, settle, site } from '../lib/fixtures'
-import { e2eFetch } from '../lib/trafficTag'
+import { e2eFetch, type ExpectedStatuses } from '../lib/trafficTag'
+import { expectRefusal } from '../lib/expectedRefusal'
 
 /** A session id in the real format (`vs_` + 32 hex) that no session will ever have. */
 const UNKNOWN_SESSION = `vs_${'0'.repeat(31)}e`
@@ -56,14 +57,20 @@ async function submitOnBallotPage(page: Page): Promise<void> {
 }
 
 /** A NEW device (no session, no stored ballot id) submits on `/vote/{id}`; returns the submit's status. */
-async function voteFromNewDevice(browser: Browser, sessionId: string, expectHeading: string, expectDetail?: RegExp): Promise<number> {
+async function voteFromNewDevice(
+  browser: Browser, sessionId: string, expectHeading: string, expectDetail?: RegExp, refusedWith: ExpectedStatuses = [],
+): Promise<number> {
   const device = await anonymousContext(browser)
   try {
     const page = await device.newPage()
     await page.goto(site(`/vote/${sessionId}`), { waitUntil: 'domcontentloaded' })
-    const submitted = page.waitForResponse((r) => /\/submit$/.test(new URL(r.url()).pathname))
-    await submitOnBallotPage(page)
-    const status = (await submitted).status()
+    const submit = async (): Promise<number> => {
+      const submitted = page.waitForResponse((r) => /\/submit$/.test(new URL(r.url()).pathname))
+      await submitOnBallotPage(page)
+      return (await submitted).status()
+    }
+    // A refusal the caller means (past the cap: 429) is declared on the submit only, for the log sweep.
+    const status = refusedWith.length === 0 ? await submit() : await expectRefusal(page, { method: 'POST', path: /\/submit$/ }, refusedWith, submit)
     await expect(page.getByRole('heading', { name: expectHeading })).toBeVisible()
     if (expectDetail !== undefined) await expect(page.getByText(expectDetail)).toBeVisible()
     return status
@@ -112,7 +119,9 @@ test.describe('prioritization and room voting', () => {
     const context = await anonymousContext(browser)
     try {
       const page = await context.newPage()
-      const { record, problems } = await runStep({
+      // The ballot page's config read of an unknown session is MEANT to be a 404 (declared for the log sweep).
+      const unknownConfig = { method: 'GET', path: new RegExp(`/voting-sessions/${UNKNOWN_SESSION}/config$`) }
+      const { record, problems } = await expectRefusal(page, unknownConfig, [404], () => runStep({
         page, role: 'user', theme: 'dark', step: 'p3-vote-unknown-anonymous',
         action: async () => {
           await page.goto(site(`/vote/${UNKNOWN_SESSION}`), { waitUntil: 'domcontentloaded' })
@@ -124,12 +133,12 @@ test.describe('prioritization and room voting', () => {
           expect(new URL(page.url()).pathname).toBe(`/vote/${UNKNOWN_SESSION}`)
           await expect(page.getByRole('button', { name: 'Submit ballot' })).toHaveCount(0)
         },
-      })
+      }))
       expect(problems, record.screenshot ?? '').toEqual([])
       // The public submit, with no Authorization header at all.
       const refused = await e2eFetch(`${apiUrl()}/voting-sessions/${UNKNOWN_SESSION}/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ANY_AXES),
-      })
+      }, { expect: [404] })
       expect(refused.status).toBe(404)
     } finally {
       await context.close()
@@ -176,7 +185,7 @@ test.describe('prioritization and room voting', () => {
       await ballot.reload({ waitUntil: 'domcontentloaded' })
       await expect(ballot.getByRole('heading', { name: NOT_OPEN })).toBeVisible()
       await expect(ballot.getByText(/The facilitator has closed this vote/)).toBeVisible()
-      const late = await apiCall('user', 'POST', `/voting-sessions/${sessionId}/submit`, ANY_AXES)
+      const late = await apiCall('user', 'POST', `/voting-sessions/${sessionId}/submit`, ANY_AXES, { expect: [409] })
       expect(late.status).toBe(409)
       expect(isRecord(late.body) ? late.body['reason'] : undefined).toBe('closed')
 
@@ -186,7 +195,7 @@ test.describe('prioritization and room voting', () => {
       expect(sessionOf(cappedBody)['ballot_cap']).toBe(1)
       const cappedId = sessionIdOf(cappedBody)
       expect(await voteFromNewDevice(browser, cappedId, 'Ballot recorded'), 'first device').toBe(200)
-      expect(await voteFromNewDevice(browser, cappedId, NOT_OPEN, /already collected as many ballots as it accepts/), 'second device, past the cap').toBe(429)
+      expect(await voteFromNewDevice(browser, cappedId, NOT_OPEN, /already collected as many ballots as it accepts/, [429]), 'second device, past the cap').toBe(429)
       expect((await apiCall('admin', 'POST', `/voting-sessions/${cappedId}/close`, {})).status, 'capped session closed').toBeLessThan(300)
     } finally {
       await phone.close()

@@ -7,7 +7,7 @@
  * a GET (404). Every create is `${RUN_PREFIX}…`; a person's address is
  * `e2e-<run id>-<what>@example.com` (a reserved domain, never a real mailbox).
  */
-import { apiCall, listOf, stringField } from './api'
+import { apiCall, listOf, stringField, type ApiCallOptions } from './api'
 import { RUN_ID } from './env'
 import { isRecord } from './guards'
 
@@ -67,20 +67,26 @@ export async function personIdByEmail(email: string): Promise<string | undefined
   return stringField(people.find((person) => person['email'] === email), 'person_id')
 }
 
-/** `GET /participants/lists/{id}` status (404 = gone). */
-export async function listStatus(listId: string): Promise<number> {
-  return (await apiCall('admin', 'GET', `/participants/lists/${encodeURIComponent(listId)}`)).status
+/**
+ * `GET /participants/lists/{id}` status (404 = gone). `options.expect: [404]` from a caller proving a delete, so the
+ * log sweep counts that 404 as expected; an existence check passes none.
+ */
+export async function listStatus(listId: string, options: ApiCallOptions = {}): Promise<number> {
+  return (await apiCall('admin', 'GET', `/participants/lists/${encodeURIComponent(listId)}`, undefined, options)).status
 }
 
-/** `GET /participants/people/{id}` status (404 = gone). */
-export async function personStatus(personId: string): Promise<number> {
-  return (await apiCall('admin', 'GET', `/participants/people/${encodeURIComponent(personId)}`)).status
+/** `GET /participants/people/{id}` status (404 = gone); `options` as for `listStatus`. */
+export async function personStatus(personId: string, options: ApiCallOptions = {}): Promise<number> {
+  return (await apiCall('admin', 'GET', `/participants/people/${encodeURIComponent(personId)}`, undefined, options)).status
 }
+
+/** What a GET after a delete is meant to answer. */
+export const GONE: ApiCallOptions = { expect: [404] }
 
 /** Admin cleanup: deletes the list when it still exists; returns the GET status after (404 expected). */
 export async function deleteListAs(listId: string): Promise<number> {
   if (await listStatus(listId) === 200) await apiCall('admin', 'DELETE', `/participants/lists/${encodeURIComponent(listId)}`)
-  return listStatus(listId)
+  return listStatus(listId, GONE)
 }
 
 /**
@@ -94,5 +100,5 @@ export async function erasePersonAs(personId: string): Promise<number> {
   if (await personStatus(personId) === 200) {
     await apiCall('admin', 'DELETE', `/participants/people/${encodeURIComponent(personId)}`, { legal_basis: E2E_LEGAL_BASIS })
   }
-  return personStatus(personId)
+  return personStatus(personId, GONE)
 }

@@ -22,7 +22,7 @@ import { apiCall } from '../lib/api'
 import { RUN_PREFIX, apiUrl } from '../lib/env'
 import { assertStep, roleOf, settle, site } from '../lib/fixtures'
 import { ensureE2eProject, projectIdOrSkip } from '../lib/projects'
-import { e2eFetch } from '../lib/trafficTag'
+import { e2eFetch, type ExpectedStatuses } from '../lib/trafficTag'
 
 const PROJECT = `${RUN_PREFIX}mcp-removed`
 /** The project page's tabs, in order (ProjectTabs.tsx TABS). */
@@ -74,7 +74,7 @@ test.describe('projects: per-project Export / MCP removed', () => {
       ['DELETE', `/projects/${id}/api-tokens/tok_0123456789abcdef`],
       ['GET', `/projects/${id}/autoseed`],
     ] as const) {
-      const res = await apiCall('admin', method, path, method === 'POST' ? { name: 'e2e', scopes: ['feedback:read'] } : undefined)
+      const res = await apiCall('admin', method, path, method === 'POST' ? { name: 'e2e', scopes: ['feedback:read'] } : undefined, { expect: [404] })
       expect(res.status, `${method} ${path} was retired in 3.00.00`).toBe(404)
     }
   })
@@ -84,10 +84,10 @@ test.describe('projects: per-project Export / MCP removed', () => {
     // Shape-valid for the gateway's token authorizer, unknown to the server: no secret.
     const bearer = `Bearer voc_tok_0123456789abcdef_${'0'.repeat(64)}`
     const ping = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
-    const post = (path: string) => e2eFetch(`${apiUrl()}${path}`, {
+    const post = (path: string, options: { expect: ExpectedStatuses }) => e2eFetch(`${apiUrl()}${path}`, {
       method: 'POST', headers: { Authorization: bearer, 'Content-Type': 'application/json' }, body: ping,
-    })
-    expect((await post('/mcp')).status, 'POST /mcp was retired in 3.00.00').toBe(403)
-    expect((await post('/mcp/global')).status, 'an unknown token is a 401 at the global server').toBe(401)
+    }, options)
+    expect((await post('/mcp', { expect: [403] })).status, 'POST /mcp was retired in 3.00.00').toBe(403)
+    expect((await post('/mcp/global', { expect: [401] })).status, 'an unknown token is a 401 at the global server').toBe(401)
   })
 })

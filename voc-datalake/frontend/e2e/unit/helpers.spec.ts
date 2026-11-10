@@ -16,6 +16,7 @@ import { SAFE_RUN_STEP_TYPES, journalEventOf, runProjectLabel, runProjects, runT
 import { avatarKeyOfUrl, avatarKeysOf, isAvatarKeyOf } from '../lib/avatars'
 import { boxOf, expectTravel, intersects, settledBoxOf, travelFrom } from '../lib/geometry'
 import { runConversations } from '../lib/runCleanup'
+import { stableProjectId } from '../lib/designRun'
 import { dialogNamed, unnamedDialogLookups } from '../lib/dialogs'
 import { headWords, lastAssistantText, plainText, runStatusOf } from '../lib/assistantHealth'
 import { ENTITY_KINDS, readLedger, recordCreated } from '../lib/ledger'
@@ -633,4 +634,12 @@ test('the 3.00.00 spec fixes stay in their specs (S1, S2, S4, S5, S6)', () => {
   expect(opener).toMatch(/getByRole\('link', \{ name: 'Autonomous agents'/)
   expect(opener).not.toMatch(/page\.goto\(site\(`\/agents\//)
   expect(guardSpec).toMatch(/F6-a6[\s\S]*window\.location\.reload\(\)[\s\S]*toEqual\(\['beforeunload'\]\)/)
+})
+
+test('the design track picks a project no e2e run created, else the first one (6.04.03)', () => {
+  const run = { project_id: 'proj_run', name: 'e2e-1794308739827-share-public' }
+  const real = { project_id: 'proj_real', name: 'Q1 Product Improvements' }
+  expect(stableProjectId([run, real])).toBe('proj_real')
+  expect(stableProjectId([run])).toBe('proj_run')
+  expect(stableProjectId([])).toBeUndefined()
 })

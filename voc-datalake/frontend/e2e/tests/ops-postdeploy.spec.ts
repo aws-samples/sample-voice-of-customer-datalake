@@ -51,6 +51,13 @@ const RETIRED_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['GET', '/projects/x/autoseed'],
 ]
 
+/**
+ * The refusals a retired route gets, declared for the log sweep: unwired (API Gateway's 403 "Missing
+ * Authentication Token"), the token / Cognito authorizer's 401, or a handler's 404. The test accepts any 4xx;
+ * another 4xx is still reported by the sweep, as a surprise worth a look.
+ */
+const RETIRED_ROUTE_REFUSALS = [401, 403, 404] as const
+
 /** `{ apiId, stage }` from the stage URL `https://<id>.execute-api.<region>.amazonaws.com/<stage>`. */
 function stageOf(url: string): { apiId: string; stage: string } {
   const parsed = new URL(url)
@@ -171,7 +178,7 @@ test.describe('ops: post-deploy health (read-only)', () => {
         method,
         headers: { Authorization: bearer, 'Content-Type': 'application/json' },
         body: method === 'POST' ? JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) : undefined,
-      })
+      }, { expect: RETIRED_ROUTE_REFUSALS })
       results.push({ route: `${method} ${route}`, status: res.status })
     }
     writeEvidence('ops-postdeploy-retired-routes.json', results)

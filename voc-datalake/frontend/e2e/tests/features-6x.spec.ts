@@ -97,12 +97,12 @@ test.describe('scraper write rules (6.04.00)', () => {
         expect(listed?.['enabled']).toBe(false)
         r.note(`GET /scrapers etag=${etag}`)
 
-        const again = await apiCall('admin', 'POST', '/scrapers', { mode: 'create', scraper: manualScraper(`${SCRAPER_NAME}-dup`) })
+        const again = await apiCall('admin', 'POST', '/scrapers', { mode: 'create', scraper: manualScraper(`${SCRAPER_NAME}-dup`) }, { expect: [409] })
         r.note(`POST /scrapers mode=create (same id) -> ${again.status} ${messageOf(again.body)}`)
         expect(again.status, 'a create never overwrites').toBe(409)
 
         const staleEtag = etag === '0000000000000000' ? '1111111111111111' : '0000000000000000'
-        const stale = await apiCall('admin', 'POST', '/scrapers', { mode: 'update', base_etag: staleEtag, scraper: manualScraper(`${SCRAPER_NAME}-stale`) })
+        const stale = await apiCall('admin', 'POST', '/scrapers', { mode: 'update', base_etag: staleEtag, scraper: manualScraper(`${SCRAPER_NAME}-stale`) }, { expect: [409] })
         r.note(`POST /scrapers mode=update base_etag=<stale> -> ${stale.status} ${messageOf(stale.body)}`)
         expect(stale.status, 'a stale update is refused').toBe(409)
         expect(stringField(await listedScraper(SCRAPER_ID), 'name'), 'the refused writes changed nothing').toBe(SCRAPER_NAME)
@@ -117,12 +117,12 @@ test.describe('scraper write rules (6.04.00)', () => {
         expect(newEtag, 'the update gives the record a new etag').not.toBe(etag)
         r.note(`new etag=${newEtag}`)
 
-        const nowStale = await apiCall('admin', 'POST', '/scrapers', { mode: 'update', base_etag: etag, scraper: manualScraper(`${SCRAPER_NAME}-old`) })
+        const nowStale = await apiCall('admin', 'POST', '/scrapers', { mode: 'update', base_etag: etag, scraper: manualScraper(`${SCRAPER_NAME}-old`) }, { expect: [409] })
         r.note(`POST /scrapers mode=update base_etag=<pre-update etag> -> ${nowStale.status}`)
         expect(nowStale.status, 'the etag read before the update is stale now').toBe(409)
 
         const unknownId = `${SCRAPER_ID.slice(0, 54)}-missing`
-        const unknown = await apiCall('admin', 'POST', '/scrapers', { mode: 'update', scraper: { ...manualScraper(`${SCRAPER_NAME}-missing`), id: unknownId } })
+        const unknown = await apiCall('admin', 'POST', '/scrapers', { mode: 'update', scraper: { ...manualScraper(`${SCRAPER_NAME}-missing`), id: unknownId } }, { expect: [404] })
         r.note(`POST /scrapers mode=update (unknown id) -> ${unknown.status} ${messageOf(unknown.body)}`)
         expect(unknown.status, 'an update never creates').toBe(404)
         expect(await listedScraper(unknownId), 'the 404 created nothing').toBeUndefined()
@@ -139,7 +139,7 @@ test.describe('scraper write rules (6.04.00)', () => {
   test('e2e-user: POST /scrapers is admin-only (403 before the body is read)', async ({}, testInfo) => {
     test.skip(roleOf(testInfo) !== 'user', 'the admin-only probe is for e2e-user')
     // `mode: 'bogus'` is a 400 for an admin, so this body can never be stored whatever the gate does.
-    const res = await apiCall('user', 'POST', '/scrapers', { mode: 'bogus', scraper: { id: `${SCRAPER_ID.slice(0, 55)}-refused` } })
+    const res = await apiCall('user', 'POST', '/scrapers', { mode: 'bogus', scraper: { id: `${SCRAPER_ID.slice(0, 55)}-refused` } }, { expect: [403] })
     expect(res.status, messageOf(res.body)).toBe(403)
   })
 })

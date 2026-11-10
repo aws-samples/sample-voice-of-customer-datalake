@@ -1020,7 +1020,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       ]
       const results: Array<{ call: string; status: number }> = []
       for (const [method, p, body] of probes) {
-        const res: ApiResult = await apiCall('user', method, p, body)
+        const res: ApiResult = await apiCall('user', method, p, body, { expect: [403] })
         results.push({ call: `${method} ${p.replace(aid, '{agent}').replace(wid, '{wf}')}`, status: res.status })
       }
       r.note(results.map((x) => `${x.call} -> ${x.status}`).join('; '))

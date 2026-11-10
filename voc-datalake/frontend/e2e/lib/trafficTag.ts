@@ -59,11 +59,35 @@ export function nodeUserAgent(env: Env = process.env): string {
 }
 
 /**
- * `fetch` with the tagged User-Agent. Every Node-side request of the suite goes through
- * this (unit/trafficTag.spec.ts fails on a bare `fetch(` in lib/ or tests/).
+ * The statuses a request is EXPECTED to be refused with (a gate, a fake id, a GET after a DELETE): only 4xx. They
+ * travel as a second User-Agent token, `voc-e2e-expect/<status>[,<status>]`, which the API access log keeps
+ * (`userAgent`), so the log sweep (scripts/ops/log_sweep.py) counts that 4xx as expected and reports every other
+ * one. A 2xx, 3xx or 5xx is never declared expected: a 5xx is always a finding.
  */
-export function e2eFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
+export type ExpectedStatuses = readonly number[]
+
+/** `voc-e2e-expect/<statuses>`, or null when none are declared; a status outside 400-499 is refused. */
+export function expectedStatusToken(expect: ExpectedStatuses = []): string | null {
+  if (expect.length === 0) return null
+  for (const status of expect) {
+    if (!Number.isInteger(status) || status < 400 || status > 499) throw new Error(`an expected status must be a 4xx, got ${String(status)}`)
+  }
+  return `voc-e2e-expect/${[...new Set(expect)].sort((a, b) => a - b).join(',')}`
+}
+
+/** The Node-side User-Agent of a request that declares its expected refusal statuses. */
+export function nodeUserAgentExpecting(expect: ExpectedStatuses = [], env: Env = process.env): string {
+  const token = expectedStatusToken(expect)
+  return token === null ? nodeUserAgent(env) : `${nodeUserAgent(env)} ${token}`
+}
+
+/**
+ * `fetch` with the tagged User-Agent. Every Node-side request of the suite goes through
+ * this (unit/trafficTag.spec.ts fails on a bare `fetch(` in lib/ or tests/). `expect` declares the 4xx statuses this
+ * request is meant to be refused with (see `expectedStatusToken`).
+ */
+export function e2eFetch(input: string | URL, init: RequestInit = {}, options: { expect?: ExpectedStatuses } = {}): Promise<Response> {
   const headers = new Headers(init.headers)
-  headers.set('User-Agent', nodeUserAgent())
+  headers.set('User-Agent', nodeUserAgentExpecting(options.expect))
   return fetch(input, { ...init, headers })
 }
