@@ -17,6 +17,14 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.05] - 2026-11-10
+
+Workshop templates pass Workshop Studio's template validation again.
+
+### Fixed
+
+- `voc-datalake/scripts/convert-template.mjs` (`npm run generate:workshop-artifacts`) keeps a template's `Description` as a literal string. Its region and account rewrite turned the VocWebSearchStack Description, which names its region, into an `Fn::Sub`, and the Workshop Studio build refused the template with "Every Description member must be a string". `voc-datalake/scripts/convert-template.test.ts` runs the converter on a scratch template.
+
 ## [6.04.04] - 2026-11-10
 
 Workshop templates delete their data with their stacks.
