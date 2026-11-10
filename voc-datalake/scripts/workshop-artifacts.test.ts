@@ -33,10 +33,10 @@ function synthContext(command: string): Array<[string, string]> {
   return [...synth.matchAll(/(?:^|\s)(?:-c|--context)[\s=]+(\w+)=(\S+)/g)].map((match) => [match[1] ?? '', match[2] ?? '']);
 }
 
-/** The stack names passed to scripts/convert-template.mjs. */
+/** The stack names passed to scripts/convert-template.mjs (its flags, if it ever gets any, left out). */
 function convertedStacks(command: string): string[] {
   const convert = commandsOf(command).find((part) => part.startsWith('node scripts/convert-template.mjs')) ?? '';
-  return convert.split(/\s+/).slice(2);
+  return convert.split(/\s+/).slice(2).filter((token) => !token.startsWith('-'));
 }
 
 describe('generate:workshop-artifacts', () => {
@@ -76,5 +76,11 @@ describe('synthContext', () => {
     expect(synthContext('npx cdk synth -c protectData=false && node convert.mjs -c protectData=true')).toStrictEqual([
       ['protectData', 'false'],
     ]);
+  });
+});
+
+describe('convertedStacks', () => {
+  it('reads the stack names and leaves a converter flag out', () => {
+    expect(convertedStacks('npx cdk synth && node scripts/convert-template.mjs --verbose A B')).toStrictEqual(['A', 'B']);
   });
 });
