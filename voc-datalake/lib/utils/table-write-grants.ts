@@ -27,7 +27,8 @@ const KEY_WRITE_ACTIONS = ['kms:Encrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey
  * The key actions a write-only grant needs: a write to a table encrypted with a customer-managed key also needs
  * kms:Decrypt (DynamoDB decrypts the table key for the caller). `grantReadWriteData` gets it from its read half; a
  * write-only role has no read half, so without it the first write fails ("not authorized to perform: kms:Decrypt"),
- * as the ModelPin custom resource did on every fresh deployment.
+ * as the ModelPin custom resource did on every fresh deployment. CDK's write grant also adds kms:DescribeKey; a
+ * write never calls it, so it stays out (exact grants: only what the role's calls need).
  */
 const KEY_ACTIONS_FOR_WRITE_ONLY_GRANT = [...KEY_WRITE_ACTIONS, 'kms:Decrypt'] as const;
 
