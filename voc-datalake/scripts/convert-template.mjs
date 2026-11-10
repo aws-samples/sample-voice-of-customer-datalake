@@ -329,6 +329,9 @@ const processStack = async (stackName, basePath, templatesOutDir) => {
   let finalTemplate = region || account ? replaceHardcodedValues(template, region, account) : template;
   finalTemplate = fixFnJoinStrings(finalTemplate);
   removeIntrinsicDefaults(finalTemplate);
+  // CloudFormation accepts only a literal string as the template Description ("Every Description member must
+  // be a string"): the region/account rewrite above must not turn it into an Fn::Sub.
+  if (typeof template.Description === 'string') finalTemplate.Description = template.Description;
 
   const outPath = resolve(templatesOutDir, `${stackName}.json`);
   await writeJSON(finalTemplate, outPath);
