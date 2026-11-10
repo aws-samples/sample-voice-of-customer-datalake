@@ -22,6 +22,13 @@ export type TableWrite = 'PutItem' | 'UpdateItem' | 'DeleteItem' | 'BatchWriteIt
 
 /** What `grantReadWriteData` adds on the table's KMS key for a write (aws-dynamodb perms.ts KEY_WRITE_ACTIONS). */
 const KEY_WRITE_ACTIONS = ['kms:Encrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey*'] as const;
+/**
+ * The key actions a write-only grant needs: a write to a table encrypted with a customer-managed key also needs
+ * kms:Decrypt (DynamoDB decrypts the table key for the caller). `grantReadWriteData` gets it from its read half; a
+ * write-only role has no read half, so without it the first write fails ("not authorized to perform: kms:Decrypt"),
+ * as the ModelPin custom resource did on every fresh deployment.
+ */
+const KEY_WRITE_ONLY_ACTIONS = [...KEY_WRITE_ACTIONS, 'kms:Decrypt'] as const;
 
 /** One Allow of `writes` on the table itself (never its indexes: a write names the table), plus the key actions. */
 function addWriteStatement(
@@ -33,7 +40,7 @@ function addWriteStatement(
     resources: [table.tableArn],
     conditions,
   }));
-  table.encryptionKey?.grant(grantee, ...KEY_WRITE_ACTIONS);
+  table.encryptionKey?.grant(grantee, ...KEY_WRITE_ONLY_ACTIONS);
 }
 
 /**
