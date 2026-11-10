@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.06] - 2026-11-10
+
+A fresh deployment completes again: the ModelPin custom resource can write its row.
+
+### Fixed
+
+- Roles with a write-only DynamoDB grant (`grantWrites`, `grantKeyScopedWrites` in `voc-datalake/lib/utils/table-write-grants.ts`) also get `kms:Decrypt` on the table's customer-managed key. A write needs it, and the write-only grants left it out, so the VocCoreStack `ModelPin` custom resource failed every FIRST deployment with "not authorized to perform: kms:Decrypt" and rolled the stack back. Existing deployments were unaffected, because the pin is written only on create. The same grant also covers the roles that hold only a key-scoped delete or put on a table.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`): the change adds one KMS action to a few Lambda roles, nothing is replaced.
+
 ## [6.04.05] - 2026-11-10
 
 Workshop templates pass Workshop Studio's template validation again.
