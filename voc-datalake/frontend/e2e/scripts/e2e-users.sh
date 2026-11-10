@@ -12,7 +12,7 @@
 # The deployment is read from the stack outputs (UserPoolId and WebsiteURL of the core stack, ApiEndpoint of the
 # API stack), with the operator's ambient AWS credentials and region.
 #
-# Env: E2E_STACK_PREFIX  the deployment's stack prefix (-c stackPrefix), if any
+# Env: E2E_STACK_PREFIX  the deployment's prefix (-c deploymentPrefix), if any
 #      E2E_ADMIN_USER    the admin test user (default e2e-admin; in the `admins` group)
 #      E2E_USER_USER     the plain test user (default e2e-viewer; in the `users` group)
 #      E2E_ENV_FILE      where the env file goes (default ~/.config/voc-e2e/suite.env; never inside a git work tree)
@@ -57,11 +57,17 @@ new_password() { # 32 characters with an upper, a lower, a digit and a symbol (t
 }
 
 if [[ "$ACTION" == disable ]]; then
+  # Every step is tried for both users (one failure must not leave the other on), then the result is reported.
+  FAILED=()
   for user in "$ADMIN_USER" "$PLAIN_USER"; do
-    aws cognito-idp admin-disable-user --user-pool-id "$POOL" --username "$user" || true
-    aws cognito-idp admin-user-global-sign-out --user-pool-id "$POOL" --username "$user" || true
+    aws cognito-idp admin-disable-user --user-pool-id "$POOL" --username "$user" || FAILED+=("disable $user")
+    aws cognito-idp admin-user-global-sign-out --user-pool-id "$POOL" --username "$user" || FAILED+=("sign out $user")
   done
   rm -f "$ENV_FILE"
+  if (( ${#FAILED[@]} > 0 )); then
+    echo "removed $ENV_FILE, but these steps FAILED: ${FAILED[*]}" >&2
+    exit 1
+  fi
   echo "disabled $ADMIN_USER and $PLAIN_USER; removed $ENV_FILE"
   exit 0
 fi

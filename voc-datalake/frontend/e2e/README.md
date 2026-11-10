@@ -16,7 +16,7 @@ bash e2e/scripts/e2e-users.sh disable             # test users off, signed out, 
 ```
 
 `e2e/scripts/e2e-users.sh enable|disable` uses the operator's AWS credentials and reads the deployment from the
-stack outputs (`UserPoolId`, `WebsiteURL`, `ApiEndpoint`; `E2E_STACK_PREFIX` for a prefixed deployment). `enable`
+stack outputs (`UserPoolId`, `WebsiteURL`, `ApiEndpoint`; `E2E_STACK_PREFIX` for a deployment made with `-c deploymentPrefix`). `enable`
 adds both test users (they must exist: `E2E_ADMIN_USER`, default `e2e-admin`, in `admins`; `E2E_USER_USER`, default
 `e2e-viewer`, in `users`) to the `e2e` group, enables them, sets new random passwords and writes the env file
 (`E2E_ENV_FILE`, mode 600; a path inside a git work tree is refused). Passwords are never printed. `disable`

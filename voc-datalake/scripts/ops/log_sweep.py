@@ -1,4 +1,4 @@
-"""Read-only error sweep of one VoC deployment's logs (docs/deployment.md → After a deploy).
+"""Read-only error sweep of one VoC deployment's logs (docs/deployment.md → Log sweep after a deploy).
 
     .venv/bin/python scripts/ops/log_sweep.py [--hours 2] [--prefix <stack prefix>] [--region <region>]
                                               [--pattern <Logs Insights regex>] [--include-tests] [--limit 80]
@@ -102,7 +102,7 @@ def existing_groups(logs: Any, lambda_client: Any, prefix: str | None) -> list[s
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Read-only error sweep of one VoC deployment\'s logs.')
     parser.add_argument('--hours', type=float, default=2.0, help='how far back to look (default 2)')
-    parser.add_argument('--prefix', help='the deployment\'s stack prefix (-c stackPrefix), if any')
+    parser.add_argument('--prefix', help='the deployment\'s prefix (-c deploymentPrefix), if any')
     parser.add_argument('--region', help='AWS region (default: the configured one)')
     parser.add_argument('--pattern', default=DEFAULT_PATTERN, help='Logs Insights `like` regex, e.g. /Task timed out/')
     parser.add_argument('--include-tests', action='store_true', help='keep the e2e suite\'s tagged lines')
@@ -127,6 +127,10 @@ def main(argv: list[str] | None = None) -> int:
         rows = [row for chunk in chunks(groups) for row in run_query(logs, chunk, start, end, query)]
     except Exception as error:  # noqa: BLE001 - a CLI: any AWS failure is reported, not a traceback
         print(f'log sweep failed: {error}', file=sys.stderr)
+        return 2
+    if not groups:
+        # Not "clean": a wrong prefix or region finds nothing to sweep.
+        print(f'no log groups found for prefix {args.prefix or "(none)"}: check --prefix and --region', file=sys.stderr)
         return 2
     print(f'{len(groups)} log groups, {len(rows)} matching lines in the last {args.hours:g} h')
     for timestamp, group, message in sorted(rows, reverse=True)[:args.limit]:

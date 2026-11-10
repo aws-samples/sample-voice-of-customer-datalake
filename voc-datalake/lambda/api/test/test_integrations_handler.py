@@ -429,7 +429,7 @@ class TestSourcesStatusDescribesRulesInParallel:
     SOURCES = ('webscraper', 'app_reviews_ios', 'synthetic_reviews', 'github_issues')
 
     @patch('integrations_handler.events_client')
-    def test_all_rules_are_in_flight_together(self, mock_events, api_gateway_event, lambda_context):
+    def test_rules_are_described_in_parallel_groups_of_the_cap(self, mock_events, api_gateway_event, lambda_context):
         import threading
 
         import integrations_handler
