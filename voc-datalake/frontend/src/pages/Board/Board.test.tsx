@@ -222,6 +222,8 @@ describe('an app user on /board', () => {
     await waitFor(() => expect(screen.getByTestId('path')).not.toHaveTextContent('/board/login'))
     const refsAsked = [...vi.mocked(api.getBoard).mock.calls, ...vi.mocked(api.listRequests).mock.calls].flat()
     expect(refsAsked).not.toContain('login')
+    // The shared request survives the redirect (`withoutSignInParams` drops only the sign-in params).
+    expect(screen.getByTestId('search')).toHaveTextContent('request=fr_1')
   })
 })
 

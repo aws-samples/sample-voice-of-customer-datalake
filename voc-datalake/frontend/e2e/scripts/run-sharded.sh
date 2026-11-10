@@ -44,7 +44,7 @@ if [[ "${1:-}" == --groups ]]; then
     # Strip a trailing comment FIRST: a line holding only a comment after the name must not select the whole suite.
     specs="${specs:-}"
     specs="${specs%%#*}"
-    if [[ -z "${specs// /}" ]]; then
+    if [[ -z "${specs//[[:space:]]/}" ]]; then
       echo "group $name in $GROUPS_FILE names no spec file" >&2
       exit 2
     fi
