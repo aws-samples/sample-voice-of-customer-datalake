@@ -31,7 +31,7 @@ function keyActions(grant: (table: dynamodb.Table, role: iam.Role) => void): str
   const policies = Object.values(Template.fromStack(stack).findResources('AWS::IAM::Policy')).map((p) => PolicySchema.parse(p));
   return policies
     .flatMap((p) => p.Properties.PolicyDocument.Statement)
-    .filter((statement) => JSON.stringify(statement.Resource) === JSON.stringify(keyId))
+    .filter((statement) => [JSON.stringify(keyId), JSON.stringify([keyId])].includes(JSON.stringify(statement.Resource)))
     .flatMap((statement) => (Array.isArray(statement.Action) ? statement.Action : [statement.Action]));
 }
 
@@ -44,9 +44,9 @@ describe('table write grants on a customer-managed key', () => {
     expect(keyActions((table, role) => grantKeyScopedWrites(table, role, ['DeleteItem'], ['CIRCUIT#*']))).toContain('kms:Decrypt');
   });
 
-  it('keeps the write key actions CDK grants for a write', () => {
+  it('grants exactly the write key actions plus kms:Decrypt, nothing broader', () => {
     const actions = keyActions((table, role) => grantWrites(table, role, ['PutItem']));
-    expect(actions).toStrictEqual(expect.arrayContaining(['kms:Encrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey*']));
+    expect([...new Set(actions)].sort((a, b) => a.localeCompare(b))).toStrictEqual(['kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey*', 'kms:ReEncrypt*']);
   });
 
   it('grantReadAndWrites already had kms:Decrypt from its read half', () => {
