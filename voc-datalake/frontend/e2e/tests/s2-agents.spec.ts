@@ -606,8 +606,11 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       const mid = await edgeMidpoint(page, eid)
       const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute('class') ?? '', mid)
       await page.mouse.click(mid.x, mid.y)
-      const selected = await page.getByRole('button', { name: 'Delete arrow' }).isVisible({ timeout: 2_000 }).catch(() => false)
-      r.note(`edge ${eid}: click at its midpoint (hit "${hit}") -> selected/side panel shown: ${String(selected)} (F1: the controlled canvas dropped React Flow's edge select changes; fixed in dfa355a1, not deployed)`)
+      // `isVisible()` answers at once (its timeout is ignored), so it raced the side panel's render (1 of 3 runs,
+      // 6.04.02): wait for the panel instead.
+      const selected = await page.getByRole('button', { name: 'Delete arrow' })
+        .waitFor({ state: 'visible', timeout: 5_000 }).then(() => true, () => false)
+      r.note(`edge ${eid}: click at its midpoint (hit "${hit}") -> selected/side panel shown: ${String(selected)}`)
       // Keyboard path: focus the edge (it is a focusable group) and Enter.
       await page.locator(`.react-flow__edge[data-id="${eid}"]`).focus()
       await page.keyboard.press('Enter')

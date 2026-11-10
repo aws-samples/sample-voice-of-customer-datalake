@@ -169,6 +169,11 @@ test('no spec or helper looks a dialog up by position (verify F3): use dialogNam
   expect(offenders).toEqual([])
 })
 
+test('no spec or helper waits with isVisible({ timeout }): Playwright ignores it and answers at once (s2-03, 6.04.03)', () => {
+  const offenders = suiteSources().filter((file) => /\.isVisible\(\s*\{[^}]*timeout/.test(fs.readFileSync(path.join(E2E_ROOT, file), 'utf8')))
+  expect(offenders, 'use locator.waitFor({ state: \'visible\', timeout }) or expect(...).toBeVisible()').toEqual([])
+})
+
 // ----------------------------------------------- assistant session reads ----
 
 test('a stored session is read leniently: run status and the last assistant answer', () => {
