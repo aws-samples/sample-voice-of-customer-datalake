@@ -15,12 +15,13 @@ Two reads, both with the operator's ambient AWS credentials; nothing is written 
    a GET after a DELETE). Those are only counted.
 
 Exit 1 when it finds a Lambda error / warning line, a 5xx, or an e2e 4xx nobody declared; 0 when clean; 2 on an AWS
-error or when it finds no log groups (a wrong prefix or region). Real traffic's 4xx (an expired session's 401, a
+error or when it finds no log groups or no API access log (a wrong prefix or region). Real traffic's 4xx (an expired session's 401, a
 mistyped id) are listed but do not fail the sweep.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import re
 import sys
 import time
@@ -111,7 +112,9 @@ def run_insights(logs: Any, groups: list[str], start: int, end: int, query: str,
     waited = 0.0
     while (response := logs.get_query_results(queryId=query_id))['status'] in ('Running', 'Scheduled'):
         if waited >= QUERY_DEADLINE_SECONDS:
-            logs.stop_query(queryId=query_id)
+            # Best effort: stopping the read-only query frees its slot; its own failure must not hide the deadline.
+            with contextlib.suppress(Exception):
+                logs.stop_query(queryId=query_id)
             raise RuntimeError(f'Logs Insights query {query_id} still running after {QUERY_DEADLINE_SECONDS} s')
         sleep(POLL_SECONDS)
         waited += POLL_SECONDS
@@ -271,9 +274,10 @@ def main(argv: list[str] | None = None) -> int:
     for timestamp, group, message in sorted(rows, reverse=True)[:args.limit]:
         print(' ', timestamp, group, '|', message)
     if not access:
-        print('API access log: not found (no API stack in this region?)')
-    else:
-        print_api_report(findings, args.limit)
+        # Not "clean": every deployment has the API stack, so a missing access log means a wrong prefix or region.
+        print(f'API access log {access_log_prefix(args.prefix)}-* not found: check --prefix and --region', file=sys.stderr)
+        return 2
+    print_api_report(findings, args.limit)
     return 1 if rows or findings.server_errors or findings.unexpected_e2e else 0
 
 

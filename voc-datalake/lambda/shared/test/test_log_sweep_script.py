@@ -107,6 +107,15 @@ class TestTheQueryDeadline:
             sweep.run_insights(logs, ['g'], 1, 2, 'q', sleep=lambda _s: None)
         logs.stop_query.assert_called_once_with(queryId='q1')
 
+    def test_a_failed_stop_still_reports_the_deadline(self, sweep, monkeypatch):
+        monkeypatch.setattr(sweep, 'QUERY_DEADLINE_SECONDS', 2)
+        logs = MagicMock()
+        logs.start_query.return_value = {'queryId': 'q1'}
+        logs.get_query_results.return_value = {'status': 'Running'}
+        logs.stop_query.side_effect = RuntimeError('throttled')
+        with pytest.raises(RuntimeError, match='still running after 2 s'):
+            sweep.run_insights(logs, ['g'], 1, 2, 'q', sleep=lambda _s: None)
+
 
 class TestTheGroupsSwept:
     def test_a_function_without_a_log_group_is_skipped_and_stack_groups_are_kept(self, sweep):
@@ -123,18 +132,22 @@ class TestTheGroupsSwept:
 
 
 class TestTheExitCode:
-    def _run(self, sweep, monkeypatch, groups, rows, access=()):
+    def _run(self, sweep, monkeypatch, groups, rows, access=(), access_groups=('/aws/apigateway/voc-analytics-api-1-r',)):
         boto3 = MagicMock()
         monkeypatch.setitem(sys.modules, 'boto3', boto3)
         monkeypatch.setattr(sweep, 'existing_groups', lambda *_a: groups)
         monkeypatch.setattr(sweep, 'run_query', lambda *_a, **_k: rows)
-        monkeypatch.setattr(sweep, 'access_log_groups', lambda *_a: ['/aws/apigateway/voc-analytics-api-1-r'])
+        monkeypatch.setattr(sweep, 'access_log_groups', lambda *_a: list(access_groups))
         monkeypatch.setattr(sweep, 'run_insights', lambda *_a, **_k: list(access))
         return sweep.main(['--hours', '1'])
 
     def test_a_5xx_or_an_undeclared_e2e_4xx_fails_the_sweep(self, sweep, monkeypatch):
         assert self._run(sweep, monkeypatch, ['g'], [], [_stat(502, e2e=False)]) == 1
         assert self._run(sweep, monkeypatch, ['g'], [], [_stat(403, e2e=True)]) == 1
+
+    def test_a_missing_access_log_is_an_error_not_clean(self, sweep, monkeypatch, capsys):
+        assert self._run(sweep, monkeypatch, ['g'], [], access_groups=()) == 2
+        assert 'access log' in capsys.readouterr().err
 
     def test_declared_e2e_4xx_and_real_4xx_do_not_fail_it(self, sweep, monkeypatch):
         access = [_stat(403, e2e=True, declared='403'), _stat(401, e2e=False)]

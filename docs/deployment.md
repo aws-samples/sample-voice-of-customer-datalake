@@ -824,7 +824,7 @@ step; the runbook is in [lambda-sizing.md](lambda-sizing.md).
   Those are counted, not listed; a 5xx is never treated as expected.
 
 Exit code 1 means it found an error / warning line, a 5xx, or an e2e 4xx nobody declared; 0 means clean; 2 an AWS
-error or no log groups. Real traffic's 4xx (an expired session's 401) are listed but do not fail the sweep.
+error, no log groups or no API access log. Real traffic's 4xx (an expired session's 401) are listed but do not fail the sweep.
 
 ```bash
 cd voc-datalake
