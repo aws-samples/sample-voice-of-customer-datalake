@@ -34,6 +34,7 @@ Operator tooling (a log sweep, an e2e users helper, a grouped e2e run), cheaper 
 
 ### Fixed
 
+- `/board/login` for someone already signed in to the app sends them to `/board`. Before, the page took `login` as a board's name and asked the API for it (a 404 "Board not found" on every such visit).
 - The e2e `s2-agents` arrow test waits for the arrow's side panel to appear; `isVisible({ timeout })` answered at once and failed 1 run in 3. A unit check refuses that pattern in the suite.
 - The Logs Insights filter documented for leaving out e2e traffic (`filter ispresent(test_run) = 0`, in the e2e README, `shared/e2e_tag.py` and the testing guide) does not compile; it now reads `filter not ispresent(test_run)`.
 
