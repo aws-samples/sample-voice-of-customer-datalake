@@ -213,12 +213,12 @@ describe('an app user on /board', () => {
     expect(screen.getByText(APP_USER.email)).toBeInTheDocument()
   })
 
-  it('sends an app user on /board/login to the boards instead of looking up a board named "login"', async () => {
+  it.each(['/board/login?request=fr_1', '/board/login/?request=fr_1'])('sends an app user on %s to the boards instead of looking up a board named "login"', async (entry) => {
     fakeAuth()
     useAuthStore.getState().setUser({ username: 'rui', email: APP_USER.email, groups: [] })
     const { api } = fakeBoard(BOARD_USER, [fixtureRequest('fr_1', { title: 'Single sign-on' })])
     appBoard.api = api
-    renderAt('/board/login?request=fr_1')
+    renderAt(entry)
     await waitFor(() => expect(screen.getByTestId('path')).not.toHaveTextContent('/board/login'))
     const refsAsked = [...vi.mocked(api.getBoard).mock.calls, ...vi.mocked(api.listRequests).mock.calls].flat()
     expect(refsAsked).not.toContain('login')
