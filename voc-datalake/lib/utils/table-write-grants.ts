@@ -4,7 +4,8 @@
  * `grantReadWriteData` hands a role all four write actions (PutItem, UpdateItem, DeleteItem, BatchWriteItem)
  * whatever its code calls, so a read-mostly API could delete rows it never touches. These helpers keep the read
  * side of CDK's grant (`grantReadData`: the reads, the table's indexes, kms:Decrypt) and grant ONLY the write
- * actions the role's handler calls, with the key actions `grantReadWriteData` added for a write.
+ * actions the role's handler calls, with the key actions a write needs: CDK's write key actions, plus kms:Decrypt
+ * for the write-only helpers, which have no read half to bring it.
  *
  * A role that must delete OPERATIONAL rows (a circuit-breaker row, a lock, a pointer, a form) in a table that also
  * holds customer or audit rows gets that delete pinned by `dynamodb:LeadingKeys` to those rows' partitions
@@ -28,7 +29,7 @@ const KEY_WRITE_ACTIONS = ['kms:Encrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey
  * write-only role has no read half, so without it the first write fails ("not authorized to perform: kms:Decrypt"),
  * as the ModelPin custom resource did on every fresh deployment.
  */
-const KEY_WRITE_ONLY_ACTIONS = [...KEY_WRITE_ACTIONS, 'kms:Decrypt'] as const;
+const KEY_ACTIONS_FOR_WRITE_ONLY_GRANT = [...KEY_WRITE_ACTIONS, 'kms:Decrypt'] as const;
 
 /** One Allow of `writes` on the table itself (never its indexes: a write names the table), plus the key actions. */
 function addWriteStatement(
@@ -40,7 +41,7 @@ function addWriteStatement(
     resources: [table.tableArn],
     conditions,
   }));
-  table.encryptionKey?.grant(grantee, ...KEY_WRITE_ONLY_ACTIONS);
+  table.encryptionKey?.grant(grantee, ...KEY_ACTIONS_FOR_WRITE_ONLY_GRANT);
 }
 
 /**
