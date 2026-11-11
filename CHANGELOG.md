@@ -23,11 +23,11 @@ Workshop templates no longer reserve Lambda concurrency, so a Workshop Studio ev
 
 ### Fixed
 
-- `npm run generate:workshop-artifacts` synthesizes with `-c mcpReservedConcurrency=0`. Workshop Studio event accounts have only 110 unreserved Lambda executions (of a 1000 quota), and AWS keeps at least 100 unreserved, so the Global MCP endpoint's default reservation of 20 failed VocApiStack ("decreases account's UnreservedConcurrentExecution below its minimum value of [100]"). Without a reservation the endpoint shares the pool; its API Gateway stage throttle (20 requests per second, burst 40) still caps a runaway client. `voc-datalake/scripts/workshop-artifacts.test.ts` pins the flag. See [docs/mcp.md](docs/mcp.md).
+- `npm run generate:workshop-artifacts` synthesizes with `-c mcpReservedConcurrency=0`. Workshop Studio event accounts have only 110 unreserved Lambda executions (of a 1000 quota), and AWS keeps at least 100 unreserved, so the Global MCP endpoint's default reservation of 20 failed VocApiStack ("decreases account's UnreservedConcurrentExecution below its minimum value of [100]"). Without a reservation the endpoint shares the pool; its API Gateway stage throttle (20 requests per second, burst 40) bounds the request rate, though not the concurrency. `voc-datalake/scripts/workshop-artifacts.test.ts` pins the flag, and `voc-datalake/lib/stacks/api-stack-mcp-global-ops.test.ts` already pins that 0 omits `ReservedConcurrentExecutions` instead of throttling to zero. See [docs/mcp.md](docs/mcp.md).
 
 ### Upgrade notes
 
-- Nothing changes for a deployment from `npm run deploy:infra`: the MCP endpoint keeps its reservation of 20 by default. Regenerate and republish the workshop templates.
+- Nothing changes for a deployment from `npm run deploy:infra`: the MCP endpoint keeps its reservation of 20 by default. Regenerate the workshop templates (`npm run generate:workshop-artifacts`) and republish them to the workshop's `development` assets.
 
 ## [6.04.07] - 2026-11-11
 

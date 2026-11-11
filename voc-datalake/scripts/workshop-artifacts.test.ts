@@ -59,7 +59,9 @@ describe('generate:workshop-artifacts', () => {
     // Workshop Studio accounts had 110 unreserved executions (limit 1000), and AWS keeps at least 100 unreserved, so
     // the MCP endpoint's default reservation of 20 failed VocApiStack ("decreases account's
     // UnreservedConcurrentExecution below its minimum value of [100]"). Without one, the endpoint shares the pool;
-    // its API Gateway stage throttle (20 rps, burst 40) still caps a runaway client (lib/stacks/global-mcp.ts).
+    // its API Gateway stage throttle (20 rps, burst 40) bounds the request rate, not the concurrency
+    // (lib/stacks/global-mcp.ts). That 0 omits the property rather than throttling the function to zero is pinned by
+    // lib/stacks/api-stack-mcp-global-ops.test.ts ("never a throttling 0"), which also pins the default 20.
     expect(synthContext(script)).toContainEqual(['mcpReservedConcurrency', '0']);
   });
 
