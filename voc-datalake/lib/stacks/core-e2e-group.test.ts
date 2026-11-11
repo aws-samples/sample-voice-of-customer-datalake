@@ -24,7 +24,7 @@ describe('the e2e Cognito group', () => {
   it('exists next to admins and users, and grants nothing by itself', () => {
     const groups = Object.values(template.findResources('AWS::Cognito::UserPoolGroup'));
     const names = groups.map((group) => String(group.Properties?.GroupName)).sort(byCodeUnit);
-    expect(names).toStrictEqual(['admins', 'e2e', 'users']);
+    expect(names).toStrictEqual(['admins', 'e2e', 'platform-admins', 'users']);
     const e2e = groups.find((group) => group.Properties?.GroupName === 'e2e');
     // No IAM role and no precedence: membership changes the model profile, never a permission.
     expect(e2e?.Properties?.RoleArn).toBeUndefined();

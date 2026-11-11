@@ -28,6 +28,9 @@ import { isDevDeployment } from '../utils/context';
 import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
 import { grantWrites } from '../utils/table-write-grants';
 
+/** The Cognito group of platform admins (docs/multi-workspace.md). */
+const PLATFORM_ADMIN_GROUP = 'platform-admins';
+
 export interface CoreAuth {
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
@@ -259,6 +262,22 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     },
   });
   adminBootstrap.node.addDependency(adminGroup);
+
+  // Platform admins (docs/multi-workspace.md): the people who create workspaces and see the platform console. The
+  // bootstrapped `admin` is the first one. A CloudFormation attachment, not the bootstrap handler, puts it in the
+  // group: idempotent on every deploy, and removing the group or the user later is an operator's choice.
+  const platformAdminGroup = new cognito.CfnUserPoolGroup(stack, 'PlatformAdminGroup', {
+    userPoolId: userPool.userPoolId,
+    groupName: PLATFORM_ADMIN_GROUP,
+    description: 'Platform administrators: create workspaces and enter any of them (audited)',
+  });
+  const firstPlatformAdmin = new cognito.CfnUserPoolUserToGroupAttachment(stack, 'FirstPlatformAdmin', {
+    userPoolId: userPool.userPoolId,
+    groupName: PLATFORM_ADMIN_GROUP,
+    username: 'admin',
+  });
+  firstPlatformAdmin.node.addDependency(platformAdminGroup);
+  firstPlatformAdmin.node.addDependency(adminBootstrap);
 
   acknowledgeNag(
     adminBootstrapProvider.node.findChild('framework-onEvent'),

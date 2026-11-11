@@ -17,6 +17,22 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.05.00] - 2026-11-11
+
+Multi-workspace, phase 1: the platform admins' Cognito group, with the first admin in it.
+
+### Added
+
+- The Cognito group `platform-admins` (VocCoreStack, `lib/stacks/core-auth.ts`): the people who will create workspaces and see the platform console ([docs/multi-workspace.md](docs/multi-workspace.md)). The bootstrapped `admin` user is put in it by a CloudFormation group attachment (`AWS::Cognito::UserPoolUserToGroupAttachment`), created after the bootstrap made the user; the bootstrap handler is unchanged. The group grants no IAM role and nothing reads it yet. `lib/stacks/core-platform-admins.test.ts` pins the group and the attachment's order.
+
+### Fixed
+
+- `lib/test-support/baseline.json` is regenerated. 6.04.08 moved the VocApiStack and VocProcessingStack hashes (the release number is in both templates) without regenerating it, so `lib/app-baseline.test.ts` failed on that release.
+
+### Upgrade notes
+
+- Deploy VocCoreStack (`npm run deploy:infra`): it adds one group and one membership. On an existing deployment whose `admin` user was deleted or renamed, the attachment fails; create the user, or remove `FirstPlatformAdmin` before deploying.
+
 ## [6.04.08] - 2026-11-11
 
 The design for serving several separate teams from one deployment, each in its own workspace.

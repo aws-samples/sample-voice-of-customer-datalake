@@ -5,6 +5,10 @@ separate teams or customers, each in its own **workspace**. Nothing below exists
 builds it is released; each phase's CHANGELOG entry says what landed and updates this page. Routes, tables and files
 named here are the planned ones.
 
+| Since | Built |
+|---|---|
+| 6.05.00 | The Cognito group `platform-admins`, with the bootstrapped `admin` in it. Nothing reads it yet |
+
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
 all of it. Multi-workspace keeps one deployment (one set of tables, buckets and Lambdas) and puts a workspace on

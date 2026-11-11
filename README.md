@@ -139,7 +139,7 @@ aws cloudformation describe-stacks \
   --output text
 ```
 
-The site address is the `WebsiteURL` output of the same stack. You are asked to change the password on first sign-in. Later deploys leave the admin user untouched: no new user is created, the password is never reset, and the output shows a placeholder.
+The admin is also the first member of the `platform-admins` group, which will create workspaces ([Multi-workspace](docs/multi-workspace.md)). The site address is the `WebsiteURL` output of the same stack. You are asked to change the password on first sign-in. Later deploys leave the admin user untouched: no new user is created, the password is never reset, and the output shows a placeholder.
 
 ## ⚙️ Configuration
 
