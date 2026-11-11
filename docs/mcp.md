@@ -491,7 +491,9 @@ or the deploy fails. It is the only reservation in the app; `docs/lambda-sizing.
 `-c mcpReservedConcurrency=<n>` changes the number (a whole number, checked at synth; default 20). `0` means
 no reservation at all: the function then shares the unreserved pool like every other Lambda, which is the
 setting for an account whose quota is under 120 (new accounts can start at 10). The quota rule above becomes
-`n` + 100.
+`n` + 100. The rule is about the UNRESERVED executions, which can be lower than the quota: Workshop Studio
+event accounts showed a quota of 1000 with only 110 unreserved, so `npm run generate:workshop-artifacts`
+synthesizes with `-c mcpReservedConcurrency=0` (`aws lambda get-account-settings` shows both numbers).
 
 ## Testing
 

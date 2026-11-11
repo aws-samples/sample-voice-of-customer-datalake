@@ -55,6 +55,14 @@ describe('generate:workshop-artifacts', () => {
     expect(synthContext(script).filter(([key]) => key === 'protectData')).toHaveLength(1);
   });
 
+  it('reserves no Lambda concurrency, which a workshop account cannot spare', () => {
+    // Workshop Studio accounts had 110 unreserved executions (limit 1000), and AWS keeps at least 100 unreserved, so
+    // the MCP endpoint's default reservation of 20 failed VocApiStack ("decreases account's
+    // UnreservedConcurrentExecution below its minimum value of [100]"). Without one, the endpoint shares the pool;
+    // its API Gateway stage throttle (20 rps, burst 40) still caps a runaway client (lib/stacks/global-mcp.ts).
+    expect(synthContext(script)).toContainEqual(['mcpReservedConcurrency', '0']);
+  });
+
   it('keeps web search on and the model pin the workshop accounts are granted', () => {
     expect(synthContext(script)).toContainEqual(['enableWebSearch', 'true']);
     expect(synthContext(script)).toContainEqual(['defaultModelId', 'global.anthropic.claude-sonnet-4-6']);
