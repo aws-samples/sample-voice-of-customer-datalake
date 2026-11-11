@@ -17,6 +17,14 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.08] - 2026-11-11
+
+The design for serving several separate teams from one deployment, each in its own workspace.
+
+### Added
+
+- [docs/multi-workspace.md](docs/multi-workspace.md): the multi-workspace design (status: design, nothing built yet). One deployment, every row keyed `WS#{ws}#…` and every object under `ws/{ws}/`; a `VocControlStack` with the `voc-workspaces` table (workspaces, members, invites, slugs, audit); a `platform-admins` group that creates workspaces and enters any of them (audited); roles per workspace (admin, editor, viewer); `/w/{slug}/…` URLs and an `X-Workspace-Id` header resolved by shared middleware that answers 404 to non-members; the public entry points, per-workspace configuration, one credentials secret per workspace (about $0.40 a month each, the one fixed cost the design adds), cost per workspace, export and delete (and its D5 trade-off), the five phases and the guards phase 1 adds (the raw-access static test, the cross-workspace suite, a two-workspace end-to-end check).
+
 ## [6.04.07] - 2026-11-11
 
 A fresh deployment's VocApiStack completes again: the API Gateway account setting accepts its CloudWatch role.

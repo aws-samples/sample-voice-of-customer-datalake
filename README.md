@@ -270,6 +270,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Data Lake Structure](docs/data-lake-structure.md) | S3 and DynamoDB organization, and the Data Explorer |
 | [Processing Pipeline](docs/processing-pipeline.md) | How feedback flows from ingestion to enriched records and metrics |
 | [Plugin Architecture](docs/plugin-architecture.md) | The plugin system's design |
+| [Multi-workspace (design)](docs/multi-workspace.md) | Planned: several separate workspaces in one deployment, the control plane, roles, invites, credentials, cost, export and delete |
 | [Getting Started with Plugins](docs/getting-started-plugins.md) | Creating a new data source plugin |
 | [Kiro ACP Browser Bridge](docs/kiro-acp-browser-bridge.md) | Developer tool: send work from a browser to a local `kiro-cli` over ACP, options and threat model |
 
