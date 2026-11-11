@@ -23,11 +23,11 @@ A fresh deployment's VocApiStack completes again: the API Gateway account settin
 
 ### Fixed
 
-- The API Gateway CloudWatch role (VocApiStack, `lib/stacks/api-gateway-logging-role.ts`) carries the AWS managed `AmazonAPIGatewayPushToCloudWatchLogs` policy again. Since 6.00 it held a narrower inline policy instead, and API Gateway refused the account setting (`AWS::ApiGateway::Account`) on every fresh account or region: "The role ARN does not have required permissions configured". Existing deployments were unaffected, because the setting is created once per account and region. cdk-nag `AwsSolutions-IAM4` is acknowledged on this one role; every other role keeps its scoped inline log grants.
+- The API Gateway CloudWatch role (VocApiStack, `lib/stacks/api-gateway-logging-role.ts`) grants its log writes on `Resource: "*"`. Since 6.00 the grants were scoped to `API-Gateway-Execution-Logs_*` and per-log-group ARNs, and API Gateway, which validates the role when the account setting (`AWS::ApiGateway::Account`) is written, refused it on every fresh account or region: "The role ARN does not have required permissions configured". Existing deployments were unaffected, because the setting is created once per account and region. The role still holds no AWS managed policy (cdk-nag IAM4) and gets no log reads: of `AmazonAPIGatewayPushToCloudWatchLogs`, it keeps the five write actions and leaves out `GetLogEvents` and `FilterLogEvents`, a combination API Gateway was verified to accept.
 
 ### Upgrade notes
 
-- Deploy every stack (`npm run deploy:infra`). The role gains the managed policy and loses its inline one; nothing is replaced.
+- Deploy every stack (`npm run deploy:infra`). The role's inline policy changes; nothing is replaced.
 
 ## [6.04.06] - 2026-11-10
 
