@@ -213,6 +213,7 @@ voice-of-customer-datalake/       # Root repository
 | `voc-radar` | `SETTINGS#radar`, `RELEASE#{brand}`, `RADAR#{brand}#…` | `brands` (the brand list `{brands: [{label, domains}]}`), `config` (scan settings), … | OTHER brands' reviews, counters and releases, kept out of our numbers (layout `lambda/shared/radar_store.py`, docs/radar.md) |
 | `voc-participants` | `PERSON#{id}`, `EMAIL#{sha}`, `LIST#{id}`, `PROJECT#{id}`, `ASK#{id}`, `TOKEN#{sha}`, `SETTINGS`, `SENDCOUNT#{day}` | `META`, `LIST#…`, `MEMBER#…`, `RCPT#…`, `RESPONSE\|UNSUB`, `engagement`, `COUNT` | People to ask for feedback, lists, project links, asks + recipients, email tokens (sha256 only), engagement settings (company domains) — layout `lambda/shared/participants_*.py`, docs/participants.md |
 | `voc-feature-requests` | `BOARD#{id}`, `SLUG#{slug}`, `FR#{id}`, `RATE#{board}#{hash}#{day}` | `META`, `BOARD`, `META\|SUP#{id}`, `COUNT` | Feedback boards (template, fields, statuses, audience; gsi1pk `BOARDS`), slug guards, requests (`board_id` absent = seeded `brd_sales`; `fields`, totals per template, status, promoted project; gsi1pk `FRS`) and supports (+1 field values), `anyone`-board rate counters (`ttl`) — docs/feature-requests.md |
+| `voc-workspaces` | `WS#{ws}`, `USER#{sub}`, `SLUG#{slug}` | `META\|MEMBER#{sub}\|INVITE#{id}\|AUDIT#{iso}#{n}`, `WS#{ws}`, `META` | The multi-workspace control plane: workspaces, members, invites (`ttl`), "my workspaces" rows, slug guards, audit — created, nothing reads or writes it yet (docs/multi-workspace.md) |
 
 ## API Endpoints
 

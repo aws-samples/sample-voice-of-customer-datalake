@@ -17,6 +17,22 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.06.00] - 2026-11-11
+
+Multi-workspace, phase 1: the control plane's table.
+
+### Added
+
+- The `voc-workspaces` table (VocCoreStack, `lib/stacks/core-stack.ts`): workspaces, members, invites, "my workspaces" rows, slug guards and their audit, keyed `pk`/`sk` with no index and TTL on `ttl` for invites ([docs/multi-workspace.md](docs/multi-workspace.md#control-plane)). Like every customer-data table it is on demand, under the customer-managed key, with point-in-time recovery, kept on replace and protected by `protectData`. Nothing reads or writes it yet. `lib/stacks/core-workspaces-table.test.ts` pins it.
+
+### Changed
+
+- [docs/multi-workspace.md](docs/multi-workspace.md): the control plane has no stack of its own. The design named a `VocControlStack`; the sample keeps to five stacks ([Deployment Guide](docs/deployment.md#cdk-stacks)), so the table is in VocCoreStack and its Lambdas will be in VocApiStack. The teardown and backup steps of the Deployment Guide list the new table.
+
+### Upgrade notes
+
+- Deploy VocCoreStack (`npm run deploy:infra`): it creates one empty table. On-demand billing and PITR bill by use and size, so an unused table adds no fixed cost.
+
 ## [6.05.00] - 2026-11-11
 
 Multi-workspace, phase 1: the platform admins' Cognito group, with the first admin in it.

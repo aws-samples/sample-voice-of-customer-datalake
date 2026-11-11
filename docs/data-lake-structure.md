@@ -168,6 +168,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 | `voc-radar` | `pk`, `sk` | Other brands' reviews, kept out of your own metrics ([radar.md](radar.md)) |
 | `voc-participants` | `pk`, `sk` | People to ask for feedback, lists and asks ([participants.md](participants.md)) |
 | `voc-feature-requests` | `pk`, `sk` | Feedback boards and their requests ([feature-requests.md](feature-requests.md)) |
+| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs and their audit; created, not used yet ([multi-workspace.md](multi-workspace.md)) |
 
 ### Feedback table indexes
 

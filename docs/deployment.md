@@ -931,7 +931,7 @@ Deleting the stacks (`npm run destroy`, `cdk destroy --all`, or deleting them in
 the CloudFormation console) after such a deploy is a **full cleanup**: no customer
 data is left behind in the account. With the Core stack go the customer-data tables
 (`voc-feedback`, `voc-aggregates`, `voc-projects`, `voc-memory`, `voc-agents`,
-`voc-participants`, `voc-feature-requests`), the operational tables, the `voc/design-integrations` secret, every bucket and
+`voc-participants`, `voc-feature-requests`, `voc-workspaces`), the operational tables, the `voc/design-integrations` secret, every bucket and
 the KMS key:
 
 - **Buckets are emptied first.** The raw-data bucket (`voc-raw-data-…`) is
@@ -969,7 +969,7 @@ aws s3 sync "s3://voc-raw-data-${ACCOUNT}-${REGION}" "s3://${BACKUP_BUCKET}/voc-
 
 # Every customer-data table, exported from point-in-time recovery to S3. Exports run
 # asynchronously and read from PITR, so they do not consume table capacity.
-for table in voc-feedback voc-aggregates voc-projects voc-memory voc-agents voc-participants voc-feature-requests; do
+for table in voc-feedback voc-aggregates voc-projects voc-memory voc-agents voc-participants voc-feature-requests voc-workspaces; do
   aws dynamodb export-table-to-point-in-time \
     --table-arn "arn:aws:dynamodb:${REGION}:${ACCOUNT}:table/${table}-${ACCOUNT}-${REGION}" \
     --s3-bucket "${BACKUP_BUCKET}" --s3-prefix "voc-dynamodb/${table}" \

@@ -8,6 +8,7 @@ named here are the planned ones.
 | Since | Built |
 |---|---|
 | 6.05.00 | The Cognito group `platform-admins`, with the bootstrapped `admin` in it. Nothing reads it yet |
+| 6.06.00 | The `voc-workspaces` table in `VocCoreStack` (keys below, TTL `ttl` for invites). Nothing reads or writes it yet |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -54,15 +55,16 @@ The pool model: one deployment, and every row and object carries its workspace.
 
 ### Control plane
 
-A new stack, `VocControlStack`, holds the `voc-workspaces` table and the Lambdas for workspaces, members and the
-platform console.
+The `voc-workspaces` table lives in `VocCoreStack` and the Lambdas for workspaces, members and the platform console
+in `VocApiStack`: the sample keeps to five stacks ([Deployment Guide](deployment.md#cdk-stacks)), so the control plane
+gets no stack of its own.
 
 | PK | SK | Holds |
 |---|---|---|
 | `WS#{ws}` | `META` | name, slug, status (`active` or `deleting`), created_by, created_at |
 | `WS#{ws}` | `MEMBER#{sub}` | role (`admin`, `editor` or `viewer`), invited_by, joined_at |
 | `USER#{sub}` | `WS#{ws}` | the inverse row behind "my workspaces", written in the same transaction as `MEMBER#` |
-| `WS#{ws}` | `INVITE#{id}` | email, role, invited_by, expires_at (TTL) |
+| `WS#{ws}` | `INVITE#{id}` | email, role, invited_by, expires_at, and `ttl` (the table's TTL attribute) |
 | `SLUG#{slug}` | `META` | slug → workspace id; uniqueness by a conditional put |
 | `WS#{ws}` | `AUDIT#{iso}#{n}` | membership changes, platform-admin entries, export and delete, share grants |
 
@@ -172,7 +174,7 @@ default, by decision 11.
 
 ## Phases
 
-1. **Control plane**: `VocControlStack`, the `platform-admins` group, `/me/workspaces`, the picker, `/w/{slug}`
+1. **Control plane**: the `voc-workspaces` table, the `platform-admins` group, `/me/workspaces`, the picker, `/w/{slug}`
    routing, the workspace middleware and repository layer, invites, the platform console (list and create
    workspaces, enter one, members), per-workspace secret creation.
 2. **Data path**: ingestion → S3 → SQS → processor → feedback → aggregator → metrics and feedback read APIs, all keyed

@@ -352,6 +352,16 @@ export class VocCoreStack extends VocStack {
     });
     this.addKeyPairIndex(this.featureRequestsTable, { indexName: 'gsi1', keyPrefix: 'gsi1' });
 
+    // Workspaces Table — the multi-workspace control plane (docs/multi-workspace.md), here and not in a
+    // stack of its own because the sample keeps to five stacks (docs/deployment.md#cdk-stacks). No index:
+    //   WS#{ws} / META | MEMBER#{sub} | INVITE#{id} | AUDIT#{iso}#{n}   workspace, members, invites, audit
+    //   USER#{sub} / WS#{ws}                                           "my workspaces", same transaction
+    //   SLUG#{slug} / META                                             slug -> workspace, conditional put
+    // TTL only on invites. No field yet: the workspaces routes that read it add one.
+    this.createEncryptedTable('WorkspacesTable', 'voc-workspaces', {
+      timeToLiveAttribute: 'ttl',
+    });
+
     // Idempotency Table
     this.idempotencyTable = new dynamodb.Table(this, 'IdempotencyTable', {
       tableName: this.uniqueName('voc-idempotency'),
