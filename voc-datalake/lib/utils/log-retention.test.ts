@@ -1,7 +1,8 @@
 /**
  * Every Lambda the app synthesizes logs to a log group with a retention period (lib/utils/log-retention.ts),
  * its role writes only that group, and no role holds an AWS managed logging policy (cdk-nag AwsSolutions-IAM4;
- * lib/utils/lambda-log-grants.ts, lib/stacks/api-gateway-logging-role.ts).
+ * lib/utils/lambda-log-grants.ts) except the API Gateway account role, which API Gateway requires to carry
+ * AmazonAPIGatewayPushToCloudWatchLogs (lib/stacks/api-gateway-logging-role.ts).
  *
  * Found in the 5.25.03 logging audit: the functions CDK creates for us (S3 auto-delete and bucket-notification
  * providers, BucketDeployment's singleton) had no LoggingConfig, so Lambda created their log groups with no
@@ -16,8 +17,9 @@ import { z } from 'zod';
 
 import { ALL_FEATURES_CONTEXT } from '../test-support/all-features-context';
 import { apiTemplate, apiTemplatePrefixed } from '../test-support/api-stack-template';
-import { cleanupAssemblyDirs, synthApp, SYNTH_ACCOUNT, SYNTH_REGION, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import type { SynthResult } from '../test-support/synth-app';
+import { API_GATEWAY_PUSH_TO_LOGS_POLICY } from '../stacks/api-gateway-logging-role';
 import { byCodeUnit } from './compare';
 
 const StatementSchema = z.object({
@@ -119,23 +121,12 @@ function rolesWithManagedPolicies(synth: SynthResult): string[] {
   return synth.stackNames.flatMap((stack) => Object.entries(resourcesOf(synth, stack))
     .filter(([, resource]) => resource.Type === 'AWS::IAM::Role'
       && JSON.stringify(resource.Properties?.ManagedPolicyArns ?? []).includes(':iam::aws:policy/'))
-    .map(([id]) => `${stack}/${id}`));
+    .map(([id]) => `${stack}/${id}`))
+    .filter((role) => !API_GATEWAY_ACCOUNT_ROLE.test(role));
 }
 
-const logsArn = (name: string): string => `arn:aws:logs:${SYNTH_REGION}:${SYNTH_ACCOUNT}:log-group:${name}`;
-
-const PSEUDO: Readonly<Record<string, string>> = { 'AWS::AccountId': SYNTH_ACCOUNT, 'AWS::Region': SYNTH_REGION, 'AWS::Partition': 'aws' };
-const JoinSchema = z.object({ 'Fn::Join': z.tuple([z.string(), z.array(z.unknown())]) });
-const PseudoRefSchema = z.object({ Ref: z.string().refine((name) => name in PSEUDO) });
-
-/** A template value with `Fn::Join` and the account / region / partition pseudo-parameters written out. */
-function flatten(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(flatten);
-  const join = JoinSchema.safeParse(value);
-  if (join.success) return join.data['Fn::Join'][1].map(flatten).map(String).join(join.data['Fn::Join'][0]);
-  const ref = PseudoRefSchema.safeParse(value);
-  return ref.success ? PSEUDO[ref.data.Ref] : value;
-}
+/** The one role allowed an AWS managed policy: API Gateway refuses its account setting without it. */
+const API_GATEWAY_ACCOUNT_ROLE = /^VocApiStack\/VocAnalyticsApiCloudWatchRole[0-9A-F]{8}$/;
 
 describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () => {
   let synth: SynthResult;
@@ -209,34 +200,22 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
     expect(autoDelete.statements).toStrictEqual([ownGroupWrites(autoDelete.group)]);
   });
 
-  it('gives the API Gateway account role the execution-log, access-log and list grants, set before the account', () => {
+  it('keeps AmazonAPIGatewayPushToCloudWatchLogs on the API Gateway account role, and only that', () => {
+    // 6.00-6.04 replaced it with a narrower inline policy; API Gateway refused the account setting on every fresh
+    // deployment ("The role ARN does not have required permissions configured").
     const api = resourcesOf(synth, 'VocApiStack');
     const role = logicalIdStartingWith(api, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole');
-    const statements = roleStatements(api, role).map((statement) => ({ ...statement, Resource: flatten(statement.Resource) }));
-    expect(statements).toStrictEqual([
-      {
-        Sid: 'ExecutionLogs', Effect: 'Allow', Resource: logsArn('API-Gateway-Execution-Logs_*'),
-        Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:DescribeLogStreams', 'logs:PutLogEvents'],
-      },
-      {
-        // Every log group: the role is the account+region setting of every REST API, VoC's or not.
-        Sid: 'AccessLogs', Effect: 'Allow', Resource: logsArn('*'),
-        Action: ['logs:CreateLogStream', 'logs:DescribeLogStreams', 'logs:PutLogEvents'],
-      },
-      { Sid: 'ListLogGroups', Effect: 'Allow', Action: 'logs:DescribeLogGroups', Resource: '*' },
-    ]);
-    const policy = logicalIdStartingWith(api, 'AWS::IAM::Policy', 'VocAnalyticsApiCloudWatchRoleDefaultPolicy');
-    const account = logicalIdStartingWith(api, 'AWS::ApiGateway::Account', 'VocAnalyticsApiAccount');
-    expect(api[account]?.DependsOn).toContain(policy);
+    expect(JSON.stringify(api[role]?.Properties?.ManagedPolicyArns)).toContain(`:iam::aws:policy/${API_GATEWAY_PUSH_TO_LOGS_POLICY}`);
+    expect(roleStatements(api, role)).toStrictEqual([]);
   });
 
-  it('grants a prefixed deployment the same account-wide access-log statement', () => {
+  it('keeps the managed policy on a prefixed deployment\'s account role too', () => {
     // VocApiStack alone (in process): the API Gateway role is built with the stack, not by the app's aspect.
-    const accessGrants = [apiTemplate(), apiTemplatePrefixed()].map((template) => {
+    const managed = [apiTemplate(), apiTemplatePrefixed()].map((template) => {
       const resources = TemplateSchema.parse(template.toJSON()).Resources;
-      return roleStatements(resources, logicalIdStartingWith(resources, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole'))
-        .filter((statement) => statement.Sid === 'AccessLogs').map((statement) => flatten(statement.Resource));
+      const role = logicalIdStartingWith(resources, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole');
+      return JSON.stringify(resources[role]?.Properties?.ManagedPolicyArns).includes(API_GATEWAY_PUSH_TO_LOGS_POLICY);
     });
-    expect(accessGrants).toStrictEqual([[logsArn('*')], [logsArn('*')]]);
+    expect(managed).toStrictEqual([true, true]);
   }, SYNTH_TIMEOUT_MS);
 });

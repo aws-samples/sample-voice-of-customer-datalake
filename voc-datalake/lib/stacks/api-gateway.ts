@@ -13,7 +13,7 @@ import { apiWafOffSuppressions } from '../utils/nag-suppressions';
 import { protectApiStage, wafEnabled } from '../utils/waf';
 import { apiAccessLogFormat } from './api-access-log';
 import { applyApiTlsPolicy } from './api-tls';
-import { scopeApiGatewayLoggingRole } from './api-gateway-logging-role';
+import { acknowledgeApiGatewayLoggingRole } from './api-gateway-logging-role';
 import { addRequestValidationResponse } from './api-request-validation';
 import type { ApiStackContext } from './api-context';
 import { MCP_OAUTH_METHOD_THROTTLE, mcpResourceMetadataUrl } from './api-mcp-oauth';
@@ -521,9 +521,9 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   // Opt-in AWS WAF on the stage (`-c enableWaf=true` / performanceTier, lib/utils/waf.ts); off = acknowledged.
   if (wafEnabled(stack)) protectApiStage(stack, api, API_STAGE_NAME);
   else acknowledgeNag(api, apiWafOffSuppressions);
-  // The account's API Gateway logging role: an inline policy in place of the managed one (IAM4), shared by
-  // every REST API in the account and region (api-gateway-logging-role.ts).
-  scopeApiGatewayLoggingRole(api);
+  // The account's API Gateway logging role keeps the AWS managed policy: API Gateway refuses the account
+  // setting with anything narrower (api-gateway-logging-role.ts).
+  acknowledgeApiGatewayLoggingRole(api);
   applyApiTlsPolicy(api);
 
   // Gateway responses for CORS on errors
