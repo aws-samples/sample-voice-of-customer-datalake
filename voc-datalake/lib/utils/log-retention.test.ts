@@ -214,6 +214,22 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
     expect(api[account]?.DependsOn).toContain(policy);
   });
 
+  it('grants the log writes on "*" to the API Gateway account role only', () => {
+    // resource-star-actions.ts lists them on "*" for that role; being keyed by action, it would accept them on any
+    // role, so this is where the scope is enforced.
+    const writes = new Set(['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:DescribeLogStreams', 'logs:PutLogEvents']);
+    const holders = synth.stackNames.flatMap((stack) => {
+      const resources = resourcesOf(synth, stack);
+      return Object.keys(resources)
+        .filter((id) => resources[id]?.Type === 'AWS::IAM::Role')
+        .filter((id) => roleStatements(resources, id).some((statement) => statement.Effect === 'Allow'
+          && [statement.Resource].flat().includes('*')
+          && [statement.Action].flat().some((action) => typeof action === 'string' && writes.has(action))))
+        .map((id) => `${stack}/${id.replace(/[0-9A-F]{8}$/, '')}`);
+    });
+    expect(holders).toStrictEqual(['VocApiStack/VocAnalyticsApiCloudWatchRole']);
+  });
+
   it('grants a prefixed deployment the same write-only statement', () => {
     // VocApiStack alone (in process): the API Gateway role is built with the stack, not by the app's aspect.
     const grants = [apiTemplate(), apiTemplatePrefixed()].map((template) => {
