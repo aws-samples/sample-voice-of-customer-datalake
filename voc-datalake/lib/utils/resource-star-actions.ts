@@ -35,6 +35,8 @@ const COMPREHEND_DETECT = `Comprehend real-time detection without a custom endpo
 const SFN_LOG_DELIVERY = 'CloudWatch Logs vended log delivery: the Step Functions logging role CDK generates for a state machine with `logs` set; the Step Functions developer guide (cw-logs.html) documents these actions on "*" because log delivery APIs have no resource type';
 const SFN_TRACING = `X-Ray tracing for a state machine with \`tracingEnabled\` (CDK-generated); the action ${NO_RESOURCE_TYPE}`;
 const MODEL_AGREEMENT = `Bedrock model access provider (account-level agreement API); the action ${NO_RESOURCE_TYPE}`;
+/** The API Gateway account role (api-gateway-logging-role.ts): API Gateway refuses it unless these are on "*". */
+const API_GATEWAY_LOG_PUSH = 'API Gateway CloudWatch role, the account+region setting every REST API logs through: API Gateway validates the role when the setting is written and refuses log-group-scoped grants (measured 2026-11-11; failed every fresh deployment of 6.00-6.04). Write actions only; no log-event reads';
 
 export const RESOURCE_STAR_ACTIONS: Readonly<Record<string, ResourceStarGrant>> = {
   'comprehend:DetectDominantLanguage': { reason: COMPREHEND_DETECT },
@@ -48,8 +50,12 @@ export const RESOURCE_STAR_ACTIONS: Readonly<Record<string, ResourceStarGrant>> 
     reason: `Granted by CDK's DynamoEventSource (aggregator stream trigger); ListStreams ${NO_RESOURCE_TYPE}. The stream reads themselves are scoped to the table's stream ARN`,
   },
   'logs:CreateLogDelivery': { reason: SFN_LOG_DELIVERY },
+  'logs:CreateLogGroup': { reason: API_GATEWAY_LOG_PUSH },
+  'logs:CreateLogStream': { reason: API_GATEWAY_LOG_PUSH },
+  'logs:DescribeLogStreams': { reason: API_GATEWAY_LOG_PUSH },
+  'logs:PutLogEvents': { reason: API_GATEWAY_LOG_PUSH },
   'logs:DeleteLogDelivery': { reason: SFN_LOG_DELIVERY },
-  'logs:DescribeLogGroups': { reason: SFN_LOG_DELIVERY },
+  'logs:DescribeLogGroups': { reason: `${SFN_LOG_DELIVERY}; also ${API_GATEWAY_LOG_PUSH}` },
   'logs:DescribeResourcePolicies': { reason: SFN_LOG_DELIVERY },
   'logs:GetLogDelivery': { reason: SFN_LOG_DELIVERY },
   'logs:ListLogDeliveries': { reason: SFN_LOG_DELIVERY },
