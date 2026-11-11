@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.06.03] - 2026-11-11
+
+The review gate run over 6.05.00 and 6.06.00, which landed before it existed: what it found.
+
+### Changed
+
+- [docs/multi-workspace.md](docs/multi-workspace.md#control-plane): how platform-admin membership is managed, written down before anything reads the group (today's users API would leave a demoted user a platform admin and could remove the only one).
+
+### Fixed
+
+- README "Initial Login" and the design's status table said the bootstrapped `admin` is a platform admin on every deployment; that holds for a new deployment only, and an older one adds a platform admin by hand ([6.06.02](#60602---2026-11-11), Upgrade notes).
+
 ## [6.06.02] - 2026-11-11
 
 The first platform admin comes from the bootstrap, so a deployment without the default `admin` user still updates.

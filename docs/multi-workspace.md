@@ -1,13 +1,13 @@
 # Multi-workspace (design)
 
-**Status: design, not built yet.** This document describes how one deployment of the platform will serve several
-separate teams or customers, each in its own **workspace**. Nothing below exists in the code until the phase that
-builds it is released; each phase's CHANGELOG entry says what landed and updates this page. Routes, tables and files
-named here are the planned ones.
+**Status: design, phase 1 being built.** This document describes how one deployment of the platform will serve
+several separate teams or customers, each in its own **workspace**. Only what the table below lists exists in the code;
+everything else is planned, and each release's CHANGELOG entry says what landed and updates the table. Routes, tables
+and files named here are the planned ones unless the table lists them.
 
 | Since | Built |
 |---|---|
-| 6.05.00 | The Cognito group `platform-admins`, with the bootstrapped `admin` in it. Nothing reads it yet |
+| 6.05.00 | The Cognito group `platform-admins`, with the bootstrapped `admin` in it (through a CloudFormation attachment, replaced in 6.06.02). Nothing reads it yet |
 | 6.06.00 | The `voc-workspaces` table in `VocCoreStack` (keys below, TTL `ttl` for invites). Nothing reads or writes it yet |
 | 6.06.02 | The bootstrap adds the first `admin` to `platform-admins` when it creates the user (no CloudFormation attachment); an older deployment adds one by hand (CHANGELOG 6.06.02, Upgrade notes) |
 
@@ -72,6 +72,14 @@ gets no stack of its own.
 - **Platform admins** are the Cognito group `platform-admins`, bootstrapped at deploy time the way the first admin
   user is today ([README](../README.md#-initial-login)). Only they create workspaces and see the platform console
   (every workspace, its members and its cost).
+- Platform-admin membership is managed on its own, before anything reads the group. Today's users API changes only
+  `admins`/`users` and counts only `admins` for its last-admin guard, so a demoted user would stay a platform admin
+  and an admin could disable or delete the only one. The phase that first reads the group therefore adds:
+  - a platform-admin route to grant and revoke the membership (platform admins only, audited, in the route-gate
+    inventory), shown in the platform console;
+  - in the users API: demoting a user also revokes it; disabling, enabling, deleting or resetting the password of a
+    platform admin is for platform admins only; and no route may leave the deployment without a platform admin.
+  (Cognito drops a deleted user's group memberships itself.)
 - Today's `admins` group no longer grants anything inside a workspace: a person's role in a workspace comes only from
   its `MEMBER#` row.
 
