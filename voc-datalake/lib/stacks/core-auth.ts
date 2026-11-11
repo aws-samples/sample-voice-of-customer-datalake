@@ -216,7 +216,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   // Idempotent bootstrap (issue #196). The handler generates the initial
   // password AT RUNTIME, and only when it actually creates the admin:
   //  - first deployment: create admin -> set temporary password -> add to
-  //    admins group -> the real password surfaces in InitialAdminPassword
+  //    the admins and platform-admins groups -> the real password surfaces in InitialAdminPassword
   //    (printing it is BY DESIGN: it is how operators find their first
   //    login, and first use forces a change).
   //  - any redeployment / admin already exists: strict no-op — no user
@@ -251,6 +251,17 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     }),
   });
 
+  // Platform admins (docs/multi-workspace.md): the people who create workspaces and see the platform console.
+  const platformAdminGroup = new cognito.CfnUserPoolGroup(stack, 'PlatformAdminGroup', {
+    userPoolId: userPool.userPoolId,
+    groupName: PLATFORM_ADMIN_GROUP,
+    description: 'Platform administrators: create workspaces and enter any of them (audited)',
+  });
+
+  // The bootstrapped admin is also the first platform admin, added by the bootstrap itself when it creates (or
+  // repairs) the user. A CloudFormation group attachment would fail every later VocCoreStack update of a deployment
+  // that deleted or renamed `admin`; the bootstrap answers Update with a no-op, so changing these properties never
+  // touches a live deployment's users.
   const adminBootstrap = new cdk.CustomResource(stack, 'AdminBootstrap', {
     serviceToken: adminBootstrapProvider.serviceToken,
     resourceType: 'Custom::AdminBootstrap',
@@ -258,26 +269,11 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
       UserPoolId: userPool.userPoolId,
       Username: 'admin',
       Email: 'admin@local.host',
-      GroupName: 'admins',
+      GroupNames: ['admins', PLATFORM_ADMIN_GROUP],
     },
   });
   adminBootstrap.node.addDependency(adminGroup);
-
-  // Platform admins (docs/multi-workspace.md): the people who create workspaces and see the platform console. The
-  // bootstrapped `admin` is the first one. A CloudFormation attachment, not the bootstrap handler, puts it in the
-  // group: idempotent on every deploy, and removing the group or the user later is an operator's choice.
-  const platformAdminGroup = new cognito.CfnUserPoolGroup(stack, 'PlatformAdminGroup', {
-    userPoolId: userPool.userPoolId,
-    groupName: PLATFORM_ADMIN_GROUP,
-    description: 'Platform administrators: create workspaces and enter any of them (audited)',
-  });
-  const firstPlatformAdmin = new cognito.CfnUserPoolUserToGroupAttachment(stack, 'FirstPlatformAdmin', {
-    userPoolId: userPool.userPoolId,
-    groupName: PLATFORM_ADMIN_GROUP,
-    username: 'admin',
-  });
-  firstPlatformAdmin.node.addDependency(platformAdminGroup);
-  firstPlatformAdmin.node.addDependency(adminBootstrap);
+  adminBootstrap.node.addDependency(platformAdminGroup);
 
   acknowledgeNag(
     adminBootstrapProvider.node.findChild('framework-onEvent'),

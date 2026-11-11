@@ -44,8 +44,9 @@ class TestCreateWhenAdminMissing:
         # Temporary on purpose: first login forces a change.
         assert 'Permanent' not in password_kwargs
 
-        group_kwargs = cognito.admin_add_user_to_group.call_args.kwargs
-        assert group_kwargs['GroupName'] == 'admins'
+        # The first admin is also the first platform admin (docs/multi-workspace.md).
+        groups = [call.kwargs['GroupName'] for call in cognito.admin_add_user_to_group.call_args_list]
+        assert groups == ['admins', 'platform-admins']
 
         assert result['Data']['Bootstrap'] == 'created'
         assert result['PhysicalResourceId'] == 'admin-bootstrap-us-east-1_TEST'
@@ -72,12 +73,25 @@ class TestCreateWhenAdminExists:
         # A confirmed admin is healthy regardless of groups — no group lookup.
         cognito.admin_list_groups_for_user.assert_not_called()
 
-    def test_admin_with_group_membership_is_untouched(self, cognito):
-        # Never logged in yet, but fully bootstrapped (group add succeeded).
+    def test_admin_in_every_group_is_untouched(self, cognito):
+        # Never logged in yet, but fully bootstrapped (both group adds succeeded).
+        cognito.admin_get_user.return_value = {'UserStatus': 'FORCE_CHANGE_PASSWORD'}
+        cognito.admin_list_groups_for_user.return_value = {
+            'Groups': [{'GroupName': 'admins'}, {'GroupName': 'platform-admins'}]}
+
+        assert_untouched(cognito, admin_bootstrap.handler(make_event(), None))
+
+    def test_admin_that_joined_only_admins_is_repaired(self, cognito):
+        # The earlier run died between the two group adds: never logged in,
+        # in `admins` but not `platform-admins`. It is finished, not skipped.
         cognito.admin_get_user.return_value = {'UserStatus': 'FORCE_CHANGE_PASSWORD'}
         cognito.admin_list_groups_for_user.return_value = {'Groups': [{'GroupName': 'admins'}]}
 
-        assert_untouched(cognito, admin_bootstrap.handler(make_event(), None))
+        result = admin_bootstrap.handler(make_event(), None)
+
+        groups = [call.kwargs['GroupName'] for call in cognito.admin_add_user_to_group.call_args_list]
+        assert groups == ['admins', 'platform-admins']
+        assert result['Data']['Bootstrap'] == 'repaired'
 
     def test_half_bootstrapped_admin_is_repaired(self, cognito):
         # A previous create failed after admin_create_user: the user exists,
@@ -91,7 +105,8 @@ class TestCreateWhenAdminExists:
         cognito.admin_create_user.assert_not_called()
         password_kwargs = cognito.admin_set_user_password.call_args.kwargs
         assert password_kwargs['Password'] == result['Data']['Password']
-        cognito.admin_add_user_to_group.assert_called_once()
+        groups = [call.kwargs['GroupName'] for call in cognito.admin_add_user_to_group.call_args_list]
+        assert groups == ['admins', 'platform-admins']
         assert result['Data']['Bootstrap'] == 'repaired'
 
 

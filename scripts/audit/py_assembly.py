@@ -249,6 +249,13 @@ def cache_key(cdk_dir: Path) -> str:
     for sub in ('bin', 'lib'):
         paths += [p for p in (cdk_dir / sub).rglob('*.ts') if not p.name.endswith('.test.ts')]
     paths += list((cdk_dir / 'plugins').glob('*/manifest.json'))
+    # Files the stacks read at synth time, outside bin/ and lib/: the inlined custom-resource handlers
+    # (core-auth.ts, Code.fromInline), the agent run's state machine (agent-runtime.ts) and the root package.json
+    # (utils/connector-version.ts). An edit to an inlined handler alone left the cached synth's ZipFile stale, and
+    # py_reachability then found no bundle for that file.
+    paths += list((cdk_dir / 'lambda' / 'custom_resources').glob('*.py'))
+    paths += list((cdk_dir / 'lambda' / 'agents').glob('*.asl.json'))
+    paths.append(cdk_dir.parent / 'package.json')
     for path in sorted(paths):
         if path.exists():
             digest.update(str(path.relative_to(cdk_dir) if path.is_relative_to(cdk_dir) else path.name).encode())

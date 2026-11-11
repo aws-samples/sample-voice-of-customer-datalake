@@ -17,6 +17,19 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.06.02] - 2026-11-11
+
+The first platform admin comes from the bootstrap, so a deployment without the default `admin` user still updates.
+
+### Fixed
+
+- 6.05.00 put the bootstrapped `admin` in `platform-admins` with a CloudFormation group attachment (`FirstPlatformAdmin`). On a deployment whose `admin` user was deleted or renamed, which is common once real admins exist, creating that attachment failed and rolled VocCoreStack back on that release and every later one. The bootstrap custom resource (`lambda/custom_resources/admin_bootstrap.py`) now adds the user to every group in its `GroupNames` (`admins`, `platform-admins`) when it creates or repairs the admin, and answers an update with its usual no-op; the attachment is gone. An admin that never logged in and is missing any of those groups (a run that died between the two adds) counts as half-bootstrapped and is finished.
+- The Python audits' synth cache (`scripts/audit/py_assembly.py`, `cache_key`) missed the files the stacks read at synth time outside `bin/` and `lib/`: the inlined custom-resource handlers, the agent run's state machine and the root `package.json`. After an edit to `admin_bootstrap.py` alone the cached template still held the old inline code, and `py_reachability` reported "no Lambda bundle ships this file". They are part of the key now; `scripts/audit/test_py_assembly.py` pins each. `lib/stacks/core-platform-admins.test.ts` pins the property, the order and that no attachment exists; `test_admin_bootstrap.py` pins both groups on create and repair.
+
+### Upgrade notes
+
+- Deploy VocCoreStack (`npm run deploy:infra`). A new deployment's `admin` is a platform admin as before. On a deployment made before 6.05.00, or one of 6.05.00 to 6.06.01 (where removing the attachment also removes that membership), add a platform admin by hand AFTER the deploy has finished (before it, the attachment's removal takes the same user out again): `aws cognito-idp admin-add-user-to-group --user-pool-id <pool> --username <user> --group-name platform-admins`. Nothing reads the group yet.
+
 ## [6.06.01] - 2026-11-11
 
 The review gate: a commit lands only with a GO record for exactly the tree it commits.

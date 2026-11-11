@@ -188,7 +188,7 @@ describe('VocCoreStack admin bootstrap (issue #196)', () => {
     const bootstraps = template.findResources('Custom::AdminBootstrap');
     const props = Object.values(bootstraps).map((r) => r.Properties ?? {});
     expect(props).toHaveLength(1);
-    expect(props[0]).toMatchObject({ Username: 'admin', GroupName: 'admins' });
+    expect(props[0]).toMatchObject({ Username: 'admin', GroupNames: ['admins', 'platform-admins'] });
     expect(props[0]).not.toHaveProperty('Password');
   });
 

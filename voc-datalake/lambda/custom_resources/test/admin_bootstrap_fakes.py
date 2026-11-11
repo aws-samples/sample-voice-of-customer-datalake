@@ -14,7 +14,7 @@ def make_event(request_type='Create', physical_id=None):
             'UserPoolId': 'us-east-1_TEST',
             'Username': 'admin',
             'Email': 'admin@local.host',
-            'GroupName': 'admins',
+            'GroupNames': ['admins', 'platform-admins'],
         },
     }
     if physical_id is not None:

@@ -119,6 +119,28 @@ def test_a_handler_cdk_stages_from_node_modules_is_external_not_repo_code(source
     assert functions['Stack/Fn'].external is external
 
 
+@pytest.mark.parametrize('rel', [
+    'lambda/custom_resources/admin_bootstrap.py',   # inlined by core-auth.ts (Code.fromInline)
+    'lambda/agents/state_machine.asl.json',         # read by agent-runtime.ts
+])
+def test_the_cache_key_changes_with_a_file_the_stacks_read_at_synth(tmp_path: Path, rel: str) -> None:
+    cdk = tmp_path / 'voc-datalake'
+    (cdk / rel).parent.mkdir(parents=True)
+    (cdk / rel).write_text('first')
+    before = cache_key(cdk)
+    (cdk / rel).write_text('second')
+    assert cache_key(cdk) != before
+
+
+def test_the_cache_key_changes_with_the_root_package_json(tmp_path: Path) -> None:
+    cdk = tmp_path / 'voc-datalake'
+    cdk.mkdir()
+    (tmp_path / 'package.json').write_text('{"version": "1.0.0"}')
+    before = cache_key(cdk)
+    (tmp_path / 'package.json').write_text('{"version": "1.0.1"}')
+    assert cache_key(cdk) != before
+
+
 def test_the_cache_key_changes_with_the_cdk_lockfile(tmp_path: Path) -> None:
     (tmp_path / 'package-lock.json').write_text('{"v": 1}')
     before = cache_key(tmp_path)

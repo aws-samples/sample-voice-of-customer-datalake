@@ -4,16 +4,15 @@ Idempotent Cognito admin bootstrap (issue #196).
 Custom resource handler (cr.Provider protocol). Decision table on Create:
   - admin missing: create it (email pre-verified, invite suppressed), set
     a TEMPORARY runtime-generated password (first login forces a change),
-    add it to the admins group, and return the password so the stack
+    add it to its groups, and return the password so the stack
     outputs it once — that is how operators find their first login.
   - admin half-bootstrapped (an earlier run failed after create: never
-    logged in AND no groups): finish the job — fresh password + group.
+    logged in AND missing a group): finish it, fresh password + groups.
   - admin healthy, or Update/Delete: strict no-op. Redeploys never create
     users or touch a live admin's password.
 
-Dependency-free by design (no powertools): this file ships inlined via
-Code.fromInline, so only stdlib + boto3 exist. Keep it under 4096 bytes
-(CloudFormation ZipFile limit; a test enforces this).
+No powertools: inlined via Code.fromInline (stdlib + boto3 only), under
+CloudFormation's 4096-byte ZipFile limit (a test enforces it).
 """
 import secrets
 
@@ -49,27 +48,27 @@ def get_admin(user_pool_id, username):
         return None
 
 
-def needs_repair(user, user_pool_id, username):
-    """True only for a half-bootstrapped admin: never logged in AND no
-    group memberships. A healthy admin (logged in, or in any group) is
-    never touched."""
+def needs_repair(user, user_pool_id, username, group_names):
+    """True only for a half-bootstrapped admin: never logged in AND not in
+    every group. One who logged in is never touched."""
     if user['UserStatus'] != 'FORCE_CHANGE_PASSWORD':
         return False
     groups = cognito.admin_list_groups_for_user(
         UserPoolId=user_pool_id, Username=username,
     )
-    return not groups['Groups']
+    return not set(group_names) <= {g['GroupName'] for g in groups['Groups']}
 
 
-def finish_bootstrap(user_pool_id, username, group_name):
-    """Password + group steps, idempotent for an existing user."""
+def finish_bootstrap(user_pool_id, username, group_names):
+    """Password + groups (admins, platform-admins), idempotent."""
     password = generate_password()
     cognito.admin_set_user_password(
         UserPoolId=user_pool_id, Username=username, Password=password,
     )
-    cognito.admin_add_user_to_group(
-        UserPoolId=user_pool_id, Username=username, GroupName=group_name,
-    )
+    for group in group_names:
+        cognito.admin_add_user_to_group(
+            UserPoolId=user_pool_id, Username=username, GroupName=group,
+        )
     return password
 
 
@@ -99,9 +98,9 @@ def handler(event, _context):
             ],
             MessageAction='SUPPRESS',
         )
-        return result(finish_bootstrap(user_pool_id, username, props['GroupName']), 'created')
+        return result(finish_bootstrap(user_pool_id, username, props['GroupNames']), 'created')
 
-    if needs_repair(user, user_pool_id, username):
-        return result(finish_bootstrap(user_pool_id, username, props['GroupName']), 'repaired')
+    if needs_repair(user, user_pool_id, username, props['GroupNames']):
+        return result(finish_bootstrap(user_pool_id, username, props['GroupNames']), 'repaired')
 
     return result(UNCHANGED, 'skipped')
