@@ -23,7 +23,7 @@ A fresh deployment's VocApiStack completes again: the API Gateway account settin
 
 ### Fixed
 
-- The API Gateway CloudWatch role (VocApiStack, `lib/stacks/api-gateway-logging-role.ts`) grants its log writes on `Resource: "*"`. Since 6.00 the grants were scoped to `API-Gateway-Execution-Logs_*` and per-log-group ARNs, and API Gateway, which validates the role when the account setting (`AWS::ApiGateway::Account`) is written, refused it on every fresh account or region: "The role ARN does not have required permissions configured". Existing deployments were unaffected, because the setting is created once per account and region. The role still holds no AWS managed policy (cdk-nag IAM4) and gets no log reads: of `AmazonAPIGatewayPushToCloudWatchLogs`, it keeps the five write actions and leaves out `GetLogEvents` and `FilterLogEvents`, a combination API Gateway was verified to accept.
+- The API Gateway CloudWatch role (VocApiStack, `lib/stacks/api-gateway-logging-role.ts`) grants its log writes on `Resource: "*"`. Since 6.00 the grants were scoped to `API-Gateway-Execution-Logs_*` and per-log-group ARNs, and API Gateway, which validates the role when the account setting (`AWS::ApiGateway::Account`) is written, refused it on every fresh account or region: "The role ARN does not have required permissions configured". Existing deployments were unaffected, because the setting is created once per account and region. The role still holds no AWS managed policy (cdk-nag IAM4) and gets no log-event reads: of `AmazonAPIGatewayPushToCloudWatchLogs`, it keeps the five write actions and leaves out `GetLogEvents` and `FilterLogEvents`, a combination API Gateway was verified to accept.
 
 ### Upgrade notes
 

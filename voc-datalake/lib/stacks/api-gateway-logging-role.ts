@@ -14,7 +14,7 @@
  *     account or region failed VocApiStack; existing deployments never re-ran the setting.
  *   - the managed policy's seven actions on `*`, inline: accepted;
  *   - the five WRITE actions on `*`, without the managed policy's two log READS (GetLogEvents, FilterLogEvents):
- *     accepted. That is what this grants: pushing logs never reads them, so the role cannot read any log group.
+ *     accepted. That is what this grants: pushing logs never reads log events, so the role cannot read any.
  */
 import type * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -26,7 +26,7 @@ import { acknowledgeNag } from '../utils/nag-ack';
 const API_GATEWAY_PUSH_TO_LOGS_POLICY = 'service-role/AmazonAPIGatewayPushToCloudWatchLogs';
 
 /** The managed policy's actions minus its two log reads: what API Gateway checks, and all pushing logs calls. */
-export const API_GATEWAY_LOG_PUSH_ACTIONS = Object.freeze([
+const API_GATEWAY_LOG_PUSH_ACTIONS = Object.freeze([
   'logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:DescribeLogGroups', 'logs:DescribeLogStreams', 'logs:PutLogEvents',
 ]);
 
@@ -35,9 +35,10 @@ export function scopeApiGatewayLoggingRole(api: apigateway.RestApi): void {
   const role = api.node.tryFindChild('CloudWatchRole');
   const cfn = role?.node.defaultChild;
   const account = api.node.tryFindChild('Account');
-  if (!(role instanceof iam.Role) || !(cfn instanceof iam.CfnRole) || account === undefined) {
+  if (!(role instanceof iam.Role) || !(cfn instanceof iam.CfnRole)) {
     throw new Error(`${api.node.path}: no CloudWatchRole (cloudWatchRole must stay on)`);
   }
+  if (account === undefined) throw new Error(`${api.node.path}: no Account (the API Gateway account setting)`);
   removeAwsManagedPolicy(cfn, API_GATEWAY_PUSH_TO_LOGS_POLICY);
   const { policyDependable } = role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'PushLogs', actions: [...API_GATEWAY_LOG_PUSH_ACTIONS], resources: ['*'],
@@ -47,7 +48,7 @@ export function scopeApiGatewayLoggingRole(api: apigateway.RestApi): void {
   if (policyDependable !== undefined) account.node.addDependency(policyDependable);
   acknowledgeNag(role, [{
     id: 'AwsSolutions-IAM5',
-    reason: 'API Gateway validates its account-level CloudWatch role and refuses the setting unless the log actions are granted on "*" (log-group-scoped grants failed every fresh deployment of 6.00-6.04); the role is the setting EVERY REST API of the account and region logs through, and it gets no log reads',
+    reason: 'API Gateway validates its account-level CloudWatch role and refuses the setting unless the log actions are granted on "*" (log-group-scoped grants failed every fresh deployment of 6.00-6.04); the role is the setting EVERY REST API of the account and region logs through, and it gets no log-event reads (GetLogEvents, FilterLogEvents)',
     findings: ['Resource::*'],
   }]);
 }

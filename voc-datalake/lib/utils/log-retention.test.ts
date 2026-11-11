@@ -18,7 +18,6 @@ import { ALL_FEATURES_CONTEXT } from '../test-support/all-features-context';
 import { apiTemplate, apiTemplatePrefixed } from '../test-support/api-stack-template';
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import type { SynthResult } from '../test-support/synth-app';
-import { API_GATEWAY_LOG_PUSH_ACTIONS } from '../stacks/api-gateway-logging-role';
 import { byCodeUnit } from './compare';
 
 const StatementSchema = z.object({
@@ -123,6 +122,15 @@ function rolesWithManagedPolicies(synth: SynthResult): string[] {
     .map(([id]) => `${stack}/${id}`));
 }
 
+/**
+ * The API Gateway account role's one statement, spelled out (not read from the module under test): the managed
+ * policy's five write actions on "*", and none of its log-event reads (GetLogEvents, FilterLogEvents).
+ */
+const PUSH_LOGS_STATEMENT = {
+  Sid: 'PushLogs', Effect: 'Allow', Resource: '*',
+  Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:DescribeLogGroups', 'logs:DescribeLogStreams', 'logs:PutLogEvents'],
+};
+
 describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () => {
   let synth: SynthResult;
   // One whole-app synth per hook (the all-features one below), so each gets the per-synth timeout.
@@ -200,9 +208,7 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
     // deployment; the managed policy's write actions on "*", without its two log reads, are accepted.
     const api = resourcesOf(synth, 'VocApiStack');
     const role = logicalIdStartingWith(api, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole');
-    expect(roleStatements(api, role)).toStrictEqual([
-      { Sid: 'PushLogs', Effect: 'Allow', Action: [...API_GATEWAY_LOG_PUSH_ACTIONS], Resource: '*' },
-    ]);
+    expect(roleStatements(api, role)).toStrictEqual([PUSH_LOGS_STATEMENT]);
     const policy = logicalIdStartingWith(api, 'AWS::IAM::Policy', 'VocAnalyticsApiCloudWatchRoleDefaultPolicy');
     const account = logicalIdStartingWith(api, 'AWS::ApiGateway::Account', 'VocAnalyticsApiAccount');
     expect(api[account]?.DependsOn).toContain(policy);
@@ -214,7 +220,6 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
       const resources = TemplateSchema.parse(template.toJSON()).Resources;
       return roleStatements(resources, logicalIdStartingWith(resources, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole'));
     });
-    expect(grants[1]).toStrictEqual(grants[0]);
-    expect(grants[0]?.map((statement) => statement.Resource)).toStrictEqual(['*']);
+    expect(grants).toStrictEqual([[PUSH_LOGS_STATEMENT], [PUSH_LOGS_STATEMENT]]);
   }, SYNTH_TIMEOUT_MS);
 });
