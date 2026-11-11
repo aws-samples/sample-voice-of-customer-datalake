@@ -27,6 +27,12 @@ describe('the voc-workspaces table', () => {
     expect(props?.PointInTimeRecoverySpecification).toStrictEqual({ PointInTimeRecoveryEnabled: true });
   });
 
+  it("uses the stack's own key, not the AWS-managed one: the feedback table's key reference", () => {
+    const feedback = Object.entries(tables).find(([id]) => id.startsWith('FeedbackTable'))?.[1];
+    expect(props?.SSESpecification?.KMSMasterKeyId).toBeDefined();
+    expect(props?.SSESpecification?.KMSMasterKeyId).toStrictEqual(feedback?.Properties?.SSESpecification?.KMSMasterKeyId);
+  });
+
   it('is kept with the stack, like the other customer-data tables', () => {
     const feedback = Object.entries(tables).find(([id]) => id.startsWith('FeedbackTable'))?.[1];
     expect(feedback).toBeDefined();

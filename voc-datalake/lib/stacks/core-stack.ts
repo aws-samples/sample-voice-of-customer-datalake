@@ -357,7 +357,9 @@ export class VocCoreStack extends VocStack {
     //   WS#{ws} / META | MEMBER#{sub} | INVITE#{id} | AUDIT#{iso}#{n}   workspace, members, invites, audit
     //   USER#{sub} / WS#{ws}                                           "my workspaces", same transaction
     //   SLUG#{slug} / META                                             slug -> workspace, conditional put
-    // TTL only on invites. No field yet: the workspaces routes that read it add one.
+    // TTL is meant for invites only, pinned by the phase that writes the table. The table is not kept in a
+    // field yet (nothing reads it, and ts_reachability refuses a write-only member); the change that adds the
+    // workspaces routes adds the field with its first reader.
     this.createEncryptedTable('WorkspacesTable', 'voc-workspaces', {
       timeToLiveAttribute: 'ttl',
     });

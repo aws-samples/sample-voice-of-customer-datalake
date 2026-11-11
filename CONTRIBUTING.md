@@ -245,6 +245,32 @@ copy), and `lambda/stream/src/browser-safe.test.ts` fails when the SPA imports a
 or a listed module imports a stream file, that the list does not name. When the SPA needs something the stream
 module does not have (its own message, an SPA-only builder), put it in a small SPA module next to its users.
 
+### The review gate (before each commit)
+With the hook installed, a commit lands only with a GO record for exactly the tree it commits. The hook gates every
+`git commit` of the clone, on every branch (a clean merge, cherry-pick, rebase or revert runs no pre-commit hook), and
+`git commit --no-verify` skips it: it keeps the discipline, it is not a lock.
+
+1. The deterministic gate is green (`scripts/validate-affected.sh` for the touched groups, the full
+   `scripts/validate.sh` before each push).
+2. At most three review rounds on the staged change: `AI_REVIEW_CACHE=0 npm run validate:tenets`,
+   `AI_REVIEW_CACHE=0 npm run validate:commit`, and the security, quality and first-principles reviewers
+   (`.kiro/agents/prompts/`). Every blocking finding is fixed, every should-fix fixed or answered; then the
+   deterministic gate again, and the next round. A round with no blocking finding ends the loop (another round
+   within the three, say one a reviewer missed, is allowed: it only adds review).
+3. A final reviewer that wrote and reviewed none of it reads the change and the rounds' findings and answers GO or
+   NO-GO. NO-GO, or a blocking finding left after round 3: split or rework the change and start again.
+4. `node scripts/ai-review/gate.mjs record <record.json>` stores the rounds and the verdict for the staged tree. Write
+   the record outside the repository (inside it, it is an untracked file, which `record` refuses); its format, the
+   severity names and the rules are at the top of `scripts/ai-review/gate.mjs`.
+5. The pre-commit hook (`scripts/git-hooks/pre-commit`, `gate.mjs check`) refuses a commit whose staged tree has no
+   valid GO record. Install it once per clone, into the hooks directory git actually uses (the one `core.hooksPath`
+   names, else the repository's own, which its linked worktrees share):
+   `hooks="$(git rev-parse --git-path hooks)" && cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"`.
+   Add the line `node scripts/ai-review/gate.mjs check` prints ("review gate: N rounds, GO") to the commit message.
+   On a checkout without `gate.mjs` (an older branch) the hook says so and lets the commit through.
+
+`node --test scripts/ai-review/gate.test.mjs` runs the gate and the hook in a scratch repository.
+
 ### Optional: AI review before push
 `scripts/git-hooks/pre-push` reviews the diff you are pushing with three Kiro CLI agents (`.kiro/agents/`), run in
 parallel on each chunk of the diff:

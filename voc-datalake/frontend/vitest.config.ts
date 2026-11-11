@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config'
 import { changelogPlugin } from './changelogPlugin.ts'
 import { streamResolve } from './streamSource.ts'
 import react from '@vitejs/plugin-react'
+import { availableParallelism } from 'node:os'
 import path from 'path'
 
 export default defineConfig({
@@ -22,6 +23,11 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules', 'dist'],
     testTimeout: 10000,
+    // One per CPU (vitest's default), but at most 32. The default started ~190 workers on a 192-CPU machine, all queued
+    // on one Vite transform server, and a beforeAll that imports a lazy chunk (AssistantRoot.bubble) hung past any
+    // timeout; with 32 the suite passes in 61 s (a run at the default took ~115 s and failed on that hook). The CDK
+    // suite caps its own (voc-datalake/vitest.config.ts).
+    maxWorkers: Math.min(32, availableParallelism()),
     // The per-file coverage gate (docs/coverage-gate.md) reads this through scripts/validate.sh, which adds
     // `--coverage.enabled --coverage.reporter=json-summary` on the command line.
     coverage: {

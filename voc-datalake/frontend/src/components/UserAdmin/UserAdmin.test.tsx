@@ -264,5 +264,16 @@ describe('UserAdmin', () => {
 
       expect(await screen.findByText('User role updated')).toBeInTheDocument()
     })
+
+    it('disables a user after the confirmation, says so, and clears the message after 3 s', async () => {
+      const user = await renderOneUser()
+      await user.click(await firstByTitle('Disable user'))
+      await user.click(await screen.findByRole('button', { name: 'Disable' }))
+
+      expect(await screen.findByText('User disabled')).toBeInTheDocument()
+      expect(mockDisableUser).toHaveBeenCalledWith(cognitoUser().username)
+      expect(screen.queryByText('Disable User')).not.toBeInTheDocument()
+      await waitFor(() => { expect(screen.queryByText('User disabled')).not.toBeInTheDocument() }, { timeout: 5000 })
+    })
   })
 })

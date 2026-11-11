@@ -20,6 +20,7 @@ import { CredentialsSection, SetupInstructionsSection, WebhooksSection } from '.
 import SourceCircuitNotice from './SourceCircuitNotice'
 import { useSourceSchedule } from './useSourceSchedule'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
+import { useExpiringValue } from '../../hooks/useExpiringValue'
 import S3ImportExplorer from '../../components/S3ImportExplorer/S3ImportExplorer'
 import clsx from 'clsx'
 import type { PluginManifest } from '../../plugins/types'
@@ -74,7 +75,9 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
   const [isExpanded, setIsExpanded] = useState(false)
   const [showSecrets, setShowSecrets] = useState(false)
   const [credentials, setCredentials] = useState<Record<string, string>>({})
-  const [saveSuccess, setSaveSuccess] = useState(false)
+  // "Saved" clears itself after 3 s; the timer goes with the card.
+  const [saveSuccessShown, showSaveSuccess] = useExpiringValue<true>(3000)
+  const saveSuccess = saveSuccessShown !== null
   const { copy: copyToClipboard, copiedKey: copiedUrl } = useCopyToClipboard()
 
   // GET /integrations/status is admin-gated server-side; only issue the query
@@ -91,8 +94,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
   const updateCredentialsMutation = useMutation({
     mutationFn: (creds: Record<string, string>) => api.updateIntegrationCredentials(manifest.id, creds),
     onSuccess: () => {
-      setSaveSuccess(true)
-      setTimeout(() => setSaveSuccess(false), 3000)
+      showSaveSuccess(true)
       void queryClient.invalidateQueries({ queryKey: ['integration-status'] })
     },
   })

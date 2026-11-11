@@ -34,7 +34,7 @@ every row and object, so a team only ever sees its own data.
 | 8 | Credentials | One Secrets Manager secret per workspace, encrypted with the customer-managed KMS key |
 | 9 | Cost | Cost reported per workspace |
 | 10 | Quotas | None for now; workspaces share Bedrock capacity (a busy workspace can slow the others) |
-| 11 | Delete | Hard delete of a whole workspace, after offering an export |
+| 11 | Delete | Hard delete of a whole workspace, after offering an export (how it meets D5 is an [open tenet question](#open-tenet-questions-to-settle-before-the-phase-that-builds-them)) |
 | 12 | Existing deployments | Not migrated: multi-workspace starts on a fresh deployment |
 | 13 | Radar | Per workspace |
 | 14 | Sharing (later) | Workspaces stay separate. Workspace B imports from A through a plugin that A approved |
@@ -141,8 +141,8 @@ What an editor may write follows today's split between admin-only and open route
   code always builds the name from the request's verified workspace, never from user input, and a test pins that.
 - **Cost**: about $0.40 per workspace per month. This is the one fixed cost the design adds, accepted by decision 8
   as the price of per-workspace credential isolation. The fixed-cost guard
-  (`voc-datalake/lib/fixed-cost-guard.test.ts`) still counts only CDK-created secrets; this cost scales with the
-  number of workspaces, not with the deployment, and is reported per workspace (below).
+  (`voc-datalake/lib/fixed-cost-guard.test.ts`) counts only CDK-created secrets today; the phase that creates these
+  extends it to count one per workspace, and the cost is reported per workspace (below).
 
 ## Cost per workspace
 
@@ -153,6 +153,9 @@ What an editor may write follows today's split between admin-only and open route
 
 ## Export and delete
 
+The proposal below waits on the first [open tenet question](#open-tenet-questions-to-settle-before-the-phase-that-builds-them)
+(D5): its legal basis, and the tombstones it would leave.
+
 1. A workspace admin or a platform admin asks to delete the workspace; the web app offers **Export first** (on by
    default).
 2. The export job writes JSONL per entity (feedback, projects and documents, personas, memory, agents and workflows,
@@ -162,15 +165,30 @@ What an editor may write follows today's split between admin-only and open route
    schedules stop.
 4. The delete job (self re-invoking and checkpointed, like `voc-retention`) deletes every `WS#{ws}#` partition of
    every table, every `ws/{ws}/` object with all its versions, the workspace secret, its MCP tokens, memberships, slug
-   and the share grants it gave or used. Copies other workspaces already imported stay theirs. One audit row stays in
-   a platform partition (name, who, when, counts), with no customer data.
+   and the share grants it gave or used. Whether copies other workspaces already imported stay theirs is the second
+   open question. One audit row stays in a platform partition (name, who, when, counts), with no customer data.
 5. With `protectData` the tables stay protected; this is item-level deletion, so it still works.
 
-**Tenet trade-off.** D5 says customer data is never removed except for a legal obligation. Deleting a whole
-workspace is the end of the data controller's relationship with the deployment, so the workspace's own decision to
-leave is treated as that obligation: it is approved (the slug typed by an admin), logged (the platform audit row),
-offered an export first, and reaches every copy the workspace holds. Tenet 6 (build it as a service) over D5's
-default, by decision 11.
+## Open tenet questions (to settle before the phase that builds them)
+
+D5 (customer data is never removed but for a legal obligation) is non-negotiable and ranks with tenet 1, so neither
+point below can be settled in this document; each needs the owner's decision and, where it changes a tenet, a change
+to TENETS.md of its own:
+
+- **Workspace delete (phase 4).** A workspace leaving is not, as such, one of D5's legal bases. The proposal to
+  decide: treat the delete as the data controller's own request under its agreement with the deployment (a retention
+  limit the deployment is bound to), with its stated basis, an approval (the slug typed), an audit row, a tombstone
+  per deleted item like `voc-retention`'s, and the export offered first.
+- **Imports and erasure (phase 5).** As planned, A's erasures would not reach B's imported copies, while D5 says an
+  erasure reaches every derived copy. `imported_from` gives the lineage to follow them; the decision is whether an
+  erasure in A also reaches B's copies.
+
+Also held to the tenets when built: the per-workspace secret is a fixed cost per workspace (decision 8 accepts it;
+tenet 7's gap names a move of secrets to SSM Parameter Store), so its phase extends the fixed-cost guard to count it
+per workspace; and `voc-workspaces` holds primary data (members, audit) beside invites, so the phase that writes it
+pins that only `INVITE#` rows carry `ttl` and protects the audit rows. The `AUDIT#` row guard
+(`voc-datalake/lib/utils/audit-row-guard.ts`) matches partition keys, and these rows are keyed `WS#{ws}` /
+`AUDIT#…`, so that phase either gives them an `AUDIT#`-prefixed partition key or adds a sort-key guard.
 
 ## Phases
 
@@ -203,7 +221,9 @@ Workspaces stay fully separate; sharing is an import, like any other source.
   first run. This plugin is the one sanctioned reader of another workspace's data, through a dedicated repository
   call that re-checks the approval on every run.
 - **After the copy the data is B's**: stored as B's own items (`source = ws_<A-slug>_<source>`,
-  `imported_from: {ws, source, id}`) and raw objects. Revoking the approval only stops future imports; A's erasures,
-  retention deletes and workspace deletion do not reach B's copies, so each workspace is the data controller of what
-  it imported, and the approval dialog A's admin sees says so. Copied items are read-only in B (no category or
-  dimension edits); B can delete them and disconnect the connector.
+  `imported_from: {ws, source, id}`) and raw objects. Revoking the approval only stops future imports. As planned,
+  A's erasures, retention deletes and workspace deletion would not reach B's copies (each workspace the data
+  controller of what it imported, said in the approval dialog A's admin sees); that waits on the second
+  [open tenet question](#open-tenet-questions-to-settle-before-the-phase-that-builds-them), since D5 says an erasure
+  reaches every derived copy. Copied items are read-only in B (no category or dimension edits); B can delete them and
+  disconnect the connector.

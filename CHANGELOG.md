@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.06.01] - 2026-11-11
+
+The review gate: a commit lands only with a GO record for exactly the tree it commits.
+
+### Added
+
+- `scripts/ai-review/gate.mjs` (`record`, `check`) and the pre-commit hook `scripts/git-hooks/pre-commit`: a change's review rounds (at most three) and its final GO are recorded for the staged tree (`git write-tree`), and the hook refuses a commit whose tree has no valid GO record. The loop, the record's rules and the hook's install are in [CONTRIBUTING.md](CONTRIBUTING.md#the-review-gate-before-each-commit); `scripts/ai-review/gate.test.mjs` runs both in scratch repositories (in the existing `node: AI review tests` step).
+
+### Changed
+
+- [docs/multi-workspace.md](docs/multi-workspace.md#open-tenet-questions-to-settle-before-the-phase-that-builds-them): the workspace delete and the imports' reach of erasures are open tenet questions (D5) for the owner to settle before phases 4 and 5, not trade-offs the design settles; the per-workspace secret's phase extends the fixed-cost guard, and the phase that writes `voc-workspaces` pins that only invites carry `ttl` and protects its audit rows (the `AUDIT#` row guard matches partition keys, so they get an `AUDIT#`-prefixed partition key or a sort-key guard).
+
+### Fixed
+
+- Two feedback-form tests (`lambda/api/test/test_prototype_pins.py::TestOpaqueOriginSubmit`) failed in the full pytest run and passed alone: an earlier test in the same pytest-xdist worker left `shared.source_profiles`' warm-container cache holding a failed read, so the submit answered 503. `lambda/conftest.py` now clears that cache around every test (`_reset_source_profiles`), like the other warm-container memos.
+- The frontend vitest suite failed on a large machine: vitest's default of one worker per CPU started about 190 workers on 192 CPUs, all queued on one Vite transform server, and `AssistantRoot.bubble.component.test.tsx`'s `beforeAll` (which imports a lazy chunk) hung past any timeout. `voc-datalake/frontend/vitest.config.ts` now caps `maxWorkers` at 32 (one per CPU below that, as before), as the CDK suite's config caps its own; with 32 workers the suite passes in 61 s, where a run at the default took about 115 s and failed on that hook.
+- Two tests of `lambda/api/test/test_mcp_tokens_handler_mutation.py` failed when pytest-xdist ran them first in a worker: they patched the Powertools app's `current_event`, which exists only after the app resolved a request. They now patch it with `create=True`, as the chat handler's tests already do.
+- Four self-clearing messages used bare `setTimeout`s that outlived their component and set state after it unmounted, and a second message within the time was cleared early by the first one's timer: the S3 import explorer's upload messages, the users page's success message, the brand settings' "Saved" and a source card's "Saved". The suite failed on unhandled errors whenever `S3ImportExplorer.test.tsx` or `UserAdmin.test.tsx` ran past the message's time. `src/hooks/useExpiringValue.ts` keeps each timer with its component (cleared on a new value, on `clear()` and on unmount), so every message gets its full time; the other timed flags already did (`useCopiedFlag`, `useCopyToClipboard`, `PasswordSection`, `AiModelSection`).
+- The suite sometimes failed on an unhandled rejection from `src/assistant/runtime/runtime.test.ts`: the sessions API test double's `getSession` resolved to `undefined`, which the real API never answers, and Stop's background settle (`adoptAfterStop`) threw on it when its poll ran before the file ended. `runtime-fixtures.ts` now answers `null` (no session) unless a test programs it.
+
 ## [6.06.00] - 2026-11-11
 
 Multi-workspace, phase 1: the control plane's table.
