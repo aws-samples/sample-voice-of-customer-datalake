@@ -1,7 +1,7 @@
 /**
  * Lambda Response Streaming utilities.
  *
- * Uses the `awslambda` global injected by the Node.js 22 managed runtime
+ * Uses the `awslambda` global injected by the Node.js 24 managed runtime
  * to wrap handlers with `streamifyResponse` and emit SSE events.
  */
 import { ConfigurationError } from './errors.js';

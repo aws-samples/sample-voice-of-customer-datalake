@@ -17,19 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.04.08] - 2026-11-11
+## [6.05.00] - 2026-11-11
 
-Dependency security fixes for minimatch and fast-xml-parser.
+The repository's tooling needs Node.js 24, and the minimatch and fast-xml-parser security alerts are fixed.
+
+### Changed
+
+- Node.js 24.15+ is now the only supported line for the local tooling (root `package.json` `engines`, was `^22.22.2 || >=24.15.0`; `tools/kiro-acp-bridge` was `>=18.0.0`). It is the line CI and the Node Lambdas (`nodejs24.x`) already ran; Node 22 was never tested in CI. README, CONTRIBUTING and [docs/deployment.md](docs/deployment.md) say so.
 
 ### Security
 
-- minimatch (GHSA-g3hv-75wg-m249, denial of service through glob-part amplification): every copy from 7.0.0 up to 11.0.1 is forced to `^11.0.1` by an npm override in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`. These copies are all used by build and lint tooling (ESLint, typescript-eslint, eslint-plugin-sonarjs, Stryker); the repository-root project holds no minimatch. minimatch 11 drops `makeRe` and `AST`, which none of those use. The stream Lambda's `eslint-plugin-import-x`, which did, moves to 4.18.1, the first release that supports minimatch 11. glob 10 does not work on minimatch 11 (a pattern matches nothing), so the frontend's `quick-temp` (behind `i18next-parser`, the `i18n:extract` authoring tool) gets rimraf 6.1.4 through a second override, which brings glob 14, built for minimatch 11. When a lint-tooling bump brings a new minimatch consumer, check that it does not need `makeRe`, `AST` or glob 13 or older before keeping the override. The copy bundled inside `aws-cdk-lib` stays at 10.2.6: npm cannot override a bundled dependency, and no `aws-cdk-lib` release ships minimatch 11 yet. That copy only matches the repository's own asset-exclude patterns at synth time and never sees user input.
+- minimatch (GHSA-g3hv-75wg-m249, denial of service through glob-part amplification): every copy from 7.0.0 up to 11.0.1 is forced to `^11.0.1` by an npm override in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`. These copies are all used by build and lint tooling (ESLint, typescript-eslint, eslint-plugin-sonarjs, Stryker); the repository-root project holds no minimatch. minimatch 11 drops `makeRe` and `AST`, which none of those use. The stream Lambda's `eslint-plugin-import-x`, which did, moves to 4.18.1, the first release that supports minimatch 11. glob 10 does not work on minimatch 11 (a pattern matches nothing), so the frontend's `quick-temp` (behind `i18next-parser`, the `i18n:extract` authoring tool) gets rimraf 6.1.4 through a second override, which brings glob 14, built for minimatch 11. When a lint-tooling bump brings a new minimatch consumer, check that it does not need `makeRe`, `AST` or glob 13 or older before keeping the override; when `quick-temp` changes, check that it still calls rimraf's `sync`, which the rimraf 6 override relies on. The copy bundled inside `aws-cdk-lib` stays at 10.2.6: npm cannot override a bundled dependency, and no `aws-cdk-lib` release ships minimatch 11 yet. That copy only matches the repository's own asset-exclude patterns at synth time and never sees user input.
 - fast-xml-parser (GHSA-474x-hrwr-fgx4, quadratic CPU use on unterminated stop-node tags) moves from 5.11.2 to 5.12.0 in the frontend lockfile. `aws-amplify` pulls it in through `@aws-amplify/storage`. The SPA imports only `aws-amplify/auth`.
 
 ### Upgrade notes
 
-- Nothing to do for a deployment of the platform. A redeploy changes only the release number the Lambdas record (`APP_VERSION`, `6.4.8`), as every release does; with the stream lockfile (the assistant's NodejsFunction `depsLockFilePath`), that is why the Api and Processing template hashes in `voc-datalake/lib/test-support/baseline.json` move.
+- Nothing to do for a deployment of the platform. A redeploy changes only the release number the Lambdas record (`APP_VERSION`, `6.5.0`), as every release does; with the stream lockfile (the assistant's NodejsFunction `depsLockFilePath`), that is why the Api and Processing template hashes in `voc-datalake/lib/test-support/baseline.json` move.
 - Run `npm ci` again in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/` to pick up the new lockfiles.
+- Deploy from Node.js 24.15+ (`node --version`). On Node 22, npm warns `EBADENGINE`, and newer tooling may not run.
 
 ## [6.04.08] - 2026-11-11
 

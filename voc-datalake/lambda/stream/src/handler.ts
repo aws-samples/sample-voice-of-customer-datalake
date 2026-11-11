@@ -1,5 +1,5 @@
 /**
- * Streaming assistant Lambda handler (Node.js 22).
+ * Streaming assistant Lambda handler (Node.js 24).
  *
  * `POST /chat/stream` (API Gateway REST, Cognito authorizer, STREAM transfer
  * mode) speaks AG-UI 1.0: the body is a `RunAgentInput`, the response is a

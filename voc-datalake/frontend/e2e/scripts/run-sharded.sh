@@ -23,7 +23,7 @@
 #      E2E_SHARD_READ_WORKERS   workers per shard for the read-only specs (lib/parallel.ts; default 2)
 #      E2E_SHARD_WORKERS  total workers per shard (default read + write; set alone, writes get at most 2
 #                         and the read-only specs the rest; a cap above it is refused)
-# Needs Node 22.12+ (the repo itself needs 22.22.2+ / 24.15+, root package.json engines): the worker plan is read
+# Needs Node 22.12+ (the repo itself needs 24.15+, root package.json engines): the worker plan is read
 # from lib/parallel.ts with `node --experimental-strip-types`, which older Node rejects as an unknown flag.
 set -uo pipefail
 
