@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.08] - 2026-11-11
+
+Workshop templates no longer reserve Lambda concurrency, so a Workshop Studio event's VocApiStack completes.
+
+### Fixed
+
+- `npm run generate:workshop-artifacts` synthesizes with `-c mcpReservedConcurrency=0`. Workshop Studio event accounts have only 110 unreserved Lambda executions (of a 1000 quota), and AWS keeps at least 100 unreserved, so the Global MCP endpoint's default reservation of 20 failed VocApiStack ("decreases account's UnreservedConcurrentExecution below its minimum value of [100]"). Without a reservation the endpoint shares the pool; its API Gateway stage throttle (20 requests per second, burst 40) still caps a runaway client. `voc-datalake/scripts/workshop-artifacts.test.ts` pins the flag. See [docs/mcp.md](docs/mcp.md).
+
+### Upgrade notes
+
+- Nothing changes for a deployment from `npm run deploy:infra`: the MCP endpoint keeps its reservation of 20 by default. Regenerate and republish the workshop templates.
+
 ## [6.04.07] - 2026-11-11
 
 A fresh deployment's VocApiStack completes again: the API Gateway account setting accepts its CloudWatch role.
