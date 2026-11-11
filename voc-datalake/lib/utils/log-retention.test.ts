@@ -131,6 +131,42 @@ const PUSH_LOGS_STATEMENT = {
   Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:DescribeLogGroups', 'logs:DescribeLogStreams', 'logs:PutLogEvents'],
 };
 
+/**
+ * resource-star-actions.ts lists these log writes on "*" for the API Gateway account role only; the list is keyed
+ * by action, so it would accept them on any role, and this is where the scope is enforced. DescribeLogGroups is
+ * left out on purpose: the Step Functions log-delivery roles also hold it on "*" (same list).
+ */
+const STAR_LOG_WRITES = new Set(['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:DescribeLogStreams', 'logs:PutLogEvents']);
+const API_GATEWAY_ROLE_ONLY = ['VocApiStack/VocAnalyticsApiCloudWatchRole'];
+
+const ManagedPolicySchema = z.object({ Roles: z.array(z.unknown()).optional(), PolicyDocument: DocumentSchema });
+
+const grantsStarLogWrite = (statement: Statement): boolean => statement.Effect === 'Allow'
+  && [statement.Resource].flat().includes('*')
+  && [statement.Action].flat().some((action) => STAR_LOG_WRITES.has(action));
+
+/** The statements of the customer-managed policies attached to `roleId`, through their Roles or its ManagedPolicyArns. */
+function managedPolicyStatements(resources: Resources, roleId: string): Statement[] {
+  const arns = JSON.stringify(resources[roleId]?.Properties?.ManagedPolicyArns ?? []);
+  return Object.entries(resources)
+    .filter(([, resource]) => resource.Type === 'AWS::IAM::ManagedPolicy')
+    .map(([id, resource]) => ({ id, policy: ManagedPolicySchema.parse(resource.Properties) }))
+    .filter(({ id, policy }) => arns.includes(`"${id}"`)
+      || (policy.Roles ?? []).some((role) => JSON.stringify(role) === JSON.stringify({ Ref: roleId })))
+    .flatMap(({ policy }) => policy.PolicyDocument.Statement);
+}
+
+/** Every role granted a log write on "*" by any of its policies, as sorted `stack/RoleLogicalIdWithoutHash`. */
+function starLogWriteHolders(result: SynthResult): string[] {
+  return result.stackNames.flatMap((stack) => {
+    const resources = resourcesOf(result, stack);
+    return Object.keys(resources)
+      .filter((id) => resources[id]?.Type === 'AWS::IAM::Role')
+      .filter((id) => [...roleStatements(resources, id), ...managedPolicyStatements(resources, id)].some(grantsStarLogWrite))
+      .map((id) => `${stack}/${id.replace(/[0-9A-F]{8}$/, '')}`);
+  }).sort(byCodeUnit);
+}
+
 describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () => {
   let synth: SynthResult;
   // One whole-app synth per hook (the all-features one below), so each gets the per-synth timeout.
@@ -168,6 +204,10 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
   describe('with every context-gated feature on', () => {
     let all: SynthResult;
     beforeAll(() => { all = synthApp({ ...ALL_FEATURES_CONTEXT }); }, SYNTH_TIMEOUT_MS);
+
+    it('grants the log writes on "*" to the API Gateway account role only', () => {
+      expect(starLogWriteHolders(all)).toStrictEqual(API_GATEWAY_ROLE_ONLY);
+    });
 
     it('gives every function writes to its own log group only, and no role a managed policy', () => {
       expect(functionProblems(all)).toStrictEqual([]);
@@ -215,19 +255,7 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
   });
 
   it('grants the log writes on "*" to the API Gateway account role only', () => {
-    // resource-star-actions.ts lists them on "*" for that role; being keyed by action, it would accept them on any
-    // role, so this is where the scope is enforced.
-    const writes = new Set(['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:DescribeLogStreams', 'logs:PutLogEvents']);
-    const holders = synth.stackNames.flatMap((stack) => {
-      const resources = resourcesOf(synth, stack);
-      return Object.keys(resources)
-        .filter((id) => resources[id]?.Type === 'AWS::IAM::Role')
-        .filter((id) => roleStatements(resources, id).some((statement) => statement.Effect === 'Allow'
-          && [statement.Resource].flat().includes('*')
-          && [statement.Action].flat().some((action) => typeof action === 'string' && writes.has(action))))
-        .map((id) => `${stack}/${id.replace(/[0-9A-F]{8}$/, '')}`);
-    });
-    expect(holders).toStrictEqual(['VocApiStack/VocAnalyticsApiCloudWatchRole']);
+    expect(starLogWriteHolders(synth)).toStrictEqual(API_GATEWAY_ROLE_ONLY);
   });
 
   it('grants a prefixed deployment the same write-only statement', () => {

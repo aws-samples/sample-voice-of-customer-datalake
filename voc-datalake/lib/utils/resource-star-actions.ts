@@ -37,8 +37,8 @@ const SFN_TRACING = `X-Ray tracing for a state machine with \`tracingEnabled\` (
 const MODEL_AGREEMENT = `Bedrock model access provider (account-level agreement API); the action ${NO_RESOURCE_TYPE}`;
 /**
  * The API Gateway account role (api-gateway-logging-role.ts): API Gateway refuses it unless these are on "*". The
- * list is keyed by action, so lib/utils/log-retention.test.ts pins that NO OTHER role grants these log writes on
- * "*": the entries below justify that one role, never a Lambda's own-group log grant.
+ * list is keyed by action, so lib/utils/log-retention.test.ts pins, in the default and the all-features synth and
+ * across inline, attached and customer-managed policies, that no other role grants these log writes on "*".
  */
 const API_GATEWAY_LOG_PUSH = 'API Gateway CloudWatch role, the account+region setting every REST API logs through: API Gateway validates the role when the setting is written and refuses log-group-scoped grants (measured 2026-11-11; failed every fresh deployment of 6.00-6.04). Write actions only; no log-event reads';
 
