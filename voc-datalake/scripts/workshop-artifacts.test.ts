@@ -61,8 +61,10 @@ describe('generate:workshop-artifacts', () => {
     // UnreservedConcurrentExecution below its minimum value of [100]"). Without one, the endpoint shares the pool;
     // its API Gateway stage throttle (20 rps, burst 40) bounds the request rate, not the concurrency
     // (lib/stacks/global-mcp.ts). That 0 omits the property rather than throttling the function to zero is pinned by
-    // lib/stacks/api-stack-mcp-global-ops.test.ts ("never a throttling 0"), which also pins the default 20.
-    expect(synthContext(script)).toContainEqual(['mcpReservedConcurrency', '0']);
+    // lib/stacks/api-stack-mcp-global-ops.test.ts ("never a throttling 0"), which also pins the default 20. Exactly
+    // once, like protectData: a later -c mcpReservedConcurrency=<n> would win and bring the failure back.
+    expect(synthContext(script).filter(([key]) => key === 'mcpReservedConcurrency'))
+      .toStrictEqual([['mcpReservedConcurrency', '0']]);
   });
 
   it('keeps web search on and the model pin the workshop accounts are granted', () => {
