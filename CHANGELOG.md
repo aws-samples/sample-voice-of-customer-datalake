@@ -19,6 +19,19 @@ the platform package version.
 
 ## [6.04.08] - 2026-11-11
 
+Dependency security fixes for minimatch and fast-xml-parser.
+
+### Security
+
+- minimatch (GHSA-g3hv-75wg-m249, denial of service through glob-part amplification): every copy from 7.0.0 up to 11.0.1 is forced to `^11.0.1` by an npm override in `voc-datalake/`, `voc-datalake/frontend/` and `voc-datalake/lambda/stream/`. These copies are all build and lint tooling (ESLint, typescript-eslint, eslint-plugin-sonarjs, Stryker, glob). The stream Lambda's `eslint-plugin-import-x` moves to 4.18.1, the first release that supports minimatch 11. The copy bundled inside `aws-cdk-lib` stays at 10.2.6: npm cannot override a bundled dependency, and no `aws-cdk-lib` release ships minimatch 11 yet. That copy only matches the repository's own asset-exclude patterns at synth time and never sees user input.
+- fast-xml-parser (GHSA-474x-hrwr-fgx4, quadratic CPU use on unterminated stop-node tags) moves from 5.11.2 to 5.12.0 in the frontend lockfile. `aws-amplify` pulls it in through `@aws-amplify/storage`. The SPA imports only `aws-amplify/auth`.
+
+### Upgrade notes
+
+- No deploy step. Run `npm install` (or `npm ci`) again in the three directories to pick up the new lockfiles.
+
+## [6.04.08] - 2026-11-11
+
 Workshop templates no longer reserve Lambda concurrency, so a Workshop Studio event's VocApiStack completes.
 
 ### Fixed
