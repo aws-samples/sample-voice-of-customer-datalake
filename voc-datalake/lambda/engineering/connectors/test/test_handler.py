@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -11,7 +11,21 @@ import pytest
 
 from engineering.connectors import handler
 from engineering.connectors.broker import Broker
-from engineering.connectors.hosts import NO_CONNECTION, PullRequestRef
+from engineering.connectors.credentials import PARAMETER_PREFIX_ENV
+from engineering.connectors.github import GitHubHost
+from engineering.connectors.hosts import (
+    NO_CONNECTION,
+    UNCONNECTED,
+    Conflict,
+    HostBusy,
+    HostError,
+    InvalidTarget,
+    NoConnection,
+    NotFound,
+    PullRequestRef,
+    ReadKind,
+    ReadPage,
+)
 from engineering.connectors.test.fakes import (
     ACCOUNT,
     BRANCH,
@@ -20,6 +34,7 @@ from engineering.connectors.test.fakes import (
     REVIEW,
     RUN,
     TREE,
+    FakeBundles,
     FakeHost,
     FakeLedger,
     FakeRuns,
@@ -44,6 +59,15 @@ def ask(role: str, operation: str, args: Mapping[str, object], broker: Broker | 
     return answer(url_event(role_arn(role), {'operation': operation, 'args': args}), broker)
 
 
+def test_an_answer_over_the_function_url_limit_is_refused_not_cut(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(handler, 'MAX_ANSWER_BYTES', 100)
+    small = handler._response(200, {'x': 'y'})
+    large = handler._response(200, {'x': 'é' * 60})
+    assert (small['statusCode'], json.loads(small['body'])) == (200, {'x': 'y'})
+    assert large['statusCode'] == 502
+    assert 'smaller page' in json.loads(large['body'])['error']
+
+
 def test_reads_for_any_agent() -> None:
     status, body = ask('mapper', 'read', {'kind': 'file', 'target': 'README.md'})
     assert (status, body) == (200, {'result': {'content': 'file:README.md', 'next_cursor': 'page-2'}})
@@ -60,10 +84,12 @@ def test_posts_a_comment() -> None:
 
 
 def test_pushes_a_bundle_decoded_from_base64() -> None:
-    host = FakeHost()
-    status, body = ask('committer', 'push_bundle', {'branch': BRANCH, 'bundle': BUNDLE}, Broker(connector(host=host)))
+    host, bundles = FakeHost(), FakeBundles()
+    status, body = ask('committer', 'push_bundle', {'branch': BRANCH, 'bundle': BUNDLE},
+                       Broker(connector(host=host, bundles=bundles)))
     assert (status, body) == (200, {'result': {'branch': BRANCH, 'tree_hash': TREE}})
-    assert host.calls[-1] == ('push_bundle', 'conn-1', BRANCH, b'git bundle bytes', TREE)
+    assert bundles.read == [b'git bundle bytes']
+    assert host.calls[-1] == ('push_bundle', 'conn-1', BRANCH, bundles.contents_, TREE, 'main')
 
 
 def test_opens_a_draft_pull_request() -> None:
@@ -221,6 +247,60 @@ def test_the_lambda_refuses_every_operation_until_a_connection_exists(monkeypatc
     monkeypatch.setenv(handler.ROLE_NAME_PATTERN_ENV, PATTERN)
     response = handler.lambda_handler(url_event(role_arn('mapper'), READ_A), lambda_context())
     assert (response['statusCode'], json.loads(response['body'])) == (503, {'error': NO_CONNECTION})
+
+
+def test_with_the_parameter_prefix_the_broker_holds_the_github_client_and_still_answers_503(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(handler.ROLE_NAME_PATTERN_ENV, PATTERN)
+    monkeypatch.setenv(PARAMETER_PREFIX_ENV, '/voc/engineering/')
+    handler.broker_for.cache_clear()
+    try:
+        response = handler.lambda_handler(url_event(role_arn('mapper'), READ_A), lambda_context())
+        connected = handler.broker_for('/voc/engineering/')._connector
+    finally:
+        handler.broker_for.cache_clear()
+    # The run records are not built yet, so the run is never found and nothing reaches GitHub (or SSM).
+    assert (response['statusCode'], json.loads(response['body'])) == (503, {'error': NO_CONNECTION})
+    assert connected is not None
+    assert isinstance(connected.host, GitHubHost)
+    assert (connected.runs, connected.ledger, connected.bundles) == (UNCONNECTED, UNCONNECTED, UNCONNECTED)
+    assert handler.broker_for('')._connector is None
+
+
+@pytest.mark.parametrize('call', [lambda: UNCONNECTED.run(RUN), lambda: UNCONNECTED.has_go(RUN, TREE),
+                                  lambda: UNCONNECTED.contents(b'bundle')])
+def test_the_unbuilt_collaborators_have_no_connection(call: Callable[[], object]) -> None:
+    with pytest.raises(NoConnection):
+        call()
+
+
+class FailingHost(FakeHost):
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self.error = error
+
+    def read(self, connection_id: str, kind: ReadKind, target: str,  # noqa: ARG002 - FakeHost's signature
+             cursor: str | None) -> ReadPage:  # noqa: ARG002
+        raise self.error
+
+
+@pytest.mark.parametrize(('error', 'status'), [
+    (InvalidTarget('The target is a path inside the repository.'), 400),
+    (NotFound('The repository has no such file.'), 404),
+    (Conflict('The branch has moved.'), 409),
+    (HostError('The repository host answered 500 to the file read.'), 502),
+])
+def test_a_host_failure_is_answered_with_its_plain_reason(error: HostError | Conflict, status: int) -> None:
+    broker = Broker(connector(host=FailingHost(error)))
+    assert ask('mapper', 'read', {'kind': 'file', 'target': 'a'}, broker) == (status, {'error': error.reason})
+
+
+def test_a_rate_limited_host_answers_503_with_retry_after() -> None:
+    broker = Broker(connector(host=FailingHost(HostBusy('The repository host is rate limiting.', retry_after=42))))
+    response = handler.handle(url_event(role_arn('mapper'), READ_A), PATTERN, ACCOUNT, broker)
+    assert response['statusCode'] == 503
+    assert response['headers'] == {'Content-Type': 'application/json', 'Retry-After': '42'}
+    assert json.loads(response['body']) == {'error': 'The repository host is rate limiting.'}
 
 
 def test_the_lambda_takes_its_own_account_from_the_function_arn(monkeypatch: pytest.MonkeyPatch) -> None:

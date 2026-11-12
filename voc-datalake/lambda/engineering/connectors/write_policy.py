@@ -55,12 +55,17 @@ _AUTHORSHIP_FORM: Final = re.compile(
 MIN_REVIEW_MATCH: Final = 24
 
 
-class WriteRefused(Exception):
-    """The broker refused a write; ``reason`` (the one argument) is a plain sentence for the run journal."""
+class BrokerError(Exception):
+    """What the broker answers a caller with instead of a result; ``reason`` (the one argument) is a plain sentence
+    for the run journal."""
 
     @property
     def reason(self) -> str:
         return str(self.args[0])
+
+
+class WriteRefused(BrokerError):
+    """The broker refused a write."""
 
 
 @dataclass(frozen=True)

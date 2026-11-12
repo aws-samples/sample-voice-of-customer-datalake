@@ -2,8 +2,14 @@
 
 POST ``{"operation": ..., "args": {...}}``; the caller comes from the request's IAM identity (``identity``), never
 from the body. Status codes: 200 with ``{"result": ...}``; 400 a body the broker cannot read; 403 a caller that is
-not an agent, or a role that may not make the operation; 409 a refusal for the run's or the board's state; 422 a
-refusal by the write rules; 503 no repository connection. Every refusal carries ``{"error": <plain reason>}``.
+not an agent, or a role that may not make the operation; 404 a read of what the repository does not have; 409 a
+refusal for the run's or the board's state, or a host state other than the checked one (the branch moved, another
+tree); 422 a refusal by the write rules; 502 a host error; 503 no repository connection, or the host rate limiting
+(with ``Retry-After``). Every refusal carries ``{"error": <plain reason>}``.
+
+The broker's connector: the GitHub client (``github.GitHubHost``) over the connections' SSM credentials, once the
+stack names their prefix; the run records, the board's GO ledger and the bundle reader are not built yet
+(``hosts.UNCONNECTED``), so every permitted operation still answers 503.
 
 Nothing from the body is logged or echoed (it may hold a bundle, a comment, or a token pasted by mistake): the log
 line has the operation, the caller's role, run and agent index, and the status.
@@ -15,6 +21,7 @@ import binascii
 import json
 import os
 from collections.abc import Callable, Mapping
+from functools import lru_cache
 from typing import Any, Final
 
 from engineering.connectors.broker import (
@@ -26,7 +33,21 @@ from engineering.connectors.broker import (
     NotNow,
     NotPermitted,
 )
-from engineering.connectors.hosts import NO_CONNECTION, CommentTarget, NoConnection, ReadKind
+from engineering.connectors.credentials import PARAMETER_PREFIX_ENV, ParameterStoreCredentials
+from engineering.connectors.github import GitHubHost
+from engineering.connectors.hosts import (
+    NO_CONNECTION,
+    UNCONNECTED,
+    CommentTarget,
+    Conflict,
+    Connector,
+    HostBusy,
+    HostError,
+    InvalidTarget,
+    NoConnection,
+    NotFound,
+    ReadKind,
+)
 from engineering.connectors.identity import Caller, UnknownCaller, caller_from_event, own_account
 from engineering.connectors.write_policy import WriteRefused
 from shared.invocation_cost import instrumented_handler
@@ -47,8 +68,20 @@ class BadRequest(Exception):
     """The body is not a request the broker reads; the message says what is wrong, without echoing it."""
 
 
-def _response(status: int, payload: Mapping[str, object]) -> dict[str, Any]:
-    return {'statusCode': status, 'headers': {'Content-Type': 'application/json'}, 'body': json.dumps(payload)}
+#: Under the function URL's 6 MB response limit, with room for the headers: JSON escaping and a pull request's
+#: combined thread pages can make an answer larger than the client's per-response cap.
+MAX_ANSWER_BYTES: Final = 5_500_000
+
+
+def _response(status: int, payload: Mapping[str, object], retry_after: int | None = None) -> dict[str, Any]:
+    headers = {'Content-Type': 'application/json'}
+    if retry_after is not None:
+        headers['Retry-After'] = str(retry_after)
+    body = json.dumps(payload)
+    if len(body.encode()) > MAX_ANSWER_BYTES:
+        return {'statusCode': 502, 'headers': {'Content-Type': 'application/json'},
+                'body': json.dumps({'error': 'The answer is larger than the broker returns; read a smaller page.'})}
+    return {'statusCode': status, 'headers': headers, 'body': body}
 
 
 def _request(event: Mapping[str, object]) -> tuple[str, dict[str, object]]:
@@ -133,6 +166,18 @@ _OPERATIONS: Final[Mapping[str, Callable[[Broker, Caller, Mapping[str, object]],
 }
 
 
+#: Each refusal the broker or the host client raises, and its status: the nearest class in the refusal's MRO.
+_REFUSAL_STATUSES: Final[Mapping[type, int]] = {
+    NotPermitted: 403, NotNow: 409, Conflict: 409, WriteRefused: 422,
+    InvalidTarget: 400, NotFound: 404, HostBusy: 503, HostError: 502,
+}
+
+
+def _refusal(exc: WriteRefused | HostError) -> dict[str, Any]:
+    status = next(_REFUSAL_STATUSES[kind] for kind in type(exc).__mro__ if kind in _REFUSAL_STATUSES)
+    return _response(status, {'error': exc.reason}, retry_after=exc.retry_after if isinstance(exc, HostBusy) else None)
+
+
 def _answer(event: Mapping[str, object], caller: Caller, broker: Broker) -> tuple[str | None, dict[str, Any]]:
     operation: str | None = None
     try:
@@ -142,12 +187,8 @@ def _answer(event: Mapping[str, object], caller: Caller, broker: Broker) -> tupl
         return operation, _response(400, {'error': str(exc)})
     except NoConnection:
         return operation, _response(503, {'error': NO_CONNECTION})
-    except NotPermitted as exc:
-        return operation, _response(403, {'error': exc.reason})
-    except NotNow as exc:
-        return operation, _response(409, {'error': exc.reason})
-    except WriteRefused as exc:
-        return operation, _response(422, {'error': exc.reason})
+    except (WriteRefused, HostError) as exc:
+        return operation, _refusal(exc)
 
 
 def handle(event: Mapping[str, object], role_name_pattern: str, account: str, broker: Broker) -> dict[str, Any]:
@@ -163,9 +204,19 @@ def handle(event: Mapping[str, object], role_name_pattern: str, account: str, br
     return response
 
 
+@lru_cache(maxsize=1)
+def broker_for(parameter_prefix: str) -> Broker:
+    """The container's broker (one, so its credentials and tokens stay warm): the GitHub client over the
+    connections under ``parameter_prefix``, with no run records or GO ledger yet; no connector without a prefix."""
+    if not parameter_prefix:
+        return Broker(None)
+    host = GitHubHost(ParameterStoreCredentials(parameter_prefix).get)
+    return Broker(Connector(host=host, bundles=UNCONNECTED, runs=UNCONNECTED, ledger=UNCONNECTED))
+
+
 @instrumented_handler
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
-    # No repository connection exists yet (the GitHub and GitLab clients are planned): every permitted, well-formed
-    # operation answers 503.
+    # The run records and the board's GO ledger are not built yet: every permitted, well-formed operation answers 503.
     account = own_account(getattr(context, 'invoked_function_arn', None))
-    return handle(event, os.environ.get(ROLE_NAME_PATTERN_ENV, ''), account, Broker(None))
+    return handle(event, os.environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
+                  broker_for(os.environ.get(PARAMETER_PREFIX_ENV, '')))

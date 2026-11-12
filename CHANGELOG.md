@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.06.00] - 2026-11-12
+
+The connector broker gets its GitHub client: App tokens scoped to one repository and one operation, paged reads, a leased push and draft pull requests. Still off by default, and every permitted operation answers 503 until the run records and the board land.
+
+### Added
+
+- Autonomous engineering agents, phase 1, second slice: the broker's GitHub client and credential reader (`voc-datalake/lambda/engineering/connectors/github.py`, `credentials.py`; docs/autonomous-engineering.md "Repository connectors"). A connection's GitHub App credential (`app_id`, `installation_id`, `repository`, `private_key`) is read decrypted from the SSM SecureString `/[<prefix>-]voc/engineering/{connection_id}` and kept five minutes at most, never logged. Minting a token signs a nine-minute RS256 App JWT for an installation token for the connection's one repository and only the permissions that operation needs, kept until five minutes before it expires (within the hour GitHub gives it; none is revoked early: a stopped run's every further operation is refused before a token is used). Reads follow `Link` pagination by page number; a pull request read also returns its review comments and reviews; a file that is not UTF-8 text is refused. A rate limit (`Retry-After`, `X-RateLimit-Reset`, a secondary rate limit) is never waited out inside a call: it answers 503 with `Retry-After`. A push takes the parsed bundle (`BundleContents` now carries its base commit and each commit's file changes; its changed paths and added lines cover every commit), refuses a commit that changes a path the bundle does not list, refuses unless the branch's head is that base or, for a new branch, the base is the default branch's head or an ancestor of it (a base GitHub does not have is refused), rebuilds the commits with the Git Data API (text files inline in the tree, other files as blobs), refuses unless GitHub's resulting tree is the checked one, and moves the branch with `force: false` (or creates it). A draft pull request is opened or updated only when the branch's head has the checked tree, and its head is checked again afterwards: a pull request just opened on a branch that moved meanwhile is closed and the write refused (an update changes only the title and body; GitHub's REST API cannot turn a ready pull request back into a draft). Requests go only to `api.github.com`, follow no redirect and carry the token only in the `Authorization` header. A write whose answer was lost after it was sent answers 502 ("the write may have happened"), never a retryable 503, so a retry cannot make it twice (a lost answer to a token request stays retryable). An answer larger than the function URL can return is refused (502), never cut. New statuses: 404 (a read of what is not there), 409 for a host state other than the checked one (the branch moved, another tree), 502 a host error, 503 with `Retry-After` for a rate limit. Every write the broker completes gets an operational log line (a pull request it opened and closed again is logged as not closed only when the close fails) with what it wrote (operation, caller, connection, branch, tree hash, issue or pull request number), never its text; the durable audit row comes with the run records. The run records, the board's GO ledger and the bundle reader are not built yet, so every permitted operation still answers 503.
+- With `-c engineeringAgents=true`, the broker's role also gets `ssm:GetParameter` on `parameter/[<prefix>-]voc/engineering/*` only and `kms:Decrypt` on the stack's key only through SSM (`kms:ViaService`) and only for those parameters (`kms:EncryptionContext:PARAMETER_ARN`), the env var `ENGINEERING_PARAMETER_PREFIX`, and the signing layer (cryptography, for the JWT); its timeout goes from 30 to 120 seconds, for a push's chain of Git Data API requests. The default synth adds no resource.
+
+### Changed
+
+- The GitHub REST API version string lives once, in `voc-datalake/lambda/shared/github_rest.py`; the GitHub plugin's client imports it from there.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`.
+
 ## [6.05.00] - 2026-11-12
 
 Autonomous engineering agents, phase 1 begins: the repository connector's broker, the one place a host write could go, with its caller identity, operations per role and write rules. Nothing is deployed by default.

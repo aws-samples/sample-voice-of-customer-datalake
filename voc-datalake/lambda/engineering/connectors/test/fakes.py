@@ -21,6 +21,8 @@ ACCOUNT = '111111111111'
 PATTERN = f'voc-eng-{{role}}-{ACCOUNT}-us-east-1'
 REVIEW = 'The refund took three weeks and nobody answered my emails about it.'
 TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+#: The commit a bundle builds on (``BundleContents.base``).
+BASE = 'a94a8fe5ccb19ba61c4c0873d391e987982fbbd3'
 BRANCH = f'voc-agent/{RUN}/fix-refund-total'
 #: A person's address, which no pushed commit may carry.
 PERSON = 'casey@mail-host.net'
@@ -59,7 +61,7 @@ def bundle_contents(*messages: str, heads: tuple[str, ...] = (f'refs/heads/{BRAN
     commits = tuple(Commit(message=m, author=author, committer=committer)
                     for m in messages or ('Fix the refund total (fb_0123abcd)',))
     return BundleContents(heads=heads, tree_hash=TREE, changed_paths=changed_paths, commits=commits,
-                          added_lines=added_lines)
+                          added_lines=added_lines, base=BASE)
 
 
 @dataclass
@@ -84,8 +86,9 @@ class FakeHost:
         self.calls.append(('branch_tree_hash', connection_id, branch))
         return self.tree_hash
 
-    def push_bundle(self, connection_id: str, branch: str, bundle: bytes, tree_hash: str) -> None:
-        self.calls.append(('push_bundle', connection_id, branch, bundle, tree_hash))
+    def push_bundle(self, connection_id: str, branch: str, contents: BundleContents, tree_hash: str,
+                    default_branch: str) -> None:
+        self.calls.append(('push_bundle', connection_id, branch, contents, tree_hash, default_branch))
 
     def open_or_update_draft_pr(self, connection_id: str, branch: str, base: str, title: str, body: str,
                                 tree_hash: str) -> PullRequestRef:

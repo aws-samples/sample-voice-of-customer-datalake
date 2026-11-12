@@ -58,9 +58,40 @@ budgets, the run journal) and on [memory](memory.md).
 
 ## Repository connectors
 
-*Partly built*: the broker's caller identity, operations per role and write rules
-(`voc-datalake/lambda/engineering/connectors/`), deployed only with `-c engineeringAgents=true`; the GitHub and GitLab
-clients, credentials and read paths are planned.
+*Partly built*: the broker's caller identity, operations per role and write rules, the GitHub client and the
+credential reader (`voc-datalake/lambda/engineering/connectors/`), deployed only with `-c engineeringAgents=true`.
+Planned: the run records and the board's GO ledger (phase 2's board), the bundle reader, the connection page that
+stores a credential, the checkout cache by commit sha, sparse clones, and the GitLab client. Until the run records
+land, the broker finds no run, so every permitted, well-formed operation still answers 503 and nothing reaches GitHub.
+
+**What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
+a nine-minute App JWT (RS256, the App's private key from the connection's parameter, below) for an installation token for the connection's one repository and
+only the permissions the operation needs: a file or history read `contents: read`, an issue read `issues: read`, a
+pull request read `pull_requests: read`, a comment `issues: write` or `pull_requests: write`, a push
+`contents: write`, a draft pull request `contents: read` and `pull_requests: write` (`metadata: read` comes with
+every token). A token is kept in memory until five minutes before it expires (GitHub's tokens live an hour). Reads
+follow the `Link` header's next page (the cursor is that page number, nothing else); a pull request read returns the
+pull request, its conversation, its review comments and its reviews, a page of each. A rate limit (`Retry-After`,
+`X-RateLimit-Remaining: 0` with `X-RateLimit-Reset`, or a secondary rate limit) is never waited out inside a call: it
+is answered 503 with `Retry-After`. A file path with an empty, `.` or `..` part is refused before any request, and a
+file that is not UTF-8 text is refused rather than read lossily. A push takes the bundle as the bundle reader parsed
+it (its base commit and each commit's changed files; its changed paths and added lines cover every commit, not only
+the final tree). The client refuses a commit that changes a path the bundle does not list, and refuses unless the
+branch's head is the bundle's base or, for a branch not on GitHub yet, the base is the default branch's head or an
+ancestor of it (a base GitHub does not have is refused too). It rebuilds the commits with the Git Data API (a tree on
+the parent's tree with text files inline and other files as blobs, then a commit whose author and committer are the
+App's bot), refuses unless the last tree GitHub computed is the tree the broker checked, and only then moves the
+branch with `force: false` (or creates it): a push made meanwhile that the new commit does not descend from makes
+the update fail (a fast-forward of the same lineage still passes, so the head check before it is the lease). Objects of a refused push
+stay unreferenced. A draft pull request is opened, or its title and body updated, only when the branch's head has the
+checked tree, and the pull request's head is checked again afterwards: if the branch moved meanwhile, a pull request
+the client just opened is closed and the write refused. An update changes only the title and body: GitHub's REST API
+cannot turn a pull request someone marked ready back into a draft. Every request goes to `api.github.com` through one
+transport, with no redirect followed; a token is sent only in the `Authorization` header, never in a URL or a log
+line. The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
+Each write the host accepts gets an operational log line with the operation, the caller, the connection and what was
+written (issue or pull request number, branch, tree hash, commit count), never a body, a bundle or a token; the
+durable audit row (D4) comes with the run records.
 
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
@@ -118,9 +149,15 @@ read the CI/CD variables).
 
 **Credentials** are SSM Parameter Store SecureString parameters under the stack's customer-managed KMS key (the
 standard tier has no monthly charge), one per connection, `/voc/engineering/{connection_id}` (`{workspace_id}/` is
-prefixed once multi-workspace lands). Only the broker reads them; they are never put in a model's context, an event, a log line, a checkpoint or a MicroVM.
-Stopping a run turns the broker off for that run at once (every further operation refused) and revokes its live
-GitHub tokens.
+prefixed once multi-workspace lands; a prefixed deployment puts its prefix on the `voc` segment,
+`/<prefix>-voc/engineering/…`). A GitHub connection's value is JSON: `app_id`, `installation_id`, `repository`
+(`owner/name`) and `private_key` (the App's PEM key). Only the broker reads them (`connectors/credentials.py`:
+`ssm:GetParameter` on that path only, `kms:Decrypt` on the stack's key only through SSM and only for those
+parameters), decrypted, kept in memory five minutes at most; a missing or malformed one answers 503 and is logged by
+connection id and error code only. They are never put in a model's context, an event, a log line, a checkpoint or a
+MicroVM. Stopping a run turns the broker off for that run at once: every further operation is refused before any
+token is used. Tokens are not revoked early: each is minted for one repository and one operation's permissions, held
+only by the broker, and expires within the hour.
 
 **Who can read and use.** Connections, the code read from them, the knowledge packs, the conversations and the
 workspace are readable by administrators only by default; a non-admin sees an engineering run only when an
@@ -575,7 +612,7 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules (no host client yet, so it refuses every operation) |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503) |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | planned |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | planned |

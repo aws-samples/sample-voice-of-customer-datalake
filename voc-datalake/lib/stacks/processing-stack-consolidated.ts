@@ -353,6 +353,7 @@ export class VocProcessingStack extends VocStack {
     if (engineeringAgentsEnabled(this)) {
       new EngineeringBroker(this, 'EngineeringBroker', {
         uniqueName, layer: processingLayer, roleNamePattern: this.uniqueNamePattern(ENGINEERING_ROLE_NAME_TEMPLATE),
+        kmsKey, deploymentPrefix: this.deploymentPrefix,
       });
     }
 

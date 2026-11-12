@@ -170,7 +170,8 @@ def test_the_committer_pushes_to_its_runs_branch() -> None:
     assert broker.push_bundle(caller('committer'), BRANCH, b'bundle') == TREE
     assert bundles.read == [b'bundle']   # the rules ran on the bundle's own contents
     # The host gets the tree the rules checked, and must push only that (with a lease).
-    assert host.calls[-1] == ('push_bundle', 'conn-1', BRANCH, b'bundle', TREE)
+    # The run's default branch, from its record: a new branch must start on it.
+    assert host.calls[-1] == ('push_bundle', 'conn-1', BRANCH, bundles.contents_, TREE, 'main')
 
 
 @pytest.mark.parametrize('heads', [(), (f'refs/heads/{BRANCH}', f'refs/heads/voc-agent/{RUN}/other')])
@@ -301,3 +302,35 @@ def test_a_pull_request_the_write_rules_refuse_is_not_opened(branch: str, title:
         broker.open_or_update_draft_pr(caller('pr-author'), branch, title, body)
     assert expected in caught.value.reason
     assert host.writes() == []
+
+
+def wrote(caplog: pytest.LogCaptureFixture) -> list[dict[str, object]]:
+    """The log line of each write the host accepted."""
+    keys = ('operation', 'role', 'run_id', 'agent', 'connection_id', 'on', 'number', 'branch', 'tree_hash', 'commits')
+    return [{k: vars(r)[k] for k in keys if k in vars(r)} for r in caplog.records if r.getMessage() == 'broker wrote']
+
+
+def test_each_write_is_logged_with_what_it_wrote_and_never_its_text(caplog: pytest.LogCaptureFixture) -> None:
+    broker, _ = go_broker()
+    body = 'The refund total is rounded too early.'
+    broker.post_comment(caller('understander'), 'issue', 42, body)
+    broker.push_bundle(caller('committer'), BRANCH, b'bundle')
+    broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, 'Fix the refund total', 'From fb_0123abcd.')
+    who = {'run_id': RUN, 'agent': 1, 'connection_id': 'conn-1'}
+    assert wrote(caplog) == [
+        {'operation': POST_COMMENT, 'role': 'understander', **who, 'on': 'issue', 'number': 42},
+        {'operation': PUSH_BUNDLE, 'role': 'committer', **who, 'branch': BRANCH, 'tree_hash': TREE, 'commits': 1},
+        {'operation': OPEN_OR_UPDATE_DRAFT_PR, 'role': 'pr-author', **who, 'number': 7, 'branch': BRANCH,
+         'tree_hash': TREE},
+    ]
+    logged = repr([vars(r) for r in caplog.records])
+    assert body not in logged
+    assert 'Fix the refund total' not in logged
+    assert 'fb_0123abcd' not in logged
+
+
+def test_a_refused_write_is_not_logged_as_written(caplog: pytest.LogCaptureFixture) -> None:
+    broker, _ = go_broker()
+    with pytest.raises(WriteRefused):
+        broker.post_comment(caller('understander'), 'issue', 42, f'They said "{REVIEW}"')
+    assert wrote(caplog) == []

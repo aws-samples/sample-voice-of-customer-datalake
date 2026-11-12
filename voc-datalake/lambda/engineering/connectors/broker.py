@@ -4,6 +4,10 @@ Every operation checks, in order: the caller's role may make it; the deployment 
 the caller's session, never the request) is one the broker knows and is not stopped; then the write rules
 (``write_policy``); and only then calls the host. A refusal raises ``WriteRefused`` (``NotPermitted`` for the
 role, ``NotNow`` for the run's or the board's state) with a plain reason for the run journal.
+
+Every write the host accepts gets an operational log line: the operation, the caller, and what was written (the
+issue or pull request number, the branch, the tree hash), never a body, a bundle or a credential. It is not the
+audit record: the durable row of who wrote what comes with the run records.
 """
 from __future__ import annotations
 
@@ -30,6 +34,7 @@ from engineering.connectors.write_policy import (
     check_push,
     check_text,
 )
+from shared.logging import logger
 
 READ: Final = 'read'
 POST_COMMENT: Final = 'post_comment'
@@ -62,6 +67,12 @@ def _require_attestation(run: RunRecord) -> None:
         raise NotNow("An administrator has not yet confirmed the repository's CI settings for agent branches.")
 
 
+def _wrote(caller: Caller, operation: str, run: RunRecord, **written: object) -> None:
+    """The log line of a write the host accepted: who, on which connection, and what (never the text)."""
+    logger.info('broker wrote', extra={'operation': operation, 'role': caller.role, 'run_id': caller.run_id,
+                                       'agent': caller.agent_index, 'connection_id': run.connection_id, **written})
+
+
 class Broker:
     """The operations, over a configured ``Connector`` (``None``: no connection, every operation refused)."""
 
@@ -91,7 +102,9 @@ class Broker:
         if own is None or number != own:
             raise NotPermitted(f"An agent comments only on its own run's {on.replace('_', ' ')}.")
         check_text(body, run.cited_reviews, prose=True)
-        return connector.host.post_comment(run.connection_id, on, number, body)
+        url = connector.host.post_comment(run.connection_id, on, number, body)
+        _wrote(caller, POST_COMMENT, run, on=on, number=number)
+        return url
 
     def push_bundle(self, caller: Caller, branch: str, bundle: bytes) -> str:
         """Push a git bundle to one of the run's branches; the pushed tree's hash."""
@@ -107,7 +120,8 @@ class Broker:
         if connector.host.open_pull_request(run.connection_id, branch) is not None \
                 and not connector.ledger.has_go(caller.run_id, contents.tree_hash):
             raise NotNow('The branch has an open pull request, and the board holds no GO for this tree.')
-        connector.host.push_bundle(run.connection_id, branch, bundle, contents.tree_hash)
+        connector.host.push_bundle(run.connection_id, branch, contents, contents.tree_hash, run.default_branch)
+        _wrote(caller, PUSH_BUNDLE, run, branch=branch, tree_hash=contents.tree_hash, commits=len(contents.commits))
         return contents.tree_hash
 
     def open_or_update_draft_pr(self, caller: Caller, branch: str, title: str, body: str) -> PullRequestRef:
@@ -123,5 +137,7 @@ class Broker:
             raise NotNow('The branch is not on the host yet; push it first.')
         if not connector.ledger.has_go(caller.run_id, tree_hash):
             raise NotNow("The board holds no GO for the branch's tree.")
-        return connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title, body,
-                                                      tree_hash)
+        ref = connector.host.open_or_update_draft_pr(run.connection_id, branch, run.default_branch, title, body,
+                                                     tree_hash)
+        _wrote(caller, OPEN_OR_UPDATE_DRAFT_PR, run, branch=branch, tree_hash=tree_hash, number=ref.number)
+        return ref
