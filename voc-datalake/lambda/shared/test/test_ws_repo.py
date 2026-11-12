@@ -11,6 +11,7 @@ from shared.workspace import WorkspaceContext
 from shared.ws_repo import (
     PARTITION_ATTRIBUTES,
     UNSCOPED_INDEX_ATTRIBUTES,
+    WATERMARK_PARTITION,
     OutOfScopeError,
     WorkspaceScope,
     category_pk,
@@ -24,6 +25,7 @@ from shared.ws_repo import (
     scope_from_key,
     scope_from_message,
     scope_of,
+    scraper_run_pk,
     source_run_pk,
     urgency_pk,
     watermark_key,
@@ -97,6 +99,7 @@ class TestKeys:
         assert metric_pk(A, 'daily_category', 'pricing') == f'WS#{WS}#METRIC#daily_category#pricing'
         assert metric_type(A, 'source') == f'WS#{WS}#source'
         assert source_run_pk(A, 'webscraper') == f'WS#{WS}#SOURCE_RUN#webscraper'
+        assert scraper_run_pk(A, 'shop') == f'WS#{WS}#SCRAPER_RUN#shop'
         assert watermark_key(A, 'webscraper', 'last_id') == f'WS#{WS}#webscraper#last_id'
 
     def test_the_same_names_in_two_workspaces_never_meet(self):
@@ -234,7 +237,7 @@ class TestWorkspaceTable:
 
     def test_watermark_keys_are_checked_by_source(self):
         backing = MagicMock()
-        repo = ws_table(A, backing)
+        repo = ws_table(A, backing, key='source')
         repo.get_item({'source': watermark_key(A, 'web', 'last_id')})
         with pytest.raises(OutOfScopeError):
             repo.get_item({'source': 'web#last_id'})
@@ -278,3 +281,79 @@ def test_the_aggregates_and_watermarks_partitions_are_scoped():
     assert set(re.findall(r"name: '([a-z0-9_]+)'", watermarks)) <= set(PARTITION_ATTRIBUTES)
     assert 'metric_type' in aggregates
     assert 'source' in set(re.findall(r"name: '([a-z0-9_]+)'", watermarks))
+
+
+def test_source_is_only_the_watermarks_key_never_a_pk_tables_index():
+    """Lockstep with lib/stacks/core-stack.ts: ``WATERMARK_PARTITION`` is voc-watermarks' key and no voc-feedback or
+    voc-aggregates index partitions on it, which is why the layer lets a ``pk`` item carry it as a plain attribute."""
+    aggregates = _table_section('// Aggregates Table', 'this.watermarksTable')
+    watermarks = _table_section('this.watermarksTable', ';\n')
+    assert WATERMARK_PARTITION == 'source'
+    assert WATERMARK_PARTITION not in _feedback_index_partitions()
+    assert WATERMARK_PARTITION not in set(re.findall(r"partitionKey: \{ name: '([a-z0-9_]+)'", aggregates))
+    assert WATERMARK_PARTITION in set(re.findall(r"name: '([a-z0-9_]+)'", watermarks))
+
+
+class TestTheLayerForTheIngestors:
+    """What the plugin ingestors use: a delete, and ``source`` as a plain attribute."""
+
+    def test_a_delete_reaches_only_a_key_of_the_scope(self, table):
+        repo = ws_table(A, table)
+        repo.put_item({'pk': A.key('CIRCUIT', 'web'), 'sk': 'TRIPPED'})
+
+        repo.delete_item({'pk': A.key('CIRCUIT', 'web'), 'sk': 'TRIPPED'})
+
+        assert 'Item' not in table.get_item(Key={'pk': A.key('CIRCUIT', 'web'), 'sk': 'TRIPPED'})
+        with pytest.raises(OutOfScopeError):
+            repo.delete_item({'pk': B.key('CIRCUIT', 'web'), 'sk': 'TRIPPED'})
+        with pytest.raises(OutOfScopeError):
+            repo.delete_item({'pk': 'CIRCUIT#web', 'sk': 'TRIPPED'})
+
+    def test_a_pk_item_may_carry_source_as_a_plain_attribute(self, table):
+        """An import run's ``source`` label (``S3 - folder``) on an aggregates row is no partition there."""
+        repo = ws_table(A, table)
+
+        repo.put_item({'pk': A.key('IMPORT_RUN'), 'sk': '2026#r1', 'source': 'S3 - reviews'})
+
+        assert table.get_item(Key={'pk': A.key('IMPORT_RUN'), 'sk': '2026#r1'})['Item']['source'] == 'S3 - reviews'
+
+    def test_a_watermark_item_still_needs_its_source_in_the_scope(self):
+        underlying = MagicMock()
+        repo = ws_table(A, underlying, key='source')
+
+        with pytest.raises(OutOfScopeError):
+            repo.put_item({'source': 'web#last_id', 'value': '1'})
+        with pytest.raises(OutOfScopeError):
+            repo.put_item({'source': watermark_key(B, 'web', 'last_id'), 'value': '1'})
+        repo.put_item({'source': watermark_key(A, 'web', 'last_id'), 'value': '1'})
+        assert underlying.put_item.call_count == 1
+
+    def test_on_the_watermarks_table_an_in_scope_pk_cannot_carry_another_workspaces_source(self):
+        """The mixed item: a ``pk`` of this workspace must not let a ``source`` (voc-watermarks' key) of another
+        workspace through, which would overwrite that workspace's watermark."""
+        underlying = MagicMock()
+        repo = ws_table(A, underlying, key='source')
+
+        with pytest.raises(OutOfScopeError):
+            repo.put_item({'pk': A.key('SOURCE_RUN', 'web'), 'source': watermark_key(B, 'web', 'last_id'), 'value': '1'})
+        with pytest.raises(OutOfScopeError):
+            repo.put_item({'source': watermark_key(A, 'web', 'last_id'), 'pk': B.key('SOURCE_RUN', 'web')})
+        underlying.put_item.assert_not_called()
+
+    def test_the_key_check_uses_exactly_the_tables_key(self):
+        underlying = MagicMock()
+        watermarks, aggregates = ws_table(A, underlying, key='source'), ws_table(A, underlying)
+
+        with pytest.raises(OutOfScopeError):
+            watermarks.get_item({'pk': A.key('SOURCE_RUN', 'web'), 'source': watermark_key(B, 'web', 'k')})
+        with pytest.raises(OutOfScopeError):
+            aggregates.get_item({'source': watermark_key(A, 'web', 'k')})
+        with pytest.raises(ValueError, match='keyed on pk or source'):
+            ws_table(A, underlying, key='sk')
+        underlying.get_item.assert_not_called()
+
+    def test_the_other_partition_attributes_are_still_checked_on_a_pk_item(self):
+        repo = ws_table(A, MagicMock())
+
+        with pytest.raises(OutOfScopeError, match='gsi1pk'):
+            repo.put_item({'pk': A.key('SOURCE', 'web'), 'sk': 'FEEDBACK#1', 'source': 'x', 'gsi1pk': 'DATE#2026'})

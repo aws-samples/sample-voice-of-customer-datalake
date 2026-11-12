@@ -27,6 +27,8 @@ ignore_names = [
     # ingestors/webhooks and read by the processor from the queued JSON, never by attribute.
     "channel", "brand_handles_matched", "ingested_at", "raw_data", "is_webhook", "is_update", "is_deleted",
     "ingestion_method", "manual_import_job_id",
+    # The ingestors' `workspace_id` (docs/multi-workspace.md): set by the plugin ingestors, read by key.
+    "workspace_id",
     # Same wire shape: the CSV dataset fields (issue #411) the manual-import API writes and the processor
     # reads by key (shared/csv_datasets.py is_csv_replace, shared/csv_updates.py).
     "csv_dataset", "csv_replace",

@@ -55,10 +55,22 @@ from _shared.app_reviews_utils import (
     process_app_reviews,
     yield_new_reviews,
 )
-from _shared.test.ingestor_fixtures import offline_ingestor_construction
+from _shared.test.ingestor_fixtures import FakeWatermarks, offline_ingestor_construction
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import (
+    EVENTS_NAMING_NO_WORKSPACE,
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    OTHER_SCOPE,
+    OTHER_WS,
+    REFUSED,
+    SCHEDULED_TICK,
+    SCOPE,
+    WS,
+    ws_event,
+)
 from shared.test.clock import frozen_clock as freeze_clock
 from shared.test.instrumentation_fixtures import TRACER_SOURCE
+from shared.ws_repo import WorkspaceScope, ws_table
 
 MODULE = "_shared.app_reviews_utils"
 NOW = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
@@ -467,9 +479,18 @@ def _constructed(**secret: str) -> Generator[None, None, None]:
         yield
 
 
-def _ingestor(execution_id: str | None = None, **secret: str) -> _Ingestor:
+def _ingestor(execution_id: str | None = None, scope: WorkspaceScope = SCOPE, **secret: str) -> _Ingestor:
     with _constructed(**secret):
-        return _Ingestor(execution_id=execution_id)
+        return _Ingestor(scope, execution_id=execution_id)
+
+
+def _scoped_mock_table(ingestor: _Ingestor, name: str) -> MagicMock:
+    """Install a MagicMock as *ingestor*'s table *name*, seen through its workspace as the real one is."""
+    table = MagicMock()
+    assert ingestor.scope is not None
+    key = "source" if name == "watermarks_table" else "pk"
+    setattr(ingestor, name, ws_table(ingestor.scope, table, key=key))
+    return table
 
 
 class TestIngestorSettings:
@@ -515,10 +536,28 @@ class TestFetchNewItems:
     def test_an_app_connector_frequency_wins_over_the_plugin_one(self, obs):
         ingestor = _ingestor(frequency_minutes="60")
         ingestor.app_configs = [_App("A", True, "id-a", frequency_minutes=0), _App("C", True, "id-c")]
-        ingestor.watermarks_table = MagicMock()
-        ingestor.watermarks_table.get_item.return_value = {}
+        _scoped_mock_table(ingestor, "watermarks_table").get_item.return_value = {}
         assert list(ingestor.fetch_new_items()) == [{"id": "C-1", "app": "C"}]
         obs.logger.info.assert_any_call("Skipping iOS A - manual-only frequency")
+
+    def test_an_apps_watermarks_in_two_workspaces_do_not_collide(self):
+        shared = FakeWatermarks()
+        here, there = _ingestor(), _ingestor(scope=OTHER_SCOPE)
+        for ingestor, scope in ((here, SCOPE), (there, OTHER_SCOPE)):
+            ingestor.watermarks_table = ws_table(scope, shared, key="source")
+        # WS's scheduled run collects A and C and stamps their last run in WS only.
+        assert [item["app"] for item in here.fetch_new_items()] == ["A", "C"]
+        assert set(shared.values) == {f"WS#{WS}#test_source#{app}_{key}"
+                                      for app in ("A", "C") for key in ("last_run", "last_count")}
+        assert here.get_watermark("A_last_run") == NOW.isoformat()
+        assert there.get_watermark("A_last_run") is None
+        # So the same apps are still due in OTHER_WS, whose own stamps are written beside WS's.
+        assert [item["app"] for item in there.fetch_new_items()] == ["A", "C"]
+        assert shared.values[f"WS#{OTHER_WS}#test_source#A_last_run"] == NOW.isoformat()
+        assert len(shared.values) == 8
+        # A newer stamp in one workspace leaves the other's alone.
+        there.set_watermark("A_last_run", "2999-01-01T00:00:00+00:00")
+        assert here.get_watermark("A_last_run") == NOW.isoformat()
 
     def test_the_sort_order_falls_back_to_the_plugin_one(self):
         ingestor = _ingestor(sort_by="rating")
@@ -529,10 +568,11 @@ class TestFetchNewItems:
 class TestRunRowWarnings:
     def test_a_completed_run_carries_its_warnings_as_errors(self):
         ingestor = _ingestor(execution_id="exec-1")
-        ingestor.aggregates_table = MagicMock()
+        table = _scoped_mock_table(ingestor, "aggregates_table")
         ingestor.record_run_warning("A: 2 storefronts failed (HTTP 403 x2)")
         ingestor._update_source_run_status({"status": "completed", "items_found": 3})
-        values = ingestor.aggregates_table.update_item.call_args.kwargs["ExpressionAttributeValues"]
+        assert table.update_item.call_args.kwargs["Key"] == {"pk": f"WS#{WS}#SOURCE_RUN#test_source", "sk": "exec-1"}
+        values = table.update_item.call_args.kwargs["ExpressionAttributeValues"]
         assert values[":errors"] == ["A: 2 storefronts failed (HTTP 403 x2)"]
         assert values[":status"] == "completed"
 
@@ -542,17 +582,17 @@ class TestRunRowWarnings:
     ])
     def test_other_updates_are_unchanged(self, updates):
         ingestor = _ingestor(execution_id="exec-1")
-        ingestor.aggregates_table = MagicMock()
+        table = _scoped_mock_table(ingestor, "aggregates_table")
         ingestor.record_run_warning("A: no reviews from any storefront (previous run: 3)")
         ingestor._update_source_run_status(dict(updates))
-        values = ingestor.aggregates_table.update_item.call_args.kwargs["ExpressionAttributeValues"]
+        values = table.update_item.call_args.kwargs["ExpressionAttributeValues"]
         assert values == {f":{key}": value for key, value in updates.items()}
 
     def test_a_clean_completed_run_writes_no_errors(self):
         ingestor = _ingestor(execution_id="exec-1")
-        ingestor.aggregates_table = MagicMock()
+        table = _scoped_mock_table(ingestor, "aggregates_table")
         ingestor._update_source_run_status({"status": "completed"})
-        assert ":errors" not in ingestor.aggregates_table.update_item.call_args.kwargs["ExpressionAttributeValues"]
+        assert ":errors" not in table.update_item.call_args.kwargs["ExpressionAttributeValues"]
 
     def test_the_warning_list_is_bounded(self):
         ingestor = _ingestor()
@@ -562,18 +602,66 @@ class TestRunRowWarnings:
 
 
 def _fake_run(self: _Ingestor) -> dict:
-    return {"execution_id": self.execution_id, "apps": [a.name for a in self.app_configs]}
+    return {
+        "execution_id": self.execution_id, "apps": [a.name for a in self.app_configs],
+        "ws": None if self.scope is None else self.scope.ws,
+    }
 
 
 class TestRunForEvent:
     @pytest.mark.parametrize(
         ("event", "expected"),
         [
-            ({"execution_id": "exec-9", "app_id": "id-c"}, {"execution_id": "exec-9", "apps": ["C"]}),
-            ({"app_id": ""}, {"execution_id": None, "apps": ["A", "B", "C"]}),
-            (None, {"execution_id": None, "apps": ["A", "B", "C"]}),
+            (ws_event(execution_id="exec-9", app_id="id-c"), {"execution_id": "exec-9", "apps": ["C"], "ws": WS}),
+            (ws_event(app_id=""), {"execution_id": None, "apps": ["A", "B", "C"], "ws": WS}),
+            ({"workspace_id": OTHER_WS}, {"execution_id": None, "apps": ["A", "B", "C"], "ws": OTHER_WS}),
         ],
     )
     def test_builds_the_ingestor_and_filters_to_one_app(self, event, expected):
         with _constructed(), patch.object(_Ingestor, "run", _fake_run):
             assert _Ingestor.run_for_event(event) == expected
+
+    def test_in_scope_a_non_dict_event_runs_every_app_with_no_execution_id(self):
+        with _constructed(), patch.object(_Ingestor, "run", _fake_run):
+            assert _Ingestor.run_in_scope(SCOPE, None) == {"execution_id": None, "apps": ["A", "B", "C"], "ws": WS}
+
+    @pytest.mark.parametrize("event", EVENTS_WITH_A_MALFORMED_WORKSPACE)
+    def test_an_event_naming_a_malformed_workspace_is_refused_and_builds_nothing(self, event):
+        with _constructed(), patch.object(_Ingestor, "__init__") as init, patch.object(_Ingestor, "run") as run:
+            assert _Ingestor.run_for_event(event) == REFUSED
+        init.assert_not_called()
+        run.assert_not_called()
+
+    @pytest.mark.parametrize(("event", "expected"), [
+        (None, {"execution_id": None, "apps": ["A", "B", "C"], "ws": None}),
+        ([], {"execution_id": None, "apps": ["A", "B", "C"], "ws": None}),
+        *(
+            (event, {"execution_id": event.get("execution_id"), "apps": ["A", "B", "C"], "ws": None})
+            for event in EVENTS_NAMING_NO_WORKSPACE
+        ),
+        ({"execution_id": "exec-9", "app_id": "id-c"}, {"execution_id": "exec-9", "apps": ["C"], "ws": None}),
+    ])
+    def test_an_event_naming_no_workspace_runs_deployment_wide(self, event, expected):
+        with (
+            _constructed(), patch.object(_Ingestor, "run", _fake_run),
+            patch("_shared.base_ingestor.fan_out_once") as fan_out,
+        ):
+            assert _Ingestor.run_for_event(event) == expected
+        fan_out.assert_not_called()
+
+    def test_the_scheduled_tick_fans_out_then_runs_deployment_wide(self):
+        order: list[str] = []
+
+        def run(self: _Ingestor) -> dict:
+            order.append("run")
+            return _fake_run(self)
+
+        with (
+            _constructed(), patch.object(_Ingestor, "run", run),
+            patch("_shared.base_ingestor.fan_out_once", side_effect=lambda *_: order.append("fan_out")) as fan_out,
+        ):
+            assert _Ingestor.run_for_event(SCHEDULED_TICK) == {
+                "execution_id": None, "apps": ["A", "B", "C"], "ws": None,
+            }
+        fan_out.assert_called_once_with("test_source", SCHEDULED_TICK)
+        assert order == ["fan_out", "run"]

@@ -8,7 +8,9 @@ parsed, and each raw access is counted by its kind:
   ``.copy_object(…)``, ``.upload_file(…)``, ``.upload_fileobj(…)``, ``.generate_presigned_url(…)``,
   ``.generate_presigned_post(…)``, ``.delete_object(…)``, ``.delete_objects(…)``, or a data-path table getter of
   shared/tables.py (``get_feedback_table()``, ``get_aggregates_table()``, ``cached_table(…)``, also under an
-  ``import … as`` alias);
+  ``import … as`` alias), or the ingestors' deployment-wide table (``DeploymentTable(…)``, and
+  ``ingest_table(None, …)`` with the literal None; a call passing a scope variable that may be None at run time
+  is not counted);
 * a string that STARTS a data-path partition or object key without the workspace (``'SOURCE#…'``,
   ``f'METRIC#{name}'``, ``'raw/'`` …: ``UNSCOPED_KEY_PREFIXES``): such a key can only name the deployment-wide
   partition, never one workspace's.
@@ -44,6 +46,9 @@ RAW_CALLS: Final = frozenset({'Table', 'put_object', 'copy_object', 'upload_file
                               'delete_objects'})
 #: The data path's table getters (shared/tables.py): a table they return is reached without the layer.
 RAW_GETTERS: Final = frozenset({'get_feedback_table', 'get_aggregates_table', 'cached_table'})
+#: The ingestors' deployment-wide table (shared/ingest_tables.py): built directly, or asked for with no scope.
+DEPLOYMENT_TABLE: Final = 'DeploymentTable'
+UNSCOPED_INGEST_TABLE: Final = 'ingest_table(None)'
 #: Partition and object prefixes of the data path that, at the start of a string, name no workspace.
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
                                 'raw/', 'silver/')
@@ -142,9 +147,12 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/source_updates.py': (2, {'CATEGORY#': 1, 'URGENCY#': 1}),
     'lambda/shared/tables.py': (2, {'Table': 2}),
     'lambda/shared/user_flags.py': (3, {'Table': 1}),
-    'plugins/_shared/base_ingestor.py': (2, {'SOURCE_RUN#': 1, 'Table': 2}),
-    'plugins/_shared/circuit_breaker.py': (2, {'Table': 1}),
-    'plugins/webscraper/ingestor/handler.py': (2, {'Table': 1}),
+    # The deployment-wide run's SOURCE_RUN# row (an event that names no workspace: kept until phase 2's last slice).
+    # and voc-workspaces opened deployment-wide for the tick's fan-out (the control plane's PLUGIN# list).
+    'plugins/_shared/base_ingestor.py': (2, {'SOURCE_RUN#': 1, 'ingest_table(None)': 1}),
+    # The one place an ingestor run opens a table by name, for both paths: the three call sites base_ingestor,
+    # circuit_breaker and the webscraper held, consolidated (the deployment-wide tables and voc-workspaces).
+    'lambda/shared/ingest_tables.py': (2, {'DeploymentTable': 1, 'Table': 1}),
 }
 
 
@@ -205,6 +213,11 @@ def _kinds(tree: ast.AST) -> Counter[str]:
                 kinds[name] += 1
             elif isinstance(node.func, ast.Name) and name in getters:
                 kinds[getters[name]] += 1
+            elif name == DEPLOYMENT_TABLE:
+                kinds[DEPLOYMENT_TABLE] += 1
+            elif (name == 'ingest_table' and node.args and isinstance(node.args[0], ast.Constant)
+                  and node.args[0].value is None):
+                kinds[UNSCOPED_INGEST_TABLE] += 1
         elif id(node) not in inside_fstring and (prefix := _unscoped_prefix(node)) is not None:
             kinds[prefix] += 1
     return kinds
@@ -315,12 +328,17 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "s3.upload_fileobj(f, 'b', 'k')\n"
         "k = cached_table(resource, 'voc-radar')\n"
         "s3.generate_presigned_url('put_object', Params={})\n"
-        "s3.delete_object(Bucket='b', Key='k')\n",
+        "s3.delete_object(Bucket='b', Key='k')\n"
+        "l = DeploymentTable(table)\n"
+        "m = ingest_tables.DeploymentTable(table)\n"
+        "n = ingest_table(None, resource, 'voc-workspaces')\n"
+        "o = ingest_table(scope, resource, 'voc-aggregates')\n",
         encoding='utf-8')
     assert _kinds(_parse(sample)) == Counter({
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
-        'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1})
+        'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
+        'ingest_table(None)': 1})
 
 
 def test_the_layer_modules_exist():

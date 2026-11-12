@@ -9,7 +9,8 @@ only ever reads and writes its own rows and objects. This module is the one plac
   a scope), or a stored partition key (``scope_from_key``: DynamoDB Stream records). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
-  ``source_run_pk``, and ``s3_key`` for objects.
+  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (the credentials secret's name is
+  shared/workspace_ids.py ``credentials_secret_name``).
 * ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions, and any
   write of gsi4's and gsi5's partitions while those stay shared by every workspace (``UNSCOPED_INDEX_ATTRIBUTES``).
 
@@ -24,19 +25,24 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     gsi4pk WS#{ws}#FEEDBACK#{feedback_id}  gsi5pk WS#{ws}#CHANNEL#{channel}   (planned: today
                     gsi4 and gsi5 are keyed on the raw feedback_id and source_channel, re-keyed with the processor)
     voc-aggregates  pk WS#{ws}#METRIC#{name}     metric_type WS#{ws}#{type}
-                    pk WS#{ws}#SOURCE_RUN#{source}
+                    pk WS#{ws}#SOURCE_RUN#{source}        pk WS#{ws}#SCRAPER_RUN#{scraper_id}
+                    pk WS#{ws}#FAILURES#{plugin}          pk WS#{ws}#CIRCUIT#{plugin} (the plugins' breaker)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...
+    secrets         {prefix}/{ws}/credentials (prefix voc/ws, <deployment prefix>-voc/ws in a prefixed deployment)
 """
 from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from shared.dynamo_paging import iter_query
-from shared.workspace import WorkspaceContext, is_workspace_id, ws_key
+from shared.workspace_ids import is_workspace_id, ws_key
+
+if TYPE_CHECKING:  # the request middleware (shared/workspace.py): the asynchronous workers never import it
+    from shared.workspace import WorkspaceContext
 
 __all__ = [
     'PARTITION_ATTRIBUTES',
@@ -44,6 +50,7 @@ __all__ = [
     'WORKSPACE_FIELD',
     'OutOfScopeError',
     'WorkspaceScope',
+    'WorkspaceTable',
     'category_pk',
     'channel_pk',
     'date_pk',
@@ -51,10 +58,12 @@ __all__ = [
     'feedback_key',
     'metric_pk',
     'metric_type',
+    'partition_query',
     's3_key',
     'scope_from_key',
     'scope_from_message',
     'scope_of',
+    'scraper_run_pk',
     'source_run_pk',
     'urgency_pk',
     'watermark_key',
@@ -65,6 +74,10 @@ __all__ = [
 WORKSPACE_FIELD: Final = 'workspace_id'
 #: Item attributes that are partition keys of the table or of one of its indexes: each must be in the scope.
 PARTITION_ATTRIBUTES: Final = ('pk', 'source', 'gsi1pk', 'gsi2pk', 'gsi3pk', 'gsi4pk', 'gsi5pk', 'metric_type')
+#: voc-watermarks' partition key (its only key), never a ``pk`` table's partition nor an index's.
+WATERMARK_PARTITION: Final = 'source'
+#: The partition keys of the data-path tables: ``pk`` (voc-feedback, voc-aggregates), ``source`` (voc-watermarks).
+TABLE_PARTITION_KEYS: Final = ('pk', WATERMARK_PARTITION)
 #: The partitions of gsi4 (``feedback_id``) and gsi5 (``source_channel``) of voc-feedback today: raw values, the same
 #: in every workspace. The processor's slice re-keys both indexes onto ``gsi4pk`` / ``gsi5pk`` (``feedback_id_pk``,
 #: ``channel_pk``); until then the layer refuses to write either attribute, so nothing it writes is found across
@@ -180,6 +193,11 @@ def source_run_pk(scope: WorkspaceScope, source: str) -> str:
     return scope.key('SOURCE_RUN', source)
 
 
+def scraper_run_pk(scope: WorkspaceScope, scraper_id: str) -> str:
+    """A web scraper's run records (a Run now's progress): ``WS#{ws}#SCRAPER_RUN#{scraper_id}``."""
+    return scope.key('SCRAPER_RUN', scraper_id)
+
+
 def watermark_key(scope: WorkspaceScope, plugin: str, key: str) -> str:
     """The ``source`` key of a plugin's watermark in voc-watermarks: ``WS#{ws}#{plugin}#{key}``."""
     return scope.key(plugin, key)
@@ -193,6 +211,19 @@ def s3_key(scope: WorkspaceScope, *parts: str) -> str:
     return '/'.join(('ws', scope.ws, *segments))
 
 
+def partition_query(partition_attribute: str, partition: str, sort_condition: str | None,
+                    kwargs: Mapping[str, Any]) -> dict[str, Any]:
+    """The Query request of one partition: ``#p = :p`` (then ``AND {sort_condition}``), merged with the names and
+    values the caller's ``kwargs`` bring and the rest of them. Checks nothing: ``WorkspaceTable.query`` checks the
+    partition first; shared/ingest_tables.py's deployment-wide table builds the same request."""
+    request = dict(kwargs)
+    names = {**(request.pop('ExpressionAttributeNames', None) or {}), '#p': partition_attribute}
+    values = {**(request.pop('ExpressionAttributeValues', None) or {}), ':p': partition}
+    condition = '#p = :p' + (f' AND {sort_condition}' if sort_condition else '')
+    return {'KeyConditionExpression': condition, 'ExpressionAttributeNames': names,
+            'ExpressionAttributeValues': values, **request}
+
+
 class WorkspaceTable:
     """A DynamoDB table seen through one workspace: every key, item and query must be in the scope.
 
@@ -200,13 +231,15 @@ class WorkspaceTable:
     attribute it carries) is outside the scope raises ``OutOfScopeError`` before anything reaches DynamoDB.
     """
 
-    def __init__(self, scope: WorkspaceScope, table: Any) -> None:
+    def __init__(self, scope: WorkspaceScope, table: Any, key: str = 'pk') -> None:
+        if key not in TABLE_PARTITION_KEYS:
+            raise ValueError('a data-path table is keyed on pk or source')
         self.scope = scope
+        self.key_attribute = key
         self._table = table
 
     def _check_key(self, key: Mapping[str, Any]) -> None:
-        partition = key.get('pk', key.get('source'))
-        if not self.scope.owns(partition):
+        if not self.scope.owns(key.get(self.key_attribute)):
             raise OutOfScopeError('a key outside the workspace')
 
     def _check_item(self, item: Mapping[str, Any]) -> None:
@@ -214,6 +247,11 @@ class WorkspaceTable:
         if any(attribute in item for attribute in UNSCOPED_INDEX_ATTRIBUTES):
             raise OutOfScopeError('an index partition shared by every workspace')
         for attribute in PARTITION_ATTRIBUTES:
+            # ``source`` is voc-watermarks' key and no index's partition (test_ws_repo pins both against
+            # core-stack.ts): on a table keyed on ``pk`` it is a plain attribute (an import run's source label).
+            # On voc-watermarks (keyed on ``source``) every partition attribute an item carries must be in scope.
+            if attribute == WATERMARK_PARTITION and self.key_attribute == 'pk':
+                continue
             if attribute in item and not self.scope.owns(item[attribute]):
                 raise OutOfScopeError(f'{attribute} outside the workspace')
 
@@ -224,6 +262,10 @@ class WorkspaceTable:
     def put_item(self, item: Mapping[str, Any], **kwargs: Any) -> dict:
         self._check_item(item)
         return self._table.put_item(Item=dict(item), **kwargs)
+
+    def delete_item(self, key: Mapping[str, Any], **kwargs: Any) -> dict:
+        self._check_key(key)
+        return self._table.delete_item(Key=dict(key), **kwargs)
 
     def update_item(self, key: Mapping[str, Any], **kwargs: Any) -> dict:
         """``UpdateItem`` of a key in the scope.
@@ -266,11 +308,7 @@ class WorkspaceTable:
         if start is not None and (not isinstance(start, Mapping) or any(
                 attribute in start and not self.scope.owns(start[attribute]) for attribute in PARTITION_ATTRIBUTES)):
             raise OutOfScopeError('a cursor outside the workspace')
-        names = {**(kwargs.pop('ExpressionAttributeNames', None) or {}), '#p': partition_attribute}
-        values = {**(kwargs.pop('ExpressionAttributeValues', None) or {}), ':p': partition}
-        condition = '#p = :p' + (f' AND {sort_condition}' if sort_condition else '')
-        return self._table.query(KeyConditionExpression=condition, ExpressionAttributeNames=names,
-                                 ExpressionAttributeValues=values, **kwargs)
+        return self._table.query(**partition_query(partition_attribute, partition, sort_condition, kwargs))
 
     def iter_query(self, partition_attribute: str, partition: str, *, sort_condition: str | None = None,
                    max_items: int | None = None, **kwargs: Any) -> Iterator[dict]:
@@ -310,6 +348,7 @@ def _names_any(expression: str, names: Mapping[str, Any], attributes: tuple[str,
                for attribute in attributes for spelling in _spellings(attribute, names))
 
 
-def ws_table(scope: WorkspaceScope, table: Any) -> WorkspaceTable:
-    """``table`` seen through ``scope`` (``WorkspaceTable``)."""
-    return WorkspaceTable(scope, table)
+def ws_table(scope: WorkspaceScope, table: Any, key: str = 'pk') -> WorkspaceTable:
+    """``table`` seen through ``scope`` (``WorkspaceTable``); ``key`` is its partition key (``source`` for
+    voc-watermarks)."""
+    return WorkspaceTable(scope, table, key)

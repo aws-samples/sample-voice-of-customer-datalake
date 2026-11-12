@@ -42,7 +42,17 @@ from _shared.base_ingestor import logger, metrics, tracer
 from _shared.raw_source import RAW_SOURCE_KEY
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import (
+    EVENTS_NAMING_NO_WORKSPACE,
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    REFUSED,
+    SCHEDULED_TICK,
+    SCOPE,
+    WS,
+    ws_event,
+)
 from shared.test.emf_fixtures import emf_metric_names
+from shared.ws_repo import ws_table
 
 ANDROID_DIR = str(Path(__file__).resolve().parent)
 ANDROID_HANDLER = "app_reviews_android.ingestor.handler"
@@ -69,7 +79,7 @@ def _build(android: ModuleType, secret: dict[str, str] | None = None, execution_
         offline_ingestor_construction(),
         patch("_shared.base_ingestor.get_secret", return_value=scoped_secret(**(secret or {}))),
     ):
-        return android.AndroidAppReviewsIngestor(execution_id=execution_id)
+        return android.AndroidAppReviewsIngestor(SCOPE, execution_id=execution_id)
 
 
 def _apps(*entries: dict[str, Any]) -> dict[str, str]:
@@ -91,7 +101,10 @@ class TestIngestorDefaults:
 
     def test_no_execution_id_by_default(self, android):
         with offline_ingestor_construction():
-            assert android.AndroidAppReviewsIngestor().execution_id is None
+            assert android.AndroidAppReviewsIngestor(SCOPE).execution_id is None
+
+    def test_the_scope_is_the_runs_workspace(self, android):
+        assert _build(android).scope == SCOPE
 
     def test_the_package_name_is_the_app_identifier(self, android):
         app = android.AndroidAppConfig(name="n", package_name="com.p")
@@ -230,8 +243,9 @@ class TestPerAppSettingsAndFailures:
 class TestWatermarkReadsTheAtField:
     def test_only_reviews_after_the_watermark_are_yielded_and_it_advances(self, android):
         ingestor = _build(android, ACME)
-        ingestor.watermarks_table = MagicMock()
-        ingestor.watermarks_table.get_item.return_value = {"Item": {"value": _day(2).isoformat()}}
+        table = MagicMock()
+        ingestor.watermarks_table = ws_table(SCOPE, table, key='source')
+        table.get_item.return_value = {"Item": {"value": _day(2).isoformat()}}
         with (
             patch.object(android, "fetch_reviews_for_country",
                          side_effect=[StorefrontFetch([_rev("old", 1), _rev("new", 5)])]),
@@ -239,11 +253,12 @@ class TestWatermarkReadsTheAtField:
         ):
             ids = [item["id"] for item in ingestor.fetch_new_items()]
         assert ids == [f"android_{PKG}_new"]
+        assert call(Key={"source": f"WS#{WS}#test_source#Acme_last_published_at"}) in table.get_item.call_args_list
         stored = {
             c.kwargs["Item"]["source"]: c.kwargs["Item"]["value"]
-            for c in ingestor.watermarks_table.put_item.call_args_list
+            for c in table.put_item.call_args_list
         }
-        assert stored["test_source#Acme_last_published_at"] == _day(5).isoformat()
+        assert stored[f"WS#{WS}#test_source#Acme_last_published_at"] == _day(5).isoformat()
 
 
 @pytest.fixture
@@ -335,26 +350,26 @@ class TestLambdaHandlerWrapping:
 
     def test_the_event_is_handed_to_run_for_event(self, invoke):
         run, run_for_event = invoke
-        assert run({"app_id": PKG}) == {"status": "success"}
+        assert run(ws_event(app_id=PKG)) == {"status": "success"}
         # The Lambda context travels too: it is the run's time budget (app_reviews_parts.py).
         event, context = run_for_event.call_args.args
-        assert event == {"app_id": PKG}
+        assert event == {"workspace_id": WS, "app_id": PKG}
         assert context.aws_request_id == "req-android-1"
 
     def test_the_lambda_context_reaches_the_logger(self, invoke, lambda_ctx):
         run, _ = invoke
-        run({})
+        run(ws_event())
         assert logger.get_current_keys()["function_name"] == lambda_ctx.function_name
 
     def test_cold_start_is_flushed_as_emf(self, invoke, capsys):
         run, _ = invoke
-        run({})
+        run(ws_event())
         assert "ColdStart" in emf_metric_names(capsys.readouterr().out)
 
     def test_one_invocation_cost_line_is_written_with_the_lambda_context(self, invoke, lambda_ctx):
         run, _ = invoke
         with patch("shared.invocation_cost.log_invocation_cost") as log_cost:
-            run({})
+            run(ws_event())
         assert log_cost.call_args_list == [call(lambda_ctx, ANY, ANY)]
 
     def test_the_tracer_wraps_the_handler_inside_the_logger(self):
@@ -364,6 +379,57 @@ class TestLambdaHandlerWrapping:
         assert capture.call_count == 1
         assert wrapped.__name__ == "lambda_handler"
         assert module.lambda_handler.__wrapped__ is wrapped
+
+
+class TestLambdaHandlerWorkspace:
+    @pytest.fixture
+    def handle(self, android, lambda_ctx) -> Iterator[tuple[Callable[[Any], Any], MagicMock]]:
+        metrics.clear_metrics()
+        with (
+            offline_ingestor_construction(),
+            patch.object(android.AndroidAppReviewsIngestor, "run_in_scope",
+                         return_value={"status": "success"}) as run_in_scope,
+        ):
+            yield (lambda event: android.lambda_handler(event, lambda_ctx)), run_in_scope
+        metrics.clear_metrics()
+
+    @pytest.mark.parametrize("event", [
+        *EVENTS_WITH_A_MALFORMED_WORKSPACE, {"workspace_id": "acme-outfitters", "app_id": PKG},
+    ])
+    def test_an_event_naming_a_malformed_workspace_is_refused_and_builds_nothing(self, android, handle, event):
+        run, run_in_scope = handle
+        with patch.object(android.AndroidAppReviewsIngestor, "__init__") as init:
+            assert run(event) == REFUSED
+        run_in_scope.assert_not_called()
+        init.assert_not_called()
+
+    @pytest.mark.parametrize("event", [*EVENTS_NAMING_NO_WORKSPACE, {"app_id": PKG}, {"execution_id": "ex-1"}])
+    def test_an_event_naming_no_workspace_runs_deployment_wide(self, handle, event):
+        run, run_in_scope = handle
+        with patch("_shared.base_ingestor.fan_out_once") as fan_out:
+            assert run(event) == {"status": "success"}
+        scope, handed_event, context = run_in_scope.call_args.args
+        assert (scope, handed_event, context.aws_request_id) == (None, event, "req-android-1")
+        run_in_scope.assert_called_once()
+        fan_out.assert_not_called()
+
+    def test_the_scheduled_tick_fans_out_then_runs_deployment_wide(self, handle):
+        run, run_in_scope = handle
+        manager = MagicMock()
+        manager.attach_mock(run_in_scope, "run_in_scope")
+        with patch("_shared.base_ingestor.fan_out_once") as fan_out:
+            manager.attach_mock(fan_out, "fan_out_once")
+            assert run(SCHEDULED_TICK) == {"status": "success"}
+        assert [name for name, _, _ in manager.mock_calls] == ["fan_out_once", "run_in_scope"]
+        assert run_in_scope.call_args.args[:2] == (None, SCHEDULED_TICK)
+        fan_out.assert_called_once_with("test_source", SCHEDULED_TICK)
+
+    def test_a_workspace_event_runs_in_that_workspace(self, handle):
+        run, run_in_scope = handle
+        event = ws_event(app_id=PKG)
+        assert run(event) == {"status": "success"}
+        scope, handed_event, context = run_in_scope.call_args.args
+        assert (scope, handed_event, context.aws_request_id) == (SCOPE, event, "req-android-1")
 
 
 class TestRadarBrand:

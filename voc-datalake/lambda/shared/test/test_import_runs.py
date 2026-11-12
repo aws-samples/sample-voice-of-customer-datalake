@@ -17,6 +17,8 @@ from shared.import_runs import (
     record_import_run,
     run_status,
 )
+from shared.ingest_tables import DeploymentTable
+from shared.ws_repo import WorkspaceScope, ws_table
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 RUN_ID = '0b1f3c4e-7a2d-4f6b-9c8e-1d2a3b4c5d6e'
@@ -95,6 +97,45 @@ class TestRecord:
         table = MagicMock()
         assert record_import_run(table, _run(method='email'), now=NOW) is None
         table.put_item.assert_not_called()
+
+
+class TestRecordInAWorkspace:
+    """A ``WorkspaceTable`` (the S3 import ingestor's) records the run under its workspace's partitions."""
+
+    @staticmethod
+    def _written_in(scope: WorkspaceScope) -> tuple[dict, dict]:
+        underlying = MagicMock()
+        assert record_import_run(ws_table(scope, underlying), _run(method='s3', source='S3 - reviews'),
+                                 now=NOW) == RUN_ID
+        detail, summary = (call.kwargs['Item'] for call in underlying.put_item.call_args_list)
+        return summary, detail
+
+    def test_the_rows_are_the_workspaces(self):
+        summary, detail = self._written_in(SCOPE)
+
+        assert (summary['pk'], summary['sk']) == (f'WS#{WS}#IMPORT_RUN', f'2026-10-01T11:59:00+00:00#{RUN_ID}')
+        assert (detail['pk'], detail['sk']) == (f'WS#{WS}#IMPORT_RUN#{RUN_ID}', 'RUN')
+        # The source label is a plain attribute of a pk row, not a partition.
+        assert summary['source'] == detail['source'] == 'S3 - reviews'
+
+    def test_a_deployment_wide_run_keeps_the_partitions_the_api_reads(self):
+        underlying = MagicMock()
+        assert record_import_run(DeploymentTable(underlying), _run(method='s3'), now=NOW) == RUN_ID
+        detail, summary = (call.kwargs['Item'] for call in underlying.put_item.call_args_list)
+        assert (summary['pk'], detail['pk']) == ('IMPORT_RUN', f'IMPORT_RUN#{RUN_ID}')
+
+    def test_two_workspaces_never_share_a_row(self):
+        mine, mine_detail = self._written_in(SCOPE)
+        theirs, theirs_detail = self._written_in(OTHER_SCOPE)
+
+        assert {mine['pk'], mine_detail['pk']}.isdisjoint({theirs['pk'], theirs_detail['pk']})
+        assert theirs['pk'] == f'WS#{OTHER_WS}#IMPORT_RUN'
+
+
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+OTHER_WS = 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ'
+SCOPE = WorkspaceScope(WS)
+OTHER_SCOPE = WorkspaceScope(OTHER_WS)
 
 
 class TestStatus:

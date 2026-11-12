@@ -13,7 +13,7 @@ import pytest
 from page_reader import PageSnapshot
 from resume import ResumeCursor, ResumeStore, next_cursor, parsed_cursor
 from target_reader import Stop, TargetResult, read_target
-from test_web_reviews_handler import URL, WatermarkTable, ingestor, page, target_config
+from test_web_reviews_handler import URL, WatermarkTable, ingestor, page, target_config, wm
 from test_web_reviews_pagination import BASE, ScriptedTab, chain, limits, per_page, public_dns, review
 from web_items import WebTarget
 
@@ -21,7 +21,7 @@ from web_reviews.ingestor import handler
 
 __all__ = ['public_dns']  # the autouse no-DNS fixture of the pagination suite applies here too
 
-KEY = 'test_source#target_t1_resume'
+KEY = wm('target_t1_resume')
 PAGES = [URL] + [f'{URL}?page={n}' for n in range(2, 5)]
 
 
@@ -193,13 +193,13 @@ class TestTheBackfillAcrossRuns:
         assert json.loads(table.values[KEY]) == {'url': PAGES[2], 'page': 2, 'reviews': 4}
 
     def test_the_next_run_starts_at_the_cursor_and_reads_every_review_as_new(self):
-        table = WatermarkTable({KEY: stored(), 'test_source#target_t1_newest_review': '2026-10-10'})
+        table = WatermarkTable({KEY: stored(), wm('target_t1_newest_review'): '2026-10-10'})
         with patch.object(handler, 'logger') as log:
             items, tab = run_once(table, max_pages='4')
         assert tab.visited == [PAGES[2], PAGES[3]]  # page 3 has nothing new and does not stop the backfill
         assert [(i['text'], i['metadata']['page']) for i in items] == [('p4 a', 4), ('p4 b', 4)]
         assert table.values[KEY] == ''  # the target's 4 pages are read: finished
-        assert table.values['test_source#target_t1_newest_review'] == '2026-10-10'  # only ever forward
+        assert table.values[wm('target_t1_newest_review')] == '2026-10-10'  # only ever forward
         log.info.assert_any_call('web_reviews www.trustpilot.com: resuming at page 3 (4 reviews read so far)')
 
     def test_the_carried_reviews_count_against_the_targets_limit(self):

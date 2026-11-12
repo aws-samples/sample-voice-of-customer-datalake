@@ -76,7 +76,7 @@ class TestEveryRefusalNamesItsCause:
     def test_a_payload_that_is_not_a_json_object(self, payload: object, payload_type: str):
         message, mock_logger = _refusal('webscraper', payload, ConfigurationError)
         assert message == (
-            "Cannot load plugin secrets for 'webscraper': the shared secret is not "
+            "Cannot load plugin secrets for 'webscraper': the secret is not "
             "a JSON object, so it cannot carry 'webscraper_*' keys."
         )
         mock_logger.error.assert_called_once_with(
@@ -88,7 +88,7 @@ class TestEveryRefusalNamesItsCause:
     def test_an_empty_payload(self):
         message, mock_logger = _refusal('webscraper', {}, SecretUnreadableError)
         assert message == (
-            "Cannot load plugin secrets for 'webscraper': the shared secret is "
+            "Cannot load plugin secrets for 'webscraper': the secret is "
             "empty or unreadable, so no 'webscraper_*' keys could be read."
         )
         mock_logger.error.assert_called_once_with(
@@ -104,7 +104,7 @@ class TestEveryRefusalNamesItsCause:
     def test_a_namespace_miss(self, payload: dict):
         message, mock_logger = _refusal('webscraper', payload, ConfigurationError)
         assert message == (
-            "Cannot load plugin secrets for 'webscraper': the shared secret "
+            "Cannot load plugin secrets for 'webscraper': the secret "
             "contains no 'webscraper_*' keys. Check the plugin id and that its "
             "credentials were saved under that prefix."
         )

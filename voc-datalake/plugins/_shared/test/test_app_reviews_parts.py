@@ -22,6 +22,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from _shared import app_reviews_parts as parts
+from _shared import self_invoke
 from _shared.app_reviews_parts import (
     CONTINUATION_KEY,
     MIN_APP_RESERVE_SECONDS,
@@ -35,8 +36,19 @@ from _shared.app_reviews_parts import (
     start_next_part,
 )
 from _shared.app_reviews_utils import MAX_RUN_WARNINGS, AppReviewsIngestor
-from _shared.test.ingestor_fixtures import offline_ingestor_construction, with_mock_circuit_breaker
+from _shared.test.ingestor_fixtures import FakeWatermarks, offline_ingestor_construction, with_mock_circuit_breaker
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import (
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    OTHER_SCOPE,
+    OTHER_WS,
+    REFUSED,
+    SCOPE,
+    WS,
+    ws_event,
+)
+from shared.ingest_tables import DeploymentTable
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, ws_table
 
 LAMBDA_TIMEOUT_SECONDS = 900
 APP_SECONDS = 100  # one app's collection on the fake clock (a real iOS app: 90-110 s)
@@ -66,20 +78,6 @@ class FakeRunRow:
             write[ExpressionAttributeNames[name]] = ExpressionAttributeValues[value]
         row.update(write)
         self.writes.append(write)
-
-
-class FakeWatermarks:
-    """The watermarks table: `get_item` / `put_item` on one dict."""
-
-    def __init__(self) -> None:
-        self.values: dict[str, str] = {}
-
-    def get_item(self, *, Key) -> dict:
-        value = self.values.get(Key["source"])
-        return {"Item": {"value": value}} if value is not None else {}
-
-    def put_item(self, *, Item) -> None:
-        self.values[Item["source"]] = Item["value"]
 
 
 class FakeLambdaRuntime:
@@ -115,11 +113,17 @@ class _Ingestor(AppReviewsIngestor[_App]):
     fake_run_row: FakeRunRow
     fake_watermarks: FakeWatermarks
 
-    def __init__(self, execution_id: str | None = None):
-        super().__init__(execution_id=execution_id)
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None):
+        super().__init__(scope, execution_id=execution_id)
         with_mock_circuit_breaker(self)
-        self.aggregates_table = self.fake_run_row
-        self.watermarks_table = self.fake_watermarks
+        # The fakes seen through the run's workspace, as the real tables are (shared/ws_repo.py); a deployment-wide
+        # run sees the tables themselves (shared/ingest_tables.py).
+        if scope is None:
+            self.aggregates_table = DeploymentTable(self.fake_run_row)
+            self.watermarks_table = DeploymentTable(self.fake_watermarks)
+        else:
+            self.aggregates_table = ws_table(scope, self.fake_run_row)
+            self.watermarks_table = ws_table(scope, self.fake_watermarks, key="source")
 
     def _load_app_configs(self) -> list[_App]:
         return [_App(name, f"id-{name.lower()}") for name in self.app_names]
@@ -182,13 +186,16 @@ def _run_chain(runtime: FakeLambdaRuntime, run_row: FakeRunRow, event: dict, *, 
     return results
 
 
-def _row(run_row: FakeRunRow, execution_id: str = "run_1") -> dict:
-    return run_row.rows[("SOURCE_RUN#test_source", execution_id)]
+def _row(run_row: FakeRunRow, execution_id: str = "run_1", ws: str = WS) -> dict:
+    return run_row.rows[(f"WS#{ws}#SOURCE_RUN#test_source", execution_id)]
+
+
+MANUAL_RUN = ws_event(execution_id="run_1")
 
 
 class TestTenAppsRunInParts:
     def test_every_app_is_collected_exactly_once_in_order(self, runtime, run_row):
-        results = _run_chain(runtime, run_row, {"execution_id": "run_1"})
+        results = _run_chain(runtime, run_row, MANUAL_RUN)
         assert runtime.collected == list(TEN_APPS)
         # 900 s, a 240 s reserve and 100 s an app: seven apps fit the first part.
         assert len(results) == 2
@@ -198,7 +205,7 @@ class TestTenAppsRunInParts:
         assert len(TEN_APPS) * APP_SECONDS > LAMBDA_TIMEOUT_SECONDS
 
     def test_the_row_is_completed_once_with_the_total_of_every_part(self, runtime, run_row):
-        _run_chain(runtime, run_row, {"execution_id": "run_1"})
+        _run_chain(runtime, run_row, MANUAL_RUN)
         row = _row(run_row)
         assert row["status"] == "completed"
         assert row["items_found"] == len(TEN_APPS)
@@ -207,32 +214,109 @@ class TestTenAppsRunInParts:
 
     def test_the_hand_off_writes_the_running_total_not_completed(self, runtime, run_row):
         with _invocation(runtime, run_row):
-            _Ingestor.run_for_event({"execution_id": "run_1"}, runtime.context())
+            _Ingestor.run_for_event(MANUAL_RUN, runtime.context())
         assert _row(run_row)["status"] == "running"
         assert _row(run_row)["items_found"] == 7
         (event,) = runtime.queued
         assert event["execution_id"] == "run_1"
+        # The next part runs, and writes this row, in the same workspace.
+        assert event[WORKSPACE_FIELD] == WS
         assert [app["name"] for app in event[CONTINUATION_KEY]["apps"]] == ["App7", "App8", "App9"]
         assert event[CONTINUATION_KEY]["items_found"] == 7
         assert event[CONTINUATION_KEY]["part"] == 2
 
     def test_a_later_part_keeps_the_first_parts_start_time(self, runtime, run_row):
-        _run_chain(runtime, run_row, {"execution_id": "run_1"})
+        _run_chain(runtime, run_row, MANUAL_RUN)
         assert [write for write in run_row.writes if "started_at" in write] == [run_row.writes[0]]
 
     def test_a_long_list_takes_as_many_parts_as_it_needs(self, runtime, run_row):
         with patch.object(_Ingestor, "app_names", tuple(f"App{n}" for n in range(25))):
-            results = _run_chain(runtime, run_row, {"execution_id": "run_1"})
+            results = _run_chain(runtime, run_row, MANUAL_RUN)
         assert len(runtime.collected) == 25
         assert len(set(runtime.collected)) == 25
         assert len(results) == 4  # 7 + 7 + 7 + 4
         assert _row(run_row)["items_found"] == 25
 
 
+class TestPartsStayInTheirWorkspace:
+    def test_a_chain_in_another_workspace_runs_and_writes_only_there(self, runtime, run_row):
+        _run_chain(runtime, run_row, {WORKSPACE_FIELD: OTHER_WS, "execution_id": "run_1"})
+        assert runtime.collected == list(TEN_APPS)
+        # Every part's writes landed on OTHER_WS's row: none on WS's, none unscoped.
+        assert list(run_row.rows) == [(f"WS#{OTHER_WS}#SOURCE_RUN#test_source", "run_1")]
+        row = _row(run_row, ws=OTHER_WS)
+        assert (row["status"], row["items_found"]) == ("completed", len(TEN_APPS))
+
+    def test_the_hand_off_of_another_workspace_names_that_workspace(self, runtime, run_row):
+        with _invocation(runtime, run_row):
+            _Ingestor.run_for_event({WORKSPACE_FIELD: OTHER_WS, "execution_id": "run_1"}, runtime.context())
+        (event,) = runtime.queued
+        assert event[WORKSPACE_FIELD] == OTHER_WS
+
+    @pytest.mark.parametrize("malformed", EVENTS_WITH_A_MALFORMED_WORKSPACE)
+    def test_a_part_naming_a_malformed_workspace_is_refused_and_runs_nothing(self, runtime, run_row, malformed):
+        event = continuation_event(scope=SCOPE, execution_id="run_1", apps=[("id-app8", "App8")],
+                                   items_found=7, warnings=[], part=2)
+        event[WORKSPACE_FIELD] = malformed[WORKSPACE_FIELD]
+        with _invocation(runtime, run_row) as start, patch.object(_Ingestor, "run_in_scope") as run_in_scope:
+            result = _Ingestor.run_for_event(event, runtime.context())
+        assert result == REFUSED
+        run_in_scope.assert_not_called()
+        assert runtime.collected == []
+        assert run_row.writes == []
+        start.assert_not_called()
+
+
+class TestDeploymentWideParts:
+    """A run whose event names no workspace (the API's Run now) runs deployment-wide, as before workspaces, and so
+    does every part of it."""
+
+    def test_a_deployment_wide_chain_runs_and_writes_only_the_deployment_row(self, runtime, run_row):
+        _run_chain(runtime, run_row, {"execution_id": "run_1"})
+        assert runtime.collected == list(TEN_APPS)
+        assert list(run_row.rows) == [("SOURCE_RUN#test_source", "run_1")]
+        row = run_row.rows[("SOURCE_RUN#test_source", "run_1")]
+        assert (row["status"], row["items_found"]) == ("completed", len(TEN_APPS))
+        statuses = [write["status"] for write in run_row.writes if "status" in write]
+        assert statuses == ["running", "running", "completed"]
+
+    def test_its_hand_off_names_no_workspace(self, runtime, run_row):
+        with _invocation(runtime, run_row):
+            _Ingestor.run_for_event({"execution_id": "run_1"}, runtime.context())
+        (event,) = runtime.queued
+        assert set(event) == {CONTINUATION_KEY, "execution_id"}
+        assert [app["name"] for app in event[CONTINUATION_KEY]["apps"]] == ["App7", "App8", "App9"]
+
+    def test_a_part_naming_no_workspace_runs_deployment_wide(self, runtime, run_row):
+        event = continuation_event(scope=None, execution_id="run_1", apps=[("id-app8", "App8")],
+                                   items_found=7, warnings=[], part=2)
+        with _invocation(runtime, run_row) as start:
+            result = _Ingestor.run_for_event(event, runtime.context())
+        assert result["status"] == "success"
+        assert runtime.collected == ["App8"]
+        assert list(run_row.rows) == [("SOURCE_RUN#test_source", "run_1")]
+        row = run_row.rows[("SOURCE_RUN#test_source", "run_1")]
+        assert (row["status"], row["items_found"]) == ("completed", 8)
+        start.assert_not_called()
+
+    def test_a_scheduled_part_keeps_the_deployment_watermarks(self, runtime, run_row):
+        watermarks = FakeWatermarks()
+        with _invocation(runtime, run_row, watermarks=watermarks):
+            _Ingestor.run_for_event({}, runtime.context())
+            (event,) = runtime.queued
+            assert set(event) == {CONTINUATION_KEY}
+            watermarks.values["test_source#App7_last_run"] = "2999-01-01T00:00:00+00:00"
+            runtime.queued.clear()
+            _Ingestor.run_for_event(event, runtime.context())
+        assert runtime.collected == [*TEN_APPS[:7], "App8", "App9"]
+        assert not any(source.startswith("WS#") for source in watermarks.values)
+        assert run_row.writes == []
+
+
 class TestAFailingApp:
     def test_its_failure_reaches_the_final_row_and_the_rest_still_run(self, runtime, run_row):
         runtime.failing_apps = {"App2", "App8"}
-        _run_chain(runtime, run_row, {"execution_id": "run_1"})
+        _run_chain(runtime, run_row, MANUAL_RUN)
         row = _row(run_row)
         assert runtime.collected == list(TEN_APPS)
         assert row["status"] == "completed"
@@ -242,7 +326,7 @@ class TestAFailingApp:
 
     def test_a_part_that_raises_keeps_the_earlier_parts_totals_and_warnings(self, runtime, run_row):
         event = continuation_event(
-            execution_id="run_1", apps=[("id-app8", "App8")], items_found=7,
+            scope=SCOPE, execution_id="run_1", apps=[("id-app8", "App8")], items_found=7,
             warnings=["App2: collection failed (ConnectionError)"], part=2,
         )
         with (
@@ -264,7 +348,7 @@ class TestAFailedHandOff:
     ])
     def test_the_run_ends_as_error_naming_the_apps_left(self, runtime, run_row, error):
         with _invocation(runtime, run_row, start_part=MagicMock(side_effect=error)):
-            _Ingestor.run_for_event({"execution_id": "run_1"}, runtime.context())
+            _Ingestor.run_for_event(MANUAL_RUN, runtime.context())
         row = _row(run_row)
         assert row["status"] == "error"
         assert row["items_found"] == 7
@@ -275,7 +359,7 @@ class TestAFailedHandOff:
         runtime.failing_apps = set(TEN_APPS)
         carried = [f"w{n}" for n in range(MAX_RUN_WARNINGS)]
         event = continuation_event(
-            execution_id="run_1", apps=[(f"id-{n.lower()}", n) for n in TEN_APPS],
+            scope=SCOPE, execution_id="run_1", apps=[(f"id-{n.lower()}", n) for n in TEN_APPS],
             items_found=0, warnings=carried, part=2,
         )
         with _invocation(runtime, run_row, start_part=MagicMock(side_effect=RuntimeError)):
@@ -289,14 +373,14 @@ class TestRunsThatNeedNoParts:
     def test_a_single_app_run_never_hands_off_even_out_of_time(self, runtime, run_row):
         with _invocation(runtime, run_row) as start:
             context = SimpleNamespace(get_remaining_time_in_millis=lambda: 1)
-            _Ingestor.run_for_event({"execution_id": "run_1", "app_id": "id-app3"}, context)
+            _Ingestor.run_for_event(ws_event(execution_id="run_1", app_id="id-app3"), context)
         assert runtime.collected == ["App3"]
         assert start.call_count == 0
         assert _row(run_row)["status"] == "completed"
 
     def test_without_a_lambda_context_every_app_runs_in_one_go(self, runtime, run_row):
         with _invocation(runtime, run_row) as start:
-            _Ingestor.run_for_event({"execution_id": "run_1"})
+            _Ingestor.run_for_event(MANUAL_RUN)
         assert runtime.collected == list(TEN_APPS)
         assert start.call_count == 0
 
@@ -305,11 +389,13 @@ class TestScheduledRuns:
     def test_parts_carry_no_execution_id_and_keep_the_due_check(self, runtime, run_row):
         watermarks = FakeWatermarks()
         with _invocation(runtime, run_row, watermarks=watermarks):
-            _Ingestor.run_for_event({}, runtime.context())
+            # A fan-out's per-workspace invoke carries only the workspace id.
+            _Ingestor.run_for_event(ws_event(), runtime.context())
             (event,) = runtime.queued
             assert "execution_id" not in event
+            assert event[WORKSPACE_FIELD] == WS
             # An app the next part carries but that ran meanwhile is skipped as not due.
-            watermarks.values["test_source#App7_last_run"] = "2999-01-01T00:00:00+00:00"
+            watermarks.values[f"WS#{WS}#test_source#App7_last_run"] = "2999-01-01T00:00:00+00:00"
             runtime.queued.clear()
             _Ingestor.run_for_event(event, runtime.context())
         assert runtime.collected == [*TEN_APPS[:7], "App8", "App9"]
@@ -320,7 +406,7 @@ class TestRefusedParts:
     def test_an_invalid_continuation_runs_nothing_and_ends_the_row(self, runtime, run_row):
         with _invocation(runtime, run_row):
             result = _Ingestor.run_for_event(
-                {"execution_id": "run_1", CONTINUATION_KEY: {"apps": "everything"}}, runtime.context()
+                ws_event(execution_id="run_1", **{CONTINUATION_KEY: {"apps": "everything"}}), runtime.context()
             )
         assert result["status"] == "skipped"
         assert runtime.collected == []
@@ -328,7 +414,7 @@ class TestRefusedParts:
         assert _row(run_row)["errors"] == ["RunPartRefused"]
 
     def test_a_part_skipped_by_an_open_breaker_ends_the_row(self, runtime, run_row):
-        event = continuation_event(execution_id="run_1", apps=[("id-app8", "App8")], items_found=7,
+        event = continuation_event(scope=SCOPE, execution_id="run_1", apps=[("id-app8", "App8")], items_found=7,
                                    warnings=[], part=2)
         with _invocation(runtime, run_row), patch.object(_Ingestor, "run", return_value={
             "status": "skipped", "reason": "circuit_breaker_open",
@@ -339,17 +425,38 @@ class TestRefusedParts:
 
     def test_a_first_part_skipped_by_the_breaker_is_unchanged(self, runtime, run_row):
         with _invocation(runtime, run_row), patch.object(_Ingestor, "run", return_value={"status": "skipped"}):
-            assert _Ingestor.run_for_event({"execution_id": "run_1"}, runtime.context()) == {"status": "skipped"}
+            assert _Ingestor.run_for_event(MANUAL_RUN, runtime.context()) == {"status": "skipped"}
         assert run_row.writes == []
 
 
 class TestContinuationEvent:
     def test_it_round_trips(self):
-        event = continuation_event(execution_id="run_1", apps=[("id-a", "A"), ("id-b", "B")],
+        event = continuation_event(scope=SCOPE, execution_id="run_1", apps=[("id-a", "A"), ("id-b", "B")],
                                    items_found=12, warnings=["A: x"], part=3)
         assert parse_continuation(event) == Carried(
             items_found=12, warnings=("A: x",), part=3, apps=(("id-a", "A"), ("id-b", "B"))
         )
+
+    @pytest.mark.parametrize(("scope", "ws"), [(SCOPE, WS), (OTHER_SCOPE, OTHER_WS)])
+    def test_it_names_the_runs_workspace(self, scope, ws):
+        event = continuation_event(scope=scope, execution_id="run_1", apps=[("id-a", "A")],
+                                   items_found=0, warnings=[], part=2)
+        assert set(event) == {WORKSPACE_FIELD, CONTINUATION_KEY, "execution_id"}
+        assert event[WORKSPACE_FIELD] == ws
+
+    def test_a_scheduled_runs_part_names_its_workspace_too(self):
+        event = continuation_event(scope=OTHER_SCOPE, execution_id=None, apps=[("id-a", "A")],
+                                   items_found=0, warnings=[], part=2)
+        assert set(event) == {WORKSPACE_FIELD, CONTINUATION_KEY}
+        assert event[WORKSPACE_FIELD] == OTHER_WS
+
+    @pytest.mark.parametrize(("execution_id", "keys"), [
+        ("run_1", {CONTINUATION_KEY, "execution_id"}), (None, {CONTINUATION_KEY}),
+    ])
+    def test_a_deployment_wide_runs_part_names_no_workspace(self, execution_id, keys):
+        event = continuation_event(scope=None, execution_id=execution_id, apps=[("id-a", "A")],
+                                   items_found=0, warnings=[], part=2)
+        assert set(event) == keys
 
     def test_an_event_without_one_starts_a_run(self):
         assert parse_continuation({"execution_id": "run_1"}) == Carried()
@@ -357,7 +464,7 @@ class TestContinuationEvent:
         assert not Carried().is_continuation
 
     def test_long_warnings_are_cut(self):
-        (text,) = continuation_event(execution_id=None, apps=[("a", "A")], items_found=0,
+        (text,) = continuation_event(scope=SCOPE, execution_id=None, apps=[("a", "A")], items_found=0,
                                      warnings=["x" * 1000], part=2)[CONTINUATION_KEY]["warnings"]
         assert len(text) == parts.MAX_WARNING_CHARS
 
@@ -447,18 +554,18 @@ class TestStartNextPart:
         monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", self.FUNCTION_NAME)
 
     def test_it_invokes_its_own_function_asynchronously(self):
-        with patch.object(parts, "invoke_lambda_async", return_value={"StatusCode": 202}) as invoke:
+        with patch.object(self_invoke, "invoke_lambda_async", return_value={"StatusCode": 202}) as invoke:
             start_next_part({"continuation": {}})
         invoke.assert_called_once_with(self.FUNCTION_NAME, {"continuation": {}})
 
     def test_a_refused_invoke_raises(self):
-        with patch.object(parts, "invoke_lambda_async", return_value={"StatusCode": 500}), \
+        with patch.object(self_invoke, "invoke_lambda_async", return_value={"StatusCode": 500}), \
              pytest.raises(RuntimeError, match="500"):
             start_next_part({})
 
     def test_outside_lambda_it_raises(self, monkeypatch):
         monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
-        with patch.object(parts, "invoke_lambda_async") as invoke, pytest.raises(RuntimeError):
+        with patch.object(self_invoke, "invoke_lambda_async") as invoke, pytest.raises(RuntimeError):
             start_next_part({})
         invoke.assert_not_called()
 

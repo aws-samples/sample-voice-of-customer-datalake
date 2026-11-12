@@ -56,11 +56,11 @@ its manifest `version` for an ingestor (`webhook_<plugin>` for a webhook), or th
 
 | Writer | Where | What | Connector |
 |---|---|---|---|
-| Plugin ingestors and webhooks | `raw/<source>/…/<item>/<sha16>.json` | The mapped item and the payload received (`raw_content`): the App Store RSS entry, the Google Play review, the scraped review element's outer HTML or the JSON-LD `Review` object, the import file's row, the GitHub issue/comment. Bounded at 256 KB, cut with a marker (`plugins/_shared/raw_source.py`) | `<plugin>` / `webhook_<plugin>` |
+| Plugin ingestors and webhooks | `raw/<source>/…/<item>/<sha16>.json`; an ingestor's run in a workspace (multi-workspace, not released yet, [multi-workspace.md](multi-workspace.md)) under `ws/<ws>/raw/<source>/…` | The mapped item and the payload received (`raw_content`): the App Store RSS entry, the Google Play review, the scraped review element's outer HTML or the JSON-LD `Review` object, the import file's row, the GitHub issue/comment. Bounded at 256 KB, cut with a marker (`plugins/_shared/raw_source.py`) | `<plugin>` / `webhook_<plugin>` |
 | Feedback forms (`POST /feedback-forms/{id}/submit`) | `raw/feedback_form/…/<feedback id>/<sha16>.json` | `{form_id, submission}`: the body as the widget sent it, before the source policy | `feedback_form` |
 | Feedback boards ([feature-requests.md](feature-requests.md#raw-copies)) | `raw/feature_requests/…/<request id \| support id>/<sha16>.json` | A request on create and every content edit; a +1 on create and every edit. Not queued into `voc-feedback` | `feature_requests` |
 | Email inbox ([email-intake.md](email-intake.md#raw-copies)) | `raw/email_intake/…/<item id>/<sha16>.eml` | The email as received; filtered mail too, with metadata `drop-reason` | `email_intake` |
-| S3 import originals | `raw/s3_import/…/<file stem>/<sha16>.<csv\|json\|jsonl>` | The staged file as uploaded, metadata `original-key`; only when the `s3_import` profile keeps whole files (allow, no retention period) | `s3_import` |
+| S3 import originals | `raw/s3_import/…/<file stem>/<sha16>.<csv\|json\|jsonl>` (`ws/<ws>/raw/s3_import/…` for a run in a workspace) | The staged file as uploaded, metadata `original-key`; only when the `s3_import` profile keeps whole files (allow, no retention period) | `s3_import` |
 | The processor | `raw/<source>/…/<item>/<sha16>.json` (the processing day) | A message's inline `raw_data`, when its producer's archive write failed (`lambda/shared/raw_fallback.py`) | `processor` |
 
 Each copy is written only when the source's profile permits one (strict read: an unreadable profile
@@ -90,13 +90,16 @@ The raw envelope written by ingestors and webhooks (`plugins/_shared/raw_archive
 }
 ```
 
-The bucket is versioned and KMS-encrypted. Ingestor roles may only put objects under `raw/`: they
-cannot read or delete. Only `voc-retention` deletes raw objects, for an opt-in per-source retention
-period or an erasure request. The bucket policy denies every PutObject under `raw/` that does not
-send `If-None-Match` (statement `DenyRawWritesWithoutIfNoneMatch`, `lib/stacks/core-buckets.ts`),
+The bucket is versioned and KMS-encrypted. Ingestor roles may only put objects under `raw/` and each
+workspace's `ws/<ws>/raw/` (a run in a workspace archives there, [multi-workspace.md](multi-workspace.md)):
+they cannot read or delete. Only `voc-retention` deletes raw objects, for an opt-in per-source retention
+period or an erasure request; it does not reach `ws/<ws>/raw/` yet (the multi-workspace slice that moves it does,
+before workspaces ingest; nothing in the app starts a workspace's run yet, so nothing is written there). The bucket policy denies every PutObject under `raw/`, `silver/`, `ws/<ws>/raw/` and
+`ws/<ws>/silver/` that does not send `If-None-Match` (the IAM patterns pin `<ws>` to one id, `ws_` and 26 `?`,
+as do the ingestor roles' puts: IAM's `*` also matches `/`) (statement `DenyRawWritesWithoutIfNoneMatch`, `lib/stacks/core-buckets.ts`),
 so no writer, ours or a custom out-of-band one, can overwrite a raw object; a CopyObject into `raw/`
 is refused too. The Data Explorer (admin-only) can create a new object but refuses (409) to
-overwrite an existing key under `raw/`. No lifecycle rule expires anything under `raw/`, current or
+overwrite an existing key under `raw/`. No lifecycle rule expires anything under `raw/` or `ws/`, current or
 noncurrent. The other prefixes (below) have no noncurrent-version rule either (since 6.00.00): a workspace
 delete removes every version of the object itself, and only `scratch/` expires (current and noncurrent versions
 after 2 days). The bucket is kept when the stacks are deleted (`protectData`, the default); under
@@ -158,7 +161,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 |-------|-------------|---------|
 | `voc-feedback` | `pk=SOURCE#<brand_name, else source_platform>`, `sk=FEEDBACK#<id>` | Processed feedback and enrichment. Producers send the deployment's brand name, so most items share one partition; filter by `source_platform` to select a source. Its stream feeds the aggregator |
 | `voc-aggregates` | `pk`, `sk` | Daily metrics, settings, logs, form configs, source and scraper runs, prioritization rows, ballots and voting sessions |
-| `voc-watermarks` | `source` (`<plugin_id>#<key>`) | Per-source ingestion progress |
+| `voc-watermarks` | `source` (`<plugin_id>#<key>`; `WS#<ws>#<plugin_id>#<key>` for a run in a workspace, [multi-workspace.md](multi-workspace.md), not released yet) | Per-source ingestion progress |
 | `voc-projects` | `pk`, `sk` | Project metadata, personas, artifacts, document comments and review links, global MCP tokens (`MCPGTOKEN`), and managed-version state |
 | `voc-jobs` | `pk=PROJECT#<id>`, `sk=JOB#<id>` | Long-running research and generation jobs, and assist jobs |
 | `voc-conversations` | `pk=USER#<subject>`, `sk=CONV#<id>` | Per-user AI assistant sessions (`kind=assistant`; `messages_json`/`page_json`/`pending_json` JSON strings, `message_count`, item kept under ~350 KB) and legacy chat records (native `messages` list); current writes do not set TTL |
@@ -168,7 +171,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 | `voc-radar` | `pk`, `sk` | Other brands' reviews, kept out of your own metrics ([radar.md](radar.md)) |
 | `voc-participants` | `pk`, `sk` | People to ask for feedback, lists and asks ([participants.md](participants.md)) |
 | `voc-feature-requests` | `pk`, `sk` | Feedback boards and their requests ([feature-requests.md](feature-requests.md)) |
-| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs, the platform console's listing (`WORKSPACES`) and their audit; read and written by the workspaces API (`/me/*`, `/platform/*`): platform admins create workspaces (one transaction, the creator as admin), a platform admin's entry is audited, and a workspace's admins add members, change roles and remove members (a member may leave), each change audited first and written to the `MEMBER#` and `USER#` rows in one transaction (its one delete: a removal's two rows); no invite rows are written (membership is immediate). Since 6.11.00 two more roles write it: the users API removes a deleted user's memberships before the account (each `AUDIT#WS#` row first, then the `MEMBER#` and `USER#` delete), and `voc-retention`'s erasure by email removes `email` and `name` from the person's `MEMBER#` rows after a tombstone ([multi-workspace.md](multi-workspace.md#invites)) |
+| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs, the platform console's listing (`WORKSPACES`) and their audit; read and written by the workspaces API (`/me/*`, `/platform/*`): platform admins create workspaces (one transaction, the creator as admin), a platform admin's entry is audited, and a workspace's admins add members, change roles and remove members (a member may leave), each change audited first and written to the `MEMBER#` and `USER#` rows in one transaction (its one delete: a removal's two rows); no invite rows are written (membership is immediate). Since 6.11.00 two more roles write it: the users API removes a deleted user's memberships before the account (each `AUDIT#WS#` row first, then the `MEMBER#` and `USER#` delete), and `voc-retention`'s erasure by email removes `email` and `name` from the person's `MEMBER#` rows after a tombstone ([multi-workspace.md](multi-workspace.md#invites)). The scheduled plugin ingestors Query its `PLUGIN#<plugin>` partitions only (the workspaces that enabled the plugin, for the tick's fan-out; nothing writes them yet) |
 
 ### Feedback table indexes
 
@@ -206,10 +209,10 @@ such as every source or persona counter. Common key families include:
 | `AUDIT#platform-admins` / `<iso>#<random>` | Every grant and revoke of the `platform-admins` group (kept, no TTL; written only by the users API, [multi-workspace.md](multi-workspace.md#control-plane)) |
 | `LOGS#validation#<source>`, `LOGS#processing#<source>` | Validation and processing logs (7-day TTL) |
 | `FEEDBACK_FORM` | Feedback-form configuration and statistics |
-| `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor |
-| `SCRAPER_RUN#<scraper id>` | Scraper run state |
-| `CIRCUIT#<plugin>` / `TRIPPED`, `FAILURES#<plugin>` | Plugin circuit breaker ([plugin-architecture.md](plugin-architecture.md#circuit-breaker)) |
-| `IMPORT_RUN`, `IMPORT_RUN#<run id>` | Import history (kept, no TTL; rows from earlier releases keep their 90-day TTL, [import-history.md](import-history.md)) |
+| `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor (`WS#<ws>#SOURCE_RUN#<source>` for a run in a workspace) |
+| `SCRAPER_RUN#<scraper id>` | Scraper run state (`WS#<ws>#SCRAPER_RUN#<scraper id>` in a workspace) |
+| `CIRCUIT#<plugin>` / `TRIPPED`, `FAILURES#<plugin>` | Plugin circuit breaker ([plugin-architecture.md](plugin-architecture.md#circuit-breaker)); a run in a workspace keeps `WS#<ws>#CIRCUIT#<plugin>` and `WS#<ws>#FAILURES#<plugin>` |
+| `IMPORT_RUN`, `IMPORT_RUN#<run id>` | Import history (kept, no TTL; rows from earlier releases keep their 90-day TTL, [import-history.md](import-history.md)); an S3 import run in a workspace writes `WS#<ws>#IMPORT_RUN` and `WS#<ws>#IMPORT_RUN#<run id>` |
 | `PRIORITIZATION` / `ROW#<id>` | Prioritization rows ([prioritization.md](prioritization.md)) |
 
 Metric rows are kept indefinitely (no `ttl`). The table keeps TTL enabled for its operational rows (logs,

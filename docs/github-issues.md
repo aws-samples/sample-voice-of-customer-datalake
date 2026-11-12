@@ -179,7 +179,8 @@ them.
 
 Every item's untouched GitHub payload is archived to the raw bucket
 (`raw/github_issues/{y}/{m}/{d}/<id>/<sha16>.json`, one write-once object per content version) by both the
-ingestor and the webhook, like every source.
+ingestor and the webhook, like every source; an ingestor run in a workspace (multi-workspace, not released yet,
+[multi-workspace.md](multi-workspace.md)) archives under `ws/{ws}/raw/github_issues/…`.
 
 ### `issue_attributes`
 
@@ -230,7 +231,8 @@ REST, not GraphQL: the REST issues endpoint supports `since=` and conditional re
   gets its issue's current labels / state; see "Updates to issues already ingested"). Usually the
   same single request as a `since=` listing; a long thread re-sends all its comments, which count
   against the per-run item cap but cost no model call unless their text changed (a comment's text starts with `Re: <issue title>`, so retitling an issue re-enriches its comments).
-- The watermark (`github_issues#repo#<owner/name>` in the watermarks table) stores `since`, the
+- The watermark (`github_issues#repo#<owner/name>` in the watermarks table; `WS#{ws}#github_issues#repo#<owner/name>`
+  for a run in a workspace) stores `since`, the
   issue numbers already processed at that instant (`since` is inclusive) and the ETag. It is
   committed **only after** every item of the run reached the processing queue, so a failed run
   re-fetches instead of skipping.

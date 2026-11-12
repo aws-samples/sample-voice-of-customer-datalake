@@ -46,6 +46,7 @@ from shared.logging import logger
 from shared.request_body import reject_unknown_fields, validated_text
 from shared.timestamps import now_iso
 from shared.workspace import ACTIVE, audit_key, audit_sort_key, is_workspace_id, text_fields, ws_key
+from shared.workspace_ids import credentials_secret_name
 
 NAME_MAX_CHARS: Final = 80
 #: 3 to 40 of a-z, 0-9 and '-', neither first nor last a '-'.
@@ -140,18 +141,11 @@ def create_workspace(table: Any, new: NewWorkspace, creator: str) -> str:
     return ws
 
 
-def _credentials_secret_name(prefix: str, ws: str) -> str:
-    """``{prefix}/{ws}/credentials``; refuses (ValueError) an id that is not well formed."""
-    if not is_workspace_id(ws):
-        raise ValueError('not a workspace id')
-    return f'{prefix}/{ws}/credentials'
-
-
 def ensure_credentials_secret(client: Any, *, prefix: str, ws: str, kms_key_arn: str) -> None:
     """Create the workspace's secret (``{}``, the customer-managed key, the ``workspace_id`` tag), or keep the one that
     is already there for this workspace. ``CredentialsSecretError`` when that one is not this workspace's; every
     Secrets Manager error propagates."""
-    name = _credentials_secret_name(prefix, ws)
+    name = credentials_secret_name(prefix, ws)
     try:
         client.create_secret(Name=name, KmsKeyId=kms_key_arn, SecretString='{}',
                              Description='Plugin credentials of one workspace (docs/multi-workspace.md)',

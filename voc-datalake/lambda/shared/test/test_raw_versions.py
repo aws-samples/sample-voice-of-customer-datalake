@@ -28,8 +28,18 @@ from shared.raw_versions import (
     put_raw_version,
     version_key,
 )
+from shared.ws_repo import WorkspaceScope
 
 BUCKET = 'raw-bucket'
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+OTHER_WS = 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ'
+SCOPE = WorkspaceScope(WS)
+OTHER_SCOPE = WorkspaceScope(OTHER_WS)
+
+
+def workspace_item_folder(scope: WorkspaceScope, source: str, day: date, stem: str) -> str:
+    """``item_folder`` for a run in ``scope``."""
+    return item_folder(source, day, stem, scope)
 CONNECTOR = Connector('manual_import', '9.1.0')
 
 
@@ -104,6 +114,58 @@ class TestParseItemKey:
     def test_anything_else_is_not_an_item_archive(self, key: str) -> None:
         assert parse_item_key(key) is None
         assert folder_of(key) is None
+
+    @pytest.mark.parametrize('key', [
+        f'ws/{WS}/raw/web/2026/03/05/r1/0123456789abcdef.json',
+        f'ws/{WS}/raw/web/2026/03/05/r1/0123456789abcdef.csv',
+    ])
+    def test_a_workspaces_versioned_archive_names_its_item_in_that_workspace(self, key: str) -> None:
+        assert parse_item_key(key) == ItemArchive(
+            stem='r1', legacy_key=f'ws/{WS}/raw/web/2026/03/05/r1.json', folder=f'ws/{WS}/raw/web/2026/03/05/r1/')
+        assert folder_of(key) == f'ws/{WS}/raw/web/2026/03/05/r1/'
+
+    @pytest.mark.parametrize('key', [
+        # No legacy layout under a workspace: nothing was ever archived there that way.
+        f'ws/{WS}/raw/web/2026/03/05/r1.json',
+        f'ws/{WS}/silver/web/2026/03/05/r1/0123456789abcdef.json',
+        f'ws/{WS}/raw/web/2026/03/r1/0123456789abcdef.json',
+        f'ws/{WS}/raw/web/2026/03/05/r1/0123456789abcdef.json/x',
+        'ws/ws_nope/raw/web/2026/03/05/r1/0123456789abcdef.json',
+        f'ws/{WS.lower()}/raw/web/2026/03/05/r1/0123456789abcdef.json',
+        f'ws/{WS}/../raw/web/2026/03/05/r1/0123456789abcdef.json',
+        f'wsx/{WS}/raw/web/2026/03/05/r1/0123456789abcdef.json',
+        'ws//raw/web/2026/03/05/r1/0123456789abcdef.json',
+        f'ws/{WS}',
+        f'raw/ws/{WS}/raw/web/2026/03/05/r1/0123456789abcdef.json',
+    ])
+    def test_anything_else_under_a_workspace_is_not_an_item_archive(self, key: str) -> None:
+        assert parse_item_key(key) is None
+
+
+class TestWorkspaceKeys:
+    def test_without_a_scope_the_folder_is_the_deployment_wide_one(self) -> None:
+        assert item_folder('web', date(2026, 3, 5), 'r1', None) == 'raw/web/2026/03/05/r1/'
+
+    def test_a_workspaces_item_folder_is_under_its_own_root(self) -> None:
+        assert workspace_item_folder(SCOPE, 'web', date(2026, 3, 5), 'r1') == f'ws/{WS}/raw/web/2026/03/05/r1/'
+        assert workspace_item_folder(OTHER_SCOPE, 'web', date(2026, 3, 5), 'r1') == (
+            f'ws/{OTHER_WS}/raw/web/2026/03/05/r1/')
+
+    def test_the_same_item_in_two_workspaces_never_shares_a_folder(self) -> None:
+        day = date(2026, 3, 5)
+        assert workspace_item_folder(SCOPE, 'web', day, 'r1') != workspace_item_folder(OTHER_SCOPE, 'web', day, 'r1')
+        assert workspace_item_folder(SCOPE, 'web', day, 'r1').removeprefix(f'ws/{WS}/') == item_folder('web', day, 'r1')
+
+    @pytest.mark.parametrize(('source', 'stem'), [('..', 'r1'), ('web', '..'), ('', 'r1'), ('web', ''), ('a//b', 'r1')])
+    def test_a_source_or_stem_cannot_climb_out_of_the_workspace(self, source: str, stem: str) -> None:
+        with pytest.raises(ValueError, match='non-empty segments'):
+            workspace_item_folder(SCOPE, source, date(2026, 3, 5), stem)
+
+    def test_a_workspaces_version_key_reads_back_as_its_item(self) -> None:
+        key = version_key(workspace_item_folder(SCOPE, 'web', date(2026, 3, 5), 'r1'), '0123456789abcdef')
+        archive = parse_item_key(key)
+        assert archive is not None
+        assert archive.folder == f'ws/{WS}/raw/web/2026/03/05/r1/'
 
 
 class TestConnector:

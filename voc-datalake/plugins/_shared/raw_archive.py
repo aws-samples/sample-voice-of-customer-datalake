@@ -1,5 +1,7 @@
 """
-The raw-data archive every plugin writes to: ``raw/{source}/{y}/{m}/{d}/{stem}/{sha16}.json``.
+The raw-data archive every plugin writes to: ``ws/{ws}/raw/{source}/{y}/{m}/{d}/{stem}/{sha16}.json`` for an
+ingestor's run in a workspace (the one its event named, docs/multi-workspace.md),
+``raw/{source}/{y}/{m}/{d}/{stem}/{sha16}.json`` for a deployment-wide run and for a webhook.
 
 One implementation for both transports. ``BaseIngestor.store_raw_to_s3`` used to
 own this outright, so a webhook (which has no ingestor instance) could only
@@ -31,6 +33,7 @@ from shared.raw_versions import (
     put_raw_version,
     version_key,
 )
+from shared.ws_repo import WorkspaceScope
 
 from .source_policy_gate import raw_archive_permitted
 
@@ -85,9 +88,10 @@ def _partition_date(created_at: object, now: datetime) -> datetime:
 
 def archive_raw_item(
     s3, bucket: str, source_platform: str, item: dict, raw_content: str | None = None,
-    transport: str = INGESTOR,
+    transport: str = INGESTOR, *, scope: WorkspaceScope | None = None,
 ) -> str | None:
-    """Write *item* (and the source's own payload, *raw_content*) to the raw archive.
+    """Write *item* (and the source's own payload, *raw_content*) to the raw archive: under the workspace's
+    ``ws/{ws}/raw/`` for a run in a workspace (its verified *scope*), else the deployment-wide ``raw/``.
 
     The key's digest covers ``{"raw_content", "raw_item"}`` only (never the envelope's
     timestamps), so identical content is archived once: S3's 412 on the conditional put
@@ -113,7 +117,7 @@ def archive_raw_item(
         partition_date = _partition_date(item.get("created_at"), now)
         connector = plugin_connector(transport)
         digest = content_digest({"raw_content": raw_content, "raw_item": item})
-        s3_key = version_key(item_folder(source_platform, partition_date, item_id), digest)
+        s3_key = version_key(item_folder(source_platform, partition_date, item_id, scope), digest)
         raw_payload = {
             "item_id": item_id,
             "source_platform": source_platform,

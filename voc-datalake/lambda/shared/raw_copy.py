@@ -46,6 +46,7 @@ from shared.raw_versions import (
 )
 from shared.source_policy import ARCHIVE_NONE, archive_mode
 from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict, source_profile_configured
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'RawTarget',
@@ -60,15 +61,17 @@ _AWS_ERRORS = (ClientError, BotoCoreError)
 
 @dataclass(frozen=True)
 class RawTarget:
-    """Where one item's copies go: the bucket, the source folder, the partition day and the item stem."""
+    """Where one item's copies go: the bucket, the source folder, the partition day and the item stem, under the
+    workspace's ``ws/{ws}/raw/`` when a ``scope`` is given (the plugin ingestors), else the deployment-wide ``raw/``."""
 
     bucket: str
     source: str
     day: date
     stem: str
+    scope: WorkspaceScope | None = None
 
     def key(self, digest: str, extension: str) -> str:
-        return version_key(item_folder(self.source, self.day, self.stem), digest, extension)
+        return version_key(item_folder(self.source, self.day, self.stem, self.scope), digest, extension)
 
 
 def _unreadable[T](source: str, fallback: T) -> T:

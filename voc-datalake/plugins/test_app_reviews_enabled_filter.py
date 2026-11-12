@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
+from _shared.test.workspace_fixtures import SCOPE
 
 _PLUGINS_DIR = os.path.dirname(os.path.abspath(__file__))
 ANDROID_DIR = os.path.join(_PLUGINS_DIR, "app_reviews_android", "ingestor")
@@ -76,7 +77,7 @@ def _android_ingestor():
         def make_config(name, identifier, enabled):
             return android_app_config(name=name, package_name=identifier, enabled=enabled)
 
-        yield android_handler.AndroidAppReviewsIngestor(), make_config
+        yield android_handler.AndroidAppReviewsIngestor(SCOPE), make_config
 
 
 @contextmanager
@@ -90,7 +91,7 @@ def _ios_ingestor():
         def make_config(name, identifier, enabled):
             return ios_app_config(name=name, app_id=identifier, enabled=enabled)
 
-        yield ios_handler.IOSAppReviewsIngestor(), make_config
+        yield ios_handler.IOSAppReviewsIngestor(SCOPE), make_config
 
 
 @pytest.fixture(params=[_android_ingestor, _ios_ingestor], ids=["android", "ios"])

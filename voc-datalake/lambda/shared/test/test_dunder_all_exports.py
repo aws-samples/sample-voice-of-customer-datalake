@@ -39,12 +39,12 @@ EXCLUDED_PARTS = frozenset({'layers', 'node_modules', '__pycache__', '_template'
 # without ``.py``. Real entry points belong here; an over-export is fixed by dropping it from ``__all__``.
 ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {
     # Multi-workspace phase 2's repository layer (docs/multi-workspace.md, Request flow step 4), landed before the
-    # data path moves onto it; each slice that imports a name removes it here (the ingestion slice first).
+    # data path moves onto it; each slice that imports a name removes it here (the ingestion slice took the
+    # scope from a message, the watermark, run and object keys and the table view).
     'lambda/shared/ws_repo': frozenset({
-        'OutOfScopeError', 'PARTITION_ATTRIBUTES', 'UNSCOPED_INDEX_ATTRIBUTES', 'WORKSPACE_FIELD',
-        'WorkspaceScope', 'category_pk', 'channel_pk', 'date_pk', 'feedback_id_pk', 'feedback_key', 'metric_pk',
-        'metric_type', 's3_key', 'scope_from_key', 'scope_from_message', 'scope_of', 'source_run_pk', 'urgency_pk',
-        'watermark_key', 'ws_table',
+        'OutOfScopeError', 'PARTITION_ATTRIBUTES', 'UNSCOPED_INDEX_ATTRIBUTES', 'category_pk', 'channel_pk',
+        'date_pk', 'feedback_id_pk', 'feedback_key', 'metric_pk', 'metric_type', 'scope_from_key', 'scope_of',
+        'urgency_pk',
     }),
 }
 

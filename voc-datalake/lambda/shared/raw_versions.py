@@ -22,6 +22,11 @@ Archives written before this layout (``raw/{source}/{YYYY}/{MM}/{DD}/{stem}.json
 stay where they are; ``parse_item_key`` recognises both layouts, and a correction of
 a legacy item writes into ``.../{stem}/`` (``folder_of``).
 
+A workspace's items (docs/multi-workspace.md; a plugin ingestor's run in a workspace) live
+under the workspace's own root, ``ws/{ws}/raw/{source}/{YYYY}/{MM}/{DD}/{stem}/{sha16}.json``
+(``item_folder`` with a scope, built by ``shared/ws_repo.py s3_key`` from a verified scope);
+``parse_item_key`` reads that layout too. The bucket's write-once policy covers both roots.
+
 Every object carries ``connector`` / ``connector-version`` metadata (``Connector``):
 the plugin id and manifest version for a plugin, the writer id (``manual_import``,
 ``csv_upload``, ...) and the app release (``APP_VERSION``) for an API writer.
@@ -45,6 +50,8 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.archive_keys import archive_key_stem
+from shared.workspace_ids import is_workspace_id
+from shared.ws_repo import WorkspaceScope, s3_key
 
 __all__ = [
     'RAW_PREFIX',
@@ -61,6 +68,10 @@ __all__ = [
 ]
 
 RAW_PREFIX: Final = 'raw/'
+#: The bronze tier's folder: ``raw/`` at the bucket's root (deployment-wide), or under ``ws/{ws}/``.
+RAW_TIER: Final = 'raw'
+WORKSPACE_ROOT: Final = 'ws'
+_WORKSPACE_SEGMENTS: Final = 2
 CONNECTOR_META: Final = 'connector'
 CONNECTOR_VERSION_META: Final = 'connector-version'
 UNKNOWN_VERSION: Final = 'unknown'
@@ -107,9 +118,13 @@ def content_digest(content: object, default: Callable[[Any], Any] = str) -> str:
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:DIGEST_CHARS]
 
 
-def item_folder(source: str, day: date, stem: str) -> str:
-    """``raw/{source}/{YYYY}/{MM}/{DD}/{stem}/``: the folder holding every version of one item."""
-    return f'{RAW_PREFIX}{source}/{day.year}/{day.month:02d}/{day.day:02d}/{stem}/'
+def item_folder(source: str, day: date, stem: str, scope: WorkspaceScope | None = None) -> str:
+    """The folder holding every version of one item: ``raw/{source}/{YYYY}/{MM}/{DD}/{stem}/`` deployment-wide, or
+    ``ws/{ws}/raw/{source}/{YYYY}/{MM}/{DD}/{stem}/`` for a run in ``scope`` (``s3_key``, which refuses an empty,
+    ``.`` or ``..`` segment, so a source or stem can never climb out of the workspace)."""
+    if scope is None:
+        return f'{RAW_PREFIX}{source}/{day.year}/{day.month:02d}/{day.day:02d}/{stem}/'
+    return s3_key(scope, RAW_TIER, source, f'{day.year}', f'{day.month:02d}', f'{day.day:02d}', stem) + '/'
 
 
 def item_stem(item_id: object, digest: str) -> str:
@@ -138,20 +153,38 @@ class ItemArchive:
     folder: str  # raw/{source}/{y}/{m}/{d}/{stem}/ (every versioned object)
 
 
+def _workspace_raw_offset(parts: list[str]) -> int | None:
+    """How many leading segments a workspace key adds before ``raw/`` (``ws/{ws}/``: 2), 0 for a deployment-wide
+    ``raw/`` key, None for any other key."""
+    if parts[0] == RAW_TIER:
+        return 0
+    if len(parts) > _WORKSPACE_SEGMENTS and parts[0] == WORKSPACE_ROOT and is_workspace_id(parts[1]) \
+            and parts[_WORKSPACE_SEGMENTS] == RAW_TIER:
+        return _WORKSPACE_SEGMENTS
+    return None
+
+
 def parse_item_key(key: str) -> ItemArchive | None:
-    """The item archive ``key`` belongs to (legacy or versioned layout); None for any other key."""
+    """The item archive ``key`` belongs to; None for any other key.
+
+    Two roots: the deployment-wide ``raw/...`` (legacy ``{stem}.json`` or versioned ``{stem}/{sha16}.json``) and a
+    workspace's ``ws/{ws}/raw/...`` (versioned only: nothing was ever archived there in the legacy layout).
+    """
     parts = key.split('/')
-    if not key.startswith(RAW_PREFIX) or any(part in ('', '.', '..') for part in parts):
+    if any(part in ('', '.', '..') for part in parts):
         return None
-    if len(parts) == _LEGACY_PARTS and parts[-1].endswith(_JSON_SUFFIX):
+    offset = _workspace_raw_offset(parts)
+    if offset is None:
+        return None
+    if offset == 0 and len(parts) == _LEGACY_PARTS and parts[-1].endswith(_JSON_SUFFIX):
         stem = parts[-1].removesuffix(_JSON_SUFFIX)
-    elif len(parts) == _VERSIONED_PARTS and _VERSION_FILE_RE.match(parts[-1]):
-        stem = parts[_STEM_INDEX]
+    elif len(parts) == _VERSIONED_PARTS + offset and _VERSION_FILE_RE.match(parts[-1]):
+        stem = parts[_STEM_INDEX + offset]
     else:
         return None
     if not stem:
         return None
-    base = '/'.join(parts[:_STEM_INDEX])
+    base = '/'.join(parts[:_STEM_INDEX + offset])
     return ItemArchive(stem=stem, legacy_key=f'{base}/{stem}{_JSON_SUFFIX}', folder=f'{base}/{stem}/')
 
 

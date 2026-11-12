@@ -143,12 +143,11 @@ same rule.
 | Field | Default | Rules | Effect |
 |-------|---------|-------|--------|
 | `enabled` | (required) | boolean | Creates the ingestor Lambda |
-| `schedule` | none | `rate(<n> minute(s)\|hour(s)\|day(s))` or `cron(...)` | Creates an EventBridge rule, disabled at deploy |
+| `schedule` | none | `rate(<n> minute(s)\|hour(s)\|day(s))` or `cron(...)` | Creates an EventBridge rule, disabled at deploy; the role may invoke its own function (the tick's per-workspace fan-out, an app-review run's next part) |
 | `timeout` | 120 | 1-900 seconds | Lambda timeout |
 | `memory` | 256 | 128-1024 MB | Lambda memory |
 | `bedrock` | false | boolean | Dedicated role with `bedrock:InvokeModel` on the curated model allowlist |
 | `browser` | false | boolean | Dedicated role with sessions of the AgentCore managed browser `aws.browser.v1` |
-| `selfInvoke` | false | boolean | A run that reaches its time budget continues in a new invocation of its own function: `lambda:InvokeFunction` on exactly that function (a scheduled plugin's dedicated role only) |
 | `jobNotices` | false | boolean | A run the API started tells its starter when it ends (docs/realtime.md): a dedicated role carrying VocCoreStack's `jobs` publish policy (`appsync:EventPublish` on `jobs`) and the Event API's host |
 
 The `cron(...)` pattern admits only digits, spaces and `, - * /`. EventBridge cron expressions need
@@ -191,7 +190,6 @@ reads.
 | Declaration | Read by | Effect | Declared by |
 |-------------|---------|--------|-------------|
 | `capabilities.updatesItems` | the feedback processor (`UPDATE_CAPABLE_SOURCES` env, `lambda/shared/source_updates.py`) | A record from the source that carries `issue_attributes` is refreshed in place when a newer copy arrives, instead of being skipped as a duplicate | `github_issues` |
-| `infrastructure.ingestor.selfInvoke` | `ingestion-stack.ts` | Own-function invoke grant for a run that continues itself | `app_reviews_ios`, `app_reviews_android` |
 | `infrastructure.ingestor.jobNotices` | `ingestion-stack.ts`, `ingestion-roles.ts` | Dedicated role + the `jobs` publish policy and host; a reprocess run's end reaches its starter (docs/realtime.md) | `s3_import` |
 | `infrastructure.ingestor.bedrock` / `browser` | `ingestion-roles.ts` | Dedicated role with the Bedrock / browser grants | `web_reviews`, `synthetic_reviews` |
 | `infrastructure.webhook.memory` | `api-stack.ts` | Receiver MemorySize | `github_issues` (512) |
@@ -239,25 +237,49 @@ The bases are listed below.
 | Bundle | `plugins/<id>/ingestor/*` at the root, plus `plugins/_shared/` as `_shared` and `lambda/shared/` as `shared`; tests and caches pruned |
 | Log group | `/aws/lambda/voc-ingestor-<id>`, 30-day retention |
 | Schedule | `voc-ingest-<id>-schedule`, created disabled; 2 delivery retries, events older than 1 hour dropped to `voc-ingest-schedule-dlq` |
-| Environment | `WATERMARKS_TABLE`, `PROCESSING_QUEUE_URL`, `RAW_DATA_BUCKET`, `SECRETS_ARN`, `BRAND_NAME`, `SOURCE_PLATFORM` (= id), `AGGREGATES_TABLE`, `INGEST_SCHEDULE_RULE_NAME` (scheduled plugins only), PII-redaction settings |
+| Environment | `WATERMARKS_TABLE`, `PROCESSING_QUEUE_URL`, `RAW_DATA_BUCKET`, `SECRETS_ARN`, `WORKSPACE_SECRET_PREFIX`, `BRAND_NAME`, `SOURCE_PLATFORM` (= id), `AGGREGATES_TABLE`, `INGEST_SCHEDULE_RULE_NAME`, `WORKSPACES_TABLE` and `IDEMPOTENCY_TABLE` (scheduled plugins only), PII-redaction settings |
 
 The schedule retries cover delivery only (a throttled or unreachable function). A failure inside
 the ingestor is handled by the [circuit breaker](#circuit-breaker).
 
-**Roles** (`lib/stacks/ingestion-roles.ts`). Every ingestor role gets the same base grants:
-read/write on the watermarks and aggregates tables, `sqs:SendMessage` on the processing queue,
-`s3:PutObject` under `raw/*` of the raw bucket (no read, no delete), KMS encrypt/decrypt, read of
-the shared secret and `comprehend:DetectPiiEntities`. Plugins that need nothing else share one
-role. A plugin gets its own role when it has:
+**Workspaces** ([multi-workspace.md](multi-workspace.md), not released yet). `run_in_workspace` in
+`plugins/_shared/base_ingestor.py` routes each event. One that names no workspace (a **Run now**, a
+scraper run, an S3 reprocess or upload) runs deployment-wide, exactly as before workspaces: the keys,
+the shared secret and `raw/` this page describes. One that names a workspace in `workspace_id` runs in
+it, with that workspace's keys (`WS#{ws}#…`), secret (`voc/ws/{ws}/credentials`) and raw objects
+(`ws/{ws}/raw/…`). One whose `workspace_id` is not a workspace id is refused. The schedule's tick
+first fans out, at most once per tick (a claim of its EventBridge event id in `voc-idempotency`, so a
+retried delivery fans out no second time): it invokes the function once per workspace that enabled
+the plugin (`PLUGIN#{id}` rows in `voc-workspaces`, `lambda/shared/workspace_plugins.py`) with
+`{"workspace_id": ws}`; then it runs the deployment-wide run. A failed claim, list read or invoke is
+logged and metered (`IngestFanOutFailures`) and never changes the deployment-wide run; the next tick
+tries again. Nothing writes those rows yet, so a tick runs no workspace. The
+deployment-wide path stays until phase 2's last slice moves the API, the S3 trigger and the
+processor onto workspaces, and is then removed.
 
-- a schedule: `events:DisableRule` on exactly its own rule, for the circuit breaker;
+**Roles** (`lib/stacks/ingestion-roles.ts`). Every ingestor role gets the same base grants:
+read/write on the watermarks and aggregates tables (DeleteItem on the aggregates table only for the
+breaker's `CIRCUIT#*` and `WS#ws_??????????????????????????#CIRCUIT#*` rows), `sqs:SendMessage` on
+the processing queue, `s3:PutObject` under `raw/*` and `ws/ws_??????????????????????????/raw/*` of the
+raw bucket (no read, no delete; the workspace segment is one id, `ws_` and 26 `?`, because IAM's `*`
+also matches `/` and `#`), KMS
+encrypt/decrypt, read of the shared secret and of the workspaces' credentials secrets `voc/ws/*` (no
+other secret) and `comprehend:DetectPiiEntities`. Plugins that need nothing else share one role. A
+plugin gets its own role when it has:
+
+- a schedule: `events:DisableRule` on exactly its own rule, for the circuit breaker of its
+  deployment-wide runs; and `dynamodb:PutItem` on `voc-idempotency` for its own claim keys
+  (`ingestor#fanout#<id>#*`) only, `dynamodb:Query` on `voc-workspaces` for its own `PLUGIN#<id>`
+  partition only, and `lambda:InvokeFunction` on its own function, for the tick's fan-out (and the app-review
+  continuation parts);
 - `bedrock: true`: `bedrock:InvokeModel` on the allowlisted models (call them through
   `shared/converse.py`, which resolves the model per surface);
 - `browser: true`: `bedrock-agentcore:StartBrowserSession` / `StopBrowserSession` on
   `aws.browser.v1`, and `ConnectBrowserAutomationStream` on `*` (that action has no resource type).
 
-A plugin that declares `selfInvoke` (today `app_reviews_ios` and `app_reviews_android`) also gets
-`lambda:InvokeFunction` on its own function, to continue a long run.
+An app-review run (`app_reviews_ios`, `app_reviews_android`) continues a long run in a new invocation
+of its own function, with the grant its schedule brings; each part of a run in a workspace carries its
+`workspace_id`.
 
 A plugin cannot declare IAM policies, tables, buckets, VPC settings or raw CloudFormation. Anything
 beyond the capabilities above needs a change to the stack code.
@@ -281,11 +303,16 @@ webhook plugin. Webhooks have no feedback-table access.
 
 - **S3 trigger:** `ObjectCreated` notifications on the import bucket `voc-import` for each suffix.
   The bucket is versioned, KMS-encrypted and expires staged files after 90 days: it is an inbox. The
-  ingestor keeps each file's original in the raw lake (`raw/s3_import/…`, `plugins/_shared/raw_original.py`)
-  when the `s3_import` profile keeps whole files, and a reprocess needs the staged file
-  ([data-lake-structure.md](data-lake-structure.md#every-ingested-source-has-a-raw-copy)).
+  ingestor keeps each file's original in the raw lake (`raw/s3_import/…`; `ws/{ws}/raw/s3_import/…`
+  for a run in a workspace, `plugins/_shared/raw_original.py`) when the `s3_import` profile keeps
+  whole files, and a reprocess needs the staged file
+  ([data-lake-structure.md](data-lake-structure.md#every-ingested-source-has-a-raw-copy)). An
+  upload's trigger names no workspace, so it runs deployment-wide until the import bucket is keyed by
+  workspace ([multi-workspace.md](multi-workspace.md)).
 - **Shared secret:** `voc-datalake/api-credentials` (with the account/region suffix), seeded with
-  every loaded plugin's `secrets` as `<id>_<key>`, plus `webscraper_configs: "[]"`. The ingestion
+  every loaded plugin's `secrets` as `<id>_<key>`, plus `webscraper_configs: "[]"`. The API saves
+  plugin credentials there; the webhooks and the ingestors' deployment-wide runs read it, and a run in
+  a workspace reads that workspace's own secret, `voc/ws/{ws}/credentials`, instead. The ingestion
   stack outputs `ApiSecretsArn`, `LoadedPlugins` and `EnabledPlugins`.
 
 ## Writing an ingestor
@@ -300,13 +327,14 @@ from collections.abc import Generator
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from shared.invocation_cost import measure_invocation_cost
+from shared.ws_repo import WorkspaceScope
 
 
 class MySourceIngestor(BaseIngestor):
-    def __init__(self, execution_id: str | None = None):
-        super().__init__(execution_id=execution_id)
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None):
+        super().__init__(scope, execution_id=execution_id)
         self.api_key = self.secrets.get("api_key", "")  # bare key, prefix stripped
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
@@ -323,8 +351,12 @@ class MySourceIngestor(BaseIngestor):
 @measure_invocation_cost
 def lambda_handler(event, context):
     execution_id = event.get("execution_id") if isinstance(event, dict) else None
-    return MySourceIngestor(execution_id=execution_id).run()
+    return run_in_workspace(event, lambda scope: MySourceIngestor(scope, execution_id=execution_id).run())
 ```
+
+The scope comes from the event, through `run_in_workspace`: a valid `workspace_id` runs in that workspace, an
+event that names none runs deployment-wide (`scope` is `None`), a malformed one is refused, and the scheduled tick
+also fans out to the workspaces that enabled the plugin. Never build the scope yourself.
 
 Pass `execution_id` into the constructor. On a manual run the constructor clears the cached secret
 before reading it, so credentials saved a moment earlier are used. Assigning `execution_id` after
@@ -334,9 +366,10 @@ construction skips that, and `plugins/test_manual_run_guard.py` fails on it.
 
 | Member | Behaviour |
 |--------|-----------|
-| `self.secrets` | This plugin's keys from the shared secret, prefix stripped. Read in `__init__` |
+| `self.scope` | The run's workspace (`WorkspaceScope`) from its event, or `None` for a deployment-wide run. Pass it as the constructor's first argument |
+| `self.secrets` | This plugin's keys from the shared secret (a deployment-wide run) or the workspace's secret `voc/ws/{ws}/credentials`, prefix stripped. Read in `__init__` |
 | `self.source_platform` | The plugin id (`SOURCE_PLATFORM`) |
-| `get_watermark(key, default=None)` / `set_watermark(key, value)` | String values in the watermarks table under `<id>#<key>`. A read or write error is logged, not raised |
+| `get_watermark(key, default=None)` / `set_watermark(key, value)` | String values in the watermarks table under `<id>#<key>` (`WS#{ws}#<id>#<key>` in a workspace). A read or write error is logged, not raised |
 | `normalize_item(item)` | Archives the raw item and builds the queue message (below) |
 | `send_to_queue(items)` | Applies the source policy, sends in batches, retries failed entries and raises if any item could not be queued. Returns the confirmed count |
 | `run()` | The whole run, below |
@@ -344,7 +377,7 @@ construction skips that, and `plugins/test_manual_run_guard.py` fails on it.
 `run()` does the following:
 
 1. Returns `{"status": "skipped", "reason": "circuit_breaker_open"}` when the breaker is open.
-2. On a manual run, writes `status: running` to the `SOURCE_RUN#<id>` row.
+2. On a manual run, writes `status: running` to the `SOURCE_RUN#<id>` row (`WS#{ws}#SOURCE_RUN#<id>` in a workspace).
 3. Iterates `fetch_new_items()`, normalizes each item and sends a batch to SQS every 100 items.
 4. Sets the `last_id` watermark to the id of the **last item yielded**. Order your items, or manage
    your own watermark keys, if "last" is not "newest" for your source.
@@ -384,8 +417,9 @@ characters such as `%0A` are fine.
 
 `normalize_item()` produces the message the processor validates: `id`, `source_platform`,
 `source_channel`, `url`, `text`, `rating`, `created_at`, `ingested_at`, `brand_name`,
-`brand_handles_matched`, the optional fields above, and `s3_raw_uri`. It first writes the raw item
-to `raw/<id>/<yyyy>/<mm>/<dd>/<item stem>/<sha16>.json`, partitioned by the item's own `created_at`
+`brand_handles_matched`, the optional fields above, and `s3_raw_uri`; for a run in a workspace
+`send_to_queue` adds its `workspace_id` last, so no item field can set it. It first writes the raw item
+to `raw/<id>/<yyyy>/<mm>/<dd>/<item stem>/<sha16>.json` (`ws/{ws}/raw/<id>/…` for a run in a workspace), partitioned by the item's own `created_at`
 date: one folder per item, one write-once object per distinct content (`<sha16>` hashes
 `raw_content` + `raw_item`, never a timestamp). A re-ingest of unchanged content writes nothing (S3
 answers 412 to the `If-None-Match: *` put and the existing URI is used); changed content is a new
@@ -508,21 +542,30 @@ for the same reasons ([scrapers.md](scrapers.md)).
 
 ## Circuit breaker
 
-`plugins/_shared/circuit_breaker.py` stops a plugin that keeps failing.
+`plugins/_shared/circuit_breaker.py` stops a plugin that keeps failing: deployment-wide for a run whose
+event names no workspace, and per workspace for a run in one ([multi-workspace.md](multi-workspace.md)).
 
 - **Trip:** 5 counted failures within 15 minutes. State lives in the aggregates table: one
   `FAILURES#<id>` / `<iso timestamp>` row per failure (24-hour TTL) and, while tripped,
-  `CIRCUIT#<id>` / `TRIPPED` with `tripped_at`, `failure_count` and `last_error` (≤ 500 chars).
-- **On trip,** three independent steps run, each logged and metered on failure without skipping
-  the others: write the `TRIPPED` row, call `events:DisableRule` on the plugin's own schedule
-  (scheduled plugins only), emit a `plugin.disabled` audit event. Failure metrics:
-  `CircuitBreakerTripRecordFailed`, `CircuitBreakerScheduleDisableFailed`.
-- **While tripped,** every run returns `skipped` at once. A successful run deletes the row.
+  `CIRCUIT#<id>` / `TRIPPED` with `tripped_at`, `failure_count` and `last_error` (≤ 500 chars); a
+  run in a workspace keeps its own, `WS#{ws}#FAILURES#<id>` and `WS#{ws}#CIRCUIT#<id>`.
+- **On trip,** independent steps run, each logged and metered on failure without skipping the
+  others: write the `TRIPPED` row, call `events:DisableRule` on the plugin's own schedule (a
+  deployment-wide run of a scheduled plugin only: a run in a workspace never disables the one rule
+  that serves every workspace), emit a `plugin.disabled` audit event (naming the workspace for a run
+  in one). Failure metrics: `CircuitBreakerTripRecordFailed`, `CircuitBreakerScheduleDisableFailed`.
+- **One rule, every workspace:** the plugin's schedule rule is also what fans its tick out to every
+  workspace, so a deployment-wide trip's disable (like `PUT /sources/<source>/disable`) stops every
+  workspace's scheduled runs too, until the source is turned back on. A workspace's own trip stops
+  only that workspace's runs.
+- **While tripped,** every run of that breaker returns `skipped` at once. A successful run deletes the row.
 - **Recovery:** the source card in **Administration → Sources → Source settings** shows "Paused
   after repeated failures" with the time, count and reason. Turning the source back on
   (`PUT /sources/<source>/enable`) closes the breaker and enables the schedule; **Reset**
-  (`POST /sources/<source>/reset`) only closes the breaker. Failure rows are kept, so a plugin that
-  is still broken trips again on its next failure.
+  (`POST /sources/<source>/reset`) only closes the breaker. Those routes read and clear the
+  deployment-wide `CIRCUIT#<id>` row (`lambda/shared/plugin_circuit.py`) until the API is keyed by
+  workspace; until then a workspace's breaker is reset by deleting its `WS#{ws}#CIRCUIT#<id>` /
+  `TRIPPED` row. Failure rows are kept, so a plugin that is still broken trips again on its next failure.
 
 ## Observability
 
@@ -607,7 +650,7 @@ variables and blocks real AWS calls. Run one plugin's tests with
 | Layer | Control |
 |-------|---------|
 | Manifest | Zod schema with identifier, path and string allowlists; timeout ≤ 900 s, memory ≤ 1,024 MB; schedule not more often than once a minute; id prefix collisions refused |
-| IAM | Base grants only; Bedrock, browser and `DisableRule` only on a dedicated role; raw bucket write-only under `raw/` |
+| IAM | Base grants only; Bedrock, browser, `DisableRule` and the fan-out's Query and self-invoke only on a dedicated role; raw bucket write-only under `raw/` and `ws/{one workspace id}/raw/` |
 | Secrets | `<id>_` namespace, fail-closed filter, admin-only writes, `secret` fields write-only |
 | Webhooks | Public route with a 10 rps / 20 burst throttle; signature verified in the handler before parsing |
 | Queue | Pydantic validation of every message; invalid messages logged and dead-lettered |
@@ -615,8 +658,9 @@ variables and blocks real AWS calls. Run one plugin's tests with
 | Runtime | Circuit breaker, audit log lines, runtime-created alarms |
 
 Review a community plugin's code before you enable it. Every ingestor role can read the whole
-shared secret, so the namespace filter protects against mistakes, not against code written to read
-other plugins' keys.
+shared secret and every workspace's whole credentials secret, so the namespace filter and the name built from the run's
+verified workspace protect against mistakes, not against code written to read other plugins' or
+other workspaces' keys (soft isolation, [multi-workspace.md](multi-workspace.md) decision 1).
 
 ## FAQ
 

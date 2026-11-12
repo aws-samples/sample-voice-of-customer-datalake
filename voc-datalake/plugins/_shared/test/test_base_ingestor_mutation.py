@@ -38,18 +38,23 @@ from _shared import base_ingestor
 from _shared.base_ingestor import BaseIngestor
 from _shared.test.fresh_import import assert_loading_puts_root_first, load_fresh
 from _shared.test.ingestor_fixtures import breaker_mock, ingestor_yielding, with_mock_circuit_breaker
+from _shared.test.workspace_fixtures import SCOPE, WS
 from shared.exceptions import ConfigurationError
 
 MODULE_PATH = Path(base_ingestor.__file__).resolve()
 PLUGINS_ROOT = str(MODULE_PATH.parents[1])
 PLATFORM = 'test_source'
 EXECUTION_ID = 'exec-1'
-RUN_KEY = {'pk': f'SOURCE_RUN#{PLATFORM}', 'sk': EXECUTION_ID}
+RUN_KEY = {'pk': f'WS#{WS}#SOURCE_RUN#{PLATFORM}', 'sk': EXECUTION_ID}
+#: The workspace every event names (``{'workspace_id': WS}``) and the run's audit details carry.
+IN_WS = {'workspace_id': WS}
 ENV_SETTINGS = (
     'WATERMARKS_TABLE',
     'PROCESSING_QUEUE_URL',
     'RAW_DATA_BUCKET',
     'SECRETS_ARN',
+    'WORKSPACE_SECRET_PREFIX',
+    'WORKSPACES_TABLE',
     'BRAND_NAME',
     'SOURCE_PLATFORM',
     'AGGREGATES_TABLE',
@@ -67,7 +72,7 @@ def _reviews(count: int) -> list[dict]:
 
 def _construct(cls: type[BaseIngestor]) -> BaseIngestor:
     """Construct *cls* the way a plugin handler does, through a variable of the base type."""
-    return cls()
+    return cls(SCOPE)
 
 
 @pytest.fixture
@@ -163,6 +168,7 @@ class TestTheConstructionFailureReport:
             'error_type': error_type,
             'phase': 'construction',
             'counted_against_circuit_breaker': counted,
+            **IN_WS,
         })
         run_env.table.update_item.assert_called_once_with(
             Key=RUN_KEY,
@@ -196,13 +202,36 @@ class TestTheConstructionFailureReport:
 
 
 class TestSecretsAndWatermarks:
-    def test_an_unset_secrets_arn_warns_and_reads_nothing(self, ingestor_aws, ingestor_logger):
-        with patch('_shared.base_ingestor.SECRETS_ARN', ''):
+    def test_an_unset_secret_prefix_warns_and_reads_nothing(self, ingestor_aws, ingestor_logger):
+        with patch('_shared.base_ingestor.WORKSPACE_SECRET_PREFIX', ''):
             ingestor = ingestor_yielding()
 
         assert ingestor.secrets == {}
         ingestor_aws.get_secret.assert_not_called()
+        ingestor_logger.warning.assert_called_once_with('WORKSPACE_SECRET_PREFIX not configured')
+
+    def test_a_deployment_wide_run_without_the_shared_secret_warns_and_reads_nothing(
+        self, ingestor_aws, ingestor_logger
+    ):
+        with patch('_shared.base_ingestor.SECRETS_ARN', ''):
+            ingestor = ingestor_yielding(scope=None)
+
+        assert ingestor.secrets == {}
+        ingestor_aws.get_secret.assert_not_called()
         ingestor_logger.warning.assert_called_once_with('SECRETS_ARN not configured')
+
+    def test_the_secret_read_is_named_from_the_prefix_and_the_scope_only(self, ingestor_aws):
+        with patch('_shared.base_ingestor.WORKSPACE_SECRET_PREFIX', 'stg-voc/ws'):
+            ingestor_yielding()
+
+        ingestor_aws.get_secret.assert_called_once_with(f'stg-voc/ws/{WS}/credentials')
+
+    def test_an_empty_read_evicts_the_cache_so_the_next_run_reads_again(self, ingestor_aws):
+        ingestor_aws.get_secret.return_value = {}
+        with patch('_shared.base_ingestor.clear_secret_cache') as clear, pytest.raises(ConfigurationError):
+            ingestor_yielding()
+
+        clear.assert_called_once_with()
 
     def test_a_failed_watermark_read_returns_the_default_and_warns(self, ingestor_aws, ingestor_logger):
         ingestor_aws.table.get_item.side_effect = CLIENT_ERROR
@@ -228,7 +257,8 @@ class TestTheDelegations:
             uri = ingestor_yielding().store_raw_to_s3(item, 'raw')
 
         assert uri == 's3://b/k'
-        archive.assert_called_once_with(ingestor_aws.s3, base_ingestor.RAW_DATA_BUCKET, platform, item, 'raw')
+        archive.assert_called_once_with(ingestor_aws.s3, base_ingestor.RAW_DATA_BUCKET, platform, item, 'raw',
+                                        scope=SCOPE)
 
     @pytest.mark.parametrize(('uri', 'carries_raw'), [(None, True), ('s3://b/k', False)])
     @pytest.mark.usefixtures('ingestor_aws')
@@ -250,7 +280,8 @@ class TestTheDelegations:
             assert ingestor_yielding().send_to_queue(items) == 1
 
         send.assert_called_once_with(
-            ingestor_aws.sqs, base_ingestor.PROCESSING_QUEUE_URL, [{'id': 'a', 'pii_policy_applied': 'allow'}],
+            ingestor_aws.sqs, base_ingestor.PROCESSING_QUEUE_URL,
+            [{'id': 'a', 'pii_policy_applied': 'allow', 'workspace_id': WS}],
             metric_name='ItemsIngested', log_label='ingestor',
         )
 
@@ -310,12 +341,12 @@ class TestARun:
             {':status': 'completed', ':items_found': 250, ':completed_at': ANY},
         ]
         run_env.table.put_item.assert_called_once_with(
-            Item={'source': f'{PLATFORM}#last_id', 'value': '249', 'updated_at': ANY}
+            Item={'source': f'WS#{WS}#{PLATFORM}#last_id', 'value': '249', 'updated_at': ANY}
         )
         assert run_env.emit.call_args_list == [
-            call('plugin.invoked', PLATFORM, True),
-            *(call('message.ingested', PLATFORM, True, {'message_id': item['id']}) for item in items),
-            call('plugin.completed', PLATFORM, True, {'items_processed': 250}),
+            call('plugin.invoked', PLATFORM, True, IN_WS),
+            *(call('message.ingested', PLATFORM, True, {'message_id': item['id'], **IN_WS}) for item in items),
+            call('plugin.completed', PLATFORM, True, {'items_processed': 250, **IN_WS}),
         ]
         breaker_mock(ingestor).record_success.assert_called_once_with()
 
@@ -335,7 +366,7 @@ class TestARun:
             def fetch_new_items(self):
                 raise ValueError('boom')
 
-        ingestor = with_mock_circuit_breaker(Exploding(execution_id=EXECUTION_ID))
+        ingestor = with_mock_circuit_breaker(Exploding(SCOPE, execution_id=EXECUTION_ID))
         with pytest.raises(ValueError, match='boom'):
             ingestor.run()
 
@@ -346,5 +377,5 @@ class TestARun:
         }
         breaker_mock(ingestor).record_failure.assert_called_once_with('boom')
         assert run_env.emit.call_args_list[-1] == call(
-            'plugin.failed', PLATFORM, False, {'error': 'boom', 'error_type': 'ValueError'}
+            'plugin.failed', PLATFORM, False, {'error': 'boom', 'error_type': 'ValueError', **IN_WS}
         )

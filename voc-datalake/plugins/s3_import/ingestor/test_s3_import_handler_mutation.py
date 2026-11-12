@@ -44,6 +44,7 @@ from aws_lambda_powertools.metrics.provider.cold_start import reset_cold_start_f
 
 from _shared.raw_source import pop_raw_source
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
+from _shared.test.workspace_fixtures import SCOPE, WS, ws_event
 from s3_import.ingestor import handler
 from s3_import.ingestor.handler import (
     FIELD_ALIASES,
@@ -77,7 +78,9 @@ def _json(data) -> io.BytesIO:
 
 
 def _s3_event(*records: tuple[str, str, str]) -> dict:
+    """An S3-shaped event of a run in ``WS`` (a bare S3 trigger names no workspace and runs deployment-wide)."""
     return {
+        "workspace_id": WS,
         "Records": [
             {"eventSource": source, "s3": {"bucket": {"name": bucket}, "object": {"key": key}}}
             for source, bucket, key in records
@@ -110,7 +113,7 @@ def ingestor():
     """An S3ImportIngestor whose normalize_item marks items and whose
     send_to_queue returns the count SQS would confirm."""
     with offline_ingestor_construction():
-        ing = handler.S3ImportIngestor()
+        ing = handler.S3ImportIngestor(SCOPE)
     ing.normalize_item = _mark_normalized
     ing.send_to_queue = MagicMock(side_effect=len)
     return ing
@@ -402,7 +405,7 @@ def _import_bucket_is_b():
 
 @pytest.mark.usefixtures("_import_bucket_is_b")
 class TestLambdaHandlerResponses:
-    @pytest.mark.parametrize("event", [{}, {"Records": []}])
+    @pytest.mark.parametrize("event", [ws_event(), ws_event(Records=[])])
     def test_no_records_is_skipped_with_a_reason(self, event):
         with patch.object(handler, "logger") as log:
             assert lambda_handler(event, _context()) == {"status": "skipped", "reason": "no records"}
@@ -443,7 +446,7 @@ class TestLambdaHandlerIsWrapped:
 
     def test_the_lambda_context_reaches_the_logger(self):
         logger.remove_keys(["function_name", "cold_start"])
-        lambda_handler({}, _context("voc-s3-import-under-test"))
+        lambda_handler(ws_event(), _context("voc-s3-import-under-test"))
         keys = logger.get_current_keys()
         assert keys["function_name"] == "voc-s3-import-under-test"
         assert keys["function_request_id"] == "req-s3-import-mutation-0001"

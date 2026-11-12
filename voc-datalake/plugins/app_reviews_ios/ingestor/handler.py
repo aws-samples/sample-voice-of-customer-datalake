@@ -23,6 +23,7 @@ from _shared.base_ingestor import logger, metrics, tracer
 from _shared.raw_source import RAW_SOURCE_KEY
 from shared.invocation_cost import measure_invocation_cost
 from shared.radar_brands import radar_stamp
+from shared.ws_repo import WorkspaceScope
 
 
 class IOSAppReviewsIngestor(AppReviewsIngestor[IOSAppConfig]):
@@ -32,8 +33,8 @@ class IOSAppReviewsIngestor(AppReviewsIngestor[IOSAppConfig]):
     DATE_FIELD = "date"
     DEFAULT_SORT_BY = "most_recent"
 
-    def __init__(self, execution_id: str | None = None):
-        super().__init__(execution_id=execution_id)
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None):
+        super().__init__(scope, execution_id=execution_id)
         self.session = create_session()
 
     def app_identifier(self, app: IOSAppConfig) -> str:

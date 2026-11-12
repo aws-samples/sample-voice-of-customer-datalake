@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
+from _shared.test.workspace_fixtures import EVENTS_WITH_A_MALFORMED_WORKSPACE, REFUSED, SCOPE, WS
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -37,7 +38,9 @@ def _stream(data: bytes):
 
 
 def _make_s3_event(bucket: str, key: str) -> dict:
+    """The S3-shaped event of a run in ``WS`` (the API names the workspace; a bare trigger names none)."""
     return {
+        "workspace_id": WS,
         "Records": [{
             "eventSource": "aws:s3",
             "s3": {"bucket": {"name": bucket}, "object": {"key": key}},
@@ -177,7 +180,7 @@ def ingestor():
             def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
                 return {**item, "_normalized": True}
 
-        ing = _MarkingS3ImportIngestor()
+        ing = _MarkingS3ImportIngestor(SCOPE)
         # Mirror the real contract: send_to_queue returns the number of items SQS
         # confirmed, and raises rather than losing any.  A bare MagicMock() would
         # return a MagicMock, so process_file's count would silently stop being a
@@ -265,3 +268,34 @@ class TestLambdaHandler:
         with patch("s3_import.ingestor.handler.IMPORT_BUCKET", "bucket"):
             lambda_handler(_make_s3_event("bucket", "my+folder/my+file.csv"), lambda_context)
         mock_inst.process_file.assert_called_once_with("bucket", "my folder/my file.csv", reprocess=False)
+        MockIngestor.assert_called_once_with(SCOPE, execution_id=None, started_by=None)
+
+    @pytest.mark.parametrize("malformed", EVENTS_WITH_A_MALFORMED_WORKSPACE)
+    @patch("s3_import.ingestor.handler.S3ImportIngestor")
+    @patch("s3_import.ingestor.handler.s3_client")
+    def test_a_trigger_event_naming_a_malformed_workspace_is_refused_unread(
+        self, mock_s3, MockIngestor, malformed, lambda_context,
+    ):
+        """A malformed workspace: refused, and nothing is read, built, queued or written."""
+        from s3_import.ingestor.handler import lambda_handler
+        event = {**_make_s3_event("bucket", "surveys/data.csv"), **malformed}
+
+        with patch("s3_import.ingestor.handler.IMPORT_BUCKET", "bucket"):
+            assert lambda_handler(event, lambda_context) == REFUSED
+        MockIngestor.assert_not_called()
+        assert mock_s3.mock_calls == []
+
+    @patch("s3_import.ingestor.handler.S3ImportIngestor")
+    def test_a_trigger_event_naming_no_workspace_runs_deployment_wide(self, MockIngestor, lambda_context):
+        """A plain S3 trigger names no workspace: the file is read by a deployment-wide run, as before workspaces."""
+        from s3_import.ingestor.handler import lambda_handler
+        MockIngestor.return_value.process_file.return_value = 3
+        event = _make_s3_event("bucket", "surveys/data.csv")
+        del event["workspace_id"]
+
+        with patch("s3_import.ingestor.handler.IMPORT_BUCKET", "bucket"):
+            result = lambda_handler(event, lambda_context)
+        assert result == {"status": "success", "files_processed": 1, "items_processed": 3,
+                          "results": [{"file": "surveys/data.csv", "items_processed": 3}]}
+        MockIngestor.assert_called_once_with(None, execution_id=None, started_by=None)
+        MockIngestor.return_value.process_file.assert_called_once_with("bucket", "surveys/data.csv", reprocess=False)

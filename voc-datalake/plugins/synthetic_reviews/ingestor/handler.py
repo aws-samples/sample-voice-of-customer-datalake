@@ -30,9 +30,10 @@ from datetime import UTC, datetime, timedelta
 # (lib/stacks/ingestion-stack.ts bundlePluginCode), and via plugins/conftest.py in tests.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from shared.converse import converse
 from shared.invocation_cost import measure_invocation_cost
+from shared.ws_repo import WorkspaceScope
 
 # Generation limits. Generation is SEQUENTIAL — one Bedrock call per BATCH_SIZE inside a
 # single ingestor invocation — so the cap is bounded by the Lambda timeout (900s in the
@@ -64,11 +65,11 @@ SYSTEM_PROMPT = (
 class SyntheticReviewsIngestor(BaseIngestor):
     """Generates synthetic customer reviews via Bedrock and ingests them as synthetic data."""
 
-    def __init__(self, execution_id: str | None = None):
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None):
         # execution_id → BaseIngestor manual-run cache clear (#141/#215).
         # This plugin previously LACKED the guard while its modal saves
         # config then runs back-to-back — the worst case for a stale read.
-        super().__init__(execution_id=execution_id)
+        super().__init__(scope, execution_id=execution_id)
         self.company_name = (self.secrets.get("company_name") or "").strip()
         self.product_name = (self.secrets.get("product_name") or "").strip()
         self.product_description = (self.secrets.get("product_description") or "").strip()
@@ -253,9 +254,9 @@ class SyntheticReviewsIngestor(BaseIngestor):
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event, context):
-    """Lambda entry point. Honors execution_id from the manual-run payload for status tracking."""
+    """Lambda entry point (``run_in_workspace``): a run in the workspace the event names, or deployment-wide when
+    it names none (the API's Run now). Honors execution_id from the manual-run payload for status tracking."""
     # Manual-run secret-cache clearing (issue #141) is centralized in
     # BaseIngestor.__init__ — passing execution_id below triggers it.
     execution_id = event.get("execution_id") if isinstance(event, dict) else None
-    ingestor = SyntheticReviewsIngestor(execution_id=execution_id)
-    return ingestor.run()
+    return run_in_workspace(event, lambda scope: SyntheticReviewsIngestor(scope, execution_id=execution_id).run())

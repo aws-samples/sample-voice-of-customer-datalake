@@ -7,6 +7,8 @@ import pytest
 from github_fixtures import API, ISSUES_PATH, REPO, FakeGitHub, FakeResponse, comment, issue, ok
 from github_ingestor_fixtures import WATERMARK_KEY, WatermarkTable, ingestor_with, run_listing, sent_items
 
+from _shared.test.workspace_fixtures import OTHER_SCOPE, OTHER_WS, WS
+
 AT_BOUNDARY = {"since": "2026-01-03T00:00:00Z", "boundary": [2]}
 
 
@@ -215,12 +217,45 @@ def test_the_raw_github_payload_is_archived_and_not_enqueued():
         ingestor.run()
 
     put = ingestor.s3.put_object.call_args.kwargs
-    assert put["Key"].startswith("raw/test_source/2026/01/01/")
+    assert put["Key"].startswith(f"ws/{WS}/raw/test_source/2026/01/01/")
     archived = json.loads(put["Body"])
     assert json.loads(archived["raw_content"])["number"] == 1
     sent = sent_items(ingestor)[0]
-    assert sent["s3_raw_uri"].startswith("s3://raw-bucket/raw/test_source/")
+    assert sent["s3_raw_uri"].startswith(f"s3://raw-bucket/ws/{WS}/raw/test_source/")
     assert "_github_payload" not in json.dumps(sent)
+
+
+class TestWorkspaces:
+    """Every watermark and message of a run is its workspace's (docs/multi-workspace.md, phase 2)."""
+
+    def test_a_repos_watermark_in_two_workspaces_is_two_keys(self):
+        page = [ok([issue(1, "2026-01-02T00:00:00Z")])]
+        watermarks = WatermarkTable()
+        with ingestor_with(FakeGitHub({ISSUES_PATH: list(page)}), watermarks) as ingestor:
+            ingestor.run()
+        with ingestor_with(FakeGitHub({ISSUES_PATH: list(page)}), watermarks, scope=OTHER_SCOPE) as ingestor:
+            ingestor.run()
+
+        other_key = f"WS#{OTHER_WS}#test_source#repo#{REPO}"
+        # Each run also keeps BaseIngestor's own last_id watermark, in its workspace too.
+        assert sorted(watermarks.values) == sorted([
+            WATERMARK_KEY, other_key, f"WS#{WS}#test_source#last_id", f"WS#{OTHER_WS}#test_source#last_id",
+        ])
+        assert json.loads(watermarks.values[other_key])["since"] == "2026-01-02T00:00:00Z"
+
+    def test_one_workspaces_watermark_does_not_move_the_others_listing(self):
+        github = FakeGitHub({ISSUES_PATH: [ok([])]})
+        watermarks = WatermarkTable({WATERMARK_KEY: json.dumps({"since": "2026-04-02T00:00:00Z", "boundary": []})})
+        with ingestor_with(github, watermarks, scope=OTHER_SCOPE) as ingestor:
+            ingestor.run()
+
+        params = github.calls[0].params
+        assert params == {"state": "all", "sort": "updated", "direction": "asc", "per_page": 100}
+
+    def test_every_enqueued_item_names_the_runs_workspace(self):
+        ingestor, _, _, _ = run_listing(ok([issue(1), issue(2, "2026-01-03T00:00:00Z")]))
+
+        assert [i["workspace_id"] for i in sent_items(ingestor)] == [WS, WS]
 
 
 def test_the_item_cap_ends_the_run():

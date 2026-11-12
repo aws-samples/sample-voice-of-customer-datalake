@@ -19,7 +19,9 @@ survived. The suite below pins, with literal values:
   character cap, the ``general`` focus area, rating clamped to 1..5, the
   0-90 day / 0-23 hour / 0-59 minute timestamp spread);
 * that ``normalize_item`` carries only the non-None synthetic fields, that
-  ``lambda_handler`` passes the ``execution_id`` through and keeps its four
+  ``lambda_handler`` runs an event naming no workspace deployment-wide, refuses
+  one naming a malformed workspace, runs the ingestor in the event's workspace,
+  fans the scheduled tick out first, passes the ``execution_id`` through and keeps its four
   instrumentation layers, and that the plugin root goes to ``sys.path[0]``.
 
 The run also showed dead code, deleted rather than tested: the
@@ -43,6 +45,17 @@ import pytest
 from _shared.test.fresh_import import assert_loading_puts_root_first, load_fresh
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import (
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    EXECUTION_ID_EVENTS,
+    REFUSED,
+    SCHEDULED_TICK,
+    SCOPE,
+    TICK_ORDER,
+    deployment_wide_events,
+    fan_out_then_run,
+    ws_event,
+)
 from shared.test.emf_fixtures import cold_start_metric_names
 from shared.test.instrumentation_fixtures import HAND_WRITTEN_HANDLER_LAYERS, TRACER_SOURCE, handler_layers
 from synthetic_reviews.ingestor import handler
@@ -65,7 +78,7 @@ def build(**secrets: str) -> handler.SyntheticReviewsIngestor:
     with offline_ingestor_construction(), patch(
         "_shared.base_ingestor.get_secret", return_value=scoped_secret(**secrets),
     ):
-        return handler.SyntheticReviewsIngestor()
+        return handler.SyntheticReviewsIngestor(SCOPE)
 
 
 def configured(**overrides: str) -> handler.SyntheticReviewsIngestor:
@@ -390,6 +403,8 @@ LAMBDA_CONTEXT = SimpleNamespace(
     get_remaining_time_in_millis=lambda: 900_000,
 )
 RUN_RESULT = {"status": "success", "items_processed": 4}
+# The execution id the integrations API's Run now names (shared/ids.py timestamped_id).
+RUN_NOW_ID = "run_synthetic_reviews_20261112080000_0a1b2c3d"
 
 
 def _invoke(event: object) -> object:
@@ -406,19 +421,45 @@ def stub_ingestor() -> Iterator[MagicMock]:
 
 
 class TestLambdaHandler:
-    @pytest.mark.parametrize(
-        ("event", "execution_id"), [({"execution_id": "exec-7"}, "exec-7"), ({}, None), ([], None)],
-    )
+    @pytest.mark.parametrize(("event", "execution_id"), EXECUTION_ID_EVENTS)
     def test_passes_the_execution_id_and_returns_the_run(self, stub_ingestor: MagicMock, event, execution_id):
         assert _invoke(event) == RUN_RESULT
-        stub_ingestor.assert_called_once_with(execution_id=execution_id)
+        stub_ingestor.assert_called_once_with(SCOPE, execution_id=execution_id)
+        stub_ingestor.return_value.run.assert_called_once_with()
+
+    @pytest.mark.parametrize("event", EVENTS_WITH_A_MALFORMED_WORKSPACE)
+    def test_an_event_naming_a_malformed_workspace_is_refused_and_builds_no_ingestor(
+        self, stub_ingestor: MagicMock, event,
+    ):
+        assert _invoke(event) == REFUSED
+        stub_ingestor.assert_not_called()
+
+    @pytest.mark.parametrize(("event", "execution_id"), deployment_wide_events(RUN_NOW_ID))
+    def test_an_event_naming_no_workspace_runs_deployment_wide(self, stub_ingestor: MagicMock, event, execution_id):
+        with patch("_shared.base_ingestor.fan_out_once") as fan_out:
+            assert _invoke(event) == RUN_RESULT
+        stub_ingestor.assert_called_once_with(None, execution_id=execution_id)
+        stub_ingestor.return_value.run.assert_called_once_with()
+        fan_out.assert_not_called()
+
+    def test_the_scheduled_tick_fans_out_then_runs_deployment_wide(self, stub_ingestor: MagicMock):
+        result, order = fan_out_then_run(stub_ingestor.return_value.run, lambda: _invoke(dict(SCHEDULED_TICK)))
+        assert result == RUN_RESULT
+        stub_ingestor.assert_called_once_with(None, execution_id=None)
+        assert order == list(TICK_ORDER)
+
+    def test_runs_the_ingestor_in_the_events_workspace(self, stub_ingestor: MagicMock):
+        _invoke(ws_event(execution_id="exec-7"))
+        (scope,), kwargs = stub_ingestor.call_args
+        assert scope == SCOPE
+        assert kwargs == {"execution_id": "exec-7"}
 
     def test_keeps_every_instrumentation_layer(self):
         assert handler_layers(handler.lambda_handler) == HAND_WRITTEN_HANDLER_LAYERS
 
     @pytest.mark.usefixtures("stub_ingestor")
     def test_a_cold_start_flushes_only_the_cold_start_metric(self, capsys):
-        assert cold_start_metric_names(handler.metrics, lambda: _invoke({}), capsys) == {"ColdStart"}
+        assert cold_start_metric_names(handler.metrics, lambda: _invoke(ws_event()), capsys) == {"ColdStart"}
 
 
 def test_loading_the_module_puts_the_plugin_root_first_on_sys_path():

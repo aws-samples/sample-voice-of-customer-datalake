@@ -11,8 +11,7 @@
       "enabled": true,
       "schedule": "rate(30 minutes)",
       "timeout": 600,
-      "memory": 1024,
-      "selfInvoke": true
+      "memory": 1024
     }
   },
 

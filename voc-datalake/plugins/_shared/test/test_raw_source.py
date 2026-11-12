@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from _shared.raw_source import MAX_RAW_SOURCE_CHARS, RAW_SOURCE_KEY, TRUNCATION_MARKER, pop_raw_source
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
+from _shared.test.workspace_fixtures import SCOPE
 
 
 class TestPopRawSource:
@@ -37,7 +38,7 @@ def _ingestor():
             yield from ()
 
     with offline_ingestor_construction():
-        return _Plugin()
+        return _Plugin(SCOPE)
 
 
 class TestNormalizeItem:
@@ -49,6 +50,8 @@ class TestNormalizeItem:
         assert archive.call_args.args[4] == '{"rss": 1}'
         assert RAW_SOURCE_KEY not in archive.call_args.args[3]
         assert RAW_SOURCE_KEY not in message
+        # Archived under the run's workspace (ws/{ws}/raw/...), never the deployment-wide raw/.
+        assert archive.call_args.kwargs == {"scope": SCOPE}
 
     def test_an_explicit_raw_content_wins_and_the_key_still_goes(self):
         ingestor = _ingestor()

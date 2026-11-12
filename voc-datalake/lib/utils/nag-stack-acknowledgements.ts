@@ -13,6 +13,7 @@ import type { VocApiStack } from '../stacks/api-stack';
 import type { VocCoreStack } from '../stacks/core-stack';
 import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
+import { WORKSPACE_RAW_LAYER_PREFIX } from '../stacks/core-buckets';
 import { acknowledgeNag } from './nag-ack';
 import {
   rawDataPrefixSuppressions, s3ObjectSuppressions,
@@ -28,7 +29,11 @@ export interface CoreStacks {
 export function acknowledgeStackFindings({ core, ingestion, processing, api }: CoreStacks): void {
   const raw = core.rawDataBucket;
   acknowledgeNag(ingestion, [
-    ...s3ObjectSuppressions([raw.arnForObjects('raw/*'), ingestion.s3ImportBucket.arnForObjects('*')]),
+    // raw/* and ws/{one id}/raw/*: a plugin ingestor's deployment-wide run writes raw/, a run in a workspace only that
+    // workspace's bronze layer, ws/{ws}/raw/ (write-once Puts).
+    ...s3ObjectSuppressions([
+      raw.arnForObjects('raw/*'), raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}*`), ingestion.s3ImportBucket.arnForObjects('*'),
+    ]),
     ...rawDataPrefixSuppressions(raw, [
       'company-context/design/logo_preview_*', 'company-context/design/icons_*', 'raw/email_intake/*',
     ]),

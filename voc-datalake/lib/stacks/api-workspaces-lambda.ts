@@ -30,12 +30,11 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { grantKeyScopedWrites } from '../utils/table-write-grants';
+import { WORKSPACE_SECRET_BASE_PREFIX, workspaceSecretsArn } from '../utils/workspace-secrets';
 import type { ApiStackContext } from './api-context';
 
 const WORKSPACES_API_FUNCTION_BASE_NAME = 'voc-workspaces-api';
 const WORKSPACES_HANDLER_FILE = 'workspaces_handler.py';
-/** The name prefix of every per-workspace credentials secret (`{prefix}/{ws}/credentials`). */
-const WORKSPACE_SECRET_BASE_PREFIX = 'voc/ws';
 /** Where the workspaces API puts (platform_workspaces.py, workspace.py, workspace_members.py): a create's rows, an
  * add's rows, the audits. */
 const WORKSPACE_WRITE_PARTITIONS = ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'];
@@ -45,9 +44,7 @@ const MEMBERSHIP_PARTITIONS = ['USER#*', 'WS#*'];
 /** Create, describe and tag the per-workspace credentials secrets, and no other secret. */
 function grantWorkspaceSecrets(ctx: ApiStackContext, role: iam.Role, prefix: string): void {
   const { kmsKey } = ctx.props;
-  const secretsArn = ctx.stack.formatArn({
-    service: 'secretsmanager', resource: 'secret', resourceName: `${prefix}/*`, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-  });
+  const secretsArn = workspaceSecretsArn(ctx.stack, prefix);
   role.addToPolicy(new iam.PolicyStatement({
     actions: ['secretsmanager:CreateSecret'],
     resources: [secretsArn],

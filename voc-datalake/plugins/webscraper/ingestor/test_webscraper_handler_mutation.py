@@ -12,7 +12,7 @@ unobserved by any test:
 * the two length floors (JSON-LD body ≥ 5, CSS text ≥ 10), the 1-5 class-digit
   window and the 1..5 clamp of the text fallback, each on BOTH sides;
 * the run bookkeeping a manual "Run now" is reported through — the exact
-  `SCRAPER_RUN#` update_item call, `pages_scraped`/`items_found`/`current_url`
+  `WS#{ws}#SCRAPER_RUN#` update_item call, `pages_scraped`/`items_found`/`current_url`
   per page, `completed` vs `completed_with_errors`, the per-scraper metric,
   the 2.0-5.0 s inter-page jitter — and the `>=` of the due-time check;
 * every WARNING/ERROR a scraper operator reads in CloudWatch to diagnose a
@@ -43,8 +43,10 @@ from _shared.base_ingestor import metrics as real_metrics
 from _shared.base_ingestor import tracer
 from _shared.raw_source import RAW_SOURCE_KEY
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import OTHER_SCOPE, SCOPE, WS, ws_event
 from shared.test.clock import frozen_clock
 from shared.test.emf_fixtures import emf_metric_names
+from shared.ws_repo import OutOfScopeError, WorkspaceTable, ws_table
 
 if TYPE_CHECKING:
     from webscraper.ingestor.handler import WebScraperIngestor
@@ -63,24 +65,33 @@ def _soup(html: str) -> BeautifulSoup:
 
 
 @contextmanager
-def _constructing(configs: str | None = None, **env):
-    """Patch the AWS seams BaseIngestor touches; the plugin secret carries *configs*."""
+def _constructing(configs: str | None = None, aggregates_table: str = ''):
+    """Patch the AWS seams BaseIngestor touches; the plugin secret carries *configs*, and
+    BaseIngestor's AGGREGATES_TABLE (read at import) is *aggregates_table*. Yields the
+    patched ``get_dynamodb_resource``."""
     secret = scoped_secret(configs=configs) if configs is not None else scoped_secret()
     with (
         patch('_shared.base_ingestor.get_dynamodb_resource') as dynamo,
         patch('_shared.base_ingestor.get_s3_client'),
         patch('_shared.base_ingestor.get_sqs_client'),
         patch('_shared.base_ingestor.get_secret', return_value=secret),
-        patch.dict('os.environ', env, clear=False),
+        patch('_shared.base_ingestor.AGGREGATES_TABLE', aggregates_table),
     ):
         dynamo.return_value.Table.return_value = MagicMock()
-        yield
+        yield dynamo
 
 
-def _ingestor(configs: str | None = None, **kwargs):
+def _ingestor(configs: str | None = None, scope=SCOPE, **kwargs):
     with _constructing(configs):
         from webscraper.ingestor.handler import WebScraperIngestor
-        return WebScraperIngestor(**kwargs)
+        return WebScraperIngestor(scope, **kwargs)
+
+
+def _with_scoped_aggregates(ingestor, scope=SCOPE) -> MagicMock:
+    """Give *ingestor* an aggregates table seen through *scope*; return the raw table under it."""
+    raw = MagicMock()
+    ingestor.aggregates_table = ws_table(scope, raw)
+    return raw
 
 
 @pytest.fixture
@@ -115,30 +126,31 @@ class TestConstruction:
             'Upgrade-Insecure-Requests': '1',
         }
 
-    def test_without_aggregates_table_env_there_is_no_table(self):
-        with _constructing(AGGREGATES_TABLE=''):
+    def test_without_aggregates_table_there_is_no_table(self):
+        with _constructing(aggregates_table='') as dynamo:
             from webscraper.ingestor.handler import WebScraperIngestor
-            ingestor = WebScraperIngestor()
-        assert ingestor.aggregates_table_name == ''
+            ingestor = WebScraperIngestor(SCOPE)
         assert ingestor.aggregates_table is None
+        # Only the watermarks table is opened.
+        assert dynamo.return_value.Table.call_args_list == [call('test-watermarks')]
 
-    def test_an_unset_aggregates_table_env_is_the_same_as_empty(self):
-        with _constructing(), patch.dict('os.environ'), patch('boto3.resource') as resource:
-            os.environ.pop('AGGREGATES_TABLE', None)
+    def test_the_scraper_opens_no_table_of_its_own(self):
+        """The run rows go through BaseIngestor's workspace table; the handler never holds a raw boto3 table."""
+        with _constructing(aggregates_table='voc-aggregates'), patch('boto3.resource') as resource, \
+                patch('boto3.client') as client:
             from webscraper.ingestor.handler import WebScraperIngestor
-            ingestor = WebScraperIngestor()
-        assert ingestor.aggregates_table_name == ''
-        assert ingestor.aggregates_table is None
+            WebScraperIngestor(SCOPE)
         resource.assert_not_called()
+        client.assert_not_called()
 
-    def test_aggregates_table_is_resolved_from_env_through_boto3(self):
-        with _constructing(AGGREGATES_TABLE='voc-aggregates'), patch('boto3.resource') as resource:
+    def test_aggregates_table_is_the_named_table_seen_through_the_runs_workspace(self):
+        with _constructing(aggregates_table='voc-aggregates') as dynamo:
             from webscraper.ingestor.handler import WebScraperIngestor
-            ingestor = WebScraperIngestor()
-        resource.assert_called_once_with('dynamodb')
-        resource.return_value.Table.assert_called_once_with('voc-aggregates')
-        assert ingestor.aggregates_table_name == 'voc-aggregates'
-        assert ingestor.aggregates_table is resource.return_value.Table.return_value
+            ingestor = WebScraperIngestor(OTHER_SCOPE)
+        assert call('voc-aggregates') in dynamo.return_value.Table.call_args_list
+        assert isinstance(ingestor.aggregates_table, WorkspaceTable)
+        assert ingestor.aggregates_table.scope == OTHER_SCOPE
+        assert ingestor.scope == OTHER_SCOPE
 
     def test_target_scraper_id_is_kept(self):
         assert _ingestor(target_scraper_id='s9').target_scraper_id == 's9'
@@ -182,14 +194,35 @@ class TestLoadScraperConfigs:
 class TestUpdateRunStatus:
     def test_writes_the_scraper_run_record_with_one_placeholder_per_key(self):
         ingestor = _ingestor(execution_id='exec-7')
-        ingestor.aggregates_table = MagicMock()
+        raw = _with_scoped_aggregates(ingestor)
         ingestor._update_run_status('shop', {'status': 'completed', 'items_found': 3})
-        ingestor.aggregates_table.update_item.assert_called_once_with(
-            Key={'pk': 'SCRAPER_RUN#shop', 'sk': 'exec-7'},
+        raw.update_item.assert_called_once_with(
+            Key={'pk': f'WS#{WS}#SCRAPER_RUN#shop', 'sk': 'exec-7'},
             UpdateExpression='SET #status = :status, #items_found = :items_found',
             ExpressionAttributeNames={'#status': 'status', '#items_found': 'items_found'},
             ExpressionAttributeValues={':status': 'completed', ':items_found': 3},
         )
+
+    def test_the_record_built_through_the_real_table_is_the_workspaces(self):
+        """No hand-installed table: the one BaseIngestor opens from AGGREGATES_TABLE gets the scoped key."""
+        with _constructing(aggregates_table='voc-aggregates') as dynamo:
+            from webscraper.ingestor.handler import WebScraperIngestor
+            ingestor = WebScraperIngestor(SCOPE, execution_id='exec-7')
+        ingestor._update_run_status('shop', {'status': 'running'})
+        dynamo.return_value.Table.return_value.update_item.assert_called_once_with(
+            Key={'pk': f'WS#{WS}#SCRAPER_RUN#shop', 'sk': 'exec-7'},
+            UpdateExpression='SET #status = :status',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={':status': 'running'},
+        )
+
+    def test_a_key_outside_the_table_s_workspace_is_refused_before_the_table_is_called(self):
+        """The key comes from the run's own scope: a table of another workspace refuses it."""
+        ingestor = _ingestor(execution_id='exec-7')
+        raw = _with_scoped_aggregates(ingestor, OTHER_SCOPE)
+        with pytest.raises(OutOfScopeError):
+            ingestor._update_run_status('shop', {'status': 'completed'})
+        raw.update_item.assert_not_called()
 
     def test_no_table_writes_nothing(self, logger):
         ingestor = _ingestor(execution_id='exec-7')
@@ -198,10 +231,10 @@ class TestUpdateRunStatus:
         logger.warning.assert_not_called()
 
     def test_no_execution_id_writes_nothing(self, ingestor):
-        ingestor.aggregates_table = MagicMock()
+        raw = _with_scoped_aggregates(ingestor)
         ingestor.execution_id = None
         ingestor._update_run_status('shop', {'status': 'completed'})
-        ingestor.aggregates_table.update_item.assert_not_called()
+        raw.update_item.assert_not_called()
 
     @pytest.mark.parametrize('error', [
         TypeError('Float types are not supported'),
@@ -210,8 +243,7 @@ class TestUpdateRunStatus:
     ])
     def test_a_failed_write_is_a_warning_with_traceback(self, logger, error):
         ingestor = _ingestor(execution_id='exec-7')
-        ingestor.aggregates_table = MagicMock()
-        ingestor.aggregates_table.update_item.side_effect = error
+        _with_scoped_aggregates(ingestor).update_item.side_effect = error
         ingestor._update_run_status('shop', {'status': 'completed'})
         logger.warning.assert_called_once_with(
             f'Failed to update run status: {error}', exc_info=True)
@@ -989,7 +1021,7 @@ class TestLambdaHandlerIsWrapped:
         with patch(f'{HANDLER}.WebScraperIngestor') as ingestor_cls:
             ingestor_cls.return_value.run.return_value = {'status': 'success'}
             from webscraper.ingestor.handler import lambda_handler
-            yield lambda: lambda_handler({'execution_id': 'exec-1', 'scraper_id': 'shop'}, lambda_context)
+            yield lambda: lambda_handler(ws_event(execution_id='exec-1', scraper_id='shop'), lambda_context)
         real_metrics.clear_metrics()
 
     def test_the_lambda_context_reaches_the_logger(self, invoke, lambda_context):

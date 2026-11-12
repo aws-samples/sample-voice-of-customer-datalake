@@ -24,7 +24,7 @@ import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -33,9 +33,22 @@ from github_ingestor_fixtures import ABSENT, WatermarkTable, ingestor_with, run_
 
 from _shared.github_api import StopRun
 from _shared.test.fresh_import import assert_loading_puts_root_first, load_fresh
+from _shared.test.workspace_fixtures import (
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    REFUSED,
+    SCHEDULED_TICK,
+    SCOPE,
+    TICK_ORDER,
+    deployment_wide_events,
+    fan_out_then_run,
+    ws_event,
+)
 from github_issues.ingestor import handler
 from shared.test.emf_fixtures import cold_start_metric_names
 from shared.test.instrumentation_fixtures import HAND_WRITTEN_HANDLER_LAYERS, handler_layers
+
+# The execution id the integrations API's Run now names (shared/ids.py timestamped_id).
+RUN_NOW_ID = "run_github_issues_20261112080000_0a1b2c3d"
 
 MODULE_PATH = Path(handler.__file__).resolve()
 PLUGIN_ROOT = str(MODULE_PATH.parents[1])
@@ -147,20 +160,48 @@ def ingestor_class() -> Iterator[MagicMock]:
 
 
 class TestLambdaHandler:
-    @pytest.mark.parametrize(("event", "execution_id"), [({"execution_id": "exec-7"}, "exec-7"), ([], None)])
+    @pytest.mark.parametrize(("event", "execution_id"), [
+        (ws_event(execution_id="exec-7"), "exec-7"),
+        (ws_event(), None),
+        # A Mapping that is not a dict names its workspace but is never read for an execution id.
+        (MappingProxyType(ws_event(execution_id="exec-7")), None),
+    ])
     def test_builds_the_ingestor_from_the_event_and_context_and_returns_its_run(
         self, ingestor_class: MagicMock, event, execution_id,
     ):
         with patch("time.monotonic", return_value=1000.0):
             assert handler.lambda_handler(event, _context()) == {"status": "success", "items_processed": 3}
-        assert ingestor_class.call_args_list == [call(execution_id=execution_id, deadline=1240.0)]
+        assert ingestor_class.call_args_list == [call(SCOPE, execution_id=execution_id, deadline=1240.0)]
+
+    @pytest.mark.parametrize("event", EVENTS_WITH_A_MALFORMED_WORKSPACE)
+    def test_an_event_naming_a_malformed_workspace_is_refused_and_builds_no_ingestor(
+        self, ingestor_class: MagicMock, event,
+    ):
+        assert handler.lambda_handler(event, _context()) == REFUSED
+        ingestor_class.assert_not_called()
+
+    @pytest.mark.parametrize(("event", "execution_id"), deployment_wide_events(RUN_NOW_ID))
+    def test_an_event_naming_no_workspace_runs_deployment_wide(self, ingestor_class: MagicMock, event, execution_id):
+        with patch("time.monotonic", return_value=1000.0), patch("_shared.base_ingestor.fan_out_once") as fan_out:
+            assert handler.lambda_handler(event, _context()) == {"status": "success", "items_processed": 3}
+        assert ingestor_class.call_args_list == [call(None, execution_id=execution_id, deadline=1240.0)]
+        ingestor_class.return_value.run.assert_called_once_with()
+        fan_out.assert_not_called()
+
+    def test_the_scheduled_tick_fans_out_then_runs_deployment_wide(self, ingestor_class: MagicMock):
+        with patch("time.monotonic", return_value=1000.0):
+            result, order = fan_out_then_run(
+                ingestor_class.return_value.run, lambda: handler.lambda_handler(dict(SCHEDULED_TICK), _context()))
+        assert result == {"status": "success", "items_processed": 3}
+        assert ingestor_class.call_args_list == [call(None, execution_id=None, deadline=1240.0)]
+        assert order == list(TICK_ORDER)
 
     def test_carries_all_four_instrumentation_layers(self):
         assert handler_layers(handler.lambda_handler) == HAND_WRITTEN_HANDLER_LAYERS
 
     @pytest.mark.usefixtures("ingestor_class")
     def test_flushes_the_cold_start_metric(self, capsys):
-        names = cold_start_metric_names(handler.metrics, lambda: handler.lambda_handler({}, _context()), capsys)
+        names = cold_start_metric_names(handler.metrics, lambda: handler.lambda_handler(ws_event(), _context()), capsys)
         assert names == {"ColdStart"}
 
 

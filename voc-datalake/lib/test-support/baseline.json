@@ -183,7 +183,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "91dc6151f3c084c510f94b8b62413e0939ebf8f1f208072868c4fdc74b0d87df",
+      "templateSha256": "2bb2e1253efd0e278a68e7930cc5deb2c8c90861dc58f3b9906821e9e938bcd4",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -280,7 +280,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "4c63625157ea7a23fe4ee76ae14b767487366b161a5bcc369501df0299d4dd64",
+      "templateSha256": "7db7feda0b36a7667a366dd5aa1397d90e78d9cf0d1d07cc6c1bb18058b060e7",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -324,7 +324,11 @@
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>"
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-github_issues-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-web_reviews-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:secretsmanager:us-east-1:111111111111:secret:voc/ws/*"
         ],
         "environmentNames": [
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -333,7 +337,8 @@
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "POWERTOOLS_SERVICE_NAME = voc-design-capture",
-          "POWERTOOLS_SERVICE_NAME = voc-ingestion"
+          "POWERTOOLS_SERVICE_NAME = voc-ingestion",
+          "WORKSPACE_SECRET_PREFIX = voc/ws"
         ]
       }
     },

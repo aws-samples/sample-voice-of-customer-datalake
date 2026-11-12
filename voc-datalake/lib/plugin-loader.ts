@@ -90,14 +90,15 @@ const IngestorInfraSchema = z.object({
   // sessions of the AWS-managed AgentCore browser (aws.browser.v1) — the
   // web_reviews plugin. See ingestion-roles.ts.
   browser: z.boolean().optional().default(false),
-  // Opt-in capability: when true, a run that reaches its time budget continues in a
-  // new invocation of the plugin's OWN function (plugins/_shared/app_reviews_parts.py),
-  // so its dedicated role gets `lambda:InvokeFunction` on exactly that function.
-  selfInvoke: z.boolean().optional().default(false),
   // Opt-in capability: when true, a run the API started tells its starter when it ends (shared/job_notices.py,
   // docs/realtime.md), so the plugin gets a DEDICATED role carrying VocCoreStack's `jobs` publish policy and
   // the Event API's host in its environment. Never the shared role.
   jobNotices: z.boolean().optional().default(false),
+  // Gone (docs/multi-workspace.md): every scheduled role may invoke its own function (the tick's fan-out, the
+  // continuation parts) and an unscheduled one may not, so the opt-in decides nothing any more. Refused rather
+  // than ignored, so a manifest still relying on it fails its load instead of silently losing the grant.
+  selfInvoke: z.never({ error: 'infrastructure.ingestor.selfInvoke is gone: a scheduled ingestor may invoke itself' })
+    .optional(),
 });
 
 /** A webhook receiver's MemorySize when its manifest names none. */

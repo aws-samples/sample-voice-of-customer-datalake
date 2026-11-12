@@ -17,14 +17,16 @@ the row needs no cross-invocation aggregation. Each part writes the running tota
 run's warnings as ``errors``; the row's contract for the UI and the assistant is
 unchanged. A manual run keeps its ``execution_id`` in every part (frequency and
 watermark checks stay skipped); a scheduled run's parts carry none, so each app
-still gets its due check. A single-app run never needs a second part.
+still gets its due check. A single-app run never needs a second part. Every part of
+a run in a workspace carries its ``workspace_id`` (the scope the first part ran in),
+so a continuation runs, and writes its row, in the same workspace; a deployment-wide
+run's parts name none and stay deployment-wide.
 
 The continuation event is produced only by this code and accepted only from the
 function's own role (``lambda:InvokeFunction`` on its own ARN,
 ``lib/stacks/ingestion-stack.ts``); it is still validated (``Continuation``).
 """
 
-import os
 import time
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
@@ -33,8 +35,9 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from shared.aws import invoke_lambda_async
+from _shared.self_invoke import invoke_self
 from shared.timestamps import now_iso
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope
 
 # The event key a continuation part carries its state under.
 CONTINUATION_KEY = "continuation"
@@ -138,10 +141,11 @@ def hand_off_failure_updates(
 
 
 def continuation_event(
-    *, execution_id: str | None, apps: Sequence[tuple[str, str]], items_found: int,
+    *, scope: WorkspaceScope | None, execution_id: str | None, apps: Sequence[tuple[str, str]], items_found: int,
     warnings: Sequence[str], part: int,
 ) -> dict:
-    """The async event that starts *part* of a run with *apps* still to do."""
+    """The async event that starts *part* of a run with *apps* still to do, in the run's workspace (*scope*; a
+    deployment-wide run's parts name none)."""
     event: dict = {
         CONTINUATION_KEY: {
             "apps": [{"app_id": app_id, "name": name} for app_id, name in apps],
@@ -150,20 +154,16 @@ def continuation_event(
             "part": part,
         }
     }
+    if scope is not None:
+        event[WORKSPACE_FIELD] = scope.ws
     if execution_id:
         event["execution_id"] = execution_id
     return event
 
 
 def start_next_part(event: dict) -> None:
-    """Invoke this function (``AWS_LAMBDA_FUNCTION_NAME``) asynchronously with *event*."""
-    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "")
-    if not function_name:
-        raise RuntimeError("AWS_LAMBDA_FUNCTION_NAME is not set")
-    response = invoke_lambda_async(function_name, event)
-    status = response.get("StatusCode")
-    if status != 202:
-        raise RuntimeError(f"async invoke answered {status}")
+    """Invoke this function asynchronously with *event* (``_shared/self_invoke.py``, shared with the tick's fan-out)."""
+    invoke_self(event)
 
 
 class RunBudget:

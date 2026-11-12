@@ -60,6 +60,10 @@ In `voc-aggregates`, two rows per run, with no `ttl` (kept while the platform ru
 | `IMPORT_RUN` | `{started_at}#{run_id}` | The summary: every field except `warnings` and `errors`, so the newest-first listing reads small rows |
 | `IMPORT_RUN#{run_id}` | `RUN` | The detail: the summary fields plus `warnings` and `errors` |
 
+An S3 import run in a workspace (multi-workspace, not released yet, [multi-workspace.md](multi-workspace.md))
+writes the same two rows under `WS#{ws}#IMPORT_RUN` and `WS#{ws}#IMPORT_RUN#{run_id}`; the history routes read the
+deployment-wide rows above until they are keyed by workspace.
+
 The detail row is written first, so a listed run always has a detail. One partition holds every
 summary row; imports are a few per day, far below a partition's write limit. A row written by an
 earlier release still carries a `ttl` 90 days after its run finished, and DynamoDB deletes it then
@@ -86,7 +90,8 @@ Both routes are on the manual-import Lambda and admin-only (its module middlewar
   `GET /feedback-forms/{id}/submissions`; one run record per submission would duplicate it.
 - **Scheduled plugin runs and scraper runs.** They are collection, not imports, and already have
   their own run rows: `SOURCE_RUN#{source}` (manual "Run now" of a plugin) and `SCRAPER_RUN#{id}`
-  (`GET /scrapers/{id}/status`, latest run only).
+  (`GET /scrapers/{id}/status`, latest run only); a run in a workspace writes `WS#{ws}#SOURCE_RUN#{source}` and
+  `WS#{ws}#SCRAPER_RUN#{id}`.
 
 To find which run created a feedback item, use the archived raw file for CSV and JSON uploads
 (`raw_s3_key`) and the item's `manual_import_job_id` for pastes; items do not carry a `run_id`.

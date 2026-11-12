@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import SCOPE, ws_event
 
 
 @contextmanager
@@ -27,7 +28,7 @@ def _make_ingestor(secrets: dict):
             patch('_shared.base_ingestor.get_secret', return_value=scoped_secret(**secrets)):
         mock_dynamo.return_value.Table.return_value = MagicMock()
         from synthetic_reviews.ingestor.handler import SyntheticReviewsIngestor
-        yield SyntheticReviewsIngestor()
+        yield SyntheticReviewsIngestor(SCOPE)
 
 
 def _configured_secrets(**overrides) -> dict:
@@ -257,6 +258,6 @@ class TestLambdaHandler:
             with patch.object(
                 handler_mod, 'SyntheticReviewsIngestor', return_value=ingestor
             ) as MockIngestor:
-                result = handler_mod.lambda_handler({'execution_id': 'run-123'}, ctx)
-        MockIngestor.assert_called_once_with(execution_id='run-123')
+                result = handler_mod.lambda_handler(ws_event(execution_id='run-123'), ctx)
+        MockIngestor.assert_called_once_with(SCOPE, execution_id='run-123')
         assert result == {'status': 'success'}

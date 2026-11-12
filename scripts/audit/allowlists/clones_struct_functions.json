@@ -11,14 +11,6 @@
     },
     {
       "files": [
-        "voc-datalake/plugins/_shared/base_ingestor.py",
-        "voc-datalake/plugins/_shared/base_webhook.py"
-      ],
-      "name": "_load_secrets",
-      "reason": "the filtering is already one implementation (plugin_secrets.filter_plugin_secrets); the read-and-evict wrapper stays per base class because the secret-isolation tests patch each module's get_secret / clear_secret_cache / SECRETS_ARN"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/agents/context_blocks.py",
         "voc-datalake/lambda/jobs/document_generator/handler.py"
       ],

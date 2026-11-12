@@ -33,7 +33,9 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.dynamo_values import as_count
 from shared.feedback_cursor import TABLE_KEY_FIELDS, decode_key_cursor, encode_key_cursor
+from shared.ingest_tables import DeploymentTable
 from shared.logging import logger
+from shared.ws_repo import WorkspaceScope, WorkspaceTable
 
 __all__ = [
     'MAX_MESSAGES',
@@ -138,12 +140,13 @@ def _count_fields(counts: ImportCounts) -> dict[str, int]:
     }
 
 
-def _rows(run: ImportRun, now: datetime) -> tuple[dict[str, Any], dict[str, Any]]:
-    """The ``(summary, detail)`` rows of ``run`` finished at ``now``."""
+def _rows(run: ImportRun, now: datetime, scope: WorkspaceScope | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The ``(summary, detail)`` rows of ``run`` finished at ``now``: under ``WS#{ws}#IMPORT_RUN`` (and
+    ``WS#{ws}#IMPORT_RUN#{run_id}``) for a workspace's run (``scope``), else the deployment-wide partitions."""
     warnings, warning_count, warnings_cut = _bounded(run.warnings, not_kept=run.warnings_not_kept)
     errors, error_count, errors_cut = _bounded(run.errors)
     summary: dict[str, Any] = {
-        'pk': LIST_PK,
+        'pk': LIST_PK if scope is None else scope.key(LIST_PK),
         'sk': f'{run.started_at}#{run.run_id}',
         'run_id': run.run_id,
         'method': run.method,
@@ -161,25 +164,36 @@ def _rows(run: ImportRun, now: datetime) -> tuple[dict[str, Any], dict[str, Any]
         'raw_s3_key': run.raw_s3_key or '',
         'radar_brand': run.radar_brand,
     }
-    detail = {**summary, 'pk': f'{LIST_PK}#{run.run_id}', 'sk': DETAIL_SK, 'warnings': warnings, 'errors': errors}
+    detail_pk = f'{LIST_PK}#{run.run_id}' if scope is None else scope.key(LIST_PK, run.run_id)
+    detail = {**summary, 'pk': detail_pk, 'sk': DETAIL_SK, 'warnings': warnings, 'errors': errors}
     return summary, detail
 
 
 def _put_rows(table: Any, rows: Iterable[Mapping[str, Any]]) -> None:
     """Write each row (the detail first, so a listed run always has its detail)."""
     for row in rows:
-        table.put_item(Item=dict(row))
+        if isinstance(table, WorkspaceTable | DeploymentTable):
+            table.put_item(row)
+        else:
+            table.put_item(Item=dict(row))
 
 
 def record_import_run(table: Any, run: ImportRun, *, now: datetime | None = None) -> str | None:
-    """Store ``run``; its ``run_id``, or None when there is no table or the write failed (logged, never raised)."""
+    """Store ``run``; its ``run_id``, or None when there is no table or the write failed (logged, never raised).
+
+    A ``WorkspaceTable`` (shared/ws_repo.py: the S3 import ingestor's run in a workspace) records the run under
+    its workspace's partitions; a ``DeploymentTable`` (shared/ingest_tables.py: its deployment-wide run) or a
+    plain table under the deployment-wide ones, which the readers (``list_import_runs``, ``get_import_run``) and
+    the API's writers use until the import API is keyed by workspace.
+    """
     if table is None:
         return None
     if run.method not in METHODS:
         logger.warning('Import run not recorded: unknown method', extra={'method': run.method})
         return None
+    scope = table.scope if isinstance(table, WorkspaceTable) else None  # a DeploymentTable's is None too
     try:
-        summary, detail = _rows(run, now or datetime.now(UTC))
+        summary, detail = _rows(run, now or datetime.now(UTC), scope)
         _put_rows(table, (detail, summary))
     except (ClientError, BotoCoreError, TypeError, ValueError):
         # The import itself has already happened: losing its history row must not turn it into an error.

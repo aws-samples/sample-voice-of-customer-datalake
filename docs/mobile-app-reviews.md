@@ -235,7 +235,8 @@ collected, and starts a new invocation of its **own** function asynchronously wi
 do and the totals so far. Every invocation (a "part") runs at least one app, so N apps take at most
 N parts; ten iOS apps take two.
 
-- **Run row** (`SOURCE_RUN#<plugin>`): unchanged contract. It stays `running` while parts follow
+- **Run row** (`SOURCE_RUN#<plugin>`; `WS#{ws}#SOURCE_RUN#<plugin>` for a run in a workspace, whose every part
+  carries its `workspace_id`, [multi-workspace.md](multi-workspace.md), not released yet): unchanged contract. It stays `running` while parts follow
   each other, `items_found` is the running total over every part, `started_at` is the first part's,
   and only the last part writes `completed` with every part's warnings as `errors`. A part that
   raises writes `error` (earlier parts' warnings kept); a part that cannot start the next one
@@ -248,9 +249,9 @@ N parts; ten iOS apps take two.
   skipped); a **scheduled** run's parts carry none, so each remaining app still gets its due check.
   A run of a single app (`app_id`) never needs a second part.
 - An app whose connector was removed or renamed while the run was going is dropped from later parts.
-- **IAM**: each app-review ingestor role may `lambda:InvokeFunction` exactly its own function ARN
-  (`"selfInvoke": true` under `infrastructure.ingestor` in each plugin's `manifest.json`); no other ingestor gets an invoke
-  grant.
+- **IAM**: each app-review ingestor role may `lambda:InvokeFunction` exactly its own function ARN, as every
+  scheduled ingestor's role may (the scheduled tick's per-workspace fan-out uses the same grant,
+  [multi-workspace.md](multi-workspace.md)); an unscheduled ingestor gets no invoke grant.
 - A scheduled chain that runs longer than the 30-minute schedule tick (about 18 iOS apps due at
   once) can overlap the next tick for an app it has not reached yet. That app is then fetched by both
   chains, and the processor deduplicates by review id.
