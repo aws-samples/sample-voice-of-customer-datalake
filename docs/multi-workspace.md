@@ -18,6 +18,7 @@ and files named here are the planned ones unless the table lists them.
 | Unreleased | The cross-workspace suite (`lambda/api/test/test_cross_workspace_routes.py`, Phases below). Workspace-scoped today: `GET /me/workspaces/current` and the four members routes; every other route is by design or pending (phase 2 or 3) |
 | Unreleased | The scope of every settings row, per workspace or for the deployment, held to the code (`lambda/shared/test/test_settings_scopes.py`, Per-workspace configuration below). No key has moved yet |
 | Unreleased | The assistant's reads carry the caller's `X-Workspace-Id` to the domain Lambdas (Request flow below); no domain route reads it yet but the workspaces API's |
+| Unreleased | Plan steps carry the workspace their plan was approved in: `workspace_id` on the plan's META, `voc:workspace` in each step's claims, sent as the domain calls' `X-Workspace-Id` header (Request flow below) |
 | Unreleased | The deployment-wide settings' writes are platform admins', checked live: `PUT /settings/appearance` and the alert writes (Per-workspace configuration below; in the route-gate inventory as admin-only and platform-admin-only) |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
@@ -131,8 +132,10 @@ The assistant's reads (the stream Lambda calling the domain Lambdas as the signe
 stream request's header (`assistant/runtime/event.ts`, as it came, not judged there; the web app sends it once it is
 inside a workspace, Request flow step 2) goes on every domain call as its `X-Workspace-Id` header, never as a claim,
 and each domain Lambda answers it exactly as it answers the caller's own request (membership, the 400 and the one
-404). So a route that moves into its workspace keeps working for the assistant. Not yet carried: plan steps (`voc-plan-step` acts for the
-approver from the plan's row, which has no workspace yet) and the global MCP tools (a token will pin its workspace).
+404). So a route that moves into its workspace keeps working for the assistant. Plan steps carry it too (since
+Unreleased): the approval's `X-Workspace-Id` (when well formed) is kept on the plan and each step names it to the
+domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). Not yet carried:
+the global MCP tools (a token will pin its workspace).
 
 ## Roles
 

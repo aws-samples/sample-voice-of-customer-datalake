@@ -189,9 +189,10 @@ def _cap_refused(exc: ClientError) -> bool:
 
 
 def create_plan(table: Any, plan: Mapping[str, Any], *, approver: Approver, conversation_id: str | None,
-                now: datetime) -> dict:
+                now: datetime, workspace: str | None = None) -> dict:
     """Store an approved plan and its steps in one transaction that also takes one of the approver's
-    slots; the META row. PlanCapReached when MAX_ACTIVE_PLANS of theirs are still active."""
+    slots; the META row. PlanCapReached when MAX_ACTIVE_PLANS of theirs are still active. ``workspace``: the
+    workspace the approval named (``workspace_id`` on META), which every step names to the domain Lambdas."""
     plan_id, stamp = new_plan_id(), iso(now)
     meta: dict[str, Any] = {
         **plan_key(plan_id), 'plan_id': plan_id, 'status': PLAN_APPROVED, 'goal': plan['goal'],
@@ -203,6 +204,8 @@ def create_plan(table: Any, plan: Mapping[str, Any], *, approver: Approver, conv
     }
     if conversation_id:
         meta['conversation_id'] = conversation_id
+    if workspace:
+        meta['workspace_id'] = workspace
     rows = [meta, *(_step_row(plan_id, index, step) for index, step in enumerate(plan['steps']))]
     try:
         table.meta.client.transact_write_items(TransactItems=[_take_slot(table, approver.sub, stamp), *(

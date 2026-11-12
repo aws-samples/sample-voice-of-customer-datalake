@@ -169,3 +169,18 @@ class TestTheClaims:
             self, client: MagicMock, groups: tuple[str, ...], expected: dict):
         client.admin_list_groups_for_user.return_value = _groups(*groups)
         assert pi.approver_claims(META, needs_admin=False, admin_if_current=True) == expected
+
+
+@pytest.mark.usefixtures('client')
+class TestTheWorkspace:
+    """The workspace the plan was approved in (META ``workspace_id``) goes with every step (docs/multi-workspace.md)."""
+
+    def test_a_step_names_the_workspace_of_its_plan(self):
+        meta = {**META, 'workspace_id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'}
+        assert pi.approver_claims(meta, needs_admin=False) == {
+            **USER_ONLY, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'}
+
+    @pytest.mark.parametrize('stored', [None, '', 42])
+    def test_a_plan_without_one_names_none(self, stored: object):
+        meta = META if stored is None else {**META, 'workspace_id': stored}
+        assert pi.approver_claims(meta, needs_admin=False) == USER_ONLY

@@ -68,6 +68,23 @@ def test_approve_stores_the_caller_as_approver(env, lambda_context):
     assert (meta.get('approver_sub'), meta.get('approver_username')) == ('user-sub', 'bob')
 
 
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+
+@pytest.mark.parametrize(('header', 'stored'), [
+    ({'X-Workspace-Id': WS}, WS),
+    ({'x-workspace-id': f' {WS} '}, WS),
+    ({'X-Workspace-Id': 'ws_short'}, None),
+    ({}, None),
+], ids=['named', 'any-case-trimmed', 'malformed', 'none'])
+def test_approve_keeps_the_workspace_its_request_named(env, lambda_context, header, stored):
+    """docs/multi-workspace.md, Request flow: each step names it to the domain Lambdas (agents/plan_identity.py)."""
+    status, body = call(lambda_context, 'POST', '/agents/plans', claims=USER, body={'plan': fixture_plan()},
+                        headers=header)
+    assert status == 202
+    assert (ps.get_meta(env.agents, body['plan_id']) or {}).get('workspace_id') == stored
+
+
 def test_an_invalid_plan_is_400_with_the_step_and_field(env, lambda_context):
     plan = fixture_plan()
     plan['steps'][1]['after'] = ['s9']

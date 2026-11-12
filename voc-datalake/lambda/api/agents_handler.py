@@ -52,6 +52,7 @@ from shared.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from shared.http_cache import request_header
 from shared.logging import logger, tracer
 from shared.plan_canonical import FINGERPRINT_RE
 from shared.plan_schema import ADMIN_ONLY_PACKS, PACKS, is_plan_id, validate_plan
@@ -61,6 +62,7 @@ from shared.request_body import json_object_body
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_aggregates_table
 from shared.warm_init import warm_at_init
+from shared.workspace import WORKSPACE_HEADER, is_workspace_id
 
 AGENT_NOT_FOUND = 'Agent not found'
 RUN_NOT_FOUND = 'Run not found'
@@ -647,6 +649,17 @@ def _conversation_id(value: object) -> str | None:
 PLAN_SIGNED_IN_ONLY = 'Plans are read and managed by the signed-in user who approved them'
 
 
+def _approval_workspace(event: dict) -> str | None:
+    """The workspace the approval's own request named (``X-Workspace-Id``, docs/multi-workspace.md "Request flow"),
+    when it is a well-formed workspace id: kept on the plan, so each step names it to the domain Lambdas it calls
+    (agents/plan_identity.py), which, once their routes read it (phases 2 and 3), resolve the approver's membership
+    there as for the approver's own request. Not judged here: from then on a plan approved for a workspace its
+    approver is not a member of has every step refused."""
+    value = request_header(event, WORKSPACE_HEADER)
+    ws = value.strip() if isinstance(value, str) else ''
+    return ws if is_workspace_id(ws) else None
+
+
 def _refuse_delegated(caller: Caller) -> None:
     """A delegated credential (MCP token, agent) never reads, lists, cancels or resolves a plan: 403."""
     if caller.delegated:
@@ -687,7 +700,8 @@ def approve_plan():
     table, now = _agents_table(), store.utc_now()
     try:
         # Atomic: the create transaction takes one of plans_store.MAX_ACTIVE_PLANS slots or fails.
-        meta = plans_store.create_plan(table, plan, approver=approver, conversation_id=conversation_id, now=now)
+        meta = plans_store.create_plan(table, plan, approver=approver, conversation_id=conversation_id, now=now,
+                                       workspace=_approval_workspace(app.current_event.raw_event))
     except plans_store.PlanCapReached as full:
         raise ConflictError(str(full)) from full
     plans_store.launch_plan(table, meta, now=now)
