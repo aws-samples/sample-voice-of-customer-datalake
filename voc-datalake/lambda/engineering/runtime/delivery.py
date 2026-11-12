@@ -2,12 +2,18 @@
 run lands in that run's inbox, and its addressees are woken to read it.
 
 The router (``bus/router.py``) is to invoke this function asynchronously with ``{"message": <voc-msg/1>, "seq": N}``
-once the message is in the run's conversation (N: its place there; today it still sends the bare message). Each message is recorded ONCE, as
-``WS#<ws>#RUN#<run>`` / ``INBOX#<addressee>#<seq:012d>#<event_id>`` in voc-engineering, with a conditional put, so
-a redelivery (the bus is at-least-once; the router keeps the message's seq) writes nothing. The addressee is
+once the message is in the run's conversation (N: its place there; today it still sends the bare message). Each
+message is recorded ONCE, as ``WS#<ws>#RUN#<run>`` / ``INBOX#<addressee>#<inbox_seq:012d>#<event_id>`` in
+voc-engineering. ``inbox_seq`` is the run's write-order counter (``inbox_seq`` on its META, taken just before the
+write), not the conversation's seq, which the row keeps as ``seq``: a delivery retried a minute later gets a number
+above every notice already read. The number is taken, then the row written: two deliveries at once can commit out
+of order by a moment, and a number can go unused (a redelivery's race, a crash between the two steps), so a reader
+takes the numbers as a near order, not a log: it re-reads a window behind its cursor at the tail (the board's
+``inbox`` op: 20 numbers) and keeps each message once by its event id. A marker, ``INBOXEVT#<event_id>``, written in
+the same transaction as the row, makes it once: a redelivery (the bus is at-least-once) writes nothing. The addressee is
 ``agent:<agent>``, ``conductor``, or ``role:<role>`` for a posted task (every agent of that role in the run reads it).
-Nothing deletes an inbox row or marks it read: the board API's ``inbox`` op (not built yet) is to read them for
-the caller's own run only, after a seq cursor, and the harness keeps each message once by its event id.
+Nothing deletes an inbox row or marks it read: the board API's ``inbox`` op reads them for the caller's own run
+only, after an ``inbox_seq`` cursor, and the harness keeps each message once by its event id.
 
 There is no queue: a suspended MicroVM runs no code, so delivery is a push (``Supervisor.wake``): a working agent's
 MicroVM is resumed and kept awake to read it, an agent held without a MicroVM on a long wait is continued in a new
@@ -27,12 +33,15 @@ from botocore.exceptions import ClientError
 from engineering.bus.schema import Message, MessageError, parse
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.interface import RuntimeRefused
-from engineering.runtime.runs import run_pk
+from engineering.runtime.runs import meta_key, run_pk
 from engineering.runtime.sessions import AgentSession
 from engineering.runtime.supervisor import Supervisor
-from shared.aws import is_conditional_check_failure
+from shared.aws import consistent_item, is_conditional_check_failure
+from shared.ids import is_key_collision
 
 INBOX: Final = 'INBOX#'
+#: The once-per-event marker beside a run's inbox rows.
+MARKER: Final = 'INBOXEVT#'
 
 
 class AddresseeBusy(RuntimeError):
@@ -51,12 +60,13 @@ def addressee(message: Message) -> str:
     raise RuntimeRefused(f'a message to {kind} has no inbox')
 
 
-def inbox_item(message: Message, seq: int, now: int) -> dict[str, Any]:
-    """The inbox row (agreed with the board's ``inbox`` op: keep the two in step)."""
+def inbox_item(message: Message, seq: int, inbox_seq: int, now: int) -> dict[str, Any]:
+    """The inbox row (agreed with the board's ``inbox`` op: keep the two in step): under its write-order number,
+    with the conversation's seq beside it."""
     item: dict[str, Any] = {
         'pk': run_pk(message.run_id),
-        'sk': f'{INBOX}{addressee(message)}#{seq:012d}#{message.event_id}',
-        'event_id': message.event_id, 'seq': seq, 'type': message.type,
+        'sk': f'{INBOX}{addressee(message)}#{inbox_seq:012d}#{message.event_id}',
+        'event_id': message.event_id, 'inbox_seq': inbox_seq, 'seq': seq, 'type': message.type,
         'from_kind': message.sender.kind, 'from_id': message.sender.id, 'summary': message.summary,
         'refs': json.dumps(message.to_dict()['refs'], separators=(',', ':'), sort_keys=True), 'at': now,
     }
@@ -66,8 +76,8 @@ def inbox_item(message: Message, seq: int, now: int) -> dict[str, Any]:
 
 
 def _seq(event: Mapping[str, Any]) -> int:
-    """The message's place in the conversation, which the router always passes (a redelivery keeps it): without it
-    a redelivery would land under another key, which the conditional put could not catch."""
+    """The message's place in the conversation, which the router always passes (a redelivery keeps it): the row
+    keeps it beside its write-order number, so a reader can show the conversation's order."""
     seq = event.get('seq')
     if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
         raise RuntimeRefused('seq is the message\'s place in the conversation, a whole number')
@@ -76,11 +86,29 @@ def _seq(event: Mapping[str, Any]) -> int:
 
 def record(table: Any, message: Message, seq: int, now: int) -> bool:
     """Write the message's inbox row once; whether it is new (False: a redelivery, nothing written)."""
+    pk = run_pk(message.run_id)
+    marker = {'pk': pk, 'sk': f'{MARKER}{message.event_id}'}
+    if consistent_item(table, marker) is not None:
+        return False  # a redelivery: no counter taken
     try:
-        table.put_item(Item=inbox_item(message, seq, now), ConditionExpression='attribute_not_exists(sk)')
+        inbox_seq = int(table.update_item(
+            Key=meta_key(message.run_id), UpdateExpression='ADD inbox_seq :one',
+            ConditionExpression='attribute_exists(pk)', ExpressionAttributeValues={':one': 1},
+            ReturnValues='UPDATED_NEW')['Attributes']['inbox_seq'])
     except ClientError as error:
         if is_conditional_check_failure(error):
-            return False
+            raise RuntimeRefused(f'run {message.run_id} has no META: no inbox') from error
+        raise
+    item = inbox_item(message, seq, inbox_seq, now)
+    try:
+        table.meta.client.transact_write_items(TransactItems=[
+            {'Put': {'TableName': table.name, 'ConditionExpression': 'attribute_not_exists(sk)',
+                     'Item': {**marker, 'inbox_seq': inbox_seq, 'addressee': addressee(message)}}},
+            {'Put': {'TableName': table.name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}},
+        ])
+    except ClientError as error:
+        if is_key_collision(error, put_index=0):
+            return False  # a redelivery raced this one: its counter is a gap
         raise
     return True
 

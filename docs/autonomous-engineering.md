@@ -632,9 +632,13 @@ continues it in a new one once the wait closes.
   coordinator), and everything the board or the pack returns is fenced as data.
 - **Delivery.** voc-engineering-delivery, the function the inbox router invokes for a message to an agent, the
   run's conductor or a role of the run (a posted task): the supervisor's code and role. It records the message
-  once in that run's inbox, `WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<seq>#<event_id>` in voc-engineering (the
-  addressee `agent:<agent>`, `conductor` or `role:<role>`; the seq its place in the conversation, kept on a
-  redelivery, so a conditional put makes a redelivery write nothing; a message without its seq is refused), and
+  once in that run's inbox, `WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<inbox_seq>#<event_id>` in voc-engineering
+  (the addressee `agent:<agent>`, `conductor` or `role:<role>`; `inbox_seq` the run's write-order counter, taken
+  just before the write, so a delivery retried a minute later sorts after every notice already read, with the
+  conversation's seq kept on the row; two deliveries at once can commit out of order by a moment, and a number can
+  go unused, so the reader re-reads a window behind its cursor at the tail and keeps each message once by its
+  event id; a marker, `INBOXEVT#<event_id>`, written in the same transaction, makes a
+  redelivery write nothing; a message without its seq is refused), and
   wakes the run's live addressees (a posted task, addressed to a role, wakes nobody: an agent is launched for its
   task, so none of the role is idle, and one held on its wait keeps its one wake for the message it waits for): a
   working agent's MicroVM suspended for an open wait is resumed with a fresh
@@ -650,7 +654,7 @@ continues it in a new one once the wait closes.
   push. An addressee another move holds, or whose wake failed, fails the invocation; Lambda retries it twice (the
   row already there, only the wake repeats), then it goes to `voc-engineering-dlq`, and that agent is reached only
   when its wait's hold or a later message wakes it. Nothing deletes an inbox row; the board's `inbox` op reads the
-  caller's run's rows after a seq cursor, and the harness keeps each message once by its event id.
+  caller's run's rows after an `inbox_seq` cursor, and the harness keeps each message once by its event id.
 - **The run's start and end.** The runtime's `start_run` writes the run's `META` row in voc-engineering
   (`WS#<ws>#RUN#<run>` / `META`: its task cap, which the board counts its tasks against, its hard caps on tokens and
   cost, its goal, repository, flow, status and start time, on which the router numbers the conversation) once, and

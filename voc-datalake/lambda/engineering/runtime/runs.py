@@ -1,10 +1,11 @@
 """A run's start and end in the ``voc-engineering`` table, and the registry of the runs the supervisor watches.
 
 ``WS#<ws>#RUN#<run>`` / ``META`` is the run's own row: the board counts its tasks on it (``task_count``, under
-the run's ``max_tasks``), the inbox router numbers its conversation on it (``msg_seq``), the reports read its
+the run's ``max_tasks``), the inbox router numbers its conversation on it (``msg_seq``), the delivery function
+numbers its inbox on it (``inbox_seq``, ``delivery.py``), the reports read its
 goal, repository, flow, status and times, and the supervisor its caps and its start. The run's start writes it,
-once; its end sets its status and end time. Nothing else here ever writes over the board's or the router's
-counters: after the first write every change is an update of this module's own attributes.
+once; its end sets its status and end time. Nothing else here ever writes over the board's, the router's or the
+inbox's counters: after the first write every change is an update of this module's own attributes.
 
 ``WS#<ws>#RUNS`` holds one row per run the supervisor still watches (``RUN#<run>``), written in the same
 transaction as the run's ``META`` (the table has no index, so this is how the supervisor lists them). A run's end
