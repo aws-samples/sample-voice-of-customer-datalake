@@ -597,6 +597,14 @@ describe('mcp transport headers reach a browser', () => {
     expect(vary, 'the UNAUTHORIZED response sends no Vary').toBeDefined();
     expect((vary ?? '').toLowerCase()).toContain('authorization');
   });
+
+  // Since 6.12.00 the web app names the current workspace on every call (docs/multi-workspace.md, Request flow).
+  // Blocked by the preflight, every call made inside a workspace would fail in the browser before reaching a Lambda.
+  it('allows X-Workspace-Id through the preflight and on the gateway error responses', () => {
+    expect(preflightAllowHeaders().map((h) => h.trim().toLowerCase())).toContain('x-workspace-id');
+    expect(headersMissingFrom(gatewayResponses(), 'gatewayresponse.header.Access-Control-Allow-Headers', ['x-workspace-id']))
+      .toStrictEqual([]);
+  });
 });
 
 describe('unauthorized gateway response', () => {

@@ -144,6 +144,8 @@ cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:341
 
 `sharing.spec.ts` skips there (it needs two real users), as does the `/mcp/global` call of `connect.spec.ts` (the mock does not serve it).
 
+`workspaces.spec.ts` (6.12.00, [docs/multi-workspace.md](../../../docs/multi-workspace.md)) runs ONLY there: it turns on the mock's two workspaces (`PUT /__mock/workspaces`, `mock-workspaces.js`; off again afterwards, so the other mock specs keep the app without workspaces), then checks that `/` shows the picker with both, that choosing Acme Outfitters from `/dashboard` lands on `/w/acme/dashboard` with acme's id in every call's `X-Workspace-Id`, that the header's workspace menu switches to `/w/juniper/dashboard` with a full page load and juniper's id, and that an unknown slug shows "Workspace not found". A deployment has no workspaces to choose from until the platform console.
+
 `csv-dataset-update.spec.ts` (issue #411, [docs/csv-import.md](../../../docs/csv-import.md)) runs ONLY there: a CSV upload under a dataset name is previewed and imported, then the corrected file is previewed (one row to update, its before / after text) and confirmed with `apply_updates`; the API refuses an unconfirmed change (409) and `GET /feedback` holds the corrected text once. On a deployment it would write feedback, which has no delete route.
 
 ## QA track s1 (`E2E_TRACK=s1` only)

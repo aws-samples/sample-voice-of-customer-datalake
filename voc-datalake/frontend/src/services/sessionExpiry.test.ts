@@ -17,6 +17,7 @@ import {
   resetSessionExpiryForTests,
   SESSION_EXPIRED_PATH,
 } from './sessionExpiry'
+import { refusedWorkspaceIds, rememberRefused } from '../workspace/refusedWorkspaces'
 
 describe('sessionExpiry', () => {
   const originalLocation = window.location
@@ -47,6 +48,13 @@ describe('sessionExpiry', () => {
 
       expect(authService.signOut).toHaveBeenCalledWith()
       expect(replace).toHaveBeenCalledWith(SESSION_EXPIRED_PATH)
+    })
+
+    it("forgets the tab's refused workspaces, so whoever signs in next asks the server afresh", () => {
+      rememberRefused('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')
+      endExpiredSession()
+
+      expect(refusedWorkspaceIds()).toStrictEqual([])
     })
 
     it('navigates once however many callers discover the dead session', () => {

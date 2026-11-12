@@ -17,6 +17,8 @@
  * @module services/sessionExpiry
  */
 import { authService } from './auth'
+import { forgetRefused } from '../workspace/refusedWorkspaces'
+import { pageHref } from '../workspace/workspacePath'
 
 /** Query flag appended to `/login` when a session ended unexpectedly. */
 const EXPIRED_FLAG = 'expired'
@@ -48,7 +50,10 @@ export function endExpiredSession(): void {
   if (ending.inProgress) return
   ending.inProgress = true
   authService.signOut()
-  window.location.replace(SESSION_EXPIRED_PATH)
+  // Whoever signs in next in this tab asks the server afresh about every workspace.
+  forgetRefused()
+  // Inside a workspace the sign-in page is under its `/w/{slug}`, so signing back in returns there.
+  window.location.replace(pageHref(SESSION_EXPIRED_PATH))
 }
 
 /**

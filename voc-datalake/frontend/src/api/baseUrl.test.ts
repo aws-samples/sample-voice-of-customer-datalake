@@ -24,6 +24,8 @@ import { buildTrustedApiOrigins, isTrustedOrigin } from '../lib/trustedOrigins'
 import * as runtimeConfigModule from '../runtimeConfig'
 import { authService } from '../services/auth'
 import { FOREIGN_HOST_SPELLINGS, useAppOrigin } from '@test/location'
+import { setCurrentWorkspace } from '../workspace/currentWorkspace'
+import { ACME } from '../test/workspaceFixtures'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -223,5 +225,29 @@ describe('getAuthHeaders — untrusted origin', () => {
     // holder admits the optional signature without a type assertion.
     const untyped: { getAuthHeaders(targetUrl?: string): Record<string, string> } = { getAuthHeaders }
     expect(untyped.getAuthHeaders()['Authorization']).toBeUndefined()
+  })
+})
+
+describe('getAuthHeaders — the current workspace', () => {
+  useSignedInAuth()
+  afterEach(() => setCurrentWorkspace(null))
+
+  it('names the current workspace beside the token, to a trusted origin only', () => {
+    setCurrentWorkspace(ACME)
+    expect(getAuthHeaders(`${TRUSTED_API}/feedback`)).toStrictEqual({
+      'Content-Type': 'application/json', Authorization: 'mock-cognito-id-token', 'X-Workspace-Id': ACME.id,
+    })
+    expect(getAuthHeaders('https://attacker.example.com/collect')).toStrictEqual({ 'Content-Type': 'application/json' })
+  })
+
+  it('sends no workspace header outside a workspace (a deployment or a person with none)', () => {
+    expect(getAuthHeaders(`${TRUSTED_API}/feedback`)['X-Workspace-Id']).toBeUndefined()
+  })
+
+  it('names it without Cognito too (a dev build against the mock), never for a missing target', () => {
+    vi.mocked(authService.isConfigured).mockReturnValue(false)
+    setCurrentWorkspace(ACME)
+    expect(getAuthHeaders('/api/feedback')).toStrictEqual({ 'Content-Type': 'application/json', 'X-Workspace-Id': ACME.id })
+    expect(getAuthHeaders('')['X-Workspace-Id']).toBeUndefined()
   })
 })

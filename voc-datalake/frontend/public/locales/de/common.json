@@ -127,6 +127,37 @@
     "signOut": "Abmelden",
     "admin": "Administrator"
   },
+  "workspaces": {
+    "listLabel": "Ihre Arbeitsbereiche",
+    "picker": {
+      "title": "Arbeitsbereich auswählen",
+      "intro": "Sie sind Mitglied in mehreren Arbeitsbereichen. Wählen Sie den aus, den Sie öffnen möchten.",
+      "lastUsed": "Zuletzt verwendet"
+    },
+    "notFound": {
+      "title": "Arbeitsbereich nicht gefunden",
+      "body": "Dieser Arbeitsbereich existiert nicht, oder Sie sind kein Mitglied. Öffnen Sie einen Ihrer Arbeitsbereiche oder bitten Sie eine Administratorin oder einen Administrator des Arbeitsbereichs, Sie hinzuzufügen.",
+      "none": "Sie sind noch in keinem Arbeitsbereich Mitglied.",
+      "notAvailable": "Dieser Arbeitsbereich ist nicht verfügbar.",
+      "start": "Zur Startseite"
+    },
+    "unavailable": {
+      "title": "Ihre Arbeitsbereiche konnten nicht geladen werden",
+      "body": "Ihre Arbeitsbereiche konnten nicht geladen werden, daher kann dieser Arbeitsbereich nicht geöffnet werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+      "retry": "Erneut versuchen"
+    },
+    "menu": {
+      "label": "Arbeitsbereich: {{name}}",
+      "trigger": "Arbeitsbereich: {{name}}, {{role}}. Arbeitsbereich wechseln",
+      "current": "Aktueller Arbeitsbereich",
+      "switchTo": "Wechseln zu"
+    },
+    "role": {
+      "admin": "Administration",
+      "editor": "Bearbeitung",
+      "viewer": "Lesezugriff"
+    }
+  },
   "timeRange": {
     "24h": "24h",
     "24hFull": "24 Stunden",

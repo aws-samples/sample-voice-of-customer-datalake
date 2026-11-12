@@ -127,6 +127,37 @@
     "signOut": "退出登录",
     "admin": "管理员"
   },
+  "workspaces": {
+    "listLabel": "你的工作区",
+    "picker": {
+      "title": "选择工作区",
+      "intro": "你是多个工作区的成员。请选择要打开的工作区。",
+      "lastUsed": "上次使用"
+    },
+    "notFound": {
+      "title": "未找到工作区",
+      "body": "此工作区不存在，或者你不是其成员。请打开你自己的工作区之一，或请工作区管理员添加你。",
+      "none": "你还不是任何工作区的成员。",
+      "notAvailable": "此工作区不可用。",
+      "start": "前往起始页"
+    },
+    "unavailable": {
+      "title": "无法加载你的工作区",
+      "body": "无法加载你的工作区，因此无法打开此工作区。请检查网络连接后重试。",
+      "retry": "重试"
+    },
+    "menu": {
+      "label": "工作区：{{name}}",
+      "trigger": "工作区：{{name}}，{{role}}。切换工作区",
+      "current": "当前工作区",
+      "switchTo": "切换到"
+    },
+    "role": {
+      "admin": "管理员",
+      "editor": "编辑者",
+      "viewer": "查看者"
+    }
+  },
   "timeRange": {
     "24h": "24小时",
     "24hFull": "24小时",

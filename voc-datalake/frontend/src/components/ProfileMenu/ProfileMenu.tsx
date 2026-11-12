@@ -13,7 +13,7 @@ import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { LogOut, UserRound } from 'lucide-react'
-import { useMenuButton } from './useMenuButton'
+import { menuButtonParts, useMenuButton } from './useMenuButton'
 
 interface ProfileUser {
   readonly name?: string
@@ -44,39 +44,21 @@ export default function ProfileMenu({ user, isAdmin, onSignOut }: Readonly<{
   onSignOut: () => void
 }>) {
   const { t } = useTranslation()
-  const { open, buttonRef, menuRef, toggle, close, onButtonKeyDown, onMenuKeyDown } = useMenuButton()
+  const menu = useMenuButton()
+  const { open, close } = menu
   const menuId = useId()
   const name = profileDisplayName(user)
   const showEmail = user.email != null && user.email !== '' && user.email !== name
-  const label = t('profileMenu.trigger', { name })
+  const parts = menuButtonParts(menu, menuId, t('profileMenu.trigger', { name }))
 
   return (
     <div className="relative flex-shrink-0">
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={toggle}
-        onKeyDown={onButtonKeyDown}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        aria-label={label}
-        title={label}
-        className="header-icon-btn focus-ring bg-card text-accent-text text-[0.8125rem] font-bold"
-      >
+      <button {...parts.trigger} className="header-icon-btn focus-ring bg-card text-accent-text text-[0.8125rem] font-bold">
         <span aria-hidden="true">{profileInitials(user)}</span>
       </button>
 
       {open ? (
-        <div
-          ref={menuRef}
-          id={menuId}
-          role="menu"
-          aria-label={label}
-          aria-orientation="vertical"
-          onKeyDown={onMenuKeyDown}
-          className="menu absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)]"
-        >
+        <div {...parts.list} className="menu absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)]">
           <div className="px-3 py-2" role="presentation">
             <p className="text-sm font-semibold text-text-strong break-words">{name}</p>
             {showEmail ? <p className="text-[0.75rem] text-muted break-words [overflow-wrap:anywhere]">{user.email}</p> : null}

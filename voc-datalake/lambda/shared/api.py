@@ -328,6 +328,7 @@ def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
             "X-Amz-Date",
             "X-Api-Key",
             "X-Amz-Security-Token",
+            "X-Workspace-Id",
         ],
         expose_headers=["Content-Type", "ETag"],
         max_age=300,

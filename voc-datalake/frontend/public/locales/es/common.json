@@ -130,6 +130,37 @@
     "signOut": "Cerrar sesión",
     "admin": "Administrador"
   },
+  "workspaces": {
+    "listLabel": "Tus espacios de trabajo",
+    "picker": {
+      "title": "Elige un espacio de trabajo",
+      "intro": "Eres miembro de más de un espacio de trabajo. Elige el que quieres abrir.",
+      "lastUsed": "Último usado"
+    },
+    "notFound": {
+      "title": "Espacio de trabajo no encontrado",
+      "body": "Este espacio de trabajo no existe o no eres miembro. Abre uno de los tuyos o pide a un administrador del espacio de trabajo que te añada.",
+      "none": "Todavía no eres miembro de ningún espacio de trabajo.",
+      "notAvailable": "Este espacio de trabajo no está disponible.",
+      "start": "Ir a la página de inicio"
+    },
+    "unavailable": {
+      "title": "No se pudieron cargar tus espacios de trabajo",
+      "body": "No se pudieron cargar tus espacios de trabajo, así que este espacio de trabajo no se puede abrir. Comprueba tu conexión e inténtalo de nuevo.",
+      "retry": "Reintentar"
+    },
+    "menu": {
+      "label": "Espacio de trabajo: {{name}}",
+      "trigger": "Espacio de trabajo: {{name}}, {{role}}. Cambiar de espacio de trabajo",
+      "current": "Espacio de trabajo actual",
+      "switchTo": "Cambiar a"
+    },
+    "role": {
+      "admin": "Administración",
+      "editor": "Edición",
+      "viewer": "Lectura"
+    }
+  },
   "timeRange": {
     "24h": "24h",
     "24hFull": "24 Horas",

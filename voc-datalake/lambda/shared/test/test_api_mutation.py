@@ -66,7 +66,7 @@ ORIGIN = 'https://app.example'
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': [ORIGIN],
     'Access-Control-Allow-Headers': [
-        'Authorization,Content-Type,X-Amz-Date,X-Amz-Security-Token,X-Api-Key,X-Requested-With',
+        'Authorization,Content-Type,X-Amz-Date,X-Amz-Security-Token,X-Api-Key,X-Requested-With,X-Workspace-Id',
     ],
     'Access-Control-Expose-Headers': ['Content-Type,ETag'],
     'Access-Control-Max-Age': ['300'],
@@ -190,7 +190,7 @@ class TestCorsContract:
         assert config._allowed_origins == [ORIGIN]
         assert config.allow_headers == {
             'Authorization', 'Content-Type', 'X-Amz-Date', 'X-Api-Key', 'X-Amz-Security-Token',
-            'X-Requested-With',
+            'X-Requested-With', 'X-Workspace-Id',
         }
         assert config.expose_headers == ['Content-Type', 'ETag']
         assert config.max_age == 300

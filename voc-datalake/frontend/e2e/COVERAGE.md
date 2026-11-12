@@ -18,6 +18,7 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 |---|---|---|---|
 | Home: greeting, morning brief, "Your brief", "Things to do", agent-decision card | `/` | Covered | surfaces M |
 | Home: onboarding buddy (checklist, Skip, Hide, Don't show again) | `/` | Covered | home-onboarding |
+| Workspaces (6.12): the picker, entering `/w/{slug}/dashboard` with `X-Workspace-Id`, the header's workspace menu, an unknown slug's not-found page | `/` | Covered | workspaces M (mock only: production has no workspaces until the platform console) |
 | Home: brief subscribe / Brief settings save, card dismiss (5.23) | `/` | Missing | writes the caller's brief subscription; needs a restore like account.spec |
 | Dashboard: tiles and charts vs the API, empty-workspace welcome | `/dashboard` | Covered | dashboard-data |
 | Dashboard: custom time range popover | `/dashboard` | Covered | modals M |

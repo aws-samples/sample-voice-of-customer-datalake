@@ -17,6 +17,7 @@ import { useAssistantUiStore } from '../../assistant/store/assistantStore'
 import { useBubbleStore } from '../../assistant/bubble/bubbleStore'
 import { languageNames, supportedLanguages } from '../../i18n/languages'
 import { parsedJson } from '@test/jsonText'
+import { stubLocationAssign } from '@test/location'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 const signOut = vi.fn<() => void>()
@@ -237,14 +238,16 @@ describe('Account — MCP tokens and sign out', () => {
     expect(within(section('My MCP tokens')).getByRole('link', { name: 'Go to Connect' })).toHaveAttribute('href', '/connect')
   })
 
-  it('signs out from the page: clears cached data, ends the session, goes to /login', async () => {
+  it('signs out from the page: clears cached data, ends the session, loads /login', async () => {
     const queryClient = createTestQueryClient({ gcTime: Infinity })
     renderAt('?tab=profile', queryClient)
     queryClient.setQueryData(['feedback'], { items: ['private'] })
+    // A full page load to the plain sign-in page (hooks/useSignOut.ts).
+    const assign = stubLocationAssign()
     await userEvent.click(within(section('Sign out')).getByRole('button', { name: 'Sign out' }))
     expect(queryClient.getQueryData(['feedback'])).toBeUndefined()
     expect(signOut).toHaveBeenCalledTimes(1)
-    expect(navigate).toHaveBeenCalledWith('/login')
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/login')
   })
 })
 

@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.12.00] - 2026-11-12
+
+Multi-workspace, phase 1: the web app knows the caller's workspaces, works inside `/w/{slug}/…` and names the current workspace on every API call.
+
+### Added
+
+- After sign-in the web app reads `GET /me/workspaces` and `GET /me/workspaces/current` ([docs/multi-workspace.md](docs/multi-workspace.md#request-flow)). With two or more workspaces, `/` (or any address without `/w/{slug}`) shows a picker listing each workspace with the caller's role; the workspace last entered in the browser is highlighted, never chosen automatically, and each choice opens the same path inside it. With exactly one, the app moves into it with a full page load, keeping the path. An address whose slug is not one of the caller's shows "Workspace not found" with the caller's own workspaces, the same page whether the slug exists or not. On an address without `/w/{slug}`, a caller with no workspace, or a list that cannot be read, gets the app as before (the data is not keyed by workspace until phase 2); on a `/w/{slug}` address a list that cannot be read shows "Could not load your workspaces" with Try again and Sign out, never the app outside the workspace, and a workspace already entered stays entered when a later refresh of the list fails. The workspace last used is remembered only once the server has confirmed it. A workspace the list names but the server refuses (one being deleted, or a membership removed a moment ago) is left out for the rest of the browser tab: the not-found page says it is not available, never links back to it, and its start link opens the app without it instead of moving back in. The public pages (`/login`, `/vote`, `/board`, `/review`, `/unsubscribe`) are unchanged. The data is not separated by workspace yet: until phase 2 keys the data path by workspace, every workspace shows the deployment's same feedback, projects and settings.
+- Inside a workspace every page lives under `/w/{slug}/` (every existing link keeps working there), the header shows the workspace's name and, with two or more workspaces, a menu that switches to another one's dashboard with a full page load (the page starts with an empty cache). The copied review link, the Prioritization "view full" link and the expired-session redirect to sign-in keep the workspace in the address; signing out, or an expired session, clears the tab's refused workspaces, and signing out also clears the current workspace and leaves its address with a full page load to the plain `/login`. All new copy is in the nine languages.
+- Every API call made inside a workspace, the assistant's stream and the feedback boards' calls included, carries `X-Workspace-Id`, sent only to the deployment's own API (the rule the session token follows).
+- The dev mock serves both routes; its dev switch `PUT /__mock/workspaces` with `{"enabled": true}` gives the mock caller two fictional workspaces (admin of Acme Outfitters, editor of Juniper Trail Co.); by default it has none, as before. A Playwright spec (`e2e/tests/workspaces.spec.ts`, dev mock only) covers the picker, the header, the switch and the not-found page.
+
+### Changed
+
+- The API's CORS allows the `X-Workspace-Id` request header: the gateway's preflight and its error responses, and the Lambdas' own CORS answers (`lambda/shared/api.py`, the projects API).
+
+### Upgrade notes
+
+- Deploy VocApiStack (`cd voc-datalake && npm run deploy:api`; it carries the gateway, the API Lambdas and the web app) so the browser's preflight allows `X-Workspace-Id`; `npm run deploy:infra` (every stack) works too. Until it is deployed, a web app inside a workspace would have its API calls refused by the preflight; a deployment without workspaces sends no such header and is not affected.
+- The SPA fallback already serves `index.html` for `/w/…` addresses (VocCoreStack's distribution answers every unknown path with it); nothing changes there.
+
 ## [6.11.00] - 2026-11-12
 
 Multi-workspace, phase 1: a deleted user leaves their workspaces, and an erasure by email reaches workspace members.

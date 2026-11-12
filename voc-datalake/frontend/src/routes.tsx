@@ -22,6 +22,7 @@ import MovedRouteRedirect from './components/MovedRouteRedirect'
 import Layout from './components/Layout/Layout'
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
 import WorkspaceThemeSync from './theme/WorkspaceThemeSync'
+import WorkspaceGate from './workspace/WorkspaceGate'
 import AdminRoute from './components/AdminRoute/AdminRoute'
 import PageLoader from './components/PageLoader/PageLoader'
 import RouteErrorBoundary from './components/RouteErrorBoundary'
@@ -104,9 +105,13 @@ export const routes: RouteObject[] = [
     path: '/',
     element: (
       <ProtectedRoute>
-        {/* The administrator's start theme (GET /settings/appearance), read once signed in. */}
-        <WorkspaceThemeSync />
-        <Layout />
+        {/* Signed in: the caller's workspaces decide the picker, the not-found page or the app inside
+            `/w/{slug}` (workspace/WorkspaceGate.tsx); with none, the app as before workspaces. */}
+        <WorkspaceGate>
+          {/* The administrator's start theme (GET /settings/appearance), read once signed in. */}
+          <WorkspaceThemeSync />
+          <Layout />
+        </WorkspaceGate>
       </ProtectedRoute>
     ),
     // Catches errors thrown by Layout/ProtectedRoute themselves; page-level

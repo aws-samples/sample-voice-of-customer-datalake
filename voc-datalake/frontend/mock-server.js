@@ -25,6 +25,7 @@ import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
 import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
+import { handleWorkspaceRoutes } from './mock-workspaces.js';
 import { handleDataQualityRoutes, stampBands } from './mock-data-quality.js';
 import { handleFeedbackCatalogueRoutes } from './mock-feedback-catalogue.js';
 import { handlePersonaRoutes } from './mock-personas.js';
@@ -1364,7 +1365,8 @@ function handleDomainModules(req, res, url) {
     || handleDecisionRoutes(req, res, url, send, shared)
     || handleRadarRoutes(req, res, url, send, shared)
     || handleParticipantsRoutes(req, res, url, send, shared)
-    || handleFeatureRequestRoutes(req, res, url, send, shared);
+    || handleFeatureRequestRoutes(req, res, url, send, shared)
+    || handleWorkspaceRoutes(req, res, url, send, shared);
 }
 
 function handleParameterizedExtras(req, res, url) {
@@ -3565,7 +3567,8 @@ const server = http.createServer((req, res) => {
   // PATCH is used by prioritization ballots and row edits; without it the
   // browser's preflight rejects them before they reach this server.
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // X-Workspace-Id: the current workspace, sent on every call inside one (mock-workspaces.js).
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Workspace-Id');
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'OPTIONS') {

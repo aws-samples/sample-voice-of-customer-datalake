@@ -7,7 +7,7 @@
  */
 import {
   useCallback, useEffect, useRef, useState,
-  type KeyboardEvent as ReactKeyboardEvent, type RefObject,
+  type ButtonHTMLAttributes, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type RefObject,
 } from 'react'
 import { noCleanup } from '../../hooks/noCleanup'
 import { MENU_KEYS, rovingIndex } from '../../utils/rovingIndex'
@@ -24,6 +24,37 @@ interface MenuButton {
   readonly close: (returnFocus?: boolean) => void
   readonly onButtonKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void
   readonly onMenuKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void
+}
+
+/**
+ * The trigger's and the menu's props for a menu button named `label` (the account menu, the workspace menu):
+ * one place for the ARIA wiring, so two header menus cannot drift apart.
+ */
+export function menuButtonParts(menu: MenuButton, menuId: string, label: string): {
+  trigger: ButtonHTMLAttributes<HTMLButtonElement> & { ref: RefObject<HTMLButtonElement | null> }
+  list: HTMLAttributes<HTMLDivElement> & { ref: RefObject<HTMLDivElement | null> }
+} {
+  return {
+    trigger: {
+      ref: menu.buttonRef,
+      type: 'button',
+      onClick: menu.toggle,
+      onKeyDown: menu.onButtonKeyDown,
+      'aria-haspopup': 'menu',
+      'aria-expanded': menu.open,
+      'aria-controls': menu.open ? menuId : undefined,
+      'aria-label': label,
+      title: label,
+    },
+    list: {
+      ref: menu.menuRef,
+      id: menuId,
+      role: 'menu',
+      'aria-label': label,
+      'aria-orientation': 'vertical',
+      onKeyDown: menu.onMenuKeyDown,
+    },
+  }
 }
 
 function menuItems(menu: HTMLElement | null): HTMLElement[] {

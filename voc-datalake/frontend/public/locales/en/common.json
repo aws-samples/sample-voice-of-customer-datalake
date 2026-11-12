@@ -127,6 +127,37 @@
     "signOut": "Sign out",
     "admin": "Administrator"
   },
+  "workspaces": {
+    "listLabel": "Your workspaces",
+    "picker": {
+      "title": "Choose a workspace",
+      "intro": "You are a member of more than one workspace. Choose the one to open.",
+      "lastUsed": "Last used"
+    },
+    "notFound": {
+      "title": "Workspace not found",
+      "body": "This workspace does not exist, or you are not a member of it. Open one of yours, or ask a workspace admin to add you.",
+      "none": "You are not a member of any workspace yet.",
+      "notAvailable": "This workspace is not available.",
+      "start": "Go to the start page"
+    },
+    "unavailable": {
+      "title": "Could not load your workspaces",
+      "body": "Your workspaces could not be loaded, so this workspace cannot open. Check your connection and try again.",
+      "retry": "Try again"
+    },
+    "menu": {
+      "label": "Workspace: {{name}}",
+      "trigger": "Workspace: {{name}}, {{role}}. Switch workspace",
+      "current": "Current workspace",
+      "switchTo": "Switch to"
+    },
+    "role": {
+      "admin": "Admin",
+      "editor": "Editor",
+      "viewer": "Viewer"
+    }
+  },
   "timeRange": {
     "24h": "24h",
     "24hFull": "24 Hours",

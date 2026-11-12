@@ -55,6 +55,7 @@ import { isMenuItemEnabled } from '../../config/menuConfig'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import ProfileMenu from '../ProfileMenu/ProfileMenu'
 import PasskeyPrompt from '../PasskeyPrompt/PasskeyPrompt'
+import WorkspaceMenu from '../../workspace/WorkspaceMenu'
 import { Sidebar, type NavItem } from './SidebarComponents'
 
 /**
@@ -165,6 +166,8 @@ function MainHeader({ onOpenMenu, menuButtonRef, showTimeRange, account }: Reado
           {showTimeRange ? <TimeRangeSelector /> : null}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-auto" data-testid="header-actions">
+          {/* The current workspace (nothing outside one); with several, the menu that switches. */}
+          <WorkspaceMenu />
           <ThemeToggle />
           {account}
         </div>

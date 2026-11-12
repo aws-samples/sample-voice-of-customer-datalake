@@ -56,6 +56,8 @@ const CORS_ALLOW_HEADERS = [
   'X-Requested-With',
   'X-Amz-Date',
   'X-Amz-Security-Token',
+  // The current workspace (docs/multi-workspace.md, Request flow): the web app sends it with every call in one.
+  'X-Workspace-Id',
   ...MCP_TRANSPORT_HEADERS,
 ];
 

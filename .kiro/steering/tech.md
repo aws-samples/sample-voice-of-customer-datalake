@@ -226,6 +226,12 @@ The main pages (a selection: `frontend/src/pages/` has 25 page folders; the rout
 
 Note: Each page is organized in its own folder under `frontend/src/pages/` with an index.tsx entry point.
 
+Workspaces (6.12.00, docs/multi-workspace.md): inside a workspace every route above lives under `/w/{slug}/`
+(the router's `basename`, read once at load by `src/workspace/workspacePath.ts`), so links stay written as
+`/dashboard`; code that reads `window.location.pathname` compares `appPathname()` instead, and a plain `href` or a
+copied link uses `pageHref()`. The signed-in routes pass through `WorkspaceGate` (picker, not-found, or the app;
+with no workspace the app as before); the public routes do not.
+
 ### Code Style
 
 ```typescript

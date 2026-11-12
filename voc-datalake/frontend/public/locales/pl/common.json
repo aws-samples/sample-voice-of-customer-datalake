@@ -120,6 +120,37 @@
     "signOut": "Wyloguj się",
     "admin": "Administrator"
   },
+  "workspaces": {
+    "listLabel": "Twoje obszary robocze",
+    "picker": {
+      "title": "Wybierz obszar roboczy",
+      "intro": "Należysz do więcej niż jednego obszaru roboczego. Wybierz ten, który chcesz otworzyć.",
+      "lastUsed": "Ostatnio używany"
+    },
+    "notFound": {
+      "title": "Nie znaleziono obszaru roboczego",
+      "body": "Ten obszar roboczy nie istnieje lub nie należysz do niego. Otwórz jeden ze swoich albo poproś administratora obszaru roboczego o dodanie.",
+      "none": "Nie należysz jeszcze do żadnego obszaru roboczego.",
+      "notAvailable": "Ten obszar roboczy jest niedostępny.",
+      "start": "Przejdź do strony startowej"
+    },
+    "unavailable": {
+      "title": "Nie udało się wczytać obszarów roboczych",
+      "body": "Nie udało się wczytać Twoich obszarów roboczych, więc nie można otworzyć tego obszaru. Sprawdź połączenie i spróbuj ponownie.",
+      "retry": "Spróbuj ponownie"
+    },
+    "menu": {
+      "label": "Obszar roboczy: {{name}}",
+      "trigger": "Obszar roboczy: {{name}}, {{role}}. Zmień obszar roboczy",
+      "current": "Bieżący obszar roboczy",
+      "switchTo": "Przełącz na"
+    },
+    "role": {
+      "admin": "Administracja",
+      "editor": "Edycja",
+      "viewer": "Podgląd"
+    }
+  },
   "timeRange": {
     "24h": "24h",
     "24hFull": "24 godziny",

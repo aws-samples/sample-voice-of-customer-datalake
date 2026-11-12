@@ -25,6 +25,7 @@ import { isValidSessionId } from '../sessions/schema'
 import { onAssistantSignOut, slotOf, useAssistantUiStore, useThreadStore } from '../store/assistantStore'
 import { announceRunEnd } from '../notifications/runNotifications'
 import { isChatRoute } from '../page/chatRoute'
+import { appPathname } from '../../workspace/workspacePath'
 import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { CUSTOM_EVENTS } from '@stream/assistant/contract'
 import { adoptAfterStop, adoptServerSession, followServerRun } from './followServerRun'
@@ -218,7 +219,7 @@ async function executeRun(threadId: string, env: RunEnvironment, { resume, befor
 /** Whether the user is looking at this thread: it is in view, in an open panel or on `/chat`. */
 function threadOnScreen(threadId: string): boolean {
   if (threadId !== activeId()) return false
-  return useAssistantUiStore.getState().open || isChatRoute(window.location.pathname)
+  return useAssistantUiStore.getState().open || isChatRoute(appPathname())
 }
 
 /** Desktop notification for a run that ended out of sight (opt-in; see runNotifications). */
@@ -230,7 +231,7 @@ function announceEnd(threadId: string): void {
     threadOnScreen: threadOnScreen(threadId),
     onOpen: () => {
       switchThread(threadId)
-      if (!isChatRoute(window.location.pathname)) useAssistantUiStore.getState().setOpen(true)
+      if (!isChatRoute(appPathname())) useAssistantUiStore.getState().setOpen(true)
     },
   })
 }

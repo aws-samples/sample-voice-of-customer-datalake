@@ -5247,7 +5247,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
             'headers': {
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Workspace-Id',
                 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
             },
             'body': json.dumps({'error': 'Internal server error', 'message': 'An unexpected error occurred.'})

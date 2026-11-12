@@ -130,6 +130,37 @@
     "signOut": "Sair",
     "admin": "Administrador"
   },
+  "workspaces": {
+    "listLabel": "Seus espaços de trabalho",
+    "picker": {
+      "title": "Escolha um espaço de trabalho",
+      "intro": "Você é membro de mais de um espaço de trabalho. Escolha o que deseja abrir.",
+      "lastUsed": "Usado por último"
+    },
+    "notFound": {
+      "title": "Espaço de trabalho não encontrado",
+      "body": "Este espaço de trabalho não existe ou você não é membro dele. Abra um dos seus ou peça a um administrador do espaço de trabalho para adicionar você.",
+      "none": "Você ainda não é membro de nenhum espaço de trabalho.",
+      "notAvailable": "Este espaço de trabalho não está disponível.",
+      "start": "Ir para a página inicial"
+    },
+    "unavailable": {
+      "title": "Não foi possível carregar seus espaços de trabalho",
+      "body": "Não foi possível carregar seus espaços de trabalho, então este espaço de trabalho não pode ser aberto. Verifique sua conexão e tente novamente.",
+      "retry": "Tentar novamente"
+    },
+    "menu": {
+      "label": "Espaço de trabalho: {{name}}",
+      "trigger": "Espaço de trabalho: {{name}}, {{role}}. Trocar de espaço de trabalho",
+      "current": "Espaço de trabalho atual",
+      "switchTo": "Trocar para"
+    },
+    "role": {
+      "admin": "Administração",
+      "editor": "Edição",
+      "viewer": "Leitura"
+    }
+  },
   "timeRange": {
     "24h": "24h",
     "24hFull": "24 Horas",

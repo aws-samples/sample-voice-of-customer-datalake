@@ -4,6 +4,7 @@
 import { authService } from '../services/auth'
 import { useConfigStore } from '../store/configStore'
 import { isTrustedOrigin } from '../lib/trustedOrigins'
+import { workspaceHeader } from '../workspace/currentWorkspace'
 
 /**
  * Remove trailing slashes from a URL string.
@@ -128,7 +129,9 @@ export function getAuthHeaders(
     }
   }
 
-  return headers
+  // The current workspace (docs/multi-workspace.md, Request flow), under the same origin rule; without
+  // Cognito too, so a dev build against the mock names it as well.
+  return { ...headers, ...workspaceHeader(targetUrl) }
 }
 
 
