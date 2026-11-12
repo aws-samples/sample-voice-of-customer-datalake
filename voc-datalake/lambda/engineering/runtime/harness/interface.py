@@ -55,6 +55,8 @@ class AgentSession:
     patch: str | None = None
     #: Why the restored checkpoint's working tree is not the newest (told to the model when it starts).
     patch_refused: str | None = None
+    #: The task's finish ran in another process (the CLI's tool server): the session ended done by it.
+    finished_elsewhere: bool = False
     #: The messages last handed out and not yet known to have reached the model (``shown``).
     handed: list[InboxMessage] = field(default_factory=list)
     #: The ids of messages the model has had since it last saved its notes: done once it saves them (a

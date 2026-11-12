@@ -7,9 +7,9 @@
 
 Everything else comes from the agent's own environment (``unit_runner.AGENT_ENV``: its ids, its region, the
 bucket its session was handed with, the board's function URL) and its role session (``AWS_CONFIG_FILE``). The
-board and the inbox are reached through the board API, signed with that session (``board_client.py``); the broker,
-the run coordinator's planner and the knowledge reader still refuse (``ports.PendingHarnessPorts``), so a session
-stops at its first call to them rather than guess.
+board, the inbox, the run coordinator's planner and the knowledge reader are reached through the board API, signed
+with that session (``board_client.py``); the broker still refuses (``ports.PendingHarnessPorts``), so a session
+stops at its first call to it rather than guess.
 """
 from __future__ import annotations
 
@@ -24,7 +24,14 @@ from typing import Any, Final
 
 from engineering.runtime.checkout import repo_git, share_working_tree
 from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, agent_prefix, artifact_prefix, is_valid
-from engineering.runtime.harness.board_client import BoardHttp, InboxHttp, SignedTransport, board_url
+from engineering.runtime.harness.board_client import (
+    BoardHttp,
+    BoardKnowledge,
+    BoardPlanner,
+    InboxHttp,
+    SignedTransport,
+    board_url,
+)
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
 from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
@@ -180,8 +187,9 @@ def _heartbeat(board: Board, ids: Mapping[str, str], stop: threading.Event) -> N
 
 
 def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
-    """The board and the inbox on the board's function URL (``VOC_BOARD_URL``, signed with the agent's own session);
-    the broker, the planner and the knowledge reader still refuse (``PendingHarnessPorts``)."""
+    """The board, the inbox, the planner and the knowledge reader on the board's function URL (``VOC_BOARD_URL``,
+    signed with the agent's own session; the board refuses the planner's ops to anyone but the run's coordinator);
+    the broker still refuses (``PendingHarnessPorts``)."""
     pending = PendingHarnessPorts()
     url = env.get('VOC_BOARD_URL')
     if not url:
@@ -192,9 +200,10 @@ def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
     transport = SignedTransport(board_url(url), env['AWS_REGION'], credentials)
     # The lease's epoch is the task's attempt (the board's claim sets it so): the harness, a continuation and the CLI's
     # tool server renew, report and move on it without claiming.
-    return Ports(board=BoardHttp(transport, env['VOC_RUN_ID'], env['VOC_TASK_ID'],
-                                 epoch=int(env.get('VOC_ATTEMPT', '1'))),
-                 inbox=InboxHttp(transport, env['VOC_RUN_ID'], env['VOC_AGENT_ID']), broker=pending)
+    run_id = env['VOC_RUN_ID']
+    return Ports(board=BoardHttp(transport, run_id, env['VOC_TASK_ID'], epoch=int(env.get('VOC_ATTEMPT', '1'))),
+                 inbox=InboxHttp(transport, run_id, env['VOC_AGENT_ID']), broker=pending,
+                 planner=BoardPlanner(transport, run_id), knowledge=BoardKnowledge(transport, run_id))
 
 
 def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Callable[[], Any]) -> Adapter:
@@ -244,8 +253,8 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
 
     # A session restored from a checkpoint renews its lease first (the supervisor refreshed it when the harness
     # started), then every minute through the restore (a working tree to put back may take minutes) and the session.
-    # A fresh start claims first (its task is not claimed yet), and renews after; so would a continuation of a crash
-    # in the moment before the fresh start's first checkpoint, whose claim the board refuses.
+    # A fresh start claims first (its task is not claimed yet), and renews after; so does a continuation of a crash
+    # in the moment before the fresh start's first checkpoint, whose claim the board answers for its live holder.
     if env.get('VOC_RESTORE_KEY'):
         _renew(ports.board, env)
     stop = threading.Event()
@@ -265,13 +274,14 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
 
 
 def _finished(session: AgentSession) -> None:
-    """A session that ended done moves its task to done, unless its ``finish`` did already (the model may end without
-    it: two answers without a tool; a CLI ending cleanly). The CLI's ``finish`` runs in its tool server: the board
-    answers a repeat of the same holder's move with the task, so moving again is safe. Any refusal (the lease not
-    this agent's, run out, the task unable to move) is raised: a crash, which the supervisor continues or ends."""
+    """A session that ended without its ``finish`` (two answers without a tool; a CLI ending cleanly) never leaves
+    its task in progress, nor calls it done: the task goes to a person (``needs_human``), since an agent that stops
+    without saying it is done may have given up. The CLI's ``finish`` runs in its tool server: its ``finished``
+    file says it ran, so its task is done already. Any refusal (the lease not this agent's, run out, the task
+    unable to move) is raised: a crash, which the supervisor continues or ends."""
     context = session.context
-    if not context.finished:
-        context.board.move(context.run_id, context.task_id, to_state='done')
+    if not (context.finished or session.finished_elsewhere):
+        context.board.move(context.run_id, context.task_id, to_state='needs_human')
 
 
 def entry() -> None:  # pragma: no cover - the image's entry script

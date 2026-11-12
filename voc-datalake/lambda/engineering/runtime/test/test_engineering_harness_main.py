@@ -477,13 +477,13 @@ def test_a_fresh_start_saves_its_brief_in_a_first_checkpoint_at_once(aws, tmp_pa
         '000001', 0, {'title', 'instructions'})
 
 
-def test_a_session_ending_done_without_finish_moves_its_task_to_done(aws, tmp_path):
+def test_a_session_ending_without_finish_sends_its_task_to_a_person_never_done(aws, tmp_path):
     s3, _ = aws
     board = FakeBoard()
-    # Two answers without a tool: the loop ends the session as done, the model never called finish.
+    # Two answers without a tool: the loop ends the session, the model never said it was done (it may have given up).
     assert main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
                 runner=FakeRunner(), bedrock=lambda: FakeBedrock([[], []])) == 0
-    assert board.moves == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'done')]
+    assert board.moves == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'needs_human')]
 
 
 def test_a_finish_moves_the_task_once(aws, tmp_path):
@@ -505,3 +505,12 @@ def test_a_refused_move_at_the_end_is_a_crash_never_a_success(aws, tmp_path):
     with pytest.raises(BoardRefused):
         main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(Refused()),
              runner=FakeRunner(), bedrock=lambda: FakeBedrock([[], []]))
+
+
+def test_a_session_its_cli_tool_server_finished_moves_nothing_more(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    session = build_session(_env(tmp_path), s3=s3, ports=_ports(board), runner=FakeRunner(), checkout=str(tmp_path))
+    session.finished_elsewhere = True  # the CLI's tool server's finish moved the task to done
+    harness_main._finished(session)
+    assert board.moves == []

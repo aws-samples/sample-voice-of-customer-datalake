@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
-from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage, TaskBrief
+from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage, TaskBrief, TaskSummary
 
 #: The board API's own limit on a page of the inbox.
 PAGE: Final = 50
@@ -252,3 +252,58 @@ class InboxHttp:
         self.open[event_id] = notice['seq']
         kind = str(notice.get('type', ''))
         return [InboxMessage(kind=ACTED_ON.get(kind, kind), summary=str(notice.get('summary', '')), event_id=event_id)]
+
+
+@dataclass
+class BoardPlanner:
+    """``ports.Planner`` on the board API (the coordinator's ops: the board refuses anyone else): the run's tasks,
+    posting one, launching its agent on the run's connection and commit (the board's, never the MicroVM's)."""
+
+    transport: Transport
+    run_id: str
+
+    def _own(self, run_id: str) -> None:
+        if run_id != self.run_id:
+            raise ValueError('the harness plans its own run only')
+
+    def tasks(self, *, run_id: str) -> list[TaskSummary]:
+        self._own(run_id)
+        listed = self.transport.post({'op': 'tasks'}).get('tasks')
+        if not isinstance(listed, list):
+            raise BoardRefused(502, 'the board answered no task list')
+        return [TaskSummary(task_id=str(task.get('task_id', '')), role=str(task.get('role', '')),
+                            title=str(task.get('title', '')), state=str(task.get('state', '')),
+                            attempt=int(task.get('attempt', 1)))
+                for task in listed if isinstance(task, dict)]
+
+    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...]) -> str:
+        self._own(run_id)
+        task = self.transport.post({'op': 'post', 'role': role, 'title': title,
+                                    'spec': {'instructions': instructions, 'paths': list(paths)}}).get('task')
+        if not isinstance(task, dict) or not isinstance(task.get('task_id'), str):
+            raise BoardRefused(502, 'the board answered no task')
+        return task['task_id']
+
+    def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str:
+        self._own(run_id)
+        answer = self.transport.post({'op': 'launch', 'task_id': task_id, 'role': role, 'language': language,
+                                      'paths': list(paths)})
+        if not isinstance(answer.get('agent_id'), str):
+            raise BoardRefused(502, 'the board answered no agent')
+        return answer['agent_id']
+
+
+@dataclass
+class BoardKnowledge:
+    """``ports.KnowledgeReader`` on the board API's ``knowledge`` op: a package's latest approved pack, fenced as data
+    by the store (none when no version is approved)."""
+
+    transport: Transport
+    run_id: str
+
+    def read(self, *, run_id: str, package: str) -> list[str]:
+        if run_id != self.run_id:
+            raise ValueError('the harness reads its own run\'s knowledge only')
+        answer = self.transport.post({'op': 'knowledge', 'package': package})
+        text = answer.get('text')
+        return [text] if answer.get('version') is not None and isinstance(text, str) else []

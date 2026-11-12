@@ -69,3 +69,29 @@ def test_a_reader_without_listbucket_reads_a_denied_object_as_missing() -> None:
     s3.get_object.side_effect = ClientError({'Error': {'Code': 'SlowDown', 'Message': 'slow'}}, 'GetObject')
     with pytest.raises(ClientError):
         workspace.read_text('k')
+
+
+def test_a_cut_read_is_logged_with_the_objects_size(workspace: WorkspaceStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(store_module, 'MAX_READ_BYTES', 4)
+    warnings: list[Any] = []
+    monkeypatch.setattr(store_module.logger, 'warning', lambda _message, **kwargs: warnings.append(kwargs['extra']))
+    workspace.put_once('k', 'abcdefgh', 'text/plain')
+    workspace.put_once('short', 'ab', 'text/plain')
+    assert (workspace.read_text('k'), workspace.read_text('short')) == ('abcd', 'ab')
+    assert warnings == [{'key': 'k', 'size': 8, 'read': 4}]
+
+
+def test_a_write_meeting_another_in_flight_backs_off_then_raises_the_conflict() -> None:
+    s3: Any = MagicMock()
+    waits: list[float] = []
+    in_flight = ClientError({'Error': {'Code': 'ConditionalRequestConflict', 'Message': 'in flight'}}, 'PutObject')
+    s3.put_object.side_effect = [in_flight, None]
+    assert WorkspaceStore(s3, BUCKET, sleep=waits.append).put_once('k', 'x', 'text/plain')   # (the second try lands)
+    assert waits == [store_module.WRITE_BACKOFF_S]
+    s3.put_object.side_effect = in_flight
+    waits.clear()
+    with pytest.raises(ClientError) as raised:   # (never "already exists")
+        WorkspaceStore(s3, BUCKET, sleep=waits.append).put_once('k', 'x', 'text/plain')
+    assert raised.value is in_flight
+    assert s3.put_object.call_count == 2 + store_module.WRITE_TRIES
+    assert waits == [store_module.WRITE_BACKOFF_S * tries for tries in range(1, store_module.WRITE_TRIES)]

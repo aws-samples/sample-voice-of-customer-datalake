@@ -177,7 +177,9 @@ class ClaudeCli:
             why = (f'a platform tool failed: {crashed.get("error", "")}' if crashed is not None
                    else f'the CLI ended with exit code {process.returncode}')
             raise RuntimeError(f'{why} before the task was finished')
-        # Finished, or ended cleanly without saying so (as the Converse loop's two answers without a tool): done.
+        # Finished (its tool server's finish moved the task to done), or ended cleanly without saying so (as the
+        # Converse loop's two answers without a tool: main.py sends that task to a person).
+        session.finished_elsewhere = files.read('finished') is not None
         return 'done'
 
 

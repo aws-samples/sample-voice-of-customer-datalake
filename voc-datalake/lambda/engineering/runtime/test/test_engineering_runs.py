@@ -130,3 +130,12 @@ def test_a_bad_connection_or_commit_starts_no_run(aws: Any, connection: str, com
     with pytest.raises(RuntimeRefused, match=error):
         runs.start(RUN, caps=RunCaps(max_tasks=5), now=1000, connection=connection, commit=commit)
     assert runs.get(RUN) is None
+
+
+def test_a_runs_start_posts_its_coordinators_task(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=1000)
+    task = aws[1].get_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'TASK#coordinate'})['Item']
+    assert (task['role'], task['state'], task['attempt']) == ('coordinator', 'open', 1)
+    with pytest.raises(RunExists):  # a retried start writes nothing again
+        runs.start(RUN, caps=RunCaps(max_tasks=5), now=1001)

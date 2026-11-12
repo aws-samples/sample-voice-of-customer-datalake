@@ -175,3 +175,13 @@ def test_a_task_never_claimed_is_left_open_never_reposted(board: Any):
     leases.repost(RUN, task_id, 'crashed', attempt=1)
     task = store.task(WORKSPACE, RUN, task_id)
     assert (task.state, task.attempt, events.entries) == ('open', 1, [])
+
+
+def test_a_task_whose_launched_agent_never_claimed_it_is_reposted_at_its_next_attempt(board: Any):
+    store, leases, events = board
+    task_id = _posted(store)
+    store.launch(WORKSPACE, RUN, task_id, role='fixer', actor='coordinator-0', paths=('src',), language='python')
+    leases.repost(RUN, task_id, 'crashed', attempt=1)
+    task = store.task(WORKSPACE, RUN, task_id)
+    assert (task.state, task.attempt, [json.loads(entry['Detail'])['type'] for entry in events.entries]) == (
+        'open', 2, ['task.posted'])

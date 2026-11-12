@@ -332,3 +332,28 @@ def test_the_saved_cursor_never_passes_the_read_cursor():
     inbox = InboxHttp(Board(), RUN, 'fixer-1')
     inbox.open, inbox.after = {'E40': 40}, 25  # the board answered a window behind its tail
     assert inbox.cursor()['after'] == 25
+
+
+def test_the_coordinators_planner_lists_posts_and_launches_through_the_board():
+    from engineering.runtime.harness.board_client import BoardPlanner
+    board = Board([{'tasks': [{'task_id': 'task-1', 'role': 'hunter', 'title': 'Find it', 'state': 'open', 'attempt': 1}]},
+                   {'task': {'task_id': 'task-2'}}, {'agent_id': 'fixer-3', 'status': 'booting'}])
+    planner = BoardPlanner(board, RUN)
+    assert [task.task_id for task in planner.tasks(run_id=RUN)] == ['task-1']
+    assert planner.post(run_id=RUN, role='fixer', title='Fix it', instructions='Read src.', paths=('src',)) == 'task-2'
+    assert planner.launch(run_id=RUN, task_id='task-2', role='fixer', language='python', paths=('src',)) == 'fixer-3'
+    assert board.sent == [{'op': 'tasks'},
+                          {'op': 'post', 'role': 'fixer', 'title': 'Fix it',
+                           'spec': {'instructions': 'Read src.', 'paths': ['src']}},
+                          {'op': 'launch', 'task_id': 'task-2', 'role': 'fixer', 'language': 'python', 'paths': ['src']}]
+    with pytest.raises(ValueError, match='its own run'):
+        planner.tasks(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AC')
+
+
+def test_the_knowledge_reader_answers_a_packages_approved_pack_or_none():
+    from engineering.runtime.harness.board_client import BoardKnowledge
+    board = Board([{'version': 3, 'text': '<data>conventions</data>'}, {'version': None}])
+    reader = BoardKnowledge(board, RUN)
+    assert reader.read(run_id=RUN, package='') == ['<data>conventions</data>']
+    assert reader.read(run_id=RUN, package='web') == []
+    assert board.sent == [{'op': 'knowledge', 'package': ''}, {'op': 'knowledge', 'package': 'web'}]

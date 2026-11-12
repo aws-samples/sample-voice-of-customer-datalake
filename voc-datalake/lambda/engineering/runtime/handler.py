@@ -41,7 +41,7 @@ from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.delivery import deliver
-from engineering.runtime.harness.skills import harness_argv, skill_for
+from engineering.runtime.harness.skills import harness_argv, skill_for, skill_label
 from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused
 from engineering.runtime.launcher import Launcher
 from engineering.runtime.runs import ENDED, RunCaps, RunExists, RunNotActive, RunStore, TableRunControl
@@ -176,8 +176,9 @@ def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]
     if skill is not None:
         argv = harness_argv(skill)
         if given is not None and (not _strings(given) or tuple(given) != argv):
-            raise RuntimeRefused(f'a {skill.name} runs its skill\'s harness ({skill.label}), not another')
-        return argv, {'model': skill.model, 'skill_version': skill.label}
+            raise RuntimeRefused(f'a {skill.name} runs its skill\'s harness '
+                                 f'({skill_label(skill.name, skill.version)}), not another')
+        return argv, {'model': skill.model, 'skill_version': skill_label(skill.name, skill.version)}
     if not _strings(given) or not 0 < len(given) <= MAX_HARNESS_ARGS:
         raise RuntimeRefused(f'harness must be an argv of 1-{MAX_HARNESS_ARGS} strings (the role has no skill yet)')
     return tuple(given), {'model': str(event.get('model', ''))[:200],

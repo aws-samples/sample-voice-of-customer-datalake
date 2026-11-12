@@ -38,7 +38,7 @@ from engineering.runtime.harness.ports import (
     Store,
     TaskBrief,
 )
-from engineering.runtime.harness.skills import skill_for
+from engineering.runtime.harness.skills import skill_for, skill_label
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.workspace import OutsideCheckout, Workspace
 from engineering.runtime.interface import CODE_ROLES
@@ -237,7 +237,8 @@ class ToolBox:
                                                     else ()))}
             unknown = [name for name in skill.tool_policy if name not in known]
             if unknown:
-                raise ValueError(f'{skill.label} names tools role {context.role} may not have: {", ".join(unknown)}')
+                raise ValueError(f'{skill_label(skill.name, skill.version)} names tools role {context.role} may not '
+                                 f'have: {", ".join(unknown)}')
             self.specs = tuple(known[name] for name in skill.tool_policy)
         self._allowed = {spec.name for spec in self.specs}
 

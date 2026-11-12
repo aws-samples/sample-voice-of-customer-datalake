@@ -12,7 +12,7 @@ A role without a skill record runs as before: the platform's own instructions an
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -23,6 +23,21 @@ RECORD_SCHEMA: Final = 'voc-skill/1'
 HARNESSES: Final = frozenset({'converse', 'cli'})
 MAX_INSTRUCTIONS: Final = 20_000
 
+
+
+def skill_record(name: str, version: int, instructions: str, examples: Iterable[Any], tool_policy: Iterable[str],
+                 model: str, harness: str) -> dict[str, Any]:
+    """The voc-skill/1 record (the one shape: the skills store's model builds its records with it too); each example
+    has a ``situation`` and an ``action``."""
+    return {'schema': RECORD_SCHEMA, 'name': name, 'version': version, 'instructions': instructions,
+            'examples': [{'situation': example.situation, 'action': example.action} for example in examples],
+            'tool_policy': list(tool_policy), 'model': model, 'harness': harness}
+
+
+def skill_label(name: str, version: int) -> str:
+    """``<name>@<version>``: a skill version as a session row's ``skill_version`` says it (the one spelling: the
+    skills store's model takes it from here)."""
+    return f'{name}@{version}'
 
 class SkillError(ValueError):
     """A record that is not a skill this harness can run."""
@@ -58,11 +73,6 @@ class Skill:
         if not self.model:
             raise SkillError('a skill names the model it was written for')
 
-    @property
-    def label(self) -> str:
-        """``<name>@<version>``: what a session row's ``skill_version`` says."""
-        return f'{self.name}@{self.version}'
-
     def system_prompt(self) -> str:
         """The instructions, then the worked examples."""
         shown = '\n\n'.join(f'Example {n}. When: {example.situation}\nDo: {example.action}'
@@ -70,16 +80,14 @@ class Skill:
         return f'{self.instructions}\n\n{shown}' if shown else self.instructions
 
     def to_record(self) -> dict[str, Any]:
-        return {'schema': RECORD_SCHEMA, 'name': self.name, 'version': self.version,
-                'instructions': self.instructions,
-                'examples': [{'situation': example.situation, 'action': example.action} for example in self.examples],
-                'tool_policy': list(self.tool_policy), 'model': self.model, 'harness': self.harness}
+        return skill_record(self.name, self.version, self.instructions, self.examples, self.tool_policy, self.model,
+                            self.harness)
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> Skill:
-        if record.get('schema') != RECORD_SCHEMA:
+        schema, examples = record.get('schema'), record.get('examples', [])
+        if schema != RECORD_SCHEMA:
             raise SkillError(f'not a {RECORD_SCHEMA} record')
-        examples = record.get('examples', [])
         policy = record.get('tool_policy')
         version = record.get('version')
         if isinstance(version, bool) or not isinstance(version, int):

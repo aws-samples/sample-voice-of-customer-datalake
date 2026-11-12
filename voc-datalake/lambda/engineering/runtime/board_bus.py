@@ -13,17 +13,14 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from botocore.exceptions import ClientError
-
 from engineering.board.api import repost_task
-from engineering.board.model import FINAL, OPEN, task_key
+from engineering.board.model import FINAL, OPEN
 from engineering.board.store import LEASE_S, BoardError, BoardStore
 from engineering.bus.publish import EventBridgePublisher, new_event_id
 from engineering.bus.schema import Message, Party, fit_summary
 from engineering.connectors.identity import WORKSPACE
 from engineering.quality_gate.text import redact
 from engineering.runtime.ports import Lease
-from shared.aws import is_conditional_check_failure
 
 #: The supervisor's source on the bus (bus/senders.py).
 SOURCE: Final = 'voc.engineering/supervisor'
@@ -64,36 +61,31 @@ class BoardLeases:
                      final_state=task.state if task.state in FINAL else '')
 
     def refresh(self, run_id: str, task_id: str, *, agent_id: str, attempt: int) -> bool:
-        """The holder's lease runs ``LEASE_S`` from now, whether or not it ran out; False when the task is not
-        ``agent_id``'s at ``attempt`` (its epoch) any more, or is open or has ended.
-
-        The board's own ``BoardStore.refresh`` (voc-auto-c's next commit) is to make this write; until it lands this
-        is that one conditional update, on the task's row alone (no history row: a heartbeat)."""
-        ended = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
+        """The holder's lease runs ``LEASE_S`` from now, whether or not it ran out (``BoardStore.refresh``); False
+        when the task is not ``agent_id``'s at ``attempt`` (its epoch) any more, or is open or has ended."""
         try:
-            self.store.client.update_item(
-                TableName=self.store.table, Key=task_key(WORKSPACE, run_id, task_id),
-                UpdateExpression='SET lease_expires = :expires',
-                ConditionExpression=(f'lease_agent = :agent AND lease_epoch = :epoch AND NOT #state IN (:open, '
-                                     f'{", ".join(ended)})'),
-                ExpressionAttributeNames={'#state': 'state'},
-                ExpressionAttributeValues={**ended, ':agent': {'S': agent_id}, ':epoch': {'N': str(attempt)},
-                                           ':open': {'S': OPEN},
-                                           ':expires': {'N': str(int(self.store.now().timestamp()) + LEASE_S)}})
-        except ClientError as error:
-            if is_conditional_check_failure(error):
+            self.store.refresh(WORKSPACE, run_id, task_id, agent=agent_id, epoch=attempt)
+        except BoardError as error:
+            if error.kind == 'conflict':
                 return False
             raise
         return True
 
     def repost(self, run_id: str, task_id: str, reason: str, *, attempt: int) -> None:
         """Free the task at ``attempt`` and post it again at the next one (``task.posted``, published as the
-        supervisor); a task that has ended meanwhile, or is still open at ``attempt`` (never claimed), is left as it
-        is, and a newer attempt is refused by the board."""
+        supervisor); a task that has ended meanwhile is left as it is, one still open at ``attempt`` (never claimed) is
+        re-posted only if an agent was launched for it, and a newer attempt is refused by the board."""
         task = self.store.task(WORKSPACE, run_id, task_id)
-        if task.state in FINAL or (task.state == OPEN and task.attempt == attempt):
-            # Ended meanwhile; or never claimed at this attempt (its agent crashed before its harness claimed it):
-            # it is open for its role already, nothing to re-post.
+        if task.state in FINAL:
+            return
+        if task.state == OPEN and task.attempt == attempt:
+            # Never claimed at this attempt: the board re-posts it when an agent was launched for it (a new agent
+            # gets the next attempt), and refuses otherwise (nobody launched: open for its role already).
+            try:
+                repost_task(self.store, self.publisher, WORKSPACE, run_id, task_id, reason, attempt)
+            except BoardError as error:
+                if error.kind != 'conflict':
+                    raise
             return
         repost_task(self.store, self.publisher, WORKSPACE, run_id, task_id, reason, attempt)
 

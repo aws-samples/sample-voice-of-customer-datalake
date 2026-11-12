@@ -22,6 +22,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from engineering.board.store import BoardStore
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.checkout import COMMIT_RE
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
@@ -116,10 +117,16 @@ class RunStore:
             meta['max_tokens'] = caps.max_tokens
         if caps.max_cost_usd is not None:
             meta['max_cost_usd'] = str(caps.max_cost_usd)
+        # The run coordinator's task, open for it alone (the board's: it claims it like any agent, so the supervisor
+        # watches it by its lease).
+        coordinate = BoardStore(self._table.meta.client, name, new_id=lambda: '').coordinate_items(
+            WORKSPACE, run_id, at=_iso(now))
         try:
             self._table.meta.client.transact_write_items(TransactItems=[
                 {'Put': {'TableName': name, 'Item': meta, 'ConditionExpression': 'attribute_not_exists(pk)'}},
                 {'Put': {'TableName': name, 'Item': {**_registry_key(run_id), 'run_id': run_id}}},
+                *({'Put': {'TableName': name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}}
+                  for item in coordinate),
             ])
         except ClientError as error:
             if is_key_collision(error, put_index=0):

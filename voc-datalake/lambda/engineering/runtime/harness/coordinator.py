@@ -13,6 +13,7 @@ from typing import Any, Final
 
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.runtime.checkout import MAX_SPARSE_PATHS, check_sparse_path
+from engineering.runtime.harness.board_client import BoardRefused
 from engineering.runtime.interface import check_id
 
 #: What tools.py hands in (its ToolSpec and ToolResult classes, its AgentContext): taken as arguments, never
@@ -23,7 +24,6 @@ Built = Any
 TASK_ROLES: Final = frozenset(AGENT_ROLES - {'coordinator', 'coach'})
 MAX_TITLE: Final = 200
 MAX_INSTRUCTIONS: Final = 8_000
-MAX_TOPIC: Final = 200
 #: The image languages (lambda/engineering/runtime/egress.py REGISTRY_HOSTS; the launch checks it again).
 LANGUAGES: Final = frozenset({'java', 'node', 'python', 'rust'})
 
@@ -40,8 +40,8 @@ def specs(tool_spec: Callable[..., Built]) -> tuple[Built, ...]:
         tool_spec('launch_agent', 'Launch one agent for a task you posted, in the run\'s repository at its commit.',
                   {'task_id': text, 'role': role, 'language': {'type': 'string', 'enum': sorted(LANGUAGES)},
                    'paths': paths}, ('task_id', 'role', 'language')),
-        tool_spec('read_knowledge', 'The repository\'s knowledge pack on a topic: conventions, build and test '
-                  'commands, the parts that matter.', {'topic': text}, ('topic',)),
+        tool_spec('read_knowledge', 'The repository\'s knowledge pack (its root\'s): conventions, build and test '
+                  'commands, the parts that matter.', {}),
     )
 
 
@@ -95,13 +95,24 @@ def handlers(context: Built, result: Callable[..., Built],
         context.progress(f'launched {agent} for task {task_id}')
         return result(json.dumps({'agent_id': agent, 'task_id': task_id}))
 
-    def read_knowledge(arguments: Mapping[str, Any]) -> Built:
-        topic = _bounded(arguments, 'topic', MAX_TOPIC)
-        parts = context.knowledge.read(run_id=context.run_id, topic=topic)
+    def read_knowledge(_arguments: Mapping[str, Any]) -> Built:
+        # The root's pack: the coordinator's task (the run's coordinate task) has no paths of its own.
+        parts = context.knowledge.read(run_id=context.run_id, package='')
         if not parts:
-            return result(f'the knowledge pack has nothing on {topic!r}')
-        # The fence's source names no text the model wrote (its topic): only the body is escaped.
+            return result('no approved knowledge pack for the repository yet')
         return result('\n'.join(as_data(f'knowledge:{n}', part) for n, part in enumerate(parts, 1)))
 
-    return {'read_board': read_board, 'post_task': post_task, 'launch_agent': launch_agent,
-            'read_knowledge': read_knowledge}
+    def answered(tool: Callable[[Mapping[str, Any]], Built]) -> Callable[[Mapping[str, Any]], Built]:
+        """The board's refusal (a 4xx: no skill for the role yet, a cap, a path not the task's) is a result the
+        model reads; a 5xx is raised (a crash the supervisor continues)."""
+        def call(arguments: Mapping[str, Any]) -> Built:
+            try:
+                return tool(arguments)
+            except BoardRefused as refused:
+                if refused.status >= 500:
+                    raise
+                return result(f'the board refused: {refused}', error=True)
+        return call
+
+    return {name: answered(tool) for name, tool in (('read_board', read_board), ('post_task', post_task),
+                                                     ('launch_agent', launch_agent), ('read_knowledge', read_knowledge))}

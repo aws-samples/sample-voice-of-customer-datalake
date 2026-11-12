@@ -279,15 +279,27 @@ describe('the engineering bus', () => {
     expect(permissions).toStrictEqual([]);
   });
 
-  it('grants the board the table\'s item calls and its inbox query, a put on exactly the bus and the key, nothing else', () => {
+  it('grants the board the table\'s item calls and its inbox query, a put on exactly the bus, the runtime\'s invoke and the knowledge packs\' reads, nothing else', () => {
     const on = template('on');
     const board = functionId(on, 'voc-engineering-board');
     expect(actionsOf(on, board)).toStrictEqual(
-      [...TABLE_ACTIONS, 'dynamodb:Query', ...KEY_ACTIONS, 'events:PutEvents', 'logs:CreateLogStream',
-        'logs:PutLogEvents'].sort(byCodeUnit));
+      [...TABLE_ACTIONS, 'dynamodb:Query', ...KEY_ACTIONS, 'events:PutEvents', 'lambda:InvokeFunction',
+        'logs:CreateLogStream', 'logs:PutLogEvents', 's3:GetObject'].sort(byCodeUnit));
     const put = statementsOf(on, board).find((statement) => statement.Action === 'events:PutEvents');
     expect(put?.Resource).toStrictEqual({ 'Fn::GetAtt': [busId(on), 'Arn'] });
-    expect(keyServices(on, board)).toStrictEqual(['dynamodb.us-east-1.amazonaws.com']);
+    expect(keyServices(on, board)).toStrictEqual(['dynamodb.us-east-1.amazonaws.com', 's3.us-east-1.amazonaws.com']);
+  });
+
+  it('lets the board invoke the runtime by name (its launch op) and read only the knowledge packs\' objects', () => {
+    const on = template('on');
+    const board = functionId(on, 'voc-engineering-board');
+    const invoke = statementsOf(on, board).find((statement) => statement.Action === 'lambda:InvokeFunction');
+    expect(JSON.stringify(invoke?.Resource)).toContain(':function:voc-engineering-runtime-');
+    const read = statementsOf(on, board).find((statement) => statement.Action === 's3:GetObject');
+    expect(JSON.stringify(read?.Resource)).toContain('/ws/default/knowledge/*');
+    expect(on.findResources('AWS::Lambda::Function')[board]?.Properties?.Environment?.Variables).toMatchObject({
+      ENGINEERING_RUNTIME_FUNCTION: expect.anything(), ENGINEERING_WORKSPACE_BUCKET: expect.anything(),
+    });
   });
 
   it('runs the report builder as one arm64 Python function with the table and the workspace bucket', () => {

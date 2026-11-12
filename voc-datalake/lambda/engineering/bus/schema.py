@@ -45,7 +45,8 @@ FIELDS = frozenset({'schema', 'event_id', 'ws', 'run_id', 'thread_id', 'task_id'
 REF_KEYS = frozenset({'s3', 'commit', 'pr', 'files'})
 #: A run, thread, task or party id; and a workspace (the workspace's key layout, workspace/layout.py, takes both).
 ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z')
-_ULID = re.compile(r'[0-9A-HJKMNP-TV-Z]{26}\Z')
+#: A ULID (an event id; a run id, which the skills store's reasons name too).
+ULID = re.compile(r'[0-9A-HJKMNP-TV-Z]{26}\Z')
 WS = re.compile(r'[a-z0-9][a-z0-9-]{0,62}\Z')
 _SHA = re.compile(r'[0-9a-f]{7,64}\Z')
 _AT = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z\Z')
@@ -178,7 +179,7 @@ def parse(data: Any) -> Message:
         raise MessageError('"attempt" is a whole number')
     ws = _text(data, 'ws', WS)
     message = Message(
-        event_id=_text(data, 'event_id', _ULID), ws=ws, run_id=_text(data, 'run_id', ID),
+        event_id=_text(data, 'event_id', ULID), ws=ws, run_id=_text(data, 'run_id', ID),
         thread_id=_text(data, 'thread_id', ID), task_id=_text(data, 'task_id', ID, required=False),
         attempt=attempt, sender=_party(data.get('from'), 'from', FROM_KINDS), to=_party(data.get('to'), 'to', TO_KINDS),
         type=data['type'], summary=summary_text(data.get('summary')), refs=_refs(data.get('refs'), ws),
