@@ -294,6 +294,41 @@ def test_an_answer_the_cli_read_reached_the_model_and_is_done_once_it_saves(tmp_
         [{'kind': 'msg.answer', 'summary': 'Yes.'}], ['E1'], ['E2'])
 
 
+def test_a_cli_that_fails_before_finishing_is_a_crash_with_its_work_saved_first(tmp_path):
+    w = world(tmp_path)
+
+    def popen(_argv: list[str], **kwargs: Any) -> FakeProcess:
+        files = SessionFiles(os.path.join(kwargs['cwd'], 'session'))
+        return FakeProcess(1, returncode=2, on_exit=lambda: files.write('checkpoint', {'notes': 'found the bug'}))
+
+    with pytest.raises(RuntimeError, match='exit code 2'):
+        _cli(tmp_path, popen=popen).run(w.session)
+    assert _checkpoints(w.store)[-1]['notes'] == 'found the bug'
+
+
+def test_a_cli_batch_counts_only_for_notes_the_model_saved_after_having_it(tmp_path, monkeypatch):
+    w = world(tmp_path)
+    w.inbox.queued = [[InboxMessage('msg.answer', 'Yes.', 'E1')], [], [], [InboxMessage(PAUSE, '', 'E2')]]
+    read = SessionFiles.read
+    raced: list[bool] = []
+
+    def racing(files: SessionFiles, name: str) -> Any:
+        # Right after the loop synced the notes: the tool server saves notes from before the batch, and hands it out
+        # in the same answer.
+        waiting = os.path.isdir(files.directory) and any(entry.startswith('messages-')
+                                                         for entry in os.listdir(files.directory))
+        if name == 'crashed' and not raced and waiting:
+            files.write('checkpoint', {'notes': 'older notes', 'plan': []})
+            files.take_messages()
+            raced.append(True)
+        return read(files, name)
+
+    monkeypatch.setattr(SessionFiles, 'read', racing)
+    assert _cli(tmp_path, popen=lambda _argv, **_kwargs: FakeProcess(10), sleep=lambda _s: None).run(w.session) == 'paused'
+    # Those notes were written before the batch reached the model: it is not done by them.
+    assert (raced, 'E1' in w.inbox.finished) == ([True], False)
+
+
 class BoardRefused(Exception):
     """What a real board adapter may raise (a service error is no OSError the tools turn into a refusal)."""
 

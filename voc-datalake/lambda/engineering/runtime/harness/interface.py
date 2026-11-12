@@ -87,8 +87,9 @@ class AgentSession:
             self.checkpoint(turn=-1)
         return others, bool(pauses)
 
-    def checkpoint(self, *, turn: int) -> str:
-        """Save a new checkpoint object under the agent's own keys (its working tree too); its key."""
+    def checkpoint(self, *, turn: int, clean: bool = False) -> str:
+        """Save a new checkpoint object under the agent's own keys (its working tree too, unless ``clean``: a fresh
+        checkout, nothing changed yet); its key."""
         context = self.context
         seq = self.restored_seq + self.saves + 1
         position: dict[str, Any] = {'task_id': context.task_id, 'turn': turn, 'step': context.status.step[:500],
@@ -96,7 +97,7 @@ class AgentSession:
                                     # The brief, so a continuation needs no claim of a task it holds already.
                                     'brief': {'title': context.brief.title[:500],
                                               'instructions': context.brief.instructions[:MAX_BRIEF]}}
-        if context.runs_code:
+        if context.runs_code and not clean:
             try:
                 # None: the working tree is clean (every change undone), and so is the continuation's.
                 self.patch = snapshot(context, f'checkpoint-{seq:06d}')

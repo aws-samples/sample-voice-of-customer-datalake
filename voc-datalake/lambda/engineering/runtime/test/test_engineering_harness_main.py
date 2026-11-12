@@ -292,13 +292,26 @@ class OrderedBoard(FakeBoard):
         return super().brief(run_id=run_id, task_id=task_id)
 
 
-def test_the_lease_is_renewed_at_once_before_the_brief_and_the_restore(aws, tmp_path):
+def test_a_fresh_start_claims_its_brief_before_any_renewal(aws, tmp_path):
     s3, _ = aws
     board = OrderedBoard()
-    runner = FakeRunner()
     main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
-         runner=runner, bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
-    assert board.order[:2] == ['heartbeat', 'brief']
+         runner=FakeRunner(), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    # Its task is not claimed yet: a renewal first would be refused.
+    assert board.order[0] == 'brief'
+
+
+def test_a_continuation_renews_its_lease_at_once_before_the_restore(aws, tmp_path):
+    s3, _ = aws
+    key = f'{CHECKPOINTS}000002-abcd.json'
+    s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': {'turn': 1}, 'notes': ''}))
+    board = OrderedBoard()
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path, VOC_RESTORE_KEY=key), s3=s3,
+         ports=_ports(board), runner=FakeRunner(), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    assert board.order[0] == 'heartbeat'
+    # Restored: no first checkpoint of a fresh start written beside it.
+    keys = [item['Key'] for item in s3.list_objects_v2(Bucket=BUCKET, Prefix=CHECKPOINTS)['Contents']]
+    assert keys == [key]
 
 
 def test_until_the_board_lands_the_harness_refuses_rather_than_guess(aws, tmp_path):
@@ -450,3 +463,45 @@ def test_a_checkpoint_saves_the_brief_for_its_continuation(aws, tmp_path):
     key = _session(s3, tmp_path).checkpoint(turn=1)
     saved = json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())
     assert set(saved['position']['brief']) == {'title', 'instructions'}
+
+
+def test_a_fresh_start_saves_its_brief_in_a_first_checkpoint_at_once(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
+         runner=FakeRunner(), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    [first, *_] = sorted(item['Key'] for item in s3.list_objects_v2(Bucket=BUCKET, Prefix=CHECKPOINTS)['Contents'])
+    saved = json.loads(s3.get_object(Bucket=BUCKET, Key=first)['Body'].read())
+    # A continuation after a crash before any save of the agent's restores it: no claim of a task it holds.
+    assert (first.removeprefix(CHECKPOINTS)[:6], saved['position']['turn'], set(saved['position']['brief'])) == (
+        '000001', 0, {'title', 'instructions'})
+
+
+def test_a_session_ending_done_without_finish_moves_its_task_to_done(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    # Two answers without a tool: the loop ends the session as done, the model never called finish.
+    assert main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
+                runner=FakeRunner(), bedrock=lambda: FakeBedrock([[], []])) == 0
+    assert board.moves == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'done')]
+
+
+def test_a_finish_moves_the_task_once(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
+         runner=FakeRunner(), bedrock=lambda: FakeBedrock([[use('finish', summary='ok')]]))
+    assert [move[2] for move in board.moves] == ['done']
+
+
+def test_a_refused_move_at_the_end_is_a_crash_never_a_success(aws, tmp_path):
+    from engineering.runtime.harness.board_client import BoardRefused
+
+    class Refused(FakeBoard):
+        def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+            raise BoardRefused(409, f'the lease of {run_id}/{task_id} is not yours or has run out: no {to_state}')
+
+    s3, _ = aws
+    with pytest.raises(BoardRefused):
+        main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(Refused()),
+             runner=FakeRunner(), bedrock=lambda: FakeBedrock([[], []]))

@@ -835,3 +835,31 @@ def test_a_booting_session_whose_task_ended_ends_as_the_task_did(world: World):
     world.board.leases[key] = replace(world.board.leases[key], final_state='done')
     world.supervisor.tick(1120)
     assert (booting.status, world.session('fixer-1').status) == ('booting', 'done')
+
+
+def test_a_fresh_agents_claim_is_due_within_the_crash_clock_from_its_harness_start(world: World):
+    world.launch(code=SLEEP)
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    world.board.leases[key] = Lease(task_id='task-1', agent_id='', renewed_at=0, last_progress_at=0)  # not claimed yet
+    working = _until(world, 1000, lambda s: s.status == 'working', progress=None)
+    assert working.harness_at == 1000
+    # Within the crash clock from its harness's start, an unclaimed task is no crash; past it, it is.
+    world.supervisor.tick(1000 + T.lease_ttl - 1)
+    assert (world.session('fixer-1').crashes, world.session('fixer-1').continuation) == (0, 0)
+    world.supervisor.tick(1000 + T.lease_ttl + 1)
+    assert world.session('fixer-1').continuation == 1
+
+
+def test_a_held_session_whose_task_ended_while_waiting_ends_as_it_did(world: World):
+    working = _working_on_a_task_that(world, waiting=True, final_state='done')
+    held = world.supervisor._save(replace(working, status='waiting'))
+    world.supervisor.tick(held.started_at + 60)
+    assert world.session('fixer-1').status == 'done'
+
+
+def test_a_refresh_refused_because_the_task_ended_ends_the_session_as_it_did(world: World):
+    working = _working_on_a_task_that(world)
+    world.board.refreshes = False
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    world.board.leases[key] = replace(world.board.leases[key], final_state='done')
+    assert world.supervisor._refused(working, 1060).status == 'done'

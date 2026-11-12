@@ -56,7 +56,8 @@ class Board(Protocol):
     """``lease``: the task's lease (an open task's has no holder, only its attempt), or None for no task. ``repost``:
     free the task at the ``attempt`` the supervisor judged and post it again at the next one, for an agent to start
     afresh (a newer attempt is left alone). ``refresh``: the holder's lease runs its full time again (before a
-    continuation starts); False when the task is not the holder's at that attempt any more."""
+    continuation's MicroVM starts, and when its harness does); False when the task is not the holder's at that
+    attempt any more."""
 
     def lease(self, run_id: str, task_id: str) -> Lease | None: ...
 

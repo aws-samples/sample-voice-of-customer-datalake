@@ -616,7 +616,8 @@ to it from its tags; `from.kind` `coach`) among them. Not aligned yet (the runti
 - **The harness.** Its board and inbox are the board API's (`harness/board_client.py`: a POST to the board's
   function URL, `VOC_BOARD_URL`, signed as the agent's own session for the `lambda` service; the brief is the
   holder's claim, whose lease epoch goes with every heartbeat, progress report and move: in progress once briefed,
-  done when the agent finishes; the inbox is read after a cursor, each notice kept once by its event id,
+  done when the agent finishes, or when its session ends done without a finish (two
+  answers without a tool; a CLI ending cleanly); the inbox is read after a cursor, each notice kept once by its event id,
   `signal.save` and `signal.pause` acted on, anything else shown as data. A checkpoint holds no message: its cursor
   stops before the oldest one taken and not yet done, with every id done its continuation can meet again. A save or
   a pause is done once acted on; any other message once the model saved its notes after having it (the Converse
@@ -628,7 +629,9 @@ to it from its tags; `from.kind` `coach`) among them. Not aligned yet (the runti
   starts (it may have run out on a long hold, a Resume long after a Pause, or over the boot's minutes), for the same
   holder at the same attempt only, else the session ends
   (`board_bus.py` `refresh`, the board store's own refresh to come); each checkpoint saves
-  the brief, so a continuation reads it there: only a fresh start claims. Its broker interface still refuses every call, and so do the run
+  the brief, so a continuation reads it there: only a fresh start claims, and saves a first checkpoint right after its claim
+  (one write), so a continuation of any crash after it has one; a crash between the claim and that first
+  checkpoint has none, so its continuation's claim is refused and its task is re-posted. Its broker interface still refuses every call, and so do the run
   coordinator's (the board's task list, posting a task, launching its agent; the knowledge pack's agent reader),
   until the board's `tasks`, `launch` and `knowledge` ops land. The coordinator's launch is to go through the
   board's API, which checks the caller is its run's coordinator, rather than an invoke grant on the runtime

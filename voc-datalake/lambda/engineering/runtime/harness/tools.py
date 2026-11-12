@@ -106,6 +106,8 @@ class AgentContext:
     #: The run coordinator's ports (the board's tasks, posting, launching; the knowledge pack's reader).
     planner: Planner = field(default_factory=PendingHarnessPorts)
     knowledge: KnowledgeReader = field(default_factory=PendingHarnessPorts)
+    #: Whether this process moved the task to done (the model's ``finish``).
+    finished: bool = False
 
     @property
     def runs_code(self) -> bool:
@@ -272,6 +274,7 @@ class ToolBox:
         summary = str(arguments.get('summary', ''))[:MAX_NOTE_CHARACTERS] or 'done'
         self.context.progress(f'finished: {summary[:480]}')
         self.context.board.move(self.context.run_id, self.context.task_id, to_state='done')
+        self.context.finished = True
         return ToolResult('finished', finished=summary)
 
     def _write(self, arguments: Mapping[str, Any]) -> ToolResult:

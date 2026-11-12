@@ -222,6 +222,19 @@ class Supervisor:
         return self.board.refresh(session.run_id, session.task_id, agent_id=session.agent_id,
                                   attempt=session.task_attempt)
 
+    def _refused(self, session: AgentSession, now: int) -> AgentSession:
+        """A refresh refused: the task moved on (another attempt or holder), or ended meanwhile (the session ends as it
+        did)."""
+        return self._gone(session, self._lease(session), now) or self._end(session, 'reposted', now)
+
+    def _gone(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession | None:
+        """The session's end when its task moved on (another attempt or holder) or ended, else None."""
+        if lease is not None and self._superseded(session, lease):
+            return self._end_superseded(session, lease, now)
+        if lease is not None and lease.ended:
+            return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
+        return None
+
     def _end_superseded(self, session: AgentSession, lease: Lease, now: int) -> AgentSession:
         """End a session whose task moved on: never continued nor re-posted."""
         if not lease.agent_id and lease.attempt == session.task_attempt + 1:
@@ -235,7 +248,12 @@ class Supervisor:
         if lease is not None and self._superseded(session, lease):
             return self._end_superseded(session, lease, now)
         if lease is not None and not lease.agent_id:
-            lease = None  # open at its own attempt: not claimed yet, no heartbeat of anyone's
+            # Open at its own attempt: not claimed yet. Its harness claims it first thing, so the claim is due within
+            # the crash clock from the harness's start (a slow first call is no crash); before that, no lease.
+            lease = (replace(lease, agent_id=session.agent_id, renewed_at=session.harness_at,
+                             last_progress_at=session.harness_at) if session.harness_at is not None else None)
+        if session.status == 'waiting' and lease is not None and lease.ended:
+            return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
         if session.status == 'waiting':
             return session if lease is not None and lease.waiting else self._continue(session, now, crashed=False)
         if session.run_id in self._spent and session.after_pause not in ('hold', 'shutdown'):
@@ -356,12 +374,13 @@ class Supervisor:
         if last and lease is not None and lease.agent_id and not self._refreshed(session):
             # Its harness starts on a lease of its own (a continuation's ran out over the boot's minutes): refused, the
             # task is not this agent's at this attempt any more.
-            return self._end(session, 'reposted', now)
+            return self._refused(session, now)
         exec_id = self._vm_call(lambda: self.runtime.start_exec(vm, command))
         if last and self._continued_for_a_message(session):
             # The continuation a message made for this wait: its grace to read the message starts with its harness.
             session = replace(session, woken_at=now)
-        return self._save(replace(session, exec_id=exec_id, status='working' if last else 'booting'))
+        return self._save(replace(session, exec_id=exec_id, status='working' if last else 'booting',
+                                  harness_at=now if last else session.harness_at))
 
     def _work(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession:
         if lease is not None and lease.ended:
@@ -459,14 +478,13 @@ class Supervisor:
         if session.run_id in self._spent:
             return self._end(session, 'paused', now)
         lease = self._lease(session)
-        if lease is not None and self._superseded(session, lease):
-            return self._end_superseded(session, lease, now)
-        if lease is not None and lease.ended:
-            return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
+        gone = self._gone(session, lease, now)
+        if gone is not None:
+            return gone
         if lease is not None and lease.agent_id and not self._refreshed(session):
             # Refused before any MicroVM starts: the task is not this agent's at this attempt any more. (Its lease is
             # refreshed again when its harness starts, after the boot's minutes.)
-            return self._end(session, 'reposted', now)
+            return self._refused(session, now)
         self._terminate(session)
         restore = self.checkpoints.latest(session.run_id, session.agent_id, session.commit, session.task_attempt)
         spec = session.spec(restore, self.workspace_bucket, self.board_url)

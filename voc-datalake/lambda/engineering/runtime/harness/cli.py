@@ -147,13 +147,15 @@ class ClaudeCli:
         #: The batches posted to the tool server and not yet taken by it: file name -> their event ids.
         posted: dict[str, list[str]] = {}
         while process.poll() is None:
+            # A batch the tool server took reached the model (its next tool call's answer carries it). Listed before
+            # the notes are synced, seen after: a batch counts only for notes the model saved after having it.
+            taken = [name for name in posted if not files.waiting(name)]
             seen = _sync(session, files, seen, turn)
+            for name in taken:
+                session.saw(posted.pop(name))
             if files.read('crashed') is not None:
                 self._end(process)
                 break
-            # A batch the tool server took reached the model (its next tool call's answer carries it).
-            for name in [name for name in posted if not files.waiting(name)]:
-                session.saw(posted.pop(name))
             others, pause = session.take_messages(shows=False)
             if pause:
                 # Ended first, so nothing it writes after the checkpoint is lost; a git command its tool server

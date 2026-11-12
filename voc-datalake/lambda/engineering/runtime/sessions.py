@@ -79,6 +79,9 @@ class AgentSession:
     session_expires_at: int | None = None
     #: When a message last woke it (``Supervisor.wake``): an open wait does not suspend it again for a while.
     woken_at: int | None = None
+    #: When this MicroVM's harness started (its boot's last command): a fresh agent's claim is due within the
+    #: crash clock from then.
+    harness_at: int | None = None
     #: The task's attempt it works on (the board's; its workspace keys go under it).
     task_attempt: int = 1
     #: When its current open wait began (None: no open wait): the 45-minute hold counts from here, awake or not.
@@ -140,12 +143,13 @@ class AgentSession:
         return replace(self, vm_id=vm.vm_id, endpoint=vm.endpoint, started_at=now, status='booting',
                        continuation=self.continuation + 1, boot_index=0, exec_id=None, asked_at=None,
                        pause_requested_at=None, after_pause='continue', suspended=False,
-                       failures=0, restore_key=restore_key, tokens_before=self.tokens, woken_at=None,
+                       failures=0, restore_key=restore_key, tokens_before=self.tokens, woken_at=None, harness_at=None,
                        session_expires_at=None, last_tick_at=now)
 
 
 _OPTIONAL_INTS: Final = ('asked_at', 'pause_requested_at', 'session_expires_at', 'last_tick_at',
-                         'claimed_until', 'woken_at', 'wait_since', 'woken_wait', 'woken_continuation')
+                         'claimed_until', 'woken_at', 'wait_since', 'woken_wait', 'woken_continuation',
+                         'harness_at')
 _OPTIONAL_STRS: Final = ('exec_id', 'restore_key')
 
 

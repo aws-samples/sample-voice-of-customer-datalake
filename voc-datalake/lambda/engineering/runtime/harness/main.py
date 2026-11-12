@@ -242,17 +242,36 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
         return boto3.client('bedrock-runtime', region_name=env.get('AWS_REGION'),
                             config=Config(retries={'mode': 'adaptive', 'max_attempts': 8}, read_timeout=300))
 
-    # The lease is renewed first (the boot took minutes), then every minute through the brief, the restore (a
-    # working tree to put back may take minutes) and the session.
-    _renew(ports.board, env)
+    # A session restored from a checkpoint renews its lease first (the supervisor refreshed it when the harness
+    # started), then every minute through the restore (a working tree to put back may take minutes) and the session.
+    # A fresh start claims first (its task is not claimed yet), and renews after; so would a continuation of a crash
+    # in the moment before the fresh start's first checkpoint, whose claim the board refuses.
+    if env.get('VOC_RESTORE_KEY'):
+        _renew(ports.board, env)
     stop = threading.Event()
     threading.Thread(target=_heartbeat, args=(ports.board, env, stop), daemon=True).start()
     try:
         session = build_session(env, s3=s3, ports=ports, runner=runner or RunnerClient())
+        if session.restored is None:
+            # A fresh start's first checkpoint, right after its claim (one write: its checkout is fresh, nothing to
+            # snapshot): its brief, so a continuation reads it there and never claims the task it already holds.
+            session.checkpoint(turn=0, clean=True)
         ending = adapter_for(args, env, bedrock or _bedrock).run(session)
+        if ending == 'done':
+            _finished(session)
     finally:
         stop.set()
     return DONE_EXIT_CODE if ending == 'done' else PAUSED_EXIT_CODE
+
+
+def _finished(session: AgentSession) -> None:
+    """A session that ended done moves its task to done, unless its ``finish`` did already (the model may end without
+    it: two answers without a tool; a CLI ending cleanly). The CLI's ``finish`` runs in its tool server: the board
+    answers a repeat of the same holder's move with the task, so moving again is safe. Any refusal (the lease not
+    this agent's, run out, the task unable to move) is raised: a crash, which the supervisor continues or ends."""
+    context = session.context
+    if not context.finished:
+        context.board.move(context.run_id, context.task_id, to_state='done')
 
 
 def entry() -> None:  # pragma: no cover - the image's entry script
