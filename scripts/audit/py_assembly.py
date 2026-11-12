@@ -47,12 +47,14 @@ GATED_PREFIX = 'b'  # a one-letter prefix: plugin rule names hit the 64-char lim
 GATED_CONTEXT: dict[str, object] = {
     'deploymentPrefix': GATED_PREFIX,
     'enableVerificationFixtureProvider': True,
+    # the engineering agents' connector broker, bus and board (lib/stacks/engineering-broker.ts, engineering-bus.ts)
+    # and their MicroVM runtime (lib/stacks/engineering-runtime.ts)
+    'engineeringAgents': True,
     'defaultModelId': 'global.anthropic.claude-sonnet-5-5',
     'inboundEmailDomain': 'voc.example.com',
     'emailFrom': 'noreply@voc.example.com',  # participant email + the board pool and its triggers
     'inferenceScope': 'eu',          # BEDROCK_INFERENCE_SCOPE / AVATARS_ENABLED on every Lambda
     'enableWebSearch': False,        # the one default-ON feature: its env must look optional too
-    'engineeringAgents': True,       # the engineering agents' runtime (lib/stacks/engineering-runtime.ts)
     'anthropicUseCase': {
         'companyName': 'Example Air', 'companyWebsite': 'https://example.com', 'intendedUsers': '0',
         'industryOption': 'Technology', 'useCases': 'Audit synth.', 'otherIndustryOption': '',

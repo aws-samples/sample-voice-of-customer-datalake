@@ -13,6 +13,7 @@ COPY lambda/engineering/runtime/unit_runner.py /opt/voc/unit_runner.py
 # The harness, root-owned and outside the checkout: the runtime's pure modules and the harness package.
 COPY lambda/engineering/__init__.py /opt/voc/engineering/__init__.py
 COPY lambda/engineering/runtime/__init__.py lambda/engineering/runtime/interface.py lambda/engineering/runtime/tokens.py lambda/engineering/runtime/checkout.py lambda/engineering/runtime/checkpoints.py lambda/engineering/runtime/unit_runner.py /opt/voc/engineering/runtime/
+COPY lambda/engineering/connectors/__init__.py lambda/engineering/connectors/identity.py /opt/voc/engineering/connectors/
 COPY lambda/engineering/runtime/harness/*.py /opt/voc/engineering/runtime/harness/
 COPY engineering-images/common/harness.py /opt/voc/harness.py
 COPY engineering-images/common/entrypoint.sh /opt/voc/entrypoint.sh

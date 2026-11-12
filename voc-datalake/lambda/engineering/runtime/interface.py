@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final, Protocol
 
+# The agents of the catalog, as the broker's and the board's identity spells them (one list, shipped in the images).
+from engineering.connectors.identity import AGENT_ROLES as ROLES
 from engineering.runtime.tokens import AuthToken
 
 if TYPE_CHECKING:
@@ -27,16 +29,10 @@ _RUN_RE: Final = re.compile(r'^[0-9A-HJKMNP-TV-Z]{26}\Z')
 _AGENT_RE: Final = re.compile(r'^(?P<role>[a-z]+(?:-[a-z]+)*)-(?P<index>0|[1-9][0-9]{0,2})\Z')
 #: IAM's limit on a session name, ``<run>.<agent index>`` (launcher.session_name): never cut, so never shared.
 MAX_SESSION_NAME: Final = 64
-#: The workspace every run belongs to until there is more than one (the board's and the bus's ``ws``).
-WORKSPACE: Final = 'default'
 
-#: The agents of the catalog, spelled as the broker's identity spells them (connectors/identity.py AGENT_ROLES,
-#: on the broker's branch: the merge makes this that import). The first set runs repository code; the writers
-#: (committer, pr-author, pr-reviewer) reach the host through the broker only.
+#: The roles that run repository code; the writers (committer, pr-author, pr-reviewer) reach the host through
+#: the broker only.
 CODE_ROLES: Final = frozenset({'hunter', 'fixer', 'builder', 'gate-runner'})
-ROLES: Final = CODE_ROLES | frozenset({
-    'mapper', 'understander', 'committer', 'commit-reviewer', 'pr-author', 'pr-reviewer', 'final-go', 'coordinator',
-    'coach'})
 
 
 class RuntimeRefused(ValueError):

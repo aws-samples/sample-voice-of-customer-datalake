@@ -17,6 +17,95 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.08.00] - 2026-11-12
+
+Autonomous engineering agents: the MicroVM runtime (one MicroVM per agent, the launcher, the runner's sandbox, sparse checkouts, checkpoints, the supervisor) and the harness each agent runs in. Merged from the voc-autonomous-b branch. Off by default, and not yet run against AWS.
+
+### Added
+
+- The runtime (`voc-datalake/lambda/engineering/runtime/`, docs/autonomous-engineering.md "Runtime: one MicroVM per agent"): the MicroVM interface, a local fake and a Lambda MicroVMs implementation whose API names follow the design and are verified before the flag is turned on; the launcher (one fixed execution role per agent role, `voc-eng-{role}`, assumed with 15-minute sessions named `<run ULID>.<agent index>` and tagged with workspace, run, agent and connection, refused for a stopped run); the runner, each image's entry point (repository code as its own user in PID and network namespaces of its own, the dependency step first behind a firewall, nothing the agent writes writable by repository code, output scrubbed); sparse, blob-less checkouts from the read-only cache mount with the git directory closed to repository code; checkpoints; and the supervisor (no fixed task cap: 10 minutes without progress leads to a question, then the task re-posted; open waits held without a MicroVM; pause and continue before the 8-hour limit and after a crash; Stop ending every MicroVM at once; the 30-day stop and spent budgets at a human decision point; the run monitor's signals, inspection data and live cost counters).
+- The harness (`runtime/harness/`): one interface, two adapters chosen per agent in its skill: a Bedrock Converse loop, and a coding-agent CLI headless at one pinned version with every built-in tool off and only the platform's tools, in a fresh home outside the checkout. The platform's tools: file tools confined to the checkout (no link, no `.git`, no file with two hard links), repository commands through the runner as the sandbox user, the dependency step, progress through the board, checkpoints carrying the working tree, and the work handed to the broker as a patch under the agent's own keys. Repository text reaches the model fenced as data. The board, inbox and broker ports refuse every call until the runtime is wired to them.
+- The images (`voc-datalake/engineering-images/`): python, node, rust and java on one base and entry point, Mountpoint pinned by version and checksum, ready and validate hooks; they ship the harness, a pinned boto3 and the broker's agent identities (`connectors/identity.py`).
+- CDK, only with `-c engineeringAgents=true` (`voc-datalake/lib/stacks/engineering-runtime.ts`): the agent roles with each role's bus source pinned to its own session by an explicit deny (the run coordinator's to `voc.engineering/conductor/<ws>/<run>`), the launcher and the supervisor (`voc-engineering-runtime`), ticked every minute by an EventBridge rule created disabled and switched on only while a run is active, its undelivered ticks going to the bus's KMS-encrypted `voc-engineering-dlq` (watched by alerting); `-c engineeringSupervisorAlarm=true` adds an alarm on its errors (docs/deployment.md). An agent role can be assumed only with all four session tags. `-c engineeringImageArns='{"python":"arn:…",…}'` names the MicroVM image per language (checked at synth; `{}` by default, so every launch is refused until it is set). The raw bucket expires `engineering/runs/` at 90 days and `engineering/cache/` at 30.
+
+### Changed
+
+- The agent roles' list lives once, in `connectors/identity.py` (`AGENT_ROLES`), with the default workspace id (`WORKSPACE`); the runtime, the board and the images take them from there.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`. The runtime has not run against AWS: keep the flag off until its MicroVM calls are verified.
+
+## [6.07.00] - 2026-11-12
+
+Autonomous engineering agents: the language gate packs and the quality gate step, the agents' event bus with its inbox router and the run's conversation, and the run's task board. Merged from the voc-autonomous-c branch and wired on this branch's infrastructure. Off by default.
+
+### Added
+
+- The language gate packs (`voc-datalake/engineering-gates/`: rust-ts, python-ts, java manifests with detection rules, ordered commands, timeouts and failure rules; a passing and a failing fictional fixture per language) and the quality gate step (`voc-datalake/lambda/engineering/quality_gate/`, a CLI the gate runner's MicroVM runs): the detected packs, the repository's own gate after the dependency steps, review rounds by reviewer agents with the knowledge pack's review guide, a final go, NO-GO as a human decision point, and the gate record (summaries, never raw tool output). The review and final-go models default to the agent worker and reviewer surfaces of `shared/model_config.py`.
+- The engineering bus (`lambda/engineering/bus/`): the voc-msg/1 envelope checked in code (claim-check refs, no credential-shaped summary, 16 KB at most), the sender allowlist (the event's source names the sender; the bus policy lets only the board API's role put events for now, and the per-publisher pins of each agent role to its own source come with the agent roles; task events only from the board, gate verdicts only from the run's final-go agent, run health only from the supervisor, a person only answering), the routing, and the inbox router Lambda, which journals a refused message with its reason and never its content.
+- The run's conversation (`lambda/engineering/conversation/store.py`): one append-only row per message with its actor and time, a per-run sequence and an event-id marker, so a redelivery is harmless (D1, D4).
+- The run's task board (`lambda/engineering/board/`): post (one transaction under the run's task cap, deduped, depth capped), claim with a lease whose epoch is the attempt, renew and move only by the holder before the lease runs out, bounded result keys under the agent's own prefix; the board API, a function URL with IAM authentication that takes the caller from its assumed-role identity and publishes each change as a task event. A task's row holds its current state; the per-change history rows (TASKLOG) come with the next merge.
+- CDK, only with `-c engineeringAgents=true` (`voc-datalake/lib/stacks/engineering-bus.ts`): the `voc-engineering` table in VocCoreStack (on demand, the stack's KMS key, point-in-time recovery, kept on stack deletion like voc-agents), the custom bus with a policy that denies `events:PutEvents` to every principal but the board API's role, one rule to the inbox router, one SQS queue per agent role and one dead-letter queue, `voc-engineering-dlq` (the stack's key, TLS only), which takes the role queues' redrives, the events the rule could not deliver and the router's invocations that failed every retry, and which alerting watches like the other failure queues (an alarm only once an administrator turns alerting on, so no fixed cost); the Core key admits EventBridge for that one queue. The board API's function URL has IAM authentication. Grants of exactly the item reads and writes, publishes and sends the code makes, and on the stack's key only `kms:Decrypt` and `kms:GenerateDataKey` through DynamoDB (and SQS for the router).
+
+### Changed
+
+- `lambda/shared/aws.py` gains `get_dynamodb_client` (a plain low-level client), which the inbox router and the board use.
+- The broker's GitHub client logs a failed close of a pull request it opened (a host refusal, a malformed answer, a lost connection) and still raises the refusal that made the close necessary.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`. With it, VocCoreStack gains the `voc-engineering` table (kept on stack deletion unless `-c protectData=false`).
+- Turning `engineeringAgents` off after it was on: VocProcessingStack imports the table from VocCoreStack, so deploy VocProcessingStack first (`npx cdk deploy VocProcessingStack --exclusively -c engineeringAgents=false`; `<prefix>-VocProcessingStack` on a prefixed deployment), then the rest; deploying VocCoreStack first fails with "Export ... cannot be deleted as it is in use".
+
+## [6.06.00] - 2026-11-12
+
+The connector broker gets its GitHub client: App tokens scoped to one repository and one operation, paged reads, a leased push and draft pull requests. Still off by default, and every permitted operation answers 503 until the run records and the board land.
+
+### Added
+
+- Autonomous engineering agents, phase 1, second slice: the broker's GitHub client and credential reader (`voc-datalake/lambda/engineering/connectors/github.py`, `credentials.py`; docs/autonomous-engineering.md "Repository connectors"). A connection's GitHub App credential (`app_id`, `installation_id`, `repository`, `private_key`) is read decrypted from the SSM SecureString `/[<prefix>-]voc/engineering/{connection_id}` and kept five minutes at most, never logged. Minting a token signs a nine-minute RS256 App JWT for an installation token for the connection's one repository and only the permissions that operation needs, kept until five minutes before it expires (within the hour GitHub gives it; none is revoked early: a stopped run's every further operation is refused before a token is used). Reads follow `Link` pagination by page number; a pull request read also returns its review comments and reviews; a file that is not UTF-8 text is refused. A rate limit (`Retry-After`, `X-RateLimit-Reset`, a secondary rate limit) is never waited out inside a call: it answers 503 with `Retry-After`. A push takes the parsed bundle (`BundleContents` now carries its base commit and each commit's file changes; its changed paths and added lines cover every commit), refuses a commit that changes a path the bundle does not list, refuses unless the branch's head is that base or, for a new branch, the base is the default branch's head or an ancestor of it (a base GitHub does not have is refused), rebuilds the commits with the Git Data API (text files inline in the tree, other files as blobs), refuses unless GitHub's resulting tree is the checked one, and moves the branch with `force: false` (or creates it). A draft pull request is opened or updated only when the branch's head has the checked tree, and its head is checked again afterwards: a pull request just opened on a branch that moved meanwhile is closed and the write refused (an update changes only the title and body; GitHub's REST API cannot turn a ready pull request back into a draft). Requests go only to `api.github.com`, follow no redirect and carry the token only in the `Authorization` header. A write whose answer was lost after it was sent answers 502 ("the write may have happened"), never a retryable 503, so a retry cannot make it twice (a lost answer to a token request stays retryable). An answer larger than the function URL can return is refused (502), never cut. New statuses: 404 (a read of what is not there), 409 for a host state other than the checked one (the branch moved, another tree), 502 a host error, 503 with `Retry-After` for a rate limit. Every write the broker completes gets an operational log line (a pull request it opened and closed again is logged as not closed only when the close fails) with what it wrote (operation, caller, connection, branch, tree hash, issue or pull request number), never its text; the durable audit row comes with the run records. The run records, the board's GO ledger and the bundle reader are not built yet, so every permitted operation still answers 503.
+- With `-c engineeringAgents=true`, the broker's role also gets `ssm:GetParameter` on `parameter/[<prefix>-]voc/engineering/*` only and `kms:Decrypt` on the stack's key only through SSM (`kms:ViaService`) and only for those parameters (`kms:EncryptionContext:PARAMETER_ARN`), the env var `ENGINEERING_PARAMETER_PREFIX`, and the signing layer (cryptography, for the JWT); its timeout goes from 30 to 120 seconds, for a push's chain of Git Data API requests. The default synth adds no resource.
+
+### Changed
+
+- The GitHub REST API version string lives once, in `voc-datalake/lambda/shared/github_rest.py`; the GitHub plugin's client imports it from there.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`.
+
+## [6.05.00] - 2026-11-12
+
+Autonomous engineering agents, phase 1 begins: the repository connector's broker, the one place a host write could go, with its caller identity, operations per role and write rules. Nothing is deployed by default.
+
+### Added
+
+- Autonomous engineering agents, phase 1, first slice: the connector broker (`voc-datalake/lambda/engineering/connectors/`, docs/autonomous-engineering.md "Repository connectors"). It takes the caller's agent role, run and agent from the function URL's assumed-role identity (never the request; an assumed role of the broker's own account only), allows each role only its operations (every agent reads; the issue understander and PR reviewer comment, on the run's own issue or pull request only; the committer pushes a bundle; the PR author opens or updates the draft pull request), and applies the write rules before any host call: only the run's own `voc-agent/{run_id}/` branches under names git accepts, never the default branch or the CI definitions, a bundle of exactly one head ref whose every commit is authored and committed by the connection's bot address, no review sentence anywhere (reviews split at full stops and line breaks; compatibility forms and invisible format characters aside) and no personal data in prose (only the bot's address in a `Co-authored-by: Name <address>` or `Signed-off-by: Name <address>` trailer aside; any other such trailer is refused), a GO for the tree before a push to a branch with an open pull request and before a pull request, and the CI attestation. The host client is handed the checked tree's hash for every push and pull request, to enforce (push with a lease, verify the head's tree before opening). No GitHub or GitLab client exists yet, so every permitted, well-formed operation answers 503 (an unknown caller or a role without the operation 403, a bad body 400). Deployed only with `-c engineeringAgents=true` (VocProcessingStack, `voc-engineering-broker`: arm64, 256 MB, a function URL with IAM authentication and no resource-based permission, a role that writes only its own logs); the default synth adds no resource.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`, except that the other Python bundles leave `lambda/engineering/` out (`lib/utils/lambda-asset-excludes.ts`), so their asset hashes change once and the next deploy updates their code without a behaviour change.
+
+## [6.04.09] - 2026-11-12
+
+The design of autonomous engineering agents: agents that learn how a connected GitHub or GitLab repository works and then hunt bugs, build features and review pull requests through a configurable quality gate, stopping at a pull request a person merges.
+
+### Added
+
+- [docs/autonomous-engineering.md](docs/autonomous-engineering.md): the design (nothing implemented yet; every design section is marked planned). Large repositories and monorepos (partial sparse clones, shards by workspace package, change impact, warm caches); repository connectors whose only writes are their own `voc-agent/` branches, pull requests and comments, with credentials in SSM SecureString parameters under the stack's KMS key; the knowledge pack (one overview and one pack per package, every claim cited, versioned, a draft until an administrator approves it); the agent catalog; the agents working together through one EventBridge bus (claim-check events), per-agent inboxes, a task board with leases, a live conversation and an S3 workspace per commit; the quality gate (language packs, up to N review rounds, a final go, the gate record); one Lambda MicroVM per agent, with no host token where repository code runs, activity-based stops, a supervisor on a schedule and continuation before the 8-hour limit; commit, PR and goal reports; versioned skills with a visible history and rollback, a coach gated by the benchmark, a learning loop and agent memory; six default flows, the new workflow-editor steps, flows drafted from the assistant, the run monitor with its signals and live cost, the harness interface inside each MicroVM, and tenets drafted for the target repository; models, trust and safety, evaluation, cost and phases.
+- The review gate: `scripts/ai-review/gate.mjs` records a change's review rounds (at most three) and its final GO for the staged tree (`git write-tree`), and `scripts/git-hooks/pre-commit` refuses a commit whose tree has no valid GO record; CONTRIBUTING.md ("The review gate") describes the loop and the install, and `scripts/ai-review/gate.test.mjs` runs both in scratch repositories.
+
+### Fixed
+
+- The frontend vitest suite caps its workers at 32 (`voc-datalake/frontend/vitest.config.ts`): on a 192-CPU machine the default started about 190 workers queued on one Vite transform server, and `beforeAll` hooks that import lazy chunks timed out.
+- Four self-clearing messages (the S3 import explorer's upload result, the users page's success message, the brand settings' and a source card's "Saved") kept a bare `setTimeout` that outlived the component and set state after unmount (an uncaught "window is not defined" in the frontend suite); `voc-datalake/frontend/src/hooks/useExpiringValue.ts` keeps the timer with the component, with its tests and a users-page test of the message clearing.
+- Three test-suite flakes under parallel workers: `voc-datalake/lambda/conftest.py` resets `shared.source_profiles`' warm-container cache around every test (two feedback-form submits answered 503 after an earlier test cached a failed read); `test_mcp_tokens_handler_mutation.py` patches `app.current_event` with `create=True` (it failed when first in a worker); the assistant runtime tests' sessions API double answers `null` from an unprogrammed `getSession`, as the real API does (an unhandled rejection from Stop's background settle).
+
+### Upgrade notes
+
+- No infrastructure, API or data change. In the web app, the four self-clearing messages keep their timer with their page: a second save within 3 seconds now shows its "Saved" for the full 3 seconds.
+
 ## [6.04.08] - 2026-11-11
 
 Workshop templates no longer reserve Lambda concurrency, so a Workshop Studio event's VocApiStack completes.

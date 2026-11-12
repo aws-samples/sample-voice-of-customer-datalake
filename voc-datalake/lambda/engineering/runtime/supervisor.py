@@ -18,7 +18,7 @@ Per run it honours a stop (a person's, an agent's kill switch, or the 30-day sto
 decision point offering only "stop"): every MicroVM is ended at once without waiting for the agents, and the
 launcher renews none of their sessions. A spent budget opens a human decision point and holds every agent
 (checkpointed, without a MicroVM) for a person to resume; no new MicroVM starts while it is spent. It emits
-``run.health``. It never switches its own schedule: the runs' own start and end do (``handler.switch``).
+``run.health``. It never switches its own schedule: the runs' own start and end do (``handler.start_run``, ``end_run``).
 
 ``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
 held for a person), Resume (a held agent continued from its checkpoint; refused for a stopped run or a spent
@@ -100,10 +100,13 @@ class Supervisor:
         return dict(statuses)
 
     def _stopping(self, run_id: str, now: int) -> bool:
+        # An ended run first: it is past any decision point, the 30-day one included.
+        if self.control.stop_requested(run_id):
+            return True
         if now - self.control.started_at(run_id) >= THIRTY_DAYS:
             self.control.needs_human(run_id, 'thirty_days')
             return True
-        return self.control.stop_requested(run_id)
+        return False
 
     def _run(self, run_id: str, run_sessions: list[AgentSession], now: int) -> list[str]:
         if self._stopping(run_id, now):
@@ -269,7 +272,8 @@ class Supervisor:
             'stuck_why': (f'no progress for {(now - last_progress) // 60} minutes'
                           if session.asked_at is not None and last_progress is not None else ''),
         }
-        return self._save(replace(session, inspect=inspect, tokens=status.tokens if status else session.tokens,
+        return self._save(replace(session, inspect=inspect,
+                                  tokens=session.reported(status.tokens) if status else session.tokens,
                                   microvm_seconds=session.microvm_seconds + self._elapsed(session, now),
                                   last_tick_at=now, failures=0))
 
@@ -434,6 +438,8 @@ class Supervisor:
         if kind == 'resume':
             if self.control.stop_requested(run_id):
                 raise RuntimeRefused(f'run {run_id} is stopped: it cannot be resumed')
+            if now - self.control.started_at(run_id) >= THIRTY_DAYS:
+                raise RuntimeRefused(f'run {run_id} is past its 30 days: it can only be stopped')
             if self.control.budget(run_id).exceeded:
                 raise RuntimeRefused(f'run {run_id} has spent its budget: raise it before resuming')
             # Its budget is no longer spent: a held run may start MicroVMs again.

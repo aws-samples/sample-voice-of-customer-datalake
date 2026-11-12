@@ -36,6 +36,7 @@ import {
 import type { ActionType } from './UserAdminComponents'
 import type { CognitoUser } from '../../api/types'
 import { usersKey } from '../../api/queryKeys'
+import { useExpiringValue } from '../../hooks/useExpiringValue'
 
 type UserGroup = 'admins' | 'users'
 
@@ -78,7 +79,8 @@ export default function UserAdmin() {
   const [editingUser, setEditingUser] = useState<CognitoUser | null>(null)
   const [accessUser, setAccessUser] = useState<CognitoUser | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState | null>(null)
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  // A success message clears itself after 3 s; the timer goes with the component.
+  const [actionSuccess, showSuccess] = useExpiringValue<string>(3000)
 
   const {
     data, isLoading, error,
@@ -86,11 +88,6 @@ export default function UserAdmin() {
     queryKey: usersKey(),
     queryFn: () => api.getUsers(),
   })
-
-  const showSuccess = (message: string) => {
-    setActionSuccess(message)
-    setTimeout(() => setActionSuccess(null), 3000)
-  }
 
   const updateGroupMutation = useMutation({
     mutationFn: ({

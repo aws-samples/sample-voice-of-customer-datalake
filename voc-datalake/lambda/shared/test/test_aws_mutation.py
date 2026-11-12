@@ -39,6 +39,8 @@ _FACTORY_SENTINELS = [
     ('get_lambda_client', '_lambda_client', 'client', 'lambda'),
     # The plugin circuit breaker's DisableRule goes through this one.
     ('get_eventbridge_client', '_eventbridge_client', 'client', 'events'),
+    # The engineering stores write typed items, so a plain client (no resource serializer).
+    ('get_dynamodb_client', '_dynamodb_client', 'client', 'dynamodb'),
 ]
 
 

@@ -1,7 +1,8 @@
 """What the supervisor needs from the parts of the system it does not own, as small interfaces.
 
-The board, the bus and the run's controls are built apart from the runtime (docs/autonomous-engineering.md
-→ How the agents work together). Until they land, the supervisor reaches them only through these
+The board and the bus (engineering/board, engineering/bus) and the run's controls (not built yet) are apart
+from the runtime (docs/autonomous-engineering.md → How the agents work together). Until the runtime is wired
+to them, the supervisor reaches them only through these
 interfaces, the tests use fakes of them, and ``handler.py`` wires adapters that refuse (``PortNotWired``),
 which is why the stack keeps the runtime behind ``-c engineeringAgents=true``.
 
@@ -15,7 +16,7 @@ from typing import Protocol
 
 
 class PortNotWired(RuntimeError):
-    """A port whose real implementation has not landed yet."""
+    """A port the runtime is not wired to yet."""
 
 
 @dataclass(frozen=True)
@@ -85,11 +86,11 @@ class RunControl(Protocol):
 
 
 class PendingPorts:
-    """The board, the bus and the run's controls until their implementations land: every call refuses."""
+    """The board, the bus and the run's controls until the runtime is wired to them: every call refuses."""
 
     @staticmethod
     def _refuse(name: str) -> PortNotWired:
-        return PortNotWired(f'{name} is not wired yet (the board, the bus and the run controls land apart from the runtime)')
+        return PortNotWired(f'{name} is not wired yet (the runtime does not reach the board, the bus or the run controls yet)')
 
     def lease(self, run_id: str, task_id: str) -> Lease | None:
         raise self._refuse(f'board.lease({run_id}, {task_id})')

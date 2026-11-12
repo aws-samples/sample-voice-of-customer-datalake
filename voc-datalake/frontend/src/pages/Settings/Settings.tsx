@@ -15,6 +15,7 @@
  */
 
 import { brandSettingsKey } from '../../hooks/useBrandSettings'
+import { useExpiringValue } from '../../hooks/useExpiringValue'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
@@ -50,7 +51,9 @@ export default function Settings() {
   const queryClient = useQueryClient()
   const { config, setConfig } = useConfigStore()
   const isAdmin = useIsAdmin()
-  const [saved, setSaved] = useState(false)
+  // "Saved" clears itself after 3 s; the timer goes with the page.
+  const [savedShown, showSaved, clearSaved] = useExpiringValue<true>(3000)
+  const saved = savedShown !== null
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const { location, selectTab, selectSection, redirectTo } = useAdminLocation(isAdmin)
@@ -114,10 +117,11 @@ export default function Settings() {
 
     const ok = apiEndpoint ? await saveToBackend(brandHandlesArray, hashtagsArray, urlsArray) : true
     setSaveFailed(!ok)
-    setSaved(ok)
     if (ok) {
       markBrandSaved()
-      setTimeout(() => setSaved(false), 3000)
+      showSaved(true)
+    } else {
+      clearSaved()
     }
     return ok
   }

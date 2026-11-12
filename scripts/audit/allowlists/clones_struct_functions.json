@@ -40,6 +40,13 @@
         "voc-datalake/lambda/api/settings_handler.py"
       ],
       "reason": "the poll routes of two Lambdas (GET /scrapers/jobs/<id>, GET /settings/jobs/<id>): each Lambda must register its own route, and the body is already one call into shared.assist_jobs; the route inventories that classify every route (test_scrapers_security, test_route_admin_gates, the tracer ROUTES lists) read each handler's own decorated functions"
+    },
+    {
+      "files": [
+        "voc-datalake/lambda/engineering/connectors/hosts.py",
+        "voc-datalake/lambda/engineering/runtime/ports.py"
+      ],
+      "reason": "typing.Protocol method stubs (a signature and `...`, no body): the engineering broker's host, run-record and GO-ledger ports and the runtime's board, bus and run-control ports declare different operations that only share the empty shape"
     }
   ]
 }

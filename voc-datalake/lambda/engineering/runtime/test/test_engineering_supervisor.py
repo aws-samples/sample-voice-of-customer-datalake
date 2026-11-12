@@ -10,12 +10,13 @@ import pytest
 
 from engineering.runtime.caps import Timings
 from engineering.runtime.checkpoints import checkpoint_prefix
-from engineering.runtime.interface import Command, RuntimeRefused
+from engineering.runtime.interface import Command, MicroVm, RuntimeRefused
 from engineering.runtime.launcher import Launcher, RunStopped
 from engineering.runtime.ports import Budget, Lease
+from engineering.runtime.runs import RunCaps
 from engineering.runtime.sessions import AgentSession, StaleSession
 from engineering.runtime.supervisor import THIRTY_DAYS
-from engineering.runtime.test.conftest import BUCKET, ROLE_ARNS, FakeSts, World
+from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, FakeSts, World
 
 T = Timings()
 SLEEP = 'import time; time.sleep(60)'
@@ -222,6 +223,32 @@ def test_a_run_is_stopped_at_thirty_days_at_a_decision_point_offering_only_stop(
     assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'thirty_days')]
 
 
+def test_an_ended_run_past_thirty_days_is_stopped_without_opening_a_decision_point(world: World):
+    world.launch(code=SLEEP)
+    world.control.stops.add(RUN)
+    world.supervisor.tick(1000 + THIRTY_DAYS)
+    assert (world.session().status, world.control.humans) == ('stopped', [])
+
+
+def test_a_run_past_thirty_days_cannot_be_resumed(world: World):
+    with pytest.raises(RuntimeRefused, match='30 days'):
+        world.supervisor.signal(RUN, None, 'resume', THIRTY_DAYS)
+
+
+def test_a_continued_session_keeps_the_tokens_of_its_earlier_microvms():
+    first = AgentSession(run_id=RUN, agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
+                         egress=(), connection='conn-1', commit=COMMIT, paths=(), harness=('true',), vm_id='vm-1',
+                         endpoint='', started_at=0, tokens={'model-a': {'in': 100, 'out': 10}})
+    continued = first.on(MicroVm(vm_id='vm-2', agent_id='fixer-1', endpoint=''), 10, None)
+    # The new MicroVM's harness counts from zero.
+    tokens = continued.reported({'model-a': {'in': 5, 'out': 1}, 'model-b': {'in': 2, 'out': 0}})
+    assert tokens == {'model-a': {'in': 105, 'out': 11}, 'model-b': {'in': 2, 'out': 0}}
+    assert replace(continued, tokens=tokens).input_tokens == 107
+    # A report from inside the MicroVM can only add: never a negative count, never below what was saved.
+    lower = replace(continued, tokens=tokens).reported({'model-a': {'in': -1_000_000, 'out': 0}})
+    assert lower == tokens
+
+
 def test_pause_holds_the_agent_after_its_checkpoint_and_resume_continues_it(world: World):
     world.launch(code=PAUSE_WHEN_ASKED)
     _until(world, 1000, lambda s: s.status == 'working')
@@ -337,6 +364,19 @@ def test_the_row_carries_inspection_data_and_live_cost_counters(world: World):
     assert observed.microvm_seconds == 60
 
 
+def test_an_agents_tokens_add_up_over_every_microvm_it_ran_in(world: World):
+    world.launch(code=REPORTS_STATUS)
+    _until(world, 1000, lambda s: s.status == 'working')
+    first = _until(world, 1060, lambda s: s.tokens != {})
+    # Its MicroVM goes away: the agent is continued in a new one, whose harness counts from zero again.
+    world.runtime.terminate(first.vm)
+    _until(world, 1120, lambda s: s.continuation == 1)
+    _until(world, 1180, lambda s: s.status == 'working')
+    both = _until(world, 1240, lambda s: s.tokens != first.tokens)
+    assert both.tokens == {'model-a': {'in': 20, 'out': 40}}
+    assert (both.input_tokens, both.output_tokens) == (20, 40)
+
+
 def test_a_spent_budget_asks_every_agent_to_pause_and_waits_for_a_person(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
@@ -402,6 +442,7 @@ def test_shut_down_or_pause_on_an_agent_still_booting_takes_effect_at_once(world
 
 def test_one_run_failing_does_not_keep_the_supervisor_from_the_others(world: World, monkeypatch: pytest.MonkeyPatch):
     world.launch(code='pass')
+    world.runs.start('01JD3R4NZXQ7Y2W8K4M6P9T0CD', caps=RunCaps(max_tasks=5), now=0)
     other = replace(world.session(), run_id='01JD3R4NZXQ7Y2W8K4M6P9T0CD', seq=0, claimed_until=None)
     world.store.create(other)
     real_budget = world.control.budget

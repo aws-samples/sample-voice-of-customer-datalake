@@ -6,8 +6,8 @@
 - ``tool-server``: the platform's tools for a CLI (``tool_server``), started by that CLI.
 
 Everything else comes from the agent's own environment (``unit_runner.AGENT_ENV``: its ids, its region, the
-bucket its session was handed with) and its role session (``AWS_CONFIG_FILE``). Until the board, the inbox
-and the broker land, their ports refuse (``ports.PendingHarnessPorts``), so a session as deployed today stops
+bucket its session was handed with) and its role session (``AWS_CONFIG_FILE``). Until the harness is wired
+to the board, the inbox and the broker, their ports refuse (``ports.PendingHarnessPorts``), so a session as deployed today stops
 at its first call to them rather than guess.
 """
 from __future__ import annotations

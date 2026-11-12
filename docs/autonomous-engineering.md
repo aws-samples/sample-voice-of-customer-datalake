@@ -48,7 +48,8 @@ budgets, the run journal) and on [memory](memory.md).
   run on those packages, and the full gate runs on the pull request's final tree (again after any fix it sends back).
 - **Warm caches.** Checkouts are kept per (connection, commit) and dependency caches per (connection, lockfile hash)
   in S3, under the connection's own prefix, so a new agent starts warm; an agent reads only its own connection's
-  prefix. Entries expire a set time after they were written and are rebuilt when needed. Every shard has a size and
+  prefix. Entries expire 30 days after they were written (the raw bucket's `engineering-cache-expiry` rule on
+  `engineering/cache/<connection>/…`, with `-c engineeringAgents=true`) and are rebuilt when needed. Every shard has a size and
   time budget, and a shard too big is split again. Only trusted code writes the cache: the connector's broker writes
   the checkouts, and the cache filler (a step that runs no repository code: fetch only, from the lockfile, install
   scripts off) writes the dependency caches. A toolchain whose dependency resolution runs build files (Gradle, Maven)
@@ -58,7 +59,40 @@ budgets, the run journal) and on [memory](memory.md).
 
 ## Repository connectors
 
-*Planned* (voc-datalake/lambda/engineering/connectors).
+*Partly built*: the broker's caller identity, operations per role and write rules, the GitHub client and the
+credential reader (`voc-datalake/lambda/engineering/connectors/`), deployed only with `-c engineeringAgents=true`.
+Planned: the run records and the board's GO ledger (phase 2's board), the bundle reader, the connection page that
+stores a credential, the checkout cache by commit sha, sparse clones, and the GitLab client. Until the run records
+land, the broker finds no run, so every permitted, well-formed operation still answers 503 and nothing reaches GitHub.
+
+**What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
+a nine-minute App JWT (RS256, the App's private key from the connection's parameter, below) for an installation token for the connection's one repository and
+only the permissions the operation needs: a file or history read `contents: read`, an issue read `issues: read`, a
+pull request read `pull_requests: read`, a comment `issues: write` or `pull_requests: write`, a push
+`contents: write`, a draft pull request `contents: read` and `pull_requests: write` (`metadata: read` comes with
+every token). A token is kept in memory until five minutes before it expires (GitHub's tokens live an hour). Reads
+follow the `Link` header's next page (the cursor is that page number, nothing else); a pull request read returns the
+pull request, its conversation, its review comments and its reviews, a page of each. A rate limit (`Retry-After`,
+`X-RateLimit-Remaining: 0` with `X-RateLimit-Reset`, or a secondary rate limit) is never waited out inside a call: it
+is answered 503 with `Retry-After`. A file path with an empty, `.` or `..` part is refused before any request, and a
+file that is not UTF-8 text is refused rather than read lossily. A push takes the bundle as the bundle reader parsed
+it (its base commit and each commit's changed files; its changed paths and added lines cover every commit, not only
+the final tree). The client refuses a commit that changes a path the bundle does not list, and refuses unless the
+branch's head is the bundle's base or, for a branch not on GitHub yet, the base is the default branch's head or an
+ancestor of it (a base GitHub does not have is refused too). It rebuilds the commits with the Git Data API (a tree on
+the parent's tree with text files inline and other files as blobs, then a commit whose author and committer are the
+App's bot), refuses unless the last tree GitHub computed is the tree the broker checked, and only then moves the
+branch with `force: false` (or creates it): a push made meanwhile that the new commit does not descend from makes
+the update fail (a fast-forward of the same lineage still passes, so the head check before it is the lease). Objects of a refused push
+stay unreferenced. A draft pull request is opened, or its title and body updated, only when the branch's head has the
+checked tree, and the pull request's head is checked again afterwards: if the branch moved meanwhile, a pull request
+the client just opened is closed and the write refused. An update changes only the title and body: GitHub's REST API
+cannot turn a pull request someone marked ready back into a draft. Every request goes to `api.github.com` through one
+transport, with no redirect followed; a token is sent only in the `Authorization` header, never in a URL or a log
+line. The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
+Each write the host accepts gets an operational log line with the operation, the caller, the connection and what was
+written (issue or pull request number, branch, tree hash, commit count), never a body, a bundle or a token; the
+durable audit row (D4) comes with the run records.
 
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
@@ -77,20 +111,27 @@ branch, being refused:
 | Role | Operations |
 |---|---|
 | every agent | read files, history, issues and pull requests through the broker; checkouts come from the cache it fills |
-| issue understander, PR reviewer | post a comment |
+| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
 | committer | push a git bundle to the agent's branch |
 | PR author | open or update the agent's draft pull request |
 
 Every operation goes through the connector's rules, which refuse, before the host would: a push to any branch but
 the run's own (`voc-agent/{run_id}/…`, the run from the caller's session name), the default branch above all; a push
-to a branch with an open pull request unless the board holds a GO for the new tree; a merge, an approval; any call to
+to a branch with an open pull request unless the board holds a GO for the new tree; a bundle with other than exactly
+one head ref; a merge, an approval; any call to
 settings, branch protection, members, webhooks or secrets; a change to the CI definition paths it knows (the GitHub
 workflows and actions folders, the GitLab CI files: best effort, since a pipeline can include other files; the CI
 attestation below is the real boundary, and the GitHub App holds no `workflows` permission); a write that carries
 customer text (below): a verbatim sentence of a cited review anywhere the agents wrote (comments, the pull request's
-body, commit messages, the lines a diff adds), and personal data in their prose (comments, the body, commit messages
-without their trailer lines), never in the authorship of commits or in what was already in the repository. A unit
-test pins each refusal. The setup guide asks
+body, commit messages, the lines a diff adds; split at full stops and line breaks, compared after Unicode
+compatibility normalisation, invisible format characters dropped), and personal data in their prose (comments, the
+body, commit messages), never in what was already in the repository. The agents write a commit's author and
+committer themselves, so both must be the connection's bot address, or the push is refused; a commit's
+`Co-authored-by:` and `Signed-off-by:` trailers take only the form `Name <address>` with the bot's address, their
+name part read as prose, and any other such trailer is refused. A branch name must also be one git accepts (no
+component starting with `.` or ending with `.lock`, no `..`, `@{` or trailing `.`). The broker hands the host the tree it checked (and the GO is for): the client pushes the bundle's head only
+when it has that tree, with a lease on the branch's head, and opens or updates a pull request only after verifying
+that the branch's head has it. A unit test pins each refusal. The setup guide asks
 the team to back them with the host's own rules: protect the default branch, and limit the App's or token's pushes to
 `voc-agent/*` (a GitHub ruleset; GitLab protected branches, plus a branch-name push rule on the tiers that offer one).
 
@@ -109,9 +150,15 @@ read the CI/CD variables).
 
 **Credentials** are SSM Parameter Store SecureString parameters under the stack's customer-managed KMS key (the
 standard tier has no monthly charge), one per connection, `/voc/engineering/{connection_id}` (`{workspace_id}/` is
-prefixed once multi-workspace lands). Only the broker reads them; they are never put in a model's context, an event, a log line, a checkpoint or a MicroVM.
-Stopping a run turns the broker off for that run at once (every further operation refused) and revokes its live
-GitHub tokens.
+prefixed once multi-workspace lands; a prefixed deployment puts its prefix on the `voc` segment,
+`/<prefix>-voc/engineering/…`). A GitHub connection's value is JSON: `app_id`, `installation_id`, `repository`
+(`owner/name`) and `private_key` (the App's PEM key). Only the broker reads them (`connectors/credentials.py`:
+`ssm:GetParameter` on that path only, `kms:Decrypt` on the stack's key only through SSM and only for those
+parameters), decrypted, kept in memory five minutes at most; a missing or malformed one answers 503 and is logged by
+connection id and error code only. They are never put in a model's context, an event, a log line, a checkpoint or a
+MicroVM. Stopping a run turns the broker off for that run at once: every further operation is refused before any
+token is used. Tokens are not revoked early: each is minted for one repository and one operation's permissions, held
+only by the broker, and expires within the hour.
 
 **Who can read and use.** Connections, the code read from them, the knowledge packs, the conversations and the
 workspace are readable by administrators only by default; a non-admin sees an engineering run only when an
@@ -188,8 +235,49 @@ Each agent is a pre-made, configurable template: its **skill** (instructions, ex
 
 ## How the agents work together
 
-*Planned* (the bus, the board, the conversation and the workspace in voc-datalake/lambda/engineering, CDK behind
-`-c engineeringAgents=true`).
+*Partly built*: the bus, the inbox router, the conversation and the board (`voc-datalake/lambda/engineering/bus/`,
+`conversation/`, `board/`), deployed only with `-c engineeringAgents=true` (`voc-datalake/lib/stacks/engineering-bus.ts`).
+What exists:
+
+- **The bus**: the `voc-engineering` EventBridge custom bus (no archive; its policy denies `events:PutEvents` to every
+  principal but the board API's role), and its schema, voc-msg/1, checked in code
+  (`bus/schema.py`: the envelope, the type list, the claim-check rules on `refs`, no credential-shaped summary, 16 KB
+  at most). `bus/publish.py` is the one publish helper: it checks a message against the schema before `PutEvents`,
+  and a message about a recorded change takes its event id from the change, so a retry is a redelivery.
+- **The inbox router** (`bus/router.py`, the `voc-engineering-router` Lambda): one fixed rule sends every event of
+  the account on the bus to it. It checks the schema and the sender (`bus/senders.py`: the event's `source` names the
+  sender, and only the allowed sources may send each type, for their own run only), writes the message to the run's
+  conversation, then fans it out (`bus/routing.py`): a posted task to its role's queue, a message for an agent or the
+  conductor to the delivery function. It drops, and journals with the reason and never the content, a malformed
+  message, a sender that may not send it, a run that does not exist and an event id reused for other content.
+- **The conversation** (`conversation/store.py`): one row per message in the `voc-engineering` DynamoDB table
+  (on demand, encrypted with the stack's key, point-in-time recovery, kept like `voc-agents`), never changed, the
+  whole message kept (its sender the actor, its `at` the time). The sequence comes from a counter on the run's `META`
+  row, and an event's marker is written with its row in one transaction, so a redelivered event changes nothing.
+- **The board** (`board/store.py`, `board/api.py`, the `voc-engineering-board` Lambda behind a function URL with IAM
+  authentication and no resource-based policy): `post`, `claim`, `renew` (the heartbeat) and `move`, each a
+  conditional write on the same table. The caller's role, run and agent come from its assumed-role identity, as for
+  the broker. A post counts the task against the run's cap, dedupes an equal task, and nests at most 3 deep. Who may
+  post for whom: the coordinator for every role, the hunter for fixers, the builder for builders. A claim leases an
+  open task of the caller's role for 5 minutes. Renew and move need the lease and its epoch. Each change is published
+  on the bus as the board's `task.*` event after the row is written. A failed publish answers 503, and the retry
+  publishes the same event again.
+- **The role queues**: one SQS queue per task-pulling role (`bus/schema.py` ROLES), encrypted with the stack's key,
+  redriving to `voc-engineering-dlq`. That one dead-letter queue also takes the events the rule could not hand the
+  router, the router's invocations that failed every retry and the runtime's undelivered supervisor ticks, and
+  alerting watches it like the platform's other
+  failure queues. The role queues are fixed per role, not made per run as described below: a run's own
+  queues and agents' inboxes are not made yet (the [runtime](#runtime-one-microvm-per-agent)'s agent roles are granted
+  per-run queue names that nothing creates).
+
+Not built yet: the run's start, which writes the `META` row (so today the board answers 404 to every post and the
+router drops every message as for an unknown run); the agents' roles' access (the [runtime](#runtime-one-microvm-per-agent) makes
+the roles and sessions the board reads as agents, but none holds `lambda:InvokeFunctionUrl` on the board or `events:PutEvents` on the bus, which the board API alone holds);
+the bus policy's per-publisher pins of each agent role to its own `source` (today it admits the board's role alone,
+which publishes only as `voc.engineering/board`); the delivery function the router names (it holds no
+invoke on it yet); per-run queues and inboxes; the run coordinator; the workspace. The rest of this section is the
+design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
+holds, and the design's type table and per-run inboxes are what the next slices bring the code to or the table to.
 
 **The bus.** One EventBridge custom bus carries every message between agents, as events of one schema. The schema
 lives in this repository; the one publish helper and the inbox router check every event against it (EventBridge
@@ -215,7 +303,7 @@ inside the 64 characters a session name allows, pinned by a test) (the roles' tr
 a role), and hands the MicroVM that session. Sessions are short (15 minutes) and renewed only by the launcher, which
 refuses a stopped run's agents, so stopping one run cuts its sessions without touching another run's. How a MicroVM
 receives a session is among the facts verified before the
-runtime lands. The conditions use the tags: an explicit deny on the bus refuses an event whose source is not the
+runtime is turned on. The conditions use the tags: an explicit deny on the bus refuses an event whose source is not the
 session's own, and S3 accepts its reads only under its connection's cache and its run's workspace and its writes
 only under its own keys. Agents never write the conversation (the inbox router writes every event there, each as a
 new row that may not exist yet) and never write the board themselves: the board's API (a Lambda function URL with IAM authentication) makes every board change,
@@ -267,8 +355,13 @@ agent comes right after the run, so a write rule on the agent's own prefix canno
 mentions it later, and `{package}` is encoded (a package path has slashes). A reduce reads only the keys the board's
 API recorded for each agent. Objects are immutable (one per shard and agent; a new attempt is a new object), so map
 steps never collide. A run reuses only its own objects; what later runs share is the cache. Encrypted, private,
-readable as the connection is. One lifecycle rule for the whole workspace removes each object a retention period
-after it was written (90 days by default, never under 75), and the run records the retention it ran under (D4). No run outlives it:
+readable as the connection is. One lifecycle rule for the whole workspace removes each object 90 days after it was
+written (built: the raw bucket's `engineering-runs-expiry` rule on the runs' keys, `engineering/runs/<run>/…`, its noncurrent version
+removed a day later, deployed with `-c engineeringAgents=true`; a retention set per deployment, never under 75 days,
+is *planned*). The run is to record the retention it ran under (D4), and when a run's objects have gone, the
+supervisor is to write one `AUDIT#delete` row for the run (who: the workspace retention rule; what went; under which
+retention; when), as D5 asks of every workspace delete (both *planned*).
+No run outlives it:
 the supervisor stops a run at 30 days at a human decision point that offers only "stop", and a decision point left
 open for 30 more days closes the run. The board and the indexes point at the keys; the reports keep the summaries they cite, so they stay
 whole after the objects go. Findings, notes, checkpoints, conversation and memory hold feedback ids, never review
@@ -335,7 +428,33 @@ for it. A pull request from a fork is only ever reviewed (comments), never fixed
 
 ## The quality gate
 
-*Planned* (the step in voc-datalake/lambda/engineering/quality_gate, the packs in voc-datalake/engineering-gates).
+*Partly built*: the packs and the step, run as a CLI (`python -m engineering.quality_gate plan|check|gate`) that the
+gate runner's MicroVM is to run; nothing deploys it yet (the [runtime](#runtime-one-microvm-per-agent)'s images do
+not ship it, and the workflow editor's Quality gate step is phase 4). What exists:
+
+- **The packs** (`voc-datalake/engineering-gates/`, [README](../voc-datalake/engineering-gates/README.md)):
+  `rust-ts`, `python-ts` and `java`, each a `manifest.toml` (schema voc-gate-pack/1: the languages' markers and
+  extensions, the tools and their versions, the registries the dependency step may reach, the ordered steps), with
+  fixtures. Detection reads a listing of the repository and finds every root of a monorepo. A step runs only where
+  the repository uses its tool. A repository with `scripts/validate.sh` runs that instead of the pack's checks, after
+  the dependency steps. Only the dependency (`setup`) steps get the network; every later step runs offline. A check
+  that looked at nothing fails.
+- **The step** (`voc-datalake/lambda/engineering/quality_gate/`): the deterministic checks (`checks.py`,
+  `runner.py`), up to N review rounds (default 3, at most 5) of fresh single-turn reviewers (security and quality
+  blocking, first-principles advisory), then a final go by an agent that neither wrote nor reviewed the change
+  (`gate.py`, `review.py`). The reviewers run on the `agent_worker` surface's default model and the final go on the
+  `agent_reviewer` surface's (`shared/model_config.py`), through `shared/converse.py`. Each round (with
+  `--fresh-checkout`, as the runtime's gate checkout always runs, after putting the checkout back to HEAD) runs every
+  root's dependency steps, then the roots the change touches, then the rest, so a round
+  passes only on the whole tree: the full gate of step 3 below is part of every round, not a step of its own. Red
+  checks are a round's blocking findings, and no model is called. It stops at a human decision point
+  (`loop_exhausted`, `no_fail_path`, or `verification` for a change to `scripts/validate.sh`, an oversized diff, a
+  repository no check covers, a model or runner failure, or an answer that twice breaks its contract). The gate
+  record (`record.py`) is written either way, never with a GO when it stopped, with its Markdown for the pull
+  request. The CLI's `gate` is review-only: it has no reviser, so the first blocking round stops it for a person.
+  In a flow, the fixer or builder is to be passed as the reviser.
+
+The design:
 
 1. **Deterministic gate.** The language packs detected for the affected packages (Rust + TypeScript, Python +
    TypeScript, Java to start) run in the gate runner's MicroVM: format, lint, types, tests, the repository's own scripts
@@ -359,13 +478,38 @@ raw tool output.
 
 ## Runtime: one MicroVM per agent
 
-*Built, not yet run against AWS* (voc-datalake/lambda/engineering/runtime, the images in
+*Partly built, not yet run against AWS* (voc-datalake/lambda/engineering/runtime, the images in
 voc-datalake/engineering-images, the stack in voc-datalake/lib/stacks/engineering-runtime.ts; deployed only with
 `-c engineeringAgents=true`; the harness inside each MicroVM is built too, behind the board, the inbox and the
-broker, which it reaches through interfaces that refuse until they land, below). The service's limits, prices,
-quotas and regions, its API's operation and field names, how a MicroVM receives a role session, how its egress
-allowlist is enforced and whether Mountpoint, `unshare`, `setpriv` and `iptables` run inside one are not yet checked
-against the AWS documentation; until they are, the flag stays off, and this section is corrected to what is verified.
+broker, which it reaches through interfaces that refuse until the runtime is wired to them, below). The service's
+limits, prices, quotas and regions, its API's operation and field names, how a MicroVM receives a role session, how
+its egress allowlist is enforced and whether Mountpoint, `unshare`, `setpriv` and `iptables` run inside one are not
+yet checked against the AWS documentation; until they are, the flag stays off, and this section is corrected to what
+is verified.
+
+The runtime names its agents as the [broker](#repository-connectors) and the
+[bus and board](#how-the-agents-work-together) read them: its roles are `connectors/identity.py`'s AGENT_ROLES (one
+list, shipped in the images), its role names the broker's `voc-eng-{role}` pattern, its session names
+`<run ULID>.<agent index>` and its bus sources of the shape `bus/senders.py` parses. Not aligned yet (the runtime's
+next slice):
+
+- **Workspace keys.** An agent role may write only `engineering/runs/<run>/<agent>/*` in the raw bucket
+  (`engineering-runtime.ts`, `WriteOwnKeys`), while the board accepts an agent's result keys only under
+  `ws/<ws>/runs/<run>/<agent>/attempt-<epoch>/` (`board/store.py`) and the bus's `refs.s3` only under `ws/<ws>/`
+  (`bus/schema.py`). Both cannot hold: whatever an agent can write, the board and the router refuse to reference,
+  and the reverse. One workspace layout (and the bucket it lives in) has to be chosen and both sides moved to it.
+- **Two roles with no voice.** The coach's and the gate runner's sessions are pinned to
+  `voc.engineering/agent/coach/…` and `voc.engineering/agent/gate-runner/…`, which `bus/senders.py` always drops:
+  its agent sources accept only the roles of `bus/schema.py` ROLES, which has neither (the coach's own source there
+  is the service source `voc.engineering/coach`, and the gate runner has none), so every event either role puts
+  on the bus would be journalled as an unknown sender.
+- **Queues.** Its queue grants name per-run queues (below) that nothing creates, while the bus's role queues are
+  fixed per role (`voc-eng-tasks-<role>`).
+- **The flag.** It reads `-c engineeringAgents` with a strict parser of its own (a typo fails the synth), the
+  broker and the bus with a looser one (`true` or `"true"`, anything else off).
+- **Wiring.** Its agent roles hold no `lambda:InvokeFunctionUrl` on the broker or the board, the bus's policy admits
+  none of them (the board's role alone), and the harness's board, inbox and broker interfaces still refuse every
+  call.
 
 Each agent of a run runs in its own Lambda MicroVM, from its language's image, with its own sparse checkout from the
 cache. The idle policy suspends a MicroVM after 5 minutes without a request and ends one suspended for an hour; the
@@ -378,7 +522,7 @@ continues it in a new one once the wait closes.
 - **No host token in any MicroVM.** Nothing in a MicroVM reaches the repository host: the
   [broker](#repository-connectors) holds the credential, fills the cache and makes every host write. An agent's egress
   allowlist is Bedrock, the run bucket's own S3 endpoint (never the regional one, which reaches every bucket) and SQS
-  in its region, the broker's and the board's function URLs by name once they land, and, for the agents that run
+  in its region, the broker's and the board's function URLs by name once the runtime is wired to them, and, for the agents that run
   repository code, its language's package registries (plus at most 10 configured hosts, a registry mirror for example).
 - **Credentials from a launcher, never in the image.** A MicroVM starts with no AWS credential. The launcher (the
   supervisor's own code, outside every MicroVM) assumes the agent role's ONE fixed execution role (one per agent role,
@@ -436,11 +580,25 @@ continues it in a new one once the wait closes.
   an explicit deny), calls the allowlisted models, and deletes nothing. No MicroVM
   auth token is ever put in an event, a log, a row or a checkpoint: it is minted when needed (at most 60 minutes),
   refreshed 5 minutes before it lapses, held in memory only, and refuses to be serialised.
-- **Sessions.** One row per agent of a run in voc-agents, `ENGRUN#<run>` / `AGENT#<agent>` (partitions of their own,
-  apart from the agent runs' journals): ids, times, the MicroVM's id
-  and endpoint, the boot step, the continuation count, the checkpoint it restored from, the run monitor's inspection
-  data and the live cost counters; on the existing `gsi1-by-agents-listing` index under `ENG_SESSIONS_ACTIVE` while it
-  is live. Every write is conditional on the row's sequence number, and every move first claims the row for at most
+- **The run's start and end.** The runtime's `start_run` writes the run's `META` row in voc-engineering
+  (`WS#<ws>#RUN#<run>` / `META`: its task cap, which the board counts its tasks against, its hard caps on tokens and
+  cost, its goal, repository, flow, status and start time, on which the router numbers the conversation) once, and
+  lists it for the supervisor (`WS#<ws>#RUNS`, a row per run, in the same transaction); `end_run` sets its status
+  (`done`, `failed` or `stopped`) and end time, ends every MicroVM of it, and the run stops being listed once none
+  of its agents is live (one busy with another move is ended by the next tick, which sees the run ended). A retried
+  start or end does what the first one left undone. After that first write only the run's own attributes are ever
+  updated, never the board's or the router's counters. A run's agents are launched only while it is active, checked
+  in the same write as the agent's row, so a run that ends meanwhile gets no agent nothing supervises. The
+  supervisor reads its caps, its spend (its agents' tokens and what was priced on their rows), its start and its
+  end from there; a human decision point is the run's status, and a Resume of the whole run makes it active again
+  (never the 30-day one, which offers only "stop"). An agent's tokens are those of every MicroVM it ran in, not
+  only the current one's.
+- **Sessions.** One row per agent of a run, the board's own `AGENT#<agent>` row in the run's partition: ids, times,
+  the MicroVM's id and endpoint, the boot step, the continuation count, the checkpoint it restored from, the run
+  monitor's inspection data, the live cost counters and what the reports read (role, model, skill version, MicroVM
+  seconds, tokens in and out). The row is created once and then only its own attributes are updated, so what the
+  brokers add to it (the cost they priced) is never written over. The supervisor finds the live sessions through the
+  listed runs (the table has no index). Every write is conditional on the row's sequence number, and every move first claims the row for at most
   5 minutes (a claim nobody else can take while it holds), so a tick and a run monitor's signal never move one agent
   at once; a continuation that loses its write ends the MicroVM it just started.
 - **No fixed task cap: activity decides.** An agent runs as long as it makes progress (its lease's last progress on
@@ -453,19 +611,20 @@ continues it in a new one once the wait closes.
   30 minutes. The board counts re-posts: a task that
   times out twice is split or goes to a person. Model tokens and cost stay hard caps set by a person: past one, the
   run goes to a human decision point, every agent is checkpointed and held (`paused`, resumable once the cap is
-  raised), and no new MicroVM starts.
+  raised; raising a run's cap is not built yet, so today a person can only end the run from that decision point; until
+  then it stays listed and the supervisor keeps ticking), and no new MicroVM starts.
 - **The supervisor.** voc-engineering-runtime, invoked every minute by an EventBridge rule created disabled (TENETS.md
-  tenet 7: schedules run on EventBridge rules). The runs' own transitions switch it (the runtime's `switch` action,
-  called after the transaction that changes the active-run count, which then re-reads that count); the supervisor
-  never switches it. Each tick it renews sessions, boots new agents (the checkout, then the harness), judges each
+  tenet 7: schedules run on EventBridge rules). `start_run` turns it on; once no run is listed (after an `end_run`
+  or a tick), it is turned off and the list re-read, and turned back on if a run started meanwhile. Each tick it renews sessions, boots new agents (the checkout, then the harness), judges each
   running agent as above, ends finished ones, continues paused and crashed ones, restarts a run coordinator that
-  stopped answering or crashed, honours a stop (a person's, an agent's kill switch, and the 30-day stop, which opens a
-  human decision point offering only "stop"): every MicroVM of the run ended at once, without waiting for the agents.
+  stopped answering or crashed, honours a run's end and a stop (a person's, an agent's kill switch, and the 30-day
+  stop, which opens a human decision point offering only "stop"): every MicroVM of the run ended at once, without waiting for the agents.
   It emits `run.health` (counts by status, tokens, cost, inbox backlog). One agent's failing call is logged and never
-  stops the tick for the others. A tick EventBridge could not deliver goes to a dead-letter queue, and a failed
-  one is not retried (the next tick is a minute away; the errors alarm sees it); it records `EngineeringSupervisorHeartbeat` and `EngineeringLiveSessions` each tick (embedded
-  metrics). Alarms (on its errors and on the dead-letter queue) bill monthly, so they are a second opt-in,
-  `-c engineeringSupervisorAlarm=true`.
+  stops the tick for the others. A tick EventBridge could not deliver goes to the bus's `voc-engineering-dlq` (on the
+  stack's key, watched by alerting like the platform's other failure queues), and a failed one is not retried (the
+  next tick is a minute away; the errors alarm sees it); it records `EngineeringSupervisorHeartbeat` and
+  `EngineeringLiveSessions` each tick (embedded metrics). An alarm on its errors bills monthly, so it is a second
+  opt-in, `-c engineeringSupervisorAlarm=true`.
 - **The run monitor's controls** (the runtime's `signal` action): Save (checkpoint now), Pause (checkpoint, then held
   for a person), Resume (a held agent continued from its checkpoint; refused for a stopped run or a spent budget), Shut down
   (checkpoint, then stopped; stopped anyway when no checkpoint comes within 3 minutes) and Stop now (ended at once),
@@ -533,11 +692,14 @@ continues it in a new one once the wait closes.
   iproute2, iptables, Python for the runner, Mountpoint for Amazon S3, the two users) and one entry point, with ready
   hooks that warm the toolchain caches (only from that language's registries) and validate hooks that prove the
   toolchain and the runner; the hooks run as root before any repository code, from `/`. Mountpoint is pinned: an image is built with `MOUNTPOINT_VERSION` and the `.deb`'s
-  `MOUNTPOINT_SHA256`, and the build fails without them or on a mismatch. Old image versions are removed (*planned*).
+  `MOUNTPOINT_SHA256`, and the build fails without them or on a mismatch. The stack builds no image: the
+  supervisor launches only the images named by `-c engineeringImageArns` (a JSON object from these four languages
+  to image ARNs, checked at synth; `{}` by default, so every launch is refused until it is set). Building and
+  registering the images, and removing old versions, are *planned*.
 - **Behind an interface.** The runtime is an interface with the AWS implementation and a local fake (a temporary
   directory and the same runner, which does not sandbox; it lives with the tests, so the deployed runtime cannot
   pick it); the supervisor's tests drive every path above on the fake,
-  and the board, the bus and the run's controls through small interfaces with fakes until they land (until then the
+  and the board, the bus and the run's controls through small interfaces with fakes until the runtime is wired to them (until then the
   deployed runtime's tick refuses rather than guess).
 
 ## Reports
@@ -669,8 +831,8 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | planned |
-| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | planned |
-| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | planned |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503) |
+| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API and the role queues ([above](#how-the-agents-work-together)); no run start yet, so the board answers 404 to every post; the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images: built, not yet run against AWS nor wired to the broker and the board, [above](#runtime-one-microvm-per-agent)); inboxes and workspace planned |
+| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); skills, the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | planned |

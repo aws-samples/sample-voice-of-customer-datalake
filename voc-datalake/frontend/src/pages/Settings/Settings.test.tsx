@@ -471,6 +471,19 @@ describe('Settings', () => {
       expect(await screen.findByText(/Couldn’t save to the server/i)).toHaveAttribute('role', 'alert')
       expect(screen.queryByText(/Saved!/i)).not.toBeInTheDocument()
     })
+
+    it('drops a showing "Saved!" when the next save fails', async () => {
+      mockSaveBrandSettings.mockResolvedValueOnce({ success: true }).mockRejectedValueOnce(new Error('nope'))
+      const user = userEvent.setup()
+      renderSettings()
+
+      await user.click(screen.getByRole('button', { name: /Save Changes/i }))
+      // While "Saved!" shows, it is the save button's own label; a second click saves again.
+      await user.click(await screen.findByRole('button', { name: /Saved!/i }))
+
+      expect(await screen.findByText(/Couldn’t save to the server/i)).toHaveAttribute('role', 'alert')
+      expect(screen.queryByText(/Saved!/i)).not.toBeInTheDocument()
+    })
   })
 
   describe('brand tab - software settings only (docs/account-vs-admin.md)', () => {

@@ -13,11 +13,14 @@ from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.interface import ROLES, Command
 from engineering.runtime.launcher import Launcher
 from engineering.runtime.ports import Budget, Lease
+from engineering.runtime.runs import RunCaps, RunStore
 from engineering.runtime.sessions import AgentSession, SessionStore
 from engineering.runtime.supervisor import Supervisor
 from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
 
 BUCKET = 'voc-raw-test'
+TABLE = 'voc-engineering-test'
+RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0AB'
 COMMIT = 'a' * 40
 ROLE_ARNS = {role: f'arn:aws:iam::111111111111:role/voc-engineering-{role}' for role in ROLES}
 
@@ -97,17 +100,11 @@ def aws() -> Iterator[tuple[Any, Any]]:
     with mock_aws():
         s3 = boto3.client('s3', region_name='us-east-1')
         s3.create_bucket(Bucket=BUCKET)
+        # voc-engineering's shape (lib/stacks/core-stack.ts): pk/sk strings, no index.
         table = boto3.resource('dynamodb', region_name='us-east-1').create_table(
-            TableName='voc-agents-test',
+            TableName=TABLE,
             KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-            AttributeDefinitions=[{'AttributeName': name, 'AttributeType': 'S'}
-                                  for name in ('pk', 'sk', 'gsi1pk', 'gsi1sk')],
-            GlobalSecondaryIndexes=[{
-                'IndexName': 'gsi1-by-agents-listing',
-                'KeySchema': [{'AttributeName': 'gsi1pk', 'KeyType': 'HASH'},
-                              {'AttributeName': 'gsi1sk', 'KeyType': 'RANGE'}],
-                'Projection': {'ProjectionType': 'KEYS_ONLY'},
-            }],
+            AttributeDefinitions=[{'AttributeName': name, 'AttributeType': 'S'} for name in ('pk', 'sk')],
             BillingMode='PAY_PER_REQUEST',
         )
         yield s3, table
@@ -123,6 +120,7 @@ class World:
     control: FakeControl
     sts: FakeSts
     s3: Any
+    runs: RunStore
 
     def launch(self, agent_id: str = 'fixer-1', role: str = 'fixer', code: str = 'pass', now: int = 1000,
                task_id: str = 'task-1') -> AgentSession:
@@ -150,9 +148,11 @@ class World:
 @pytest.fixture
 def world(aws: tuple[Any, Any]) -> World:
     s3, table = aws
-    runtime, store, sts = LocalMicroVmRuntime(), SessionStore(table), FakeSts()
+    runs = RunStore(table)
+    runs.start(RUN, caps=RunCaps(max_tasks=50), now=0)
+    runtime, store, sts = LocalMicroVmRuntime(), SessionStore(table, runs), FakeSts()
     board, bus, control = FakeBoard(), FakeBus(), FakeControl()
     supervisor = Supervisor(runtime=runtime, sessions=store, board=board, bus=bus, control=control,
                             launcher=Launcher(sts, ROLE_ARNS), checkpoints=CheckpointReader(s3, BUCKET),
                             bucket=BUCKET, timings=Timings(), checkout=quick_checkout)
-    return World(supervisor, runtime, store, board, bus, control, sts, s3)
+    return World(supervisor, runtime, store, board, bus, control, sts, s3, runs)

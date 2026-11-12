@@ -2,8 +2,9 @@
 
 The board (the task brief, the lease's heartbeat and progress), the agent's inbox (the run monitor's and
 the supervisor's messages: ``save``, ``pause``, a question) and the broker (every write to the repository
-host) are built apart from the runtime (docs/autonomous-engineering.md → How the agents work together,
-Repository connectors). Until they land, the harness reaches them only through these interfaces, the
+host) are built apart from the runtime (engineering/board, engineering/connectors; the inbox is not built yet;
+docs/autonomous-engineering.md → How the agents work together, Repository connectors). Until the harness is
+wired to them, it reaches them only through these interfaces, the
 tests use fakes of them, and ``main.py`` wires adapters that refuse (``PendingHarnessPorts``), like the
 supervisor's own ports.
 """
@@ -67,16 +68,16 @@ class Store(Protocol):
 
 
 class HarnessPortNotWired(RuntimeError):
-    """A port whose owner has not landed yet: the harness refuses rather than guess."""
+    """A port the harness is not wired to yet: it refuses rather than guess."""
 
 
 class PendingHarnessPorts:
-    """The board, the inbox and the broker until they land: every call refuses."""
+    """The board, the inbox and the broker until the harness is wired to them: every call refuses."""
 
     @staticmethod
     def _refuse(name: str) -> HarnessPortNotWired:
-        return HarnessPortNotWired(f'{name} is not wired yet (the board, the inbox and the broker land apart from '
-                                   'the runtime)')
+        return HarnessPortNotWired(f'{name} is not wired yet (the harness does not reach the board, the inbox or '
+                                   'the broker yet)')
 
     def brief(self, *, run_id: str, task_id: str) -> TaskBrief:
         raise self._refuse(f'board.brief({run_id}, {task_id})')

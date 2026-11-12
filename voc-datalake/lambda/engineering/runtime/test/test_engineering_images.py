@@ -15,7 +15,11 @@ IMAGES = Path(__file__).resolve().parents[4] / 'engineering-images'
 RUNTIME = IMAGES.parent / 'lambda' / 'engineering' / 'runtime'
 #: What the images run with their system python3 (3.11 on the Debian 12 based ones): the runner and the harness.
 SHIPPED_RUNTIME = ('__init__.py', 'interface.py', 'tokens.py', 'checkout.py', 'checkpoints.py', 'unit_runner.py')
-SHIPPED = sorted([RUNTIME / name for name in SHIPPED_RUNTIME] + list((RUNTIME / 'harness').glob('*.py')))
+#: The broker's caller identity, which the runtime's agent roles come from (interface.ROLES).
+CONNECTORS = RUNTIME.parent / 'connectors'
+SHIPPED_CONNECTORS = ('__init__.py', 'identity.py')
+SHIPPED = sorted([RUNTIME / name for name in SHIPPED_RUNTIME] + [CONNECTORS / name for name in SHIPPED_CONNECTORS]
+                 + list((RUNTIME / 'harness').glob('*.py')))
 #: typing names Python 3.11 lacks (3.12 and 3.13 added them).
 NEWER_TYPING = {'override', 'TypeAliasType', 'TypeIs', 'ReadOnly', 'NoDefault', 'get_protocol_members', 'is_protocol'}
 
@@ -86,6 +90,8 @@ def test_each_image_ships_the_harness_and_pins_boto3(language):
     dockerfile = (IMAGES / language / 'Dockerfile').read_text()
     for name in SHIPPED_RUNTIME:
         assert f'lambda/engineering/runtime/{name}' in dockerfile
+    connectors = ' '.join(f'lambda/engineering/connectors/{name}' for name in SHIPPED_CONNECTORS)
+    assert f'COPY {connectors} /opt/voc/engineering/connectors/' in dockerfile
     assert 'COPY lambda/engineering/runtime/harness/*.py /opt/voc/engineering/runtime/harness/' in dockerfile
     assert 'COPY engineering-images/common/harness.py /opt/voc/harness.py' in dockerfile
     assert 'ARG BOTO3_VERSION' in dockerfile
@@ -148,6 +154,13 @@ def test_the_stack_has_an_execution_role_for_exactly_the_runtimes_agent_roles():
     listed = re.search(r'const AGENT_ROLES = \[(.*?)\];', stack, re.DOTALL)
     assert listed is not None
     assert set(re.findall(r"'([a-z-]+)'", listed.group(1))) == set(ROLES)
+
+
+def test_the_stack_takes_an_image_arn_for_exactly_the_languages_with_an_image():
+    stack = (IMAGES.parent / 'lib' / 'stacks' / 'engineering-runtime.ts').read_text()
+    listed = re.search(r'const IMAGE_LANGUAGES = \[(.*?)\];', stack, re.DOTALL)
+    assert listed is not None
+    assert set(re.findall(r"'([a-z]+)'", listed.group(1))) == set(REGISTRY_HOSTS)
 
 
 def test_the_base_keeps_the_agents_home_from_repository_code():

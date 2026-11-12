@@ -1,10 +1,10 @@
 """Auth tokens are never stored; egress is an allowlist of plain hosts, and no MicroVM reaches the host."""
 import json
 import pickle
-import re
 
 import pytest
 
+from engineering.connectors.identity import ROLE_PLACEHOLDER, Caller, caller_from_event
 from engineering.runtime import egress
 from engineering.runtime.interface import ROLES, AgentSpec, CacheMount, Command, RuntimeRefused, agent_index
 from engineering.runtime.launcher import session_name
@@ -129,22 +129,22 @@ def test_a_ulid_run_id_and_a_short_agent_index_fit_one_session_name():
             session_name(RUN, index)
 
 
-#: The broker's and the board's reading of a caller (connectors/identity.py, on the broker's branch): the session
-#: name and the roles, quoted from there.
-BROKER_SESSION = re.compile(r'(?P<run>[0-9A-HJKMNP-TV-Z]{26})\.(?P<agent>0|[1-9][0-9]{0,2})')
-BROKER_ROLES = frozenset({
-    'mapper', 'understander', 'hunter', 'fixer', 'builder', 'committer', 'commit-reviewer', 'gate-runner',
-    'pr-author', 'pr-reviewer', 'final-go', 'coordinator', 'coach',
-})
+#: The broker's and the board's reading of a caller (connectors/identity.py), with the stack's role naming.
+ACCOUNT = '123456789012'
+ROLE_NAME_PATTERN = 'voc-eng-{role}-123456789012-eu-west-1'
+
+
+def _caller_event(role: str, session: str) -> dict[str, object]:
+    role_name = ROLE_NAME_PATTERN.replace(ROLE_PLACEHOLDER, role)
+    arn = f'arn:aws:sts::{ACCOUNT}:assumed-role/{role_name}/{session}'
+    return {'requestContext': {'authorizer': {'iam': {'userArn': arn}}}}
 
 
 def test_the_launchers_session_is_one_the_broker_and_the_board_read_as_that_agent():
-    assert ROLES == BROKER_ROLES
-    for role, agent_id in (('fixer', 'fixer-1'), ('gate-runner', 'gate-runner-2'), ('coordinator', 'coordinator-0')):
-        index = agent_index(agent_id, role)
-        read = BROKER_SESSION.fullmatch(session_name(RUN, index))
-        assert read is not None
-        assert (read.group('run'), int(read.group('agent'))) == (RUN, index)
+    for role, index in [(role, 3) for role in sorted(ROLES)] + [('fixer', 0), ('gate-runner', 999)]:
+        assert agent_index(f'{role}-{index}', role) == index
+        read = caller_from_event(_caller_event(role, session_name(RUN, index)), ROLE_NAME_PATTERN, ACCOUNT)
+        assert read == Caller(role=role, run_id=RUN, agent_index=index)
 
 
 def test_a_spec_refuses_an_unknown_role_and_its_environment_holds_no_credential():

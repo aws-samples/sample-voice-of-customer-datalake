@@ -25,8 +25,10 @@ import { createCoreBuckets } from './core-buckets';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { dataProtectionOf, type DataProtection } from '../utils/data-protection';
 import { grantReadAndWrites } from '../utils/table-write-grants';
-import { ALARM_NAME_PREFIX, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME, createAlarmTopic, createApiAsyncFailureQueue } from './dlq-alarms';
+import { ALARM_NAME_PREFIX, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, ENGINEERING_DLQ_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME, createAlarmTopic, createApiAsyncFailureQueue } from './dlq-alarms';
 import { allowEventBridgeToScheduleDlq } from './ingestion-schedule-dlq';
+import { engineeringAgentsEnabled } from './engineering-broker';
+import { ENGINEERING_DLQ_KEY_SID } from './engineering-bus';
 
 /**
  * Days KMS waits before deleting the data key once the stack is deleted (KMS
@@ -74,6 +76,8 @@ export class VocCoreStack extends VocStack {
   public readonly memoryTable: dynamodb.Table;
   /** voc-agents — autonomous agents, workflow definitions, runs, run events, crewmate transcripts. */
   public readonly agentsTable: dynamodb.Table;
+  /** voc-engineering — the engineering agents' task boards and run conversations; only with -c engineeringAgents=true. */
+  public readonly engineeringTable?: dynamodb.Table;
   /** voc-radar — other brands' reviews, counters and releases, kept out of our numbers (docs/radar.md). */
   public readonly radarTable: dynamodb.Table;
   /** voc-participants — people, lists, project links, asks and their tokens (docs/participants.md). */
@@ -170,6 +174,10 @@ export class VocCoreStack extends VocStack {
     // VocIngestionStack's schedule DLQ is encrypted with this key too; its EventBridge grant is added
     // HERE, built from the queue's fixed name, so the Ingestion stack never edits this key's policy.
     allowEventBridgeToScheduleDlq(this.kmsKey, this.uniqueName(INGEST_SCHEDULE_DLQ_BASE_NAME));
+    // The engineering bus's dead-letter queue (VocProcessingStack) takes the inbox rule's undelivered events the same way.
+    if (engineeringAgentsEnabled(this)) {
+      allowEventBridgeToScheduleDlq(this.kmsKey, this.uniqueName(ENGINEERING_DLQ_BASE_NAME), ENGINEERING_DLQ_KEY_SID);
+    }
     // VocApiStack's async-invoke failure queue (#253) lives HERE:
     // that stack is 3 resources under CloudFormation's 500 ceiling with every
     // plugin on. Its Lambdas address the queue by this name (api-stack.ts).
@@ -183,7 +191,7 @@ export class VocCoreStack extends VocStack {
       accessLogs: this.uniqueDnsName('voc-access-logs'),
       rawData: this.uniqueDnsName('voc-raw-data'),
       website: this.uniqueDnsName('voc-frontend'),
-    }, this.kmsKey, corsAllowedOriginsBase, data);
+    }, this.kmsKey, corsAllowedOriginsBase, data, engineeringAgentsEnabled(this));
     this.accessLogsBucket = buckets.accessLogsBucket;
     this.rawDataBucket = buckets.rawDataBucket;
     this.websiteBucket = buckets.websiteBucket;
@@ -326,6 +334,16 @@ export class VocCoreStack extends VocStack {
     //   RUN#{run_id} / MATE#{role}#{seq:06d}  crewmate transcript
     this.agentsTable = this.createEncryptedTable('AgentsTable', 'voc-agents');
     this.addKeyPairIndex(this.agentsTable, { indexName: 'gsi1-by-agents-listing', keyPrefix: 'gsi1' });
+
+    // Engineering Table — docs/autonomous-engineering.md, only with -c engineeringAgents=true. A run's board and its
+    // conversation (append-only, D1): the record of what each agent was given and said, kept like voc-agents.
+    // Layout: lambda/engineering/board/store.py, lambda/engineering/conversation/store.py.
+    //   WS#{ws}#RUN#{run} / META             the run's caps and counters (task count, message sequence)
+    //   WS#{ws}#RUN#{run} / TASK#{id}        a task on the board         SPEC#{hash}  its dedupe marker
+    //   WS#{ws}#RUN#{run} / MSG#{seq:08d}    a conversation message      EVT#{id}     its event's marker
+    if (engineeringAgentsEnabled(this)) {
+      this.engineeringTable = this.createEncryptedTable('EngineeringTable', 'voc-engineering');
+    }
 
     // Radar Table — docs/radar.md. Reviews of OTHER brands (Radar sources), their
     // counters, release records and the scan state; no index. Never read by our

@@ -10,7 +10,9 @@ import type { RunEnvironment } from './runtime'
 /** A `sessions/sessionsApi` module of spies: saves and cancels resolve, `getSession` is programmed per test. */
 export function sessionsApiModule() {
   return {
-    getSession: vi.fn(),
+    // Unprogrammed, the server holds no session: `null`, which the real API answers and adoptAfterStop and
+    // followServerRun read as "nothing newer" (never `undefined`, which the API never returns).
+    getSession: vi.fn(() => Promise.resolve(null)),
     saveSession: vi.fn(() => Promise.resolve()),
     cancelServerRun: vi.fn(() => Promise.resolve()),
   }

@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, NoReturn
 
+from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.interface import (
     MAX_SESSION_NAME,
     ROLES,
-    WORKSPACE,
     RuntimeRefused,
     agent_index,
     check_id,

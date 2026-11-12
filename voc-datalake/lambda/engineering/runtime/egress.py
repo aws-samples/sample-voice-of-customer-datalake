@@ -42,8 +42,8 @@ def aws_hosts(region: str, bucket: str) -> tuple[str, ...]:
     """What the agent process itself reaches in ``region``: Bedrock, the run bucket (its virtual-hosted endpoint
     only: the regional path-style endpoint would reach every bucket in the region) and its queues (SQS).
 
-    The broker's and the board's function URLs are added by name when those land (their hosts are known only
-    then); no generic Lambda endpoint is ever on the list.
+    The broker's and the board's function URLs are added by name when the runtime is wired to them (their hosts
+    are known only then); no generic Lambda endpoint is ever on the list.
     """
     if not _REGION_RE.match(region):
         raise RuntimeRefused(f'{region!r} is not an AWS region name')

@@ -16,7 +16,8 @@
  * current or noncurrent, and a bucket-policy statement refuses any PutObject under them that
  * could overwrite (no `If-None-Match`). Only voc-retention deletes there (lawful erasure / a declared retention period). The raw
  * bucket's workspace prefixes have no noncurrent rule either: a workspace delete removes every
- * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires.
+ * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires, and, with the engineering agents on,
+ * `engineering/runs/` and `engineering/cache/`.
  *
  * Resources are created directly on the stack passed in (not inside a child
  * construct), so their logical ids are exactly those VocCoreStack always had.
@@ -33,7 +34,8 @@ import { dataProtection, type DataProtection } from '../utils/data-protection';
  * Every prefix of the raw data bucket other than `raw/`: the workspace prefixes. None has a noncurrent-version
  * rule since 6.00 (wave C owner decision: a workspace artifact is really deleted when its owner deletes it, and the
  * deleting code removes every version itself, lib/utils/workspace-object-deletes.ts), so nothing here expires a
- * version behind the owner's back either. `scratch/` alone expires (SCRATCH_EXPIRATION_DAYS). A new prefix must be
+ * version behind the owner's back either. `scratch/` expires (SCRATCH_EXPIRATION_DAYS), and with the engineering
+ * agents on, the runs' workspaces and the caches under `engineering/` (ENGINEERING_RUNS_EXPIRATION_DAYS). A new prefix must be
  * added here; `core-buckets.test.ts` checks every grant on the bucket in lib/stacks against this list.
  */
 export const RAW_BUCKET_WORKSPACE_PREFIXES = [
@@ -54,6 +56,17 @@ export const APPEND_ONLY_PREFIXES = [RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX] as
  * workflow's own delete leaves one): no workflow runs longer than 2 h.
  */
 export const SCRATCH_EXPIRATION_DAYS = 2;
+/**
+ * Only with `-c engineeringAgents=true` (docs/autonomous-engineering.md): the runs' workspaces,
+ * `engineering/runs/`, expire this many days after they were written (the workspace retention the doc states),
+ * and the connections' caches, `engineering/cache/`, after ENGINEERING_CACHE_EXPIRATION_DAYS (rebuilt when needed).
+ * An expired object's noncurrent version goes ENGINEERING_NONCURRENT_DAYS later, so an expiry really removes it.
+ */
+export const ENGINEERING_RUNS_PREFIX = 'engineering/runs/';
+export const ENGINEERING_CACHE_PREFIX = 'engineering/cache/';
+export const ENGINEERING_RUNS_EXPIRATION_DAYS = 90;
+export const ENGINEERING_CACHE_EXPIRATION_DAYS = 30;
+const ENGINEERING_NONCURRENT_DAYS = 1;
 /**
  * SPA bucket: each deploy's `s3 sync --delete` turns the previous build's assets
  * noncurrent. 30 days keeps a month of deploys restorable for a rollback; the
@@ -181,12 +194,24 @@ export function createPrivateVersionedBucket(
   }));
 }
 
+/** The engineering workspace's expiry rules (ENGINEERING_RUNS_EXPIRATION_DAYS); none without the engineering agents. */
+function engineeringExpiryRules(engineeringAgents: boolean): s3.LifecycleRule[] {
+  if (!engineeringAgents) return [];
+  return ([['engineering-runs-expiry', ENGINEERING_RUNS_PREFIX, ENGINEERING_RUNS_EXPIRATION_DAYS],
+    ['engineering-cache-expiry', ENGINEERING_CACHE_PREFIX, ENGINEERING_CACHE_EXPIRATION_DAYS]] as const)
+    .map(([id, prefix, days]) => ({
+      id, prefix, expiration: cdk.Duration.days(days),
+      noncurrentVersionExpiration: cdk.Duration.days(ENGINEERING_NONCURRENT_DAYS),
+    }));
+}
+
 export function createCoreBuckets(
   scope: Construct,
   names: CoreBucketNames,
   kmsKey: kms.Key,
   corsAllowedOriginsBase: string[],
   protection: DataProtection,
+  engineeringAgents = false,
 ): CoreBuckets {
   const accessLogsBucket = new s3.Bucket(scope, 'AccessLogsBucket', {
     bucketName: names.accessLogs,
@@ -227,6 +252,8 @@ export function createCoreBuckets(
         id: 'scratch-expiry', prefix: 'scratch/', expiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
         noncurrentVersionExpiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
       },
+      // The engineering agents' run workspaces and caches (only with -c engineeringAgents=true).
+      ...engineeringExpiryRules(engineeringAgents),
     ],
     cors: [{
       // PUT is required for browser-side presigned uploads (project product docs).

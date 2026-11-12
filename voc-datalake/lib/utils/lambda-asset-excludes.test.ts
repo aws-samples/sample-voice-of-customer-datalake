@@ -264,8 +264,8 @@ describe('lambda staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
   it('keeps the memory/agents/briefing/engineering worker trees out of every other bundle', () => {
     const otherBundles = ignoresWith([...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES]);
     expect(['memory/extractor/handler.py', 'agents/conductor/handler.py', 'briefing/handler.py',
-      'engineering/runtime/handler.py'].map(otherBundles))
-      .toStrictEqual([true, true, true, true]);
+      'engineering/connectors/handler.py', 'engineering/runtime/handler.py'].map(otherBundles))
+      .toStrictEqual([true, true, true, true, true]);
     expect(otherBundles('shared/api.py')).toBe(false);
     expect(otherBundles('api/memory_handler.py')).toBe(false);
   });

@@ -16,9 +16,10 @@ import { z } from 'zod';
 
 import { VocCoreStack } from './core-stack';
 import {
-  ALARM_NAME_PREFIX, ALARM_PUBLISH_SID, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME,
-  OPS_ALERT_ALARM_BASE_NAME, opsAlertsWiring,
+  ALARM_NAME_PREFIX, ALARM_PUBLISH_SID, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, ENGINEERING_DLQ_BASE_NAME,
+  INGEST_SCHEDULE_DLQ_BASE_NAME, OPS_ALERT_ALARM_BASE_NAME, opsAlertsWiring,
 } from './dlq-alarms';
+import { ENGINEERING_DLQ_KEY_SID } from './engineering-bus';
 import { EVENTBRIDGE_DLQ_KEY_SID } from './ingestion-schedule-dlq';
 import { apiTemplateAllPlugins, discoverPluginIds, policyStatementsOf, serviceEnvironment } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
@@ -338,4 +339,37 @@ describe('the email inbox DLQ is watched only when the inbox exists', () => {
     expect(queues).not.toContain('email-intake-dlq');
     expect(queues).toContain('briefing-dlq=voc-briefing-dlq');
   });
+});
+
+describe('the engineering bus DLQ (only with -c engineeringAgents=true)', () => {
+  const on = { engineeringAgents: true };
+  const queuesWith = (context: Record<string, unknown>): string => {
+    const stack = new cdk.Stack(new cdk.App({ context }), 'Probe');
+    return opsAlertsWiring({ stack, uniqueName: (base) => base, enabledPlugins: [] }).environment.OPS_ALERTS_QUEUES ?? '';
+  };
+  const engineeringKeyGrants = (context: Record<string, unknown>): Record<string, unknown>[] => {
+    const keys = Object.values(synthCoreTemplate(context).findResources('AWS::KMS::Key'));
+    return z.array(z.object({ Properties: z.object({ KeyPolicy: z.object({ Statement: z.array(z.record(z.string(), z.unknown())) }) }) }))
+      .parse(keys).flatMap((key) => key.Properties.KeyPolicy.Statement).filter((s) => s.Sid === ENGINEERING_DLQ_KEY_SID);
+  };
+
+  it('is watched by alerting only when the engineering agents are on (an alarm only once alerting is on)', () => {
+    expect(queuesWith(on)).toContain(`engineering-dlq=${ENGINEERING_DLQ_BASE_NAME}`);
+    expect(queuesWith({})).not.toContain('engineering-dlq');
+  });
+
+  it('lets EventBridge use the Core key for exactly the queue VocProcessingStack creates, and only with the flag', () => {
+    expect(engineeringKeyGrants({})).toStrictEqual([]);
+    const grant = z.object({
+      Principal: z.object({ Service: z.literal('events.amazonaws.com') }),
+      Action: z.array(z.string()),
+      Condition: z.object({ StringEquals: z.object({ 'kms:EncryptionContext:aws:sqs:arn': z.unknown(), 'aws:SourceAccount': z.unknown() }) }),
+    }).parse(itemAt(engineeringKeyGrants(on), 0));
+    const queueName = rendered(queueNameOf(synthProcessingTemplate({ context: on }), 'EngineeringBusDLQ'));
+    expect({
+      actions: [...grant.Action].sort(byCodeUnit), arn: rendered(grant.Condition.StringEquals['kms:EncryptionContext:aws:sqs:arn']),
+    }).toStrictEqual({
+      actions: ['kms:Decrypt', 'kms:GenerateDataKey'], arn: `arn:aws:sqs:${SYNTH_REGION}:${SYNTH_ACCOUNT}:${queueName}`,
+    });
+  }, SYNTH_TIMEOUT_MS);
 });

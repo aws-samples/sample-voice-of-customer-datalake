@@ -84,6 +84,8 @@ export interface WorkerFunctionSpec {
    * retries, visibly) — a hidden Lambda re-drive would double-pay model calls.
    */
   retryAttempts?: number;
+  /** Where an async invocation that failed every attempt goes (a dead-letter queue); none by default. */
+  onFailure?: lambda.IDestination;
 }
 
 /**
@@ -115,6 +117,7 @@ export function createWorkerFunction(scope: Construct, id: string, spec: WorkerF
     timeout: spec.timeout,
     memorySize: spec.memorySize,
     retryAttempts: spec.retryAttempts ?? 0,
+    onFailure: spec.onFailure,
     environment: {
       ...spec.environment,
       POWERTOOLS_SERVICE_NAME: spec.serviceName,

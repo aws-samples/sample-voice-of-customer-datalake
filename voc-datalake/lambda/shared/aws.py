@@ -25,6 +25,7 @@ _bedrock_client = None
 _lambda_client = None
 _eventbridge_client = None
 _cognito_idp_client = None
+_dynamodb_client = None
 
 # One pooled connection per read a request can have in flight on the shared DynamoDB client
 # (shared/concurrency.py). Below that, botocore discards the surplus connections after each fan-out
@@ -198,6 +199,18 @@ def get_lambda_client():
     if _lambda_client is None:
         _lambda_client = boto3.client("lambda")
     return _lambda_client
+
+
+def get_dynamodb_client():
+    """Get shared low-level DynamoDB client with connection reuse: items in DynamoDB's own format (``{'S': ...}``).
+
+    Not ``get_dynamodb_resource().meta.client``, which turns plain Python values into that format and back (and would
+    wrap an ``{'S': ...}`` again): for code that writes typed items itself (lambda/engineering/board/store.py).
+    """
+    global _dynamodb_client
+    if _dynamodb_client is None:
+        _dynamodb_client = boto3.client("dynamodb")
+    return _dynamodb_client
 
 
 def get_eventbridge_client():

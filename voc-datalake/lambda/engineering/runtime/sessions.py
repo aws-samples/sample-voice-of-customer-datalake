@@ -1,13 +1,15 @@
 """Agent sessions: one row per agent of a run, the supervisor's view of its MicroVM.
 
-``ENGRUN#<run>`` / ``AGENT#<agent>`` in voc-agents. While the session is live the row is also on the
-existing ``gsi1-by-agents-listing`` index under ``gsi1pk = ENG_SESSIONS_ACTIVE`` (no new index), which is
-how the supervisor finds what to check; a session that ends or is paused by a person leaves it in the same
-write. Every write is conditional on the row's ``seq``, so overlapping ticks never write over each other:
-the second gets ``StaleSession`` and leaves the session to the next tick.
+``WS#<ws>#RUN#<run>`` / ``AGENT#<agent>`` in voc-engineering: the row the board's table keeps for each agent
+of a run, which the reports read (role, skill version, model, MicroVM seconds, tokens in and out) and the
+brokers add their own metering to (the cost they priced). So this store never writes the whole item: it
+creates the row once and from then on updates only its own attributes. The supervisor finds the live sessions
+through the runs the supervisor watches (``runs.RunStore.listed``: the table has no index). Every write is
+conditional on the row's ``seq``, so overlapping ticks never write over each other: the second gets
+``StaleSession`` and leaves the session to the next tick.
 
 A row holds ids, times, the MicroVM's id and endpoint, the run monitor's inspection data and the live cost
-counters (MicroVM seconds, tokens per model), never a token, a credential or a command's output.
+counters (MicroVM seconds, tokens per model and their totals), never a token, a credential or a command's output.
 """
 from __future__ import annotations
 
@@ -18,12 +20,12 @@ from typing import Any, Final, Literal
 from botocore.exceptions import ClientError
 
 from engineering.runtime.interface import AgentSpec, MicroVm
+from engineering.runtime.runs import RunNotActive, RunStore, meta_key, run_pk
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
-from shared.indexes import AGENTS_LISTING_INDEX
+from shared.ids import is_key_collision
 
-ACTIVE_KEY: Final = 'ENG_SESSIONS_ACTIVE'
 Status = Literal['booting', 'working', 'pause_requested', 'waiting', 'paused', 'done', 'failed', 'stopped',
                  'reposted']
 #: The sessions the supervisor checks each tick. All but ``waiting`` have a MicroVM; a ``waiting`` session
@@ -78,9 +80,37 @@ class AgentSession:
     #: Live cost and inspection data for the run monitor.
     microvm_seconds: int = 0
     last_tick_at: int | None = None
+    #: Tokens per model (``{"in", "out"}``) of every MicroVM of this session so far: ``tokens_before`` (the
+    #: earlier ones', fixed when it continues) plus what the current one's harness reported, which starts at zero.
     tokens: dict[str, dict[str, int]] = field(default_factory=dict)
+    tokens_before: dict[str, dict[str, int]] = field(default_factory=dict)
     inspect: dict[str, Any] = field(default_factory=dict)
     seq: int = 0
+
+    @property
+    def input_tokens(self) -> int:
+        return sum(counts.get('in', 0) for counts in self.tokens.values())
+
+    @property
+    def output_tokens(self) -> int:
+        return sum(counts.get('out', 0) for counts in self.tokens.values())
+
+    def reported(self, current: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+        """The session's tokens, given what the current MicroVM's harness reported.
+
+        The report comes from inside the MicroVM, so it can only add: a negative count is none, and no total ever
+        drops below what was saved (the run's token cap must not be talked down).
+        """
+        totals = {model: dict(counts) for model, counts in self.tokens_before.items()}
+        for model, counts in current.items():
+            total = totals.setdefault(model, {'in': 0, 'out': 0})
+            for kind in ('in', 'out'):
+                total[kind] = total.get(kind, 0) + max(int(counts.get(kind, 0)), 0)
+        for model, counts in self.tokens.items():
+            total = totals.setdefault(model, {'in': 0, 'out': 0})
+            for kind in ('in', 'out'):
+                total[kind] = max(total.get(kind, 0), int(counts.get(kind, 0)))
+        return totals
 
     def spec(self, restore_key: str | None = None) -> AgentSpec:
         return AgentSpec(run_id=self.run_id, agent_id=self.agent_id, role=self.role, task_id=self.task_id,
@@ -96,7 +126,7 @@ class AgentSession:
         return replace(self, vm_id=vm.vm_id, endpoint=vm.endpoint, started_at=now, status='booting',
                        continuation=self.continuation + 1, boot_index=0, exec_id=None, asked_at=None,
                        pause_requested_at=None, after_pause='continue', suspended=False, suspended_at=None,
-                       failures=0, restore_key=restore_key,
+                       failures=0, restore_key=restore_key, tokens_before=self.tokens,
                        session_expires_at=None, last_tick_at=now)
 
 
@@ -105,13 +135,15 @@ _OPTIONAL_INTS: Final = ('asked_at', 'pause_requested_at', 'session_expires_at',
 _OPTIONAL_STRS: Final = ('exec_id', 'restore_key')
 
 
-def _to_item(session: AgentSession) -> dict[str, Any]:
-    item = {key: value for key, value in asdict(session).items() if value is not None}
-    item.update(pk=f'ENGRUN#{session.run_id}', sk=f'AGENT#{session.agent_id}',
-                egress=list(session.egress), paths=list(session.paths), harness=list(session.harness))
-    if session.status in LIVE_STATUSES:
-        item.update(gsi1pk=ACTIVE_KEY, gsi1sk=f'{session.run_id}#{session.agent_id}')
-    return item
+def _key(run_id: str, agent_id: str) -> dict[str, str]:
+    return {'pk': run_pk(run_id), 'sk': f'AGENT#{agent_id}'}
+
+
+def _own(session: AgentSession) -> dict[str, Any]:
+    """The attributes this store writes: the session's own (and the totals the reports read), never anyone else's."""
+    return dict(asdict(session), egress=list(session.egress), paths=list(session.paths),
+                harness=list(session.harness), input_tokens=session.input_tokens,
+                output_tokens=session.output_tokens)
 
 
 def _from_item(item: dict[str, Any]) -> AgentSession:
@@ -127,19 +159,42 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
         after_pause=item.get('after_pause', 'continue'), suspended=bool(item.get('suspended', False)),
         failures=int(item.get('failures', 0)),
         microvm_seconds=int(item.get('microvm_seconds', 0)),
-        tokens=plain(item.get('tokens') or {}), inspect=plain(item.get('inspect') or {}), seq=int(item['seq']),
+        tokens=plain(item.get('tokens') or {}), tokens_before=plain(item.get('tokens_before') or {}),
+        inspect=plain(item.get('inspect') or {}),
+        seq=int(item['seq']),
         **optional,
     )
 
 
 class SessionStore:
-    def __init__(self, table: Any) -> None:
+    def __init__(self, table: Any, runs: RunStore) -> None:
         self._table = table
+        self._runs = runs
 
-    def create(self, session: AgentSession) -> AgentSession:
-        """Write a new session's row (refused when the agent already has one in this run)."""
+    def create(self, session: AgentSession, labels: dict[str, str] | None = None) -> AgentSession:
+        """Write a new session's row, only while its run is active (``RunNotActive``: checked in the same write, so
+        a run that ends meanwhile gets no agent nothing supervises), and never over the agent's session in it.
+
+        ``labels``: what the reports name the agent by (its model, its skill version), written once here; later
+        writes set only the session's own attributes, so they stay.
+        """
         first = replace(session, seq=1)
-        self._write(first, 'attribute_not_exists(pk)', {})
+        name = self._table.name
+        try:
+            self._table.meta.client.transact_write_items(TransactItems=[
+                {'ConditionCheck': {'TableName': name, 'Key': meta_key(session.run_id),
+                                    'ConditionExpression': '#status = :active',
+                                    'ExpressionAttributeNames': {'#status': 'status'},
+                                    'ExpressionAttributeValues': {':active': 'active'}}},
+                {'Update': {'TableName': name, **self._update(first, 'attribute_not_exists(seq)', {},
+                                                              dict(labels or {}))}},
+            ])
+        except ClientError as error:
+            if is_key_collision(error, put_index=0):
+                raise RunNotActive(f'run {session.run_id} is not active: no agent is launched') from error
+            if is_key_collision(error, put_index=1):
+                raise StaleSession(f'session {session.run_id}/{session.agent_id} exists') from error
+            raise
         return first
 
     def save(self, session: AgentSession) -> AgentSession:
@@ -159,31 +214,49 @@ class SessionStore:
                     {':seen': session.seq, ':now': now})
         return claimed
 
+    @staticmethod
+    def _update(session: AgentSession, condition: str, values: dict[str, Any],
+                extra: dict[str, str] | None = None) -> dict[str, Any]:
+        """The update that SETs the session's own attributes (REMOVEs the ones it no longer has), under ``condition``."""
+        names: dict[str, str] = {}
+        sets, removes, own = [], [], {**_own(session), **(extra or {})}
+        for number, (attribute, value) in enumerate(sorted(own.items())):
+            names[f'#a{number}'] = attribute
+            if value is None:
+                removes.append(f'#a{number}')
+            else:
+                sets.append(f'#a{number} = :a{number}')
+                values = {**values, f':a{number}': value}
+        expression = 'SET ' + ', '.join(sets) + (' REMOVE ' + ', '.join(removes) if removes else '')
+        return {'Key': _key(session.run_id, session.agent_id), 'UpdateExpression': expression,
+                'ConditionExpression': condition, 'ExpressionAttributeNames': names,
+                'ExpressionAttributeValues': values}
+
     def _write(self, session: AgentSession, condition: str, values: dict[str, Any]) -> None:
         try:
-            self._table.put_item(Item=_to_item(session), ConditionExpression=condition,
-                                 **({'ExpressionAttributeValues': values} if values else {}))
+            self._table.update_item(**self._update(session, condition, values))
         except ClientError as error:
             if is_conditional_check_failure(error):
                 raise StaleSession(f'session {session.run_id}/{session.agent_id} moved') from error
             raise
 
     def get(self, run_id: str, agent_id: str) -> AgentSession | None:
-        item = consistent_item(self._table, {'pk': f'ENGRUN#{run_id}', 'sk': f'AGENT#{agent_id}'})
-        return None if item is None else _from_item(item)
+        item = consistent_item(self._table, _key(run_id, agent_id))
+        return None if item is None or 'seq' not in item else _from_item(item)
 
     def of_run(self, run_id: str) -> list[AgentSession]:
         """Every session of one run, live or not (the run monitor's signals reach paused agents too)."""
         query = {'KeyConditionExpression': 'pk = :run AND begins_with(sk, :agent)',
-                 'ExpressionAttributeValues': {':run': f'ENGRUN#{run_id}', ':agent': 'AGENT#'}, 'ConsistentRead': True}
-        return [_from_item(item) for item in iter_query(self._table, query)]
+                 'ExpressionAttributeValues': {':run': run_pk(run_id), ':agent': 'AGENT#'}, 'ConsistentRead': True}
+        # A row the brokers metered before the session was written holds no session yet.
+        return [_from_item(item) for item in iter_query(self._table, query) if 'seq' in item]
+
+    def any_live_or_moving(self, run_id: str, now: int) -> bool:
+        """An agent of the run is live, or one is being moved (a Resume may be starting a MicroVM for it)."""
+        return any(session.status in LIVE_STATUSES or (session.claimed_until or 0) >= now
+                   for session in self.of_run(run_id))
 
     def active(self) -> Iterator[AgentSession]:
-        """Every live session, page by page (the index is eventually consistent: each is re-read before a write)."""
-        query = {'IndexName': AGENTS_LISTING_INDEX, 'KeyConditionExpression': 'gsi1pk = :active',
-                 'ExpressionAttributeValues': {':active': ACTIVE_KEY}}
-        for item in iter_query(self._table, query):
-            run_id, _, agent_id = str(item['gsi1sk']).partition('#')
-            session = self.get(run_id, agent_id)
-            if session is not None and session.status in LIVE_STATUSES:
-                yield session
+        """Every live session of the runs the supervisor watches, run by run."""
+        for run_id in self._runs.listed():
+            yield from (session for session in self.of_run(run_id) if session.status in LIVE_STATUSES)
