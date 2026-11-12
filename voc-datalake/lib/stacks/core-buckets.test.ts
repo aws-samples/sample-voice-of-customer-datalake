@@ -9,7 +9,8 @@ import {
   RAW_BUCKET_WORKSPACE_PREFIXES,
   APPEND_ONLY_PREFIXES,
   ENGINEERING_CACHE_EXPIRATION_DAYS,
-  ENGINEERING_RUNS_EXPIRATION_DAYS,
+  ENGINEERING_RUNS_PREFIX,
+  ENGINEERING_WORKSPACE,
   RAW_LAYER_PREFIX,
   SILVER_HISTORY_PREFIX,
   SCRATCH_EXPIRATION_DAYS,
@@ -102,7 +103,10 @@ describe('VocCoreStack bucket versioning', () => {
   });
 });
 
-/** With -c engineeringAgents=true the engineering workspace expires; nothing else about the raw bucket changes. */
+/**
+ * With -c engineeringAgents=true only the repository caches expire; the runs' objects are kept until an expiry that
+ * writes its AUDIT#delete row exists (TENETS.md D5); nothing else about the raw bucket changes.
+ */
 describe('VocCoreStack raw bucket with the engineering agents', () => {
   const RulesSchema = z.object({
     Properties: z.object({ LifecycleConfiguration: z.object({ Rules: z.array(z.record(z.string(), z.unknown())) }) }),
@@ -114,20 +118,78 @@ describe('VocCoreStack raw bucket with the engineering agents', () => {
     rules = RulesSchema.parse(itemAt(found, 0)[1]).Properties.LifecycleConfiguration.Rules;
   });
 
-  it('expires the runs\' workspaces at 90 days and the caches at 30, with their noncurrent versions a day later', () => {
-    expect({ runs: ENGINEERING_RUNS_EXPIRATION_DAYS, cache: ENGINEERING_CACHE_EXPIRATION_DAYS })
-      .toStrictEqual({ runs: 90, cache: 30 });
+  it('expires only the caches, at 30 days with their noncurrent versions a day later; never the runs\' objects', () => {
+    expect(ENGINEERING_CACHE_EXPIRATION_DAYS).toBe(30);
     expect(rules.filter((rule) => String(rule['Id']).startsWith('engineering-'))).toStrictEqual([
-      { Id: 'engineering-runs-expiry', Status: 'Enabled', Prefix: 'engineering/runs/', ExpirationInDays: 90,
-        NoncurrentVersionExpiration: { NoncurrentDays: 1 } },
       { Id: 'engineering-cache-expiry', Status: 'Enabled', Prefix: 'engineering/cache/', ExpirationInDays: 30,
         NoncurrentVersionExpiration: { NoncurrentDays: 1 } },
     ]);
+    const prefixes = rules.map((rule) => rule['Prefix']).filter((prefix) => typeof prefix === 'string');
+    expect(prefixes.filter((prefix) => ENGINEERING_RUNS_PREFIX.startsWith(prefix) || prefix.startsWith(ENGINEERING_RUNS_PREFIX)))
+      .toStrictEqual([]);
   });
 
   it.each(APPEND_ONLY_PREFIXES)('still expires nothing under %s', (layer) => {
     const prefixes = rules.map((rule) => rule['Prefix']).filter((prefix) => typeof prefix === 'string');
     expect(prefixes.filter((prefix) => prefix.startsWith(layer) || layer.startsWith(prefix))).toStrictEqual([]);
+  });
+});
+
+/**
+ * The engineering workspace bucket (lambda/engineering/workspace/): only with -c engineeringAgents=true; private,
+ * KMS-encrypted, versioned and access-logged like the raw bucket; nothing in it expires (TENETS.md D5: an expiry
+ * waits for one that writes its AUDIT#delete row).
+ */
+describe('VocCoreStack engineering workspace bucket', () => {
+  const workspaceBuckets = (template: Template) => Object.entries(template.findResources('AWS::S3::Bucket'))
+    .filter(([logicalId]) => logicalId.startsWith('EngineeringWorkspaceBucket'));
+
+  it('is absent by default', () => {
+    expect(workspaceBuckets(synthCoreTemplate())).toStrictEqual([]);
+  });
+
+  it('is private, on the stack key, versioned and logged; expires nothing, current or noncurrent', () => {
+    const found = workspaceBuckets(synthCoreTemplate({ engineeringAgents: 'true' }));
+    expect(found).toHaveLength(1);
+    const props = z.looseObject({ Properties: z.record(z.string(), z.unknown()) }).parse(itemAt(found, 0)[1]).Properties;
+    expect(props).toMatchObject({
+      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: 'aws:kms' } }] },
+      PublicAccessBlockConfiguration: {
+        BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true,
+      },
+      VersioningConfiguration: { Status: 'Enabled' },
+      LoggingConfiguration: { LogFilePrefix: 'engineering-workspace-bucket/' },
+    });
+    const rules = z.object({ Rules: z.array(z.record(z.string(), z.unknown())) })
+      .parse(props['LifecycleConfiguration']).Rules;
+    // Only the no-data hygiene: abandoned multipart uploads and expired delete markers.
+    expect(rules).toStrictEqual([
+      { Id: 'abort-incomplete-uploads', Status: 'Enabled', AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 } },
+      { Id: 'remove-expired-delete-markers', Status: 'Enabled', ExpiredObjectDeleteMarker: true },
+    ]);
+  });
+
+  it('refuses, for every principal, any write that could overwrite an object (no If-None-Match)', () => {
+    const template = synthCoreTemplate({ engineeringAgents: 'true' });
+    const policies = Object.values(template.findResources('AWS::S3::BucketPolicy'))
+      .filter((policy) => JSON.stringify(policy.Properties?.Bucket).includes('EngineeringWorkspaceBucket'));
+    const denies = z.array(z.looseObject({ Sid: z.string().optional() }))
+      .parse(itemAt(policies, 0).Properties?.PolicyDocument?.Statement)
+      .filter((statement) => statement.Sid === 'DenyWorkspaceWritesWithoutIfNoneMatch');
+    expect(denies).toMatchObject([{
+      Effect: 'Deny', Principal: { AWS: '*' }, Action: 's3:PutObject',
+      Condition: { Null: { 's3:if-none-match': 'true' }, Bool: { 's3:ObjectCreationOperation': 'true' } },
+    }]);
+    expect(JSON.stringify(denies[0]?.['Resource'])).toContain('"/*"');
+  });
+
+  it('keeps the workspace key layout of lambda/engineering/workspace/layout.py and the one workspace of identity.py', () => {
+    expect(ENGINEERING_WORKSPACE).toBe('default');
+    const layout = readFileSync(join(__dirname, '../../lambda/engineering/workspace/layout.py'), 'utf8');
+    expect(layout).toContain("f'ws/{_check(_WS, ws, \"workspace\")}/reports/");
+    expect(layout).toContain("(parts[0], parts[2], parts[5]) != ('ws', 'runs', 'commits')");
+    const identity = readFileSync(join(__dirname, '../../lambda/engineering/connectors/identity.py'), 'utf8');
+    expect(identity).toMatch(/^WORKSPACE: Final = 'default'$/m);
   });
 });
 

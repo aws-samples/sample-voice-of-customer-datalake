@@ -39,7 +39,8 @@ import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 
 const ENGINEERING_AGENTS_FLAG = 'engineeringAgents';
-const SUPERVISOR_ALARM_FLAG = 'engineeringSupervisorAlarm';
+/** A fixed monthly cost, so an opt-in of its own (lib/test-support/fixed-cost-rules.ts OPT_IN_FIXED_COSTS). */
+export const SUPERVISOR_ALARM_FLAG = 'engineeringSupervisorAlarm';
 /** `-c engineeringImageArns='{"python":"arn:…",…}'`: the MicroVM image per language; `{}` (no launch) by default. */
 const IMAGE_ARNS_CONTEXT = 'engineeringImageArns';
 /**

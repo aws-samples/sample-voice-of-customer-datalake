@@ -21,7 +21,7 @@ ACCOUNT = '123456789012'
 PATTERN = 'voc-eng-{role}-123456789012-us-east-1'
 FIXER = Caller('fixer', RUN, 1)
 COORDINATOR = Caller('coordinator', RUN, 0)
-KEY = f'ws/default/runs/{RUN}/fixer-1/commits/abc1234/attempt-1/patch.diff'
+KEY = f'ws/default/runs/{RUN}/fixer-1/commits/a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4/core/attempt-1/findings-0.jsonl'
 SPEC = {'issue': 7}
 
 

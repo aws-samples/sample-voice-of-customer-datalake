@@ -409,6 +409,8 @@ export const OPTIONAL_FUNCTION_SIZES: Readonly<Record<string, number>> = {
   // The engineering bus (lib/stacks/engineering-bus.ts): the inbox router and the board API, not measured yet.
   'voc-engineering-router': 256,
   'voc-engineering-board': 256,
+  // The report builder (engineering-bus.ts): reads a run's rows and recorded objects (each at most 4 MB), not measured.
+  'voc-engineering-reports': 512,
 };
 
 /** The size this checkout deploys, per function, under any context (capacity-report `--repo-sizes`). */

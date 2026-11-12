@@ -158,8 +158,10 @@ MCP call never sees an archived board.
 
 **Not tools, and why.** Every import route (`/scrapers/manual/*` paste / CSV / JSON, `/s3-import/*`) is admin-only
 (the handlers' `admins_only` middleware, #242: importing writes customer data), and an MCP token is never admin, so
-there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes and a board
-request's status.
+there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes, a board
+request's status, and, for now, reading an engineering run: its board, conversation and reports
+(`GET /agents/engineering/{run_id}/…`, only with `-c engineeringAgents=true`) are for administrators only until a
+repository connection can be shared ([autonomous-engineering.md](autonomous-engineering.md)), so they have no tool yet.
 
 The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Radar and feedback-edit tools in
 `lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in

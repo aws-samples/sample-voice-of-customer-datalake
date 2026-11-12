@@ -22,10 +22,19 @@
  *   not deliver (engineering-runtime.ts). Alerting watches it like the platform's other
  *   failure queues (dlq-alarms.ts): its alarm exists only once an administrator turns alerting on, so no fixed cost.
  *
- * Grants, exactly what the code calls: both functions GetItem, PutItem and UpdateItem on the voc-engineering table
- * (the transactions are Put and Update items; no delete, no query yet); the board `events:PutEvents` on the bus; the
+ * - The report builder (`engineering/reports/handler.py`): `{run_id, level, subject[, head]}` in, a new version of
+ *   that commit, PR or goal report written to the workspace bucket (`ws/<ws>/reports/…`, create-only). Its callers
+ *   (the run coordinator, the supervisor, the write broker before it opens a PR) are not wired yet, so nothing
+ *   invokes it and no role holds an invoke on it; an asynchronous invocation that fails is kept in the DLQ.
+ *
+ * Grants, exactly what the code calls: the router and the board GetItem, PutItem and UpdateItem on the voc-engineering
+ * table (the transactions are Put and Update items, the board's history rows included; no delete, no query); the
+ * report builder GetItem, Query (a run's rows of a kind) and UpdateItem (the version counter and pointer), GetObject
+ * on the runs' objects and PutObject on the reports in the workspace bucket, and ListBucket on it so a missing object
+ * reads as missing rather than denied; the board `events:PutEvents` on the bus; the
  * router `sqs:SendMessage` on the role queues (and on the DLQ, as its failure destination); `kms:Decrypt` and
- * `kms:GenerateDataKey` on the stack's key, only through DynamoDB (and SQS for the router). The router names the
+ * `kms:GenerateDataKey` on the stack's key, only through DynamoDB (and SQS for the router, S3 and SQS for the report
+ * builder). The router names the
  * delivery function (the runtime's, not deployed yet) and holds no invoke on it: until it lands, a message for an
  * agent or a conductor is written to the conversation and its delivery fails into the DLQ (no producer sends one
  * yet: only the board publishes, to a role or the run).
@@ -37,11 +46,17 @@ import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import type * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
+import { ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
+
+/** The report builder's base name: its future callers (the broker, the supervisor) address it by this name. */
+export const ENGINEERING_REPORTS_FUNCTION_BASE_NAME = 'voc-engineering-reports';
 
 /**
  * The roles with a task queue: lambda/engineering/bus/schema.py ROLES, in its order (engineering-bus.test.ts keeps
@@ -67,6 +82,8 @@ export interface EngineeringBusProps {
   kmsKey: kms.IKey;
   /** voc-engineering (VocCoreStack): the board's tasks and the runs' conversations. */
   engineeringTable: dynamodb.ITable;
+  /** voc-eng-workspace (VocCoreStack): the runs' findings and gate records, and the reports. */
+  workspaceBucket: s3.IBucket;
 }
 
 export class EngineeringBus extends Construct {
@@ -85,6 +102,67 @@ export class EngineeringBus extends Construct {
     const queues = this.roleQueues(props);
     this.createRouter(props, queues);
     this.pinPublishers([this.createBoardApi(props)]);
+    this.createReports(props);
+  }
+
+  /**
+   * The report builder. Reads a run's rows and the workspace objects its tasks recorded, writes each report version
+   * once; puts no event and holds no invoke.
+   */
+  private createReports(props: EngineeringBusProps): void {
+    const role = workerRole(this, 'ReportsRole');
+    props.engineeringTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem');
+    const bucket = props.workspaceBucket;
+    const runObjects = bucket.arnForObjects(ENGINEERING_WORKSPACE_RUNS_KEYS);
+    const reportObjects = bucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'ReadRunObjects', actions: ['s3:GetObject'], resources: [runObjects],
+    }));
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'WriteReports', actions: ['s3:PutObject'], resources: [reportObjects],
+    }));
+    // A key the board recorded may name an object its agent never wrote (a failed attempt): with ListBucket S3 answers
+    // 404, which reads as missing, rather than 403.
+    // Scoped to the runs' keys (the only ones it reads): never a listing of the reports or anything else.
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'MissingReadsAsMissing', actions: ['s3:ListBucket'], resources: [bucket.bucketArn],
+      conditions: { StringLike: { 's3:prefix': [ENGINEERING_WORKSPACE_RUNS_KEYS] } },
+    }));
+    acknowledgeNag(role, [{
+      id: 'AwsSolutions-IAM5',
+      reason: 'The workspace bucket\'s object keys: reads of the runs\' objects the board recorded (their keys are known only at run time) and create-only writes of the reports; never another bucket',
+      findings: [runObjects, reportObjects].map(resourceFinding),
+    }]);
+    // The table's, the bucket's and the DLQ's key (a failure record sent to it needs GenerateDataKey).
+    grantKeyThrough(role, props.kmsKey, ['dynamodb', 's3', 'sqs']);
+    createWorkerFunction(this, 'Reports', {
+      tree: 'engineering',
+      functionName: props.uniqueName(ENGINEERING_REPORTS_FUNCTION_BASE_NAME),
+      handler: 'engineering/reports/handler.handler',
+      role,
+      layer: props.layer,
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 512,
+      environment: {
+        ENGINEERING_TABLE: props.engineeringTable.tableName,
+        ENGINEERING_WORKSPACE_BUCKET: bucket.bucketName,
+      },
+      serviceName: ENGINEERING_REPORTS_FUNCTION_BASE_NAME,
+      // An asynchronous build that failed (its callers never read the answer) is kept, like the router's.
+      onFailure: this.failureRecords(role),
+    });
+  }
+
+  /**
+   * The DLQ as an async failure destination, and `role`'s send to it. Not destinations.SqsDestination, whose grant
+   * adds GetQueueAttributes, GetQueueUrl and every key action: the send and the role's key statement are all a failure
+   * record needs.
+   */
+  private failureRecords(role: iam.Role): lambda.IDestination {
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'EngineeringFailureRecords', actions: ['sqs:SendMessage'], resources: [this.dlq.queueArn],
+    }));
+    return { bind: () => ({ destination: this.dlq.queueArn }) };
   }
 
   /** One queue per role, encrypted with the stack's key, TLS only, redriving to the bus's dead-letter queue. */
@@ -136,13 +214,8 @@ export class EngineeringBus extends Construct {
       // A redelivery is safe (the EVT# marker; the receivers dedupe by event id) and the router calls no model, so a
       // failed fan-out (a throttled queue) is retried rather than lost; one that fails every retry is kept in the DLQ.
       retryAttempts: 2,
-      // Not destinations.SqsDestination, whose grant adds GetQueueAttributes, GetQueueUrl and every key action: the
-      // send below and the key statement above are all a failure record needs.
-      onFailure: { bind: () => ({ destination: this.dlq.queueArn }) },
+      onFailure: this.failureRecords(role),
     });
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'EngineeringFailureRecords', actions: ['sqs:SendMessage'], resources: [this.dlq.queueArn],
-    }));
     new events.Rule(this, 'InboxRule', {
       eventBus: this.bus,
       description: 'Every event on the engineering bus to the inbox router (one fixed rule, never one per run)',

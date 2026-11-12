@@ -15,16 +15,22 @@ Permissions:
 - any signed-in user reads the agents whose WHOLE scope their category access
   covers (``shared.category_gate``); any other agent, and its runs, answers 404;
 - workflows hold no customer data, so every signed-in user may read and
-  validate them.
+  validate them;
+- an engineering run's board, conversation and reports (``/agents/engineering/<run_id>/*``,
+  read-only, lambda/engineering/views.py) are read by administrators only, acting for
+  themselves (403 for anyone else, an MCP credential included); while the engineering agents
+  are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
-``states:StopExecution`` on ``voc-agent-run`` only.
+``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
+their table and workspace bucket (nothing while the module is off).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -45,6 +51,7 @@ from shared.api import api_handler, create_api_resolver, validate_int
 from shared.aws import get_dynamodb_resource
 from shared.category_access import CategoryScope
 from shared.category_gate import read_categories_config, scope_for_caller
+from shared.engineering_agents import engineering_agents_on
 from shared.exceptions import (
     AuthorizationError,
     ConfigurationError,
@@ -68,6 +75,8 @@ RUN_ALREADY_DECIDED = 'This run is not waiting for a decision'
 WORKFLOW_NOT_FOUND = 'Workflow not found'
 PLAN_NOT_FOUND = 'Plan not found'
 STEP_NOT_FOUND = 'Step not found'
+KEEPS_ITS_KIND = ('a workflow keeps its kind: save an engineering flow as a new workflow, not over an agents one '
+                  '(or the other way round)')
 # sha256 hex of a paused write (``canonical_write_fingerprint``), as the plan view shows it.
 DEFAULT_RUNS_PAGE = 20
 MAX_RUNS_PAGE = 50
@@ -165,10 +174,20 @@ def _sees_archived(caller: Caller) -> bool:
     return acts_as_admin(caller)
 
 
+def _engineering_flow(workflow: Mapping[str, Any]) -> bool:
+    """A stored workflow that is an engineering flow (voc-workflow/2), which no agent runs (by its decoded top level:
+    a step's params may hold any key, so the stored text alone cannot tell)."""
+    definition = workflow_schema.decode_definition(workflow.get('definition')) or {}
+    return definition.get('schema') == workflow_schema.SCHEMA_V2
+
+
 def _require_workflow(workflow_id: str) -> None:
-    """A workflow an agent body names must exist (400, it is a field of the request)."""
-    if _find_workflow(workflow_id) is None:
+    """A workflow an agent body names must exist and be an agents workflow (400, it is a field of the request)."""
+    workflow = _find_workflow(workflow_id)
+    if workflow is None:
         raise ValidationError('workflow_id does not name a workflow')
+    if _engineering_flow(workflow):
+        raise ValidationError('an engineering flow is not run by an agent: pick an agents workflow')
 
 
 def _default_workflow_for(name: str, caller: Caller) -> str:
@@ -447,8 +466,10 @@ def list_workflows():
     include_archived = _query('include_archived') == 'true'
     if include_archived:
         require_admin_caller(caller)
+    # Engineering flows (voc-workflow/2) stay out of the library until the editor opens them (it would read them as
+    # agents workflows); they are saved, validated and read by id.
     rows = [row for row in store.list_workflows(_agents_table())
-            if include_archived or not store.is_archived_workflow(row)]
+            if (include_archived or not store.is_archived_workflow(row)) and not _engineering_flow(row)]
     builtin, stored = rows[:1], sorted(rows[1:], key=lambda row: str(row.get('gsi1sk') or ''))
     items = [store.workflow_view(row, include_definition=False) for row in builtin + stored]
     return {'items': items, 'count': len(items)}
@@ -470,11 +491,19 @@ def validate_workflow():
     result = workflow_schema.validate_definition(body.get('definition'))
     response: dict[str, Any] = result.to_dict()
     # Methodology gaps (a PRD with no PR/FAQ before it, ...): warnings, never errors (tenet 2).
-    response['warnings'] = workflow_methodology.methodology_warnings(result.definition) if result.definition else []
+    # The methodology rules are the agents' (research, PR/FAQ, PRD, prototype); an engineering flow has none of them.
+    definition = result.definition
+    agents_flow = definition is not None and definition['schema'] == workflow_schema.SCHEMA
+    response['warnings'] = workflow_methodology.methodology_warnings(definition) if definition and agents_flow else []
     workflow_id = body.get('workflow_id')
     if workflow_id is not None and isinstance(body.get('definition'), Mapping):
         current = workflow_schema.decode_definition(_workflow(str(workflow_id)).get('definition'))
         response['diff'] = workflow_schema.diff_definitions(current, result.definition or body['definition'])
+        stored_kind = (current or {}).get('schema', workflow_schema.SCHEMA)   # as the save reads it
+        if result.definition is not None and result.definition['schema'] != stored_kind:
+            # The save over that workflow would be refused (it keeps its kind): say so here too.
+            response['valid'] = False
+            response['errors'] = [{'message': KEEPS_ITS_KIND}]
     return response
 
 
@@ -523,10 +552,13 @@ def save_workflow(workflow_id: str):
     expected = body.get('expected_revision')
     if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
         raise ValidationError('expected_revision must be the revision you edited (a whole number ≥ 1)')
-    _workflow(workflow_id)
+    current = workflow_schema.decode_definition(_workflow(workflow_id).get('definition')) or {}
     definition = _valid_definition(body.get('definition'))
     if isinstance(definition, Response):
         return definition
+    if definition['schema'] != current.get('schema', workflow_schema.SCHEMA):
+        # An agent may run this workflow: it stays an agents workflow (or an engineering flow) for good.
+        raise ValidationError(KEEPS_ITS_KIND)
     saved = store.save_revision(_agents_table(), workflow_id, definition, expected_revision=expected,
                                 saved_by=caller.subject, username=caller.username, now=store.utc_now())
     return {'workflow': store.workflow_view(saved)}
@@ -795,6 +827,75 @@ def approve_plan_step(plan_id: str, step_id: str):
 @tracer.capture_method
 def decline_plan_step(plan_id: str, step_id: str):
     return _resolve_paused_step(plan_id, step_id, approve=False)
+
+
+# --------------------------------------------------------------------------
+# Engineering runs (lambda/engineering/views.py): the board, the conversation, the reports. On only when the
+# deployment turned the engineering agents on (shared.engineering_agents, with their table and bucket); otherwise 404.
+# Administrators only, acting for themselves, until a repository connection can be shared (docs/autonomous-engineering.md,
+# "Who can read and use"): anyone else, a delegated (MCP) credential included, gets 403. An administrator sees every
+# category, so the run's feedback ids hide nothing from them.
+# --------------------------------------------------------------------------
+
+ENGINEERING_RUN_NOT_FOUND = 'Engineering run not found'
+_VERSION = re.compile(r'[0-9]{1,4}\Z')
+
+
+def _engineering(run_id: str) -> Any:
+    """The views, for an administrator (403 for anyone else; 404 for a bad run id and while the module is off)."""
+    table, bucket = os.environ.get('ENGINEERING_TABLE', ''), os.environ.get('ENGINEERING_WORKSPACE_BUCKET', '')
+    if not (engineering_agents_on() and table and bucket):
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    require_admin_caller(_caller())
+    # Imported here: the package ships only in a deployment with the engineering agents on.
+    from engineering.views import EngineeringViews
+    from engineering.workspace.layout import ID
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_dynamodb_client, get_s3_client
+
+    if not ID.fullmatch(run_id):
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    # No ListBucket on its role (lib/stacks/api-assistant-lambdas.ts): a report never written reads as denied.
+    return EngineeringViews(get_dynamodb_client(), table, WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True))
+
+
+def _found(value: Any) -> Any:
+    if value is None:
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    return value
+
+
+@app.get('/agents/engineering/<run_id>/board')
+@tracer.capture_method
+def get_engineering_board(run_id: str):
+    return _found(_engineering(run_id).board(run_id))
+
+
+@app.get('/agents/engineering/<run_id>/conversation')
+@tracer.capture_method
+def get_engineering_conversation(run_id: str):
+    views = _engineering(run_id)
+    after = validate_int(_query('after'), default=0, min_val=0, max_val=99_999_998)
+    limit = validate_int(_query('limit'), default=MAX_EVENTS_PAGE, min_val=1, max_val=MAX_EVENTS_PAGE)
+    return _found(views.conversation(run_id, after=after, limit=limit))
+
+
+@app.get('/agents/engineering/<run_id>/reports')
+@tracer.capture_method
+def list_engineering_reports(run_id: str):
+    return _found(_engineering(run_id).reports(run_id))
+
+
+@app.get('/agents/engineering/<run_id>/reports/<level>/<subject>')
+@tracer.capture_method
+def get_engineering_report(run_id: str, level: str, subject: str):
+    views = _engineering(run_id)
+    version = _query('version')
+    if version is not None and not (_VERSION.fullmatch(version) and int(version) >= 1):
+        raise ValidationError('version is a whole number from 1 to 9999 (leave it out for the latest)')
+    wanted = None if version is None else int(version)
+    report = _found(views.report(run_id, level, subject, wanted))
+    return {'report': report.document, 'markdown': report.markdown}
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

@@ -134,3 +134,34 @@ def test_gate_needs_an_input(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main(['gate', '--repo', str(tmp_path)])
     assert 'gate needs --input' in capsys.readouterr().err
+
+
+def _gate_with_packs(tmp_path, capsys, packs) -> tuple[int, str]:
+    repo = _repo(tmp_path, 'ok.py')
+    gate_input = tmp_path / 'input.json'
+    gate_input.write_text(json.dumps({'task': 't', 'diff': '+x = 1\n', 'changed_paths': ['ok.py'],
+                                      'params': {'max_rounds': 1, 'reviewers': [{'name': 'quality'}],
+                                                 'packs': packs}}))
+    model = RecordedModel({'reviewer:quality': [review()], 'final-go': [GO]})
+    try:
+        code = main(['gate', '--repo', str(repo), '--packs', str(_packs(tmp_path)), '--input', str(gate_input),
+                     '--python', sys.executable], model=model)
+    except SystemExit:
+        return 2, capsys.readouterr().err
+    return code, capsys.readouterr().out
+
+
+@pytest.mark.skipif(GIT is None, reason='git is not installed')
+def test_a_step_that_pins_its_packs_runs_only_those(tmp_path, capsys):
+    code, out = _gate_with_packs(tmp_path, capsys, ['demo'])
+    assert (code, json.loads(out)['record']['packs']) == (0, ['demo'])
+
+
+@pytest.mark.parametrize(('packs', 'message'), [
+    (['unknown-pack'], 'the input: unknown gate packs: unknown-pack'),
+    (['demo', 'demo'], "the input: packs must be 'auto' or a list of gate pack ids, each once"),
+    ('python', "the input: packs must be 'auto' or a list of gate pack ids, each once"),
+])
+def test_packs_off_the_list_are_refused_as_usage_errors(tmp_path, capsys, packs, message):
+    code, err = _gate_with_packs(tmp_path, capsys, packs)
+    assert (code, message in err) == (2, True)

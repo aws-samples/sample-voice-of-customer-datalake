@@ -21,7 +21,7 @@ import { createBoardAuth } from './core-board-auth';
 import { createCoreRealtime, type CoreRealtime } from './core-realtime';
 import { emailSenderOf } from '../utils/email-sender';
 import { createCoreCdn, type CoreBuildContext } from './core-cdn';
-import { createCoreBuckets } from './core-buckets';
+import { createCoreBuckets, createEngineeringWorkspaceBucket } from './core-buckets';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { dataProtectionOf, type DataProtection } from '../utils/data-protection';
 import { grantReadAndWrites } from '../utils/table-write-grants';
@@ -78,6 +78,11 @@ export class VocCoreStack extends VocStack {
   public readonly agentsTable: dynamodb.Table;
   /** voc-engineering — the engineering agents' task boards and run conversations; only with -c engineeringAgents=true. */
   public readonly engineeringTable?: dynamodb.Table;
+  /**
+   * voc-eng-workspace — the engineering runs' findings, gate records and reports (lambda/engineering/workspace/);
+   * only with -c engineeringAgents=true.
+   */
+  public readonly engineeringWorkspaceBucket?: s3.Bucket;
   /** voc-radar — other brands' reviews, counters and releases, kept out of our numbers (docs/radar.md). */
   public readonly radarTable: dynamodb.Table;
   /** voc-participants — people, lists, project links, asks and their tokens (docs/participants.md). */
@@ -195,6 +200,10 @@ export class VocCoreStack extends VocStack {
     this.accessLogsBucket = buckets.accessLogsBucket;
     this.rawDataBucket = buckets.rawDataBucket;
     this.websiteBucket = buckets.websiteBucket;
+    if (engineeringAgentsEnabled(this)) {
+      this.engineeringWorkspaceBucket = createEngineeringWorkspaceBucket(this, this.uniqueDnsName('voc-eng-workspace'),
+        this.kmsKey, this.accessLogsBucket, data);
+    }
 
     // ============================================
     // CLOUDFRONT DISTRIBUTIONS (core-cdn.ts)
@@ -341,6 +350,8 @@ export class VocCoreStack extends VocStack {
     //   WS#{ws}#RUN#{run} / META             the run's caps and counters (task count, message sequence)
     //   WS#{ws}#RUN#{run} / TASK#{id}        a task on the board         SPEC#{hash}  its dedupe marker
     //   WS#{ws}#RUN#{run} / MSG#{seq:08d}    a conversation message      EVT#{id}     its event's marker
+    //   WS#{ws}#RUN#{run} / TASKLOG#{task}#{at}#{state}  a task's move (its history)
+    //   WS#{ws}#RUN#{run} / AGENT#{agent}    an agent's metering         REPORT#{level}#{subject}  a report's versions
     if (engineeringAgentsEnabled(this)) {
       this.engineeringTable = this.createEncryptedTable('EngineeringTable', 'voc-engineering');
     }

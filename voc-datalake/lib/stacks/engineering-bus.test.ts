@@ -12,7 +12,7 @@ import type { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
-import { ENGINEERING_QUEUE_ROLES } from './engineering-bus';
+import { ENGINEERING_QUEUE_ROLES, ENGINEERING_REPORTS_FUNCTION_BASE_NAME } from './engineering-bus';
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
 import {
   AGENT_ROLE_NAME_PATTERN_JOIN, functionRoleId, functionStatements as statementsOf, functionUrlAuthTypes, processingSynths,
@@ -70,6 +70,8 @@ function keyServices(on: Template, fnId: string): unknown {
 const TABLE_ACTIONS = ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'];
 /** The fixture's voc-engineering table, imported from the test's dependency stack. */
 const TABLE_ARN_IMPORT = /Fn::ImportValue.*TestDeps:ExportsOutputFnGetAttEngineering[0-9A-F]+Arn/;
+/** The fixture's workspace bucket, imported from the test's dependency stack. */
+const WORKSPACE_IMPORT = /Fn::ImportValue.*TestDeps:ExportsOutput\w*EngineeringWorkspace/;
 
 /** The router's environment variables in the flag-on synth. */
 function routerEnv(on: Template): Record<string, unknown> {
@@ -81,7 +83,7 @@ describe('the engineering bus', () => {
   it('is absent by default: no bus, rule, router, board, queue or function URL', () => {
     const off = template('off');
     expect(Object.keys(off.findResources('AWS::Events::EventBus'))).toStrictEqual([]);
-    expect(JSON.stringify(off.toJSON())).not.toMatch(/voc-engineering-(router|board)|voc-eng-tasks/);
+    expect(JSON.stringify(off.toJSON())).not.toMatch(/voc-engineering-(router|board|reports)|voc-eng-tasks/);
     expect(Object.keys(off.findResources('AWS::Lambda::Url'))).toStrictEqual([]);
   });
 
@@ -241,6 +243,66 @@ describe('the engineering bus', () => {
     const put = statementsOf(on, board).find((statement) => statement.Action === 'events:PutEvents');
     expect(put?.Resource).toStrictEqual({ 'Fn::GetAtt': [busId(on), 'Arn'] });
     expect(keyServices(on, board)).toStrictEqual(['dynamodb.us-east-1.amazonaws.com']);
+  });
+
+  it('runs the report builder as one arm64 Python function with the table and the workspace bucket', () => {
+    const on = template('on');
+    const props = on.findResources('AWS::Lambda::Function')[functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME)]
+      ?.Properties;
+    expect(props).toMatchObject({
+      Handler: 'engineering/reports/handler.handler', Runtime: 'python3.14', Architectures: ['arm64'],
+      MemorySize: OPTIONAL_FUNCTION_SIZES[ENGINEERING_REPORTS_FUNCTION_BASE_NAME],
+    });
+    const env = z.record(z.string(), z.unknown()).parse(props?.Environment?.Variables);
+    expect(JSON.stringify(env.ENGINEERING_TABLE)).toMatch(/Fn::ImportValue.*Engineering/);
+    expect(JSON.stringify(env.ENGINEERING_WORKSPACE_BUCKET)).toMatch(WORKSPACE_IMPORT);
+  });
+
+  it('lets nothing invoke the report builder yet and keeps its failed async builds in the DLQ', () => {
+    const on = template('on');
+    const reports = functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME);
+    // Its callers (the run coordinator, the supervisor, the broker) come later.
+    const permissions = Object.values(on.findResources('AWS::Lambda::Permission'))
+      .filter((permission) => JSON.stringify(permission.Properties).includes(`"${reports}"`));
+    expect(permissions).toStrictEqual([]);
+    const configs = Object.values(on.findResources('AWS::Lambda::EventInvokeConfig'))
+      .filter((config) => JSON.stringify(config.Properties?.FunctionName).includes(`"${reports}"`));
+    expect(configs.map((config) => config.Properties)).toMatchObject([{
+      MaximumRetryAttempts: 0, DestinationConfig: { OnFailure: { Destination: { 'Fn::GetAtt': [dlqId(on), 'Arn'] } } },
+    }]);
+  });
+
+  it('grants the report builder its table, bucket and key calls and its failure records, nothing else', () => {
+    const on = template('on');
+    const reports = functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME);
+    expect(actionsOf(on, reports)).toStrictEqual([
+      'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem', ...KEY_ACTIONS, 'logs:CreateLogStream',
+      'logs:PutLogEvents', 's3:GetObject', 's3:ListBucket', 's3:PutObject', 'sqs:SendMessage',
+    ].sort(byCodeUnit));
+    expect(keyServices(on, reports)).toStrictEqual(
+      ['dynamodb.us-east-1.amazonaws.com', 's3.us-east-1.amazonaws.com', 'sqs.us-east-1.amazonaws.com']);
+  });
+
+  it('scopes the report builder to reading the runs\' objects and writing the reports', () => {
+    const on = template('on');
+    const statements = statementsOf(on, functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME));
+    const resourceOf = (action: string) => JSON.stringify(statements.find((statement) => statement.Action === action)
+      ?.Resource);
+    expect({
+      get: resourceOf('s3:GetObject'), put: resourceOf('s3:PutObject'), list: resourceOf('s3:ListBucket'),
+    }).toStrictEqual({
+      // The one workspace spelled out: an IAM `*` crosses `/`, so `ws/*/reports/*` would reach run objects too.
+      get: expect.stringMatching(/"\/ws\/default\/runs\/\*"/), put: expect.stringMatching(/"\/ws\/default\/reports\/\*"/),
+      list: expect.stringMatching(WORKSPACE_IMPORT),
+    });
+    expect(JSON.parse(resourceOf('sqs:SendMessage'))).toStrictEqual({ 'Fn::GetAtt': [dlqId(on), 'Arn'] });
+  });
+
+  it('lets the report builder list only under the runs\' keys', () => {
+    const on = template('on');
+    const list = statementsOf(on, functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME))
+      .find((statement) => statement.Action === 's3:ListBucket');
+    expect(list?.['Condition']).toStrictEqual({ StringLike: { 's3:prefix': ['ws/default/runs/*'] } });
   });
 
   it('lets only the rule invoke the router', () => {

@@ -9,7 +9,16 @@ from pathlib import Path
 
 import pytest
 from audit_common import CDK_DIR, AuditError
-from py_assembly import Assembly, Function, _functions, cache_key, emulate_bundle, python_modules, refs
+from py_assembly import (
+    Assembly,
+    Function,
+    _functions,
+    cache_key,
+    emulate_bundle,
+    merge_gated,
+    python_modules,
+    refs,
+)
 
 from conftest import TreeMaker
 
@@ -117,6 +126,22 @@ def test_a_handler_cdk_stages_from_node_modules_is_external_not_repo_code(source
     records = [{'assetHash': 'abc', 'sourcePath': str(CDK_DIR / source), 'command': None}]
     functions = _functions(_template({'S3Bucket': 'b', 'S3Key': 'abc.zip'}), records, CDK_DIR)
     assert functions['Stack/Fn'].external is external
+
+
+def test_a_gated_feature_that_ships_more_code_gives_the_function_its_larger_bundle() -> None:
+    """The agents API ships lambda/engineering/ only with -c engineeringAgents=true: its lazy import of the
+    engineering views must be judged against that bundle, with the env split kept per synth."""
+    default, gated, other = _fn('cp a'), _fn('cp a && cp b'), _fn('cp c')
+    default.env, gated.env = {'A': '1'}, {'A': '1', 'B': '2'}
+    gated_only = _fn('cp d')
+    functions = {'S/Fn': default}
+    merge_gated(functions, {'S/Fn': gated, 'S/Other': gated_only})
+    assert functions['S/Fn'].asset_command == ['bash', '-c', 'cp a && cp b']
+    assert (functions['S/Fn'].default_env, functions['S/Fn'].gated_env) == ({'A'}, {'A', 'B'})
+    assert functions['S/Other'].context_only
+    elsewhere = _fn('cp a', source='lambda/other')
+    merge_gated({'S/Fn': elsewhere}, {'S/Fn': other})
+    assert elsewhere.asset_command == ['bash', '-c', 'cp a']   # another source dir: not the same bundle
 
 
 def test_the_cache_key_changes_with_the_cdk_lockfile(tmp_path: Path) -> None:

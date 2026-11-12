@@ -1,6 +1,18 @@
 {
   "entries": [
     {
+      "key": "MEMORY_MODES|SCOPE_NAMES::*",
+      "reason": "an engineering flow's memory step modes (shared/workflow_engineering.py) and the MCP OAuth scopes: both read and write by coincidence, different meanings"
+    },
+    {
+      "key": "REVIEWER_KEYS|REVIEWER_SETTINGS::*",
+      "reason": "the quality gate's own reviewer settings (engineering/quality_gate/gate.py) and the workflow editor's copy (shared/workflow_engineering.py): shared/ ships in the agents API without the engineering package (only with -c engineeringAgents=true), so it cannot import the gate's; engineering/test/test_workflow_lockstep.py holds the two equal"
+    },
+    {
+      "key": "_NAME|_REVIEWER_NAME::*",
+      "reason": "the quality gate's reviewer name shape and the workflow editor's copy: shared/ cannot import the engineering package (see REVIEWER_KEYS|REVIEWER_SETTINGS); test_workflow_lockstep.py's pairwise test holds the editor to the gate"
+    },
+    {
       "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PK_PREFIX::*",
       "reason": "three unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row and a category-access row"
     },

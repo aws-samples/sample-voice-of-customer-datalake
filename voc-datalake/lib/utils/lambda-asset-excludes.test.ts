@@ -270,6 +270,13 @@ describe('lambda staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(otherBundles('api/memory_handler.py')).toBe(false);
   });
 
+  it('stages lambda/engineering/, its tests left out, only in the agents API bundle that re-includes it', () => {
+    // api-stack.ts createApiLambdaCode(…, { engineering: true }), with -c engineeringAgents=true.
+    const withEngineering = ignoresWith([...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES, '!/engineering/']);
+    expect(['engineering/views.py', 'engineering/workspace/layout.py', 'engineering/board/test/test_api.py',
+      'memory/extractor/handler.py'].map(withEngineering)).toStrictEqual([false, false, true, true]);
+  });
+
   it("spreads WORKER_TREE_ASSET_EXCLUDES at every pythonLambdaAsset('lambda') site outside worker-lambda.ts", () => {
     let sites = 0;
     forEachCallSite("pythonLambdaAsset('lambda'", (file, options) => {

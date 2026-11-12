@@ -164,7 +164,8 @@ only by the broker, and expires within the hour.
 workspace are readable by administrators only by default; a non-admin sees an engineering run only when an
 administrator shares its connection with them, and then every feedback-derived field it shows (ids, counts,
 categories, problem labels, in findings, reports, the conversation and memories) is filtered by the viewer's own
-category and source access, not the run owner's; what the viewer may not see is left out. A flow can use a connection only when it is shared with the agent's
+category and source access, not the run owner's; what the viewer may not see is left out (built: an engineering run's
+reads are admin-only, 403 for anyone else; sharing and the per-viewer filter are *planned*). A flow can use a connection only when it is shared with the agent's
 owner, checked when the workflow is saved and again when the run starts.
 
 ## The knowledge pack
@@ -261,23 +262,38 @@ What exists:
   post for whom: the coordinator for every role, the hunter for fixers, the builder for builders. A claim leases an
   open task of the caller's role for 5 minutes. Renew and move need the lease and its epoch. Each change is published
   on the bus as the board's `task.*` event after the row is written. A failed publish answers 503, and the retry
-  publishes the same event again.
+  publishes the same event again. Each post, claim and move also writes a `TASKLOG#<task>#<at>#<state>` row in the
+  same transaction (the actor and the operation; no past state is overwritten, a renewal is not a move), which is the
+  task's history; a result key a move records must be one of the caller's own workspace objects of the lease's attempt.
+- **The workspace** (`workspace/`): the key layout below, voc-finding/1 shard lines (`workspace/findings.py`: a line
+  off the schema is skipped and counted; credential-shaped strings and personal data are redacted) and the store
+  (bounded reads, create-only writes). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
+  encrypted with the stack's key, versioned, access-logged, kept under `-c protectData`), where nothing expires
+  until a retention that writes its `AUDIT#delete` row exists (*planned*; "The workspace" further down this
+  section). Nothing writes agents' objects there yet: the runtime's agent roles write
+  to the raw bucket (see [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet").
+- **The reads** (`views.py`, `rows.py`): the Agents API's `GET /agents/engineering/<run_id>/board`, `…/conversation`,
+  `…/reports` and `…/reports/<level>/<subject>`, on only with `-c engineeringAgents=true` (anywhere else they answer
+  404), and read by administrators only, acting for themselves, until a connection can be shared ([Repository connectors](#repository-connectors), "Who can read
+  and use"; anyone else gets 403). An MCP token never acts as an administrator, so the global MCP server has no tool for them
+  yet ([docs/mcp.md](mcp.md)).
 - **The role queues**: one SQS queue per task-pulling role (`bus/schema.py` ROLES), encrypted with the stack's key,
   redriving to `voc-engineering-dlq`. That one dead-letter queue also takes the events the rule could not hand the
   router, the router's invocations that failed every retry and the runtime's undelivered supervisor ticks, and
   alerting watches it like the platform's other
-  failure queues. The role queues are fixed per role, not made per run as described below: a run's own
-  queues and agents' inboxes are not made yet (the [runtime](#runtime-one-microvm-per-agent)'s agent roles are granted
-  per-run queue names that nothing creates).
+  failure queues. The role queues are fixed per role and shared by every run, and there are no per-agent inboxes
+  (an addressed message is pushed by the delivery function, [below](#how-the-agents-work-together)); the
+  [runtime](#runtime-one-microvm-per-agent)'s agent roles are still granted per-run queue names that nothing creates.
 
 Not built yet: the run's start, which writes the `META` row (so today the board answers 404 to every post and the
 router drops every message as for an unknown run); the agents' roles' access (the [runtime](#runtime-one-microvm-per-agent) makes
 the roles and sessions the board reads as agents, but none holds `lambda:InvokeFunctionUrl` on the board or `events:PutEvents` on the bus, which the board API alone holds);
 the bus policy's per-publisher pins of each agent role to its own `source` (today it admits the board's role alone,
 which publishes only as `voc.engineering/board`); the delivery function the router names (it holds no
-invoke on it yet); per-run queues and inboxes; the run coordinator; the workspace. The rest of this section is the
+invoke on it yet); the run coordinator; a person's board actions (POST), which come with
+the run monitor; the agents' writes to the workspace. The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
-holds, and the design's type table and per-run inboxes are what the next slices bring the code to or the table to.
+holds, and the design's type table is what the next slices bring the code to or the table to.
 
 **The bus.** One EventBridge custom bus carries every message between agents, as events of one schema. The schema
 lives in this repository; the one publish helper and the inbox router check every event against it (EventBridge
@@ -322,13 +338,24 @@ a pull request only when the board holds a GO for that exact tree's hash. A pers
 published only by the API, which writes the signed-in user; a decision needs an administrator, or a person the
 connection is shared with to manage, not only to view.
 
-**Inboxes and roles.** One fixed rule sends every event to the inbox router (a Lambda). The router puts a posted task
-in its role's queue for that run (mapper, understander, hunter, fixer, committer, commit reviewer, gate runner, PR author, PR
-reviewer, builder, final go; the run coordinator's and the coach's own tasks, such as the retrospective, come
-assigned, to their inboxes), and an addressed event in its addressee's inbox, an SQS queue per agent of the run, so a
-suspended agent resumes and reads it: EventBridge is the bus, SQS the queue. A queue belongs to one run, so no agent
-ever sees another run's task. The rules are fixed, never made per run, so the bus's rule quota does not limit how many
-runs work at once; a run's queues are made when it starts (an agent's inbox when it joins) and deleted when it ends.
+**Inboxes and roles.** One fixed rule sends every event to the inbox router (a Lambda, `bus/router.py`), which
+writes it to the run's conversation and then routes it (`bus/routing.py`). A posted task goes to its role's queue:
+one fixed SQS queue per task-pulling role, `voc-eng-tasks-<role>` (mapper, understander, hunter, fixer, committer,
+commit reviewer, PR author, PR reviewer, builder, final go: `bus/schema.py` ROLES), shared by every run and made with
+the stack, never per run; the task carries its run, and an agent can claim only its own run's tasks, since the board's
+API takes the run from the caller's session. A message addressed to an agent or to the run coordinator goes to the
+delivery function, which is to wake the addressee (a suspended MicroVM runs no code and cannot poll a queue, so
+delivery is a push); that function is not built yet, so such a message is written to the conversation and its
+delivery fails into `voc-engineering-dlq`. A message to the run (a signal, run health, an outcome) stays in the
+conversation, where the supervisor, the coordinator and the run view read it. **Known risk, to be closed before the
+flag can go on:** a shared role queue lets one run's agent receive another run's task notice (its summary) and
+remove it, which crosses runs; the board stays the record, but the design wants no run to see another's tasks. So
+task notices are to be delivered per run (*planned*: the run's own role queues made when it starts and removed when it
+ends, or the delivery function placing each notice for the run's agents, with the agent roles' queue grants scoped by
+the run tag); the runtime's agent roles are still granted per-run queue names nothing creates
+([Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"). The gate runner, the coordinator and the coach have no
+role queue: their work comes assigned. The rule is fixed, never made per run, so the bus's rule quota does not limit
+how many runs work at once. EventBridge is the bus, SQS the role queues.
 
 **The board.** A run's work is a board of tasks: open → claimed → in progress → in review → done, failed or needs a
 human. An agent takes a task through the board's API, which claims it with a conditional write on its row (DynamoDB,
@@ -350,18 +377,20 @@ request opened, or a human decision point).
 
 **The workspace.** Findings and outputs live in S3, by agent and commit:
 `runs/{run}/{agent}/commits/{sha}/{package}/{shard}.jsonl` (each finding with `file:line`, its evidence, a severity
-and the rule or reviewer it came from), with logs, the gate packs' outputs and patches under the same commit. The
+and the rule or reviewer it came from), with logs, the gate packs' outputs and patches under the same commit (built,
+`workspace/layout.py`: `ws/<ws>/runs/<run>/<agent>/commits/<full sha>/<package | _kind>/attempt-<n>/<name>`, the
+reports under `ws/<ws>/reports/<run>/<level>/<subject>/v<nnnn>.json` and `.md`). The
 agent comes right after the run, so a write rule on the agent's own prefix cannot be matched by a key that only
 mentions it later, and `{package}` is encoded (a package path has slashes). A reduce reads only the keys the board's
 API recorded for each agent. Objects are immutable (one per shard and agent; a new attempt is a new object), so map
 steps never collide. A run reuses only its own objects; what later runs share is the cache. Encrypted, private,
-readable as the connection is. One lifecycle rule for the whole workspace removes each object 90 days after it was
-written (built: the raw bucket's `engineering-runs-expiry` rule on the runs' keys, `engineering/runs/<run>/…`, its noncurrent version
-removed a day later, deployed with `-c engineeringAgents=true`; a retention set per deployment, never under 75 days,
-is *planned*). The run is to record the retention it ran under (D4), and when a run's objects have gone, the
-supervisor is to write one `AUDIT#delete` row for the run (who: the workspace retention rule; what went; under which
-retention; when), as D5 asks of every workspace delete (both *planned*).
-No run outlives it:
+readable as the connection is. Today a run's objects are kept: nothing expires them, neither the runtime's keys
+(`engineering/runs/<run>/…` in the raw bucket) nor the workspace bucket's (`ws/<ws>/runs/`), nor the reports; only
+the repository caches expire. A workspace retention (each object removed some days after it was written, set per
+deployment, never under 75 days) is *planned*, and comes only with what D5 asks of every workspace delete: when a
+run's objects have gone, the supervisor writes one `AUDIT#delete` row for the run (who: the workspace retention
+rule; what went; under which retention; when), and the run records the retention it ran under (D4) (all *planned*).
+No run is to outlive that retention:
 the supervisor stops a run at 30 days at a human decision point that offers only "stop", and a decision point left
 open for 30 more days closes the run. The board and the indexes point at the keys; the reports keep the summaries they cite, so they stay
 whole after the objects go. Findings, notes, checkpoints, conversation and memory hold feedback ids, never review
@@ -386,6 +415,15 @@ with its sharding rule) and Reduce, Board (post or claim tasks), Quality gate (g
 existing human decision point, Learning loop (retrospective → memory), Self-improvement (coach → proposal → benchmark
 → acceptance), Memory read and write, and Stop at PR (the flow's end on a draft pull request; the validation refuses
 a flow that pushes code, one with a committer, without it, and there is no merge step at all).
+*Server side built* (`voc-datalake/lambda/shared/workflow_engineering.py`, validated by `shared/workflow_schema.py`):
+an engineering flow is a workflow of schema `voc-workflow/2` (start, end and the engineering steps: `agent`, `map`,
+`reduce`, `board`, `quality_gate`, `learning_loop`, `self_improvement`, `memory`, `stop_at_pr`), held to the rules
+above (every map meets one reduce on every way out, a quality gate's GO and NO-GO arrows with NO-GO to the human
+decision point, a committer or PR author ends only at a stop at PR or a human decision point); the Agents API saves
+and validates one, keeps each workflow's kind, and leaves engineering flows out of `GET /workflows` and out of every
+agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's settings are the gate's own
+(`max_rounds`, `packs`, `final_go_model`, `reviewers`). *Planned*: the editor's palette, settings and graph rules for
+these steps (the SPA's workflow editor knows `voc-workflow/1` only), and the six default flows as templates.
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it in the editor behind an approval card, like its other writes; "refresh
@@ -430,7 +468,8 @@ for it. A pull request from a fork is only ever reviewed (comments), never fixed
 
 *Partly built*: the packs and the step, run as a CLI (`python -m engineering.quality_gate plan|check|gate`) that the
 gate runner's MicroVM is to run; nothing deploys it yet (the [runtime](#runtime-one-microvm-per-agent)'s images do
-not ship it, and the workflow editor's Quality gate step is phase 4). What exists:
+not ship it; the workflow's Quality gate step is validated server side, with a `packs` pin the CLI keeps, and the
+editor's step is phase 5). What exists:
 
 - **The packs** (`voc-datalake/engineering-gates/`, [README](../voc-datalake/engineering-gates/README.md)):
   `rust-ts`, `python-ts` and `java`, each a `manifest.toml` (schema voc-gate-pack/1: the languages' markers and
@@ -494,10 +533,14 @@ list, shipped in the images), its role names the broker's `voc-eng-{role}` patte
 next slice):
 
 - **Workspace keys.** An agent role may write only `engineering/runs/<run>/<agent>/*` in the raw bucket
-  (`engineering-runtime.ts`, `WriteOwnKeys`), while the board accepts an agent's result keys only under
-  `ws/<ws>/runs/<run>/<agent>/attempt-<epoch>/` (`board/store.py`) and the bus's `refs.s3` only under `ws/<ws>/`
-  (`bus/schema.py`). Both cannot hold: whatever an agent can write, the board and the router refuse to reference,
-  and the reverse. One workspace layout (and the bucket it lives in) has to be chosen and both sides moved to it.
+  (`engineering-runtime.ts`, `WriteOwnKeys`; its checkpoints and patches go there), while the board accepts an
+  agent's result keys only as `workspace/layout.py` parses them,
+  `ws/<ws>/runs/<run>/<agent>/commits/<sha>/<package | _kind>/attempt-<epoch>/<name>` (`board/store.py`), the bus's
+  `refs.s3` only under `ws/<ws>/` (`bus/schema.py`), and the report builder and the reads look for them in the
+  workspace bucket, `voc-eng-workspace`. Both cannot hold: whatever an agent can write, the board and the router
+  refuse to reference, and the reverse. The runtime's roles, checkpoints and harness are to move to the workspace
+  bucket's layout (the session tags already carry `ws`, so `ws/${ws}/runs/${run}/${agent}/*` scopes an agent's
+  writes there), the cache staying in the raw bucket.
 - **Two roles with no voice.** The coach's and the gate runner's sessions are pinned to
   `voc.engineering/agent/coach/…` and `voc.engineering/agent/gate-runner/…`, which `bus/senders.py` always drops:
   its agent sources accept only the roles of `bus/schema.py` ROLES, which has neither (the coach's own source there
@@ -690,8 +733,16 @@ continues it in a new one once the wait closes.
 
 ## Reports
 
-*Planned.* Three levels, each a versioned document of the run, built from the workspace and the events, readable in
-the run view and through REST and MCP, each naming the agent versions that made it:
+*Partly built*: the builder (`voc-datalake/lambda/engineering/reports/`, the `voc-engineering-reports` Lambda,
+deployed only with `-c engineeringAgents=true`) and the administrators' reads through REST
+([above](#how-the-agents-work-together); no MCP tool while the reads are admin-only). A report (voc-report/1) is built from what the run recorded: its `META`,
+each agent's metering (`AGENT#`: skill version, model, MicroVM-seconds, tokens, metered cost), the conversation's
+count, the board's tasks and their history, and only the workspace objects their result keys name (never a listing).
+The PR report takes the quality gate's record only from an ended final-go task under the PR's head commit, checked
+against the gate's own shapes before its Markdown goes into the description. Every version is new (an atomic
+counter, create-only objects, D1). Not built yet: its callers (the run coordinator's closing task, the supervisor,
+the write broker before it opens a PR: nothing invokes it, and no role holds an invoke on it), the run view, and
+"what the agents learned" and "what improved since the last run". The design:
 
 - **Commit report**: what the commit changes and why (its task), the gate packs' results, each review round's
   findings and what was done about each, the final verdict, cost and time.
@@ -818,7 +869,7 @@ and the phase that ships them names them in that row.
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503) |
-| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API and the role queues ([above](#how-the-agents-work-together)); no run start yet, so the board answers 404 to every post; the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images: built, not yet run against AWS nor wired to the broker and the board, [above](#runtime-one-microvm-per-agent)); inboxes and workspace planned |
+| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, the role queues, the workspace's layout, findings and store in its own bucket, and the administrators' read routes for a run's board and conversation ([above](#how-the-agents-work-together)); no run start yet, so the board answers 404 to every post; the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images: built, not yet run against AWS nor wired to the broker and the board, and its agents' writes not yet in the workspace's layout, [above](#runtime-one-microvm-per-agent)); the delivery function for addressed messages planned |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); skills, the coach, memory and the benchmark gate planned |
-| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | planned |
+| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | planned |

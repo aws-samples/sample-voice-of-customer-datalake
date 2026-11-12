@@ -111,6 +111,27 @@ Building a workflow by hand (the built-in can be rebuilt from an empty canvas, p
 - With nothing selected the panel shows the workflow's name, description and an outline that selects any step or
   loop, so every setting is reachable from the keyboard.
 
+### Engineering flows (`voc-workflow/2`)
+
+The opt-in engineering agents' flows are workflows too, with `schema: 'voc-workflow/2'` (`shared/workflow_engineering.py`
+holds their steps and rules; `shared/workflow_schema.py` validates both kinds). An engineering flow has `start`, `end`
+(an end with `status: needs_human` is the human decision point) and the engineering steps: `agent` (`role`,
+`skill_version`, `model`, `budget_share`), `map` (`shard_by`, `shard_cap`) and `reduce`, `board` (`posters`,
+`claimers`, `until`), `quality_gate` (the gate's own settings: `max_rounds`, `packs`, `final_go_model`, `reviewers`),
+`learning_loop`, `self_improvement`, `memory` (`mode`, `scope`, `limit`) and `stop_at_pr`. A save or
+`POST /workflows/validate` refuses, pinned to the step: a setting off its range; a map that does not meet exactly one
+reduce on every way out (a way to an end without one would leave its shards unreduced), or a reduce with no map; a quality gate without its `pass` (GO) and `fail` (NO-GO) arrows, or whose `fail`
+arrow does not go to a human decision point; a label on any other arrow; a learning loop that is neither last nor
+right after a board; self-improvement that is neither alone in its flow nor last; an arrow out of a stop at PR; agents'
+budget shares above 1 in all; and a committer or PR author (an agent, or a board's claimers) whose work can end
+anywhere but a stop at PR or a human decision point. There is no merge step. An engineering flow declares no loops (its
+board does the repeating) and holds no agents step; an agents workflow holds no engineering step.
+
+The two kinds never mix: no agent runs an engineering flow (`POST`/`PUT /agents` refuse one), a saved workflow keeps
+its kind (a save of the other kind over it is refused: save it as a new workflow), and the agents' runtime refuses a
+`voc-workflow/2` definition. Until the editor opens engineering flows, `GET /workflows` leaves them out of the library
+(they are read by id).
+
 ### Methodology warnings
 
 A valid workflow can still skip the methodology (TENETS.md tenet 2): `start → write_prd → end` writes a PRD with no

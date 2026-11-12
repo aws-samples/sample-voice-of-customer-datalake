@@ -25,7 +25,7 @@ _MODULES = (
     'shared/embeddings.py', 'shared/company_context.py', 'shared/design_references.py',
     'shared/user_flags.py', 'shared/mcp_delegate.py', 'shared/assist_jobs.py',
     'shared/briefing_subscription.py', 'shared/briefing_requests.py',
-    'api/radar_handler.py', 'jobs/radar_scan/handler.py',
+    'api/radar_handler.py', 'jobs/radar_scan/handler.py', 'shared/engineering_agents.py',
 )
 # Names that are legitimately absent from the stack, each with its reason.
 _NOT_SET_BY_CDK = {
