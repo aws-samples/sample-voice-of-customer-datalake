@@ -70,6 +70,16 @@ describe('erasure jobs', () => {
     expect(before?.board_items_deidentified).toBe(0)
   })
 
+  it('reads how many deleted items were a workspace\'s, absent or malformed reading as 0', () => {
+    const [reached, before, odd] = normalizeErasureJobs({ jobs: [
+      { ...job, deleted_items: 3, deleted_workspace_items: 2 },
+      { ...job, job_id: 'er_2' },
+      { ...job, job_id: 'er_3', deleted_workspace_items: 'two' },
+    ] })
+    expect([reached?.deleted_items, reached?.deleted_workspace_items]).toStrictEqual([3, 2])
+    expect([before?.deleted_workspace_items, odd?.deleted_workspace_items]).toStrictEqual([0, 0])
+  })
+
   it('keeps only valid source ids in the erasable list', () => {
     expect(normalizeErasableSources({ jobs: [], sources: ['web_x', 'Bad Id', 7, 'manual_import'] }))
       .toStrictEqual(['web_x', 'manual_import'])

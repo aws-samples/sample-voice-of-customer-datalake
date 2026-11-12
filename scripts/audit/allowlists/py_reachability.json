@@ -1,8 +1,7 @@
 {
   "entries": [
     {"key": "lambda/shared/ws_repo.py::scope_of", "reason": "Multi-workspace phase 2's repository layer (docs/multi-workspace.md, Request flow step 4): a request's scope, first called by the API slice; the ingestion slice uses the layer's message scope, keys and tables."},
-    {"key": "lambda/shared/ws_repo.py::ResolvedWorkspace", "reason": "A typing Protocol, named only in scope_of's annotation (shared/workspace.py's WorkspaceContext by its shape): an import of the context, even type-only, closes a module cycle CodeQL refuses. Never executed by design."},
-    {"key": "lambda/shared/ws_repo.py::scope_from_key", "reason": "Repository layer (docs/multi-workspace.md): a stored key's scope, first called by the stream and processor slices."},
+    {"key": "lambda/shared/ws_repo.py::ResolvedWorkspace", "reason": "The Protocol scope_of takes (shared/workspace.py WorkspaceContext without importing it: that import closed a module cycle); reached with scope_of."},
     {"key": "lambda/shared/ws_repo.py::metric_pk", "reason": "Repository layer (docs/multi-workspace.md): the counters' partition, first called by the aggregator slice."},
     {"key": "lambda/shared/ws_repo.py::WorkspaceTable.iter_query", "reason": "Repository layer (docs/multi-workspace.md): the paged read of the feedback and metrics read APIs, first called by their slice."},
     {"key": "lambda/shared/ws_repo.py::_BoundQuery", "reason": "The pager adapter behind WorkspaceTable.iter_query (above), reached when it is."},

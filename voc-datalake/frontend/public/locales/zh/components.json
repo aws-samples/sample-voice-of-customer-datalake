@@ -695,6 +695,9 @@
     "copies": "已删除 {{radar, number}} 条 Radar 评论，已标记 {{artifacts, number}} 个角色或文档",
     "boards": "已去标识化的看板请求和 +1：{{rows, number}}",
     "members": "已去标识化的工作区成员身份：{{rows, number}}",
+    "workspaceItems": "工作区中已删除的评论：{{items, number}}",
+    "emailReachesWorkspaces": "按电子邮件删除也会删除此人在每个工作区中的评论。其他字段仅作用于此部署自身的评论。",
+    "reviewFolders": "因可能包含已删除的行而保留的 S3 导入原件文件夹：{{folders, number}} 个。请检查：",
     "reviewFiles": "因同时包含未删除的行而保留的上传文件：{{files, number}} 个。请检查：",
     "status": {
       "queued": "排队中",

@@ -695,6 +695,9 @@
     "copies": "Radar 리뷰 {{radar, number}}개 삭제, 페르소나 또는 문서 {{artifacts, number}}개 표시",
     "boards": "비식별 처리된 보드 요청 및 +1: {{rows, number}}",
     "members": "비식별 처리된 워크스페이스 멤버십: {{rows, number}}",
+    "workspaceItems": "워크스페이스에서 삭제된 리뷰: {{items, number}}",
+    "emailReachesWorkspaces": "이메일로 삭제하면 모든 워크스페이스에 있는 이 사람의 리뷰도 삭제됩니다. 다른 항목은 이 배포 자체의 리뷰에만 적용됩니다.",
+    "reviewFolders": "삭제된 행이 들어 있을 수 있어 보관한 S3 가져오기 원본 폴더: {{folders, number}}개. 검토하세요:",
     "reviewFiles": "삭제되지 않은 행도 포함하고 있어 보관한 업로드 파일: {{files, number}}개. 검토하세요:",
     "status": {
       "queued": "대기 중",

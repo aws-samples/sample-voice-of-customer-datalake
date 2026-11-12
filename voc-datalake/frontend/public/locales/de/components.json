@@ -695,6 +695,9 @@
     "copies": "{{radar, number}} Radar-Bewertungen gelöscht, {{artifacts, number}} Personas oder Dokumente markiert",
     "boards": "Anonymisierte Board-Anfragen und +1: {{rows, number}}",
     "members": "Anonymisierte Workspace-Mitgliedschaften: {{rows, number}}",
+    "workspaceItems": "Gelöschte Bewertungen in Workspaces: {{items, number}}",
+    "emailReachesWorkspaces": "Eine Löschung per E-Mail entfernt die Bewertungen dieser Person auch in jedem Workspace. Die anderen Felder erreichen nur die eigenen Bewertungen dieser Bereitstellung.",
+    "reviewFolders": "Behaltene Ordner mit S3-Import-Originalen, die gelöschte Zeilen enthalten können: {{folders, number}}. Prüfen Sie sie:",
     "reviewFiles": "Hochgeladene Dateien, die behalten wurden, weil sie auch nicht gelöschte Zeilen enthalten: {{files, number}}. Prüfen Sie sie:",
     "status": {
       "queued": "In der Warteschlange",

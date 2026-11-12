@@ -152,7 +152,11 @@ aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones 
 radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan/UpdateItem, workspaces Scan + UpdateItem
 pinned to `WS#*` and the attributes `email` and `name` (since 6.11.00 an erasure by email without a source
 de-identifies the person's `MEMBER#` rows, `lambda/jobs/retention/members.py`), raw bucket
-`s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions`, KMS,
+`s3:DeleteObject`/`DeleteObjectVersion` on `raw/*`, `silver/*` and (since 7.03.00: an erasure by email and a
+retention window reach a workspace's items, tombstoned `AUDIT#tombstone#{source}` / `{ws}#{feedback_id}`) each
+workspace's `ws/{ws}/raw/*` and `ws/{ws}/silver/*` (one workspace id per pattern), `ListBucketVersions` on those
+prefixes, and an explicit Deny of any delete under `ws/{ws}/raw/s3_import/*` (`DenyWorkspaceImportOriginalDeletes`,
+`lib/stacks/retention-worker.ts`: import originals are listed for review), KMS,
 invoke itself; an erasure job's end notice to its starter (6.04.00: VocCoreStack's `jobs` publish managed policy,
 `appsync:EventPublish` on `jobs` only; docs/realtime.md). Ingestion-side Lambdas (plugins, webhooks, manual import,
 feedback forms, data explorer) apply the source policy before archive/SQS and
@@ -224,7 +228,7 @@ The main pages (a selection: `frontend/src/pages/` has 28 page folders; the rout
 | Feedback Forms | `/feedback-forms` | Embeddable form management |
 | Settings | `/admin` (`/settings` redirects) | Software settings in six tabs with section switches (`?tab=&section=`, old tab ids redirect): General, Sources, Taxonomy, Privacy & access, AI models, System (`?tab=system&section=version`: build version/commit/time + CHANGELOG). Privacy & access → Workspaces (`?tab=access&section=workspaces`) is the platform console, for platform admins only, with the deployment's default brand (a request without `X-Workspace-Id`, `fetchApi(…, 'deployment')`). Personal preferences live on `/account` (docs/account-vs-admin.md) |
 | Members | `/members` (inside a workspace: `/w/{slug}/members`) | The current workspace's members: everyone reads; workspace admins add by email, change roles, remove; any member leaves (docs/multi-workspace.md). "Page not found" outside a workspace |
-| Workspace settings (code: `pages/WorkspaceSettings`) | `/workspace-settings` (inside a workspace: `/w/{slug}/workspace-settings`) | The current workspace's brand (its admins save it, also outside `admins`; everyone else reads) and the plugins the deployment offers with whether the workspace enabled each (its admins get Enable and Disable; enabling answers 409 until phase 2's retention slice). "Page not found" outside a workspace |
+| Workspace settings (code: `pages/WorkspaceSettings`) | `/workspace-settings` (inside a workspace: `/w/{slug}/workspace-settings`) | The current workspace's brand (its admins save it, also outside `admins`; everyone else reads) and the plugins the deployment offers with whether the workspace enabled each (its admins get Enable and Disable; enabling answers 409 until the hold lifts: `PER_WORKSPACE_INGESTION` and `PLUGIN#*` back in the workspaces role's writes, once a workspace's items are aggregated and readable, docs/multi-workspace.md). "Page not found" outside a workspace |
 
 Note: Each page is organized in its own folder under `frontend/src/pages/` with an index.tsx entry point.
 

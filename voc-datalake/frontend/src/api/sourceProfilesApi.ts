@@ -136,6 +136,9 @@ const ErasureJobSchema = z.object({
   board_items_deidentified: count,
   /** Workspace membership rows whose email and name an erasure by email removed; absent (0) when it touched none. */
   member_rows_deidentified: count,
+  /** Of `deleted_items`, the workspaces' items (an erasure of a person and a retention window reach them); absent (0)
+   * when it deleted none. */
+  deleted_workspace_items: count,
   files_needing_review: FilesNeedingReviewSchema,
   started_by: z.string().catch(''),
   created_at: z.string().catch(''),

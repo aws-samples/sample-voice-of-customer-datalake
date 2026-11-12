@@ -55,14 +55,35 @@ export function ErasureStartError({ text }: Readonly<{ text: string }>) {
   )
 }
 
+/** How many of a job's deleted reviews were a workspace's (shown beside the deleted-reviews count; none: nothing). */
+export function ErasureWorkspaceItems({ job }: Readonly<{ job: ErasureJob }>) {
+  const { t } = useTranslation('components', { keyPrefix: 'erasure' })
+  if (job.deleted_workspace_items <= 0) return null
+  return <span className="text-text">{t('workspaceItems', { items: job.deleted_workspace_items })}</span>
+}
+
+/** Keys the job kept for review: uploaded files, and S3 import originals folders (a key ending in `/`). */
+function ReviewList({ text, keys }: Readonly<{ text: string; keys: readonly string[] }>) {
+  return (
+    <div className="basis-full text-warn">
+      <p>{text}</p>
+      <ul className="font-mono text-muted">{keys.map((key) => <li key={key}>{key}</li>)}</ul>
+    </div>
+  )
+}
+
 /**
  * What a job did beyond its feedback counts: its legal basis, the Radar reviews it
- * deleted, the board requests and +1s it de-identified and the workspace items it marked, and the uploaded files it kept because
- * they also hold rows it did not erase (keys only; an admin reviews them).
+ * deleted, the board requests and +1s it de-identified, the workspace artifacts it marked,
+ * and what it kept for review (keys only; an admin reviews them): the uploaded files that
+ * also hold rows it did not erase, and the S3 import originals folders of the items it deleted
+ * (no row says which file in them an item came from).
  */
 export function ErasureJobDetails({ job }: Readonly<{ job: ErasureJob }>) {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })
-  const review = job.files_needing_review
+  const keys = job.files_needing_review?.keys ?? []
+  const folders = keys.filter((key) => key.endsWith('/'))
+  const files = keys.filter((key) => !key.endsWith('/'))
   return (
     <>
       {job.legal_basis !== undefined && <span className="text-muted">{t('legalBasisShown', { basis: job.legal_basis })}</span>}
@@ -75,12 +96,8 @@ export function ErasureJobDetails({ job }: Readonly<{ job: ErasureJob }>) {
       {job.member_rows_deidentified > 0 && (
         <span className="text-text">{t('members', { rows: job.member_rows_deidentified })}</span>
       )}
-      {review !== undefined && review.count > 0 && (
-        <div className="basis-full text-warn">
-          <p>{t('reviewFiles', { files: review.count })}</p>
-          <ul className="font-mono text-muted">{review.keys.map((key) => <li key={key}>{key}</li>)}</ul>
-        </div>
-      )}
+      {files.length > 0 && <ReviewList text={t('reviewFiles', { files: files.length })} keys={files} />}
+      {folders.length > 0 && <ReviewList text={t('reviewFolders', { folders: folders.length })} keys={folders} />}
     </>
   )
 }

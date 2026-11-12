@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.03.00] - 2026-11-12
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's retention slice merged: an erasure by email and a retention window now reach every workspace's reviews and their copies, each tombstoned first. Enabling a plugin for a workspace still answers 409: a workspace's reviews are not yet counted in the dashboards or shown by the read APIs ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).
+
+### Changed
+
+- Erasure and retention reach workspaces (TENETS.md D5; [docs/source-policies.md](docs/source-policies.md#retention-and-erasure), "Workspace items"): an erasure by email, and a source profile's retention window, also delete every workspace's matching reviews (`WS#{ws}#SOURCE#…` in `voc-feedback`), their Silver versions under `ws/{ws}/silver/` and every version of their raw objects under `ws/{ws}/raw/`. Each is tombstoned first in `AUDIT#tombstone#<source>` (sort key `{ws}#{feedback_id}`, `workspace_id` on the row) and counted in `deleted_workspace_items`, which the erasure API's job view and Administration's erasure jobs show beside the deleted-reviews count. Administration's erasure form and its confirm dialog say that an erasure by email reaches every workspace.
+- An erasure by author, `source_id` or `csv_row_id`, and a whole-source erasure, stay the deployment's: an author is a display name, an id is unique only within one account or upload, and each workspace has its own. To reach a person's reviews in the workspaces, erase by their email.
+- An erasure that deletes an S3 import's reviews lists that scope's originals folder (`raw/s3_import/`, or a workspace's `ws/{ws}/raw/s3_import/`) on `files_needing_review`, shown in Administration as a folder to review: no row says which original file a review came from, so the files are kept.
+- The daily retention run skips and counts a row whose partition starts `WS#` but names no workspace (`unscoped_rows_skipped`, metric `RetentionUnscopedRowsSkipped`), so the deployment's windows keep running; an erasure fails on such a row before deleting it or anything after it (the runbook is in [docs/source-policies.md](docs/source-policies.md#retention-and-erasure)).
+- The category reprocess's raw mode follows a review's raw link only under that review's own root (`raw/` or `ws/{ws}/raw/`); the job itself stays deployment-wide and leaves workspace reviews out.
+- IAM (`{ws}` is exactly one workspace id in each pattern): `voc-retention` may delete objects and object versions under `ws/{ws}/raw/*` and `ws/{ws}/silver/*` and list versions under those prefixes, and an explicit Deny refuses it any delete under `ws/{ws}/raw/s3_import/*`.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the processing stack (the `voc-retention` role's policy) and the web app change; no table, index or cross-stack reference changes, and nothing is migrated.
+- IAM: the `voc-retention` role gains the deletes and version listing above, plus a Deny statement on a workspace's S3 import originals; review them if you restrict IAM changes. A Deny always wins, so a policy you attach to that role cannot re-allow those deletes.
+- A retention window now also binds workspace reviews of that source (a workspace's messages are processed under the deployment's source profiles until per-workspace profiles arrive, phase 3). No workspace holds reviews yet: enabling a plugin for a workspace still answers 409.
+
 ## [7.02.00] - 2026-11-12
 
 Multi-workspace: the web app's side of a workspace's brand and plugins, and an editor for the deployment's default brand in the platform console. No API or stack change; workspaces still do not separate most data, and enabling a plugin for a workspace still answers 409 until phase 2's retention slice ([docs/multi-workspace.md](docs/multi-workspace.md)).

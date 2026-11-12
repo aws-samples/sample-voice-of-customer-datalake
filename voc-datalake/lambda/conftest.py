@@ -129,6 +129,26 @@ def _clear_log_group_discovery() -> None:
         module.discovered_log_groups.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_categories_cache():
+    """Forget shared.api's configured-categories cache between tests.
+
+    It is kept 5 minutes per warm Lambda, so a test that read a categories config without, say, `delivery` left
+    it for the next test on the same pytest-xdist worker, which then bucketed every `delivery` review under
+    `other` (the order-dependent `/metrics/categories` scan-branch failure). Cleared before and after each test
+    (only when the module is loaded).
+    """
+    _clear_categories_cache()
+    yield
+    _clear_categories_cache()
+
+
+def _clear_categories_cache() -> None:
+    module = sys.modules.get('shared.api')
+    if module is not None:
+        module.clear_categories_cache()
+
+
 def _clear_counted_sources() -> None:
     module = sys.modules.get('shared.source_erasure')
     if module is not None:

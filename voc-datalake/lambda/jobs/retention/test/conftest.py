@@ -6,9 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
+from boto3.dynamodb.conditions import Key
 from moto import mock_aws
 
-from jobs.retention import handler
+from jobs.retention import handler, runs
+from shared.digests import sha256_hex
+from shared.retention import ERASURE_JOB_PK
 from shared.test.moto_s3 import create_versioned_bucket
 from shared.test.moto_tables import create_pk_sk_table
 
@@ -28,6 +31,23 @@ def put_feedback(aws: dict[str, Any], feedback_id: str, source: str = 'web', **e
     aws['feedback'].put_item(Item={'pk': f'SOURCE#{source}', 'sk': f'FEEDBACK#{feedback_id}',
                                    'feedback_id': feedback_id, 'source_id': feedback_id, 'source_platform': source,
                                    'date': days_ago(1), **extra})
+
+
+def erasure_job(aws: dict[str, Any], job_id: str, field: str, value: str, **row: Any) -> dict[str, Any]:
+    """A queued erasure job row (its ``row`` fields, None left out), and the invoke event that runs it."""
+    item = {'pk': ERASURE_JOB_PK, 'sk': job_id, 'job_id': job_id, 'status': 'queued', 'field': field,
+            'value_hash': sha256_hex(value)}
+    item.update({name: given for name, given in row.items() if given is not None})
+    aws['aggregates'].put_item(Item=item)
+    return {'mode': 'erase', 'job_id': job_id, 'value': value}
+
+
+def erasure_rows(aws: dict[str, Any], job_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """``(job row, the one audit row)`` after a run."""
+    job = aws['aggregates'].get_item(Key={'pk': ERASURE_JOB_PK, 'sk': job_id})['Item']
+    audits = aws['aggregates'].query(KeyConditionExpression=Key('pk').eq(runs.AUDIT_PK))['Items']
+    assert len(audits) == 1
+    return job, audits[0]
 
 
 @pytest.fixture

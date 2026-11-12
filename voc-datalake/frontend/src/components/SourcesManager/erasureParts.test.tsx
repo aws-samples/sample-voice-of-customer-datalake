@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { ErasureJobDetails } from './erasureParts'
+import { ErasureJobDetails, ErasureWorkspaceItems } from './erasureParts'
 import { normalizeErasureJob } from '../../api/sourceProfilesApi'
 
 function jobWith(extra: Record<string, unknown>) {
@@ -24,9 +24,27 @@ describe('ErasureJobDetails', () => {
     expect(screen.getByText('Workspace memberships de-identified: 3')).toBeInTheDocument()
   })
 
-  it('says nothing about boards when the job touched none', () => {
+  it('shows how many of the deleted reviews were a workspace\'s, and nothing when none were', () => {
+    const { unmount } = render(<ErasureWorkspaceItems job={jobWith({ deleted_items: 3, deleted_workspace_items: 2 })} />)
+    expect(screen.getByText('Deleted reviews in workspaces: 2')).toBeInTheDocument()
+    unmount()
+    render(<ErasureWorkspaceItems job={jobWith({ deleted_items: 3 })} />)
+    expect(screen.queryByText(/in workspaces/)).not.toBeInTheDocument()
+  })
+
+  it('lists kept uploaded files and S3 import originals folders apart', () => {
+    render(<ErasureJobDetails job={jobWith({ files_needing_review: {
+      count: 2, keys: ['raw/csv_upload/2026/01/01/j.csv', 'ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/raw/s3_import/'],
+    } })} />)
+    expect(screen.getByText(/Uploaded files kept because they also hold rows that were not erased: 1/)).toBeInTheDocument()
+    expect(screen.getByText(/S3 import originals folders kept that may hold erased rows: 1/)).toBeInTheDocument()
+    expect(screen.getByText('ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/raw/s3_import/')).toBeInTheDocument()
+  })
+
+  it('says nothing about boards or folders when the job touched none', () => {
     render(<ErasureJobDetails job={jobWith({ artifacts_marked: 1 })} />)
     expect(screen.queryByText(/Board requests/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/originals folders/)).not.toBeInTheDocument()
     expect(screen.getByText('0 Radar reviews deleted, 1 personas or documents marked')).toBeInTheDocument()
   })
 })

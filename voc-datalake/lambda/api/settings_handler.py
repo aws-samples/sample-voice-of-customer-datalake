@@ -103,10 +103,10 @@ from shared.request_body import json_body_value, json_object_body, reject_unknow
 from shared.request_workspace import request_workspace, require_settings_admin, require_workspace_writer
 from shared.retention import (
     ERASE_FIELDS,
-    ERASURE_DEIDENTIFIED_COUNTERS,
     ERASURE_JOB_COUNTERS,
     ERASURE_JOB_PK,
     ERASURE_JOB_PREFIX,
+    ERASURE_OPTIONAL_COUNTERS,
     SOURCE_FIELD,
 )
 from shared.scope_names import (
@@ -1936,9 +1936,9 @@ def erasure_job_view(item: dict) -> dict:
     view = {field: item.get(field) for field in ERASURE_VIEW_FIELDS if item.get(field) is not None}
     for counter in ERASURE_JOB_COUNTERS:
         view[counter] = int(item.get(counter) or 0)
-    # An erasure by email's de-identified board rows and workspace membership rows (shared/retention.py): on the
-    # job row only once above 0, so shown only then.
-    for counter in ERASURE_DEIDENTIFIED_COUNTERS:
+    # An erasure by email's de-identified board rows and workspace membership rows, and how many of the deleted items
+    # were a workspace's (shared/retention.py): on the job row only once above 0, so shown only then.
+    for counter in ERASURE_OPTIONAL_COUNTERS:
         if item.get(counter):
             view[counter] = int(item[counter])
     review = item.get('files_needing_review')

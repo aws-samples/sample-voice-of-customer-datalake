@@ -23,6 +23,7 @@ from shared.ws_repo import (
     message_scope,
     metric_pk,
     metric_type,
+    partition_scope,
     s3_key,
     scope_from_key,
     scope_from_message,
@@ -68,6 +69,17 @@ class TestScope:
     def test_a_key_outside_every_workspace_has_no_scope(self, key):
         with pytest.raises(ValueError, match='not a workspace'):
             scope_from_key(key)
+
+    def test_the_partition_scope_of_either_kind_of_row(self):
+        assert partition_scope(f'WS#{WS}#SOURCE#webscraper') == A
+        assert partition_scope('SOURCE#webscraper') is None
+        assert partition_scope(f'AUDIT#WS#{WS}') is None
+        assert partition_scope(None) is None
+
+    @pytest.mark.parametrize('key', [f'WS#{WS}', 'WS#acme#SOURCE#x', 'WS#'])
+    def test_a_ws_key_that_names_no_workspace_is_never_read_as_deployment_wide(self, key):
+        with pytest.raises(ValueError, match='not a workspace'):
+            partition_scope(key)
 
     def test_owns_only_its_own_partitions(self):
         assert A.owns(f'WS#{WS}#SOURCE#x')

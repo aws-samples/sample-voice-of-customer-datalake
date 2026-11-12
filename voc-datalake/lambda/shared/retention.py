@@ -45,6 +45,20 @@ item's earlier states, ``shared/silver_provenance.py``) goes with it, every obje
 version (``delete_silver_versions``); a whole-source erasure also sweeps what is left
 under ``silver/{source}/`` (``silver_source_prefix``).
 
+A workspace's items (``WS#{ws}#SOURCE#…``, docs/multi-workspace.md) are reached by an erasure by email
+(``reaches_workspaces``: the deployment's erasure, made by a deployment admin, erases a person's data wherever it
+is; an author, a display name, is not one person everywhere) and by a retention window (a workspace's items are processed under the deployment's source profiles until
+per-workspace profiles replace them, phase 3). Such an item's own copies are its workspace's: raw objects under
+``ws/{ws}/raw/`` (``raw_root`` of its scope: a key under any other root is never deleted as its own) and Silver
+versions under ``ws/{ws}/silver/``. A whole-source erasure, a request about the deployment's own source, leaves them,
+and so does an erasure by ``author``, ``source_id`` or ``csv_row_id`` (a display name, or an id unique only within
+one source account or upload).
+
+An S3 import's original file (``{raw root}s3_import/…``, ``plugins/_shared/raw_original.py``, in either scope) is
+linked from no row, so no run can tell which file an item came from: a run that deletes an S3 import's item
+(``source_platform`` ``S3 - …``) lists that scope's originals folder for review when it holds any object
+(``import_originals_prefix``), as it lists a whole-file upload it keeps.
+
 The same filters and deletes reach Radar (``voc-radar``: other brands' reviews,
 ``STORE_RADAR``): a review, its dedupe marker and its own raw archive.
 
@@ -65,9 +79,9 @@ from boto3.dynamodb.conditions import Attr, ConditionBase
 from shared.archive_keys import archive_key_stem
 from shared.logging import logger
 from shared.radar_store import marker_key
-from shared.raw_versions import RAW_PREFIX, parse_item_key
+from shared.raw_versions import RAW_PREFIX, parse_item_key, raw_root
 from shared.silver_provenance import SILVER_PREFIX, silver_item_prefix
-from shared.ws_repo import WORKSPACE_KEY_PREFIX
+from shared.ws_repo import WORKSPACE_KEY_PREFIX, WorkspaceScope, partition_scope, ws_table
 
 __all__ = [
     'ERASURE_JOB_COUNTERS',
@@ -79,6 +93,9 @@ __all__ = [
     'delete_raw_prefix_page',
     'delete_whole_upload',
     'erase_filter',
+    'holds_files',
+    'import_originals_prefix',
+    'item_scope',
     'raw_source_prefix',
     'retention_cutoffs',
     'retention_filter',
@@ -89,6 +106,9 @@ __all__ = [
 # The whole-source erasure's field: the value IS a source id (``source_platform``).
 SOURCE_FIELD: Final = 'source'
 ERASE_FIELDS: Final = ('author', 'source_id', 'csv_row_id', 'email', SOURCE_FIELD)
+# The erasure fields that name one person the same wherever their data is: the ones that reach every workspace.
+# An email only: an author is a display name, not unique even within one source.
+PERSON_FIELDS: Final = ('email',)
 # The partition of erasure job rows in voc-aggregates (Settings starts them, voc-retention runs them).
 ERASURE_JOB_PK: Final = 'JOB#erasure'
 # Every job row's ``sk`` (and ``job_id``) starts with this; the partition's lock rows do not.
@@ -101,13 +121,23 @@ ERASURE_JOB_COUNTERS: Final = ('deleted_items', 'deleted_objects', 'deleted_rada
 # workspace memberships (jobs/retention/members.py). On the job and audit rows only once above 0.
 BOARD_COUNTER: Final = 'board_items_deidentified'
 MEMBER_COUNTER: Final = 'member_rows_deidentified'
-ERASURE_DEIDENTIFIED_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER)
+# Of ``deleted_items``, how many were a workspace's (``WS#{ws}#SOURCE#…``): an erasure of a person reaches them.
+WORKSPACE_ITEM_COUNTER: Final = 'deleted_workspace_items'
+# Rows a retention run skipped because their partition starts `WS#` but names no workspace (an erasure fails on one).
+UNSCOPED_ROW_COUNTER: Final = 'unscoped_rows_skipped'
+# The counters on the job and audit rows only once above 0 (a run that touched none reads as before).
+ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER)
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'
 _RADAR_PK_PREFIX: Final = 'RADAR#'
 _RADAR_ITEMS_MARK: Final = '#ITEMS#'
 _WHOLE_UPLOAD_PREFIXES: Final = ('raw/csv_upload/', 'raw/json_upload/')
+# The s3_import plugin's label for an imported file's items (plugins/s3_import/ingestor/handler.py
+# `_get_source_from_key`) and the folder it keeps the files' originals in under a bronze root
+# (plugins/_shared/raw_original.py `S3_IMPORT_SOURCE`).
+S3_IMPORT_LABEL_PREFIX: Final = 'S3 - '
+_IMPORT_ORIGINALS_FOLDER: Final = 's3_import/'
 _MAX_VERSIONS_PER_DELETE: Final = 1000
 
 
@@ -121,37 +151,56 @@ def retention_cutoffs(profiles: list[dict[str, Any]], today: date) -> dict[str, 
     return cutoffs
 
 
-def _store_items(store: str) -> ConditionBase:
+def _store_items(store: str, *, workspaces: bool) -> ConditionBase:
     """The rows of ``store`` that are reviews: ``FEEDBACK#`` items, or Radar's month-partitioned reviews.
 
     A Radar review row (``shared/radar_store.py``) is ``RADAR#{brand}#ITEMS#{month}`` and carries
     ``feedback_id`` and ``radar_brand``; its counters and dedupe markers carry neither, so a
     category named ``ITEMS`` in a counter's key can never match.
+
+    ``workspaces``: whether a workspace's item (``WS#{ws}#SOURCE#…``, docs/multi-workspace.md) is in reach (with its
+    raw objects and Silver versions under ``ws/{ws}/``, ``delete_item``): an erasure of a person and a retention
+    window reach one; a whole-source erasure, a request about the deployment's own source, leaves it.
     """
     if store == STORE_RADAR:
         return (Attr('pk').begins_with(_RADAR_PK_PREFIX) & Attr('pk').contains(_RADAR_ITEMS_MARK)
                 & Attr('feedback_id').exists() & Attr('radar_brand').exists())
     if store != STORE_FEEDBACK:
         raise ValueError(f'Unknown item store "{store}"')
-    # A workspace's item (`WS#{ws}#SOURCE#…`, docs/multi-workspace.md) is not reached yet: its raw objects and
-    # Silver versions live under `ws/{ws}/`, which this deployment-wide job does not delete, and a version
-    # folder `silver/{source}/{id}/` here could be a deployment item's with the same source and id.
-    return Attr('sk').begins_with(FEEDBACK_SK_PREFIX) & ~Attr('pk').begins_with(WORKSPACE_KEY_PREFIX)
+    feedback = Attr('sk').begins_with(FEEDBACK_SK_PREFIX)
+    return feedback if workspaces else feedback & ~Attr('pk').begins_with(WORKSPACE_KEY_PREFIX)
 
 
 def retention_filter(cutoffs: Mapping[str, str], store: str = STORE_FEEDBACK) -> ConditionBase:
-    """Scan filter: items of ``store`` of a retained source dated before its cutoff."""
+    """Scan filter: items of ``store`` of a retained source dated before its cutoff.
+
+    A workspace's item too: a workspace's message is processed under the deployment's source profiles (its PII and
+    raw-copy policy; ``plugins/_shared/raw_original.py`` keeps no whole file for a source with a window, because the
+    window deletes item by item), so the profile's window binds its items as well, until per-workspace profiles
+    replace the deployment's for workspaces (phase 3).
+    """
     clauses = [Attr('source_platform').eq(source) & Attr('date').lt(cutoff) for source, cutoff in cutoffs.items()]
     if not clauses:
         raise ValueError('retention_filter needs at least one source')
     combined = clauses[0]
     for clause in clauses[1:]:
         combined = combined | clause
-    return _store_items(store) & combined
+    return _store_items(store, workspaces=True) & combined
+
+
+def reaches_workspaces(field: str) -> bool:
+    """Whether an erasure by ``field`` reaches the workspaces' items: an erasure by ``email`` does, wherever a copy
+    is (one address is one person). An erasure by ``author`` does not: a display name is not unique even within one
+    source, so the deployment's Jane Doe is not every workspace's Jane Doe. Nor by ``source_id`` or ``csv_row_id``:
+    such an id is unique only within one source account or upload, and each workspace has its own. Those stay the
+    deployment's until a job can name its workspace. Nor does a whole-source erasure (``SOURCE_FIELD``), a request
+    about the deployment's own source."""
+    return field in PERSON_FIELDS
 
 
 def erase_filter(field: str, value: str, source: str | None, store: str = STORE_FEEDBACK) -> ConditionBase:
-    """Scan filter: items of ``store`` whose ``field`` equals ``value`` (optionally in one source)."""
+    """Scan filter: items of ``store`` whose ``field`` equals ``value`` (optionally in one source); in every
+    workspace too only for an erasure by email (``reaches_workspaces``), else the deployment's items only."""
     if field not in ERASE_FIELDS:
         raise ValueError(f'Unknown erasure field "{field}"')
     if field == 'email':
@@ -163,7 +212,7 @@ def erase_filter(field: str, value: str, source: str | None, store: str = STORE_
         match = Attr('source_platform').eq(value)
     else:
         match = Attr(field).eq(value)
-    condition = _store_items(store) & match
+    condition = _store_items(store, workspaces=reaches_workspaces(field)) & match
     return condition & Attr('source_platform').eq(source) if source and field != SOURCE_FIELD else condition
 
 
@@ -175,15 +224,25 @@ class ItemRawObjects:
     folder: str | None
 
 
+def item_scope(item: Mapping[str, Any]) -> WorkspaceScope | None:
+    """The workspace ``item`` is stored in (its ``pk``), None for a deployment item; ValueError for a ``WS#`` key
+    that names no workspace (never deleted as if it were the deployment's: the run fails and says so)."""
+    return partition_scope(item.get('pk'))
+
+
 def _own_raw_key(item: Mapping[str, Any], bucket: str) -> tuple[str, str] | None:
-    """``(key, source_id)`` of ``item``'s ``s3_raw_uri`` when it may be its own archive (see module doc)."""
+    """``(key, source_id)`` of ``item``'s ``s3_raw_uri`` when it may be its own archive (see module doc).
+
+    The key must be under the bronze root of the item's own scope (``raw_root``): ``raw/`` for a deployment item,
+    ``ws/{ws}/raw/`` for a workspace's, so no item ever reaches another scope's objects.
+    """
     uri = item.get('s3_raw_uri')
     source_id = item.get('source_id')
     if not isinstance(uri, str) or not bucket or not isinstance(source_id, str) or not source_id:
         return None
     parsed = urlparse(uri)
     key = parsed.path.lstrip('/')
-    if parsed.scheme != 's3' or parsed.netloc != bucket or not key.startswith(RAW_PREFIX):
+    if parsed.scheme != 's3' or parsed.netloc != bucket or not key.startswith(raw_root(item_scope(item))):
         return None
     if key.startswith(_WHOLE_UPLOAD_PREFIXES) or '..' in key.split('/'):
         return None
@@ -255,20 +314,30 @@ def delete_item(feedback_table: Any, s3: Any, bucket: str, item: Mapping[str, An
     folder go, and every kept Silver version of the item (``delete_silver_versions``).
     The S3 copies go first: if that fails the item stays, so a retry finds
     it again (deleting the item first would orphan the objects for good).
+
+    A workspace's item (``WS#{ws}#SOURCE#…``) takes its own copies under ``ws/{ws}/``: its raw objects under
+    ``ws/{ws}/raw/`` and its Silver versions under ``ws/{ws}/silver/``, and the item is deleted through the
+    workspace layer (``ws_table``, which refuses a key outside the workspace).
     """
+    scope = item_scope(item)
     objects = delete_silver_versions(s3, bucket, item) + _delete_own_raw_objects(s3, bucket, item)
-    feedback_table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
+    key = {'pk': item['pk'], 'sk': item['sk']}
+    if scope is None:
+        feedback_table.delete_item(Key=key)
+    else:
+        ws_table(scope, feedback_table).delete_item(key)
     logger.debug('Deleted one feedback item under its retention / erasure rule')
     return 1, objects
 
 
 def delete_silver_versions(s3: Any, bucket: str, item: Mapping[str, Any]) -> int:
-    """Every kept Silver version of ``item`` (``silver/{source}/{feedback_id}/``, all object versions).
+    """Every kept Silver version of ``item`` (``silver/{source}/{feedback_id}/``, all object versions; a workspace
+    item's ``ws/{ws}/silver/{source}/{feedback_id}/``).
 
     The item's earlier states (``shared/silver_provenance.py``) are copies of it, so an erasure
     reaches them too (TENETS.md D5). Returns the files deleted; 0 for an item without an id.
     """
-    prefix = silver_item_prefix(item)
+    prefix = silver_item_prefix(item, item_scope(item))
     if prefix is None:
         return 0
     return _delete_versions(s3, bucket, prefix, lambda key: key.startswith(prefix))
@@ -305,6 +374,25 @@ def whole_upload_key(item: Mapping[str, Any], bucket: str) -> str | None:
     if parsed.scheme != 's3' or parsed.netloc != bucket or '..' in key.split('/'):
         return None
     return key if key.startswith(_WHOLE_UPLOAD_PREFIXES) and not key.endswith('/') else None
+
+
+def import_originals_prefix(item: Mapping[str, Any]) -> str | None:
+    """The folder of the S3 import originals of ``item``'s scope (``raw/s3_import/`` or ``ws/{ws}/raw/s3_import/``)
+    when ``item`` is an S3 import's (``source_platform`` ``S3 - …``), else None (see the module docstring)."""
+    source = item.get('source_platform')
+    if not isinstance(source, str) or not source.startswith(S3_IMPORT_LABEL_PREFIX):
+        return None
+    return raw_root(item_scope(item)) + _IMPORT_ORIGINALS_FOLDER
+
+
+def holds_files(s3: Any, bucket: str, prefix: str) -> bool:
+    """Whether any object version holding data is under ``prefix`` (a delete marker is no file). Pages until a
+    version appears or the listing ends, so a folder whose first entries are delete markers still counts."""
+    paginator = s3.get_paginator('list_object_versions')
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        if any(_under(entry, prefix) for entry in page.get('Versions', [])):
+            return True
+    return False
 
 
 def delete_whole_upload(s3: Any, bucket: str, key: str) -> int:

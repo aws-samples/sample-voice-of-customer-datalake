@@ -695,6 +695,9 @@
     "copies": "削除した Radar レビュー: {{radar, number}}、印を付けたペルソナまたはドキュメント: {{artifacts, number}}",
     "boards": "匿名化されたボードのリクエストと +1: {{rows, number}}",
     "members": "匿名化されたワークスペースのメンバーシップ: {{rows, number}}",
+    "workspaceItems": "ワークスペースで削除されたレビュー: {{items, number}}",
+    "emailReachesWorkspaces": "メールアドレスによる消去は、すべてのワークスペースにあるこの人のレビューも削除します。その他の項目は、このデプロイメント自身のレビューのみが対象です。",
+    "reviewFolders": "消去された行を含む可能性があるため保持した S3 インポート原本フォルダー: {{folders, number}}。確認してください:",
     "reviewFiles": "消去されていない行も含むため保持したアップロードファイル: {{files, number}}。確認してください:",
     "status": {
       "queued": "待機中",
