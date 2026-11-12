@@ -11,6 +11,7 @@ from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
 import workspaces_handler
+from shared import workspace_plugin_settings
 from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
 
@@ -29,6 +30,13 @@ class World:
 
 
 @pytest.fixture
+def ingestion(monkeypatch) -> None:
+    """The per-workspace data path is in (shared/workspace_plugin_settings.py PER_WORKSPACE_INGESTION): the enable
+    path this file tests beside today's refusal, so the change that turns it on only flips the flag."""
+    monkeypatch.setattr(workspace_plugin_settings, 'PER_WORKSPACE_INGESTION', True)
+
+
+@pytest.fixture
 def world(monkeypatch) -> Iterator[World]:
     monkeypatch.setenv('ENABLED_SOURCES', CEILING)
     monkeypatch.setattr(workspaces_handler, 'memberships', MembershipCache())
@@ -43,6 +51,16 @@ def world(monkeypatch) -> Iterator[World]:
         for row in rows:
             table.put_item(Item=row)
         yield World(table, cognito)
+
+
+@pytest.mark.parametrize('claims', [ADA, PAT, VIC], ids=['admin', 'platform-admin', 'viewer'])
+def test_until_per_workspace_ingestion_is_in_enabling_is_409_and_writes_nothing(world, lambda_context, claims):
+    """The deployed default: refused before the workspace is resolved, so no PLUGIN# row (the ingestor's fan-out) and
+    no audit row, not even a platform admin's entry; the reason says when."""
+    before = world.table.scan()['Items']
+    assert _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', claims=claims, body={'enabled': True}) == (
+        409, {'success': False, 'error': workspace_plugin_settings.INGESTION_NOT_YET})
+    assert world.table.scan()['Items'] == before
 
 
 def _call(world, lambda_context, method, path, claims=ADA, body=None):
@@ -74,6 +92,7 @@ def test_another_workspace_s_enabled_plugin_is_not_this_one_s(world, lambda_cont
     assert [(p['id'], p['enabled']) for p in listed['plugins']] == [('webscraper', False), ('app_reviews_ios', False)]
 
 
+@pytest.mark.usefixtures('ingestion')
 def test_an_admin_enables_a_plugin_audited_first_and_the_ingestor_s_partition_holds_it(world, lambda_context):
     status, body = _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True})
     assert status == 200
@@ -85,6 +104,7 @@ def test_an_admin_enables_a_plugin_audited_first_and_the_ingestor_s_partition_ho
     assert [(p['id'], p['enabled']) for p in listed['plugins']] == [('webscraper', True), ('app_reviews_ios', False)]
 
 
+@pytest.mark.usefixtures('ingestion')
 def test_an_admin_disables_it_again(world, lambda_context):
     _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True})
     assert _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': False}) == (
@@ -99,6 +119,7 @@ def test_asking_for_what_holds_changes_and_records_nothing(world, lambda_context
     assert (_row(world, 'webscraper'), _audit(world)) == (None, [])
 
 
+@pytest.mark.usefixtures('ingestion')
 def test_enabling_an_enabled_plugin_changes_nothing_and_answers_it_as_get_does(world, lambda_context):
     _, first = _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True})
     assert _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True}) == (200, first)
@@ -106,9 +127,12 @@ def test_enabling_an_enabled_plugin_changes_nothing_and_answers_it_as_get_does(w
 
 
 def test_a_viewer_is_refused_and_nothing_changes(world, lambda_context):
-    status, _ = _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', claims=VIC, body={'enabled': True})
+    """Today's one write, a disable, of a row that is there (so the disable is not the no-op): the viewer gets 403."""
+    row = {'pk': 'PLUGIN#webscraper', 'sk': f'WS#{WS}', 'enabled_by': 'sub-ada', 'enabled_at': '2026-11-12T00:00:00Z'}
+    world.table.put_item(Item=row)
+    status, _ = _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', claims=VIC, body={'enabled': False})
     assert status == 403
-    assert (_row(world, 'webscraper'), _audit(world)) == (None, [])
+    assert (_row(world, 'webscraper'), _audit(world)) == (row, [])
 
 
 @pytest.mark.parametrize('plugin', ['synthetic_reviews', 'Not-A-Plugin', 'webscraper%23x'])
@@ -125,6 +149,7 @@ def test_a_bad_body_is_a_400(world, lambda_context, body):
     assert _audit(world) == []
 
 
+@pytest.mark.usefixtures('ingestion')
 def test_a_platform_admin_enables_one_audited_as_such(world, lambda_context):
     status, _ = _call(world, lambda_context, 'PUT', f'{PLUGINS}/app_reviews_ios', claims=PAT, body={'enabled': True})
     assert status == 200
@@ -134,6 +159,7 @@ def test_a_platform_admin_enables_one_audited_as_such(world, lambda_context):
     assert next(row for row in kinds if row['kind'] == 'plugin_enabled')['platform_admin'] is True
 
 
+@pytest.mark.usefixtures('ingestion')
 def test_an_admin_demoted_meanwhile_is_refused_at_commit(world, lambda_context):
     real = workspaces_handler.set_plugin_enabled
 
@@ -148,6 +174,7 @@ def test_an_admin_demoted_meanwhile_is_refused_at_commit(world, lambda_context):
     assert _row(world, 'webscraper') is None
 
 
+@pytest.mark.usefixtures('ingestion')
 def test_a_workspace_set_to_deleting_meanwhile_is_the_one_404(world, lambda_context):
     real = workspaces_handler.set_plugin_enabled
 
@@ -162,6 +189,7 @@ def test_a_workspace_set_to_deleting_meanwhile_is_the_one_404(world, lambda_cont
     assert _row(world, 'webscraper') is None
 
 
+@pytest.mark.usefixtures('ingestion')
 def test_a_row_written_meanwhile_is_409_and_the_attempt_stays_audited(world, lambda_context):
     real = workspaces_handler.set_plugin_enabled
 
@@ -179,6 +207,7 @@ def test_a_row_written_meanwhile_is_409_and_the_attempt_stays_audited(world, lam
     assert _audit(world) == [('plugin_enabled', 'webscraper')]
 
 
+@pytest.mark.usefixtures('ingestion')
 def test_a_transaction_conflict_is_409(world, lambda_context):
     conflict = ClientError({'Error': {'Code': 'TransactionCanceledException', 'Message': 'cancelled'},
                             'CancellationReasons': [{'Code': 'None'}, {'Code': 'None'}, {'Code': 'TransactionConflict'}]},

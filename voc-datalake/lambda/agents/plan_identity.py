@@ -28,8 +28,9 @@ from shared.project_access import ACTING_SUBJECT_CLAIM, ADMIN_GROUP
 
 USERS_GROUP: Final = 'users'
 #: The workspace a plan was approved in (META ``workspace_id``), for the step's domain calls: not a claim, the plan
-#: step sends it as their ``X-Workspace-Id`` header (stream/src/assistant/tools/internal-api.ts), and each domain
-#: Lambda, once its routes read it (phases 2 and 3), resolves the approver's membership there (lambda/shared/workspace.py).
+#: step sends it as their ``X-Workspace-Id`` header (stream/src/assistant/tools/internal-api.ts), and a domain route
+#: that has moved into its workspace (so far the resolved problems; the rest in phases 2 and 3) resolves the approver's
+#: membership there (lambda/shared/request_workspace.py).
 WORKSPACE_CLAIM: Final = 'voc:workspace'
 _GROUPS_PAGE: Final = 60
 

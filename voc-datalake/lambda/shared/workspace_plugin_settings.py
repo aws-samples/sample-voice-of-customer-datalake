@@ -17,6 +17,14 @@ so a row that cannot be written refuses the change; then ONE transaction writes 
 key, or a delete conditional on an existing one) with a check that the workspace is still ``active`` and, for a member
 admin, that they are still admin. Asking for what already holds changes and records nothing. A plugin outside the
 ceiling is answered like an unknown one (404): the deployment does not offer it.
+
+Not yet: enabling is refused (409, ``INGESTION_NOT_YET``, by ``parse_plugin_change``, before the workspace is
+resolved) and writes nothing, not even an audit row (a platform admin's entry included), while
+``PER_WORKSPACE_INGESTION`` is off; the workspaces role holds no PutItem on ``PLUGIN#*`` meanwhile
+(lib/stacks/api-workspaces-lambda.ts), so IAM holds it too. A ``PLUGIN#`` row is what the plugin's scheduled ingestor fans out over, into the
+workspace's own raw data (the data path, phase 2); until that path's processing and retention are in, a workspace that
+enabled a plugin would get raw data nothing processes or retains. The change that brings them turns it on and gives the role
+its PutItem back. Disabling stays: with no row written, it changes nothing.
 """
 from __future__ import annotations
 
@@ -40,6 +48,9 @@ __all__ = ['offered_plugin', 'parse_plugin_change', 'set_plugin_enabled', 'works
 PLUGIN_PREFIX: Final = 'PLUGIN#'
 PLUGIN_ENABLED: Final = 'plugin_enabled'
 PLUGIN_DISABLED: Final = 'plugin_disabled'
+PER_WORKSPACE_INGESTION: Final = False
+INGESTION_NOT_YET: Final = ('Per-workspace ingestion arrives with phase 2 of multi-workspace: a workspace cannot '
+                            'enable a plugin yet')
 #: One answer for a plugin outside the ceiling and an id that is not a plugin's.
 PLUGIN_NOT_FOUND: Final = 'Plugin not found'
 CHANGED_MEANWHILE: Final = "The workspace's plugins changed meanwhile: reload them and try again"
@@ -60,11 +71,14 @@ def offered_plugin(plugin_id: object, ceiling: Sequence[str]) -> str:
 
 
 def parse_plugin_change(body: dict[str, Any]) -> bool:
-    """``{enabled: true|false}`` -> the asked state; 400 for anything else."""
+    """``{enabled: true|false}`` -> the asked state; 400 for anything else; 409 for an enable while
+    ``PER_WORKSPACE_INGESTION`` is off (see the module docstring)."""
     reject_unknown_fields(body, {'enabled'})
     enabled = body.get('enabled')
     if not isinstance(enabled, bool):
         raise ValidationError('enabled must be true or false')
+    if enabled and not PER_WORKSPACE_INGESTION:
+        raise ConflictError(INGESTION_NOT_YET)
     return enabled
 
 

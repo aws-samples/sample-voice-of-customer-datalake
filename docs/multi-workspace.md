@@ -18,7 +18,7 @@ and files named here are the planned ones unless the table lists them.
 | Unreleased | The cross-workspace suite (`lambda/api/test/test_cross_workspace_routes.py`, Phases below). Workspace-scoped today: `GET /me/workspaces/current`, the four members routes, the two plugin routes and the two resolved-problems routes; every other route is by design or pending (phase 2 or 3) |
 | Unreleased | The scope of every settings row, per workspace or for the deployment, held to the code (`lambda/shared/test/test_settings_scopes.py`, Per-workspace configuration below). See the resolved problems' row for the first key moved |
 | Unreleased | The assistant's reads carry the caller's `X-Workspace-Id` to the domain Lambdas (Request flow below); the workspaces API reads it, and the settings API's resolved-problems routes (below) |
-| Unreleased | A workspace's plugins: `GET` and `PUT /me/workspaces/current/plugins[/{plugin_id}]` in the workspaces API, the `PLUGIN#{plugin_id}` / `WS#{ws}` rows the ingestors' fan-out reads, within the deployment's ceiling (Per-workspace configuration below) |
+| Unreleased | A workspace's plugins: `GET` and `PUT /me/workspaces/current/plugins[/{plugin_id}]` in the workspaces API, the `PLUGIN#{plugin_id}` / `WS#{ws}` rows the ingestors' fan-out reads, within the deployment's ceiling (Per-workspace configuration below); enabling is refused (409) and writes nothing until phase 2's data path is in |
 | Unreleased | The first settings kind under its workspace: a team's resolved problems (`GET` and `PUT /settings/resolved-problems` with `X-Workspace-Id` read and write `WS#{ws}#SETTINGS#resolved_problems`; a viewer reads, an editor or admin marks; without the header, the deployment's row as before), through the domain APIs' shared resolution (`lambda/shared/request_workspace.py`) and the stack's one workspace-resolution managed policy, which the audit-row guard now guards like a role (Per-workspace configuration below) |
 | Unreleased | Plan steps carry the workspace their plan was approved in: `workspace_id` on the plan's META, `voc:workspace` in each step's claims, sent as the domain calls' `X-Workspace-Id` header (Request flow below) |
 | Unreleased | The deployment-wide settings' writes are platform admins', checked live: `PUT /settings/appearance` and the alert writes (Per-workspace configuration below; in the route-gate inventory as admin-only and platform-admin-only) |
@@ -80,7 +80,7 @@ gets no stack of its own.
 | `WS#{ws}` | `INVITE#{id}` | planned, not written: email, role, invited_by, expires_at, and `ttl` (the table's TTL attribute). Since 6.10.00 an add is immediate for a new email too (Invites), so nothing has an invite to accept; the row stays reserved, the only one allowed `ttl`, for a later invite that waits for acceptance |
 | `SLUG#{slug}` | `META` | slug → workspace id (`workspace_id`, created_at); uniqueness by a conditional put |
 | `WORKSPACES` | `{name, case-folded}#{ws}` | the platform console's listing (workspace_id, name, slug, status, created_at): one partition, sorted by name, so the list is a paged Query, never a Scan. Written once per created workspace and read by platform admins only; a later rename or status change moves or updates it too |
-| `PLUGIN#{plugin_id}` | `WS#{ws}` | a plugin of the deployment the workspace enabled (enabled_by, enabled_at; since Unreleased, Per-workspace configuration): one partition per plugin, which its scheduled ingestor reads to fan out over the workspaces that enabled it; deleted when it is disabled |
+| `PLUGIN#{plugin_id}` | `WS#{ws}` | a plugin of the deployment the workspace enabled (enabled_by, enabled_at; since Unreleased, Per-workspace configuration): one partition per plugin, which its scheduled ingestor reads to fan out over the workspaces that enabled it; deleted when it is disabled. None is written until phase 2's data path is in (enabling answers 409) |
 | `AUDIT#WS#{ws}` | `{iso}#{random}` | the workspace's creation (since 6.09.00), membership changes, platform-admin entries, export and delete, share grants: an `AUDIT#` partition, so the audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) lets no role change or remove one |
 
 Creating a workspace (6.09.00, `POST /platform/workspaces`, `lambda/shared/platform_workspaces.py`) writes the
@@ -245,6 +245,16 @@ Built in 6.10.00 (`POST`, `PUT` and `DELETE /me/workspaces/current/members[/{sub
   and records nothing. Disabling deletes the row and keeps no version of it: its history (who turned which plugin
   on or off, and when) is the workspace's append-only `AUDIT#WS#` rows, as for a membership (D2). The web app's menu does not read it yet; today every plugin of
   the ceiling still deploys as before (the ceiling stays the one `cdk.context.json` sets).
+  **Not yet (Unreleased, a release blocker until phase 2's data path is in):** enabling answers 409 "Per-workspace
+  ingestion arrives with phase 2 of multi-workspace: a workspace cannot enable a plugin yet", to everyone, before the
+  workspace is resolved, and writes nothing, not even an audit row (`PER_WORKSPACE_INGESTION` in
+  `lambda/shared/workspace_plugin_settings.py`, off); the workspaces role holds no PutItem on `PLUGIN#*` meanwhile. A
+  `PLUGIN#` row is what the ingestor's tick fans out over, into the workspace's `ws/{ws}/raw/`; until the processor
+  keys those items by workspace and erasure (D5) and raw reprocess (D3) reach them, a workspace that enabled a plugin
+  would get raw data that nothing processes or retains. Disabling still answers (with no row written, it changes
+  nothing); the list shows every plugin as not enabled. The change that completes the data path turns the flag on
+  and gives the role its PutItem on `PLUGIN#*` back. The row stays `PLUGIN#{plugin_id}` /
+  `WS#{ws}` (`enabled_by`, `enabled_at`), the shape the ingestors' fan-out reads (its workspace from the sort key).
 - The model picker is per workspace; the model allowlist stays deployment-wide.
 - Brand configuration (name, products, the tone the AI uses) is per workspace; the logo and colours stay global.
 
@@ -263,7 +273,8 @@ opens "as before, with no header" on an address without a slug or for a person w
 gets (decision 12: no migration), and what an MCP token that pins no workspace sends; it never reaches a
 workspace's row. So nothing changes for those, and a workspace starts with no marks of its own: the deployment's
 marks are not copied into it (a mark expires anyway, and setting it again is one click). This mode goes when every
-deployment runs inside a workspace (a first workspace made at bootstrap: voc-lead's decision); a later kind that
+deployment runs inside a workspace (a first workspace made at bootstrap, at the phase 2 cut-over; agreed with the
+multi-workspace lead); a later kind that
 moves before then decides it again, for its own readers. Upgrade note for the release: nothing to do; the deployment's marks stay where
 they are and keep working without a workspace, and a workspace's members see only their workspace's marks. The
 settings API reads `voc-workspaces`' `WS#*` rows and puts only a new entry audit row in `AUDIT#WS#*` there, through

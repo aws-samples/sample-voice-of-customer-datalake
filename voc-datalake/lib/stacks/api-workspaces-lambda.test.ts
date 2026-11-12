@@ -59,7 +59,7 @@ describe('the voc-workspaces-api Lambda', () => {
         'PLUGIN#*', 'USER#*', 'WS#*'] } } },
       { actions: ['dynamodb:GetItem', 'dynamodb:Query'], condition: undefined },
       { actions: ['dynamodb:PutItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
-        'AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'] } } },
+        'AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'] } } },
       // A role change: `role` alone, on the MEMBER# and USER# rows.
       { actions: ['dynamodb:UpdateItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] },

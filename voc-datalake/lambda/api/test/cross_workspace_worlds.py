@@ -257,7 +257,9 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('workspaces_handler.py', 'PUT /me/workspaces/current/plugins/<plugin_id>'): RouteCase(
         no_ids='the plugin is the deployment\'s, the workspace is the header: check 1',
         shared={'plugin_id': PLUGIN}, literals={PLUGIN: 'a plugin of the deployment, the same in every workspace'},
-        body={'enabled': True}),
+        # Disabling: the write a workspace may make until per-workspace ingestion is in (enabling is refused, 409,
+        # shared/workspace_plugin_settings.py); B's enabled row must stay B's.
+        body={'enabled': False}),
     ('settings_handler.py', 'GET /settings/resolved-problems'): RouteCase(
         no_ids='the header is its only id: check 1 (B resolved a problem; A lists only its own)',
         without_a_workspace=_AS_BEFORE),
