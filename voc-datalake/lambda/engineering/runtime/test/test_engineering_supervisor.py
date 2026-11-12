@@ -393,6 +393,60 @@ def test_an_agents_microvm_time_is_priced_once_across_its_continuations(world: W
     assert row['cost_usd'] == Decimal('0.0001') * ended.microvm_seconds
 
 
+def test_a_signal_says_whether_it_took_effect_on_each_agent(world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    assert world.supervisor.signal_detailed(RUN, 'fixer-1', 'save', 1001) == {'fixer-1': ('working', True)}
+    # Its message to the agent cannot be sent (a refused bus): the save did not happen.
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError('the bus refused')
+
+    monkeypatch.setattr(world.bus, 'emit', refuse)
+    assert world.supervisor.signal_detailed(RUN, 'fixer-1', 'save', 1002) == {'fixer-1': ('working', False)}
+    monkeypatch.undo()
+    world.store.claim(world.session(), 1003, 300)
+    assert world.supervisor.signal_detailed(RUN, 'fixer-1', 'save', 1003) == {'fixer-1': ('busy', False)}
+
+
+def test_a_signal_for_another_attempt_of_the_task_does_nothing_but_stop_now_always_stops(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    assert world.supervisor.signal_detailed(RUN, 'fixer-1', 'pause', 1001, attempt=2) == {'fixer-1': ('stale', False)}
+    assert world.session().status == 'working'
+    with pytest.raises(RuntimeRefused, match='agent_id'):
+        world.supervisor.signal_detailed(RUN, None, 'pause', 1001, attempt=1)
+    # A person's kill switch reaches whatever attempt the agent is on.
+    assert world.supervisor.signal_detailed(RUN, 'fixer-1', 'stop_now', 1002, attempt=2) == {'fixer-1': ('stopped', True)}
+    # Nothing left to do: answered with its status, not applied.
+    assert world.supervisor.signal_detailed(RUN, 'fixer-1', 'resume', 1003) == {'fixer-1': ('stopped', False)}
+
+
+def test_a_resume_of_an_agent_that_already_runs_is_not_applied(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    before = world.session()
+    assert world.supervisor.signal_detailed(RUN, 'fixer-1', 'resume', 1001) == {'fixer-1': ('working', False)}
+    # Nothing written beyond the claim and its release.
+    assert (world.session().status, world.session().suspended) == (before.status, before.suspended)
+
+
+def test_a_signal_whose_microvm_call_fails_is_not_applied(world: World, monkeypatch: pytest.MonkeyPatch):
+    _until_waiting = world.launch(code=SLEEP)
+    assert _until_waiting.status == 'booting'
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(
+        world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'], waiting=True)
+    world.supervisor.tick(1001)
+    assert world.session().suspended
+
+    def refuse(_vm: object) -> None:
+        raise RuntimeError('the MicroVM did not answer')
+
+    monkeypatch.setattr(world.runtime, 'resume', refuse)
+    status, applied = world.supervisor.signal_detailed(RUN, 'fixer-1', 'save', 1002)['fixer-1']
+    assert (status, applied, world.session().suspended) == ('working', False, True)
+
+
 def test_a_spent_budget_asks_every_agent_to_pause_and_waits_for_a_person(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')

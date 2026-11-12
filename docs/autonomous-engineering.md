@@ -692,7 +692,11 @@ continues it in a new one once the wait closes.
   then leaves it alone), and a Resume while a hold is still pausing continues the agent once it has paused. An agent
   held by a Pause, a Shut down or a spent budget that stops answering or crashes while it pauses is held as asked,
   never continued or re-posted. An agent another move is working on answers `busy`: nothing was
-  done, and the caller sends the signal again. For each agent the row carries its current step and recent tool calls (the
+  done, and the caller sends the signal again. The answer says, per agent, whether the signal took effect
+  (`applied`: false when busy, when its move failed, a refused port or a MicroVM call, when there was nothing to
+  do in the agent's state, answered with its status, a final one meaning nothing to send again, or `stale`: given
+  the `attempt` of the task the caller saw, with its `agent_id`, an agent on another attempt is left alone; a Stop
+  now is never stale). For each agent the row carries its current step and recent tool calls (the
   harness's own report, bounded and scrubbed), its last progress, heartbeat age, MicroVM state and age, why it looks
   stuck, the last failed command's exit code and output tails, its MicroVM seconds (only while a MicroVM is up and
   not suspended) and its tokens per model.

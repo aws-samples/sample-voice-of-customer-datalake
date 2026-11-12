@@ -457,29 +457,59 @@ class Supervisor:
 
     def signal(self, run_id: str, agent_id: str | None, kind: str, now: int) -> dict[str, str]:
         """The run monitor's control on one agent (``agent_id``) or every agent of the run; each one's status."""
+        return {agent: status for agent, (status, _) in self.signal_detailed(run_id, agent_id, kind, now).items()}
+
+    def _may_resume(self, run_id: str, now: int) -> None:
+        """Refuse a Resume of a run that ended, is past its 30 days or spent its budget; else its budget no longer
+        holds it."""
+        if self.control.stop_requested(run_id):
+            raise RuntimeRefused(f'run {run_id} is stopped: it cannot be resumed')
+        if now - self.control.started_at(run_id) >= THIRTY_DAYS:
+            raise RuntimeRefused(f'run {run_id} is past its 30 days: it can only be stopped')
+        if self.control.budget(run_id).exceeded:
+            raise RuntimeRefused(f'run {run_id} has spent its budget: raise it before resuming')
+        # Its budget is no longer spent: a held run may start MicroVMs again.
+        self._spent.discard(run_id)
+
+    def signal_detailed(self, run_id: str, agent_id: str | None, kind: str, now: int,
+                        attempt: int | None = None) -> dict[str, tuple[str, bool]]:
+        """``signal``, with whether the signal took effect on each agent: not when another move holds it
+        (``busy``), when its move failed (a refused port, a MicroVM call), when there was nothing to do in the agent's
+        state (its current status; a final one means nothing to send again), or, given the ``attempt`` of the task
+        the caller saw on that one agent, when the agent works on another one (``stale``: nothing done). A Stop now
+        is never stale: a person's kill switch reaches whatever attempt the agent is on."""
         if kind not in SIGNALS:
             raise RuntimeRefused(f'unknown signal {kind!r}')
         if kind == 'resume':
-            if self.control.stop_requested(run_id):
-                raise RuntimeRefused(f'run {run_id} is stopped: it cannot be resumed')
-            if now - self.control.started_at(run_id) >= THIRTY_DAYS:
-                raise RuntimeRefused(f'run {run_id} is past its 30 days: it can only be stopped')
-            if self.control.budget(run_id).exceeded:
-                raise RuntimeRefused(f'run {run_id} has spent its budget: raise it before resuming')
-            # Its budget is no longer spent: a held run may start MicroVMs again.
-            self._spent.discard(run_id)
+            self._may_resume(run_id, now)
+        if attempt is not None and agent_id is None:
+            raise RuntimeRefused('an attempt names one agent\'s task: send it with agent_id')
         targets = [session for session in self.sessions.of_run(run_id)
                    if agent_id is None or session.agent_id == agent_id]
         if agent_id is not None and not targets:
             raise RuntimeRefused(f'run {run_id} has no agent {agent_id}')
-        answers: dict[str, str] = {}
+        answers: dict[str, tuple[str, bool]] = {}
+        done: set[str] = set()
+
+        def signalled(session: AgentSession) -> AgentSession:
+            moved = self._signal_one(session, kind, now)
+            if moved is not session:
+                # Something moved: nothing to do in the agent's state is not "applied".
+                done.add(session.agent_id)
+            return moved
+
         for session in targets:
+            if attempt is not None and session.task_attempt != attempt and kind != 'stop_now':
+                answers[session.agent_id] = ('stale', False)
+                continue
             try:
-                answers[session.agent_id] = self._guarded(session, now,
-                                                          lambda s: self._signal_one(s, kind, now)).status
+                status = self._guarded(session, now, signalled).status
             except SessionBusy:
                 # Another move is under way on this agent: nothing was done; the caller sends the signal again.
-                answers[session.agent_id] = 'busy'
+                answers[session.agent_id] = ('busy', False)
+                continue
+            # ``_guarded`` logs a failed move and keeps the session as it was: nothing took effect.
+            answers[session.agent_id] = (status, session.agent_id in done)
         return answers
 
     def wake(self, run_id: str, addressee: Callable[[AgentSession], bool], now: int) -> dict[str, str]:
@@ -555,6 +585,7 @@ class Supervisor:
             return session
         # A signal is a message to the agent: a MicroVM suspended for an open wait is woken (and its session
         # renewed) to read it.
+        before = session
         session = self._renew(self._wake(session), now)
         if kind == 'save':
             self.bus.emit(session.run_id, session.agent_id, 'save', 'Save a checkpoint now.')
@@ -566,4 +597,6 @@ class Supervisor:
             if session.status == 'working':
                 self.bus.emit(session.run_id, session.agent_id, 'pause', 'Finish the step, checkpoint, and pause.')
             return self._ask_pause(session, now, after)
-        return self._save(session)
+        # A Resume of an agent that runs (or pauses to continue, or to shut down: a Shut down outranks it) does nothing
+        # but the wake and renewal above: nothing to save, and so not applied, when neither moved anything.
+        return self._save(session) if session != before else before

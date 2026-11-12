@@ -13,8 +13,9 @@
 - ``{"action": "launch", ...}``: the run coordinator starting one agent of an active run on one task: the
   MicroVM from the agent's image, with its egress allowlist, and the session row (the first tick hands it its
   role session).
-- ``{"action": "signal", "run_id", "agent_id"?, "signal"}``: the run monitor's Save, Pause, Resume, Shut down
-  and Stop now (``Supervisor.signal``).
+- ``{"action": "signal", "run_id", "agent_id"?, "signal", "attempt"?}``: the run monitor's Save, Pause, Resume,
+  Shut down and Stop now (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
+  (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given).
 
 ``delivery_handler`` is voc-engineering-delivery's entry point, the same code and role: the router's message for
 an agent, the conductor or a role of a run, recorded in the run's inbox and its addressees woken (``delivery.py``).
@@ -104,13 +105,18 @@ def tick(_event: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def signal(event: Mapping[str, Any]) -> dict[str, Any]:
+    """``{"agents": {agent: status}, "applied": {agent: bool}}``: ``applied`` false where nothing took effect (busy,
+    a failed move, or ``stale`` when the ``attempt`` given is not the one the agent works on)."""
     agent_id, run_id, kind = event.get('agent_id'), str(event.get('run_id', '')), str(event.get('signal', ''))
-    statuses = _supervisor().signal(run_id, None if agent_id is None else str(agent_id), kind, int(clock()))
+    attempt = _optional_number(event, 'attempt', int)
+    answers = _supervisor().signal_detailed(run_id, None if agent_id is None else str(agent_id), kind, int(clock()),
+                                            attempt)
     if kind == 'resume' and agent_id is None:
         # The supervisor accepted it (the run is not ended, its budget not spent): the run may launch agents again.
         with contextlib.suppress(RunNotActive):  # it was not at a decision point
             _runs().resume(run_id)
-    return {'agents': statuses}
+    return {'agents': {agent: status for agent, (status, _) in answers.items()},
+            'applied': {agent: applied for agent, (_, applied) in answers.items()}}
 
 
 def _switch(enabled: bool) -> None:

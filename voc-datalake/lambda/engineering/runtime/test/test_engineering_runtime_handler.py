@@ -306,6 +306,25 @@ def test_the_delivery_entry_point_records_the_message_in_its_runs_inbox(wired: A
     assert [row['event_id'] for row in rows] == [raw['event_id']]
 
 
+@pytest.mark.parametrize(('attempt', 'answer'), [(2, ('stale', False)), (1, ('paused', True))])
+def test_a_signal_with_the_attempt_the_person_saw(wired: Any, attempt: int, answer: tuple[str, bool]):
+    assert wired is not None
+    handler.lambda_handler(LAUNCH, None)
+    # Still booting: a Pause holds it at once (no message to send, so the bus, not wired yet, is not needed).
+    got = handler.lambda_handler({'action': 'signal', 'run_id': RUN, 'agent_id': 'fixer-1', 'signal': 'pause',
+                                  'attempt': attempt}, None)
+    assert (got['agents']['fixer-1'], got['applied']['fixer-1']) == answer
+
+
+@pytest.mark.parametrize('attempt', [True, '1', 1.5])
+def test_an_attempt_that_is_not_a_whole_number_is_refused(wired: Any, attempt: object):
+    assert wired is not None
+    handler.lambda_handler(LAUNCH, None)
+    with pytest.raises(RuntimeRefused, match='attempt'):
+        handler.lambda_handler({'action': 'signal', 'run_id': RUN, 'agent_id': 'fixer-1', 'signal': 'save',
+                                'attempt': attempt}, None)
+
+
 def test_an_unknown_action_is_refused():
     with pytest.raises(RuntimeRefused, match='unknown action'):
         handler.lambda_handler({'action': 'merge'}, None)
@@ -323,4 +342,4 @@ def test_a_signal_reaches_the_supervisor_and_an_unknown_one_is_refused(wired: An
         handler.lambda_handler({'action': 'signal', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'signal': 'reboot'}, None)
     answer = handler.lambda_handler({'action': 'signal', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id': 'fixer-1',
                                      'signal': 'stop_now'}, None)
-    assert answer == {'agents': {'fixer-1': 'stopped'}}
+    assert answer == {'agents': {'fixer-1': 'stopped'}, 'applied': {'fixer-1': True}}
