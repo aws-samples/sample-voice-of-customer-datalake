@@ -81,7 +81,7 @@ describe('VocCoreStack bucket versioning', () => {
       SCRATCH_RULE,
     ]);
     expect(RAW_BUCKET_WORKSPACE_PREFIXES).toStrictEqual(
-      ['avatars/', 'company-context/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/']);
+      ['avatars/', 'company-context/', 'engineering/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/']);
   });
 
   it.each(APPEND_ONLY_PREFIXES)('no raw-bucket lifecycle rule can expire anything under %s (kept forever)', (layer) => {

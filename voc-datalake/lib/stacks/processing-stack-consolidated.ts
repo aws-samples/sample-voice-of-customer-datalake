@@ -21,6 +21,7 @@ import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { MemoryWorkers } from './memory-workers';
 import { AGGREGATOR_FUNCTION_BASE_NAME, AGGREGATOR_STREAM_FAILURES_BASE_NAME, FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME } from './dlq-alarms';
 import { AgentRuntime } from './agent-runtime';
+import { addEngineeringRuntime } from './engineering-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
@@ -333,6 +334,8 @@ export class VocProcessingStack extends VocStack {
       webSearchToolName: props.webSearchToolName,
     });
     this.agentRunStateMachine = agentRuntime.stateMachine;
+    // The engineering agents' MicroVM runtime: only with `-c engineeringAgents=true` (engineering-runtime.ts).
+    addEngineeringRuntime(this, { uniqueName, layer: processingLayer, kmsKey, agentsTable: props.agentsTable, rawDataBucket });
     // The per-user morning brief (docs/briefing.md): idle until someone subscribes or presses Refresh.
     const briefingWorker = createBriefingWorker(this, 'BriefingWorker', {
       uniqueName, layer: processingLayer, kmsKey, feedbackTable, aggregatesTable, memoryTable: props.memoryTable,

@@ -67,12 +67,12 @@ export const PY_LAMBDA_ASSET_EXCLUDES = [
 /**
  * The worker trees VocProcessingStack bundles on their own (memory
  * extraction/scanning/retention, the autonomous-agent runtime, the morning
- * brief). Every OTHER `fromAsset('lambda')` site spreads this so an edit under
- * lambda/memory/, lambda/agents/ or lambda/briefing/ does not redeploy the ~25
- * unrelated functions; each worker bundle excludes only the OTHER trees (see
- * lib/utils/worker-lambda.ts).
+ * brief, the engineering agents' runtime). Every OTHER `fromAsset('lambda')` site
+ * spreads this so an edit under lambda/memory/, lambda/agents/, lambda/briefing/
+ * or lambda/engineering/ does not redeploy the ~25 unrelated functions; each
+ * worker bundle excludes only the OTHER trees (see lib/utils/worker-lambda.ts).
  */
-export const WORKER_TREE_ASSET_EXCLUDES = ['/agents/', '/briefing/', '/memory/'];
+export const WORKER_TREE_ASSET_EXCLUDES = ['/agents/', '/briefing/', '/engineering/', '/memory/'];
 
 /**
  * Provider-only source must not churn every API/job Lambda rooted at `lambda/`.
@@ -131,6 +131,7 @@ export function rootPluginAssetExcludes(pluginId: string, allPluginIds: string[]
     '/scripts/',
     '/schemas/',
     '/Workshop/',
+    '/engineering-images/',
     '/plugins/_template/',
     // lambda/: only shared/ ships in ingestor bundles.
     '/lambda/agents/',
@@ -139,6 +140,7 @@ export function rootPluginAssetExcludes(pluginId: string, allPluginIds: string[]
     '/lambda/custom_resources/',
     '/lambda/design_capture/',
     '/lambda/email_intake/',
+    '/lambda/engineering/',
     '/lambda/jobs/',
     '/lambda/layers/',
     '/lambda/memory/',

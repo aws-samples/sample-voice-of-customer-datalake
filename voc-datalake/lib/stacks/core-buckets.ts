@@ -37,7 +37,7 @@ import { dataProtection, type DataProtection } from '../utils/data-protection';
  * added here; `core-buckets.test.ts` checks every grant on the bucket in lib/stacks against this list.
  */
 export const RAW_BUCKET_WORKSPACE_PREFIXES = [
-  'avatars/', 'company-context/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/',
+  'avatars/', 'company-context/', 'engineering/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/',
 ] as const;
 /** The bronze layer: written once (If-None-Match), never overwritten or expired. */
 export const RAW_LAYER_PREFIX = 'raw/';

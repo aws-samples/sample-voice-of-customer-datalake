@@ -104,6 +104,11 @@ max-returns = 8
 "lambda/shared/test/test_snapstart.py" = ["S311"]  # tests the `random` reseed itself
 "lambda/shared/test/test_model_agreement_handler.py" = ["S102"]  # execs the handler inlined in the CDK stack
 "scripts/mcp_gate.py" = ["S314"]                          # parses the JUnit XML our own pytest run just wrote
+# The engineering agents' runner runs an agent's own argv without a shell, in the agent's checkout, dropped to an
+# unprivileged user; the AWS runtime and its test call that runner (https only in production).
+"lambda/engineering/runtime/unit_runner.py" = ["S603"]
+"lambda/engineering/runtime/aws.py" = ["S310"]
+"lambda/engineering/runtime/test/test_engineering_local_runtime.py" = ["S310"]
 # Per-review isolation and the job-level belt log the error TYPE only (privacy, see the handler), so
 # they neither narrow the catch nor log the exception itself.
 "lambda/jobs/category_reprocess/handler.py" = ["BLE001", "TRY400"]

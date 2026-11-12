@@ -205,6 +205,11 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(ignores('scripts/build-layers.sh')).toBe(true);
   });
 
+  it('keeps the engineering runtime and its images out of the ingestor hashes', () => {
+    expect(ignores('lambda/engineering/runtime/handler.py')).toBe(true);
+    expect(ignores('engineering-images/rust/Dockerfile')).toBe(true);
+  });
+
   it("sibling plugins never churn this plugin's hash; its own tree counts", () => {
     expect(ignores('plugins/s3_import/ingestor/handler.py')).toBe(true);
     expect(ignores('plugins/synthetic_reviews/ingestor/handler.py')).toBe(true);
@@ -256,10 +261,11 @@ describe('lambda staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
     expect(ignores('api/test/conftest.py')).toBe(true);
   });
 
-  it('keeps the memory/agents/briefing worker trees out of every other bundle', () => {
+  it('keeps the memory/agents/briefing/engineering worker trees out of every other bundle', () => {
     const otherBundles = ignoresWith([...PY_LAMBDA_ASSET_EXCLUDES, ...WORKER_TREE_ASSET_EXCLUDES]);
-    expect(['memory/extractor/handler.py', 'agents/conductor/handler.py', 'briefing/handler.py'].map(otherBundles))
-      .toStrictEqual([true, true, true]);
+    expect(['memory/extractor/handler.py', 'agents/conductor/handler.py', 'briefing/handler.py',
+      'engineering/runtime/handler.py'].map(otherBundles))
+      .toStrictEqual([true, true, true, true]);
     expect(otherBundles('shared/api.py')).toBe(false);
     expect(otherBundles('api/memory_handler.py')).toBe(false);
   });
