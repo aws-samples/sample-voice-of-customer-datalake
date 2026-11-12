@@ -16,6 +16,7 @@ and files named here are the planned ones unless the table lists them.
 | 6.10.00 | A workspace's members, in the workspaces API under `/me/workspaces/current/members` (GET, POST, PUT and DELETE on the existing `/me/{proxy+}`; logic in `lambda/shared/workspace_members.py`), each acting in the workspace `X-Workspace-Id` names as `resolve_workspace` decides (400 without the header, the one 404 for a non-member, the deployment's `admins` group included; a platform admin enters as admin, live-checked and audited). `GET` lists the members `{members: [{sub, role, email, name, invited_by, joined_at}], next_cursor}` for any member, by sub (`?limit=` 1 to 100, default 25, `?cursor=`; one Query of the `MEMBER#` rows; email and name are the row's, and for up to 5 rows a page that hold none, such as the creator's, Cognito's by sub). `POST {email, role}` (admin, editor or viewer): workspace admins only (`require_workspace_admin`: 403 for an editor or a viewer); an email with a Cognito account is a member at once, a new email first gets an account (`AdminCreateUser`, the temporary password emailed, as the users API does) when the caller is in the deployment's `admins` group (platform admins are; 403 for any other workspace admin: until the data path is keyed by workspace, phase 2, every account reads the whole deployment, so creating one stays with the users API's administrators), then 201 `{member: {sub, role, email, name, invited_by, joined_at, account: 'existing'\|'created'}}`; 409 for a member already there, for two accounts sharing the email, or for an email Cognito holds for another account. An existing account gets no notification email: the deployment has no mail path for account notices, so the add is logged. No `INVITE#` row is written: membership is immediate either way, so there is nothing to accept. `PUT /{sub}` `{role}`: workspace admins only (asking for the role a member has changes and records nothing). `DELETE /{sub}`: workspace admins, or the member themselves (leave). Demoting or removing the last member admin, the caller included, is refused (409). Each add, role change and removal writes an `AUDIT#WS#{ws}` / `{iso}#{random}` row (kind `member_added`, `member_role_changed`, `member_removed` or `member_left`; actor, target sub, role before and after, `platform_admin`, and on an add `account`) before the change, so it records the attempt (a row that cannot be written refuses the change); then ONE transaction changes the `MEMBER#` row and the `USER#` row together (an add: two conditional puts and a check that `META` is still `active`; a role change: two updates, each only of `role` and only on existing rows; a removal: two deletes), and a demotion or removal of an admin also checks that another member is still an admin, so two admins demoting each other at once cannot both succeed. Each write resolves the caller's role from the table, not the 30 s cache, so an admin demoted or removed a moment ago cannot undo it; the change drops the member's cached membership in the container that made it, and other warm containers serve the old role to reads for up to 30 s. The role's new grants: UpdateItem on `WS#*` and `USER#*` with the attribute `role` only; DeleteItem on `WS#*` and `USER#*` (`dynamodb:LeadingKeys`; IAM cannot pin a sort key, so `META` in `WS#*` is in reach of IAM and kept out by the code, while `SLUG#`, `WORKSPACES` and `AUDIT#` are not); ConditionCheckItem on `WS#*`; Cognito `ListUsers` and `AdminCreateUser` on the user pool (IAM cannot limit ListUsers to an email filter; the code sends only an email or a sub). The web app does not call these routes yet |
 | 6.11.00 | A user's delete and an erasure by email reach the memberships. `DELETE /users/{username}` (the users API) removes every membership of the user BEFORE `AdminDeleteUser` (`plan_user_removal` and `remove_user_memberships` in `lambda/shared/workspace_members.py`): it reads their `USER#{sub}` rows, and per workspace the `MEMBER#` role and, for an admin, another admin; the last member admin of a workspace is refused (409, naming the workspace: make another member an admin there first) unless the caller is a platform admin (live-checked), in which case the workspace keeps no member admin until a platform admin enters it and names one (Invites). Every refusal comes before any write; then, per workspace, an `AUDIT#WS#{ws}` row (kind `member_removed`, `via: user_deleted`, actor, target, role before, `platform_admin`, `left_without_admin`) and ONE transaction deleting the `MEMBER#` and `USER#` rows (the `MEMBER#` delete conditional on the role read; for an admin a check that the other admin still is one: 409 when either changed meanwhile); only then the Cognito account. The users API's role gains, on `voc-workspaces`: Query on `USER#*` and `WS#*`, GetItem on `WS#*` and `AUDIT#WS#*` (an audit row read back after a retried put), ConditionCheckItem on `WS#*`, PutItem on `AUDIT#WS#*` and DeleteItem on `USER#*` and `WS#*` (`dynamodb:LeadingKeys`; the code deletes `MEMBER#` and `USER#` keys only); the audit-row guard names it a writer of `AUDIT#WS#*` there and of no other audit partition. An erasure by email without a source (`voc-retention`, docs/source-policies.md) removes the `email` and `name` of every `MEMBER#` row that holds the email, in any case, and keeps the row; each row first gets a tombstone `AUDIT#tombstone#workspace_members` / `{ws}#{sub}#{job}` (the workspace, the run, the legal basis; never the email), counted as `member_rows_deidentified`. It finds the rows with a paged Scan of `voc-workspaces` (no email index; Invites says why and how it is bounded); `voc-retention` gains Scan and UpdateItem pinned to `WS#*` and the attributes `email` and `name` there |
 | Unreleased | The cross-workspace suite (`lambda/api/test/test_cross_workspace_routes.py`, Phases below). Workspace-scoped today: `GET /me/workspaces/current` and the four members routes; every other route is by design or pending (phase 2 or 3) |
+| Unreleased | The scope of every settings row, per workspace or for the deployment, held to the code (`lambda/shared/test/test_settings_scopes.py`, Per-workspace configuration below). No key has moved yet |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -211,11 +212,32 @@ Built in 6.10.00 (`POST`, `PUT` and `DELETE /me/workspaces/current/members[/{sub
 
 ## Per-workspace configuration
 
-- Everything stored today under `SETTINGS#…` and `METRIC#…` in `voc-aggregates` moves under `WS#{ws}#…`.
+- Every workspace kind of settings in the table below moves under `WS#{ws}#…`; the deployment kinds keep their key.
+  The `METRIC#…` rows in `voc-aggregates` move under `WS#{ws}#…` with the data path (phase 2).
 - Plugins and menu items stop being chosen at deploy time: every plugin Lambda is deployed, `cdk.context.json` becomes
   the ceiling (what this deployment offers), and each workspace's settings pick a subset of it at run time.
 - The model picker is per workspace; the model allowlist stays deployment-wide.
 - Brand configuration (name, products, the tone the AI uses) is per workspace; the logo and colours stay global.
+
+Every settings row and its scope (Unreleased; `voc-datalake/lambda/shared/test/test_settings_scopes.py` holds this
+table and the files that spell each key to the code, so the files still to move only shrink). A workspace kind moves
+to `WS#{ws}#SETTINGS#<kind>` in phase 3; a deployment kind keeps `SETTINGS#<kind>`. Nothing has moved yet, and the
+deployment kinds' writes (`PUT /settings/appearance`, the alert routes) are still the `admins` group's: phase 3 makes
+them platform-admin only, so no workspace admin changes what every workspace shares.
+
+| Kind (`SETTINGS#…`) | Scope | Why |
+|---|---|---|
+| `brand`, `company_context`, `design_system` | workspace | the brand the AI writes for, the team's vision and objectives, its design tokens and references (decision 6) |
+| `categories`, `dimensions`, `sources` | workspace | the team's taxonomy and source profiles (decision 6) |
+| `resolved_problems` | workspace | the problems a team marked resolved |
+| `email_intake` | workspace | the team's inbox caps (its address is `{slug}@`, [Public and non-user entry points](#public-and-non-user-entry-points)) |
+| `fallback_owner` | workspace | the member an agent's new project falls back to |
+| `radar` (voc-radar: config, brands, version) | workspace | decision 13 |
+| `model` | workspace, over a deployment default | the team's model pick; the default pinned at deploy and the allowlist stay deployment-wide (decision 6). Today the pin and the pick share one row and attribute, so the move first splits the default into a deployment row of its own |
+| `participants` (voc-participants, pk `SETTINGS`: engagement, board audience) | workspace | the team's engagement settings |
+| `appearance` | deployment | one logo and colour scheme (decision 7): a platform admin's setting, not a workspace admin's |
+| `model_quotas`, `image_model_quota` | deployment | the AWS account's Bedrock quotas, cached; every workspace shares them (decision 10) |
+| `alerts` | deployment | alarms on the deployment's own Lambdas and their recipients: the deployment's operations |
 
 ## Credentials
 
@@ -322,8 +344,8 @@ audit writer names it in the guard.
 5. **Later: the workspace import plugin** (below).
 
 Guards added in phase 1 and kept green from then on: the raw-access static test, a cross-workspace test suite (a
-member of workspace A gets 404 on every id of workspace B, route by route), and an end-to-end check with two
-workspaces against the local mock.
+member of workspace A is refused every id of workspace B exactly as an id that exists nowhere, route by route), and an
+end-to-end check with two workspaces against the local mock.
 
 The cross-workspace suite (`voc-datalake/lambda/api/test/test_cross_workspace_routes.py`; its docstring has the
 rules) names every route of the API, reads and writes, by file and route, in exactly one table: workspace-scoped (it
