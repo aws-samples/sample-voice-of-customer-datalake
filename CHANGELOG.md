@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.12.00] - 2026-11-12
+
+Autonomous engineering agents, phase 3: the skills' record and their versioned store, every version used only once an administrator accepts it, with its diff, its reason and a rollback that keeps the history. Nothing invokes it yet.
+
+### Added
+
+- Skills, slice 1 (`voc-datalake/lambda/engineering/skills/`, docs/autonomous-engineering.md "Getting better"): the `voc-skill/1` record (the role, an allowed model, the `converse` or `cli` harness, the tool policy; bounded instructions of at most 500 lines and examples; a record naming a budget, cap, the dial, permissions or safety instructions is refused), a stable, readable diff of two versions with a one-line summary made from it by rule, and a versioned store in `voc-engineering` (`WS#<ws>#SKILL#<connection>#<role>`: a `HEAD` counter and current pointer, one `VER#` row per version with its diff, why, benchmark, who proposed it and who accepted it, capped at 256 KB, and create-only `LOG#` rows: accepted, rejected, rolled back, and a promoted version's source). A version is used only once an administrator accepts it, in a transaction that refuses a version written on a base that is no longer current; the history is read a page at a time. The coach writes only the version of the connection its run is for, from that run's failure, once per run and failure kind (a conditional `RUN#` row), and never one that changes the tool policy, model or harness. A connection falls back to the shared skill. An administrator can promote a connection's lesson to the shared skill: the store refuses a promoted version that adds an instruction line or example text of 20 characters or more (case and spacing aside) which the connection's version also adds, and the administrator carries the rest of keeping that connection's text out; the source connection is kept in a log row only an administrator reads, never on the shared version. An administrator can roll back to any accepted version as a new version, keeping the whole history (D1, D4). A proposal, an acceptance and a rollback each return their `skill.proposed`, `skill.accepted` or `skill.rolled_back` announcement for the bus (a rejection announces nothing). Nothing invokes it yet: the harness, the coach and the administrators' routes land with phases 4 and 5.
+
+### Changed
+
+- The shared row helpers move into `voc-datalake/lambda/engineering/rows.py`; the run-id pattern is public in `bus/schema.py` (`ULID`). An agent's `Actor` (`engineering/knowledge/store.py`) can carry the connection its run is for.
+- vulture's kept seams of the engineering agents (the knowledge pack's and the skills store's) move from `pyproject.toml`'s `ignore_names` to `voc-datalake/scripts/vulture_whitelist.py`, by class and attribute, checked by pyright.
+
+### Upgrade notes
+
+- Nothing changes in a deployment.
+
 ## [6.11.00] - 2026-11-12
 
 Autonomous engineering agents, phase 4: the run's start and end, the agents' checkpoints and patches in the workspace layout, the delivery function, MicroVM time in a run's cost, and the run monitor's signal results. Merged from the voc-autonomous-b branch. Off by default.

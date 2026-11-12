@@ -102,6 +102,12 @@ class Task:
     progress_at: int = 0
     step: str = ''
     waiting: bool = False
+    #: The agent the run's coordinator launched for this task (the ``launch`` op), the attempt it was launched at (a
+    #: retried launch at that attempt reuses it; a repost's new attempt gets a new one) and the paths it was given.
+    launched_agent: str = ''
+    launched_attempt: int = 0
+    launched_paths: tuple[str, ...] = ()
+    launched_language: str = ''
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> Task:
@@ -113,7 +119,17 @@ class Task:
             result_keys=tuple(item.get('result_keys', {}).get('SS', ())), posted_by=_s(item, 'posted_by'),
             updated_by=_s(item, 'updated_by'), updated_at=_s(item, 'updated_at'),
             progress_at=_n(item, 'progress_at'), step=_s(item, 'step'),
-            waiting=item.get('waiting', {}).get('BOOL') is True)
+            waiting=item.get('waiting', {}).get('BOOL') is True, launched_agent=_s(item, 'launched_agent'),
+            launched_attempt=_n(item, 'launched_attempt'),
+            launched_paths=tuple(path['S'] for path in item.get('launched_paths', {}).get('L', ()) if 'S' in path),
+            launched_language=_s(item, 'launched_language'))
+
+    def paths(self) -> tuple[str, ...]:
+        """The repository paths the task works on: '' (the root), its spec's ``paths`` (strings) and the paths its
+        agent was launched on."""
+        listed = json.loads(self.spec).get('paths', [])
+        spec = [path for path in listed if isinstance(path, str)] if isinstance(listed, list) else []
+        return tuple(dict.fromkeys(('', *spec, *self.launched_paths)))
 
     def view(self) -> dict[str, Any]:
         """What the board API answers about a task."""
@@ -126,4 +142,4 @@ class Task:
                 if self.lease_agent else None, 'result_keys': sorted(self.result_keys), 'posted_by': self.posted_by,
                 'updated_by': self.updated_by, 'updated_at': self.updated_at, 'spec_hash': self.spec_hash,
                 'progress': {'at': self.progress_at, 'step': self.step, 'waiting': self.waiting}
-                if self.progress_at else None}
+                if self.progress_at else None, 'launched_agent': self.launched_agent or None}

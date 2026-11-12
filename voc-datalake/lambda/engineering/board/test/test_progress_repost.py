@@ -366,3 +366,39 @@ def test_repost_task_raises_for_a_task_never_reposted(board: Board) -> None:
     task_id = post(board.store)
     publisher = EventBridgePublisher(Bus(), 'voc-engineering', 'voc.engineering/board')
     assert kind(lambda: repost_task(board.store, publisher, WS, RUN, task_id, 'x', 1)) == 'conflict'
+
+
+# --- the supervisor's refresh, the claim's epoch ------------------------------------------------------------------
+
+def test_the_supervisor_refreshes_a_holders_lease_even_after_it_ran_out(board: Board) -> None:
+    """A person's pause resumed late, or a slow continuation: the lease runs again, for that agent at that epoch."""
+    task_id = claimed(board)
+    board.tick(LEASE_S * 4)   # (paused: no heartbeat)
+    task = board.store.refresh(WS, RUN, task_id, agent='fixer-1', epoch=1)
+    assert task.lease_expires == int(board.clock[0].timestamp()) + LEASE_S
+    board.store.renew(WS, RUN, task_id, agent='fixer-1', epoch=1)   # (the holder renews again)
+
+
+def test_a_refresh_for_a_task_that_moved_on_is_refused(board: Board) -> None:
+    task_id = claimed(board)
+    assert kind(lambda: board.store.refresh(WS, RUN, task_id, agent='fixer-2', epoch=1)) == 'conflict'
+    assert kind(lambda: board.store.refresh(WS, RUN, task_id, agent='fixer-1', epoch=2)) == 'conflict'
+    board.store.repost(WS, RUN, task_id, reason='stalled', attempt=1)
+    assert kind(lambda: board.store.refresh(WS, RUN, task_id, agent='fixer-1', epoch=1)) == 'conflict'   # (open)
+    board.tick(1)
+    board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-1')
+    assert board.store.refresh(WS, RUN, task_id, agent='fixer-1', epoch=2).lease_epoch == 2
+
+
+def test_a_claims_epoch_is_the_tasks_attempt_and_the_holder_claims_again(board: Board) -> None:
+    """The harness builds its epoch from the task's attempt and never needs to re-claim; a re-claim by the holder (a
+    continuation with no saved brief) answers its task, at that same epoch, whatever state it is in short of an end."""
+    task_id = claimed(board)
+    board.tick(LEASE_S + 1)
+    board.store.repost(WS, RUN, task_id, reason='crashed', attempt=1)
+    board.tick(1)
+    task = board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-2')
+    assert (task.attempt, task.lease_epoch) == (2, 2)
+    board.store.move(WS, RUN, task_id, agent='fixer-2', epoch=2, to_state='in_progress', result_keys=[])
+    again = board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-2')
+    assert (again.state, again.lease_epoch) == ('in_progress', 2)

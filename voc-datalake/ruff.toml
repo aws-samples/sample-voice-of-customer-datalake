@@ -84,6 +84,7 @@ max-returns = 8
 "**/*_test.py" = ["S101", "S105", "S106"]
 "**/conftest.py" = ["S101", "S105"]
 "scripts/**" = ["T201"]     # scripts talk to a terminal
+"scripts/vulture_whitelist.py" = ["B018"]   # vulture's whitelist format: bare attribute reads mark them used
 # Reviewed security findings (wave 4), each scoped to the one file and code it concerns:
 "lambda/shared/cloudfront_signing.py" = ["S303"]          # CloudFront signed URLs are RSA-SHA1 by AWS's spec
 "lambda/shared/test/test_cloudfront_signing.py" = ["S303"]  # verifies that SHA1 signature

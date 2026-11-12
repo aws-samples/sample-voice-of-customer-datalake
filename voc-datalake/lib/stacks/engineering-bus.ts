@@ -53,7 +53,9 @@ import { Construct } from 'constructs';
 
 import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
-import { ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS } from './core-buckets';
+import {
+  ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
+} from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
 
 /** The report builder's base name: its future callers (the broker, the supervisor) address it by this name. */
@@ -61,6 +63,10 @@ export const ENGINEERING_REPORTS_FUNCTION_BASE_NAME = 'voc-engineering-reports';
 
 /** The delivery function's base name (the runtime's): the router pushes every message to it. */
 const ENGINEERING_DELIVERY_FUNCTION_BASE_NAME = 'voc-engineering-delivery';
+/** The runtime's function (engineering-runtime.ts): the board invokes its `launch` action for the run's coordinator. */
+const ENGINEERING_RUNTIME_FUNCTION_BASE_NAME = 'voc-engineering-runtime';
+/** The knowledge packs' objects in the workspace bucket (engineering/knowledge/store.py), read for the agents. */
+const ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS = `ws/${ENGINEERING_WORKSPACE}/knowledge/*`;
 
 /** Sid of the Core key-policy statement that lets EventBridge write the inbox rule's undelivered events to the DLQ. */
 export const ENGINEERING_DLQ_KEY_SID = 'AllowEventBridgeToEngineeringDeadLetter';
@@ -215,13 +221,8 @@ export class EngineeringBus extends Construct {
     const role = workerRole(this, 'RouterRole');
     props.engineeringTable.grant(role, ...TABLE_ACTIONS);
     const delivery = props.uniqueName(ENGINEERING_DELIVERY_FUNCTION_BASE_NAME);
-    // By name: the delivery function is the runtime's and is deployed with it (not yet), so no construct to grant on.
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'EngineeringDelivery', actions: ['lambda:InvokeFunction'],
-      resources: [cdk.Stack.of(this).formatArn({
-        service: 'lambda', resource: 'function', resourceName: delivery, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-      })],
-    }));
+    // By name: the delivery function is the runtime's and is deployed with it, so no construct to grant on.
+    this.grantInvokeByName(role, 'EngineeringDelivery', delivery);
     // The table's key, and the DLQ's for its failure records (a send to a queue on a customer-managed key needs
     // GenerateDataKey).
     grantKeyThrough(role, props.kmsKey, ['dynamodb', 'sqs']);
@@ -253,13 +254,40 @@ export class EngineeringBus extends Construct {
     });
   }
 
-  /** The board API (its role is a publisher). */
+  /** `lambda:InvokeFunction` on a function of this deployment by its name (one deployed with another stack). */
+  private grantInvokeByName(role: iam.IRole, sid: string, functionName: string): void {
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid, actions: ['lambda:InvokeFunction'],
+      resources: [cdk.Stack.of(this).formatArn({
+        service: 'lambda', resource: 'function', resourceName: functionName,
+        arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+      })],
+    }));
+  }
+
+  /**
+   * The board API (its role is a publisher). Its role also invokes the runtime's function, for the coordinator's
+   * `launch` op (the board sends only the `launch` action; the coordinator role holds no invoke itself), and reads
+   * the knowledge packs' objects (`ws/<ws>/knowledge/*`) for the `knowledge` op; no ListBucket, so a missing object
+   * reads as denied, which the board reads as missing.
+   */
   private createBoardApi(props: EngineeringBusProps): lambda.Function {
     const role = workerRole(this, 'BoardRole');
     this.publishers.push(role);
     // Query: the inbox op reads the caller's INBOX# rows (board/inbox.py).
     props.engineeringTable.grant(role, ...TABLE_ACTIONS, 'dynamodb:Query');
-    grantKeyThrough(role, props.kmsKey, ['dynamodb']);
+    const runtime = props.uniqueName(ENGINEERING_RUNTIME_FUNCTION_BASE_NAME);
+    this.grantInvokeByName(role, 'EngineeringRuntimeLaunch', runtime);
+    const knowledge = props.workspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS);
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'ReadKnowledgePacks', actions: ['s3:GetObject'], resources: [knowledge],
+    }));
+    acknowledgeNag(role, [{
+      id: 'AwsSolutions-IAM5',
+      reason: 'The knowledge packs\' objects in the workspace bucket (one prefix: their keys name the connection, package and version, known only at run time), read only',
+      findings: [resourceFinding(knowledge)],
+    }]);
+    grantKeyThrough(role, props.kmsKey, ['dynamodb', 's3']);
     this.bus.grantPutEventsTo(role);
     const board = createWorkerFunction(this, 'Board', {
       tree: 'engineering',
@@ -273,6 +301,8 @@ export class EngineeringBus extends Construct {
         AGENT_ROLE_NAME_PATTERN: props.roleNamePattern,
         ENGINEERING_TABLE: props.engineeringTable.tableName,
         ENGINEERING_BUS_NAME: this.bus.eventBusName,
+        ENGINEERING_RUNTIME_FUNCTION: runtime,
+        ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
       },
       serviceName: 'voc-engineering-board',
     });

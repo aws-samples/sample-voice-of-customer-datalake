@@ -53,18 +53,8 @@ ignore_names = [
     # (DEFAULT_CACHE) around every API test (lambda/api/test/conftest.py) and between the reads one
     # test compares (test_metrics_projected_reads.py). No production caller; a cache is never cleared live.
     "clear",
-    # The supervisor's re-post of a task whose lease ran out (engineering/board/api.py): its Board.repost port
-    # (engineering/runtime/ports.py, voc-auto-b's) is to call it; the board's tests drive it until it is wired.
-    "repost_task",
-    # The Understand flow's entry (engineering/knowledge/understand.py), run by the mapper agent in its MicroVM; the
-    # agent lands in phase 4 (docs/autonomous-engineering.md), its tests drive it until then.
-    "understand_package",
-    # engineering/knowledge/store.py PackStore.for_agent: the one read of a pack for an agent's prompt (its documents
-    # fenced as data); the agents that call it land in phase 4, its tests drive it until then.
-    "for_agent",
-    # engineering/knowledge/store.py PackVersion's D4 record of who wrote and approved a version, read back from
-    # the row for the pack's admin REST reads (planned with the Understand flow); the tests read them.
-    "author_kind", "approved_by", "approved_at",
+    # The engineering agents' seams that land before their callers (the knowledge pack, the skills store) are kept
+    # in scripts/vulture_whitelist.py, by their exact class and attribute, not here.
     # http.server.BaseHTTPRequestHandler callbacks, called by the server itself (engineering/runtime/unit_runner.py).
     "do_GET", "do_POST", "log_message",
     # html.parser.HTMLParser callbacks, called by the parser itself (agents/artifacts.py).

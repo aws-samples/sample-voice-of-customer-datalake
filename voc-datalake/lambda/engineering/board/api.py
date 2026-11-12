@@ -5,8 +5,19 @@ assumed-role identity (``engineering.connectors.identity``), never from the body
 (a JSON body with ``op``): ``post`` (a task for a role the caller may post for, within the run's caps), ``claim``
 (an open task of the caller's own role), ``renew`` (the heartbeat: the lease's expiry moves on), ``progress`` (the
 holder's progress report: ``{task_id, epoch, step, waiting?}``, published as ``task.progress``), ``move`` (the
-lease holder moves its task on) and ``inbox`` (the caller's notices after a seq, ``board/inbox.py``: its own, its
-role's, and the conductor's for the coordinator; it reads, it changes nothing). Each change is published on the bus as the board (``task.*``), after the row is
+lease holder moves its task on), ``inbox`` (the caller's notices after a seq, ``board/inbox.py``: its own, its
+role's, and the conductor's for the coordinator; it reads, it changes nothing) and ``knowledge`` (``{package}``: the
+approved knowledge pack of one of the caller's task's paths, or of '' the root, as data; ``{version: null}`` when none
+is approved; the paths are the task spec's, the ones its agent was launched on, and the root). The run's coordinator
+also has ``tasks`` (its run's tasks) and ``launch`` (``{task_id, role, language, paths}``: an agent for an open task,
+through ``voc-engineering-runtime``'s ``launch`` action only, with the run's commit and connection from its META;
+recorded on the task with its attempt and paths, so a retried launch launches the same agent and a repost's new
+attempt a new one; the runtime's refusals answer 409, a session already there for the recorded agent 200). The board
+never chooses the agent's argv: the runtime's ``launch`` in this tree still requires a ``harness``, so every board
+launch is refused (409) until the runtime derives the harness from the role's skill. The coordinator claims the run's ``coordinate`` task, which only the run's start is to write
+(``BoardStore.coordinate_items``; the runtime's run start does not call it yet, nor record META's ``commit`` and
+``connection``, so until it does there is no coordinate task, the coordinator's claim and ``knowledge`` answer 404, and an
+agent's ``knowledge`` answers 503). Each change is published on the bus as the board (``task.*``), after the row is
 written: the row is the record, the event a notification. A failed publish answers 503 and the agent retries; every
 operation is idempotent, and the event's id comes from the change itself, so the retry publishes the same event again
 (a redelivery its receivers dedupe), including a retried post the board answered from its ``spec_hash`` dedupe. A
@@ -25,24 +36,27 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.inbox import MAX_LIMIT, Inbox
-from engineering.board.model import EVENT_OF, OPEN, Task
-from engineering.board.store import BoardError, BoardStore
+from engineering.board.model import EVENT_OF, FINAL, OPEN, Task
+from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
 from engineering.bus.schema import ROLES, Message, MessageError, Party, Refs, fit_summary
 from engineering.connectors.identity import WORKSPACE, Caller, UnknownCaller, caller_from_event, own_account
+from engineering.knowledge.store import PackError
+from engineering.knowledge.workspaces import ROOT
 from engineering.quality_gate.text import redact
+from engineering.workspace.layout import LayoutError
 from shared.logging import logger
 
 BOARD_SOURCE = 'voc.engineering/board'
 MAX_TITLE = 200
 #: Priorities and epochs are small numbers (DynamoDB's own limit is 38 digits).
 MAX_INT = 1_000_000
-STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'cap': 429}
+STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'cap': 429, 'unavailable': 503}
 #: Who may post a task for whom (plan v3, 4.3 "Posting"): the coordinator plans the run, the hunter posts a fix task
 #: per confirmed bug, the builder its own sub-tasks. A flow's definition is to narrow this further; a human's posts
 #: (from the UI) are not agents' and do not come through this API.
@@ -132,6 +146,66 @@ def repost_task(store: BoardStore, publisher: EventBridgePublisher, ws: str, run
     return task
 
 
+MAX_PATHS = 50
+MAX_LANGUAGE = 40
+#: The runtime's refusals of a launch (each a ``RuntimeRefused``; a Lambda error names the class itself): a bad
+#: request, a run not active, stopped or already there, a session busy. The coordinator reads the message: 409.
+REFUSALS = frozenset({'RuntimeRefused', 'RunNotActive', 'RunExists', 'RunStopped', 'SessionBusy'})
+
+
+class Launcher(Protocol):
+    """The runtime's launch (``LambdaLauncher`` invokes voc-engineering-runtime ``{action: launch, ...}``)."""
+
+    def launch(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+
+class Knowledge(Protocol):
+    """The approved pack of a package (engineering/knowledge/store.py ``PackStore.for_agent``)."""
+
+    def for_agent(self, ws: str, connection: str, package: str) -> Any:
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class LambdaLauncher:
+    """The runtime's ``launch`` action, and only it, invoked and waited for."""
+
+    #: boto3's Lambda client (or a test's), and the runtime function's name.
+    client: Any
+    function_name: str
+
+    def launch(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        answer = self.client.invoke(FunctionName=self.function_name, InvocationType='RequestResponse',
+                                    Payload=json.dumps({**request, 'action': 'launch'}).encode())
+        read = json.loads(answer['Payload'].read() or b'{}')
+        payload: dict[str, Any] = read if isinstance(read, dict) else {}
+        if answer.get('FunctionError'):
+            error = payload.get('errorType')
+            if error in REFUSALS:
+                raise BoardError('conflict', str(payload.get('errorMessage', 'the runtime refused it'))[:MAX_TITLE])
+            if error == 'StaleSession':
+                raise SessionExists
+            raise LaunchFailed
+        return payload
+
+
+class LaunchFailed(RuntimeError):
+    """The runtime could not be asked, or failed: the coordinator retries (the task keeps its launched agent)."""
+
+
+class SessionExists(LaunchFailed):
+    """The runtime has the agent's session already (``StaleSession``): an earlier launch of it got through."""
+
+
+def _paths(body: Mapping[str, Any]) -> list[str]:
+    paths = body.get('paths', [])
+    if not (isinstance(paths, list) and len(paths) <= MAX_PATHS and all(
+            isinstance(path, str) and path and not path.startswith('/') and '..' not in path.split('/')
+            for path in paths)):
+        raise BoardError('invalid', f'"paths" is a list of at most {MAX_PATHS} repository paths')
+    return paths
+
+
 @dataclass(frozen=True)
 class Outcome:
     """The task after an operation; whether its last change is published; whether a post found it already there."""
@@ -144,10 +218,88 @@ class Outcome:
 
 
 class BoardApi:
-    def __init__(self, store: BoardStore, publisher: EventBridgePublisher, inbox: Inbox) -> None:
+    def __init__(self, store: BoardStore, publisher: EventBridgePublisher, inbox: Inbox, *,
+                 launcher: Launcher | None = None, knowledge: Knowledge | None = None) -> None:
+        """``launcher`` and ``knowledge``: the coordinator's launch and the knowledge reads (None: refused)."""
         self.store = store
         self.publisher = publisher
         self.inbox = inbox
+        self.launcher = launcher
+        self.knowledge = knowledge
+
+    def _meta(self, run_id: str) -> Mapping[str, Any]:
+        meta = self.store.meta(WORKSPACE, run_id)
+        if meta is None:
+            raise BoardError('not_found', 'no such run')
+        return meta
+
+    def _tasks(self, caller: Caller) -> dict[str, Any]:
+        if caller.role != COORDINATOR:
+            raise BoardError('forbidden', 'only the run\'s coordinator lists its tasks')
+        return {'tasks': [{'task_id': t.task_id, 'role': t.role, 'title': t.title, 'state': t.state,
+                           'attempt': t.attempt, 'priority': t.priority, 'parent_task': t.parent_task or None}
+                          for t in self.store.tasks(WORKSPACE, caller.run_id)]}
+
+    def _launch(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        if caller.role != COORDINATOR:
+            raise BoardError('forbidden', 'only the run\'s coordinator launches agents')
+        if self.launcher is None:
+            raise LaunchFailed
+        role, language, paths = _text(body, 'role'), _text(body, 'language'), _paths(body)
+        if role not in ROLES or len(language) > MAX_LANGUAGE:
+            raise BoardError('invalid', f'"role" is a role that claims tasks, "language" at most {MAX_LANGUAGE}')
+        launched = self.store.launch(WORKSPACE, caller.run_id, _text(body, 'task_id'), role=role,
+                                     actor=agent_id(caller), paths=paths, language=language)
+        task = launched.task
+        meta = self._meta(caller.run_id)
+        try:
+            answer = self.launcher.launch({
+                'run_id': caller.run_id, 'agent_id': task.launched_agent, 'role': role, 'task_id': task.task_id,
+                'attempt': task.attempt, 'language': task.launched_language or language,
+                'paths': list(task.launched_paths),
+                'commit': meta.get('commit', {}).get('S', ''), 'connection': meta.get('connection', {}).get('S', '')})
+        except SessionExists:
+            if not launched.reused:
+                raise   # a session for an agent just numbered: not an earlier launch's
+            return {'agent_id': task.launched_agent, 'status': 'launched'}   # an earlier try's launch got through
+        return {'agent_id': task.launched_agent, 'status': str(answer.get('status', ''))}
+
+    def _callers_task(self, caller: Caller) -> Task:
+        """The task the caller works on: the coordinator's coordinate task, else the one whose live lease it holds."""
+        if caller.role == COORDINATOR:
+            return self.store.task(WORKSPACE, caller.run_id, COORDINATE_TASK)
+        agent, now = agent_id(caller), int(self.store.now().timestamp())
+        for task in self.store.tasks(WORKSPACE, caller.run_id):
+            if task.lease_agent == agent and task.state not in FINAL and (task.lease_expires >= now or task.waiting):
+                return task
+        raise BoardError('forbidden', 'the caller holds no task: knowledge is read for one\'s own task')
+
+    def _knowledge(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        if self.knowledge is None:
+            raise BoardError('unavailable', 'the knowledge store is not configured here')
+        package = body.get('package', '')
+        if not isinstance(package, str):
+            raise BoardError('invalid', '"package" is a repository path, or \'\' for the root')
+        if package not in self._callers_task(caller).paths():
+            raise BoardError('forbidden', 'knowledge is read only for the paths of one\'s own task, or the root')
+        connection = self._meta(caller.run_id).get('connection', {}).get('S', '')
+        try:   # the root's pack is the knowledge store's ROOT package ('.')
+            if not connection:
+                # The run's start records its connection (the runtime's, not yet wired): never read as "none approved".
+                raise BoardError('unavailable', 'the run has no repository connection recorded yet')
+            pack = self.knowledge.for_agent(WORKSPACE, connection, package or ROOT)
+        except (PackError, LayoutError) as exc:
+            raise BoardError('invalid', f'"package" is not a package with a knowledge pack: {exc}'[:MAX_TITLE]) from exc
+        return {'version': None} if pack is None else {'version': pack.version, 'text': pack.text}
+
+    def _direct(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any] | None:
+        """The ops answered directly, with no board event (None: not one of them): the reads, and the launch, whose
+        record is the task's history row and whose agent speaks for itself once it runs."""
+        readers = {'inbox': self._inbox, 'knowledge': self._knowledge, 'launch': self._launch}
+        op = body.get('op')
+        if op == 'tasks':
+            return self._tasks(caller)
+        return readers[op](caller, body) if isinstance(op, str) and op in readers else None
 
     def _inbox(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
         after, limit = _int(body, 'after', 0), _int(body, 'limit', MAX_LIMIT)
@@ -158,6 +310,8 @@ class BoardApi:
 
     def _post(self, caller: Caller, body: Mapping[str, Any]) -> Outcome:
         role = _text(body, 'role')
+        if role == COORDINATOR:
+            raise BoardError('forbidden', 'the coordinate task is the run start\'s, never posted')
         if role not in ROLES:
             raise BoardError('invalid', 'unknown role')
         if role not in POSTERS.get(caller.role, frozenset()):
@@ -199,16 +353,20 @@ class BoardApi:
                 raise BoardError('invalid', '"result_keys" is a list')
             return Outcome(self.store.move(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch,
                                            to_state=_text(body, 'to'), result_keys=keys))
-        raise BoardError('invalid', 'op is post, claim, renew, progress, move or inbox')
+        raise BoardError('invalid', 'op is post, claim, renew, progress, move, inbox, knowledge, tasks or launch')
 
     def handle_request(self, caller: Caller, raw_body: Any) -> dict[str, Any]:
         try:
             body = _object(raw_body)
-            if body.get('op') == 'inbox':
-                return _answer(200, self._inbox(caller, body))
+            direct = self._direct(caller, body)
+            if direct is not None:
+                return _answer(200, direct)
             outcome = self.operate(caller, body)
         except BoardError as exc:
             return _answer(STATUS[exc.kind], {'error': str(exc)})
+        except LaunchFailed:
+            logger.exception('board: the runtime or the knowledge store could not be reached')
+            return _answer(503, {'error': 'the runtime could not be reached: retry'})
         except (ClientError, BotoCoreError):
             logger.exception('board: the table refused a call')
             return _answer(503, {'error': 'the board could not be reached: retry'})
@@ -229,12 +387,19 @@ _api: BoardApi | None = None
 
 
 def _from_environment() -> BoardApi:
-    from shared.aws import get_dynamodb_client, get_eventbridge_client
+    from engineering.knowledge.store import PackStore
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_dynamodb_client, get_eventbridge_client, get_lambda_client, get_s3_client
 
     client, table = get_dynamodb_client(), os.environ['ENGINEERING_TABLE']
+    runtime, bucket = os.environ.get('ENGINEERING_RUNTIME_FUNCTION', ''), os.environ.get('ENGINEERING_WORKSPACE_BUCKET', '')
+    # No ListBucket on its role: a pack object never written reads as denied, so as missing.
+    knowledge = PackStore(client, table, WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True)) if bucket \
+        else None
     return BoardApi(BoardStore(client, table, new_id=new_event_id),
                     EventBridgePublisher(get_eventbridge_client(), os.environ['ENGINEERING_BUS_NAME'], BOARD_SOURCE),
-                    Inbox(client, table))
+                    Inbox(client, table), launcher=LambdaLauncher(get_lambda_client(), runtime) if runtime else None,
+                    knowledge=knowledge)
 
 
 def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
