@@ -62,7 +62,7 @@ def test_plan_prints_the_detected_checks_with_the_sandboxs_python(capsys):
     assert main(['plan', '--repo', str(FIXTURES / 'python-ts' / 'passing'), '--python', '/sandbox/py']) == 0
     assert _out(capsys)['checks'][0]['argv'][0] == '/sandbox/py'
     assert printed['image'] == {'python': '3.12', 'node': '24'}
-    # network is a list of host names: counting the exact name, not a substring of a URL.
+    # A host the plan needs (a list of host names, never a URL).
     assert printed['network'].count('pypi.org') == 1
 
 

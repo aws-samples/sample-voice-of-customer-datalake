@@ -18,7 +18,8 @@ Per run it honours a stop (a person's, an agent's kill switch, or the 30-day sto
 decision point offering only "stop"): every MicroVM is ended at once without waiting for the agents, and the
 launcher renews none of their sessions. A spent budget opens a human decision point and holds every agent
 (checkpointed, without a MicroVM) for a person to resume; no new MicroVM starts while it is spent. It emits
-``run.health``. It never switches its own schedule: the runs' own start and end do (``handler.switch``).
+``run.health``. It never switches its own schedule: the handler does, around the runs (``handler.start_run``, and its settling
+after an ``end_run`` and after each tick).
 
 ``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
 held for a person), Resume (a held agent continued from its checkpoint; refused for a stopped run or a spent
@@ -76,8 +77,10 @@ class Supervisor:
     control: RunControl
     launcher: Launcher
     checkpoints: CheckpointReader
-    #: The run bucket: the connections' caches are mounted from it.
+    #: The raw bucket: the connections' caches are mounted from it.
     bucket: str
+    #: The workspace bucket (voc-eng-workspace): the agents' checkpoints, patches and findings.
+    workspace_bucket: str
     timings: Timings = field(default_factory=Timings)
     #: The checkout an agent boots with (``checkout.checkout_commands``; the tests give a local one).
     checkout: Callable[[str, Sequence[str]], list[Command]] = field(default_factory=lambda: checkout_commands)
@@ -100,10 +103,13 @@ class Supervisor:
         return dict(statuses)
 
     def _stopping(self, run_id: str, now: int) -> bool:
+        # An ended run first: it is past any decision point, the 30-day one included.
+        if self.control.stop_requested(run_id):
+            return True
         if now - self.control.started_at(run_id) >= THIRTY_DAYS:
             self.control.needs_human(run_id, 'thirty_days')
             return True
-        return self.control.stop_requested(run_id)
+        return False
 
     def _run(self, run_id: str, run_sessions: list[AgentSession], now: int) -> list[str]:
         if self._stopping(run_id, now):
@@ -224,23 +230,41 @@ class Supervisor:
         MicroVM nears its 8-hour limit); wake it after."""
         waiting = lease is not None and lease.waiting
         if not waiting:
-            return self._wake(session)
+            woken = self._wake(session)
+            return woken if woken.wait_since is None else replace(woken, wait_since=None)
         if session.status != 'working':
             return session
-        long_wait = session.suspended and now - (session.suspended_at or now) >= self.timings.wait_suspend_limit
+        if session.wait_since is None:
+            session = replace(session, wait_since=now)
+        # A message woke it: it reads the message before it is suspended again.
+        in_grace = session.woken_at is not None and now - session.woken_at < self.timings.wake_grace
+        # The wait's own clock, whether its MicroVM is suspended or a message keeps it awake. Only the one
+        # continuation a message makes per wait (``woken_wait``) reads its message before the clock holds it again:
+        # a resumed agent's grace never stops the clock, so no stream of messages keeps a MicroVM running.
+        continued_for_it = in_grace and self._continued_for_a_message(session)
+        long_wait = not continued_for_it and now - (session.wait_since or now) >= self.timings.wait_suspend_limit
         if long_wait or now - session.started_at >= self.timings.pause_after:
             self.bus.emit(session.run_id, session.agent_id, 'pause', 'Your wait is long: checkpoint and pause.')
             return replace(self._wake(session), status='pause_requested', pause_requested_at=now, after_pause='wait')
         if not session.suspended:
+            if in_grace:
+                # Its harness reads the message (and closes the wait) before it is suspended again.
+                return session
             self._vm_call(lambda: self.runtime.suspend(session.vm))
-            return replace(session, suspended=True, suspended_at=now)
+            return replace(session, suspended=True)
         return session
+
+    @staticmethod
+    def _continued_for_a_message(session: AgentSession) -> bool:
+        """This MicroVM is the one continuation a message made for the agent's current wait (not one after it)."""
+        return (session.woken_wait is not None and session.woken_wait == session.wait_since
+                and session.woken_continuation == session.continuation)
 
     def _wake(self, session: AgentSession) -> AgentSession:
         if not session.suspended:
             return session
         self._vm_call(lambda: self.runtime.resume(session.vm))
-        return replace(session, suspended=False, suspended_at=None)
+        return replace(session, suspended=False)
 
     def _renew(self, session: AgentSession, now: int) -> AgentSession:
         """Hand the MicroVM a fresh role session when it has none or its session lapses within 6 minutes."""
@@ -269,7 +293,8 @@ class Supervisor:
             'stuck_why': (f'no progress for {(now - last_progress) // 60} minutes'
                           if session.asked_at is not None and last_progress is not None else ''),
         }
-        return self._save(replace(session, inspect=inspect, tokens=status.tokens if status else session.tokens,
+        return self._save(replace(session, inspect=inspect,
+                                  tokens=session.reported(status.tokens) if status else session.tokens,
                                   microvm_seconds=session.microvm_seconds + self._elapsed(session, now),
                                   last_tick_at=now, failures=0))
 
@@ -294,6 +319,9 @@ class Supervisor:
         command = commands[session.boot_index]
         exec_id = self._vm_call(lambda: self.runtime.start_exec(vm, command))
         last = session.boot_index == len(commands) - 1
+        if last and self._continued_for_a_message(session):
+            # The continuation a message made for this wait: its grace to read the message starts with its harness.
+            session = replace(session, woken_at=now)
         return self._save(replace(session, exec_id=exec_id, status='working' if last else 'booting'))
 
     def _work(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession:
@@ -376,8 +404,8 @@ class Supervisor:
         if session.run_id in self._spent:
             return self._end(session, 'paused', now)
         self._terminate(session)
-        restore = self.checkpoints.latest(session.run_id, session.agent_id)
-        spec = session.spec(restore)
+        restore = self.checkpoints.latest(session.run_id, session.agent_id, session.commit, session.task_attempt)
+        spec = session.spec(restore, self.workspace_bucket)
         vm = self._vm_call(lambda: self.runtime.run(spec))
         continued = replace(session.on(vm, now, restore), crashes=session.crashes + 1 if crashed else 0,
                             microvm_seconds=session.microvm_seconds + self._elapsed(session, now))
@@ -418,7 +446,7 @@ class Supervisor:
 
     def _end(self, session: AgentSession, status: Status, now: int) -> AgentSession:
         self._terminate(session)
-        return self._save(replace(session, status=status, exec_id=None, suspended=False, suspended_at=None,
+        return self._save(replace(session, status=status, exec_id=None, suspended=False,
                                   microvm_seconds=session.microvm_seconds + self._elapsed(session, now),
                                   last_tick_at=now))
 
@@ -429,28 +457,110 @@ class Supervisor:
 
     def signal(self, run_id: str, agent_id: str | None, kind: str, now: int) -> dict[str, str]:
         """The run monitor's control on one agent (``agent_id``) or every agent of the run; each one's status."""
+        return {agent: status for agent, (status, _) in self.signal_detailed(run_id, agent_id, kind, now).items()}
+
+    def _may_resume(self, run_id: str, now: int) -> None:
+        """Refuse a Resume of a run that ended, is past its 30 days or spent its budget; else its budget no longer
+        holds it."""
+        if self.control.stop_requested(run_id):
+            raise RuntimeRefused(f'run {run_id} is stopped: it cannot be resumed')
+        if now - self.control.started_at(run_id) >= THIRTY_DAYS:
+            raise RuntimeRefused(f'run {run_id} is past its 30 days: it can only be stopped')
+        if self.control.budget(run_id).exceeded:
+            raise RuntimeRefused(f'run {run_id} has spent its budget: raise it before resuming')
+        # Its budget is no longer spent: a held run may start MicroVMs again.
+        self._spent.discard(run_id)
+
+    def signal_detailed(self, run_id: str, agent_id: str | None, kind: str, now: int,
+                        attempt: int | None = None) -> dict[str, tuple[str, bool]]:
+        """``signal``, with whether the signal took effect on each agent: not when another move holds it
+        (``busy``), when its move failed (a refused port, a MicroVM call), when there was nothing to do in the agent's
+        state (its current status; a final one means nothing to send again), or, given the ``attempt`` of the task
+        the caller saw on that one agent, when the agent works on another one (``stale``: nothing done). A Stop now
+        is never stale: a person's kill switch reaches whatever attempt the agent is on."""
         if kind not in SIGNALS:
             raise RuntimeRefused(f'unknown signal {kind!r}')
         if kind == 'resume':
-            if self.control.stop_requested(run_id):
-                raise RuntimeRefused(f'run {run_id} is stopped: it cannot be resumed')
-            if self.control.budget(run_id).exceeded:
-                raise RuntimeRefused(f'run {run_id} has spent its budget: raise it before resuming')
-            # Its budget is no longer spent: a held run may start MicroVMs again.
-            self._spent.discard(run_id)
+            self._may_resume(run_id, now)
+        if attempt is not None and agent_id is None:
+            raise RuntimeRefused('an attempt names one agent\'s task: send it with agent_id')
         targets = [session for session in self.sessions.of_run(run_id)
                    if agent_id is None or session.agent_id == agent_id]
         if agent_id is not None and not targets:
             raise RuntimeRefused(f'run {run_id} has no agent {agent_id}')
-        answers: dict[str, str] = {}
+        answers: dict[str, tuple[str, bool]] = {}
+        done: set[str] = set()
+
+        def signalled(session: AgentSession) -> AgentSession:
+            moved = self._signal_one(session, kind, now)
+            if moved is not session:
+                # Something moved: nothing to do in the agent's state is not "applied".
+                done.add(session.agent_id)
+            return moved
+
         for session in targets:
+            if attempt is not None and session.task_attempt != attempt and kind != 'stop_now':
+                answers[session.agent_id] = ('stale', False)
+                continue
             try:
-                answers[session.agent_id] = self._guarded(session, now,
-                                                          lambda s: self._signal_one(s, kind, now)).status
+                status = self._guarded(session, now, signalled).status
             except SessionBusy:
                 # Another move is under way on this agent: nothing was done; the caller sends the signal again.
-                answers[session.agent_id] = 'busy'
+                answers[session.agent_id] = ('busy', False)
+                continue
+            # ``_guarded`` logs a failed move and keeps the session as it was: nothing took effect.
+            answers[session.agent_id] = (status, session.agent_id in done)
         return answers
+
+    def wake(self, run_id: str, addressee: Callable[[AgentSession], bool], now: int) -> dict[str, str]:
+        """A message for these agents of the run is in their inbox (``delivery.py``): each working or waiting one is
+        woken to read it (a booting or pausing one reads its inbox once it runs, so it is left alone); each woken
+        one's status, or ``busy`` when another move holds it (the caller tries again).
+
+        Nobody is woken in a run that ended, is past its 30 days or spent its budget: the message waits in the inbox
+        (this runs outside the tick, so it checks the run itself rather than the tick's view of it).
+        """
+        if (self.control.stop_requested(run_id) or now - self.control.started_at(run_id) >= THIRTY_DAYS
+                or self.control.budget(run_id).exceeded):
+            return {}
+        answers: dict[str, str] = {}
+        done: set[str] = set()
+
+        def woken(session: AgentSession) -> AgentSession:
+            moved = self._woken(session, now)
+            done.add(session.agent_id)
+            return moved
+
+        for session in self.sessions.of_run(run_id):
+            if session.status not in ('working', 'waiting') or not addressee(session):
+                continue
+            try:
+                answer = self._guarded(session, now, woken).status
+            except SessionBusy:
+                answer = 'busy'
+            # A wake that failed (a MicroVM or launcher call; ``_guarded`` records it) is tried again, like a busy one.
+            answers[session.agent_id] = answer if session.agent_id in done else 'busy'
+        return answers
+
+    def _woken(self, session: AgentSession, now: int) -> AgentSession:
+        """Held without a MicroVM on a long wait: continued in a new one, which reads the message, once per wait (a
+        later message waits for the wait to close). Working (its MicroVM suspended for an open wait, or about to be):
+        resumed with a fresh role session and kept awake for ``wake_grace``, which a later message does not extend;
+        the wait's 45-minute hold still counts meanwhile."""
+        if session.status == 'waiting':
+            # Held for a wait the tick saw open (one held before ``wait_since`` existed: this wait, from now).
+            wait = session.wait_since if session.wait_since is not None else now
+            if session.woken_wait == wait:
+                return session
+            # The once-per-wait record goes in the same write that names the new MicroVM; its grace starts when its
+            # harness does (``_boot``), so a slow checkout does not eat it.
+            return self._continue(replace(session, wait_since=wait, woken_wait=wait,
+                                          woken_continuation=session.continuation + 1), now, crashed=False)
+        in_grace = session.woken_at is not None and now - session.woken_at < self.timings.wake_grace
+        # A continuation's one grace is never moved by a later message; nor is a running one. An agent the tick has
+        # not seen on a wait gets none (it reads its inbox as it works).
+        keep = in_grace or self._continued_for_a_message(session) or session.wait_since is None
+        return self._save(replace(self._renew(self._wake(session), now), woken_at=session.woken_at if keep else now))
 
     def _signal_paused(self, session: AgentSession, kind: str, now: int) -> AgentSession:
         if kind == 'resume':
@@ -475,6 +585,7 @@ class Supervisor:
             return session
         # A signal is a message to the agent: a MicroVM suspended for an open wait is woken (and its session
         # renewed) to read it.
+        before = session
         session = self._renew(self._wake(session), now)
         if kind == 'save':
             self.bus.emit(session.run_id, session.agent_id, 'save', 'Save a checkpoint now.')
@@ -486,4 +597,6 @@ class Supervisor:
             if session.status == 'working':
                 self.bus.emit(session.run_id, session.agent_id, 'pause', 'Finish the step, checkpoint, and pause.')
             return self._ask_pause(session, now, after)
-        return self._save(session)
+        # A Resume of an agent that runs (or pauses to continue, or to shut down: a Shut down outranks it) does nothing
+        # but the wake and renewal above: nothing to save, and so not applied, when neither moved anything.
+        return self._save(session) if session != before else before

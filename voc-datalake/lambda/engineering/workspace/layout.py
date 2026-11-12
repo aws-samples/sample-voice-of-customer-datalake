@@ -22,11 +22,12 @@ from dataclasses import dataclass
 from engineering.bus.schema import ID
 from engineering.bus.schema import WS as _WS
 
+# A commit, by its full hash (SHA-1 or SHA-256): the workspace is content-addressed by commit, never abbreviated.
+from engineering.runtime.checkpoints import SHA
+
 #: The kinds of non-finding artifact an agent writes under a commit.
 ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints'})
 REPORT_LEVELS = frozenset({'commit', 'pr', 'goal'})
-#: A commit, by its full hash (SHA-1 or SHA-256): the workspace is content-addressed by commit, never abbreviated.
-SHA = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
 _NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z')
 #: A package segment: plain characters and ``=XX`` escapes, not beginning with ``_`` (escaped as ``=5F``).
 _ENCODED = re.compile(r'(?:[A-Za-z0-9-]|=[0-9A-F]{2})(?:[A-Za-z0-9_-]|=[0-9A-F]{2}){0,599}\Z')

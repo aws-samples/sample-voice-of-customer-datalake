@@ -16,7 +16,7 @@
  * `kms:Decrypt` on the stack's key only through SSM (`kms:ViaService`) and only for those parameters (the
  * `PARAMETER_ARN` encryption context): no table or bucket. The function URL has no
  * resource-based policy, so only identities of this account that an IAM policy grants `lambda:InvokeFunctionUrl`
- * on it can call it; no such policy exists until the agent roles land. Idle, it costs nothing (tenet 7): standard
+ * on it can call it: the agent roles (engineering-runtime.ts). Idle, it costs nothing (tenet 7): standard
  * SSM parameters have no monthly charge.
  */
 import * as cdk from 'aws-cdk-lib';
@@ -25,6 +25,7 @@ import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 
+import { booleanContextFlag } from '../utils/context-flag';
 import { SIGNING_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
@@ -53,10 +54,14 @@ export function engineeringParameterPrefix(deploymentPrefix: string | undefined)
 /** `lambda/engineering/connectors/handler.py`, path-style inside the worker bundle. */
 const BROKER_HANDLER = 'engineering/connectors/handler.lambda_handler';
 
-/** Whether `-c engineeringAgents=true` asked for the engineering agents (CLI context arrives as a string). */
+/**
+ * Whether `-c engineeringAgents=true` asked for the engineering agents (CLI context arrives as a string), strictly
+ * parsed: a typo fails the synth instead of deploying the opposite. The one parser of the flag (core, processing,
+ * runtime).
+ */
 export function engineeringAgentsEnabled(scope: Construct): boolean {
-  const value: unknown = scope.node.tryGetContext(ENGINEERING_AGENTS_CONTEXT_KEY);
-  return value === true || value === 'true';
+  return booleanContextFlag(scope.node.tryGetContext(ENGINEERING_AGENTS_CONTEXT_KEY), ENGINEERING_AGENTS_CONTEXT_KEY,
+    false, `Use -c ${ENGINEERING_AGENTS_CONTEXT_KEY}=true or false.`);
 }
 
 export interface EngineeringBrokerProps {
@@ -70,6 +75,9 @@ export interface EngineeringBrokerProps {
 }
 
 export class EngineeringBroker extends Construct {
+  /** The broker: the agent roles may call its function URL (engineering-runtime.ts). */
+  public readonly function: lambda.IFunction;
+
   constructor(scope: Construct, id: string, props: EngineeringBrokerProps) {
     super(scope, id);
     const functionName = props.uniqueName('voc-engineering-broker');
@@ -116,5 +124,6 @@ export class EngineeringBroker extends Construct {
       },
     }));
     broker.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
+    this.function = broker;
   }
 }

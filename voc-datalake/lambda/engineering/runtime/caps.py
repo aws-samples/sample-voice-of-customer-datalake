@@ -12,6 +12,8 @@ An agent runs as long as its task needs and it makes progress. These are the onl
   not acknowledged by ``hard_stop`` (7 h 50) is treated as a crash, so no MicroVM reaches its limit.
 - ``max_crash_continuations``: a crash is continued this many times in a row; then the task goes back
   to the board (or, for the conductor, the run to a person).
+- ``wake_grace``: a MicroVM woken for a message (``delivery.py``) is not suspended again for an open wait for
+  this long, so its harness reads its inbox and closes the wait first.
 
 Model tokens and cost stay hard caps set by a person, per run; they are read from the run, never here.
 """
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Final
 
 from engineering.runtime.interface import RuntimeRefused
@@ -46,6 +49,8 @@ class Timings:
     boot_deadline: int = 30 * MINUTE
     #: MicroVM calls failing this many ticks in a row are a crash (the MicroVM is gone or never came up).
     max_runtime_failures: int = 3
+    #: A MicroVM woken for a message stays awake this long on an open wait (its harness reads the message).
+    wake_grace: int = 10 * MINUTE
 
 
 #: The clocks a deployment may set (``ENGINEERING_TIMINGS``), each with its bounds in seconds.
@@ -53,6 +58,29 @@ SETTABLE: Final[dict[str, tuple[int, int]]] = {
     'stall_after': (2 * MINUTE, 60 * MINUTE),
     'pause_after': (60 * MINUTE, MAX_PAUSE_AFTER_SECONDS),
 }
+
+
+#: The highest price a deployment may set for a MicroVM second (a typo of a few orders of magnitude fails).
+MAX_USD_PER_SECOND: Final = Decimal('0.01')
+#: At most this many digits after the point (synth checks the same), so the product with a second count is exact.
+PRICE_DIGITS: Final = 12
+
+
+def microvm_price(raw: str | None) -> Decimal:
+    """``ENGINEERING_MICROVM_USD_PER_SECOND``: the price of a MicroVM second, priced into each agent's ``cost_usd``
+    (and so into the run's cost cap); unset or ``0``: MicroVM time is not priced."""
+    if raw is None or raw.strip() == '':
+        return Decimal(0)
+    try:
+        price = Decimal(raw.strip())
+    except InvalidOperation as error:
+        raise RuntimeRefused('ENGINEERING_MICROVM_USD_PER_SECOND is a decimal amount') from error
+    exponent = price.as_tuple().exponent
+    if (not price.is_finite() or not isinstance(exponent, int) or exponent < -PRICE_DIGITS
+            or not Decimal(0) <= price <= MAX_USD_PER_SECOND):
+        raise RuntimeRefused(f'ENGINEERING_MICROVM_USD_PER_SECOND is 0-{MAX_USD_PER_SECOND}, '
+                             f'at most {PRICE_DIGITS} digits after the point')
+    return price
 
 
 def timings(raw: Mapping[str, Any] | None = None) -> Timings:

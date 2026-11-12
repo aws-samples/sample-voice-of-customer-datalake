@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.harness import main as harness_main
@@ -22,8 +23,11 @@ from engineering.runtime.test.conftest import BUCKET
 from engineering.runtime.test.harness_fakes import FakeBedrock, FakeBoard, FakeBroker, FakeInbox, FakeRunner, use
 from engineering.runtime.test.test_engineering_images import IMAGES, RUNTIME, SHIPPED
 from engineering.runtime.unit_runner import Runner, serve
+from engineering.workspace.layout import parse_agent_key
 
-PREFIX = 'engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/'
+PREFIX = 'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/'
+CHECKPOINTS = 'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/commits/cccccccccccccccccccccccccccccccccccccccc/_checkpoints/attempt-1/'
+PATCHES = 'ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/commits/cccccccccccccccccccccccccccccccccccccccc/_patches/attempt-1/'
 #: The test's own git, by absolute path (the fixture repository it builds is the test's, not a MicroVM's).
 GIT_BIN = shutil.which('git') or '/usr/bin/git'
 
@@ -44,7 +48,7 @@ class BeatingBoard(FakeBoard):
 def _env(tmp_path: Any, **extra: str) -> dict[str, str]:
     (tmp_path / 'home').mkdir(exist_ok=True)
     return {'VOC_RUN_ID': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'VOC_AGENT_ID': 'fixer-1', 'VOC_TASK_ID': 'task-1', 'VOC_ROLE': 'fixer',
-            'VOC_BUCKET': BUCKET, 'AWS_REGION': 'us-east-1', 'AWS_CONFIG_FILE': '/run/voc/aws-config',
+            'VOC_WORKSPACE_BUCKET': BUCKET, 'VOC_COMMIT': 'c' * 40, 'AWS_REGION': 'us-east-1', 'AWS_CONFIG_FILE': '/run/voc/aws-config',
             'HOME': str(tmp_path / 'home'), **extra}
 
 
@@ -59,19 +63,19 @@ def _session(s3: Any, tmp_path: Any, runner: FakeRunner | None = None, **extra: 
 
 def test_the_session_comes_from_the_agents_environment_and_restores_its_own_checkpoint(aws, tmp_path):
     s3, _ = aws
-    key = f'{PREFIX}checkpoints/000007-abcd.json'
+    key = f'{CHECKPOINTS}000007-abcd.json'
     s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': {'turn': 3}, 'notes': 'n', 'plan': ['p']}))
     session = _session(s3, tmp_path, VOC_RESTORE_KEY=key)
     assert (session.context.task_id, session.context.own_prefix) == ('task-1', PREFIX)
     assert (session.restored_seq, session.notes, session.plan) == (7, 'n', ['p'])
-    assert session.checkpoint(turn=1).startswith(f'{PREFIX}checkpoints/000008-')
+    assert session.checkpoint(turn=1).startswith(f'{CHECKPOINTS}000008-')
 
 
 def _checkpoint_with_a_tree(s3: Any) -> str:
     """A checkpoint of the agent's whose working tree is a patch under its own keys; the checkpoint's key."""
-    tree = f'{PREFIX}patches/checkpoint-000003-ab.diff'
+    tree = f'{PATCHES}checkpoint-000003-ab.diff'
     s3.put_object(Bucket=BUCKET, Key=tree, Body=b'diff --git a/x b/x\n')
-    key = f'{PREFIX}checkpoints/000003-ab.json'
+    key = f'{CHECKPOINTS}000003-ab.json'
     s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': {'turn': 1}, 'notes': '', 'patch': tree}))
     return key
 
@@ -143,9 +147,10 @@ def test_a_working_tree_that_does_not_apply_is_a_crash_never_a_silent_loss(aws, 
         _session(s3, tmp_path, FakeRunner(apply_exit=1), VOC_RESTORE_KEY=_checkpoint_with_a_tree(s3))
 
 
-@pytest.mark.parametrize('key', ['engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/other-1/checkpoints/000001-a.json',
-                                 f'{PREFIX}checkpoints/sub/000001-a.json', f'{PREFIX}notes.json'],
-                         ids=['another-agent', 'nested', 'not-a-checkpoint'])
+@pytest.mark.parametrize('key', [CHECKPOINTS.replace('fixer-1', 'other-1') + '000001-a.json',
+                                 f'{CHECKPOINTS}sub/000001-a.json', f'{PREFIX}notes.json',
+                                 CHECKPOINTS.replace('attempt-1', 'attempt-2') + '000001-a.json'],
+                         ids=['another-agent', 'nested', 'not-a-checkpoint', 'another-attempt'])
 def test_a_restore_key_that_is_not_one_of_the_agents_own_checkpoints_starts_afresh(aws, tmp_path, key):
     s3, _ = aws
     s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': 1, 'notes': 'planted'}))
@@ -153,9 +158,18 @@ def test_a_restore_key_that_is_not_one_of_the_agents_own_checkpoints_starts_afre
     assert (session.restored, session.notes) == (None, '')
 
 
+def test_the_tasks_attempt_names_every_key_the_harness_writes(aws, tmp_path):
+    s3, _ = aws
+    session = _session(s3, tmp_path, VOC_ATTEMPT='2')
+    parsed = parse_agent_key(session.checkpoint(turn=1))
+    assert parsed is not None
+    assert (parsed.kind, parsed.attempt, parsed.sha, parsed.agent) == ('checkpoints', 2, 'c' * 40, 'fixer-1')
+    assert session.context.patches_prefix == PATCHES.replace('attempt-1', 'attempt-2')
+
+
 def test_an_invalid_checkpoint_is_not_restored(aws, tmp_path):
     s3, _ = aws
-    key = f'{PREFIX}checkpoints/000002-a.json'
+    key = f'{CHECKPOINTS}000002-a.json'
     s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': 1, 'notes': {'api_token': 'x'}}))
     assert _session(s3, tmp_path, VOC_RESTORE_KEY=key).restored is None
 
@@ -163,10 +177,14 @@ def test_an_invalid_checkpoint_is_not_restored(aws, tmp_path):
 def test_the_store_puts_only_under_the_agents_own_keys(aws):
     s3, _ = aws
     store = S3Store(s3, BUCKET, PREFIX)
-    for key in ('engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/other-1/x', f'{PREFIX}../other-1/x'):
+    for key in ('ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/other-1/x', f'{PREFIX}../other-1/x'):
         with pytest.raises(ValueError, match='own keys'):
             store.put(key, b'x')
-    store.put(f'{PREFIX}patches/p.diff', b'x')
+    store.put(f'{PATCHES}p.diff', b'x')
+    # Create-only (If-None-Match, which the workspace bucket requires): an object is never written over.
+    with pytest.raises(ClientError, match='PreconditionFailed'):
+        store.put(f'{PATCHES}p.diff', b'y')
+    assert s3.get_object(Bucket=BUCKET, Key=f'{PATCHES}p.diff')['Body'].read() == b'x'
 
 
 def test_run_exits_0_when_done_and_75_when_paused(aws, tmp_path):

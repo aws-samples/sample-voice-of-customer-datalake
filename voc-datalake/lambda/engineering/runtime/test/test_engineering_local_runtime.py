@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 
 import pytest
 
@@ -322,23 +323,29 @@ def test_a_status_file_that_is_a_link_is_not_followed(tmp_path):
 
 def test_killing_a_job_ends_its_whole_process_group(tmp_path):
     runner = _runner(tmp_path)
+    # The pid file appears whole (written beside it, then renamed), so it is never read half-written.
     spawn = ("import os, subprocess, sys, time; "
-             "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
-             "open('child.pid', 'w').write(str(child.pid)); time.sleep(30)")
-    exec_id = runner.start({'argv': [sys.executable, '-c', spawn], 'timeout_seconds': 60})
+             "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)']); "
+             "open('child.pid.tmp', 'w').write(str(child.pid)); os.rename('child.pid.tmp', 'child.pid'); "
+             "time.sleep(120)")
+    exec_id = runner.start({'argv': [sys.executable, '-c', spawn], 'timeout_seconds': 180})
     pid_file = tmp_path / 'child.pid'
-    for _ in range(200):
-        if pid_file.exists() and pid_file.read_text():
-            break
-        time.sleep(0.02)
+    # Deadlines, not tick counts: a loaded machine (a load average in the hundreds) takes seconds to start Python.
+    assert _within(60, pid_file.exists), 'the job never started its child'
     child = int(pid_file.read_text())
     runner.kill_all()
     assert runner.poll(exec_id) is not None
-    for _ in range(100):
-        if not _alive(child):
-            break
+    assert _within(60, lambda: not _alive(child)), 'the child outlived its killed job'
+
+
+def _within(seconds: float, done: Callable[[], bool]) -> bool:
+    """Whether ``done`` holds before ``seconds`` have passed (checked every 20 ms)."""
+    deadline = time.monotonic() + seconds
+    while not done():
+        if time.monotonic() > deadline:
+            return False
         time.sleep(0.02)
-    assert not _alive(child)
+    return True
 
 
 def _alive(pid: int) -> bool:

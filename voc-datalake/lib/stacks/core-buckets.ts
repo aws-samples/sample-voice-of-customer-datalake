@@ -59,10 +59,9 @@ export const SCRATCH_EXPIRATION_DAYS = 2;
 /**
  * Only with `-c engineeringAgents=true` (docs/autonomous-engineering.md): the connections' caches,
  * `engineering/cache/`, a rebuildable copy of repository code, expire after ENGINEERING_CACHE_EXPIRATION_DAYS, their
- * noncurrent versions ENGINEERING_NONCURRENT_DAYS later. The runs' objects, `engineering/runs/`, are kept: they are
+ * noncurrent versions ENGINEERING_NONCURRENT_DAYS later. The runs' objects are in voc-eng-workspace and kept: they are
  * workspace artifacts, and an expiry of them waits for one that writes its `AUDIT#delete` row (TENETS.md D5; planned).
  */
-export const ENGINEERING_RUNS_PREFIX = 'engineering/runs/';
 export const ENGINEERING_CACHE_PREFIX = 'engineering/cache/';
 export const ENGINEERING_CACHE_EXPIRATION_DAYS = 30;
 const ENGINEERING_NONCURRENT_DAYS = 1;
@@ -289,7 +288,8 @@ export function createCoreBuckets(
         id: 'scratch-expiry', prefix: 'scratch/', expiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
         noncurrentVersionExpiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
       },
-      // The engineering agents' repository caches (only with -c engineeringAgents=true); their runs' objects are kept.
+      // The engineering agents' repository caches (only with -c engineeringAgents=true); their runs' objects are in
+      // voc-eng-workspace, where nothing expires.
       ...engineeringExpiryRules(engineeringAgents),
     ],
     cors: [{

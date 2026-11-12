@@ -54,6 +54,15 @@ def test_the_source_mints_once_then_again_only_near_expiry():
     assert len(minted) == 2
 
 
+def test_an_agent_reaches_the_workspace_buckets_own_endpoint_too():
+    hosts = egress.egress_allowlist(role='hunter', language='python', region='eu-west-1', bucket='voc-raw-test',
+                                    workspace_bucket='voc-eng-workspace-test')
+    assert {'voc-raw-test.s3.eu-west-1.amazonaws.com', 'voc-eng-workspace-test.s3.eu-west-1.amazonaws.com'} <= set(hosts)
+    with pytest.raises(RuntimeRefused, match='bucket name'):
+        egress.egress_allowlist(role='hunter', language='python', region='eu-west-1', bucket='voc-raw-test',
+                                workspace_bucket='Not_A_Bucket')
+
+
 def test_an_agent_that_runs_code_reaches_its_registries_bedrock_and_the_bucket_only():
     hosts = egress.egress_allowlist(role='fixer', language='python', region='eu-west-1', bucket='voc-raw-test')
     # The bucket's own endpoint only: the regional path-style one reaches every bucket in the region.
@@ -152,8 +161,10 @@ def test_a_spec_refuses_an_unknown_role_and_its_environment_holds_no_credential(
         AgentSpec(run_id=RUN, agent_id='admin-1', role='admin', task_id='t', language='python', egress=(),
                   connection='k')
     env = AgentSpec(run_id=RUN, agent_id='fixer-1', role='fixer', task_id='t', language='python', egress=(),
-                    connection='k', restore_key='engineering/runs/r/a/checkpoints/000001-x.json').environment()
-    assert env['VOC_RESTORE_KEY'] == 'engineering/runs/r/a/checkpoints/000001-x.json'
+                    connection='k', restore_key='ws/default/runs/r/a/commits/c/_checkpoints/attempt-1/000001-x.json',
+                    commit='c' * 40, attempt=2, workspace_bucket='voc-eng-workspace-test').environment()
+    assert env['VOC_RESTORE_KEY'] == 'ws/default/runs/r/a/commits/c/_checkpoints/attempt-1/000001-x.json'
+    assert (env['VOC_COMMIT'], env['VOC_ATTEMPT'], env['VOC_WORKSPACE_BUCKET']) == ('c' * 40, '2', 'voc-eng-workspace-test')
     assert not [name for name in env if 'TOKEN' in name or 'SECRET' in name or name.startswith('AWS_')]
     assert CacheMount(bucket='b', connection='k').prefix == 'engineering/cache/k/'
 

@@ -8,6 +8,7 @@
     {"key": "lambda/shared/document_history.py::edited_from_id", "reason": "Version provenance (which document a restore was edited from), stored with restored_from_id/_version for the version history audit."},
     {"key": "lambda/shared/document_history.py::replaced_at", "reason": "Audit timestamp on a superseded revision snapshot (saved_at is served; replaced_at records when it stopped being current)."},
     {"key": "lambda/shared/jobs.py::execution_owner", "reason": "Operator diagnostic: the aws_request_id holding a job's execution lease, matched against CloudWatch logs when a job is stuck."},
-    {"key": "lambda/shared/document_share.py::revoked_by", "reason": "Audit trail on a turned-off review link (the row is kept with revoked = true): who turned it off, for an operator reading the table."}
+    {"key": "lambda/shared/document_share.py::revoked_by", "reason": "Audit trail on a turned-off review link (the row is kept with revoked = true): who turned it off, for an operator reading the table."},
+    {"key": "lambda/engineering/runtime/supervisor.py::last_failure", "reason": "A key of a session's free-form inspect map (not an item attribute of its own): the run monitor shows the map as it is, so no code names its keys."}
   ]
 }
