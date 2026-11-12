@@ -22,7 +22,7 @@ from engineering.board.test.table import RUN, TABLE, board, engineering_table
 
 WS = 'default'
 AGENT_PREFIX = f'ws/{WS}/runs/{RUN}/fixer-1'
-KEY = f'{AGENT_PREFIX}/commits/abc1234/attempt-1/patch.diff'
+KEY = f'{AGENT_PREFIX}/commits/a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4/_patches/attempt-1/fix.diff'
 
 
 @pytest.fixture
@@ -117,6 +117,22 @@ def test_only_the_holder_with_its_epoch_renews_and_moves(store: BoardStore) -> N
                                    result_keys=[])) == 'conflict'
 
 
+def test_every_post_claim_and_move_is_kept_and_nothing_else_is(store: BoardStore) -> None:
+    task_id = post(store).task.task_id
+    store.claim(WS, RUN, task_id, role='fixer', agent='fixer-1')
+    store.claim(WS, RUN, task_id, role='fixer', agent='fixer-1')                     # a retry
+    store.renew(WS, RUN, task_id, agent='fixer-1', epoch=1)                           # a heartbeat
+    store.move(WS, RUN, task_id, agent='fixer-1', epoch=1, to_state='in_progress', result_keys=[])
+    store.move(WS, RUN, task_id, agent='fixer-1', epoch=1, to_state='done', result_keys=[KEY])
+    store.move(WS, RUN, task_id, agent='fixer-1', epoch=1, to_state='done', result_keys=[KEY])  # a retry
+    moves = store.history(WS, RUN)[task_id]
+    assert [(m.state, m.actor, m.op, m.attempt) for m in moves] == [
+        ('open', 'coordinator-0', 'post', 1), ('claimed', 'fixer-1', 'claim', 1),
+        ('in_progress', 'fixer-1', 'move', 1), ('done', 'fixer-1', 'move', 1)]
+    assert moves[-1].result_keys == (KEY,)
+    assert store.task(WS, RUN, task_id).updated_at == moves[-1].at
+
+
 def test_a_lease_that_ran_out_lets_its_holder_do_nothing_more() -> None:
     clock = [datetime(2026, 11, 12, 9, 0, tzinfo=UTC)]
     with engineering_table() as client:
@@ -144,7 +160,7 @@ def test_a_task_keeps_a_bounded_set_of_result_keys(store: BoardStore) -> None:
                                    result_keys=[KEY + 'x' * MAX_KEY_LENGTH])) == 'invalid'
     # Someone else's call is refused as not theirs, whatever it carries.
     assert kind(lambda: store.move(WS, RUN, task_id, agent='fixer-1', epoch=2, to_state='done',
-                                   result_keys=[f'{AGENT_PREFIX}/attempt-2/more'])) == 'conflict'
+                                   result_keys=[f'{AGENT_PREFIX}/commits/a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4/_logs/attempt-2/more'])) == 'conflict'
 
 
 def test_the_key_cap_holds_against_a_move_that_raced_the_read(store: BoardStore,
@@ -172,9 +188,9 @@ def test_a_repeated_move_that_adds_keys_is_not_taken_for_a_retry(store: BoardSto
 
 
 @pytest.mark.parametrize(('to', 'keys'), [
-    ('open', []), ('claimed', []), ('done', ['ws/default/runs/other/fixer-1/attempt-1/x']),
-    ('done', [f'{AGENT_PREFIX}/../fixer-2/attempt-1/x']), ('done', [3]), ('done', [f'{AGENT_PREFIX}/attempt-2/x']),
-    ('done', [f'{AGENT_PREFIX}/x']), ('done', [f'{AGENT_PREFIX}/attempt-1/a"b']),
+    ('open', []), ('claimed', []), ('done', [KEY.replace(RUN, 'other-run')]), ('done', [KEY.replace('fixer-1', 'fixer-2')]),
+    ('done', [3]), ('done', [KEY.replace('attempt-1', 'attempt-2')]), ('done', [f'{AGENT_PREFIX}/x']),
+    ('done', [KEY.replace('fix.diff', 'a"b')]), ('done', [KEY.replace('_patches', '_secrets')]),
 ])
 def test_a_move_off_the_map_or_outside_the_prefix_is_invalid(store: BoardStore, to: str, keys: list[Any]) -> None:
     task_id = post(store).task.task_id
@@ -192,5 +208,7 @@ def test_other_dynamodb_errors_are_raised() -> None:
     store = BoardStore(client, TABLE, new_id=lambda: 'task-1')
     with pytest.raises(ClientError):
         store.claim(WS, RUN, 't', role='fixer', agent='fixer-1')
+    with pytest.raises(ClientError):
+        store.renew(WS, RUN, 't', agent='fixer-1', epoch=1)
     with pytest.raises(ClientError):
         post(store)

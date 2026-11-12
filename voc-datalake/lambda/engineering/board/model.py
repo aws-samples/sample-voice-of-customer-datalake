@@ -29,6 +29,35 @@ def task_key(ws: str, run_id: str, task_id: str) -> dict[str, dict[str, str]]:
     return {'pk': {'S': f'WS#{ws}#RUN#{run_id}'}, 'sk': {'S': f'TASK#{task_id}'}}
 
 
+@dataclass(frozen=True)
+class Move:
+    """One change of a task, kept as its own row (``TASKLOG#<task>#<at>#<state>``, D1), with who made it and how
+    (D4: ``op`` is the board operation, the reason the board knows)."""
+
+    task_id: str
+    state: str
+    actor: str
+    at: str
+    attempt: int
+    op: str
+    result_keys: tuple[str, ...] = ()
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> Move:
+        return cls(task_id=_s(item, 'task_id'), state=_s(item, 'state'), actor=_s(item, 'actor'), at=_s(item, 'at'),
+                   attempt=_n(item, 'attempt'), op=_s(item, 'op'),
+                   result_keys=tuple(sorted(item.get('result_keys', {}).get('SS', ()))))
+
+    def item(self, ws: str, run_id: str) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            'pk': {'S': f'WS#{ws}#RUN#{run_id}'}, 'sk': {'S': f'TASKLOG#{self.task_id}#{self.at}#{self.state}'},
+            'task_id': {'S': self.task_id}, 'state': {'S': self.state}, 'actor': {'S': self.actor},
+            'at': {'S': self.at}, 'attempt': {'N': str(self.attempt)}, 'op': {'S': self.op}}
+        if self.result_keys:
+            row['result_keys'] = {'SS': list(self.result_keys)}
+        return row
+
+
 def _s(item: Mapping[str, Any], key: str) -> str:
     return str(item.get(key, {}).get('S', ''))
 

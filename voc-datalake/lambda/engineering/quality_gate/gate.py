@@ -23,7 +23,7 @@ from typing import Any, Protocol
 from engineering.quality_gate.checks import GateError, GateRun, reset_checkout, run_plan, tree_hash
 from engineering.quality_gate.models import OPUS, SONNET, CountingModel, ModelClient, ModelRequest
 from engineering.quality_gate.packs import OWN_GATE_FILE, GatePlan
-from engineering.quality_gate.record import FinalGoRecord, GateRecord, RoundRecord
+from engineering.quality_gate.record import REVISION_OUTCOMES, FinalGoRecord, GateRecord, RoundRecord
 from engineering.quality_gate.review import (
     FINAL_GO_SYSTEM,
     REVIEWER_SYSTEM,
@@ -43,7 +43,6 @@ from shared.logging import logger
 
 DEFAULT_ROUNDS = 3
 MAX_ROUNDS = 5
-REVISION_OUTCOMES = frozenset({'fixed', 'disputed', 'deferred'})
 NOTE_CHARS = 600
 #: What a person may decide at each stop: what shared.agent_run_decisions.allowed_actions answers for the payload.
 DECISIONS = {'loop_exhausted': ('accept', 'another_round', 'stop'), 'no_fail_path': ('accept', 'stop'),

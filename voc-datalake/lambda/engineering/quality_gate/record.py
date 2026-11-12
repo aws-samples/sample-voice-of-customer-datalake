@@ -5,14 +5,24 @@ Every string a model or the repository wrote is made safe for Markdown first (``
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from engineering.quality_gate.review import Finding
+from engineering.quality_gate.review import SEVERITIES, Finding
 from engineering.quality_gate.text import cell
 
 SCHEMA = 'voc-gate-record/1'
+VERDICTS = frozenset({'GO', 'NO-GO', 'STOPPED'})
+#: What a reviser may say it did about a finding (a finding nobody acted on is ``open``).
+REVISION_OUTCOMES = frozenset({'fixed', 'disputed', 'deferred'})
+# The values the record prints as they are (the gate makes them; ``cell`` renders everything else): read back from
+# the workspace, each must have the gate's own shape, so no Markdown, link or mention gets through them.
+_PLAIN = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z')
+_FINDING_ID = re.compile(r'R[0-9]{1,2}-[A-Za-z0-9_.-]{1,64}-[0-9]{1,4}\Z')
+_STOP = re.compile(r'[a-z_]{0,40}\Z')
+_TREE = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})?\Z')
 
 
 @dataclass(frozen=True)
@@ -74,6 +84,43 @@ class GateRecord:
                 'verdict': 'GO' if self.final_go.go else 'NO-GO', 'reasons': list(self.final_go.reasons)},
         }
 
+    @classmethod
+    def from_dict(cls, data: object) -> GateRecord:
+        """A stored record read back (a report re-renders it): anything off ``voc-gate-record/1`` raises ValueError.
+
+        The record comes back from the workspace, which the gate's agent wrote, so it is checked, not trusted: the
+        values ``render_markdown`` prints as they are must have the gate's own shapes (verdicts, stop reasons, finding
+        ids, severities, outcomes, pack and reviewer names, the tree hash); everything else it renders through
+        ``cell``.
+        """
+        if not isinstance(data, Mapping) or data.get('schema') != SCHEMA:
+            raise ValueError('not a voc-gate-record/1')
+        final = data.get('final_go')
+        findings = tuple(_finding(item) for item in _list(data, 'findings'))
+        verdict = _str(data, 'verdict')
+        if verdict not in VERDICTS:
+            raise ValueError('"verdict" is GO, NO-GO or STOPPED')
+        outcomes = {f.id: (_str(item, 'outcome') or 'open', _str(item, 'outcome_note'))
+                    for f, item in zip(findings, map(_check, _list(data, 'findings')), strict=True)}
+        if any(outcome != 'open' and outcome not in REVISION_OUTCOMES for outcome, _ in outcomes.values()):
+            raise ValueError(f'an "outcome" is open or one of {sorted(REVISION_OUTCOMES)}')
+        return cls(
+            verdict=verdict, tree_hash=_shaped(data, 'tree_hash', _TREE),
+            packs=tuple(_plain(name, 'packs') for name in _strs(data, 'packs')),
+            max_rounds=_int(data, 'max_rounds'),
+            reviewers=tuple(_plain(name, 'reviewers') for name in _strs(data, 'reviewers')),
+            model_calls=_int(data, 'model_calls'), own_gate=data.get('own_gate') is True,
+            stop_reason=_shaped(data, 'stop_reason', _STOP), accepted_by=_str(data, 'accepted_by'),
+            tool_versions={str(k): str(v) for k, v in _map(data, 'tool_versions').items()},
+            rounds=tuple(RoundRecord(number=_int(r, 'number'), reviewed=r.get('reviewed') is True,
+                                     complete=r.get('complete') is not False, finding_ids=_strs(r, 'finding_ids'),
+                                     checks=tuple(dict(_check(c)) for c in _list(r, 'checks')))
+                         for r in map(_check, _list(data, 'rounds'))),
+            findings=findings, outcomes=outcomes,
+            final_go=None if final is None else FinalGoRecord(
+                agent=_str(_check(final), 'agent'), model_id=_str(_check(final), 'model_id'),
+                go=_check(final).get('verdict') == 'GO', reasons=_strs(_check(final), 'reasons')))
+
     def render_markdown(self) -> str:
         """The record as the "Quality gate" section of a pull request description."""
         lines = [*self._summary_lines(), *self._round_lines(), *self._finding_lines(), *self._closing_lines()]
@@ -127,3 +174,67 @@ class GateRecord:
                       for name, version in sorted(self.tool_versions.items())]
             lines += ['', '</details>']
         return lines
+
+
+# Reading a stored record back: each helper refuses a value of the wrong type (ValueError), so a record off the schema
+# is never rendered half-read.
+def _check(value: object) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError('a gate record entry is an object')
+    return value
+
+
+def _str(data: Mapping[str, Any], key: str) -> str:
+    value = data.get(key, '')
+    if not isinstance(value, str):
+        raise ValueError(f'"{key}" is a string')
+    return value
+
+
+def _int(data: Mapping[str, Any], key: str) -> int:
+    value = data.get(key, 0)
+    if type(value) is not int or value < 0:
+        raise ValueError(f'"{key}" is a whole number')
+    return value
+
+
+def _list(data: Mapping[str, Any], key: str) -> list[object]:
+    value = data.get(key, [])
+    if not isinstance(value, list):
+        raise ValueError(f'"{key}" is a list')
+    return value
+
+
+def _strs(data: Mapping[str, Any], key: str) -> tuple[str, ...]:
+    values = _list(data, key)
+    if not all(isinstance(value, str) for value in values):
+        raise ValueError(f'"{key}" is a list of strings')
+    return tuple(str(value) for value in values)
+
+
+def _map(data: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    return _check(data.get(key, {}))
+
+
+def _shaped(data: Mapping[str, Any], key: str, pattern: re.Pattern[str]) -> str:
+    value = _str(data, key)
+    if not pattern.fullmatch(value):
+        raise ValueError(f'"{key}" is not of the gate\'s own shape')
+    return value
+
+
+def _plain(value: str, key: str) -> str:
+    if not _PLAIN.fullmatch(value):
+        raise ValueError(f'"{key}" holds plain names only')
+    return value
+
+
+def _finding(raw: object) -> Finding:
+    item = _check(raw)
+    severity = _str(item, 'severity')
+    if severity not in SEVERITIES:
+        raise ValueError(f'a finding\'s "severity" is one of {list(SEVERITIES)}')
+    return Finding(id=_shaped(item, 'id', _FINDING_ID), round=_int(item, 'round'), reviewer=_str(item, 'reviewer'),
+                   severity=severity, title=_str(item, 'title'), file=_str(item, 'file'),
+                   line=_int(item, 'line'), quote=_str(item, 'quote'), trigger=_str(item, 'trigger'),
+                   fix=_str(item, 'fix'), note=_str(item, 'note'))
