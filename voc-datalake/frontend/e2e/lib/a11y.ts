@@ -8,7 +8,7 @@ import { expect, type Locator, type Page } from '@playwright/test'
 import { overflowsHorizontally, widthMetrics } from './mode'
 
 /** The tags lib/recorder.ts scans with: WCAG 2.0 to 2.2 AA and best practice. */
-const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']
+export const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']
 const BLOCKING_IMPACTS: ReadonlySet<string> = new Set(['serious', 'critical'])
 
 /** axe over the page: no serious or critical finding, each named with its first nodes. */

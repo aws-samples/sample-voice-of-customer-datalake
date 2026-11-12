@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import type { Page, Request } from '@playwright/test'
+import { AXE_TAGS } from './a11y'
 import { OUT_DIR, SCREENS_DIR, type Role } from './env'
 import { designAudit, type DesignAudit } from './design'
 
@@ -241,7 +242,7 @@ export class StepRecorder {
   private async runAxe(): Promise<AxeSummary | null> {
     try {
       const result = await new AxeBuilder({ page: this.page })
-        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
+        .withTags(AXE_TAGS)
         .analyze()
       const counts: Record<string, number> = {}
       const violations = result.violations.map((v) => {

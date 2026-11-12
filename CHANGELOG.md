@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.08.00] - 2026-11-12
+
+The document page fits every width and works from the keyboard, and the canvas stays fast on long documents with a lighter editor (tracks voc-wiki-b and voc-wiki-c, merged).
+
+### Changed
+
+- **Long documents and a lighter editor** (voc-wiki-c): typing in a 200,000-character document no longer stalls after each pause (the longest main-thread task 957 ms → about 60 ms; at 60,000 characters 276 ms → none over 50 ms): the Markdown written after a change costs the edited blocks, not the document, and heading ids are read again only when a heading changes. The editor's lazy chunk is smaller (`vendor-editor` 161 → 144 kB gzip): the format bar, block handle, "/" menu and popovers load right after the text (`vendor-editor-menus`, 18 kB gzip). The Markdown written is unchanged, byte for byte; the entry chunk does not grow. New dev-mock spec `e2e/tests/document-canvas-perf.spec.ts`.
+
+### Fixed
+
+- **Accessibility and widths** (voc-wiki-b): the File menu opens inside a phone's screen; Full screen opens with the page's header in view; the stale-save banner's buttons meet AA contrast; the Revise-from-comments panel keeps Close in its corner; the comment filters use the select style. In a comment or reply box Ctrl/⌘+Enter sends and Escape closes an empty box but keeps one with text, so a draft is no longer lost to Escape; focus returns to Reply. New dev-mock spec `e2e/tests/document-canvas-a11y.spec.ts` (axe and the keyboard at 1440 to 360 px, both themes).
+
 ## [6.07.00] - 2026-11-12
 
 A saved revision proposal is recorded as one only after the server checks it, and the dev-mock end-to-end suite is green again.

@@ -23,11 +23,14 @@ import path from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { CANVAS_TEXT, createDocument, openDocument, saveStatus } from '../lib/canvas'
-import { OUT_DIR, RUN_PREFIX } from '../lib/env'
+import { apiCall, listOf, stringField } from '../lib/api'
+import { MOCK, OUT_DIR, RUN_PREFIX } from '../lib/env'
 import { isRecord } from '../lib/guards'
 
 const PROJECT = 'proj_1'
 const STAMP = Date.now()
+const SIZES = [60_000, 200_000]
+const titleOf = (size: number): string => `${RUN_PREFIX}canvas perf ${String(size)} ${String(STAMP)}`
 
 /** One part of the long document: a heading, prose with a citation and marks, a list and a small table. */
 function part(n: number): string {
@@ -70,12 +73,22 @@ async function timings(page: Page): Promise<Timings> {
 
 const max = (values: readonly number[]): number => values.reduce((a, b) => Math.max(a, b), 0)
 
-for (const size of [60_000, 200_000]) {
+test.skip(!MOCK, 'dev mock only, as document-canvas.spec.ts')
+// This run's documents only, by title.
+test.afterAll(async () => {
+  if (!MOCK) return
+  const titles = new Set(SIZES.map(titleOf))
+  const { body } = await apiCall('admin', 'GET', `/projects/${PROJECT}`)
+  const ids = listOf(body, 'documents').filter((d) => titles.has(stringField(d, 'title') ?? '')).map((d) => stringField(d, 'document_id') ?? '')
+  for (const id of ids) await apiCall('admin', 'DELETE', `/projects/${PROJECT}/documents/${encodeURIComponent(id)}`)
+})
+
+for (const size of SIZES) {
   test(`typing in a ${String(size)}-character document: each keystroke and each pause's write stay short`, async ({ page }) => {
     test.setTimeout(180_000)
     const markdown = longMarkdown(size)
     expect(markdown.length).toBeGreaterThanOrEqual(size)
-    const title = `${RUN_PREFIX}canvas perf ${String(size)} ${String(STAMP)}`
+    const title = titleOf(size)
     await createDocument(PROJECT, { title, content: markdown })
     const canvas = await openDocument(page, PROJECT, title)
 

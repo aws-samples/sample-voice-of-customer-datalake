@@ -137,6 +137,30 @@ describe('a draft', () => {
     expect(screen.queryByLabelText('Add a comment')).not.toBeInTheDocument()
   })
 
+  it('with text stays open on Escape from its Comment button, the key taken and the person back in its box', async () => {
+    const { user } = await openDraft('How long?')
+    const onKey = vi.fn<(prevented: boolean) => void>()
+    const listener = (event: KeyboardEvent) => { if (event.key === 'Escape') onKey(event.defaultPrevented) }
+    document.addEventListener('keydown', listener)
+    screen.getByRole('button', { name: 'Comment' }).focus()
+
+    await user.keyboard('{Escape}')
+    document.removeEventListener('keydown', listener)
+
+    expect(screen.getByLabelText('Add a comment')).toHaveValue('How long?')
+    expect(screen.getByLabelText('Add a comment')).toHaveFocus()
+    expect(onKey).toHaveBeenCalledWith(true)
+  })
+
+  it('still empty closes on Escape from its Cancel button', async () => {
+    const { user } = await openDraft()
+    screen.getByRole('button', { name: 'Cancel' }).focus()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByLabelText('Add a comment')).not.toBeInTheDocument()
+  })
+
   it('with text is never replaced by a second selection: it says so and takes the person back to it', async () => {
     const { handle } = await openDraft('How long?')
     selectRange(0, 9)

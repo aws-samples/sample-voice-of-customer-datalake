@@ -89,14 +89,24 @@ function ThreadSection({ title, threads, render }: Readonly<{
   )
 }
 
-function DraftCard({ draft, onCreate, onCancel, onTextChange }: Readonly<{
+function DraftCard({ draft, onCreate, onCancel, onTextChange, hasText }: Readonly<{
   draft: Draft; onCreate: (text: string) => Promise<unknown>; onCancel: () => void; onTextChange: (text: string) => void
+  hasText: () => boolean
 }>) {
   const { t } = useTranslation('components')
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // In its box, the box decides (it takes the key). From the card's buttons, as in the box: an empty draft closes,
+    // one with text stays (the key taken, so full screen stays too) and the person is back in its box.
+    if (event.key !== 'Escape' || event.defaultPrevented) return
+    if (!hasText()) {
+      onCancel()
+      return
+    }
+    event.preventDefault()
+    event.currentTarget.querySelector('textarea')?.focus()
+  }
   return (
-    <div className="rounded-lg border border-accent bg-card p-3 space-y-2 shadow-md"
-      // Escape from the card's buttons closes it; in its box, the box decides (an empty one closes, text stays).
-      onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented) onCancel() }}>
+    <div className="rounded-lg border border-accent bg-card p-3 space-y-2 shadow-md" onKeyDown={onKeyDown}>
       {draft.anchor === null ? (
         <p className="text-xs text-muted">{t('documentComments.onWholeDocument')}</p>
       ) : (
@@ -137,8 +147,9 @@ export default function CommentedDocument({
   const visible = useMemo(() => threads.filter((thread) => matchesFilter(thread, filter)), [threads, filter])
   const layout = useCommentLayout(contentRoot, marginRef, visible, revision, activeId)
   /** Opens `next`, unless the open draft has text: then it says so and takes the person back to it. */
+  const draftHasText = useCallback(() => draftText.current.trim() !== '', [])
   const openDraft = useCallback((next: Draft) => {
-    if (draft !== null && draftText.current.trim() !== '') {
+    if (draft !== null && draftHasText()) {
       setMessage(t('projectDetail:canvas.comments.draftOpen'))
       draftBox.current?.querySelector('textarea')?.focus()
       return false
@@ -147,7 +158,7 @@ export default function CommentedDocument({
     setDraft(next)
     setMessage('')
     return true
-  }, [draft, t])
+  }, [draft, draftHasText, t])
   const closeDraft = useCallback(() => {
     draftText.current = ''
     setDraft(null)
@@ -216,7 +227,7 @@ export default function CommentedDocument({
           <div ref={draftBox} className={clsx(BUBBLE_CLASS, 'z-30')} style={bubbleStyle(draft.top)}>
             {/* Keyed by its passage: an empty draft moved to another passage starts afresh, focused. */}
             <DraftCard key={`${draft.anchor?.exact ?? ''}@${draft.top}`} draft={draft} onCreate={create}
-              onCancel={closeDraft} onTextChange={(text) => { draftText.current = text }} />
+              onCancel={closeDraft} onTextChange={(text) => { draftText.current = text }} hasText={draftHasText} />
           </div>
         )}
         {layout.placed.map((placement) => (

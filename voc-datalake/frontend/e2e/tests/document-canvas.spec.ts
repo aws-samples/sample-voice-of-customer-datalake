@@ -51,6 +51,7 @@ import path from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
+import { expectNoSidewaysScrolling } from '../lib/a11y'
 import { apiCall, listOf, stringField } from '../lib/api'
 import {
   CANVAS_TEXT, DOCUMENT_PUT, REVISE_TEXT, actionsBar, addComment, addressedIn, barButton, revisePanel, canvasOf, caretAtEnd, clickSave, createDocument, documentRow, fileMenu, fileMenuItem,
@@ -96,12 +97,6 @@ const PRFAQ_BODY = [
   'Will I get more notifications? Only when the date changes.',
   '',
 ].join('\n')
-
-/** No sideways scroll: the page is never wider than the window. */
-async function expectNoSidewaysScroll(page: Page, label: string): Promise<void> {
-  const [scrollWidth, innerWidth] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth])
-  expect(scrollWidth, `${label}: scrollWidth ${scrollWidth} <= innerWidth ${innerWidth}`).toBeLessThanOrEqual(innerWidth)
-}
 
 /** Nothing (the floating assistant button, a sticky bar) sits on top of `target`'s centre: a click there reaches it. */
 async function expectNotCovered(target: Locator, label: string): Promise<void> {
@@ -596,7 +591,7 @@ test.describe('document canvas', () => {
         await expect(page.getByTestId('canvas-focus-note')).toHaveText('Full screen. Press Escape to leave.')
         expect(await chromeShown(page, title), 'nothing else of the app').toStrictEqual({ sidebar: false, header: false, tabs: false, list: false, launcher: false })
         await expectPageIsTheWindow(page)
-        await expectNoSidewaysScroll(page, `${width} focus`)
+        await expectNoSidewaysScrolling(page, `${width} focus`)
         await expect(margin(page)).toBeVisible()
         const [text, rail] = await Promise.all([canvas.boundingBox(), margin(page).boundingBox()])
         if (text === null || rail === null) throw new Error('no boxes')
@@ -784,7 +779,7 @@ test.describe('document canvas', () => {
       await assertStep(page, 'admin', `canvas-width-${width}`, async () => {
         const canvas = await openDocument(page, PROJECT, title)
         await expect(page.getByRole('tablist', { name: 'Comments and evidence', exact: true })).toBeVisible()
-        await expectNoSidewaysScroll(page, `${width} clean`)
+        await expectNoSidewaysScrolling(page, `${width} clean`)
         const contents = page.getByRole('navigation', { name: 'Contents', exact: true })
         const disclosure = contents.getByRole('button', { name: 'Contents', exact: true })
         if (width < 1024) {
@@ -802,7 +797,7 @@ test.describe('document canvas', () => {
         await page.keyboard.type(' One more line.')
         await expect(saveStatus(page)).toHaveText(CANVAS_TEXT.unsaved)
         await expect(barButton(page, 'Save'), 'the primary action stays on screen').toBeInViewport()
-        await expectNoSidewaysScroll(page, `${width} dirty`)
+        await expectNoSidewaysScrolling(page, `${width} dirty`)
         await expect.poll(() => launcherOverlaps(page, barButton(page, 'Save')), `${width}: the assistant launcher keeps clear of Save`).toBe(false)
         await page.screenshot({ path: path.join(SCREENS_DIR, `admin-dark-canvas-width-${width}-dirty.png`) })
         await expectNotCovered(barButton(page, 'Save'), `${width}: Save`)
@@ -919,7 +914,7 @@ test.describe('document canvas: revise from comments', () => {
         const second = review.getByRole('group', { name: 'Change 2', exact: true })
         await expect(first.locator('del')).toHaveText(ONCE_A_DAY)
         await expect(first.locator('ins')).toHaveText(ONCE_A_DAY_AFTER)
-        await expectNoSidewaysScroll(page, `${width} proposal`)
+        await expectNoSidewaysScrolling(page, `${width} proposal`)
         await page.screenshot({ path: path.join(SCREENS_DIR, `admin-dark-canvas-revise-proposal-${width}.png`) })
         const axe = await new AxeBuilder({ page }).include('[data-testid="revise-proposal"]').withRules(['color-contrast']).analyze()
         expect(axe.violations.flatMap((v) => v.nodes.map((n) => n.target.join(' '))), 'the review keeps AA contrast').toEqual([])
@@ -957,7 +952,7 @@ test.describe('document canvas: revise from comments', () => {
         await margin(page).getByRole('checkbox', { name: 'Addressed', exact: true }).check()
         await expect(threadCard(page, onceThread)).toBeVisible()
         await expect(margin(page).getByRole('article')).toHaveCount(1)
-        await expectNoSidewaysScroll(page, `${width} saved`)
+        await expectNoSidewaysScrolling(page, `${width} saved`)
         await page.screenshot({ path: path.join(SCREENS_DIR, `admin-dark-canvas-revise-saved-${width}.png`) })
       })
     })

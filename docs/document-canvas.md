@@ -41,6 +41,7 @@ path in the app; other schemes, and addresses starting with `//` or holding a ba
 | Move a block | Drag the handle beside it, or Alt+Shift+Up / Down; the handle's menu also moves, turns into, duplicates and deletes |
 | Open the block menu from the keyboard | Alt+Shift+M |
 | Save | **Save** in the page header, or Ctrl/⌘+S |
+| Send a comment or reply | Ctrl/⌘+Enter in its box (Escape closes an empty box and keeps one with text) |
 
 **Saving** writes one new version (D1: nothing is overwritten): a PR/FAQ or PRD gets its next series version,
 any other document its next revision, and the server records when (D4). There is no autosave, since every
@@ -67,7 +68,7 @@ thread whose quote you change is listed under **Not found in this version** at o
 
 **Full screen** in the page header (or Ctrl/⌘+Shift+F) gives the page the whole window for reading and answering
 comments: the canvas and the comment rail side by side from 1280 px wide (one column below), the app's sidebar,
-header, project tabs and document list hidden. Esc (when no menu, dialog or format bar is open), the same button or
+header, project tabs and document list hidden. Esc (when no menu, dialog, format bar or comment box has it), the same button or
 the shortcut leaves. The address keeps it as `?view=focus`, so a reload stays in it; entering and leaving add no
 history entry, so the browser's Back goes to the page you came from (never to an older version of a document you
 saved in full screen). Unsaved
@@ -115,7 +116,8 @@ path. A proposal is refused before it is shown when your way of working does not
 ## Code
 
 The canvas is in `voc-datalake/frontend/src/components/DocumentCanvas/`: `markdown/` (the Markdown ↔ editor
-mapping, on TipTap and ProseMirror, MIT), `editor/` (the editor, its menus and format bar), `page/` (the page,
+mapping, on TipTap and ProseMirror, MIT), `editor/` (the editor; its menus, format bar and popovers load as a chunk of their own right after the text,
+`editor/CanvasChrome.tsx`), `page/` (the page,
 outline, evidence and the full-screen view), `comments/`, `actions/` (save, the header and File menu, the
 assistant's diff) and `revise/` (Revise from comments). It is loaded only
 when the Documents tab opens a document.
