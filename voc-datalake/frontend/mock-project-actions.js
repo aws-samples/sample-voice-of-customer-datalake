@@ -16,7 +16,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { autofillPrfaq, suggestDocumentBrief } from './mock-ai-drafts.js';
-import { documentSeriesKey } from './mock-document-review.js';
+import { documentSeriesKey, versionLlmView } from './mock-document-review.js';
 import {
   NO_SOURCE_MESSAGE, documentRequestUse, generationMethodology, importStartMethodology, importedPersonaMarker,
   prototypeBlocked,
@@ -655,9 +655,9 @@ const seriesOf = (detail, doc) => {
     .filter((d) => d.document_type === doc.document_type && splitVersionedTitle(d.base_title ?? d.title)[0].toLowerCase() === series)
     .sort((a, b) => (b.version ?? 1) - (a.version ?? 1));
 };
-// document_history._ROW_IDENTITY_FIELDS (plus what is set afresh): `edited_by` and `revise_job_id`
+// document_history._ROW_IDENTITY_FIELDS (plus what is set afresh): `edited_by`, `revise_job_id` and `llm_metadata`
 // describe the version a revise wrote, never a later one derived from it.
-const ROW_IDENTITY = new Set(['document_id', 'title', 'base_title', 'version', 'created_at', 'updated_at', 'content', 'edited_from_id', 'edit_kind', 'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id']);
+const ROW_IDENTITY = new Set(['document_id', 'title', 'base_title', 'version', 'created_at', 'updated_at', 'content', 'edited_from_id', 'edit_kind', 'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id', 'llm_metadata']);
 
 function newManagedVersion(ctx, source, content, provenance) {
   const carried = Object.fromEntries(Object.entries(source).filter(([key]) => !ROW_IDENTITY.has(key)));
@@ -801,22 +801,31 @@ export function holdsAChange(content, edited, changes) {
  * document_revision.verify_saved_proposal: the `revise` provenance of a save naming its pass, or the
  * 400. The job is this project's revise pass, completed with a proposal, started by the same caller,
  * of the edited document's series, and one of its changes is new in the saved text; never a quiet relabel.
+ * Each of its refusals carries the code `revise_refused` (the document type's 400 is projects.py's, without it).
  */
 function verifiedProposal(ctx, doc, content, jobId) {
+  const refused = (error) => [null, [400, { success: false, error, code: 'revise_refused' }]];
   const entry = jobs.get(jobId);
   const record = entry?.projectId === ctx.projectId ? entry.record : null;
-  if (record?.job_type !== 'assist_revise_from_comments') return [null, bad('That revision was not found in this project')];
+  if (record?.job_type !== 'assist_revise_from_comments') return refused('That revision was not found in this project');
   if (record.status !== 'completed' || record.result?.outcome !== 'proposal') {
-    return [null, bad('That revision has no proposal to save: it is still running, failed or only recommended')];
+    return refused('That revision has no proposal to save: it is still running, failed or only recommended');
   }
   const caller = ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB;
-  if (record.initiated_by !== caller) return [null, bad('That revision was started by someone else: save it as your own edit')];
+  if (record.initiated_by !== caller) return refused('That revision was started by someone else: save it as your own edit');
   if (doc.document_type !== 'prfaq' && doc.document_type !== 'prd') {
     return [null, bad('Comments are available on PR/FAQ and PRD documents only')];
   }
-  if (entry.config?.series_key !== documentSeriesKey(ctx.projectId, doc)) return [null, bad('That revision is of another document')];
-  if (!holdsAChange(content, String(doc.content ?? ''), record.result.changes)) return [null, bad('This save does not hold a change from that revision')];
-  return [{ edited_by: { sub: caller, kind: 'user' }, revise_job_id: jobId }, null];
+  if (entry.config?.series_key !== documentSeriesKey(ctx.projectId, doc)) return refused('That revision is of another document');
+  if (!holdsAChange(content, String(doc.content ?? ''), record.result.changes)) return refused('This save does not hold a change from that revision');
+  return [{ edited_by: { sub: caller, kind: 'user' }, revise_job_id: jobId, ...passLlmMetadata(record.result) }, null];
+}
+
+/** document_revision.verify_saved_proposal's llm_metadata: the pass's own model and prompt version; none unrecorded. */
+function passLlmMetadata(result) {
+  const { model_id: modelId, prompt_version: promptVersion } = result;
+  if (typeof modelId !== 'string' || !modelId || typeof promptVersion !== 'string' || !promptVersion) return {};
+  return { llm_metadata: { model: modelId, prompt_version: promptVersion } };
 }
 
 /** The new version's provenance: a checked proposal save records the person and the pass (D4). */
@@ -898,7 +907,7 @@ function listDocumentVersions(ctx, documentId) {
     const versions = seriesOf(ctx.detail, doc).map((d, index) => ({
       version_id: d.document_id, document_id: d.document_id, version: d.version ?? 1, title: d.title,
       content: d.content ?? '', created_at: d.created_at, current: index === 0,
-      edit_kind: d.edit_kind ?? null, restored_from_version: d.restored_from_version ?? null,
+      edit_kind: d.edit_kind ?? null, restored_from_version: d.restored_from_version ?? null, llm_metadata: versionLlmView(d.llm_metadata),
     }));
     return [200, { success: true, managed: true, versions }];
   }

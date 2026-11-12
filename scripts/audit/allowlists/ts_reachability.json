@@ -25,6 +25,7 @@
     {"key": "frontend:vendorChunkGroups.ts#vendorChunkGroups", "reason": "Build helper at voc-datalake/frontend/vendorChunkGroups.ts (beside vite.config.ts, not under src/), read by vite.config.ts; the frontend program is tsconfig.test.json, which covers src/ only, so only vendorChunkGroups.test.ts shows."},
     {"key": "frontend:vendorChunkGroups.ts#isInPackage", "reason": "Module-private helper of vendorChunkGroups (same file, same reason)."},
     {"key": "frontend:vendorChunkGroups.ts#VendorChunkGroup", "reason": "Return type of vendorChunkGroups (same file, same reason)."},
+    {"key": "frontend:vendorChunkGroups.ts#isFolderOfPackage", "reason": "Module-private helper of vendorChunkGroups (same file, same reason)."},
     {"key": "frontend:src/components/DocumentCanvas/editor/noCollaboration.ts#*", "kind": "dead", "reason": "Alias target: canvasResolve.ts (applied by vite.config.ts and vitest.config.ts, so dev, the e2e runs, the unit tests and the bundle alike) points @tiptap/y-tiptap and @tiptap/extension-collaboration at it, and the drag handle's Yjs imports bind to these stand-ins; the program cannot see that bundler edge, so no reference reaches the four exports (CanvasEditor.test.tsx checks the alias by module identity, a namespace import that names none of them)."}
   ]
 }

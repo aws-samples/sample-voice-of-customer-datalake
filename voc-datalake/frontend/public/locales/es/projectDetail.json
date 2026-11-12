@@ -61,6 +61,7 @@
       "current": "Actual",
       "edited": "Editada",
       "revised": "Revisada a partir de los comentarios",
+      "revisedWith": "Revisada a partir de los comentarios · {{model}}",
       "restoredFrom": "Restaurada desde v{{n}}",
       "open": "Abrir",
       "openNamed": "Abrir {{label}}",

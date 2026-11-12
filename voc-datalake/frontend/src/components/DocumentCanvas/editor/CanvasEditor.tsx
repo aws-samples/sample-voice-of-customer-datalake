@@ -38,7 +38,8 @@ export interface CanvasEditorHandle {
   /** Replace the content (load the latest version, discard) without firing onChange. */
   readonly setMarkdown: (markdown: string) => void
   readonly scrollToHeading: (id: string) => void
-  readonly focus: () => void
+  /** Focus the text at its caret; it scrolls the caret into view unless `scroll` is false (the host keeps the page). */
+  readonly focus: (options?: { readonly scroll?: boolean }) => void
   /** Collapse the selection to its end without moving focus (a comment took it): the format bar closes. */
   readonly clearSelection: () => void
 }
@@ -73,6 +74,17 @@ function scrollToHeading(editor: Editor | null, id: string) {
   }
   target.setAttribute('tabindex', '-1')
   target.focus({ preventScroll: true })
+}
+
+/**
+ * Focus the text at its caret. Without scrolling, the text takes the focus first with preventScroll: TipTap's focus
+ * command on iOS and Android calls the DOM's focus() without it (the browser scrolls to the box); focused already,
+ * the command leaves the focus and the caret as they are.
+ */
+function focusText(editor: Editor | null, scroll: boolean) {
+  if (!editor || editor.isDestroyed) return
+  if (!scroll) editor.view.dom.focus({ preventScroll: true })
+  editor.chain().focus(undefined, { scrollIntoView: scroll }).run()
 }
 
 /** The schema and keys, built once per canvas (a language switch shows in the next canvas, the content is kept). */
@@ -135,7 +147,7 @@ export default function CanvasEditor({
     getMarkdown: flush,
     setMarkdown: replace,
     scrollToHeading: (id) => scrollToHeading(editor, id),
-    focus: () => editor?.commands.focus(),
+    focus: (options) => focusText(editor, options?.scroll ?? true),
     clearSelection: () => {
       if (editor && !editor.isDestroyed && !editor.state.selection.empty) editor.commands.setTextSelection(editor.state.selection.to)
     },

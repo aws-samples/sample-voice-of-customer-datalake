@@ -17,6 +17,9 @@
  *    its heading's line.
  * 5. The stale-save banner (a research note saved meanwhile through the API) at 1440 and 360, both themes.
  * 6. A viewer's read-only page (the mock's proj_2) at 1440 and 390.
+ * 7. On an Android phone at 360 (touch, its user agent), Full screen from the top of a long note: the header stays on
+ *    screen and the text takes focus without asking the browser to scroll to it. At 360 (a desktop browser), Full
+ *    screen straight from a page read further down: the header (the save status, Full screen) comes on screen.
  *
  * MOCK ONLY, as document-canvas.spec.ts (the viewer needs the mock's read-only project). From voc-datalake/frontend:
  *   PORT=3417 node mock-server.js &   VITE_API_ENDPOINT=http://localhost:3417 npx vite --port 5417 --strictPort &
@@ -39,6 +42,9 @@ const THEMES: readonly Theme[] = ['dark', 'light']
 const STAMP = Date.now()
 const PRFAQ = `${RUN_PREFIX}canvas a11y PR/FAQ ${STAMP}`
 const NOTE = `${RUN_PREFIX}canvas a11y note ${STAMP}`
+/** A note longer than a phone's window: its text runs past the foot of the screen. */
+const LONG_NOTE = `${RUN_PREFIX}canvas a11y long note ${STAMP}`
+const LONG_NOTE_BODY = ['# Interviews', ...Array.from({ length: 40 }, (_, n) => `Interview ${String(n + 1)}: the delivery date moved twice before the parcel left.`)].join('\n\n')
 /** History and Share for review: the File menu's dialogs, by their names. */
 const MENU_DIALOGS = [['History', 'Versions'], ['Share for review', 'Share for review']] as const
 
@@ -92,11 +98,12 @@ test.describe('document canvas: accessibility and widths', () => {
     await addComment(PROJECT, prfaq, 'Which carriers are in the first launch?', 'honest delivery date')
     await addComment(PROJECT, prfaq, 'Add the metric we will watch.', null)
     await createDocument(PROJECT, { title: NOTE, content: '# Notes\n\nA research note about delivery dates.\n' })
+    await createDocument(PROJECT, { title: LONG_NOTE, content: LONG_NOTE_BODY })
   })
   // This run's documents only (a PR/FAQ save is a new row of its series, under the same title).
   test.afterAll(async () => {
     if (!MOCK) return
-    const ids = (await documentsOf(PROJECT)).filter(({ title }) => title === PRFAQ || title === NOTE).map(({ id }) => id)
+    const ids = (await documentsOf(PROJECT)).filter(({ title }) => [PRFAQ, NOTE, LONG_NOTE].includes(title)).map(({ id }) => id)
     for (const id of ids) await apiCall('admin', 'DELETE', `/projects/${PROJECT}/documents/${encodeURIComponent(id)}`)
   })
 
@@ -132,6 +139,57 @@ test.describe('document canvas: accessibility and widths', () => {
       })
     }
   }
+
+  // Full screen straight from a page read further down (nothing else focused first): the chrome steps aside and the
+  // app's scroll area, shorter by it, loses some of its scroll; the header (the save status, the way out) still opens
+  // on screen.
+  test('360: Full screen from a scrolled-down page brings the header on screen', async ({ page }) => {
+    await atWidth(page, 360, 'light')
+    await openPage(page, LONG_NOTE)
+    const scrolled = await page.getByTestId('document-detail-pane').evaluate((pane) => {
+      let most = 0
+      for (let box = pane.parentElement; box; box = box.parentElement) most = Math.max(most, box.scrollTop)
+      return most
+    })
+    expect(scrolled, 'the app\'s scroll area scrolled down to the page').toBeGreaterThan(0)
+    await page.getByTestId('canvas-focus-button').click()
+    await expect(page.getByTestId('document-detail-pane')).toHaveAttribute('data-focus-view', '')
+    await expect(canvasOf(page, LONG_NOTE)).toBeFocused()
+    await expect.poll(async () => (await saveStatus(page).boundingBox())?.y ?? -1, { message: 'the header on screen' }).toBeGreaterThanOrEqual(0)
+    await expect(saveStatus(page)).toBeInViewport()
+    expect((await page.getByTestId('canvas-focus-button').boundingBox())?.y ?? -1, 'Full screen (the way out) on screen').toBeGreaterThanOrEqual(0)
+    await expect(page.getByTestId('canvas-focus-button')).toBeInViewport()
+  })
+
+  // A phone's browser (touch, its user agent): there the editor's own focus calls the text's focus() without
+  // preventScroll, and a real phone scrolls to the text, past the header. An emulated phone does not scroll on it, so
+  // the text's focus calls are read too: every one asks not to scroll.
+  test.describe('on an Android phone', () => {
+    test.use({ isMobile: true, hasTouch: true, viewport: { width: 360, height: 844 },
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36' })
+    test('360: Full screen keeps the header on screen', async ({ page }) => {
+      await pinTheme(page, 'light')
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await openPage(page, LONG_NOTE)
+      // The page from its top, as it opens: the header on screen, the text running past the foot of the window.
+      await page.getByTestId('document-detail-pane').evaluate((pane) => {
+        for (let box = pane.parentElement; box; box = box.parentElement) box.scrollTop = 0
+      })
+      const canvas = canvasOf(page, LONG_NOTE)
+      await canvas.evaluate((text) => {
+        const calls: unknown[] = []
+        Reflect.set(window, '__canvasFocusCalls', calls)
+        const own = text.focus.bind(text)
+        text.focus = (options?: FocusOptions) => { calls.push(options?.preventScroll === true); own(options) }
+      })
+      await page.getByTestId('canvas-focus-button').click()
+      await expect(page.getByTestId('document-detail-pane')).toHaveAttribute('data-focus-view', '')
+      await expect(canvas).toBeFocused()
+      expect(await page.evaluate(() => Reflect.get(window, '__canvasFocusCalls')), 'the text\'s focus calls ask not to scroll').toStrictEqual([true])
+      await expect.poll(async () => (await saveStatus(page).boundingBox())?.y ?? -1, { message: 'the header on screen' }).toBeGreaterThanOrEqual(0)
+      expect((await page.getByTestId('canvas-focus-button').boundingBox())?.y ?? -1, 'Full screen (the way out) on screen').toBeGreaterThanOrEqual(0)
+    })
+  })
 
   test('the keyboard: Escape out of History and Share back to File, a reply box\'s Escape and Ctrl+Enter; Revise from comments at 360', async ({ page }) => {
     await atWidth(page, 360, 'dark')

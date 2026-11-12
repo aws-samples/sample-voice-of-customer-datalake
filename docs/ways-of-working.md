@@ -95,8 +95,10 @@ it (one read), picks `applied` (AI-driven) or `proposal`.
 - `recommendations`: one suggestion per thread; nothing is written (like persona review).
 - `proposal`: the changes come back to the canvas; the person accepts or rejects each and saves the
   version themselves (their own save, so allowed in every mode, sent with the pass's `revise_job_id`; the
-  server checks the pass and records it like an applied pass: `edit_kind` `revise`, the person in `edited_by`).
-- `applied`: the server writes the next version itself (who asked is recorded on it) and marks the
+  server checks the pass and records it like an applied pass: `edit_kind` `revise`, the person in `edited_by`,
+  and the pass's model and prompt version in `llm_metadata`).
+- `applied`: the server writes the next version itself (who asked, and the model and prompt version
+  that wrote it, are recorded on it) and marks the
   threads addressed; History restores the previous one, and the canvas's Undo also clears the marks
   (`POST …/comments/addressed` with `addressed: false`).
 

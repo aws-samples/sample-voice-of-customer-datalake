@@ -183,6 +183,13 @@ _OMIT_TEMPERATURE_IDS = {m["id"] for m in ALLOWED_MODELS if m["omit_temperature"
 _ADAPTIVE_THINKING_IDS = {m["id"] for m in ALLOWED_MODELS if m["adaptive_thinking"]}
 _FLEX_IDS = {m["id"] for m in ALLOWED_MODELS if m["supports_flex"]}
 _CONTEXT_WINDOWS = {m["id"]: m["context_window"] for m in ALLOWED_MODELS}
+_LABELS = {m["id"]: m["label"] for m in ALLOWED_MODELS}
+
+
+def model_label(model_id: str) -> str | None:
+    """The display label of an allowlisted ``model_id`` (e.g. "Claude Sonnet 5.5"), None for any other id:
+    a stored provenance stamp may name a model that has since left the allowlist."""
+    return _LABELS.get(model_id)
 
 # Window assumed for a model ID that is not in the allowlist — i.e. a legacy
 # BEDROCK_MODEL_ID value, or an override written before an allowlist change.

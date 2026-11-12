@@ -56,6 +56,7 @@
       "current": "現在",
       "edited": "編集済み",
       "revised": "コメントをもとに改訂",
+      "revisedWith": "コメントをもとに改訂 · {{model}}",
       "restoredFrom": "v{{n}} から復元",
       "open": "開く",
       "openNamed": "{{label}} を開く",

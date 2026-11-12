@@ -42,7 +42,7 @@ from shared.aws import get_cognito_idp_client as _get_cognito_client
 from shared.aws import get_s3_client
 from shared.batch_get import batch_get_all
 from shared.company_personas import is_company_container
-from shared.converse import ConverseResult, converse_chain, converse_detailed
+from shared.converse import ConverseResult, answering_model, converse_chain, converse_detailed
 from shared.decision_records import DECISION_DOCUMENT_TYPE
 from shared.delete_audit import record_delete
 from shared.deleted_sources import DOCUMENT_SORT_KEY_PREFIXES, DeletedSource, mark_citing_documents
@@ -105,7 +105,7 @@ from shared.indexes import PROJECTS_BY_TYPE_INDEX
 
 # Shared module imports
 from shared.logging import logger, metrics, tracer
-from shared.model_config import get_active_model_id, surface_context_window_tokens
+from shared.model_config import surface_context_window_tokens
 from shared.persona_context import personas_prompt_context
 from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, resolve_evidence_ids
 from shared.persona_knowledge import PERSONA_KNOWLEDGE_STEP, persona_knowledge_fields, with_persona_knowledge
@@ -1826,20 +1826,6 @@ def _run_persona_step(step: dict, user: str | None = None) -> ConverseResult:
     )
 
 
-def _persona_model_id(result: ConverseResult | None) -> str:
-    """The model a persona-writing call reported running on.
-
-    Re-resolving the picker after the run is wrong: it caches per container
-    (~60 s), so an admin switching the AI model during a multi-minute run would
-    make the stamp name a model that never wrote these personas. The picker is
-    consulted only when the result carries no model (a stand-in that does not
-    report one); converse_detailed always sets it.
-    """
-    if result is not None and result.model_id:
-        return result.model_id
-    return get_active_model_id(PERSONA_SURFACE)
-
-
 @dataclass(frozen=True)
 class _PlannedPersona:
     """One persona the plan step assigned: who it is and which evidence it covers."""
@@ -2106,7 +2092,7 @@ def _surviving_personas(outcomes: list[_PersonaWrite]) -> _PersonaBatch:
         personas=[outcome.persona for outcome in survivors if outcome.persona is not None],
         tiers=[outcome.tier for outcome in survivors],
         dropped=len(outcomes) - len(survivors),
-        model_id=_persona_model_id(survivors[0].result),
+        model_id=answering_model(survivors[0].result, PERSONA_SURFACE),
     )
 
 
@@ -3091,7 +3077,8 @@ def update_document(project_id: str, document_id: str, body: dict, *,
     as a revision. See ``shared.document_history``. ``proposal``: the save names the
     "Revise from comments" pass whose proposal it holds (``revise_job_id``); it is recorded
     as a revise only when ``shared.document_revision.verify_saved_proposal`` says so (else
-    400). Answers the saved document.
+    400), with the pass's model and prompt version. Answers the
+    saved document.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')

@@ -8,7 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from shared.converse import converse_chain, converse_chain_detailed, converse_detailed
+from shared.converse import (
+    ConverseResult,
+    answering_model,
+    converse_chain,
+    converse_chain_detailed,
+    converse_detailed,
+)
 
 SURFACE_MODELS = {
     'documents': 'global.anthropic.claude-sonnet-5',
@@ -54,3 +60,18 @@ class TestModelIdIsReported:
 
     def test_the_plain_chain_still_returns_texts(self):
         assert converse_chain(TWO_STEPS, surface='documents') == ['first', 'second']
+
+
+class TestAnsweringModel:
+    """The provenance stamp's model: the one the call reported, the surface's only when it reported none."""
+
+    def test_the_reported_model_wins_and_the_picker_is_not_asked(self):
+        with patch('shared.converse.get_active_model_id') as picker:
+            assert answering_model(ConverseResult(text='', model_id=EXPLICIT), 'documents') == EXPLICIT
+        picker.assert_not_called()
+
+    @pytest.mark.parametrize('result', [None, ConverseResult(text=''), ConverseResult(text='', model_id='')])
+    def test_no_reported_model_asks_the_picker_for_that_surface(self, result):
+        with patch('shared.converse.get_active_model_id', side_effect=SURFACE_MODELS.__getitem__) as picker:
+            assert answering_model(result, 'prototype') == SURFACE_MODELS['prototype']
+        picker.assert_called_once_with('prototype')

@@ -11,7 +11,7 @@
  * Same pattern as the workflow editor's conflict banner (useWorkflowEditor).
  *
  * A save holding changes accepted from "Revise from comments" names its pass (`revise_job_id`); when the server
- * will not record it as a revise (400) nothing is saved and the draft stays: the page shows the server's reason
+ * will not record it as a revise (400, code `revise_refused`) nothing is saved and the draft stays: the page shows the server's reason
  * and offers "Save as my own edit" (the same save, as a plain edit).
  *
  * @module pages/ProjectDetail/useDocumentSave
@@ -22,7 +22,7 @@ import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { isVersionManagedDocument } from '../../api/documentLineage'
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
-import { serverReason } from '../../lib/errors'
+import { apiErrorCode, serverReason } from '../../lib/errors'
 import type { ProjectDocument } from '../../api/types'
 import { documentRevision, latestDocument } from './documentEdit'
 import type { DocumentUpdate } from './useProjectData'
@@ -84,8 +84,10 @@ export interface DocumentSave {
   readonly saveAsOwnEdit: () => Promise<void>
 }
 
-/** 400: the server refused the body (here: the pass a revise save names, see `reviseRefused`). */
+/** 400: the server refused the body; with `REVISE_REFUSED_CODE`, the pass a revise save names (`reviseRefused`). */
 const HTTP_BAD_REQUEST = 400
+/** The `code` of the server's refusal to record a save as a revise; any other 400 is the save's normal error. */
+const REVISE_REFUSED_CODE = 'revise_refused'
 
 /** How a save is sent: with the revision check (`checked`), and naming the pass its text holds (`asRevise`). */
 interface SaveMode {
@@ -111,12 +113,13 @@ function updateOf(document: ProjectDocument, sent: DocumentEdits, checked: boole
 
 /**
  * What a failed save of `update` means for the page: a stale-save conflict (409, checked saves only), or a revise
- * the server would not record (400 for a save naming its pass: nothing was saved; the person may save the text as
- * their own edit, the same way: `checked`).
+ * the server would not record (400 with the code `revise_refused`, for a save naming its pass: nothing was saved;
+ * the person may save the text as their own edit, the same way: `checked`).
  */
 function failureOf(error: unknown, update: DocumentUpdate, checked: boolean) {
   const status = apiErrorStatus(error)
   const refusedRevise = update.reviseJobId !== undefined && status === HTTP_BAD_REQUEST
+    && apiErrorCode(error) === REVISE_REFUSED_CODE
   return {
     conflict: checked && status === HTTP_CONFLICT,
     refused: refusedRevise ? { message: serverReason(error), checked } : null,

@@ -7,7 +7,7 @@
  * - a document save names its "Revise from comments" pass (`revise_job_id`) and is recorded as a
  *   revise only when the pass checks out (this project's, a completed proposal, the same caller, the
  *   same series, a change NEW in the text: an `after` more often than in the edited version, or a `before`
- *   less often while its `after` stays: a deletion or a trim), else 400; a client's own `edit_kind` is ignored
+ *   less often while its `after` stays: a deletion or a trim), else 400 with the code `revise_refused`; a client's own `edit_kind` is ignored
  *   like any unknown key; a later save never inherits `edited_by` / `revise_job_id` (ROW_IDENTITY);
  * - marking threads addressed past a thread's history cap answers 409, with the machine-readable `code`
  *   `addressed_some_full` when the others were marked;
@@ -52,6 +52,7 @@ async function proposalOn(doc) {
   assert.equal(job.status, 'completed')
   assert.equal(job.result.outcome, 'proposal')
   assert.ok(job.result.changes.length > 0, 'the seeded threads give the pass a change')
+  assert.deepEqual([job.result.model_id, job.result.prompt_version], ['global.anthropic.claude-sonnet-5-5', '1.0.0'])
   return { jobId: body.job_id, changes: job.result.changes }
 }
 
@@ -68,12 +69,18 @@ describe('dev mock: a saved proposal is a revise only when the server checks its
     assert.equal(saved.document.edit_kind, 'revise')
     assert.equal(saved.document.revise_job_id, jobId)
     assert.deepEqual(saved.document.edited_by, { sub: 'sub-admin-demo', kind: 'user' })
+    const llm = { model: 'global.anthropic.claude-sonnet-5-5', prompt_version: '1.0.0' }
+    assert.deepEqual(saved.document.llm_metadata, llm)
 
     const [later, plain] = await put(saved.document, { content: `${saved.document.content}\n\nOne more line.`, edit_id: 'rev2' })
     assert.equal(later, 200, JSON.stringify(plain))
     assert.equal(plain.document.edit_kind, 'edit')
     assert.equal(plain.document.edited_by, undefined)
     assert.equal(plain.document.revise_job_id, undefined)
+    assert.equal(plain.document.llm_metadata, undefined)
+
+    const [, listed] = await call('GET', `/projects/proj_1/documents/${plain.document.document_id}/versions`)
+    assert.deepEqual(listed.versions.slice(0, 2).map((v) => v.llm_metadata), [null, { ...llm, model_label: 'Claude Sonnet 5.5' }])
   })
 
   it('refuses a save without any of the changes, of another series, or of an unknown pass, and writes nothing', async () => {
@@ -81,15 +88,17 @@ describe('dev mock: a saved proposal is a revise only when the server checks its
     const { jobId, changes } = await proposalOn(prfaq)
     const head = await seriesHead('prd')
     const cases = [
-      [prfaq, { content: 'My own words, none of the changes.', revise_job_id: jobId }, 'This save does not hold a change from that revision'],
-      [head, { content: applied(head.content, changes) + changes[0].after, revise_job_id: jobId }, 'That revision is of another document'],
-      [head, { content: `${head.content}\n\nx`, revise_job_id: 'job_unknown' }, 'That revision was not found in this project'],
-      [head, { content: 'x', revise_job_id: 'not an id!' }, 'revise_job_id must be the job id of a Revise from comments pass'],
+      [prfaq, { content: 'My own words, none of the changes.', revise_job_id: jobId }, 'This save does not hold a change from that revision', 'revise_refused'],
+      [head, { content: applied(head.content, changes) + changes[0].after, revise_job_id: jobId }, 'That revision is of another document', 'revise_refused'],
+      [head, { content: `${head.content}\n\nx`, revise_job_id: 'job_unknown' }, 'That revision was not found in this project', 'revise_refused'],
+      // A malformed id is the body's 400, not a refused revise: no code.
+      [head, { content: 'x', revise_job_id: 'not an id!' }, 'revise_job_id must be the job id of a Revise from comments pass', undefined],
     ]
-    for (const [doc, body, message] of cases) {
+    for (const [doc, body, message, code] of cases) {
       const [status, answer] = await put(doc, body)
       assert.equal(status, 400, message)
       assert.ok(String(answer.error).includes(message), `${message}: ${answer.error}`)
+      assert.equal(answer.code, code, message)
     }
     assert.equal((await seriesHead('prd')).document_id, head.document_id, 'nothing was written')
     assert.equal((await seriesHead('prfaq')).document_id, prfaq.document_id, 'nothing was written')
@@ -99,7 +108,7 @@ describe('dev mock: a saved proposal is a revise only when the server checks its
     const head = await seriesHead('prd')
     const [, started] = await call('POST', `/projects/proj_1/documents/${head.document_id}/revise-from-comments`, {})
     const [status, answer] = await put(head, { content: `${head.content}\n\nx`, revise_job_id: started.job_id })
-    assert.equal(status, 400)
+    assert.deepEqual([status, answer.code], [400, 'revise_refused'])
     assert.match(answer.error, /has no proposal to save/)
   })
 

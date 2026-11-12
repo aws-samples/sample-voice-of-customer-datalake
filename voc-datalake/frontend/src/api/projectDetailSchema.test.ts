@@ -193,4 +193,15 @@ describe('normalizeDocumentVersions', () => {
 
     expect(versions.map((v) => v.edit_kind)).toStrictEqual(['revise', null])
   })
+
+  it('keeps what wrote a revised version, and an unusable block as null', () => {
+    const row = { version_id: 'd3', document_id: 'd3', version: 3, title: 'T (v3)', content: 'C', created_at: null, current: true }
+    const llm = { model: 'global.example-model', model_label: 'Example' }
+    const versions = normalizeDocumentVersions({ versions: [
+      { ...row, llm_metadata: llm }, { ...row, llm_metadata: { ...llm, model_label: 7 } },
+      { ...row, llm_metadata: { model: '' } }, { ...row, llm_metadata: 'x' }, row,
+    ] })
+
+    expect(versions.map((v) => v.llm_metadata)).toStrictEqual([llm, { ...llm, model_label: null }, null, null, undefined])
+  })
 })

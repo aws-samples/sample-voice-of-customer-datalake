@@ -602,20 +602,21 @@ class TestProvenanceNamesTheModelThatRan:
             model_id=self.RESEARCH_MODEL, persona_model_id=self.SYNTHESIS_MODEL,
         )
         with _model(model), \
-                patch('api.projects.get_active_model_id', return_value=self.SWITCHED_TO) as resolve:
+                patch('shared.converse.get_active_model_id', return_value=self.SWITCHED_TO) as resolve:
             generate_personas('proj-1', {'persona_count': 2})
 
         assert {i['llm_metadata']['model'] for i in _saved_items(projects_table)} == {self.SYNTHESIS_MODEL}
         resolve.assert_not_called()
 
-    def test_a_result_reporting_no_model_falls_back_to_the_persona_surfaces_picker(self):
-        from api.projects import _persona_model_id
-        from shared.converse import ConverseResult
+    @pytest.mark.usefixtures("feedback", "avatars")
+    def test_a_result_reporting_no_model_falls_back_to_the_persona_surfaces_picker(self, projects_table):
+        from api.projects import generate_personas
 
-        with patch('api.projects.get_active_model_id', return_value=self.SWITCHED_TO) as resolve:
-            stamp = _persona_model_id(ConverseResult(text='{}', model_id=None))
+        with _model(FakePersonaModel(['Ada Moreno', 'Grace Okafor'], model_id='')), \
+                patch('shared.converse.get_active_model_id', return_value=self.SWITCHED_TO) as resolve:
+            generate_personas('proj-1', {'persona_count': 2})
 
-        assert stamp == self.SWITCHED_TO
+        assert {i['llm_metadata']['model'] for i in _saved_items(projects_table)} == {self.SWITCHED_TO}
         resolve.assert_called_once_with('documents')
 
     @pytest.mark.usefixtures("projects_table", "feedback", "avatars")

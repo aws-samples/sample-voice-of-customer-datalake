@@ -64,7 +64,7 @@ What it answers depends on the person's [way of working](ways-of-working.md#revi
 |---|---|---|
 | `recommendations` | The AI may not write this PR/FAQ or PRD for the caller (Human-driven without the unlock, or an agent / MCP token whose person is not AI-driven) | One recommendation per thread; nothing is written |
 | `proposal` | The person may have the AI write it and works Human-driven with the unlock or AI-assisted | The changes are shown as a diff on the canvas: accept or reject each, then **Save** (one new version, sent with the pass's job id, `revise_job_id`; when the server's checks pass, History records it like an applied pass: `edit_kind` `revise`, the person in `edited_by`, see [Saving a proposal](#saving-a-proposal)); the canvas then marks the accepted changes' threads addressed by that version |
-| `applied` | The person (and, for an agent or MCP token, the project's owner) works AI-driven | The server writes the revised text as the **next version** of the series (never an overwrite; `edit_kind` `revise`, who asked in `edited_by`) and marks the changes' threads addressed by it, best effort: a thread it cannot mark (deleted meanwhile, its history full, a failed write) is logged and left out of `addressed_thread_ids`, and the pass still answers `applied` (mark it from the canvas). **Undo** restores the previous version from History (a new version again) and clears those marks on the restored version (`addressed: false`); when someone saved a version after the revision, it says so first and offers **Undo anyway** or **Keep it**, since the restore would revert that save too. A pass that keeps no change writes nothing and answers `recommendations` |
+| `applied` | The person (and, for an agent or MCP token, the project's owner) works AI-driven | The server writes the revised text as the **next version** of the series (never an overwrite; `edit_kind` `revise`, who asked in `edited_by`, what wrote it in `llm_metadata`) and marks the changes' threads addressed by it, best effort: a thread it cannot mark (deleted meanwhile, its history full, a failed write) is logged and left out of `addressed_thread_ids`, and the pass still answers `applied` (mark it from the canvas). **Undo** restores the previous version from History (a new version again) and clears those marks on the restored version (`addressed: false`); when someone saved a version after the revision, it says so first and offers **Undo anyway** or **Keep it**, since the restore would revert that save too. A pass that keeps no change writes nothing and answers `recommendations` |
 
 Every change is **grounded**: its `before` must occur exactly once in the Markdown of the version the
 pass read, must not overlap another kept change and must name one of the threads; at most 20 are kept.
@@ -83,8 +83,17 @@ The job's `result`:
  "recommendations": [{"thread_id", "text"}],
  "changes": [{"change_id", "thread_ids", "before", "after", "reason"}],
  "applied_version": {"document_id", "version"} | null,
- "addressed_thread_ids": [str], "dropped": int}
+ "addressed_thread_ids": [str], "dropped": int,
+ "model_id": str, "prompt_version": str}
 ```
+
+`model_id` is the model that answered the pass (the one the call reports, so a capacity fallback
+names the fallback; the `documents` surface's model only when a stand-in reports none), and
+`prompt_version` is `REVISE_PROMPT_VERSION` (`lambda/shared/document_revision.py`), the version of
+the prompts the pass sends. It is bumped with any change to those prompts, and a test pins each
+version to a digest of the rendered prompts, so a prompt edit without a bump fails. A version an
+applied pass writes carries both as `llm_metadata: {model, prompt_version}` (the shape a generated
+persona records), so History can say which model and which prompt wrote it (tenet D4).
 
 A thread answered by a version shows **Addressed in vN** (`addressed: {version, at, by_kind: user | ai}`,
 null when none). `POST …/comments/addressed` on that version's path marks it (`addressed: true`, the
@@ -113,10 +122,23 @@ client's word: it records the version as a revise (`edit_kind` `revise`, the per
 | The edited document is a PR/FAQ or PRD of the series the pass read (the pass stores it in its job when it starts) | That revision is of another document (another type: Comments are available on PR/FAQ and PRD documents only) |
 | At least one of the pass's changes is **new** in the saved text relative to the version being edited, verbatim or as plain text (markup and whitespace aside, as anchors are found): a change with an `after` when the saved text holds that `after` more often than the edited version did (a text already in the document does not count by itself); a deletion (`after` empty) or a trim (an `after` that is a piece of its `before`) when its `before` occurs in the edited version and less often in the saved text, verbatim and as plain text (other markup on the same words is not a deletion), and its `after`, if any, is in the saved text and does not occur less often | This save does not hold a change from that revision |
 
+Each of these 400s carries the machine-readable `code` `revise_refused` beside its `error` (except the
+other document type's, which is the route's own check): the canvas reads the code, never the message,
+and only on it keeps the draft, says the server's reason and offers **Save as my own edit** (the same
+text as a plain edit). Any other 400 on such a save (a malformed `revise_job_id`, the content's own
+checks) has no code and is the save's normal error.
+
 `edit_kind` is the server's to record: one in the body is ignored, like any other key the route does
 not read. A save without `revise_job_id` is a plain `edit`. An unchanged save (the same content and
 title as the version edited) is the usual no-op (`unchanged: true`, nothing written), whatever pass it
 names: the pass is not checked.
+
+A checked save also records what wrote the changes it holds: `llm_metadata: {model,
+prompt_version}`, the model and prompt version from the pass's own job `result` (the prompt version
+the pass ran under, not the current one; the job itself is the row's `revise_job_id`). A pass whose
+result names no model or prompt version (one that finished before passes recorded them) adds no
+`llm_metadata`: the server never guesses a model. The person is still the author (`edited_by`);
+`llm_metadata` says which AI proposed the text.
 
 ## Share for review
 
@@ -181,7 +203,7 @@ All in the projects table:
 | Item | Key | Notes |
 |---|---|---|
 | Thread | `DCOMMENTS#{project}#{series}` / `C#{comment_id}` | Version, anchor, author (`user` / `persona` / `reviewer`), status, replies, `addressed_history` (append-only, at most 100 entries, never trimmed: `[{version, document_id, at, by_kind, by_sub, addressed: bool}]`, one `list_append` per call so two writers never drop each other's entry; past 100 a 409), `addressed` (the newest entry when it is a mark, else null; the API shows `{version, at, by_kind}`) |
-| Revised version | `PROJECT#{project}` / the series' next row | A normal version row with `edit_kind: revise`, `edited_from_id` and `edited_by: {sub, kind}` (not carried to later versions): written by an applied pass (who asked) or by the person's save of a proposal (`PUT …/documents/{doc}` with `revise_job_id`, checked by the server; that row also keeps `revise_job_id`, not carried either) |
+| Revised version | `PROJECT#{project}` / the series' next row | A normal version row with `edit_kind: revise`, `edited_from_id`, `edited_by: {sub, kind}` and `llm_metadata: {model, prompt_version}` (none carried to later versions, nor to a restore): written by an applied pass (who asked) or by the person's save of a proposal (`PUT …/documents/{doc}` with `revise_job_id`, checked by the server; that row also keeps `revise_job_id`, and its `llm_metadata` comes from the pass's job result). `GET …/versions` lists each version's `llm_metadata` (null when no AI wrote it) with the model's display label, `model_label` (null for a model no longer offered); History shows "Revised from comments · <model>" |
 | Pass's series | the assist job's `config.series_id` (voc-jobs, `PROJECT#{project}` / `JOB#{job_id}`, 1-day TTL) | The series the pass read, checked when its proposal is saved |
 | Series' current link | `DCOMMENTS#{project}#{series}` / `SHARE` | Points at the link |
 | Link | `DOCSHARE#{share_id}` / `META` | Audience, expiry, revoked; `ttl` 30 days past expiry |

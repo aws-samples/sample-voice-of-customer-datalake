@@ -36,6 +36,12 @@ names at least one considered thread; at most ``MAX_CHANGES`` are kept. Every ot
 (shared/document_comments.py) is withheld from the prompt and says so, and so is an anchor's
 free-text ``heading`` that reads like one (screened here, where it reaches the prompt), so a
 reviewer behind a link cannot steer the rewrite.
+
+**Provenance of the AI** (D4). Every pass's result names the model that answered
+(``ConverseResult.model_id``; the surface's model only when a stand-in reports none) and
+``REVISE_PROMPT_VERSION`` (``model_id``, ``prompt_version``). The version an applied pass writes
+carries both as its ``llm_metadata: {model, prompt_version}`` (the shape personas use), and so does a
+person's save of a proposal (``verify_saved_proposal``: read from the pass's job result).
 """
 from __future__ import annotations
 
@@ -52,7 +58,7 @@ from botocore.exceptions import ClientError
 from shared import ai_mode, category_access
 from shared import document_comments as comments
 from shared.assist_jobs import COMPLETED
-from shared.converse import converse
+from shared.converse import ConverseResult, answering_model, converse_detailed
 from shared.document_history import require_series_head, revise_document
 from shared.document_review import SURFACE, TYPE_LABELS
 from shared.document_series import collapse, plain_text, series_of
@@ -69,6 +75,13 @@ OUTCOME_RECOMMENDATIONS: Final = 'recommendations'
 OUTCOME_PROPOSAL: Final = 'proposal'
 OUTCOME_APPLIED: Final = 'applied'
 OUTCOMES: Final = (OUTCOME_RECOMMENDATIONS, OUTCOME_PROPOSAL, OUTCOME_APPLIED)
+
+#: The version of what a pass sends the model (``_RULES``, ``_RECOMMEND_ONLY``, ``_WITH_CHANGES``,
+#: ``system_prompt``, ``user_prompt``), recorded on every pass's result and on the version it writes
+#: (``llm_metadata.prompt_version``), so a revised version says which prompt wrote it. Bump it with ANY change
+#: to those prompts: shared/test/test_document_revision.py pins each version to a digest of the
+#: rendered prompts (append only), so a prompt edit without a bump fails.
+REVISE_PROMPT_VERSION: Final = '1.0.0'
 
 MAX_THREADS: Final = comments.MAX_ADDRESSED_THREADS
 MAX_CHANGES: Final = 20
@@ -323,12 +336,17 @@ def apply_changes(markdown: str, changes: Sequence[Mapping[str, Any]]) -> str:
 
 # ── The work ────────────────────────────────────────────────────────────────
 
-Invoke = Callable[[str, str], str]
+Invoke = Callable[[str, str], ConverseResult]
 
 
-def _default_invoke(prompt: str, system: str) -> str:
-    return converse(prompt=prompt, system_prompt=system, max_tokens=REVISE_MAX_TOKENS, temperature=None,
-                    surface=SURFACE, step_name='document_revise_from_comments')
+def _default_invoke(prompt: str, system: str) -> ConverseResult:
+    return converse_detailed(prompt=prompt, system_prompt=system, max_tokens=REVISE_MAX_TOKENS, temperature=None,
+                             surface=SURFACE, step_name='document_revise_from_comments')
+
+
+def pass_llm_metadata(model_id: str, prompt_version: str = REVISE_PROMPT_VERSION) -> dict[str, str]:
+    """The ``llm_metadata`` of a revised version: ``{model, prompt_version}`` (the shape personas use)."""
+    return {'model': model_id, 'prompt_version': prompt_version}
 
 
 def new_revise_id() -> str:
@@ -338,11 +356,13 @@ def new_revise_id() -> str:
 
 
 def _result(outcome: str, document: Mapping[str, Any], recommendations: list, changes: list, dropped: int,
-            *, applied_version: dict | None = None, addressed: list[str] | None = None) -> dict[str, Any]:
+            *, model_id: str, applied_version: dict | None = None,
+            addressed: list[str] | None = None) -> dict[str, Any]:
     return {'outcome': outcome, 'base_document_id': str(document.get('document_id') or ''),
             'base_version': int(document['version']) if document.get('version') is not None else None,
             'recommendations': recommendations, 'changes': changes, 'applied_version': applied_version,
-            'addressed_thread_ids': addressed or [], 'dropped': dropped}
+            'addressed_thread_ids': addressed or [], 'dropped': dropped,
+            'model_id': model_id, 'prompt_version': REVISE_PROMPT_VERSION}
 
 
 def run_revision(table: Any, *, project_id: str, series_id: str, document: Mapping[str, Any], document_type: str,
@@ -358,25 +378,27 @@ def run_revision(table: Any, *, project_id: str, series_id: str, document: Mappi
         require_series_head(table, project_id, dict(document))
     markdown = str(document.get('content') or '')
     refs = thread_refs(threads)
-    answer = parse_json_object(invoke(user_prompt(markdown, threads, evidence), system_prompt(document_type, outcome)))
+    reply = invoke(user_prompt(markdown, threads, evidence), system_prompt(document_type, outcome))
+    model_id = answering_model(reply, SURFACE)
+    answer = parse_json_object(reply.text)
     if answer is None:
         raise ValidationError('The AI answer could not be read. Please try again.')
     recommendations = parse_recommendations(answer, refs)
     if outcome == OUTCOME_RECOMMENDATIONS:
-        return _result(outcome, document, recommendations, [], 0)
+        return _result(outcome, document, recommendations, [], 0, model_id=model_id)
     changes, dropped = ground_changes(answer, markdown, refs)
     if outcome == OUTCOME_PROPOSAL:
-        return _result(outcome, document, recommendations, changes, dropped)
+        return _result(outcome, document, recommendations, changes, dropped, model_id=model_id)
     if not changes:
-        return _result(OUTCOME_RECOMMENDATIONS, document, recommendations, [], dropped)
+        return _result(OUTCOME_RECOMMENDATIONS, document, recommendations, [], dropped, model_id=model_id)
     answered = list(dict.fromkeys(tid for change in changes for tid in change['thread_ids']))
     item = revise_document(table, project_id, dict(document), apply_changes(markdown, changes), revise_id=revise_id,
-                           now=now_iso(), actor=dict(actor))
+                           now=now_iso(), actor=dict(actor), llm_metadata=pass_llm_metadata(model_id))
     version = int(item['version'])
     entry = comments.addressed_entry(version=version, document_id=str(item['document_id']),
                                      by_kind=comments.ADDRESSED_BY_AI, by_sub=str(actor.get('sub') or ''))
     marked = _mark_best_effort(table, [t for t in threads if t['comment_id'] in answered], entry)
-    return _result(outcome, document, recommendations, changes, dropped,
+    return _result(outcome, document, recommendations, changes, dropped, model_id=model_id,
                    applied_version={'document_id': str(item['document_id']), 'version': version},
                    addressed=marked)
 
@@ -408,6 +430,8 @@ REVISION_WITHOUT_PROPOSAL: Final = ('That revision has no proposal to save: it i
 REVISION_OF_SOMEONE_ELSE: Final = 'That revision was started by someone else: save it as your own edit'
 REVISION_OF_ANOTHER_DOCUMENT: Final = 'That revision is of another document'
 SAVE_WITHOUT_CHANGE: Final = 'This save does not hold a change from that revision'
+#: The machine-readable ``code`` of every refusal above (the client offers "Save as my own edit" on it alone).
+REVISE_REFUSED_CODE: Final = 'revise_refused'
 
 
 @dataclass(frozen=True)
@@ -487,6 +511,11 @@ def _expired(ttl: object) -> bool:
     return isinstance(ttl, int | float | Decimal) and not isinstance(ttl, bool) and ttl <= time.time()
 
 
+def _refused(message: str) -> ValidationError:
+    """A 400 refusing a save as a revise, with its ``code``."""
+    return ValidationError(message, code=REVISE_REFUSED_CODE)
+
+
 def verify_saved_proposal(save: ProposalSave, *, project_id: str, document: Mapping[str, Any],
                           content: str) -> dict[str, Any]:
     """The ``revise`` provenance (``{edited_by, revise_job_id}``) of a person's save of a proposal, or a 400.
@@ -495,19 +524,27 @@ def verify_saved_proposal(save: ProposalSave, *, project_id: str, document: Mapp
     completed with outcome ``proposal``, started by the same caller, read a version of the edited document's series, and at
     least one of its changes is new in the saved text relative to ``document`` (the version edited:
     ``holds_a_change``). Never a quiet relabel: any miss refuses the save.
+
+    Plus the pass's ``llm_metadata`` (``pass_llm_metadata``: the model and prompt version its job result
+    recorded, not today's). A pass whose result names neither (one finished before passes recorded them)
+    adds none: never a guessed model.
     """
     job = save.job
     if not isinstance(job, Mapping) or job.get('job_type') != ASSIST_JOB_TYPE or job.get('project_id') != project_id:
-        raise ValidationError(REVISION_NOT_FOUND)
+        raise _refused(REVISION_NOT_FOUND)
     if _expired(job.get('ttl')):
-        raise ValidationError(REVISION_NOT_FOUND)
+        raise _refused(REVISION_NOT_FOUND)
     result = job.get('result')
     if job.get('status') != COMPLETED or not isinstance(result, Mapping) or result.get('outcome') != OUTCOME_PROPOSAL:
-        raise ValidationError(REVISION_WITHOUT_PROPOSAL)
+        raise _refused(REVISION_WITHOUT_PROPOSAL)
     if not save.caller_sub or job.get('initiated_by') != save.caller_sub:
-        raise ValidationError(REVISION_OF_SOMEONE_ELSE)
+        raise _refused(REVISION_OF_SOMEONE_ELSE)
     if not _read_the_same_series(job, project_id, document):
-        raise ValidationError(REVISION_OF_ANOTHER_DOCUMENT)
+        raise _refused(REVISION_OF_ANOTHER_DOCUMENT)
     if not holds_a_change(content, str(document.get('content') or ''), result.get('changes')):
-        raise ValidationError(SAVE_WITHOUT_CHANGE)
-    return {'edited_by': dict(save.actor), 'revise_job_id': save.job_id}
+        raise _refused(SAVE_WITHOUT_CHANGE)
+    revise: dict[str, Any] = {'edited_by': dict(save.actor), 'revise_job_id': save.job_id}
+    model_id, prompt_version = result.get('model_id'), result.get('prompt_version')
+    if not isinstance(model_id, str) or not model_id or not isinstance(prompt_version, str) or not prompt_version:
+        return revise
+    return {**revise, 'llm_metadata': pass_llm_metadata(model_id, prompt_version)}

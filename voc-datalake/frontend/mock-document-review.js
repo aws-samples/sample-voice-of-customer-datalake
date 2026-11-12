@@ -41,6 +41,19 @@ const baseTitle = (doc) => String(doc.base_title ?? doc.title ?? '').trim().repl
 const seriesKey = (projectId, doc) => `${projectId}#${doc.document_type}#${baseTitle(doc)}`;
 /** A document's series key (document_series.series_of), for a save naming its revise pass (mock-project-actions.js). */
 export const documentSeriesKey = seriesKey;
+
+// What a pass records about the AI that wrote it (document_revision: the `documents` surface's model,
+// REVISE_PROMPT_VERSION): on its result (`model_id`, `prompt_version`) and, as
+// `llm_metadata: {model, prompt_version}`, on the version it writes or a saved proposal.
+const REVISE_MODEL = 'global.anthropic.claude-sonnet-5-5';
+const REVISE_PROMPT_VERSION = '1.0.0';
+// model_config.model_label for the mock's revise model; any other id has no label (shown as its id).
+const MODEL_LABELS = new Map([[REVISE_MODEL, 'Claude Sonnet 5.5']]);
+/** document_history._llm_metadata_view: a stored `llm_metadata` plus its model's label, or null. */
+export function versionLlmView(llm) {
+  if (!isObject(llm) || typeof llm.model !== 'string') return null;
+  return { model: llm.model, prompt_version: llm.prompt_version ?? null, model_label: MODEL_LABELS.get(llm.model) ?? null };
+}
 const seriesId = (key) => `ser_${Buffer.from(key).toString('hex').slice(0, 24)}`;
 
 function textOf(body, field, required = true) {
@@ -256,10 +269,12 @@ function applyRevision({ detail, doc, key }, changes, shared) {
   // The row's own identity is never carried (document_history._ROW_IDENTITY_FIELDS): a saved pass's id stays on its version.
   const carried = { ...doc };
   delete carried.revise_job_id;
+  delete carried.llm_metadata;
   const revised = {
     ...carried, document_id: shared.nextMockId(doc.document_type), title: `${base} (v${version})`, base_title: base, version,
     content, created_at: nowIso(), updated_at: nowIso(), edit_kind: 'revise', edited_from_id: doc.document_id,
     edited_by: { sub: shared.mockCaller?.sub ?? '', kind: 'user' },
+    llm_metadata: { model: REVISE_MODEL, prompt_version: REVISE_PROMPT_VERSION },
   };
   detail.documents.push(revised);
   const answeredIds = [...new Set(changes.flatMap((change) => change.thread_ids))];
@@ -286,6 +301,7 @@ function reviseRoute(ctx, body, shared) {
   const result = {
     outcome, base_document_id: ctx.doc.document_id, base_version: ctx.doc.version ?? 1, recommendations, changes,
     applied_version: null, addressed_thread_ids: [], dropped: 0,
+    model_id: REVISE_MODEL, prompt_version: REVISE_PROMPT_VERSION,
   };
   const answer = outcome === 'applied' && changes.length > 0 ? { ...result, ...applyRevision(ctx, changes, shared) }
     : { ...result, outcome: outcome === 'applied' ? 'recommendations' : outcome };

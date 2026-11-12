@@ -15,12 +15,13 @@
  *
  * Focus view ("Full screen", `?view=focus`, useFocusView): the page takes the whole window, the canvas and its rail
  * side by side (one column on a phone, the rail under the text); the app's chrome steps aside (focusView). A polite
- * live note says how to leave it.
+ * live note says how to leave it. Entering it brings the page's header to the top of the window, then focuses the
+ * canvas without scrolling.
  *
  * @module components/DocumentCanvas/page/DocumentPage
  */
 import clsx from 'clsx'
-import { useCallback, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DocumentCoachingNotice } from '../../AiCoach/HumanDrivenNotice'
 import { DocumentTypeBadge } from '../../DocumentTypeBadge/DocumentTypeBadge'
@@ -98,29 +99,6 @@ function DocumentTitle({ document, state, editable }: Readonly<{
   )
 }
 
-/**
- * The element the caret is in (the selection's focus: its text's element, or the element itself on an empty line),
- * measured rather than the caret's own box, which is empty there. On an empty document it is the canvas itself.
- */
-function caretElement(): Element | null {
-  const node = window.getSelection()?.focusNode ?? null
-  return node instanceof Element ? node : (node?.parentElement ?? null)
-}
-
-const onScreen = (element: Element): boolean => {
-  const box = element.getBoundingClientRect()
-  return box.bottom > 0 && box.top < window.innerHeight
-}
-
-/** Scrolls `pane` to its top (its header in view); a caret that was on screen and would leave it is brought back. */
-function showHeaderKeepingCaret(pane: HTMLElement | null): void {
-  if (pane === null) return
-  const caret = caretElement()
-  const caretWasShown = caret !== null && onScreen(caret)
-  pane.scrollIntoView({ block: 'start' })
-  if (caretWasShown && !onScreen(caret)) caret.scrollIntoView({ block: 'nearest' })
-}
-
 export default function DocumentPage({
   project, document, documents, canEdit, onSelectDoc, onDeleteDoc, isDeleting,
 }: DocumentPageProps) {
@@ -140,13 +118,20 @@ export default function DocumentPage({
       erasedEvidence={document.erased_evidence} titled={titled} />
   )
   const { handleRef } = state
-  const paneRef = useRef<HTMLDivElement>(null)
-  // The focus view drops the chrome above the page, and focusing the canvas (a tall editable box) scrolls its top to
-  // the window's: a phone opened it scrolled past the header (the title, Save, the way out). Once the editor has
-  // taken focus (its next frame), the page starts at its top, unless that would hide the caret.
+  const headerRef = useRef<HTMLElement>(null)
+  const enterFrame = useRef(0)
+  useEffect(() => () => { cancelAnimationFrame(enterFrame.current) }, [])
+  // The focus view drops the chrome above the page, and the app's scroll area, shorter by it, loses some of its
+  // scroll: a page read from further down would open with its header (the title, Save, the way out) above the
+  // window. Once the chrome is gone (the next frame), the header is brought to the top of the window; then the canvas
+  // takes focus without scrolling, a phone's browser too (a tall editable box, scrolled to, put a phone past the
+  // header), so the caret does not drag the page away from it.
   const focusCanvas = useCallback(() => {
-    handleRef.current?.focus()
-    requestAnimationFrame(() => { showHeaderKeepingCaret(paneRef.current) })
+    cancelAnimationFrame(enterFrame.current)
+    enterFrame.current = requestAnimationFrame(() => {
+      headerRef.current?.scrollIntoView({ block: 'start', behavior: 'auto' })
+      handleRef.current?.focus({ scroll: false })
+    })
   }, [handleRef])
   const focusButtonRef = useRef<HTMLButtonElement>(null)
   const focus = useFocusView(focusCanvas, focusButtonRef)
@@ -155,13 +140,13 @@ export default function DocumentPage({
   return (
     // Unsaved, a phone pins the Save bar over the page's foot: the padding keeps it off the last lines. In focus view
     // the page is the window (the shell has stepped aside): no card edge, its full height.
-    <div ref={paneRef} data-testid="document-detail-pane" data-focus-view={focus.active ? '' : undefined}
+    <div data-testid="document-detail-pane" data-focus-view={focus.active ? '' : undefined}
       className={clsx('bg-card p-4 sm:p-6 min-w-0',
         focus.active ? 'min-h-screen lg:px-10' : 'rounded-xl border lg:min-h-[500px]', state.dirty && 'max-sm:pb-20')}>
       <p aria-live="polite" className="sr-only" data-testid="canvas-focus-note">{focus.active ? t('canvas.focus.announce') : ''}</p>
       {/* The title, its type, then the bar as one row: its save status (the version and when) on the left, the
           actions on the right, wrapping on a phone. */}
-      <header className="mb-4 space-y-2">
+      <header ref={headerRef} className="mb-4 space-y-2 scroll-mt-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="min-w-0 flex-1 basis-64">
             <DocumentTitle document={document} state={state} editable={editable && state.titleEditable} />

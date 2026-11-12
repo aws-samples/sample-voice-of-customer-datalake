@@ -56,6 +56,7 @@
       "current": "Aktuell",
       "edited": "Bearbeitet",
       "revised": "Anhand der Kommentare überarbeitet",
+      "revisedWith": "Anhand der Kommentare überarbeitet · {{model}}",
       "restoredFrom": "Wiederhergestellt aus v{{n}}",
       "open": "Öffnen",
       "openNamed": "{{label}} öffnen",

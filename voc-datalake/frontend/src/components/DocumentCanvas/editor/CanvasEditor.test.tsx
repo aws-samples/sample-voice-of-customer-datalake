@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { indexText } from '../../DocumentComments/anchors'
 import CanvasEditor, { type CanvasEditorHandle, type CanvasEditorProps } from './CanvasEditor'
 import * as noCollaboration from './noCollaboration'
@@ -461,6 +461,44 @@ describe('what the other parts of the page rely on', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  /** A canvas with its caret at 10 and the text not focused: what `focus` is then asked to restore. */
+  async function blurredAtTen() {
+    const { handle } = renderCanvas({ markdown: OUTLINED })
+    const editor = await editorOf(handle)
+    act(() => {
+      editor.commands.setTextSelection(10)
+      editor.commands.blur()
+    })
+    return { handle, editor }
+  }
+
+  it.each([
+    ['scrolls the caret into view by default', undefined, true],
+    ['leaves the scroll alone with { scroll: false }', { scroll: false }, false],
+  ] as const)('focus %s, the caret where it was', async (_case, options, scrolls) => {
+    const { handle, editor } = await blurredAtTen()
+    const scrolled: boolean[] = []
+    const note = ({ transaction }: { transaction: { scrolledIntoView: boolean } }) => { scrolled.push(transaction.scrolledIntoView) }
+    editor.on('transaction', note)
+    onTestFinished(() => { editor.off('transaction', note) })
+    act(() => handle.current?.focus(options))
+    await waitFor(() => expect(handle.current?.root()).toHaveFocus())
+    expect({ scrolled: scrolled.includes(true), caret: editor.state.selection.from }).toStrictEqual({ scrolled: scrolls, caret: 10 })
+  })
+
+  it('focus with { scroll: false } on a phone focuses the text with preventScroll only, the caret where it was', async () => {
+    const { handle, editor } = await blurredAtTen()
+    // TipTap's own focus on Android or iOS calls the DOM's focus() without preventScroll: the browser scrolls to the box.
+    const agent = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 14; Pixel 7) Mobile')
+    const domFocus = vi.spyOn(editor.view.dom, 'focus')
+    onTestFinished(() => { agent.mockRestore(); domFocus.mockRestore() })
+    act(() => handle.current?.focus({ scroll: false }))
+    await waitFor(() => expect(handle.current?.root()).toHaveFocus())
+    await new Promise((resolve) => { requestAnimationFrame(resolve) })
+    expect({ calls: domFocus.mock.calls, caret: editor.state.selection.from })
+      .toStrictEqual({ calls: [[{ preventScroll: true }]], caret: 10 })
   })
 
   it('scrollToHeading focuses the heading itself in a read-only canvas', async () => {

@@ -250,15 +250,35 @@ class TestAManagedEdit:
         assert {k: fields[k] for k in ('edit_kind', 'edited_by', 'revise_job_id', 'edited_from_id')} == {
             'edit_kind': 'revise', 'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1',
             'edited_from_id': 'f1'}
+        assert 'llm_metadata' not in fields
+
+    def test_a_proposal_save_records_the_passs_llm_metadata_and_never_inherits_an_earlier_one(
+            self, persist: MagicMock):
+        earlier = {'model': 'old-model', 'prompt_version': '0.9.0'}
+        document = {'sk': 'PRFAQ#f1', 'document_id': 'f1', 'title': 'L (v2)', 'base_title': 'L', 'content': 'old',
+                    'llm_metadata': earlier}
+        llm = {'model': 'global.anthropic.claude-sonnet-5-5', 'prompt_version': '1.0.0'}
+        dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW,
+                         revise={'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1',
+                                 'llm_metadata': llm})
+        assert persist.call_args.args[5]['llm_metadata'] == llm
 
     def test_a_plain_edit_of_a_revised_row_drops_its_revise_provenance(self, persist: MagicMock):
         document = {'sk': 'PRFAQ#f1', 'document_id': 'f1', 'title': 'L (v2)', 'base_title': 'L', 'content': 'old',
-                    'edit_kind': 'revise', 'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1'}
+                    'edit_kind': 'revise', 'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1',
+                    'llm_metadata': {'model': 'm', 'prompt_version': '1.0.0'}}
         dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW)
         fields = persist.call_args.args[5]
         assert fields['edit_kind'] == 'edit'
         assert 'edited_by' not in fields
         assert 'revise_job_id' not in fields
+        assert 'llm_metadata' not in fields
+
+    def test_a_restore_of_a_revised_row_drops_its_llm_metadata(self, persist: MagicMock):
+        revised = _prd('b', 2, 'two', edit_kind='revise', llm_metadata={'model': 'm', 'prompt_version': '1.0.0'})
+        table = _table([{'Items': [revised, _prd('a', 1, 'one')]}])
+        dh.restore_document_version(table, 'p1', revised, 'a', {'edit_id': 'e'}, now=NOW)
+        assert 'llm_metadata' not in persist.call_args.args[5]
 
     def test_a_revise_of_a_custom_document_is_refused(self):
         with pytest.raises(ValidationError):
@@ -289,14 +309,29 @@ class TestManagedVersionList:
 
         assert listed == {'managed': True, 'versions': [
             {'version_id': 'b', 'document_id': 'b', 'version': 2, 'title': 'Launch (v2)', 'content': '',
-             'created_at': '2026-02-01', 'current': True, 'edit_kind': 'restore', 'restored_from_version': 1},
+             'created_at': '2026-02-01', 'current': True, 'edit_kind': 'restore', 'restored_from_version': 1,
+             'llm_metadata': None},
             {'version_id': 'a', 'document_id': 'a', 'version': 1, 'title': 'Launch (v1)', 'content': 'one',
-             'created_at': '2026-01-01', 'current': False, 'edit_kind': None, 'restored_from_version': None},
+             'created_at': '2026-01-01', 'current': False, 'edit_kind': None, 'restored_from_version': None,
+             'llm_metadata': None},
         ]}
         assert [c.kwargs for c in table.query.call_args_list] == [
             {'KeyConditionExpression': Key('pk').eq('PROJECT#p1'), 'ConsistentRead': True},
             {'KeyConditionExpression': Key('pk').eq('PROJECT#p1'), 'ConsistentRead': True,
              'ExclusiveStartKey': {'pk': 'k1'}},
+        ]
+
+    def test_a_revised_version_lists_what_wrote_it_with_the_models_label(self):
+        llm = {'model': 'global.anthropic.claude-sonnet-5-5', 'prompt_version': '1.0.0'}
+        rows = [_prd('d', 4, 'w', llm_metadata={'model': 'retired-model', 'prompt_version': '1.0.0'}),
+                _prd('c', 3, 'x', llm_metadata={**llm, 'stray': 'not listed'}),
+                _prd('b', 2, 'y', llm_metadata={'prompt_version': '1.0.0'}), _prd('a', 1, 'z', llm_metadata='x')]
+        listed = dh.list_document_versions(_table([{'Items': rows}]), 'p1', rows[0])['versions']
+        assert [v['llm_metadata'] for v in listed] == [
+            {'model': 'retired-model', 'prompt_version': '1.0.0', 'model_label': None},
+            {**llm, 'model_label': 'Claude Sonnet 5.5'},
+            None,
+            None,
         ]
 
     def test_a_page_without_items_reads_as_empty(self):

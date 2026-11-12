@@ -312,6 +312,15 @@ export function normalizeProjectDocument(raw: unknown): ProjectDocument | null {
 // ── Document versions (GET /projects/{id}/documents/{doc}/versions) ──
 // A PRD / PR-FAQ version is a document row of its own (`version_id` = its
 // document_id); a research / custom version is a saved revision (`r{n}`).
+
+// What wrote a revised version (D4, `llm_metadata`): the model that answered the "Revise from
+// comments" pass and its display label (null when the model has left the allowlist: the id is shown
+// instead). Only what History reads; null for a version no AI wrote.
+const DocumentVersionLlmSchema = z.object({
+  model: z.string().min(1),
+  model_label: z.string().min(1).nullable().optional().catch(null),
+})
+
 const DocumentVersionSchema = z.object({
   version_id: z.string().min(1),
   document_id: optionalString,
@@ -323,6 +332,7 @@ const DocumentVersionSchema = z.object({
   // `revise`: a "Revise from comments" pass applied, or its proposal saved by the person (D4).
   edit_kind: z.enum(['edit', 'restore', 'revise']).nullable().optional().catch(null),
   restored_from_version: z.number().int().positive().nullable().optional().catch(null),
+  llm_metadata: DocumentVersionLlmSchema.nullable().optional().catch(null),
 })
 export type DocumentVersion = z.output<typeof DocumentVersionSchema>
 

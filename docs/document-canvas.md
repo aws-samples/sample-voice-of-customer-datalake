@@ -68,7 +68,9 @@ thread whose quote you change is listed under **Not found in this version** at o
 
 **Full screen** in the page header (or Ctrl/⌘+Shift+F) gives the page the whole window for reading and answering
 comments: the canvas and the comment rail side by side from 1280 px wide (one column below), the app's sidebar,
-header, project tabs and document list hidden. Esc (when no menu, dialog, format bar or comment box has it), the same button or
+header, project tabs and document list hidden. It opens with the page's header (the title, the save status and the
+way out) at the top of the window, however far down the page you were, and puts the cursor in the text without
+scrolling it. Esc (when no menu, dialog, format bar or comment box has it), the same button or
 the shortcut leaves. The address keeps it as `?view=focus`, so a reload stays in it; entering and leaving add no
 history entry, so the browser's Back goes to the page you came from (never to an older version of a document you
 saved in full screen). Unsaved

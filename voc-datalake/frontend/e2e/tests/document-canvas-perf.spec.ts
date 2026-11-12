@@ -16,7 +16,7 @@
  * work; after it, over several runs, 0 ms and 52-65 ms). A keystroke's duration also holds the time it waits for the browser,
  * which a loaded machine stretches (the slowest one read 232 ms at 60,000 characters with the machine's load at 220,
  * against 48-88 ms alone), and no keystroke bar told the old code from the new one (median 32 / 56 ms before, 24 / 40
- * ms after), so the keystrokes are reported (slowest, median, 90th percentile) and held to no bar.
+ * ms after), so only the slowest keystroke is reported, held to no bar.
  *
  * MOCK ONLY (as document-canvas.spec.ts): run from voc-datalake/frontend/e2e with the mock and vite on your own ports:
  *   E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:3417 E2E_OUT=/tmp/e2e-mock \
@@ -78,18 +78,7 @@ async function timings(page: Page): Promise<Timings> {
 
 const max = (values: readonly number[]): number => values.reduce((a, b) => Math.max(a, b), 0)
 
-/**
- * The `p`-th percentile of `values` (nearest rank), 0 for none. Event Timing lists only the key events of 16 ms or
- * more, so the faster ones count as 0 here: `count` is how many key events were typed.
- */
-function percentile(values: readonly number[], count: number, p: number): number {
-  const all = [...values, ...Array.from({ length: Math.max(0, count - values.length) }, () => 0)].sort((a, b) => a - b)
-  return all.length === 0 ? 0 : all[Math.min(all.length - 1, Math.ceil((p / 100) * all.length) - 1)] ?? 0
-}
-
 const BURSTS = [' and more [FR:fr_2]', ' with *stars* and_under', ' then [a link] text']
-/** Each typed character is one keydown (and one keypress): the keystrokes the observer can report. */
-const TYPED = BURSTS.join('').length * 2
 
 test.skip(!MOCK, 'dev mock only, as document-canvas.spec.ts')
 // This run's documents only, by title.
@@ -130,11 +119,9 @@ for (const size of SIZES) {
     const measured = await timings(page)
     const summary = {
       characters: markdown.length,
-      // Event Timing entries of 16 ms or more: two per typed character (its keydown and its keypress).
+      // Event Timing lists only key events of 16 ms or more (each typed character makes a keydown and a keypress).
       keyEventsOf16MsOrMore: measured.keystrokes.length,
       slowestKeystrokeMs: Math.round(max(measured.keystrokes)),
-      medianKeystrokeMs: Math.round(percentile(measured.keystrokes, TYPED, 50)),
-      p90KeystrokeMs: Math.round(percentile(measured.keystrokes, TYPED, 90)),
       longTasks: measured.longTasks.map(Math.round),
       longestTaskMs: Math.round(max(measured.longTasks)),
     }

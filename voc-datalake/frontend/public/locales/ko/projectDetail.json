@@ -56,6 +56,7 @@
       "current": "현재",
       "edited": "편집됨",
       "revised": "댓글을 바탕으로 수정됨",
+      "revisedWith": "댓글을 바탕으로 수정됨 · {{model}}",
       "restoredFrom": "v{{n}}에서 복원",
       "open": "열기",
       "openNamed": "{{label}} 열기",

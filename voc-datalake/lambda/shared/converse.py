@@ -150,6 +150,18 @@ class ConverseResult:
         return self.requested_model_id is not None and self.model_id != self.requested_model_id
 
 
+def answering_model(result: ConverseResult | None, surface: str) -> str:
+    """The model that answered ``result`` (after a capacity fallback, the fallback), else ``surface``'s model.
+
+    For provenance stamps. The picker is consulted only when the result carries no model (a stand-in
+    that reports none; converse_detailed always sets it): re-resolving it after the call is wrong, since
+    it caches per container and could name a model an admin switched to after the call was answered.
+    """
+    if result is not None and result.model_id:
+        return result.model_id
+    return get_active_model_id(surface)
+
+
 @dataclass
 class _TierState:
     """Mutable tier bookkeeping shared by every Bedrock call of one converse().

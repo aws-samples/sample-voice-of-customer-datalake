@@ -16,6 +16,7 @@ import { Loader2, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import { ContentDiff } from '../../assistant/approvals/previews/DocumentDiffPreview'
@@ -44,10 +45,17 @@ function VersionBadges({ version }: Readonly<{ version: DocumentVersion }>) {
         <span className="badge badge-info">{t('documents.versions.restoredFrom', { n: version.restored_from_version })}</span>
       ) : null}
       {version.edit_kind === 'edit' ? <span className="badge badge-muted">{t('documents.versions.edited')}</span> : null}
-      {/* Saved from the changes a person accepted from "Revise from comments" (D4). */}
-      {version.edit_kind === 'revise' ?<span className="badge badge-info">{t('documents.versions.revised')}</span> : null}
+      {/* Saved from the changes a person accepted from "Revise from comments", or applied by the pass (D4). */}
+      {version.edit_kind === 'revise' ? <span className="badge badge-info">{revisedLabel(version, t)}</span> : null}
     </>
   )
+}
+
+/** "Revised from comments", with the model that wrote it when the version records one (its label, else its id). */
+function revisedLabel(version: DocumentVersion, t: TFunction<'projectDetail'>): string {
+  const llm = version.llm_metadata
+  const model = llm ? (llm.model_label ?? llm.model) : null
+  return model === null ? t('documents.versions.revised') : t('documents.versions.revisedWith', { model })
 }
 
 function VersionRow({ version, canRestore, restoring, onOpen, onRestore }: Readonly<{

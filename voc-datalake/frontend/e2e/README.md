@@ -165,9 +165,8 @@ outcome (Close on its heading's line). The stale-save banner at 1440 and 360 in 
 
 `document-canvas-perf.spec.ts` (the canvas on long documents) runs ONLY there too: it creates a 60,000- and a 200,000-character document in
 `proj_1` (`e2e-<run id>-canvas perf …`), types three bursts with pauses into a paragraph with a citation, and reads the
-browser's Event Timing and Long Tasks: no main-thread task over 200 ms (the keystrokes, slowest, median and 90th
-percentile, are reported but held to no bar: a loaded machine stretches them, and none of them told the old code from
-the new; the numbers go to `$E2E_OUT/canvas-perf-<size>.json`).
+browser's Event Timing and Long Tasks: no main-thread task over 200 ms (the slowest keystroke is reported but held to no bar:
+a loaded machine stretches keystrokes, and no keystroke number told the old code from the new; the numbers go to `$E2E_OUT/canvas-perf-<size>.json`).
 
 ## QA track s1 (`E2E_TRACK=s1` only)
 

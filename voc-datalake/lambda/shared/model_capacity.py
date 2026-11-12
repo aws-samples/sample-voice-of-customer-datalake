@@ -34,7 +34,7 @@ from shared import model_quota_store
 from shared.aws import invoke_lambda_async
 from shared.converse import build_single_turn_request
 from shared.logging import logger
-from shared.model_config import ALLOWED_MODELS, invocation_model_id, scope_bedrock_client
+from shared.model_config import ALLOWED_MODELS, invocation_model_id, model_label, scope_bedrock_client
 from shared.timestamps import now_iso
 
 PROBE_PROMPT: Final = "Reply with OK"
@@ -152,17 +152,13 @@ def _service_quotas_client():
     return client
 
 
-def _model_label(model_id: str) -> str | None:
-    return next((m["label"] for m in ALLOWED_MODELS if m["id"] == model_id), None)
-
-
 def quota_name(model_id: str) -> str | None:
     """The Service Quotas name of ``model_id``'s tokens-per-minute quota under the scope in force.
 
     ``global.`` profiles use the global cross-region quota; a geo profile
     (``eu.``, ``us.``) the cross-region one. None for a model outside the allowlist.
     """
-    label = _model_label(model_id)
+    label = model_label(model_id)
     if label is None:
         return None
     prefix = _GLOBAL_QUOTA_PREFIX if invocation_model_id(model_id).startswith("global.") else _GEO_QUOTA_PREFIX

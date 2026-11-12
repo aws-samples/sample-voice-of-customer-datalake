@@ -73,6 +73,14 @@ describe('recommendations', () => {
     expect(onShowThread).toHaveBeenCalledWith('t1')
   })
 
+  it('wraps a thread link\'s quote (two lines at most) instead of cutting it to one; its tooltip is its name (read once)', () => {
+    renderPanel({ kind: 'recommendations', result: result('recommendations', { changes: [] }) })
+    const link = screen.getByRole('button', { name: 'Show the comment: Quiet hours are 21:00 to 08:00' })
+    const label = within(link).getByTestId('thread-link-label')
+    expect({ title: link.getAttribute('title'), clamp: label.classList.contains('line-clamp-2'), cut: label.classList.contains('truncate') })
+      .toStrictEqual({ title: 'Show the comment: Quiet hours are 21:00 to 08:00', clamp: true, cut: false })
+  })
+
   it('shows nothing while idle, running or failed (the button says those)', () => {
     for (const pass of [{ kind: 'idle' }, { kind: 'running' }, { kind: 'failed', message: null }] as const) {
       const { container } = render(<RevisePanel controls={controlsFor(pass)} draft={DRAFT} threads={THREADS} onShowThread={vi.fn()} onReviewAgain={vi.fn()} canReview />)

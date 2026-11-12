@@ -2,7 +2,7 @@
  * The canvas's save of changes accepted from "Revise from comments" (markRevised): a PR/FAQ / PRD save whose text
  * keeps them names the pass (its job id as `revise_job_id`; the server checks it and records a revise, D4); a plain
  * edit, a research / custom document, or a draft the accepted changes left names none. When the server will not
- * record the save as a revise (400) nothing is saved: the draft stays, the server's reason is said in an alert, and
+ * record the save as a revise (400 with the code `revise_refused`) nothing is saved: the draft stays, the server's reason is said in an alert, and
  * "Save as my own edit" saves the same text as a plain edit, with the revision check.
  */
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -92,13 +92,14 @@ describe('a save holding changes accepted from "Revise from comments" (markRevis
   })
 })
 
-describe('a revise save refused by the server (400: the text no longer holds a change of the pass)', () => {
+describe('a revise save refused by the server (400, code revise_refused: the text no longer holds a change of the pass)', () => {
   const reason = 'This save does not hold a change from that revision'
+  const REFUSED = 'revise_refused'
   const refused = enProjectDetail.canvas.revise.refused
   const banner = () => screen.getByTestId('canvas-revise-refused')
   /** The PRD's revise save refused: the banner is on screen, nothing saved. */
   async function refusedRevise() {
-    api.updateDocument.mockRejectedValueOnce(new ApiError(400, reason))
+    api.updateDocument.mockRejectedValueOnce(new ApiError(400, reason, REFUSED))
     const mounted = await saveRevised(prd)
     await screen.findByTestId('canvas-revise-refused')
     return mounted
@@ -127,7 +128,7 @@ describe('a revise save refused by the server (400: the text no longer holds a c
   })
 
   it('without a reason from the server it still says what happened', async () => {
-    api.updateDocument.mockRejectedValueOnce(new ApiError(400))
+    api.updateDocument.mockRejectedValueOnce(new ApiError(400, undefined, REFUSED))
     await saveRevised(prd)
 
     expect(await screen.findByTestId('canvas-revise-refused')).toHaveTextContent(`${refused.fallback} ${refused.explain}`)
@@ -139,6 +140,15 @@ describe('a revise save refused by the server (400: the text no longer holds a c
     await user.click(screen.getByRole('button', { name: 'discard' }))
 
     expect(screen.queryByTestId('canvas-revise-refused')).not.toBeInTheDocument()
+  })
+
+  it('a revise save\'s other 400 (no revise_refused code) is the save\'s normal error: no banner, the draft unsaved', async () => {
+    api.updateDocument.mockRejectedValueOnce(new ApiError(400, 'content too long'))
+    await saveRevised(prd)
+    await act(() => Promise.resolve())
+
+    expect(reviseJobIds()).toStrictEqual(['job-7'])
+    expect([screen.queryByTestId('canvas-revise-refused'), screen.getByTestId('dirty').textContent]).toStrictEqual([null, 'true'])
   })
 
   it('a 400 for a plain save (no pass named) offers nothing of the kind', async () => {

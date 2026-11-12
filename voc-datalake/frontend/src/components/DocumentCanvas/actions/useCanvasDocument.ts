@@ -91,7 +91,7 @@ export interface CanvasDocument {
    * the server records a revise, D4); otherwise it is a plain edit.
    */
   readonly markRevised: (revised: RevisedBy | null) => void
-  /** The server would not record the last save as a revise (400): its reason, and "Save as my own edit". */
+  /** The server would not record the last save as a revise (400, code `revise_refused`): its reason, and "Save as my own edit". */
   readonly reviseRefused: ReviseRefused | null
 }
 

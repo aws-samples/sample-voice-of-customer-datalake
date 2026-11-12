@@ -56,6 +56,7 @@
       "current": "Current",
       "edited": "Edited",
       "revised": "Revised from comments",
+      "revisedWith": "Revised from comments · {{model}}",
       "restoredFrom": "Restored from v{{n}}",
       "open": "Open",
       "openNamed": "Open {{label}}",

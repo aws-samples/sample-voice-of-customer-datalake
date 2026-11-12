@@ -541,26 +541,6 @@ class TestDeleteProjectSweepsBothPartitionsAndCollectsPersonaIds:
 
 
 # ---------------------------------------------------------------------------
-# Provenance: the model stamp
-# ---------------------------------------------------------------------------
-
-
-class TestThePersonaModelStamp:
-    def test_the_model_the_synthesis_step_ran_on_wins(self):
-        result = chain_results(['[]'])[0]
-        assert result.model_id
-        with patch.object(projects, 'get_active_model_id') as picker:
-            assert projects._persona_model_id(result) == result.model_id
-        picker.assert_not_called()
-
-    def test_a_result_without_a_model_consults_the_picker_for_the_persona_surface(self):
-        bare = chain_results(['[]'], model_id='')[0]
-        with patch.object(projects, 'get_active_model_id', return_value='picked-model') as picker:
-            assert projects._persona_model_id(bare) == 'picked-model'
-        picker.assert_called_once_with('documents')
-
-
-# ---------------------------------------------------------------------------
 # Parse tiers: the fenced tier
 # ---------------------------------------------------------------------------
 

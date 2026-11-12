@@ -50,6 +50,7 @@ from shared.document_versions import (
 )
 from shared.dynamo_paging import iter_query, query_all
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
+from shared.model_config import model_label
 from shared.project_writes import projects_table_name
 from shared.row_ids import OPAQUE_ID_RE
 
@@ -72,7 +73,7 @@ STALE_DOCUMENT_MESSAGE = STALE_SERIES_MESSAGE
 # (content, timestamps, edit_kind and edited_from_id are always set afresh.)
 _ROW_IDENTITY_FIELDS = frozenset({
     'pk', 'sk', 'document_id', 'title', 'base_title', 'version', 'version_allocation_id',
-    'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id',
+    'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id', 'llm_metadata',
 })
 
 
@@ -166,7 +167,17 @@ def _managed_version_view(row: dict, *, current: bool) -> dict:
         'version': row['version'], 'title': row.get('title'),
         'content': row.get('content') or '', 'created_at': row.get('created_at'), 'current': current,
         'edit_kind': row.get('edit_kind'), 'restored_from_version': row.get('restored_from_version'),
+        'llm_metadata': _llm_metadata_view(row.get('llm_metadata')),
     }
+
+
+def _llm_metadata_view(stored: object) -> dict | None:
+    """A revised version's ``llm_metadata`` (``{model, prompt_version}``) plus the model's display label
+    (``model_label``: the allowlist's, None for a model no longer on it); None for a version no AI wrote."""
+    if not isinstance(stored, Mapping) or not isinstance(stored.get('model'), str):
+        return None
+    return {'model': stored['model'], 'prompt_version': stored.get('prompt_version'),
+            'model_label': model_label(stored['model'])}
 
 
 # ── Unmanaged revisions ──────────────────────────────────────────────────────
@@ -258,10 +269,11 @@ def edit_document(table: Any, project_id: str, document: dict, body: dict, *, no
     document that moved on since is a ConflictError (409), never a silent overwrite.
     Checked after the no-change return: an edit that saves nothing clobbers nothing.
 
-    ``revise`` (``{edited_by, revise_job_id}``, verified by the caller first:
+    ``revise`` (``{edited_by, revise_job_id, llm_metadata?}``, verified by the caller first:
     ``shared.document_revision.verify_saved_proposal``) is a person saving the "Revise from
     comments" proposal they accepted: a PR/FAQ / PRD only, recorded like the applied pass
-    (``edit_kind`` ``revise``, ``edited_by`` the person's ``{sub, kind}``) plus the pass's job id.
+    (``edit_kind`` ``revise``, ``edited_by`` the person's ``{sub, kind}``) plus the pass's job id and,
+    when its result names them, the pass's model and prompt version (``llm_metadata``).
     """
     expected = validated_expected_revision(body.get('expected_revision'))
     if revise is not None:
@@ -274,6 +286,8 @@ def edit_document(table: Any, project_id: str, document: dict, body: dict, *, no
     if revise is not None:
         provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_by': dict(revise['edited_by']),
                       'revise_job_id': str(revise['revise_job_id'])}
+        if isinstance(revise.get('llm_metadata'), Mapping):
+            provenance['llm_metadata'] = dict(revise['llm_metadata'])
     document_type = managed_document_type(document)
     if document_type is not None:
         allocation_id = f"edit:{document['document_id']}:{validated_edit_id(body.get('edit_id'), content)}"
@@ -358,15 +372,17 @@ def require_series_head(table: Any, project_id: str, document: dict) -> None:
 
 
 def revise_document(table: Any, project_id: str, document: dict, content: str, *, revise_id: str, now: str,
-                    actor: dict[str, str]) -> dict:
+                    actor: dict[str, str], llm_metadata: Mapping[str, str]) -> dict:
     """The revised ``content`` of a PR/FAQ / PRD as the NEXT version of its series (never an overwrite).
 
     Conditioned on ``document`` still being the series head (409 otherwise: someone saved since the
     pass read it); ``revise_id`` is the version's allocation id (the write is idempotent). The row
-    records who asked (``edited_by``: the starter's ``{sub, kind}``) and ``edit_kind`` ``revise``.
+    records who asked (``edited_by``: the starter's ``{sub, kind}``), ``edit_kind`` ``revise`` and
+    what wrote it (``llm_metadata``: ``{model, prompt_version}``, shared.document_revision.pass_llm_metadata).
     """
     document_type = _revised_type(document)
-    provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_from_id': document['document_id'], 'edited_by': dict(actor)}
+    provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_from_id': document['document_id'], 'edited_by': dict(actor),
+                  'llm_metadata': dict(llm_metadata)}
     return _new_managed_version(table, project_id, document_type, document, content,
                                 allocation_id=_revise_allocation_id(document, revise_id), now=now,
                                 provenance=provenance, expected_last_version=int(document['version']))

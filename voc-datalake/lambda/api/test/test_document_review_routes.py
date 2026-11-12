@@ -15,6 +15,7 @@ from handler_events_fixtures import call_route
 from moto import mock_aws
 
 from shared import document_share
+from shared.converse import ConverseResult
 from shared.test.moto_tables import create_pk_sk_table
 
 BOARD_POOL = 'us-east-1_boardpool'
@@ -502,10 +503,15 @@ def test_revising_a_custom_document_is_400(call):
 def _revise_work(config, reply):
     import projects_handler
 
-    with patch('shared.document_review.converse'), patch('shared.document_revision.converse',
-                                                         return_value=json.dumps(reply)) as converse:
+    answered = ConverseResult(text=json.dumps(reply), model_id=REVISE_MODEL)
+    with patch('shared.document_review.converse'), patch('shared.document_revision.converse_detailed',
+                                                         return_value=answered) as converse:
         result = projects_handler._revise_work(config)
     return result, converse
+
+
+#: The model the stubbed pass reports answering on.
+REVISE_MODEL = 'global.anthropic.claude-sonnet-5-5'
 
 
 def _work_config(thread_ids, outcome):
@@ -543,6 +549,12 @@ def test_the_applied_revision_is_a_new_version_and_its_threads_show_addressed(ca
     [new] = [row for row in v3 if row.get('document_id') == result['applied_version']['document_id']]
     assert (new['version'], new['edit_kind'], new['content'], new['edited_by']) == (
         3, 'revise', 'Final draft of the launch.', {'sub': 'editor-sub', 'kind': 'user'})
+    assert new['llm_metadata'] == {'model': REVISE_MODEL, 'prompt_version': '1.0.0'}
+    assert (result['model_id'], result['prompt_version']) == (REVISE_MODEL, '1.0.0')
+    with patch('projects.projects_table', table):
+        [listed_v3, *_] = call('GET', '/projects/p1/documents/d2/versions', VIEWER)[1]['versions']
+    assert listed_v3['llm_metadata'] == {'model': REVISE_MODEL, 'prompt_version': '1.0.0',
+                                         'model_label': 'Claude Sonnet 5.5'}
     assert table.get_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d2'})['Item']['content'] == V2['content']
 
 
@@ -734,6 +746,22 @@ def test_a_saved_proposal_is_recorded_as_a_revise_by_the_person_with_its_pass(ca
     row = _saved_version(documents, body['document']['document_id'])
     assert (row['version'], row['edit_kind'], row['edited_by'], row['revise_job_id']) == (
         3, 'revise', {'sub': 'editor-sub', 'kind': 'user'}, 'job_r1')
+    assert 'llm_metadata' not in row
+
+
+def test_a_saved_proposal_records_the_passs_model_and_prompt_and_history_lists_them(call, documents, jobs):
+    recorded = {**_revise_job()['result'], 'model_id': 'global.anthropic.claude-haiku-5-5', 'prompt_version': '1.0.0'}
+    jobs.put_item(Item=_revise_job(result=recorded))
+    response, body = _save_proposal(call)
+    assert response['statusCode'] == 200, body
+    saved = _saved_version(documents, body['document']['document_id'])
+    llm = {'model': 'global.anthropic.claude-haiku-5-5', 'prompt_version': '1.0.0'}
+    assert (saved['llm_metadata'], saved['revise_job_id']) == (llm, 'job_r1')
+    later_response, later = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'edit_id': 'e2'})
+    assert later_response['statusCode'] == 200, later
+    assert 'llm_metadata' not in _saved_version(documents, later['document']['document_id'])
+    listed = call('GET', DOCUMENT_PUT + '/versions', VIEWER)[1]['versions']
+    assert [v['llm_metadata'] for v in listed[:2]] == [None, {**llm, 'model_label': 'Claude Haiku 5.5'}]
 
 
 def test_a_later_plain_save_does_not_inherit_the_revise_provenance(call, documents, jobs):
@@ -783,6 +811,8 @@ def test_a_save_naming_a_pass_that_does_not_check_out_is_400_and_writes_nothing(
     response, body = _save_proposal(call)
     assert response['statusCode'] == 400
     assert message in json.dumps(body)
+    # The refused revise's code: the canvas offers "Save as my own edit" on it, not on the message.
+    assert body['code'] == 'revise_refused'
     assert len(_prfaq_rows(documents)) == 2
 
 
@@ -892,6 +922,7 @@ def test_a_malformed_revise_job_id_is_400(call, job_id):
     response, body = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'revise_job_id': job_id})
     assert response['statusCode'] == 400
     assert 'revise_job_id must be' in json.dumps(body)
+    assert 'code' not in body
 
 
 def test_a_revise_save_of_a_custom_document_is_400(call, jobs):

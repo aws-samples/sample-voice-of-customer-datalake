@@ -17,17 +17,39 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.08.00] - 2026-11-12
+## [6.09.00] - 2026-11-12
 
-The document page fits every width and works from the keyboard, and the canvas stays fast on long documents with a lighter editor (tracks voc-wiki-b and voc-wiki-c, merged).
+A version written by Revise from comments records which model and prompt wrote it, and the follow-ups of 6.08.00.
+
+### Added
+
+- **Which AI wrote a revised version** (D4): every Revise-from-comments pass's result names the model that answered (`model_id`, the one the call reports, so a capacity fallback is named) and the prompt version (`prompt_version`; new `REVISE_PROMPT_VERSION` 1.0.0, pinned to a digest of the prompts, withheld-text branches included, so a prompt change must bump it). A version an applied pass writes, and a person's checked save of a proposal, carry `llm_metadata: {model, prompt_version}` (the shape personas use); it is never carried to later versions or restores. `GET …/versions` lists each version's `llm_metadata` with the model's label, and History shows "Revised from comments · <model>". One shared `answering_model` (shared/converse.py) for personas and revise passes.
 
 ### Changed
 
-- **Long documents and a lighter editor** (voc-wiki-c): typing in a 200,000-character document no longer stalls after each pause (the longest main-thread task 957 ms → about 60 ms; at 60,000 characters 276 ms → none over 50 ms): the Markdown written after a change costs the edited blocks, not the document, and heading ids are read again only when a heading changes. The editor's lazy chunk is smaller (`vendor-editor` 161 → 144 kB gzip): the format bar, block handle, "/" menu and popovers load right after the text (`vendor-editor-menus`, 18 kB gzip). The Markdown written is unchanged, byte for byte; the entry chunk does not grow. New dev-mock spec `e2e/tests/document-canvas-perf.spec.ts`.
+- A refused revise save (`revise_job_id` that does not check out) answers 400 with `code: revise_refused`; only that refusal offers "Save as my own edit", other 400s show the normal save error.
+- Full screen brings the page's header to the top of the window (however far down the page was) and then focuses the canvas without scrolling it (the editor handle's `focus({ scroll: false })`, which also asks the browser not to scroll on a phone), instead of scrolling back afterwards.
+- The canvas perf spec gates on long tasks only and reports keystroke timings (a shared machine's load made the keystroke bar fail on good code); its comment states the revise limit right.
 
 ### Fixed
 
-- **Accessibility and widths** (voc-wiki-b): the File menu opens inside a phone's screen; Full screen opens with the page's header in view; the stale-save banner's buttons meet AA contrast; the Revise-from-comments panel keeps Close in its corner; the comment filters use the select style. In a comment or reply box Ctrl/⌘+Enter sends and Escape closes an empty box but keeps one with text, so a draft is no longer lost to Escape; focus returns to Reply. New dev-mock spec `e2e/tests/document-canvas-a11y.spec.ts` (axe and the keyboard at 1440 to 360 px, both themes).
+- A revise thread link wraps its quote (two lines at most) instead of cutting it on a phone.
+
+### Upgrade notes
+
+- Deploy every stack and the frontend (`npm run deploy:infra`, `npm run deploy:frontend`): the projects Lambda records `llm_metadata` on revised versions and answers `code: revise_refused`. No new route, resource or permission; versions written before this release read `llm_metadata: null`.
+
+## [6.08.00] - 2026-11-12
+
+The document page fits every width and works from the keyboard, and the canvas stays fast on long documents with a lighter editor.
+
+### Changed
+
+- **Long documents and a lighter editor**: typing in a 200,000-character document no longer stalls after each pause (the longest main-thread task 957 ms → about 60 ms; at 60,000 characters 276 ms → none over 50 ms): the Markdown written after a change costs the edited blocks, not the document, and heading ids are read again only when a heading changes. The editor's lazy chunk is smaller (`vendor-editor` 161 → 144 kB gzip): the format bar, block handle, "/" menu and popovers load right after the text (`vendor-editor-menus`, 18 kB gzip). The Markdown written is unchanged, byte for byte; the entry chunk does not grow. New dev-mock spec `e2e/tests/document-canvas-perf.spec.ts`.
+
+### Fixed
+
+- **Accessibility and widths**: the File menu opens inside a phone's screen; Full screen opens with the page's header in view; the stale-save banner's buttons meet AA contrast; the Revise-from-comments panel keeps Close in its corner; the comment filters use the select style. In a comment or reply box Ctrl/⌘+Enter sends and Escape closes an empty box but keeps one with text, so a draft is no longer lost to Escape; focus returns to Reply. New dev-mock spec `e2e/tests/document-canvas-a11y.spec.ts` (axe and the keyboard at 1440 to 360 px, both themes).
 
 ## [6.07.00] - 2026-11-12
 
