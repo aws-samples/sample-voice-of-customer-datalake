@@ -687,9 +687,27 @@
     "tabs": {
       "agents": "Agents",
       "board": "Board",
-      "conversation": "Conversation"
+      "conversation": "Conversation",
+      "reports": "Reports"
     },
-    "panels": "The run’s agents, board and conversation",
+    "panels": "The run’s agents, board, conversation and reports",
+    "reports": {
+      "title": "Report: {{subject}}",
+      "version": "Version",
+      "latest": "Latest (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "Built {{when}}",
+      "readFailed": "This report could not be read.",
+      "missing": "This version was never written (its build did not finish). Pick another version.",
+      "loadFailed": "The reports could not be loaded.",
+      "none": "No report has been written yet.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "Goal",
+        "pr": "Pull requests",
+        "commit": "Commits"
+      }
+    },
     "flow": "The run’s flow, with the steps its agents are on",
     "noFlow": "The run’s flow could not be read: the rest of the run is shown.",
     "notFound": "Engineering run not found",

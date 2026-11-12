@@ -741,9 +741,27 @@
     "tabs": {
       "agents": "智能体",
       "board": "看板",
-      "conversation": "对话"
+      "conversation": "对话",
+      "reports": "报告"
     },
-    "panels": "运行的智能体、看板和对话",
+    "panels": "运行的代理、看板、对话和报告",
+    "reports": {
+      "title": "报告：{{subject}}",
+      "version": "版本",
+      "latest": "最新 (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "生成于 {{when}}",
+      "readFailed": "无法读取此报告。",
+      "missing": "此版本从未写入（生成未完成）。请选择其他版本。",
+      "loadFailed": "无法加载报告。",
+      "none": "尚未生成任何报告。",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "目标",
+        "pr": "拉取请求",
+        "commit": "提交"
+      }
+    },
     "flow": "运行的流程，标出智能体所在的步骤",
     "noFlow": "无法读取运行的流程：其余内容照常显示。",
     "notFound": "找不到工程运行",

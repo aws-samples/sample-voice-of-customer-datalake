@@ -523,7 +523,8 @@ and validates one, keeps each workflow's kind, lists both kinds in `GET /workflo
 engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's
 settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
 builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
-shared fixture). *Planned*: the six default flows as templates.
+shared fixture); its library offers New engineering flow only where the module is deployed (`config.json`
+`features.engineering`). *Planned*: the six default flows as templates.
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it in the editor behind an approval card, like its other writes; "refresh
@@ -531,7 +532,7 @@ the knowledge pack", "pull the latest from the repository" and "what is agent X 
 through the same REST routes and MCP tools as everything else (tenet 4).
 
 **The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
-live step highlighted), the board and the conversation. Inspecting an agent shows its current step, its last progress,
+live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,
 its heartbeat's age, its MicroVM's state and age, its recent tool calls and, when it looks stuck, why (no progress for
 N minutes, the same step repeated). A person can message the run coordinator or an agent as a participant, and send
 signals: Save (checkpoint now), Pause, Resume, Shut down (checkpoint, then stop) and Stop now. Stop now is the
@@ -891,14 +892,15 @@ continues it in a new one once the wait closes.
 ## Reports
 
 *Partly built*: the builder (`voc-datalake/lambda/engineering/reports/`, the `voc-engineering-reports` Lambda,
-deployed only with `-c engineeringAgents=true`) and the administrators' reads through REST
-([above](#how-the-agents-work-together); no MCP tool while the reads are admin-only). A report (voc-report/1) is built from what the run recorded: its `META`,
+deployed only with `-c engineeringAgents=true`), the administrators' reads through REST
+([above](#how-the-agents-work-together); no MCP tool while the reads are admin-only) and the run monitor's Reports
+panel in the web app (each report's versions as Markdown, [docs/autonomous-agents.md](autonomous-agents.md)). A report (voc-report/1) is built from what the run recorded: its `META`,
 each agent's metering (`AGENT#`: skill version, model, MicroVM-seconds, tokens, metered cost), the conversation's
 count, the board's tasks and their history, and only the workspace objects their result keys name (never a listing).
 The PR report takes the quality gate's record only from an ended final-go task under the PR's head commit, checked
 against the gate's own shapes before its Markdown goes into the description. Every version is new (an atomic
 counter, create-only objects, D1). Not built yet: its callers (the run coordinator's closing task, the supervisor,
-the write broker before it opens a PR: nothing invokes it, and no role holds an invoke on it), the run view, and
+the write broker before it opens a PR: nothing invokes it, and no role holds an invoke on it), and
 "what the agents learned" and "what improved since the last run". The design:
 
 - **Commit report**: what the commit changes and why (its task), the gate packs' results, each review round's
@@ -1059,4 +1061,4 @@ and the phase that ships them names them in that row.
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
-| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)); the templates, live cost, skill histories, the reports' view and the assistant drafting flows planned |
+| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)); the templates, live cost, skill histories and the assistant drafting flows planned |

@@ -10,6 +10,8 @@
 //                     outcome (each agent's status, or why not); 503 when the agent is busy
 //                     (MOCK_ENGINEERING_AGENT_BUSY=1), the request recorded
 //   POST …/messages   {to: 'conductor' | 'agent', agent?, text, thread_id?}: admin; 404 for an agent not in the run
+//   GET  …/reports    the run's reports, each with its latest version
+//   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
 // Every GET of the overview moves the run a little (the agents' ages), so polling shows it live.
 // MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin: 403 on every route, as the server answers (admins only).
 // Wired into mock-server.js by handleDomainModules (before the agents routes, which would read `engineering` as an
@@ -244,7 +246,40 @@ function answer(body) {
   return [200, { message: { event_id: `evt-${run.messages.length}`, thread_id: threadId, at } }];
 }
 
-function routeGet(sub, url) {
+/** The sample run's reports: a goal report written twice, one commit's report (the builder's Markdown, abridged). */
+const REPORTS = [
+  { level: 'goal', subject: SAMPLE_RUN_ID, versions: [minutesAgo(25), minutesAgo(10)] },
+  { level: 'commit', subject: '3f9c2a7e5b1d4c6f8a0e2b4d6f8a1c3e5b7d9f0a', versions: [minutesAgo(12)] },
+];
+
+function reportMarkdown(entry, version) {
+  return [
+    `# ${entry.level === 'goal' ? 'Goal' : 'Commit'} report: ${run.meta.goal}`, '',
+    `Version ${version} · ${entry.subject}`, '',
+    '## Cost', '', '| Events | MicroVM time | Tokens in | Tokens out |', '| --- | --- | --- | --- |',
+    `| ${run.messages.length} | ${version * 420} s | ${version * 2000} | ${version * 400} |`, '',
+    '## Findings', '', version === 1 ? 'None yet.' : '- `src/search/paging.ts:41` (high): the last page shows one item too many',
+  ].join('\n');
+}
+
+function reports(rest, url) {
+  if (rest.length === 0) {
+    return [200, { items: REPORTS.map((r) => ({ level: r.level, subject: r.subject, latest_version: r.versions.length })) }];
+  }
+  const [level, subject] = rest;
+  const entry = REPORTS.find((r) => r.level === level && r.subject === subject);
+  const asked = url.searchParams.get('version');
+  const version = asked === null ? entry?.versions.length : Number(asked);
+  if (rest.length !== 2 || !entry || !Number.isInteger(version) || version < 1 || version > entry.versions.length) {
+    return [404, { message: 'Report not found' }];
+  }
+  const builtAt = entry.versions[version - 1];
+  return [200, { report: { schema: 'voc-report/1', level, subject, version, built_at: builtAt }, markdown: reportMarkdown(entry, version) }];
+}
+
+function routeGet(sub, rest, url) {
+  if (sub === 'reports') return reports(rest, url);
+  if (rest.length > 0) return [404, { message: 'Engineering run not found' }];
   if (sub === undefined) return [200, overview()];
   if (sub === 'board') return [200, { tasks: run.tasks }];
   if (sub === 'conversation') return [200, conversation(url)];
@@ -261,7 +296,7 @@ function routePost(sub, body) {
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
   const [runId, sub, ...rest] = url.pathname.slice(PREFIX.length).split('/').map(decodeURIComponent);
-  if (runId !== SAMPLE_RUN_ID || rest.length > 0) {
+  if (runId !== SAMPLE_RUN_ID || (rest.length > 0 && !(req.method === 'GET' && sub === 'reports'))) {
     send(404, { message: 'Engineering run not found' });
     return true;
   }
@@ -270,7 +305,7 @@ export function handleEngineeringRunRoutes(req, res, url, send, shared) {
     return true;
   }
   if (req.method === 'GET') {
-    const [status, payload] = routeGet(sub, url);
+    const [status, payload] = routeGet(sub, rest, url);
     send(status, payload);
     return true;
   }

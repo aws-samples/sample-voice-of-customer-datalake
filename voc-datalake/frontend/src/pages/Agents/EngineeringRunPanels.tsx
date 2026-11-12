@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { formatDateTime, formatRelativeDate } from '../../utils/dateUtils'
 import { FINAL_TASK_STATES, TASK_STATES } from '../../api/engineeringRunsApi'
 import { EngineeringSignals } from './EngineeringSignals'
-import { useAge } from './engineeringRunText'
+import { groupsInOrder, useAge } from './engineeringRunText'
 import type { EngineeringAgent, EngineeringTask } from '../../api/engineeringRunsApi'
 
 /**
@@ -132,20 +132,12 @@ function TaskItem({ task }: Readonly<{ task: EngineeringTask }>) {
   )
 }
 
-/** The states in board order, then any the server has that this page does not know, as they are named. */
-function statesOf(tasks: readonly EngineeringTask[]): string[] {
-  const known: readonly string[] = TASK_STATES
-  const others = [...new Set(tasks.map((task) => task.state))].filter((state) => !known.includes(state))
-    .sort((a, b) => a.localeCompare(b))
-  return [...known, ...others].filter((state) => tasks.some((task) => task.state === state))
-}
-
 export function BoardPanel({ tasks }: Readonly<{ tasks: readonly EngineeringTask[] }>) {
   const { t } = useTranslation('agents')
   if (tasks.length === 0) return <p className="text-sm text-muted">{t('engineeringRun.noTasks')}</p>
   return (
     <div className="space-y-4">
-      {statesOf(tasks).map((state) => {
+      {groupsInOrder(TASK_STATES, tasks.map((task) => task.state)).map((state) => {
         const group = tasks.filter((task) => task.state === state)
         const name = t(`engineeringRun.states.${state}`, { defaultValue: state })
         return (

@@ -54,6 +54,16 @@ export function useActionError(): (error: unknown) => string {
 }
 
 /**
+ * The groups present (a board's states, the reports' levels) in the page's own order, then any the server has that
+ * the page does not know, by name: an unknown one is shown as it is named, never dropped.
+ */
+export function groupsInOrder(known: readonly string[], present: readonly string[]): string[] {
+  const seen = new Set(present)
+  const others = [...seen].filter((group) => !known.includes(group)).sort((a, b) => a.localeCompare(b))
+  return [...known, ...others].filter((group) => seen.has(group))
+}
+
+/**
  * The steps the agents are on, lit as running. An agent's `step` is the harness's own words: a step is lit only when
  * they are one of the flow's node ids (`nodeIds`). One round each: the canvas reads rounds as an agents workflow's
  * loop rounds ("Round 2"), which an engineering flow does not have; who is on a step is the Agents panel's to say.

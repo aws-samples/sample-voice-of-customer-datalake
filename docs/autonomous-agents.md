@@ -143,7 +143,10 @@ server by the shared fixture `frontend/src/test/engineeringFlows.json`).
 Where the engineering agents are on (`ENGINEERING_AGENTS=on`, with their table and workspace bucket), the Agents API
 lets an administrator acting for themselves read a run and act on it (403 for anyone else, a delegated MCP or agent
 credential included, like a run's decision; 404 for an unknown run, and for everyone while the module is off). There is
-no MCP tool for engineering runs yet (docs/mcp.md). The web app's page for a run is `/agents/engineering/<run_id>`.
+no MCP tool for engineering runs yet (docs/mcp.md). The web app's page for a run is `/agents/engineering/<run_id>`:
+its flow with the steps its agents are on, and the Agents, Board, Conversation and Reports panels (the reports by
+level, goal first; the one chosen shows its latest version's Markdown, rendered as Markdown only, with a picker for
+the earlier versions).
 The reads work wherever the module is on. The actions (signals, answers) need the runtime and the bus named on the
 Agents API, with their grants and the bus's resource policy, which the opt-in stack does not set yet: until it does,
 they answer 503.

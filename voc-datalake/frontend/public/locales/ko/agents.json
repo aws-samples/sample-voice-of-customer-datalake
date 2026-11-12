@@ -741,9 +741,27 @@
     "tabs": {
       "agents": "에이전트",
       "board": "보드",
-      "conversation": "대화"
+      "conversation": "대화",
+      "reports": "보고서"
     },
-    "panels": "실행의 에이전트, 보드, 대화",
+    "panels": "실행의 에이전트, 보드, 대화, 보고서",
+    "reports": {
+      "title": "보고서: {{subject}}",
+      "version": "버전",
+      "latest": "최신 (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "작성 {{when}}",
+      "readFailed": "이 보고서를 읽을 수 없습니다.",
+      "missing": "이 버전은 작성되지 않았습니다 (생성이 끝나지 않았습니다). 다른 버전을 선택하세요.",
+      "loadFailed": "보고서를 불러올 수 없습니다.",
+      "none": "아직 작성된 보고서가 없습니다.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "목표",
+        "pr": "풀 리퀘스트",
+        "commit": "커밋"
+      }
+    },
     "flow": "실행의 흐름(에이전트가 있는 단계 표시)",
     "noFlow": "실행의 흐름을 읽을 수 없었습니다. 나머지 정보는 표시됩니다.",
     "notFound": "엔지니어링 실행을 찾을 수 없습니다",

@@ -2,7 +2,8 @@
  * @fileoverview An engineering run, as the run monitor reads it and acts on it (`/agents/engineering/<run_id>…`,
  * `lambda/engineering/monitor.py` and `views.py`, docs/autonomous-agents.md "An engineering run"): the overview (the
  * run, each agent's session as the supervisor keeps it, the tokens per model; no cost yet), the board, a page of the
- * conversation (where signals are recorded too, as `signal.*` messages), and an admin's signals and answers. Every read is lenient: a bad entry costs itself, an unknown state
+ * conversation (where signals are recorded too, as `signal.*` messages), the reports (commit, PR and goal, each
+ * version's Markdown), and an admin's signals and answers. Every read is lenient: a bad entry costs itself, an unknown state
  * or signal is kept as text.
  *
  * @module api/engineeringRunsApi
@@ -96,6 +97,22 @@ const MessageSchema = z.object({
 })
 export type ConversationMessage = z.output<typeof MessageSchema>
 
+/** The report levels, in the order the monitor lists them (`engineering/workspace/layout.py` REPORT_LEVELS). */
+export const REPORT_LEVELS = ['goal', 'pr', 'commit'] as const
+
+const ReportEntrySchema = z.object({ level: z.string().min(1), subject: z.string().min(1), latest_version: z.number().int().min(1) })
+export type EngineeringReportEntry = z.output<typeof ReportEntrySchema>
+
+/** One version of a report: the Markdown the server rendered, and the few facts the monitor shows beside it. */
+const ReportSchema = z.object({
+  report: z.object({ built_at: text }).catch({ built_at: '' }),
+  markdown: z.string(),
+})
+export interface EngineeringReport {
+  builtAt: string
+  markdown: string
+}
+
 export interface ConversationPage {
   items: ConversationMessage[]
   nextAfter: number
@@ -135,6 +152,9 @@ export const engineeringRunsKeys = {
   overview: (runId: string) => ['engineering-runs', runId, 'overview'] as const,
   board: (runId: string) => ['engineering-runs', runId, 'board'] as const,
   conversation: (runId: string) => ['engineering-runs', runId, 'conversation'] as const,
+  reports: (runId: string) => ['engineering-runs', runId, 'reports'] as const,
+  report: (runId: string, level: string, subject: string, version: number) =>
+    ['engineering-runs', runId, 'reports', level, subject, version] as const,
 }
 
 const engineeringRunPath = (runId: string, suffix = '') => `/agents/engineering/${encodeURIComponent(runId)}${suffix}`
@@ -154,4 +174,16 @@ export const engineeringRunsApi = {
   },
   answer: async (runId: string, request: AnswerRequest): Promise<unknown> =>
     fetchApi<unknown>(engineeringRunPath(runId, '/messages'), post(request)),
+  /** The run's reports, each with its latest version (a bad entry costs itself). */
+  reports: async (runId: string): Promise<EngineeringReportEntry[]> => {
+    const raw = await fetchApi<unknown>(engineeringRunPath(runId, '/reports'))
+    return eachOf(ReportEntrySchema).parse(isRecord(raw) ? raw.items : undefined)
+  },
+  /** One version of a report; an answer with no Markdown is an error. */
+  report: async (runId: string, level: string, subject: string, version: number): Promise<EngineeringReport> => {
+    const path = `/reports/${encodeURIComponent(level)}/${encodeURIComponent(subject)}?version=${version}`
+    const parsed = ReportSchema.safeParse(await fetchApi<unknown>(engineeringRunPath(runId, path)))
+    if (!parsed.success) throw new Error('The report answer was unreadable')
+    return { builtAt: parsed.data.report.built_at, markdown: parsed.data.markdown }
+  },
 }

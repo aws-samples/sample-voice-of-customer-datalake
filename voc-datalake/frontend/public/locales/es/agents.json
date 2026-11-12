@@ -747,9 +747,27 @@
     "tabs": {
       "agents": "Agentes",
       "board": "Tablero",
-      "conversation": "Conversación"
+      "conversation": "Conversación",
+      "reports": "Informes"
     },
-    "panels": "Los agentes, el tablero y la conversación de la ejecución",
+    "panels": "Los agentes, el tablero, la conversación y los informes de la ejecución",
+    "reports": {
+      "title": "Informe: {{subject}}",
+      "version": "Versión",
+      "latest": "La más reciente (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "Generado {{when}}",
+      "readFailed": "No se pudo leer este informe.",
+      "missing": "Esta versión nunca se escribió (su generación no terminó). Elija otra versión.",
+      "loadFailed": "No se pudieron cargar los informes.",
+      "none": "Todavía no se ha escrito ningún informe.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "Objetivo",
+        "pr": "Pull requests",
+        "commit": "Commits"
+      }
+    },
     "flow": "El flujo de la ejecución, con los pasos en los que están sus agentes",
     "noFlow": "No se pudo leer el flujo de la ejecución: se muestra el resto.",
     "notFound": "No se encontró la ejecución de ingeniería",

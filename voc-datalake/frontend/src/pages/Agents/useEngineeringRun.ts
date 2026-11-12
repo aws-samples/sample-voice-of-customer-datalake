@@ -2,7 +2,7 @@
  * @fileoverview The run monitor's reads and actions (api/engineeringRunsApi.ts).
  *
  * The overview, the board and the conversation are polled every {@link ENGINEERING_POLL_MS} while the run has not
- * ended. Polling is the fallback the plan names (v3 4.10): the push over the sample's AppSync Events channels is a
+ * ended, the report index (while its panel is open) every {@link REPORTS_POLL_MS}. Polling is the fallback the plan names (v3 4.10): the push over the sample's AppSync Events channels is a
  * later item. The conversation is read from where the last page left off (`after = next_after`), and each page is
  * merged into what is known by seq, so the window the server re-reads at the tail keeps each message once.
  *
@@ -16,6 +16,8 @@ import { useConfigStore } from '../../store/configStore'
 import type { AnswerRequest, ConversationMessage, SignalRequest } from '../../api/engineeringRunsApi'
 
 const ENGINEERING_POLL_MS = 5000
+/** The report index changes only when the builder writes a version: read less often. */
+const REPORTS_POLL_MS = 15_000
 
 interface Tail {
   messages: ConversationMessage[]
@@ -34,8 +36,8 @@ interface PollState {
 }
 
 /** Poll while `live` and the query's last read did not fail (an error stops it until the page reads again). */
-const pollWhile = (live: boolean) => (query: PollState): number | false =>
-  (live && query.state.status !== 'error' ? ENGINEERING_POLL_MS : false)
+const pollWhile = (live: boolean, every = ENGINEERING_POLL_MS) => (query: PollState): number | false =>
+  (live && query.state.status !== 'error' ? every : false)
 
 /**
  * The run's overview, polled while it has data, its last read did not fail and the run has not ended; `live` says
@@ -74,6 +76,16 @@ export function useEngineeringConversation(runId: string, live: boolean) {
     },
     enabled: useEnabled(runId),
     refetchInterval: pollWhile(live),
+  })
+}
+
+/** The run's report index, read every {@link REPORTS_POLL_MS} while the run is under way (a newer version shows). */
+export function useEngineeringReports(runId: string, live: boolean) {
+  return useQuery({
+    queryKey: engineeringRunsKeys.reports(runId),
+    queryFn: () => engineeringRunsApi.reports(runId),
+    enabled: useEnabled(runId),
+    refetchInterval: pollWhile(live, REPORTS_POLL_MS),
   })
 }
 
