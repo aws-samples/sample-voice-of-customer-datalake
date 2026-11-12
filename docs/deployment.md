@@ -1348,7 +1348,8 @@ data-handling requirements should factor this in, or opt out.
 The frontend discovers availability through the `features.webSearch` flag in
 `config.json` (set by CDK and by `scripts/deploy.sh` from the
 `WebSearchAvailable` stack output). For local development against the mock,
-set `VITE_ENABLE_WEB_SEARCH=true`.
+set `VITE_ENABLE_WEB_SEARCH=true` (and `VITE_ENABLE_ENGINEERING=true` for New engineering flow; neither is
+written by `update-env.sh`).
 
 ### Pinning All AI Surfaces to One Model
 
@@ -1564,7 +1565,9 @@ Behaviour worth knowing:
 The frontend reads its configuration at runtime from `config.json`, which is generated at deploy time (by
 `VocApiStack` and by `npm run deploy:frontend`) from the CloudFormation outputs: the API endpoint, the Cognito
 user pool and client ids, the board pool, the region, and feature flags (`features.webSearch`, `features.email`,
-`features.passkey`). The frontend build (`npm run build`) does not produce it.
+`features.passkey`, `features.engineering`: true only with `-c engineeringAgents=true`, from VocApiStack's
+`EngineeringAvailable` output; the workflow library offers New engineering flow only then, and against the dev mock
+with `VITE_ENABLE_ENGINEERING=true`). The frontend build (`npm run build`) does not produce it.
 
 For local development, `voc-datalake/frontend/scripts/update-env.sh` writes a `.env` from the same outputs
 (`VITE_API_ENDPOINT`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, `VITE_COGNITO_REGION`). A dev server on

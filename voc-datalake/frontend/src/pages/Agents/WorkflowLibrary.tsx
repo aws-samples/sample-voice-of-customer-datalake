@@ -3,7 +3,8 @@
  * revision, Open (the workflow's own page, `/agents/workflows/:workflowId`),
  * Rename (a new revision with only the name changed), New workflow (a dialog
  * asks for the name and an optional description; only its submit creates the
- * Start → End workflow, which then opens), and Archive for the ones no active agent runs. The
+ * Start → End workflow, which then opens; New engineering flow only where the deployment has the engineering
+ * agents module, `features.engineering`), and Archive for the ones no active agent runs. The
  * built-in template can be neither renamed nor archived.
  *
  * Archiving is soft (`DELETE /workflows/{id}`): the workflow leaves the library
@@ -28,6 +29,7 @@ import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import {
   API_WORKFLOW_LIMITS, WORKFLOW_SCHEMA_V2, seedWorkflowDetail, workflowsApi, workflowsKeys,
 } from '../../api/workflowsApi'
+import { isEngineeringAvailable } from '../../runtimeConfig'
 import { workflowPath } from './workflowPaths'
 import type { WorkflowSummary } from '../../api/workflowsApi'
 
@@ -150,9 +152,11 @@ export function WorkflowLibrary() {
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => { create.reset(); setCreating('agents') }}>
           <Plus size={14} aria-hidden="true" /> {t('library.newWorkflow')}
         </button>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { create.reset(); setCreating('engineering') }}>
-          <Plus size={14} aria-hidden="true" /> {t('library.newEngineeringFlow')}
-        </button>
+        {isEngineeringAvailable() && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { create.reset(); setCreating('engineering') }}>
+            <Plus size={14} aria-hidden="true" /> {t('library.newEngineeringFlow')}
+          </button>
+        )}
       </div>
       {isLoading && <div className="skeleton h-16" />}
       {failure.loadFailed && <LoadFailed message={t('library.loadFailed')} onRetry={failure.retry} retrying={failure.retrying} />}

@@ -37,6 +37,7 @@ import { createAssistantLambdas } from './api-assistant-lambdas';
 import { s3ImportIngestorDeployed } from './api-s3-import-lambda';
 import { createDataLambdas } from './api-data-lambdas';
 import { createEngagementLambdas } from './api-engagement-lambdas';
+import { engineeringAgentsEnabled } from './engineering-broker';
 import { createVerificationFixtureProvider } from './api-fixture-provider';
 import { createApiGateway, restApiBaseUrl } from './api-gateway';
 import { createJobLambdas } from './api-job-lambdas';
@@ -386,6 +387,8 @@ export class VocApiStack extends VocStack {
         email: emailSenderOf(this.node) !== undefined,
         // Opt-in passkeys: the app user pool allows WebAuthn sign-in (core-auth.ts), on every deployment.
         passkey: true,
+        // The engineering agents module (-c engineeringAgents=true): the SPA offers "New engineering flow" only then.
+        engineering: engineeringAgentsEnabled(this),
       },
       // The board pool (/board and /review): its ids and how it emails sign-in codes.
       ...boardRuntimeConfig(props, emailSenderOf(this.node) !== undefined),
@@ -439,6 +442,14 @@ export class VocApiStack extends VocStack {
       new cdk.CfnOutput(this, 'EmailAvailable', {
         value: 'true',
         description: 'Participant email can be sent (-c emailFrom; drives the frontend features.email flag)',
+      });
+    }
+    // Only with -c engineeringAgents=true, so the default templates do not change: deploy.sh reads a missing output
+    // as `features.engineering: false`.
+    if (engineeringAgentsEnabled(this)) {
+      new cdk.CfnOutput(this, 'EngineeringAvailable', {
+        value: 'true',
+        description: 'The engineering agents module is deployed (drives the frontend features.engineering flag)',
       });
     }
   }

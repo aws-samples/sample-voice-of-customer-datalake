@@ -569,7 +569,7 @@ for it. A pull request from a fork is only ever reviewed (comments), never fixed
 *Partly built*: the packs and the step, run as a CLI (`python -m engineering.quality_gate plan|check|gate`) that the
 gate runner's MicroVM is to run; nothing deploys it yet (the [runtime](#runtime-one-microvm-per-agent)'s images do
 not ship it; the workflow's Quality gate step is validated server side, with a `packs` pin the CLI keeps, and the
-editor's step is phase 5). What exists:
+editor has the step with its settings panel, [above](#how-the-agents-work-together)). What exists:
 
 - **The packs** (`voc-datalake/engineering-gates/`, [README](../voc-datalake/engineering-gates/README.md)):
   `rust-ts`, `python-ts` and `java`, each a `manifest.toml` (schema voc-gate-pack/1: the languages' markers and

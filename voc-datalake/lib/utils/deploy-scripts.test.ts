@@ -191,7 +191,7 @@ describe('frontend/scripts/update-env.sh', () => {
       ...[...runtimeConfig.matchAll(/import\.meta\.env\.(VITE_[A-Z_]+)/g)].map((m) => m[1]),
     ]
       // Local-only escape hatches have no CloudFormation output to read from.
-      .filter((name) => name !== 'VITE_ENABLE_WEB_SEARCH');
+      .filter((name) => name !== 'VITE_ENABLE_WEB_SEARCH' && name !== 'VITE_ENABLE_ENGINEERING');
     expect(required.length, 'expected runtimeConfig.ts to read VITE_ vars').toBeGreaterThan(0);
 
     const written = new Set(
@@ -406,7 +406,8 @@ describe('runtime config.json keys', () => {
   it('reads the board, email and hosted-UI values from outputs a stack declares', () => {
     const deploy = readFileSync(DEPLOY_SH, 'utf8');
     const stacks = ['core-stack.ts', 'api-stack.ts'].map((f) => readFileSync(join(PROJECT_ROOT, 'lib', 'stacks', f), 'utf8')).join('\n');
-    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable', 'UserPoolDomain', 'PasskeyAvailable']) {
+    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable', 'UserPoolDomain', 'PasskeyAvailable',
+      'EngineeringAvailable']) {
       expect(deploy).toContain(`select(.OutputKey=="${key}")`);
       expect(stacks).toMatch(new RegExp(`new cdk\\.CfnOutput\\(this, '${key}'`));
     }
