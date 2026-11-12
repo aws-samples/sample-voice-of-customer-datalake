@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from engineering.quality_gate.review import SEVERITIES
 from engineering.quality_gate.text import redact
@@ -43,14 +44,20 @@ def _safe(text: str, limit: int) -> str:
     return redact_text(redact(text)).text[:limit]
 
 
-def _finding(raw: str) -> Finding | None:
-    if len(raw.encode()) > MAX_LINE_BYTES:
+def schema_line(raw: str, schema: str, max_bytes: int = MAX_LINE_BYTES) -> dict[str, Any] | None:
+    """One JSON line an agent wrote, as an object of ``schema``, or None (too long, not JSON, another schema)."""
+    if len(raw.encode()) > max_bytes:
         return None
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
         return None
-    if not isinstance(data, dict) or data.get('schema') != SCHEMA:
+    return data if isinstance(data, dict) and data.get('schema') == schema else None
+
+
+def _finding(raw: str) -> Finding | None:
+    data = schema_line(raw, SCHEMA)
+    if data is None:
         return None
     file, line, severity = data.get('file'), data.get('line', 0), data.get('severity')
     rule, title, evidence = data.get('rule', ''), data.get('title'), data.get('evidence', '')

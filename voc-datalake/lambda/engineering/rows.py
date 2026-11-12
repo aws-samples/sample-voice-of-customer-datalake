@@ -11,6 +11,11 @@ def run_pk(ws: str, run_id: str) -> str:
     return f'WS#{ws}#RUN#{run_id}'
 
 
+def get_row(client: Any, table: str, key: Mapping[str, Any]) -> dict[str, Any] | None:
+    """One row by its key, read consistently (a low-level client's item), None when it is not there."""
+    return client.get_item(TableName=table, Key=key, ConsistentRead=True).get('Item')
+
+
 def string_attr(item: Mapping[str, Any], key: str) -> str:
     """A low-level item's string attribute, ``''`` when it is absent."""
     return str(item.get(key, {}).get('S', ''))

@@ -11,14 +11,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import Any, Final, Protocol
 
 # The agents of the catalog, as the broker's and the board's identity spells them (one list, shipped in the images).
 from engineering.connectors.identity import AGENT_ROLES as ROLES
 from engineering.runtime.tokens import AuthToken
-
-if TYPE_CHECKING:
-    from engineering.runtime.launcher import RoleSession
 
 MAX_ID_LENGTH: Final = 63
 #: A task or connection id: it becomes S3 keys, DynamoDB sort keys and session tags.
@@ -142,6 +139,13 @@ class ExecResult:
         return self.exit_code == 0 and not self.timed_out
 
 
+class HandedSession(Protocol):
+    """What the runtime hands a MicroVM's runner: the launcher's role session. Declared, not imported, so the two
+    modules don't import each other."""
+
+    def process_credentials(self) -> dict[str, Any]: ...
+
+
 class MicroVmRuntime(Protocol):
     """Run, suspend, resume, terminate a MicroVM; run commands in it; mint its auth token."""
 
@@ -173,7 +177,7 @@ class MicroVmRuntime(Protocol):
         """A fresh auth token for ``vm``'s endpoint (at most 60 minutes; held in memory only)."""
         ...
 
-    def hand_session(self, vm: MicroVm, session: RoleSession, mount: CacheMount | None) -> None:
+    def hand_session(self, vm: MicroVm, session: HandedSession, mount: CacheMount | None) -> None:
         """Give the MicroVM's agent user the launcher's role session (and mount the cache, the first time)."""
         ...
 

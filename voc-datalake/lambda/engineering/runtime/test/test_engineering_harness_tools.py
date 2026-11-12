@@ -29,7 +29,8 @@ def test_a_path_must_stay_inside_the_checkout_and_out_of_git(tmp_path, path):
 def test_files_are_read_listed_and_written_inside_the_checkout(tmp_path):
     workspace = Workspace(str(tmp_path))
     (tmp_path / '.git').mkdir()
-    assert workspace.write('src/new/module.py', 'x = 1\n') == 6
+    written = workspace.write('src/new/module.py', 'x = 1\n')
+    assert written == 6
     assert workspace.read('src/new/module.py') == 'x = 1\n'
     assert workspace.list('') == ['src/']
     # Group-writable: a later repository step (a formatter) may rewrite what the agent wrote.
@@ -253,7 +254,8 @@ def test_the_runner_client_reports_once_a_minute_while_a_command_runs():
     answers = [{'exec_id': 'e1'}] + [{'state': 'running'}] * 125 + [{'state': 'done', 'exit_code': 0}]
     waited: list[int] = []
     client = RunnerClient(sleep=lambda _s: None, opener=lambda _request: answers.pop(0))
-    assert client.run(['make'], timeout_seconds=600, on_wait=lambda: waited.append(1)) == {'exit_code': 0}
+    result = client.run(['make'], timeout_seconds=600, on_wait=lambda: waited.append(1))
+    assert result == {'exit_code': 0}
     assert len(waited) == 2
 
 

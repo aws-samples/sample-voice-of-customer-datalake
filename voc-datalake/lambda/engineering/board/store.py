@@ -26,7 +26,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from engineering.board.model import CLAIMED, FINAL, MOVES, OPEN, Move, Task, task_key
-from engineering.rows import run_pk, run_rows
+from engineering.rows import get_row, run_pk, run_rows
 from engineering.workspace.layout import parse_agent_key
 from shared.aws import is_conditional_check_failure
 from shared.ids import is_key_collision
@@ -88,7 +88,7 @@ class BoardStore:
         self.new_id = new_id
 
     def _get(self, key: Mapping[str, Any]) -> dict[str, Any] | None:
-        return self.client.get_item(TableName=self.table, Key=key, ConsistentRead=True).get('Item')
+        return get_row(self.client, self.table, key)
 
     def run_exists(self, ws: str, run_id: str) -> bool:
         """The run's META row is there (the run's start writes it)."""

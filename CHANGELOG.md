@@ -17,6 +17,22 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.10.00] - 2026-11-12
+
+Autonomous engineering agents, phase 1: the knowledge pack's first slice, the code that turns a repository into cited, versioned "how this repository works" documents, each a draft until an administrator approves it. Nothing invokes it yet.
+
+### Added
+
+- The knowledge pack, slice 1 (`voc-datalake/lambda/engineering/knowledge/`, docs/autonomous-engineering.md "The knowledge pack"), as tested code that nothing invokes yet (the Understand flow and its mapper agent land in phase 4). It detects a repository's packages from its file listing and manifests (Cargo, npm / yarn / pnpm, uv, Go modules and `go.work`, Gradle, Maven, Python packages, with Bazel `BUILD` roots as the fallback) and their CODEOWNERS owners (handles only). Detection is deterministic and bounded (what it leaves out past its caps is counted), and a listing with an absolute path or an empty, `.` or `..` part is refused. It cuts each package into shards within a byte budget (files by directory, split again and windowed when too big; history in windows of 50 commits, oldest first; pull requests in pages of 20) with stable ids, so a run resumes at the first shard not mapped. Each shard is mapped by one fenced, redacted model call (a file's lines numbered as git numbers them) into `voc-note/1` notes, whose citations must name what that shard itself read (a `path:line` of one of its files and a line it showed, a full sha of its history window, a review-comment URL of the connection's own repository found in its pull request page); anything else is removed, and a note left without one is dropped and counted. The reduce reads a shard's notes only from this refresh's own workspace key (its workspace, run, agent, commit and package) and checks them again. Claims are redacted for credentials and personal data. The notes reduce into the seven documents per package plus an overview with the package table, as deterministic Markdown with citation footnotes; a refreshed claim that contradicts a person's edit is flagged, not applied. Versions are stored per refresh or edit (D1), with rows `WS#<ws>#REPO#<connection>` / `KPACK#<package>#<version:06d>` in `voc-engineering` and create-only objects under `ws/<ws>/knowledge/…` in the workspace bucket. Each version is a draft until an administrator approves it, recorded with who and when (D4), and agents read only the latest approved version, through one reader that hands them its documents inside fenced DATA blocks. A person's edit is held to the bar of a mapped claim (one redacted line, citations of the repository's paths, commits or review comments only), and approving a draft built on an older version than the approved one is refused. A mapped shard whose notes cannot be read, or whose key is not the refresh's own, stops the publish and is named, never read as empty.
+
+### Fixed
+
+- The engineering runtime's interface no longer imports the launcher (CodeQL `py/unsafe-cyclic-import`): `hand_session` takes a `HandedSession` protocol declared in `runtime/interface.py`. Behaviour is unchanged.
+
+### Upgrade notes
+
+- Nothing changes in a deployment: no route, Lambda or stack changes.
+
 ## [6.09.00] - 2026-11-12
 
 Autonomous engineering agents: the run's S3 workspace, the commit, PR and goal reports, the board's history, admin-only reads of a run over REST, and engineering flows as a second kind of workflow. Merged from the voc-autonomous-c branch. Off by default.

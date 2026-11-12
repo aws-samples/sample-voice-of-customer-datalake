@@ -5,6 +5,7 @@
     ws/<ws>/runs/<run>/<agent>/commits/<sha>/<package>/attempt-<n>/<shard>.jsonl   findings (voc-finding/1 lines)
     ws/<ws>/runs/<run>/<agent>/commits/<sha>/_<kind>/attempt-<n>/<name>             gate outputs, logs, patches, checkpoints
     ws/<ws>/reports/<run>/<level>/<subject>/v<nnnn>.json (+ .md)                    commit, PR and goal reports
+    ws/<ws>/knowledge/<connection>/<package>/v<nnnnnn>/<name>                       a knowledge pack's version
 
 Objects are immutable: one per shard, agent and attempt, so a new attempt is a new object and map steps never
 collide; a reduce reads the keys the board recorded on its tasks, never a listing. The writer (the runtime) encodes a
@@ -30,6 +31,9 @@ _NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z')
 #: A package segment: plain characters and ``=XX`` escapes, not beginning with ``_`` (escaped as ``=5F``).
 _ENCODED = re.compile(r'(?:[A-Za-z0-9-]|=[0-9A-F]{2})(?:[A-Za-z0-9_-]|=[0-9A-F]{2}){0,599}\Z')
 _ATTEMPT = re.compile(r'attempt-([1-9][0-9]{0,3})\Z')
+#: A repository connection's id (the broker's parameter name after its prefix: no ``/``).
+CONNECTION = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z')
+_PLAIN = re.compile(rb'[A-Za-z0-9_-]')
 
 
 class LayoutError(ValueError):
@@ -47,6 +51,37 @@ def _decode_package(segment: str) -> str | None:
         return re.sub(rb'=([0-9A-F]{2})', lambda m: bytes([int(m.group(1), 16)]), segment.encode()).decode()
     except UnicodeDecodeError:
         return None
+
+
+def encode_package(package: str) -> str:
+    """A package path as one key segment (the module's encoding, which ``_decode_package`` reverses)."""
+    if not package or len(package) > 300:
+        raise LayoutError(f'not a valid package: {package[:80]!r}')
+    raw = package.encode()
+    encoded = ''.join(chr(byte) if _PLAIN.fullmatch(bytes([byte])) and not (i == 0 and byte == ord('_'))
+                      else f'={byte:02X}' for i, byte in enumerate(raw))
+    return _check(_ENCODED, encoded, 'package')
+
+
+def knowledge_key(ws: str, connection: str, package: str, version: int, name: str) -> str:
+    """One object of a knowledge pack's version (``pack.json``, ``<document>.md``): written once, never replaced."""
+    if not 0 < version < 1_000_000:
+        raise LayoutError('a pack version is 1 to 999999')
+    return (f'ws/{_check(_WS, ws, "workspace")}/knowledge/{_check(CONNECTION, connection, "connection id")}/'
+            f'{encode_package(package)}/v{version:06d}/{_check(_NAME, name, "name")}')
+
+
+def agent_shard_key(ws: str, run_id: str, agent: str, sha: str, package: str, attempt: int, name: str) -> str:
+    """An agent's object for one shard of ``package`` (a finding shard, a mapper's notes): ``parse_agent_key``'s
+    shape."""
+    if not 0 < attempt < 10_000:
+        raise LayoutError('an attempt is 1 to 9999')
+    key = (f'ws/{_check(_WS, ws, "workspace")}/runs/{_check(ID, run_id, "run id")}/{_check(ID, agent, "agent id")}/'
+           f'commits/{_check(SHA, sha, "commit sha")}/{encode_package(package)}/attempt-{attempt}/'
+           f'{_check(_NAME, name, "name")}')
+    if parse_agent_key(key) is None:
+        raise LayoutError(f'not a shard key: {name[:80]!r}')
+    return key
 
 
 def report_key(ws: str, run_id: str, level: str, subject: str, version: int, suffix: str = 'json') -> str:
