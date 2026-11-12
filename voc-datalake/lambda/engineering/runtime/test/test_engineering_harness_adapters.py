@@ -24,7 +24,7 @@ def test_the_harness_pauses_with_the_code_the_supervisor_reads_as_paused():
 
 
 def _checkpoints(store: Any) -> list[dict[str, Any]]:
-    return [json.loads(body) for key, body in sorted(store.objects.items()) if '/checkpoints/' in key]
+    return [json.loads(body) for key, body in sorted(store.objects.items()) if '/_checkpoints/' in key]
 
 
 def test_the_converse_loop_runs_the_tools_until_finish_and_counts_tokens(tmp_path):
@@ -55,10 +55,10 @@ def test_a_pause_in_the_inbox_saves_a_checkpoint_and_pauses(tmp_path):
     assert [state['notes'] for state in saved] == ['parser split is wrong', 'parser split is wrong']
     assert saved[-1]['plan'] == ['fix', 'test']
     assert saved[-1]['position']['task_id'] == 'task-1'
-    keys = sorted(key for key in w.store.objects if '/checkpoints/' in key)
-    assert keys[-1].startswith('engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/checkpoints/000002-')
+    keys = sorted(key for key in w.store.objects if '/_checkpoints/' in key)
+    assert keys[-1].startswith('ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/commits/cccccccccccccccccccccccccccccccccccccccc/_checkpoints/attempt-1/000002-')
     # Each checkpoint carries the working tree as a patch under the agent's own keys.
-    assert saved[-1]['patch'].startswith('engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/patches/checkpoint-000002-')
+    assert saved[-1]['patch'].startswith('ws/default/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/commits/cccccccccccccccccccccccccccccccccccccccc/_patches/attempt-1/checkpoint-000002-')
     assert saved[-1]['patch'] in w.store.objects
 
 

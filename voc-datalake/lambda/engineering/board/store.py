@@ -33,7 +33,7 @@ from botocore.exceptions import ClientError
 
 from engineering.board.model import CLAIMED, FINAL, MOVES, OPEN, Move, Task, task_key
 from engineering.quality_gate.text import redact
-from engineering.rows import Refused, run_pk, run_rows
+from engineering.rows import Refused, get_row, run_pk, run_rows
 from engineering.workspace.layout import parse_agent_key
 from shared.aws import is_conditional_check_failure
 from shared.ids import is_key_collision
@@ -93,7 +93,7 @@ class BoardStore:
         self.new_id = new_id
 
     def _get(self, key: Mapping[str, Any]) -> dict[str, Any] | None:
-        return self.client.get_item(TableName=self.table, Key=key, ConsistentRead=True).get('Item')
+        return get_row(self.client, self.table, key)
 
     def run_exists(self, ws: str, run_id: str) -> bool:
         """The run's META row is there (the run's start writes it)."""
@@ -273,12 +273,23 @@ class BoardStore:
                     ':waiting': {'BOOL': waiting}},
             already=lambda _task: False, refusal='the lease is not yours, has run out, or the task has ended'))
 
-    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str) -> Task:
-        """The supervisor's re-post of a task whose lease ran out: ``open`` again at the next attempt, the lease
-        cleared, its reason in the history row. Only from the attempt read, so two re-posts never both apply."""
+    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None) -> Task:
+        """The supervisor's re-post of the task at the ``attempt`` it judged (crashed, stalled, its lease run out):
+        ``open`` again at the next attempt, the lease cleared, its reason in the history row. Only at that attempt,
+        so a retried re-post never revokes the claim a new agent made meanwhile (a later attempt), and two re-posts
+        never both apply. Pass it: without it (a caller from before it, ``None``) the attempt read now is taken,
+        which cannot tell a retry from a newer claim."""
         current = self.task(ws, run_id, task_id)
+        if attempt is None:
+            if current.state == OPEN and current.attempt > 1:
+                return current   # (a re-post landed already: its retry publishes the same event again)
+            attempt = current.attempt
+        if current.state == OPEN and current.attempt == attempt + 1:
+            return current   # (this re-post landed already: a retry after a lost answer)
         if current.state == OPEN or current.state in FINAL:
             raise BoardError('conflict', f'a {current.state} task is not re-posted')
+        if current.attempt != attempt:
+            raise BoardError('conflict', f'the task is at attempt {current.attempt}, not the {attempt} judged')
         at = self.now().isoformat()
         why = redact(reason.strip())[:MAX_LINE]
         ended = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
@@ -289,11 +300,11 @@ class BoardStore:
             condition=f'attempt = :attempt AND NOT #state IN (:open, {", ".join(ended)})',
             names={'#state': 'state'},
             values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False},
-                    ':actor': {'S': 'supervisor'}, ':at': {'S': at}, ':attempt': {'N': str(current.attempt)}},
+                    ':actor': {'S': 'supervisor'}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
             # Another re-post of the same attempt landed between the read and the write.
-            already=lambda t: t.state == OPEN and t.attempt == current.attempt + 1,
+            already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
             refusal='the task moved on since it was read'),
-            Move(task_id, OPEN, 'supervisor', at, current.attempt + 1, 'repost', reason=why).item(ws, run_id))
+            Move(task_id, OPEN, 'supervisor', at, attempt + 1, 'repost', reason=why).item(ws, run_id))
 
     def move(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, to_state: str,
              result_keys: Sequence[object]) -> Task:

@@ -5,7 +5,10 @@ create-only, never changed or deleted: ``WS#<ws>#RUN#<run>`` / ``INBOX#<addresse
 the addressee ``agent:<agent>`` (a message to that agent), ``role:<role>`` (a posted task: every live agent of the
 role reads it) or ``conductor`` (a message to the run's conductor, which the coordinator plays). ``inbox_seq`` is the
 run's write-order counter (``ADD inbox_seq`` on its META, taken once per notice behind an ``INBOXEVT#<event_id>``
-marker), so a notice delivered late (an asynchronous retry) still numbers above everything already read. Its
+marker), so a notice delivered late (an asynchronous retry) still numbers above everything already read. That counter
+is voc-auto-b's delivery from their a3f5eb13 on; the delivery merged here (6.11.00) still keys the row by the
+conversation seq, so until that commit merges, a notice delivered more than 20 numbers late can fall behind a reader's
+cursor. This reader reads the key's number either way. Its
 attributes: ``event_id``, ``type``, ``from_kind``, ``from_id``, ``task_id`` (when the message has one), ``summary``,
 ``at`` (epoch seconds), ``refs`` (the message's refs, as JSON), ``inbox_seq`` and ``seq`` (the message's conversation
 seq).

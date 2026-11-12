@@ -24,7 +24,7 @@ import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { ENGINEERING_ROLE_NAME_TEMPLATE, EngineeringBroker, engineeringAgentsEnabled } from './engineering-broker';
 import { EngineeringBus } from './engineering-bus';
-import { addEngineeringRuntime } from './engineering-runtime';
+import { type EngineeringPeers, addEngineeringRuntime } from './engineering-runtime';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
@@ -358,26 +358,31 @@ export class VocProcessingStack extends VocStack {
         : undefined,
     });
     // The engineering agents' connector broker (docs/autonomous-engineering.md): only with -c engineeringAgents=true.
-    let engineeringBus: EngineeringBus | undefined;
+    let peers: EngineeringPeers | undefined;
     if (engineeringAgentsEnabled(this)) {
       const roleNamePattern = this.uniqueNamePattern(ENGINEERING_ROLE_NAME_TEMPLATE);
-      new EngineeringBroker(this, 'EngineeringBroker', {
+      const broker = new EngineeringBroker(this, 'EngineeringBroker', {
         uniqueName, layer: processingLayer, roleNamePattern, kmsKey, deploymentPrefix: this.deploymentPrefix,
       });
       if (!props.engineeringTable) throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table');
       if (!props.engineeringWorkspaceBucket) {
         throw new Error('engineeringAgents needs VocCoreStack\'s voc-eng-workspace bucket');
       }
-      engineeringBus = new EngineeringBus(this, 'EngineeringBus', {
+      const bus = new EngineeringBus(this, 'EngineeringBus', {
         uniqueName, layer: processingLayer, roleNamePattern, kmsKey, engineeringTable: props.engineeringTable,
         workspaceBucket: props.engineeringWorkspaceBucket,
       });
+      peers = {
+        deadLetterQueue: bus.dlq, bus: bus.bus, board: bus.board, broker: broker.function,
+        addAgentPublisher: (statementId, role, source) => bus.addAgentPublisher(statementId, role, source),
+      };
     }
-    // The engineering agents' MicroVM runtime: only with `-c engineeringAgents=true` (engineering-runtime.ts); its
-    // supervisor rule's undelivered ticks go to the bus's dead-letter queue.
+    // The engineering agents' MicroVM runtime: only with `-c engineeringAgents=true` (engineering-runtime.ts): its
+    // agent roles call the board and the broker and publish on the bus; its supervisor rule's undelivered ticks go to
+    // the bus's dead-letter queue.
     addEngineeringRuntime(this, {
-      uniqueName, layer: processingLayer, kmsKey, agentsTable: props.agentsTable, rawDataBucket,
-      deadLetterQueue: engineeringBus?.dlq,
+      uniqueName, layer: processingLayer, kmsKey, engineeringTable: props.engineeringTable, rawDataBucket, peers,
+      workspaceBucket: props.engineeringWorkspaceBucket,
     });
 
     // ============================================

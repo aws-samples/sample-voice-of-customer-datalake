@@ -11,14 +11,20 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import Any, Final, Protocol
 
 # The agents of the catalog, as the broker's and the board's identity spells them (one list, shipped in the images).
 from engineering.connectors.identity import AGENT_ROLES as ROLES
 from engineering.runtime.tokens import AuthToken
 
-if TYPE_CHECKING:
-    from engineering.runtime.launcher import RoleSession
+
+class HandedSession(Protocol):
+    """A role session as the runtime hands it to a MicroVM (``launcher.RoleSession``; declared here, not imported,
+    so this module and the launcher, which imports it, do not import each other)."""
+
+    def process_credentials(self) -> dict[str, Any]:
+        """The ``credential_process`` answer the MicroVM's runner keeps for the agent user."""
+        ...
 
 MAX_ID_LENGTH: Final = 63
 #: A task or connection id: it becomes S3 keys, DynamoDB sort keys and session tags.
@@ -61,6 +67,10 @@ def agent_index(agent_id: str, role: str) -> int:
     return int(match.group('index'))
 
 
+#: The workspace's attempts (workspace/layout.py: ``attempt-<n>``, 1-9999).
+MAX_ATTEMPT: Final = 9999
+
+
 @dataclass(frozen=True)
 class AgentSpec:
     """What one MicroVM is started for: one agent of one run, on one task."""
@@ -77,6 +87,11 @@ class AgentSpec:
     connection: str
     #: The checkpoint a continuation restores from (``checkpoints.CheckpointReader.latest``), if any.
     restore_key: str | None = None
+    #: The task's commit and attempt (the board's): the agent's workspace keys go under them.
+    commit: str = ''
+    attempt: int = 1
+    #: The workspace bucket (voc-eng-workspace): the agent's checkpoints, patches and findings.
+    workspace_bucket: str = ''
 
     def __post_init__(self) -> None:
         if self.role not in ROLES:
@@ -85,11 +100,17 @@ class AgentSpec:
         agent_index(self.agent_id, self.role)
         check_id('task_id', self.task_id)
         check_id('connection', self.connection)
+        if isinstance(self.attempt, bool) or not 0 < self.attempt <= MAX_ATTEMPT:
+            raise RuntimeRefused(f'attempt is the task\'s attempt, 1-{MAX_ATTEMPT}')
 
     def environment(self) -> dict[str, str]:
         """What the harness reads: ids and keys, never a credential (those come from the launcher)."""
         env = {'VOC_RUN_ID': self.run_id, 'VOC_AGENT_ID': self.agent_id, 'VOC_TASK_ID': self.task_id,
-               'VOC_ROLE': self.role}
+               'VOC_ROLE': self.role, 'VOC_ATTEMPT': str(self.attempt)}
+        if self.commit:
+            env['VOC_COMMIT'] = self.commit
+        if self.workspace_bucket:
+            env['VOC_WORKSPACE_BUCKET'] = self.workspace_bucket
         if self.restore_key:
             env['VOC_RESTORE_KEY'] = self.restore_key
         return env
@@ -173,7 +194,7 @@ class MicroVmRuntime(Protocol):
         """A fresh auth token for ``vm``'s endpoint (at most 60 minutes; held in memory only)."""
         ...
 
-    def hand_session(self, vm: MicroVm, session: RoleSession, mount: CacheMount | None) -> None:
+    def hand_session(self, vm: MicroVm, session: HandedSession, mount: CacheMount | None) -> None:
         """Give the MicroVM's agent user the launcher's role session (and mount the cache, the first time)."""
         ...
 

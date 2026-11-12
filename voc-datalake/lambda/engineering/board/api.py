@@ -14,7 +14,8 @@ retried progress report is a new report (its time is part of it).
 
 The supervisor re-posts a task whose lease ran out with ``repost_task`` (its ``Board.repost`` port,
 engineering/runtime/ports.py, is to call it): the store's ``repost``, then the task published again as
-``task.posted`` to its role, so the delivery function pushes it to the run's agents of that role.
+``task.posted`` to its role, so the delivery function records it for the role's agents to read (it wakes
+nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ import base64
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -90,16 +91,21 @@ def _event(task: Task, run_id: str) -> Message:
     return Message(event_id=change_event_id(at, run_id, task.task_id, task.state, str(task.attempt), task.updated_at),
                    ws=WORKSPACE, run_id=run_id, thread_id=task.task_id, task_id=task.task_id, attempt=task.attempt,
                    sender=Party('system', 'board'), to=to, type=kind,
-                   summary=f'{task.title} ({task.state}, by {task.updated_by})',
+                   summary=_summary(f'{task.title} ({task.state}, by {task.updated_by})'),
                    refs=Refs(s3=tuple(sorted(task.result_keys))),
                    at=at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
 
 
+def _summary(text: str) -> str:
+    """A board event's summary: cut to a summary's bytes on a character boundary and redacted as a whole (its parts
+    each passed alone; joined, they could read as a credential's line), cut again (a marker can be longer than what
+    it hides)."""
+    return fit_summary(redact(fit_summary(text)))
+
+
 def _progress_summary(task: Task) -> str:
-    """``progress: <title>: <step>``, cut to a summary's bytes on a character boundary and redacted as a whole (the
-    title and the step each passed alone; joined, they could read as a credential's line)."""
-    text = f'progress: {task.title}: {task.step}' + (' (waiting)' if task.waiting else '')
-    return fit_summary(redact(fit_summary(text)))   # (a redaction's marker can be longer than what it hides)
+    """``progress: <title>: <step>``."""
+    return _summary(f'progress: {task.title}: {task.step}' + (' (waiting)' if task.waiting else ''))
 
 
 def _progress_event(task: Task, run_id: str) -> Message:
@@ -114,18 +120,15 @@ def _progress_event(task: Task, run_id: str) -> Message:
 
 
 def repost_task(store: BoardStore, publisher: EventBridgePublisher, ws: str, run_id: str, task_id: str,
-                reason: str) -> Task:
-    """The supervisor's re-post of a task whose lease ran out: written, then published as ``task.posted``.
+                reason: str, attempt: int | None = None) -> Task:
+    """The supervisor's re-post of the task at the ``attempt`` it judged: written, then published as ``task.posted``
+    by the supervisor (``publisher`` carries its own source, ``voc.engineering/supervisor``, which may send
+    ``task.posted``: bus/senders.py), so each service role publishes as one source.
 
-    A retry after a lost event finds the task already open at its next attempt, and publishes it again (the same
-    change, so the same event: a redelivery)."""
-    try:
-        task = store.repost(ws, run_id, task_id, reason=reason)
-    except BoardError:
-        task = store.task(ws, run_id, task_id)
-        if not (task.state == OPEN and task.attempt > 1):
-            raise
-    publisher.publish(_event(task, run_id))
+    A retry after a lost event finds the task already open at the next attempt, and publishes it again (the same
+    change, so the same event: a redelivery). A task that moved on (a newer claim) is refused: ``BoardError``."""
+    task = store.repost(ws, run_id, task_id, reason=reason, attempt=attempt)
+    publisher.publish(replace(_event(task, run_id), sender=Party('supervisor', 'supervisor')))
     return task
 
 

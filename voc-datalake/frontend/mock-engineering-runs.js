@@ -185,7 +185,7 @@ function signalTarget(body) {
   }
   const task = run.tasks.find((t) => t.task_id === body.task_id);
   if (!task) return [404, 'no such task in this run'];
-  if (!task.lease || task.lease.epoch !== body.attempt || FINAL.has(task.state)) {
+  if (!task.lease || task.lease.epoch !== body.attempt || task.state === 'open' || FINAL.has(task.state)) {
     return [409, 'This task has moved on since you looked: reload the run'];
   }
   return { kind: 'agent', id: task.lease.agent };

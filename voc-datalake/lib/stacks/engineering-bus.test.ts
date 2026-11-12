@@ -6,7 +6,7 @@
  * makes.
  */
 import { describe, expect, it } from 'vitest';
-import type { Template } from 'aws-cdk-lib/assertions';
+import { Match, type Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
@@ -89,15 +89,65 @@ describe('the engineering bus', () => {
     expect(Object.keys(on.findResources('AWS::Events::Archive'))).toStrictEqual([]);
   });
 
-  it('has a bus policy that denies PutEvents to every principal but the board\'s role', () => {
+  it('has a bus policy that denies PutEvents to every principal but the board\'s role and the agent roles with a voice', () => {
     const on = template('on');
     const boardRole = functionRoleId(on, functionId(on, 'voc-engineering-board'));
-    const policies = Object.values(on.findResources('AWS::Events::EventBusPolicy'));
-    expect(policies.map((policy) => policy.Properties?.Statement)).toStrictEqual([{
-      Sid: 'cdk-OnlyTheEngineeringPublishers', Effect: 'Deny', Principal: { AWS: '*' }, Action: 'events:PutEvents',
-      Resource: { 'Fn::GetAtt': [busId(on), 'Arn'] },
-      Condition: { ArnNotEquals: { 'aws:PrincipalArn': [{ 'Fn::GetAtt': [boardRole, 'Arn'] }] } },
-    }]);
+    const agentRoles = Object.keys(on.findResources('AWS::IAM::Role'))
+      .filter((id) => /EngineeringAgent.*Role/.test(id)).sort(byCodeUnit);
+    expect(agentRoles).toHaveLength(13);
+    // The agent roles with a voice: all but the coach (engineering-runtime.ts NO_VOICE).
+    const speaking = agentRoles.filter((id) => !id.includes('Coach'));
+    const statements = Object.values(on.findResources('AWS::Events::EventBusPolicy'))
+      .map((policy) => z.looseObject({ Sid: z.string(), Condition: z.unknown() }).parse(policy.Properties?.Statement));
+    const only = statements.find((statement) => statement.Sid === 'cdk-OnlyTheEngineeringPublishers');
+    const allowed = z.object({ ArnNotEquals: z.object({ 'aws:PrincipalArn': z.array(z.unknown()) }) })
+      .parse(only?.Condition).ArnNotEquals['aws:PrincipalArn'];
+    expect(allowed).toStrictEqual([boardRole, ...speaking].map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })));
+    expect(JSON.stringify(only)).toContain(busId(on));
+  });
+
+  it('denies each agent role every bus source but its own, whatever its own policy says', () => {
+    const statements = Object.values(template('on').findResources('AWS::Events::EventBusPolicy'))
+      .map((policy) => JSON.stringify(policy.Properties?.Statement)).filter((text) => text.includes('OwnSourceOnly'));
+    // One per agent role with a voice: none for the coach.
+    expect([statements.length, statements.some((text) => text.includes('Coach'))]).toStrictEqual([12, false]);
+    const fixer = statements.find((text) => text.includes('cdk-OwnSourceOnlyFixer'));
+    expect(fixer).toContain('"Effect":"Deny"');
+    expect(fixer).toContain('"StringNotEquals":{"events:source":"voc.engineering/agent/fixer/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}"}');
+    expect(fixer).toMatch(/"ArnEquals":\{"aws:PrincipalArn":\{"Fn::GetAtt":\["[^"]*EngineeringAgentFixerRole/);
+  });
+
+  it('writes the bus policy one statement at a time (each resource waits for the one before)', () => {
+    const policies = Object.entries(template('on').findResources('AWS::Events::EventBusPolicy'));
+    expect(policies).toHaveLength(13);
+    const ids = new Set(policies.map(([id]) => id));
+    // Each policy's one dependency among them: the one written before it.
+    const before = new Map(policies.map(([id, policy]) => [id,
+      z.array(z.string()).parse([policy.DependsOn ?? []].flat()).filter((dep) => ids.has(dep))]));
+    const first = [...before].filter(([, deps]) => deps.length === 0).map(([id]) => id);
+    expect(first).toHaveLength(1);
+    // Walking back from every other policy, one step at a time, reaches all 13: one chain, no fan-out.
+    const next = new Map([...before].filter(([, deps]) => deps.length === 1).map(([id, [dep]]) => [dep, id]));
+    expect(next.size).toBe(12);
+    let at: string | undefined = first[0];
+    const seen: string[] = [];
+    while (at !== undefined) {
+      seen.push(at);
+      at = next.get(at);
+    }
+    expect(seen).toHaveLength(13);
+  });
+
+  it('hands the agent roles the real board and broker, and no role queue (they serve every run)', () => {
+    const on = template('on');
+    const fixer = JSON.stringify(on.findResources('AWS::IAM::Policy', {
+      Properties: { Roles: [{ Ref: Match.stringLikeRegexp('EngineeringAgentFixerRole') }] },
+    }));
+    const board = functionId(on, 'voc-engineering-board');
+    const broker = functionId(on, 'voc-engineering-broker');
+    expect(fixer).toContain(`{"Fn::GetAtt":["${board}","Arn"]}`);
+    expect(fixer).toContain(`{"Fn::GetAtt":["${broker}","Arn"]}`);
+    expect(fixer).not.toContain('sqs:');
   });
 
   it('has ONE rule on the bus, matching every event of the account, with the inbox router its only target', () => {

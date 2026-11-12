@@ -17,6 +17,44 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.11.00] - 2026-11-12
+
+Autonomous engineering agents, phase 4: the run's start and end, the agents' checkpoints and patches in the workspace layout, the delivery function, MicroVM time in a run's cost, and the run monitor's signal results. Merged from the voc-autonomous-b branch. Off by default.
+
+### Added
+
+- A run's start and end on `voc-engineering` (`runtime/runs.py`, `handler.py`). `start_run` writes the run's META row and lists the run for the supervisor in one transaction; META holds the task cap the board counts against, the hard caps on tokens and cost, and the goal, repository, flow, status and start (the list row is `WS#<ws>#RUNS`). `end_run` sets the status and end time and stops every MicroVM of the run. Both finish on a retry what a first call left. An ended run stays listed until none of its agents is live or being moved; then it is released, and with no run listed the supervisor's rule switches off. Session rows are the board's `AGENT#` rows, written by update only (the broker's `cost_usd` is never overwritten), created only while META is active, so an ending run gets no unsupervised agent. Caps refuse NaN and infinity.
+- `voc-engineering-delivery` (`runtime/delivery.py`), the function the inbox router names. It records each voc-msg/1 message once in its run's inbox (`WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<seq:012d>#<event_id>`, a conditional put, so a redelivery writes nothing), then wakes the addressees: a working agent's MicroVM is resumed with a fresh session and kept awake for 10 minutes (later messages do not extend it); an agent held without a MicroVM is continued in a new one, once per wait; the 45-minute wait limit counts from the wait's start, so a stream of messages cannot keep a MicroVM running. Nobody is woken in a run that has ended, is past 30 days or has spent its budget. A busy addressee or a failed wake fails the call, so Lambda retries it (twice; failures go to `voc-engineering-dlq`). A posted task wakes nobody.
+- The agent roles reach the board's and the broker's function URLs (`lambda:InvokeFunctionUrl` with IAM authentication). Each role with a voice puts events on the engineering bus under its own source only; the bus policy denies each such role every other source. The coach has no voice yet. No agent role reads the shared role queues.
+
+### Changed
+
+- An agent's checkpoints and patches follow `voc-eng-workspace`'s layout (`ws/<ws>/runs/<run>/<agent>/commits/<sha>/_<checkpoints|patches>/attempt-<n>/`), written create-only. The launch takes the task's attempt (1 to 9999), and a continuation restores only from its own task's attempt. The commit pattern has one home (`runtime/checkpoints.SHA`), which `workspace/layout.py` imports. Egress allows both buckets' endpoints.
+- An agent's MicroVM time is priced into its `AGENT#` row's `cost_usd`, in the same write that moves the session, so a run's cost cap counts it and each second is priced once (forward only).
+- The run monitor's `signal` action answers each agent's status and whether the signal took effect (not when the agent is busy, its move failed, or there was nothing to do), and takes an optional `attempt`: an agent on another attempt of its task is answered stale and left alone (Stop now is never stale).
+- `engineeringAgentsEnabled` is the one strict parser of `-c engineeringAgents`.
+
+### Upgrade notes
+
+- Without `-c engineeringAgents=true` nothing changes. With it, VocProcessingStack gains `voc-engineering-delivery` with its own role (the run partitions' item reads and writes, never a delete or the run registry; the MicroVM resume, run, terminate and auth-token calls; the checkpoints' reads; the dead-letter queue; and, to renew an agent's session on a wake, the launcher's AssumeRole, so each agent role now trusts the supervisor and the delivery role, each only with all four session tags); the supervisor gains Get/Put/Update/ConditionCheck/Query on `WS#*#RUN#*` and `WS#*#RUNS`, Delete only on the registry, and `ENGINEERING_TABLE`; the agent roles gain function-URL invoke on the board and the broker and their own event source on the bus.
+- New `-c engineeringMicrovmUsdPerSecond` (0 to 0.01 USD, at most 12 decimal places, checked at synth and again at start); unset means 0, so MicroVM time is not priced. Set it to the region's MicroVM price.
+
+## [6.10.00] - 2026-11-12
+
+Autonomous engineering agents, phase 1: the knowledge pack's first slice, the code that turns a repository into cited, versioned "how this repository works" documents, each a draft until an administrator approves it. Nothing invokes it yet.
+
+### Added
+
+- The knowledge pack, slice 1 (`voc-datalake/lambda/engineering/knowledge/`, docs/autonomous-engineering.md "The knowledge pack"), as tested code that nothing invokes yet (the Understand flow and its mapper agent land in phase 4). It detects a repository's packages from its file listing and manifests (Cargo, npm / yarn / pnpm, uv, Go modules and `go.work`, Gradle, Maven, Python packages, with Bazel `BUILD` roots as the fallback) and their CODEOWNERS owners (handles only). Detection is deterministic and bounded (what it leaves out past its caps is counted), and a listing with an absolute path or an empty, `.` or `..` part is refused. It cuts each package into shards within a byte budget (files by directory, split again and windowed when too big; history in windows of 50 commits, oldest first; pull requests in pages of 20) with stable ids, so a run resumes at the first shard not mapped. Each shard is mapped by one fenced, redacted model call (a file's lines numbered as git numbers them) into `voc-note/1` notes, whose citations must name what that shard itself read (a `path:line` of one of its files and a line it showed, a full sha of its history window, a review-comment URL of the connection's own repository found in its pull request page); anything else is removed, and a note left without one is dropped and counted. The reduce reads a shard's notes only from this refresh's own workspace key (its workspace, run, agent, commit and package) and checks them again. Claims are redacted for credentials and personal data. The notes reduce into the seven documents per package plus an overview with the package table, as deterministic Markdown with citation footnotes; a refreshed claim that contradicts a person's edit is flagged, not applied. Versions are stored per refresh or edit (D1), with rows `WS#<ws>#REPO#<connection>` / `KPACK#<package>#<version:06d>` in `voc-engineering` and create-only objects under `ws/<ws>/knowledge/…` in the workspace bucket. Each version is a draft until an administrator approves it, recorded with who and when (D4), and agents read only the latest approved version, through one reader that hands them its documents inside fenced DATA blocks. A person's edit is held to the bar of a mapped claim (one redacted line, citations of the repository's paths, commits or review comments only), and approving a draft built on an older version than the approved one is refused. A mapped shard whose notes cannot be read, or whose key is not the refresh's own, stops the publish and is named, never read as empty.
+
+### Fixed
+
+- The engineering runtime's interface no longer imports the launcher (CodeQL `py/unsafe-cyclic-import`): `hand_session` takes a `HandedSession` protocol declared in `runtime/interface.py`. Behaviour is unchanged.
+
+### Upgrade notes
+
+- Nothing changes in a deployment: no route, Lambda or stack changes.
+
 ## [6.09.00] - 2026-11-12
 
 Autonomous engineering agents: the run's S3 workspace, the commit, PR and goal reports, the board's history, admin-only reads of a run over REST, and engineering flows as a second kind of workflow. Merged from the voc-autonomous-c branch. Off by default.

@@ -1,46 +1,152 @@
-"""Session rows: listed while live, conditional moves, nothing but ids and times."""
+"""Session rows: the board's AGENT# rows, listed through the active runs, conditional moves, never another's attributes."""
 from dataclasses import replace
+from decimal import Decimal
+from typing import Any
 
 import pytest
 
-from engineering.runtime.interface import MicroVm
+from engineering.runtime.caps import microvm_price
+from engineering.runtime.interface import MicroVm, RuntimeRefused
+from engineering.runtime.runs import RunCaps, RunNotActive, RunStore
 from engineering.runtime.sessions import AgentSession, SessionStore, StaleSession
+from engineering.runtime.test.conftest import RUN
 
-SESSION = AgentSession(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
+SESSION = AgentSession(run_id=RUN, agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
                        egress=('pypi.org',), connection='repo-1', commit='a' * 40, paths=('src',),
                        harness=('python3', '-m', 'harness'), vm_id='vm-1', endpoint='https://vm-1.example.org',
                        started_at=1000)
+KEY = {'pk': f'WS#default#RUN#{RUN}', 'sk': 'AGENT#fixer-1'}
 
 
-def test_a_created_session_reads_back_and_is_listed_while_live(aws):
-    store = SessionStore(aws[1])
+def _store(table: Any) -> tuple[SessionStore, RunStore]:
+    runs = RunStore(table)
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)
+    return SessionStore(table, runs), runs
+
+
+def test_a_created_session_is_listed_until_its_ended_run_is_released(aws):
+    store, runs = _store(aws[1])
     created = store.create(SESSION)
-    assert store.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1') == created
+    assert store.get(RUN, 'fixer-1') == created
     assert list(store.active()) == [created]
+    runs.end(RUN, 'done', now=10)
+    # Still live: the supervisor must see it to end its MicroVM.
+    assert list(store.active()) == [created]
+    runs.release(RUN)
+    assert list(store.active()) == []
+
+
+def test_no_session_is_created_once_its_run_has_ended_nor_twice(aws):
+    store, runs = _store(aws[1])
+    store.create(SESSION)
+    with pytest.raises(StaleSession, match='exists'):
+        store.create(SESSION)
+    runs.end(RUN, 'stopped', now=10)
+    with pytest.raises(RunNotActive, match='no agent is launched'):
+        store.create(replace(SESSION, agent_id='fixer-2'))
+    assert [session.agent_id for session in store.of_run(RUN)] == ['fixer-1']
 
 
 def test_an_ended_session_leaves_the_active_list(aws):
-    store = SessionStore(aws[1])
+    store, _ = _store(aws[1])
     store.save(replace(store.create(SESSION), status='done'))
     assert list(store.active()) == []
-    row = aws[1].get_item(Key={'pk': 'ENGRUN#01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'sk': 'AGENT#fixer-1'})['Item']
-    assert 'gsi1pk' not in row
+    assert store.of_run(RUN)[0].status == 'done'
+
+
+def test_the_row_is_the_boards_agent_row_with_the_totals_the_reports_read(aws):
+    store, _ = _store(aws[1])
+    created = store.create(SESSION, {'model': 'model-a', 'skill_version': 'fixer@3'})
+    store.save(replace(created, tokens={'model-a': {'in': 10, 'out': 4}, 'model-b': {'in': 1, 'out': 2}},
+                       microvm_seconds=60))
+    row = aws[1].get_item(Key=KEY)['Item']
+    assert (row['role'], row['model'], row['skill_version'], row['microvm_seconds']) == ('fixer', 'model-a',
+                                                                                         'fixer@3', 60)
+    assert (row['input_tokens'], row['output_tokens']) == (11, 6)
+
+
+def test_the_store_never_writes_over_what_others_add_to_the_row(aws):
+    store, _ = _store(aws[1])
+    created = store.create(SESSION)
+    # The brokers add the cost they priced to the same row.
+    aws[1].update_item(Key=KEY, UpdateExpression='ADD cost_usd :cost', ExpressionAttributeValues={':cost': 2})
+    store.save(replace(created, status='working', exec_id=None, asked_at=None))
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == 2
+
+
+def test_microvm_seconds_are_priced_once_into_cost_usd_beside_the_brokers(aws):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)
+    store = SessionStore(aws[1], runs, usd_per_second=Decimal('0.0001'))
+    created = store.create(SESSION)
+    aws[1].update_item(Key=KEY, UpdateExpression='ADD cost_usd :cost', ExpressionAttributeValues={':cost': 2})
+    moved = store.save(replace(created, microvm_seconds=600))
+    # The same seconds again (a save that moved nothing else) are not priced twice.
+    moved = store.save(moved)
+    claimed = store.claim(replace(moved, microvm_seconds=900), 1000, 60)
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('2.09')
+    assert (claimed.priced_seconds, runs.spend(RUN)) == (900, (0, 2.09))
+    # A write that loses its race prices nothing: the move it would have priced did not happen.
+    with pytest.raises(StaleSession):
+        store.save(replace(created, microvm_seconds=5000))
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('2.09')
+
+
+def test_without_a_price_microvm_time_adds_nothing_and_a_later_price_applies_from_then_on(aws):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)
+    moved = SessionStore(aws[1], runs).save(replace(SessionStore(aws[1], runs).create(SESSION), microvm_seconds=600))
+    row = aws[1].get_item(Key=KEY)['Item']
+    assert ('cost_usd' in row, row['priced_seconds']) == (False, 600)
+    # A price set later prices the time after it only, never the 600 seconds used before.
+    SessionStore(aws[1], runs, usd_per_second=Decimal('0.0001')).save(replace(moved, microvm_seconds=700))
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('0.01')
+
+
+@pytest.mark.parametrize(('raw', 'price'), [(None, Decimal(0)), ('', Decimal(0)), ('0', Decimal(0)),
+                                            (' 0.0000166 ', Decimal('0.0000166'))])
+def test_the_deployments_price_of_a_microvm_second(raw: str | None, price: Decimal):
+    assert microvm_price(raw) == price
+
+
+@pytest.mark.parametrize('raw', ['free', '-0.1', 'NaN', 'Infinity', '1', '0.0100000000000000001'])
+def test_a_price_that_is_not_one_is_refused(raw: str):
+    with pytest.raises(RuntimeRefused, match='ENGINEERING_MICROVM_USD_PER_SECOND'):
+        microvm_price(raw)
+
+
+def test_an_attribute_the_session_no_longer_has_is_removed(aws):
+    store, _ = _store(aws[1])
+    moved = store.save(replace(store.create(SESSION), exec_id='e1', asked_at=5))
+    store.save(replace(moved, exec_id=None, asked_at=None))
+    row = aws[1].get_item(Key=KEY)['Item']
+    assert 'exec_id' not in row
+    assert 'asked_at' not in row
+
+
+def test_a_row_metered_before_the_session_was_written_is_no_session_until_it_is(aws):
+    store, _ = _store(aws[1])
+    aws[1].put_item(Item={**KEY, 'cost_usd': 1})
+    assert (store.get(RUN, 'fixer-1'), store.of_run(RUN)) == (None, [])
+    created = store.create(SESSION)
+    assert store.get(RUN, 'fixer-1') == created
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == 1
 
 
 def test_a_second_session_for_the_same_agent_is_refused(aws):
-    store = SessionStore(aws[1])
+    store, _ = _store(aws[1])
     store.create(SESSION)
     with pytest.raises(StaleSession):
         store.create(SESSION)
 
 
 def test_a_write_from_a_stale_read_is_refused(aws):
-    store = SessionStore(aws[1])
+    store, _ = _store(aws[1])
     read = store.create(SESSION)
     store.save(replace(read, asked_at=1100))
     with pytest.raises(StaleSession):
         store.save(replace(read, status='done'))
-    found = store.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
+    found = store.get(RUN, 'fixer-1')
     assert found is not None
     assert (found.asked_at, found.status, found.seq) == (1100, 'booting', 2)
 

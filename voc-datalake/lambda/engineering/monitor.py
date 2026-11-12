@@ -1,8 +1,8 @@
 """The run monitor (plan v3, 4.10): what a person sees of a run under way, and the two things they may do to it.
 
 ``overview``: the run (its ``META`` in voc-engineering: goal, repository, flow, status, times, how many messages it
-has numbered), and every agent as the supervisor last saw it: its session row in voc-agents (``ENGRUN#<run>`` /
-``AGENT#<agent>``, ``engineering.runtime.sessions``): role, task, status, continuation, the inspection data
+has numbered), and every agent as the supervisor last saw it: its session row, the run's ``AGENT#<agent>`` row in
+voc-engineering (``engineering.runtime.sessions``): role, task, status, continuation, the inspection data
 (step, recent tool calls, last progress, heartbeat age, MicroVM state and age, why it looks stuck) and the live cost
 counters (MicroVM-seconds, tokens per model), with the totals per model and for the run. The run's cost and budget
 are to come from the run control (``engineering.runtime.ports.RunControl.budget``) once it is wired.

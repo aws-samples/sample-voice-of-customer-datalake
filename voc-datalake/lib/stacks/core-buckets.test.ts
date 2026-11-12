@@ -9,7 +9,6 @@ import {
   RAW_BUCKET_WORKSPACE_PREFIXES,
   APPEND_ONLY_PREFIXES,
   ENGINEERING_CACHE_EXPIRATION_DAYS,
-  ENGINEERING_RUNS_PREFIX,
   ENGINEERING_WORKSPACE,
   RAW_LAYER_PREFIX,
   SILVER_HISTORY_PREFIX,
@@ -125,7 +124,9 @@ describe('VocCoreStack raw bucket with the engineering agents', () => {
         NoncurrentVersionExpiration: { NoncurrentDays: 1 } },
     ]);
     const prefixes = rules.map((rule) => rule['Prefix']).filter((prefix) => typeof prefix === 'string');
-    expect(prefixes.filter((prefix) => ENGINEERING_RUNS_PREFIX.startsWith(prefix) || prefix.startsWith(ENGINEERING_RUNS_PREFIX)))
+    // Where the runtime wrote its runs' objects before voc-eng-workspace: no rule may expire them either.
+    const oldRuns = 'engineering/runs/';
+    expect(prefixes.filter((prefix) => oldRuns.startsWith(prefix) || prefix.startsWith(oldRuns)))
       .toStrictEqual([]);
   });
 

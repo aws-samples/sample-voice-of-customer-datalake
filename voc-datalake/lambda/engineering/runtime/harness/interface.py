@@ -19,7 +19,7 @@ import secrets
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Protocol
 
-from engineering.runtime.checkpoints import assert_storable, checkpoint_prefix, is_valid
+from engineering.runtime.checkpoints import assert_storable, is_valid
 from engineering.runtime.harness.ports import PAUSE, SAVE, Inbox, InboxMessage, Store
 from engineering.runtime.harness.tools import AgentContext, ToolBox, snapshot
 from engineering.runtime.harness.workspace import OutsideCheckout
@@ -89,7 +89,7 @@ class AgentSession:
                 break
         else:  # pragma: no cover - a position alone always fits
             raise ValueError('the checkpoint does not fit even without notes')
-        key = f'{checkpoint_prefix(context.run_id, context.agent_id)}{seq:06d}-{secrets.token_hex(4)}.json'
+        key = f'{context.checkpoints_prefix}{seq:06d}-{secrets.token_hex(4)}.json'
         self.store.put(key, body)
         self.saves += 1
         return key

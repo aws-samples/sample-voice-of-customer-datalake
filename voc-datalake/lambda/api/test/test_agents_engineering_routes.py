@@ -14,11 +14,13 @@ from dataclasses import dataclass
 from typing import Any
 from unittest.mock import patch
 
+import boto3
 import pytest
 from agents_handler_fixtures import ADMIN, USER
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 
+from engineering.runtime.runs import RunStore
 from engineering.runtime.sessions import SessionStore
 from engineering.test.run_fixture import BUCKET, FIXER, RUN, TABLE, EngineeringRun, LambdaClient, engineering_run
 
@@ -143,8 +145,11 @@ class Actions:
 
 @pytest.fixture
 def actions(monkeypatch: pytest.MonkeyPatch, run: tuple[Any, EngineeringRun]) -> Iterator[Actions]:
-    env, _ = run
-    SessionStore(env.agents).create(FIXER)
+    del run   # (the run's table first)
+    rows = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    rows.update_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'META'}, UpdateExpression='SET #s = :active',
+                     ExpressionAttributeNames={'#s': 'status'}, ExpressionAttributeValues={':active': 'active'})
+    SessionStore(rows, RunStore(rows)).create(FIXER)   # (a session is written only while its run is active)
     monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
     monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
     reached = Actions(Bus(), LambdaClient({'agents': {'fixer-1': 'pause_requested'}, 'applied': {'fixer-1': True}}))
