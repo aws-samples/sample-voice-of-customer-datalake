@@ -41,8 +41,13 @@ def assert_storable(value: object, path: str = 'checkpoint') -> None:
             assert_storable(item, f'{path}[{index}]')
 
 
+def agent_prefix(run_id: str, agent_id: str) -> str:
+    """The agent's own keys in its run's workspace: the only ones its role may write."""
+    return f'{RUNS_PREFIX}/{check_id("run_id", run_id)}/{check_id("agent_id", agent_id)}/'
+
+
 def checkpoint_prefix(run_id: str, agent_id: str) -> str:
-    return f'{RUNS_PREFIX}/{check_id("run_id", run_id)}/{check_id("agent_id", agent_id)}/checkpoints/'
+    return f'{agent_prefix(run_id, agent_id)}checkpoints/'
 
 
 def is_valid(body: bytes) -> bool:
@@ -64,12 +69,15 @@ class CheckpointReader:
 
     def latest(self, run_id: str, agent_id: str) -> str | None:
         """The key of the agent's newest valid checkpoint, or None (the task starts afresh)."""
-        keys: list[str] = []
+        sizes: dict[str, int] = {}
         for page in self._s3.get_paginator('list_objects_v2').paginate(
                 Bucket=self._bucket, Prefix=checkpoint_prefix(run_id, agent_id)):
-            keys.extend(str(item['Key']) for item in page.get('Contents', []))
-        for key in sorted(keys, reverse=True)[:MAX_CANDIDATES]:
-            body = self._s3.get_object(Bucket=self._bucket, Key=key)['Body'].read()
+            sizes.update((str(item['Key']), int(item.get('Size', 0))) for item in page.get('Contents', []))
+        for key in sorted(sizes, reverse=True)[:MAX_CANDIDATES]:
+            # The agent writes these objects: one too big is never read (the supervisor's memory is every run's).
+            if sizes[key] > MAX_CHECKPOINT_BYTES:
+                continue
+            body = self._s3.get_object(Bucket=self._bucket, Key=key)['Body'].read(MAX_CHECKPOINT_BYTES + 1)
             if is_valid(body):
                 return key
         return None

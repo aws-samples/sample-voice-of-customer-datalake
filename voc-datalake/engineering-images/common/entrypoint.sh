@@ -16,7 +16,18 @@
 # agent's own commands with 0022, so nothing the agent writes is writable by `code`.
 set -eu
 umask 0002
-mkdir -p /run/voc && chown root:root /run/voc && chmod 0711 /run/voc
+mkdir -p /run/voc
+# The hard-link guard: the session lives on a file system of its own, or hard links to files a user does not own
+# are refused, so repository code cannot link the session into the checkout. Only when one of the two holds does
+# the runner run any repository code (--hardlink-guard).
+/usr/bin/mount -t tmpfs -o mode=0711,nosuid,nodev,noexec,size=1m tmpfs /run/voc || true
+echo 1 > /proc/sys/fs/protected_hardlinks || true
+chown root:root /run/voc && chmod 0711 /run/voc
+guard=''
+if [ "$(/usr/bin/stat -c %d /run/voc)" != "$(/usr/bin/stat -c %d /work)" ] \
+  || [ "$(/usr/bin/cat /proc/sys/fs/protected_hardlinks 2>/dev/null)" = 1 ]; then
+  guard='--hardlink-guard'
+fi
 firewall=''
 if /usr/sbin/iptables -I OUTPUT 1 -p udp --dport 53 -m owner --uid-owner code -j ACCEPT \
   && /usr/sbin/iptables -I OUTPUT 2 -p tcp --dport 53 -m owner --uid-owner code -j ACCEPT \
@@ -30,6 +41,6 @@ if /usr/sbin/iptables -I OUTPUT 1 -p udp --dport 53 -m owner --uid-owner code -j
   && /usr/sbin/ip6tables -I OUTPUT 5 -d fe80::/10 -m owner --uid-owner code -j REJECT; then
   firewall='--code-firewall'
 fi
-# shellcheck disable=SC2086 # $firewall is one flag or nothing
+# shellcheck disable=SC2086 # $firewall and $guard are one flag or nothing
 exec /usr/bin/python3 /opt/voc/unit_runner.py --host 0.0.0.0 --port 8080 --workdir /work --agent-home /home/unit \
-  --secrets-dir /run/voc --sandbox $firewall
+  --secrets-dir /run/voc --sandbox $firewall $guard

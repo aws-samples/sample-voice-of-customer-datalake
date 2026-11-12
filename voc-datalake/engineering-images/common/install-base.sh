@@ -5,13 +5,16 @@
 # `unit` (the agent: the harness, the broker calls) and `code` (repository code: builds, tests, gate tools), both in
 # the group `work`, which owns only /work.
 #
-# Usage: install-base.sh <mountpoint-version> <sha256 of that version's .deb for this architecture>
-# Mountpoint is pinned and checked: the build fails rather than install a package it cannot verify.
+# Usage: install-base.sh <mountpoint-version> <sha256 of that version's .deb for this architecture> <boto3-version>
+# Mountpoint is pinned and checked: the build fails rather than install a package it cannot verify. boto3 (the
+# harness's only dependency: Bedrock and S3) is pinned to one version for the system python3 the harness runs on.
 set -eu
 version="${1:?the Mountpoint for Amazon S3 version to install (build-arg MOUNTPOINT_VERSION)}"
 expected="${2:?the sha256 of that version's .deb (build-arg MOUNTPOINT_SHA256)}"
+boto3_version="${3:?the boto3 version the harness runs on (build-arg BOTO3_VERSION)}"
 apt-get update
-apt-get install -y --no-install-recommends git ca-certificates python3 util-linux iproute2 iptables curl
+apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip util-linux iproute2 iptables curl
+/usr/bin/python3 -m pip install --no-cache-dir --break-system-packages "boto3==${boto3_version}"
 case "$(dpkg --print-architecture)" in
   arm64) arch=arm64 ;;
   amd64) arch=x86_64 ;;

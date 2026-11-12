@@ -361,7 +361,8 @@ raw tool output.
 
 *Built, not yet run against AWS* (voc-datalake/lambda/engineering/runtime, the images in
 voc-datalake/engineering-images, the stack in voc-datalake/lib/stacks/engineering-runtime.ts; deployed only with
-`-c engineeringAgents=true`; the harness inside each MicroVM is *planned*, below). The service's limits, prices,
+`-c engineeringAgents=true`; the harness inside each MicroVM is built too, behind the board, the inbox and the
+broker, which it reaches through interfaces that refuse until they land, below). The service's limits, prices,
 quotas and regions, its API's operation and field names, how a MicroVM receives a role session, how its egress
 allowlist is enforced and whether Mountpoint, `unshare`, `setpriv` and `iptables` run inside one are not yet checked
 against the AWS documentation; until they are, the flag stays off, and this section is corrected to what is verified.
@@ -407,7 +408,9 @@ continues it in a new one once the wait closes.
   loopback, the runner's port on any address and link-local addresses (name lookups on port 53 excepted), over IPv4
   and IPv6; without every rule in
   place the runner refuses the dependency step. Repository code runs under umask 0002, the agent's own commands under
-  0022, and the checkout opens only its working tree to the group. A killed or timed-out command is ended with its whole process group, and a boxed command's
+  0022, and the checkout opens only its working tree to the group. The session lives on a file system of its own
+  (a tmpfs at `/run/voc`) and the kernel's protected hard links are turned on, so repository code cannot hard-link
+  the session into the checkout; unless one of the two holds, the runner runs no repository code at all. A killed or timed-out command is ended with its whole process group, and a boxed command's
   namespace dies with it.
 - **Sparse partial clones.** The broker keeps a partial clone per connection in the cache, under
   `engineering/cache/<connection>/`. With its first session the runner mounts that prefix read-only at `/mnt/voc-cache`
@@ -415,8 +418,12 @@ continues it in a new one once the wait closes.
   and a sparse checkout of only its task's paths (at most 200), then checks out the task's commit. The agent user runs
   every git command with the system config, terminal prompts, hooks, the file-system monitor, the pager, external diff
   tools and credential helpers off, and with git's own file modes (`core.sharedRepository=0644`, whatever the
-  umask); the checkout's git directory is then made read-only to the group, so repository code can change the
-  working tree but not the git directory, and anything git writes there later stays the agent's.
+  umask). The git directory lives beside the working tree (`/work/repo.git`, which repository code cannot write)
+  and is made read-only to the group, and every agent git command runs from the working tree's root naming it and
+  the work tree (no discovery; a bare repository is used only when named; what git writes, a restored patch
+  included, lands inside the working tree), so repository code can change the working tree but neither the git
+  directory nor which one the agent's git reads: a `.git` or a repository it plants in the working tree, with
+  its config and filters, is never the agent's.
 - **Scoped roles.** Each agent role reads only its connection's cache prefix and its run's workspace
   (`engineering/runs/<run>/`), writes only its own keys there (`engineering/runs/<run>/<agent>/`: the agent comes right
   after the run, so no other agent's key matches), reads only its own inbox and its run's queue for its role (queues
@@ -451,8 +458,8 @@ continues it in a new one once the wait closes.
   stopped answering or crashed, honours a stop (a person's, an agent's kill switch, and the 30-day stop, which opens a
   human decision point offering only "stop"): every MicroVM of the run ended at once, without waiting for the agents.
   It emits `run.health` (counts by status, tokens, cost, inbox backlog). One agent's failing call is logged and never
-  stops the tick for the others. Its failed invocations go to a dead-letter queue (no retry: the next tick is a
-  minute away); it records `EngineeringSupervisorHeartbeat` and `EngineeringLiveSessions` each tick (embedded
+  stops the tick for the others. A tick EventBridge could not deliver goes to a dead-letter queue, and a failed
+  one is not retried (the next tick is a minute away; the errors alarm sees it); it records `EngineeringSupervisorHeartbeat` and `EngineeringLiveSessions` each tick (embedded
   metrics). Alarms (on its errors and on the dead-letter queue) bill monthly, so they are a second opt-in,
   `-c engineeringSupervisorAlarm=true`.
 - **The run monitor's controls** (the runtime's `signal` action): Save (checkpoint now), Pause (checkpoint, then held
@@ -485,15 +492,39 @@ continues it in a new one once the wait closes.
   keys, `name=value` and JSON `"name": "value"` pairs whose name says secret) and keeps the last 4,000 characters of
   each stream; the runtime
   masks them again on receipt.
-- **The harness.** *Planned* (voc-datalake/lambda/engineering/runtime/harness). Inside each MicroVM the agent runs
-  through one harness interface with adapters, chosen per agent in its skill: a coding-agent CLI in its headless mode,
-  or a plain Bedrock Converse loop for small agents. Whatever the adapter, it gets only the task, the knowledge pack and
-  memory slices and the platform's tools: a CLI runs with every built-in tool of its own off (its shell, file and web
-  tools), so repository code still runs only as the sandbox user, through the platform's run tool; it starts in a
-  directory outside the checkout and loads only the platform's own configuration, never the repository's or a user's;
-  it reaches models only through Bedrock with the agent's session, and a CLI that needs any other endpoint or login
-  is not offered. It holds no host credential, and every write goes through the broker. It reports progress through
-  the board's API and its status (step, recent tool calls, tokens per model) to the runner.
+- **The harness** (voc-datalake/lambda/engineering/runtime/harness; `/usr/bin/python3 -I /opt/voc/harness.py run
+  --adapter converse|cli --model <id>` as the agent user, from root-owned `/opt/voc`, outside the checkout). Inside
+  each MicroVM the agent runs through one harness interface with two adapters, chosen per agent in its skill: a plain
+  Bedrock Converse loop for small agents, or a coding-agent CLI in its headless mode. Whatever the adapter, it gets
+  only the task's brief, its knowledge-pack and memory slices and the platform's tools: read, list and write files
+  of the checkout (walked one directory at a time, never through a link, never into `.git`, never a file with two
+  hard links), run a repository command (through the runner, as the sandbox user, without network; a command
+  still running reports progress once a minute), install the dependencies (the one command with the registries,
+  before any other), report progress (through the board's API), save a checkpoint, submit the work (a patch made
+  by the agent's own git, one at a time, refused when a file it holds has two hard links or when it is over 50 MB,
+  put under its own keys and handed to the broker, which alone writes to the host) and finish (its summary is the task's last progress); the agents that
+  run no repository code get none of the code tools. It renews its task's lease once a minute. Everything from the
+  repository, the knowledge pack, the memory or a checkpoint reaches the model fenced as data, which its
+  instructions say is never an instruction. Between turns it reads its inbox: `save` checkpoints at once, `pause`
+  checkpoints and exits 75; the Converse loop also checkpoints and pauses after 150 turns in one MicroVM or once a
+  call's input passes 120,000 tokens (a fresh conversation from its notes). On any error either adapter saves a
+  checkpoint before the crash is raised. A checkpoint carries the agent's
+  working tree as a patch under its own keys, which the continuation applies to its fresh checkout and opens to
+  repository code again, as the checkout does (one that
+  does not apply is a crash, never a silent loss; one the patch rules refuse is saved without it and says why),
+  and is written only when the supervisor would accept it (too big, its notes are cut). Which CLI follows the repository's
+  own AI reviews (kiro-cli, else claude), minus any that needs an endpoint or login other than Bedrock with the
+  agent's session: kiro-cli signs in to its own service, so it is not offered; `claude` runs at one pinned version
+  only, with every built-in tool of its own off (`--tools ""`), the platform's tools from the harness's own tool
+  server alone (`--strict-mcp-config`), in a fresh home outside the checkout (`HOME` and `CLAUDE_CONFIG_DIR` there,
+  so no repository's or user's hooks, tool servers, steering or instruction files, or settings are loaded), with an
+  environment the harness builds and Bedrock through the agent's session; a test plants each kind of such
+  configuration in a checkout. Each `save_checkpoint` of a CLI is saved at once (and once more before a crash),
+  other inbox messages reach it with its next tool result, and its whole process session is ended on every way
+  out. It holds no host credential. It reports its status (step, recent tool calls, tokens
+  per model) to the runner; a CLI agent's tokens are not counted yet (*planned*: the CLI's own usage report). The images ship it with boto3 pinned (`BOTO3_VERSION`), and everything they run needs
+  nothing newer than Python 3.11 (their system `python3`; a test checks every shipped module). No image installs
+  a CLI yet: the CLI adapter refuses one that is missing or not the pinned version.
 - **Images.** python, node, rust and java, each a Dockerfile in this repository on one shared base (git, util-linux,
   iproute2, iptables, Python for the runner, Mountpoint for Amazon S3, the two users) and one entry point, with ready
   hooks that warm the toolchain caches (only from that language's registries) and validate hooks that prove the

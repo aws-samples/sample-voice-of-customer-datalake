@@ -8,8 +8,10 @@ clone from there: ``--filter=blob:none`` and a sparse checkout of only the task'
 costs what the task touches (the broker sets git's uploadpack.allowFilter on the cache's repository; without it
 git ignores the filter and clones whole). The agent user runs every git command, with hooks, the file-system
 monitor, pagers, external diff tools, credential helpers, terminal prompts and the system config off, so
-nothing the repository planted runs as the agent; then the checkout's ``.git`` is made read-only to the
-``work`` group, so repository code (the ``code`` user) can change the working tree but not the git directory.
+nothing the repository planted runs as the agent. The git directory lives beside the working tree
+(``/work/repo.git``, the agent's: ``/work`` is not group-writable), is made read-only to the ``work`` group,
+and every agent git command names it (``repo_git``), so repository code (the ``code`` user) can change the
+working tree but neither the git directory nor which one the agent's git reads.
 """
 from __future__ import annotations
 
@@ -31,14 +33,32 @@ _PATH_RE: Final = re.compile(r'^[A-Za-z0-9_.@+][A-Za-z0-9_./@+-]{0,511}\Z')
 #: Every git command: no system config, no terminal prompt, no hooks, no file-system monitor, no pager, no
 #: external diff, no credential helper, no protocol but file.
 #: Absolute paths: the agent's PATH may hold a directory the `code` user can write (a toolchain's bin directory).
-_GIT: Final = ('/usr/bin/env', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_TERMINAL_PROMPT=0', '/usr/bin/git',
-               '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.pager=cat',
-               '-c', 'diff.external=', '-c', 'credential.helper=',
-               '-c', 'protocol.allow=never', '-c', 'protocol.file.allow=always',
-               # Whatever git writes in .git later (the index, refs, objects) is 0644/0755 whatever the umask, so
-               # repository code (group `work`) never gets write access back to the git directory. Every agent
-               # git command in the checkout uses this same prefix.
-               '-c', 'core.sharedRepository=0644')
+GIT: Final = ('/usr/bin/env', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_TERMINAL_PROMPT=0', '/usr/bin/git',
+              '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.pager=cat',
+              '-c', 'diff.external=', '-c', 'credential.helper=',
+              '-c', 'protocol.allow=never', '-c', 'protocol.file.allow=always',
+              # Whatever git writes in its directory later (the index, refs, objects) is 0644/0755 whatever the
+              # umask, so repository code (group `work`) never gets write access to it.
+              '-c', 'core.sharedRepository=0644',
+              # A bare repository is used only when named: never one repository code planted where git looks.
+              '-c', 'safe.bareRepository=explicit')
+#: The checkout's git directory: beside the working tree in /work (the agent's, not writable by the group), never
+#: inside it, where repository code could rename it and plant a repository (and its config) of its own.
+GIT_DIR: Final = 'repo.git'
+
+
+def repo_git(*args: str) -> tuple[str, ...]:
+    """An agent git command on the checkout, run from the working tree's root and naming its git directory and
+    work tree: nothing is discovered, so a ``.git`` or a bare repository that repository code planted in the
+    working tree is never read, and every path git writes (``apply`` included) is inside the working tree."""
+    env, *rest = GIT
+    return (env, '-C', CHECKOUT_DIR, *rest, f'--git-dir=../{GIT_DIR}', '--work-tree=.', *args)
+
+
+def share_working_tree() -> tuple[str, ...]:
+    """The agent's command that opens the working tree (never its links) to the group, for repository code; run
+    after the checkout and after a continuation puts its working tree back."""
+    return ('/usr/bin/find', CHECKOUT_DIR, '!', '-type', 'l', '-exec', '/usr/bin/chmod', 'g+w', '{}', '+')
 
 
 def check_sparse_path(path: str) -> str:
@@ -60,19 +80,17 @@ def checkout_commands(commit: str, paths: Sequence[str], source: str = CACHE_SOU
     if len(paths) > MAX_SPARSE_PATHS:
         raise RuntimeRefused(f'at most {MAX_SPARSE_PATHS} sparse paths')
     sparse = [check_sparse_path(path) for path in paths]
-    in_repo = (*_GIT, '-C', CHECKOUT_DIR)
     steps: list[tuple[tuple[str, ...], int]] = [
-        ((*_GIT, 'clone', '--no-checkout', '--filter=blob:none', '--quiet', source, CHECKOUT_DIR),
-         CLONE_TIMEOUT_SECONDS),
+        ((*GIT, 'clone', '--no-checkout', '--filter=blob:none', f'--separate-git-dir={GIT_DIR}', '--quiet', source,
+          CHECKOUT_DIR), CLONE_TIMEOUT_SECONDS),
     ]
     if sparse:
-        steps.append(((*in_repo, 'sparse-checkout', 'set', '--', *sparse), 300))
-    steps.append(((*in_repo, 'checkout', '--quiet', '--detach', commit), CLONE_TIMEOUT_SECONDS))
-    # The agent's commands run under umask 0022: the working tree (never .git) is opened to the group, for
-    # builds and tests, and the git directory is closed to it. Links are skipped: chmod follows a link it is
-    # named, and the repository's links may point anywhere (or nowhere).
-    steps.append((('/usr/bin/find', CHECKOUT_DIR, '-path', f'{CHECKOUT_DIR}/.git', '-prune', '-o',
-                   '!', '-type', 'l', '-exec', '/usr/bin/chmod', 'g+w', '{}', '+'), 300))
-    steps.append((('/usr/bin/chmod', '-R', 'g-w', f'{CHECKOUT_DIR}/.git'), 300))
+        steps.append((repo_git('sparse-checkout', 'set', '--', *sparse), 300))
+    steps.append((repo_git('checkout', '--quiet', '--detach', commit), CLONE_TIMEOUT_SECONDS))
+    # The agent's commands run under umask 0022: the working tree is opened to the group, for builds and tests;
+    # the git directory, beside it, is closed to it. Links are skipped: chmod follows a link it is named, and the
+    # repository's links may point anywhere (or nowhere).
+    steps.append((share_working_tree(), 300))
+    steps.append((('/usr/bin/chmod', '-R', 'g-w', GIT_DIR), 300))
     # The agent's own commands (as `unit`): never repository code, and the cache is a local mount.
     return [Command(argv=argv, timeout_seconds=timeout, repository_code=False) for argv, timeout in steps]

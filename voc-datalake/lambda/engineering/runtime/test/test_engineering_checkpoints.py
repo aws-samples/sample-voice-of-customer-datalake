@@ -6,6 +6,7 @@ import pytest
 
 from engineering.runtime.checkpoints import (
     MAX_CANDIDATES,
+    MAX_CHECKPOINT_BYTES,
     CheckpointReader,
     assert_storable,
     checkpoint_prefix,
@@ -36,6 +37,17 @@ def test_invalid_checkpoints_are_skipped_for_an_older_valid_one(aws):
     _put(s3, 3, b'not json')
     _put(s3, 4, {'plan': 'no position'})
     assert CheckpointReader(s3, BUCKET).latest('run-1', 'fixer-1') == good
+
+
+def test_a_checkpoint_too_big_is_never_read_and_an_older_valid_one_wins(aws, monkeypatch):
+    s3, _ = aws
+    good = _put(s3, 1, {'position': 1})
+    huge = _put(s3, 2, b'x' * (MAX_CHECKPOINT_BYTES + 1))
+    read: list[str] = []
+    original = s3.get_object
+    monkeypatch.setattr(s3, 'get_object', lambda **kwargs: read.append(kwargs['Key']) or original(**kwargs))
+    assert CheckpointReader(s3, BUCKET).latest('run-1', 'fixer-1') == good
+    assert huge not in read
 
 
 def test_no_checkpoint_or_none_valid_among_the_newest_starts_afresh(aws):

@@ -165,6 +165,21 @@ def test_commands_see_only_the_passed_environment_and_only_repository_code_the_t
                                                          'RUSTUP_HOME': '/opt/voc/cache/rustup'}
 
 
+def test_the_agents_own_commands_get_its_ids_and_bucket_and_repository_code_none_of_them(
+        tmp_path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv('VOC_RUN_ID', 'run-1')
+    monkeypatch.setenv('VOC_AGENT_ID', 'fixer-1')
+    runner = _runner(tmp_path)
+    runner.keep_session({'Version': 1, 'AccessKeyId': 'ASIAFAKE', 'SecretAccessKey': 'fake', 'SessionToken': 'fake',
+                         'Expiration': '2026-11-12T12:15:00+00:00',
+                         'mount': {'bucket': 'voc-raw-test', 'prefix': 'engineering/cache/repo-1/'}})
+    show = [sys.executable, '-c', "import os; print(os.environ.get('VOC_RUN_ID'), os.environ.get('VOC_BUCKET'))"]
+    agent = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10, 'repository_code': False}))
+    code = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10}))
+    assert agent['stdout_tail'].split() == ['run-1', 'voc-raw-test']
+    assert code['stdout_tail'].split() == ['None', 'None']
+
+
 def test_the_agent_starts_with_its_first_session_whatever_ran_before_it(tmp_path):
     runner = _runner(tmp_path)
     probe = runner.start({'argv': [sys.executable, '-c', 'pass'], 'timeout_seconds': 10})
@@ -184,11 +199,11 @@ def test_a_command_job_refuses_an_empty_argv_and_a_zero_timeout(tmp_path):
         CommandJob(['true'], str(tmp_path), 0)
 
 
-def _runner(tmp_path, *, sandbox: bool = False) -> Runner:
+def _runner(tmp_path, *, sandbox: bool = False, hardlink_guard: bool = False) -> Runner:
     (tmp_path / 'home').mkdir(exist_ok=True)
     (tmp_path / 'secrets').mkdir(exist_ok=True)
     return Runner(str(tmp_path), sandbox=sandbox, secrets_dir=str(tmp_path / 'secrets'),
-                  agent_home=str(tmp_path / 'home'))
+                  agent_home=str(tmp_path / 'home'), hardlink_guard=hardlink_guard)
 
 
 def _serving(tmp_path):
@@ -264,9 +279,15 @@ def test_a_new_session_never_writes_through_a_link_planted_in_the_secrets_direct
 
 
 def test_the_dependency_step_is_refused_in_a_sandbox_without_the_code_firewall(tmp_path):
-    runner = _runner(tmp_path, sandbox=True)
+    runner = _runner(tmp_path, sandbox=True, hardlink_guard=True)
     with pytest.raises(ValueError, match='code firewall'):
         runner.start({'argv': ['npm', 'ci'], 'timeout_seconds': 10, 'repository_code': True, 'network': True})
+
+
+def test_no_repository_code_runs_in_a_sandbox_without_the_hard_link_guard(tmp_path):
+    runner = _runner(tmp_path, sandbox=True)
+    with pytest.raises(ValueError, match='hard-link guard'):
+        runner.start({'argv': ['make'], 'timeout_seconds': 10})
 
 
 def test_a_status_directory_that_is_a_link_or_a_status_that_is_a_fifo_is_not_read(tmp_path):

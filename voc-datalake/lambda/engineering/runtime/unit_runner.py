@@ -35,7 +35,16 @@ import time
 import uuid
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Final, override
+from typing import Any, Final, TypeVar
+
+# The images run this with their system python3, which is 3.11 on the Debian 12 based ones (node, rust):
+# nothing newer than 3.11 is used here (test_engineering_images.py checks every module the images ship).
+_Method = TypeVar('_Method')
+if sys.version_info >= (3, 12):
+    from typing import override
+else:  # pragma: no cover - the images' Python 3.11
+    def override(method: _Method) -> _Method:
+        return method
 
 TAIL_CHARACTERS: Final = 4000
 MAX_BODY_BYTES: Final = 256 * 1024
@@ -61,6 +70,9 @@ PASSED_ENV: Final = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'JAVA_HOME')
 #: loads a toolchain, a plugin or a config from a place repository code can write.
 TOOLCHAIN_ENV: Final = ('CARGO_HOME', 'RUSTUP_HOME', 'GRADLE_USER_HOME', 'MAVEN_OPTS', 'NPM_CONFIG_CACHE',
                         'PIP_CACHE_DIR')
+#: The agent's ids (``interface.AgentSpec.environment``, set on the MicroVM) and its region: the agent's own
+#: commands' only (the harness reads them); repository code never needs them.
+AGENT_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_RESTORE_KEY', 'AWS_REGION')
 #: Credential shapes masked in tool output: AWS access keys and secrets, host tokens (GitHub, GitLab),
 #: bearer headers, private keys, and `name=value` pairs whose name says secret.
 _CREDENTIAL_RES: Final = (
@@ -202,28 +214,35 @@ class Runner:
     image), so nothing the agent or repository code planted there can redirect root's writes, and the
     session file inside it is readable by ``unit`` only. ``code_firewall`` says the image's entry point
     has stopped ``code`` from reaching the runner's port and link-local addresses: without it, the
-    dependency step (repository code with network) is refused.
+    dependency step (repository code with network) is refused. ``hardlink_guard`` says the session cannot be
+    hard-linked into the checkout (the secrets directory on a file system of its own, or the kernel's protected
+    hard links on): without it, no repository code runs at all.
     """
 
     def __init__(self, workdir: str, *, sandbox: bool, secrets_dir: str, agent_home: str,
-                 code_firewall: bool = False, logs_root: str | None = None) -> None:
+                 code_firewall: bool = False, hardlink_guard: bool = False, logs_root: str | None = None) -> None:
         self.workdir = workdir
         self.sandbox = sandbox
         self.secrets_dir = secrets_dir
         self.agent_home = agent_home
         self.code_firewall = code_firewall
+        self.hardlink_guard = hardlink_guard
         self._logs_root = logs_root
         #: exec id -> (job, kind): ``agent`` (the agent's own), ``dependency`` (repository code with network), ``code``.
         self._jobs: dict[str, tuple[CommandJob, str]] = {}
         self._code_ran = False
         self._mounted = False
         self._has_session = False
+        self._bucket = ''
         self._lock = threading.Lock()
 
     def _agent_env(self) -> dict[str, str]:
-        """What the agent's own commands (never repository code) get: its home, and where its session is."""
-        return {'HOME': self.agent_home, 'AWS_CONFIG_FILE': os.path.join(self.secrets_dir, 'aws-config'),
-                'AWS_SDK_LOAD_CONFIG': '1'}
+        """What the agent's own commands (never repository code) get: its home, where its session is, its ids,
+        and the bucket its session was handed with."""
+        ids = {name: os.environ[name] for name in AGENT_ENV if name in os.environ}
+        bucket = {'VOC_BUCKET': self._bucket} if self._bucket else {}
+        return {**ids, **bucket, 'HOME': self.agent_home,
+                'AWS_CONFIG_FILE': os.path.join(self.secrets_dir, 'aws-config'), 'AWS_SDK_LOAD_CONFIG': '1'}
 
     def _code_env(self) -> dict[str, str]:
         """What repository code gets beyond PASSED_ENV: its own home in the image (never root's or the agent's)."""
@@ -234,6 +253,8 @@ class Runner:
         if not isinstance(argv, list) or not isinstance(timeout, int) or isinstance(timeout, bool):
             raise ValueError('the body needs argv (a list of strings) and timeout_seconds (a whole number)')
         repository_code, network = body.get('repository_code') is not False, body.get('network') is True
+        if repository_code and self.sandbox and not self.hardlink_guard:
+            raise ValueError('repository code needs the hard-link guard, which this MicroVM could not set up')
         if repository_code and network and self.sandbox and not self.code_firewall:
             raise ValueError('the dependency step needs the code firewall, which this MicroVM could not set up')
         command = [str(arg) for arg in argv]
@@ -302,6 +323,8 @@ class Runner:
         session_path = self._write_secret('session.json', json.dumps(credentials), 0o400)
         config = self._write_secret('aws-config', f'[default]\ncredential_process = {CAT} {session_path}\n', 0o444)
         mount = body.get('mount')
+        if isinstance(mount, dict) and _BUCKET_RE.match(str(mount.get('bucket', ''))):
+            self._bucket = str(mount['bucket'])
         if self.sandbox and isinstance(mount, dict) and not self._mounted:
             self._mount(str(mount.get('bucket', '')), str(mount.get('prefix', '')), config)
 
@@ -406,9 +429,11 @@ def main(argv: list[str]) -> ThreadingHTTPServer:
     parser.add_argument('--secrets-dir', required=True)
     parser.add_argument('--sandbox', action='store_true')
     parser.add_argument('--code-firewall', action='store_true')
+    parser.add_argument('--hardlink-guard', action='store_true')
     args = parser.parse_args(argv)
     return serve(args.host, args.port, Runner(args.workdir, sandbox=args.sandbox, secrets_dir=args.secrets_dir,
-                                               agent_home=args.agent_home, code_firewall=args.code_firewall))
+                                               agent_home=args.agent_home, code_firewall=args.code_firewall,
+                                               hardlink_guard=args.hardlink_guard))
 
 
 if __name__ == '__main__':

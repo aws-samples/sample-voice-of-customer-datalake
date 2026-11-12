@@ -45,7 +45,9 @@ DEFAULT_MEMORY_MB: Final = 8192
 
 
 class MicroVmClient(Protocol):
-    """The boto3 operations this runtime calls."""
+    """The boto3 operations this runtime calls, and the client's region (``meta.region_name``)."""
+
+    meta: Any
 
     def run_microvm(self, **kwargs: Any) -> Mapping[str, Any]:
         ...
@@ -110,7 +112,8 @@ class AwsMicroVmRuntime:
             IdlePolicy={'SuspendAfterSeconds': IDLE_SUSPEND_SECONDS,
                         'TerminateAfterSeconds': IDLE_TERMINATE_SECONDS},
             EgressAllowlist=list(spec.egress),
-            Environment=spec.environment(),
+            # The harness's region (its Bedrock and S3 clients): the runtime's own.
+            Environment={**spec.environment(), 'AWS_REGION': str(self._client.meta.region_name)},
             Tags={'voc:run_id': spec.run_id, 'voc:agent_id': spec.agent_id, 'voc:task_id': spec.task_id},
         )
         vm_id = answer.get('MicrovmId')

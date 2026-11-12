@@ -1,6 +1,16 @@
 {
   "entries": [
     {"key": "lambda/agents/state_machine.py", "reason": "Build-time generator of state_machine.asl.json (the CDK loads the JSON); test_graph_and_state_machine.py keeps the two in lockstep. Never imported at run time by design."},
+    {"key": "lambda/engineering/runtime/harness/cli.py", "reason": "The engineering harness runs inside each agent's MicroVM (/opt/voc/harness.py, copied by engineering-images/*/Dockerfile), never in a Lambda; test_engineering_images.py pins what the images ship and the harness tests drive it."},
+    {"key": "lambda/engineering/runtime/harness/converse_loop.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/interface.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/main.py", "reason": "The engineering harness's entry point inside each agent's MicroVM (engineering-images/common/harness.py), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/ports.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/runner_client.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/status.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/tool_server.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/tools.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/workspace.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/shared/api.py::clear_categories_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the module-level categories cache between API tests."},
     {"key": "lambda/shared/memory_store.py::clear_pool_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container embedding pool between memory tests."},
     {"key": "lambda/shared/memory_store.py::clear_objective_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container objectives cache between memory tests."},

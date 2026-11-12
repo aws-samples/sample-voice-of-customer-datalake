@@ -2,6 +2,7 @@
 import json
 import time
 import urllib.request
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +20,8 @@ VM = MicroVm('mvm-1', 'fixer-1', 'https://x.example.org')
 
 
 class FakeClient:
+    meta = SimpleNamespace(region_name='eu-west-1')
+
     def __init__(self, run_answer: dict[str, Any] | None = None) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.run_answer = run_answer or {'MicrovmId': 'mvm-1', 'Endpoint': 'https://mvm-1.example.org'}
@@ -75,8 +78,9 @@ def test_run_starts_the_language_image_with_its_egress_and_no_role_of_its_own():
     assert vm == MicroVm(vm_id='mvm-1', agent_id='fixer-1', endpoint='https://mvm-1.example.org')
     assert (args['ImageArn'], args['EgressAllowlist']) == (IMAGES['rust'], ['crates.io'])
     assert 'ExecutionRoleArn' not in args
-    assert (args['IdlePolicy'], args['Environment']['VOC_AGENT_ID']) == (
-        {'SuspendAfterSeconds': IDLE_SUSPEND_SECONDS, 'TerminateAfterSeconds': IDLE_TERMINATE_SECONDS}, 'fixer-1')
+    assert (args['IdlePolicy'], args['Environment']['VOC_AGENT_ID'], args['Environment']['AWS_REGION']) == (
+        {'SuspendAfterSeconds': IDLE_SUSPEND_SECONDS, 'TerminateAfterSeconds': IDLE_TERMINATE_SECONDS}, 'fixer-1',
+        'eu-west-1')
 
 
 def test_a_session_is_handed_to_the_runner_with_the_cache_mount_and_the_status_is_bounded():
