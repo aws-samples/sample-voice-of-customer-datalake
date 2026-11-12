@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "fe57276911298cc61a5af0ba8b735234af23d6a151c0361c95b46e0071cfb975",
+      "templateSha256": "1ba10cca1c96659851e839394a03cf7f8e4dd7fecb0c901e8a5eb05b5269a300",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -113,6 +113,7 @@
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>:*",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>:*",
+          "arn:aws:secretsmanager:us-east-1:111111111111:secret:voc/ws/*",
           "arn:aws:sns:us-east-1:111111111111:voc-briefing-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:sns:us-east-1:111111111111:voc-ops-alarms-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:sqs:us-east-1:111111111111:voc-aggregator-stream-failures-<AWS::AccountId>-<AWS::Region>",
@@ -176,7 +177,8 @@
           "SYSTEM_API_ACCESS_LOG_GROUP = /aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
           "SYSTEM_LOG_GROUP_PATTERN = /aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>",
           "SYSTEM_WORKFLOW_LOG_GROUP_PATTERN = /aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>",
-          "WEBSCRAPER_FUNCTION_NAME = voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>"
+          "WEBSCRAPER_FUNCTION_NAME = voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
+          "WORKSPACE_SECRET_PREFIX = voc/ws"
         ]
       }
     },
@@ -336,7 +338,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "861d6554a6c9858bc08aa1c46503216cf70d5d8fa48b17fd2919bca255def463",
+      "templateSha256": "06046fa5179fc9c67fa8d0d48c8f44c09b8302e77f07f31497ac63f3c20979c7",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",

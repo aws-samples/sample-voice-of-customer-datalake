@@ -800,6 +800,11 @@ synth and the all-features synth each hold exactly one customer-managed KMS key 
 key-policy statement for a service principal) and the known baseline of three Secrets Manager secrets, which a later
 release moves to SSM Parameter Store. Both shapes share ONE baseline on purpose, so no context-gated feature may add a
 key or a secret either. A count above its baseline fails; a count below it fails too, until the baseline is lowered.
+Keys and secrets made at RUN time are not in any template, so the gate also holds every grant of
+`kms:CreateKey` or `secretsmanager:CreateSecret` in the app to `RUNTIME_FIXED_COSTS` (same file): today only the
+workspaces API's, on `voc/ws/*`, which creates one credentials secret per workspace a platform admin creates
+(about $0.40 a month per workspace, accepted by decision 8 of [multi-workspace.md](multi-workspace.md#credentials)).
+A deployment with no workspace pays nothing for it.
 
 ### Lambda sizing and post-deploy capacity check
 

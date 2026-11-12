@@ -19,9 +19,11 @@ from typing import Final
 
 from shared.b64_json import decode_b64_json, encode_b64_json
 
-__all__ = ['decode_key_cursor', 'decode_offset_cursor', 'encode_key_cursor', 'encode_offset_cursor']
+__all__ = ['TABLE_KEY_FIELDS', 'decode_key_cursor', 'decode_offset_cursor', 'encode_key_cursor', 'encode_offset_cursor']
 
 _INVALID: Final = 'next_token is not valid'
+#: The fields of a key cursor on a table keyed ``pk`` + ``sk`` (a Query of the table itself, no index).
+TABLE_KEY_FIELDS: Final = frozenset({'pk', 'sk'})
 
 
 def _decode(token: str) -> object:

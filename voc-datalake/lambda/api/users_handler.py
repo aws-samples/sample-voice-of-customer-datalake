@@ -51,11 +51,11 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
+from shared.platform_admin import PLATFORM_ADMIN_GROUP, is_live_platform_admin, require_platform_admin
 from shared.project_access import ADMIN_GROUP
 from shared.request_body import json_body_value, json_object_body
 from shared.source_profiles import load_source_profiles
 from shared.timestamps import now_iso
-from shared.workspace import PLATFORM_ADMIN_GROUP, is_platform_admin, require_platform_admin
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
@@ -479,32 +479,14 @@ def _refuse_last_platform_admin(username: str, public_error: str) -> None:
 
 
 def _caller_is_platform_admin(event: dict, public_error: str) -> bool:
-    """Whether the caller is a platform admin NOW: the token's group, the caller's live Cognito membership and an
-    enabled account.
-
-    A token keeps its groups until it expires, so a revoked platform admin's token alone would still pass (and could
-    grant the group back); the live look-up makes a revoke take effect at once. A caller with no username claim, or a
-    failed look-up, is not admitted (the look-up's failure answers the route's fixed 500).
-    """
-    if not is_platform_admin(event):
-        return False
-    request_context = event.get('requestContext')
-    authorizer = request_context.get('authorizer') if isinstance(request_context, dict) else None
-    claims = authorizer.get('claims') if isinstance(authorizer, dict) else None
-    username = (claims.get('cognito:username') or claims.get('username')) if isinstance(claims, dict) else None
-    if not isinstance(username, str) or not username.strip():
-        return False
+    """Whether the caller is a platform admin NOW (``shared.platform_admin.is_live_platform_admin``: the token's
+    group, the live Cognito membership and an enabled account), so a revoked platform admin's token cannot grant the
+    group back. A failed look-up answers the route's fixed 500 and admits no one."""
     try:
-        # A disabled account keeps its groups, and its unexpired ID token still passes the authorizer: require both.
-        if PLATFORM_ADMIN_GROUP not in _user_groups(username.strip()):
-            return False
-        caller = cognito.admin_get_user(UserPoolId=USER_POOL_ID, Username=username.strip())
-    except cognito.exceptions.UserNotFoundException:
-        return False  # a deleted caller whose token is still valid: refused (403), not a fault
+        return is_live_platform_admin(event, cognito, USER_POOL_ID)
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Error checking the caller platform admin membership')
         raise ServiceError(public_error) from exc
-    return caller.get('Enabled') is True
 
 
 def _guard_platform_admin_target(username: str, groups: list[str], action: str, public_error: str, *,

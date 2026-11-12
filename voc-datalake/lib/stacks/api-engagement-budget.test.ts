@@ -39,6 +39,11 @@
  * default policy, log group and one invoke permission, and `/me` + `/me/{proxy+}` with GET and its CORS preflight.
  * One GET proxy rather than explicit routes, so the control plane's later `/me` reads cost nothing. Every shape
  * grows by the same 9 (performance tier 395 → 404); the ceiling is 404, and the 425 gate is unchanged.
+ *
+ * 6.09.00 (create and list workspaces, the platform console's API, docs/multi-workspace.md) spends 5: `/platform` +
+ * `/platform/{proxy+}` with GET, POST and its CORS preflight, through the workspaces API's existing integration (no
+ * new function, role or invoke permission). One proxy, so the console's later `/platform` routes cost nothing.
+ * Every shape grows by the same 5 (performance tier 404 → 409); the ceiling is 409, and the 425 gate is unchanged.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -49,9 +54,10 @@ import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
 /**
  * The release ceiling: 388 after 5.63.00 (MCP OAuth), + 4 in 5.77.00 (request validation) + 2 for the opt-in API web
  * ACL (5.77.00) + the BucketDeployment handler's log group the bare fixture did not count (5.78.00); the
- * performance-tier synth is 395, as deployed; + 9 for the workspaces API (6.07.00): 404.
+ * performance-tier synth is 395, as deployed; + 9 for the workspaces API (6.07.00): 404; + 5 for `/platform`
+ * (6.09.00): 409.
  */
-const ENGAGEMENT_RELEASE_CEILING = 404;
+const ENGAGEMENT_RELEASE_CEILING = 409;
 
 function resourceCount(resources: Record<string, unknown> | undefined): number {
   return Object.keys(resources ?? {}).length;

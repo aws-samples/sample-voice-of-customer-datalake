@@ -9,30 +9,33 @@ workspace id is ``ws_`` plus a 26-character ULID in Crockford base32 (upper case
   confirms that another team's workspace exists.
 * A member gets the role of their ``MEMBER#{sub}`` row (``admin``, ``editor`` or ``viewer``); a row with any
   other role counts as no membership.
-* A caller in the Cognito group ``platform-admins`` who is not a member, or a member below ``admin``, passes as
-  ``admin`` (decision 2: full admin rights in any workspace), flagged ``platform_admin``, and the entry writes an
-  audit row ``AUDIT#WS#{ws}`` / ``{iso}#{random}`` (kind ``platform_admin_entry``, the actor's sub, the time)
-  with a conditional put, so it never overwrites a row. The partition starts with ``AUDIT#`` so the audit-row
-  guard covers it (lib/utils/audit-row-guard.ts: no role may change or remove it, only this API's role may put
-  one) and the role's PutItem is scoped to ``AUDIT#WS#*`` (lib/stacks/api-workspaces-lambda.ts).
+* A platform admin who is not a member, or a member below ``admin``, passes as ``admin`` (decision 2: full admin
+  rights in any workspace), flagged ``platform_admin``. The token's ``platform-admins`` group only makes the caller
+  a candidate: the elevation also needs the live check (``confirm_platform_admin``, the handler's call of
+  shared/platform_admin.py ``is_live_platform_admin``: the live Cognito membership and an enabled account), run on
+  each cache fill that would elevate, so a revoke or a disable ends new entries at once and cached ones within
+  the TTL. A failed live check enters with the member's own role, or answers the one 404 for a non-member; a
+  Cognito fault propagates (no entry, nothing cached). A member ``admin`` needs no elevation, so no look-up.
+* An elevated entry writes an audit row ``AUDIT#WS#{ws}`` / ``{iso}#{random}`` (kind ``platform_admin_entry``,
+  the actor's sub, the time) with a conditional put, so it never overwrites a row. The partition starts with
+  ``AUDIT#`` so the audit-row guard covers it (lib/utils/audit-row-guard.ts: no role may change or remove it,
+  only this API's role may put one) and the role's PutItem is scoped (lib/stacks/api-workspaces-lambda.ts).
   When that row cannot be written, the entry is refused (the error propagates, nothing is cached); a retried put
   whose first attempt had landed (the same row now stored at that key) counts as written (shared/audit_rows.py).
 
-``require_platform_admin`` gates the platform-admin routes (the users API's ``PUT /users/{username}/platform-admin``):
-403 unless the caller's token carries ``platform-admins``.
+Warm-container cache. A resolved membership is kept per ``(workspace, sub, token platform admin or not)`` for
+``MEMBERSHIP_TTL_SECONDS`` (30 s) in the ``MembershipCache`` the handler owns, so a page's burst of calls costs
+two GetItems (and, for an elevated entry, the two Cognito look-ups) once. A platform-admin entry writes its
+audit row once per cache fill, not once per request: one row per entry and per 30 s of continued use, per warm
+container. Refusals are not cached, so a new membership works at once; a removed membership, a changed role, a
+revoked platform admin or a workspace set to ``deleting`` takes effect within the TTL.
 
-Warm-container cache. A resolved membership is kept per ``(workspace, sub)`` for ``MEMBERSHIP_TTL_SECONDS``
-(30 s) in the ``MembershipCache`` the handler owns, so a page's burst of calls costs two GetItems once. A
-platform-admin entry writes its audit row once per cache fill, not once per request: one row per entry
-and per 30 s of continued use, per warm container. Refusals are not cached, so a new membership works at
-once; a removed membership, a changed role or a workspace set to ``deleting`` takes effect within the TTL.
-
-The table layout (``voc-workspaces``, VocCoreStack):
+The table layout (``voc-workspaces``, VocCoreStack; the platform console's writes: shared/platform_workspaces.py):
 
     WS#{ws}       / META             name, slug, status
     WS#{ws}       / MEMBER#{sub}     role
     USER#{sub}    / WS#{ws}          name, slug, role: the inverse row behind "my workspaces"
-    AUDIT#WS#{ws} / {iso}#{random}   kind, actor, at: a platform admin's entry
+    AUDIT#WS#{ws} / {iso}#{random}   kind, actor, at: a platform admin's entry (and the workspace's creation)
 
 The caller's sub identifies a person: it is stored in the audit row and never logged.
 """
@@ -45,12 +48,13 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
-from shared.api import get_caller_groups, get_caller_subject
+from shared.api import get_caller_subject
 from shared.audit_rows import put_new_audit_row
 from shared.dynamo_paging import iter_query
-from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
+from shared.exceptions import NotFoundError, ValidationError
 from shared.http_cache import request_header
 from shared.logging import logger
+from shared.platform_admin import is_platform_admin
 from shared.timestamps import now_iso
 
 #: The request header that names the workspace (HTTP header names are case-insensitive).
@@ -58,7 +62,6 @@ WORKSPACE_HEADER: Final = 'x-workspace-id'
 #: ``ws_`` + a ULID: 26 Crockford base32 characters (no I, L, O, U), the first one 0-7 (128 bits).
 _WORKSPACE_ID: Final = re.compile(r'ws_[0-7][0-9A-HJKMNP-TV-Z]{25}')
 ROLES: Final = frozenset({'viewer', 'editor', 'admin'})
-PLATFORM_ADMIN_GROUP: Final = 'platform-admins'
 PLATFORM_ADMIN_ENTRY: Final = 'platform_admin_entry'
 ACTIVE: Final = 'active'
 MEMBERSHIP_TTL_SECONDS: Final = 30.0
@@ -107,9 +110,14 @@ class MembershipCache:
         self._entries[(ws, sub, platform_admin)] = (self._clock() + self._ttl, context)
 
 
+def is_workspace_id(value: str) -> bool:
+    """Whether ``value`` is a well-formed workspace id (``ws_`` + a ULID)."""
+    return _WORKSPACE_ID.fullmatch(value) is not None
+
+
 def ws_key(ws: str, *parts: str) -> str:
     """``WS#{ws}#a#b``: a key inside the workspace. Refuses (ValueError) an id that is not well formed."""
-    if not _WORKSPACE_ID.fullmatch(ws):
+    if not is_workspace_id(ws):
         raise ValueError('not a workspace id')
     return '#'.join(('WS', ws, *parts))
 
@@ -119,12 +127,12 @@ def _workspace_id(event: Mapping[str, Any]) -> str:
     ws = value.strip() if isinstance(value, str) else ''
     if not ws:
         raise ValidationError('The X-Workspace-Id header is required')
-    if not _WORKSPACE_ID.fullmatch(ws):
+    if not is_workspace_id(ws):
         raise NotFoundError(NOT_FOUND)
     return ws
 
 
-def _texts(item: Mapping[str, Any], *fields: str) -> list[str]:
+def text_fields(item: Mapping[str, Any], *fields: str) -> list[str]:
     """Each ``item[field]`` that is text, else ``''``, in the order asked."""
     return [value if isinstance(value := item.get(field), str) else '' for field in fields]
 
@@ -140,29 +148,31 @@ def audit_key(ws: str) -> str:
     return f'AUDIT#{ws_key(ws)}'
 
 
-def is_platform_admin(event: dict) -> bool:
-    """Whether the caller's token carries the ``platform-admins`` group."""
-    return PLATFORM_ADMIN_GROUP in get_caller_groups(event)
-
-
-def require_platform_admin(event: dict) -> None:
-    """403 unless the caller is a platform admin (an administrator outside the group is refused too)."""
-    if not is_platform_admin(event):
-        raise AuthorizationError('Platform admin access required')
+def audit_sort_key(at: str) -> str:
+    """``{iso}#{random}``: the sort key of a new audit row written at ``at`` (never the same twice)."""
+    return f'{at}#{secrets.token_hex(8)}'
 
 
 def _audit_platform_admin_entry(table: Any, ws: str, sub: str) -> None:
     at = now_iso()
-    put_new_audit_row(table, {'pk': audit_key(ws), 'sk': f'{at}#{secrets.token_hex(8)}',
+    put_new_audit_row(table, {'pk': audit_key(ws), 'sk': audit_sort_key(at),
                               'kind': PLATFORM_ADMIN_ENTRY, 'actor': sub, 'at': at})
     logger.info('Platform admin entered a workspace', extra={'workspace_id': ws})
 
 
-def _load(table: Any, ws: str, sub: str, platform_admin: bool) -> WorkspaceContext:
+#: The live platform-admin check of a request (shared/platform_admin.py ``is_live_platform_admin``, bound to the
+#: handler's Cognito client and user pool): True only for a platform admin now; a Cognito fault raises.
+LivePlatformAdminCheck = Callable[[dict], bool]
+
+
+def _load(table: Any, event: dict, ws: str, platform_admin: bool,
+          confirm_platform_admin: LivePlatformAdminCheck) -> WorkspaceContext:
+    sub = get_caller_subject(event)
     stored = _item(table, ws_key(ws), f'MEMBER#{sub}').get('role')
     role = stored if isinstance(stored, str) and stored in ROLES else None
-    # Decision 2: a platform admin enters with full admin rights, a member with a lower role too (audited).
-    enters_as_platform_admin = platform_admin and role != 'admin'
+    # Decision 2: a platform admin enters with full admin rights, a member with a lower role too (audited). The
+    # token's group makes the caller a candidate; the live check decides (a revoked or disabled one is not).
+    enters_as_platform_admin = platform_admin and role != 'admin' and confirm_platform_admin(event)
     if role is None and not enters_as_platform_admin:
         # Answered before the workspace row is read: a non-member costs the same one read whether or not the
         # workspace exists, so neither the answer nor its timing confirms another team's workspace.
@@ -170,22 +180,26 @@ def _load(table: Any, ws: str, sub: str, platform_admin: bool) -> WorkspaceConte
     meta = _item(table, ws_key(ws), 'META')
     if meta.get('status') != ACTIVE:
         raise NotFoundError(NOT_FOUND)
-    name, slug = _texts(meta, 'name', 'slug')
+    name, slug = text_fields(meta, 'name', 'slug')
     if enters_as_platform_admin:
         _audit_platform_admin_entry(table, ws, sub)
         return WorkspaceContext(ws=ws, role='admin', name=name, slug=slug, platform_admin=True)
     return WorkspaceContext(ws=ws, role=role or '', name=name, slug=slug, platform_admin=False)
 
 
-def resolve_workspace(table: Any, event: dict, cache: MembershipCache) -> WorkspaceContext:
-    """The workspace ``event``'s ``X-Workspace-Id`` names and the caller's role in it (see the module docstring)."""
+def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
+                      confirm_platform_admin: LivePlatformAdminCheck) -> WorkspaceContext:
+    """The workspace ``event``'s ``X-Workspace-Id`` names and the caller's role in it (see the module docstring).
+
+    ``confirm_platform_admin`` runs only on a cache fill where the token's group would elevate the caller.
+    """
     ws = _workspace_id(event)
     sub = get_caller_subject(event)
     # Part of the cache key: a token that gained or lost the group is resolved again, not served the old answer.
     platform_admin = is_platform_admin(event)
     context = cache.get(ws, sub, platform_admin)
     if context is None:
-        context = _load(table, ws, sub, platform_admin)
+        context = _load(table, event, ws, platform_admin, confirm_platform_admin)
         cache.put(ws, sub, context, platform_admin)
     return context
 
@@ -205,9 +219,9 @@ def list_my_workspaces(table: Any, sub: str) -> list[dict[str, str]]:
     workspaces = []
     left_out = 0
     for row in rows:
-        sk, name, slug, role = _texts(row, 'sk', 'name', 'slug', 'role')
+        sk, name, slug, role = text_fields(row, 'sk', 'name', 'slug', 'role')
         ws = sk.removeprefix('WS#')
-        if _WORKSPACE_ID.fullmatch(ws) and role in ROLES:
+        if is_workspace_id(ws) and role in ROLES:
             workspaces.append({'id': ws, 'name': name, 'slug': slug, 'role': role})
         else:
             left_out += 1

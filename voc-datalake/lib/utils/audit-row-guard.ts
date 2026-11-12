@@ -8,7 +8,8 @@
  * a grant or revoke of the platform-admins group, written by the users API) and voc-projects /
  * voc-participants / voc-feature-requests / voc-conversations (`AUDIT#delete`, written by the API that deletes the
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row) and voc-workspaces (`AUDIT#WS#<ws>`, a platform
- * admin's entry into a workspace, written by the workspaces API, lambda/shared/workspace.py). Every role that can write in one of those
+ * admin's entry into a workspace and the workspace's creation, written by the workspaces API,
+ * lambda/shared/workspace.py and platform_workspaces.py). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
  *
  *   - a table the role is that table's audit writer for: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit
@@ -93,7 +94,8 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   { table: 'featureRequestsTable', rolePathSuffix: '/EngagementLambdaRole' },
   // A deleted conversation.
   { table: 'conversationsTable', rolePathSuffix: '/ChatLambdaRole' },
-  // A platform admin's entry into a workspace (AUDIT#WS#<ws>; the role may put only those partitions).
+  // A platform admin's entry into a workspace and a workspace's creation (AUDIT#WS#<ws>; the only audit partitions
+  // its PutItem's LeadingKeys reach, lib/stacks/api-workspaces-lambda.ts).
   { table: 'workspacesTable', rolePathSuffix: '/WorkspacesLambdaRole' },
 ];
 
@@ -140,7 +142,8 @@ const PUT_ACTIONS = ['dynamodb:PutItem', 'dynamodb:BatchWriteItem'];
 /**
  * What no role may do to an audit row, writers included. BatchWriteItem too: IAM checks a batch as BatchWriteItem, so
  * a DeleteRequest inside it is NOT checked as DeleteItem; every audit writer puts its rows one PutItem at a time
- * (lambda/shared/delete_audit.py, participants_erasure.py, workspace.py, jobs/retention/copies.py), so none needs a batch there.
+ * (lambda/shared/delete_audit.py, participants_erasure.py, workspace.py, jobs/retention/copies.py) or as one Put of a
+ * transaction, which IAM checks as PutItem (platform_workspaces.py, a workspace's creation), so none needs a batch there.
  * PartiQL is not listed: no role is granted a PartiQL action (grantReadWriteData and the exact grants hold none).
  */
 const CHANGE_ACTIONS = ['dynamodb:DeleteItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem'];

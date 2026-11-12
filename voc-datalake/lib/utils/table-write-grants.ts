@@ -71,7 +71,13 @@ export function grantWrites(table: dynamodb.ITable, grantee: iam.IGrantable, wri
  */
 export function grantKeyScopedWrites(
   table: dynamodb.ITable, grantee: iam.IGrantable, writes: readonly TableWrite[], partitions: readonly string[],
+  attributes?: readonly string[],
 ): void {
   if (writes.length === 0 || partitions.length === 0) throw new Error('grantKeyScopedWrites: name writes and partitions');
-  addWriteStatement(table, grantee, writes, { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [...partitions] } });
+  // `attributes`: the only attribute names the request may touch (`dynamodb:Attributes`, the key's included), so an
+  // update limited to one field cannot rewrite any other.
+  addWriteStatement(table, grantee, writes, {
+    'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [...partitions] },
+    ...(attributes ? { 'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...attributes] } } : {}),
+  });
 }

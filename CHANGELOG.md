@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.09.00] - 2026-11-12
+
+Multi-workspace, phase 1: platform admins create and list workspaces; each new workspace gets its credentials secret.
+
+### Added
+
+- `POST /platform/workspaces` with `{name, slug}` and `GET /platform/workspaces` (the workspaces API, `/platform/{proxy+}`), for platform admins only by the live check (token group, live Cognito membership, enabled account), now one shared module, `lambda/shared/platform_admin.py`, used by the users API too; it also requires the account's `sub` to be the token's, so a deleted platform admin's token does not pass on an account that reused the username. A create validates the name and slug (3 to 40 characters of `a-z0-9-`, reserved words refused), mints a `ws_<ULID>` id and writes, in one idempotent transaction, the slug guard (a taken slug is 409), the workspace, the creator as its admin, the creator's "my workspaces" row, a listing row and a `workspace_created` audit row; the answer is 201 ([docs/multi-workspace.md](docs/multi-workspace.md#control-plane)). The list is one paged Query of a listing partition, never a Scan, and shows each workspace's `secret_status`, so a `pending` one is found there.
+- The per-workspace credentials secret `voc/ws/{ws}/credentials` (decision 8), created after the transaction under the customer-managed key and tagged with the workspace; its name comes only from the server-generated id. The workspace starts `secret_status: pending` and becomes `ready` once the secret exists; a failure leaves it `pending` (said in the answer and logged) rather than rolling back rows beside a kept audit row.
+- The fixed-cost guard (`lib/fixed-cost-guard.test.ts`, `RUNTIME_FIXED_COSTS`) refuses any runtime `secretsmanager:CreateSecret` or `kms:CreateKey` grant in the app other than the workspaces API's on `voc/ws/*`, recorded as about $0.40 a month per workspace.
+
+### Changed
+
+- Entering a workspace as a platform admin (`lambda/shared/workspace.py`) now passes the same live check on each cache fill; a failed check falls back to the member role, or the usual 404.
+- The workspaces API's role: PutItem scoped to the `SLUG#`, `WS#`, `USER#`, `WORKSPACES` and `AUDIT#WS#` partitions, UpdateItem to `WS#` and `WORKSPACES` and, by `dynamodb:Attributes`, to `secret_status` alone (of `META` and the listing row, flipped together; `grantKeyScopedWrites` takes the attribute list), Cognito AdminListGroupsForUser and AdminGetUser on the user pool, Secrets Manager CreateSecret (only with the CMK), DescribeSecret and TagResource on `voc/ws/*`. `lib/customer-data-deletes.test.ts` pins the new writer scope and that no row of `voc-workspaces` but an invite carries `ttl`. The API stack's resource ceiling is 409 (+5 for `/platform`); the 425 gate is unchanged.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`). Each workspace created costs about $0.40 a month for its secret. A workspace left `pending` is recovered by hand: check whether its secret already exists (only the `ready` mark may have failed), create it if not, then set `secret_status` to `ready` on both the workspace's `META` and its `WORKSPACES` listing row (docs/multi-workspace.md, Credentials). The web app does not call these routes yet.
+
 ## [6.08.00] - 2026-11-12
 
 Multi-workspace, phase 1: platform-admin membership is managed and protected, server-side, before the group can grant anything.

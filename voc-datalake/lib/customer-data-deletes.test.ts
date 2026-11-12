@@ -86,9 +86,13 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
 
 const DYNAMO_WRITE = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|PartiQL(Insert|Update|Delete)|\*)$/;
 
-/** Who may write voc-workspaces, and where: no role creates workspaces or members yet. */
+/**
+ * Who may write voc-workspaces, and where: the workspaces API alone, in the partitions a workspace's creation writes
+ * (lambda/shared/platform_workspaces.py: `SLUG#`, `WS#`, `USER#`, the `WORKSPACES` listing, `AUDIT#WS#`) and its
+ * entry audit rows; no role deletes there.
+ */
 const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
-  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*'],
+  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
 };
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */
@@ -125,7 +129,10 @@ const RAW_BUCKET_DELETERS: Readonly<Record<string, Readonly<Record<string, strin
 
 const LeadingKeysSchema = z.object({
   'ForAllValues:StringLike': z.object({ 'dynamodb:LeadingKeys': z.array(z.string()) }).optional(),
-  'ForAllValues:StringEquals': z.object({ 'dynamodb:LeadingKeys': z.array(z.string()) }).optional(),
+  // StringEquals may also name the attributes an update may touch (dynamodb:Attributes): not a key scope.
+  'ForAllValues:StringEquals': z.object({
+    'dynamodb:LeadingKeys': z.array(z.string()).optional(), 'dynamodb:Attributes': z.array(z.string()).optional(),
+  }).optional(),
 });
 
 interface Grant { role: string; managed: boolean; actions: string[]; resource: string; condition: unknown }
@@ -168,9 +175,10 @@ const grants = allowGrants();
 function scopeOf(grant: Grant): Scope {
   if (grant.condition === undefined) return WHOLE_TABLE;
   const parsed = LeadingKeysSchema.parse(grant.condition);
-  const keys = parsed['ForAllValues:StringLike'] ?? parsed['ForAllValues:StringEquals'];
+  const keys = parsed['ForAllValues:StringLike']?.['dynamodb:LeadingKeys']
+    ?? parsed['ForAllValues:StringEquals']?.['dynamodb:LeadingKeys'];
   if (keys === undefined) throw new Error(`${grant.role}: a delete with a condition that is not LeadingKeys`);
-  return [...keys['dynamodb:LeadingKeys']].sort(byCodeUnit);
+  return [...keys].sort(byCodeUnit);
 }
 
 /** Matches the table itself (`<table>` / `<table>/index/...`) by its logical id in a GetAtt or an import. */
@@ -220,11 +228,12 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     expect(tableDeleters(table)).toStrictEqual(expected);
   });
 
-  // The order docs/multi-workspace.md (Control plane) asks for, held by a test rather than prose: 6.07.00 reads the
-  // platform-admins group, so no role may write a workspace (META) or a membership (MEMBER#, USER#) until the change
-  // that does also lands the users-API safeguards for that group (6.08.00) and the live platform-admin check on
-  // entering a workspace (docs/multi-workspace.md, Control plane). That change edits WORKSPACE_WRITERS here.
-  it('voc-workspaces: only the workspaces API writes, and only its entry audit rows', () => {
+  // The order docs/multi-workspace.md (Control plane) asked for, held by a test rather than prose: no role could write
+  // a workspace (META) or a membership (MEMBER#, USER#) before the users-API safeguards for platform-admins (6.08.00)
+  // and the live platform-admin check on entering a workspace (6.09.00, lambda/shared/workspace.py). Both landed; the
+  // change that creates workspaces (6.09.00) is the one that widened WORKSPACE_WRITERS. A new writer or partition is a
+  // decision recorded here.
+  it('voc-workspaces: only the workspaces API writes, and only in its creation and audit partitions', () => {
     const writers: Record<string, Scope> = {};
     for (const grant of grants.filter(onTable('WorkspacesTable')).filter((g) => g.actions.some((a) => DYNAMO_WRITE.test(a)))) {
       writers[grant.role] = unionOf(writers[grant.role] ?? [], scopeOf(grant));

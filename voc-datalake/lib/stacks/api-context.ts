@@ -27,7 +27,9 @@ export interface ApiStackContext {
   logGroup: (id: string, name: string) => logs.LogGroup;
   uniqueName: (baseName: string) => string;
   uniqueNamePattern: (baseNameTemplate: string) => string;
-  prefixOnlyEnv: (entries: Record<string, string>) => Record<string, string>;
+  /** `name` with the deployment prefix on its `voc` segment (unchanged without a prefix), lib/utils/naming.ts. */
+  prefixed: (name: string) => string;
+  prefixOnlyEnv:(entries: Record<string, string>) => Record<string, string>;
   deploymentPrefix: string | undefined;
   /** The persona-avatar image model ARN (model-allowlist.ts `imageModelArn()`). */
   avatarImageModelArn: string;

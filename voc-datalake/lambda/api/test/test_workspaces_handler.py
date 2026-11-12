@@ -9,19 +9,23 @@ from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
 import workspaces_handler
+from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
 
 WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 OTHER_WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
 ANA = {'sub': 'sub-ana', 'cognito:groups': 'users'}
 SAM = {'sub': 'sub-sam', 'cognito:groups': 'users'}
-PAT = {'sub': 'sub-pat', 'cognito:groups': 'platform-admins'}
+PAT = {'sub': 'sub-pat', 'cognito:username': 'pat', 'cognito:groups': 'platform-admins'}
 DENIED = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': f'not on AUDIT#WS#{WS}'}}, 'PutItem')
 
 
 @pytest.fixture
 def table() -> Iterator:
-    with mock_aws(), patch.object(workspaces_handler, 'memberships', MembershipCache()):
+    # Cognito as the live check reads it: pat is in platform-admins now, with an enabled account.
+    with mock_aws(), patch.object(workspaces_handler, 'memberships', MembershipCache()), \
+            patch.object(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool'), \
+            patch.object(workspaces_handler, 'get_cognito_idp_client', return_value=live_cognito()):
         created = pk_sk_table('workspaces')
         for ws, name, slug in ((WS, 'Acme Outfitters', 'acme'), (OTHER_WS, 'Birch Lane', 'birch')):
             created.put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'name': name, 'slug': slug, 'status': 'active'})

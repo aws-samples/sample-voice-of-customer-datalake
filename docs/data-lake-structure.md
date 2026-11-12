@@ -168,7 +168,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 | `voc-radar` | `pk`, `sk` | Other brands' reviews, kept out of your own metrics ([radar.md](radar.md)) |
 | `voc-participants` | `pk`, `sk` | People to ask for feedback, lists and asks ([participants.md](participants.md)) |
 | `voc-feature-requests` | `pk`, `sk` | Feedback boards and their requests ([feature-requests.md](feature-requests.md)) |
-| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs and their audit; read by the workspaces API (`GET /me/*`), which writes only a platform-admin entry's audit row; nothing creates workspaces or members yet ([multi-workspace.md](multi-workspace.md)) |
+| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs, the platform console's listing (`WORKSPACES`) and their audit; read and written only by the workspaces API (`GET /me/*`, `/platform/*`): platform admins create workspaces (one transaction, the creator as admin) and a platform admin's entry is audited; nothing adds members or invites yet ([multi-workspace.md](multi-workspace.md#control-plane)) |
 
 ### Feedback table indexes
 

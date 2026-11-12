@@ -149,15 +149,20 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         # Platform-admin membership: an admin gate, then the platform-admin one (PLATFORM_ADMIN_ONLY below).
         'PUT /users/<username>/platform-admin',
     }),
+    # The platform console (docs/multi-workspace.md → Control plane): an admin gate, then the platform-admin one.
+    'workspaces_handler.py': frozenset({'POST /platform/workspaces'}),
 }
 
-# Routes for platform admins only (docs/multi-workspace.md → Control plane): each is also in ADMIN_ONLY, and its
-# handler body also calls `require_platform_admin` (shared/workspace.py) as an unconditional top-level statement,
-# so a plain administrator gets 403 too.
+# Routes for platform admins only (docs/multi-workspace.md → Control plane): each is also in ADMIN_ONLY (a write)
+# or ADMIN_ONLY_READS (a read), and its handler body also calls `require_platform_admin` (shared/platform_admin.py)
+# as an unconditional top-level statement, so a plain administrator gets 403 too; the live check follows it.
 PLATFORM_GATE = 'require_platform_admin'
 PLATFORM_ADMIN_ONLY: dict[str, frozenset[str]] = {
     'users_handler.py': frozenset({'PUT /users/<username>/platform-admin'}),
+    'workspaces_handler.py': frozenset({'POST /platform/workspaces', 'GET /platform/workspaces'}),
 }
+#: The methods whose routes the platform-gate checks read: the writes and the reads.
+PLATFORM_GATED_METHODS = MUTATING_METHODS | {'get'}
 
 
 @dataclass(frozen=True)
@@ -458,16 +463,16 @@ def test_no_open_by_decision_route_carries_an_admin_gate():
 
 
 def _platform_gated(source: str) -> dict[str, bool]:
-    """Every mutating route in *source* -> whether its body calls `require_platform_admin` unconditionally."""
+    """Every mutating or read route in *source* -> whether its body calls `require_platform_admin` unconditionally."""
     functions = _module_functions(ast.parse(source))
     return {key: PLATFORM_GATE in _top_level_calls(fn)
-            for fn in functions.values() for key in _route_keys(fn, MUTATING_METHODS)}
+            for fn in functions.values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
 
 
 @pytest.mark.parametrize(('handler', 'route'), sorted(
     (handler, route) for handler, routes in PLATFORM_ADMIN_ONLY.items() for route in routes))
 def test_every_platform_admin_route_is_admin_only_and_carries_the_platform_gate(handler, route):
-    assert route in ADMIN_ONLY[handler]
+    assert route in ADMIN_ONLY.get(handler, frozenset()) | ADMIN_ONLY_READS.get(handler, frozenset())
     assert _platform_gated((API_DIR / handler).read_text(encoding='utf-8')).get(route) is True, (
         f'{handler} {route} is missing or lost its require_platform_admin gate')
 
@@ -479,17 +484,33 @@ def test_only_the_listed_routes_carry_the_platform_gate():
 
 
 def test_the_platform_gate_raises_authorization_error():
-    functions = _module_functions(ast.parse((SHARED_DIR / 'workspace.py').read_text(encoding='utf-8')))
+    functions = _module_functions(ast.parse((SHARED_DIR / 'platform_admin.py').read_text(encoding='utf-8')))
     assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
                for stmt in functions[PLATFORM_GATE].body)
 
 
-def test_removing_the_platform_gate_is_detected():
-    tree = ast.parse((API_DIR / 'users_handler.py').read_text(encoding='utf-8'))
-    route = 'PUT /users/<username>/platform-admin'
+@pytest.mark.parametrize(('handler', 'route'), [
+    ('users_handler.py', 'PUT /users/<username>/platform-admin'),
+    ('workspaces_handler.py', 'POST /platform/workspaces'),
+    ('workspaces_handler.py', 'GET /platform/workspaces'),
+])
+def test_removing_the_platform_gate_is_detected(handler, route):
+    tree = ast.parse((API_DIR / handler).read_text(encoding='utf-8'))
     for fn in _module_functions(tree).values():
         fn.body = [s for s in fn.body if not (isinstance(s, ast.Expr) and _called_name(s.value) == PLATFORM_GATE)]
     assert _platform_gated(ast.unparse(tree))[route] is False
+
+
+# The live check follows the token gate on every platform route of the workspaces API (shared/platform_admin.py):
+# the token alone would let a revoked or disabled platform admin through until it expires.
+LIVE_PLATFORM_GATE = '_require_live_platform_admin'
+
+
+@pytest.mark.parametrize('route', sorted(PLATFORM_ADMIN_ONLY['workspaces_handler.py']))
+def test_every_workspaces_platform_route_runs_the_live_check(route):
+    functions = _module_functions(ast.parse((API_DIR / 'workspaces_handler.py').read_text(encoding='utf-8')))
+    [fn] = [fn for fn in functions.values() if route in _route_keys(fn, PLATFORM_GATED_METHODS)]
+    assert LIVE_PLATFORM_GATE in _top_level_calls(fn)
 
 
 def test_every_table_entry_names_a_route_that_exists():
@@ -521,6 +542,8 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
         # Import history (#237): who imported what, from which file — admin data like the imports themselves.
         'GET /scrapers/manual/history', 'GET /scrapers/manual/history/<run_id>',
     }),
+    # Every workspace of the deployment (the platform console, docs/multi-workspace.md): platform admins only.
+    'workspaces_handler.py': frozenset({'GET /platform/workspaces'}),
 }
 
 

@@ -12,6 +12,8 @@
  * `-c mcpReservedConcurrency`). Record sets in an EXISTING hosted zone (the inbound-email intake
  * imports its zone by id) are pay-per-query too.
  */
+import { z } from 'zod';
+
 import { PERFORMANCE_TIER_CONTEXT_KEY } from '../utils/performance-tier';
 import { SNAPSTART_CONTEXT_KEY, SNAPSTART_FUNCTION_IDS } from '../utils/snapstart';
 import { WAF_CONTEXT_KEY } from '../utils/waf';
@@ -176,7 +178,9 @@ export interface CountedFixedCost {
  * - `AWS::SecretsManager::Secret`: 3 today (about $0.40 a month each), a known baseline: the plugin-credentials
  *   secret (lib/stacks/ingestion-stack.ts) and the design-integrations and CDN signing-key secrets
  *   (lib/stacks/core-cdn.ts). A later release moves them to SSM Parameter Store (SecureString, no monthly fee) and
- *   brings this number to zero.
+ *   brings this number to zero. These are the secrets CDK creates; the per-workspace credentials secrets the app
+ *   creates at run time (one per workspace, decision 8) are not in any template, so {@link RUNTIME_FIXED_COSTS}
+ *   names them instead, as the only runtime create of a counted type.
  *
  * The single-flag opt-in shapes (`snapStart`, `enableWaf`, `performanceTier`) are not counted: their registries above list
  * hourly-priced resources only. Every free context-gated feature is in the all-features synth, so a key or secret
@@ -220,7 +224,104 @@ export function countedFixedCostFindings(templates: readonly StackTemplate[]): s
   });
 }
 
-const SNAPSTART_FINDINGS = SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
+/**
+ * A counted resource the app creates at RUN time, outside CloudFormation, so the template count above cannot see it:
+ * the only role allowed the create action, the one resource pattern it may create, and the accepted cost.
+ */
+export interface RuntimeFixedCost {
+  /** The create action that makes a billed resource (`secretsmanager:CreateSecret`). */
+  readonly action: string;
+  /** The logical-id fragment of the one role allowed it (`<RoleId>DefaultPolicy…`). */
+  readonly role: string;
+  /** What every resource of the grant must end with: the name pattern of the resources made at run time. */
+  readonly resourceSuffix: string;
+  readonly what: string;
+}
+
+/**
+ * The create actions of the counted types ({@link COUNTED_FIXED_COSTS}): a role allowed one of them could add a
+ * monthly cost the template count never sees, so every such grant in the app must be a {@link RUNTIME_FIXED_COSTS}
+ * entry (an owner decision). `*` actions count too.
+ */
+const COUNTED_CREATE_ACTIONS: readonly string[] = ['kms:CreateKey', 'secretsmanager:CreateSecret'];
+
+/**
+ * THE registry of fixed costs made at run time (TENETS.md, tenet 7), each accepted by an owner decision:
+ *
+ * - One Secrets Manager secret per workspace (docs/multi-workspace.md, decision 8: per-workspace credential
+ *   isolation, about $0.40 a month per workspace, reported per workspace): `voc/ws/{ws}/credentials`, created by
+ *   the workspaces API when a platform admin creates a workspace (lambda/shared/platform_workspaces.py,
+ *   lib/stacks/api-workspaces-lambda.ts). Its count is the number of workspaces; no other role may create a secret
+ *   or a key at run time.
+ */
+export const RUNTIME_FIXED_COSTS: readonly RuntimeFixedCost[] = [
+  { action: 'secretsmanager:CreateSecret', role: 'WorkspacesLambdaRole', resourceSuffix: ':secret:voc/ws/*',
+    what: 'one credentials secret per workspace (decision 8, about $0.40 a month each)' },
+];
+
+const PolicyStatementsSchema = z.object({
+  PolicyDocument: z.object({ Statement: z.array(z.looseObject({
+    Effect: z.string().optional(), Action: z.union([z.string(), z.array(z.string())]).optional(), Resource: z.unknown(),
+  })) }),
+});
+const PolicyResourceSchema = z.object({
+  Type: z.enum(['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']), Properties: PolicyStatementsSchema,
+});
+const RoleResourceSchema = z.object({
+  Type: z.literal('AWS::IAM::Role'), Properties: z.object({ Policies: z.array(PolicyStatementsSchema).optional() }),
+});
+
+/** One Allow of a counted create action: `<stack>/<policy or role id>`, the action, and the resources it names. */
+interface CountedCreateGrant { readonly where: string; readonly action: string; readonly resources: readonly string[] }
+
+const grantsCountedCreate = (action: string, wanted: string): boolean => (
+  action === wanted || action === '*' || action === `${wanted.split(':')[0]}:*`
+);
+
+function countedCreateGrants({ stack, template }: StackTemplate): CountedCreateGrant[] {
+  return Object.entries(TemplateResourcesSchema.parse(template.Resources ?? {})).flatMap(([id, raw]) => {
+    const policy = PolicyResourceSchema.safeParse(raw);
+    const role = RoleResourceSchema.safeParse(raw);
+    const documents = policy.success ? [policy.data.Properties] : (role.data?.Properties.Policies ?? []);
+    return documents.flatMap((document) => document.PolicyDocument.Statement)
+      .filter((statement) => (statement.Effect ?? 'Allow') === 'Allow')
+      .flatMap((statement) => COUNTED_CREATE_ACTIONS
+        .filter((wanted) => [statement.Action ?? []].flat().some((action) => grantsCountedCreate(action, wanted)))
+        .map((action) => ({
+          where: `${stack}/${id}`, action,
+          resources: [statement.Resource].flat().map((resource) => JSON.stringify(resource)),
+        })));
+  });
+}
+
+/** A resource with a `-c deploymentPrefix` (`:secret:<prefix>-voc/ws/*`) read as the unprefixed name. */
+const withoutDeploymentPrefix = (resource: string): string => resource.replace(/:secret:[A-Za-z0-9]+-(?=voc\/)/, ':secret:');
+
+const matchesRuntimeCost = (grant: CountedCreateGrant, cost: RuntimeFixedCost): boolean => (
+  grant.action === cost.action && grant.where.includes(cost.role)
+    // A literal ARN ends with the suffix; a joined one (account and region tokens) has it as its last string part.
+    && grant.resources.length > 0
+    && grant.resources.map(withoutDeploymentPrefix).every((resource) => resource.endsWith(`${cost.resourceSuffix}"`)
+      || resource.endsWith(`${cost.resourceSuffix}"]]}`))
+);
+
+/**
+ * One message per grant of a counted create action that is no {@link RUNTIME_FIXED_COSTS} entry, and per entry
+ * whose grant is gone (lower the registry with it), across every stack of one synth shape.
+ */
+export function runtimeFixedCostFindings(templates: readonly StackTemplate[]): string[] {
+  const grants = templates.flatMap(countedCreateGrants);
+  const unlisted = grants.filter((grant) => !RUNTIME_FIXED_COSTS.some((cost) => matchesRuntimeCost(grant, cost)))
+    .map((grant) => `${grant.where} may ${grant.action} on ${grant.resources.join(', ')} — a key or secret made at `
+      + 'run time bills monthly (TENETS.md, tenet 7) and the template count cannot see it; reuse an existing one, '
+      + 'or record the owner decision in RUNTIME_FIXED_COSTS (lib/test-support/fixed-cost-rules.ts)');
+  const gone = RUNTIME_FIXED_COSTS.filter((cost) => !grants.some((grant) => matchesRuntimeCost(grant, cost)))
+    .map((cost) => `RUNTIME_FIXED_COSTS lists ${cost.what} (${cost.role} ${cost.action}), and no grant makes it: `
+      + 'remove the entry');
+  return [...unlisted, ...gone];
+}
+
+const SNAPSTART_FINDINGS =SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
 
 // lib/utils/waf.ts: the CLOUDFRONT ACL (VocWebSearchStack), the REGIONAL ACL and its stage association (VocApiStack).
 const WAF_FINDINGS = [

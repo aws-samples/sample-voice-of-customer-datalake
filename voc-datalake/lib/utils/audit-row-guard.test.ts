@@ -29,7 +29,8 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   ParticipantsTable: ['VocApiStack/EngagementLambdaRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
   ConversationsTable: ['VocApiStack/ChatLambdaRole'],
-  // A platform admin's entry (AUDIT#WS#<ws>); every other role writing voc-workspaces gets the forge Deny.
+  // A platform admin's entry and a workspace's creation (AUDIT#WS#<ws>); every other role writing voc-workspaces gets
+  // the forge Deny.
   WorkspacesTable: ['VocApiStack/WorkspacesLambdaRole'],
 };
 

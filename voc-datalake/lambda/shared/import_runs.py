@@ -32,7 +32,7 @@ from typing import Any, Final
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.dynamo_values import as_count
-from shared.feedback_cursor import decode_key_cursor, encode_key_cursor
+from shared.feedback_cursor import TABLE_KEY_FIELDS, decode_key_cursor, encode_key_cursor
 from shared.logging import logger
 
 __all__ = [
@@ -59,7 +59,6 @@ IMPORT_FAILED: Final = 'failed'
 # The actor of a file dropped into the import bucket: the uploader is not known there.
 S3_UPLOAD_ACTOR: Final = 's3-upload'
 _COUNT_FIELDS: Final = ('received', 'imported', 'skipped', 'duplicate', 'failed')
-_CURSOR_FIELDS: Final = frozenset({'pk', 'sk'})
 _ELLIPSIS: Final = '…'
 
 
@@ -265,7 +264,7 @@ def list_import_runs(table: Any, *, limit: int, cursor: str | None = None) -> tu
         'Limit': limit,
     }
     if cursor:
-        request['ExclusiveStartKey'] = decode_key_cursor(cursor, _CURSOR_FIELDS, ('pk', LIST_PK))
+        request['ExclusiveStartKey'] = decode_key_cursor(cursor, TABLE_KEY_FIELDS, ('pk', LIST_PK))
     response = table.query(**request)
     now_epoch = int(time.time())
     items = response.get('Items') if isinstance(response, Mapping) else None

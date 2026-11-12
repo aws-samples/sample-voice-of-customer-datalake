@@ -27,7 +27,7 @@ export interface RouteTargets extends DataLambdas, EngagementLambdas, AssistantL
   radarLambda: lambda.Function;
   /** voc-engagement-api: /participants/*, /feature-requests/*, POST /unsubscribe. */
   engagementLambda: lambda.Function;
-  /** voc-workspaces-api: GET /me/{proxy+} (docs/multi-workspace.md). */
+  /** voc-workspaces-api: GET /me/{proxy+}, GET + POST /platform/{proxy+} (docs/multi-workspace.md). */
   workspacesLambda: lambda.Function;
   webhookPlugins: PluginManifest[];
   webhookLambdas: Map<string, lambda.Function>;
@@ -274,7 +274,11 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
 
   // /me/* — the caller's own view of the workspaces (voc-workspaces-api, docs/multi-workspace.md): GET only,
   // Cognito on the proxy, nothing on the bare /me. One proxy, so later /me reads cost no resource.
-  proxyServing(api.root.addResource('me'), { GET: frugalIntegration(workspacesLambda) });
+  const workspacesIntegration = frugalIntegration(workspacesLambda);
+  proxyServing(api.root.addResource('me'), { GET: workspacesIntegration });
+  // /platform/* — the platform console (the same Lambda and integration, so no new invoke permission): GET and POST,
+  // Cognito on the proxy, nothing on the bare /platform; the handler admits platform admins only (live check).
+  proxyServing(api.root.addResource('platform'), { GET: workspacesIntegration, POST: workspacesIntegration });
 
   // Engagement (voc-engagement-api). ONE integration, so ONE invoke permission for all three trees.
   const engagementIntegration = frugalIntegration(engagementLambda);

@@ -238,6 +238,7 @@ export class VocApiStack extends VocStack {
       logGroup: (logGroupId, name) => this.createLogGroup(logGroupId, name),
       uniqueName: (baseName) => this.uniqueName(baseName),
       uniqueNamePattern: (baseNameTemplate) => this.uniqueNamePattern(baseNameTemplate),
+      prefixed: (name) => this.prefixed(name),
       prefixOnlyEnv: (entries) => this.prefixOnlyEnv(entries),
       deploymentPrefix: this.deploymentPrefix,
       // Persona avatar image generation (projects API + persona jobs).

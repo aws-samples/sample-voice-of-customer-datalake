@@ -6,7 +6,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
-from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
+from shared.exceptions import NotFoundError, ValidationError
 from shared.test.moto_tables import create_pk_sk_table
 from shared.workspace import (
     MAX_CACHED_MEMBERSHIPS,
@@ -15,9 +15,8 @@ from shared.workspace import (
     MembershipCache,
     WorkspaceContext,
     audit_key,
-    is_platform_admin,
+    is_workspace_id,
     list_my_workspaces,
-    require_platform_admin,
     resolve_workspace,
     ws_key,
 )
@@ -27,6 +26,25 @@ OTHER_WS = 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ'
 MEMBER = {'sub': 'sub-ana', 'cognito:groups': 'users'}
 STRANGER = {'sub': 'sub-sam', 'cognito:groups': 'users'}
 PLATFORM_ADMIN = {'sub': 'sub-pat', 'cognito:groups': '[admins, platform-admins]'}
+
+
+class LiveCheck:
+    """The live platform-admin check double: answers ``confirmed`` (or raises ``fault``) and records each event."""
+
+    def __init__(self, confirmed: bool = True, fault: Exception | None = None) -> None:
+        self.confirmed = confirmed
+        self.fault = fault
+        self.calls: list[dict] = []
+
+    def __call__(self, event: dict) -> bool:
+        self.calls.append(event)
+        if self.fault is not None:
+            raise self.fault
+        return self.confirmed
+
+
+def _resolve(table, event, cache, live: LiveCheck | None = None) -> WorkspaceContext:
+    return resolve_workspace(table, event, cache, confirm_platform_admin=live or LiveCheck())
 
 
 class FakeClock:
@@ -68,7 +86,7 @@ def _workspace_rows(table, ws=WS):
 
 @pytest.mark.parametrize('header', ['X-Workspace-Id', 'x-workspace-id', 'X-WORKSPACE-ID'])
 def test_the_header_is_found_whatever_its_case(table, header):
-    context = resolve_workspace(table, _ws_event(MEMBER, header=header), MembershipCache())
+    context = _resolve(table,_ws_event(MEMBER, header=header), MembershipCache())
     assert context == WorkspaceContext(ws=WS, role='editor', name='Acme Outfitters', slug='acme',
                                        platform_admin=False)
 
@@ -77,7 +95,7 @@ def test_the_header_is_found_whatever_its_case(table, header):
                                      {'X-Workspace-Id': None}], ids=['none', 'empty', 'blank', 'spaces', 'null'])
 def test_a_missing_header_is_a_400(table, headers):
     with pytest.raises(ValidationError, match='X-Workspace-Id'):
-        resolve_workspace(table, _event(MEMBER, headers), MembershipCache())
+        _resolve(table,_event(MEMBER, headers), MembershipCache())
 
 
 @pytest.mark.parametrize('ws', [
@@ -91,27 +109,27 @@ def test_a_missing_header_is_a_400(table, headers):
 ], ids=['lower', 'short', 'long', 'overflow', 'letter-i', 'key-prefix', 'key-injection'])
 def test_a_malformed_id_is_the_same_404_as_any_other(table, ws):
     with pytest.raises(NotFoundError, match=NOT_FOUND):
-        resolve_workspace(table, _ws_event(MEMBER, ws=ws), MembershipCache())
+        _resolve(table,_ws_event(MEMBER, ws=ws), MembershipCache())
 
 
 # ── Membership ───────────────────────────────────────────────────────────────
 
 def test_a_caller_who_is_not_a_member_gets_404(table):
     with pytest.raises(NotFoundError, match=NOT_FOUND):
-        resolve_workspace(table, _ws_event(STRANGER), MembershipCache())
+        _resolve(table,_ws_event(STRANGER), MembershipCache())
 
 
 @pytest.mark.parametrize('ws', [WS, OTHER_WS], ids=['exists', 'does-not-exist'])
 def test_a_non_member_costs_one_read_whether_or_not_the_workspace_exists(table, ws):
     # Neither the answer nor its timing confirms another team's workspace: the membership row is read first.
     with patch.object(table, 'get_item', wraps=table.get_item) as get_item, pytest.raises(NotFoundError, match=NOT_FOUND):
-        resolve_workspace(table, _ws_event(STRANGER, ws=ws), MembershipCache())
+        _resolve(table,_ws_event(STRANGER, ws=ws), MembershipCache())
     assert [call.kwargs['Key'] for call in get_item.call_args_list] == [{'pk': f'WS#{ws}', 'sk': 'MEMBER#sub-sam'}]
 
 
 def test_a_workspace_that_does_not_exist_is_404_even_for_a_platform_admin(table):
     with pytest.raises(NotFoundError, match=NOT_FOUND):
-        resolve_workspace(table, _ws_event(PLATFORM_ADMIN, ws=OTHER_WS), MembershipCache())
+        _resolve(table,_ws_event(PLATFORM_ADMIN, ws=OTHER_WS), MembershipCache())
     assert _audit_rows(table, OTHER_WS) == []
 
 
@@ -120,32 +138,32 @@ def test_a_deleting_workspace_is_404_for_everyone(table, claims):
     table.update_item(Key={'pk': f'WS#{WS}', 'sk': 'META'}, UpdateExpression='SET #s = :s',
                       ExpressionAttributeNames={'#s': 'status'}, ExpressionAttributeValues={':s': 'deleting'})
     with pytest.raises(NotFoundError, match=NOT_FOUND):
-        resolve_workspace(table, _ws_event(claims), MembershipCache())
+        _resolve(table,_ws_event(claims), MembershipCache())
     assert _audit_rows(table) == []
 
 
 def test_a_workspace_without_a_status_is_not_active(table):
     table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'META', 'name': 'Acme Outfitters', 'slug': 'acme'})
     with pytest.raises(NotFoundError, match=NOT_FOUND):
-        resolve_workspace(table, _ws_event(MEMBER), MembershipCache())
+        _resolve(table,_ws_event(MEMBER), MembershipCache())
 
 
 @pytest.mark.parametrize('role', ['admin', 'editor', 'viewer'])
 def test_a_member_acts_with_the_role_of_their_row(table, role):
     table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-ana', 'role': role})
-    assert resolve_workspace(table, _ws_event(MEMBER), MembershipCache()).role == role
+    assert _resolve(table,_ws_event(MEMBER), MembershipCache()).role == role
 
 
 @pytest.mark.parametrize('role', ['owner', 'Admin', ''], ids=['unknown', 'case', 'empty'])
 def test_a_member_row_with_an_unknown_role_is_no_membership(table, role):
     table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-ana', 'role': role})
     with pytest.raises(NotFoundError, match=NOT_FOUND):
-        resolve_workspace(table, _ws_event(MEMBER), MembershipCache())
+        _resolve(table,_ws_event(MEMBER), MembershipCache())
 
 
 def test_the_name_and_slug_default_to_empty_text(table):
     table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'META', 'status': 'active', 'name': 7})
-    context = resolve_workspace(table, _ws_event(MEMBER), MembershipCache())
+    context = _resolve(table,_ws_event(MEMBER), MembershipCache())
     assert (context.name, context.slug) == ('', '')
 
 
@@ -153,7 +171,7 @@ def test_the_name_and_slug_default_to_empty_text(table):
 
 def test_a_platform_admin_who_is_not_a_member_enters_as_admin_and_is_audited(table):
     with patch('shared.workspace.now_iso', return_value='2026-11-11T09:00:00+00:00'):
-        context = resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+        context = _resolve(table,_ws_event(PLATFORM_ADMIN), MembershipCache())
     assert (context.role, context.platform_admin) == ('admin', True)
     [row] = _audit_rows(table)
     # The partition starts with AUDIT# (the audit-row guard covers it, lib/utils/audit-row-guard.ts).
@@ -169,14 +187,14 @@ def test_a_platform_admin_who_is_not_a_member_enters_as_admin_and_is_audited(tab
 def test_a_platform_admin_who_is_a_lower_member_still_enters_as_admin_and_is_audited(table, role):
     # Decision 2: full admin rights in any workspace; a viewer or editor membership does not cap them.
     table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-pat', 'role': role})
-    context = resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+    context = _resolve(table,_ws_event(PLATFORM_ADMIN), MembershipCache())
     assert (context.role, context.platform_admin) == ('admin', True)
     assert len(_audit_rows(table)) == 1
 
 
 def test_a_platform_admin_who_is_a_member_admin_is_a_member_and_writes_no_audit_row(table):
     table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-pat', 'role': 'admin'})
-    context = resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+    context = _resolve(table,_ws_event(PLATFORM_ADMIN), MembershipCache())
     assert (context.role, context.platform_admin) == ('admin', False)
     assert _audit_rows(table) == []
 
@@ -185,10 +203,10 @@ def test_an_audit_row_is_written_once_per_cache_fill_not_per_request(table):
     clock = FakeClock()
     cache = MembershipCache(ttl_seconds=30, clock=clock)
     for _ in range(3):
-        resolve_workspace(table, _ws_event(PLATFORM_ADMIN), cache)
+        _resolve(table,_ws_event(PLATFORM_ADMIN), cache)
     assert len(_audit_rows(table)) == 1
     clock.now += 30
-    resolve_workspace(table, _ws_event(PLATFORM_ADMIN), cache)
+    _resolve(table,_ws_event(PLATFORM_ADMIN), cache)
     assert len(_audit_rows(table)) == 2
 
 
@@ -207,7 +225,7 @@ def test_the_audit_put_never_overwrites_another_row(table):
     table.put_item(Item=other)
     clock, suffix = _fixed_audit_key()
     with clock, suffix, pytest.raises(ClientError, match='ConditionalCheckFailed'):
-        resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+        _resolve(table,_ws_event(PLATFORM_ADMIN), MembershipCache())
     assert _audit_rows(table) == [other]
 
 
@@ -221,7 +239,7 @@ def test_a_retried_put_whose_first_attempt_landed_counts_as_audited(table):
 
     clock, suffix = _fixed_audit_key()
     with clock, suffix, patch.object(table, 'put_item', side_effect=landed_then_lost):
-        context = resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+        context = _resolve(table,_ws_event(PLATFORM_ADMIN), MembershipCache())
     assert (context.role, context.platform_admin) == ('admin', True)
     assert [(row['sk'], row['actor']) for row in _audit_rows(table)] == [(_FIXED_SK, 'sub-pat')]
 
@@ -231,7 +249,7 @@ def test_an_entry_whose_audit_row_cannot_be_written_is_refused_and_not_cached(ta
     table.put_item(Item={'pk': audit_key(WS), 'sk': _FIXED_SK, 'kind': 'other'})
     clock, suffix = _fixed_audit_key()
     with clock, suffix, pytest.raises(ClientError):
-        resolve_workspace(table, _ws_event(PLATFORM_ADMIN), cache)
+        _resolve(table,_ws_event(PLATFORM_ADMIN), cache)
     assert cache.get(WS, 'sub-pat') is None
 
 
@@ -239,22 +257,64 @@ def test_an_audit_put_that_fails_otherwise_is_not_retried_as_audited(table):
     denied = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'no'}}, 'PutItem')
     with patch.object(table, 'put_item', side_effect=denied), patch.object(table, 'get_item', wraps=table.get_item) as get, \
             pytest.raises(ClientError, match='AccessDenied'):
-        resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+        _resolve(table,_ws_event(PLATFORM_ADMIN), MembershipCache())
     # Only the membership and META reads: no look-up of the audit row for a failure that is not the condition.
     assert [call.kwargs['Key']['sk'] for call in get.call_args_list] == ['MEMBER#sub-pat', 'META']
 
 
-# ── The platform-admin gate ──────────────────────────────────────────────────
+# ── The live platform-admin check on entry ───────────────────────────────────
 
-def test_require_platform_admin_admits_the_group():
-    assert (is_platform_admin(_event(PLATFORM_ADMIN)), require_platform_admin(_event(PLATFORM_ADMIN))) == (True, None)
+def test_an_elevating_entry_runs_the_live_check_once_per_cache_fill(table):
+    live = LiveCheck()
+    cache = MembershipCache()
+    for _ in range(3):
+        assert _resolve(table, _ws_event(PLATFORM_ADMIN), cache, live).platform_admin is True
+    assert len(live.calls) == 1
+    assert live.calls[0]['requestContext']['authorizer']['claims'] == PLATFORM_ADMIN
 
 
-@pytest.mark.parametrize('claims', [MEMBER, {'sub': 'sub-ada', 'cognito:groups': 'admins'}], ids=['user', 'admin'])
-def test_require_platform_admin_refuses_everyone_else_an_administrator_too(claims):
-    assert is_platform_admin(_event(claims)) is False
-    with pytest.raises(AuthorizationError, match='Platform admin access required'):
-        require_platform_admin(_event(claims))
+def test_a_revoked_or_disabled_platform_admin_who_is_not_a_member_gets_404_and_no_audit_row(table):
+    # The token still carries the group; the live check (membership and enabled account) says no.
+    cache = MembershipCache()
+    with pytest.raises(NotFoundError, match=NOT_FOUND):
+        _resolve(table, _ws_event(PLATFORM_ADMIN), cache, LiveCheck(confirmed=False))
+    assert _audit_rows(table) == []
+    assert cache.get(WS, 'sub-pat', platform_admin=True) is None
+
+
+@pytest.mark.parametrize('role', ['viewer', 'editor'])
+def test_a_revoked_platform_admin_who_is_a_member_enters_with_the_member_role(table, role):
+    table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-pat', 'role': role})
+    context = _resolve(table, _ws_event(PLATFORM_ADMIN), MembershipCache(), LiveCheck(confirmed=False))
+    assert (context.role, context.platform_admin) == (role, False)
+    assert _audit_rows(table) == []
+
+
+@pytest.mark.parametrize('claims', [MEMBER, PLATFORM_ADMIN], ids=['no-group', 'member-admin'])
+def test_no_live_check_runs_when_nothing_would_elevate(table, claims):
+    table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-pat', 'role': 'admin'})
+    live = LiveCheck(fault=AssertionError('the live check must not run'))
+    _resolve(table, _ws_event(claims), MembershipCache(), live)
+    assert live.calls == []
+
+
+def test_a_failed_live_check_refuses_the_entry_and_caches_nothing(table):
+    cache = MembershipCache()
+    fault = ClientError({'Error': {'Code': 'TooManyRequestsException', 'Message': 'slow down'}}, 'AdminGetUser')
+    with pytest.raises(ClientError, match='TooManyRequests'):
+        _resolve(table, _ws_event(PLATFORM_ADMIN), cache, LiveCheck(fault=fault))
+    assert (cache.get(WS, 'sub-pat', platform_admin=True), _audit_rows(table)) == (None, [])
+
+
+def test_a_live_check_that_ends_is_seen_on_the_next_cache_fill(table):
+    clock = FakeClock()
+    cache = MembershipCache(ttl_seconds=30, clock=clock)
+    live = LiveCheck()
+    assert _resolve(table, _ws_event(PLATFORM_ADMIN), cache, live).platform_admin is True
+    live.confirmed = False
+    clock.now += 30
+    with pytest.raises(NotFoundError, match=NOT_FOUND):
+        _resolve(table, _ws_event(PLATFORM_ADMIN), cache, live)
 
 
 # ── The cache ────────────────────────────────────────────────────────────────
@@ -262,21 +322,21 @@ def test_require_platform_admin_refuses_everyone_else_an_administrator_too(claim
 def test_a_membership_is_served_from_the_cache_until_its_ttl_passes(table):
     clock = FakeClock()
     cache = MembershipCache(ttl_seconds=30, clock=clock)
-    resolve_workspace(table, _ws_event(MEMBER), cache)
+    _resolve(table,_ws_event(MEMBER), cache)
     table.delete_item(Key={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-ana'})
     clock.now += 29.9
-    assert resolve_workspace(table, _ws_event(MEMBER), cache).role == 'editor'
+    assert _resolve(table,_ws_event(MEMBER), cache).role == 'editor'
     clock.now += 0.1
     with pytest.raises(NotFoundError):
-        resolve_workspace(table, _ws_event(MEMBER), cache)
+        _resolve(table,_ws_event(MEMBER), cache)
 
 
 def test_a_refusal_is_not_cached(table):
     cache = MembershipCache()
     with pytest.raises(NotFoundError):
-        resolve_workspace(table, _ws_event(STRANGER), cache)
+        _resolve(table,_ws_event(STRANGER), cache)
     table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-sam', 'role': 'viewer'})
-    assert resolve_workspace(table, _ws_event(STRANGER), cache).role == 'viewer'
+    assert _resolve(table,_ws_event(STRANGER), cache).role == 'viewer'
 
 
 def test_the_cache_is_per_workspace_and_caller():
@@ -288,10 +348,10 @@ def test_the_cache_is_per_workspace_and_caller():
 
 def test_a_token_that_lost_the_platform_admin_group_is_resolved_again_not_served_from_the_cache(table):
     cache = MembershipCache()
-    assert resolve_workspace(table, _ws_event(PLATFORM_ADMIN), cache).platform_admin is True
+    assert _resolve(table,_ws_event(PLATFORM_ADMIN), cache).platform_admin is True
     demoted = {'sub': 'sub-pat', 'cognito:groups': '[admins]'}
     with pytest.raises(NotFoundError, match=NOT_FOUND):
-        resolve_workspace(table, _ws_event(demoted), cache)
+        _resolve(table,_ws_event(demoted), cache)
 
 
 def test_a_full_cache_starts_again_empty():
@@ -314,6 +374,11 @@ def test_ws_key_prefixes_the_parts_with_the_workspace():
 def test_ws_key_refuses_an_id_that_is_not_well_formed(ws):
     with pytest.raises(ValueError, match='not a workspace id'):
         ws_key(ws, 'META')
+
+
+def test_is_workspace_id_accepts_only_ws_and_a_ulid():
+    assert [is_workspace_id(value) for value in (WS, OTHER_WS, WS.lower(), f'{WS}#x', 'ws_')] == [
+        True, True, False, False, False]
 
 
 def test_audit_key_is_an_audit_partition_of_the_workspace():
