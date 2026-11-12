@@ -149,9 +149,12 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
   const labelForId = new Map(data.available_models.map((model) => [model.id, model.label]))
   const labelOf = (id: string) => labelForId.get(id) ?? id
 
-  // 🔑 The deployment-wide pin (`settings.model_id`, seeded by
-  // `-c defaultModelId=<id>`) outranks every surface's built-in default in
-  // shared/model_config.py: per-surface override > global pin > SURFACE_DEFAULTS.
+  // 🔑 The global pick (`settings.model_id`; on a deployment pinned before the
+  // split, the deploy-time pin itself) and, below it, the deployment's default
+  // (`deployment_default`, SETTINGS#model_default, seeded by
+  // `-c defaultModelId=<id>`) outrank every surface's built-in default in
+  // shared/model_config.py: per-surface override > global pick > deployment
+  // default > SURFACE_DEFAULTS.
   // Labelling Automatic from `surface.default_id` alone — which is what this did
   // before #275 — made a pinned deployment advertise a model it never invokes,
   // and invited an admin to "correct" it by explicitly selecting the advertised
@@ -159,7 +162,8 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
   // `??`: the field can arrive absent or as '' from an older payload, and
   // neither is a pin. Tests: 'names the deployment-wide pin in every Automatic
   // option' and 'ignores an empty-string pin and keeps the surface default'.
-  const pinnedId = typeof data.model_id === 'string' && data.model_id !== '' ? data.model_id : null
+  const pinOf = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null)
+  const pinnedId = pinOf(data.model_id) ?? pinOf(data.deployment_default)
 
   const requestSave = (save: PendingSave) => {
     if (tests.results[save.resolvedId]?.status === 'available') {

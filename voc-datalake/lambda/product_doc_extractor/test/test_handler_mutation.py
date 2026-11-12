@@ -24,6 +24,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from shared.test.model_config_fixtures import MODEL_ROWS_READ
+
 from .conftest import (
     DOCUMENTS_DEFAULT_MODEL,
     TEST_AGGREGATES_TABLE,
@@ -220,7 +222,8 @@ class TestTheKeysThatAreRead:
 
         extractor._resolve_model_id()
 
-        aggregates.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#model', 'sk': 'config'})
+        # The picks, then the deployment's default (pinned at deploy).
+        assert [call.kwargs for call in aggregates.get_item.call_args_list] == MODEL_ROWS_READ
 
     def test_an_event_without_a_bucket_falls_back_to_the_configured_one(
         self, extractor, wire, pending_doc,
@@ -288,7 +291,8 @@ class TestTheAllowlistIsReadQuietly:
 
         extractor._resolve_model_id()
 
-        assert _messages(caplog) == ['Model settings lookup failed; using default: boom']
+        # One line per failed read: the picks' row and the deployment default's.
+        assert _messages(caplog) == ['Model settings lookup failed; using default: boom'] * 2
 
 
 # ── Header parsing edges ────────────────────────────────────────────────────

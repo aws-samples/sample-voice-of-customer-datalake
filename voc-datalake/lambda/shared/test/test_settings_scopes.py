@@ -70,9 +70,9 @@ WORKSPACE_KINDS: dict[str, frozenset[str]] = {
     'fallback_owner': frozenset({'lambda/agents/nodes/select_or_create_project.py', 'lambda/shared/user_flags.py'}),
     'radar': frozenset({'lambda/shared/data_version.py', 'lambda/shared/radar_brands.py',
                         'lambda/shared/radar_settings.py', 'lib/utils/cache-version-grants.ts'}),
-    # The workspace's pick; the default pinned at deploy (model_pin.py) and the allowlist stay deployment-wide. The
-    # pin and the pick share one row and attribute today, so the move first splits the default into its own kind.
-    'model': frozenset({'lambda/custom_resources/model_pin.py', 'lambda/product_doc_extractor/handler.py',
+    # The workspace's pick; the default pinned at deploy (model_pin.py, `model_default` below) and the allowlist stay
+    # deployment-wide.
+    'model': frozenset({'lambda/product_doc_extractor/handler.py',
                         'lambda/shared/model_config.py', 'lambda/stream/src/bedrock/model-override.ts',
                         'lib/stacks/design-capture.ts'}),
     PARTICIPANTS: frozenset({'lambda/shared/participants_settings.py'}),
@@ -81,6 +81,11 @@ WORKSPACE_KINDS: dict[str, frozenset[str]] = {
 #: Kept deployment-wide.
 DEPLOYMENT_KINDS: dict[str, frozenset[str]] = {
     'appearance': frozenset({'lambda/shared/appearance.py'}),
+    # The default pinned at deploy, below every pick (decision 6: the picks per workspace, the default and the
+    # allowlist the deployment's): split from `model` so the picks can move.
+    'model_default': frozenset({'lambda/custom_resources/model_pin.py', 'lambda/product_doc_extractor/handler.py',
+                                'lambda/shared/model_config.py', 'lambda/stream/src/bedrock/model-override.ts',
+                                'lib/utils/model-allowlist.ts'}),
     'model_quotas': frozenset({'lambda/shared/model_quota_store.py'}),
     'image_model_quota': frozenset({'lambda/shared/image_model_quota.py'}),
     'alerts': frozenset({'lambda/shared/ops_alerts.py'}),

@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.01.00] - 2026-11-12
+
+Multi-workspace, phase 2: the voc-multiplayer-c track's model slice merged: the model pinned at deploy gets a row of its own, the first step of the model picker per workspace. A workspace's brand, the track's other slice in this merge, was already in 6.18.00.
+
+### Changed
+
+- The model pinned at deploy (`-c defaultModelId`) is a deployment row of its own, `SETTINGS#model_default`, read below every administrator's pick (per surface, then for all surfaces, then the deployment's default, then the built-in default) by every model lookup: the shared resolver, streaming chat and the product-doc extractor ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)). Administration → AI models shows it as what Automatic uses when no model is picked for all surfaces (`GET /settings/model` returns `deployment_default`). The pin's custom resource may update only that row. The picks can now move into each workspace without the deployment's default.
+
+### Upgrade notes
+
+- Nothing to do: a deployment pinned before keeps its pin where it was (`SETTINGS#model`'s `model_id`), and it still applies. Deploy every stack together (`npm run deploy:all` from the repo root): the model-pin resource, the settings API, the stream Lambda, the product-doc extractor and the web app change, across several stacks. IAM: the model-pin resource's UpdateItem on `voc-aggregates` is narrowed to the `SETTINGS#model_default` partition (it could update any row before), and the design-capture role's GetItem also reaches that partition.
+
 ## [7.00.00] - 2026-11-12
 
 **Breaking (major):** this release re-keys the feedback table's `gsi4-by-feedback-id` and `gsi5-by-channel` onto new attributes, a change to a stack that CloudFormation cannot apply to an existing deployment in one update, and to stored data, whose existing items carry neither new key and need a backfill. Read the Upgrade notes before deploying over an existing stack; a fresh deployment needs nothing.

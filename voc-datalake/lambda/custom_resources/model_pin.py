@@ -1,4 +1,4 @@
-"""Deploy-time seed for the global model pin (``settings.model_id``).
+"""Deploy-time seed for the deployment's default model (``SETTINGS#model_default`` / ``config``, ``model_id``).
 
 Why this exists
 --------------
@@ -15,20 +15,24 @@ How it works
 
     explicit argument
     > per-surface override (settings.surfaces[S])
-    > legacy global override (settings.model_id)     <- what this writes
+    > legacy global override (settings.model_id)
+    > the deployment's default (SETTINGS#model_default)   <- what this writes
     > built-in SURFACE_DEFAULTS[S]
     > BEDROCK_MODEL_ID
 
-Writing the single ``model_id`` attribute therefore repoints **every** surface,
-using a path both resolvers already implement (the TypeScript streaming-chat
-lookup in ``lambda/stream/src/bedrock/model-override.ts`` honours the same
-precedence). No change to ``SURFACE_DEFAULTS`` is needed, so deployments that
-can use the newer models are unaffected.
+Writing it repoints **every** surface an admin did not pick for (the TypeScript
+streaming-chat lookup in ``lambda/stream/src/bedrock/model-override.ts`` and the
+product-doc extractor honour the same precedence). No change to
+``SURFACE_DEFAULTS`` is needed, so deployments that can use the newer models are
+unaffected. It is a row of its own, not the picks' row, so the picks can move
+into each workspace while the default stays the deployment's
+(docs/multi-workspace.md, "Per-workspace configuration"). A deployment from
+before that split keeps its earlier pin in ``settings.model_id``, which still
+outranks this row, so nothing changes for it.
 
 Create-once, like the sibling admin bootstrap: the write is conditional on
-``model_id`` being absent, so an admin who later picks a model in Settings is
-never overwritten by a redeploy. It is a floor, not a lock — per-surface
-overrides still outrank it.
+``model_id`` being absent, so a redeploy never changes it. It is a floor, not a
+lock: every admin pick outranks it.
 """
 import logging
 
@@ -37,14 +41,14 @@ import boto3
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-MODEL_SETTINGS_PK = 'SETTINGS#model'
-MODEL_SETTINGS_SK = 'config'
+MODEL_DEFAULT_PK = 'SETTINGS#model_default'
+MODEL_DEFAULT_SK = 'config'
 
 PHYSICAL_ID = 'voc-model-pin'
 
 
 def handler(event, _context):
-    """Seed settings.model_id unless it is already set.
+    """Seed the deployment's default model unless it is already set.
 
     Raises on unexpected failures: a silent no-op would leave the deployment
     green while every AI surface resolves to a model the account cannot
@@ -70,15 +74,15 @@ def handler(event, _context):
     table = boto3.resource('dynamodb').Table(table_name)
     try:
         table.update_item(
-            Key={'pk': MODEL_SETTINGS_PK, 'sk': MODEL_SETTINGS_SK},
+            Key={'pk': MODEL_DEFAULT_PK, 'sk': MODEL_DEFAULT_SK},
             UpdateExpression='SET model_id = :m',
             ConditionExpression='attribute_not_exists(model_id)',
             ExpressionAttributeValues={':m': model_id},
         )
-        logger.info(f'Pinned every AI surface to {model_id}')
+        logger.info(f"Pinned the deployment's default model to {model_id}")
         outcome = 'pinned'
     except table.meta.client.exceptions.ConditionalCheckFailedException:
-        # Already configured (a previous deploy, or an admin's own choice).
+        # Already pinned by a previous deploy.
         logger.info(f'model_id already set; leaving it untouched (wanted {model_id})')
         outcome = 'kept'
 

@@ -275,7 +275,8 @@ read from it for a link.
 
 Infrastructure: `voc-design-capture` runs as its own role — the managed-browser statements (Start/Stop on
 `aws.browser.v1`, the stream connect on `*`), `bedrock:InvokeModel` on the model allowlist, aggregates `GetItem`
-on the `SETTINGS#design_system` and `SETTINGS#model` partitions and `UpdateItem` on `SETTINGS#design_system` only
+on the `SETTINGS#design_system`, `SETTINGS#model` and `SETTINGS#model_default` partitions and `UpdateItem` on
+`SETTINGS#design_system` only
 (`dynamodb:LeadingKeys`), KMS for the table and bucket, `s3:PutObject` on
 `company-context/design/logo_preview_*` (the logo preview: a downloaded raster candidate or the PNG the
 browser rendered from an SVG logo, and its sanitised SVG) and `company-context/design/icons_*` (the copied icons)

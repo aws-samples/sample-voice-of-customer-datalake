@@ -339,6 +339,8 @@ export const api = {
       available_models: Array<{ key: string; id: string; label: string; description: string }>
       surfaces: Array<{ key: string; default_id: string; selected: string | null }>
       model_id: string | null
+      // The deployment's default (`-c defaultModelId`, SETTINGS#model_default), below every pick; absent on an older API.
+      deployment_default?: string | null
       image_model?: unknown
     }>('/settings/model')
     return { ...raw, image_model: normalizeImageModelInfo(raw.image_model) }

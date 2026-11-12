@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -90,6 +90,7 @@ from shared.logging import logger, tracer
 from shared.model_config import (
     ALLOWED_MODEL_IDS,
     ALLOWED_MODELS,
+    MODEL_DEFAULT_KEY,
     MODEL_SETTINGS_PK,
     MODEL_SETTINGS_SK,
     PICKER_SURFACES,
@@ -224,6 +225,9 @@ def get_model_settings():
             'available_models': ALLOWED_MODELS,
             'surfaces': surfaces,
             'model_id': legacy_global if legacy_global in ALLOWED_MODEL_IDS else None,
+            # The deployment's default, pinned at deploy (SETTINGS#model_default): what a surface on Automatic uses
+            # when no global pick is set (shared/model_config.py).
+            'deployment_default': _deployment_default_model(),
             # The persona-avatar image model: fixed, not a picker choice (shared/image_model_status.py).
             'image_model': image_model_status.image_model_info(),
         }
@@ -314,6 +318,18 @@ def get_model_capacity():
     require_admin(app.current_event.raw_event)
     models = model_agreements.with_access(model_capacity.capacity_overview())
     return {'models': models, 'image': image_model_status.image_capacity()}
+
+
+def _deployment_default_model() -> str | None:
+    """The deployment's default model id (custom_resources/model_pin.py), or None when unset or not allowlisted."""
+    try:
+        item = _configured_table().get_item(Key=MODEL_DEFAULT_KEY).get('Item') or {}
+    except (ClientError, BotoCoreError):
+        # The picks still answer; the page labels Automatic without the default until the next read.
+        logger.exception("Failed to read the deployment's default model")
+        return None
+    model_id = item.get('model_id')
+    return model_id if isinstance(model_id, str) and model_id in ALLOWED_MODEL_IDS else None
 
 
 def _load_model_item() -> dict:

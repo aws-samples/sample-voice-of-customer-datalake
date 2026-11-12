@@ -7,7 +7,7 @@
  * Its own least-privilege role:
  * - the managed browser (Start/Stop on aws.browser.v1, the stream connect on `*`), as web_reviews;
  * - bedrock:InvokeModel on the curated allowlist (the vision call on the utility surface);
- * - voc-aggregates GetItem on the design-system and model-settings partitions only, UpdateItem on the
+ * - voc-aggregates GetItem on the design-system, model-settings and default-model partitions only, UpdateItem on the
  *   design-system partition only (`dynamodb:LeadingKeys`), and KMS for the table;
  * - s3:PutObject on the raw bucket's `company-context/design/logo_preview_*` keys (the logo candidate's
  *   preview, downloaded through the SSRF-guarded fetch, or the PNG the browser rendered from an SVG logo and
@@ -19,6 +19,7 @@
  * it, plugins/_shared (agentcore_browser logs through it) and lambda/shared; the ingestion layer carries
  * websocket-client. Resources are created on the stack itself (logical ids `DesignCapture*`).
  */
+import { MODEL_DEFAULT_PARTITION } from '../utils/model-allowlist';
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -85,7 +86,7 @@ function designCaptureRole(stack: cdk.Stack, props: DesignCaptureProps): iam.Rol
     sid: 'ReadDesignAndModelSettings',
     actions: ['dynamodb:GetItem'],
     resources: [aggregatesTable.tableArn],
-    conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [DESIGN_SYSTEM_PARTITION, MODEL_SETTINGS_PARTITION] } },
+    conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [DESIGN_SYSTEM_PARTITION, MODEL_SETTINGS_PARTITION, MODEL_DEFAULT_PARTITION] } },
   }));
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'RecordDesignReferenceOutcome',
