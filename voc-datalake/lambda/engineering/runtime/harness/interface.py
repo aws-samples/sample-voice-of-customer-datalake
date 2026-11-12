@@ -32,6 +32,8 @@ _NOTE_CUTS: Final = (4000, 500, 0)
 
 Ending = Literal['done', 'paused']
 
+#: The brief's instructions a checkpoint keeps at most (a task's spec is at most 8 KB on the board).
+MAX_BRIEF: Final = 16 * 1024
 
 @dataclass
 class AgentSession:
@@ -53,24 +55,47 @@ class AgentSession:
     patch: str | None = None
     #: Why the restored checkpoint's working tree is not the newest (told to the model when it starts).
     patch_refused: str | None = None
+    #: The messages last handed out and not yet known to have reached the model (``shown``).
+    handed: list[InboxMessage] = field(default_factory=list)
+    #: The ids of messages the model has had since it last saved its notes: done once it saves them (a
+    #: continuation starts from those notes, so until then they are read again).
+    seen_since_save: list[str] = field(default_factory=list)
 
-    def take_messages(self) -> tuple[list[InboxMessage], bool]:
-        """The inbox's other messages, and whether a pause was asked; a save is done at once."""
-        others, pause = [], False
-        for message in self.inbox.take(run_id=self.context.run_id, agent_id=self.context.agent_id):
-            if message.kind == SAVE:
-                self.checkpoint(turn=-1)
-            elif message.kind == PAUSE:
-                pause = True
-            else:
-                others.append(message)
-        return others, pause
+    def shown(self) -> None:
+        """The messages last handed out reached the model."""
+        self.saw([message.event_id for message in self.handed])
+        self.handed = []
+
+    def saw(self, event_ids: list[str]) -> None:
+        """These messages reached the model (the CLI: its tool server took them)."""
+        self.seen_since_save.extend(event_ids)
+
+    def take_messages(self, *, shows: bool = True) -> tuple[list[InboxMessage], bool]:
+        """The inbox's other messages, and whether a pause was asked. A save or a pause is done once acted on; the
+        others once the model saved its notes after having them (``remember``): they reach it at the next take
+        (``shows``), or when the adapter says (``saw``)."""
+        if shows:
+            self.shown()
+        taken = self.inbox.take(run_id=self.context.run_id, agent_id=self.context.agent_id)
+        others = [message for message in taken if message.kind not in (SAVE, PAUSE)]
+        self.handed = others
+        saves = [message.event_id for message in taken if message.kind == SAVE]
+        pauses = [message.event_id for message in taken if message.kind == PAUSE]
+        self.inbox.done(pauses)  # acted on: the caller pauses; a continuation is not to pause again
+        if saves:
+            self.inbox.done(saves)
+            self.checkpoint(turn=-1)
+        return others, bool(pauses)
 
     def checkpoint(self, *, turn: int) -> str:
         """Save a new checkpoint object under the agent's own keys (its working tree too); its key."""
         context = self.context
         seq = self.restored_seq + self.saves + 1
-        position: dict[str, Any] = {'task_id': context.task_id, 'turn': turn, 'step': context.status.step[:500]}
+        position: dict[str, Any] = {'task_id': context.task_id, 'turn': turn, 'step': context.status.step[:500],
+                                    'inbox': self.inbox.cursor(),
+                                    # The brief, so a continuation needs no claim of a task it holds already.
+                                    'brief': {'title': context.brief.title[:500],
+                                              'instructions': context.brief.instructions[:MAX_BRIEF]}}
         if context.runs_code:
             try:
                 # None: the working tree is clean (every change undone), and so is the continuation's.
@@ -95,7 +120,10 @@ class AgentSession:
         return key
 
     def remember(self, checkpoint: dict[str, Any]) -> None:
-        """What the agent asked a continuation to know (``save_checkpoint``)."""
+        """What the agent asked a continuation to know (``save_checkpoint``): the messages it had before are in its
+        notes now, so they are done."""
+        self.inbox.done(self.seen_since_save)
+        self.seen_since_save = []
         self.notes = str(checkpoint.get('notes', ''))
         plan = checkpoint.get('plan', [])
         self.plan = [str(item) for item in plan] if isinstance(plan, list) else []

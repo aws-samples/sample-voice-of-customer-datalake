@@ -755,6 +755,7 @@
     "notFoundHint": "Verifique o id da execução. As execuções de engenharia só aparecem onde os agentes de engenharia estão ligados, a quem pode ver todas as categorias.",
     "modelTokens": "{{model}}: {{input, number}} de entrada, {{output, number}} de saída",
     "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}} (não aplicado)",
     "status": {
       "booting": "A arrancar",
       "working": "A trabalhar",

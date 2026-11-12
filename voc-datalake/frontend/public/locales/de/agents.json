@@ -749,6 +749,7 @@
     "notFoundHint": "Prüfe die ID des Laufs. Engineering-Läufe werden nur dort angezeigt, wo die Engineering-Agenten eingeschaltet sind, und nur Personen, die alle Kategorien sehen.",
     "modelTokens": "{{model}}: {{input, number}} rein, {{output, number}} raus",
     "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}} (nicht angewendet)",
     "status": {
       "booting": "Startet",
       "working": "Arbeitet",

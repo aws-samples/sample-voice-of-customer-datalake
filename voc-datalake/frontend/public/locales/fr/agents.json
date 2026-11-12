@@ -755,6 +755,7 @@
     "notFoundHint": "Vérifiez l’identifiant de l’exécution. Les exécutions d’ingénierie ne s’affichent que là où les agents d’ingénierie sont activés, pour les personnes qui voient toutes les catégories.",
     "modelTokens": "{{model}} : {{input, number}} en entrée, {{output, number}} en sortie",
     "agentStatus": "{{agent}} : {{status}}",
+    "agentNotApplied": "{{agent}} : {{status}} (non appliqué)",
     "status": {
       "booting": "Démarrage",
       "working": "Au travail",

@@ -6,9 +6,10 @@
 - ``tool-server``: the platform's tools for a CLI (``tool_server``), started by that CLI.
 
 Everything else comes from the agent's own environment (``unit_runner.AGENT_ENV``: its ids, its region, the
-bucket its session was handed with) and its role session (``AWS_CONFIG_FILE``). Until the harness is wired
-to the board, the inbox and the broker, their ports refuse (``ports.PendingHarnessPorts``), so a session as deployed today stops
-at its first call to them rather than guess.
+bucket its session was handed with, the board's function URL) and its role session (``AWS_CONFIG_FILE``). The
+board and the inbox are reached through the board API, signed with that session (``board_client.py``); the broker,
+the run coordinator's planner and the knowledge reader still refuse (``ports.PendingHarnessPorts``), so a session
+stops at its first call to them rather than guess.
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from typing import Any, Final
 
 from engineering.runtime.checkout import repo_git, share_working_tree
 from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, agent_prefix, artifact_prefix, is_valid
+from engineering.runtime.harness.board_client import BoardHttp, InboxHttp, SignedTransport, board_url
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
 from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
@@ -33,6 +35,7 @@ from engineering.runtime.harness.ports import (
     KnowledgeReader,
     PendingHarnessPorts,
     Planner,
+    TaskBrief,
 )
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.status import StatusReport
@@ -76,43 +79,67 @@ class Ports:
 def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs,
                   checkout: str = CHECKOUT_ROOT, restore: bool = True) -> AgentSession:
     """The agent's session from its environment: its ids, its brief, its tools and (``restore``: the harness
-    itself, never its tool server) its restored checkpoint, working tree included."""
+    itself, never its tool server) its restored checkpoint, working tree included. The brief is the checkpoint's when
+    it has one (a continuation: the board's claim is a fresh start's only), else the holder's claim; the tool server
+    reads no brief (only the model's loop does) and so never claims."""
     run_id, agent_id, task_id = env['VOC_RUN_ID'], env['VOC_AGENT_ID'], env['VOC_TASK_ID']
     prefix = agent_prefix(run_id, agent_id)
     commit, attempt = env['VOC_COMMIT'], int(env.get('VOC_ATTEMPT', '1'))
     store = S3Store(s3, env['VOC_WORKSPACE_BUCKET'], prefix)
     home = env['HOME']
+    checkpoints = artifact_prefix(run_id, agent_id, commit, attempt, 'checkpoints')
+    restored = _read(store, checkpoints, env.get('VOC_RESTORE_KEY')) if restore else None
+    saved = _saved_brief(restored, task_id)
     context = AgentContext(
         run_id=run_id, agent_id=agent_id, task_id=check_id('task_id', task_id), role=env['VOC_ROLE'],
-        brief=ports.board.brief(run_id=run_id, task_id=task_id), workspace=Workspace(checkout), runner=runner,
+        brief=saved or (ports.board.brief(run_id=run_id, task_id=task_id) if restore else TaskBrief(task_id, '', '')),
+        workspace=Workspace(checkout), runner=runner,
         board=ports.board, broker=ports.broker, store=store, status=StatusReport(home),
         patch_dir=os.path.join(home, '.voc', 'patches'), own_prefix=prefix,
-        checkpoints_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'checkpoints'),
+        checkpoints_prefix=checkpoints,
         patches_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'patches'),
         planner=ports.planner, knowledge=ports.knowledge)
     session = AgentSession(context=context, tools=ToolBox(context), inbox=ports.inbox, store=store)
-    key = env.get('VOC_RESTORE_KEY')
-    if restore and key:
-        _restore(session, store, key)
+    if restored is not None:
+        _restore(session, store, *restored)
     return session
 
 
-def _restore(session: AgentSession, store: S3Store, key: str) -> None:
-    """Restore from ``key`` when it is one of the agent's own valid checkpoints (else start afresh), and put its
-    working tree back on the fresh checkout; a working tree that does not apply is a crash, never a silent loss."""
-    context = session.context
-    checkpoints = context.checkpoints_prefix
+def _read(store: S3Store, checkpoints: str, key: str | None) -> tuple[str, dict[str, Any]] | None:
+    """The checkpoint at ``key`` when it is one of the agent's own valid ones (its name and state), else None (the
+    session starts afresh)."""
+    if not key:
+        return None
     name = key.removeprefix(checkpoints)
     if not key.startswith(checkpoints) or '/' in name:
-        return
+        return None
     body = store.get(key, MAX_CHECKPOINT_BYTES)
-    if not is_valid(body):
-        return
-    state = json.loads(body)
+    return (name, json.loads(body)) if is_valid(body) else None
+
+
+def _saved_brief(restored: tuple[str, dict[str, Any]] | None, task_id: str) -> TaskBrief | None:
+    """The brief a checkpoint saved for this task, if any."""
+    position = restored[1].get('position') if restored is not None else None
+    if not isinstance(position, dict) or position.get('task_id', task_id) != task_id:
+        return None
+    brief = position.get('brief')
+    if not (isinstance(brief, dict) and isinstance(brief.get('title'), str)
+            and isinstance(brief.get('instructions'), str)):
+        return None
+    return TaskBrief(task_id=task_id, title=brief['title'], instructions=brief['instructions'])
+
+
+def _restore(session: AgentSession, store: S3Store, name: str, state: dict[str, Any]) -> None:
+    """Restore from one of the agent's own valid checkpoints (``_read``), and put its working tree back on the fresh
+    checkout; a working tree that does not apply is a crash, never a silent loss."""
+    context = session.context
     session.restored = state
     session.restored_seq = int(name.split('-', 1)[0]) if name.split('-', 1)[0].isdigit() else 0
     session.remember(state)
     position = state.get('position')
+    # The inbox from where the checkpoint left it: what never reached the model is read again from the board;
+    # nothing the first session acted on (a pause) is taken again.
+    session.inbox.resume(position.get('inbox') if isinstance(position, dict) else None)
     refused = position.get('patch_refused') if isinstance(position, dict) else None
     session.patch_refused = str(refused) if refused else None
     tree = state.get('patch')
@@ -152,12 +179,30 @@ def _heartbeat(board: Board, ids: Mapping[str, str], stop: threading.Event) -> N
         _renew(board, ids)
 
 
+def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
+    """The board and the inbox on the board's function URL (``VOC_BOARD_URL``, signed with the agent's own session);
+    the broker, the planner and the knowledge reader still refuse (``PendingHarnessPorts``)."""
+    pending = PendingHarnessPorts()
+    url = env.get('VOC_BOARD_URL')
+    if not url:
+        return Ports(board=pending, inbox=pending, broker=pending)
+    if credentials is None:
+        import boto3
+        credentials = boto3.Session(region_name=env['AWS_REGION']).get_credentials()
+    transport = SignedTransport(board_url(url), env['AWS_REGION'], credentials)
+    # The lease's epoch is the task's attempt (the board's claim sets it so): the harness, a continuation and the CLI's
+    # tool server renew, report and move on it without claiming.
+    return Ports(board=BoardHttp(transport, env['VOC_RUN_ID'], env['VOC_TASK_ID'],
+                                 epoch=int(env.get('VOC_ATTEMPT', '1'))),
+                 inbox=InboxHttp(transport, env['VOC_RUN_ID'], env['VOC_AGENT_ID']), broker=pending)
+
+
 def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Callable[[], Any]) -> Adapter:
     if args.adapter == 'converse':
         return ConverseAdapter(bedrock(), args.model)
     choose_cli(args.cli)
     tool_env = {name: env[name] for name in ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE',
-                                              'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT', 'VOC_ATTEMPT',
+                                              'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT', 'VOC_ATTEMPT', 'VOC_BOARD_URL',
                                               'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME') if name in env}
     return ClaudeCli(binary=args.cli_binary, version=args.cli_version, model_id=args.model,
                      home_root=os.path.join(env['HOME'], '.voc', 'cli'), region=env['AWS_REGION'],
@@ -181,8 +226,7 @@ def main(argv: Sequence[str], env: Mapping[str, str] | None = None, *, s3: Any =
          bedrock: Callable[[], Any] | None = None, runner: Runs | None = None) -> int:
     args = _parser().parse_args(list(argv))
     env = dict(os.environ) if env is None else env
-    pending = PendingHarnessPorts()
-    ports = ports or Ports(board=pending, inbox=pending, broker=pending)
+    ports = ports or default_ports(env)
     if s3 is None:
         import boto3
         s3 = boto3.client('s3', region_name=env.get('AWS_REGION'))

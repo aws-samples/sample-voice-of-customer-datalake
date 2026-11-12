@@ -49,9 +49,16 @@ class SessionFiles:
             return None
         return value if isinstance(value, dict) else None
 
-    def post(self, messages: list[dict[str, str]]) -> None:
-        """Leave inbox messages for the agent: one file per batch, never rewritten (nothing lost to a race)."""
-        self.write(f'messages-{time.time_ns():020d}-{secrets.token_hex(4)}', {'messages': messages})
+    def post(self, messages: list[dict[str, str]]) -> str:
+        """Leave inbox messages for the agent: one file per batch, never rewritten (nothing lost to a race); its
+        name."""
+        name = f'messages-{time.time_ns():020d}-{secrets.token_hex(4)}'
+        self.write(name, {'messages': messages})
+        return name
+
+    def waiting(self, name: str) -> bool:
+        """Whether the batch ``name`` is still there, not yet taken by the tool server."""
+        return os.path.exists(self._path(name))
 
     def take_messages(self) -> list[dict[str, Any]]:
         """Every batch left so far, oldest first, each taken once (renamed away before it is read)."""

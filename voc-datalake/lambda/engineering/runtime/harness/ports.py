@@ -13,7 +13,7 @@ supervisor's own ports.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Any, Final, Protocol
 
 #: The inbox messages the harness acts on itself; any other kind is shown to the model as data.
 SAVE: Final = 'save'
@@ -37,18 +37,22 @@ class TaskBrief:
 class InboxMessage:
     kind: str
     summary: str = ''
+    #: The notice's event id: what ``Inbox.done`` names.
+    event_id: str = ''
 
 
 class Board(Protocol):
     """``brief``: the task's brief (refused when the agent does not hold the task's lease). ``heartbeat``: renew the
     lease (once a minute, the supervisor's crash clock). ``progress``: record progress on the task (the lease's last
-    progress, the supervisor's activity clock)."""
+    progress, the supervisor's activity clock). ``move``: move the agent's own task on (``done`` when it finishes)."""
 
     def brief(self, *, run_id: str, task_id: str) -> TaskBrief: ...
 
     def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None: ...
 
     def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None: ...
+
+    def move(self, run_id: str, task_id: str, *, to_state: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -82,9 +86,17 @@ class KnowledgeReader(Protocol):
 
 
 class Inbox(Protocol):
-    """``take``: the messages waiting for the agent, each taken once."""
+    """``take``: the messages waiting for the agent, each taken once in a session. ``done``: these reached the model,
+    or were acted on. ``cursor``: what a checkpoint saves, up to the oldest message taken and not yet done;
+    ``resume``: start there (a continuation takes again only what never reached the model)."""
 
     def take(self, *, run_id: str, agent_id: str) -> list[InboxMessage]: ...
+
+    def done(self, event_ids: list[str]) -> None: ...
+
+    def cursor(self) -> dict[str, Any]: ...
+
+    def resume(self, cursor: object) -> None: ...
 
 
 class Broker(Protocol):
@@ -104,19 +116,32 @@ class HarnessPortNotWired(RuntimeError):
 
 
 class PendingHarnessPorts:
-    """The board, the planner, the knowledge reader, the inbox and the broker until the harness is wired to them:
-    every call refuses."""
+    """The ports a harness has no wiring for: the board and the inbox without a board URL, and the broker, the
+    planner and the knowledge reader until they are wired. Every call refuses."""
 
     @staticmethod
     def _refuse(name: str) -> HarnessPortNotWired:
-        return HarnessPortNotWired(f'{name} is not wired yet (the harness does not reach the board, the inbox or '
-                                   'the broker yet)')
+        return HarnessPortNotWired(f'{name} is not wired yet (no board URL for the board and the inbox; the broker, '
+                                   'the planner and the knowledge reader are not wired yet)')
 
     def brief(self, *, run_id: str, task_id: str) -> TaskBrief:
         raise self._refuse(f'board.brief({run_id}, {task_id})')
 
     def heartbeat(self, *, run_id: str, task_id: str, agent_id: str) -> None:
         raise self._refuse(f'board.heartbeat({run_id}, {task_id}, {agent_id})')
+
+    def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+        raise self._refuse(f'board.move({run_id}, {task_id}, {to_state})')
+
+    def done(self, event_ids: list[str]) -> None:
+        if event_ids:
+            raise self._refuse(f'inbox.done({len(event_ids)})')
+
+    def cursor(self) -> dict[str, Any]:
+        return {}
+
+    def resume(self, cursor: object) -> None:
+        raise self._refuse(f'inbox.resume({str(cursor)[:40]})')
 
     def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
         raise self._refuse(f'board.progress({run_id}, {task_id}, {agent_id}): {step[:40]}')

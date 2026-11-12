@@ -373,8 +373,8 @@ export class VocProcessingStack extends VocStack {
         workspaceBucket: props.engineeringWorkspaceBucket,
       });
       peers = {
-        deadLetterQueue: bus.dlq, bus: bus.bus, board: bus.board, broker: broker.function,
-        addAgentPublisher: (statementId, role, source) => bus.addAgentPublisher(statementId, role, source),
+        deadLetterQueue: bus.dlq, bus: bus.bus, board: bus.board, boardUrl: bus.boardUrl, broker: broker.function,
+        addPublisher: (statementId, role, source) => bus.addPublisher(statementId, role, source),
       };
     }
     // The engineering agents' MicroVM runtime: only with `-c engineeringAgents=true` (engineering-runtime.ts): its

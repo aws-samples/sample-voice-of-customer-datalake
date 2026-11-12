@@ -749,6 +749,7 @@
     "notFoundHint": "请检查运行 ID。只有在开启了工程智能体的部署中，且只对能看到所有类别的人，才会显示工程运行。",
     "modelTokens": "{{model}}：输入 {{input, number}}，输出 {{output, number}}",
     "agentStatus": "{{agent}}：{{status}}",
+    "agentNotApplied": "{{agent}}：{{status}}（未应用）",
     "status": {
       "booting": "启动中",
       "working": "工作中",

@@ -248,6 +248,8 @@ def test_finish_records_its_summary_as_the_tasks_last_progress(tmp_path):
     w = world(tmp_path)
     assert w.session.tools.call('finish', {'summary': 'fixed the split'}).finished == 'fixed the split'
     assert w.board.progress_seen[-1][3] == 'finished: fixed the split'
+    # And the task is done on the board.
+    assert w.board.moves[-1][2] == 'done'
 
 
 def test_the_runner_client_reports_once_a_minute_while_a_command_runs():

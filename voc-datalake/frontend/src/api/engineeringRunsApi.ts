@@ -64,9 +64,13 @@ const OverviewSchema = z.object({
 })
 export type EngineeringOverview = z.output<typeof OverviewSchema>
 
-/** What a signal did: each agent's status after it, as the supervisor answered. */
+/** What a signal did: each agent's status after it, and whether it did anything to it, as the supervisor answered
+ *  (an agent the answer does not say was applied is shown as not applied). */
 const SignalSentSchema = z.object({
-  signal: z.object({ agents: z.record(z.string(), z.string()).catch({}) }),
+  signal: z.object({
+    agents: z.record(z.string(), z.string()).catch({}),
+    applied: z.record(z.string(), z.boolean()).catch({}),
+  }),
 })
 export type SignalSent = z.output<typeof SignalSentSchema>['signal']
 
@@ -144,7 +148,7 @@ export const engineeringRunsApi = {
   /** The agents' statuses after the signal (none when the answer names none). */
   signal: async (runId: string, request: SignalRequest): Promise<SignalSent> => {
     const parsed = SignalSentSchema.safeParse(await fetchApi<unknown>(engineeringRunPath(runId, '/signals'), post(request)))
-    return parsed.success ? parsed.data.signal : { agents: {} }
+    return parsed.success ? parsed.data.signal : { agents: {}, applied: {} }
   },
   answer: async (runId: string, request: AnswerRequest): Promise<unknown> =>
     fetchApi<unknown>(engineeringRunPath(runId, '/messages'), post(request)),

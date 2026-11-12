@@ -135,3 +135,12 @@ SKILLS: Final[Mapping[str, Skill]] = {COORDINATOR.name: COORDINATOR}
 
 def skill_for(role: str) -> Skill | None:
     return SKILLS.get(role)
+
+
+#: The harness's entry in every image (engineering-images/common/harness.py).
+HARNESS_ENTRY: Final = ('/usr/bin/python3', '-I', '/opt/voc/harness.py', 'run')
+
+
+def harness_argv(skill: Skill) -> tuple[str, ...]:
+    """The argv a launch runs an agent of ``skill`` with: its harness and its model (``main.py`` ``run``)."""
+    return (*HARNESS_ENTRY, '--adapter', skill.harness, '--model', skill.model)

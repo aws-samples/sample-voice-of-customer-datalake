@@ -271,6 +271,7 @@ class ToolBox:
     def _finish(self, arguments: Mapping[str, Any]) -> ToolResult:
         summary = str(arguments.get('summary', ''))[:MAX_NOTE_CHARACTERS] or 'done'
         self.context.progress(f'finished: {summary[:480]}')
+        self.context.board.move(self.context.run_id, self.context.task_id, to_state='done')
         return ToolResult('finished', finished=summary)
 
     def _write(self, arguments: Mapping[str, Any]) -> ToolResult:

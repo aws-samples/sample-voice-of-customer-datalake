@@ -20,13 +20,13 @@ SCHEMA = 'voc-msg/1'
 MAX_EVENT_BYTES = 16 * 1024
 MAX_SUMMARY_BYTES = 1024
 #: The roles that claim tasks (plan v3, 4.2: a posted task is addressed to one), and so the agent roles that may
-#: speak on the bus. There are no queues: a task is pushed to the run's live agents of its role by the delivery
-#: function. The IAM catalog (connectors.identity AGENT_ROLES) has three more, none of which claims tasks: the
+#: speak on the bus. There are no queues: a posted task's notice is recorded by the delivery function for the
+#: role's agents to read (it wakes nobody). The IAM catalog (connectors.identity AGENT_ROLES) has three more, none of which claims tasks: the
 #: coordinator, which plans the run on the board and speaks on the bus as the run's conductor (its own source); the
 #: coach; and the gate-runner. Adding one here lets tasks be posted for it and gives it a voice.
 ROLES = frozenset({'understander', 'hunter', 'fixer', 'committer', 'commit-reviewer', 'pr-author', 'pr-reviewer',
                    'builder', 'final-go', 'mapper'})
-FROM_KINDS = frozenset({'agent', 'conductor', 'supervisor', 'human', 'system'})
+FROM_KINDS = frozenset({'agent', 'conductor', 'supervisor', 'coach', 'human', 'system'})
 TO_KINDS = frozenset({'role', 'agent', 'conductor', 'run'})
 TYPES = frozenset({
     'task.posted', 'task.claimed', 'task.progress', 'task.review', 'task.done', 'task.failed', 'task.needs_human',
@@ -34,7 +34,8 @@ TYPES = frozenset({
     'review.requested', 'review.result',
     'gate.go', 'gate.no_go',
     'run.started', 'run.health', 'run.paused', 'run.resumed', 'run.ended',
-    'signal.save', 'signal.pause', 'signal.resume', 'signal.shutdown', 'signal.stop_now',
+    'run.agent_continued', 'run.agent_timed_out', 'run.agent_failed',
+    'signal.save', 'signal.pause', 'signal.resume', 'signal.shutdown', 'signal.stop_now', 'signal.check_in',
     'skill.proposed', 'skill.accepted', 'skill.rolled_back',
     'outcome.pr_opened', 'outcome.accepted', 'outcome.merged', 'outcome.closed', 'outcome.reverted',
     'outcome.review_posted',
@@ -144,6 +145,11 @@ def _refs(raw: Any, ws: str) -> Refs:
     if not isinstance(pr, int) or isinstance(pr, bool) or pr < 0:
         raise MessageError('"refs.pr" is a pull request number')
     return Refs(s3=tuple(_s3_key(key, f'ws/{ws}/') for key in s3), commit=commit, pr=pr, files=tuple(files))
+
+
+def fit_summary(text: str) -> str:
+    """``text`` cut to a summary's bytes, on a character boundary."""
+    return text.encode('utf-8')[:MAX_SUMMARY_BYTES].decode('utf-8', 'ignore')
 
 
 def summary_text(raw: Any) -> str:

@@ -28,8 +28,8 @@ Own role (20 KB policy limit): the agents table (read/write), the aggregates tab
 their table and workspace bucket; it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
-answer 503). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
-are in the engineering table, read with the Query its stack already grants.
+answer 503). Nothing while the module is off. The supervisor's session rows (the run's ``AGENT#`` rows) are in
+the engineering table it already reads (GetItem, Query).
 """
 
 from __future__ import annotations
@@ -874,8 +874,8 @@ def _engineering(run_id: str) -> Any:
 
 def _monitor(run_id: str) -> Any:
     """The run monitor, for an administrator (as the views): the agents from the supervisor's session rows (the
-    run's partition of the engineering table, read only); its actions need the runtime (ENGINEERING_RUNTIME_FUNCTION)
-    and the bus (ENGINEERING_BUS_NAME)."""
+    run's ``AGENT#`` rows in the engineering table); its actions need the runtime (ENGINEERING_RUNTIME_FUNCTION) and
+    the bus (ENGINEERING_BUS_NAME)."""
     table, _ = _engineering_tables(run_id)
     from engineering.bus.publish import EventBridgePublisher
     from engineering.monitor import API_SOURCE, LambdaRuntime, RunMonitor
@@ -884,8 +884,8 @@ def _monitor(run_id: str) -> Any:
     from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_eventbridge_client, get_lambda_client
 
     bus, runtime = os.environ.get('ENGINEERING_BUS_NAME', ''), os.environ.get('ENGINEERING_RUNTIME_FUNCTION', '')
-    engineering = get_dynamodb_resource().Table(table)
-    return RunMonitor(get_dynamodb_client(), table, SessionStore(engineering, RunStore(engineering)),
+    rows = get_dynamodb_resource().Table(table)
+    return RunMonitor(get_dynamodb_client(), table, SessionStore(rows, RunStore(rows)),
                       runtime=LambdaRuntime(get_lambda_client(), runtime) if runtime else None,
                       publisher=EventBridgePublisher(get_eventbridge_client(), bus, API_SOURCE) if bus else None)
 

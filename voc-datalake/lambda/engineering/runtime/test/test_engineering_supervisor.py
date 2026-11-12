@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -276,6 +277,51 @@ def test_a_run_coordinator_that_keeps_stalling_goes_to_a_person_after_its_contin
     assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'coordinator')]
     assert world.board.reposted == []
 
+
+
+def test_a_session_whose_task_another_agent_now_holds_ends_never_continued_nor_reposted(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    # Its task was re-posted and taken by fixer-2, whose heartbeat is fresh: none of it is fixer-1's.
+    world.renew(1060, agent_id='fixer-2')
+    world.supervisor.tick(1060)
+    ended = world.session('fixer-1')
+    assert (ended.status, ended.continuation, world.board.reposted) == ('reposted', 0, [])
+    _assert_terminated(world, ended)
+
+
+def test_a_session_whose_task_is_at_another_attempt_ends(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    world.board.leases[key] = replace(world.board.leases[key], attempt=2)  # re-posted and taken again by fixer-1
+    world.supervisor.tick(1060)
+    assert world.session('fixer-1').status == 'reposted'
+
+
+def _working_on_a_task_that(world: World, **lease: Any) -> AgentSession:
+    """fixer-1 working, its task's lease then changed on the board (``lease``: the Lease's fields)."""
+    world.launch(code=SLEEP)
+    working = _until(world, 1000, lambda s: s.status == 'working')
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    world.board.leases[key] = replace(world.board.leases[key], **lease)
+    return working
+
+
+def test_a_task_that_has_ended_waits_for_its_harness_to_exit_never_judged_crashed(world: World):
+    # Done on the board, its lease no longer renewed: well past the lease's time, it is not a crash.
+    working = _working_on_a_task_that(world, final_state='done')
+    world.supervisor.tick(1000 + T.lease_ttl * 3)
+    after = world.session('fixer-1')
+    assert (after.status, after.crashes, after.continuation) == ('working', 0, working.continuation)
+
+
+def test_a_stalled_agents_task_is_reposted_at_the_attempt_it_worked_on(world: World):
+    world.launch(code=SLEEP, attempt=3)
+    _until(world, 1000, lambda s: s.status == 'working')
+    _until(world, 1000 + T.stall_after, lambda s: s.asked_at is not None, progress=False)
+    _until(world, 1000 + T.stall_after + T.answer_window, lambda s: s.status == 'reposted', progress=False)
+    assert world.board.attempts == [3]
 
 def test_an_agent_that_stalls_while_pausing_is_held_never_reposted(world: World):
     world.launch(code=SLEEP)
@@ -683,10 +729,109 @@ def test_time_without_a_microvm_is_not_counted_as_microvm_seconds(world: World):
     assert world.session().microvm_seconds == held.microvm_seconds
 
 
-def test_run_health_reports_counts_spend_and_backlog(world: World):
+def test_run_health_reports_counts_and_spend(world: World):
     world.launch(code=SLEEP)
-    world.bus.depths['01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1'] = 3
     world.supervisor.tick(1000)
     health = [event for event in world.bus.events if event['kind'] == 'run.health'][-1]
     assert health['summary'] == '1 booting'
-    assert health['refs'] == {'tokens': '0', 'cost_usd': '0.00', 'inbox_backlog': '3'}
+    # No inbox backlog: the inbox has no read state (an agent reads after its cursor).
+    assert health['refs'] == {'tokens': '0', 'cost_usd': '0.00'}
+
+
+@pytest.mark.parametrize(('final', 'status'), [('done', 'done'), ('failed', 'failed'), ('needs_human', 'failed')])
+def test_a_task_that_has_ended_ends_its_session_however_the_harness_exits(world: World, final: str, status: str):
+    # A harness that crashes a moment after its task ended on the board.
+    world.launch(code='import sys, time; time.sleep(0.5); sys.exit(1)')
+    _until(world, 1000, lambda s: s.status == 'working')
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    world.board.leases[key] = replace(world.board.leases[key], final_state=final)
+    for _ in range(200):
+        world.supervisor.tick(1060)
+        if world.session('fixer-1').status != 'working':
+            break
+        time.sleep(0.02)
+    ended = world.session('fixer-1')
+    # Its harness crashed after the task ended on the board: ended as the task did, never continued nor re-posted.
+    assert (ended.status, ended.continuation, world.board.reposted) == (status, 0, [])
+
+
+def test_a_harness_that_does_not_exit_after_its_task_ended_is_ended_at_the_hard_stop(world: World):
+    working = _working_on_a_task_that(world, final_state='done')
+    world.supervisor.tick(working.started_at + T.hard_stop)
+    ended = world.session('fixer-1')
+    assert (ended.status, ended.continuation, world.board.reposted) == ('done', 0, [])
+
+
+def test_a_session_whose_own_repost_landed_posts_it_again_and_ends_never_continued(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    # Its re-post was written (open at the next attempt) but its publish failed: the session stayed live.
+    world.board.leases[key] = Lease(task_id='task-1', agent_id='', renewed_at=0, last_progress_at=0, attempt=2)
+    world.supervisor.tick(1060)
+    ended = world.session('fixer-1')
+    assert (ended.status, ended.continuation, world.board.reposted, world.board.attempts) == (
+        'reposted', 0, [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'reposted')], [1])
+
+
+@pytest.mark.parametrize(('lease', 'status'), [
+    ({'final_state': 'done'}, 'done'), ({'attempt': 2}, 'reposted'), ({'agent_id': 'fixer-2'}, 'reposted')])
+def test_a_continuation_of_a_task_that_ended_or_moved_on_never_starts(world: World, lease: dict[str, object],
+                                                                      status: str):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    held = world.supervisor._save(replace(world.session('fixer-1'), status='waiting'))  # held on a long wait
+    world.board.leases[key] = replace(world.board.leases[key], **lease)
+    ended = world.supervisor._continue(held, 1060, crashed=False)
+    assert (ended.status, ended.continuation) == (status, 0)
+
+
+def test_a_suspended_session_whose_task_ended_is_ended_at_once(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    suspended = world.supervisor._save(replace(world.session('fixer-1'), suspended=True))
+    world.board.leases[key] = replace(world.board.leases[key], final_state='done')
+    assert world.supervisor._task_ended(suspended, world.board.leases[key], 1060).status == 'done'
+
+
+def test_a_continuation_refreshes_its_lease_before_its_microvm_starts(world: World):
+    working = _working_on_a_task_that(world)
+    before = len(world.board.refreshed)  # (its first harness started on a refreshed lease too)
+    continued = world.supervisor._continue(working, 1060, crashed=False)
+    assert (world.board.refreshed[before:], continued.continuation) == (
+        [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'fixer-1', 1)], 1)
+
+
+def test_a_continuation_whose_lease_cannot_be_refreshed_ends_never_starting(world: World):
+    working = _working_on_a_task_that(world)
+    world.board.refreshes = False
+    ended = world.supervisor._continue(working, 1060, crashed=False)
+    assert (ended.status, ended.continuation) == ('reposted', 0)
+
+
+def test_a_continuations_lease_is_refreshed_again_when_its_harness_starts(world: World):
+    working = _working_on_a_task_that(world)
+    before = len(world.board.refreshed)
+    world.supervisor._continue(working, 1060, crashed=False)
+    # Through its boot (the checkout, then the harness), a tick at a time.
+    _until(world, 1120, lambda s: s.status == 'working')
+    assert len(world.board.refreshed) - before == 2  # before its MicroVM started, and when its harness did
+
+
+def test_a_continuation_whose_lease_is_refused_when_its_harness_starts_ends(world: World):
+    working = _working_on_a_task_that(world)
+    world.supervisor._continue(working, 1060, crashed=False)
+    world.board.refreshes = False
+    ended = _until(world, 1120, lambda s: s.status != 'booting')
+    assert (ended.status, ended.exec_id) == ('reposted', None)
+
+
+def test_a_booting_session_whose_task_ended_ends_as_the_task_did(world: World):
+    working = _working_on_a_task_that(world)
+    booting = world.supervisor._continue(working, 1060, crashed=False)
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    world.board.leases[key] = replace(world.board.leases[key], final_state='done')
+    world.supervisor.tick(1120)
+    assert (booting.status, world.session('fixer-1').status) == ('booting', 'done')

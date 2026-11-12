@@ -1,7 +1,7 @@
 """Where a message goes after the router has written it to the run's conversation: a posted task (for its role) and a
 message for an agent or the run conductor to the delivery function, which records the notice in the run's partition
-(``INBOX#`` rows) and wakes the addressee (the agent, or the run's coordinator; a posted task wakes nobody, its
-row is there for the role's agents to read). A message to the run (a
+(``INBOX#`` rows) and wakes an addressed agent or conductor. A posted task wakes nobody (an agent is launched for its
+task, so none of its role is idle): its row is there for the role's agents to read. A message to the run (a
 signal's record, run health, an outcome) stays in the conversation, where the supervisor, the conductor and the run
 view read it.
 
@@ -20,7 +20,7 @@ DELIVERY = 'delivery'
 @dataclass(frozen=True)
 class Destination:
     kind: str
-    #: A posted task's role (its notice is recorded for the role's agents in the run to read).
+    #: A posted task's role (its row is there for the role's agents to read; it wakes nobody).
     role: str = ''
 
 

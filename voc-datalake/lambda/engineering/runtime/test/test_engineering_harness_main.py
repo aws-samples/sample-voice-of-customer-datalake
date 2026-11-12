@@ -15,6 +15,7 @@ from botocore.exceptions import ClientError
 
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.harness import main as harness_main
+from engineering.runtime.harness.board_client import InboxHttp
 from engineering.runtime.harness.cli import CliNotOffered
 from engineering.runtime.harness.main import Ports, S3Store, build_session, main
 from engineering.runtime.harness.ports import HarnessPortNotWired, PendingHarnessPorts
@@ -70,6 +71,41 @@ def test_the_session_comes_from_the_agents_environment_and_restores_its_own_chec
     assert (session.restored_seq, session.notes, session.plan) == (7, 'n', ['p'])
     assert session.checkpoint(turn=1).startswith(f'{CHECKPOINTS}000008-')
 
+
+
+@dataclass
+class PausedInbox:
+    """The board's inbox op holding one old pause: every read answers it, as the window behind the tail does."""
+
+    reads: list[int] = field(default_factory=list)
+
+    def post(self, body: dict[str, Any]) -> dict[str, Any]:
+        self.reads.append(body['after'])
+        return {'messages': [{'seq': 1, 'event_id': 'E-PAUSE', 'type': 'signal.pause', 'summary': 'pause'}],
+                'next': 0}
+
+
+def test_a_continuation_does_not_take_again_the_pause_its_first_session_acted_on(aws, tmp_path):
+    s3, _ = aws
+    board = PausedInbox()
+    first = _inbox_session(s3, tmp_path, board)
+    assert first.take_messages() == ([], True)
+    key = first.checkpoint(turn=4)  # the pause's checkpoint
+    saved = json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())
+    assert saved['position']['inbox'] == {'after': 0, 'done': [{'id': 'E-PAUSE', 'seq': 1}]}
+    # The continuation reads the inbox again (the old pause still answers) and takes nothing: no second pause.
+    assert _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages() == ([], False)
+    assert board.reads == [0, 0]
+
+
+def test_a_checkpoints_cursor_is_handed_to_the_inbox_whatever_it_holds(aws, tmp_path):
+    s3, _ = aws
+    key = f'{CHECKPOINTS}000002-abcd.json'
+    s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({'position': {'turn': 1, 'inbox': 'nonsense'}, 'notes': ''}))
+    ports = _ports()
+    build_session(_env(tmp_path, VOC_RESTORE_KEY=key), s3=s3, ports=ports, runner=FakeRunner(), checkout=str(tmp_path))
+    assert isinstance(ports.inbox, FakeInbox)
+    assert ports.inbox.resumed == 'nonsense'  # handed on; InboxHttp.resume ignores what is not a cursor
 
 def _checkpoint_with_a_tree(s3: Any) -> str:
     """A checkpoint of the agent's whose working tree is a patch under its own keys; the checkpoint's key."""
@@ -303,3 +339,114 @@ def test_the_images_entry_script_imports_the_harness_from_its_own_directory_unde
                            timeout=60, cwd=tmp_path, check=False)
     assert shown.returncode == 0, shown.stderr
     assert 'usage: harness' in shown.stdout
+
+
+def test_the_tool_servers_session_reads_no_brief(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    session = build_session(_env(tmp_path), s3=s3, ports=_ports(board), runner=FakeRunner(), checkout=str(tmp_path),
+                            restore=False)
+    assert (board.briefs_asked, session.context.brief.task_id) == ([], 'task-1')
+
+
+@dataclass
+class Batch:
+    """The inbox op answering one batch, then nothing new (the window behind the tail answers it again)."""
+
+    notices: list[tuple[str, str]]
+
+    def post(self, body: dict[str, Any]) -> dict[str, Any]:
+        del body
+        return {'messages': [{'seq': n, 'event_id': f'E{n}', 'type': kind, 'summary': text}
+                             for n, (kind, text) in enumerate(self.notices, 1)], 'next': 0}
+
+
+
+class Failing:
+    """The board's inbox op failing (a 503 past its retries)."""
+
+    def post(self, body: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError(f'board down ({body["op"]})')
+
+def _inbox_session(s3: Any, tmp_path: Any, board: Batch | Failing | PausedInbox, **extra: str) -> Any:
+    ports = Ports(board=FakeBoard(), inbox=InboxHttp(board, '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1'), broker=FakeBroker())
+    return build_session(_env(tmp_path, **extra), s3=s3, ports=ports, runner=FakeRunner(), checkout=str(tmp_path))
+
+
+def test_an_answer_taken_with_a_pause_reaches_the_continuation(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('msg.answer', 'Use the second parser.'), ('signal.pause', 'pause')])
+    first = _inbox_session(s3, tmp_path, board)
+    notes, pause = first.take_messages()
+    assert pause
+    key = first.checkpoint(turn=2)  # the pause's checkpoint: the answer was never shown to the model
+    others, again = _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages()
+    assert (notes, [(note.kind, note.summary) for note in others], again) == (
+        notes, [('msg.answer', 'Use the second parser.')], False)
+
+
+def test_a_save_in_a_batch_leaves_the_batchs_other_messages_to_be_read_again(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('signal.save', 'save'), ('msg.answer', 'Yes, go on.')])
+    first = _inbox_session(s3, tmp_path, board)
+    first.take_messages()
+    [key] = [item['Key'] for item in s3.list_objects_v2(Bucket=BUCKET, Prefix=CHECKPOINTS)['Contents']]
+    # The save is done; the answer, not yet shown to the model, is before the cursor's end: read again.
+    others, _ = _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages()
+    assert [(note.kind, note.summary) for note in others] == [('msg.answer', 'Yes, go on.')]
+
+
+def test_a_continuation_whose_first_read_fails_keeps_the_cursor_it_restored(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('msg.answer', 'Use the second parser.'), ('signal.pause', 'pause')])
+    first = _inbox_session(s3, tmp_path, board)
+    first.take_messages()
+    key = first.checkpoint(turn=2)
+    second = _inbox_session(s3, tmp_path, Failing(), VOC_RESTORE_KEY=key)
+    with pytest.raises(RuntimeError, match='board down'):
+        second.take_messages()
+    crash = second.checkpoint(turn=0)  # the crash's checkpoint: the answer is still to be read
+    others, _ = _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=crash).take_messages()
+    assert [note.summary for note in others] == ['Use the second parser.']
+
+
+def test_messages_the_model_saved_after_are_not_handed_out_again(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('msg.answer', 'Yes.')])
+    first = _inbox_session(s3, tmp_path, board)
+    first.take_messages()  # shown to the model
+    first.take_messages()  # the loop came back: the batch reached it
+    first.remember({'notes': 'The person said yes.', 'plan': []})  # the model saved its notes after
+    key = first.checkpoint(turn=3)
+    assert _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages() == ([], False)
+
+
+def test_a_message_the_model_had_but_never_saved_after_is_read_again(aws, tmp_path):
+    s3, _ = aws
+    board = Batch([('msg.answer', 'Use the second parser.')])
+    first = _inbox_session(s3, tmp_path, board)
+    first.take_messages()
+    first.take_messages()  # it reached the model; then a pause before the model saved its notes
+    key = first.checkpoint(turn=3)
+    others, _ = _inbox_session(s3, tmp_path, board, VOC_RESTORE_KEY=key).take_messages()
+    assert [note.summary for note in others] == ['Use the second parser.']
+
+
+def test_a_continuation_reads_its_brief_in_its_checkpoint_and_claims_nothing(aws, tmp_path):
+    s3, _ = aws
+    key = f'{CHECKPOINTS}000004-abcd.json'
+    s3.put_object(Bucket=BUCKET, Key=key, Body=json.dumps({
+        'position': {'turn': 2, 'brief': {'title': 'Fix the parser', 'instructions': 'Read src/parse.py.'}},
+        'notes': ''}))
+    board = FakeBoard()
+    session = build_session(_env(tmp_path, VOC_RESTORE_KEY=key), s3=s3, ports=_ports(board), runner=FakeRunner(),
+                            checkout=str(tmp_path))
+    assert (board.briefs_asked, session.context.brief.title, session.context.brief.instructions) == (
+        [], 'Fix the parser', 'Read src/parse.py.')
+
+
+def test_a_checkpoint_saves_the_brief_for_its_continuation(aws, tmp_path):
+    s3, _ = aws
+    key = _session(s3, tmp_path).checkpoint(turn=1)
+    saved = json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())
+    assert set(saved['position']['brief']) == {'title', 'instructions'}

@@ -261,16 +261,37 @@ def test_a_pause_during_the_cli_checkpoints_its_last_notes_and_ends_it(tmp_path)
     assert _checkpoints(w.store)[-1]['notes'] == 'half way'
 
 
-def test_a_cli_that_fails_before_finishing_is_a_crash_with_its_work_saved_first(tmp_path):
+
+def test_an_answer_posted_to_the_cli_and_never_read_is_not_done_at_the_pause(tmp_path):
     w = world(tmp_path)
+    # A person's answer, posted to the tool server; the model is in a long turn and never reads it; then a pause.
+    w.inbox.queued = [[InboxMessage('msg.answer', 'Use the second parser.', 'E1')], [InboxMessage(PAUSE, '', 'E2')]]
+    assert _cli(tmp_path, popen=lambda _argv, **_kwargs: FakeProcess(10), sleep=lambda _s: None).run(w.session) == 'paused'
+    # The pause is done; the answer is not: the checkpoint's cursor leaves it to be read again.
+    assert w.inbox.finished == ['E2']
+
+
+def test_an_answer_the_cli_read_reached_the_model_and_is_done_once_it_saves(tmp_path):
+    w = world(tmp_path)
+    w.inbox.queued = [[InboxMessage('msg.answer', 'Yes.', 'E1')], [], [InboxMessage(PAUSE, '', 'E2')]]
+    seen: list[Any] = []
 
     def popen(_argv: list[str], **kwargs: Any) -> FakeProcess:
         files = SessionFiles(os.path.join(kwargs['cwd'], 'session'))
-        return FakeProcess(1, returncode=2, on_exit=lambda: files.write('checkpoint', {'notes': 'found the bug'}))
+        process = FakeProcess(10)
+        original = process.poll
 
-    with pytest.raises(RuntimeError, match='exit code 2'):
-        _cli(tmp_path, popen=popen).run(w.session)
-    assert _checkpoints(w.store)[-1]['notes'] == 'found the bug'
+        def poll() -> int | None:
+            seen.extend(files.take_messages())  # the tool server reads what was posted
+            return original()
+
+        process.poll = poll  # type: ignore[method-assign]
+        return process
+
+    assert _cli(tmp_path, popen=popen, sleep=lambda _s: None).run(w.session) == 'paused'
+    # It reached the model (seen), but the model never saved its notes after: only the pause is done.
+    assert (seen, w.session.seen_since_save, w.inbox.finished) == (
+        [{'kind': 'msg.answer', 'summary': 'Yes.'}], ['E1'], ['E2'])
 
 
 class BoardRefused(Exception):

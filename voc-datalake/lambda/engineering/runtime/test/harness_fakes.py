@@ -53,6 +53,7 @@ class FakeBoard:
     progress_seen: list[tuple[str, str, str, str]] = field(default_factory=list)
     briefs_asked: list[tuple[str, str]] = field(default_factory=list)
     heartbeats: list[tuple[str, str, str]] = field(default_factory=list)
+    moves: list[tuple[str, str, str]] = field(default_factory=list)
 
     def brief(self, *, run_id: str, task_id: str) -> TaskBrief:
         self.briefs_asked.append((run_id, task_id))
@@ -64,6 +65,9 @@ class FakeBoard:
     def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
         self.progress_seen.append((run_id, task_id, agent_id, step))
 
+    def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+        self.moves.append((run_id, task_id, to_state))
+
 
 @dataclass
 class FakeInbox:
@@ -71,9 +75,23 @@ class FakeInbox:
     queued: list[list[InboxMessage]] = field(default_factory=list)
     takers: set[tuple[str, str]] = field(default_factory=set)
 
+    #: The event ids it was told are done.
+    finished: list[str] = field(default_factory=list)
+    #: The cursor a restore handed it.
+    resumed: object = None
+
     def take(self, *, run_id: str, agent_id: str) -> list[InboxMessage]:
         self.takers.add((run_id, agent_id))
         return self.queued.pop(0) if self.queued else []
+
+    def done(self, event_ids: list[str]) -> None:
+        self.finished.extend(event_ids)
+
+    def cursor(self) -> dict[str, Any]:
+        return {'after': 0, 'done': []}
+
+    def resume(self, cursor: object) -> None:
+        self.resumed = cursor
 
 
 @dataclass

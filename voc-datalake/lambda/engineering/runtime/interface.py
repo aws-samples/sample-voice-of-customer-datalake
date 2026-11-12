@@ -83,6 +83,8 @@ class AgentSpec:
     attempt: int = 1
     #: The workspace bucket (voc-eng-workspace): the agent's checkpoints, patches and findings.
     workspace_bucket: str = ''
+    #: The board API's function URL: the harness's board and inbox (its host is on the agent's egress).
+    board_url: str = ''
 
     def __post_init__(self) -> None:
         if self.role not in ROLES:
@@ -104,6 +106,8 @@ class AgentSpec:
             env['VOC_WORKSPACE_BUCKET'] = self.workspace_bucket
         if self.restore_key:
             env['VOC_RESTORE_KEY'] = self.restore_key
+        if self.board_url:
+            env['VOC_BOARD_URL'] = self.board_url
         return env
 
 

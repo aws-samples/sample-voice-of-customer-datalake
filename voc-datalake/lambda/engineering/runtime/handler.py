@@ -18,12 +18,12 @@
   (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given).
 
 ``delivery_handler`` is voc-engineering-delivery's entry point, the same code with a role of its own
-(engineering-runtime.ts createDelivery): the router's message for
-an agent, the conductor or a role of a run, recorded in the run's inbox and its addressees woken (``delivery.py``).
+(engineering-runtime.ts createDelivery): the router's message for an agent, the conductor or a role of a run,
+recorded in the run's inbox and its addressees woken (``delivery.py``).
 
-The board and the bus are not this track's: until they are wired they are ``ports.PendingPorts``, which refuse,
-and the runtime stays behind ``-c engineeringAgents=true``. The run's controls are its own rows
-(``runs.TableRunControl``); a Resume of the whole run also takes it off its decision point (``RunStore.resume``).
+Both functions' supervisor reads the board through its store and speaks on the bus as the supervisor
+(``board_bus.py``: ``ENGINEERING_BUS_NAME``); the run's controls are its own rows (``runs.TableRunControl``); a
+Resume of the whole run also takes it off its decision point (``RunStore.resume``).
 """
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.delivery import deliver
+from engineering.runtime.harness.skills import harness_argv, skill_for
 from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused
 from engineering.runtime.launcher import Launcher
-from engineering.runtime.ports import PendingPorts
 from engineering.runtime.runs import ENDED, RunCaps, RunExists, RunNotActive, RunStore, TableRunControl
 from engineering.runtime.sessions import LIVE_STATUSES, AgentSession, SessionStore
 from engineering.runtime.supervisor import Supervisor
@@ -72,19 +72,22 @@ def _runtime() -> MicroVmRuntime:
 def _supervisor() -> Supervisor:
     global _supervisor_cache
     if _supervisor_cache is None:
-        from shared.aws import get_dynamodb_resource, get_s3_client
+        from engineering.runtime.board_bus import wired
+        from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_eventbridge_client, get_s3_client
         bucket, workspace = os.environ['RAW_DATA_BUCKET'], os.environ['ENGINEERING_WORKSPACE_BUCKET']
-        pending = PendingPorts()
+        table = os.environ['ENGINEERING_TABLE']
+        board, bus = wired(get_dynamodb_client(), table, get_eventbridge_client(), os.environ['ENGINEERING_BUS_NAME'])
         runs = _runs()
         _supervisor_cache = Supervisor(
             runtime=_runtime(),
-            sessions=SessionStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']), runs,
+            sessions=SessionStore(get_dynamodb_resource().Table(table), runs,
                                   caps.microvm_price(os.environ.get('ENGINEERING_MICROVM_USD_PER_SECOND'))),
-            board=pending, bus=pending, control=TableRunControl(runs),
+            board=board, bus=bus, control=TableRunControl(runs),
             launcher=Launcher(_sts_client(), json.loads(os.environ['ENGINEERING_AGENT_ROLE_ARNS'])),
             checkpoints=CheckpointReader(get_s3_client(), workspace),
             bucket=bucket, workspace_bucket=workspace,
             timings=caps.timings(json.loads(os.environ.get('ENGINEERING_TIMINGS', '{}'))),
+            board_url=os.environ['ENGINEERING_BOARD_URL'],
         )
     return _supervisor_cache
 
@@ -154,6 +157,33 @@ def _settle() -> None:
             _switch(True)
 
 
+def _attempt(supervisor: Supervisor, run_id: str, task_id: str, given: int | None) -> int:
+    """The task's attempt, as the board has it (a launch naming another is refused: the agent's lease epoch is the
+    attempt, and the supervisor ends a session at another); 1, or the one given, for a task not on the board yet."""
+    lease = supervisor.board.lease(run_id, task_id)
+    if lease is None:
+        return 1 if given is None else given
+    if given is not None and given != lease.attempt:
+        raise RuntimeRefused(f'the task is at attempt {lease.attempt}, not {given}')
+    return lease.attempt
+
+
+def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]:
+    """The agent's harness argv and what the reports name it by: its role's skill's (a request that names another
+    argv for it is refused), else the request's (a role with no skill yet)."""
+    skill = skill_for(str(event.get('role', '')))
+    given = event.get('harness')
+    if skill is not None:
+        argv = harness_argv(skill)
+        if given is not None and (not _strings(given) or tuple(given) != argv):
+            raise RuntimeRefused(f'a {skill.name} runs its skill\'s harness ({skill.label}), not another')
+        return argv, {'model': skill.model, 'skill_version': skill.label}
+    if not _strings(given) or not 0 < len(given) <= MAX_HARNESS_ARGS:
+        raise RuntimeRefused(f'harness must be an argv of 1-{MAX_HARNESS_ARGS} strings (the role has no skill yet)')
+    return tuple(given), {'model': str(event.get('model', ''))[:200],
+                          'skill_version': str(event.get('skill_version', ''))[:200]}
+
+
 def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
     """Start a run with its caps; the supervisor's rule is on from then."""
     caps = RunCaps(max_tasks=_optional_number(event, 'max_tasks', int) or 0,
@@ -162,7 +192,8 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
     run_id, runs, status = str(event.get('run_id', '')), _runs(), 'active'
     try:
         runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),
-                   repo=str(event.get('repo', '')), flow=str(event.get('flow', '')))
+                   repo=str(event.get('repo', '')), flow=str(event.get('flow', '')),
+                   connection=str(event.get('connection', '')), commit=str(event.get('commit', '')))
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:
@@ -194,9 +225,7 @@ def _strings(value: object) -> TypeGuard[list[str]]:
 
 def launch(event: Mapping[str, Any]) -> dict[str, Any]:
     """Start one agent of a run on one task (refused when that agent already has a session in the run)."""
-    harness = event.get('harness')
-    if not _strings(harness) or not 0 < len(harness) <= MAX_HARNESS_ARGS:
-        raise RuntimeRefused(f'harness must be an argv of 1-{MAX_HARNESS_ARGS} strings')
+    harness, labels = _harness(event)
     paths = event.get('paths', [])
     if not _strings(paths):
         raise RuntimeRefused('paths must be a list of repository paths')
@@ -210,13 +239,13 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
     allowlist = egress.egress_allowlist(
         role=role, language=language, region=os.environ.get('AWS_REGION', 'us-east-1'), bucket=supervisor.bucket,
         workspace_bucket=supervisor.workspace_bucket,
-        extra_hosts=json.loads(os.environ.get('ENGINEERING_EXTRA_EGRESS', '[]')))
-    given = _optional_number(event, 'attempt', int)
-    attempt = 1 if given is None else given
+        extra_hosts=json.loads(os.environ.get('ENGINEERING_EXTRA_EGRESS', '[]')), service_urls=[supervisor.board_url])
+    attempt = _attempt(supervisor, str(event.get('run_id', '')), str(event.get('task_id', '')),
+                       _optional_number(event, 'attempt', int))
     spec = AgentSpec(run_id=str(event.get('run_id', '')), agent_id=str(event.get('agent_id', '')), role=role,
                      task_id=str(event.get('task_id', '')), language=language, egress=allowlist,
                      connection=str(event.get('connection', '')), commit=commit, attempt=attempt,
-                     workspace_bucket=supervisor.workspace_bucket)
+                     workspace_bucket=supervisor.workspace_bucket, board_url=supervisor.board_url)
     vm = supervisor.runtime.run(spec)
     try:
         session = supervisor.sessions.create(AgentSession(
@@ -224,7 +253,7 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
             egress=allowlist, connection=spec.connection, commit=commit, paths=tuple(paths),
             harness=tuple(harness), vm_id=vm.vm_id, endpoint=vm.endpoint, task_attempt=attempt,
             started_at=int(clock()), last_tick_at=int(clock())),
-            {'model': str(event.get('model', ''))[:200], 'skill_version': str(event.get('skill_version', ''))[:200]})
+            labels)
     except Exception:
         # No session row, no MicroVM: one that nothing supervises would run until its idle policy.
         supervisor.runtime.terminate(vm)

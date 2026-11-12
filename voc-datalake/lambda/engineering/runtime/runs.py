@@ -23,7 +23,8 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from engineering.connectors.identity import WORKSPACE
-from engineering.runtime.interface import RuntimeRefused, check_run_id
+from engineering.runtime.checkout import COMMIT_RE
+from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
 from engineering.runtime.ports import Budget
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
@@ -72,6 +73,9 @@ class Run:
     status: str
     started_at: int
     caps: RunCaps
+    #: The run's repository connection and its base commit (the board launches the run's agents on them).
+    connection: str = ''
+    commit: str = ''
 
 
 class RunExists(RuntimeRefused):
@@ -94,12 +98,20 @@ class RunStore:
     def __init__(self, table: Any) -> None:
         self._table = table
 
-    def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '') -> None:
-        """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already."""
+    def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
+              connection: str = '', commit: str = '') -> None:
+        """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
+
+        ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
+        run's agents on: read from here, never from the agent asking."""
+        if connection:
+            check_id('connection', connection)
+        if commit and not COMMIT_RE.match(commit):
+            raise RuntimeRefused('a commit is a full hexadecimal object id')
         name = self._table.name
         meta: dict[str, Any] = {**meta_key(run_id), 'run_id': run_id, 'status': 'active', 'started_at': _iso(now),
                                 'started_epoch': now, 'max_tasks': caps.max_tasks, 'goal': _text(goal),
-                                'repo': _text(repo), 'flow': _text(flow)}
+                                'repo': _text(repo), 'flow': _text(flow), 'connection': connection, 'commit': commit}
         if caps.max_tokens is not None:
             meta['max_tokens'] = caps.max_tokens
         if caps.max_cost_usd is not None:
@@ -154,7 +166,8 @@ class RunStore:
         caps = RunCaps(max_tasks=int(item['max_tasks']),
                        max_tokens=int(item['max_tokens']) if item.get('max_tokens') is not None else None,
                        max_cost_usd=float(cost) if cost is not None else None)
-        return Run(run_id=run_id, status=str(item['status']), started_at=int(item['started_epoch']), caps=caps)
+        return Run(run_id=run_id, status=str(item['status']), started_at=int(item['started_epoch']), caps=caps,
+                   connection=str(item.get('connection', '')), commit=str(item.get('commit', '')))
 
     def listed(self) -> list[str]:
         """The runs the supervisor watches (live, or ended with a live agent), oldest first (a ULID sorts by time)."""

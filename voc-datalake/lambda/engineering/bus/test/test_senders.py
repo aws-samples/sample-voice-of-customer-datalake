@@ -10,12 +10,18 @@ from engineering.bus.test.messages import AGENT_SOURCE, RUN, message
 TASK = {'type': 'task.posted', 'task_id': 'task-1', 'to': {'kind': 'role', 'id': 'fixer'}}
 CONDUCTOR = f'voc.engineering/conductor/default/{RUN}'
 BOARD = 'voc.engineering/board'
+COACH = f'voc.engineering/coach/default/{RUN}'
+SUPERVISOR = 'voc.engineering/supervisor'
+GATE_RUNNER = f'voc.engineering/agent/gate-runner/default/{RUN}/gate-runner-1'
 
 
 @pytest.mark.parametrize(('source', 'expected'), [
     ('voc.engineering/api', Source('api')),
     ('voc.engineering/board', Source('board')),
     (CONDUCTOR, Source('conductor', ws='default', run_id=RUN)),
+    (COACH, Source('coach', ws='default', run_id=RUN)),
+    (GATE_RUNNER, Source('agent', role='gate-runner', ws='default', run_id=RUN, agent_id='gate-runner-1')),
+    ('voc.engineering/coach', None),   # (no service coach: a coach is a run's)
     (AGENT_SOURCE, Source('agent', role='fixer', ws='default', run_id=RUN, agent_id='fixer-1')),
     ('voc.engineering/agent/janitor/default/run-1/x', None),
     (f'voc.engineering/agent/fixer/{RUN}/fixer-1', None),
@@ -41,7 +47,17 @@ def test_sources(source, expected):
     ({'type': 'signal.pause', 'from': {'kind': 'supervisor', 'id': 'sup'}}, 'voc.engineering/supervisor'),
     ({'type': 'run.ended', 'from': {'kind': 'system', 'id': 'board'}, 'to': {'kind': 'run', 'id': RUN}}, BOARD),
     ({'type': 'msg.handoff', 'from': {'kind': 'conductor', 'id': 'c'}}, CONDUCTOR),
-    ({'type': 'skill.proposed', 'from': {'kind': 'system', 'id': 'coach'}}, 'voc.engineering/coach'),
+    ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, COACH),
+    ({'type': 'msg.finding', 'from': {'kind': 'agent', 'id': 'gate-runner-1'}, 'refs': {'s3': []}}, GATE_RUNNER),
+    ({'type': 'review.result', 'from': {'kind': 'agent', 'id': 'gate-runner-1'}, 'refs': {'s3': []}}, GATE_RUNNER),
+    ({'type': 'signal.check_in', 'from': {'kind': 'supervisor', 'id': 'supervisor'}}, SUPERVISOR),
+    ({'type': 'run.agent_continued', 'from': {'kind': 'supervisor', 'id': 'supervisor'},
+      'to': {'kind': 'run', 'id': RUN}}, SUPERVISOR),
+    ({'type': 'run.agent_timed_out', 'from': {'kind': 'supervisor', 'id': 'supervisor'},
+      'to': {'kind': 'run', 'id': RUN}}, SUPERVISOR),
+    ({'type': 'run.agent_failed', 'from': {'kind': 'supervisor', 'id': 'supervisor'},
+      'to': {'kind': 'run', 'id': RUN}}, SUPERVISOR),
+    ({**TASK, 'from': {'kind': 'supervisor', 'id': 'supervisor'}}, SUPERVISOR),
     ({'type': 'outcome.merged', 'from': {'kind': 'system', 'id': 'gh'}, 'to': {'kind': 'run', 'id': RUN}},
      'voc.engineering/webhook'),
 ])
@@ -67,7 +83,21 @@ def test_allowed(changes, source):
      'board may not send run.health'),
     ({'refs': {'s3': ['ws/default/runs/run-2/x.jsonl']}}, AGENT_SOURCE, "may refer only to its own run's objects"),
     ({'type': 'msg.answer'}, 'voc.engineering/api', 'from.kind agent is not what the source api proves'),
-    ({'type': 'skill.accepted'}, 'voc.engineering/coach', 'coach may not send skill.accepted'),
+    ({'type': 'skill.accepted', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, COACH,
+     'coach may not send skill.accepted'),
+    ({'type': 'skill.proposed', 'from': {'kind': 'system', 'id': 'coach'}, 'refs': {'s3': []}}, COACH,
+     'from.kind system is not what the source coach proves'),
+    ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'run_id': 'other-run',
+      'refs': {'s3': []}}, COACH, 'coach of run default/'),
+    ({'type': 'msg.question', 'from': {'kind': 'agent', 'id': 'gate-runner-1'}, 'refs': {'s3': []}}, GATE_RUNNER,
+     'the gate runner sends only its gate results'),
+    ({'type': 'gate.go', 'from': {'kind': 'agent', 'id': 'gate-runner-1'}, 'refs': {'s3': []}}, GATE_RUNNER,
+     'only the final-go agent gives the verdict'),
+    ({'type': 'signal.check_in'}, 'voc.engineering/api', 'api may not send signal.check_in'),
+    ({'type': 'run.agent_failed', 'from': {'kind': 'system', 'id': 'board'}, 'to': {'kind': 'run', 'id': RUN}},
+     BOARD, 'board may not send run.agent_failed'),
+    ({**TASK, 'type': 'task.claimed', 'to': {'kind': 'run', 'id': RUN},
+      'from': {'kind': 'supervisor', 'id': 'supervisor'}}, SUPERVISOR, 'supervisor may not send task.claimed'),
     ({}, 'someone.else', 'unknown source'),
 ])
 def test_refused(changes, source, reason):

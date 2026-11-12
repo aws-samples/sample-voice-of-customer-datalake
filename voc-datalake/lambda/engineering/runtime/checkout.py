@@ -27,7 +27,7 @@ CACHE_SOURCE: Final = f'file://{MOUNT_POINT}/repo.git'
 CHECKOUT_DIR: Final = 'repo'
 CLONE_TIMEOUT_SECONDS: Final = 30 * 60
 MAX_SPARSE_PATHS: Final = 200
-_COMMIT_RE: Final = re.compile(r'^[0-9a-f]{40}([0-9a-f]{24})?\Z')
+COMMIT_RE: Final = re.compile(r'^[0-9a-f]{40}([0-9a-f]{24})?\Z')
 #: A plain path: never starting with "-" (an option to git) or "/", no glob, no backslash.
 _PATH_RE: Final = re.compile(r'^[A-Za-z0-9_.@+][A-Za-z0-9_./@+-]{0,511}\Z')
 #: Every git command: no system config, no terminal prompt, no hooks, no file-system monitor, no pager, no
@@ -75,7 +75,7 @@ def checkout_commands(commit: str, paths: Sequence[str], source: str = CACHE_SOU
     """
     if not source.startswith('file:///'):
         raise RuntimeRefused('a checkout comes from the cache only (a file:// source)')
-    if not _COMMIT_RE.match(commit):
+    if not COMMIT_RE.match(commit):
         raise RuntimeRefused('a commit is a full hexadecimal object id')
     if len(paths) > MAX_SPARSE_PATHS:
         raise RuntimeRefused(f'at most {MAX_SPARSE_PATHS} sparse paths')

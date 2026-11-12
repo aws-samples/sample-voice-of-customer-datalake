@@ -51,7 +51,8 @@ export function EngineeringSignals({ runId, task }: Readonly<Props>) {
         <p role="status" className="text-[12px] text-muted break-words">
           {t('engineeringRun.signalSent')}{' '}
           {Object.entries(signal.data.agents).sort(([a], [b]) => a.localeCompare(b)).map(([agent, status]) => (
-            t('engineeringRun.agentStatus', { agent, status: t(`engineeringRun.status.${status}`, { defaultValue: status }) })
+            t(signal.data.applied[agent] === true ? 'engineeringRun.agentStatus' : 'engineeringRun.agentNotApplied',
+              { agent, status: t(`engineeringRun.status.${status}`, { defaultValue: status }) })
           )).join(' · ')}
         </p>
       )}
