@@ -28,7 +28,7 @@ import type { CursorPagesQuery } from '../../hooks/useCursorPages'
 import { useAuthStore } from '../../store/authStore'
 import RefusalAlert from '../../workspace/RefusalAlert'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
-import { useMyWorkspaces, useServerWorkspace } from '../../workspace/useMyWorkspaces'
+import { useMyWorkspaces, useServerRole } from '../../workspace/useMyWorkspaces'
 import { MEMBER_REFUSALS } from '../../workspace/workspaceRefusals'
 import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
 import type { WorkspaceMember } from '../../api/workspaceMembersApi'
@@ -52,9 +52,8 @@ export default function Members() {
  * the membership's role stays, as in the gate; the server decides every write either way.
  */
 function MembersFor({ workspace }: Readonly<{ workspace: CurrentWorkspace }>) {
-  const server = useServerWorkspace(workspace.id)
-  if (server.isPending) return <PageLoader />
-  const role = server.data?.id === workspace.id ? server.data.role : workspace.role
+  const role = useServerRole(workspace)
+  if (role === null) return <PageLoader />
   return <MembersView workspace={workspace} role={role} />
 }
 

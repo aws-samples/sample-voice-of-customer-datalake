@@ -1,20 +1,22 @@
 /**
  * Every server reason the refusal tables (workspaceRefusals.ts) match on, against the value the API assigns or
- * raises, read as TEXT from lambda/shared/workspace_members.py, platform_workspaces.py, user_admin_guard.py and
- * lambda/api/users_handler.py: a module constant (`NAME: Final = '…'`, adjacent string literals joined as Python
+ * raises, read as TEXT from lambda/shared/workspace_members.py, workspace_plugin_settings.py, platform_workspaces.py,
+ * user_admin_guard.py and lambda/api/users_handler.py: a module constant (`NAME: Final = '…'`, adjacent string literals joined as Python
  * joins them) or a literal `raise ValidationError('…')`. Only code counts: a reason left in a comment, or changed on
  * one side only, fails here (the page would fall back to the generic message).
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { MEMBER_REFUSALS, PLATFORM_ADMIN_REFUSALS, PLATFORM_REFUSALS } from './workspaceRefusals'
+import {
+  BRAND_REFUSALS, DEPLOYMENT_BRAND_REFUSALS, MEMBER_REFUSALS, PLATFORM_ADMIN_REFUSALS, PLATFORM_REFUSALS, PLUGIN_REFUSALS,
+} from './workspaceRefusals'
 
 const LAMBDA = join(__dirname, '../../../lambda')
 
 const source = (file: string): string => readFileSync(join(LAMBDA, file), 'utf8')
 
-/** The value of the module constant `name` (`NAME: Final = 'a'` or `NAME: Final = (\n 'a '\n 'b'\n)`), or null. */
+/** The value of the module constant `name` (`NAME: Final = 'a'`, `"a"` or `(\n 'a '\n 'b'\n)`), or null. */
 function constant(file: string, name: string): string | null {
   const lines = source(file).split('\n')
   const start = lines.findIndex((line) => line.startsWith(`${name}: Final = `))
@@ -24,7 +26,8 @@ function constant(file: string, name: string): string | null {
   const wrapped = first.startsWith('(') && !first.trimEnd().endsWith(')')
   const end = wrapped ? lines.findIndex((line, index) => index > start && line.trimEnd().endsWith(')')) : start
   const text = [first, ...lines.slice(start + 1, end + 1)].join('\n')
-  return [...text.matchAll(/'([^'\\\n]*)'/g)].map((match) => match[1] ?? '').join('')
+  // Each literal in single or double quotes (a reason with an apostrophe is written in double quotes).
+  return [...text.matchAll(/'([^'\\\n]*)'|"([^"\\\n]*)"/g)].map((match) => match[1] ?? match[2] ?? '').join('')
 }
 
 /** The literal of `raise <Error>('…')` on a code line (not a comment) whose text starts with `prefix`, or null. */
@@ -44,17 +47,26 @@ const SERVER_REASONS: readonly (readonly [string, string | null])[] = [
   ['workspace_members NO_LONGER_ADMIN', constant('shared/workspace_members.py', 'NO_LONGER_ADMIN')],
   ['workspace_members NEW_ACCOUNT_ADMINS_ONLY', constant('shared/workspace_members.py', 'NEW_ACCOUNT_ADMINS_ONLY')],
   ['workspace_members MEMBER_NOT_FOUND', constant('shared/workspace_members.py', 'MEMBER_NOT_FOUND')],
+  ['workspace_plugin_settings INGESTION_NOT_YET', constant('shared/workspace_plugin_settings.py', 'INGESTION_NOT_YET')],
+  ['workspace_plugin_settings CHANGED_MEANWHILE', constant('shared/workspace_plugin_settings.py', 'CHANGED_MEANWHILE')],
+  ['workspace_plugin_settings PLUGIN_NOT_FOUND', constant('shared/workspace_plugin_settings.py', 'PLUGIN_NOT_FOUND')],
   ['platform_workspaces SLUG_TAKEN', constant('shared/platform_workspaces.py', 'SLUG_TAKEN')],
   ['user_admin_guard LAST_PLATFORM_ADMIN_MESSAGE', constant('shared/user_admin_guard.py', 'LAST_PLATFORM_ADMIN_MESSAGE')],
   ['users_handler grant to a non-administrator', raised('api/users_handler.py', 'ValidationError', 'Only an administrator can be a platform admin')],
 ]
 
-const tableReasons = [...MEMBER_REFUSALS, ...PLATFORM_REFUSALS, ...PLATFORM_ADMIN_REFUSALS]
-  .flatMap((row) => (row.reason === undefined ? [] : [row.reason]))
+// A reason two tables share (NO_LONGER_ADMIN: the members' and the plugins' writes) counts once.
+const tableReasons = [...new Set([
+  ...MEMBER_REFUSALS, ...PLUGIN_REFUSALS, ...BRAND_REFUSALS, ...DEPLOYMENT_BRAND_REFUSALS, ...PLATFORM_REFUSALS, ...PLATFORM_ADMIN_REFUSALS,
+].flatMap((row) => (row.reason === undefined ? [] : [row.reason])))]
 
 describe('the refusal tables mirror the API', () => {
   it.each(SERVER_REASONS)('%s is in the API\'s code', (_where, value) => {
     expect(value).not.toBeNull()
+  })
+
+  it('the plugins\' writes refuse a demoted admin with the members\' constant', () => {
+    expect(source('shared/workspace_plugin_settings.py')).toContain('from shared.workspace_members import NO_LONGER_ADMIN')
   })
 
   it('name exactly the reasons the API assigns or raises, no more and no fewer', () => {

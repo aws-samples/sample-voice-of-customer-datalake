@@ -496,7 +496,10 @@ export const api = {
 A simplified sketch: the real `fetchApi` (`frontend/src/api/client.ts`) builds its headers with `getAuthHeaders`
 (`api/baseUrl.ts`), which adds the Cognito token and, inside a workspace, `X-Workspace-Id`
 (`workspace/currentWorkspace.ts`), both only for a trusted origin. A transport that sets its own headers (the
-feedback boards' `boardTransport`) adds `workspaceHeader(url)` the same way.
+feedback boards' `boardTransport`) adds `workspaceHeader(url)` the same way. A call that must reach the
+deployment-wide row even inside a workspace passes the request scope `'deployment'` (`fetchApi(path, options,
+'deployment')`, `RequestScope` in `api/baseUrl.ts`; today only the platform console's default brand,
+`api/brandApi.ts`): never strip the header by hand.
 
 ### Zustand Store Pattern
 

@@ -159,6 +159,7 @@
     "retry": "Retry",
     "notSynced": "Not synced",
     "saveFailed": "Couldn’t save to the server. Try again.",
+    "savedToServer": "Brand saved.",
     "adminOnlyNotice": "Only admins can change the brand configuration. You can view it here."
   },
   "categories": {

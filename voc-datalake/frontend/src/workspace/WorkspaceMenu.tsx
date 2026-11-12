@@ -1,8 +1,9 @@
 /**
  * @fileoverview The current workspace in the header (docs/multi-workspace.md): a WAI-ARIA menu button (the account
  * menu's behaviour, `useMenuButton`) named after the workspace and the caller's role there. Its menu lists the
- * caller's other workspaces, if any (not one the server refused in this tab, refusedWorkspaces.ts), then Members (`/members`, the workspace's members page). Choosing another
- * workspace is a full page load to `/w/{slug}/dashboard`, which starts with an empty cache (so once phase 2 keys the
+ * caller's other workspaces, if any (not one the server refused in this tab, refusedWorkspaces.ts), then Members
+ * (`/members`, the workspace's members page) and Workspace settings (`/workspace-settings`, its brand and
+ * plugins). Choosing another workspace is a full page load to `/w/{slug}/dashboard`, which starts with an empty cache (so once phase 2 keys the
  * data by workspace, no answer of this one is shown in the next). Nothing renders outside a workspace.
  *
  * @module workspace/WorkspaceMenu
@@ -10,7 +11,7 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { Building2, ChevronDown, Users } from 'lucide-react'
+import { Building2, ChevronDown, SlidersHorizontal, Users } from 'lucide-react'
 import { menuButtonParts, useMenuButton } from '../components/ProfileMenu/useMenuButton'
 import { useCurrentWorkspace } from './currentWorkspace'
 import { withoutRefused } from './refusedWorkspaces'
@@ -75,6 +76,10 @@ export default function WorkspaceMenu() {
           <Link to="/members" role="menuitem" className={ITEM_CLASS} onClick={() => menu.close()}>
             <Users size={16} className="flex-shrink-0" aria-hidden="true" />
             <span>{t('workspaces.menu.members')}</span>
+          </Link>
+          <Link to="/workspace-settings" role="menuitem" className={ITEM_CLASS} onClick={() => menu.close()}>
+            <SlidersHorizontal size={16} className="flex-shrink-0" aria-hidden="true" />
+            <span>{t('workspaces.menu.settings')}</span>
           </Link>
         </div>
       ) : null}

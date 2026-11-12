@@ -27,6 +27,7 @@
     "connect": "Conectar",
     "account": "Conta",
     "members": "Membros",
+    "workspaceSettings": "Configurações do espaço de trabalho",
     "workflows": "Fluxos",
     "workflow": "Fluxo",
     "radar": "Radar",
@@ -155,7 +156,8 @@
       "triggerSingle": "Espaço de trabalho: {{name}}, {{role}}. Menu do espaço de trabalho",
       "current": "Espaço de trabalho atual",
       "switchTo": "Trocar para",
-      "members": "Membros"
+      "members": "Membros",
+      "settings": "Configurações do espaço de trabalho"
     },
     "role": {
       "admin": "Administração",
@@ -231,6 +233,32 @@
       "for": "Administração da plataforma: {{user}}",
       "adminsOnly": "Só um administrador pode ser administrador da plataforma."
     },
+    "settings": {
+      "title": "Configurações do espaço de trabalho",
+      "subtitle": "A marca e os plug-ins de {{name}}.",
+      "brandTitle": "Marca",
+      "brandDescription": "A marca própria deste espaço de trabalho. Um espaço de trabalho novo começa com uma marca vazia: nada é copiado da marca da implantação.",
+      "brandReadOnly": "Somente os administradores deste espaço de trabalho podem alterar a marca dele. Você pode visualizá-la aqui.",
+      "pluginsTitle": "Plug-ins",
+      "pluginsDescription": "Os plug-ins que esta implantação oferece e se este espaço de trabalho ativou cada um. Todos os plug-ins continuam coletando feedback para a implantação inteira, como antes.",
+      "pluginsReadOnly": "Somente os administradores deste espaço de trabalho podem ativar ou desativar plug-ins.",
+      "pluginsLoading": "Carregando os plug-ins…",
+      "pluginsLoadFailed": "Não foi possível carregar os plug-ins.",
+      "pluginsNone": "Esta implantação não oferece plug-ins.",
+      "pluginsListLabel": "Plug-ins que esta implantação oferece",
+      "pluginOn": "Ativado",
+      "pluginOff": "Desativado",
+      "enable": "Ativar",
+      "disable": "Desativar",
+      "enableWho": "Ativar {{name}} para este espaço de trabalho",
+      "disableWho": "Desativar {{name}} para este espaço de trabalho",
+      "retry": "Tentar novamente"
+    },
+    "deploymentBrand": {
+      "title": "Marca padrão da implantação",
+      "description": "A marca própria da implantação, usada fora de qualquer espaço de trabalho, como antes dos espaços de trabalho. Os e-mails para participantes e os quadros de feedback continuam usando o nome dela. Cada espaço de trabalho tem a sua própria marca: nada é copiado entre elas.",
+      "readOnly": "Somente os administradores da implantação podem alterar a marca padrão. Você pode visualizá-la aqui."
+    },
     "errors": {
       "lastAdmin": "Um espaço de trabalho precisa de um administrador: torne outro membro administrador primeiro.",
       "changedMeanwhile": "A associação mudou nesse meio-tempo. Recarregue a página e tente novamente.",
@@ -247,6 +275,11 @@
       "lastPlatformAdmin": "Este é o último administrador da plataforma ativo: torne outro administrador administrador da plataforma primeiro.",
       "grantNeedsAdmin": "Só um administrador pode ser administrador da plataforma: torne o usuário administrador primeiro.",
       "userGone": "Esse usuário não existe mais. Recarregue a página.",
+      "pluginGone": "Esta implantação não oferece mais esse plug-in. Recarregue a página.",
+      "pluginsChangedMeanwhile": "Os plug-ins do espaço de trabalho mudaram nesse meio-tempo. Recarregue a página e tente novamente.",
+      "ingestionNotYet": "A ingestão por espaço de trabalho chega em uma versão posterior: um espaço de trabalho ainda não pode ativar um plug-in.",
+      "notDeploymentAdmin": "Somente os administradores da implantação podem alterar a marca padrão.",
+      "notBrandAdmin": "Somente os administradores deste espaço de trabalho podem alterar a marca dele.",
       "generic": "Não funcionou. Tente novamente.",
       "genericWithReason": "Não funcionou: {{reason}}"
     }

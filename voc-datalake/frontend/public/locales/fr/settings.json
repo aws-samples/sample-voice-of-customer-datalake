@@ -159,6 +159,7 @@
     "retry": "Réessayer",
     "notSynced": "Non synchronisé",
     "saveFailed": "Échec de l’enregistrement sur le serveur. Réessayez.",
+    "savedToServer": "Marque enregistrée.",
     "adminOnlyNotice": "Seuls les administrateurs peuvent modifier la configuration de la marque. Vous pouvez la consulter ici."
   },
   "categories": {

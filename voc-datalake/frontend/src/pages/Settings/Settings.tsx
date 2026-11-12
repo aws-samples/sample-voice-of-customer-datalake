@@ -15,13 +15,13 @@
  * - System: Logs, Version
  */
 
-import { brandSettingsKey } from '../../hooks/useBrandSettings'
+import { brandSettingsKey, useBrandSettings } from '../../hooks/useBrandSettings'
 import { useExpiringValue } from '../../hooks/useExpiringValue'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
 import { useIsAdmin, useIsPlatformAdmin } from '../../store/authStore'
@@ -68,11 +68,7 @@ export default function Settings() {
 
   const {
     data: backendSettings, isLoading: loadingSettings, isError: brandLoadFailed, refetch: refetchBrand,
-  } = useQuery({
-    queryKey: brandSettingsKey(),
-    queryFn: () => api.getBrandSettings(),
-    enabled: !!config.apiEndpoint,
-  })
+  } = useBrandSettings(config.apiEndpoint)
 
   const {
     brandName, setBrandName,

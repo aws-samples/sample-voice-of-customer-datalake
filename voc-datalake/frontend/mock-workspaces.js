@@ -94,8 +94,11 @@ function myWorkspaces(shared) {
     .map((workspace) => ({ id: workspace.id, name: workspace.name, slug: workspace.slug, role: roleOf(workspace, sub) }));
 }
 
-/** The workspace X-Workspace-Id names as the caller may act in it, or [status, error] (resolve_workspace). */
-function resolve(req, shared) {
+/**
+ * The workspace X-Workspace-Id names as the caller may act in it, or [status, error] (resolve_workspace). Also the
+ * resolution of mock-workspace-settings.js, whose routes keep their state on the workspace (so each switch resets it).
+ */
+export function resolve(req, shared) {
   const header = req.headers['x-workspace-id'];
   if (typeof header !== 'string' || header === '') return { refusal: [400, 'The X-Workspace-Id header is required'] };
   const workspace = state.workspaces.find((candidate) => candidate.id === header && candidate.status === 'active');

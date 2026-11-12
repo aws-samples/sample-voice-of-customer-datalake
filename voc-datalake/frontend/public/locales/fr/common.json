@@ -27,6 +27,7 @@
     "connect": "Connexion",
     "account": "Compte",
     "members": "Membres",
+    "workspaceSettings": "Réglages de l’espace de travail",
     "workflows": "Workflows",
     "workflow": "Workflow",
     "radar": "Radar",
@@ -155,7 +156,8 @@
       "triggerSingle": "Espace de travail : {{name}}, {{role}}. Menu de l’espace de travail",
       "current": "Espace de travail actuel",
       "switchTo": "Passer à",
-      "members": "Membres"
+      "members": "Membres",
+      "settings": "Réglages de l’espace de travail"
     },
     "role": {
       "admin": "Administration",
@@ -231,6 +233,32 @@
       "for": "Administration de la plateforme : {{user}}",
       "adminsOnly": "Seul un administrateur peut être administrateur de la plateforme."
     },
+    "settings": {
+      "title": "Réglages de l’espace de travail",
+      "subtitle": "La marque et les plugins de {{name}}.",
+      "brandTitle": "Marque",
+      "brandDescription": "La marque propre à cet espace de travail. Un nouvel espace de travail commence avec une marque vide : rien n’est copié depuis la marque du déploiement.",
+      "brandReadOnly": "Seuls les administrateurs de cet espace de travail peuvent modifier sa marque. Vous pouvez la consulter ici.",
+      "pluginsTitle": "Plugins",
+      "pluginsDescription": "Les plugins que propose ce déploiement, et si cet espace de travail a activé chacun d’eux. Chaque plugin collecte toujours les retours pour l’ensemble du déploiement, comme avant.",
+      "pluginsReadOnly": "Seuls les administrateurs de cet espace de travail peuvent activer ou désactiver des plugins.",
+      "pluginsLoading": "Chargement des plugins…",
+      "pluginsLoadFailed": "Les plugins n’ont pas pu être chargés.",
+      "pluginsNone": "Ce déploiement ne propose aucun plugin.",
+      "pluginsListLabel": "Plugins proposés par ce déploiement",
+      "pluginOn": "Activé",
+      "pluginOff": "Désactivé",
+      "enable": "Activer",
+      "disable": "Désactiver",
+      "enableWho": "Activer {{name}} pour cet espace de travail",
+      "disableWho": "Désactiver {{name}} pour cet espace de travail",
+      "retry": "Réessayer"
+    },
+    "deploymentBrand": {
+      "title": "Marque par défaut du déploiement",
+      "description": "La marque propre au déploiement, utilisée en dehors de tout espace de travail, comme avant les espaces de travail. Les e-mails aux participants et les tableaux de retours utilisent toujours son nom. Chaque espace de travail a sa propre marque : rien n’est copié entre elles.",
+      "readOnly": "Seuls les administrateurs du déploiement peuvent modifier la marque par défaut. Vous pouvez la consulter ici."
+    },
     "errors": {
       "lastAdmin": "Un espace de travail a besoin d’un administrateur : faites d’abord d’un autre membre un administrateur.",
       "changedMeanwhile": "L’adhésion a changé entre-temps. Rechargez la page et réessayez.",
@@ -247,6 +275,11 @@
       "lastPlatformAdmin": "C’est le dernier administrateur de la plateforme activé : faites d’abord d’un autre administrateur un administrateur de la plateforme.",
       "grantNeedsAdmin": "Seul un administrateur peut être administrateur de la plateforme : faites d’abord de cet utilisateur un administrateur.",
       "userGone": "Cet utilisateur n’existe plus. Rechargez la page.",
+      "pluginGone": "Ce déploiement ne propose plus ce plugin. Rechargez la page.",
+      "pluginsChangedMeanwhile": "Les plugins de l’espace de travail ont changé entre-temps. Rechargez la page et réessayez.",
+      "ingestionNotYet": "L’ingestion par espace de travail arrive dans une version ultérieure : un espace de travail ne peut pas encore activer de plugin.",
+      "notDeploymentAdmin": "Seuls les administrateurs du déploiement peuvent modifier la marque par défaut.",
+      "notBrandAdmin": "Seuls les administrateurs de cet espace de travail peuvent modifier sa marque.",
       "generic": "Cela n’a pas fonctionné. Réessayez.",
       "genericWithReason": "Cela n’a pas fonctionné : {{reason}}"
     }

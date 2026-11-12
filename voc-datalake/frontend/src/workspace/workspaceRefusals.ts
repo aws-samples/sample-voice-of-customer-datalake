@@ -1,11 +1,12 @@
 /**
- * @fileoverview The server's refusals of the members, platform console and platform-admin writes, as the message
- * key each one shows (`common:workspaces.errors.*`, in every locale).
+ * @fileoverview The server's refusals of the members, plugins, brand, platform console and platform-admin writes,
+ * as the message key each one shows (`common:workspaces.errors.*`, in every locale).
  *
  * A status alone cannot tell them apart (two different 409s: the last admin, a membership changed meanwhile), so a
  * row may also name the server's exact reason (`error` of the body, `serverReason`). Those texts are the constants
- * of lambda/shared/workspace_members.py, platform_workspaces.py, user_admin_guard.py and users_handler.py;
- * `workspaceRefusals.lockstep.test.ts` fails when one changes on one side only. A refusal no row names shows the
+ * of lambda/shared/workspace_members.py, workspace_plugin_settings.py, platform_workspaces.py, user_admin_guard.py
+ * and users_handler.py; `workspaceRefusals.lockstep.test.ts` fails when one changes on one side only. A refusal no
+ * row names shows the
  * generic message, with the server's own reason when it gave one.
  *
  * @module workspace/workspaceRefusals
@@ -58,6 +59,30 @@ export const PLATFORM_ADMIN_REFUSALS: readonly Refusal[] = [
   },
   { status: 403, messageKey: 'common:workspaces.errors.notPlatformAdmin' },
   { status: 404, messageKey: 'common:workspaces.errors.userGone' },
+]
+
+/** The server's reason when a workspace may not enable a plugin yet (`INGESTION_NOT_YET`, workspace_plugin_settings.py). */
+export const INGESTION_NOT_YET = 'Per-workspace ingestion arrives with phase 2 of multi-workspace: a workspace cannot enable a plugin yet'
+
+/** The refusals of `PUT /me/workspaces/current/plugins/{plugin_id}` (workspace_plugin_settings.py, workspace.py). */
+export const PLUGIN_REFUSALS: readonly Refusal[] = [
+  { status: 409, reason: INGESTION_NOT_YET, messageKey: 'common:workspaces.errors.ingestionNotYet' },
+  { status: 409, reason: "The workspace's plugins changed meanwhile: reload them and try again", messageKey: 'common:workspaces.errors.pluginsChangedMeanwhile' },
+  { status: 403, reason: 'You are no longer an admin of this workspace', messageKey: 'common:workspaces.errors.noLongerAdmin' },
+  { status: 403, messageKey: 'common:workspaces.errors.notWorkspaceAdmin' },
+  { status: 404, reason: 'Plugin not found', messageKey: 'common:workspaces.errors.pluginGone' },
+  { status: 404, messageKey: 'common:workspaces.errors.workspaceGone' },
+]
+
+/** The refusals of `PUT /settings/brand` inside a workspace (`require_settings_admin`, request_workspace.py). */
+export const BRAND_REFUSALS: readonly Refusal[] = [
+  { status: 403, messageKey: 'common:workspaces.errors.notBrandAdmin' },
+  { status: 404, messageKey: 'common:workspaces.errors.workspaceGone' },
+]
+
+/** The refusals of `PUT /settings/brand` without a workspace: the deployment's `admins` only (shared/api.py). */
+export const DEPLOYMENT_BRAND_REFUSALS: readonly Refusal[] = [
+  { status: 403, messageKey: 'common:workspaces.errors.notDeploymentAdmin' },
 ]
 
 /** What to show for a failed write: a message key, and the server's reason for the generic message. */

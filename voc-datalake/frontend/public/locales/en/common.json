@@ -27,6 +27,7 @@
     "connect": "Connect",
     "account": "Account",
     "members": "Members",
+    "workspaceSettings": "Workspace settings",
     "workflows": "Workflows",
     "workflow": "Workflow",
     "radar": "Radar",
@@ -152,7 +153,8 @@
       "triggerSingle": "Workspace: {{name}}, {{role}}. Workspace menu",
       "current": "Current workspace",
       "switchTo": "Switch to",
-      "members": "Members"
+      "members": "Members",
+      "settings": "Workspace settings"
     },
     "role": {
       "admin": "Admin",
@@ -228,6 +230,32 @@
       "for": "Platform admin: {{user}}",
       "adminsOnly": "Only an administrator can be a platform admin."
     },
+    "settings": {
+      "title": "Workspace settings",
+      "subtitle": "The brand and plugins of {{name}}.",
+      "brandTitle": "Brand",
+      "brandDescription": "This workspace's own brand. A new workspace starts with an empty one: nothing is copied from the deployment's brand.",
+      "brandReadOnly": "Only this workspace's admins can change its brand. You can view it here.",
+      "pluginsTitle": "Plugins",
+      "pluginsDescription": "The plugins this deployment offers, and whether this workspace has turned each one on. Every plugin still collects feedback for the whole deployment, as before.",
+      "pluginsReadOnly": "Only this workspace's admins can turn plugins on or off.",
+      "pluginsLoading": "Loading the plugins…",
+      "pluginsLoadFailed": "The plugins could not be loaded.",
+      "pluginsNone": "This deployment offers no plugins.",
+      "pluginsListLabel": "Plugins this deployment offers",
+      "pluginOn": "On",
+      "pluginOff": "Off",
+      "enable": "Enable",
+      "disable": "Disable",
+      "enableWho": "Enable {{name}} for this workspace",
+      "disableWho": "Disable {{name}} for this workspace",
+      "retry": "Try again"
+    },
+    "deploymentBrand": {
+      "title": "Deployment default brand",
+      "description": "The deployment's own brand, used outside any workspace as before workspaces. Participant emails and feedback boards still use its name. Each workspace has a brand of its own: nothing is copied between them.",
+      "readOnly": "Only the deployment's administrators can change the default brand. You can view it here."
+    },
     "errors": {
       "lastAdmin": "A workspace needs an admin: make another member an admin first.",
       "changedMeanwhile": "The membership changed meanwhile. Reload the page and try again.",
@@ -244,6 +272,11 @@
       "lastPlatformAdmin": "This is the last enabled platform admin: make another administrator a platform admin first.",
       "grantNeedsAdmin": "Only an administrator can be a platform admin: make the user an administrator first.",
       "userGone": "That user no longer exists. Reload the page.",
+      "pluginGone": "This deployment no longer offers that plugin. Reload the page.",
+      "pluginsChangedMeanwhile": "The workspace's plugins changed meanwhile. Reload the page and try again.",
+      "ingestionNotYet": "Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet.",
+      "notDeploymentAdmin": "Only the deployment's administrators can change the default brand.",
+      "notBrandAdmin": "Only this workspace's admins can change its brand.",
       "generic": "That did not work. Try again.",
       "genericWithReason": "That did not work: {{reason}}"
     }

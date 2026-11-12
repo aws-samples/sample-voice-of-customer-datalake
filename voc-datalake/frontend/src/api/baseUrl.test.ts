@@ -244,6 +244,22 @@ describe('getAuthHeaders — the current workspace', () => {
     expect(getAuthHeaders(`${TRUSTED_API}/feedback`)['X-Workspace-Id']).toBeUndefined()
   })
 
+  it("names none for a deployment-wide call inside a workspace, and keeps the call's token and headers", () => {
+    setCurrentWorkspace(ACME)
+    expect(getAuthHeaders(`${TRUSTED_API}/settings/brand`, { 'X-Extra': '1' }, 'deployment')).toStrictEqual({
+      'Content-Type': 'application/json', Authorization: 'mock-cognito-id-token', 'X-Extra': '1',
+    })
+    expect(getAuthHeaders(`${TRUSTED_API}/settings/brand`, undefined, 'workspace')['X-Workspace-Id']).toBe(ACME.id)
+  })
+
+  it('drops a caller-supplied workspace header, in any spelling, from a deployment-wide call', () => {
+    setCurrentWorkspace(ACME)
+    const extra = { 'X-Workspace-Id': ACME.id, 'x-workspace-id': ACME.id, 'X-Extra': '1' }
+    expect(getAuthHeaders(`${TRUSTED_API}/settings/brand`, extra, 'deployment')).toStrictEqual({
+      'Content-Type': 'application/json', Authorization: 'mock-cognito-id-token', 'X-Extra': '1',
+    })
+  })
+
   it('names it without Cognito too (a dev build against the mock), never for a missing target', () => {
     vi.mocked(authService.isConfigured).mockReturnValue(false)
     setCurrentWorkspace(ACME)

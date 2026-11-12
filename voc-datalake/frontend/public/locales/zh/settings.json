@@ -159,6 +159,7 @@
     "retry": "重试",
     "notSynced": "未同步",
     "saveFailed": "无法保存到服务器。请重试。",
+    "savedToServer": "品牌已保存。",
     "adminOnlyNotice": "只有管理员可以更改品牌配置。您可以在此查看。"
   },
   "categories": {

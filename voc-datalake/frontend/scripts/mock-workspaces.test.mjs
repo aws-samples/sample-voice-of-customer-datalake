@@ -5,7 +5,9 @@
  * `/__mock/workspaces` switch (admin of acme, editor of juniper), `/me/workspaces/current` honouring
  * X-Workspace-Id (400 without it, one 404 for any id that is not the caller's), the members routes with their
  * refusals (403 for a non-admin, 409 for the last admin or a person already a member, a leave), the platform list
- * and create (409 for a taken slug), and the platform-admin grant and revoke (users routes in mock-server.js).
+ * and create (409 for a taken slug), and the platform-admin grant and revoke (users routes in mock-server.js). Also a
+ * workspace's plugins and brand (mock-workspace-settings.js: every enable held with 409, a disable answered, the brand
+ * per workspace for its admins) and the deployment's brand and default model without the header (mock-server.js).
  *
  * Run: node --test scripts/mock-workspaces.test.mjs
  */
@@ -28,6 +30,9 @@ async function inWorkspace(id, method, path, body) {
 const current = (id) => inWorkspace(id, 'GET', '/me/workspaces/current')
 const members = (id) => inWorkspace(id, 'GET', '/me/workspaces/current/members')
 const member = (sub) => `/me/workspaces/current/members/${sub}`
+const PLUGINS = '/me/workspaces/current/plugins'
+const BRAND = '/settings/brand'
+const EMPTY_BRAND = { brand_name: '', brand_handles: [], hashtags: [], urls_to_track: [] }
 
 /** The mock's workspaces by slug, as `GET /me/workspaces` lists them. */
 async function mine() {
@@ -118,6 +123,43 @@ describe('mock workspaces', () => {
       assert.deepEqual(await call('POST', '/platform/workspaces', { name: 'Again', slug: 'acme-field' }), [409, { success: false, error: 'That slug is taken: choose another' }])
     })
 
+    it('lists every plugin the deployment offers as not enabled, to any member; 400 without the header', async () => {
+      const { juniper } = await mine()
+      const [status, body] = await inWorkspace(juniper.id, 'GET', PLUGINS)
+      assert.equal(status, 200)
+      assert.deepEqual(body.plugins.filter(({ enabled }) => enabled), [])
+      assert.ok(body.plugins.some(({ id }) => id === 'webscraper'))
+      assert.equal((await inWorkspace(undefined, 'GET', PLUGINS))[0], 400)
+    })
+
+    it('holds every enable (409, the server\'s reason) and answers a disable; 404 for a plugin not offered', async () => {
+      const { acme, juniper } = await mine()
+      const held = [409, { success: false, error: 'Per-workspace ingestion arrives with phase 2 of multi-workspace: a workspace cannot enable a plugin yet' }]
+      assert.deepEqual(await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: true }), held)
+      assert.deepEqual(await inWorkspace(juniper.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: true }), held)
+      assert.deepEqual(await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: false }), [200, { plugin: { id: 'webscraper', enabled: false } }])
+      assert.deepEqual(await inWorkspace(acme.id, 'PUT', `${PLUGINS}/nope`, { enabled: false }), [404, { success: false, error: 'Plugin not found' }])
+      assert.equal((await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: 'no' }))[0], 400)
+    })
+
+    it('refuses a disable from an editor (403)', async () => {
+      const { juniper } = await mine()
+      assert.deepEqual(await inWorkspace(juniper.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: false }),
+        [403, { success: false, error: 'Workspace admin access required' }])
+    })
+
+    it('keeps a brand per workspace: its admin saves it, an editor reads it and is refused (403)', async () => {
+      const { acme, juniper } = await mine()
+      assert.deepEqual(await inWorkspace(acme.id, 'GET', BRAND), [200, EMPTY_BRAND])
+      const saved = { ...EMPTY_BRAND, brand_name: 'Acme Outfitters Trail Gear', hashtags: ['#acme'] }
+      assert.equal((await inWorkspace(acme.id, 'PUT', BRAND, saved))[0], 200)
+      assert.deepEqual(await inWorkspace(acme.id, 'GET', BRAND), [200, saved])
+      assert.deepEqual(await inWorkspace(juniper.id, 'GET', BRAND), [200, EMPTY_BRAND])
+      assert.deepEqual(await inWorkspace(juniper.id, 'PUT', BRAND, saved), [403, { success: false, error: 'Workspace admin access required' }])
+      // The deployment's brand, without the header, is not the workspace's.
+      assert.notEqual((await inWorkspace(undefined, 'GET', BRAND))[1].brand_name, saved.brand_name)
+    })
+
     it('lets a platform admin who is not a member enter as admin', async () => {
       const { juniper } = await mine()
       await inWorkspace(juniper.id, 'DELETE', member(CALLER))
@@ -162,6 +204,23 @@ describe('mock workspaces', () => {
       await call('PUT', '/__mock/workspaces', { enabled: false })
       assert.equal((await call('GET', '/platform/workspaces'))[0], 200)
     })
+  })
+})
+
+describe('mock deployment-wide settings, without X-Workspace-Id', () => {
+  it('reads and saves the deployment\'s brand, as before workspaces', async () => {
+    const [, before] = await inWorkspace(undefined, 'GET', BRAND)
+    const changed = { ...EMPTY_BRAND, brand_name: 'Juniper Trail Co. Outfitters' }
+    assert.equal((await inWorkspace(undefined, 'PUT', BRAND, changed))[0], 200)
+    assert.equal((await inWorkspace(undefined, 'GET', BRAND))[1].brand_name, changed.brand_name)
+    // A blank header is no workspace, as request_workspace.py reads it.
+    assert.equal((await inWorkspace(' ', 'GET', BRAND))[1].brand_name, changed.brand_name)
+    await inWorkspace(undefined, 'PUT', BRAND, before)
+  })
+
+  it('names no deployment default model, as a deployment pinned without -c defaultModelId', async () => {
+    const [status, body] = await call('GET', '/settings/model')
+    assert.deepEqual([status, body.deployment_default], [200, null])
   })
 })
 

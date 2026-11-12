@@ -8,6 +8,8 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { currentWorkspaceKey, myWorkspacesKey, workspacesApi } from '../api/workspacesApi'
+import type { WorkspaceRole } from '../api/workspacesApi'
+import type { CurrentWorkspace } from './currentWorkspace'
 
 export function useMyWorkspaces() {
   return useQuery({ queryKey: myWorkspacesKey(), queryFn: workspacesApi.list })
@@ -21,6 +23,18 @@ export function useMyWorkspaces() {
  */
 export function useServerWorkspace(id: string | null) {
   return useQuery({ queryKey: currentWorkspaceKey(id ?? ''), queryFn: workspacesApi.current, enabled: id !== null, retry: false })
+}
+
+/**
+ * The role the server applies in `workspace` (`/current`), or null until it answers. If that read fails, the
+ * membership's role, as the gate keeps it; the server decides every write either way. The members and workspace
+ * settings pages wait for it, so a platform admin who is also an editor or a viewer is not shown the read-only page
+ * first; the brand form reads it too (useBrandEditRight.ts).
+ */
+export function useServerRole(workspace: CurrentWorkspace | null): WorkspaceRole | null {
+  const server = useServerWorkspace(workspace?.id ?? null)
+  if (workspace === null || server.isPending) return null
+  return server.data?.id === workspace.id ? server.data.role : workspace.role
 }
 
 /** localStorage: the slug of the workspace last entered in this browser (a highlight, never a redirect). */

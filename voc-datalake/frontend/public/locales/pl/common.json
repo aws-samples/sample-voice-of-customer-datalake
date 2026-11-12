@@ -25,6 +25,7 @@
     "connect": "Połączenia",
     "account": "Konto",
     "members": "Członkowie",
+    "workspaceSettings": "Ustawienia obszaru roboczego",
     "workflows": "Przepływy pracy",
     "workflow": "Przepływ pracy",
     "radar": "Radar",
@@ -145,7 +146,8 @@
       "triggerSingle": "Obszar roboczy: {{name}}, {{role}}. Menu obszaru roboczego",
       "current": "Bieżący obszar roboczy",
       "switchTo": "Przełącz na",
-      "members": "Członkowie"
+      "members": "Członkowie",
+      "settings": "Ustawienia obszaru roboczego"
     },
     "role": {
       "admin": "Administracja",
@@ -221,6 +223,32 @@
       "for": "Administracja platformy: {{user}}",
       "adminsOnly": "Administratorem platformy może być tylko administrator."
     },
+    "settings": {
+      "title": "Ustawienia obszaru roboczego",
+      "subtitle": "Marka i wtyczki obszaru {{name}}.",
+      "brandTitle": "Marka",
+      "brandDescription": "Własna marka tego obszaru roboczego. Nowy obszar roboczy zaczyna z pustą marką: nic nie jest kopiowane z marki wdrożenia.",
+      "brandReadOnly": "Tylko administratorzy tego obszaru roboczego mogą zmieniać jego markę. Możesz ją tutaj przeglądać.",
+      "pluginsTitle": "Wtyczki",
+      "pluginsDescription": "Wtyczki, które oferuje to wdrożenie, i to, czy ten obszar roboczy włączył każdą z nich. Każda wtyczka nadal zbiera opinie dla całego wdrożenia, jak dotąd.",
+      "pluginsReadOnly": "Tylko administratorzy tego obszaru roboczego mogą włączać i wyłączać wtyczki.",
+      "pluginsLoading": "Wczytywanie wtyczek…",
+      "pluginsLoadFailed": "Nie udało się wczytać wtyczek.",
+      "pluginsNone": "To wdrożenie nie oferuje żadnych wtyczek.",
+      "pluginsListLabel": "Wtyczki oferowane przez to wdrożenie",
+      "pluginOn": "Włączona",
+      "pluginOff": "Wyłączona",
+      "enable": "Włącz",
+      "disable": "Wyłącz",
+      "enableWho": "Włącz {{name}} dla tego obszaru roboczego",
+      "disableWho": "Wyłącz {{name}} dla tego obszaru roboczego",
+      "retry": "Spróbuj ponownie"
+    },
+    "deploymentBrand": {
+      "title": "Domyślna marka wdrożenia",
+      "description": "Własna marka wdrożenia, używana poza każdym obszarem roboczym, tak jak przed obszarami roboczymi. E-maile do uczestników i tablice opinii nadal używają jej nazwy. Każdy obszar roboczy ma własną markę: nic nie jest kopiowane między nimi.",
+      "readOnly": "Tylko administratorzy wdrożenia mogą zmieniać domyślną markę. Możesz ją tutaj przeglądać."
+    },
     "errors": {
       "lastAdmin": "Obszar roboczy potrzebuje administratora: najpierw nadaj tę rolę innemu członkowi.",
       "changedMeanwhile": "Członkostwo zmieniło się w międzyczasie. Odśwież stronę i spróbuj ponownie.",
@@ -237,6 +265,11 @@
       "lastPlatformAdmin": "To ostatni aktywny administrator platformy: najpierw nadaj tę rolę innemu administratorowi.",
       "grantNeedsAdmin": "Administratorem platformy może być tylko administrator: najpierw nadaj tej osobie rolę administratora.",
       "userGone": "Ten użytkownik już nie istnieje. Odśwież stronę.",
+      "pluginGone": "To wdrożenie nie oferuje już tej wtyczki. Odśwież stronę.",
+      "pluginsChangedMeanwhile": "Wtyczki obszaru roboczego w międzyczasie się zmieniły. Odśwież stronę i spróbuj ponownie.",
+      "ingestionNotYet": "Pozyskiwanie danych dla obszaru roboczego pojawi się w późniejszej wersji: obszar roboczy nie może jeszcze włączyć wtyczki.",
+      "notDeploymentAdmin": "Tylko administratorzy wdrożenia mogą zmieniać domyślną markę.",
+      "notBrandAdmin": "Tylko administratorzy tego obszaru roboczego mogą zmieniać jego markę.",
       "generic": "Nie udało się. Spróbuj ponownie.",
       "genericWithReason": "Nie udało się: {{reason}}"
     }

@@ -27,6 +27,7 @@
     "connect": "连接",
     "account": "账户",
     "members": "成员",
+    "workspaceSettings": "工作区设置",
     "workflows": "工作流列表",
     "workflow": "工作流",
     "radar": "雷达",
@@ -152,7 +153,8 @@
       "triggerSingle": "工作区：{{name}}，{{role}}。工作区菜单",
       "current": "当前工作区",
       "switchTo": "切换到",
-      "members": "成员"
+      "members": "成员",
+      "settings": "工作区设置"
     },
     "role": {
       "admin": "管理员",
@@ -228,6 +230,32 @@
       "for": "平台管理员：{{user}}",
       "adminsOnly": "只有管理员可以成为平台管理员。"
     },
+    "settings": {
+      "title": "工作区设置",
+      "subtitle": "{{name}} 的品牌和插件。",
+      "brandTitle": "品牌",
+      "brandDescription": "此工作区自己的品牌。新工作区从空白品牌开始，不会从部署的品牌复制任何内容。",
+      "brandReadOnly": "只有此工作区的管理员可以更改其品牌。您可以在此查看。",
+      "pluginsTitle": "插件",
+      "pluginsDescription": "此部署提供的插件，以及此工作区是否已开启每个插件。每个插件仍像以前一样为整个部署收集反馈。",
+      "pluginsReadOnly": "只有此工作区的管理员可以开启或关闭插件。",
+      "pluginsLoading": "正在加载插件…",
+      "pluginsLoadFailed": "无法加载插件。",
+      "pluginsNone": "此部署未提供插件。",
+      "pluginsListLabel": "此部署提供的插件",
+      "pluginOn": "已开启",
+      "pluginOff": "已关闭",
+      "enable": "开启",
+      "disable": "关闭",
+      "enableWho": "为此工作区开启 {{name}}",
+      "disableWho": "为此工作区关闭 {{name}}",
+      "retry": "重试"
+    },
+    "deploymentBrand": {
+      "title": "部署的默认品牌",
+      "description": "部署自身的品牌，与引入工作区之前一样，在任何工作区之外使用。参与者邮件和反馈看板仍使用其名称。每个工作区都有自己的品牌，彼此之间不会复制任何内容。",
+      "readOnly": "只有部署的管理员可以更改默认品牌。您可以在此查看。"
+    },
     "errors": {
       "lastAdmin": "工作区需要一名管理员：请先将另一名成员设为管理员。",
       "changedMeanwhile": "成员身份在此期间已更改。请重新加载页面后重试。",
@@ -244,6 +272,11 @@
       "lastPlatformAdmin": "这是最后一名已启用的平台管理员：请先将另一名管理员设为平台管理员。",
       "grantNeedsAdmin": "只有管理员可以成为平台管理员：请先将该用户设为管理员。",
       "userGone": "该用户已不存在。请重新加载页面。",
+      "pluginGone": "此部署已不再提供该插件。请重新加载页面。",
+      "pluginsChangedMeanwhile": "在此期间工作区的插件已更改。请重新加载页面后重试。",
+      "ingestionNotYet": "按工作区采集将在后续版本中推出：工作区暂时无法开启插件。",
+      "notDeploymentAdmin": "只有部署的管理员可以更改默认品牌。",
+      "notBrandAdmin": "只有此工作区的管理员可以更改其品牌。",
       "generic": "操作未成功。请重试。",
       "genericWithReason": "操作未成功：{{reason}}"
     }

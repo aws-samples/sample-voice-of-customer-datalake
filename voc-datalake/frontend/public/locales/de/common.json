@@ -27,6 +27,7 @@
     "connect": "Verbinden",
     "account": "Konto",
     "members": "Mitglieder",
+    "workspaceSettings": "Einstellungen des Arbeitsbereichs",
     "workflows": "Workflows",
     "workflow": "Workflow",
     "radar": "Radar",
@@ -152,7 +153,8 @@
       "triggerSingle": "Arbeitsbereich: {{name}}, {{role}}. Arbeitsbereichsmenü",
       "current": "Aktueller Arbeitsbereich",
       "switchTo": "Wechseln zu",
-      "members": "Mitglieder"
+      "members": "Mitglieder",
+      "settings": "Einstellungen des Arbeitsbereichs"
     },
     "role": {
       "admin": "Administration",
@@ -228,6 +230,32 @@
       "for": "Plattform-Admin: {{user}}",
       "adminsOnly": "Nur wer zur Administration gehört, kann Plattform-Admin sein."
     },
+    "settings": {
+      "title": "Einstellungen des Arbeitsbereichs",
+      "subtitle": "Die Marke und die Plugins von {{name}}.",
+      "brandTitle": "Marke",
+      "brandDescription": "Die eigene Marke dieses Arbeitsbereichs. Ein neuer Arbeitsbereich beginnt mit einer leeren Marke: Von der Marke der Bereitstellung wird nichts übernommen.",
+      "brandReadOnly": "Nur die Admins dieses Arbeitsbereichs können seine Marke ändern. Hier können Sie sie ansehen.",
+      "pluginsTitle": "Plugins",
+      "pluginsDescription": "Die Plugins, die diese Bereitstellung anbietet, und ob dieser Arbeitsbereich jedes davon eingeschaltet hat. Jedes Plugin sammelt Feedback weiterhin für die gesamte Bereitstellung, wie bisher.",
+      "pluginsReadOnly": "Nur die Admins dieses Arbeitsbereichs können Plugins ein- oder ausschalten.",
+      "pluginsLoading": "Plugins werden geladen…",
+      "pluginsLoadFailed": "Die Plugins konnten nicht geladen werden.",
+      "pluginsNone": "Diese Bereitstellung bietet keine Plugins an.",
+      "pluginsListLabel": "Plugins dieser Bereitstellung",
+      "pluginOn": "An",
+      "pluginOff": "Aus",
+      "enable": "Einschalten",
+      "disable": "Ausschalten",
+      "enableWho": "{{name}} für diesen Arbeitsbereich einschalten",
+      "disableWho": "{{name}} für diesen Arbeitsbereich ausschalten",
+      "retry": "Erneut versuchen"
+    },
+    "deploymentBrand": {
+      "title": "Standardmarke der Bereitstellung",
+      "description": "Die eigene Marke der Bereitstellung, die außerhalb jedes Arbeitsbereichs gilt, wie vor den Arbeitsbereichen. E-Mails an Teilnehmende und Feedback-Boards verwenden weiterhin ihren Namen. Jeder Arbeitsbereich hat eine eigene Marke: Zwischen ihnen wird nichts übernommen.",
+      "readOnly": "Nur die Administration der Bereitstellung kann die Standardmarke ändern. Hier können Sie sie ansehen."
+    },
     "errors": {
       "lastAdmin": "Ein Arbeitsbereich braucht einen Admin: Machen Sie zuerst ein anderes Mitglied zum Admin.",
       "changedMeanwhile": "Die Mitgliedschaft hat sich inzwischen geändert. Laden Sie die Seite neu und versuchen Sie es erneut.",
@@ -244,6 +272,11 @@
       "lastPlatformAdmin": "Dies ist der letzte aktive Plattform-Admin: Machen Sie zuerst eine andere Person aus der Administration zum Plattform-Admin.",
       "grantNeedsAdmin": "Nur wer zur Administration gehört, kann Plattform-Admin sein: Nehmen Sie die Person zuerst in die Administration auf.",
       "userGone": "Diese Person gibt es nicht mehr. Laden Sie die Seite neu.",
+      "pluginGone": "Diese Bereitstellung bietet dieses Plugin nicht mehr an. Laden Sie die Seite neu.",
+      "pluginsChangedMeanwhile": "Die Plugins des Arbeitsbereichs haben sich inzwischen geändert. Laden Sie die Seite neu und versuchen Sie es erneut.",
+      "ingestionNotYet": "Die Erfassung pro Arbeitsbereich kommt mit einer späteren Version: Ein Arbeitsbereich kann noch kein Plugin einschalten.",
+      "notDeploymentAdmin": "Nur die Administration der Bereitstellung kann die Standardmarke ändern.",
+      "notBrandAdmin": "Nur die Admins dieses Arbeitsbereichs können seine Marke ändern.",
       "generic": "Das hat nicht funktioniert. Versuchen Sie es erneut.",
       "genericWithReason": "Das hat nicht funktioniert: {{reason}}"
     }

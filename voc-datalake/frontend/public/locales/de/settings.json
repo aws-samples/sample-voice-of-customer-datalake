@@ -159,6 +159,7 @@
     "retry": "Erneut versuchen",
     "notSynced": "Nicht synchronisiert",
     "saveFailed": "Speichern auf dem Server fehlgeschlagen. Bitte erneut versuchen.",
+    "savedToServer": "Marke gespeichert.",
     "adminOnlyNotice": "Nur Administratoren können die Markenkonfiguration ändern. Sie können sie hier ansehen."
   },
   "categories": {

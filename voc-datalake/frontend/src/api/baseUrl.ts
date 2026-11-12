@@ -84,6 +84,14 @@ export function getDaysFromRange(range: string, customDays?: number | null): num
 }
 
 /**
+ * Which rows a request acts on (docs/multi-workspace.md, Per-workspace configuration): `'workspace'`, the default,
+ * names the current workspace in `X-Workspace-Id` when there is one; `'deployment'` never does, so the request
+ * reaches the deployment-wide row even inside a workspace (the platform console's default brand). The explicit
+ * opt-out is the only way to leave the header off inside a workspace.
+ */
+export type RequestScope = 'workspace' | 'deployment'
+
+/**
  * Build auth headers with Cognito ID token.
  * Shared by client.ts (REST) and assistant/agui/client.ts (SSE).
  *
@@ -103,6 +111,7 @@ export function getDaysFromRange(range: string, customDays?: number | null): num
 export function getAuthHeaders(
   targetUrl: string,
   extraHeaders?: Record<string, string>,
+  scope: RequestScope = 'workspace',
 ): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -130,9 +139,16 @@ export function getAuthHeaders(
   }
 
   // The current workspace (docs/multi-workspace.md, Request flow), under the same origin rule; without
-  // Cognito too, so a dev build against the mock names it as well.
+  // Cognito too, so a dev build against the mock names it as well. A deployment-wide call names none, not even
+  // one the caller passed in (header names are case-insensitive, so every spelling goes).
+  if (scope === 'deployment') {
+    return Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== WORKSPACE_HEADER_LOWER))
+  }
   return { ...headers, ...workspaceHeader(targetUrl) }
 }
+
+/** `X-Workspace-Id` (currentWorkspace.ts), lower-cased to compare header names. */
+const WORKSPACE_HEADER_LOWER = 'x-workspace-id'
 
 
 /**

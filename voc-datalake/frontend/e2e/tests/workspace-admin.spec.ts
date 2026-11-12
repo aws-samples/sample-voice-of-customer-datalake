@@ -11,6 +11,11 @@
  *    no longer offers juniper.
  * 4. The platform console enters juniper, which the caller is no longer a member of: the gate lets them in once the
  *    server answers it, as admin, and every call names juniper.
+ * 5. In acme, Workspace settings (the workspace menu) saves acme's brand, not the deployment's, and lists the
+ *    deployment's plugins; Enable is refused with the held reason (409 until phase 2's retention slice) and offered
+ *    no more.
+ * 6. The platform console, inside acme, edits the deployment's default brand: the save names no workspace, and the
+ *    deployment's brand (read without the header) has the new name; the spec puts the old one back.
  *
  * MOCK ONLY: on a deployment these would create a workspace and change real memberships, and a workspace cannot be
  * deleted yet (phase 4). The mock's state lives in its process: the spec turns its workspaces on
@@ -34,6 +39,9 @@ const TEXT = {
   acme: 'Acme Outfitters',
   juniper: 'Juniper Trail Co.',
   lastAdmin: 'A workspace needs an admin: make another member an admin first.',
+  held: 'Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet.',
+  acmeBrand: 'Acme Outfitters Trail Gear',
+  deploymentBrand: 'Acme Outfitters Basecamp',
 } as const
 
 /** The console's address inside acme (the gate shows the picker for an address without a workspace). */
@@ -89,7 +97,8 @@ test.describe('workspace administration', () => {
       await page.goto(site(CONSOLE), { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: 'Workspaces', level: 2 })).toBeVisible()
       await expect(page.getByRole('button', { name: `Enter ${TEXT.juniper}` })).toBeVisible()
-      await page.getByLabel('Name').fill(TEXT.field)
+      // Exact: the console's deployment brand below has a "Brand Name".
+      await page.getByLabel('Name', { exact: true }).fill(TEXT.field)
       await page.getByLabel('Address (slug)').fill('acme-field')
       await page.getByRole('button', { name: 'Create workspace' }).click()
       await expect(page.getByRole('status')).toContainText(`Created ${TEXT.field}. You are its admin.`)
@@ -141,4 +150,65 @@ test.describe('workspace administration', () => {
       await expect.poll(sent).toStrictEqual([juniperId])
     })
   })
+
+  test("a workspace admin saves the workspace's brand and is told enabling a plugin is held", async ({ page }, testInfo) => {
+    await assertStep(page, roleOf(testInfo), 'workspace-admin-05-workspace-settings', async () => {
+      const acmeId = await workspaceId('acme')
+      await page.goto(site('/w/acme/dashboard'), { waitUntil: 'domcontentloaded' })
+      await page.getByRole('button', { name: new RegExp(`^Workspace: ${TEXT.acme}, Admin\\.`) }).click()
+      await page.getByRole('menuitem', { name: 'Workspace settings' }).click()
+      await expect(page.getByRole('heading', { name: 'Workspace settings', level: 1 })).toBeVisible()
+
+      const brand = page.getByRole('region', { name: 'Brand' })
+      await brand.getByLabel('Brand Name').fill(TEXT.acmeBrand)
+      await brand.getByRole('button', { name: 'Save Changes' }).click()
+      await expect(brand.getByRole('status')).toHaveText('Brand saved.')
+      // Saved in acme, not in the deployment's brand.
+      expect(await brandName(page, acmeId)).toBe(TEXT.acmeBrand)
+      expect(await brandName(page, null)).not.toBe(TEXT.acmeBrand)
+
+      const plugins = page.getByRole('region', { name: 'Plugins' })
+      await expect(plugins.getByRole('list', { name: 'Plugins this deployment offers' })).toContainText('Web Scraper')
+      await plugins.getByRole('button', { name: 'Enable Web Scraper for this workspace' }).click()
+      await expect(plugins.getByRole('status')).toHaveText(TEXT.held)
+      // Held: still focusable for its description, but inert.
+      await expect(plugins.getByRole('button', { name: 'Enable Web Scraper for this workspace' })).toHaveAttribute('aria-disabled', 'true')
+    })
+  })
+
+  test("a platform admin edits the deployment's default brand from the console, inside a workspace", async ({ page }, testInfo) => {
+    await assertStep(page, roleOf(testInfo), 'workspace-admin-06-deployment-brand', async () => {
+      const before = await storedBrand(page, null)
+      try {
+        await page.goto(site(CONSOLE), { waitUntil: 'domcontentloaded' })
+        const card = page.getByRole('region', { name: 'Deployment default brand' })
+        await expect(card.getByLabel('Brand Name')).toHaveValue(String(before['brand_name']))
+        await card.getByLabel('Brand Name').fill(TEXT.deploymentBrand)
+        const [save] = await Promise.all([
+          page.waitForRequest((request) => request.method() === 'PUT' && new URL(request.url()).pathname === '/settings/brand'),
+          card.getByRole('button', { name: 'Save Changes' }).click(),
+        ])
+        await expect(card.getByRole('status')).toHaveText('Brand saved.')
+        // The client's opt-out: no workspace on this call, though the page is inside acme.
+        expect(save.headers()['x-workspace-id']).toBeUndefined()
+        expect(await brandName(page, null)).toBe(TEXT.deploymentBrand)
+      } finally {
+        // The deployment's brand as it was, every field, for the specs after this one.
+        await apiCall('admin', 'PUT', '/settings/brand', before)
+      }
+    })
+  })
 })
+
+/** The stored brand, of the workspace `id` (its X-Workspace-Id) or of the deployment (`null`: no header). */
+async function storedBrand(page: Page, id: string | null): Promise<Record<string, unknown>> {
+  const response = await page.request.get(`${apiUrl()}/settings/brand`, { headers: id === null ? {} : { 'X-Workspace-Id': id } })
+  const body: unknown = await response.json()
+  return isRecord(body) ? body : {}
+}
+
+/** The stored brand's name (see {@link storedBrand}). */
+async function brandName(page: Page, id: string | null): Promise<string> {
+  const name = (await storedBrand(page, id))['brand_name']
+  return typeof name === 'string' ? name : ''
+}

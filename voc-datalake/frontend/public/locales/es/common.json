@@ -27,6 +27,7 @@
     "connect": "Conectar",
     "account": "Cuenta",
     "members": "Miembros",
+    "workspaceSettings": "Configuración del espacio de trabajo",
     "workflows": "Flujos de trabajo",
     "workflow": "Flujo de trabajo",
     "radar": "Radar",
@@ -155,7 +156,8 @@
       "triggerSingle": "Espacio de trabajo: {{name}}, {{role}}. Menú del espacio de trabajo",
       "current": "Espacio de trabajo actual",
       "switchTo": "Cambiar a",
-      "members": "Miembros"
+      "members": "Miembros",
+      "settings": "Configuración del espacio de trabajo"
     },
     "role": {
       "admin": "Administración",
@@ -231,6 +233,32 @@
       "for": "Administración de la plataforma: {{user}}",
       "adminsOnly": "Solo un administrador puede ser administrador de la plataforma."
     },
+    "settings": {
+      "title": "Configuración del espacio de trabajo",
+      "subtitle": "La marca y los plugins de {{name}}.",
+      "brandTitle": "Marca",
+      "brandDescription": "La marca propia de este espacio de trabajo. Un espacio de trabajo nuevo empieza con una vacía: no se copia nada de la marca de la implementación.",
+      "brandReadOnly": "Solo los administradores de este espacio de trabajo pueden cambiar su marca. Puedes consultarla aquí.",
+      "pluginsTitle": "Plugins",
+      "pluginsDescription": "Los plugins que ofrece esta implementación y si este espacio de trabajo ha activado cada uno. Todos los plugins siguen recopilando comentarios para toda la implementación, como antes.",
+      "pluginsReadOnly": "Solo los administradores de este espacio de trabajo pueden activar o desactivar plugins.",
+      "pluginsLoading": "Cargando los plugins…",
+      "pluginsLoadFailed": "No se pudieron cargar los plugins.",
+      "pluginsNone": "Esta implementación no ofrece plugins.",
+      "pluginsListLabel": "Plugins que ofrece esta implementación",
+      "pluginOn": "Activado",
+      "pluginOff": "Desactivado",
+      "enable": "Activar",
+      "disable": "Desactivar",
+      "enableWho": "Activar {{name}} para este espacio de trabajo",
+      "disableWho": "Desactivar {{name}} para este espacio de trabajo",
+      "retry": "Reintentar"
+    },
+    "deploymentBrand": {
+      "title": "Marca predeterminada de la implementación",
+      "description": "La marca propia de la implementación, que se usa fuera de cualquier espacio de trabajo, como antes de los espacios de trabajo. Los correos a participantes y los tableros de comentarios siguen usando su nombre. Cada espacio de trabajo tiene su propia marca: no se copia nada entre ellas.",
+      "readOnly": "Solo los administradores de la implementación pueden cambiar la marca predeterminada. Puedes consultarla aquí."
+    },
     "errors": {
       "lastAdmin": "Un espacio de trabajo necesita un administrador: haz administrador a otro miembro primero.",
       "changedMeanwhile": "La membresía cambió mientras tanto. Recarga la página e inténtalo de nuevo.",
@@ -247,6 +275,11 @@
       "lastPlatformAdmin": "Este es el último administrador de la plataforma habilitado: haz administrador de la plataforma a otro administrador primero.",
       "grantNeedsAdmin": "Solo un administrador puede ser administrador de la plataforma: haz administrador al usuario primero.",
       "userGone": "Ese usuario ya no existe. Recarga la página.",
+      "pluginGone": "Esta implementación ya no ofrece ese plugin. Vuelve a cargar la página.",
+      "pluginsChangedMeanwhile": "Los plugins del espacio de trabajo cambiaron mientras tanto. Vuelve a cargar la página e inténtalo de nuevo.",
+      "ingestionNotYet": "La ingesta por espacio de trabajo llega con una versión posterior: un espacio de trabajo aún no puede activar un plugin.",
+      "notDeploymentAdmin": "Solo los administradores de la implementación pueden cambiar la marca predeterminada.",
+      "notBrandAdmin": "Solo los administradores de este espacio de trabajo pueden cambiar su marca.",
       "generic": "No funcionó. Inténtalo de nuevo.",
       "genericWithReason": "No funcionó: {{reason}}"
     }

@@ -222,8 +222,9 @@ The main pages (a selection: `frontend/src/pages/` has 28 page folders; the rout
 | Data Explorer | `/data-explorer` | S3 raw data and DynamoDB browser |
 | Data sources (code: `pages/Scrapers`) | `/scrapers` | Every feedback source: web scrapers, app/review pages, imports; CSS/JSON-LD selectors behind Advanced |
 | Feedback Forms | `/feedback-forms` | Embeddable form management |
-| Settings | `/admin` (`/settings` redirects) | Software settings in six tabs with section switches (`?tab=&section=`, old tab ids redirect): General, Sources, Taxonomy, Privacy & access, AI models, System (`?tab=system&section=version`: build version/commit/time + CHANGELOG). Privacy & access → Workspaces (`?tab=access&section=workspaces`) is the platform console, for platform admins only. Personal preferences live on `/account` (docs/account-vs-admin.md) |
+| Settings | `/admin` (`/settings` redirects) | Software settings in six tabs with section switches (`?tab=&section=`, old tab ids redirect): General, Sources, Taxonomy, Privacy & access, AI models, System (`?tab=system&section=version`: build version/commit/time + CHANGELOG). Privacy & access → Workspaces (`?tab=access&section=workspaces`) is the platform console, for platform admins only, with the deployment's default brand (a request without `X-Workspace-Id`, `fetchApi(…, 'deployment')`). Personal preferences live on `/account` (docs/account-vs-admin.md) |
 | Members | `/members` (inside a workspace: `/w/{slug}/members`) | The current workspace's members: everyone reads; workspace admins add by email, change roles, remove; any member leaves (docs/multi-workspace.md). "Page not found" outside a workspace |
+| Workspace settings (code: `pages/WorkspaceSettings`) | `/workspace-settings` (inside a workspace: `/w/{slug}/workspace-settings`) | The current workspace's brand (its admins save it, also outside `admins`; everyone else reads) and the plugins the deployment offers with whether the workspace enabled each (its admins get Enable and Disable; enabling answers 409 until phase 2's retention slice). "Page not found" outside a workspace |
 
 Note: Each page is organized in its own folder under `frontend/src/pages/` with an index.tsx entry point.
 
@@ -232,7 +233,7 @@ Workspaces (6.12.00, docs/multi-workspace.md): inside a workspace every route ab
 `/dashboard`; code that reads `window.location.pathname` compares `appPathname()` instead, and a plain `href` or a
 copied link uses `pageHref()`. The signed-in routes pass through `WorkspaceGate` (picker, not-found, or the app;
 with no workspace the app as before); the public routes do not. Since 6.13.00 the header's workspace menu opens
-`/members`, and a platform admin's Enter in the platform console records the workspace for the gate
+`/members` (and since 7.02.00 `/workspace-settings`), and a platform admin's Enter in the platform console records the workspace for the gate
 (`src/workspace/platformEntry.ts`), which opens a workspace outside the caller's list only once
 `GET /me/workspaces/current` answers it.
 

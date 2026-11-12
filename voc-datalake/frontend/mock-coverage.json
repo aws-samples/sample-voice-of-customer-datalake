@@ -324,6 +324,38 @@
     ]
   },
   {
+    "file": "api/brandApi.ts",
+    "method": "GET",
+    "call": "'/settings/brand'",
+    "probes": [
+      {
+        "path": "/settings/brand"
+      }
+    ]
+  },
+  {
+    "file": "api/brandApi.ts",
+    "method": "PUT",
+    "call": "'/settings/brand'",
+    "probes": [
+      {
+        "path": "/settings/brand",
+        "body": {
+          "brand_name": "Acme Outfitters",
+          "brand_handles": [
+            "@acme"
+          ],
+          "hashtags": [
+            "#acme"
+          ],
+          "urls_to_track": [
+            "https://example.com/reviews"
+          ]
+        }
+      }
+    ]
+  },
+  {
     "file": "api/categoryAccessApi.ts",
     "method": "GET",
     "call": "'/feedback/access'",
@@ -3018,6 +3050,35 @@
         "body": {
           "name": "x",
           "revision": 1
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workspacePluginsApi.ts",
+    "method": "GET",
+    "call": "'/me/workspaces/current/plugins'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/plugins"
+      }
+    ]
+  },
+  {
+    "file": "api/workspacePluginsApi.ts",
+    "method": "PUT",
+    "call": "`/me/workspaces/current/plugins/${encodeURIComponent(pluginId)}`",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/plugins/webscraper",
+        "body": {
+          "enabled": false
+        }
+      },
+      {
+        "path": "/me/workspaces/current/plugins/webscraper",
+        "body": {
+          "enabled": true
         }
       }
     ]

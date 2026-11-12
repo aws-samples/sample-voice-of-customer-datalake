@@ -165,6 +165,8 @@ export const SUB_KEY_FAMILIES: readonly (readonly [QueryKey, CacheFamily])[] = [
   [['agents', 'list'], 'polled'],
   // A workspace's members change by other admins' hand: read like the users list, not like the caller's own list.
   [['my-workspaces', 'members'], 'standard'],
+  // A workspace's plugins, the same: its other admins turn them on and off.
+  [['my-workspaces', 'plugins'], 'standard'],
   [['radar', 'brands'], 'config'],
   [['settings', 'my-briefing'], 'live'],
   [['settings', 'my-onboarding'], 'live'],

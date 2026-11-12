@@ -1,13 +1,14 @@
 /**
- * @fileoverview Who may edit the brand on Administration → General, as `PUT /settings/brand` decides it
- * (`require_settings_admin`, lambda/shared/request_workspace.py): inside a workspace, its admins (the role the server
- * applies there, `GET /me/workspaces/current`; the deployment's `admins` group grants nothing inside a workspace);
- * outside one, the deployment's `admins`, as before.
+ * @fileoverview Who may edit the brand, as `PUT /settings/brand` decides it (`require_settings_admin`,
+ * lambda/shared/request_workspace.py): inside a workspace, its admins (the role the server applies there,
+ * `GET /me/workspaces/current`; the deployment's `admins` group grants nothing inside a workspace); outside one,
+ * the deployment's `admins`, as before. Administration → General asks it; the workspace's settings page reads the
+ * same role itself (`useServerRole`), since it opens only inside a workspace.
  *
  * @module pages/Settings/useBrandEditRight
  */
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
-import { useServerWorkspace } from '../../workspace/useMyWorkspaces'
+import { useServerRole } from '../../workspace/useMyWorkspaces'
 
 /**
  * Whether the caller may edit the brand. Inside a workspace: `admin` in the server's answer for it; until that
@@ -17,9 +18,7 @@ import { useServerWorkspace } from '../../workspace/useMyWorkspaces'
  */
 export function useBrandEditRight(isDeploymentAdmin: boolean): boolean {
   const workspace = useCurrentWorkspace()
-  const server = useServerWorkspace(workspace?.id ?? null)
+  const role = useServerRole(workspace)
   if (workspace === null) return isDeploymentAdmin
-  if (server.isPending) return false
-  const role = server.data?.id === workspace.id ? server.data.role : workspace.role
   return role === 'admin'
 }

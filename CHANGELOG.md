@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.02.00] - 2026-11-12
+
+Multi-workspace: the web app's side of a workspace's brand and plugins, and an editor for the deployment's default brand in the platform console. No API or stack change; workspaces still do not separate most data, and enabling a plugin for a workspace still answers 409 until phase 2's retention slice ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- Workspace settings, a page of each workspace at `/w/{slug}/workspace-settings`, opened from the header's workspace menu beside Members ("Page not found" outside a workspace). Its admins (the role the server applies there) edit and save the workspace's brand, whether or not they are in the deployment's `admins` group; editors and viewers see it read-only. A refused save says "Only this workspace's admins can change its brand." Administration's own sections are unchanged: the deployment's `admins` still reach them, and nobody else.
+- The same page lists the plugins the deployment offers and whether the workspace has turned each one on (`GET /me/workspaces/current/plugins`, for every member), with Enable and Disable for the workspace's admins. Enabling is not possible yet: the server refuses it, and the page then says "Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet." and offers Enable no more. Every plugin still collects feedback for the whole deployment, as before, and the page says so.
+- Administration → Privacy & access → Workspaces (platform admins) has a Deployment default brand editor below the workspaces: the deployment's own brand, used outside any workspace and still by participant emails and feedback boards. It reads and saves `/settings/brand` without `X-Workspace-Id` from any address, a workspace's included, so people who have a workspace can reach it again. Its save is for the deployment's `admins`, as the server decides for a request without a workspace.
+
+### Changed
+
+- Inside a workspace, Administration → General's read-only brand notice names the workspace's admins, who are the ones who can change that brand.
+- The dev mock serves a workspace's plugins (every enable refused with 409 and the server's reason, a disable answered) and its brand per workspace, beside the deployment's brand without the header, and `GET /settings/model` returns `deployment_default` (none pinned).
+
+### Fixed
+
+- Corrections to 6.18.00's entry, whose text stays as released: its summary's "a workspace's own plugins" meant the routes that list and change them; no workspace could enable a plugin then, nor can one now. The appearance and alert writes need the deployment's `admins` and a live platform admin (both checks), not a platform admin alone. [docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration) now says both this way.
+
+### Upgrade notes
+
+- Nothing to do: only the web app and the dev mock change. Deploy as usual (`npm run deploy:all` from the repo root).
+
 ## [7.01.00] - 2026-11-12
 
 Multi-workspace, phase 2: the voc-multiplayer-c track's model slice merged: the model pinned at deploy gets a row of its own, the first step of the model picker per workspace. A workspace's brand, the track's other slice in this merge, was already in 6.18.00.

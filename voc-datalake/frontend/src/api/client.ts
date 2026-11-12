@@ -8,6 +8,7 @@ import { authService } from '../services/auth'
 import { endExpiredSession } from '../services/sessionExpiry'
 import { ApiError, AuthError } from '../lib/errors'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange } from './baseUrl'
+import type { RequestScope } from './baseUrl'
 import { buildSearchParams, del, patch, post, put } from './requestKit'
 import { logsEndpoints, userAdminEndpoints } from './adminEndpoints'
 import { dataExplorerEndpoints, s3ImportEndpoints } from './dataEndpoints'
@@ -60,9 +61,9 @@ export interface DateRangeParams {
  * {@link getAuthHeaders}: the origin check is the point of this function, so a
  * call site that forgets the URL must not compile.
  */
-function buildHeaders(targetUrl: string, existingHeaders?: HeadersInit): Record<string, string> {
+function buildHeaders(targetUrl: string, existingHeaders: HeadersInit | undefined, scope: RequestScope): Record<string, string> {
   const extra = existingHeaders ? Object.fromEntries(Object.entries(existingHeaders)) : undefined
-  return getAuthHeaders(targetUrl, extra)
+  return getAuthHeaders(targetUrl, extra, scope)
 }
 
 import { z } from 'zod'
@@ -129,13 +130,14 @@ export async function apiErrorFor(response: Response): Promise<ApiError> {
 async function handleUnauthorized<T>(
   fullUrl: string,
   options: RequestInit | undefined,
+  scope: RequestScope,
 ): Promise<T> {
   await authService.refreshSession()
   // Rebuild headers through buildHeaders so the origin check fires on the
   // retry path too — this prevents an attacker-controlled server from
   // receiving the refreshed token by responding 401 to the first request.
   // The assistant's AG-UI client (assistant/agui/client.ts) does the same.
-  const retryHeaders = buildHeaders(fullUrl, options?.headers)
+  const retryHeaders = buildHeaders(fullUrl, options?.headers, scope)
   const retryResponse = await fetch(fullUrl, { ...options, headers: retryHeaders })
   if (!retryResponse.ok) {
     throw await apiErrorFor(retryResponse)
@@ -143,10 +145,14 @@ async function handleUnauthorized<T>(
   return parseJsonResponse<T>(retryResponse)
 }
 
-export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+/**
+ * One API request. `scope` `'deployment'` sends no `X-Workspace-Id`, even inside a workspace (baseUrl.ts
+ * `RequestScope`), on the first try and on the 401 retry alike.
+ */
+export async function fetchApi<T>(endpoint: string, options?: RequestInit, scope: RequestScope = 'workspace'): Promise<T> {
   const baseUrl = getBaseUrl()
   const fullUrl = `${baseUrl}${endpoint}`
-  const headers = buildHeaders(fullUrl, options?.headers)
+  const headers = buildHeaders(fullUrl, options?.headers, scope)
 
   const response = await fetch(fullUrl, { ...options, headers })
   
@@ -156,7 +162,7 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
   
   if (response.status === 401) {
     try {
-      return await handleUnauthorized<T>(fullUrl, options)
+      return await handleUnauthorized<T>(fullUrl, options, scope)
     } catch {
       // Carries the reason to /login so the user is told the session ended,
       // instead of meeting a bare login form after a working-looking app.

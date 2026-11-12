@@ -153,6 +153,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── FeedbackForms/    # Feedback form management
     │   │   │   ├── Login/            # Cognito login page
     │   │   │   ├── Members/          # The current workspace's members (/w/{slug}/members; docs/multi-workspace.md)
+    │   │   │   ├── WorkspaceSettings/ # The current workspace's brand and plugins (/w/{slug}/workspace-settings)
     │   │   │   ├── Prioritization/   # Issue prioritization
     │   │   │   ├── ProblemAnalysis/  # Problem analysis dashboard
     │   │   │   ├── ProjectDetail/    # Single project view

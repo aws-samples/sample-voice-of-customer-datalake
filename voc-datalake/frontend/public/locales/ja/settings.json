@@ -159,6 +159,7 @@
     "retry": "再試行",
     "notSynced": "未同期",
     "saveFailed": "サーバーに保存できませんでした。もう一度お試しください。",
+    "savedToServer": "ブランドを保存しました。",
     "adminOnlyNotice": "ブランド設定を変更できるのは管理者のみです。ここで内容を確認できます。"
   },
   "categories": {

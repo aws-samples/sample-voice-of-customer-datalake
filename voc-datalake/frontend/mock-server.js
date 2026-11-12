@@ -26,6 +26,7 @@ import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
 import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
 import { handleWorkspaceRoutes } from './mock-workspaces.js';
+import { handleWorkspaceSettingsRoutes } from './mock-workspace-settings.js';
 import { handleDataQualityRoutes, stampBands } from './mock-data-quality.js';
 import { handleFeedbackCatalogueRoutes } from './mock-feedback-catalogue.js';
 import { handlePersonaRoutes } from './mock-personas.js';
@@ -601,6 +602,8 @@ const handlers = {
       selected: mockModelSurfaces[key] ?? null,
     })),
     model_id: null,
+    // The model pinned at deploy (SETTINGS#model_default, 7.01.00): none, as a deployment without -c defaultModelId.
+    deployment_default: null,
     image_model: mockImageModel,
   }),
   'PUT /settings/model': (body) => {
@@ -902,7 +905,8 @@ const handlers = {
   'POST /projects/prioritization/rows': (body) => ensureDefaultRows(body),
   'POST /projects/prioritization/rows/compose': (body) => composeRow(body),
 
-  // Brand settings (settings_handler.py) — stateful so Settings round-trips.
+  // Brand settings (settings_handler.py) — stateful so Settings round-trips. This is the deployment's brand, the
+  // request without X-Workspace-Id: one that names a workspace is that workspace's (mock-workspace-settings.js).
   // PUT is admin-only on the real API (#242); the mock caller is always admin-demo, so it never 403s here.
   'GET /settings/brand': () => ({ ...mockBrandSettings }),
   'PUT /settings/brand': (body) => {
@@ -1391,7 +1395,8 @@ function handleDomainModules(req, res, url) {
     || handleRadarRoutes(req, res, url, send, shared)
     || handleParticipantsRoutes(req, res, url, send, shared)
     || handleFeatureRequestRoutes(req, res, url, send, shared)
-    || handleWorkspaceRoutes(req, res, url, send, shared);
+    || handleWorkspaceRoutes(req, res, url, send, shared)
+    || handleWorkspaceSettingsRoutes(req, res, url, send, shared);
 }
 
 function handleParameterizedExtras(req, res, url) {

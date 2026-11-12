@@ -159,6 +159,7 @@
     "retry": "Reintentar",
     "notSynced": "No sincronizado",
     "saveFailed": "No se pudo guardar en el servidor. Inténtalo de nuevo.",
+    "savedToServer": "Marca guardada.",
     "adminOnlyNotice": "Solo los administradores pueden cambiar la configuración de marca. Puedes consultarla aquí."
   },
   "categories": {

@@ -4,7 +4,7 @@
  * helpers. The per-endpoint URL/method/body round-trips live in
  * `client.endpoints.test.ts`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import {
   expectFetchedWith, fetchMock, installFetchMock, mockFailureOnce, mockJsonOnce, mockStatusOnce,
   requestHeaders, requestUrl,
@@ -81,6 +81,8 @@ import { authService } from '../services/auth'
 import * as runtimeConfig from '../runtimeConfig'
 import { useConfigStore } from '../store/configStore'
 import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/sessionExpiry'
+import { setCurrentWorkspace } from '../workspace/currentWorkspace'
+import { ACME } from '../test/workspaceFixtures'
 
 const EMPTY_PAGE = { count: 0, items: [] }
 
@@ -262,6 +264,28 @@ describe('error bodies', () => {
     mockStatusOnce(401)
     mockFailureOnce(403, JSON.stringify({ message: SERVER_MESSAGE }))
     await expect(fetchApi('/projects/p1')).rejects.toThrow('Session expired. Please login again.')
+  })
+})
+
+describe('the request scope: a deployment-wide call names no workspace', () => {
+  afterEach(() => setCurrentWorkspace(null))
+
+  it('names the current workspace by default, and none when the call opts out', async () => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    mockJsonOnce({})
+    await fetchApi('/settings/brand')
+    await fetchApi('/settings/brand', { method: 'GET' }, 'deployment')
+    expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
+    expect(requestHeaders(1)).toStrictEqual({ 'Content-Type': 'application/json', Authorization: DEFAULT_ID_TOKEN })
+  })
+
+  it('keeps the opt-out on the 401 retry', async () => {
+    setCurrentWorkspace(ACME)
+    queueUnauthorizedThenOk()
+    await fetchApi('/settings/brand', { method: 'PUT', body: '{}' }, 'deployment')
+    expect(fetchMock()).toHaveBeenCalledTimes(2)
+    expect(requestHeaders(1)['X-Workspace-Id']).toBeUndefined()
   })
 })
 

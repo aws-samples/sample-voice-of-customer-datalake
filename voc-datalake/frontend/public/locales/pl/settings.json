@@ -159,6 +159,7 @@
     "retry": "Ponów",
     "notSynced": "Niezsynchronizowano",
     "saveFailed": "Nie udało się zapisać na serwerze. Spróbuj ponownie.",
+    "savedToServer": "Zapisano markę.",
     "adminOnlyNotice": "Tylko administratorzy mogą zmieniać konfigurację marki. Możesz ją tutaj przeglądać."
   },
   "categories": {
