@@ -373,7 +373,7 @@ itself does not validate events).
 |---|---|
 | `run_id`, `thread_id` | the run, and the thread inside it |
 | `from_agent`, `to` | the sender; an agent or a role |
-| `type` | the board: `task.posted`, `task.assigned`, `task.claimed`, `task.progress`, `task.review`, `task.done`, `task.failed`, `task.needs_human`; the talk: `finding`, `question`, `answer`, `review.requested`, `review.result`, `handoff`; the gate: `gate.go`, `gate.no_go`; people: `decision`, `stop`, `message`, `signal` (save, pause, resume, shut down, stop now); the runtime: `pause`, `pause.ack`, `continued`, `timed_out`, `run.health`; skills: `skill.version`; the run: `methodology` (a skipped methodology step, tenet 2), `run.done`, `run.failed` |
+| `type` | the board: `task.posted`, `task.assigned`, `task.claimed`, `task.progress`, `task.review`, `task.done`, `task.failed`, `task.needs_human`; the talk: `finding`, `question`, `answer`, `review.requested`, `review.result`, `handoff`; the gate: `gate.go`, `gate.no_go`; people: `decision`, `stop`, `message`, `signal` (save, pause, resume, shut down, stop now); the runtime: `pause`, `pause.ack`, `continued`, `timed_out`, `run.health`; skills: `skill.proposed`, `skill.accepted`, `skill.rolled_back`; the run: `methodology` (a skipped methodology step, tenet 2), `run.done`, `run.failed` |
 | `body` | a short summary |
 | `refs` | S3 keys, commits, files, knowledge-pack versions |
 
@@ -399,7 +399,7 @@ the event's `source`, which the bus's policy pins to the session's own agent tag
 run, so no agent can forge another's message or write into another run. The router also holds which sender may send
 which type, and drops (and journals) anything else: `decision` and `stop` only from the API's own source, `gate.go`
 and `gate.no_go` only from the run's final-go agent, the `task.*` events only from the board's API (agents report
-progress and moves through it), `skill.version` only from the API, and the talk (`finding`, `question`, `answer`,
+progress and moves through it), the `skill.*` announcements only from the API and the coach's service source, and the talk (`finding`, `question`, `answer`,
 `review.*`, `handoff`) from the run's own agents, with a person's `answer` from the API; the runtime's `pause`,
 `continued`, `timed_out` and `run.health` only from the supervisor, `pause.ack` only from the paused agent, and
 `methodology`, `run.done` and `run.failed` only from the board's API and the supervisor (trusted code, on the run
@@ -864,7 +864,9 @@ the write broker before it opens a PR: nothing invokes it, and no role holds an 
 
 ## Getting better: skills, the coach, the learning loop, memory
 
-*Planned* (voc-datalake/lambda/engineering/skills, coach and memory).
+*Partly built*: the skills' record, diff and versioned store (`voc-datalake/lambda/engineering/skills/`), nothing
+invoking them yet (the harness, the coach and the administrators' routes land with phases 4 and 5); the coach, the
+learning loop and memory planned.
 
 **Skills, visibly and reversibly.** An agent's skill (instructions, examples, tool policy, model, harness) is
 versioned. Each version keeps its diff, why it changed (the run, the failure, the person's comment), the benchmark
@@ -872,6 +874,32 @@ before and after, and who accepted it; a run records the versions it used, every
 rolls an agent back to an earlier version (a new version that restores it, so the history stays whole, D1). No
 version change goes unannounced: it is an event in the run and in the agent's history ("Fixer rewrote its skill: v7 →
 v8, two more examples, a stricter test rule").
+
+What exists: the `voc-skill/1` record (`skills/model.py`: the role, a model from the deployment's allowlist, the
+`converse` or `cli` harness, the tool policy as tool names, bounded instructions of at most 500 lines and bounded
+examples; a record naming a
+budget, a cap, the dial, permissions or safety instructions is refused, since none of them is ever in a skill), the
+diff of two versions and its one-line summary, made by rule from the diff and never by a model (`skills/diff.py`),
+and the store (`skills/store.py`), in the `voc-engineering` table: rows `WS#<ws>#SKILL#<connection>#<role>` (the
+connection empty for the shared skill) with a `HEAD` row (the version counter and the current version), one
+`VER#<version>` row per version (its record, its base, its diff and summary, why, the benchmark pass rates when
+measured, who proposed it, its status; at most 256 KB, checked before it is written) and a create-only `LOG#` row
+per acceptance, rejection and rollback, and for a promoted version's source. A proposal is used
+only once an administrator accepts it, in one transaction that also checks its base is still the current version
+(the scope's, or the shared skill's for a connection with none of its own), so a proposal written on a version that
+moved meanwhile is refused; the coach (any agent) writes only the version of the connection its run is for (the
+connection its identity carries), from that run's failure, once per run and failure kind (a conditional `RUN#` row
+in the same transaction), and never one that changes the tool policy, the model or the harness. A connection reads
+its own current version, else the shared skill's, and the history is read a page at a time. An administrator
+promotes a connection's lesson by writing a new shared version: the store refuses one that adds an instruction line
+or example text of 20 characters or more (case and spacing aside) which the connection's version also adds to the
+shared skill, and the administrator carries the rest of keeping the connection's text out. The source connection is
+kept only in that version's `promoted_from` log row, which only an administrator reads; the shared version every
+connection reads does not name it. A rollback is an administrator's new version that restores an earlier accepted
+one of the same scope. Each proposal, acceptance and rollback returns its announcement
+(`skill.proposed`, `skill.accepted`, `skill.rolled_back`, the bus's types today) for the caller to publish. Not yet:
+the harness reading the store, a run recording the versions it used,
+the routes, the benchmark gate on acceptance.
 
 **The coach.** When an agent fails (an error, a timeout, a NO-GO, a review finding it keeps repeating, a person
 rejecting its pull request or editing it heavily), the coach reads the conversation, the task, the outputs and the
@@ -979,6 +1007,6 @@ and the phase that ships them names them in that row.
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, the role queues, the workspace's layout, findings and store in its own bucket, and the administrators' read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
-| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); skills, the coach, memory and the benchmark gate planned |
+| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | planned |

@@ -40,11 +40,12 @@ from engineering.bus.schema import WS
 from engineering.knowledge.notes import KINDS, CitationRules
 from engineering.knowledge.reduce import Edit, Pack, apply_edits, from_json, render, to_json
 from engineering.quality_gate.text import data_block, nonce
-from engineering.rows import get_row
+from engineering.rows import get_row, partition_rows
+from engineering.rows import number_value as _number
+from engineering.rows import text_value as _text
 from engineering.workspace.layout import CONNECTION, SHA, LayoutError, encode_package, knowledge_key
 from engineering.workspace.store import WorkspaceStore
 from shared.aws import is_conditional_check_failure
-from shared.dynamo_paging import query_all
 from shared.ids import is_key_collision
 
 DRAFT, APPROVED = 'draft', 'approved'
@@ -73,23 +74,19 @@ class PackConflict(PackError):
 @dataclass(frozen=True)
 class Actor:
     """Who acts: an agent (``agent``: the run's agent id) or a person (their user id; ``admin`` from their
-    role, as the API's admin check reads it)."""
+    role, as the API's admin check reads it). ``connection``: for an agent, the connection its run is for (from
+    the run's record, never from the agent), so a store can hold it to that connection."""
 
     id: str
     kind: Literal['agent', 'person']
     admin: bool = False
+    connection: str = ''
 
     def __post_init__(self) -> None:
         if not self.id or len(self.id) > 200 or (self.admin and self.kind != 'person'):
             raise ValueError('an actor has an id, and only a person can be an administrator')
-
-
-def _text(value: Any) -> str:
-    return str(value.get('S', '')) if isinstance(value, dict) else ''
-
-
-def _number(value: Any) -> int:
-    return int(value.get('N', '0')) if isinstance(value, dict) else 0
+        if self.connection and self.kind != 'agent':
+            raise ValueError("only an agent acts for its run's connection")
 
 
 @dataclass(frozen=True)
@@ -202,10 +199,7 @@ class PackStore:
 
     def versions(self, ws: str, connection: str, package: str) -> list[PackVersion]:
         """Every version of the package, oldest first (D1: none is ever replaced)."""
-        items = query_all(self.client, {
-            'TableName': self.table, 'ConsistentRead': True,
-            'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :p)',
-            'ExpressionAttributeValues': {':pk': {'S': _pk(ws, connection)}, ':p': {'S': f'KPACK#{_segment(package)}#'}}})
+        items = partition_rows(self.client, self.table, _pk(ws, connection), f'KPACK#{_segment(package)}#')
         return [PackVersion.from_item(item) for item in items]
 
     def _approved_version(self, ws: str, connection: str, package: str) -> int:

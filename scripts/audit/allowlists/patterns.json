@@ -18,6 +18,7 @@
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/memory/scanner/handler.py", "scope": "idle_sessions", "reason": "a Scan (not a Query) with a time-budget stop"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/research/research_step_handler.py", "scope": "_project_items", "reason": "page cap MAX_PROJECT_ITEM_PAGES with a logged warning past it"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/agents_store.py", "scope": "list_runs", "reason": "one page plus an encoded client cursor"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/engineering/skills/store.py", "scope": "SkillStore.versions", "reason": "one page plus a client cursor (next_after, the last version read), not a drain"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/channel_index.py", "scope": "walk_channel", "reason": "row cap and time budget, returns a truncated flag; maps a missing index to ChannelIndexUnavailable"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/feedback_sampling.py", "scope": "_read_partition", "reason": "room cap and time budget, returns an overflow flag"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/import_runs.py", "scope": "list_import_runs", "reason": "one page plus an encoded client cursor (GET /scrapers/manual/history)"},
