@@ -59,6 +59,8 @@ const OverviewSchema = z.object({
     run_id: text, goal: text, repo: text, flow: text, status: text, started_at: maybeText, ended_at: maybeText,
   }),
   agents: eachOf(AgentSchema),
+  /** The signals and answers can reach the run (the stack names the runtime and the bus); false when unsaid. */
+  actions_available: z.boolean().catch(false),
   totals: z.object({ messages: count, microvm_seconds: count, by_model: eachOf(TokensSchema) })
     .catch({ messages: 0, microvm_seconds: 0, by_model: [] }),
 })

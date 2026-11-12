@@ -16,7 +16,7 @@ from engineering.bus.publish import new_event_id
 from engineering.connectors.identity import WORKSPACE
 from engineering.conversation.store import ConversationStore
 from engineering.reports.store import ReportStore
-from engineering.rows import next_after
+from engineering.rows import TAIL_WINDOW, next_after, window_page, window_start
 from engineering.workspace.layout import REPORT_LEVELS, report_key
 from engineering.workspace.store import WorkspaceStore
 
@@ -48,14 +48,15 @@ class EngineeringViews:
         """A page of the conversation after ``after`` (a seq); ``next_after`` is where the next page starts.
 
         Two writers may commit their numbers out of order (engineering/conversation/store.py), so a message just
-        below the newest can land after a reader passed it. A full page moves on to its last seq (older messages are
-        long committed); a page that reached the tail moves on to ``TAIL_WINDOW`` below its last seq, so the reader
-        polling the tail reads the newest messages again and keeps each once, by its ``seq``.
+        below the newest can land after a reader passed it. Every page re-reads the ``TAIL_WINDOW`` messages below
+        ``after`` (``rows.window_start``), a full page as much as the tail, and moves on to its last seq: at most
+        ``limit`` messages above ``after`` and the window's again, which the reader keeps once, by its ``seq``.
         """
         if not self.run_exists(run_id):
             return None
-        items = self.conversation_store.page(WORKSPACE, run_id, after=after, limit=limit)
-        return {'items': items, 'next_after': next_after(after, [item['seq'] for item in items], limit)}
+        read = self.conversation_store.page(WORKSPACE, run_id, after=window_start(after), limit=limit + TAIL_WINDOW)
+        items = window_page(after, read, limit, lambda item: item['seq'])
+        return {'items': items, 'next_after': next_after(after, [item['seq'] for item in items])}
 
     def reports(self, run_id: str) -> dict[str, Any] | None:
         if not self.run_exists(run_id):

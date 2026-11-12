@@ -620,6 +620,7 @@
     "ended": "Ended {{when}}",
     "totals": "MicroVM time: {{seconds, number}} s · Messages: {{messages, number}}",
     "byModel": "Tokens per model",
+    "actionsUnavailable": "Signals and answers can't be sent from this deployment yet: it doesn't connect the run monitor to the engineering runtime and bus.",
     "runSignals": "The whole run",
     "agentSignals": "Agent {{agent}}",
     "signals": {

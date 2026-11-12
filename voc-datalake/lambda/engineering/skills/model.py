@@ -28,11 +28,12 @@ from typing import Any, Final
 
 from engineering.bus.schema import ULID
 from engineering.connectors.identity import AGENT_ROLES
-
-# The voc-skill/1 record's one home: its schema name, the harness adapters (main.py's ``--adapter``) and a version's
-# label, as the runtime's harness reads them.
 from engineering.runtime.harness.skills import HARNESSES, RECORD_SCHEMA, skill_label, skill_record
 from shared.model_config import ALLOWED_MODEL_IDS
+
+# The record's shape version (``RECORD_SCHEMA``), the harness adapters (``HARNESSES``, runtime/harness/main.py's
+# ``--adapter``) and the record's stored shape (``skill_record``) are the harness's own (runtime/harness/skills.py),
+# which ships alone in the agents' images; this module adds the store's stricter rules.
 
 MAX_INSTRUCTIONS: Final = 20_000
 #: Lines, so a diff's per-line framing stays small beside the text (the version row's size cap, store.py).
@@ -138,9 +139,7 @@ class Skill:
         return skill_label(self.name, self.version)
 
     def to_record(self) -> dict[str, Any]:
-        content = self.content
-        return skill_record(self.name, self.version, content.instructions, content.examples, content.tool_policy,
-                            content.model, content.harness)
+        return skill_record(self.name, self.version, self.content)
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> Skill:

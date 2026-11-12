@@ -1,8 +1,8 @@
 """The run monitor (plan v3, 4.10): what a person sees of a run under way, and the two things they may do to it.
 
 ``overview``: the run (its ``META`` in voc-engineering: goal, repository, flow, status, times, how many messages it
-has numbered), and every agent as the supervisor last saw it: its session row, the run's ``AGENT#<agent>`` row in
-voc-engineering (``engineering.runtime.sessions``): role, task, status, continuation, the inspection data
+has numbered), and every agent as the supervisor last saw it: its session row in the run's partition
+(``WS#<ws>#RUN#<run>`` / ``AGENT#<agent>``, ``engineering.runtime.sessions``): role, task, status, continuation, the inspection data
 (step, recent tool calls, last progress, heartbeat age, MicroVM state and age, why it looks stuck) and the live cost
 counters (MicroVM-seconds, tokens per model), with the totals per model and for the run. The run's cost and budget
 are to come from the run control (``engineering.runtime.ports.RunControl.budget``) once it is wired.
@@ -268,11 +268,22 @@ class RunMonitor:
                     'started_at': string_attr(meta, 'started_at') or None,
                     'ended_at': string_attr(meta, 'ended_at') or None},
             'agents': agents,
+            # Whether the signals and answers can reach the run from here: the runtime and the bus both named (until
+            # the stack wires them, every action answers 503, so the page offers none).
+            'actions_available': self.actions_available,
             # The messages numbered so far (META's counter: a redelivery or a failed write uses a number too).
             'totals': {'messages': int(amount_attr(meta, 'msg_seq')),
                        'microvm_seconds': sum(agent['microvm_seconds'] for agent in agents),
                        'by_model': _by_model(agents)},
         }
+
+    @property
+    def actions_available(self) -> bool:
+        """The runtime and the bus are both configured, so a signal or an answer can be sent."""
+        return self.runtime is not None and self.publisher is not None
+
+    def run_exists(self, run_id: str) -> bool:
+        return self._get(run_id, 'META') is not None
 
     def _open_run(self, run_id: str) -> None:
         meta = self._get(run_id, 'META')

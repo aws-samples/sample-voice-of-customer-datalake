@@ -21,7 +21,7 @@ from engineering.bus.publish import EventBridgePublisher
 from engineering.connectors.identity import Caller
 from engineering.knowledge.notes import Note
 from engineering.knowledge.reduce import reduce_package
-from engineering.knowledge.store import Actor, PackError, PackStore
+from engineering.knowledge.store import Actor, PackConflict, PackError, PackNotFound, PackStore
 from engineering.knowledge.test.fixtures import pack_tables
 from engineering.knowledge.workspaces import ROOT
 from engineering.rows import run_pk
@@ -51,6 +51,10 @@ class Pack:
     text: str
 
 
+#: Packages the fake store cannot read (its own faults, not the caller's).
+FAULTS: dict[str, type[PackError]] = {'gone': PackNotFound, 'changed': PackConflict}
+
+
 class Knowledge:
     def __init__(self) -> None:
         self.reads: list[tuple[str, str, str]] = []
@@ -59,6 +63,8 @@ class Knowledge:
         self.reads.append((ws, connection, package))
         if package == 'bad':
             raise PackError('not a valid package')
+        if package in FAULTS:
+            raise FAULTS[package]('the approved version cannot be read')
         return Pack(3, f'<<DATA {package}>>') if package != 'none' else None
 
 
@@ -208,6 +214,18 @@ def test_a_launched_agent_that_never_claimed_is_reposted_and_the_next_launch_is_
         run.store.repost(WS, RUN, never, reason='x', attempt=1)
 
 
+@pytest.mark.parametrize('missing', ['commit', 'connection'])
+def test_a_launch_before_the_run_start_recorded_its_commit_and_connection_records_nothing(run: Board,
+                                                                                          missing: str) -> None:
+    task_id = fixer_task(run)
+    run.store.client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': 'META'}},
+                                 UpdateExpression='REMOVE #n', ExpressionAttributeNames={'#n': missing})
+    status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='py', paths=[])
+    assert (status, 'no commit or repository connection' in body['error']) == (503, True)
+    task = run.store.task(WS, RUN, task_id)
+    assert (task.launched_agent, run.launcher.requests, run.store.history(WS, RUN)[task_id][-1].op) == ('', [], 'post')
+
+
 def test_a_retried_launch_keeps_the_language_it_was_launched_with(run: Board) -> None:
     task_id = fixer_task(run)
     call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
@@ -312,6 +330,14 @@ def test_an_agent_reads_the_packs_of_the_paths_it_was_launched_on(run: Board) ->
     assert call(run, FIXER, op='knowledge', package='services/billing')[0] == 200
     status, body = call(run, FIXER, op='knowledge', package='bad')   # (the store refuses the package: 400)
     assert (status, 'not a valid package' in body['error']) == (400, True)
+
+
+@pytest.mark.parametrize('package', sorted(FAULTS))
+def test_a_pack_the_store_cannot_read_answers_503_not_the_callers_fault(run: Board, package: str) -> None:
+    task_id = fixer_task(run, [package])
+    call(run, FIXER, op='claim', task_id=task_id)
+    status, body = call(run, FIXER, op='knowledge', package=package)
+    assert (status, 'cannot be read right now' in body['error']) == (503, True)
 
 
 def test_the_real_pack_store_reads_the_roots_pack_and_refuses_a_bad_package() -> None:

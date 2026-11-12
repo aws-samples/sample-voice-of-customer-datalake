@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from engineering.connectors.identity import AGENT_ROLES
 
@@ -23,21 +23,6 @@ RECORD_SCHEMA: Final = 'voc-skill/1'
 HARNESSES: Final = frozenset({'converse', 'cli'})
 MAX_INSTRUCTIONS: Final = 20_000
 
-
-
-def skill_record(name: str, version: int, instructions: str, examples: Iterable[Any], tool_policy: Iterable[str],
-                 model: str, harness: str) -> dict[str, Any]:
-    """The voc-skill/1 record (the one shape: the skills store's model builds its records with it too); each example
-    has a ``situation`` and an ``action``."""
-    return {'schema': RECORD_SCHEMA, 'name': name, 'version': version, 'instructions': instructions,
-            'examples': [{'situation': example.situation, 'action': example.action} for example in examples],
-            'tool_policy': list(tool_policy), 'model': model, 'harness': harness}
-
-
-def skill_label(name: str, version: int) -> str:
-    """``<name>@<version>``: a skill version as a session row's ``skill_version`` says it (the one spelling: the
-    skills store's model takes it from here)."""
-    return f'{name}@{version}'
 
 class SkillError(ValueError):
     """A record that is not a skill this harness can run."""
@@ -49,6 +34,48 @@ class Example:
 
     situation: str
     action: str
+
+
+class ExampleLike(Protocol):
+    """A worked example as either skill class holds it."""
+
+    @property
+    def situation(self) -> str: ...
+
+    @property
+    def action(self) -> str: ...
+
+
+class SkillFields(Protocol):
+    """A skill's content as either skill class holds it (this module's ``Skill``, the store's ``SkillContent``)."""
+
+    @property
+    def instructions(self) -> str: ...
+
+    @property
+    def examples(self) -> Iterable[ExampleLike]: ...
+
+    @property
+    def tool_policy(self) -> Iterable[str]: ...
+
+    @property
+    def model(self) -> str: ...
+
+    @property
+    def harness(self) -> str: ...
+
+
+def skill_label(name: str, version: int) -> str:
+    """``<name>@<version>``: a skill version as a session row's ``skill_version`` names it (both skill classes)."""
+    return f'{name}@{version}'
+
+
+def skill_record(name: str, version: int, fields: SkillFields) -> dict[str, Any]:
+    """The stored ``voc-skill/1`` shape, the one place it is written (this module's ``Skill`` and the skills store's
+    ``engineering.skills.model.Skill`` both write it here, since the harness ships alone in the agents' images)."""
+    return {'schema': RECORD_SCHEMA, 'name': name, 'version': version, 'instructions': fields.instructions,
+            'examples': [{'situation': example.situation, 'action': example.action} for example in fields.examples],
+            'tool_policy': list(fields.tool_policy), 'model': fields.model, 'harness': fields.harness}
 
 
 @dataclass(frozen=True)
@@ -80,14 +107,13 @@ class Skill:
         return f'{self.instructions}\n\n{shown}' if shown else self.instructions
 
     def to_record(self) -> dict[str, Any]:
-        return skill_record(self.name, self.version, self.instructions, self.examples, self.tool_policy, self.model,
-                            self.harness)
+        return skill_record(self.name, self.version, self)
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> Skill:
-        schema, examples = record.get('schema'), record.get('examples', [])
-        if schema != RECORD_SCHEMA:
+        if record.get('schema') != RECORD_SCHEMA:
             raise SkillError(f'not a {RECORD_SCHEMA} record')
+        examples = record.get('examples', [])
         policy = record.get('tool_policy')
         version = record.get('version')
         if isinstance(version, bool) or not isinstance(version, int):

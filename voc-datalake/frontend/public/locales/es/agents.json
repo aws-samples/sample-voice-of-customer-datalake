@@ -680,6 +680,7 @@
     "ended": "Terminó {{when}}",
     "totals": "Tiempo de MicroVM: {{seconds, number}} s · Mensajes: {{messages, number}}",
     "byModel": "Tokens por modelo",
+    "actionsUnavailable": "Esta implementación aún no puede enviar señales ni respuestas: no conecta el monitor de la ejecución con el entorno de ejecución y el bus de ingeniería.",
     "runSignals": "Toda la ejecución",
     "agentSignals": "Agente {{agent}}",
     "signals": {

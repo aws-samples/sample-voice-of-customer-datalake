@@ -5,7 +5,8 @@
  * The run's goal, status, MicroVM time and tokens (its cost once the run control reports it); the run's flow with
  * the steps its agents are on lit (the read-only canvas the agents' runs use, from the run's flow definition); and
  * beside it the Agents, Board and Conversation panels (the conversation records the signals sent too). An admin
- * signals the run or an agent on its task, and answers the conductor or an agent. The
+ * signals the run or an agent on its task, and answers the conductor or an agent, where the deployment lets the
+ * monitor reach the run (`actions_available`; else one line says why there are no controls). The
  * reads poll every few seconds while the run is under way (useEngineeringRun.ts: polling until the push lands).
  *
  * @module pages/Agents/EngineeringRun
@@ -46,8 +47,8 @@ function FlowGraph({ flow, agents }: Readonly<{ flow: string; agents: readonly E
   return <WorkflowCanvas definition={definition} readOnly runStates={states} />
 }
 
-function Panels({ runId, overview, live, isAdmin, readAt }: Readonly<{
-  runId: string; overview: EngineeringOverview; live: boolean; isAdmin: boolean; readAt: number
+function Panels({ runId, overview, live, canAct, readAt }: Readonly<{
+  runId: string; overview: EngineeringOverview; live: boolean; canAct: boolean; readAt: number
 }>) {
   const { t } = useTranslation('agents')
   const [tab, setTab] = useState<Tab>('agents')
@@ -59,12 +60,12 @@ function Panels({ runId, overview, live, isAdmin, readAt }: Readonly<{
       <IconTabs tabs={TABS} active={tab} icons={TAB_ICONS} label={t('engineeringRun.panels')}
         labelOf={(id) => t(`engineeringRun.tabs.${id}`)} onSelect={setTab} />
       <div role="tabpanel" aria-label={t(`engineeringRun.tabs.${tab}`)} className="max-h-[70vh] overflow-y-auto">
-        {tab === 'agents' && <AgentsPanel runId={runId} agents={overview.agents} tasks={tasks} isAdmin={isAdmin && live}
+        {tab === 'agents' && <AgentsPanel runId={runId} agents={overview.agents} tasks={tasks} isAdmin={canAct && live}
           now={readAt} />}
         {tab === 'board' && <BoardPanel tasks={tasks} />}
         {tab === 'conversation' && (
           <ConversationPanel runId={runId} messages={conversation.data?.messages ?? []} agents={overview.agents}
-            isAdmin={isAdmin} live={live} />
+            isAdmin={canAct} live={live} />
         )}
       </div>
     </section>
@@ -76,10 +77,15 @@ function RunMonitor({ runId, overview, live, readAt }: Readonly<{
 }>) {
   const { t } = useTranslation('agents')
   const isAdmin = useIsAdmin()
+  // An admin acts only where the monitor can reach the run; until then one line says why there are no controls.
+  const canAct = isAdmin && overview.actions_available
   return (
     <>
       <EngineeringRunHeader overview={overview} />
-      {isAdmin && live && (
+      {isAdmin && !overview.actions_available && (
+        <p className="card text-sm text-muted">{t('engineeringRun.actionsUnavailable')}</p>
+      )}
+      {canAct && live && (
         <section className="card space-y-2" aria-labelledby="engineering-run-signals">
           <h2 id="engineering-run-signals" className="text-sm font-medium text-text-strong">{t('engineeringRun.runSignals')}</h2>
           <EngineeringSignals runId={runId} />
@@ -89,7 +95,7 @@ function RunMonitor({ runId, overview, live, readAt }: Readonly<{
         <section className="card p-0 h-[420px] sm:h-[520px] overflow-hidden min-w-0" aria-label={t('engineeringRun.flow')}>
           <FlowGraph flow={overview.run.flow} agents={overview.agents} />
         </section>
-        <Panels runId={runId} overview={overview} live={live} isAdmin={isAdmin} readAt={readAt} />
+        <Panels runId={runId} overview={overview} live={live} canAct={canAct} readAt={readAt} />
       </div>
     </>
   )

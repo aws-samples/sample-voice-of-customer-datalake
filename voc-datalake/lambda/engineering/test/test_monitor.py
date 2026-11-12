@@ -113,6 +113,17 @@ def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(ru
     assert view['totals'] == {'messages': 12, 'microvm_seconds': 300, 'by_model': [
         {'model': 'model-a', 'input_tokens': 1050, 'output_tokens': 205},
         {'model': 'model-b', 'input_tokens': 7, 'output_tokens': 1}]}
+    assert view['actions_available'] is True
+
+
+def test_the_overview_says_the_actions_are_unavailable_without_the_runtime_or_the_bus(run) -> None:
+    client, _, runtime, publisher, _ = run
+    for monitor in (RunMonitor(client, TABLE, Sessions(FIXER), runtime=None, publisher=publisher),
+                    RunMonitor(client, TABLE, Sessions(FIXER), runtime=runtime, publisher=None),
+                    RunMonitor(client, TABLE, Sessions(FIXER), runtime=None, publisher=None)):
+        view = monitor.overview(RUN)
+        assert view is not None
+        assert view['actions_available'] is False
 
 
 def test_an_unknown_run_has_no_overview() -> None:

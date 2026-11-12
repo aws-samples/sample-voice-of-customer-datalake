@@ -33,14 +33,15 @@
  *
  * Grants, exactly what the code calls: the router and the board GetItem, PutItem and UpdateItem on the voc-engineering
  * table (the transactions are Put and Update items, the board's history rows included; no delete), and the board Query
- * (its inbox op reads the caller's INBOX# rows); the
- * report builder GetItem, Query (a run's rows of a kind) and UpdateItem (the version counter and pointer), GetObject
- * on the runs' objects and PutObject on the reports in the workspace bucket, and ListBucket on it so a missing object
- * reads as missing rather than denied; the board `events:PutEvents` on the bus; the router `lambda:InvokeFunction` on
+ * (its inbox op reads the caller's INBOX# rows and its tasks op the run's tasks), `lambda:InvokeFunction` on the
+ * runtime's function by its name (the coordinator's `launch`, which sends only the `launch` action) and GetObject on
+ * the knowledge packs' objects (`ws/default/knowledge/*`, its `knowledge` op); the report builder GetItem, Query (a run's rows of a kind) and UpdateItem (the version counter and pointer), GetObject
+ * on the runs' objects and PutObject on the reports in the workspace bucket (no ListBucket: a missing object answers
+ * 403, which it reads as missing and logs); the board `events:PutEvents` on the bus; the router `lambda:InvokeFunction` on
  * the delivery function, by its name (the runtime's voc-engineering-delivery, deployed with it on the same flag), and
  * `sqs:SendMessage` on the DLQ as its failure destination; `kms:Decrypt` and `kms:GenerateDataKey` on the stack's
  * key, only through DynamoDB (and SQS for the router's and the report builder's failure records, S3 for the report
- * builder).
+ * builder and the board's knowledge reads).
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -163,13 +164,10 @@ export class EngineeringBus extends Construct {
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       sid: 'WriteReports', actions: ['s3:PutObject'], resources: [reportObjects],
     }));
-    // A key the board recorded may name an object its agent never wrote (a failed attempt): with ListBucket S3 answers
-    // 404, which reads as missing, rather than 403.
-    // Scoped to the runs' keys (the only ones it reads): never a listing of the reports or anything else.
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'MissingReadsAsMissing', actions: ['s3:ListBucket'], resources: [bucket.bucketArn],
-      conditions: { StringLike: { 's3:prefix': [ENGINEERING_WORKSPACE_RUNS_KEYS] } },
-    }));
+    // No ListBucket: a key the board recorded may name an object its agent never wrote (a failed attempt), which S3
+    // then answers 403, not 404; the builder may read every runs' key, so it reads that denial as missing and logs it
+    // (reports/handler.py). A ListBucket scoped by an s3:prefix condition would not help: a GetObject carries no
+    // prefix, so the condition never matches it.
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
       reason: 'The workspace bucket\'s object keys: reads of the runs\' objects the board recorded (their keys are known only at run time) and create-only writes of the reports; never another bucket',

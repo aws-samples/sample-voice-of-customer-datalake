@@ -674,6 +674,7 @@
     "ended": "结束于 {{when}}",
     "totals": "MicroVM 时间：{{seconds, number}} 秒 · 消息：{{messages, number}}",
     "byModel": "按模型的令牌",
+    "actionsUnavailable": "此部署尚无法发送信号和回复：它没有将运行监视器连接到工程运行时和总线。",
     "runSignals": "整个运行",
     "agentSignals": "智能体 {{agent}}",
     "signals": {

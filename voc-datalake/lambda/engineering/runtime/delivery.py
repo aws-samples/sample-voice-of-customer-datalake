@@ -8,7 +8,7 @@ voc-engineering. ``inbox_seq`` is the run's write-order counter (``inbox_seq`` o
 write), not the conversation's seq, which the row keeps as ``seq``: a delivery retried a minute later gets a number
 above every notice already read. The number is taken, then the row written: two deliveries at once can commit out
 of order by a moment, and a number can go unused (a redelivery's race, a crash between the two steps), so a reader
-takes the numbers as a near order, not a log: it re-reads a window behind its cursor at the tail (the board's
+takes the numbers as a near order, not a log: it re-reads a window behind its cursor on every page (the board's
 ``inbox`` op: 20 numbers) and keeps each message once by its event id. A marker, ``INBOXEVT#<event_id>``, written in
 the same transaction as the row, makes it once: a redelivery (the bus is at-least-once) writes nothing. The addressee is
 ``agent:<agent>``, ``conductor``, or ``role:<role>`` for a posted task (every agent of that role in the run reads it).

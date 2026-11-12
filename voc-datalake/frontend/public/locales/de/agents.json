@@ -674,6 +674,7 @@
     "ended": "Beendet {{when}}",
     "totals": "MicroVM-Zeit: {{seconds, number}} s · Nachrichten: {{messages, number}}",
     "byModel": "Tokens pro Modell",
+    "actionsUnavailable": "Signale und Antworten lassen sich von dieser Bereitstellung noch nicht senden: Sie verbindet die Laufüberwachung nicht mit der Engineering-Laufzeit und dem Bus.",
     "runSignals": "Der ganze Lauf",
     "agentSignals": "Agent {{agent}}",
     "signals": {

@@ -247,16 +247,20 @@ class BoardApi:
         role, language, paths = _text(body, 'role'), _text(body, 'language'), _paths(body)
         if role not in ROLES or len(language) > MAX_LANGUAGE:
             raise BoardError('invalid', f'"role" is a role that claims tasks, "language" at most {MAX_LANGUAGE}')
+        meta = self._meta(caller.run_id)
+        commit, connection = meta.get('commit', {}).get('S', ''), meta.get('connection', {}).get('S', '')
+        if not (commit and connection):
+            # The run's start records them (RunStore.start): checked before an agent is numbered, so a
+            # launch the runtime must refuse records nothing.
+            raise BoardError('unavailable', 'the run has no commit or repository connection recorded yet')
         launched = self.store.launch(WORKSPACE, caller.run_id, _text(body, 'task_id'), role=role,
                                      actor=agent_id(caller), paths=paths, language=language)
         task = launched.task
-        meta = self._meta(caller.run_id)
         try:
             answer = self.launcher.launch({
                 'run_id': caller.run_id, 'agent_id': task.launched_agent, 'role': role, 'task_id': task.task_id,
                 'attempt': task.attempt, 'language': task.launched_language or language,
-                'paths': list(task.launched_paths),
-                'commit': meta.get('commit', {}).get('S', ''), 'connection': meta.get('connection', {}).get('S', '')})
+                'paths': list(task.launched_paths), 'commit': commit, 'connection': connection})
         except SessionExists:
             if not launched.reused:
                 raise   # a session for an agent just numbered: not an earlier launch's
@@ -284,10 +288,16 @@ class BoardApi:
         connection = self._meta(caller.run_id).get('connection', {}).get('S', '')
         try:   # the root's pack is the knowledge store's ROOT package ('.')
             if not connection:
-                # The run's start records its connection (the runtime's, not yet wired): never read as "none approved".
+                # The run's start records its connection (RunStore.start): a run without one never reads as "none approved".
                 raise BoardError('unavailable', 'the run has no repository connection recorded yet')
             pack = self.knowledge.for_agent(WORKSPACE, connection, package or ROOT)
-        except (PackError, LayoutError) as exc:
+        except PackError as exc:
+            if exc.kind != 'invalid':
+                # An approved version whose object is missing or denied, or whose row changed (PackNotFound,
+                # PackConflict): the store's fault, so 503 (try again), never "none approved" nor the caller's.
+                raise BoardError('unavailable', 'the knowledge pack cannot be read right now') from exc
+            raise BoardError('invalid', f'"package" is not a package with a knowledge pack: {exc}'[:MAX_TITLE]) from exc
+        except LayoutError as exc:
             raise BoardError('invalid', f'"package" is not a package with a knowledge pack: {exc}'[:MAX_TITLE]) from exc
         return {'version': None} if pack is None else {'version': pack.version, 'text': pack.text}
 

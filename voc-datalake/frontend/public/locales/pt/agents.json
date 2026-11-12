@@ -680,6 +680,7 @@
     "ended": "Terminou {{when}}",
     "totals": "Tempo de MicroVM: {{seconds, number}} s · Mensagens: {{messages, number}}",
     "byModel": "Tokens por modelo",
+    "actionsUnavailable": "Esta implantação ainda não pode enviar sinais nem respostas: ela não conecta o monitor da execução ao runtime e ao barramento de engenharia.",
     "runSignals": "Toda a execução",
     "agentSignals": "Agente {{agent}}",
     "signals": {

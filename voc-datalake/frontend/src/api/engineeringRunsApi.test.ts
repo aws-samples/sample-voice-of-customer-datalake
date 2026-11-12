@@ -23,7 +23,7 @@ describe('parseOverview', () => {
     expect(overview.totals).toStrictEqual({
       messages: 3, microvm_seconds: 900, by_model: [{ model: 'model-a', input_tokens: 2000, output_tokens: 400 }],
     })
-    expect(Object.keys(overview)).toStrictEqual(['run', 'agents', 'totals'])
+    expect(Object.keys(overview)).toStrictEqual(['run', 'agents', 'actions_available', 'totals'])
   })
 
   it('reads a sparse overview with defaults, and drops a bad agent alone', () => {

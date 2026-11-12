@@ -190,15 +190,25 @@ describe('an admin acts on the run', () => {
 })
 
 describe('who may act', () => {
-  it('a non-admin sees the run with no signals and no composer', async () => {
-    adminFlag.isAdmin = false
-    routes()
+  it.each([
+    { who: 'a non-admin', admin: false, available: true, told: false },
+    { who: 'an admin, where the monitor cannot reach the run,', admin: true, available: false, told: true },
+  ])('$who sees the run with no signals and no composer', async ({ admin, available, told }) => {
+    adminFlag.isAdmin = admin
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({}, available) })
     renderRun()
     await screen.findByRole('heading', { name: 'Fix the paging bugs' })
-    expect(screen.queryByRole('group', { name: 'The whole run' })).toBeNull()
-    expect(screen.queryByRole('group', { name: 'Agent fixer-1' })).toBeNull()
+    // Only an admin is told why: the deployment does not connect the monitor to the run yet.
+    expect(screen.queryByText(/Signals and answers can't be sent from this deployment yet/) !== null).toBe(told)
+    expect([screen.queryByRole('group', { name: 'The whole run' }), screen.queryByRole('group', { name: 'Agent fixer-1' })])
+      .toStrictEqual([null, null])
     await userEvent.click(screen.getByRole('tab', { name: /Conversation/ }))
     expect(screen.queryByLabelText('Your message')).toBeNull()
+  })
+
+  it('reads an overview that does not say whether the actions are available as unavailable', () => {
+    expect(parseOverview({ ...engineeringOverview(), actions_available: undefined }).actions_available).toBe(false)
+    expect(parseOverview(engineeringOverview()).actions_available).toBe(true)
   })
 
   it('an ended run takes no more actions', async () => {

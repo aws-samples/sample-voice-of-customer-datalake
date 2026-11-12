@@ -240,7 +240,7 @@ def test_an_agent_reads_its_inbox_and_the_coordinator_the_conductors_too(bus: Bu
         notice(client, 'conductor', 2)
         notice(client, 'agent:fixer-2', 4)   # another agent's: never read
         status, body = call(api, FIXER, op='inbox')
-        assert (status, [m['seq'] for m in body['messages']], body['next']) == (200, [1, 3], 0)
+        assert (status, [m['seq'] for m in body['messages']], body['next']) == (200, [1, 3], 3)
         assert body['messages'][0]['task_id'] == 'task-1'
         assert [m['seq'] for m in call(api, COORDINATOR, op='inbox')[1]['messages']] == [2]
         assert bus.entries == []   # (reading publishes nothing)

@@ -680,6 +680,7 @@
     "ended": "Terminée {{when}}",
     "totals": "Temps MicroVM : {{seconds, number}} s · Messages : {{messages, number}}",
     "byModel": "Jetons par modèle",
+    "actionsUnavailable": "Ce déploiement ne peut pas encore envoyer de signaux ni de réponses : il ne relie pas le moniteur de l'exécution au runtime et au bus d'ingénierie.",
     "runSignals": "Toute l’exécution",
     "agentSignals": "Agent {{agent}}",
     "signals": {

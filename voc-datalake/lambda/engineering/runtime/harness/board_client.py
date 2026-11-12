@@ -7,7 +7,7 @@ nothing the MicroVM sends can name another's. The brief is the task as the board
 fresh start's; a continuation's is in its checkpoint); the lease's epoch, the task's attempt, goes with every
 heartbeat, progress report and move. The inbox is read after a cursor (the run's
 write-order numbers, ``board/inbox.py``) and each notice kept once by its event id: two deliveries may commit their
-numbers out of order, so the board re-reads a window behind the cursor at the tail.
+numbers out of order, so the board re-reads a window below the cursor on every page.
 """
 from __future__ import annotations
 
@@ -32,7 +32,8 @@ MAX_ANSWER_BYTES: Final = 1024 * 1024
 ACTED_ON: Final = {'signal.save': SAVE, 'signal.pause': PAUSE}
 #: The waits before each retry of a 503 or a lost connection (seconds).
 RETRY_WAITS: Final = (1.0, 3.0)
-#: The board's re-read window behind the tail (rows.TAIL_WINDOW): the done ids a checkpoint keeps reach back that far.
+#: The board's re-read window below the cursor, on every page (rows.TAIL_WINDOW): the done ids a checkpoint keeps
+#: reach back that far.
 TAIL_WINDOW: Final = 20
 #: The done ids a checkpoint keeps at most (those its continuation can meet again): far more than a run's notices
 #: between two saves of an agent's notes, within the checkpoint's size.
@@ -206,9 +207,9 @@ class InboxHttp:
 
     def cursor(self) -> dict[str, Any]:
         """Up to just before the oldest notice not yet done (or the read cursor), and every id done the
-        continuation's read can meet again (those after it, and the board's window behind the tail): it reads from
+        continuation's read can meet again (those after it, and the board's window below the cursor): it reads from
         there and skips those, a pause or a save never acted on twice."""
-        # Never past the read cursor: at the tail the board answers a window behind it, which a late delivery can
+        # Never past the read cursor: the board answers a window below it on every page, which a late delivery can
         # commit into.
         after = max(0, min(self.after, min(self.open.values()) - 1) if self.open else self.after)
         done = [event_id for event_id, seq in self.finished.items() if seq > after - TAIL_WINDOW]
