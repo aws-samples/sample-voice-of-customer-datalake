@@ -51,7 +51,7 @@ def _table() -> Any:
 @app.get('/settings/appearance')
 @tracer.capture_method
 def get_appearance():
-    """The workspace's start theme (no row = the default theme)."""
+    """The deployment's start theme (no row = the default theme)."""
     item = _table().get_item(Key={'pk': APPEARANCE_PK, 'sk': APPEARANCE_SK}).get('Item')
     return appearance_view(item)
 

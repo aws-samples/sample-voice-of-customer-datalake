@@ -30,7 +30,7 @@ const KEY_WRITE_ACTIONS = ['kms:Encrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey
  * as the ModelPin custom resource did on every fresh deployment. CDK's write grant also adds kms:DescribeKey; a
  * write never calls it, so it stays out (exact grants: only what the role's calls need).
  */
-const KEY_ACTIONS_FOR_WRITE_ONLY_GRANT = [...KEY_WRITE_ACTIONS, 'kms:Decrypt'] as const;
+export const KEY_ACTIONS_FOR_WRITE_ONLY_GRANT = [...KEY_WRITE_ACTIONS, 'kms:Decrypt'] as const;
 
 /** One Allow of `writes` on the table itself (never its indexes: a write names the table), plus the key actions. */
 function addWriteStatement(

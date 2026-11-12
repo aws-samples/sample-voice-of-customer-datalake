@@ -68,7 +68,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',
     }),
-    # The workspace's start theme (Administration → General): every person sees it until they pick their own.
+    # The deployment's start theme (Administration → General): every person sees it until they pick their own.
     'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
     # Company personas (since 5.60.00): only admins write the shared library; promote copies into it.
@@ -303,7 +303,8 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'PATCH /projects/prioritization/rows/<row_id>',
           'PUT /projects/prioritization/rows/<row_id>/lineage-ack', 'PUT /projects/prioritization',
           'PATCH /projects/prioritization'),
-    _open('resolved problems: shared team state, every signed-in user marks a problem resolved',
+    _open("resolved problems: the workspace's shared state, every editor or admin of it marks a problem resolved "
+          "(without a workspace, the deployment's, every signed-in user, as before)",
           'settings_handler.py', 'PUT /settings/resolved-problems'),
     _open("caller's own data: personal context and onboarding preference, self only",
           'settings_handler.py', 'PUT /settings/my-context', 'PUT /settings/my-onboarding'),

@@ -37,6 +37,7 @@ import pytest
 from botocore.exceptions import ClientError
 from handler_events_fixtures import call_route
 from module_reload_fixtures import reload_cycle
+from workspace_fixtures import WS, act_in_workspace
 
 import settings_handler
 from settings_handler import lambda_handler
@@ -47,12 +48,18 @@ from shared.reprocess_slices import ReprocessSlice
 from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
 
+
+@pytest.fixture(autouse=True)
+def _in_a_workspace(monkeypatch):
+    """The resolved-problems routes act in a workspace (shared/request_workspace.py, stubbed here)."""
+    act_in_workspace(monkeypatch, settings_handler)
+
 HAIKU = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
 OPUS = 'global.anthropic.claude-opus-5'
 FIXED_NOW = datetime(2026, 10, 5, 12, 0, 0, 1, tzinfo=UTC)
 FIXED_NOW_ISO = '2026-10-05T12:00:00.000001+00:00'
 USER = {'sub': 'user-sub', 'cognito:username': 'bob', 'cognito:groups': 'users'}
-RESOLVED_KEY = {'pk': 'SETTINGS#resolved_problems', 'sk': 'config'}
+RESOLVED_KEY = {'pk': f'WS#{WS}#SETTINGS#resolved_problems', 'sk': 'config'}
 
 
 def _client_error(code: str, message: str = 'from the table') -> ClientError:
@@ -138,8 +145,7 @@ class TestTheColdStartModuleState:
     def test_the_module_constants_are_the_documented_values(self):
         assert (settings_handler.SETTINGS_PK, settings_handler.SETTINGS_SK) == ('SETTINGS#brand', 'config')
         assert (settings_handler.CATEGORIES_PK, settings_handler.CATEGORIES_SK) == ('SETTINGS#categories', 'config')
-        assert (settings_handler.RESOLVED_PROBLEMS_PK, settings_handler.RESOLVED_PROBLEMS_SK) == (
-            'SETTINGS#resolved_problems', 'config')
+        assert settings_handler.RESOLVED_PROBLEMS_KIND == 'resolved_problems'
         assert (settings_handler.MAX_PROBLEM_KEY_LEN, settings_handler.MAX_PROBLEM_KEY_BYTES,
                 settings_handler.MAX_RESOLVED_ENTRIES, settings_handler._PRUNE_CHUNK_SIZE) == (255, 255, 500, 20)
         assert settings_handler.RESOLVED_PROBLEMS_TTL_DAYS == 180
@@ -580,7 +586,7 @@ class TestTheResolveWrites:
         table.update_item.side_effect = attempts
         table.get_item.return_value = {'Item': {'resolved': stored}}
         with pytest.raises(ValidationError) as raised:
-            settings_handler._resolve_problem_key('new')
+            settings_handler._resolve_problem_key(RESOLVED_KEY, 'new')
         assert raised.value.__cause__ is attempts[-1]
 
     def test_the_unresolve_write(self, route, table):
@@ -643,7 +649,7 @@ class TestThePrune:
     def test_the_chunked_remove_expressions_cover_every_stale_key_in_order(self, table, logger):
         stale = {f'old {i:02d}': _entry(300) for i in range(45)}
         table.get_item.return_value = {'Item': {'resolved': {**stale, 'live': _entry(1)}}}
-        assert settings_handler._prune_expired_entries() == 45
+        assert settings_handler._prune_expired_entries(RESOLVED_KEY) == 45
         table.get_item.assert_called_once_with(Key=RESOLVED_KEY)
         calls = table.update_item.call_args_list
         assert [len(c.kwargs['ExpressionAttributeNames']) - 1 for c in calls] == [20, 20, 5]
@@ -661,20 +667,20 @@ class TestThePrune:
 
     def test_nothing_stale_means_no_write_and_no_log(self, table, logger):
         table.get_item.return_value = {'Item': {'resolved': {'live': _entry(1)}}}
-        assert settings_handler._prune_expired_entries() == 0
+        assert settings_handler._prune_expired_entries(RESOLVED_KEY) == 0
         table.update_item.assert_not_called()
         logger.info.assert_not_called()
 
     def test_a_disabled_ttl_prunes_nothing_without_reading(self, table):
         with patch.object(settings_handler, 'RESOLVED_PROBLEMS_TTL_DAYS', 0):
-            assert settings_handler._prune_expired_entries() == 0
+            assert settings_handler._prune_expired_entries(RESOLVED_KEY) == 0
         table.get_item.assert_not_called()
 
     @pytest.mark.parametrize('stored', [{}, {'Item': {}}, {'Item': {'resolved': 'corrupted'}},
                                         {'Item': {'resolved': ['a']}}])
     def test_malformed_or_missing_storage_prunes_nothing(self, table, stored):
         table.get_item.return_value = stored
-        assert settings_handler._prune_expired_entries() == 0
+        assert settings_handler._prune_expired_entries(RESOLVED_KEY) == 0
         table.update_item.assert_not_called()
 
 
@@ -720,6 +726,37 @@ class TestExpiry:
         assert response['statusCode'] == 200
         assert payload == {'resolved': {'k': {'resolved_at': '2099-01-01T00:00:00+00:00'}}}
         table.get_item.assert_called_once_with(Key=RESOLVED_KEY)
+
+
+#: The deployment's row: a request that names no workspace keeps it, as before (shared/request_workspace.py).
+DEPLOYMENT_RESOLVED_KEY = {'pk': 'SETTINGS#resolved_problems', 'sk': 'config'}
+
+
+class TestWithoutAWorkspace:
+    @pytest.fixture(autouse=True)
+    def _no_workspace(self, monkeypatch):
+        monkeypatch.setattr(settings_handler, 'request_workspace', lambda _event, _public_error, **_options: None)
+
+    def test_get_reads_the_deployment_row(self, route, table):
+        table.get_item.return_value = {'Item': {'resolved': {}}}
+        response, _ = route('GET', '/settings/resolved-problems')
+        assert response['statusCode'] == 200
+        table.get_item.assert_called_once_with(Key=DEPLOYMENT_RESOLVED_KEY)
+
+    def test_put_writes_the_deployment_row_for_any_signed_in_user(self, route, table):
+        response, _ = route('PUT', '/settings/resolved-problems', {'key': 'k', 'resolved': True})
+        assert response['statusCode'] == 200
+        assert table.update_item.call_args.kwargs['Key'] == DEPLOYMENT_RESOLVED_KEY
+
+
+@pytest.mark.parametrize(('role', 'status'), [('viewer', 403), ('editor', 200), ('admin', 200)])
+def test_in_a_workspace_a_viewer_reads_and_an_editor_marks(monkeypatch, route, table, role, status):
+    act_in_workspace(monkeypatch, settings_handler, role)
+    table.get_item.return_value = {'Item': {'resolved': {}}}
+    assert route('GET', '/settings/resolved-problems')[0]['statusCode'] == 200
+    response, _ = route('PUT', '/settings/resolved-problems', {'key': 'k', 'resolved': True})
+    assert response['statusCode'] == status
+    assert table.update_item.called is (status == 200)
 
 
 # ── Model settings ───────────────────────────────────────────────────────────

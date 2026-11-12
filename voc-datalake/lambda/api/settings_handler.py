@@ -98,6 +98,7 @@ from shared.model_config import (
 from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body, reject_unknown_fields
+from shared.request_workspace import request_workspace, require_workspace_writer
 from shared.retention import (
     ERASE_FIELDS,
     ERASURE_DEIDENTIFIED_COUNTERS,
@@ -130,6 +131,8 @@ from shared.source_profiles import (
 )
 from shared.timestamps import now_iso, parse_iso
 from shared.url_policy import validate_url
+from shared.workspace import WorkspaceContext
+from shared.workspace_settings import settings_key
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -140,8 +143,13 @@ RETENTION_FUNCTION = os.environ.get("RETENTION_FUNCTION", "")
 
 SETTINGS_PK = "SETTINGS#brand"
 SETTINGS_SK = "config"
-RESOLVED_PROBLEMS_PK = "SETTINGS#resolved_problems"
-RESOLVED_PROBLEMS_SK = "config"
+# The resolved problems are a workspace's (docs/multi-workspace.md, "Per-workspace configuration"): their row is
+# under the workspace the request names (shared/request_workspace.py), keyed by shared/workspace_settings.py. A request
+# that names none keeps the deployment's row, as before.
+RESOLVED_PROBLEMS_KIND = "resolved_problems"
+DEPLOYMENT_RESOLVED_PROBLEMS_KEY: Final = {'pk': "SETTINGS#resolved_problems", 'sk': "config"}
+FAILED_RESOLVED_READ = "Failed to retrieve resolved problems"
+FAILED_RESOLVED_WRITE = "Failed to update problem resolution"
 
 # Problem keys are client-built as "category|subcategory|normalized problem
 # text". Bound their size in characters AND UTF-8 bytes (CJK text triples
@@ -166,7 +174,7 @@ RESOLVED_PROBLEMS_TTL_DAYS = 180
 _PRUNE_CHUNK_SIZE = 20
 
 app = create_api_resolver()
-# The workspace's start theme (shared/appearance_routes.py); reads the table at call time.
+# The deployment's start theme (shared/appearance_routes.py); reads the table at call time.
 appearance_routes.bind_aggregates_table(lambda: aggregates_table)
 app.include_router(appearance_routes.app)
 
@@ -389,23 +397,30 @@ def get_resolved_problems():
     """Get the map of problems marked as resolved on the Problem Analysis page.
 
     Shape: {'resolved': {problem_key: {'resolved_at': iso8601}}}. Shared
-    across all users by design (issue #66) — resolving a problem clears it
-    from everyone's working view. Entries older than
+    by the workspace's members by design (issue #66) — resolving a problem
+    clears it from their working view; another workspace has its own (a
+    request that names no workspace: the deployment's, as before). Entries older than
     RESOLVED_PROBLEMS_TTL_DAYS are filtered out (issue #159): the problem
     resurfaces for re-review, and the stored entry is reclaimed the next
     time the entry cap is under pressure.
     """
+    context = request_workspace(app.current_event.raw_event, FAILED_RESOLVED_READ)
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
     try:
-        response = aggregates_table.get_item(
-            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
-        )
+        response = aggregates_table.get_item(Key=_resolved_key(context))
         resolved = _without_expired(response.get('Item', {}).get('resolved', {}))
     except Exception as e:
         logger.exception("Failed to get resolved problems")
-        raise ServiceError('Failed to retrieve resolved problems') from e
+        raise ServiceError(FAILED_RESOLVED_READ) from e
     return {'resolved': _resolved_in_scope(resolved)}
+
+
+def _resolved_key(context: WorkspaceContext | None) -> dict[str, str]:
+    """The workspace's resolved-problems row; the deployment's when the request names no workspace."""
+    if context is None:
+        return dict(DEPLOYMENT_RESOLVED_PROBLEMS_KEY)
+    return settings_key(context.ws, RESOLVED_PROBLEMS_KIND)
 
 
 def _resolved_in_scope(resolved: dict) -> dict:
@@ -454,17 +469,24 @@ def set_problem_resolution():
     resolved = body.get('resolved')
     if not isinstance(resolved, bool):
         raise ValidationError('resolved must be a boolean')
+    # A write: the caller's role from the table, not the warm cache (a member removed a moment ago cannot write).
+    context = request_workspace(app.current_event.raw_event, FAILED_RESOLVED_WRITE, fresh=True)
+    if context is not None:
+        # A viewer reads the workspace; marking a problem resolved is an editor's or an admin's (without a workspace,
+        # every signed-in user, as before).
+        require_workspace_writer(context)
+    row = _resolved_key(context)
 
     try:
         if resolved:
-            _resolve_problem_key(key)
+            _resolve_problem_key(row, key)
         else:
-            _unresolve_problem_key(key)
+            _unresolve_problem_key(row, key)
     except ValidationError:
         raise
     except Exception as e:
         logger.exception("Failed to update problem resolution")
-        raise ServiceError('Failed to update problem resolution') from e
+        raise ServiceError(FAILED_RESOLVED_WRITE) from e
     else:
         return {'success': True, 'key': key, 'resolved': resolved}
 
@@ -474,12 +496,12 @@ def _error_code(error: ClientError) -> str | None:
     return error.response.get('Error', {}).get('Code')
 
 
-def _set_resolved_entry(key: str) -> None:
+def _set_resolved_entry(row: dict[str, str], key: str) -> None:
     """Single conditional write: overwrite is always allowed; NEW entries
     only while the map is under the cap. Atomic — two concurrent resolves
     at the cap can't both slip through (review feedback on #153)."""
     _configured_table().update_item(
-        Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+        Key=row,
         UpdateExpression='SET #r.#k = :entry',
         ConditionExpression='attribute_exists(#r.#k) OR size(#r) < :max',
         ExpressionAttributeNames={'#r': 'resolved', '#k': key},
@@ -490,9 +512,9 @@ def _set_resolved_entry(key: str) -> None:
     )
 
 
-def _ensure_resolved_map() -> None:
+def _ensure_resolved_map(row: dict[str, str]) -> None:
     _configured_table().update_item(
-        Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+        Key=row,
         UpdateExpression='SET #r = if_not_exists(#r, :empty)',
         ExpressionAttributeNames={'#r': 'resolved'},
         ExpressionAttributeValues={':empty': {}},
@@ -500,7 +522,7 @@ def _ensure_resolved_map() -> None:
 
 
 @tracer.capture_method
-def _prune_expired_entries() -> int:
+def _prune_expired_entries(row: dict[str, str]) -> int:
     """Remove expired entries from storage; returns how many were removed.
 
     Called only under cap pressure (a resolve hit the entry cap), keeping
@@ -518,7 +540,7 @@ def _prune_expired_entries() -> int:
     if cutoff is None:
         return 0
     response = _configured_table().get_item(
-        Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK}
+        Key=row
     )
     resolved = response.get('Item', {}).get('resolved', {})
     if not isinstance(resolved, dict):
@@ -529,7 +551,7 @@ def _prune_expired_entries() -> int:
         chunk = stale[start:start + _PRUNE_CHUNK_SIZE]
         names = {f'#k{i}': key for i, key in enumerate(chunk)}
         _configured_table().update_item(
-            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+            Key=row,
             UpdateExpression='REMOVE ' + ', '.join(f'#r.{alias}' for alias in names),
             ExpressionAttributeNames={'#r': 'resolved', **names},
         )
@@ -541,11 +563,11 @@ def _prune_expired_entries() -> int:
     return len(stale)
 
 
-def _attempt_resolve(key: str, tolerated_codes: tuple[str, ...]) -> ClientError | None:
+def _attempt_resolve(row: dict[str, str], key: str, tolerated_codes: tuple[str, ...]) -> ClientError | None:
     """One conditional resolve write: None on success, the error when its code
     is one of ``tolerated_codes``; any other failure propagates."""
     try:
-        _set_resolved_entry(key)
+        _set_resolved_entry(row, key)
     except ClientError as e:
         if _error_code(e) not in tolerated_codes:
             raise
@@ -553,7 +575,7 @@ def _attempt_resolve(key: str, tolerated_codes: tuple[str, ...]) -> ClientError 
     return None
 
 
-def _resolve_problem_key(key: str) -> None:
+def _resolve_problem_key(row: dict[str, str], key: str) -> None:
     """Conditionally set the entry, materializing the parent map on first use.
 
     DynamoDB reports a missing parent map either as a document-path
@@ -564,15 +586,15 @@ def _resolve_problem_key(key: str) -> None:
     expired entries are pruned (issue #159) and the write retried once more;
     the cap error only surfaces when the map is full of LIVE entries.
     """
-    if _attempt_resolve(key, ('ConditionalCheckFailedException', 'ValidationException')) is None:
+    if _attempt_resolve(row, key, ('ConditionalCheckFailedException', 'ValidationException')) is None:
         return
-    _ensure_resolved_map()
-    cap_error = _attempt_resolve(key, ('ConditionalCheckFailedException',))
+    _ensure_resolved_map(row)
+    cap_error = _attempt_resolve(row, key, ('ConditionalCheckFailedException',))
     if cap_error is None:
         return
     # Cap reached: reclaim slots held by expired (often orphaned) entries.
-    if _prune_expired_entries() > 0:
-        cap_error = _attempt_resolve(key, ('ConditionalCheckFailedException',))
+    if _prune_expired_entries(row) > 0:
+        cap_error = _attempt_resolve(row, key, ('ConditionalCheckFailedException',))
         if cap_error is None:
             return
     raise ValidationError(
@@ -581,7 +603,7 @@ def _resolve_problem_key(key: str) -> None:
     ) from cap_error
 
 
-def _unresolve_problem_key(key: str) -> None:
+def _unresolve_problem_key(row: dict[str, str], key: str) -> None:
     """REMOVE the entry; a missing parent map just means nothing to remove.
 
     The no-op is detected by a ConditionExpression on the parent map —
@@ -591,7 +613,7 @@ def _unresolve_problem_key(key: str) -> None:
     """
     try:
         _configured_table().update_item(
-            Key={'pk': RESOLVED_PROBLEMS_PK, 'sk': RESOLVED_PROBLEMS_SK},
+            Key=row,
             UpdateExpression='REMOVE #r.#k',
             ConditionExpression='attribute_exists(#r)',
             ExpressionAttributeNames={'#r': 'resolved', '#k': key},

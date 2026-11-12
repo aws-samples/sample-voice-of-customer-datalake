@@ -74,15 +74,22 @@ WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 @pytest.mark.parametrize(('header', 'stored'), [
     ({'X-Workspace-Id': WS}, WS),
     ({'x-workspace-id': f' {WS} '}, WS),
-    ({'X-Workspace-Id': 'ws_short'}, None),
+    ({'X-Workspace-Id': '  '}, None),
     ({}, None),
-], ids=['named', 'any-case-trimmed', 'malformed', 'none'])
+], ids=['named', 'any-case-trimmed', 'blank', 'none'])
 def test_approve_keeps_the_workspace_its_request_named(env, lambda_context, header, stored):
     """docs/multi-workspace.md, Request flow: each step names it to the domain Lambdas (agents/plan_identity.py)."""
     status, body = call(lambda_context, 'POST', '/agents/plans', claims=USER, body={'plan': fixture_plan()},
                         headers=header)
     assert status == 202
     assert (ps.get_meta(env.agents, body['plan_id']) or {}).get('workspace_id') == stored
+
+
+def test_a_malformed_workspace_header_is_the_one_404_and_starts_nothing(env, lambda_context):
+    status, body = call(lambda_context, 'POST', '/agents/plans', claims=USER, body={'plan': fixture_plan()},
+                        headers={'X-Workspace-Id': 'ws_short'})
+    assert (status, body['error']) == (404, 'Workspace not found')
+    env.sfn.start_execution.assert_not_called()
 
 
 def test_an_invalid_plan_is_400_with_the_step_and_field(env, lambda_context):

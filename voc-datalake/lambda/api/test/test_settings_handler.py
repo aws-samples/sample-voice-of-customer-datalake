@@ -8,8 +8,16 @@ from unittest.mock import patch
 
 import pytest
 from handler_events_fixtures import call_route
+from workspace_fixtures import act_in_workspace
 
+import settings_handler
 from settings_handler import lambda_handler
+
+
+@pytest.fixture(autouse=True)
+def _in_a_workspace(monkeypatch):
+    """The resolved-problems routes act in a workspace (shared/request_workspace.py, stubbed here)."""
+    act_in_workspace(monkeypatch, settings_handler)
 
 
 class TestGetBrandSettings:

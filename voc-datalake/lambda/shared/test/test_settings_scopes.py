@@ -35,6 +35,9 @@ import pytest
 from shared.test.test_dunder_all_exports import ROOT, is_production, production_files
 
 DOCS = ROOT.parent / 'docs' / 'multi-workspace.md'
+#: The one module that builds the keys inside a workspace, `WS#{ws}#SETTINGS#{kind}`, from a kind it is given (so its
+#: `f'SETTINGS#{kind}'` is not a deployment-wide key): out of this map by design (the module docstring).
+WORKSPACE_KEY_BUILDER = 'lambda/shared/workspace_settings.py'
 TYPESCRIPT_TREES = ('lib', 'lambda/stream/src', 'bin')
 #: A settings key as a whole string: ``SETTINGS`` (the participants' partition) or ``SETTINGS#<anything>``.
 _PYTHON_KEY = re.compile(r'SETTINGS(?:#(.*))?', re.DOTALL)
@@ -57,6 +60,9 @@ WORKSPACE_KINDS: dict[str, frozenset[str]] = {
                              'lambda/shared/category_gate.py'}),
     'dimensions': frozenset({'lambda/shared/dimension_config.py'}),
     'sources': frozenset({'lambda/shared/source_profiles.py'}),
+    # Moved under its workspace (shared/workspace_settings.py); the settings API keeps the deployment's row for a
+    # request that names no workspace (shared/request_workspace.py: the deployment as before), until every
+    # deployment runs inside one.
     'resolved_problems': frozenset({'lambda/api/settings_handler.py'}),
     'email_intake': frozenset({'lambda/shared/email_intake_settings.py'}),
     'fallback_owner': frozenset({'lambda/agents/nodes/select_or_create_project.py', 'lambda/shared/user_flags.py'}),
@@ -137,7 +143,8 @@ def _script_files() -> Iterator[Path]:
 def spelled() -> dict[str, frozenset[str]]:
     """kind -> the production files that spell its key."""
     scripts = [path for path in (ROOT / 'scripts').rglob('*.py') if is_production(path.relative_to(ROOT))]
-    sources = [(path, python_keys) for path in [*production_files(), *scripts]]
+    sources = [(path, python_keys) for path in [*production_files(), *scripts]
+               if str(path.relative_to(ROOT)) != WORKSPACE_KEY_BUILDER]
     sources += [(path, typescript_keys) for path in _script_files()]
     files: dict[str, set[str]] = {}
     for path, keys in sources:

@@ -7,6 +7,12 @@ group, shared/platform_admin.py) and ``require_live_platform_admin`` (below): th
 enabled account of the same person (``is_live_platform_admin``), so a revoked or disabled platform admin is refused at
 once, not when the token expires. The Lambda needs ``USER_POOL_ID`` and Cognito ``AdminListGroupsForUser`` and
 ``AdminGetUser`` on the pool.
+
+``confirm_live_platform_admin`` is that live check alone, in the pool ``USER_POOL_ID`` names: also the check a domain
+API's workspace resolution runs before a platform admin enters (shared/request_workspace.py). The workspaces API
+(lambda/api/workspaces_handler.py) still has its own copy of both, and of shared/request_workspace.py's resolution
+(``_workspace``), from before these modules; it moves onto them at the merge of the multi-workspace branches (its
+handler changes there), so the live gate and the resolution are one.
 """
 from __future__ import annotations
 
@@ -19,17 +25,23 @@ from shared.exceptions import AuthorizationError, ConfigurationError, ServiceErr
 from shared.logging import logger
 from shared.platform_admin import is_live_platform_admin
 
-__all__ = ['require_live_platform_admin']
+__all__ = ['confirm_live_platform_admin', 'require_live_platform_admin']
+
+
+def confirm_live_platform_admin(event: dict) -> bool:
+    """Whether the caller is a platform admin now, in the pool ``USER_POOL_ID`` names (``ConfigurationError``
+    without it); a Cognito fault raises."""
+    user_pool_id = os.environ.get('USER_POOL_ID', '')
+    if not user_pool_id:
+        raise ConfigurationError('User pool not configured')
+    return is_live_platform_admin(event, get_cognito_idp_client(), user_pool_id)
 
 
 def require_live_platform_admin(event: dict, public_error: str) -> None:
     """403 unless the caller is a platform admin now; 500 ``ConfigurationError`` without ``USER_POOL_ID``; a failed
     Cognito look-up answers ``public_error`` (500, the AWS text only in the log) and admits nobody."""
-    user_pool_id = os.environ.get('USER_POOL_ID', '')
-    if not user_pool_id:
-        raise ConfigurationError('User pool not configured')
     try:
-        confirmed = is_live_platform_admin(event, get_cognito_idp_client(), user_pool_id)
+        confirmed = confirm_live_platform_admin(event)
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Error checking the caller platform admin membership')
         raise ServiceError(public_error) from exc

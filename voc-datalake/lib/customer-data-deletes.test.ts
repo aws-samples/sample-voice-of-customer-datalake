@@ -109,6 +109,9 @@ const DYNAMO_WRITE = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|Pa
 const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
   'VocApiStack/UsersLambdaRole': ['AUDIT#WS#*', 'USER#*', 'WS#*'],
+  // A platform admin's entry into a workspace from a domain API: the stack's one workspace-resolution policy, attached
+  // to each domain API's role that resolves (lib/utils/workspace-resolution-grants.ts).
+  'VocApiStack/WorkspaceResolutionPolicy': ['AUDIT#WS#*'],
   [RETENTION_ROLE]: ['WS#*'],
 };
 
@@ -157,9 +160,10 @@ interface Grant { role: string; managed: boolean; actions: string[]; resource: s
 const DYNAMO_DELETE = /^dynamodb:(DeleteItem|BatchWriteItem|PartiQLDelete|\*)$/;
 const S3_DELETE = /^s3:(Delete.*|\*)$/;
 
-/** `<Stack>/<RoleId>` for a CDK default policy logical id (`<RoleId>DefaultPolicy<hash>`). */
+/** `<Stack>/<RoleId>` for a CDK default policy logical id (`<RoleId>DefaultPolicy<hash>`), `<Stack>/<PolicyId>` for a
+ *  customer-managed policy's (`<PolicyId><hash>`). */
 function roleOf(stack: string, policyId: string): string {
-  return `${stack}/${policyId.replace(/DefaultPolicy[0-9A-F]{8}$/, '')}`;
+  return `${stack}/${policyId.replace(/(?:DefaultPolicy)?[0-9A-F]{8}$/, '')}`;
 }
 
 const synthed = synthApp();
@@ -250,9 +254,10 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   // and the live platform-admin check on entering a workspace (6.09.00, lambda/shared/workspace.py). Both landed; the
   // change that creates workspaces (6.09.00) is the one that widened WORKSPACE_WRITERS; the members routes (6.10.00)
   // write within the same partitions (role updates and removals in `USER#*` and `WS#*`); 6.11.00 adds the users API (a
-  // deleted user's memberships) and voc-retention (an erasure by email's de-identification). A new writer or partition
-  // is a decision recorded here.
-  it('voc-workspaces: only the workspaces API, the users API and voc-retention write, each in its partitions', () => {
+  // deleted user's memberships) and voc-retention (an erasure by email's de-identification); the workspace-resolution
+  // policy of the domain APIs that act in a workspace (the settings API first), the entry audit row of a platform admin
+  // (`AUDIT#WS#*`, a new row only). A new writer or partition is a decision recorded here.
+  it('voc-workspaces: only the workspaces and users APIs, the domain APIs\' resolution and voc-retention write, each in its partitions', () => {
     const writers: Record<string, Scope> = {};
     for (const grant of grants.filter(onTable('WorkspacesTable')).filter((g) => g.actions.some((a) => DYNAMO_WRITE.test(a)))) {
       writers[grant.role] = unionOf(writers[grant.role] ?? [], scopeOf(grant));

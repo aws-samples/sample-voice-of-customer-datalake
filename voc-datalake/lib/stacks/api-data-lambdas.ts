@@ -27,6 +27,7 @@ import type { ApiStackContext } from './api-context';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
+import { grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
@@ -400,7 +401,10 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // PUT /settings/appearance is a platform admin's (the deployment's one colour scheme, docs/multi-workspace.md):
   // the live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py), in the pool
   // `USER_POOL_ID` names (set with the briefing environment below).
+  // The same live check lets a platform admin enter a workspace (the resolved-problems routes act in the caller's
+  // workspace, lambda/shared/request_workspace.py): the membership reads and the entry's audit row.
   ctx.props.userPool.grant(settingsRole, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
+  const workspaceResolutionEnv = grantWorkspaceResolution(ctx.props.workspacesTable, settingsRole);
 
   const settingsProps: lambda.FunctionProps = {
     functionName: settingsFunctionName,
@@ -415,6 +419,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     memorySize: 1769, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
     environment: {
       AGGREGATES_TABLE: aggregatesTable.tableName,
+      ...workspaceResolutionEnv,
       // The category reprocess worker lives in VocProcessingStack. Named, not
       // imported: the deterministic physical name needs no cross-stack export,
       // and this stack already deploys after Processing.
