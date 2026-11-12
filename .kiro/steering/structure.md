@@ -397,7 +397,11 @@ which also holds the live check, `is_live_platform_admin`): `PUT /users/{usernam
 `POST /platform/workspaces` and `GET /platform/workspaces` (the last in ADMIN_ONLY_READS). Its WORKSPACE_ADMIN_ONLY
 table pins the routes gated by the caller's role in the workspace (`require_workspace_admin`, `shared/workspace.py`):
 `POST /me/workspaces/current/members` and `PUT /me/workspaces/current/members/{sub}`; the member `DELETE` is
-OPEN_BY_DECISION (a member leaves; removing someone else calls the gate first).
+OPEN_BY_DECISION (a member leaves; removing someone else calls the gate first). Every route in `lambda/` (on any router) that resolves the
+workspace (`resolve_workspace`, directly or through helpers in any module) or is served under `/me/workspaces/current` is in
+`WORKSPACE_SCOPED_ROUTES` of `lambda/api/test/test_cross_workspace.py` (since 6.14.00), which calls each one as a
+member of another workspace and as a non-member and expects the one 404; a scoped route missing from it fails that
+test.
 
 ### Users (users_handler.py)
 | Method | Path | Description |

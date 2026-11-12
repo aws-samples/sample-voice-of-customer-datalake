@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "1f8df67f61d1682e725cfd3a12c12b676e01549d411bcc4ac46a70dd8da6f9b8",
+      "templateSha256": "51a87ab0d463a6124246f88501d05e096d40dc23d532788c504e902cfd5de37b",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -338,7 +338,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "f38e753d25aff574d05a7eee6a5a0a4c6f70e503d5a6e40c5da16e36a63659a8",
+      "templateSha256": "0bd14f5a082be95b7c4ea8c1e5d71a4644eda9b3a8415825f211dbb77c69f495",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",

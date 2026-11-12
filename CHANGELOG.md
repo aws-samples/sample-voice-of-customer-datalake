@@ -17,6 +17,21 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.14.00] - 2026-11-12
+
+Multi-workspace, phase 1: the workspace-scoped repository layer, and the three guards that keep workspaces apart from now on. The data path is still not keyed by workspace (phase 2).
+
+### Added
+
+- The repository layer that phase 2 moves the data path onto, `lambda/shared/ws_repository.py` ([docs/multi-workspace.md](docs/multi-workspace.md#request-flow), step 4): `ws_table(ws, env_var)` opens one of the tables phase 2 keys by workspace (a fixed list of tables and their indexes; any other table is refused) and refuses, before calling AWS, any key whose partition attribute is not inside the workspace's data partitions (`WS#{ws}#…`), any put whose index partition attributes (each of that table's indexes) are not, and any update whose update expression names one of them (as a word or a `#placeholder`; a condition such as `attribute_exists(#pk)` is fine); each call takes only the parameters listed for it (the legacy `AttributeUpdates`, `Expected`, `KeyConditions`, `QueryFilter` and `AttributesToGet` are refused). Gets, puts, updates and deletes take and answer boto3's own forms, so a call site of those moves by swapping its table handle (its key values becoming `WS#{ws}#…`, phase 2's re-keying), unless it uses a legacy parameter or its update sets a key or index attribute (which becomes a put); a query names its partition (and an index by name) instead of a key condition, so each query call site is rewritten when it moves, and there is no scan. The layer has no transactions and no batch reads or writes yet: phase 2 adds scoped ones before it moves a call site that needs them. `ws_s3_key(ws, …)` builds `ws/{ws}/…` object keys and refuses empty parts, path traversal and control characters. Nothing in the data path uses it yet, so no route behaves differently.
+- A raw-access gate step, `audit: ws_raw_access` (`scripts/audit/ws_raw_access.py`, [docs/code-audit.md](docs/code-audit.md)): it counts, file by file, the raw table handles and DynamoDB and S3 clients and the S3 writes, copies and deletes it can see statically (client calls, presigned URLs, `Object`/`Bucket` methods and collection deletes; the detector lists what it misses) outside the layer in the Lambdas' Python and in the stream and plan-step Lambdas (TypeScript names followed through import and require aliases), against `scripts/audit/allowlists/ws_raw_access.json`. A new file with raw access, or a count that grows, fails the gate; a count that drops fails until its entry is lowered, so the list only shrinks. The list (today's baseline: 111 files), grouped by the phase that moves each file or the reason it stays raw (the control plane, the shared handle plumbing, a deploy-time resource), is the work list of phases 2 to 4.
+- A cross-workspace test suite, `lambda/api/test/test_cross_workspace.py`: every workspace-scoped route (today `GET /me/workspaces/current` and the members routes) answers a member of another workspace, and a caller in neither workspace, with the one 404 and the same body as for an id that names no workspace, calls no Cognito and changes nothing. A route anywhere in the Lambdas that resolves the workspace, directly or through helpers in other modules, but is missing from the suite's registry fails it.
+- A two-workspace check on the dev mock: the mock switch takes `"member"`, `PUT /__mock/workspaces {"enabled": true, "member": "acme"}` (the caller a member of that workspace only, and no platform admin to the workspace routes), and a Playwright spec (`e2e/tests/cross-workspace.spec.ts`, dev mock only) checks that the address `/w/juniper/members` of the other workspace shows "Workspace not found".
+
+### Upgrade notes
+
+- Nothing to do: no route, table, permission or web app behaviour changes. Deploy as usual; the version number in the API and Processing stacks moves with the release.
+
 ## [6.13.00] - 2026-11-12
 
 Multi-workspace, phase 1: the web app manages a workspace's members, and platform admins get the platform console.

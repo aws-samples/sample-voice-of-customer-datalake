@@ -26,6 +26,9 @@ AGGREGATES_BY_METRIC_TYPE_INDEX = 'gsi1-by-metric-type'
 # voc-projects table
 PROJECTS_BY_TYPE_INDEX = 'gsi1-by-type'
 
+# voc-jobs table (gsi1pk / gsi1sk; named by the workspace repository layer, shared/ws_repository.py)
+JOBS_BY_STATUS_INDEX = 'gsi1-by-status'
+
 # voc-memory table (gsi1pk MEMSTATUS#{scope}#{status}, gsi1sk last touched)
 MEMORY_BY_STATUS_INDEX = 'gsi1-by-memory-status'
 

@@ -190,6 +190,9 @@ def web  frontend,frontend-tests            "vitest: frontend"                  
 # Their groups (audit = every one) let validate-affected.sh run only the detectors whose inputs changed.
 def tsc  audit,audit-callers                "audit: py_route_callers"            'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/py_route_callers.py'
 def tsc  audit,audit-callers                "audit: py_stored_attrs"             'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/py_stored_attrs.py'
+# The multi-workspace raw-access ratchet (docs/multi-workspace.md, Request flow step 4): raw table handles and S3
+# writes outside lambda/shared/ws_repository.py, per file, against the counts in its allowlist (which only shrinks).
+def tsc  audit,audit-callers                "audit: ws_raw_access"               'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/ws_raw_access.py'
 def tsc  audit,audit-patterns               "audit: patterns"                    'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/patterns.py'
 def tsc  audit,audit-clones-py              "audit: clones_struct.py"            'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/clones_struct.py'
 def tsc  audit,audit-clones-py              "audit: py_dead_params"              'cd "$ROOT" && "$PYTHON_BIN" scripts/audit/py_dead_params.py'

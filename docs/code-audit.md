@@ -20,6 +20,7 @@ node scripts/audit/ts_locale_keys.mjs --help   # any one detector, with its own 
 | `py_layers.py` | layer libraries no attached function needs, few of them need, or the runtime already ships | ~5 s* |
 | `py_route_callers.py` | API routes with no product caller | ~1 s |
 | `py_stored_attrs.py` | DynamoDB attributes written but never read | ~3 s |
+| `ws_raw_access.py` | raw table handles and S3 writes, copies and deletes outside the workspace repository layer, a ratchet on today's counts | ~2 s |
 | `stack_outputs.py` | CloudFormation outputs scripts and docs read that no stack declares | ~1 s |
 | `repo_contracts.mjs` | undocumented or unread CDK context keys, `cdk.json` flags for unused modules, npm scripts nothing runs or that name missing files, orphan script files | ~2 s |
 | `doc_contract.py` | docs and steering that cite missing files, anchors, paths or routes, or a handler list out of step with `lambda/api/` | ~2 s |
@@ -101,6 +102,7 @@ reports everything.
 | `py_iam_contract.py` | grants on tables, buckets, queues, topics, secrets, functions, state machines and user pools that no function of the role can name (env var, physical-name literal, self re-invoke); event sources, DLQs and notifications are wiring, never judged | `grant-unused` |
 | `py_route_callers.py` | `@app.<verb>(path)` with no caller in the SPA, stream tools and plan writes, MCP tools, agent runtime, plan-step delegates, the static widget or Python delegates; the method is read near the literal. The inverse: a request no route serves (`route_targets.py`, below) | `no-caller`, `weak-caller-only`, `method-uncalled`, `called-no-route` |
 | `py_stored_attrs.py` | attributes in `put_item` / `update_item` items, `Item=` builders, write-helper arguments and `SET` / `ADD` targets that no reader names (Python, stream, SPA, widget, JSON) | `written-never-read` |
+| `ws_raw_access.py` | per file, outside `lambda/shared/ws_repository.py` ([multi-workspace.md](multi-workspace.md), Request flow step 4): in production Python (AST) `Table(…)` calls, `.client`/`.resource('dynamodb')` on any receiver (and `client`/`resource` imported from boto3), `get_dynamodb_resource()`, any `.meta.client`, any reference to a `shared/tables.py` getter (imported by name, alias or through the module), the layer's private handle (by attribute or by name) and any private attribute, `vars()` or `__dict__` of a layer handle, `create_client('dynamodb'/'s3')`, and S3 writes, copies and deletes (`put_object`, `upload_file(obj)`, `copy_object`, `copy`, `copy_from`, `delete_object(s)`, `put_object_tagging`, `create_multipart_upload`, `generate_presigned_post`, a presigned PUT, DELETE or copy URL, `put/delete/copy_from` on `Object(…)`/`Bucket(…)` or a name assigned one, a resource collection's `delete()`); in `lambda/stream/src` (the whole comment-stripped text, `@aws-sdk` names followed through named, namespace and default `import`s and `require`s) DynamoDB and S3 client construction, DynamoDB commands (PartiQL included) and S3 writes, copies and deletes. It misses a handle's use away from where it was built, dynamic calls, a non-literal service name, re-exported getters, the objects a resource collection yields (`for o in bucket.objects.all(): o.delete()`) and S3 reads (the docstring lists them). Its allowlist is a ratchet, not a list of excused keys: `{"group", "reason", "files": {"<path>": <count>}}`, and `--counts` prints today's counts | `raw-access`, `count-grew`, `count-dropped` |
 
 **`py_layers.py`: what the dependency layers ship.** `py_assembly` also records each `LayerVersion`: its
 source dir and bundling command. Per layer, `requirements.txt` is resolved offline against the installed metadata
@@ -439,7 +441,7 @@ each fails the gate on exit 1 (findings) or 2 (could not run). `bash scripts/val
 | Step | Lane | Group | Runs on a topic branch (`validate-affected.sh`) when |
 |---|---|---|---|
 | `audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function` | test, right after the vite build | `audit-py-synth` | `lambda/` (layer requirement files included), `plugins/`, the CDK app (`lib/`, `bin/`, `cdk*.json`) change |
-| `audit: py_route_callers`, `audit: py_stored_attrs` | tsc | `audit-callers` | `lambda/`, `plugins/`, the SPA, the stream Lambda or `voc-datalake/schemas/` change |
+| `audit: py_route_callers`, `audit: py_stored_attrs`, `audit: ws_raw_access` | tsc | `audit-callers` | `lambda/`, `plugins/`, the SPA, the stream Lambda or `voc-datalake/schemas/` change |
 | `audit: patterns` | tsc | `audit-patterns` | `lambda/`, `plugins/`, `voc-datalake/scripts/`, the SPA (incl. locales) or the stream change |
 | `audit: clones_struct.py` | tsc | `audit-clones-py` | Python in `lambda/`, `plugins/`, `voc-datalake/scripts/` or `scripts/` changes |
 | `audit: py_dead_params` | tsc | `audit-clones-py` | the same |

@@ -21,6 +21,9 @@
 // and an editor of "Juniper Trail Co." (juniper, whose admin is editor-demo; its secret is pending). Unlike the
 // server, which also lifts a platform admin who is a member below admin to admin, the mock lifts only a
 // non-member (entering from the platform console), so the caller's own role shows in juniper.
+// `{"enabled":true,"member":"acme"}`: the same two workspaces, but the caller is a member of acme only and these
+// routes treat them as no platform admin (no entry, and 403 on /platform), so juniper answers the one 404
+// (e2e/tests/cross-workspace.spec.ts).
 // Wired into mock-server.js by handleDomainModules; the dev-only /__mock/workspaces route is not an app route.
 
 const CONTROL_ROUTE = '/__mock/workspaces';
@@ -51,7 +54,7 @@ const ACME_ID = 'ws_01JCACME0000000000000000A1';
 const JUNIPER_ID = 'ws_01JCJNPR0000000000000000J1';
 const DAY_MS = 86_400_000;
 
-const state = { enabled: false, workspaces: [], created: 0 };
+const state = { enabled: false, workspaces: [], created: 0, platformAdmin: true };
 
 const daysAgo = (days) => new Date(Date.now() - days * DAY_MS).toISOString();
 
@@ -81,7 +84,7 @@ const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base
 const roleOf = (workspace, sub) => workspace.members.find((member) => member.sub === sub)?.role ?? null;
 
 function isPlatformAdmin(shared) {
-  return shared.mockUsers.some((user) => user.username === shared.mockCaller.username && user.enabled && user.groups.includes(PLATFORM_ADMIN_GROUP));
+  return state.platformAdmin && shared.mockUsers.some((user) => user.username === shared.mockCaller.username && user.enabled && user.groups.includes(PLATFORM_ADMIN_GROUP));
 }
 
 /** `GET /me/workspaces`: the caller's memberships, by name, each with its own row's role. */
@@ -240,16 +243,37 @@ function currentWorkspace(req, send, shared) {
   return send(200, { workspace: { id, name, slug, role: entry.role, platform_admin: entry.platformAdmin } });
 }
 
-/** PUT /__mock/workspaces {enabled}: the dev switch (no other method is served); each call starts afresh. */
+/** The switch's fixtures; with `member` (a slug) the caller keeps only that workspace's membership. */
+function switchFixtures(member, shared) {
+  const workspaces = fixtures(shared.mockCaller.sub, shared.mockSub);
+  if (member === undefined) return workspaces;
+  return workspaces.map((workspace) => workspace.slug === member
+    ? workspace
+    : { ...workspace, members: workspace.members.filter((row) => row.sub !== shared.mockCaller.sub) });
+}
+
+/** PUT /__mock/workspaces {enabled, member?}: the dev switch (no other method is served); each call starts afresh. */
 function control(req, res, send, shared) {
   shared.collectJson(req, res, (body) => {
+    const member = body?.member;
     if (typeof body?.enabled !== 'boolean') {
       send(400, { success: false, error: 'enabled must be true or false' });
       return;
     }
+    if (member !== undefined && !body.enabled) {
+      send(400, { success: false, error: 'member needs enabled: true' });
+      return;
+    }
+    const workspaces = body.enabled ? switchFixtures(member, shared) : [];
+    if (member !== undefined && !workspaces.some((workspace) => workspace.slug === member)) {
+      send(400, { success: false, error: 'member must be the slug of a mock workspace (acme, juniper)' });
+      return;
+    }
     state.enabled = body.enabled;
-    state.workspaces = body.enabled ? fixtures(shared.mockCaller.sub, shared.mockSub) : [];
+    state.workspaces = workspaces;
     state.created = 0;
+    // `member` also makes the caller no platform admin to these routes; off again restores the default.
+    state.platformAdmin = !(body.enabled && member !== undefined);
     send(200, { enabled: state.enabled });
   });
 }

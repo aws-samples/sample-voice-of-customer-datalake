@@ -167,6 +167,16 @@ except Exception as e:
     raise  # Let it go to DLQ
 ```
 
+## Workspace-Scoped Data Access (multi-workspace)
+
+Until phase 2 keys the data path by workspace, `lambda/shared/ws_repository.py` (`ws_table`, `ws_s3_key`) cannot read
+today's rows and nothing uses it; the `audit: ws_raw_access` step ([docs/code-audit.md](../../docs/code-audit.md))
+fails on a new raw table handle, client or S3 write outside it. So in phase 1, build new data code on the handles its
+module already has (a table passed into a function adds nothing); a change that truly needs a new one raises that
+file's count in `scripts/audit/allowlists/ws_raw_access.json` in the same change, in the group of the phase that moves
+it, so the reviewer sees it. A route that resolves the workspace goes into `WORKSPACE_SCOPED_ROUTES` in
+`lambda/api/test/test_cross_workspace.py`.
+
 ## Environment Variables
 
 Access via `os.environ` with defaults:

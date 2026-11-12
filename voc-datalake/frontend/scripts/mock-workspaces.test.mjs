@@ -126,8 +126,42 @@ describe('mock workspaces', () => {
     })
   })
 
-  it('refuses a switch that is not a boolean', async () => {
+  it('refuses a switch that is not a boolean, or a member that is not a slug', async () => {
     assert.equal((await call('PUT', '/__mock/workspaces', { enabled: 'yes' }))[0], 400)
+    assert.equal((await call('PUT', '/__mock/workspaces', { enabled: true, member: 7 }))[0], 400)
+    assert.equal((await call('PUT', '/__mock/workspaces', { enabled: true, member: 'nowhere' }))[0], 400)
+    assert.deepEqual(await call('PUT', '/__mock/workspaces', { enabled: false, member: 'acme' }),
+      [400, { success: false, error: 'member needs enabled: true' }])
+  })
+
+  describe('member: acme (the cross-workspace check)', () => {
+    let juniperId = ''
+    before(async () => {
+      await call('PUT', '/__mock/workspaces', { enabled: true })
+      juniperId = (await mine()).juniper.id
+      assert.deepEqual(await call('PUT', '/__mock/workspaces', { enabled: true, member: 'acme' }), [200, { enabled: true }])
+    })
+    after(async () => { await call('PUT', '/__mock/workspaces', { enabled: false }) })
+
+    it('lists acme only and refuses the platform routes', async () => {
+      assert.deepEqual(Object.keys(await mine()), ['acme'])
+      assert.equal((await call('GET', '/platform/workspaces'))[0], 403)
+    })
+
+    it("answers juniper's id with the one 404, as an id that names no workspace", async () => {
+      const refused = [404, { success: false, error: 'Workspace not found' }]
+      for (const id of [juniperId, 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ']) {
+        assert.deepEqual(await current(id), refused)
+        assert.deepEqual(await members(id), refused)
+        assert.deepEqual(await inWorkspace(id, 'PUT', member('sub-editor-demo'), { role: 'viewer' }), refused)
+        assert.deepEqual(await inWorkspace(id, 'DELETE', member('sub-editor-demo')), refused)
+      }
+    })
+
+    it('restores the default when switched off', async () => {
+      await call('PUT', '/__mock/workspaces', { enabled: false })
+      assert.equal((await call('GET', '/platform/workspaces'))[0], 200)
+    })
   })
 })
 

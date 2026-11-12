@@ -86,6 +86,9 @@ ignore_names = [
     # urllib3's connection protocols, which exist only under TYPE_CHECKING: shared/http_utils.py
     # imports them there and names them in its two `cast('type[...]', ...)` strings.
     "BaseHTTPConnection", "BaseHTTPSConnection",
+    # Phase 2's layer (lambda/shared/ws_repository.py, docs/multi-workspace.md Request flow step 4): used by its
+    # tests until the data path moves onto it; scripts/audit/ws_raw_access.py ratchets the raw uses it replaces.
+    "ws_table", "ws_s3_key",
 ]
 # Decorators that REGISTER the function with a framework, which then calls it: Powertools routes and
 # exception handlers, pydantic validators. Your own wrapper decorators (@api_handler, @tracer.*) are

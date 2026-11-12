@@ -1,5 +1,7 @@
 {
   "entries": [
+    {"key": "lambda/shared/ws_repository.py", "reason": "Phase 2's workspace-scoped repository layer (docs/multi-workspace.md, Request flow step 4): used by its tests until the data path moves onto it; scripts/audit/ws_raw_access.py ratchets the raw uses it replaces. Remove this entry with its first production import."},
+    {"key": "lambda/shared/indexes.py::JOBS_BY_STATUS_INDEX", "reason": "voc-jobs' gsi1-by-status, named only by the workspace repository layer's table registry (shared/ws_repository.py TABLES, phase 2's layer, allowlisted above as unreached until the data path moves onto it). Remove this entry with that one."},
     {"key": "lambda/agents/state_machine.py", "reason": "Build-time generator of state_machine.asl.json (the CDK loads the JSON); test_graph_and_state_machine.py keeps the two in lockstep. Never imported at run time by design."},
     {"key": "lambda/shared/api.py::clear_categories_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the module-level categories cache between API tests."},
     {"key": "lambda/shared/memory_store.py::clear_pool_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container embedding pool between memory tests."},
