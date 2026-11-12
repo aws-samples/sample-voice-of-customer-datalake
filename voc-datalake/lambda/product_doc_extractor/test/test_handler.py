@@ -25,6 +25,7 @@ from .conftest import (
     MAX_IMAGE_BYTES,
     MAX_IMAGE_DIMENSION_PX,
     OTHER_ALLOWED_MODEL,
+    TEST_AGGREGATES_TABLE,
     conditional_check_failed,
     gif_header,
     jpeg_header,
@@ -695,6 +696,27 @@ class TestModelResolution:
                        'model_id': OTHER_ALLOWED_MODEL})
 
         assert extractor._resolve_model_id() == DOCUMENTS_DEFAULT_MODEL
+
+    def test_the_deployment_default_applies_when_nobody_picked(self, extractor, wire):
+        wire(settings=None, deployment_default={'model_id': OTHER_ALLOWED_MODEL})
+
+        assert extractor._resolve_model_id() == OTHER_ALLOWED_MODEL
+
+    def test_every_pick_outranks_the_deployment_default(self, extractor, wire):
+        wire(settings={'model_id': DOCUMENTS_DEFAULT_MODEL}, deployment_default={'model_id': OTHER_ALLOWED_MODEL})
+
+        assert extractor._resolve_model_id() == DOCUMENTS_DEFAULT_MODEL
+
+    def test_a_failed_read_of_the_default_keeps_the_picks(self, extractor, wire):
+        wire(settings={'model_id': OTHER_ALLOWED_MODEL}, deployment_default=RuntimeError('Throttled'))
+
+        assert extractor._resolve_model_id() == OTHER_ALLOWED_MODEL
+
+    def test_a_failed_read_of_the_picks_still_applies_the_default(self, extractor, wire):
+        wire(settings=None, deployment_default={'model_id': OTHER_ALLOWED_MODEL})
+        extractor._clients[f'table:{TEST_AGGREGATES_TABLE}'].by_pk['SETTINGS#model'] = RuntimeError('Throttled')
+
+        assert extractor._resolve_model_id() == OTHER_ALLOWED_MODEL
 
     def test_non_allowlisted_configured_model_is_ignored(self, extractor, wire):
         # A stale or tampered settings row must never reach Bedrock: a model that

@@ -47,6 +47,7 @@ from shared.model_config import ALLOWED_MODEL_IDS, PICKER_SURFACES
 from shared.reprocess_slices import ReprocessSlice
 from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
+from shared.test.model_config_fixtures import MODEL_ROWS_READ
 
 
 @pytest.fixture(autouse=True)
@@ -769,7 +770,30 @@ def test_in_a_workspace_a_viewer_reads_and_an_editor_marks(monkeypatch, route, t
 class TestTheModelSettingsRow:
     def test_the_row_is_read_by_its_key(self, route, table):
         route('GET', '/settings/model')
-        table.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#model', 'sk': 'config'})
+        # The picks, then the deployment's default (pinned at deploy), which the answer names.
+        assert [call.kwargs for call in table.get_item.call_args_list] == MODEL_ROWS_READ
+
+    def test_a_failed_read_of_the_default_still_answers_the_picks(self, route, table):
+        failure = ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'slow down'}}, 'GetItem')
+
+        def picks_only(Key):
+            if Key['pk'] == 'SETTINGS#model_default':
+                raise failure
+            return {'Item': {'model_id': OPUS}}
+
+        table.get_item.side_effect = picks_only
+        response, payload = route('GET', '/settings/model')
+        assert (response['statusCode'], payload['model_id'], payload['deployment_default']) == (200, OPUS, None)
+
+    def test_a_default_outside_the_allowlist_is_not_named(self, route, table):
+        table.get_item.side_effect = lambda Key: (
+            {'Item': {'model_id': 'anthropic.unknown'}} if Key['pk'] == 'SETTINGS#model_default' else {})
+        assert route('GET', '/settings/model')[1]['deployment_default'] is None
+
+    def test_the_answer_names_the_deployment_s_default(self, route, table):
+        table.get_item.side_effect = lambda Key: {'Item': {'model_id': OPUS}} if Key['pk'] == 'SETTINGS#model_default' else {}
+        _, payload = route('GET', '/settings/model')
+        assert (payload['model_id'], payload['deployment_default']) == (None, OPUS)
 
     def test_a_non_dict_surfaces_attribute_reads_as_automatic(self, route, table):
         table.get_item.return_value = {'Item': {'surfaces': 'chat=haiku', 'model_id': OPUS}}

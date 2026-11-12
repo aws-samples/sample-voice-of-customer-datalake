@@ -1372,11 +1372,19 @@ npm run deploy:infra -- -c defaultModelId=global.anthropic.claude-sonnet-4-6
 ```
 
 This creates a `Custom::ModelPin` resource in `VocCoreStack` that writes
-`model_id` to the `SETTINGS#model` configuration item. Behaviour worth knowing:
+`model_id` to the deployment's default-model item, `SETTINGS#model_default`
+(its own row, not the administrators' picks in `SETTINGS#model`, so the picks
+can later be each workspace's while the default stays the deployment's).
+Behaviour worth knowing:
 
-- **Write-once.** The value is only set if absent, so an administrator's later
-  choice in Administration → AI models is never overwritten by a redeploy. It is a floor, not a lock:
-  per-surface overrides still take precedence.
+- **Write-once.** The value is only set if absent, so a redeploy never changes
+  it. It is a floor, not a lock: every choice in Administration → AI models
+  (per surface, or for all surfaces) takes precedence.
+- **Upgrading.** A deployment pinned before this row existed keeps its pin in
+  `SETTINGS#model` (`model_id`), where it still applies to every surface left on
+  Automatic; nothing needs to move (the custom resource runs again only when
+  `defaultModelId` changes, and then writes the new row, which that pin
+  outranks).
 - **Validated at synth.** The id must be in `ALLOWED_MODEL_IDS`
   (`lib/utils/model-allowlist.ts`); an unrecognized value fails the synth rather
   than being discarded at read time.
@@ -1515,6 +1523,7 @@ throttles every call. So when the model a surface resolved cannot serve right
 now, the request is re-run on the next model of one ordered chain:
 
 1. the surface's resolved model (admin per-surface pin › legacy global pin ›
+   the deployment's default (`SETTINGS#model_default`, `-c defaultModelId`) ›
    built-in default, or an explicit `model_id=`),
 2. the surface's built-in default, when different,
 3. then `MODEL_FALLBACK_ORDER`: **Sonnet 5.5 → Sonnet 5 → Sonnet 4.6 → Haiku 5.5 → Haiku 4.5**.

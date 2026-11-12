@@ -31,8 +31,43 @@ function isDocClient(client: DocClientLike): client is DocClientLike & DynamoDBD
 }
 
 /** Build a doc-client test double without `as` type assertions. */
-function docClientReturning(item: Record<string, unknown> | undefined): DynamoDBDocumentClient & DocClientLike {
-  const double: DocClientLike = { send: vi.fn().mockResolvedValue({ Item: item }) };
+/** A table whose picks' row (SETTINGS#model) is `item` and whose deployment default (SETTINGS#model_default) is
+ *  `pinned` (each absent when undefined). */
+function docClientReturning(
+  item: Record<string, unknown> | undefined, pinned?: Record<string, unknown>,
+): DynamoDBDocumentClient & DocClientLike {
+  const send = vi.fn((command: unknown) => {
+    const key: unknown = Reflect.get(Reflect.get(command as object, 'input') as object, 'Key');
+    const pk: unknown = Reflect.get(key as object, 'pk');
+    return Promise.resolve({ Item: pk === 'SETTINGS#model_default' ? pinned : item });
+  });
+  const double: DocClientLike = { send };
+  if (!isDocClient(double)) throw new Error('test double is not send-able');
+  return double;
+}
+
+/** A table whose picks' read fails (a throttled read) and whose deployment default is `pinned`. */
+function docClientFailingThePicks(pinned: Record<string, unknown>): DynamoDBDocumentClient & DocClientLike {
+  const send = vi.fn((command: unknown) => {
+    const key: unknown = Reflect.get(Reflect.get(command as object, 'input') as object, 'Key');
+    return Reflect.get(key as object, 'pk') === 'SETTINGS#model'
+      ? Promise.reject(new Error('Throttled'))
+      : Promise.resolve({ Item: pinned });
+  });
+  const double: DocClientLike = { send };
+  if (!isDocClient(double)) throw new Error('test double is not send-able');
+  return double;
+}
+
+/** A table whose picks' row is `item` and whose deployment-default read fails (a throttled read). */
+function docClientFailingTheDefault(item: Record<string, unknown>): DynamoDBDocumentClient & DocClientLike {
+  const send = vi.fn((command: unknown) => {
+    const key: unknown = Reflect.get(Reflect.get(command as object, 'input') as object, 'Key');
+    return Reflect.get(key as object, 'pk') === 'SETTINGS#model_default'
+      ? Promise.reject(new Error('Throttled'))
+      : Promise.resolve({ Item: item });
+  });
+  const double: DocClientLike = { send };
   if (!isDocClient(double)) throw new Error('test double is not send-able');
   return double;
 }
@@ -163,6 +198,7 @@ describe('resolveModelOverride — exact read, cache windows and warnings', () =
     await resolveModelOverride(client, 'agg');
     expect(client.send.mock.calls.map(([command]) => Reflect.get(command, 'input'))).toStrictEqual([
       { TableName: 'agg', Key: { pk: 'SETTINGS#model', sk: 'config' } },
+      { TableName: 'agg', Key: { pk: 'SETTINGS#model_default', sk: 'config' } },
     ]);
   });
 
@@ -181,10 +217,10 @@ describe('resolveModelOverride — exact read, cache windows and warnings', () =
     await resolveModelOverride(client, 'agg');
     advance(59_999);
     await resolveModelOverride(client, 'agg');
-    expect(client.send).toHaveBeenCalledTimes(1);
+    expect(client.send).toHaveBeenCalledTimes(2);   // one fill: the picks and the default
     advance(60_000);
     await resolveModelOverride(client, 'agg');
-    expect(client.send).toHaveBeenCalledTimes(2);
+    expect(client.send).toHaveBeenCalledTimes(4);
   });
 
   it('warns on a failed read and retries it after 10 s', async () => {
@@ -195,10 +231,10 @@ describe('resolveModelOverride — exact read, cache windows and warnings', () =
     expect(warn.mock.calls).toStrictEqual([['Model override lookup failed; using default:', new Error('AccessDenied')]]);
     advance(9_999);
     await resolveModelOverride(client, 'agg');
-    expect(client.send).toHaveBeenCalledTimes(1);
+    expect(client.send).toHaveBeenCalledTimes(2);   // one fill: both reads sent, one warning
     advance(10_000);
     await resolveModelOverride(client, 'agg');
-    expect(client.send).toHaveBeenCalledTimes(2);
+    expect(client.send).toHaveBeenCalledTimes(4);
   });
 
   it('names a value off the allowlist, cut to 80 characters', async () => {
@@ -206,6 +242,32 @@ describe('resolveModelOverride — exact read, cache windows and warnings', () =
     const tampered = `x${'y'.repeat(99)}`;
     expect(await resolveModelOverride(docClientReturning({ model_id: tampered }), 'agg')).toBeUndefined();
     expect(warn.mock.calls).toStrictEqual([[`Configured model '${tampered.slice(0, 80)}' not in allowlist; ignoring`]]);
+  });
+
+  it('falls back to the deployment default when nobody picked', async () => {
+    expect(await resolveModelOverride(docClientReturning(undefined, { model_id: HAIKU45 }), 'agg')).toBe(HAIKU45);
+  });
+
+  it('puts every pick above the deployment default', async () => {
+    const picked = docClientReturning({ model_id: SONNET46, surfaces: { chat: OPUS5 } }, { model_id: HAIKU45 });
+    expect(await resolveModelOverride(picked, 'agg', 'chat')).toBe(OPUS5);
+  });
+
+  it('keeps the picks when only the deployment default cannot be read', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const advance = clock(1_000_000);
+    const client = docClientFailingTheDefault({ surfaces: { chat: OPUS5 } });
+    expect(await resolveModelOverride(client, 'agg')).toBe(OPUS5);
+    expect(warn.mock.calls).toStrictEqual([['Model override lookup failed; using default:', new Error('Throttled')]]);
+    // A partial failure is cached for the 10 s error window, not the minute.
+    advance(10_000);
+    await resolveModelOverride(client, 'agg');
+    expect(client.send).toHaveBeenCalledTimes(4);
+  });
+
+  it('applies the deployment default when only the picks cannot be read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    expect(await resolveModelOverride(docClientFailingThePicks({ model_id: HAIKU45 }), 'agg')).toBe(HAIKU45);
   });
 
   it('stays silent when nothing is configured', async () => {

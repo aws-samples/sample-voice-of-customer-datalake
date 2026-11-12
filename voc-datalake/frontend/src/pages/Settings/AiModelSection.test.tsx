@@ -165,6 +165,23 @@ describe('AiModelSection', () => {
     expect(screen.queryByText('Automatic — Claude Opus 5')).not.toBeInTheDocument()
   })
 
+  it('names the deployment default in every Automatic option when nobody picked a global model', async () => {
+    // A deployment pinned at deploy since the split: the pin is SETTINGS#model_default, below the global pick.
+    mockGetModelSettings.mockResolvedValue({ ...modelSettingsFixture, model_id: null, deployment_default: SONNET46 })
+    renderAdminSection()
+
+    await screen.findByLabelText('AI Assistant')
+    expect(new Set(SURFACE_LABELS.map(automaticOptionOf))).toStrictEqual(new Set(['Automatic — Claude Sonnet 4.6']))
+  })
+
+  it('puts the global pick above the deployment default', async () => {
+    mockGetModelSettings.mockResolvedValue({ ...modelSettingsFixture, model_id: OPUS5, deployment_default: SONNET46 })
+    renderAdminSection()
+
+    await waitFor(() => expect(screen.getByLabelText('AI Assistant')).toBeInTheDocument())
+    expect(automaticOptionOf('AI Assistant')).toBe('Automatic — Claude Opus 5')
+  })
+
   it('keeps an explicit per-surface selection selected under a global pin', async () => {
     // The pin only re-labels Automatic; a stored per-surface choice still wins
     // in the resolver and must stay the selected option.

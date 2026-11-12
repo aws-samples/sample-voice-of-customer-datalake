@@ -299,3 +299,7 @@ export const MAX_IMAGE_BYTES = 3_750_000;
 
 /** Max pixels on either side of an image in a Converse message. */
 export const MAX_IMAGE_DIMENSION_PX = 8000;
+
+/** The deployment's default model row in voc-aggregates (`SETTINGS#model_default` / `config`, `model_id`): pinned at
+ *  deploy by lambda/custom_resources/model_pin.py, read below every pick (lambda/shared/model_config.py). */
+export const MODEL_DEFAULT_PARTITION = 'SETTINGS#model_default';

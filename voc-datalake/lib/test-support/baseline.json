@@ -280,7 +280,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "4c63625157ea7a23fe4ee76ae14b767487366b161a5bcc369501df0299d4dd64",
+      "templateSha256": "9f2194848672e4b9b6aa588edce7afe74e32d3c9aa5aa748e7cc84e84562ec29",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",

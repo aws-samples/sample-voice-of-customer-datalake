@@ -4,7 +4,8 @@
  * Admins pick a Bedrock model per AI surface in Settings; the choices live in
  * the aggregates table under SETTINGS#model. Streaming chat is the "chat"
  * surface: this module resolves the chat override (per-surface first, then the
- * legacy global override), returning `undefined` when nothing valid is
+ * legacy global override, then the deployment's default pinned at deploy,
+ * SETTINGS#model_default), returning `undefined` when nothing valid is
  * configured so the caller falls back to its env default. The lookup must
  * never break a chat turn.
  *
@@ -19,6 +20,10 @@ import { z } from 'zod';
 const settingsRecordSchema = z.record(z.string(), z.unknown());
 
 const MODEL_SETTINGS_PK = 'SETTINGS#model';
+/** The deployment's default model, pinned at deploy (lambda/custom_resources/model_pin.py), below the picks. */
+const MODEL_DEFAULT_PK = 'SETTINGS#model_default';
+/** Where fetchSettings puts the deployment default's model id in the settings it returns (no stored attribute). */
+const DEPLOYMENT_DEFAULT = 'deployment_default';
 const MODEL_SETTINGS_SK = 'config';
 
 // Curated allowlist — MUST stay in lockstep with model_config.py::ALLOWED_MODELS
@@ -77,12 +82,20 @@ async function fetchSettings(
   tableName: string,
 ): Promise<{ item: Record<string, unknown>; ttl: number }> {
   try {
-    const result = await docClient.send(new GetCommand({
-      TableName: tableName,
-      Key: { pk: MODEL_SETTINGS_PK, sk: MODEL_SETTINGS_SK },
-    }));
-    const parsed = settingsRecordSchema.safeParse(result.Item);
-    return { item: parsed.success ? parsed.data : {}, ttl: CACHE_TTL_MS };
+    // Both rows at once; a failed read of either one keeps what the other answered (the picks are never lost to a
+    // failed read of the default), cached for the short error window.
+    const [result, pinned] = await Promise.allSettled([MODEL_SETTINGS_PK, MODEL_DEFAULT_PK].map((pk) =>
+      docClient.send(new GetCommand({ TableName: tableName, Key: { pk, sk: MODEL_SETTINGS_SK } }))));
+    const parsed = settingsRecordSchema.safeParse(result?.status === 'fulfilled' ? result.value.Item : undefined);
+    const item: Record<string, unknown> = parsed.success ? { ...parsed.data } : {};
+    const pinnedItem = settingsRecordSchema.safeParse(pinned?.status === 'fulfilled' ? pinned.value.Item : undefined);
+    if (pinnedItem.success && pinnedItem.data.model_id) item[DEPLOYMENT_DEFAULT] = pinnedItem.data.model_id;
+    const failed = [result, pinned].find((outcome) => outcome?.status === 'rejected');
+    if (failed?.status === 'rejected') {
+      console.warn('Model override lookup failed; using default:', failed.reason);
+      return { item, ttl: ERROR_CACHE_TTL_MS };
+    }
+    return { item, ttl: CACHE_TTL_MS };
   } catch (error) {
     console.warn('Model override lookup failed; using default:', error);
     return { item: {}, ttl: ERROR_CACHE_TTL_MS };
@@ -123,9 +136,10 @@ function allowlisted(value: unknown): string | undefined {
 /**
  * Resolve the admin-configured model override for a surface, if any.
  *
- * Precedence: per-surface override > legacy global override > undefined
- * (caller falls back to its own env default). Returns an allowlisted model id
- * or undefined; never throws.
+ * Precedence: per-surface override > legacy global override > the
+ * deployment's default (SETTINGS#model_default) > undefined (caller falls back
+ * to its own env default). Returns an allowlisted model id or undefined;
+ * never throws.
  */
 export async function resolveModelOverride(
   docClient: DynamoDBDocumentClient,
@@ -139,5 +153,5 @@ export async function resolveModelOverride(
     const perSurface = allowlisted(surfaces.data[surface]);
     if (perSurface) return perSurface;
   }
-  return allowlisted(item.model_id);
+  return allowlisted(item.model_id) ?? allowlisted(item[DEPLOYMENT_DEFAULT]);
 }
