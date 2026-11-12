@@ -1,0 +1,139 @@
+# Rust + TypeScript gate pack, for a TARGET repository: the gate checks a change with the repository's own
+# configuration and pins; it never adds rules the team did not choose. Steps run in kind order (setup, format, lint, types, build, test), per root; a failing setup step
+# stops the rest. Setup steps are the dependency step: they fetch only what the lock file names, run no install
+# script and build nothing; every later step runs offline.
+schema = "voc-gate-pack/1"
+id = "rust-ts"
+name = "Rust + TypeScript"
+# The hosts the setup steps need (the dependency step's egress allowlist); no other step has network.
+network = ["index.crates.io", "static.crates.io", "registry.npmjs.org"]
+
+[image]
+rust = "1.99.1"   # the image's default toolchain; a repository's rust-toolchain.toml wins
+node = "24"
+
+# A root is the outermost directory with a marker and a source file under it; a marker below a workspace root is
+# one of its members (checked through it), any other marker below a root is a root of its own.
+[languages.rust]
+markers = ["Cargo.toml"]
+extensions = [".rs"]
+workspace = [{ file = "Cargo.toml", contains = "[workspace]" }]
+
+[languages.ts]
+markers = ["package.json"]
+extensions = [".ts", ".tsx", ".mts", ".cts"]
+workspace = [{ file = "package.json", contains = "\"workspaces\"" }, { file = "pnpm-workspace.yaml" }]
+
+[tools.cargo]
+version_argv = ["cargo", "--version"]
+
+[tools.rustc]
+version_argv = ["rustc", "--version"]
+
+[tools.node]
+version_argv = ["node", "--version"]
+
+[tools.npm]
+version_argv = ["npm", "--version"]
+
+# ---- Rust ----
+[[steps]]
+id = "rust.fetch"
+language = "rust"
+name = "cargo fetch"
+kind = "setup"
+# No rustc wrapper the repository's .cargo/config.toml names runs here.
+argv = ["cargo", "--config", "build.rustc-wrapper=''", "--config", "build.rustc-workspace-wrapper=''", "fetch"]
+timeout_s = 1200
+[[steps.prefer]]
+when = [{ file = "Cargo.lock" }]
+argv = ["cargo", "--config", "build.rustc-wrapper=''", "--config", "build.rustc-workspace-wrapper=''", "fetch",
+        "--locked"]
+
+[[steps]]
+id = "rust.fmt"
+language = "rust"
+name = "rustfmt"
+kind = "format"
+argv = ["cargo", "fmt", "--all", "--check"]
+timeout_s = 300
+
+[[steps]]
+id = "rust.clippy"
+language = "rust"
+name = "clippy"
+kind = "lint"
+argv = ["cargo", "clippy", "--workspace", "--all-targets", "--offline", "--", "-D", "warnings"]
+timeout_s = 2700
+[[steps.prefer]]
+when = [{ file = "Cargo.lock" }]
+argv = ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"]
+
+[[steps]]
+id = "rust.test"
+language = "rust"
+name = "cargo test"
+kind = "test"
+argv = ["cargo", "test", "--workspace", "--offline"]
+timeout_s = 3600
+# Proof that it looked: at least one test target ran at least one test.
+expect_output = 'test result: ok\. [1-9]'
+[[steps.prefer]]
+when = [{ file = "Cargo.lock" }]
+argv = ["cargo", "test", "--workspace", "--locked", "--offline"]
+
+# ---- TypeScript (the same steps as python-ts: one run per root when both packs apply) ----
+[[steps]]
+id = "ts.install"
+language = "ts"
+name = "install dependencies"
+kind = "setup"
+argv = []
+timeout_s = 1200
+# The lock file's packages from the public registry (the repository's registry settings overridden), no scripts.
+[[steps.prefer]]
+when = [{ file = "package-lock.json" }]
+argv = ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--registry=https://registry.npmjs.org/"]
+[[steps.prefer]]
+when = [{ file = "pnpm-lock.yaml" }]
+argv = ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile",
+        "--registry=https://registry.npmjs.org/"]
+
+[[steps]]
+id = "ts.typecheck"
+language = "ts"
+name = "tsc"
+kind = "types"
+when_any = [{ file = "tsconfig.json" }, { file = "package.json", npm_script = "typecheck" }]
+argv = ["npx", "--no-install", "tsc", "--noEmit", "-p", "tsconfig.json"]
+timeout_s = 1200
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "typecheck" }]
+argv = ["npm", "run", "--silent", "typecheck"]
+
+[[steps]]
+id = "ts.lint"
+language = "ts"
+name = "eslint"
+kind = "lint"
+when_any = [
+  { file = "eslint.config.js" }, { file = "eslint.config.mjs" }, { file = "eslint.config.cjs" },
+  { file = "eslint.config.ts" }, { file = ".eslintrc.json" }, { file = ".eslintrc.js" }, { file = ".eslintrc.cjs" },
+  { file = "package.json", npm_script = "lint" },
+]
+argv = ["npx", "--no-install", "eslint", ".", "--max-warnings", "0"]
+timeout_s = 1200
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "lint" }]
+argv = ["npm", "run", "--silent", "lint"]
+
+[[steps]]
+id = "ts.test"
+language = "ts"
+name = "npm test"
+kind = "test"
+argv = []
+timeout_s = 3600
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "test" }]
+argv = ["npm", "test", "--silent"]
