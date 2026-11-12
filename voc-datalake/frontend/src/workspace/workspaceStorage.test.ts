@@ -86,9 +86,9 @@ async function helpersAt(pathname: string) {
   return import('./workspaceStorage')
 }
 
-/** Records of acme, juniper and outside workspaces, plus a key of another store and the assistant's per-tab half. */
+/** Records of acme, juniper and outside workspaces (the plain draft among them), plus a key of another store and the assistant's per-tab half. */
 function seed(): void {
-  for (const key of ['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-manual-import:w/juniper', 'voc-config', 'voc-config:w/acme', 'voc-config:w/juniper', 'voc-theme']) {
+  for (const key of ['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-manual-import', 'voc-manual-import:w/juniper', 'voc-config', 'voc-config:w/acme', 'voc-config:w/juniper', 'voc-theme']) {
     saved.set(key, '{}')
   }
   window.sessionStorage.setItem('voc-assistant-ui:w/juniper', '{}')
@@ -100,8 +100,8 @@ describe('forgetWorkspaceStores (sign-out, an expired session)', () => {
     seed()
     const { forgetWorkspaceStores } = await helpersAt('/w/acme/dashboard')
     forgetWorkspaceStores()
-    // The plain config (filters) stays as before 6.15.00; the plain assistant record goes with the session.
-    expect(savedKeys()).toStrictEqual(['voc-config', 'voc-theme'])
+    // The plain draft and config (filters) stay as before 6.15.00; the plain assistant record goes with the session.
+    expect(savedKeys()).toStrictEqual(['voc-config', 'voc-manual-import', 'voc-theme'])
     expect(Object.keys(window.sessionStorage)).toStrictEqual(['voc-refused-workspaces'])
   })
 })
@@ -111,13 +111,13 @@ describe('forgetOtherRecords (Reset local settings)', () => {
     seed()
     const { forgetOtherRecords } = await helpersAt('/w/acme/settings')
     forgetOtherRecords('voc-config')
-    expect(savedKeys()).toStrictEqual(['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-config:w/acme', 'voc-manual-import:w/juniper', 'voc-theme'])
+    expect(savedKeys()).toStrictEqual(['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-config:w/acme', 'voc-manual-import', 'voc-manual-import:w/juniper', 'voc-theme'])
   })
 
   it('outside a workspace keeps the plain record and removes every workspace\'s', async () => {
     seed()
     const { forgetOtherRecords } = await helpersAt('/account')
     forgetOtherRecords('voc-config')
-    expect(savedKeys()).toStrictEqual(['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-config', 'voc-manual-import:w/juniper', 'voc-theme'])
+    expect(savedKeys()).toStrictEqual(['voc-assistant-ui', 'voc-assistant-ui:w/acme', 'voc-config', 'voc-manual-import', 'voc-manual-import:w/juniper', 'voc-theme'])
   })
 })

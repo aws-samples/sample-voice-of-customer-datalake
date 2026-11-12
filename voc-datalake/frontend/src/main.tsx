@@ -5,6 +5,8 @@ import './i18n/config'
 import './index.css'
 import { ConfigError } from './lib/errors'
 import { installStaleBuildReload } from './lib/staleBuildReload'
+// Another tab's sign-out or expired session ends this tab's too (its listener installs on import).
+import './services/crossTabSignOut'
 
 // A tab opened before a deploy reloads once when it asks for a chunk the deploy removed (lib/staleBuildReload).
 installStaleBuildReload({

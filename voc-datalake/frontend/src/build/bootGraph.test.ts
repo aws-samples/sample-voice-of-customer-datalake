@@ -53,6 +53,10 @@ describe('the app shell', () => {
     expect([...files].some((file) => file.endsWith('components/Layout/Layout.tsx'))).toBe(true)
   })
 
+  it('installs the cross-tab sign-out listener itself, whatever else becomes lazy', () => {
+    expect(staticSpecifiers(join(SRC, 'main.tsx'))).toContain('./services/crossTabSignOut')
+  })
+
   it('loads no chart and no markdown library before a page asks for one', () => {
     expect([...packages].filter((name) => name === 'recharts' || name.startsWith('react-markdown') || name === 'remark-gfm'))
       .toStrictEqual([])

@@ -58,7 +58,10 @@ export function forgetPlatformEntry(slug: string): void {
   store(storedEntries().filter((entry) => entry.slug !== slug))
 }
 
-/** Drop every entry of the tab (sign-out; an expired session keeps them, services/sessionExpiry.ts). */
+/**
+ * Drop every entry of the tab (sign-out, and another tab's end of session: services/crossTabSignOut.ts). This tab's
+ * own expired session keeps them (services/sessionExpiry.ts), so signing back in returns to the workspace.
+ */
 export function forgetPlatformEntries(): void {
   try {
     window.sessionStorage.removeItem(PLATFORM_ENTRIES_KEY)

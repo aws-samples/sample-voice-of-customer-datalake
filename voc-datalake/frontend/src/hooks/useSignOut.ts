@@ -5,6 +5,7 @@
 import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { authService } from '../services/auth'
+import { announceSessionEnded } from '../services/crossTabSignOut'
 import { setCurrentWorkspace } from '../workspace/currentWorkspace'
 import { forgetPlatformEntries } from '../workspace/platformEntry'
 import { forgetRefused } from '../workspace/refusedWorkspaces'
@@ -25,6 +26,8 @@ export function useSignOut(): () => void {
     forgetPlatformEntries()
     authService.signOut()
     forgetWorkspaceStores()
+    // The browser's other open tabs end theirs too (services/crossTabSignOut.ts).
+    announceSessionEnded()
     window.location.assign(SIGNED_OUT_PATH)
   }, [queryClient])
 }

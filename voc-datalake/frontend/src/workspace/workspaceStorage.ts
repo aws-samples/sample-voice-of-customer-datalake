@@ -13,7 +13,8 @@
  * shows not-found there and opens no page.
  *
  * A page load holds only its own workspace's stores, so sign-out and an expired session drop the other
- * workspaces' records from the browser here ({@link forgetWorkspaceStores}).
+ * workspaces' records from the browser here ({@link forgetWorkspaceStores}), and so does another tab's sign-out
+ * (services/crossTabSignOut.ts).
  *
  * @module workspace/workspaceStorage
  */
@@ -44,6 +45,8 @@ function removeMatching(storage: () => Storage, matches: (key: string) => boolea
 
 const BROWSER_STORAGES: ReadonlyArray<() => Storage> = [() => window.localStorage, () => window.sessionStorage]
 
+const ASSISTANT_STORE: WorkspaceStore = 'voc-assistant-ui'
+
 /**
  * Forget every workspace's record of the three stores, in localStorage and sessionStorage (sign-out, an expired
  * session): the next person on this browser finds no workspace's conversation in view, draft or filters. The
@@ -56,8 +59,6 @@ export function forgetWorkspaceStores(): void {
       || WORKSPACE_STORES.some((name) => isWorkspaceRecord(name, key)))
   }
 }
-
-const ASSISTANT_STORE: WorkspaceStore = 'voc-assistant-ui'
 
 /**
  * Forget every record of the store `name` but this page load's own (the plain one and every workspace's): "Reset

@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.16.00] - 2026-11-12
+
+Multi-workspace, phase 1: signing out in one browser tab now ends the session in the browser's other open tabs too. The data path is still not keyed by workspace (phase 2).
+
+### Changed
+
+- When a browser tab signs out, or its session expires, every other open tab of the web app in that browser removes each workspace's saved state (the assistant panel's, the manual-import draft and the dashboard filters) and the assistant panel's saved state outside workspaces, as the tab that signed out does, and a tab that was signed in reloads to the sign-in page. Before, such a tab kept the last person's state in memory and could save it back to the browser for the next person. The draft and filters outside workspaces are kept, as after a sign-out. The tab that ends its session leaves a short notice in the browser's storage (`voc-session-ended`, a fresh value each time), and the browser tells the other tabs; nothing is sent to the server. A session refresh that fails for a moment and then succeeds is not a sign-out and ends no other tab, a sign-in in another tab changes nothing in the open ones, and a late notice of an earlier sign-out does not remove what a person who signed in meanwhile has saved.
+
+### Upgrade notes
+
+- Only the web app changes: deploy VocApiStack as usual (`cd voc-datalake && npm run deploy:api`; it carries the web app). No API, table or permission changes.
+
 ## [6.15.00] - 2026-11-12
 
 Multi-workspace, phase 1: what the browser saves stays in its workspace, and two follow-ups to the header menu and the members page. The data path is still not keyed by workspace (phase 2).

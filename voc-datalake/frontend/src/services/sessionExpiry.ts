@@ -17,6 +17,7 @@
  * @module services/sessionExpiry
  */
 import { authService } from './auth'
+import { announceSessionEnded } from './crossTabSignOut'
 import { forgetRefused } from '../workspace/refusedWorkspaces'
 import { pageHref } from '../workspace/workspacePath'
 import { forgetWorkspaceStores } from '../workspace/workspaceStorage'
@@ -55,6 +56,8 @@ export function endExpiredSession(): void {
   forgetRefused()
   // And finds no workspace's saved conversation, draft or filters, nor the assistant's plain record.
   forgetWorkspaceStores()
+  // The browser's other open tabs end theirs too (services/crossTabSignOut.ts).
+  announceSessionEnded()
   // A platform admin's entries stay (signing back in returns to the workspace's address): each one only names an id
   // to ask the server about, so whoever signs in gets the server's answer for themselves (workspace/platformEntry.ts).
   // Inside a workspace the sign-in page is under its `/w/{slug}`, so signing back in returns there.
