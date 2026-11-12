@@ -3,12 +3,18 @@
 Reached through a Lambda function URL with IAM authentication: the caller's role, run and agent come from its
 assumed-role identity (``engineering.connectors.identity``), never from the body. Operations
 (a JSON body with ``op``): ``post`` (a task for a role the caller may post for, within the run's caps), ``claim``
-(an open task of the caller's own role), ``renew`` (the heartbeat: the lease's expiry moves on), ``move`` (the
+(an open task of the caller's own role), ``renew`` (the heartbeat: the lease's expiry moves on), ``progress`` (the
+holder's progress report: ``{task_id, epoch, step, waiting?}``, published as ``task.progress``), ``move`` (the
 lease holder moves its task on) and ``inbox`` (the caller's notices after a seq, ``board/inbox.py``: its own, its
 role's, and the conductor's for the coordinator; it reads, it changes nothing). Each change is published on the bus as the board (``task.*``), after the row is
 written: the row is the record, the event a notification. A failed publish answers 503 and the agent retries; every
 operation is idempotent, and the event's id comes from the change itself, so the retry publishes the same event again
-(a redelivery its receivers dedupe), including a retried post the board answered from its ``spec_hash`` dedupe.
+(a redelivery its receivers dedupe), including a retried post the board answered from its ``spec_hash`` dedupe. A
+retried progress report is a new report (its time is part of it).
+
+The supervisor re-posts a task whose lease ran out with ``repost_task`` (its ``Board.repost`` port,
+engineering/runtime/ports.py, is to call it): the store's ``repost``, then the task published again as
+``task.posted`` to its role, so the delivery function pushes it to the run's agents of that role.
 """
 from __future__ import annotations
 
@@ -26,7 +32,7 @@ from engineering.board.inbox import MAX_LIMIT, Inbox
 from engineering.board.model import EVENT_OF, OPEN, Task
 from engineering.board.store import BoardError, BoardStore
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
-from engineering.bus.schema import ROLES, Message, Party, Refs
+from engineering.bus.schema import ROLES, Message, MessageError, Party, Refs, fit_summary
 from engineering.connectors.identity import WORKSPACE, Caller, UnknownCaller, caller_from_event, own_account
 from engineering.quality_gate.text import redact
 from shared.logging import logger
@@ -89,6 +95,40 @@ def _event(task: Task, run_id: str) -> Message:
                    at=at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
 
 
+def _progress_summary(task: Task) -> str:
+    """``progress: <title>: <step>``, cut to a summary's bytes on a character boundary and redacted as a whole (the
+    title and the step each passed alone; joined, they could read as a credential's line)."""
+    text = f'progress: {task.title}: {task.step}' + (' (waiting)' if task.waiting else '')
+    return fit_summary(redact(fit_summary(text)))   # (a redaction's marker can be longer than what it hides)
+
+
+def _progress_event(task: Task, run_id: str) -> Message:
+    """The holder's progress report as a board event. Its id is the report's whole content (the epoch, the time, the
+    step, waiting): a retry of the same report is the same event, and two reports in one second are two."""
+    at = datetime.fromtimestamp(task.progress_at, UTC)
+    return Message(event_id=change_event_id(at, task.task_id, 'progress', str(task.lease_epoch), str(task.progress_at),
+                                            task.step, str(task.waiting)),
+                   ws=WORKSPACE, run_id=run_id, thread_id=task.task_id, task_id=task.task_id, attempt=task.attempt,
+                   sender=Party('system', 'board'), to=Party('run', run_id), type='task.progress',
+                   summary=_progress_summary(task), at=at.strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
+
+
+def repost_task(store: BoardStore, publisher: EventBridgePublisher, ws: str, run_id: str, task_id: str,
+                reason: str) -> Task:
+    """The supervisor's re-post of a task whose lease ran out: written, then published as ``task.posted``.
+
+    A retry after a lost event finds the task already open at its next attempt, and publishes it again (the same
+    change, so the same event: a redelivery)."""
+    try:
+        task = store.repost(ws, run_id, task_id, reason=reason)
+    except BoardError:
+        task = store.task(ws, run_id, task_id)
+        if not (task.state == OPEN and task.attempt > 1):
+            raise
+    publisher.publish(_event(task, run_id))
+    return task
+
+
 @dataclass(frozen=True)
 class Outcome:
     """The task after an operation; whether its last change is published; whether a post found it already there."""
@@ -96,6 +136,8 @@ class Outcome:
     task: Task
     publish: bool = True
     duplicate: bool = False
+    #: The event that tells of it, when it is not the task's last change (a progress report).
+    event: Message | None = None
 
 
 class BoardApi:
@@ -141,13 +183,20 @@ class BoardApi:
         if op == 'renew':
             return Outcome(self.store.renew(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch),
                            publish=False)
+        if op == 'progress':
+            waiting = body.get('waiting', False)
+            if not isinstance(waiting, bool):
+                raise BoardError('invalid', '"waiting" is true or false')
+            task = self.store.progress(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch,
+                                       step=_text(body, 'step'), waiting=waiting)
+            return Outcome(task, event=_progress_event(task, caller.run_id))
         if op == 'move':
             keys = body.get('result_keys', [])
             if not isinstance(keys, list):
                 raise BoardError('invalid', '"result_keys" is a list')
             return Outcome(self.store.move(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch,
                                            to_state=_text(body, 'to'), result_keys=keys))
-        raise BoardError('invalid', 'op is post, claim, renew, move or inbox')
+        raise BoardError('invalid', 'op is post, claim, renew, progress, move or inbox')
 
     def handle_request(self, caller: Caller, raw_body: Any) -> dict[str, Any]:
         try:
@@ -163,7 +212,10 @@ class BoardApi:
         task = outcome.task
         if outcome.publish:
             try:
-                self.publisher.publish(_event(task, caller.run_id))
+                self.publisher.publish(outcome.event or _event(task, caller.run_id))
+            except MessageError:
+                logger.exception('board: an event did not pass the schema', extra={'task_id': task.task_id})
+                return _answer(400, {'error': 'the board changed but its event could not be built: shorten the text'})
             except (PublishError, ClientError, BotoCoreError):
                 logger.exception('board: the bus refused an event', extra={'task_id': task.task_id})
                 return _answer(503, {'error': 'the board changed but its event was not published: retry'})

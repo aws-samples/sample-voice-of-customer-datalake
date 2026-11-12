@@ -1,18 +1,24 @@
 """The board's writes, each one conditional (plan v3, 4.3; I6: state is the record, events are notifications).
 
 - ``post``: one transaction counts the task on the run's ``META`` row (which must exist and be under its
-  ``max_tasks`` cap), writes a ``SPEC#<hash>`` marker (an equivalent task already posted is answered, not posted
-  twice) and the ``TASK#`` row; the depth below its parent is capped.
+  ``max_tasks`` cap), writes a ``SPEC#<hash>`` marker (an equivalent task still under way is answered, not posted
+  twice) and the ``TASK#`` row; the depth below its parent is capped. A marker whose task has ended (done, failed,
+  needs a human) is moved to the new task, conditionally on the task it named, so the same work can be posted again
+  once the first ended (nothing is deleted, D5).
 - ``claim``: only an ``open`` task of the caller's role; the lease's epoch is the task's attempt.
-- ``renew`` (the heartbeat) and ``move``: only the lease holder with the lease's epoch, before the lease runs out, so
-  an agent whose lease was lost cannot act on the task again. The supervisor re-posts an expired task on its own row
-  (``open`` again, ``attempt + 1``, a later item), not through ``post``, so the ``SPEC#`` dedupe does not stand in
-  its way, and the next claim's lease takes the new attempt as its epoch.
+- ``renew`` (the heartbeat), ``progress`` and ``move``: only the lease holder with the lease's epoch, before the
+  lease runs out, on a task that has not ended, so an agent whose lease was lost cannot act on the task again.
+  ``progress`` sets ``progress_at``, a short ``step`` and ``waiting`` (an open question, review or decision): the
+  supervisor judges "no progress" from ``progress_at`` and leaves a waiting task alone. Like a renewal, it is not a
+  move and writes no history row.
+- ``repost`` (the supervisor's, for an expired lease): the task is ``open`` again at ``attempt + 1``, its lease
+  cleared, with a history row naming the supervisor and its reason; on its own row, not through ``post``, so the
+  ``SPEC#`` dedupe does not stand in its way, and the next claim's lease takes the new attempt as its epoch.
 - A task keeps at most ``MAX_RESULT_KEYS`` result keys, which every board event about it carries. A repeated claim
   or move that already took effect answers the task as it is (callers retry after a lost answer).
 - History (D1, D4): the ``TASK#`` row is the task now; each post, claim and move also writes, in the same
   transaction, a ``TASKLOG#<task>#<at>#<state>`` row (create-only) with who made it and how, so no past state is
-  overwritten. A renewal is not a move and writes none.
+  overwritten. A renewal or a progress report is not a move and writes none.
 """
 from __future__ import annotations
 
@@ -26,6 +32,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from engineering.board.model import CLAIMED, FINAL, MOVES, OPEN, Move, Task, task_key
+from engineering.quality_gate.text import redact
 from engineering.rows import Refused, run_pk, run_rows
 from engineering.workspace.layout import parse_agent_key
 from shared.aws import is_conditional_check_failure
@@ -37,6 +44,8 @@ MAX_SPEC_BYTES = 8 * 1024
 #: A task's result keys ride on its board events: 16 keys of 512 characters stay well inside an event's 16 KB.
 MAX_RESULT_KEYS = 16
 MAX_KEY_LENGTH = 512
+#: A progress step or a re-post's reason: a line, not a log.
+MAX_LINE = 200
 
 
 class BoardError(Refused):
@@ -122,35 +131,48 @@ class BoardStore:
         if parent_task:
             item['parent_task'] = {'S': parent_task}
         spec_key = {'pk': {'S': pk}, 'sk': {'S': f'SPEC#{digest}'}}
-        try:
-            self.client.transact_write_items(TransactItems=[
-                {'Update': {'TableName': self.table, 'Key': {'pk': {'S': pk}, 'sk': {'S': 'META'}},
-                            'UpdateExpression': 'ADD task_count :one',
-                            'ConditionExpression': 'attribute_exists(max_tasks) AND (attribute_not_exists(task_count) '
-                                                   'OR task_count < max_tasks)',
-                            'ExpressionAttributeValues': {':one': {'N': '1'}}}},
-                {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)',
-                         'Item': {**spec_key, 'task_id': {'S': task_id}}}},
-                {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)', 'Item': item}},
-                {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)',
-                         'Item': Move(task_id, OPEN, actor, at, 1, 'post').item(ws, run_id)}},
-            ])
-        except ClientError as exc:
-            if is_key_collision(exc, put_index=1):
-                marker = self._get(spec_key) or {}
-                return Posted(self.task(ws, run_id, marker.get('task_id', {}).get('S', '')), created=False)
-            # is_key_collision only asks whether the reason at that index is ConditionalCheckFailed: index 0 is the
-            # META row's update (the run exists, under its cap), not a put.
-            if is_key_collision(exc, put_index=0):
-                meta = self._get({'pk': {'S': pk}, 'sk': {'S': 'META'}})
-                if meta is None:
-                    raise BoardError('not_found', 'no such run') from exc
-                if 'max_tasks' not in meta:
-                    raise BoardError('cap', 'the run has no task cap (its start sets one): nothing can be posted') \
-                        from exc
-                raise BoardError('cap', 'the run has reached its task cap') from exc
-            raise
-        return Posted(Task.from_item(item), created=True)
+        marker: dict[str, Any] = {'ConditionExpression': 'attribute_not_exists(pk)'}
+        for _ in range(2):   # (a second try only after the marker's task had ended)
+            try:
+                self.client.transact_write_items(TransactItems=[
+                    {'Update': {'TableName': self.table, 'Key': {'pk': {'S': pk}, 'sk': {'S': 'META'}},
+                                'UpdateExpression': 'ADD task_count :one',
+                                'ConditionExpression': 'attribute_exists(max_tasks) AND (attribute_not_exists('
+                                                       'task_count) OR task_count < max_tasks)',
+                                'ExpressionAttributeValues': {':one': {'N': '1'}}}},
+                    {'Put': {'TableName': self.table, **marker, 'Item': {**spec_key, 'task_id': {'S': task_id}}}},
+                    {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)', 'Item': item}},
+                    {'Put': {'TableName': self.table, 'ConditionExpression': 'attribute_not_exists(pk)',
+                             'Item': Move(task_id, OPEN, actor, at, 1, 'post').item(ws, run_id)}},
+                ])
+            except ClientError as exc:
+                if is_key_collision(exc, put_index=1):
+                    named = (self._get(spec_key) or {}).get('task_id', {}).get('S', '')
+                    existing = self.task(ws, run_id, named)
+                    if existing.state not in FINAL:
+                        return Posted(existing, created=False)
+                    # The equal task has ended: this post is new work. The marker moves to it, only if it still
+                    # names the ended task (a racing post that moved it first is answered on the next pass).
+                    marker = {'ConditionExpression': 'task_id = :ended',
+                              'ExpressionAttributeValues': {':ended': {'S': named}}}
+                    continue
+                self._refused_post(exc, pk)
+                raise
+            return Posted(Task.from_item(item), created=True)
+        raise BoardError('conflict', 'an equal task was posted at the same time: read the board and retry')
+
+    def _refused_post(self, exc: ClientError, pk: str) -> None:
+        """Why the run refused a post, when it is its META row (index 0: the run exists, under its cap)."""
+        if not is_key_collision(exc, put_index=0):
+            return
+        # is_key_collision only asks whether the reason at that index is ConditionalCheckFailed: index 0 is the
+        # META row's update, not a put.
+        meta = self._get({'pk': {'S': pk}, 'sk': {'S': 'META'}})
+        if meta is None:
+            raise BoardError('not_found', 'no such run') from exc
+        if 'max_tasks' not in meta:
+            raise BoardError('cap', 'the run has no task cap (its start sets one): nothing can be posted') from exc
+        raise BoardError('cap', 'the run has reached its task cap') from exc
 
     def history(self, ws: str, run_id: str) -> dict[str, list[Move]]:
         """Every task's moves, oldest first (D1: the past is kept, never overwritten)."""
@@ -181,8 +203,9 @@ class BoardStore:
             raise BoardError('conflict', write.refusal) from exc
         return self.task(ws, run_id, task_id)
 
-    def _renew(self, ws: str, run_id: str, task_id: str, write: _Write) -> Task:
-        """The lease renewal: no history row (a heartbeat is not a move), so a plain conditional update."""
+    def _update(self, ws: str, run_id: str, task_id: str, write: _Write) -> Task:
+        """A renewal or a progress report: no history row (neither is a move), so a plain conditional
+        update."""
         try:
             result = self.client.update_item(
                 TableName=self.table, Key=task_key(ws, run_id, task_id), UpdateExpression=write.set_expr,
@@ -213,20 +236,64 @@ class BoardStore:
             Move(task_id, CLAIMED, agent, at, current.attempt, 'claim').item(ws, run_id))
 
     def _holder(self, agent: str, epoch: int, now: datetime) -> tuple[str, dict[str, Any]]:
-        """The lease holder, with the lease's epoch, before the lease runs out (the supervisor re-posts it then)."""
-        return ('lease_agent = :agent AND lease_epoch = :epoch AND lease_expires >= :now',
-                {':agent': {'S': agent}, ':epoch': {'N': str(epoch)}, ':now': {'N': str(int(now.timestamp()))}})
+        """The lease holder, with the lease's epoch, before the lease runs out (the supervisor re-posts it then), or
+        while it waits: an agent suspended on an open wait cannot renew, and keeps its lease while the wait is open
+        (plan v3, 4.5), so it can renew, report (``waiting: false``) and move once it resumes."""
+        return ('lease_agent = :agent AND lease_epoch = :epoch AND (lease_expires >= :now OR waiting = :waiting)',
+                {':agent': {'S': agent}, ':epoch': {'N': str(epoch)}, ':now': {'N': str(int(now.timestamp()))},
+                 ':waiting': {'BOOL': True}})
+
+    def _live_holder(self, agent: str, epoch: int, now: datetime) -> tuple[str, dict[str, Any]]:
+        """The lease holder (``_holder``) on a task that has not ended."""
+        holder, values = self._holder(agent, epoch, now)
+        final = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
+        return f'{holder} AND NOT #state IN ({", ".join(final)})', {**values, **final}
 
     def renew(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int) -> Task:
         """The heartbeat: the lease runs ``LEASE_S`` more seconds."""
         now = self.now()
-        holder, values = self._holder(agent, epoch, now)
-        final = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
-        return self._renew(ws, run_id, task_id, _Write(
-            set_expr='SET lease_expires = :expires', condition=f'{holder} AND NOT #state IN ({", ".join(final)})',
-            names={'#state': 'state'},
-            values={**values, **final, ':expires': {'N': str(int(now.timestamp()) + LEASE_S)}},
+        condition, values = self._live_holder(agent, epoch, now)
+        return self._update(ws, run_id, task_id, _Write(
+            set_expr='SET lease_expires = :expires', condition=condition, names={'#state': 'state'},
+            values={**values, ':expires': {'N': str(int(now.timestamp()) + LEASE_S)}},
             already=lambda _task: False, refusal='the lease is not yours, has run out, or the task has ended'))
+
+    def progress(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, step: str,
+                 waiting: bool) -> Task:
+        """The holder's progress report: when, its step (a line, credential shapes redacted), whether it waits."""
+        line = redact(step.strip())
+        if not line or len(line) > MAX_LINE:
+            raise BoardError('invalid', f'"step" is a line of 1 to {MAX_LINE} characters')
+        now = self.now()
+        condition, values = self._live_holder(agent, epoch, now)
+        return self._update(ws, run_id, task_id, _Write(
+            set_expr='SET progress_at = :at, step = :step, waiting = :waiting', condition=condition,
+            names={'#state': 'state'},
+            values={**values, ':at': {'N': str(int(now.timestamp()))}, ':step': {'S': line},
+                    ':waiting': {'BOOL': waiting}},
+            already=lambda _task: False, refusal='the lease is not yours, has run out, or the task has ended'))
+
+    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str) -> Task:
+        """The supervisor's re-post of a task whose lease ran out: ``open`` again at the next attempt, the lease
+        cleared, its reason in the history row. Only from the attempt read, so two re-posts never both apply."""
+        current = self.task(ws, run_id, task_id)
+        if current.state == OPEN or current.state in FINAL:
+            raise BoardError('conflict', f'a {current.state} task is not re-posted')
+        at = self.now().isoformat()
+        why = redact(reason.strip())[:MAX_LINE]
+        ended = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
+        return self._write(ws, run_id, task_id, _Write(
+            # The last attempt's progress goes with its lease: the next holder starts with none, never stalled.
+            set_expr='SET #state = :open, attempt = attempt + :one, waiting = :no, updated_by = :actor, '
+                     'updated_at = :at REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
+            condition=f'attempt = :attempt AND NOT #state IN (:open, {", ".join(ended)})',
+            names={'#state': 'state'},
+            values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False},
+                    ':actor': {'S': 'supervisor'}, ':at': {'S': at}, ':attempt': {'N': str(current.attempt)}},
+            # Another re-post of the same attempt landed between the read and the write.
+            already=lambda t: t.state == OPEN and t.attempt == current.attempt + 1,
+            refusal='the task moved on since it was read'),
+            Move(task_id, OPEN, 'supervisor', at, current.attempt + 1, 'repost', reason=why).item(ws, run_id))
 
     def move(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, to_state: str,
              result_keys: Sequence[object]) -> Task:

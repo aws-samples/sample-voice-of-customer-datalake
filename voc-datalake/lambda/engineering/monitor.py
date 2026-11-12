@@ -38,7 +38,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.model import FINAL, OPEN
 from engineering.bus.publish import PublishError, new_event_id
-from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, summary_text
+from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, fit_summary, summary_text
 from engineering.connectors.identity import WORKSPACE
 from engineering.rows import Refused, amount_attr, run_pk, string_attr
 from engineering.runtime.sessions import AgentSession
@@ -180,16 +180,11 @@ def _at(now: datetime) -> str:
     return now.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
 
-def _fit(text: str) -> str:
-    """``text`` cut to a summary's bytes, on a character boundary."""
-    return text.encode('utf-8')[:MAX_SUMMARY_BYTES].decode('utf-8', 'ignore')
-
-
 def _record(signal: Signal, actor: Actor, target: Party) -> str:
     """The request as the conversation keeps it: who asked what of whom, and their note."""
     whom = f'agent {target.id}' if target.kind == 'agent' else 'the whole run'
     note = f' Note: {signal.note}' if signal.note else ''
-    return _fit(f"{signal.name.replace('_', ' ')} requested from the run monitor by {actor.name} for {whom}.{note}")
+    return fit_summary(f"{signal.name.replace('_', ' ')} requested from the run monitor by {actor.name} for {whom}.{note}")
 
 
 class LambdaRuntime:
@@ -309,7 +304,7 @@ class RunMonitor:
         """What came of a recorded request, in the conversation (best effort: the request itself is recorded)."""
         try:
             _publish(publisher, replace(request, event_id=new_event_id(), at=_at(self.now()),
-                                        summary=_fit(f'{request.type} request {request.event_id}: {outcome}')))
+                                        summary=fit_summary(f'{request.type} request {request.event_id}: {outcome}')))
         except MonitorError:
             logger.warning('run monitor: a signal\'s outcome was not recorded',
                            extra={'run_id': request.run_id, 'request': request.event_id})

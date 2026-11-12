@@ -53,6 +53,8 @@
     {"key": "lambda/engineering/quality_gate/runner.py", "reason": "The quality gate's CLI (python -m engineering.quality_gate), run by the gate runner inside its MicroVM, not by a Lambda: a module only the CLI imports. No template handler names it, so the graph has no entry for it; lambda/engineering/quality_gate/test runs it."},
     {"key": "lambda/engineering/quality_gate/text.py::clip", "reason": "Used by the quality gate's CLI (python -m engineering.quality_gate, run in the gate runner's MicroVM, not by a Lambda); the board API reaches text.py only for redact."},
     {"key": "lambda/engineering/quality_gate/text.py::data_block", "reason": "Used by the quality gate's CLI (python -m engineering.quality_gate, run in the gate runner's MicroVM, not by a Lambda); the board API reaches text.py only for redact."},
-    {"key": "lambda/engineering/quality_gate/text.py::nonce", "reason": "Used by the quality gate's CLI (python -m engineering.quality_gate, run in the gate runner's MicroVM, not by a Lambda); the board API reaches text.py only for redact."}
+    {"key": "lambda/engineering/quality_gate/text.py::nonce", "reason": "Used by the quality gate's CLI (python -m engineering.quality_gate, run in the gate runner's MicroVM, not by a Lambda); the board API reaches text.py only for redact."},
+    {"key": "lambda/engineering/board/api.py::repost_task", "reason": "The supervisor's re-post of a task whose lease ran out: its Board.repost port (engineering/runtime/ports.py, still PendingPorts) is to call it when the runtime is wired to the board; until then the board's tests drive it (pyproject.toml vulture ignore_names)."},
+    {"key": "lambda/engineering/board/store.py::BoardStore.repost", "reason": "Called by repost_task (engineering/board/api.py), the supervisor's re-post, not wired yet: see its entry."}
   ]
 }

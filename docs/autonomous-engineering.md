@@ -256,14 +256,20 @@ What exists:
   whole message kept (its sender the actor, its `at` the time). The sequence comes from a counter on the run's `META`
   row, and an event's marker is written with its row in one transaction, so a redelivered event changes nothing.
 - **The board** (`board/store.py`, `board/api.py`, the `voc-engineering-board` Lambda behind a function URL with IAM
-  authentication and no resource-based policy): `post`, `claim`, `renew` (the heartbeat) and `move`, each a
-  conditional write on the same table. The caller's role, run and agent come from its assumed-role identity, as for
+  authentication and no resource-based policy): `post`, `claim`, `renew` (the heartbeat), `progress` (when, a
+  short step, whether it waits on a question, review or decision: the supervisor judges "no progress" from it and
+  leaves a waiting task alone; published as `task.progress`) and `move`, each a conditional write on the same table. The caller's role, run and agent come from its assumed-role identity, as for
   the broker. A post counts the task against the run's cap, dedupes an equal task, and nests at most 3 deep. Who may
-  post for whom: the coordinator for every role, the hunter for fixers, the builder for builders. A claim leases an
-  open task of the caller's role for 5 minutes. Renew and move need the lease and its epoch. Each change is published
+  post for whom: the coordinator for every role, the hunter for fixers, the builder for builders. An equal task is
+  answered while it is under way; once it has ended (done, failed, needs a human), the same work can be posted
+  again, and the dedupe marker moves to the new task. A claim leases an open task of the caller's role for 5
+  minutes. Renew, progress and move need the lease and its epoch, on a task that has not ended. The supervisor
+  re-posts a task whose lease ran out (`repost_task`): open again at the next attempt, its lease cleared, published
+  again as `task.posted` to its role, its reason in the history row. Each change is published
   on the bus as the board's `task.*` event after the row is written. A failed publish answers 503, and the retry
   publishes the same event again. Each post, claim and move also writes a `TASKLOG#<task>#<at>#<state>` row in the
-  same transaction (the actor and the operation; no past state is overwritten, a renewal is not a move), which is the
+  same transaction (the actor and the operation; no past state is overwritten; a renewal or a progress report is
+  not a move), and so does a re-post, which is the
   task's history; a result key a move records must be one of the caller's own workspace objects of the lease's attempt.
 - **The workspace** (`workspace/`): the key layout below, voc-finding/1 shard lines (`workspace/findings.py`: a line
   off the schema is skipped and counted; credential-shaped strings and personal data are redacted) and the store
@@ -344,7 +350,7 @@ runtime's), invoked asynchronously with the message and its conversation seq (`{
 the seq the message was first written under). It records each notice once in the run's own partition, as an
 `INBOX#<addressee>#<inbox_seq>#<event_id>` row (the addressee `agent:<agent>`, `role:<role>` for a posted task, or
 `conductor`; `inbox_seq` the run's write-order counter, so a notice delivered late still numbers above everything
-already read; the row keeps the conversation seq too), and wakes the addressee: the agent, or the run's live agents of the task's role. An agent reads its
+already read; the row keeps the conversation seq too), and wakes an addressed agent or conductor (a posted task wakes nobody: an agent is launched for its task, so none of its role is idle; its role's agents read the notice on their next inbox read). An agent reads its
 notices with the board API's `inbox` op (`board/inbox.py`): its own, its role's and, for the coordinator, the
 conductor's, after an `inbox_seq`, merged in write order (each with its `conversation_seq`); its session gives
 its run, so it never reads another run's. A page that reached the tail starts the next one 20 behind (two deliveries

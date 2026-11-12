@@ -146,6 +146,11 @@ def _refs(raw: Any, ws: str) -> Refs:
     return Refs(s3=tuple(_s3_key(key, f'ws/{ws}/') for key in s3), commit=commit, pr=pr, files=tuple(files))
 
 
+def fit_summary(text: str) -> str:
+    """``text`` cut to a summary's bytes, on a character boundary."""
+    return text.encode('utf-8')[:MAX_SUMMARY_BYTES].decode('utf-8', 'ignore')
+
+
 def summary_text(raw: Any) -> str:
     """A message's summary (or a text bound for one): short, and nothing shaped like a credential."""
     if not isinstance(raw, str) or len(raw.encode('utf-8')) > MAX_SUMMARY_BYTES:

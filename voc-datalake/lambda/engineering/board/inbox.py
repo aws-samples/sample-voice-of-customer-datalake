@@ -1,6 +1,6 @@
 """An agent's inbox: the notices the delivery function recorded for it, read through the board API's ``inbox`` op.
 
-The delivery function (voc-auto-b's ``voc-engineering-delivery``) writes one row per notice in the run's partition,
+The delivery function (the runtime's ``voc-engineering-delivery``) writes one row per notice in the run's partition,
 create-only, never changed or deleted: ``WS#<ws>#RUN#<run>`` / ``INBOX#<addressee>#<inbox_seq:012d>#<event_id>``,
 the addressee ``agent:<agent>`` (a message to that agent), ``role:<role>`` (a posted task: every live agent of the
 role reads it) or ``conductor`` (a message to the run's conductor, which the coordinator plays). ``inbox_seq`` is the
