@@ -22,12 +22,21 @@ export class ConfigError extends Error {
 /** Thrown when an API request fails with a non-OK status. */
 export class ApiError extends Error {
   readonly status: number
+  /** The machine-readable `code` the body carried beside its `error` (lambda/shared/exceptions.py
+   *  `ApiError.code`, e.g. `addressed_some_full`), when it sent one: read it, never the sentence. */
+  readonly code: string | undefined
 
-  constructor(status: number, message = `API Error: ${String(status)}`) {
+  constructor(status: number, message = `API Error: ${String(status)}`, code?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
+}
+
+/** The machine-readable code of a failed request (see `ApiError.code`), or null. */
+export function apiErrorCode(error: unknown): string | null {
+  return error instanceof ApiError ? error.code ?? null : null
 }
 
 /**

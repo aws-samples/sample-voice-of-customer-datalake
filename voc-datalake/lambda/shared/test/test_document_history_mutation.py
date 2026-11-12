@@ -203,6 +203,17 @@ class TestTheUnmanagedTransaction:
         assert caught.value is error
 
 
+class TestWhatASaveMaySay:
+    def test_revise_job_id_is_none_or_an_opaque_id(self):
+        assert dh.validated_revise_job_id(None) is None
+        assert dh.validated_revise_job_id('job_0123abcd') == 'job_0123abcd'
+
+    @pytest.mark.parametrize('raw', ['', 'a b', 'x' * 65, 7, ['job_1']])
+    def test_a_malformed_revise_job_id_is_refused(self, raw: object):
+        with pytest.raises(ValidationError):
+            dh.validated_revise_job_id(raw)
+
+
 class TestAManagedEdit:
     def test_carries_lineage_drops_row_identity_and_allocates_by_edit_id(self, persist: MagicMock):
         stale = ('pk', 'sk', 'version', 'version_allocation_id', 'created_at', 'updated_at', 'content',
@@ -229,6 +240,30 @@ class TestAManagedEdit:
         args = persist.call_args
         assert args.args[2:5] == ('prfaq', 'Untitled', 'edit:f1:ba7816bf8f01cfea414140de5dae2223')
         assert args.kwargs == {'expected_last_version': None}
+
+    def test_a_verified_proposal_save_records_revise_who_and_the_pass(self, persist: MagicMock):
+        document = {'sk': 'PRFAQ#f1', 'document_id': 'f1', 'title': 'L (v2)', 'base_title': 'L', 'content': 'old',
+                    'edited_by': {'sub': 'earlier', 'kind': 'user'}, 'revise_job_id': 'job_earlier'}
+        dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW,
+                         revise={'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1'})
+        fields = persist.call_args.args[5]
+        assert {k: fields[k] for k in ('edit_kind', 'edited_by', 'revise_job_id', 'edited_from_id')} == {
+            'edit_kind': 'revise', 'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1',
+            'edited_from_id': 'f1'}
+
+    def test_a_plain_edit_of_a_revised_row_drops_its_revise_provenance(self, persist: MagicMock):
+        document = {'sk': 'PRFAQ#f1', 'document_id': 'f1', 'title': 'L (v2)', 'base_title': 'L', 'content': 'old',
+                    'edit_kind': 'revise', 'edited_by': {'sub': 's', 'kind': 'user'}, 'revise_job_id': 'job_1'}
+        dh.edit_document(_table(), 'p1', document, {'content': 'new', 'edit_id': 'e'}, now=NOW)
+        fields = persist.call_args.args[5]
+        assert fields['edit_kind'] == 'edit'
+        assert 'edited_by' not in fields
+        assert 'revise_job_id' not in fields
+
+    def test_a_revise_of_a_custom_document_is_refused(self):
+        with pytest.raises(ValidationError):
+            dh.edit_document(_table(), 'p1', _custom(), {'content': 'new'}, now=NOW,
+                             revise={'edited_by': {}, 'revise_job_id': 'job_1'})
 
     def test_a_titled_row_without_base_title_takes_its_series_from_the_title(self, persist: MagicMock):
         document = {'sk': 'PRD#p', 'document_id': 'p', 'title': 'Launch (v4)', 'content': 'old'}

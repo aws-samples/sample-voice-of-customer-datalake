@@ -1110,16 +1110,20 @@ def api_merge_documents(project_id: str):
 @app.put("/projects/<project_id>/documents/<document_id>")
 @tracer.capture_method
 def api_update_document(project_id: str, document_id: str):
-    """``{title?, content?, edit_id?, expected_revision?, edit_kind?: edit | revise}``: one new version.
+    """``{title?, content?, edit_id?, expected_revision?, revise_job_id?}``: one new version.
 
-    ``edit_kind: revise`` = the person saving a "Revise from comments" proposal they accepted on the
-    canvas (D4: ``edit_kind`` ``revise``, ``edited_by`` them, like the applied pass); 400 otherwise.
+    ``revise_job_id`` = the "Revise from comments" pass whose proposal the person accepted on the
+    canvas: the server checks the pass (docs/document-review.md) and records ``edit_kind`` ``revise``,
+    ``edited_by`` them and the job id (D4), or answers 400. ``edit_kind`` is the server's to record:
+    one in the body is ignored, like any other key the route does not read.
     """
     body = json_object_body(app)
-    edit_kind = document_history.validated_edit_kind(body.get('edit_kind'))
+    revise_job_id = document_history.validated_revise_job_id(body.get('revise_job_id'))
     _require_autonomous_edit_allowed(project_id, document_id)
-    return update_document(project_id, document_id, body, edit_kind=edit_kind,
-                           edited_by=actor_from_event(app.current_event.raw_event))
+    proposal = None if revise_job_id is None else document_revision.ProposalSave(
+        job_id=revise_job_id, job=_project_job_row(project_id, revise_job_id),
+        caller_sub=_request_caller().subject, actor=actor_from_event(app.current_event.raw_event))
+    return update_document(project_id, document_id, body, proposal=proposal)
 
 
 @app.get("/projects/<project_id>/documents/<document_id>/versions")
@@ -1177,12 +1181,18 @@ def api_get_job_status(project_id: str, job_id: str):
     return _job_status(project_id, job_id)
 
 
-def _job_status(project_id: str, job_id: str) -> dict:
+def _project_job_row(project_id: str, job_id: str) -> dict | None:
+    """The project's job row (config included: never answered as is), or None."""
     # Consistent: an assist's first poll lands milliseconds after its start wrote the row.
     response = get_jobs_table().get_item(
         Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'}, ConsistentRead=True,
     )
     item = response.get('Item')
+    return item if isinstance(item, dict) else None
+
+
+def _job_status(project_id: str, job_id: str) -> dict:
+    item = _project_job_row(project_id, job_id)
     if not item:
         raise NotFoundError('Job not found')
     return {
@@ -5163,7 +5173,7 @@ def _persona_review_work(config: dict) -> dict:
 # of working (recommendations / proposal / applied), decided here from the request's claims and stored
 # in the job config: the worker never sees the request.
 
-ASSIST_REVISE_FROM_COMMENTS = 'assist_revise_from_comments'
+ASSIST_REVISE_FROM_COMMENTS = document_revision.ASSIST_JOB_TYPE
 
 
 def _revise_outcome(project_id: str, doc_type: str) -> str:
@@ -5194,6 +5204,7 @@ def start_revise_from_comments(project_id: str, document_id: str):
     document_revision.require_revisable(document, threads)
     return _started_assist(project_id, ASSIST_REVISE_FROM_COMMENTS, {
         'project_id': project_id, 'document_id': document_id,
+        document_revision.SERIES_CONFIG_KEY: series['series_id'],
         'body_json': json.dumps({'thread_ids': [t['comment_id'] for t in threads]}),
         'outcome': _revise_outcome(project_id, series['document_type']),
         'revise_id': document_revision.new_revise_id(),

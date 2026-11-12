@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next'
 import { useNow } from '../../../hooks/useNow'
 import { useRegisterActionBar } from '../../StickyActionBar/actionBarRegistry'
 import { isVersionManagedDocument } from '../../../api/documentLineage'
-import { ConflictBanner } from './ConflictBanner'
+import { ConflictBanner, ReviseRefusedBanner } from './ConflictBanner'
 import DocumentMenu from './DocumentMenu'
 import { saveIgnoringFailure } from '../../UnsavedChangesGuard/useSnapshotGuard'
 import { formatRelativeDate } from '../../../utils/dateUtils'
@@ -111,6 +111,7 @@ export default function DocumentActionsBar({ focus, focusButtonRef, ...menu }: D
         <DocumentMenu {...menu} />
       </div>
       {state.conflict === null ? null : <ConflictBanner conflict={state.conflict} />}
+      {state.reviseRefused === null ? null : <ReviseRefusedBanner refused={state.reviseRefused} />}
       {state.guardDialog}
     </div>
   )

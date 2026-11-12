@@ -18,11 +18,15 @@ class ApiError(Exception):
     Attributes:
         message: Human-readable error message
         status_code: HTTP status code to return
+        code: A machine-readable word the answer's body carries beside ``success`` and ``error``
+            (e.g. ``'addressed_some_full'``), so a client tells refusals apart without reading the
+            English ``error``; None (the default) adds nothing
     """
     status_code: int = 500
 
-    def __init__(self, message: str):
+    def __init__(self, message: str, *, code: str | None = None):
         self.message = message
+        self.code = code
         super().__init__(message)
 
 

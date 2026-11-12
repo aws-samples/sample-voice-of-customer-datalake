@@ -47,12 +47,13 @@ from shared.decision_records import DECISION_DOCUMENT_TYPE
 from shared.delete_audit import record_delete
 from shared.deleted_sources import DOCUMENT_SORT_KEY_PREFIXES, DeletedSource, mark_citing_documents
 from shared.document_history import (
-    EDIT_KIND_EDIT,
     delete_document_revisions,
     edit_document,
     list_document_versions,
     restore_document_version,
+    saves_nothing,
 )
+from shared.document_revision import ProposalSave, verify_saved_proposal
 from shared.document_versions import (
     VERSIONED_DOCUMENT_TYPES,
     get_versioned_document_by_allocation,
@@ -3081,14 +3082,16 @@ def _refuse_decision_edit(document: dict) -> None:
 
 
 @tracer.capture_method
-def update_document(project_id: str, document_id: str, body: dict, *, edit_kind: str = EDIT_KIND_EDIT,
-                    edited_by: dict[str, str] | None = None) -> dict:
+def update_document(project_id: str, document_id: str, body: dict, *,
+                    proposal: ProposalSave | None = None) -> dict:
     """Save an edit as a NEW version; the previous content stays retrievable.
 
     A PRD / PR/FAQ edit is the next version of its series (a new document, like a
     regeneration); a research / custom edit keeps its id and saves what it replaces
-    as a revision. See ``shared.document_history`` (``edit_kind`` / ``edited_by``: a
-    saved "Revise from comments" proposal). Answers the saved document.
+    as a revision. See ``shared.document_history``. ``proposal``: the save names the
+    "Revise from comments" pass whose proposal it holds (``revise_job_id``); it is recorded
+    as a revise only when ``shared.document_revision.verify_saved_proposal`` says so (else
+    400). Answers the saved document.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -3117,8 +3120,12 @@ def update_document(project_id: str, document_id: str, body: dict, *, edit_kind:
             'Prototype content is stored in S3 and cannot be updated through '
             'generic document CRUD. Use the prototype revision workflow.'
         )
-    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title,
-                         edit_kind=edit_kind, edited_by=edited_by)
+    revise = None
+    # An unchanged save is edit_document's no-op, whatever pass it names.
+    if proposal is not None and not saves_nothing(document, body, title):
+        content = body.get('content') if isinstance(body.get('content'), str) else document.get('content') or ''
+        revise = verify_saved_proposal(proposal, project_id=project_id, document=document, content=str(content))
+    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title, revise=revise)
 
 
 @tracer.capture_method

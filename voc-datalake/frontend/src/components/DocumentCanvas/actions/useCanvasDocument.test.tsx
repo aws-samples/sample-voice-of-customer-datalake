@@ -8,90 +8,35 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, Link, MemoryRouter, RouterProvider } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { expectCancelKeepsDraftGuarded } from '@test/unsavedGuardContract'
 import { createTestQueryClient } from '../../../test/query-client'
 import { ApiError } from '../../../lib/errors'
 import enComponents from '../../../../public/locales/en/components.json'
-import { ignoreRejection } from '../../../lib/rejections'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
 import { VIEWER_ACCESS } from '../../../pages/ProjectDetail/projectAccess-fixtures'
 import { useGuardedAction } from '../../UnsavedChangesGuard/guardRegistry'
 import CanvasEditor from '../editor/CanvasEditor'
 import enProjectDetail from '../../../../public/locales/en/projectDetail.json'
 import { FakeCanvasEditor } from './canvas-editor-fixtures'
-import { ConflictBanner } from './ConflictBanner'
+import { canvas, custom, mount, prd, project, putStores as storesFor } from './canvas-document-fixtures'
+import { Harness } from './canvas-harness-fixtures'
 import { useCanvasDocument } from './useCanvasDocument'
 import type { Editor } from '@tiptap/core'
 import type { ComponentType } from 'react'
-import type { Project } from '../../../api/projectTypes'
 import type { ProjectDocument } from '../../../api/types'
 import type { CanvasEditorProps } from '../editor/CanvasEditor'
+import type { UpdateDocument } from './canvas-document-fixtures'
 
 const api = vi.hoisted(() => ({
-  updateDocument: vi.fn<(projectId: string, documentId: string, body: Record<string, unknown>, editKind?: string) => Promise<unknown>>(),
+  updateDocument: vi.fn<UpdateDocument>(),
   getProject: vi.fn<(projectId: string) => Promise<unknown>>(),
 }))
 vi.mock('../../../api/projectsApi', () => ({ projectsApi: api }))
 
-const project = makeProject({ project_id: 'p1' })
 const viewerProject = makeProject({ project_id: 'p1', access: VIEWER_ACCESS })
-const custom: ProjectDocument = {
-  document_id: 'doc-1', document_type: 'custom', title: 'Notes', content: 'stored', revision: 4, created_at: '2026-10-01T00:00:00Z',
-}
-const prd: ProjectDocument = {
-  document_id: 'prd-2', document_type: 'prd', base_title: 'Launch', version: 2, title: 'Launch (v2)', content: '# PRD',
-  created_at: '2026-10-01T00:00:00Z',
-}
-
-function Harness({ document, onSelectDoc, canvasProject = project, Editor = FakeCanvasEditor }: Readonly<{
-  document: ProjectDocument; onSelectDoc: (doc: ProjectDocument) => void; canvasProject?: Project
-  Editor?: ComponentType<CanvasEditorProps>
-}>) {
-  const state = useCanvasDocument({ project: canvasProject, document, onSelectDoc })
-  return (
-    <div>
-      {/* As the page does: the editable canvas is on the hook's version, the read-only one on the selected copy. */}
-      <Editor markdown={state.editable ? state.content : document.content} editable={state.editable} ariaLabel="canvas"
-        onChange={state.onChange} handleRef={state.handleRef} />
-      <input aria-label="title" value={state.title} onChange={(event) => state.setTitle(event.target.value)} />
-      <p data-testid="dirty">{String(state.dirty)}</p>
-      <p data-testid="last-saved">{state.lastSaved === null ? 'none' : `${state.lastSaved.document.document_id}:${state.lastSaved.content}`}</p>
-      <p data-testid="generation">{state.generation}</p>
-      <p data-testid="editable">{`${String(state.editable)}/${String(state.titleEditable)}`}</p>
-      <button type="button" onClick={() => { state.save().catch(ignoreRejection) }}>save</button>
-      <button type="button" onClick={state.discard}>discard</button>
-      <button type="button" onClick={() => state.markRevised(() => true)}>revised</button>
-      <button type="button" onClick={() => state.markRevised(null)}>not revised</button>
-      {state.conflict === null ? null : (
-        <>
-          <button type="button" onClick={() => { void state.conflict?.onLoadLatest() }}>load latest</button>
-          <button type="button" onClick={() => { state.conflict?.onSaveAnyway().catch(ignoreRejection) }}>save mine anyway</button>
-          {/* The page's own banner too (its buttons are named as on the page). */}
-          <ConflictBanner conflict={state.conflict} />
-        </>
-      )}
-      <button type="button" onClick={state.reloadLatest}>reload</button>
-      <Link to="/elsewhere">leave</Link>
-      {state.guardDialog}
-    </div>
-  )
-}
-
-/** Mounted in a data router (so the route guard is live), under a fresh query client. */
-function mount(document: ProjectDocument, canvasProject = project) {
-  const onSelectDoc = vi.fn<(doc: ProjectDocument) => void>()
-  const router = createMemoryRouter([
-    { path: '/doc', element: <Harness document={document} onSelectDoc={onSelectDoc} canvasProject={canvasProject} /> },
-    { path: '/elsewhere', element: <p>elsewhere</p> },
-  ], { initialEntries: ['/doc'] })
-  render(<QueryClientProvider client={createTestQueryClient()}><RouterProvider router={router} /></QueryClientProvider>)
-  return { onSelectDoc, router, user: userEvent.setup() }
-}
-
-const canvas = () => screen.getByRole('textbox', { name: 'canvas' })
 
 /** The custom document dirty on its canvas, while the server already holds a newer version with `content`. */
 async function dirtyWithNewer(content: string) {
@@ -128,10 +73,7 @@ function firstSave(): unknown {
 }
 
 /** Every PUT answers the version it stored: `edited` with the content sent, one revision on. */
-function putStores(edited: ProjectDocument) {
-  api.updateDocument.mockImplementation((_projectId, _documentId, body) =>
-    Promise.resolve({ document: { ...edited, content: body.content, revision: (edited.revision ?? 0) + 1 } }))
-}
+const putStores = (edited: ProjectDocument) => { storesFor(api.updateDocument, edited) }
 
 beforeEach(() => {
   api.updateDocument.mockReset()
@@ -183,40 +125,6 @@ describe('useCanvasDocument', () => {
     await loadLatestAfterConflict(() => expect(generation(), 'the 409 keeps it').toBe('0'))
 
     expect(generation()).toBe('1')
-  })
-
-  // markRevised is "Revise from comments" saying its accepted changes are (or are no longer) in the draft.
-  describe('a save holding changes accepted from "Revise from comments" (markRevised)', () => {
-    const editKinds = () => api.updateDocument.mock.calls.map((call) => call[3] ?? 'none')
-    /** `document` typed on, marked revised, then saved. */
-    async function saveRevised(document: ProjectDocument) {
-      putStores(document)
-      const { user } = mount(document)
-      await user.type(canvas(), '!')
-      await user.click(screen.getByRole('button', { name: 'revised' }))
-      await user.click(screen.getByRole('button', { name: 'save' }))
-    }
-
-    it('is recorded as a revise: the PRD\'s PUT carries edit_kind "revise"', async () => {
-      await saveRevised(prd)
-      await waitFor(() => expect(editKinds()).toStrictEqual(['revise']))
-    })
-
-    it('a plain edit, or one after the accepted changes left the draft, sends no edit_kind', async () => {
-      const { user } = await savePrdEdit()
-      await user.click(screen.getByRole('button', { name: 'revised' }))
-      await user.click(screen.getByRole('button', { name: 'not revised' }))
-      await user.type(canvas(), '?')
-
-      await user.click(screen.getByRole('button', { name: 'save' }))
-
-      await waitFor(() => expect(editKinds()).toStrictEqual(['none', 'none']))
-    })
-
-    it('never on a research / custom document (only a PR/FAQ / PRD is revised from comments)', async () => {
-      await saveRevised(custom)
-      await waitFor(() => expect(editKinds()).toStrictEqual(['none']))
-    })
   })
 
   it('never sends a PRD title (its series owns it), and the title is not editable', async () => {
@@ -491,7 +399,7 @@ describe('useCanvasDocument', () => {
     function RefetchingHost() {
       const [held, setHeld] = useState(custom)
       useEffect(() => { landed.refetch = () => setHeld({ ...custom }) })
-      return <Harness document={held} onSelectDoc={vi.fn()} />
+      return <Harness document={held} onSelectDoc={vi.fn()} canvasProject={project} />
     }
     const router = createMemoryRouter([
       { path: '/doc', element: <RefetchingHost /> },
@@ -524,7 +432,7 @@ function mountRefetching(Editor: ComponentType<CanvasEditorProps> = FakeCanvasEd
   function RefetchingPage() {
     const [held, setHeld] = useState(custom)
     useEffect(() => { page.arrive = (doc) => setHeld(doc) })
-    return <Harness document={held} onSelectDoc={vi.fn()} Editor={Editor} />
+    return <Harness document={held} onSelectDoc={vi.fn()} canvasProject={project} Editor={Editor} />
   }
   render(<QueryClientProvider client={createTestQueryClient()}><MemoryRouter><RefetchingPage /></MemoryRouter></QueryClientProvider>)
   return { arrive: (doc: ProjectDocument) => { act(() => page.arrive?.(doc)) }, user: userEvent.setup() }
@@ -550,6 +458,34 @@ describe('useCanvasDocument: a newer version arriving from the page (a refetch)'
     await user.click(screen.getByRole('button', { name: 'save' }))
     expect(await screen.findByRole('button', { name: 'load latest' })).toBeInTheDocument()
     expect(firstSave()).toStrictEqual(['p1', 'doc-1', { title: 'Notes', content: 'stored!', expected_revision: 4, edit_id: 'string' }])
+  })
+
+  it('follows a newer version it skipped while dirty once the canvas is clean again (the change typed away)', async () => {
+    const { arrive, user } = mountRefetching()
+    await user.type(canvas(), '!')
+    arrive(theirs)
+    expect(canvas()).toHaveValue('stored!')
+
+    await user.type(canvas(), '{Backspace}')
+
+    await waitFor(() => expect(canvas()).toHaveValue('theirs'))
+    expect([screen.getByTestId('dirty').textContent, screen.getByTestId('generation').textContent]).toStrictEqual(['false', '1'])
+  })
+
+  it('never follows back to the skipped version right after a save (the version just stored is ahead of it)', async () => {
+    // The save stores revision 6, past the skipped revision 5 the page still has selected.
+    api.updateDocument.mockImplementation((_projectId, _documentId, body) =>
+      Promise.resolve({ document: { ...custom, content: body.content, revision: 6 } }))
+    const { arrive, user } = mountRefetching()
+    await user.type(canvas(), '!')
+    arrive(theirs)
+
+    await user.click(screen.getByRole('button', { name: 'save' }))
+
+    await waitFor(() => expect(screen.getByTestId('last-saved')).toHaveTextContent('doc-1:stored!'))
+    await act(() => Promise.resolve())
+    expect([screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'canvas' }).value, screen.getByTestId('dirty').textContent, screen.getByTestId('generation').textContent])
+      .toStrictEqual(['stored!', 'false', '0'])
   })
 
   /** Dirty, then (after `whileDirty`) the newer version arrives, then Discard: the canvas follows it, clean. */
@@ -603,7 +539,7 @@ describe('useCanvasDocument with the real canvas editor', () => {
     const guarded = useGuardedAction()
     return (
       <>
-        <Harness document={custom} onSelectDoc={(doc) => guarded(() => selected(doc))} Editor={CanvasEditor} />
+        <Harness document={custom} onSelectDoc={(doc) => guarded(() => selected(doc))} canvasProject={project} Editor={CanvasEditor} />
         <button type="button" onClick={() => guarded(() => selected(prd))}>open the PRD</button>
       </>
     )

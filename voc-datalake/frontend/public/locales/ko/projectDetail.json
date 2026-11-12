@@ -752,7 +752,9 @@
         "hide": "변경 숨기기",
         "newTitle": "새 제목: {{title}}",
         "noChanges": "제안이 저장된 텍스트와 같습니다.",
+        "otherVersion": "v{{proposed}}에 대한 제안입니다. 이 페이지에는 v{{current}}이(가) 표시됩니다.",
         "removed": "삭제됨",
+        "replacesSince": "승인하면 제안이 다음 버전으로 저장되고 v{{proposed}} 이후의 변경 사항을 대체합니다(변경 사항은 기록에 남습니다). 아래 변경 사항은 이 페이지와 비교한 것입니다.",
         "review": "검토",
         "stats": "추가된 블록: {{added, number}} · 삭제: {{removed, number}}",
         "tooLarge": "너무 길어서 블록별로 비교할 수 없습니다. 전체 제안:",
@@ -811,6 +813,7 @@
         "intro": "변경마다 수락하거나 거절하세요. 수락한 변경은 초안에 들어가고, 저장하면 새 버전이 됩니다.",
         "listLabel": "제안된 변경",
         "markFailed": "저장했지만 댓글을 반영됨으로 표시하지 못했습니다. 나중에 다시 시도하세요.",
+        "markPartial": "저장했지만 일부 댓글은 반영 표시 한도에 도달해 반영됨으로 표시하지 못했습니다. 나머지는 표시했습니다. 해당 댓글은 새 댓글로 시작하세요.",
         "marked_one": "저장됨: 댓글 {{count, number}}개가 v{{version}}에서 반영됨으로 표시되었습니다.",
         "marked_other": "저장됨: 댓글 {{count, number}}개가 v{{version}}에서 반영됨으로 표시되었습니다.",
         "none": "이 댓글들로는 변경을 제안할 수 없었습니다. 대신 할 일은 권장 사항을 참고하세요.",
@@ -828,6 +831,11 @@
         "status_one": "변경 {{count, number}}개가 제안되었습니다.",
         "status_other": "변경 {{count, number}}개가 제안되었습니다.",
         "title": "제안된 변경"
+      },
+      "refused": {
+        "explain": "아무것도 저장되지 않았습니다. 변경 내용은 그대로 있습니다. 대신 내 편집으로 저장하세요.",
+        "fallback": "이 저장을 수정본으로 기록하지 못했습니다.",
+        "saveAsOwn": "내 편집으로 저장"
       },
       "recommendations": {
         "listLabel": "권장 사항",

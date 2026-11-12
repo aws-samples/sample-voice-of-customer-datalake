@@ -63,7 +63,7 @@ What it answers depends on the person's [way of working](ways-of-working.md#revi
 | Outcome | When | What happens |
 |---|---|---|
 | `recommendations` | The AI may not write this PR/FAQ or PRD for the caller (Human-driven without the unlock, or an agent / MCP token whose person is not AI-driven) | One recommendation per thread; nothing is written |
-| `proposal` | The person may have the AI write it and works Human-driven with the unlock or AI-assisted | The changes are shown as a diff on the canvas: accept or reject each, then **Save** (one new version, sent with `edit_kind: revise`, so History records it like an applied pass: `edit_kind` `revise`, the person in `edited_by`); the canvas then marks the accepted changes' threads addressed by that version |
+| `proposal` | The person may have the AI write it and works Human-driven with the unlock or AI-assisted | The changes are shown as a diff on the canvas: accept or reject each, then **Save** (one new version, sent with the pass's job id, `revise_job_id`; when the server's checks pass, History records it like an applied pass: `edit_kind` `revise`, the person in `edited_by`, see [Saving a proposal](#saving-a-proposal)); the canvas then marks the accepted changes' threads addressed by that version |
 | `applied` | The person (and, for an agent or MCP token, the project's owner) works AI-driven | The server writes the revised text as the **next version** of the series (never an overwrite; `edit_kind` `revise`, who asked in `edited_by`) and marks the changes' threads addressed by it, best effort: a thread it cannot mark (deleted meanwhile, its history full, a failed write) is logged and left out of `addressed_thread_ids`, and the pass still answers `applied` (mark it from the canvas). **Undo** restores the previous version from History (a new version again) and clears those marks on the restored version (`addressed: false`); when someone saved a version after the revision, it says so first and offers **Undo anyway** or **Keep it**, since the restore would revert that save too. A pass that keeps no change writes nothing and answers `recommendations` |
 
 Every change is **grounded**: its `before` must occur exactly once in the Markdown of the version the
@@ -93,7 +93,30 @@ version). Each call is one append to the thread's history, never written over or
 current mark is the newest entry when it is a mark. A thread's history holds at most 100 marks and
 clears: one more answers **409** ("This comment has reached its limit of addressed marks; start a new
 comment"), as a reply past 50 does. A full thread does not stop the others of the same call: they are
-marked, then the call answers 409 saying some comments could not be marked and the others were. A reply or a status change clears nothing.
+marked, then the call answers 409 saying some comments could not be marked and the others were. That
+409 carries the machine-readable `code` `addressed_some_full` beside its `error` (a client reads it,
+never the sentence). A reply or a status change clears nothing.
+
+### Saving a proposal
+
+The canvas saves the accepted changes through the normal document save (`PUT …/documents/{doc}`, one
+new version) with `revise_job_id`: the job id of the pass whose proposal they came from (the client's
+`reviseFromComments` result carries it as `job_id`). The server never takes a "this is a revise" on the
+client's word: it records the version as a revise (`edit_kind` `revise`, the person in `edited_by`, and
+`revise_job_id`) only when all of these hold, and otherwise answers **400** and writes nothing:
+
+| Check | 400 message |
+|---|---|
+| The job is a Revise from comments pass of this project (it is read from the project's own job partition; an expired job, a day after it started, is gone) | That revision was not found in this project |
+| It completed with outcome `proposal` | That revision has no proposal to save: it is still running, failed or only recommended |
+| The person saving started it (the job's starter is the caller's subject) | That revision was started by someone else: save it as your own edit |
+| The edited document is a PR/FAQ or PRD of the series the pass read (the pass stores it in its job when it starts) | That revision is of another document (another type: Comments are available on PR/FAQ and PRD documents only) |
+| At least one of the pass's changes is **new** in the saved text relative to the version being edited, verbatim or as plain text (markup and whitespace aside, as anchors are found): a change with an `after` when the saved text holds that `after` more often than the edited version did (a text already in the document does not count by itself); a deletion (`after` empty) or a trim (an `after` that is a piece of its `before`) when its `before` occurs in the edited version and less often in the saved text, verbatim and as plain text (other markup on the same words is not a deletion), and its `after`, if any, is in the saved text and does not occur less often | This save does not hold a change from that revision |
+
+`edit_kind` is the server's to record: one in the body is ignored, like any other key the route does
+not read. A save without `revise_job_id` is a plain `edit`. An unchanged save (the same content and
+title as the version edited) is the usual no-op (`unchanged: true`, nothing written), whatever pass it
+names: the pass is not checked.
 
 ## Share for review
 
@@ -158,7 +181,8 @@ All in the projects table:
 | Item | Key | Notes |
 |---|---|---|
 | Thread | `DCOMMENTS#{project}#{series}` / `C#{comment_id}` | Version, anchor, author (`user` / `persona` / `reviewer`), status, replies, `addressed_history` (append-only, at most 100 entries, never trimmed: `[{version, document_id, at, by_kind, by_sub, addressed: bool}]`, one `list_append` per call so two writers never drop each other's entry; past 100 a 409), `addressed` (the newest entry when it is a mark, else null; the API shows `{version, at, by_kind}`) |
-| Revised version | `PROJECT#{project}` / the series' next row | A normal version row with `edit_kind: revise`, `edited_from_id` and `edited_by: {sub, kind}` (not carried to later versions): written by an applied pass (who asked) or by the person's save of a proposal (`PUT …/documents/{doc}` with `edit_kind: revise`) |
+| Revised version | `PROJECT#{project}` / the series' next row | A normal version row with `edit_kind: revise`, `edited_from_id` and `edited_by: {sub, kind}` (not carried to later versions): written by an applied pass (who asked) or by the person's save of a proposal (`PUT …/documents/{doc}` with `revise_job_id`, checked by the server; that row also keeps `revise_job_id`, not carried either) |
+| Pass's series | the assist job's `config.series_id` (voc-jobs, `PROJECT#{project}` / `JOB#{job_id}`, 1-day TTL) | The series the pass read, checked when its proposal is saved |
 | Series' current link | `DCOMMENTS#{project}#{series}` / `SHARE` | Points at the link |
 | Link | `DOCSHARE#{share_id}` / `META` | Audience, expiry, revoked; `ttl` 30 days past expiry |
 | Reviewer's daily writes | `DCRATE#{share_id}#{email digest}` / `{day}` | `ttl` 2 days |

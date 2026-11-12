@@ -91,6 +91,7 @@ function ChangeGroup({ change, n, state, threads, onShowThread, onAccept, onReje
 function ProposalStatus({ pass, states }: Readonly<{ pass: Proposal; states: readonly ChangeState[] }>) {
   const { t } = useTranslation('projectDetail')
   if (pass.marked === 'failed') return t('canvas.revise.proposal.markFailed')
+  if (pass.marked === 'partial') return t('canvas.revise.proposal.markPartial')
   if (pass.marked !== null) return t('canvas.revise.proposal.marked', { count: pass.marked.count, version: pass.marked.version })
   if (states.includes('accepted')) return t('canvas.revise.proposal.saveNote')
   return t('canvas.revise.proposal.status', { count: states.length })

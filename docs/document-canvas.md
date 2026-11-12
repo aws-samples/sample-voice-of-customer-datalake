@@ -9,8 +9,8 @@ Decisions tab.
 Nothing about storage changes: a document is still Markdown in its `content` field, saved through the same
 `PUT /projects/{id}/documents/{document_id}` as before, so exports, the review page, the assistant, MCP tools
 and the REST API read and write it exactly as they did. Editing adds no route: the canvas saves through that PUT
-(with `edit_kind: revise` when the saved text holds changes accepted from Revise from comments; the server records
-what the canvas says, since the person saves the text). Revise from comments has its own two routes and an MCP step
+(with `revise_job_id` when the saved text holds changes accepted from Revise from comments; the server records
+the save as a revision only after checking that pass: [document-review.md](document-review.md#saving-a-proposal)). Revise from comments has its own two routes and an MCP step
 ([document-review.md](document-review.md#revise-from-comments)): what the canvas can do, the API and MCP do (tenet 4).
 
 ## Reading

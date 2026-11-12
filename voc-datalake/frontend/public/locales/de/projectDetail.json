@@ -752,7 +752,9 @@
         "hide": "Änderungen ausblenden",
         "newTitle": "Neuer Titel: {{title}}",
         "noChanges": "Der Vorschlag stimmt mit dem gespeicherten Text überein.",
+        "otherVersion": "Vorgeschlagen für v{{proposed}}; diese Seite zeigt v{{current}}.",
         "removed": "Entfernt",
+        "replacesSince": "Wenn Sie zustimmen, wird der Vorschlag als nächste Version gespeichert und ersetzt die Änderungen seit v{{proposed}} (sie bleiben im Verlauf). Die Änderungen unten vergleichen ihn mit dieser Seite.",
         "review": "Prüfen",
         "stats": "Blöcke hinzugefügt: {{added, number}} · entfernt: {{removed, number}}",
         "tooLarge": "Zu lang für einen Vergleich Block für Block. Der vollständige Vorschlag:",
@@ -811,6 +813,7 @@
         "intro": "Nehmen Sie jede Änderung an oder lehnen Sie sie ab. Angenommene Änderungen kommen in Ihren Entwurf; Speichern macht daraus eine neue Version.",
         "listLabel": "Vorgeschlagene Änderungen",
         "markFailed": "Gespeichert, aber die Kommentare konnten nicht als umgesetzt markiert werden. Bitte versuchen Sie es später erneut.",
+        "markPartial": "Gespeichert, aber einige Kommentare haben ihr Limit an Markierungen erreicht und konnten nicht als umgesetzt markiert werden; die anderen schon. Beginnen Sie für diese einen neuen Kommentar.",
         "marked_one": "Gespeichert: {{count, number}} Kommentar ist als umgesetzt in v{{version}} markiert.",
         "marked_other": "Gespeichert: {{count, number}} Kommentare sind als umgesetzt in v{{version}} markiert.",
         "none": "Aus diesen Kommentaren ließ sich keine Änderung vorschlagen. Die Empfehlungen sagen, was stattdessen zu tun ist.",
@@ -828,6 +831,11 @@
         "status_one": "{{count, number}} Änderung vorgeschlagen.",
         "status_other": "{{count, number}} Änderungen vorgeschlagen.",
         "title": "Vorgeschlagene Änderungen"
+      },
+      "refused": {
+        "explain": "Es wurde nichts gespeichert: Ihre Änderungen sind noch da. Speichern Sie sie stattdessen als eigene Bearbeitung.",
+        "fallback": "Diese Speicherung konnte nicht als Überarbeitung erfasst werden.",
+        "saveAsOwn": "Als eigene Bearbeitung speichern"
       },
       "recommendations": {
         "listLabel": "Empfehlungen",

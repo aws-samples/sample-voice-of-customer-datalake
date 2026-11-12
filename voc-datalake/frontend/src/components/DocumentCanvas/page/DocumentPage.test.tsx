@@ -22,7 +22,7 @@ const handle = { root: vi.fn(), getMarkdown: vi.fn(), setMarkdown: vi.fn(), scro
 const canvasState = {
   content: '', title: 'Notes', setTitle: vi.fn(), onChange: vi.fn(), dirty: false, saving: false,
   save: vi.fn(), discard: vi.fn(), conflict: null, titleEditable: true, handleRef: { current: handle },
-  editable: true, selectDoc: vi.fn(), reloadLatest: vi.fn(), guardDialog: null,
+  editable: true, selectDoc: vi.fn(), reloadLatest: vi.fn(), guardDialog: null, reviseRefused: null,
 }
 /** The headings the mocked canvas reports on load. */
 const outline: OutlineItem[] = []

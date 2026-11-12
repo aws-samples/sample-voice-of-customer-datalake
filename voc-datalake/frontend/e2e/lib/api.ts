@@ -20,12 +20,19 @@ export interface ApiCallOptions {
   expect?: ExpectedStatuses
 }
 
+/**
+ * The dev mock has no login: it answers every caller as its admin, unless `x-mock-board-viewer: user` makes the call a
+ * second, non-admin app user (e2e.user@example.com, mock-feature-requests.js), as the live suite's e2e-user is.
+ */
+function mockHeaders(role: Role): Record<string, string> {
+  return role === 'user' ? { 'Content-Type': 'application/json', 'x-mock-board-viewer': 'user' } : { 'Content-Type': 'application/json' }
+}
+
 export async function apiCall(role: Role, method: string, path: string, body?: unknown, options: ApiCallOptions = {}): Promise<ApiResult> {
   const started = performance.now()
   const response = await e2eFetch(`${apiUrl()}${path}`, {
     method,
-    // The dev mock has no login: it answers every caller as the admin.
-    headers: MOCK ? { 'Content-Type': 'application/json' } : { Authorization: idTokenFor(role), 'Content-Type': 'application/json' },
+    headers: MOCK ? mockHeaders(role) : { Authorization: idTokenFor(role), 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   }, options)
   return resultOf(response, started)

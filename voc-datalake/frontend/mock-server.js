@@ -682,10 +682,13 @@ const handlers = {
   'GET /feedback': (_body, searchParams) => {
     const { items, error } = filterFeedbackRequest(mockFeedback, searchParams);
     if (error) return badDims(error);
-    // offset/limit paging like metrics_handler.list_feedback.
+    // offset/limit paging like metrics_handler.list_feedback, newest import first as its walk of
+    // gsi1-by-date reads it (days newest first, each day's `processed_at#id` descending); a stable
+    // sort, so reviews imported in the same instant keep their stored order.
     const limit = Math.min(Math.max(Number(searchParams.get('limit')) || 50, 1), 100);
     const offset = Math.max(Number(searchParams.get('offset')) || 0, 0);
-    const page = items.slice(offset, offset + limit);
+    const newestFirst = [...items].sort((a, b) => String(b.processed_at ?? '').localeCompare(String(a.processed_at ?? '')));
+    const page = newestFirst.slice(offset, offset + limit);
     return { count: page.length, total: items.length, offset, limit, is_partial_window: false, items: page };
   },
   'GET /feedback/problems': (_body, searchParams) => {

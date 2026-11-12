@@ -96,7 +96,8 @@ function createDocumentCommentsApi(fetchApi: FetchApi) {
         parsePersonaReviewResult,
       )
     },
-    /** 202 + an assist job: recommendations, a proposal of grounded changes, or (AI-driven) an applied version. */
+    /** 202 + an assist job: recommendations, a proposal of grounded changes, or (AI-driven) an applied version.
+     *  The result carries the pass's `job_id`: a save of the proposal names it (`updateDocument`'s `reviseJobId`). */
     reviseFromComments(projectId: string, documentId: string, threadIds?: readonly string[]): Promise<ReviseFromCommentsResult> {
       const body = threadIds === undefined ? {} : { thread_ids: threadIds }
       return runAssistJob(

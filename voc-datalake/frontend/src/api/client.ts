@@ -93,24 +93,30 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
  * / 409 / 500, `lambda/shared/api.py`) with `{success: false, error}`, so `error`
  * is read when `message` is absent — without it a ValidationError's reason (e.g.
  * "No feedback data found for the given filters") never reached the screen and
- * the user saw "API Error: 400". Nothing else in the body is kept, and a reason
- * longer than a sentence or two is not one meant for a screen.
+ * the user saw "API Error: 400". Besides it only a machine-readable `code` (a
+ * snake_case word, `ApiError.code` in lambda/shared/exceptions.py) is kept, and
+ * a reason longer than a sentence or two is not one meant for a screen.
  */
 const MAX_SERVER_MESSAGE_CHARS = 300
 const reasonSchema = z.string().trim().min(1).max(MAX_SERVER_MESSAGE_CHARS)
 const errorBodySchema = z.object({
   message: reasonSchema.optional().catch(undefined),
   error: reasonSchema.optional().catch(undefined),
+  code: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/).optional().catch(undefined),
 })
 
-async function serverMessage(response: Response): Promise<string | undefined> {
+interface ServerAnswer { readonly message: string | undefined; readonly code: string | undefined }
+
+async function serverAnswer(response: Response): Promise<ServerAnswer> {
   try {
     const parsed = errorBodySchema.safeParse(JSON.parse(await response.text()))
-    return parsed.success ? (parsed.data.message ?? parsed.data.error) : undefined
+    return parsed.success
+      ? { message: parsed.data.message ?? parsed.data.error, code: parsed.data.code }
+      : { message: undefined, code: undefined }
   } catch {
     // No body, a non-JSON body (an API Gateway error page), or a body that was
     // already consumed: the status alone is still a complete answer.
-    return undefined
+    return { message: undefined, code: undefined }
   }
 }
 
@@ -122,8 +128,9 @@ async function serverMessage(response: Response): Promise<string | undefined> {
  * `fetchApi` for a board session (its 401 path ends the APP session).
  */
 export async function apiErrorFor(response: Response): Promise<ApiError> {
-  const message = await serverMessage(response)
-  return message === undefined ? new ApiError(response.status) : new ApiError(response.status, message)
+  const { message, code } = await serverAnswer(response)
+  // An absent message takes ApiError's default (`API Error: {status}`).
+  return new ApiError(response.status, message, code)
 }
 
 async function handleUnauthorized<T>(

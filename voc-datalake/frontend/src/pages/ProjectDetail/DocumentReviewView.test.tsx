@@ -358,9 +358,11 @@ describe('the persona review, in the rail', () => {
 
 describe('Revise from comments', () => {
   const QUOTE_CHANGE = { change_id: 'ch_1', thread_ids: ['c_quote'], before: 'two weeks', after: 'five days', reason: 'Answers the method question' }
+  // `job_id`: the pass's job, as reviseFromComments sets it from the job it polled (runAssistJob is mocked whole here).
   const revised = (outcome: string, extra: Record<string, unknown> = {}) => ({
     outcome, base_document_id: 'doc_2', base_version: 2, recommendations: [{ thread_id: 'c_done', text: 'Say which typo was fixed.' }],
-    changes: outcome === 'recommendations' ? [] : [QUOTE_CHANGE], applied_version: null, addressed_thread_ids: [], dropped: 0, ...extra,
+    changes: outcome === 'recommendations' ? [] : [QUOTE_CHANGE], applied_version: null, addressed_thread_ids: [], dropped: 0,
+    job_id: 'job_rev_1', ...extra,
   })
   const REPLIED = { replies: [{ reply_id: 'r1', author: author('user', 'Rui'), text: 'Bank transfer', flagged: false, at: '' }] }
   const rail = () => screen.findByRole('complementary', { name: 'Comments' })
@@ -522,27 +524,29 @@ describe('Revise from comments', () => {
       )
     }
     const mountPage = () => renderWithQueryClient(<CanvasPage />)
-    /** Each PUT's edit_kind ("none": absent). */
-    const editKinds = () => writes().filter(([, options]) => options?.method === 'PUT')
-      .map(([, options]) => sentBody(options).edit_kind ?? 'none')
+    /** Each PUT's revise_job_id ("none": absent); no PUT ever says its own edit_kind (the server sets it). */
+    const reviseJobIds = () => writes().filter(([, options]) => options?.method === 'PUT').map(([, options]) => {
+      const body = sentBody(options)
+      return 'edit_kind' in body ? 'edit_kind sent' : body.revise_job_id ?? 'none'
+    })
 
-    it('after an accepted change: edit_kind "revise", and the thread is marked addressed by the saved version', async () => {
+    it('after an accepted change: the pass\'s job id as revise_job_id, and the thread is marked addressed by the saved version', async () => {
       const { user } = await acceptTheProposal(mountPage)
 
       await user.click(screen.getByRole('button', { name: 'Save the page' }))
 
-      await waitFor(() => expect(editKinds()).toStrictEqual(['revise']))
+      await waitFor(() => expect(reviseJobIds()).toStrictEqual(['job_rev_1']))
       await expectAddressed('doc_3', true)
     })
 
-    /** A plain edit on the canvas, then the page's Save: its PUT sends no edit_kind. */
+    /** A plain edit on the canvas, then the page's Save: its PUT names no pass. */
     async function savePlainEdit(user: ReturnType<typeof userEvent.setup>) {
       await user.click(await screen.findByRole('button', { name: 'Simulate an edit' }))
       await user.click(screen.getByRole('button', { name: 'Save the page' }))
-      await waitFor(() => expect(editKinds()).toStrictEqual(['none']))
+      await waitFor(() => expect(reviseJobIds()).toStrictEqual(['none']))
     }
 
-    it('after a plain edit: no edit_kind', async () => {
+    it('after a plain edit: no revise_job_id', async () => {
       const user = userEvent.setup()
       mountPage()
 
@@ -551,7 +555,7 @@ describe('Revise from comments', () => {
       expect(addressedWrites()).toStrictEqual([])
     })
 
-    it('after the accepted change was discarded (then a plain edit): no edit_kind, nothing marked', async () => {
+    it('after the accepted change was discarded (then a plain edit): no revise_job_id, nothing marked', async () => {
       const { user } = await acceptTheProposal(mountPage)
       await user.click(screen.getByRole('button', { name: 'Discard the page' }))
 
@@ -560,7 +564,7 @@ describe('Revise from comments', () => {
       expect(addressedWrites()).toStrictEqual([])
     })
 
-    it('after the accepted change was removed by hand: no edit_kind, nothing marked', async () => {
+    it('after the accepted change was removed by hand: no revise_job_id, nothing marked', async () => {
       const { user } = await acceptTheProposal(mountPage)
 
       await savePlainEdit(user)
@@ -577,7 +581,7 @@ describe('Revise from comments', () => {
       expect([button.matches(':disabled'), button.getAttribute('aria-describedby') === null]).toStrictEqual([true, false])
       expect(button).toHaveAccessibleDescription('Save or discard the accepted changes first.')
       await user.click(screen.getByRole('button', { name: 'Save the page' }))
-      await waitFor(() => expect([editKinds(), button.matches(':disabled')]).toStrictEqual([['revise'], false]))
+      await waitFor(() => expect([reviseJobIds(), button.matches(':disabled')]).toStrictEqual([['job_rev_1'], false]))
       await expectAddressed('doc_3', true)
     })
   })

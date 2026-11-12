@@ -22,6 +22,7 @@ import { ContentDiff } from '../../assistant/approvals/previews/DocumentDiffPrev
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
 import { formatDateTime } from '../../utils/dateUtils'
+import { documentVersionsKey } from './documentEdit'
 import type { DocumentVersion } from '../../api/projectDetailSchema'
 import type { ProjectDocument } from '../../api/types'
 
@@ -33,9 +34,6 @@ interface DocumentVersionsProps {
 }
 
 type ViewMode = 'content' | 'compare'
-
-const versionsKey = (projectId: string, documentId: string) =>
-  [...projectKey(projectId), 'document-versions', documentId] as const
 
 function VersionBadges({ version }: Readonly<{ version: DocumentVersion }>) {
   const { t } = useTranslation('projectDetail')
@@ -137,7 +135,7 @@ function useVersionRestore(projectId: string, documentId: string, onSelectDoc: (
 export default function DocumentVersions({ projectId, document, canEdit, onSelectDoc }: DocumentVersionsProps) {
   const { t } = useTranslation('projectDetail')
   const { data: versions, isLoading, isError } = useQuery({
-    queryKey: versionsKey(projectId, document.document_id),
+    queryKey: documentVersionsKey(projectId, document.document_id),
     queryFn: () => projectsApi.getDocumentVersions(projectId, document.document_id),
   })
   const restore = useVersionRestore(projectId, document.document_id, onSelectDoc)

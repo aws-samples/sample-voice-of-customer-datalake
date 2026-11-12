@@ -806,7 +806,9 @@
         "hide": "Ukryj zmiany",
         "newTitle": "Nowy tytuł: {{title}}",
         "noChanges": "Propozycja jest zgodna z zapisanym tekstem.",
+        "otherVersion": "Zaproponowano dla v{{proposed}}; ta strona pokazuje v{{current}}.",
         "removed": "Usunięto",
+        "replacesSince": "Zatwierdzenie zapisze sugestię jako następną wersję i zastąpi zmiany wprowadzone od v{{proposed}} (pozostaną w Historii). Zmiany poniżej porównują ją z tą stroną.",
         "review": "Przejrzyj",
         "stats": "Dodane bloki: {{added, number}} · usunięte: {{removed, number}}",
         "tooLarge": "Za długie, by porównać blok po bloku. Cała propozycja:",
@@ -869,6 +871,7 @@
         "intro": "Zaakceptuj lub odrzuć każdą zmianę. Zaakceptowane zmiany trafiają do szkicu; Zapisz tworzy z nich nową wersję.",
         "listLabel": "Proponowane zmiany",
         "markFailed": "Zapisano, ale nie udało się oznaczyć komentarzy jako uwzględnionych. Spróbuj ponownie później.",
+        "markPartial": "Zapisano, ale niektóre komentarze osiągnęły limit oznaczeń i nie udało się ich oznaczyć jako uwzględnionych; pozostałe oznaczono. Dla nich rozpocznij nowy komentarz.",
         "marked_one": "Zapisano: {{count, number}} komentarz oznaczono jako uwzględniony w v{{version}}.",
         "marked_few": "Zapisano: {{count, number}} komentarze oznaczono jako uwzględnione w v{{version}}.",
         "marked_many": "Zapisano: {{count, number}} komentarzy oznaczono jako uwzględnione w v{{version}}.",
@@ -890,6 +893,11 @@
         "status_many": "Zaproponowano {{count, number}} zmian.",
         "status_other": "Zaproponowano {{count, number}} zmiany.",
         "title": "Proponowane zmiany"
+      },
+      "refused": {
+        "explain": "Nic nie zostało zapisane: Twoje zmiany nadal tu są. Zapisz je jako własną edycję.",
+        "fallback": "Tego zapisu nie udało się zarejestrować jako poprawki.",
+        "saveAsOwn": "Zapisz jako moją edycję"
       },
       "recommendations": {
         "listLabel": "Rekomendacje",

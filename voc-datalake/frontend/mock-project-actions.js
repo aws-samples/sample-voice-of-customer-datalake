@@ -16,6 +16,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { autofillPrfaq, suggestDocumentBrief } from './mock-ai-drafts.js';
+import { documentSeriesKey } from './mock-document-review.js';
 import {
   NO_SOURCE_MESSAGE, documentRequestUse, generationMethodology, importStartMethodology, importedPersonaMarker,
   prototypeBlocked,
@@ -246,14 +247,15 @@ const isAssistJob = (record) => typeof record.job_type === 'string' && record.jo
  * the route used to send synchronously. An error answer is still sent as is (the
  * real route checks its preconditions before it starts the job); a success
  * becomes 202 + a job that completes on its FIRST poll with that very body.
+ * `config` is the job row's config (never answered by a poll), as the real start stores it.
  */
-export function startProjectAssistJob(projectId, jobType, answer) {
+export function startProjectAssistJob(projectId, jobType, answer, config = {}) {
   const [status, body] = answer;
   if (status !== 200) return answer;
   const [, started] = startJob(projectId, {
     jobType, status: 'pending', runningStep: 'running', errorMessage: 'Request failed', complete: () => body,
   });
-  jobs.get(started.job_id).assist = true;
+  Object.assign(jobs.get(started.job_id), { assist: true, config });
   return [202, { success: true, job_id: started.job_id, status: 'pending' }];
 }
 
@@ -653,7 +655,9 @@ const seriesOf = (detail, doc) => {
     .filter((d) => d.document_type === doc.document_type && splitVersionedTitle(d.base_title ?? d.title)[0].toLowerCase() === series)
     .sort((a, b) => (b.version ?? 1) - (a.version ?? 1));
 };
-const ROW_IDENTITY = new Set(['document_id', 'title', 'base_title', 'version', 'created_at', 'updated_at', 'content', 'edited_from_id', 'edit_kind', 'restored_from_id', 'restored_from_version']);
+// document_history._ROW_IDENTITY_FIELDS (plus what is set afresh): `edited_by` and `revise_job_id`
+// describe the version a revise wrote, never a later one derived from it.
+const ROW_IDENTITY = new Set(['document_id', 'title', 'base_title', 'version', 'created_at', 'updated_at', 'content', 'edited_from_id', 'edit_kind', 'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id']);
 
 function newManagedVersion(ctx, source, content, provenance) {
   const carried = Object.fromEntries(Object.entries(source).filter(([key]) => !ROW_IDENTITY.has(key)));
@@ -700,33 +704,126 @@ function expectedRevisionOf(body) {
     : [null, bad('expected_revision must be the revision you loaded (a whole number ≥ 1)')];
 }
 
-/**
- * validated_edit_kind: `edit` (absent / null) or `revise`, a person saving the "Revise from comments"
- * proposal they accepted (a PR/FAQ / PRD only, recorded like the applied pass: D4).
- */
-function editKindOf(body) {
-  if (!own(body, 'edit_kind') || body.edit_kind === null) return ['edit', null];
-  return body.edit_kind === 'edit' || body.edit_kind === 'revise'
-    ? [body.edit_kind, null]
-    : [null, bad('edit_kind must be "edit" or "revise"')];
-}
-
-/** document_history._revised_type: only a PR/FAQ or PRD is saved as a revise. */
-function reviseRefusal(editKind, doc) {
-  return editKind === 'revise' && doc.document_type !== 'prfaq' && doc.document_type !== 'prd'
-    ? bad('Only a PR/FAQ or PRD is revised from comments')
-    : null;
-}
-
-/** The new version's provenance: a revise records the person who saved it (`edited_by`, D4). */
-function editProvenance(ctx, doc, editKind) {
-  const provenance = { edit_kind: editKind, edited_from_id: doc.document_id };
-  if (editKind !== 'revise') return provenance;
-  return { ...provenance, edited_by: { sub: ctx.shared.mockCaller?.sub ?? '', kind: 'user' } };
-}
-
 const STALE_DOCUMENT = [409, { success: false, error: 'The document was changed by someone else; reload it and try again' }];
 const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** validated_revise_job_id: the pass a save of its proposal names (null when absent). */
+function reviseJobIdOf(body) {
+  if (!own(body, 'revise_job_id') || body.revise_job_id === null) return [null, null];
+  return typeof body.revise_job_id === 'string' && OPAQUE_ID.test(body.revise_job_id)
+    ? [body.revise_job_id, null]
+    : [null, bad('revise_job_id must be the job id of a Revise from comments pass')];
+}
+
+// document_series.plain_text, its steps in its order: block markers, links, images, emphasis and table pipes go.
+// Its line patterns run here line by line (the same result once whitespace is collapsed, and linear; only where
+// its `\s` runs across lines, e.g. a divider then marker-only lines, does the API drop a little more).
+const isFence = (line) => line.trimStart().startsWith('```') || line.trimStart().startsWith('~~~');
+function isTableSeparator(line) {
+  const row = line.trim();
+  const inner = row.slice(row.startsWith('|') ? 1 : 0, row.endsWith('|') && row.length > 1 ? -1 : undefined);
+  return inner.split('|').every((cell) => /^:?-{2,}:?$/.test(cell.trim()));
+}
+const isDivider = (line) => /^[-*_]{3,}$/.test(line.replace(/\s/g, ''));
+const LINE_MARKERS = [
+  /^\s{0,3}#{1,6}\s+/, // headings
+  /^\s{0,3}>\s?/, // quotes
+  /^\s*(?:[-*+]|\p{Nd}{1,9}[.)])\s+(?:\[[ xX]\]\s+)?/u, // list items and to-dos
+];
+
+/** `[words](target)` (`![words](target)` when `bang`) as its words, left to right like the API's regex. */
+function unlink(text, bang) {
+  let out = '';
+  let at = 0;
+  let open = text.indexOf('[');
+  while (open !== -1) {
+    const start = bang ? open - 1 : open;
+    const close = text.indexOf(']', open);
+    const end = close !== -1 && text[close + 1] === '(' ? text.indexOf(')', close) : -1;
+    const found = start >= at && (!bang || text[start] === '!') && end !== -1;
+    if (found) {
+      out += text.slice(at, start) + text.slice(open + 1, close);
+      at = end + 1;
+    }
+    open = text.indexOf('[', found ? at : open + 1);
+  }
+  return out + text.slice(at);
+}
+
+function plainText(markdown) {
+  const lines = String(markdown).split('\n').map((line) => (isFence(line) || isTableSeparator(line) ? ' ' : line));
+  const unlinked = unlink(unlink(lines.join('\n'), true), false).split('\n').map((line) => {
+    const marked = LINE_MARKERS.reduce((text, pattern) => text.replace(pattern, ' '), line);
+    return isDivider(marked) ? ' ' : marked;
+  });
+  return unlinked.join('\n')
+    .replace(/<\/?[A-Za-z][^>]*>/g, ' ')
+    .replace(/(\*\*|__|~~|`)/g, '')
+    .replace(/(?<![\p{L}\p{N}_*])\*(?=\S)|(?<=\S)\*(?![\p{L}\p{N}_*])/gu, '')
+    .replaceAll('|', ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** How often `passage` occurs in `text`, verbatim and as plain text (0 when it has none): `[verbatim, plain]`. */
+function occurrences(text, passage) {
+  const count = (haystack, needle) => (needle === '' ? 0 : haystack.split(needle).length - 1);
+  return [count(text, passage), count(plainText(text), plainText(passage))];
+}
+
+/**
+ * document_revision.holds_a_change: at least one change is NEW in the saved text relative to the edited version's:
+ * a non-empty `after` occurs more often (verbatim, or as plain text); or its `before` occurs less often, verbatim and
+ * as plain text (when it has any), while its non-empty `after` is in the saved text and does not occur less often
+ * (a deletion, or a trim whose `after` is a piece of its `before`).
+ */
+export function holdsAChange(content, edited, changes) {
+  return Array.isArray(changes) && changes.some((change) => {
+    if (!isPlainObject(change) || typeof change.after !== 'string') return false;
+    const { after, before } = change;
+    const hasAfter = after.trim() !== '';
+    const [afterNow, afterWas] = hasAfter ? [occurrences(content, after), occurrences(edited, after)] : [[0, 0], [0, 0]];
+    if (afterNow[0] > afterWas[0] || afterNow[1] > afterWas[1]) return true;
+    if (typeof before !== 'string' || before.trim() === '') return false;
+    const [now, was] = [occurrences(content, before), occurrences(edited, before)];
+    const beforeGone = now[0] < was[0] && (now[1] < was[1] || plainText(before) === '');
+    // Only a deletion or a trim: the `after` is a piece of the `before` (verbatim, or as plain text).
+    const flatAfter = plainText(after);
+    const trimmed = !hasAfter || before.includes(after) || (flatAfter !== '' && plainText(before).includes(flatAfter));
+    // "Less often" as for the before: verbatim and as plain text; a trim may change the kept words' markup.
+    const afterKept = !hasAfter
+      || ((afterNow[0] >= afterWas[0] || afterNow[1] >= afterWas[1]) && (afterNow[0] > 0 || afterNow[1] > 0));
+    return beforeGone && trimmed && afterKept;
+  });
+}
+
+/**
+ * document_revision.verify_saved_proposal: the `revise` provenance of a save naming its pass, or the
+ * 400. The job is this project's revise pass, completed with a proposal, started by the same caller,
+ * of the edited document's series, and one of its changes is new in the saved text; never a quiet relabel.
+ */
+function verifiedProposal(ctx, doc, content, jobId) {
+  const entry = jobs.get(jobId);
+  const record = entry?.projectId === ctx.projectId ? entry.record : null;
+  if (record?.job_type !== 'assist_revise_from_comments') return [null, bad('That revision was not found in this project')];
+  if (record.status !== 'completed' || record.result?.outcome !== 'proposal') {
+    return [null, bad('That revision has no proposal to save: it is still running, failed or only recommended')];
+  }
+  const caller = ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB;
+  if (record.initiated_by !== caller) return [null, bad('That revision was started by someone else: save it as your own edit')];
+  if (doc.document_type !== 'prfaq' && doc.document_type !== 'prd') {
+    return [null, bad('Comments are available on PR/FAQ and PRD documents only')];
+  }
+  if (entry.config?.series_key !== documentSeriesKey(ctx.projectId, doc)) return [null, bad('That revision is of another document')];
+  if (!holdsAChange(content, String(doc.content ?? ''), record.result.changes)) return [null, bad('This save does not hold a change from that revision')];
+  return [{ edited_by: { sub: caller, kind: 'user' }, revise_job_id: jobId }, null];
+}
+
+/** The new version's provenance: a checked proposal save records the person and the pass (D4). */
+function editProvenance(doc, revise) {
+  const provenance = { edit_kind: revise ? 'revise' : 'edit', edited_from_id: doc.document_id };
+  return revise ? { ...provenance, ...revise } : provenance;
+}
 
 /** validated_edit_id: the caller's idempotency key for one save, or a digest of the content. */
 function editIdOf(body, content) {
@@ -753,6 +850,21 @@ function allocatedManagedVersion(ctx, source, allocationId, expected, build) {
   return [200, { success: true, document: saved }];
 }
 
+/** A save's body checks (revise_job_id, expected_revision, content) and the pass it names:
+ *  `[{expected, content, revise}, null]`, or `[null, the 400]`. Any other key (`edit_kind` too) is ignored.
+ *  An unchanged save is the no-op, whatever pass it names: the pass is not checked. */
+function checkedSave(ctx, doc, title) {
+  const [expected, expectedError] = expectedRevisionOf(ctx.body);
+  const [reviseJobId, reviseJobIdError] = reviseJobIdOf(ctx.body);
+  const refusal = reviseJobIdError ?? expectedError;
+  if (refusal) return [null, refusal];
+  if (own(ctx.body, 'content') && typeof ctx.body.content !== 'string') return [null, bad('content must be a string')];
+  const content = own(ctx.body, 'content') ? ctx.body.content : (doc.content ?? '');
+  const unchanged = content === (doc.content ?? '') && title === doc.title;
+  const [revise, reviseError] = reviseJobId === null || unchanged ? [null, null] : verifiedProposal(ctx, doc, content, reviseJobId);
+  return reviseError ? [null, reviseError] : [{ expected, content, revise, unchanged }, null];
+}
+
 /** update_document (projects.py + document_history.edit_document): every save is a new version, never an overwrite. */
 function updateDocument(ctx, documentId) {
   const doc = findDocument(ctx.detail, documentId);
@@ -764,18 +876,15 @@ function updateDocument(ctx, documentId) {
   if (own(ctx.body, 'content') && doc.document_type === 'prototype') {
     return bad('Prototype content is stored in S3 and cannot be updated through generic document CRUD. Use the prototype revision workflow.');
   }
-  const [expected, expectedError] = expectedRevisionOf(ctx.body);
-  const [editKind, editKindError] = editKindOf(ctx.body);
-  const refusal = expectedError ?? editKindError ?? reviseRefusal(editKind, doc);
+  const [save, refusal] = checkedSave(ctx, doc, title);
   if (refusal) return refusal;
-  if (own(ctx.body, 'content') && typeof ctx.body.content !== 'string') return bad('content must be a string');
-  const content = own(ctx.body, 'content') ? ctx.body.content : (doc.content ?? '');
-  if (content === (doc.content ?? '') && title === doc.title) return [200, { success: true, unchanged: true, document: doc }];
+  const { expected, content, revise, unchanged } = save;
+  if (unchanged) return [200, { success: true, unchanged: true, document: doc }];
   const [editId, editIdError] = editIdOf(ctx.body, content);
   if (editIdError) return editIdError;
   if (managed) {
     return allocatedManagedVersion(ctx, doc, `edit:${doc.document_id}:${editId}`, expected,
-      () => newManagedVersion(ctx, doc, content, editProvenance(ctx, doc, editKind)));
+      () => newManagedVersion(ctx, doc, content, editProvenance(doc, revise)));
   }
   if (expected !== null && expected !== currentRevision(doc)) return STALE_DOCUMENT;
   return [200, { success: true, document: replaceUnmanaged(ctx, doc, { content, title, provenance: { edit_kind: 'edit' } }) }];

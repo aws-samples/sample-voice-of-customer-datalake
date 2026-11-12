@@ -148,7 +148,12 @@ const reviseResultSchema = z.object({
   addressed_thread_ids: z.array(z.string()).catch([]),
   dropped: z.number().catch(0),
 })
-export type ReviseFromCommentsResult = z.infer<typeof reviseResultSchema>
+export type ReviseFromCommentsResult = z.infer<typeof reviseResultSchema> & {
+  /** The pass's assist job id, set by `reviseFromComments` from the job it polled (never read from the
+   *  result): a save of the proposal names it (`projectsApi.updateDocument(…, reviseJobId)`) and the
+   *  server checks the pass before it records a revise. */
+  readonly job_id: string
+}
 
 const threadsAnswerSchema = z.object({ threads: threadListSchema })
 
@@ -163,5 +168,7 @@ export const parseThreadAnswer = (answer: unknown): CommentThread => parsed(thre
 export const parseShareAnswer = (answer: unknown): ReviewShare | null => parsed(shareAnswerSchema, answer).share
 export const parseReviewAnswer = (answer: unknown): ReviewPageAnswer => parsed(reviewAnswerSchema, answer)
 export const parsePersonaReviewResult = (answer: unknown): PersonaReviewResult => parsed(personaReviewResultSchema, answer)
-export const parseReviseResult = (answer: unknown): ReviseFromCommentsResult => parsed(reviseResultSchema, answer)
+/** A pass's result, with `jobId` (the job that produced it, a non-empty id: runAssistJob's start answer) as `job_id`. */
+export const parseReviseResult = (answer: unknown, jobId: string): ReviseFromCommentsResult =>
+  ({ ...parsed(reviseResultSchema, answer), job_id: jobId })
 export const parseThreadsAnswer = (answer: unknown): readonly CommentThread[] => parsed(threadsAnswerSchema, answer).threads

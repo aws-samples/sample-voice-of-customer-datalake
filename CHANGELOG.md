@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.07.00] - 2026-11-12
+
+A saved revision proposal is recorded as one only after the server checks it, and the dev-mock end-to-end suite is green again.
+
+### Changed
+
+- **Saving a Revise-from-comments proposal** ([docs/document-review.md](docs/document-review.md#saving-a-proposal)): `PUT /projects/{id}/documents/{doc}` takes `revise_job_id` (the pass's assist job) instead of trusting `edit_kind: revise` from the client. The server records `edit_kind: revise`, `edited_by` and `revise_job_id` only when the job is a completed revise pass of this project with a proposal, started by the caller, on the same series, and at least one of its changes is new in the saved text relative to the version being edited (an `after` it holds more often than that version did, or a deletion (or trim) whose `before` occurs less often than in that version); a pass past its expiry is refused even before DynamoDB removes it, and an unchanged save stays the no-op; otherwise it answers 400 and writes nothing. A deletion-only proposal is saved as a revise too. On a refusal the canvas keeps the draft, shows the reason and offers **Save as my own edit** (the same text as a plain edit, with the revision check). `revise_job_id` and `edited_by` are not copied onto later versions.
+- The assistant's proposed change shows on the canvas also when it names another version of the same PR/FAQ or PRD, labelled "Proposed on vN; this page shows vM". When vN is older than the page's version, the diff is against this page (what approving produces: the next version holds the proposal, replacing the changes made since vN, which stay in History) and the banner says so; a proposal on a newer version is diffed against that version.
+- A newer version skipped while the canvas had unsaved changes is followed once the canvas is clean again (never back to an older version after a save).
+- When some threads could not be marked addressed (a full history) the canvas says so and that the others were. `POST …/comments/addressed`'s 409 for some marked carries a machine-readable `code` (`addressed_some_full`), which the canvas reads instead of the message: any API error can now carry a `code` beside `error` (`ApiError.code`).
+- Settings' "saved" note uses the shared `useResetAfter` hook.
+
+### Fixed
+
+- The dev mock lists `GET /feedback` newest first, like the API, so a just-uploaded CSV dataset's rows are on the first page (`csv-dataset-update.spec.ts`), and answers a second, non-admin app user (`x-mock-board-viewer: user`) so the feature-request spec's second +1 is its own (`feature-requests.spec.ts`). The dev mock no longer copies `edited_by` onto later versions. The full mock end-to-end suite passes (203 passed, 0 failed).
+
+### Upgrade notes
+
+- Deploy every stack and the frontend (`npm run deploy:infra`, `npm run deploy:frontend`): the projects Lambda checks `revise_job_id`.
+
 ## [6.06.00] - 2026-11-12
 
 The document canvas gets a full-screen view, one File menu, and a revision pass from the comments.

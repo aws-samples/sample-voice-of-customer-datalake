@@ -440,6 +440,8 @@ def test_starting_a_revision_answers_202_with_the_outcome_of_the_way_of_working(
     config = args[2]
     assert args[1] == 'assist_revise_from_comments'
     assert (config['document_id'], config['outcome']) == ('d2', outcome)
+    # The series the pass read: a save of its proposal is checked against it (PUT revise_job_id).
+    assert config['series_id'] == _series_of_launch()
     assert json.loads(config['body_json']) == {'thread_ids': [thread['comment_id']]}
     assert config['actor'] == {'sub': 'editor-sub', 'kind': 'user'}
     assert config['category_scope']['all'] is True
@@ -644,7 +646,7 @@ def test_marking_past_the_history_cap_is_409_and_writes_nothing(call, table, mon
         call('POST', ADDRESSED, OWNER, {'thread_ids': [thread['comment_id']]})
     response, body = call('POST', ADDRESSED, OWNER, {'thread_ids': [thread['comment_id']], 'addressed': False})
     assert response['statusCode'] == 409
-    assert document_comments.ADDRESSED_FULL in json.dumps(body)
+    assert body == {'success': False, 'error': document_comments.ADDRESSED_FULL}
     stored = _stored_thread(table, thread['comment_id'])
     assert stored is not None
     assert len(stored['addressed_history']) == 2
@@ -660,6 +662,9 @@ def test_marking_past_the_cap_still_marks_the_other_threads_then_is_409(call, ta
     response, body = call('POST', ADDRESSED, OWNER, {'thread_ids': [full['comment_id'], other['comment_id']]})
     assert response['statusCode'] == 409
     assert document_comments.ADDRESSED_SOME_FULL in json.dumps(body)
+    # Machine-readable: the client reads the code, never the sentence.
+    assert body['code'] == 'addressed_some_full'
+    assert 'marked_thread_ids' not in body
     marked, kept = _stored_thread(table, other['comment_id']), _stored_thread(table, full['comment_id'])
     assert marked is not None
     assert kept is not None
@@ -667,7 +672,7 @@ def test_marking_past_the_cap_still_marks_the_other_threads_then_is_409(call, ta
     assert len(kept['addressed_history']) == 1
 
 
-# ── saving a proposal (PUT edit_kind, D4) ───────────────────────────────────
+# ── saving a proposal (PUT revise_job_id, D4: checked by the server) ────────
 
 DOCUMENT_PUT = '/projects/p1/documents/d2'
 
@@ -685,32 +690,212 @@ def _saved_version(table, document_id):
     return row
 
 
-def test_a_saved_proposal_is_recorded_as_a_revise_by_the_person(call, documents):
-    response, body = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Final draft of the launch.', 'edit_id': 'e1',
-                                                        'expected_revision': 2, 'edit_kind': 'revise'})
+def _series_of_launch():
+    from shared.document_series import series_of
+
+    return series_of('p1', V2)['series_id']
+
+
+def _revise_job(**overrides):
+    """A finished proposal pass the editor started on v2 (the jobs table's row, config included)."""
+    row = {'pk': 'PROJECT#p1', 'sk': 'JOB#job_r1', 'job_id': 'job_r1', 'job_type': 'assist_revise_from_comments',
+           'status': 'completed', 'project_id': 'p1', 'initiated_by': 'editor-sub',
+           'config': {'document_id': 'd2', 'series_id': _series_of_launch()},
+           'result': {'outcome': 'proposal', 'base_document_id': 'd2', 'base_version': 2, 'dropped': 0,
+                      'changes': [{'change_id': 'c1', 'thread_ids': ['t1'], 'before': 'Second draft',
+                                   'after': 'Final draft', 'reason': 'Asked'}]}}
+    return {**row, **overrides}
+
+
+@pytest.fixture
+def jobs(request):
+    """The jobs table the PUT reads the pass from (the moto world of ``table``, with ``documents``)."""
+    from shared.test.moto_tables import create_pk_sk_table
+
+    request.getfixturevalue('documents')
+    rows = create_pk_sk_table('jobs')
+    with patch('projects_handler.get_jobs_table', return_value=rows):
+        yield rows
+
+
+def _prfaq_rows(table):
+    return [r for r in table.scan()['Items'] if r['sk'].startswith('PRFAQ#')]
+
+
+def _save_proposal(call, content='Final draft of the launch.', claims=EDITOR, job_id='job_r1', **extra):
+    return call('PUT', DOCUMENT_PUT, claims, {'content': content, 'edit_id': 'e1', 'expected_revision': 2,
+                                              'revise_job_id': job_id, **extra})
+
+
+def test_a_saved_proposal_is_recorded_as_a_revise_by_the_person_with_its_pass(call, documents, jobs):
+    jobs.put_item(Item=_revise_job())
+    response, body = _save_proposal(call)
     assert response['statusCode'] == 200, body
     row = _saved_version(documents, body['document']['document_id'])
-    assert (row['version'], row['edit_kind'], row['edited_by']) == (3, 'revise', {'sub': 'editor-sub', 'kind': 'user'})
+    assert (row['version'], row['edit_kind'], row['edited_by'], row['revise_job_id']) == (
+        3, 'revise', {'sub': 'editor-sub', 'kind': 'user'}, 'job_r1')
 
 
-@pytest.mark.parametrize('body', [{}, {'edit_kind': 'edit'}])
-def test_a_plain_save_stays_an_edit_with_no_edited_by(call, documents, body):
-    response, saved = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'edit_id': 'e2', **body})
+def test_a_later_plain_save_does_not_inherit_the_revise_provenance(call, documents, jobs):
+    jobs.put_item(Item=_revise_job())
+    _save_proposal(call)
+    response, body = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'edit_id': 'e2'})
+    assert response['statusCode'] == 200, body
+    row = _saved_version(documents, body['document']['document_id'])
+    assert (row['version'], row['edit_kind']) == (4, 'edit')
+    assert 'edited_by' not in row
+    assert 'revise_job_id' not in row
+
+
+def test_a_change_written_with_other_markup_still_counts(call, documents, jobs):
+    """The canvas may serialise the accepted text differently: plain text is compared too."""
+    jobs.put_item(Item=_revise_job(result={**_revise_job()['result'], 'changes': [
+        {'change_id': 'c1', 'thread_ids': ['t1'], 'before': 'Second draft', 'after': '**Final**   draft'}]}))
+    response, body = _save_proposal(call, content='Final draft of the launch.')
+    assert response['statusCode'] == 200, body
+    assert _saved_version(documents, body['document']['document_id'])['edit_kind'] == 'revise'
+
+
+@pytest.mark.parametrize(('job', 'message'), [
+    (None, 'That revision was not found in this project'),
+    (_revise_job(job_type='assist_persona_review'), 'That revision was not found in this project'),
+    (_revise_job(pk='PROJECT#p2', project_id='p2'), 'That revision was not found in this project'),
+    (_revise_job(project_id='p2'), 'That revision was not found in this project'),
+    (_revise_job(status='running'), 'That revision has no proposal to save'),
+    (_revise_job(status='failed'), 'That revision has no proposal to save'),
+    (_revise_job(result=None), 'That revision has no proposal to save'),
+    (_revise_job(result={**_revise_job()['result'], 'outcome': 'recommendations'}), 'no proposal to save'),
+    (_revise_job(result={**_revise_job()['result'], 'outcome': 'applied'}), 'no proposal to save'),
+    (_revise_job(initiated_by='owner-sub'), 'That revision was started by someone else'),
+    (_revise_job(initiated_by=None), 'That revision was started by someone else'),
+    (_revise_job(config={'document_id': 'x', 'series_id': 'ser_another'}), 'That revision is of another document'),
+    # The series is the job's from the start (6.07.00): a job without it matches no document.
+    (_revise_job(config={}), 'That revision is of another document'),
+    (_revise_job(result={**_revise_job()['result'], 'changes': []}), 'This save does not hold a change'),
+    # A deletion of a passage the edited version never had.
+    (_revise_job(result={**_revise_job()['result'], 'changes': [{'before': 'Third draft', 'after': '  '}]}),
+     'This save does not hold a change'),
+])
+def test_a_save_naming_a_pass_that_does_not_check_out_is_400_and_writes_nothing(call, documents, jobs, job,
+                                                                                message):
+    if job is not None:
+        jobs.put_item(Item=job)
+    response, body = _save_proposal(call)
+    assert response['statusCode'] == 400
+    assert message in json.dumps(body)
+    assert len(_prfaq_rows(documents)) == 2
+
+
+@pytest.mark.parametrize(('before', 'after'), [
+    # A deletion: an empty ``after`` (kept by the grounding).
+    (' of the launch', ''),
+    # A trim: an ``after`` that is a piece of its ``before`` occurs no more often than in v2.
+    ('Second draft of the launch', 'Second draft'),
+])
+def test_a_deletion_or_trim_proposal_is_recorded_as_a_revise(call, documents, jobs, before, after):
+    """The change is held when its ``before`` is gone and its ``after`` (if any) stays."""
+    jobs.put_item(Item=_revise_job(result={**_revise_job()['result'], 'changes': [
+        {'change_id': 'c1', 'thread_ids': ['t1'], 'before': before, 'after': after, 'reason': 'Asked'}]}))
+    response, body = _save_proposal(call, content='Second draft.')
+    assert response['statusCode'] == 200, body
+    row = _saved_version(documents, body['document']['document_id'])
+    assert (row['version'], row['edit_kind'], row['revise_job_id']) == (3, 'revise', 'job_r1')
+
+
+def test_a_save_naming_an_expired_pass_is_400_though_the_row_is_still_there(call, documents, jobs):
+    """DynamoDB deletes past the ttl lazily: a job read after it is gone all the same."""
+    jobs.put_item(Item=_revise_job(ttl=1))
+    response, body = _save_proposal(call)
+    assert response['statusCode'] == 400
+    assert 'That revision was not found in this project' in json.dumps(body)
+    assert len(_prfaq_rows(documents)) == 2
+
+
+@pytest.mark.parametrize('job', [None, _revise_job()])
+def test_an_unchanged_save_naming_a_pass_is_the_no_op_not_a_400(call, documents, jobs, job):
+    """Nothing to save is checked first: the pass is never checked, whether it checks out or not."""
+    if job is not None:
+        jobs.put_item(Item=job)
+    response, body = _save_proposal(call, content=V2['content'])
+    assert response['statusCode'] == 200, body
+    assert (body['unchanged'], body['document']['document_id']) == (True, 'd2')
+    assert len(_prfaq_rows(documents)) == 2
+
+
+def test_an_after_already_in_the_document_with_nothing_else_changed_is_400(call, documents, jobs):
+    """The text was there before the pass: the save holds nothing new from it."""
+    jobs.put_item(Item=_revise_job(result={**_revise_job()['result'], 'changes': [
+        {'change_id': 'c1', 'thread_ids': ['t1'], 'before': 'Second draft', 'after': 'the launch'}]}))
+    response, body = _save_proposal(call, content='Second draft of the launch, and a line of mine.')
+    assert response['statusCode'] == 400
+    assert 'This save does not hold a change from that revision' in json.dumps(body)
+    assert len(_prfaq_rows(documents)) == 2
+
+
+def test_a_hand_rewrite_of_the_before_is_not_a_trim_and_is_400(call, documents, jobs):
+    """The before is gone and the after stays, but the after is no piece of the before: not this change."""
+    jobs.put_item(Item=_revise_job(result={**_revise_job()['result'], 'changes': [
+        {'change_id': 'c1', 'thread_ids': ['t1'], 'before': 'Second draft', 'after': 'the launch'}]}))
+    response, body = _save_proposal(call, content='My own words of the launch.')
+    assert response['statusCode'] == 400
+    assert 'This save does not hold a change from that revision' in json.dumps(body)
+    assert len(_prfaq_rows(documents)) == 2
+
+
+def test_a_save_without_any_of_the_changes_is_400_and_writes_nothing(call, documents, jobs):
+    jobs.put_item(Item=_revise_job())
+    response, body = _save_proposal(call, content='My own words about the launch.')
+    assert response['statusCode'] == 400
+    assert 'This save does not hold a change from that revision' in json.dumps(body)
+    assert len(_prfaq_rows(documents)) == 2
+
+
+def test_another_version_of_the_same_series_may_be_saved_with_the_pass(call, documents, jobs):
+    """The pass read v2; the person saves over v1's page of the same series (the server picks the series' next)."""
+    jobs.put_item(Item=_revise_job())
+    response, body = call('PUT', '/projects/p1/documents/d1', EDITOR,
+                          {'content': 'Final draft of the launch.', 'revise_job_id': 'job_r1'})
+    assert response['statusCode'] == 200, body
+    assert _saved_version(documents, body['document']['document_id'])['edit_kind'] == 'revise'
+
+
+def test_someone_else_saving_the_editors_pass_is_400(call, jobs):
+    jobs.put_item(Item=_revise_job())
+    response, body = _save_proposal(call, claims=OWNER)
+    assert response['statusCode'] == 400
+    assert 'started by someone else' in json.dumps(body)
+
+
+def test_a_plain_save_stays_an_edit_with_no_edited_by(call, documents):
+    response, saved = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'edit_id': 'e2'})
     assert response['statusCode'] == 200, saved
     row = _saved_version(documents, saved['document']['document_id'])
     assert row['edit_kind'] == 'edit'
     assert 'edited_by' not in row
 
 
-@pytest.mark.parametrize('kind', ['restore', 'REVISE', 1, True, ['revise']])
-def test_any_other_edit_kind_is_400(call, documents, kind):
-    response, body = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'edit_kind': kind})
-    assert response['statusCode'] == 400
-    assert 'edit_kind must be' in json.dumps(body)
-    assert len([r for r in documents.scan()['Items'] if r['sk'].startswith('PRFAQ#')]) == 2
+@pytest.mark.parametrize('kind', ['revise', 'restore', 'edit', 1, ['revise']])
+def test_an_edit_kind_in_the_body_is_ignored_like_any_other_unknown_key(call, documents, kind):
+    """The server records what a save is (a revise only from a pass it checked): a client's word is never read."""
+    response, saved = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Final draft of the launch.', 'edit_id': 'e3',
+                                                         'edit_kind': kind})
+    assert response['statusCode'] == 200, saved
+    row = _saved_version(documents, saved['document']['document_id'])
+    assert (row['version'], row['edit_kind']) == (3, 'edit')
+    assert 'edited_by' not in row
+    assert 'revise_job_id' not in row
 
 
 @pytest.mark.usefixtures('documents')
-def test_a_revise_save_of_a_custom_document_is_400(call):
-    response, _ = call('PUT', '/projects/p1/documents/c1', OWNER, {'content': 'x', 'edit_kind': 'revise'})
+@pytest.mark.parametrize('job_id', [1, '', 'not an id!', ['job_r1'], 'x' * 65])
+def test_a_malformed_revise_job_id_is_400(call, job_id):
+    response, body = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'revise_job_id': job_id})
     assert response['statusCode'] == 400
+    assert 'revise_job_id must be' in json.dumps(body)
+
+
+def test_a_revise_save_of_a_custom_document_is_400(call, jobs):
+    jobs.put_item(Item=_revise_job(initiated_by='owner-sub'))
+    response, body = call('PUT', '/projects/p1/documents/c1', OWNER, {'content': 'Final draft', 'revise_job_id': 'job_r1'})
+    assert response['statusCode'] == 400
+    assert 'PR/FAQ and PRD' in json.dumps(body)

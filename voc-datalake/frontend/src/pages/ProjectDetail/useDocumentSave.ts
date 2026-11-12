@@ -10,6 +10,10 @@
  *   way — the other save stays in the document's version history.
  * Same pattern as the workflow editor's conflict banner (useWorkflowEditor).
  *
+ * A save holding changes accepted from "Revise from comments" names its pass (`revise_job_id`); when the server
+ * will not record it as a revise (400) nothing is saved and the draft stays: the page shows the server's reason
+ * and offers "Save as my own edit" (the same save, as a plain edit).
+ *
  * @module pages/ProjectDetail/useDocumentSave
  */
 import { useCallback, useState } from 'react'
@@ -18,6 +22,7 @@ import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { isVersionManagedDocument } from '../../api/documentLineage'
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
+import { serverReason } from '../../lib/errors'
 import type { ProjectDocument } from '../../api/types'
 import { documentRevision, latestDocument } from './documentEdit'
 import type { DocumentUpdate } from './useProjectData'
@@ -41,10 +46,11 @@ interface DocumentSaveDeps {
    */
   readonly generation: () => number
   /**
-   * Asked of the text a save sends: it keeps changes accepted from "Revise from comments". A PR/FAQ / PRD save (the
-   * only documents it revises) is then recorded as a revise (`edit_kind: 'revise'`, D4); absent or false, a plain edit.
+   * Asked of the text a save sends: the job id of the "Revise from comments" pass whose accepted changes it keeps
+   * (null: none). A PR/FAQ / PRD save (the only documents it revises) then names that pass (`revise_job_id`): the
+   * server checks it and records the version as a revise (D4), or refuses the save (400, see `reviseRefused`).
    */
-  readonly revised?: (content: string) => boolean
+  readonly revised?: (content: string) => string | null
   readonly updateDoc: (variables: DocumentUpdate) => Promise<{ readonly document: ProjectDocument | null }>
   /** The version just saved (a PRD / PR/FAQ version has a new id), and the edits the save sent. */
   readonly onSaved: (saved: ProjectDocument, sent: DocumentEdits) => void
@@ -69,21 +75,51 @@ export interface DocumentSave {
   readonly loading: boolean
   /** The draft the conflict was about is gone (Discard): the banner, and its unchecked save, go with it. */
   readonly clearConflict: () => void
+  /**
+   * The server refused to record the last save as a revise (400: e.g. its text no longer holds a change of the
+   * pass): nothing was saved, the draft stays. `message` is the server's reason (null: none given).
+   */
+  readonly reviseRefused: { readonly message: string | null } | null
+  /** "Save as my own edit": the refused save again, as a plain edit (no pass named; the same revision check). */
+  readonly saveAsOwnEdit: () => Promise<void>
+}
+
+/** 400: the server refused the body (here: the pass a revise save names, see `reviseRefused`). */
+const HTTP_BAD_REQUEST = 400
+
+/** How a save is sent: with the revision check (`checked`), and naming the pass its text holds (`asRevise`). */
+interface SaveMode {
+  readonly checked: boolean
+  readonly asRevise: boolean
 }
 
 /**
  * The PUT's variables for `sent` over `document`: the revision check when `checked`; the title only for a research /
- * custom document (a PRD / PR/FAQ title is the series' own); `revised` only for a PRD / PR/FAQ (the only documents
- * "Revise from comments" works on).
+ * custom document (a PRD / PR/FAQ title is the series' own); `reviseJobId` only for a PRD / PR/FAQ (the only
+ * documents "Revise from comments" works on).
  */
-function updateOf(document: ProjectDocument, sent: DocumentEdits, checked: boolean, revised: boolean): DocumentUpdate {
+function updateOf(document: ProjectDocument, sent: DocumentEdits, checked: boolean, reviseJobId: string | null): DocumentUpdate {
   const versionManaged = isVersionManagedDocument(document)
   return {
     docId: document.document_id,
     ...(versionManaged ? {} : { title: sent.title }),
     content: sent.content,
     ...(checked ? { expectedRevision: documentRevision(document) } : {}),
-    ...(versionManaged && revised ? { editKind: 'revise' as const } : {}),
+    ...(versionManaged && reviseJobId !== null ? { reviseJobId } : {}),
+  }
+}
+
+/**
+ * What a failed save of `update` means for the page: a stale-save conflict (409, checked saves only), or a revise
+ * the server would not record (400 for a save naming its pass: nothing was saved; the person may save the text as
+ * their own edit, the same way: `checked`).
+ */
+function failureOf(error: unknown, update: DocumentUpdate, checked: boolean) {
+  const status = apiErrorStatus(error)
+  const refusedRevise = update.reviseJobId !== undefined && status === HTTP_BAD_REQUEST
+  return {
+    conflict: checked && status === HTTP_CONFLICT,
+    refused: refusedRevise ? { message: serverReason(error), checked } : null,
   }
 }
 
@@ -93,6 +129,8 @@ export function useDocumentSave({
   const queryClient = useQueryClient()
   const [conflict, setConflict] = useState(false)
   const [loading, setLoading] = useState(false)
+  // The refused revise save: its mode is kept, so "Save as my own edit" sends it again the same way, plain.
+  const [refused, setRefused] = useState<{ readonly message: string | null; readonly checked: boolean } | null>(null)
 
   /** The newest stored copy of the document, read from the server (a failed refetch rejects). */
   const fetchLatest = useCallback(async () => {
@@ -103,15 +141,18 @@ export function useDocumentSave({
   }, [projectId, queryClient, stored])
 
   /** Save the edits; an answer for a canvas that moved on since resolves and changes nothing (see `generation`). */
-  const update = useCallback(async (checked: boolean) => {
+  const update = useCallback(async ({ checked, asRevise }: SaveMode) => {
     const sentOn = generation()
     const current = () => generation() === sentOn
     const sent = edits()
     const document = stored()
+    const reviseJobId = asRevise ? (revised?.(sent.content) ?? null) : null
+    const variables = updateOf(document, sent, checked, reviseJobId)
     try {
-      const result = await updateDoc(updateOf(document, sent, checked, revised?.(sent.content) === true))
+      const result = await updateDoc(variables)
       if (!current()) return
       setConflict(false)
+      setRefused(null)
       // Every edit is a new version: show the one just saved (the edited one stays in Versions). An answer without
       // it still means the save landed: the stored copy is read back, never a revision made up here (none found:
       // the save rejects and the draft stays unsaved).
@@ -121,14 +162,21 @@ export function useDocumentSave({
       onSaved(saved, sent)
     } catch (error) {
       if (!current()) return
-      if (checked && apiErrorStatus(error) === HTTP_CONFLICT) setConflict(true)
+      const failure = failureOf(error, variables, checked)
+      if (failure.conflict) setConflict(true)
+      if (failure.refused !== null) setRefused(failure.refused)
       throw error
     }
   }, [edits, fetchLatest, generation, onSaved, revised, stored, updateDoc])
 
-  const save = useCallback(() => update(true), [update])
+  const save = useCallback(() => update({ checked: true, asRevise: true }), [update])
 
-  const saveAnyway = useCallback(() => update(false), [update])
+  const saveAnyway = useCallback(() => update({ checked: false, asRevise: true }), [update])
+
+  const saveAsOwnEdit = useCallback(
+    () => update({ checked: refused?.checked ?? true, asRevise: false }),
+    [refused, update],
+  )
 
   // A failed refetch rejects: the conflict stays on screen, and the draft with it. An answer for a canvas that
   // moved on (Discard, another version followed, a save landed) or that was typed on meanwhile changes nothing:
@@ -144,13 +192,18 @@ export function useDocumentSave({
       if (generation() !== startedOn || stored() !== startedFrom) return
       if (now.content !== startedWith.content || now.title !== startedWith.title) return
       setConflict(false)
+      setRefused(null)
       onLoaded(latest)
     } finally {
       setLoading(false)
     }
   }, [edits, fetchLatest, generation, onLoaded, stored])
 
-  const clearConflict = useCallback(() => setConflict(false), [])
+  // Discard: the conflict and a refused revise were both about the draft that is gone.
+  const clearConflict = useCallback(() => { setConflict(false); setRefused(null) }, [])
 
-  return { save, saveAnyway, loadLatest, loading, conflict, clearConflict }
+  return {
+    save, saveAnyway, loadLatest, loading, conflict, clearConflict,
+    reviseRefused: refused === null ? null : { message: refused.message }, saveAsOwnEdit,
+  }
 }

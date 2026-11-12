@@ -17,6 +17,7 @@ import { useRevisePass } from './useRevisePass'
 import type { ReviseCanvas, RevisePass } from './useRevisePass'
 import type { ReviseChange, ReviseFromCommentsResult } from '../../../api/documentReviewSchema'
 import type { ProjectDocument } from '../../../api/types'
+import type { RevisedBy } from '../actions/useCanvasDocument'
 
 const api = vi.hoisted(() => ({
   restoreDocumentVersion: vi.fn<(projectId: string, documentId: string, versionId: string, editId: string) => Promise<unknown>>(),
@@ -28,10 +29,12 @@ const BASE = 'Quiet hours are 21:00 to 08:00.\n\nWe message at most once a day.\
 const QUIET: ReviseChange = { change_id: 'ch_1', thread_ids: ['t1'], before: 'Quiet hours are 21:00 to 08:00', after: 'Quiet hours are 21:00 to 07:00', reason: 'Answers t1' }
 const ONCE: ReviseChange = { change_id: 'ch_2', thread_ids: ['t2', 't3'], before: 'at most once a day', after: 'at most once a day per parcel', reason: '' }
 
+/** A pass's result, run as job `job_9`. */
 function result(outcome: ReviseFromCommentsResult['outcome'], extra: Partial<ReviseFromCommentsResult> = {}): ReviseFromCommentsResult {
   return {
     outcome, base_document_id: 'prd_3', base_version: 3, recommendations: [{ thread_id: 't1', text: 'Say 07:00.' }],
-    changes: outcome === 'recommendations' ? [] : [QUIET, ONCE], applied_version: null, addressed_thread_ids: [], dropped: 0, ...extra,
+    changes: outcome === 'recommendations' ? [] : [QUIET, ONCE], applied_version: null, addressed_thread_ids: [], dropped: 0,
+    job_id: 'job_9', ...extra,
   }
 }
 
@@ -48,7 +51,7 @@ function setup(answer: ReviseFromCommentsResult) {
   const putDraft = vi.fn((next: string) => { draft.text = next })
   const canvas: ReviseCanvas = {
     lastSaved: null, generation: 0, reloadLatest: vi.fn(), selectDoc: vi.fn<(doc: ProjectDocument) => void>(),
-    markRevised: vi.fn<(revised: ((content: string) => boolean) | null) => void>(),
+    markRevised: vi.fn<(revised: RevisedBy | null) => void>(),
   }
   const hook = renderHook((props: { canvas: ReviseCanvas }) => useRevisePass({
     projectId: 'proj_1', run, markAddressed, clearAddressed, draft: () => draft.text, putDraft, canvas: props.canvas,
@@ -242,6 +245,33 @@ describe('after the save', () => {
     await waitFor(() => expect(hook.current.pass).toMatchObject({ marked: 'failed' }))
   })
 
+  /** A proposal with both changes accepted and saved, the marking refused with `failure`; the pass's `marked`. */
+  async function markedAfter(failure: unknown) {
+    const { result: hook, startPass, saveAs, markAddressed, draft } = setup(result('proposal'))
+    markAddressed.mockRejectedValueOnce(failure)
+    await startPass()
+    act(() => hook.current.acceptAll())
+    saveAs(saved(draft.text, 4))
+    await waitFor(() => expect(hook.current.pass).not.toMatchObject({ marked: null }))
+    return hook.current.pass.kind === 'proposal' ? hook.current.pass.marked : null
+  }
+
+  it('says some threads could not be marked and the others were (409 code addressed_some_full)', async () => {
+    // The code decides, not the sentence: any message (here another language's) reads the same.
+    const someFull = new ApiError(409, 'Einige Kommentare wurden nicht markiert', 'addressed_some_full')
+
+    expect(await markedAfter(someFull)).toBe('partial')
+  })
+
+  it('a 409 for none marked (no code), or another code, is still a failure', async () => {
+    const full = new ApiError(409, 'This comment has reached its limit of addressed marks; start a new comment')
+    // The "some marked" sentence alone, without its code, is not read; nor is another code.
+    const uncoded = new ApiError(409, 'Some comments have reached their limit of addressed marks and were not marked; the others were.')
+    const otherCode = new ApiError(409, 'Some comments were not marked', 'addressed_full')
+
+    expect([await markedAfter(full), await markedAfter(uncoded), await markedAfter(otherCode)]).toStrictEqual(['failed', 'failed', 'failed'])
+  })
+
   it('a save that lost the accepted text where it was put (a copy of it elsewhere is not it) marks nothing', async () => {
     const pass = await accepted('ch_2')
     const elsewhere = `${pass.draft.text.replace('at most once a day per parcel', 'whenever it suits us')}\nSomeone said: at most once a day per parcel.\n`
@@ -293,9 +323,10 @@ describe('closing the proposal with accepted changes not saved yet', () => {
 })
 
 describe('the canvas\'s next save is a revise while its text keeps an accepted change (markRevised)', () => {
+  /** What the canvas was told last: the pass it would name, and how to tell a text keeping its changes (or null). */
+  const revisedNow = (pass: ReturnType<typeof setup>) => vi.mocked(pass.canvas.markRevised).mock.lastCall?.[0] ?? null
   /** What the canvas would record a save of `content` as, now: a revise (true) or a plain edit (false). */
-  const revisesNow = (pass: Awaited<ReturnType<typeof accepted>>, content: string) =>
-    vi.mocked(pass.canvas.markRevised).mock.lastCall?.[0]?.(content) ?? false
+  const revisesNow = (pass: ReturnType<typeof setup>, content: string) => revisedNow(pass)?.keeps(content) ?? false
 
   it('on from the first accepted change, through Close, off once the save settled them', async () => {
     const pass = await accepted('ch_1')
@@ -321,6 +352,12 @@ describe('the canvas\'s next save is a revise while its text keeps an accepted c
     pass.replaceDraft(BASE)
 
     expect(revisesNow(pass, text)).toBe(false)
+  })
+
+  it('names the pass by its job id (the save sends it as revise_job_id)', async () => {
+    const pass = await accepted('ch_1')
+
+    expect(revisedNow(pass)?.jobId).toBe('job_9')
   })
 
   it('off before any change is accepted', async () => {

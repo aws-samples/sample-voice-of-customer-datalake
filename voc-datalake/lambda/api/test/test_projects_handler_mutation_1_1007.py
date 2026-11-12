@@ -133,9 +133,11 @@ THIN_ROUTES = [
     ('POST', '/projects/p1/personas/x1/notes', BODY, None, 'add_persona_note', ('p1', 'x1', BODY), {}),
     ('POST', '/projects/p1/documents', BODY, None, 'create_document', ('p1', BODY), {'creator_sub': 'test-user-id'}),
     ('PUT', '/projects/p1/documents/d1', BODY, None, 'update_document', ('p1', 'd1', BODY),
-     {'edit_kind': 'edit', 'edited_by': ACTOR}),
+     {'proposal': None}),
+    # A save naming its pass (revise_job_id) is checked against the job: test_document_review_routes.py.
+    # A client's own edit_kind is passed on unread: it never makes the save a proposal's.
     ('PUT', '/projects/p1/documents/d1', {'content': 'x', 'edit_kind': 'revise'}, None, 'update_document',
-     ('p1', 'd1', {'content': 'x', 'edit_kind': 'revise'}), {'edit_kind': 'revise', 'edited_by': ACTOR}),
+     ('p1', 'd1', {'content': 'x', 'edit_kind': 'revise'}), {'proposal': None}),
     ('GET', '/projects/p1/documents/d1/versions', None, None, 'get_document_versions', ('p1', 'd1'), {}),
     ('POST', '/projects/p1/documents/d1/versions/v1/restore', BODY, None, 'restore_document',
      ('p1', 'd1', 'v1', BODY), {}),

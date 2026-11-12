@@ -12,7 +12,8 @@
 // by another board `slug_taken`.
 //
 // The viewer is the mock's admin app user; `x-mock-board-viewer: board` acts as a board-pool user
-// (sam.seller@example.com, company domain example.com), who sees only the boards that admit them.
+// (sam.seller@example.com, company domain example.com), who sees only the boards that admit them;
+// `x-mock-board-viewer: user` a non-admin app user (e2e.user@example.com: every board but an archived one).
 
 export const SEEDED_BOARD_ID = 'brd_sales';
 const FRONTEND = 'http://localhost:5173';

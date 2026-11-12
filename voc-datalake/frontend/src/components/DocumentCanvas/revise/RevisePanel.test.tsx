@@ -29,7 +29,7 @@ function result(outcome: ReviseFromCommentsResult['outcome'], extra: Partial<Rev
   return {
     outcome, base_document_id: 'prd_3', base_version: 3,
     recommendations: [{ thread_id: 't1', text: 'Move the end of quiet hours to 07:00.' }, { thread_id: 'gone', text: 'Name the report.' }],
-    changes: [QUIET, ONCE], applied_version: null, addressed_thread_ids: [], dropped: 0, ...extra,
+    changes: [QUIET, ONCE], applied_version: null, addressed_thread_ids: [], dropped: 0, job_id: 'job_1', ...extra,
   }
 }
 
@@ -147,6 +147,13 @@ describe('the proposal', () => {
   it('says when the save could not mark its threads', () => {
     renderPanel(proposal({ marked: 'failed' }))
     expect(screen.getByRole('status')).toHaveTextContent('Saved, but the comments could not be marked as addressed.')
+  })
+
+  it('says when some threads could not be marked and the others were (not the generic failure)', () => {
+    renderPanel(proposal({ decisions: { ch_1: 'addressed' }, marked: 'partial' }))
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Saved, but some comments have reached their limit of addressed marks and could not be marked; the others were.',
+    )
   })
 
   it('with no change, shows the recommendations instead, and how many suggestions were left out', () => {

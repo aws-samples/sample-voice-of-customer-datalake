@@ -39,6 +39,8 @@ const newCommentId = () => `dc_${String(Date.now() * 1000).padStart(20, '0')}${r
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const baseTitle = (doc) => String(doc.base_title ?? doc.title ?? '').trim().replace(/\(v\d+\)$/i, '').trim().toLowerCase();
 const seriesKey = (projectId, doc) => `${projectId}#${doc.document_type}#${baseTitle(doc)}`;
+/** A document's series key (document_series.series_of), for a save naming its revise pass (mock-project-actions.js). */
+export const documentSeriesKey = seriesKey;
 const seriesId = (key) => `ser_${Buffer.from(key).toString('hex').slice(0, 24)}`;
 
 function textOf(body, field, required = true) {
@@ -200,15 +202,18 @@ function proposedChanges(threads, content) {
 // document_comments.MAX_ADDRESSED_HISTORY: append-only (D1), one more is a 409, like replies past 50.
 const MAX_ADDRESSED_HISTORY = 100;
 const ADDRESSED_FULL = 'This comment has reached its limit of addressed marks; start a new comment';
+const ADDRESSED_SOME_FULL = 'Some comments have reached their limit of addressed marks and were not marked; '
+  + 'the others were. Start a new comment for those';
 
-/** Append `entry` to each thread of `ids`, in order: `{marked, full}`. The route stops at the first full
- * thread (record_threads_addressed lets the 409 out); the applied pass skips it (best effort). */
-function appendAddressed(key, ids, entry, { bestEffort }) {
+/** Append `entry` to each thread of `ids`, in order: `{marked, full}`. A full thread does not stop the others
+ * (record_threads_addressed tries every thread; the route then answers its 409, the applied pass skips it). */
+function appendAddressed(key, ids, entry) {
   const marked = [];
+  let full = false;
   for (const thread of threadsOf(key).filter((t) => ids.includes(t.comment_id))) {
     if ((thread.addressed_history ?? []).length >= MAX_ADDRESSED_HISTORY) {
-      if (bestEffort) continue;
-      return { marked, full: true };
+      full = true;
+      continue;
     }
     marked.push(replaceThread(key, {
       ...thread, updated_at: entry.at,
@@ -216,7 +221,14 @@ function appendAddressed(key, ids, entry, { bestEffort }) {
       addressed: entry.addressed ? { version: entry.version, at: entry.at, by_kind: entry.by_kind } : null,
     }));
   }
-  return { marked, full: false };
+  return { marked, full };
+}
+
+/** The route's 409 when a thread's history is full; "some marked" has its machine-readable `code` (ApiError.code). */
+function fullAnswer(marked) {
+  return marked.length === 0
+    ? [409, { success: false, error: ADDRESSED_FULL }]
+    : [409, { success: false, error: ADDRESSED_SOME_FULL, code: 'addressed_some_full' }];
 }
 
 function addressedEntry(doc, byKind, addressed) {
@@ -231,8 +243,8 @@ function recordAddressed(key, doc, body, byKind) {
   if (typeof addressed !== 'boolean') throw new Error('addressed must be true or false');
   const ids = threadIdsOf(body.thread_ids, true);
   if (!threadsOf(key).some((t) => ids.includes(t.comment_id))) return bad(404, 'Comment not found');
-  const { marked, full } = appendAddressed(key, ids, addressedEntry(doc, byKind, addressed), { bestEffort: false });
-  return full ? bad(409, ADDRESSED_FULL) : [200, { threads: marked.map(threadView) }];
+  const { marked, full } = appendAddressed(key, ids, addressedEntry(doc, byKind, addressed));
+  return full ? fullAnswer(marked) : [200, { threads: marked.map(threadView) }];
 }
 
 /** The applied revision: the next version of the series (D1), its threads addressed by the AI. */
@@ -241,15 +253,18 @@ function applyRevision({ detail, doc, key }, changes, shared) {
   const series = detail.documents.filter((d) => seriesKey('', d) === seriesKey('', doc));
   const version = Math.max(...series.map((d) => d.version ?? 1)) + 1;
   const content = changes.reduce((text, change) => text.replace(change.before, change.after), String(doc.content ?? ''));
+  // The row's own identity is never carried (document_history._ROW_IDENTITY_FIELDS): a saved pass's id stays on its version.
+  const carried = { ...doc };
+  delete carried.revise_job_id;
   const revised = {
-    ...doc, document_id: shared.nextMockId(doc.document_type), title: `${base} (v${version})`, base_title: base, version,
+    ...carried, document_id: shared.nextMockId(doc.document_type), title: `${base} (v${version})`, base_title: base, version,
     content, created_at: nowIso(), updated_at: nowIso(), edit_kind: 'revise', edited_from_id: doc.document_id,
     edited_by: { sub: shared.mockCaller?.sub ?? '', kind: 'user' },
   };
   detail.documents.push(revised);
   const answeredIds = [...new Set(changes.flatMap((change) => change.thread_ids))];
   // The version is written: a thread that cannot be marked is left out, never a failed pass.
-  const { marked } = appendAddressed(key, answeredIds, addressedEntry(revised, 'ai', true), { bestEffort: true });
+  const { marked } = appendAddressed(key, answeredIds, addressedEntry(revised, 'ai', true));
   return {
     applied_version: { document_id: revised.document_id, version },
     addressed_thread_ids: marked.map((thread) => thread.comment_id),
@@ -274,7 +289,8 @@ function reviseRoute(ctx, body, shared) {
   };
   const answer = outcome === 'applied' && changes.length > 0 ? { ...result, ...applyRevision(ctx, changes, shared) }
     : { ...result, outcome: outcome === 'applied' ? 'recommendations' : outcome };
-  return shared.startProjectAssistJob(ctx.projectId, 'assist_revise_from_comments', [200, answer]);
+  // The job keeps the series the pass read (its config's series_id): a save of the proposal is checked against it.
+  return shared.startProjectAssistJob(ctx.projectId, 'assist_revise_from_comments', [200, answer], { series_key: ctx.key });
 }
 
 function threadAction(key, commentId, action, body) {

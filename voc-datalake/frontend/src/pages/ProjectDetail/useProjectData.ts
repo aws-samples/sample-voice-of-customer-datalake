@@ -393,8 +393,11 @@ export interface DocumentUpdate {
   content: string
   /** The revision the editor loaded (documentEdit.documentRevision); absent = no stale check. */
   expectedRevision?: number
-  /** `'revise'`: the content holds changes accepted from "Revise from comments" (the version's `edit_kind`, D4). */
-  editKind?: 'revise'
+  /**
+   * The job id of the "Revise from comments" pass whose accepted changes the content holds: sent as
+   * `revise_job_id`, the server checks that pass and records the version as a revise (D4), or answers 400.
+   */
+  reviseJobId?: string
 }
 
 interface UseDocumentMutationsProps {
@@ -453,10 +456,10 @@ export function useUpdateDocument(id: string | undefined) {
         // A fresh id per save, so the server can tell a replayed request from a second save.
         edit_id: crypto.randomUUID(),
       }
-      // A plain edit sends no edit_kind (the server's default).
-      return data.editKind === undefined
+      // A plain edit names no pass (the server records it as an edit).
+      return data.reviseJobId === undefined
         ? projectsApi.updateDocument(projectId, data.docId, body)
-        : projectsApi.updateDocument(projectId, data.docId, body, data.editKind)
+        : projectsApi.updateDocument(projectId, data.docId, body, data.reviseJobId)
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })

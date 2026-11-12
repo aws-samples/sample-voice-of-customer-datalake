@@ -6,7 +6,9 @@
 // and statuses its writes are checked against. Wired into mock-server.js by handleDomainModules.
 //
 // The viewer is the mock's admin app user. Send `x-mock-board-viewer: board` to act as a board-pool
-// user (never an admin), which is how the 403 paths of status / delete / promote are reached.
+// user (never an admin), which is how the 403 paths of status / delete / promote are reached, or
+// `x-mock-board-viewer: user` to act as a second, non-admin app user with its own email (the e2e
+// "user" role: its +1 on a request the admin filed is its own, never the admin's 409).
 import {
   Refusal, SEEDED_BOARD_ID, SUPPORT_KEYS, boardFor, boardWire, fieldValues, handleBoardRoutes, refuse, refuseWhenPaused, registerRequestQueries, templateOfBoard,
 } from './mock-boards.js';
@@ -21,6 +23,8 @@ const COMPANY_DOMAINS = ['example.com'];
 
 const ADMIN_VIEWER = { email: 'admin@example.com', name: 'Admin Demo', is_admin: true, pool: 'app' };
 const BOARD_VIEWER = { email: 'sam.seller@example.com', name: 'Sam Seller', is_admin: false, pool: 'board' };
+// The e2e "user" role in mock mode (the live suite's e2e-user): a signed-in app user who is not an admin.
+const APP_USER_VIEWER = { email: 'e2e.user@example.com', name: 'E2E User', is_admin: false, pool: 'app' };
 
 const fail = (status, error) => [status, { success: false, error }];
 const counter = { next: 100 };
@@ -348,8 +352,14 @@ function route(req, match, body, viewer, shared, url) {
   return handler ? handler(entry, body, viewer, shared) : fail(405, 'Method not allowed');
 }
 
-/** The board-pool user with `x-mock-board-viewer: board`, else the mock's admin app user. */
-const viewerOf = (req) => (req.headers['x-mock-board-viewer'] === 'board' ? BOARD_VIEWER : ADMIN_VIEWER);
+/** `x-mock-board-viewer`: `board` the board-pool user, `user` a second, non-admin app user (its own
+ *  email, so its +1 is not the admin's); anything else the mock's admin app user. */
+const VIEWERS = { board: BOARD_VIEWER, user: APP_USER_VIEWER };
+// Own keys only: a header such as `constructor` or `__proto__` is no viewer.
+const viewerOf = (req) => {
+  const header = req.headers['x-mock-board-viewer'];
+  return typeof header === 'string' && Object.hasOwn(VIEWERS, header) ? VIEWERS[header] : ADMIN_VIEWER;
+};
 
 /** The board `boardId` as `viewer` may use it as evidence (archived boards never), else null. */
 function evidenceBoard(boardId, viewer) {

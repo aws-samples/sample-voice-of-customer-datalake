@@ -86,11 +86,28 @@ export interface CanvasDocument {
    */
   readonly generation: number
   /**
-   * "Revise from comments" says how to tell whether a saved text keeps changes the person accepted from its proposal
-   * (null: it holds none): a PR/FAQ / PRD save whose text does is recorded as a revise (`edit_kind: 'revise'`, D4);
-   * otherwise as a plain edit.
+   * "Revise from comments" names its pass and says how to tell whether a saved text keeps changes the person accepted
+   * from its proposal (null: it holds none): a PR/FAQ / PRD save whose text does names the pass (`revise_job_id`,
+   * the server records a revise, D4); otherwise it is a plain edit.
    */
-  readonly markRevised: (revised: ((content: string) => boolean) | null) => void
+  readonly markRevised: (revised: RevisedBy | null) => void
+  /** The server would not record the last save as a revise (400): its reason, and "Save as my own edit". */
+  readonly reviseRefused: ReviseRefused | null
+}
+
+/** The accepted changes of a "Revise from comments" pass in the draft: the pass's job id, and whether a text keeps one. */
+export interface RevisedBy {
+  readonly jobId: string
+  readonly keeps: (content: string) => boolean
+}
+
+/** A save the server would not record as a revise: nothing was saved, the draft stays. */
+export interface ReviseRefused {
+  /** The server's reason (null: it gave none). */
+  readonly message: string | null
+  /** The same save as a plain edit. Rejects on failure (what failed stays on screen). */
+  readonly onSaveAsOwnEdit: () => Promise<void>
+  readonly saving: boolean
 }
 
 /** A save of this canvas: the version it stored and the text it sent. */
@@ -119,6 +136,11 @@ function baselineOf(document: ProjectDocument, generation: number): Baseline {
     key: `${document.document_id}:${String(documentRevision(document) ?? 0)}`,
     content: document.content, title: document.title, stored: document, generation,
   }
+}
+
+/** `stored` is a later version than `selected` (a PRD / PR/FAQ series version, a research / custom revision). */
+function isAhead(stored: ProjectDocument, selected: ProjectDocument): boolean {
+  return (documentRevision(stored) ?? 0) > (documentRevision(selected) ?? 0)
 }
 
 /** ⌘/Ctrl+S, unless a dialog has the focus (its own form owns the keys). */
@@ -165,17 +187,29 @@ function useCanvasDraft(document: ProjectDocument, editable: boolean, titleEdita
   // Followed, the selected version starts a new generation of the canvas.
   const incoming = baselineOf(document, baseline.generation + 1)
   const [seen, setSeen] = useState(incoming.key)
+  // A selected version skipped while the canvas was dirty: followed once the canvas is clean again (the change
+  // typed away, say), while it is still the selection.
+  const [skipped, setSkipped] = useState<string | null>(null)
+  const follow = () => {
+    setBaseline({ ...incoming, reload: true, left: baselineOf(baseline.stored, incoming.generation) })
+    setDraft(incoming.content)
+    setTitle(incoming.title)
+    setSkipped(null)
+  }
   if (incoming.key !== seen) {
     setSeen(incoming.key)
     // Another version is selected (a restore, an approved edit, a refetch), not the one this canvas moved to
     // itself: follow it while clean (state reset during render, not in an effect). While dirty the draft and
     // its baseline stay: the next save meets the newer version as a conflict, never a silent replace. The
     // reload checks the editor's own text first, and goes back to `left` if a change was typed in its pause.
-    if (incoming.key !== baseline.key && !dirty) {
-      setBaseline({ ...incoming, reload: true, left: baselineOf(baseline.stored, incoming.generation) })
-      setDraft(incoming.content)
-      setTitle(incoming.title)
-    }
+    if (incoming.key === baseline.key) setSkipped(null)
+    else if (dirty) setSkipped(incoming.key)
+    else follow()
+  } else if (skipped !== null && !dirty && skipped === incoming.key && incoming.key !== baseline.key) {
+    // Never back to an older version: right after a save the baseline is the version just stored, ahead of the
+    // selection until the page selects it.
+    if (isAhead(baseline.stored, document)) setSkipped(null)
+    else follow()
   }
   return { baseline, setBaseline, draft, setDraft, title, setTitle, dirty, selectedKey: incoming.key }
 }
@@ -268,11 +302,17 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
   const stored = useCallback(() => held.current.baseline.stored, [])
   const generation = useCallback(() => held.current.baseline.generation, [])
   // Asked of the text a save sends: set by "Revise from comments" while it holds accepted changes.
-  const revisedRef = useRef<((content: string) => boolean) | null>(null)
-  const markRevised = useCallback((revised: ((content: string) => boolean) | null) => { revisedRef.current = revised }, [])
-  const revised = useCallback((content: string) => revisedRef.current?.(content) === true, [])
+  const revisedRef = useRef<RevisedBy | null>(null)
+  const markRevised = useCallback((revised: RevisedBy | null) => { revisedRef.current = revised }, [])
+  // The pass the text holds accepted changes of (its job id), else null: a plain edit.
+  const revised = useCallback((content: string) => {
+    const by = revisedRef.current
+    return by?.keeps(content) === true ? by.jobId : null
+  }, [])
   const update = useUpdateDocument(project.project_id)
-  const { save: saveChecked, saveAnyway: saveUnchecked, conflict, loadLatest, loading, clearConflict } = useDocumentSave({
+  const {
+    save: saveChecked, saveAnyway: saveUnchecked, conflict, loadLatest, loading, clearConflict, reviseRefused, saveAsOwnEdit: savePlain,
+  } = useDocumentSave({
     projectId: project.project_id, stored, edits, generation, revised, updateDoc: update.mutateAsync,
     onSaved: adoptSaved,
     onLoaded: (latest) => { if (latest !== undefined) adopt(latest, null) },
@@ -299,12 +339,15 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
   // A second click of Save mine anyway, or one during a save, is that save: never a second unchecked version.
   // A clean canvas has nothing of its own to put over the newer version: it writes nothing (the stale loaded
   // text, unchecked, would replace a teammate's save), and the conflict it no longer holds goes away.
-  const saveAnyway = useCallback((): Promise<void> => {
+  // The same holds for "Save as my own edit" after a refused revise (the refusal goes with a draft no longer held).
+  const saveOnce = useCallback((send: () => Promise<void>): Promise<void> => {
     if (inFlight.current !== null) return inFlight.current
-    if (holdsChanges()) return fly(saveUnchecked)
+    if (holdsChanges()) return fly(send)
     clearConflict()
     return Promise.resolve()
-  }, [clearConflict, fly, holdsChanges, saveUnchecked])
+  }, [clearConflict, fly, holdsChanges])
+  const saveAnyway = useCallback(() => saveOnce(saveUnchecked), [saveOnce, saveUnchecked])
+  const saveAsOwnEdit = useCallback(() => saveOnce(savePlain), [saveOnce, savePlain])
 
   const discard = useCallback(() => {
     const { baseline: base, selectedKey: selected } = held.current
@@ -375,5 +418,8 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
     lastSaved,
     generation: baseline.generation,
     markRevised,
+    reviseRefused: reviseRefused === null
+      ? null
+      : { message: reviseRefused.message, onSaveAsOwnEdit: saveAsOwnEdit, saving: update.isPending },
   }
 }

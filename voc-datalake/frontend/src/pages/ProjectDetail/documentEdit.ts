@@ -9,8 +9,17 @@
  * @module pages/ProjectDetail/documentEdit
  */
 import { isVersionManagedDocument } from '../../api/documentLineage'
+import { projectKey } from '../../api/projectQueryKeys'
 import type { ProjectDocument } from '../../api/types'
 import { documentSeriesKey } from './generatedDocTitle'
+
+/**
+ * The query key of a document's versions list (`GET …/documents/{doc}/versions`): the History dialog's, and the
+ * page's read of the series when the assistant proposes an edit of another version. Under the project's prefix, so
+ * a save or a restore (which invalidate the project) refresh it too.
+ */
+export const documentVersionsKey = (projectId: string, documentId: string) =>
+  [...projectKey(projectId), 'document-versions', documentId] as const
 
 /**
  * The revision an editor opened on `document` loaded.

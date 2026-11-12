@@ -778,7 +778,9 @@
         "hide": "Ocultar alterações",
         "newTitle": "Novo título: {{title}}",
         "noChanges": "A sugestão é igual ao texto salvo.",
+        "otherVersion": "Proposto sobre a v{{proposed}}; esta página mostra a v{{current}}.",
         "removed": "Removido",
+        "replacesSince": "Aprovar salva a sugestão como a próxima versão e substitui as alterações feitas desde a v{{proposed}} (elas continuam no Histórico). As alterações abaixo a comparam com esta página.",
         "review": "Revisar",
         "stats": "Blocos adicionados: {{added, number}} · removidos: {{removed, number}}",
         "tooLarge": "Longo demais para comparar bloco a bloco. A sugestão completa:",
@@ -839,6 +841,7 @@
         "intro": "Aceite ou rejeite cada alteração. As alterações aceitas vão para o seu rascunho; Salvar as transforma em uma nova versão.",
         "listLabel": "Alterações sugeridas",
         "markFailed": "Salvo, mas não foi possível marcar os comentários como atendidos. Tente novamente mais tarde.",
+        "markPartial": "Salvo, mas alguns comentários atingiram o limite de marcações e não puderam ser marcados como atendidos; os demais foram. Inicie um novo comentário para esses.",
         "marked_one": "Salvo: {{count, number}} comentário está marcado como atendido na v{{version}}.",
         "marked_many": "Salvo: {{count, number}} comentários estão marcados como atendidos na v{{version}}.",
         "marked_other": "Salvo: {{count, number}} comentários estão marcados como atendidos na v{{version}}.",
@@ -858,6 +861,11 @@
         "status_many": "{{count, number}} alterações sugeridas.",
         "status_other": "{{count, number}} alterações sugeridas.",
         "title": "Alterações sugeridas"
+      },
+      "refused": {
+        "explain": "Nada foi salvo: suas alterações continuam aqui. Salve-as como sua própria edição.",
+        "fallback": "Este salvamento não pôde ser registrado como revisão.",
+        "saveAsOwn": "Salvar como minha edição"
       },
       "recommendations": {
         "listLabel": "Recomendações",

@@ -46,6 +46,17 @@ describe('reviseFromComments', () => {
     expect(result.dropped).toBe(1)
   })
 
+  it('carries the polled job id (a save of the proposal names it: revise_job_id), over one the result claims', async () => {
+    route({
+      'POST /projects/proj_1/documents/prd_3/revise-from-comments': () => ({ success: true, job_id: 'job_t', status: 'pending' }),
+      'GET /projects/proj_1/jobs/job_t': () => ({ job_id: 'job_t', status: 'completed', result: { ...RESULT, job_id: 'job_other' } }),
+    })
+
+    const result = await appDocumentCommentsApi.reviseFromComments('proj_1', 'prd_3')
+
+    expect(result.job_id).toBe('job_t')
+  })
+
   it('sends an empty body for every waiting thread', async () => {
     route({
       'POST /projects/proj_1/documents/prd_3/revise-from-comments': () => ({ success: true, job_id: 'job_s', status: 'pending' }),
@@ -91,14 +102,14 @@ describe('markAddressed and clearAddressed', () => {
 
 describe('the revise and addressed shapes', () => {
   it('refuses a result without a known outcome', () => {
-    expect(() => parseReviseResult({ ...RESULT, outcome: 'rewrite' })).toThrow('Unexpected response')
+    expect(() => parseReviseResult({ ...RESULT, outcome: 'rewrite' }, 'job_1')).toThrow('Unexpected response')
   })
 
   it('falls back field by field', () => {
-    const result = parseReviseResult({ outcome: 'recommendations', changes: 'x', base_version: 'v3' })
+    const result = parseReviseResult({ outcome: 'recommendations', changes: 'x', base_version: 'v3' }, 'job_1')
     expect(result).toStrictEqual({
       outcome: 'recommendations', base_document_id: '', base_version: null, recommendations: [], changes: [],
-      applied_version: null, addressed_thread_ids: [], dropped: 0,
+      applied_version: null, addressed_thread_ids: [], dropped: 0, job_id: 'job_1',
     })
   })
 

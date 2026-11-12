@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
@@ -60,7 +61,8 @@ UNMANAGED_VERSION_RE = re.compile(r'^r([1-9]\d{0,5})\Z')
 
 EDIT_KIND_EDIT = 'edit'
 EDIT_KIND_RESTORE = 'restore'
-# "Revise from comments" applied for an AI-driven person (shared/document_revision.py).
+# "Revise from comments" applied for an AI-driven person (shared/document_revision.py), or a
+# person's save of its proposal once the pass is checked (verify_saved_proposal).
 EDIT_KIND_REVISE = 'revise'
 # One wording for both kinds of document (the managed series check lives in document_versions).
 STALE_DOCUMENT_MESSAGE = STALE_SERIES_MESSAGE
@@ -70,7 +72,7 @@ STALE_DOCUMENT_MESSAGE = STALE_SERIES_MESSAGE
 # (content, timestamps, edit_kind and edited_from_id are always set afresh.)
 _ROW_IDENTITY_FIELDS = frozenset({
     'pk', 'sk', 'document_id', 'title', 'base_title', 'version', 'version_allocation_id',
-    'restored_from_id', 'restored_from_version', 'edited_by',
+    'restored_from_id', 'restored_from_version', 'edited_by', 'revise_job_id',
 })
 
 
@@ -87,18 +89,13 @@ def validated_edit_id(raw: object, content: str) -> str:
     return raw
 
 
-#: What a person's save may say it is (``PUT …/documents/{doc}`` ``edit_kind``): a plain edit, or a
-#: "Revise from comments" proposal they accepted on the canvas (D4: recorded like the applied pass).
-SAVED_EDIT_KINDS = (EDIT_KIND_EDIT, EDIT_KIND_REVISE)
-
-
-def validated_edit_kind(raw: object) -> str:
-    """``edit`` (absent) or ``revise``; anything else is a 400."""
+def validated_revise_job_id(raw: object) -> str | None:
+    """A save's ``revise_job_id`` (None when absent): an opaque id, checked against the job by the caller."""
     if raw is None:
-        return EDIT_KIND_EDIT
-    if raw not in SAVED_EDIT_KINDS:
-        raise ValidationError('edit_kind must be "edit" or "revise"')
-    return str(raw)
+        return None
+    if not isinstance(raw, str) or not OPAQUE_ID_RE.fullmatch(raw):
+        raise ValidationError('revise_job_id must be the job id of a Revise from comments pass')
+    return raw
 
 
 def validated_expected_revision(raw: object) -> int | None:
@@ -245,29 +242,38 @@ def _unmanaged_version_view(row: dict, revision: int, *, current: bool, created_
 
 # ── Public operations ────────────────────────────────────────────────────────
 
+def saves_nothing(document: Mapping[str, Any], body: dict, title: str | None = None) -> bool:
+    """``body`` (with ``title``, as for ``edit_document``) leaves the content and the title as stored:
+    ``edit_document``'s no-op, which a caller's own checks of the save run after."""
+    content = _content_of(body, dict(document))
+    new_title = title if title is not None else str(document.get('title') or '')
+    return content == (document.get('content') or '') and new_title == (document.get('title') or '')
+
+
 def edit_document(table: Any, project_id: str, document: dict, body: dict, *, now: str,
-                  title: str | None = None, edit_kind: str = EDIT_KIND_EDIT,
-                  edited_by: dict[str, str] | None = None) -> dict:
+                  title: str | None = None, revise: Mapping[str, Any] | None = None) -> dict:
     """Apply an edit as a new version. ``title`` is the new title of an UNMANAGED document.
 
     ``body['expected_revision']`` (optional) is the revision the caller loaded; a
     document that moved on since is a ConflictError (409), never a silent overwrite.
     Checked after the no-change return: an edit that saves nothing clobbers nothing.
 
-    ``edit_kind`` ``revise`` (``validated_edit_kind``) is a person saving the "Revise from
+    ``revise`` (``{edited_by, revise_job_id}``, verified by the caller first:
+    ``shared.document_revision.verify_saved_proposal``) is a person saving the "Revise from
     comments" proposal they accepted: a PR/FAQ / PRD only, recorded like the applied pass
-    (``edit_kind`` ``revise``, ``edited_by`` the person's ``{sub, kind}``).
+    (``edit_kind`` ``revise``, ``edited_by`` the person's ``{sub, kind}``) plus the pass's job id.
     """
     expected = validated_expected_revision(body.get('expected_revision'))
-    if edit_kind == EDIT_KIND_REVISE:
+    if revise is not None:
         _revised_type(document)
     content = _content_of(body, document)
     new_title = title if title is not None else str(document.get('title') or '')
-    if content == (document.get('content') or '') and new_title == (document.get('title') or ''):
+    if saves_nothing(document, body, title):
         return {'success': True, 'unchanged': True, 'document': document}
     provenance: dict[str, Any] = {'edit_kind': EDIT_KIND_EDIT}
-    if edit_kind == EDIT_KIND_REVISE:
-        provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_by': dict(edited_by or {})}
+    if revise is not None:
+        provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_by': dict(revise['edited_by']),
+                      'revise_job_id': str(revise['revise_job_id'])}
     document_type = managed_document_type(document)
     if document_type is not None:
         allocation_id = f"edit:{document['document_id']}:{validated_edit_id(body.get('edit_id'), content)}"

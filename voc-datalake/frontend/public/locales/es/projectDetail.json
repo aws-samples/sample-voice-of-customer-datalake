@@ -778,7 +778,9 @@
         "hide": "Ocultar cambios",
         "newTitle": "Nuevo título: {{title}}",
         "noChanges": "La sugerencia coincide con el texto guardado.",
+        "otherVersion": "Propuesto sobre la v{{proposed}}; esta página muestra la v{{current}}.",
         "removed": "Eliminado",
+        "replacesSince": "Al aprobarla, la sugerencia se guarda como la siguiente versión y reemplaza los cambios hechos desde la v{{proposed}} (siguen en el Historial). Los cambios de abajo la comparan con esta página.",
         "review": "Revisar",
         "stats": "Bloques añadidos: {{added, number}} · eliminados: {{removed, number}}",
         "tooLarge": "Demasiado largo para compararlo bloque a bloque. La sugerencia completa:",
@@ -839,6 +841,7 @@
         "intro": "Acepta o rechaza cada cambio. Los cambios aceptados pasan a tu borrador; Guardar los convierte en una versión nueva.",
         "listLabel": "Cambios sugeridos",
         "markFailed": "Guardado, pero no se pudieron marcar los comentarios como atendidos. Inténtalo de nuevo más tarde.",
+        "markPartial": "Guardado, pero algunos comentarios han alcanzado su límite de marcas y no se pudieron marcar como atendidos; los demás sí. Inicia un comentario nuevo para esos.",
         "marked_one": "Guardado: {{count, number}} comentario queda marcado como atendido en v{{version}}.",
         "marked_many": "Guardado: {{count, number}} comentarios quedan marcados como atendidos en v{{version}}.",
         "marked_other": "Guardado: {{count, number}} comentarios quedan marcados como atendidos en v{{version}}.",
@@ -858,6 +861,11 @@
         "status_many": "{{count, number}} cambios sugeridos.",
         "status_other": "{{count, number}} cambios sugeridos.",
         "title": "Cambios sugeridos"
+      },
+      "refused": {
+        "explain": "No se guardó nada: tus cambios siguen aquí. Guárdalos como tu propia edición.",
+        "fallback": "Este guardado no se pudo registrar como revisión.",
+        "saveAsOwn": "Guardar como mi propia edición"
       },
       "recommendations": {
         "listLabel": "Recomendaciones",

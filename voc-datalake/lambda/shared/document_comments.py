@@ -68,6 +68,8 @@ MAX_ADDRESSED_HISTORY: Final = 100
 ADDRESSED_FULL: Final = 'This comment has reached its limit of addressed marks; start a new comment'
 ADDRESSED_SOME_FULL: Final = ('Some comments have reached their limit of addressed marks and were not marked; '
                               'the others were. Start a new comment for those')
+#: The machine-readable ``code`` of the "some marked" 409 (``ApiError.code``): a client reads it, never the English.
+ADDRESSED_SOME_FULL_CODE: Final = 'addressed_some_full'
 ADDRESSED_BY_USER: Final = 'user'
 ADDRESSED_BY_AI: Final = 'ai'
 ADDRESSED_BY_KINDS: Final = (ADDRESSED_BY_USER, ADDRESSED_BY_AI)
@@ -289,7 +291,8 @@ def record_threads_addressed(table: Any, threads: Iterable[Mapping[str, Any]],
     """``record_addressed`` on each of ``threads``; one deleted meanwhile is skipped.
 
     A thread whose history is full does not stop the others: every thread is tried, then a 409 says
-    so (``ADDRESSED_FULL`` when none was marked, else ``ADDRESSED_SOME_FULL``: the others are marked).
+    so (``ADDRESSED_FULL`` when none was marked, else ``ADDRESSED_SOME_FULL``: the others are marked),
+    the latter with its ``code``.
     """
     marked = []
     full = False
@@ -301,8 +304,10 @@ def record_threads_addressed(table: Any, threads: Iterable[Mapping[str, Any]],
         except ClientError as error:
             if not is_conditional_check_failure(error):
                 raise
+    if full and marked:
+        raise ConflictError(ADDRESSED_SOME_FULL, code=ADDRESSED_SOME_FULL_CODE)
     if full:
-        raise ConflictError(ADDRESSED_SOME_FULL if marked else ADDRESSED_FULL)
+        raise ConflictError(ADDRESSED_FULL)
     return marked
 
 

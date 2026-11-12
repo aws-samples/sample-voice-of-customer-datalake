@@ -9,7 +9,8 @@
  *   Load the latest: the canvas's `generation` moves) puts every accepted change back to pending. Closing the panel
  *   while accepted changes are unsaved keeps them (`pendingMarks`): the next save still settles them, and a new pass
  *   waits until they are saved or discarded (`holdsAccepted`). A save whose text still keeps an accepted change is
- *   recorded as a revise (`markRevised`: the version's `edit_kind`, D4);
+ *   recorded as a revise (`markRevised`: the save names the pass's job id, `revise_job_id`; the server checks it
+ *   and sets the version's `edit_kind`, D4);
  * - `applied`: the server wrote the next version; the canvas reloads on it (asking first while it holds changes), and
  *   Undo restores the version the pass read through the History's restore route (a new version again), then takes
  *   the pass's "addressed" marks off its threads. When someone saved after the revision, Undo asks first: restoring
@@ -19,9 +20,10 @@
  */
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { apiErrorStatus, HTTP_CONFLICT } from '../../../api/apiErrorStatus'
 import { projectsApi } from '../../../api/projectsApi'
 import { projectKey } from '../../../api/projectQueryKeys'
-import { serverReason } from '../../../lib/errors'
+import { apiErrorCode, serverReason } from '../../../lib/errors'
 import { ignoreRejection } from '../../../lib/rejections'
 import { keptChanges, NOTHING_PLACED, placeChange, relocate, threadIdsOf } from './reviseChanges'
 import type { Placed } from './reviseChanges'
@@ -49,8 +51,11 @@ export type RevisePass =
   | {
     readonly kind: 'proposal'; readonly result: ReviseFromCommentsResult
     readonly decisions: Readonly<Record<string, Decision>>
-    /** The last save's marking: how many threads, in which version (or that it failed). */
-    readonly marked: { readonly count: number; readonly version: number } | 'failed' | null
+    /**
+     * The last save's marking: how many threads, in which version; `partial`: some threads could not be marked (their
+     * history of marks is full), the others were; `failed`: none was.
+     */
+    readonly marked: { readonly count: number; readonly version: number } | 'partial' | 'failed' | null
   }
   | {
     readonly kind: 'applied'; readonly result: ReviseFromCommentsResult; readonly undo: UndoState
@@ -108,6 +113,17 @@ function settleOnSave(
     decisions,
     mark: threadIds.length === 0 ? null : { result: pass.result, documentId: saved.document.document_id, threadIds, version },
   }
+}
+
+/** The marking's code when some threads were marked and the others not (their history of marks is full). */
+const PARTLY_MARKED_CODE = 'addressed_some_full'
+
+/**
+ * The marking's 409 says some threads were marked and the others not: its `code` is `addressed_some_full` (the
+ * server's `ADDRESSED_SOME_FULL_CODE`); a 409 for none marked (no code), or any other failure, is not.
+ */
+function isPartlyMarked(failure: unknown): boolean {
+  return apiErrorStatus(failure) === HTTP_CONFLICT && apiErrorCode(failure) === PARTLY_MARKED_CODE
 }
 
 /** The proposal holds changes taken into the draft and not saved yet. */
@@ -273,14 +289,15 @@ export function useRevisePass({ projectId, run, markAddressed, clearAddressed, d
       setPass((current) => (current.kind === 'proposal' && current.result === result ? { ...current, marked: value } : current))
     markAddressed(documentId, threadIds).then(
       () => marked({ count: threadIds.length, version }),
-      () => marked('failed'),
+      (failure: unknown) => marked(isPartlyMarked(failure) ? 'partial' : 'failed'),
     )
   }, [toMark, markAddressed])
 
-  // The canvas's next save is recorded as a revise (D4) when the text it sends still keeps an accepted change (the
-  // same occurrence of its new text, see keptChanges): not once they are saved, discarded or edited away by hand.
+  // The canvas's next save names this pass (its job id: the server checks it and records a revise, D4) when the
+  // text it sends still keeps an accepted change (the same occurrence of its new text, see keptChanges): not once
+  // they are saved, discarded or edited away by hand.
   const keepsAccepted = useMemo(() => (holdsAccepted && tracked !== null
-    ? (content: string) => keptChanges(acceptedOf(tracked), placed, content).length > 0
+    ? { jobId: tracked.result.job_id, keeps: (content: string) => keptChanges(acceptedOf(tracked), placed, content).length > 0 }
     : null), [holdsAccepted, tracked, placed])
   const { markRevised } = canvas
   useEffect(() => {

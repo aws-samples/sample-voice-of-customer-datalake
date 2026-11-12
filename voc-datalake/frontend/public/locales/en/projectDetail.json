@@ -752,7 +752,9 @@
         "hide": "Hide changes",
         "newTitle": "New title: {{title}}",
         "noChanges": "The suggestion matches the saved text.",
+        "otherVersion": "Proposed on v{{proposed}}; this page shows v{{current}}.",
         "removed": "Removed",
+        "replacesSince": "Approving saves the suggestion as the next version and replaces the changes made since v{{proposed}} (they stay in History). The changes below compare it with this page.",
         "review": "Review",
         "stats": "Blocks added: {{added, number}} · removed: {{removed, number}}",
         "tooLarge": "Too long to compare block by block. The full suggestion:",
@@ -811,6 +813,7 @@
         "intro": "Accept or reject each change. Accepted changes go into your draft; Save makes them a new version.",
         "listLabel": "Suggested changes",
         "markFailed": "Saved, but the comments could not be marked as addressed. Please try again later.",
+        "markPartial": "Saved, but some comments have reached their limit of addressed marks and could not be marked; the others were. Start a new comment for those.",
         "marked_one": "Saved: {{count, number}} comment is marked as addressed in v{{version}}.",
         "marked_other": "Saved: {{count, number}} comments are marked as addressed in v{{version}}.",
         "none": "No change could be suggested from these comments. The recommendations say what to do instead.",
@@ -828,6 +831,11 @@
         "status_one": "{{count, number}} change suggested.",
         "status_other": "{{count, number}} changes suggested.",
         "title": "Suggested changes"
+      },
+      "refused": {
+        "explain": "Nothing was saved: your changes are still here. Save them as your own edit instead.",
+        "fallback": "This save could not be recorded as a revision.",
+        "saveAsOwn": "Save as my own edit"
       },
       "recommendations": {
         "listLabel": "Recommendations",

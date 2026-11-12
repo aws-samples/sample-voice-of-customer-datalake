@@ -75,7 +75,7 @@ vi.mock('../services/auth', () => ({
 
 import { api, fetchApi, getDateRangeParams } from './client'
 import { ALL_TIME_CUSTOM_DAYS, getDaysFromRange, MAX_CUSTOM_DAYS, WIDEST_PRESET_DAYS } from './baseUrl'
-import { ApiError } from '../lib/errors'
+import { ApiError, apiErrorCode } from '../lib/errors'
 import { apiErrorStatus } from './apiErrorStatus'
 import { authService } from '../services/auth'
 import * as runtimeConfig from '../runtimeConfig'
@@ -237,6 +237,14 @@ describe('error bodies', () => {
     expect(describeRejection(both)).toStrictEqual(apiError(413, SERVER_MESSAGE))
     const badMessage = await rejectionFor(400, JSON.stringify({ message: 42, error: 'from error' }))
     expect(describeRejection(badMessage)).toStrictEqual(apiError(400, 'from error'))
+  })
+
+  it('keeps a machine-readable `code` beside the reason (ApiError.code), and only a snake_case word', async () => {
+    const coded = await rejectionFor(409, JSON.stringify({ success: false, error: 'Some were not marked', code: 'addressed_some_full' }))
+    expect([describeRejection(coded), apiErrorCode(coded)]).toStrictEqual([apiError(409, 'Some were not marked'), 'addressed_some_full'])
+    const odd = await Promise.all([{ code: 'Not A Code' }, { code: 7 }, {}].map((extra) =>
+      rejectionFor(409, JSON.stringify({ success: false, error: 'x', ...extra }))))
+    expect(odd.map(apiErrorCode)).toStrictEqual([null, null, null])
   })
 
   it.each([

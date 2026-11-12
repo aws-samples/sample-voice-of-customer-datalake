@@ -40,7 +40,10 @@ reviewer behind a link cannot steer the rewrite.
 from __future__ import annotations
 
 import secrets
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import Key
@@ -48,10 +51,11 @@ from botocore.exceptions import ClientError
 
 from shared import ai_mode, category_access
 from shared import document_comments as comments
+from shared.assist_jobs import COMPLETED
 from shared.converse import converse
 from shared.document_history import require_series_head, revise_document
 from shared.document_review import SURFACE, TYPE_LABELS
-from shared.document_series import collapse, plain_text
+from shared.document_series import collapse, plain_text, series_of
 from shared.exceptions import ConflictError, ValidationError
 from shared.feedback_sampling import received_input_feedback_ids
 from shared.indexes import FEEDBACK_BY_ID_INDEX
@@ -390,3 +394,120 @@ def _mark_best_effort(table: Any, threads: Sequence[Mapping[str, Any]], entry: M
             continue
         marked.append(str(thread['comment_id']))
     return marked
+
+
+# ── A person's save of a proposal (PUT …/documents/{doc} revise_job_id, D4) ─────────────────
+
+#: The assist job type of a pass (the projects API registers its work under it).
+ASSIST_JOB_TYPE: Final = 'assist_revise_from_comments'
+#: The job config's series of the version the pass read (set when the pass starts).
+SERIES_CONFIG_KEY: Final = 'series_id'
+REVISION_NOT_FOUND: Final = 'That revision was not found in this project'
+REVISION_WITHOUT_PROPOSAL: Final = ('That revision has no proposal to save: it is still running, failed '
+                                    'or only recommended')
+REVISION_OF_SOMEONE_ELSE: Final = 'That revision was started by someone else: save it as your own edit'
+REVISION_OF_ANOTHER_DOCUMENT: Final = 'That revision is of another document'
+SAVE_WITHOUT_CHANGE: Final = 'This save does not hold a change from that revision'
+
+
+@dataclass(frozen=True)
+class ProposalSave:
+    """What a save that names its pass (``revise_job_id``) brings to the check."""
+
+    job_id: str
+    #: The job row in the project's own partition (``PROJECT#{id}``), None when there is none.
+    job: Mapping[str, Any] | None
+    #: The caller's subject (compared with the job's ``initiated_by``) and their ``{sub, kind}``.
+    caller_sub: str
+    actor: Mapping[str, str]
+
+
+@dataclass(frozen=True)
+class _Texts:
+    """A text verbatim and as plain text (the canvas may write the same Markdown with other markup;
+    the anchors allow the same)."""
+
+    markdown: str
+    flat: str
+
+    @classmethod
+    def of(cls, markdown: str) -> _Texts:
+        return cls(markdown, plain_text(markdown))
+
+    def count(self, passage: str) -> tuple[int, int]:
+        """How often ``passage`` occurs verbatim, and as plain text (0 when it has none)."""
+        plain = plain_text(passage)
+        return self.markdown.count(passage), self.flat.count(plain) if plain else 0
+
+
+def _is_new(change: object, saved: _Texts, edited: _Texts) -> bool:
+    """``change`` is new in ``saved`` relative to ``edited``: a non-empty ``after`` occurs MORE often
+    (verbatim, or as plain text); or its ``before`` occurs LESS often, verbatim and as plain text
+    (when it has any), while its non-empty ``after`` is in ``saved`` and does not occur less often
+    (a deletion, or a trim whose ``after`` is a piece of its ``before``): other markup on the same
+    words is not a deletion, and words the document also says elsewhere may stay."""
+    if not isinstance(change, Mapping) or not isinstance(change.get('after'), str):
+        return False
+    after, before = change['after'], change.get('before')
+    counts = list(zip(saved.count(after), edited.count(after), strict=True)) if after.strip() else []
+    if any(now > was for now, was in counts):
+        return True
+    if not isinstance(before, str) or not before.strip():
+        return False
+    (verbatim_now, plain_now), (verbatim_was, plain_was) = saved.count(before), edited.count(before)
+    before_gone = verbatim_now < verbatim_was and (plain_now < plain_was or not plain_text(before))
+    # Only a deletion or a trim: the ``after`` is a piece of the ``before`` (verbatim, or as plain text).
+    flat_after = plain_text(after)
+    trimmed = not after.strip() or after in before or (bool(flat_after) and flat_after in plain_text(before))
+    # "Less often" as for the before: verbatim and as plain text; a trim may change the kept words' markup.
+    after_kept = not counts or (any(now >= was for now, was in counts) and any(now for now, _ in counts))
+    return before_gone and trimmed and after_kept
+
+
+def holds_a_change(content: str, edited: str, changes: object) -> bool:
+    """True when at least one of ``changes`` is NEW in ``content`` (the saved text) relative to
+    ``edited`` (the content of the version being edited, ``_is_new``): a text that was already in the
+    document, or a change the save does not hold, is not."""
+    if not isinstance(changes, list):
+        return False
+    saved, before = _Texts.of(content), _Texts.of(edited)
+    return any(_is_new(change, saved, before) for change in changes)
+
+
+def _read_the_same_series(job: Mapping[str, Any], project_id: str, document: Mapping[str, Any]) -> bool:
+    """The pass read a version of ``document``'s series (its job's config holds the series)."""
+    config = job.get('config')
+    read = config.get(SERIES_CONFIG_KEY) if isinstance(config, Mapping) else None
+    return isinstance(read, str) and bool(read) and read == series_of(project_id, dict(document))['series_id']
+
+
+def _expired(ttl: object) -> bool:
+    """The job's ``ttl`` (epoch seconds) is past: DynamoDB deletes expired items lazily, so a job
+    past it may still be read, and counts as gone."""
+    return isinstance(ttl, int | float | Decimal) and not isinstance(ttl, bool) and ttl <= time.time()
+
+
+def verify_saved_proposal(save: ProposalSave, *, project_id: str, document: Mapping[str, Any],
+                          content: str) -> dict[str, Any]:
+    """The ``revise`` provenance (``{edited_by, revise_job_id}``) of a person's save of a proposal, or a 400.
+
+    Recorded only when the job is this project's Revise from comments pass (its ``ttl`` not past),
+    completed with outcome ``proposal``, started by the same caller, read a version of the edited document's series, and at
+    least one of its changes is new in the saved text relative to ``document`` (the version edited:
+    ``holds_a_change``). Never a quiet relabel: any miss refuses the save.
+    """
+    job = save.job
+    if not isinstance(job, Mapping) or job.get('job_type') != ASSIST_JOB_TYPE or job.get('project_id') != project_id:
+        raise ValidationError(REVISION_NOT_FOUND)
+    if _expired(job.get('ttl')):
+        raise ValidationError(REVISION_NOT_FOUND)
+    result = job.get('result')
+    if job.get('status') != COMPLETED or not isinstance(result, Mapping) or result.get('outcome') != OUTCOME_PROPOSAL:
+        raise ValidationError(REVISION_WITHOUT_PROPOSAL)
+    if not save.caller_sub or job.get('initiated_by') != save.caller_sub:
+        raise ValidationError(REVISION_OF_SOMEONE_ELSE)
+    if not _read_the_same_series(job, project_id, document):
+        raise ValidationError(REVISION_OF_ANOTHER_DOCUMENT)
+    if not holds_a_change(content, str(document.get('content') or ''), result.get('changes')):
+        raise ValidationError(SAVE_WITHOUT_CHANGE)
+    return {'edited_by': dict(save.actor), 'revise_job_id': save.job_id}

@@ -25,7 +25,7 @@
  * the i18n gate rejects same-as-English values. Surface labels/descriptions and
  * the surrounding chrome are translated under `aiModel.*`.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Cpu, Loader2, AlertCircle } from 'lucide-react'
@@ -39,6 +39,7 @@ import { useModelTests } from './useModelTests'
 import type { ModelTests } from './useModelTests'
 import type { ModelTestStatus } from '../../api/modelTestSchema'
 import { modelSettingsKey } from '../../api/queryKeys'
+import { useResetAfter } from '../../hooks/useResetAfter'
 
 interface AiModelSectionProps {
   readonly apiEndpoint: string
@@ -107,18 +108,13 @@ function AiModelSectionBody({ data, isLoading, isError }: AiModelSectionBodyProp
 
 const SAVED_BADGE_MS = 2000
 
-/** Saved-badge timer: shows `surface` as just saved for two seconds. */
+/** Saved-badge timer: shows `surface` as just saved for two seconds (useResetAfter: a newer save restarts it). */
 function useJustSaved(): [string | null, (surface: string) => void] {
   const [savedSurface, setSavedSurface] = useState<string | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Clear the timer on unmount so it can't set state afterwards.
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current)
-  }, [])
+  const resetAfter = useResetAfter()
   const mark = (surface: string) => {
     setSavedSurface(surface)
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => setSavedSurface(null), SAVED_BADGE_MS)
+    resetAfter(SAVED_BADGE_MS, () => setSavedSurface(null))
   }
   return [savedSurface, mark]
 }

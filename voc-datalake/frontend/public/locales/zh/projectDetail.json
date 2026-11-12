@@ -752,7 +752,9 @@
         "hide": "隐藏修改",
         "newTitle": "新标题：{{title}}",
         "noChanges": "建议与已保存的文本相同。",
+        "otherVersion": "针对 v{{proposed}} 提出；此页面显示的是 v{{current}}。",
         "removed": "已删除",
+        "replacesSince": "批准后，该建议将保存为下一个版本，并替换自 v{{proposed}} 以来所做的更改（这些更改仍保留在历史记录中）。下方的更改是与此页面的对比。",
         "review": "查看",
         "stats": "添加的块：{{added, number}} · 删除：{{removed, number}}",
         "tooLarge": "内容太长，无法逐块比较。完整建议：",
@@ -811,6 +813,7 @@
         "intro": "逐条接受或拒绝更改。接受的更改会进入你的草稿；保存后成为新版本。",
         "listLabel": "建议的更改",
         "markFailed": "已保存，但无法将评论标记为已处理。请稍后重试。",
+        "markPartial": "已保存，但部分评论的已处理标记已达上限，无法标记为已处理；其他评论已标记。请为这些评论新建评论。",
         "marked_one": "已保存：{{count, number}} 条评论已标记为在 v{{version}} 中处理。",
         "marked_other": "已保存：{{count, number}} 条评论已标记为在 v{{version}} 中处理。",
         "none": "无法根据这些评论提出更改。建议说明了可以改做什么。",
@@ -828,6 +831,11 @@
         "status_one": "建议了 {{count, number}} 处更改。",
         "status_other": "建议了 {{count, number}} 处更改。",
         "title": "建议的更改"
+      },
+      "refused": {
+        "explain": "未保存任何内容：你的更改仍在这里。请改为将其保存为你自己的编辑。",
+        "fallback": "此次保存无法记录为修订。",
+        "saveAsOwn": "保存为我自己的编辑"
       },
       "recommendations": {
         "listLabel": "建议",

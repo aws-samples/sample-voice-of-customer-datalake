@@ -445,6 +445,8 @@ def _exception_answer(status_code: int | None, log_level: str, label: str,
         # The logger method is looked up per call, so a test that patches the module logger sees it.
         getattr(logger, log_level)(f"{label}: {ex.message}")
         body: dict[str, Any] = {'success': False, 'error': ex.message}
+        if ex.code is not None:
+            body['code'] = ex.code
         if both_keys:
             body['message'] = ex.message
         return Response(

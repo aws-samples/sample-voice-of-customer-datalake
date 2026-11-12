@@ -70,7 +70,8 @@ function nextPause(intervalMs: number, deadline: number): number {
 }
 
 /**
- * Start an assist job, poll it until it ends, and resolve `parse(result)`.
+ * Start an assist job, poll it until it ends, and resolve `parse(result, jobId)` (the job id for a
+ * result that names its pass, e.g. Revise from comments' save of its proposal).
  *
  * Polls once straight after the start (the job read is consistent, and the mock
  * completes on the first poll), then every `intervalMs`, or on the job's notice
@@ -82,7 +83,7 @@ function nextPause(intervalMs: number, deadline: number): number {
 export async function runAssistJob<T>(
   start: () => Promise<unknown>,
   poll: (jobId: string) => Promise<unknown>,
-  parse: (result: unknown) => T,
+  parse: (result: unknown, jobId: string) => T,
   opts: AssistJobOptions = {},
 ): Promise<T> {
   const { intervalMs = ASSIST_POLL_INTERVAL_MS, timeoutMs = ASSIST_TIMEOUT_MS, signal } = opts
@@ -93,7 +94,7 @@ export async function runAssistJob<T>(
     for (;;) {
       if (signal?.aborted === true) throw abortError()
       const answer = parseAnswer(assistJobPollSchema, await poll(jobId))
-      if (answer.status === 'completed') return parse(answer.result)
+      if (answer.status === 'completed') return parse(answer.result, jobId)
       if (answer.status === 'failed') {
         throw new Error(answer.error != null && answer.error !== '' ? answer.error : GENERIC_FAILURE)
       }

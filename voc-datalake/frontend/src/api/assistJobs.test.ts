@@ -22,6 +22,14 @@ describe('runAssistJob', () => {
     expect(poll).toHaveBeenCalledWith('job_1')
   })
 
+  it('hands the parser the job id it polled', async () => {
+    const poll = pollAnswers({ status: 'completed', result: 1 })
+
+    const result = await runAssistJob(() => Promise.resolve(STARTED), poll, (r, jobId) => ({ r, jobId }))
+
+    expect(result).toStrictEqual({ r: 1, jobId: 'job_1' })
+  })
+
   it('keeps polling every interval while the job is pending or running', async () => {
     const poll = pollAnswers({ status: 'pending' }, { status: 'running' }, { status: 'completed', result: 7 })
 

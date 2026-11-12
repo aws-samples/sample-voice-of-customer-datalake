@@ -6,6 +6,8 @@ is kept only when its ``before`` occurs exactly once in the base Markdown) and t
 working, since those are what keep the AI from writing what a person did not allow.
 """
 import json
+import time
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -517,3 +519,146 @@ def test_the_same_revise_id_writes_one_version(table):
     again = revise_document(table, 'p1', dict(DOCUMENT), 'New', revise_id='r', now='t', actor=ACTOR)
     assert again['document_id'] == first['document_id']
     assert len(_versions(table)) == 2
+
+
+# ── a person's save of a proposal (verify_saved_proposal) ──────────────────
+
+def _proposal_job(**overrides):
+    from shared.document_series import series_of
+
+    job = {'job_type': rev.ASSIST_JOB_TYPE, 'status': 'completed', 'project_id': 'p1', 'initiated_by': 'owner-sub',
+           'config': {'series_id': series_of('p1', DOCUMENT)['series_id']},
+           'result': {'outcome': 'proposal', 'base_document_id': 'd1',
+                      'changes': [{'before': 'ten dollars', 'after': 'eight dollars'}]}}
+    return {**job, **overrides}
+
+
+def _verify(job, content='It costs eight dollars a month.', caller='owner-sub'):
+    save = rev.ProposalSave(job_id='job_1', job=job, caller_sub=caller, actor=ACTOR)
+    return rev.verify_saved_proposal(save, project_id='p1', document=DOCUMENT, content=content)
+
+
+def test_a_checked_proposal_save_answers_the_revise_provenance():
+    assert _verify(_proposal_job()) == {'edited_by': ACTOR, 'revise_job_id': 'job_1'}
+
+
+def test_a_job_whose_ttl_is_still_ahead_is_saved():
+    assert _verify(_proposal_job(ttl=Decimal(int(time.time()) + 3600)))['revise_job_id'] == 'job_1'
+
+
+@pytest.mark.parametrize(('job', 'caller', 'message'), [
+    (None, 'owner-sub', rev.REVISION_NOT_FOUND),
+    (_proposal_job(job_type='assist_persona_review'), 'owner-sub', rev.REVISION_NOT_FOUND),
+    (_proposal_job(project_id='p2'), 'owner-sub', rev.REVISION_NOT_FOUND),
+    # Past its ttl (DynamoDB deletes lazily, so it may still be read): gone, as Decimal or int.
+    (_proposal_job(ttl=Decimal(1)), 'owner-sub', rev.REVISION_NOT_FOUND),
+    (_proposal_job(ttl=int(time.time()) - 1), 'owner-sub', rev.REVISION_NOT_FOUND),
+    (_proposal_job(status='running'), 'owner-sub', rev.REVISION_WITHOUT_PROPOSAL),
+    (_proposal_job(result=['not', 'a', 'map']), 'owner-sub', rev.REVISION_WITHOUT_PROPOSAL),
+    (_proposal_job(result={'outcome': 'applied', 'changes': []}), 'owner-sub', rev.REVISION_WITHOUT_PROPOSAL),
+    (_proposal_job(), 'someone-else', rev.REVISION_OF_SOMEONE_ELSE),
+    (_proposal_job(initiated_by=''), '', rev.REVISION_OF_SOMEONE_ELSE),
+    (_proposal_job(config={'series_id': 'ser_other'}), 'owner-sub', rev.REVISION_OF_ANOTHER_DOCUMENT),
+    # The series is the job's from the start (6.07.00): a job without it matches no document.
+    (_proposal_job(config={}), 'owner-sub', rev.REVISION_OF_ANOTHER_DOCUMENT),
+    (_proposal_job(config=None), 'owner-sub', rev.REVISION_OF_ANOTHER_DOCUMENT),
+])
+def test_every_miss_refuses_the_save(job, caller, message):
+    with pytest.raises(ValidationError) as caught:
+        _verify(job, caller=caller)
+    assert str(caught.value) == message
+
+
+EDITED = 'It costs ten dollars.'
+
+
+@pytest.mark.parametrize(('content', 'changes', 'holds'), [
+    ('It costs eight dollars.', [{'after': 'eight dollars'}], True),
+    ('It costs **eight** dollars.', [{'after': 'eight dollars'}], True),
+    ('It costs eight dollars.', [{'after': '*eight*\n dollars'}], True),
+    ('It costs ten dollars.', [{'after': 'eight dollars'}], False),
+    ('Anything.', [{'after': '   '}, {'after': None}, 'x', {}, {'before': 'ten', 'after': None}], False),
+    ('Anything.', [], False),
+    ('Anything.', None, False),
+    ('It costs eight dollars.', [{'after': 'nine'}, {'after': 'eight'}], True),
+])
+def test_a_save_holds_a_change_when_its_after_is_new(content, changes, holds):
+    assert rev.holds_a_change(content, EDITED, changes) is holds
+
+
+@pytest.mark.parametrize(('content', 'holds'), [
+    ('It costs dollars.', True),
+    # Its plain text gone, the markup changed too.
+    ('It **costs** dollars.', True),
+    # Still there verbatim and as plain text: nothing was deleted.
+    ('It costs ten dollars.', False),
+    # Other markup on the same words is not a deletion.
+    ('It costs **ten** dollars.', False),
+])
+def test_a_deletion_is_held_when_its_before_is_gone(content, holds):
+    assert rev.holds_a_change(content, EDITED, [{'before': 'ten ', 'after': ''}]) is holds
+
+
+@pytest.mark.parametrize('before', ['', '   ', None, 'not in the document'])
+def test_a_deletion_of_nothing_or_of_a_passage_never_there_is_not_held(before):
+    assert rev.holds_a_change('It costs dollars.', EDITED, [{'before': before, 'after': ''}]) is False
+
+
+@pytest.mark.parametrize(('content', 'holds'), [
+    # Already in the edited text once, and the save holds it once: nothing new.
+    ('It costs ten dollars. Or eight dollars.', False),
+    ('It costs eight dollars. Or eight dollars.', True),
+    ('It costs **eight** dollars. Or eight dollars.', True),
+])
+def test_an_after_already_in_the_document_is_new_only_when_it_occurs_more_often(content, holds):
+    edited = 'It costs ten dollars. Or eight dollars.'
+    assert rev.holds_a_change(content, edited, [{'before': 'ten dollars', 'after': 'eight dollars'}]) is holds
+
+
+TRIMMED = 'Reminders go out at most once a day per parcel.'
+
+
+@pytest.mark.parametrize(('content', 'change', 'holds'), [
+    # A trim at the end: the after is a piece of the before, so it occurs no more often, yet the before is gone.
+    ('Reminders go out at most once a day.', {'before': 'at most once a day per parcel', 'after': 'at most once a day'},
+     True),
+    # A trim at the start.
+    ('Reminders go out once a day per parcel.', {'before': 'at most once a day per parcel', 'after': 'once a day per parcel'},
+     True),
+    # The same trim with other markup on the kept words: its plain text holds it too.
+    ('Reminders go out at most **once a day**.', {'before': 'at most once a day per parcel', 'after': 'at most once a day'},
+     True),
+    # Not applied: the before is still there (and the after inside it), so nothing is new.
+    (TRIMMED, {'before': 'at most once a day per parcel', 'after': 'at most once a day'}, False),
+    # The before is gone, and so is its after: the passage was deleted, not trimmed as proposed.
+    ('Reminders go out.', {'before': 'at most once a day per parcel', 'after': 'at most once a day'}, False),
+    # The before rewritten in other words, its after never in either text: not this change.
+    ('Reminders go out weekly.', {'before': 'at most once a day per parcel', 'after': 'twice a week'}, False),
+])
+def test_a_trim_is_held_when_its_before_is_gone_and_its_after_stays(content, change, holds):
+    assert rev.holds_a_change(content, TRIMMED, [change]) is holds
+
+
+def test_a_rewrite_is_not_a_trim_when_its_after_is_not_a_piece_of_its_before():
+    # The before is gone and the after stays (it was already elsewhere), but the change is no trim: a hand rewrite.
+    change = {'before': 'Second draft', 'after': 'the launch'}
+    assert rev.holds_a_change('My own words of the launch.', 'Second draft of the launch.', [change]) is False
+
+
+def test_a_deletion_only_proposal_save_answers_the_revise_provenance():
+    deleted = ' It costs ten dollars a month.'
+    job = _proposal_job(result={'outcome': 'proposal', 'changes': [{'before': deleted, 'after': ''}]})
+    assert _verify(job, content=CONTENT.replace(deleted, '', 1))['revise_job_id'] == 'job_1'
+
+
+def test_a_save_whose_after_was_already_in_the_document_is_refused():
+    job = _proposal_job(result={'outcome': 'proposal', 'changes': [{'before': 'every file', 'after': 'Acme Sync'}]})
+    with pytest.raises(ValidationError) as caught:
+        _verify(job, content=CONTENT + '\n\nA line of my own.')
+    assert str(caught.value) == rev.SAVE_WITHOUT_CHANGE
+
+
+def test_a_save_without_a_change_is_refused():
+    with pytest.raises(ValidationError) as caught:
+        _verify(_proposal_job(), content=CONTENT)
+    assert str(caught.value) == rev.SAVE_WITHOUT_CHANGE

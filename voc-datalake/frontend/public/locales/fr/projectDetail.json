@@ -778,7 +778,9 @@
         "hide": "Masquer les modifications",
         "newTitle": "Nouveau titre : {{title}}",
         "noChanges": "La proposition correspond au texte enregistré.",
+        "otherVersion": "Proposé sur la v{{proposed}} ; cette page affiche la v{{current}}.",
         "removed": "Supprimé",
+        "replacesSince": "L'approuver enregistre la suggestion comme version suivante et remplace les modifications faites depuis la v{{proposed}} (elles restent dans l'Historique). Les modifications ci-dessous la comparent à cette page.",
         "review": "Examiner",
         "stats": "Blocs ajoutés : {{added, number}} · supprimés : {{removed, number}}",
         "tooLarge": "Trop long pour une comparaison bloc par bloc. La proposition complète :",
@@ -839,6 +841,7 @@
         "intro": "Acceptez ou refusez chaque modification. Les modifications acceptées vont dans votre brouillon ; Enregistrer en fait une nouvelle version.",
         "listLabel": "Modifications suggérées",
         "markFailed": "Enregistré, mais les commentaires n'ont pas pu être marqués comme traités. Veuillez réessayer plus tard.",
+        "markPartial": "Enregistré, mais certains commentaires ont atteint leur limite de marquages et n'ont pas pu être marqués comme traités ; les autres l'ont été. Créez un nouveau commentaire pour ceux-là.",
         "marked_one": "Enregistré : {{count, number}} commentaire est marqué comme traité dans la v{{version}}.",
         "marked_many": "Enregistré : {{count, number}} commentaires sont marqués comme traités dans la v{{version}}.",
         "marked_other": "Enregistré : {{count, number}} commentaires sont marqués comme traités dans la v{{version}}.",
@@ -858,6 +861,11 @@
         "status_many": "{{count, number}} modifications suggérées.",
         "status_other": "{{count, number}} modifications suggérées.",
         "title": "Modifications suggérées"
+      },
+      "refused": {
+        "explain": "Rien n'a été enregistré : vos modifications sont toujours là. Enregistrez-les plutôt comme votre propre modification.",
+        "fallback": "Cet enregistrement n'a pas pu être consigné comme révision.",
+        "saveAsOwn": "Enregistrer comme ma modification"
       },
       "recommendations": {
         "listLabel": "Recommandations",
