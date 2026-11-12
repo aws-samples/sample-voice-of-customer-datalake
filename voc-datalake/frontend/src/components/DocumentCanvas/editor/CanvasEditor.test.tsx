@@ -59,13 +59,32 @@ describe('CanvasEditor', () => {
   it('runs the drag handle on the stand-in for Yjs, as the dev server and the build do (canvasResolve.ts)', async () => {
     const { handle, container } = renderCanvas()
     await editorOf(handle)
-    // The handle is mounted (hidden until a block is hovered).
-    expect(container.querySelector('.canvas-handle__grip')).toHaveAttribute('aria-label', 'Drag to move the block, or click for its menu')
+    // The handle is mounted (hidden until a block is hovered) once its chunk has loaded.
+    await waitFor(() => expect(container.querySelector('.canvas-handle__grip')).toHaveAttribute('aria-label', 'Drag to move the block, or click for its menu'))
     // Yjs marks the global object when it loads; the stand-in never loads it.
     expect(Reflect.get(globalThis, '__ $YJS$ __')).toBeUndefined()
     const [collaboration, yTiptap] = await Promise.all([import('@tiptap/extension-collaboration'), import('@tiptap/y-tiptap')])
     expect(collaboration).toBe(noCollaboration)
     expect(yTiptap).toBe(noCollaboration)
+  })
+
+  it('notes the pointer over the text, so a block handle mounted later shows where the pointer already is', async () => {
+    // Read-only first: no handle yet, as before the menus' chunk arrives.
+    const { handle, container, rerender } = renderCanvas({ editable: false })
+    const editor = await editorOf(handle)
+    const moves: { x: number; y: number }[] = []
+    editor.view.dom.addEventListener('mousemove', (event) => moves.push({ x: event.clientX, y: event.clientY }))
+    const canvas = container.querySelector('.canvas-editor') ?? container
+    fireEvent.mouseMove(canvas, { clientX: 10, clientY: 10 })
+    fireEvent.mouseLeave(canvas)
+    fireEvent.mouseMove(canvas, { clientX: 30, clientY: 60, buttons: 0 })
+    expect(container.querySelector('.canvas-handle__grip')).toBeNull()
+
+    rerender(<CanvasEditor markdown={DEFAULT_MARKDOWN} editable ariaLabel="Launch plan" handleRef={handle} />)
+
+    await waitFor(() => expect(container.querySelector('.canvas-handle__grip')).not.toBeNull())
+    // The moves above went to the canvas around the text; the text itself gets the one the handle makes.
+    await waitFor(() => expect(moves).toStrictEqual([{ x: 30, y: 60 }]))
   })
 
   it('shows the Markdown as a labelled, editable text box', async () => {

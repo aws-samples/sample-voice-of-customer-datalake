@@ -10,22 +10,24 @@
 import type { Editor } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/react'
 import clsx from 'clsx'
-import { useCallback, useEffect, useImperativeHandle, useState } from 'react'
+import { lazy, Suspense, useEffect, useImperativeHandle, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { noCleanup } from '../../../hooks/noCleanup'
 import type { CalloutKind } from '../markdown/callout'
 import { markdownToDoc } from '../markdown/convert'
 import { canvasExtensions } from '../markdown/extensions'
-import BlockHandle from './BlockHandle'
-import BlockMenu from './BlockMenu'
 import { CanvasController, CanvasKeys } from './controller'
-import { type Anchor, anchorAt } from './floating'
-import FormatBar from './FormatBar'
 import { HeadingIds, headingsOf } from './headingIds'
-import ImageDialog from './ImageDialog'
-import LinkEditor from './LinkEditor'
-import SlashMenu from './SlashMenu'
+import { orNothing } from './orNothing'
 import { useCanvasSync } from './useCanvasSync'
 import './CanvasEditor.css'
+
+/**
+ * The menus, the format bar and the popovers: a chunk of their own (with their libraries), asked for as soon as
+ * this module runs, so it loads while the editor starts and the text is never kept waiting for it.
+ */
+const chrome = orNothing(() => import('./CanvasChrome'))
+const CanvasChrome = lazy(() => chrome)
 
 /** A heading of the page's "Contents": h1-h3 (a contents list of every h4 is a second copy of the text). */
 export interface OutlineItem { readonly id: string; readonly level: 1 | 2 | 3; readonly text: string }
@@ -52,8 +54,6 @@ export interface CanvasEditorProps {
 }
 
 const EMPTY_CLASS = 'canvas-empty'
-
-type Popover = { readonly kind: 'link' | 'image'; readonly anchor: Anchor } | { readonly kind: 'block'; readonly pos: number; readonly anchor: Anchor }
 
 const editorDom = (editor: Editor | null) => (editor && !editor.isDestroyed ? editor.view.dom : null)
 
@@ -117,6 +117,19 @@ export default function CanvasEditor({
     if (editor && !editor.isDestroyed && editor.isEditable !== editable) editor.setEditable(editable, false)
   }, [editor, editable])
 
+  // Where the pointer is over the canvas, for the block handle that loads after the text (BlockHandle.tsx).
+  useEffect(() => {
+    if (!container) return noCleanup
+    const move = (event: MouseEvent) => controller.setPointer({ x: event.clientX, y: event.clientY, buttons: event.buttons })
+    const leave = () => controller.setPointer(null)
+    container.addEventListener('mousemove', move, { passive: true })
+    container.addEventListener('mouseleave', leave)
+    return () => {
+      container.removeEventListener('mousemove', move)
+      container.removeEventListener('mouseleave', leave)
+    }
+  }, [container, controller])
+
   useImperativeHandle(handleRef, () => ({
     root: () => editorDom(editor),
     getMarkdown: flush,
@@ -131,42 +144,11 @@ export default function CanvasEditor({
   return (
     <div ref={setContainer} className={clsx('canvas-editor', className)} data-editable={editable}>
       <EditorContent editor={editor} />
-      {editor && <CanvasChrome editor={editor} editable={editable} container={container} controller={controller} onComment={onCommentSelection} />}
+      {editor && (
+        <Suspense fallback={null}>
+          <CanvasChrome editor={editor} editable={editable} container={container} controller={controller} onComment={onCommentSelection} />
+        </Suspense>
+      )}
     </div>
-  )
-}
-
-interface ChromeProps {
-  readonly editor: Editor
-  readonly editable: boolean
-  readonly container: HTMLElement | null
-  readonly controller: CanvasController
-  readonly onComment?: () => void
-}
-
-/** Everything around the text: the block handle, the format bar, the "/" menu and the popovers. */
-function CanvasChrome({ editor, editable, container, controller, onComment }: ChromeProps) {
-  const [popover, setPopover] = useState<Popover | null>(null)
-  const closePopover = useCallback(() => setPopover(null), [])
-  const openAt = useCallback((kind: 'link' | 'image', pos: number) => setPopover({ kind, anchor: anchorAt(editor, pos, container) }), [editor, container])
-
-  useEffect(() => {
-    controller.setOpenLink(() => openAt('link', editor.state.selection.to))
-    controller.setOpenBlockMenu((pos) => setPopover({ kind: 'block', pos, anchor: anchorAt(editor, pos + 1, container) }))
-    return () => {
-      controller.setOpenLink(null)
-      controller.setOpenBlockMenu(null)
-    }
-  }, [editor, container, controller, openAt])
-
-  return (
-    <>
-      {editable && <BlockHandle editor={editor} onOpenMenu={(pos) => controller.openBlockMenu(pos)} />}
-      <FormatBar editor={editor} controller={controller} onComment={onComment} />
-      {editable && <SlashMenu editor={editor} container={container} controller={controller} onImage={() => openAt('image', editor.state.selection.from)} />}
-      {popover?.kind === 'link' && <LinkEditor editor={editor} anchor={popover.anchor} onClose={closePopover} />}
-      {popover?.kind === 'image' && <ImageDialog editor={editor} anchor={popover.anchor} onClose={closePopover} />}
-      {popover?.kind === 'block' && <BlockMenu editor={editor} pos={popover.pos} anchor={popover.anchor} onClose={closePopover} />}
-    </>
   )
 }

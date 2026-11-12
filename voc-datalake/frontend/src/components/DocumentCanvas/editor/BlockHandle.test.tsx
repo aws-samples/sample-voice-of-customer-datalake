@@ -9,6 +9,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import BlockHandle from './BlockHandle'
+import type { Pointer } from './controller'
 import { headlessEditor } from './headless-editor-fixtures'
 
 type NodeChange = (data: { node: PMNode | null; editor: Editor; pos: number }) => void
@@ -22,14 +23,16 @@ vi.mock('@tiptap/extension-drag-handle-react', () => ({
   },
 }))
 
-function renderHandle() {
+function renderHandle(pointer: Pointer | null = null) {
   const editor = headlessEditor('One\n\nTwo')
   const block = editor.state.doc.child(0)
   const onOpenMenu = vi.fn<(pos: number) => void>()
-  render(<BlockHandle editor={editor} onOpenMenu={onOpenMenu} />)
+  const moves: Pointer[] = []
+  editor.view.dom.addEventListener('mousemove', (event) => moves.push({ x: event.clientX, y: event.clientY, buttons: event.buttons }))
+  render(<BlockHandle editor={editor} onOpenMenu={onOpenMenu} lastPointer={() => pointer} />)
   const grip = screen.getByRole('button', { name: 'Drag to move the block, or click for its menu' })
   const hover = (pos: number | null) => act(() => handle.report?.({ node: pos === null ? null : block, editor, pos: pos ?? -1 }))
-  return { editor, onOpenMenu, grip, hover }
+  return { editor, onOpenMenu, grip, hover, moves }
 }
 
 describe('BlockHandle', () => {
@@ -62,5 +65,17 @@ describe('BlockHandle', () => {
     hover(0)
     fireEvent.click(grip)
     expect(onOpenMenu).toHaveBeenCalledExactlyOnceWith(0)
+  })
+
+  it('moves the pointer once on the text where it already was when it loaded, so the grip shows there at once', () => {
+    const { moves } = renderHandle({ x: 40, y: 120, buttons: 0 })
+    expect(moves).toStrictEqual([{ x: 40, y: 120, buttons: 0 }])
+  })
+
+  it.each<[string, Pointer | null]>([
+    ['the pointer was not over the text', null],
+    ['a mouse button is held (a selection or a drag in progress)', { x: 40, y: 120, buttons: 1 }],
+  ])('moves nothing when %s', (_when, pointer) => {
+    expect(renderHandle(pointer).moves).toStrictEqual([])
   })
 })

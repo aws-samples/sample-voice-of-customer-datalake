@@ -117,7 +117,7 @@ Frontend document canvas, its Markdown reader and writer (voc-datalake/frontend,
 [mdast-util-gfm@3.1.0](https://github.com/syntax-tree/mdast-util-gfm) - MIT
 [micromark-extension-gfm@3.0.0](https://github.com/micromark/micromark-extension-gfm) - MIT
 
-Frontend document canvas, the editor (voc-datalake/frontend, the Documents tab's lazy `vendor-editor` chunk):
+Frontend document canvas, the editor (voc-datalake/frontend, the Documents tab's lazy chunks: `vendor-editor`, and `vendor-editor-menus` for @floating-ui/*, @tiptap/extension-bubble-menu, -floating-menu, -drag-handle, -drag-handle-react, -node-range and @tiptap/react's menus, loaded after the text; vendorChunks.json):
 [@floating-ui/core@1.8.0](https://github.com/floating-ui/floating-ui) - MIT
 [@floating-ui/dom@1.8.0](https://github.com/floating-ui/floating-ui) - MIT
 [@floating-ui/utils@0.2.12](https://github.com/floating-ui/floating-ui) - MIT

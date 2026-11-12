@@ -34,6 +34,7 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | Projects list, create, edit, share, delete | `/projects` | Covered | writes, projects-edit, sharing M |
 | Project Overview / Documents / remix / export / research / prototype | `?tab=overview\|documents` | Covered | s3-personas-documents, prototype-enlarge M, concurrency M |
 | Document canvas (6.05): edit in place (shortcuts, "/" menu, format bar), Save / Discard, conflict, leave guard, comments, share, History restore, outline, viewer, keyboard, 360–1440 | `?tab=documents` | Covered | document-canvas M (mock only), concurrency M, s3-personas-documents |
+| Document canvas on long documents: typing and the write after each pause on 60,000 and 200,000 characters (Event Timing, Long Tasks: under 200 ms) | `?tab=documents` | Covered | document-canvas-perf M (mock only) |
 | Document canvas: the assistant's suggested-changes banner | `?tab=documents` | Missing | needs an assistant `update_document` proposal; the mock assistant does not stream one |
 | Project Personas: generate, import, edit, delete, avatar regenerate | `?tab=personas` | Covered | s3-personas-documents |
 | Every persona has a loaded avatar (project page and agent runs) | `?tab=personas` | Covered | persona-avatars M (agent part: production, when the run made a project), s3 step 02, s2 (soft) |

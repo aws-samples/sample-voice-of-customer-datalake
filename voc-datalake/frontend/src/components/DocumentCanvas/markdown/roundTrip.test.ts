@@ -7,10 +7,18 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { Editor } from '@tiptap/core'
+import type { Nodes, Root, RootContent } from 'mdast'
 import { docToMarkdown, markdownToDoc } from './convert'
-import { readTree } from './serialize'
+import { canvasExtensions } from './extensions'
+import { readTree, serialize } from './serialize'
+import { blockToMdast } from './toMdast'
 
 const VOC = join(import.meta.dirname, '../../../../..')
+const SCHEMA_OPTIONS = {
+  placeholder: '', calloutLabels: { note: 'Note', tip: 'Tip', important: 'Important', warning: 'Warning', caution: 'Caution' },
+  taskLabel: () => 'Done', emptyClass: 'empty',
+} as const
 const read = (file: string) => readFileSync(join(VOC, file), 'utf8')
 
 /** A model-written section, as the writer prompts ask for it (bold lead-ins, lists, quotes, citations). */
@@ -156,4 +164,37 @@ describe.each(CORPUS)('%s', (_name, markdown) => {
   it('comes back byte for byte when nothing changed', () => {
     expect(docToMarkdown(markdownToDoc(markdown), markdown)).toBe(markdown)
   })
+
+  it('writes from the editor\'s live document what it writes from the JSON (the path the canvas takes)', () => {
+    const editor = new Editor({ extensions: canvasExtensions(SCHEMA_OPTIONS), content: markdownToDoc(markdown) })
+    try {
+      expect(docToMarkdown(editor.state.doc, markdown)).toBe(markdown)
+      expect(docToMarkdown(editor.state.doc)).toBe(docToMarkdown(markdownToDoc(markdown)))
+    } finally {
+      editor.destroy()
+    }
+  })
+
+  it('writes the bytes the whole-text check writes, alone and with each block edited (serialize.ts readsTheSame)', () => {
+    const blocks = (markdownToDoc(markdown).content ?? []).flatMap((node) => blockToMdast(node) ?? [])
+    const trees: Root[] = [{ type: 'root', children: blocks }, ...blocks.map((_block, at) => ({
+      type: 'root' as const,
+      children: blocks.map((block, index) => (index === at ? withText(block, ' [x] *y* a_b') : block)),
+    }))]
+    for (const tree of trees) expect(serialize(tree, null, false)).toBe(serialize(tree, null, true))
+  })
 })
+
+/** The block with `text` added to its first text (an edit the unescape has work on). */
+function withText(block: RootContent, text: string): RootContent {
+  const copy = structuredClone(block)
+  const visit = (node: Nodes): boolean => {
+    if (node.type === 'text') {
+      node.value += text
+      return true
+    }
+    return 'children' in node && node.children.some((child: Nodes) => visit(child))
+  }
+  visit(copy)
+  return copy
+}

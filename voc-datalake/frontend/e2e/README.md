@@ -154,6 +154,11 @@ format bar's Bold), Save as one PUT with the loaded `expected_revision` ("Saved 
 Copy, Turn off link), History (Restore v1 → v3 on the canvas), the outline, the read-only canvas of `proj_2`, a
 keyboard-only save (Tab, Ctrl+S) and widths 360 / 390 / 768 / 1024 / 1440 with no sideways scroll.
 
+`document-canvas-perf.spec.ts` (the canvas on long documents) runs ONLY there too: it creates a 60,000- and a 200,000-character document in
+`proj_1` (`e2e-<run id>-canvas perf …`), types three bursts with pauses into a paragraph with a citation, and reads the
+browser's Event Timing and Long Tasks: no keystroke and no main-thread task over 200 ms (the numbers go to
+`$E2E_OUT/canvas-perf-<size>.json`).
+
 ## QA track s1 (`E2E_TRACK=s1` only)
 
 `tests/s1-a-data.spec.ts` and `tests/s1-b-assistant.spec.ts` skip unless `E2E_TRACK=s1`, because they write feedback that cannot be deleted:

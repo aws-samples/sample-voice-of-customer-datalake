@@ -10,7 +10,11 @@
   ],
   "vendor-editor": [
     "@tiptap/core", "@tiptap/pm", "@tiptap/react", "@tiptap/starter-kit", "@tiptap/extension-code",
-    "@tiptap/extension-drag-handle", "@tiptap/extension-drag-handle-react", "@tiptap/extension-image",
-    "@tiptap/extension-list", "@tiptap/extension-node-range", "@tiptap/extension-table", "@tiptap/extensions"
+    "@tiptap/extension-image", "@tiptap/extension-list", "@tiptap/extension-table", "@tiptap/extensions"
+  ],
+  "vendor-editor-menus": [
+    "@tiptap/react/dist/menus", "@tiptap/extension-bubble-menu", "@tiptap/extension-floating-menu",
+    "@tiptap/extension-drag-handle", "@tiptap/extension-drag-handle-react", "@tiptap/extension-node-range",
+    "@floating-ui/dom", "@floating-ui/core", "@floating-ui/utils"
   ]
 }
