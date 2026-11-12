@@ -17,6 +17,22 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.14.00] - 2026-11-12
+
+Autonomous engineering agents, phase 3: the agents' memory, slice 1, scoped per repository, per role and per person, every learned memory a draft until it is approved, recalled for a task as fenced data. Nothing invokes it yet.
+
+### Added
+
+- Agent memory, slice 1 (`voc-datalake/lambda/engineering/agent_memory/`, docs/autonomous-engineering.md "Agent memory", docs/memory.md): the agents' part of the memory layer, kept in `voc-engineering` (`WS#<ws>#AMEM#REPO#<connection>`, `…#ROLE#<connection>#<role>`, `…#PERSON#<user>`) rather than `voc-memory`, whose company memories reach every shared generator and have no connection in their keys. Three scopes: a repository's, a role's within a connection (one connection's lessons never reach another's agents) and a person's, kept only for a signed-in user of this deployment. Each memory is a bounded statement (400 characters; credentials and personal data redacted, the layer's hygiene applied, a cited review's sentence refused: feedback ids only), with its provenance (a run, a review comment on the connection's own host, or a person), a confidence and a review date. A learned memory needs 0.8 confidence and stays a draft until an administrator (repository, role) or the person (their own) approves it; every edit is a new create-only version with its author (D1, D4), checked against the memory's revision; forget archives and restore brings it back, and nothing is deleted. An agent acts through a run context built from its run's record (its connection, run, role and the people on its task): it learns and confirms only within its run's connection, its own role's lessons and the people on its task, with its own run as the provenance; a person confirms only as themselves. Each source counts once, up to 20, and an approved repository or role memory confirmed three times is returned as a knowledge-pack proposal, never written to the pack. Every learn, write and edit must pass the reviews the run cited (`review_texts` is required). Recall for a task reads the run's connection's, its role's and its people's approved memories, keeps whole memories within a count and character limit, flags stale and conflicting ones (a conflict names the first five others and counts the rest, found in O(n log n)), and fences them in one DATA block. Reads stay bounded: a scope holds at most 200 live and 500 stored memories per connection (a person's per person and connection) and a memory at most 21 confirmation rows. An administrator erases a person's memories for a legal obligation (D5): a tombstone and an `AUDIT#delete` row (who, what, when, the legal basis) first, then their id de-identified wherever other scopes name it, then their partition deleted, and they are refused in every scope afterwards; nothing calls it yet (no path erases a signed-in user's data today; its caller will need its own grants and the `AUDIT#` row guard extended to `voc-engineering`). Nothing invokes it yet: the learning loop, the harness and the routes land with phases 4 and 5.
+
+### Changed
+
+- Shared write helpers (`create_only`, `transact_or_refuse`) move into `voc-datalake/lambda/engineering/rows.py`, which the skills store now uses; it also gains `whole_partition` (an erasure's unbounded read), and `partition_rows` takes `max_items`. The knowledge notes' subject pattern is public (`SUBJECT`).
+
+### Upgrade notes
+
+- Nothing changes in a deployment.
+
 ## [6.13.00] - 2026-11-12
 
 Autonomous engineering agents: engineering flows in the workflow editor, the run monitor, push delivery per run with the board's inbox, the board's progress and repost, and the run coordinator on a versioned skill. Merged from the voc-autonomous-c and voc-autonomous-b branches. Off by default.

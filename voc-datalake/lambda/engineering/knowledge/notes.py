@@ -39,7 +39,8 @@ MAX_CITATIONS = 8
 MAX_LINE_BYTES = 8 * 1024
 MAX_NOTES = 200
 _PATH = re.compile(r'[A-Za-z0-9_./@+-]{1,300}\Z')
-_SUBJECT = re.compile(r'[a-z0-9][a-z0-9 ._-]{0,79}\Z')
+#: A subject: a few lower-case words (a note's here, an agent memory's in engineering/agent_memory/model.py).
+SUBJECT = re.compile(r'[a-z0-9][a-z0-9 ._-]{0,79}\Z')
 _GITHUB_COMMENT = re.compile(r'/pull/[1-9][0-9]{0,9}#(?:discussion_r|issuecomment-|pullrequestreview-)[1-9][0-9]{0,19}\Z')
 _GITLAB_NOTE = re.compile(r'/-/merge_requests/[1-9][0-9]{0,9}#note_[1-9][0-9]{0,19}\Z')
 _WEB_URL = re.compile(r'https://[a-z0-9.-]{1,253}(?::[0-9]{1,5})?/[A-Za-z0-9._/-]{1,300}\Z')
@@ -130,7 +131,7 @@ def safe_text(text: str, limit: int) -> str:
 
 def subject_of(value: Any) -> str:
     flat = ' '.join(str(value).casefold().split())[:MAX_SUBJECT] if isinstance(value, str) else ''
-    return flat if _SUBJECT.fullmatch(flat) and flat == safe_text(flat, MAX_SUBJECT) else ''
+    return flat if SUBJECT.fullmatch(flat) and flat == safe_text(flat, MAX_SUBJECT) else ''
 
 
 def _fields(raw: str) -> dict[str, Any] | None:

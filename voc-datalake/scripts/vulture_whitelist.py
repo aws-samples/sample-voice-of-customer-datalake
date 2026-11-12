@@ -10,6 +10,8 @@ leaves.
 """
 from __future__ import annotations
 
+from engineering.agent_memory.recall import Recall
+from engineering.agent_memory.store import AgentMemoryStore
 from engineering.board.api import repost_task
 from engineering.knowledge.store import PackStore, PackVersion
 from engineering.knowledge.understand import understand_package
@@ -48,3 +50,20 @@ SkillVersion.rejected_by
 SkillVersion.rejected_at
 Change.announcement
 VersionPage.next_after
+
+# The agents' memory store, written by the agents' learning (the learning loop, phase 5), read by the harness's
+# recall for a task (phase 4's agents) and approved, edited, forgotten and restored through the people's and the
+# administrators' routes (phase 5), and erased by the platform's erasure of a person (not wired yet); its tests drive
+# it until then. Recall.left_out: how many applicable memories the bounds left out, for the run journal.
+AgentMemoryStore.erase_person_memories
+AgentMemoryStore.learn_agent_memory
+AgentMemoryStore.write_agent_memory
+AgentMemoryStore.confirm_agent_memory
+AgentMemoryStore.approve_agent_memory
+AgentMemoryStore.edit_agent_memory
+AgentMemoryStore.forget_agent_memory
+AgentMemoryStore.restore_agent_memory
+AgentMemoryStore.agent_memory_history
+AgentMemoryStore.pending_agent_memories
+AgentMemoryStore.recall_for_task
+Recall.left_out
