@@ -58,7 +58,8 @@ MAX_LINE = 200
 #: The run's coordinate task (one per run, the coordinator's): its id and its role.
 COORDINATE_TASK = 'coordinate'
 COORDINATOR = 'coordinator'
-#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 1.
+#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 2, the run's
+#: start having taken 1 for its coordinator (``runs.COORDINATOR_AGENT``: ``agent_count`` 1 on META).
 MAX_AGENTS = 999
 
 

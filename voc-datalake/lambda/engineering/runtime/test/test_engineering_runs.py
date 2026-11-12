@@ -2,8 +2,10 @@
 import math
 from typing import Any
 
+import boto3
 import pytest
 
+from engineering.board.store import BoardStore
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.runs import RunCaps, RunExists, RunNotActive, RunStore, TableRunControl
 from engineering.runtime.test.conftest import RUN
@@ -139,3 +141,14 @@ def test_a_runs_start_posts_its_coordinators_task(aws: Any):
     assert (task['role'], task['state'], task['attempt']) == ('coordinator', 'open', 1)
     with pytest.raises(RunExists):  # a retried start writes nothing again
         runs.start(RUN, caps=RunCaps(max_tasks=5), now=1001)
+
+
+def test_the_coordinator_is_the_runs_first_agent_so_the_board_numbers_its_launches_from_two(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=1000, connection='conn-1', commit='a' * 40, language='python')
+    # The board's own client: a low-level one (a resource table's client would serialize its typed items again).
+    board = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), aws[1].name, new_id=lambda: 'task-1')
+    posted = board.post('default', RUN, role='fixer', title='Fix the parser', spec={'goal': 'fix it'},
+                        parent_task='', priority=1, actor='coordinator-1')
+    launched = board.launch('default', RUN, posted.task.task_id, role='fixer', actor='coordinator-1')
+    assert launched.task.launched_agent == 'fixer-2'

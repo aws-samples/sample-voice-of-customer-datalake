@@ -1,8 +1,11 @@
 """voc-engineering-runtime: a run's start and end, the supervisor's tick, the launcher, the run monitor's signals.
 
-- ``{"action": "start_run", "run_id", "max_tasks", "max_tokens"?, "max_cost_usd"?, "goal"?, "repo"?, "flow"?}``:
-  the run's ``META`` row (``runs.RunStore.start``), and the supervisor's rule switched on. A retry of a run that
-  is live switches the rule on again and keeps the first start's caps.
+- ``{"action": "start_run", "run_id", "max_tasks", "max_tokens"?, "max_cost_usd"?, "goal"?, "repo"?, "flow"?,
+  "connection"?, "commit"?, "language"?}``: the run's ``META`` row and its ``coordinate`` task
+  (``runs.RunStore.start``), the supervisor's rule switched on, and, for a run with its connection, commit and
+  language, its coordinator launched on that task (``coordinator-1``, on the coordinator's skill's harness). A
+  retry of a run that is live switches the rule on again, keeps the first start's caps and launches the
+  coordinator only if the run is active and no session of it exists yet.
 - ``{"action": "end_run", "run_id", "status"}``: the run ended (``done``, ``failed`` or ``stopped``), every
   MicroVM of it ended (one busy with another move at the next tick, which sees the run ended), then settled. A
   retry of an ended run does the rest again and keeps the first end's status.
@@ -37,6 +40,7 @@ from typing import Any, Final, TypeGuard
 
 from aws_lambda_powertools.metrics import MetricUnit
 
+from engineering.board.store import COORDINATE_TASK, COORDINATOR
 from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import CheckpointReader
@@ -44,8 +48,16 @@ from engineering.runtime.delivery import deliver
 from engineering.runtime.harness.skills import harness_argv, skill_for, skill_label
 from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused
 from engineering.runtime.launcher import Launcher
-from engineering.runtime.runs import ENDED, RunCaps, RunExists, RunNotActive, RunStore, TableRunControl
-from engineering.runtime.sessions import LIVE_STATUSES, AgentSession, SessionStore
+from engineering.runtime.runs import (
+    COORDINATOR_AGENT,
+    ENDED,
+    RunCaps,
+    RunExists,
+    RunNotActive,
+    RunStore,
+    TableRunControl,
+)
+from engineering.runtime.sessions import LIVE_STATUSES, AgentSession, SessionStore, StaleSession
 from engineering.runtime.supervisor import Supervisor
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
@@ -185,8 +197,21 @@ def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]
                           'skill_version': str(event.get('skill_version', ''))[:200]}
 
 
+def _launch_coordinator(run_id: str) -> None:
+    """Launch the run's coordinator on its ``coordinate`` task, at the task's attempt, once: never for a run
+    without its connection, commit and language, nor when a session of it exists (a retried start's)."""
+    run = _runs().get(run_id)
+    if run is None or run.status != 'active' or not (run.connection and run.commit and run.language):
+        return
+    if _supervisor().sessions.get(run_id, COORDINATOR_AGENT) is None:
+        with contextlib.suppress(StaleSession):   # a retried start racing this one: its launch is the run's
+            launch({'run_id': run_id, 'agent_id': COORDINATOR_AGENT, 'role': COORDINATOR,
+                    'task_id': COORDINATE_TASK, 'language': run.language, 'paths': [], 'commit': run.commit,
+                    'connection': run.connection})
+
+
 def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
-    """Start a run with its caps; the supervisor's rule is on from then."""
+    """Start a run with its caps and launch its coordinator; the supervisor's rule is on from then."""
     caps = RunCaps(max_tasks=_optional_number(event, 'max_tasks', int) or 0,
                    max_tokens=_optional_number(event, 'max_tokens', int),
                    max_cost_usd=_optional_number(event, 'max_cost_usd', float))
@@ -194,13 +219,15 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
     try:
         runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),
                    repo=str(event.get('repo', '')), flow=str(event.get('flow', '')),
-                   connection=str(event.get('connection', '')), commit=str(event.get('commit', '')))
+                   connection=str(event.get('connection', '')), commit=str(event.get('commit', '')),
+                   language=str(event.get('language', '')))
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:
             raise
         status = run.status  # a retry of a live run: its rule may never have been switched on
     _switch(True)
+    _launch_coordinator(run_id)
     return {'run_id': run_id, 'status': status}
 
 

@@ -16,7 +16,9 @@ attempt a new one; the runtime's refusals answer 409, a session already there fo
 never chooses the agent's argv: the runtime derives it from the role's skill, so a launch of a role with no skill yet
 is refused (409). The coordinator claims the run's ``coordinate`` task, which only the run's start writes
 (``BoardStore.coordinate_items``, in the start's transaction with META, which records the run's ``commit`` and
-``connection``; a run started without a connection answers 503 to ``knowledge``). Each change is published on the bus as the board (``task.*``), after the row is
+``connection``; a run started without its commit or connection answers 503 to ``launch``, one without its
+connection to ``knowledge``). The run's start launches the coordinator itself (``coordinator-1``, the runtime's
+``start_run``); this op launches the rest. Each change is published on the bus as the board (``task.*``), after the row is
 written: the row is the record, the event a notification. A failed publish answers 503 and the agent retries; every
 operation is idempotent, and the event's id comes from the change itself, so the retry publishes the same event again
 (a redelivery its receivers dedupe), including a retried post the board answered from its ``spec_hash`` dedupe. A

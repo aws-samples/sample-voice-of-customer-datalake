@@ -5,7 +5,9 @@ the run's ``max_tasks``), the inbox router numbers its conversation on it (``msg
 numbers its inbox on it (``inbox_seq``, ``delivery.py``), the reports read its
 goal, repository, flow, status and times, and the supervisor its caps and its start. The run's start writes it,
 once; its end sets its status and end time. Nothing else here ever writes over the board's, the router's or the
-inbox's counters: after the first write every change is an update of this module's own attributes.
+inbox's counters: after the first write every change is an update of this module's own attributes. The start
+takes the run's first agent number (``agent_count`` 1, the board's counter of ``<role>-<n>`` ids) for its
+coordinator, ``coordinator-1`` (``COORDINATOR_AGENT``), so the board numbers the agents it launches from 2.
 
 ``WS#<ws>#RUNS`` holds one row per run the supervisor still watches (``RUN#<run>``), written in the same
 transaction as the run's ``META`` (the table has no index, so this is how the supervisor lists them). A run's end
@@ -25,6 +27,7 @@ from botocore.exceptions import ClientError
 from engineering.board.store import BoardStore
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.checkout import COMMIT_RE
+from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
 from engineering.runtime.ports import Budget
 from shared.aws import consistent_item, is_conditional_check_failure
@@ -35,6 +38,8 @@ from shared.ids import is_key_collision
 ENDED: Final = frozenset({'done', 'failed', 'stopped'})
 MAX_TEXT: Final = 500
 MAX_TASKS_LIMIT: Final = 10_000
+#: The run coordinator's agent id: the run's first agent (``agent_count`` 1 at its start).
+COORDINATOR_AGENT: Final = 'coordinator-1'
 
 
 def run_pk(run_id: str) -> str:
@@ -77,6 +82,8 @@ class Run:
     #: The run's repository connection and its base commit (the board launches the run's agents on them).
     connection: str = ''
     commit: str = ''
+    #: The repository's toolchain (an ``egress.REGISTRY_HOSTS`` language): the coordinator's MicroVM image.
+    language: str = ''
 
 
 class RunExists(RuntimeRefused):
@@ -100,19 +107,23 @@ class RunStore:
         self._table = table
 
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
-              connection: str = '', commit: str = '') -> None:
+              connection: str = '', commit: str = '', language: str = '') -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
-        run's agents on: read from here, never from the agent asking."""
+        run's agents on: read from here, never from the agent asking; ``language``, the repository's toolchain,
+        is the image its coordinator runs in."""
         if connection:
             check_id('connection', connection)
         if commit and not COMMIT_RE.match(commit):
             raise RuntimeRefused('a commit is a full hexadecimal object id')
+        if language and language not in REGISTRY_HOSTS:
+            raise RuntimeRefused(f'no toolchain image for language {language!r}')
         name = self._table.name
         meta: dict[str, Any] = {**meta_key(run_id), 'run_id': run_id, 'status': 'active', 'started_at': _iso(now),
                                 'started_epoch': now, 'max_tasks': caps.max_tasks, 'goal': _text(goal),
-                                'repo': _text(repo), 'flow': _text(flow), 'connection': connection, 'commit': commit}
+                                'repo': _text(repo), 'flow': _text(flow), 'connection': connection, 'commit': commit,
+                                'language': language, 'agent_count': 1}
         if caps.max_tokens is not None:
             meta['max_tokens'] = caps.max_tokens
         if caps.max_cost_usd is not None:
@@ -174,7 +185,8 @@ class RunStore:
                        max_tokens=int(item['max_tokens']) if item.get('max_tokens') is not None else None,
                        max_cost_usd=float(cost) if cost is not None else None)
         return Run(run_id=run_id, status=str(item['status']), started_at=int(item['started_epoch']), caps=caps,
-                   connection=str(item.get('connection', '')), commit=str(item.get('commit', '')))
+                   connection=str(item.get('connection', '')), commit=str(item.get('commit', '')),
+                   language=str(item.get('language', '')))
 
     def listed(self) -> list[str]:
         """The runs the supervisor watches (live, or ended with a live agent), oldest first (a ULID sorts by time)."""

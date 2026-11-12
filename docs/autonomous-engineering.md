@@ -339,7 +339,7 @@ What exists:
   its lease cleared, published again as `task.posted` to its role, its reason in the history row. The run's
   `coordinate` task (role `coordinator`) is written only by the run's start (`coordinate_items`, in the start's
   transaction with META, which records the run's `commit` and `connection` that `launch` and `knowledge` read; a run
-  started without its commit or connection answers 503 to `launch` and `knowledge`),
+  started without its commit or connection answers 503 to `launch`, one without its connection to `knowledge`),
   never posted, and claimed only by the run's coordinator, which renews and reports progress on it like
   any agent. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
@@ -385,8 +385,8 @@ What exists:
 
 Not built yet: the rest of the harness's side (its broker interface still refuses every call:
 [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); the skills of the roles other than the coordinator
-(the board's launch of such a role is refused, 409); the run coordinator's own launch (the run's start,
-or whoever starts it, is to launch it on its `coordinate` task, and again after a re-post); a person's board actions
+(the board's launch of such a role is refused, 409); the run coordinator's launch again after a re-post of its
+`coordinate` task (the run's start launches it once: [Runtime](#runtime-one-microvm-per-agent)); a person's board actions
 (POST),
 planned as the run monitor's board controls; the agents' findings in the workspace (the runtime writes their
 checkpoints and patches there). The rest of this section is the
@@ -787,8 +787,13 @@ continues it in a new one once the wait closes.
 - **The run's start and end.** The runtime's `start_run` writes the run's `META` row in voc-engineering
   (`WS#<ws>#RUN#<run>` / `META`: its task cap, which the board counts its tasks against, its hard caps on tokens and
   cost, its goal, repository, flow, status and start time, its connection and base commit, which the board's
-  launch starts the run's agents on, never taken from an agent, on which the router numbers the conversation) once, and
-  lists it for the supervisor (`WS#<ws>#RUNS`, a row per run, in the same transaction); `end_run` sets its status
+  launch starts the run's agents on, never taken from an agent, its language (the repository's toolchain image),
+  on which the router numbers the conversation) once, with its `coordinate` task, and
+  lists it for the supervisor (`WS#<ws>#RUNS`, a row per run, in the same transaction). It then launches the run's
+  coordinator on that task, for a run started with its connection, commit and language: `coordinator-1`, the run's
+  first agent (META's `agent_count` starts at 1, so the board numbers the agents it launches from 2), on the
+  coordinator's skill's harness; a retried start of an active run launches it only if no session of it exists yet, so a start whose
+  launch failed launches it on its retry; `end_run` sets its status
   (`done`, `failed` or `stopped`) and end time, ends every MicroVM of it, and the run stops being listed once none
   of its agents is live (one busy with another move is ended by the next tick, which sees the run ended). A retried
   start or end does what the first one left undone. After that first write only the run's own attributes are ever

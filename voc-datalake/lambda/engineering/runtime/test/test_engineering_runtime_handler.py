@@ -7,12 +7,14 @@ from typing import Any
 import boto3
 import pytest
 
+from engineering.board.store import COORDINATE_TASK
 from engineering.bus.test.messages import message
 from engineering.runtime import handler
 from engineering.runtime.aws import AwsMicroVmRuntime
 from engineering.runtime.board_bus import SupervisorBus
+from engineering.runtime.harness.skills import COORDINATOR, harness_argv
 from engineering.runtime.interface import AgentSpec, MicroVm, RuntimeRefused
-from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore
+from engineering.runtime.runs import COORDINATOR_AGENT, Run, RunCaps, RunNotActive, RunStore, meta_key
 from engineering.runtime.sessions import StaleSession
 from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE, WORKSPACE_BUCKET
 from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
@@ -233,6 +235,93 @@ def test_a_retried_start_or_end_finishes_what_the_first_one_left(wired: Any):
     assert handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'done'}, None) == {
         'run_id': RUN, 'status': 'failed', 'agents': {}}
     assert (_runs().listed(), _state(wired)) == ([], 'DISABLED')
+
+
+COORDINATED = {'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'goal': 'fix the parser',
+               'connection': 'conn-1', 'commit': COMMIT, 'language': 'python'}
+
+
+def test_a_runs_start_launches_its_coordinator_on_its_coordinate_task(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _runtime, started = _recording(monkeypatch)
+    assert handler.lambda_handler(COORDINATED, None) == {'run_id': OTHER_RUN, 'status': 'active'}
+    session = handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT)
+    assert session is not None
+    assert (session.role, session.task_id, session.task_attempt, session.paths, session.connection, session.commit,
+            session.language, session.harness) == ('coordinator', COORDINATE_TASK, 1, (), 'conn-1', COMMIT, 'python',
+                                                    harness_argv(COORDINATOR))
+    assert [vm.agent_id for vm in started] == [COORDINATOR_AGENT]
+    # The coordinator is the run's first agent: the board numbers the agents it launches from 2.
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    meta = table.get_item(Key=meta_key(OTHER_RUN)).get('Item')
+    assert meta is not None
+    assert (meta['agent_count'], meta['language']) == (1, 'python')
+
+
+def test_a_retried_start_keeps_the_coordinator_it_launched(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    handler.lambda_handler(COORDINATED, None)
+    _runtime, started = _recording(monkeypatch)
+    handler.lambda_handler(COORDINATED, None)
+    assert started == []   # no second MicroVM, not even one ended again
+
+
+def test_two_starts_racing_launch_one_coordinator(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    handler.lambda_handler(COORDINATED, None)
+    first = handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT)
+    runtime, started = _recording(monkeypatch)
+    with monkeypatch.context() as patch:
+        # The second start read no session before the first one's write.
+        patch.setattr(handler._supervisor().sessions, 'get', lambda *_args: None)
+        handler.lambda_handler(COORDINATED, None)
+    with pytest.raises(RuntimeRefused, match='terminated'):
+        runtime.mint_token(started[0])   # its MicroVM ended; the first start's session is the run's
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) == first
+
+
+def _start_whose_launch_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A start that wrote the run, then failed to launch its coordinator (the MicroVM service was down)."""
+    runtime = handler._supervisor().runtime
+
+    def down(_spec: AgentSpec) -> MicroVm:
+        raise RuntimeRefused('the MicroVM service is unavailable')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(runtime, 'run', down)
+        with pytest.raises(RuntimeRefused, match='unavailable'):
+            handler.lambda_handler(COORDINATED, None)
+
+
+def test_a_start_whose_coordinator_failed_to_launch_launches_it_on_its_retry(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _start_whose_launch_fails(monkeypatch)
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) is None
+    handler.lambda_handler(COORDINATED, None)
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) is not None
+
+
+def test_a_retried_start_of_a_run_at_its_decision_point_launches_nothing(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    _start_whose_launch_fails(monkeypatch)
+    _runs().needs_human(OTHER_RUN, 'budget')
+    _runtime, started = _recording(monkeypatch)
+    assert handler.lambda_handler(COORDINATED, None) == {'run_id': OTHER_RUN, 'status': 'needs_human'}
+    assert (started, _state(wired)) == ([], 'ENABLED')
+
+
+@pytest.mark.parametrize('missing', ['connection', 'commit', 'language'])
+def test_a_run_without_its_connection_commit_or_language_starts_without_a_coordinator(wired: Any, missing: str):
+    assert wired is not None
+    handler.lambda_handler({**COORDINATED, missing: ''}, None)
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) is None
+
+
+def test_a_start_with_a_language_that_has_no_image_is_refused_before_anything_is_written(wired: Any):
+    assert wired is not None
+    with pytest.raises(RuntimeRefused, match='cobol'):
+        handler.lambda_handler({**COORDINATED, 'language': 'cobol'}, None)
+    assert _runs().get(OTHER_RUN) is None
 
 
 def test_resuming_a_run_at_its_decision_point_lets_it_launch_again(wired: Any):
