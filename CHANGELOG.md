@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.07.00] - 2026-11-12
+
+Autonomous engineering agents: the language gate packs and the quality gate step, the agents' event bus with its inbox router and the run's conversation, and the run's task board. Merged from the voc-autonomous-c branch and wired on this branch's infrastructure. Off by default.
+
+### Added
+
+- The language gate packs (`voc-datalake/engineering-gates/`: rust-ts, python-ts, java manifests with detection rules, ordered commands, timeouts and failure rules; a passing and a failing fictional fixture per language) and the quality gate step (`voc-datalake/lambda/engineering/quality_gate/`, a CLI the gate runner's MicroVM runs): the detected packs, the repository's own gate after the dependency steps, review rounds by reviewer agents with the knowledge pack's review guide, a final go, NO-GO as a human decision point, and the gate record (summaries, never raw tool output). The review and final-go models default to the agent worker and reviewer surfaces of `shared/model_config.py`.
+- The engineering bus (`lambda/engineering/bus/`): the voc-msg/1 envelope checked in code (claim-check refs, no credential-shaped summary, 16 KB at most), the sender allowlist (the event's source names the sender; the bus policy lets only the board API's role put events for now, and the per-publisher pins of each agent role to its own source come with the agent roles; task events only from the board, gate verdicts only from the run's final-go agent, run health only from the supervisor, a person only answering), the routing, and the inbox router Lambda, which journals a refused message with its reason and never its content.
+- The run's conversation (`lambda/engineering/conversation/store.py`): one append-only row per message with its actor and time, a per-run sequence and an event-id marker, so a redelivery is harmless (D1, D4).
+- The run's task board (`lambda/engineering/board/`): post (one transaction under the run's task cap, deduped, depth capped), claim with a lease whose epoch is the attempt, renew and move only by the holder before the lease runs out, bounded result keys under the agent's own prefix; the board API, a function URL with IAM authentication that takes the caller from its assumed-role identity and publishes each change as a task event. A task's row holds its current state; the per-change history rows (TASKLOG) come with the next merge.
+- CDK, only with `-c engineeringAgents=true` (`voc-datalake/lib/stacks/engineering-bus.ts`): the `voc-engineering` table in VocCoreStack (on demand, the stack's KMS key, point-in-time recovery, kept on stack deletion like voc-agents), the custom bus with a policy that denies `events:PutEvents` to every principal but the board API's role, one rule to the inbox router, one SQS queue per agent role and one dead-letter queue, `voc-engineering-dlq` (the stack's key, TLS only), which takes the role queues' redrives, the events the rule could not deliver and the router's invocations that failed every retry, and which alerting watches like the other failure queues (an alarm only once an administrator turns alerting on, so no fixed cost); the Core key admits EventBridge for that one queue. The board API's function URL has IAM authentication. Grants of exactly the item reads and writes, publishes and sends the code makes, and on the stack's key only `kms:Decrypt` and `kms:GenerateDataKey` through DynamoDB (and SQS for the router).
+
+### Changed
+
+- `lambda/shared/aws.py` gains `get_dynamodb_client` (a plain low-level client), which the inbox router and the board use.
+- The broker's GitHub client logs a failed close of a pull request it opened (a host refusal, a malformed answer, a lost connection) and still raises the refusal that made the close necessary.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`. With it, VocCoreStack gains the `voc-engineering` table (kept on stack deletion unless `-c protectData=false`).
+- Turning `engineeringAgents` off after it was on: VocProcessingStack imports the table from VocCoreStack, so deploy VocProcessingStack first (`npx cdk deploy VocProcessingStack --exclusively -c engineeringAgents=false`; `<prefix>-VocProcessingStack` on a prefixed deployment), then the rest; deploying VocCoreStack first fails with "Export ... cannot be deleted as it is in use".
+
 ## [6.06.00] - 2026-11-12
 
 The connector broker gets its GitHub client: App tokens scoped to one repository and one operation, paged reads, a leased push and draft pull requests. Still off by default, and every permitted operation answers 503 until the run records and the board land.

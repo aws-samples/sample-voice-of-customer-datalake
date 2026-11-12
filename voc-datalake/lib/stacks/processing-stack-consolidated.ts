@@ -23,6 +23,7 @@ import { AGGREGATOR_FUNCTION_BASE_NAME, AGGREGATOR_STREAM_FAILURES_BASE_NAME, FE
 import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { ENGINEERING_ROLE_NAME_TEMPLATE, EngineeringBroker, engineeringAgentsEnabled } from './engineering-broker';
+import { EngineeringBus } from './engineering-bus';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
@@ -57,6 +58,8 @@ export interface VocProcessingStackProps extends VocStackProps {
   memoryTable: dynamodb.Table;
   /** voc-agents — agents, workflows, runs, run events, crewmate transcripts. */
   agentsTable: dynamodb.Table;
+  /** voc-engineering — the engineering bus's board and conversations; VocCoreStack makes it only with -c engineeringAgents=true. */
+  engineeringTable?: dynamodb.ITable;
   /** voc-radar — the processor routes Radar sources' reviews here; the release scan writes here (docs/radar.md). */
   radarTable: dynamodb.Table;
   /** voc-feature-requests: research reads board requests as a separate evidence source (Query only); the
@@ -108,7 +111,8 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Retention / erasure worker, voc-retention (daily + POST /settings/erasure; retention-worker.ts)
  * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
  * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
- * - Only with -c engineeringAgents=true: the engineering agents' connector broker (engineering-broker.ts)
+ * - Only with -c engineeringAgents=true: the engineering agents' connector broker (engineering-broker.ts), and their
+ *   bus, inbox router, role queues and board API (engineering-bus.ts)
  */
 export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;
@@ -351,9 +355,13 @@ export class VocProcessingStack extends VocStack {
     });
     // The engineering agents' connector broker (docs/autonomous-engineering.md): only with -c engineeringAgents=true.
     if (engineeringAgentsEnabled(this)) {
+      const roleNamePattern = this.uniqueNamePattern(ENGINEERING_ROLE_NAME_TEMPLATE);
       new EngineeringBroker(this, 'EngineeringBroker', {
-        uniqueName, layer: processingLayer, roleNamePattern: this.uniqueNamePattern(ENGINEERING_ROLE_NAME_TEMPLATE),
-        kmsKey, deploymentPrefix: this.deploymentPrefix,
+        uniqueName, layer: processingLayer, roleNamePattern, kmsKey, deploymentPrefix: this.deploymentPrefix,
+      });
+      if (!props.engineeringTable) throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table');
+      new EngineeringBus(this, 'EngineeringBus', {
+        uniqueName, layer: processingLayer, roleNamePattern, kmsKey, engineeringTable: props.engineeringTable,
       });
     }
 

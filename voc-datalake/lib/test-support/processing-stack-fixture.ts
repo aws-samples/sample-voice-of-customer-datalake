@@ -51,6 +51,7 @@ export function synthProcessingTemplate(
     radarTable: makeTable('Radar'),
     featureRequestsTable: makeTable('FeatureRequests'),
     conversationsTable: makeTable('Conversations'),
+    engineeringTable: makeTable('Engineering'),
   };
   const stack = new VocProcessingStack(app, 'TestProcessing', {
     env,

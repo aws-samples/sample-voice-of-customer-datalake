@@ -243,6 +243,7 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
   idempotencyTable: coreStack.idempotencyTable,
   memoryTable: coreStack.memoryTable,
   agentsTable: coreStack.agentsTable,
+  engineeringTable: coreStack.engineeringTable,
   radarTable: coreStack.radarTable,
   featureRequestsTable: coreStack.featureRequestsTable,
   conversationsTable: coreStack.conversationsTable,

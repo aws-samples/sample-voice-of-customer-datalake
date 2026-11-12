@@ -1,0 +1,157 @@
+# Python + TypeScript gate pack, for a TARGET repository: the gate checks a change with the repository's own
+# configuration and pins; it never adds rules the team did not choose. Steps run in kind order, per root; a failing setup step stops the rest. Setup steps are
+# the dependency step: they fetch only what the requirement files name, run no build or install script (wheels
+# only), and every later step runs offline.
+# {python} is the sandbox's interpreter (the image's python3), never the gate's own.
+schema = "voc-gate-pack/1"
+id = "python-ts"
+name = "Python + TypeScript"
+network = ["pypi.org", "files.pythonhosted.org", "registry.npmjs.org"]
+
+[image]
+python = "3.12"
+node = "24"
+
+[languages.python]
+markers = ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"]
+extensions = [".py"]
+workspace = [{ file = "pyproject.toml", contains = "[tool.uv.workspace]" }]
+
+[languages.ts]
+markers = ["package.json"]
+extensions = [".ts", ".tsx", ".mts", ".cts"]
+workspace = [{ file = "package.json", contains = "\"workspaces\"" }, { file = "pnpm-workspace.yaml" }]
+
+[tools.python]
+version_argv = ["{python}", "--version"]
+
+[tools.node]
+version_argv = ["node", "--version"]
+
+[tools.npm]
+version_argv = ["npm", "--version"]
+
+# ---- Python ----
+[[steps]]
+id = "py.install"
+language = "python"
+name = "install dependencies"
+kind = "setup"
+argv = []
+timeout_s = 1200
+# Wheels only (no setup.py runs), from PyPI, with pip's own configuration ignored; `-I` so a pip.py the
+# repository holds is never the pip that runs.
+[[steps.prefer]]
+when = [{ file = "requirements-dev.txt" }]
+argv = ["{python}", "-I", "-m", "pip", "install", "--isolated", "--quiet", "--only-binary=:all:",
+        "--index-url", "https://pypi.org/simple", "-r", "requirements-dev.txt"]
+[[steps.prefer]]
+when = [{ file = "requirements.txt" }]
+argv = ["{python}", "-I", "-m", "pip", "install", "--isolated", "--quiet", "--only-binary=:all:",
+        "--index-url", "https://pypi.org/simple", "-r", "requirements.txt"]
+
+[[steps]]
+id = "py.ruff"
+language = "python"
+name = "ruff check"
+kind = "lint"
+when_any = [{ file = "ruff.toml" }, { file = ".ruff.toml" }, { file = "pyproject.toml", contains = "[tool.ruff" }]
+argv = ["{python}", "-m", "ruff", "check", "."]
+timeout_s = 600
+
+[[steps]]
+id = "py.format"
+language = "python"
+name = "ruff format"
+kind = "format"
+when_any = [{ file = "ruff.toml", contains = "[format]" }, { file = "pyproject.toml", contains = "[tool.ruff.format]" }]
+argv = ["{python}", "-m", "ruff", "format", "--check", "."]
+timeout_s = 600
+
+[[steps]]
+id = "py.pyright"
+language = "python"
+name = "pyright"
+kind = "types"
+when_any = [{ file = "pyrightconfig.json" }, { file = "pyproject.toml", contains = "[tool.pyright]" }]
+argv = ["{python}", "-m", "pyright"]
+timeout_s = 1200
+
+[[steps]]
+id = "py.mypy"
+language = "python"
+name = "mypy"
+kind = "types"
+when_any = [
+  { file = "mypy.ini" }, { file = ".mypy.ini" }, { file = "pyproject.toml", contains = "[tool.mypy]" },
+  { file = "setup.cfg", contains = "[mypy" },
+]
+argv = ["{python}", "-m", "mypy", "."]
+timeout_s = 1200
+
+[[steps]]
+id = "py.test"
+language = "python"
+name = "pytest"
+kind = "test"
+when_any = [{ glob = "test_*.py" }, { glob = "*/test_*.py" }, { glob = "*_test.py" }]
+argv = ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+timeout_s = 3600
+# pytest exits 5 when it collected no test: the gate looked at nothing.
+empty_exit_codes = [5]
+
+# ---- TypeScript (the same steps as rust-ts: one run per root when both packs apply) ----
+[[steps]]
+id = "ts.install"
+language = "ts"
+name = "install dependencies"
+kind = "setup"
+argv = []
+timeout_s = 1200
+# The lock file's packages from the public registry (the repository's registry settings overridden), no scripts.
+[[steps.prefer]]
+when = [{ file = "package-lock.json" }]
+argv = ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--registry=https://registry.npmjs.org/"]
+[[steps.prefer]]
+when = [{ file = "pnpm-lock.yaml" }]
+argv = ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile",
+        "--registry=https://registry.npmjs.org/"]
+
+[[steps]]
+id = "ts.typecheck"
+language = "ts"
+name = "tsc"
+kind = "types"
+when_any = [{ file = "tsconfig.json" }, { file = "package.json", npm_script = "typecheck" }]
+argv = ["npx", "--no-install", "tsc", "--noEmit", "-p", "tsconfig.json"]
+timeout_s = 1200
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "typecheck" }]
+argv = ["npm", "run", "--silent", "typecheck"]
+
+[[steps]]
+id = "ts.lint"
+language = "ts"
+name = "eslint"
+kind = "lint"
+when_any = [
+  { file = "eslint.config.js" }, { file = "eslint.config.mjs" }, { file = "eslint.config.cjs" },
+  { file = "eslint.config.ts" }, { file = ".eslintrc.json" }, { file = ".eslintrc.js" }, { file = ".eslintrc.cjs" },
+  { file = "package.json", npm_script = "lint" },
+]
+argv = ["npx", "--no-install", "eslint", ".", "--max-warnings", "0"]
+timeout_s = 1200
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "lint" }]
+argv = ["npm", "run", "--silent", "lint"]
+
+[[steps]]
+id = "ts.test"
+language = "ts"
+name = "npm test"
+kind = "test"
+argv = []
+timeout_s = 3600
+[[steps.prefer]]
+when = [{ file = "package.json", npm_script = "test" }]
+argv = ["npm", "test", "--silent"]

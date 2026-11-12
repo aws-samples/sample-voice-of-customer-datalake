@@ -406,6 +406,9 @@ export const OPTIONAL_FUNCTION_SIZES: Readonly<Record<string, number>> = {
   'voc-email-intake': 1024,
   // `-c engineeringAgents=true` (docs/autonomous-engineering.md): the connector broker, not measured yet.
   'voc-engineering-broker': 256,
+  // The engineering bus (lib/stacks/engineering-bus.ts): the inbox router and the board API, not measured yet.
+  'voc-engineering-router': 256,
+  'voc-engineering-board': 256,
 };
 
 /** The size this checkout deploys, per function, under any context (capacity-report `--repo-sizes`). */

@@ -477,6 +477,23 @@ def test_a_close_that_fails_is_logged_by_number_and_the_refusal_still_raised(
     assert 'Secret' not in repr([vars(r) for r in caplog.records])
 
 
+def test_any_failure_of_the_close_still_raises_the_original_refusal(caplog: pytest.LogCaptureFixture,
+                                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+    host = client(draftable(FakeGitHub(), open_prs=[], pr_tree='e' * 40))
+    real_api = host._api
+
+    def api(connection_id: str, permissions: Mapping[str, str], method: str, path: str, what: str,
+            **kwargs: Any) -> Response:
+        if what == 'the pull request close':
+            raise ValueError('a malformed answer')
+        return real_api(connection_id, permissions, method, path, what, **kwargs)
+    monkeypatch.setattr(host, '_api', api)
+    with pytest.raises(Conflict):
+        host.open_or_update_draft_pr('c', BRANCH, 'main', 'Fix', 'Body', TREE)
+    assert [vars(r)['pull_request'] for r in caplog.records
+            if r.getMessage() == 'engineering pull request not closed'] == [8]
+
+
 def test_an_updated_pull_request_whose_branch_moved_is_refused_but_left_open() -> None:
     api = draftable(FakeGitHub(), open_prs=[{'number': 7, 'html_url': 'https://h/pull/7'}], pr_tree='e' * 40)
     with pytest.raises(Conflict):

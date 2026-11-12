@@ -234,8 +234,47 @@ Each agent is a pre-made, configurable template: its **skill** (instructions, ex
 
 ## How the agents work together
 
-*Planned* (the bus, the board, the conversation and the workspace in voc-datalake/lambda/engineering, CDK behind
-`-c engineeringAgents=true`).
+*Partly built*: the bus, the inbox router, the conversation and the board (`voc-datalake/lambda/engineering/bus/`,
+`conversation/`, `board/`), deployed only with `-c engineeringAgents=true` (`voc-datalake/lib/stacks/engineering-bus.ts`).
+What exists:
+
+- **The bus**: the `voc-engineering` EventBridge custom bus (no archive; its policy denies `events:PutEvents` to every
+  principal but the board API's role), and its schema, voc-msg/1, checked in code
+  (`bus/schema.py`: the envelope, the type list, the claim-check rules on `refs`, no credential-shaped summary, 16 KB
+  at most). `bus/publish.py` is the one publish helper: it checks a message against the schema before `PutEvents`,
+  and a message about a recorded change takes its event id from the change, so a retry is a redelivery.
+- **The inbox router** (`bus/router.py`, the `voc-engineering-router` Lambda): one fixed rule sends every event of
+  the account on the bus to it. It checks the schema and the sender (`bus/senders.py`: the event's `source` names the
+  sender, and only the allowed sources may send each type, for their own run only), writes the message to the run's
+  conversation, then fans it out (`bus/routing.py`): a posted task to its role's queue, a message for an agent or the
+  conductor to the delivery function. It drops, and journals with the reason and never the content, a malformed
+  message, a sender that may not send it, a run that does not exist and an event id reused for other content.
+- **The conversation** (`conversation/store.py`): one row per message in the `voc-engineering` DynamoDB table
+  (on demand, encrypted with the stack's key, point-in-time recovery, kept like `voc-agents`), never changed, the
+  whole message kept (its sender the actor, its `at` the time). The sequence comes from a counter on the run's `META`
+  row, and an event's marker is written with its row in one transaction, so a redelivered event changes nothing.
+- **The board** (`board/store.py`, `board/api.py`, the `voc-engineering-board` Lambda behind a function URL with IAM
+  authentication and no resource-based policy): `post`, `claim`, `renew` (the heartbeat) and `move`, each a
+  conditional write on the same table. The caller's role, run and agent come from its assumed-role identity, as for
+  the broker. A post counts the task against the run's cap, dedupes an equal task, and nests at most 3 deep. Who may
+  post for whom: the coordinator for every role, the hunter for fixers, the builder for builders. A claim leases an
+  open task of the caller's role for 5 minutes. Renew and move need the lease and its epoch. Each change is published
+  on the bus as the board's `task.*` event after the row is written. A failed publish answers 503, and the retry
+  publishes the same event again.
+- **The role queues**: one SQS queue per task-pulling role (`bus/schema.py` ROLES), encrypted with the stack's key,
+  redriving to `voc-engineering-dlq`. That one dead-letter queue also takes the events the rule could not hand the
+  router and the router's invocations that failed every retry, and alerting watches it like the platform's other
+  failure queues. The role queues are fixed per role, not made per run as described below: a run's own
+  queues and agents' inboxes come with the runtime.
+
+Not built yet: the run's start, which writes the `META` row (so today the board answers 404 to every post and the
+router drops every message as for an unknown run); the agents' roles (no identity matches the agent role names, and
+none holds `lambda:InvokeFunctionUrl` on the board or `events:PutEvents` on the bus, which the board API alone holds);
+the bus policy's per-publisher pins of each agent role to its own `source` (today it admits the board's role alone,
+which publishes only as `voc.engineering/board`); the delivery function the router names (it holds no
+invoke on it yet); per-run queues and inboxes; the run coordinator; the workspace. The rest of this section is the
+design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
+holds, and the design's type table and per-run inboxes are what the next slices bring the code to or the table to.
 
 **The bus.** One EventBridge custom bus carries every message between agents, as events of one schema. The schema
 lives in this repository; the one publish helper and the inbox router check every event against it (EventBridge
@@ -384,7 +423,33 @@ for it. A pull request from a fork is only ever reviewed (comments), never fixed
 
 ## The quality gate
 
-*Planned* (the step in voc-datalake/lambda/engineering/quality_gate, the packs in voc-datalake/engineering-gates).
+*Partly built*: the packs and the step, run as a CLI (`python -m engineering.quality_gate plan|check|gate`) that the
+gate runner's MicroVM is to run; nothing deploys it yet (the runtime and the workflow editor's Quality gate step are
+phase 2 and 4). What exists:
+
+- **The packs** (`voc-datalake/engineering-gates/`, [README](../voc-datalake/engineering-gates/README.md)):
+  `rust-ts`, `python-ts` and `java`, each a `manifest.toml` (schema voc-gate-pack/1: the languages' markers and
+  extensions, the tools and their versions, the registries the dependency step may reach, the ordered steps), with
+  fixtures. Detection reads a listing of the repository and finds every root of a monorepo. A step runs only where
+  the repository uses its tool. A repository with `scripts/validate.sh` runs that instead of the pack's checks, after
+  the dependency steps. Only the dependency (`setup`) steps get the network; every later step runs offline. A check
+  that looked at nothing fails.
+- **The step** (`voc-datalake/lambda/engineering/quality_gate/`): the deterministic checks (`checks.py`,
+  `runner.py`), up to N review rounds (default 3, at most 5) of fresh single-turn reviewers (security and quality
+  blocking, first-principles advisory), then a final go by an agent that neither wrote nor reviewed the change
+  (`gate.py`, `review.py`). The reviewers run on the `agent_worker` surface's default model and the final go on the
+  `agent_reviewer` surface's (`shared/model_config.py`), through `shared/converse.py`. Each round (with
+  `--fresh-checkout`, as the runtime's gate checkout always runs, after putting the checkout back to HEAD) runs every
+  root's dependency steps, then the roots the change touches, then the rest, so a round
+  passes only on the whole tree: the full gate of step 3 below is part of every round, not a step of its own. Red
+  checks are a round's blocking findings, and no model is called. It stops at a human decision point
+  (`loop_exhausted`, `no_fail_path`, or `verification` for a change to `scripts/validate.sh`, an oversized diff, a
+  repository no check covers, a model or runner failure, or an answer that twice breaks its contract). The gate
+  record (`record.py`) is written either way, never with a GO when it stopped, with its Markdown for the pull
+  request. The CLI's `gate` is review-only: it has no reviser, so the first blocking round stops it for a person.
+  In a flow, the fixer or builder is to be passed as the reviser.
+
+The design:
 
 1. **Deterministic gate.** The language packs detected for the affected packages (Rust + TypeScript, Python +
    TypeScript, Java to start) run in the gate runner's MicroVM: format, lint, types, tests, the repository's own scripts
@@ -613,7 +678,7 @@ and the phase that ships them names them in that row.
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503) |
-| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | planned |
-| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | planned |
+| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API and the role queues ([above](#how-the-agents-work-together)); no run start yet, so the board answers 404 to every post; the runtime, inboxes and workspace planned |
+| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); skills, the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | planned |

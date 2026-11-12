@@ -4,40 +4,17 @@
  * resource-based permission, and a role that can write its own logs, read the connections' SSM parameters and
  * decrypt them through SSM, and nothing else.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Template } from 'aws-cdk-lib/assertions';
-import { z } from 'zod';
 
 import { engineeringParameterPrefix } from './engineering-broker';
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
-import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
-import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import {
+  AGENT_ROLE_NAME_PATTERN_JOIN, functionRoleId, functionStatements, functionUrlAuthTypes, processingSynths,
+} from '../test-support/engineering-template';
 import { byCodeUnit } from '../utils/compare';
 
-const StatementSchema = z.looseObject({
-  Action: z.union([z.string(), z.array(z.string())]),
-  Resource: z.unknown(),
-});
-const PolicySchema = z.object({
-  Properties: z.object({
-    Roles: z.array(z.unknown()),
-    PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
-  }),
-});
-
-const holder: { off?: Template; on?: Template; onString?: Template } = {};
-
-beforeAll(() => {
-  holder.off = synthProcessingTemplate();
-  holder.on = synthProcessingTemplate({ context: { engineeringAgents: true } });
-  holder.onString = synthProcessingTemplate({ context: { engineeringAgents: 'true' } });
-}, SYNTH_TIMEOUT_MS);
-
-function template(key: keyof typeof holder): Template {
-  const synthesized = holder[key];
-  if (!synthesized) throw new Error(`${key} was not synthesized`);
-  return synthesized;
-}
+const template = processingSynths({ off: {}, on: { engineeringAgents: true }, onString: { engineeringAgents: 'true' } });
 
 /** The logical ids of the broker's function (its physical name starts `voc-engineering-broker`). */
 function brokerIds(synthesized: Template): string[] {
@@ -72,16 +49,12 @@ describe('the engineering broker', () => {
       MemorySize: OPTIONAL_FUNCTION_SIZES['voc-engineering-broker'],
       Environment: {
         Variables: {
-          AGENT_ROLE_NAME_PATTERN: {
-            'Fn::Join': ['', ['voc-eng-{role}-', { Ref: 'AWS::AccountId' }, '-', { Ref: 'AWS::Region' }]],
-          },
+          AGENT_ROLE_NAME_PATTERN: AGENT_ROLE_NAME_PATTERN_JOIN,
         },
       },
     });
-    const urls = Object.values(on.findResources('AWS::Lambda::Url'));
-    expect(urls.map((url) => [url.Properties?.AuthType, url.Properties?.TargetFunctionArn])).toStrictEqual([
-      ['AWS_IAM', { 'Fn::GetAtt': [id, 'Arn'] }],
-    ]);
+    // Its one URL (the board API has its own: engineering-bus.test.ts).
+    expect(functionUrlAuthTypes(on, id)).toStrictEqual(['AWS_IAM']);
   });
 
   it('grants nobody a way in: no resource-based permission on the broker', () => {
@@ -136,17 +109,10 @@ describe('the engineering broker', () => {
 
 /** The logical id of the broker's role. */
 function brokerRoleId(synthesized: Template): string {
-  const role = JSON.stringify(synthesized.findResources('AWS::Lambda::Function')[brokerId(synthesized)]?.Properties?.Role);
-  const roleId = /"Fn::GetAtt":\["([^"]+)","Arn"\]/.exec(role)?.[1];
-  expect(roleId).toBeDefined();
-  return roleId ?? '';
+  return functionRoleId(synthesized, brokerId(synthesized));
 }
 
 /** Every statement of the policies attached to the broker's role. */
-function brokerStatements(synthesized: Template): z.infer<typeof StatementSchema>[] {
-  const roleId = brokerRoleId(synthesized);
-  return Object.values(synthesized.findResources('AWS::IAM::Policy'))
-    .map((policy) => PolicySchema.parse(policy).Properties)
-    .filter((policy) => JSON.stringify(policy.Roles).includes(`"${roleId}"`))
-    .flatMap((policy) => policy.PolicyDocument.Statement);
+function brokerStatements(synthesized: Template): ReturnType<typeof functionStatements> {
+  return functionStatements(synthesized, brokerId(synthesized));
 }

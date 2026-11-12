@@ -27,6 +27,7 @@ import { MEMORY_EXTRACT_DLQ_BASE_NAME } from './memory-workers';
 import { BRIEFING_DLQ_BASE_NAME } from './briefing-worker';
 import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
 import { inboundEmailConfig } from '../utils/inbound-email';
+import { engineeringAgentsEnabled } from './engineering-broker';
 
 /** Base physical name of the operational alarm topic (run through `uniqueName()`). */
 export const ALARM_TOPIC_BASE_NAME = 'voc-ops-alarms';
@@ -45,6 +46,11 @@ export const INGEST_SCHEDULE_DLQ_BASE_NAME = 'voc-ingest-schedule-dlq';
 export const AGGREGATOR_STREAM_FAILURES_BASE_NAME = 'voc-aggregator-stream-failures';
 /** The email inbox's dead-letter queue (VocIngestionStack, only with `-c inboundEmailDomain`). */
 export const EMAIL_INTAKE_DLQ_BASE_NAME = 'voc-email-intake-dlq';
+/**
+ * The engineering bus's dead-letter queue (VocProcessingStack, only with `-c engineeringAgents=true`;
+ * engineering-bus.ts): role-queue redrives, the inbox rule's undelivered events, the router's failed invocations.
+ */
+export const ENGINEERING_DLQ_BASE_NAME = 'voc-engineering-dlq';
 
 /** Base physical names of the processing Lambdas whose errors alerting watches. */
 export const FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME = 'voc-feedback-processor';
@@ -223,6 +229,8 @@ function watchedQueues(inputs: OpsAlertsInputs): string {
     // Created by VocIngestionStack only when the email inbox is on.
     ...(inboundEmailConfig(inputs.stack.node) ? [['email-intake-dlq', EMAIL_INTAKE_DLQ_BASE_NAME] satisfies [string, string]] : []),
     ['api-async-failures', API_ASYNC_FAILURES_QUEUE_BASE_NAME],
+    // Created by VocProcessingStack only with the engineering agents.
+    ...(engineeringAgentsEnabled(inputs.stack) ? [['engineering-dlq', ENGINEERING_DLQ_BASE_NAME] satisfies [string, string]] : []),
   ];
   return queues.map(([slug, base]) => `${slug}=${inputs.uniqueName(base)}`).join(',');
 }

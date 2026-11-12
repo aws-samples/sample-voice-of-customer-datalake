@@ -61,7 +61,7 @@ from engineering.connectors.hosts import (
     ReadKind,
     ReadPage,
 )
-from engineering.connectors.write_policy import WriteRefused
+from engineering.connectors.write_policy import BrokerError, WriteRefused
 from shared.github_rest import GITHUB_API, GITHUB_API_VERSION
 from shared.logging import logger
 
@@ -524,5 +524,7 @@ class GitHubHost:
         try:
             self._api(connection_id, _DRAFT, 'PATCH', f'/pulls/{number}', 'the pull request close',
                       body={'state': 'closed'})
-        except (HostError, NoConnection):
+        except (BrokerError, NoConnection, ValueError, OSError):
+            # A failure of the close (a host refusal, a malformed answer, a lost connection) is logged by number
+            # only, so the caller still gets the failure that made the close necessary.
             logger.warning('engineering pull request not closed', extra={'pull_request': number})
