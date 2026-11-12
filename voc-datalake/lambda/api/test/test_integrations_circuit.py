@@ -19,7 +19,9 @@ from moto import mock_aws
 import integrations_handler as h
 from shared import plugin_circuit
 from shared.test.moto_tables import create_pk_sk_table
+from shared.ws_repo import WorkspaceScope
 
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 TRIPPED_KEY = {'pk': 'CIRCUIT#webscraper', 'sk': 'TRIPPED'}
 TRIPPED_ROW = {
     **TRIPPED_KEY,
@@ -202,12 +204,16 @@ class TestTheRowShape:
         assert plugin_circuit.circuit_from_row({'failure_count': True}, include_error=True)['failure_count'] == 0
 
     def test_the_key_matches_the_one_the_breaker_writes(self):
-        """Lockstep with plugins/_shared/circuit_breaker.py: the partition is spelled there, the sort key
-        is imported from shared.plugin_circuit (the plugin bundles ship lambda/shared)."""
+        """Lockstep with plugins/_shared/circuit_breaker.py: the breaker's keys are this module's (the plugin
+        bundles ship lambda/shared): ``tripped_key`` for a deployment-wide run, the one these routes read and
+        clear, and ``workspace_tripped_key`` for a run in a workspace."""
         breaker = PLUGINS_SHARED.read_text()
 
-        assert re.search(r'return f"CIRCUIT#\{plugin_id\}"', breaker)
-        assert 'from shared.plugin_circuit import TRIPPED_SK' in breaker
+        assert 'from shared.plugin_circuit import tripped_key, workspace_tripped_key' in breaker
+        assert re.search(r'return tripped_key\(self\.plugin_id\)', breaker)
+        assert re.search(r'return workspace_tripped_key\(self\.scope, self\.plugin_id\)', breaker)
+        assert plugin_circuit.workspace_tripped_key(WorkspaceScope(WS), 'x') == {
+            'pk': f'WS#{WS}#CIRCUIT#x', 'sk': 'TRIPPED'}
         assert plugin_circuit.tripped_key('x') == {'pk': 'CIRCUIT#x', 'sk': 'TRIPPED'}
 
     def test_the_breaker_and_this_api_use_the_same_table(self):

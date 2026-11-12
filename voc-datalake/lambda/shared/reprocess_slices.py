@@ -30,6 +30,7 @@ from shared.api import ALL_TIME_DAYS
 from shared.feedback import DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, basis_date
 from shared.retention import FEEDBACK_SK_PREFIX
 from shared.timestamps import ISO_DAY_RE
+from shared.ws_repo import WORKSPACE_KEY_PREFIX, is_workspace_key
 
 DATE_BASIS_PROCESSED: Final = 'processed'
 DATE_BASES: Final = (DATE_BASIS_PROCESSED, DATE_BASIS_REVIEW)
@@ -178,7 +179,10 @@ def slice_from_job(job: Mapping[str, Any]) -> ReprocessSlice:
 
 
 def admits(item: Mapping[str, Any], job_slice: ReprocessSlice, window: tuple[str | None, str | None]) -> bool:
-    """Is ``item`` inside the slice? (The read's filter narrows first; this is the rule.)"""
+    """Is ``item`` inside the slice? (The read's filter narrows first; this is the rule.) Never a workspace's
+    item: the job reprocesses the deployment-wide feedback and writes deployment-wide index partitions."""
+    if is_workspace_key(item.get('pk')):
+        return False
     if job_slice.sources and item.get('source_platform') not in job_slice.sources:
         return False
     if job_slice.categories and item.get('category') not in job_slice.categories:
@@ -200,7 +204,8 @@ def read_filter(job_slice: ReprocessSlice, window: tuple[str | None, str | None]
     A review-date window is not pushed down (its fallback to ``date`` cannot be
     expressed); ``admits`` applies it.
     """
-    conditions: list[ConditionBase] = [Attr('sk').begins_with(FEEDBACK_SK_PREFIX)]
+    conditions: list[ConditionBase] = [Attr('sk').begins_with(FEEDBACK_SK_PREFIX),
+                                       ~Attr('pk').begins_with(WORKSPACE_KEY_PREFIX)]
     if job_slice.sources:
         conditions.append(Attr('source_platform').is_in(list(job_slice.sources)))
     if job_slice.categories:

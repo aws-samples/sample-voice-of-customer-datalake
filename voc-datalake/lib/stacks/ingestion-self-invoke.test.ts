@@ -1,36 +1,25 @@
 /**
- * The app-review ingestors' self-invoke grant (plugins/_shared/app_reviews_parts.py).
- *
- * A many-app run continues in a new invocation of its own function once its time
- * budget is reached, so each app-review role may invoke exactly its OWN function —
- * never a sibling ingestor, never a wildcard — and no other ingestor role may
- * invoke any function.
+ * The scheduled ingestors' self-invoke grant: the tick's per-workspace fan-out (plugins/_shared/base_ingestor.py
+ * fan_out_tick) and the app-review continuation parts (plugins/_shared/app_reviews_parts.py) invoke the plugin's
+ * OWN function, so each scheduled role may invoke exactly that function — never a sibling ingestor, never a
+ * wildcard — and an unscheduled one may invoke no function.
  */
 import type { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import * as path from 'path';
-
-import { capitalize, loadPlugins } from '../plugin-loader';
-import { byCodeUnit } from '../utils/compare';
+import { capitalize } from '../plugin-loader';
 import { flattenRefJoin } from '../test-support/cfn-join';
 import { type NormalizedStatement, roleStatements } from '../test-support/iam-statements';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
-
-/** The plugins whose manifest declares `infrastructure.ingestor.selfInvoke` (tenet 5: no id list in the stack). */
-const selfInvokingPlugins = (): string[] => loadPlugins(path.join(__dirname, '../../plugins'))
-  .filter((plugin) => plugin.infrastructure.ingestor?.selfInvoke === true)
-  .map((plugin) => plugin.id)
-  .sort(byCodeUnit);
 
 const FunctionSchema = z.object({ Properties: z.object({ FunctionName: z.unknown() }) });
 
 const invokeStatements = (statements: NormalizedStatement[]) =>
   statements.filter((s) => s.actions.includes('lambda:InvokeFunction'));
 
-describe('VocIngestionStack app-review self-invoke grants', () => {
+describe('VocIngestionStack scheduled ingestors\' self-invoke grants', () => {
   let template: Template;
   beforeAll(() => {
     template = synthIngestionTemplate(['app_reviews_ios', 'app_reviews_android', 'webscraper']);
@@ -45,11 +34,7 @@ describe('VocIngestionStack app-review self-invoke grants', () => {
     roleStatements(template, `IngestorRole${capitalize(pluginId)}DefaultPolicy`, { byIdPrefix: true }),
   );
 
-  it('reads the grant from the manifests: exactly the two app-review ingestors declare selfInvoke', () => {
-    expect(selfInvokingPlugins()).toStrictEqual(['app_reviews_android', 'app_reviews_ios']);
-  });
-
-  it.each(['app_reviews_ios', 'app_reviews_android'])('lets %s invoke exactly its own function', (pluginId) => {
+  it.each(['app_reviews_ios', 'app_reviews_android', 'webscraper'])('lets %s invoke exactly its own function', (pluginId) => {
     const grants = grantsOf(pluginId);
     expect(grants.map((s) => s.actions)).toStrictEqual([['lambda:InvokeFunction']]);
     expect(grants.map((s) => flattenRefJoin(JSON.parse(s.resource)))).toStrictEqual([
@@ -57,7 +42,9 @@ describe('VocIngestionStack app-review self-invoke grants', () => {
     ]);
   });
 
-  it('gives an ingestor that does not continue itself no invoke grant', () => {
-    expect(grantsOf('webscraper')).toStrictEqual([]);
+  it('gives an unscheduled ingestor no invoke grant (s3_import: a role of its own for its job notices)', () => {
+    const statements = invokeStatements(roleStatements(synthIngestionTemplate(['s3_import']),
+      `IngestorRole${capitalize('s3_import')}DefaultPolicy`, { byIdPrefix: true }));
+    expect(statements).toStrictEqual([]);
   });
 });

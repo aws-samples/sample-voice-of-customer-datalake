@@ -4,9 +4,12 @@ Every test runs with the ``ingestor_aws`` fixture (conftest.py) standing in for
 the DynamoDB/S3/SQS client factories and the secret read; tests configure or
 assert on the doubles it yields.
 """
-from unittest.mock import MagicMock, patch
+import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock, call, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from _shared.test.ingestor_fixtures import (
     THREE_REVIEWS,
@@ -19,6 +22,7 @@ from _shared.test.sqs_response_fixtures import (
     echo_batch_success,
     permanent_failure_response,
 )
+from _shared.test.workspace_fixtures import OTHER_SCOPE, OTHER_WS, REFUSED, SCHEDULED_TICK, SCOPE, SECRET_NAME, WS
 
 
 class TestBaseIngestorInit:
@@ -89,7 +93,7 @@ class TestBaseIngestorWatermarks:
 
         assert result == '2025-01-01T00:00:00Z'
         ingestor_aws.table.get_item.assert_called_once_with(
-            Key={'source': 'test_source#last_timestamp'}
+            Key={'source': f'WS#{WS}#test_source#last_timestamp'}
         )
 
     def test_get_watermark_returns_default_when_not_found(self, ingestor_aws):
@@ -106,7 +110,7 @@ class TestBaseIngestorWatermarks:
 
         ingestor_aws.table.put_item.assert_called_once()
         item = ingestor_aws.table.put_item.call_args.kwargs['Item']
-        assert item['source'] == 'test_source#last_id'
+        assert item['source'] == f'WS#{WS}#test_source#last_id'
         assert item['value'] == 'review-999'
         assert 'updated_at' in item
 
@@ -418,7 +422,7 @@ class TestBaseIngestorRun:
             def fetch_new_items(self):
                 raise UpstreamFetchError('GET https://api.example/v1?token=SECRET-123 failed')
 
-        ingestor = with_mock_circuit_breaker(LeakyIngestor(execution_id='exec-1'))
+        ingestor = with_mock_circuit_breaker(LeakyIngestor(SCOPE, execution_id='exec-1'))
         with pytest.raises(UpstreamFetchError):
             ingestor.run()
 
@@ -466,3 +470,447 @@ class TestManualRunSecretCacheClear:
 
         mock_clear.assert_not_called()
         assert ingestor.execution_id is None
+
+
+def _sent_messages(sqs: MagicMock) -> list[dict]:
+    return [json.loads(entry['MessageBody'])
+            for call in sqs.send_message_batch.call_args_list for entry in call.kwargs['Entries']]
+
+
+class TestTheRunsWorkspaceComesFromItsEvent:
+    """docs/multi-workspace.md, phase 2 "ingestion": the event names the workspace (``run_in_workspace``)."""
+
+    def test_an_event_naming_a_workspace_runs_in_that_scope(self):
+        from _shared.base_ingestor import run_in_workspace
+
+        run = MagicMock(return_value={'status': 'success'})
+
+        assert run_in_workspace({'workspace_id': WS, 'execution_id': 'exec-1'}, run) == {'status': 'success'}
+        run.assert_called_once_with(SCOPE)
+
+    @pytest.mark.parametrize('event', [
+        {'workspace_id': ''}, {'workspace_id': 'ws_nope'}, {'workspace_id': f' {WS}'}, {'workspace_id': 7},
+        {'workspace_id': None}, {'workspace_id': WS.lower(), 'execution_id': 'exec-1'},
+        # A tick shape that also names a workspace is a workspace's run, so a malformed id is still refused.
+        {**SCHEDULED_TICK, 'workspace_id': 'not-a-workspace'},
+    ])
+    def test_a_malformed_workspace_is_refused_and_never_run_deployment_wide(self, event):
+        from _shared.base_ingestor import run_in_workspace
+
+        run = MagicMock()
+        with patch('_shared.base_ingestor.metrics') as metrics, \
+                patch('_shared.base_ingestor.fan_out_once') as fan_out:
+            result = run_in_workspace(event, run)
+
+        assert result == REFUSED
+        run.assert_not_called()
+        fan_out.assert_not_called()
+        metrics.add_metric.assert_called_once_with(name='IngestorEventRefused', unit='Count', value=1)
+
+    @pytest.mark.parametrize('event', [{}, {'execution_id': 'exec-1'}, {'Records': []}, None, [], 'ws'])
+    def test_an_event_naming_no_workspace_runs_deployment_wide_as_before(self, event):
+        """The API's Run now, scraper run and reprocess and an S3 upload send no workspace_id: they keep the
+        deployment-wide path until phase 2's last slice moves them."""
+        from _shared.base_ingestor import run_in_workspace
+
+        run = MagicMock(return_value={'status': 'success'})
+        with patch('_shared.base_ingestor.fan_out_once') as fan_out:
+            assert run_in_workspace(event, run) == {'status': 'success'}
+
+        run.assert_called_once_with(None)
+        fan_out.assert_not_called()
+
+    def test_the_scheduled_tick_fans_out_first_then_runs_deployment_wide(self):
+        """The fan-out comes first, so a deployment-wide run that raises or times out never keeps the
+        workspaces from their tick."""
+        from _shared.base_ingestor import run_in_workspace
+
+        order = MagicMock()
+        order.run.return_value = {'status': 'success', 'items_processed': 3}
+        with patch('_shared.base_ingestor.fan_out_once', order.fan_out_once):
+            assert run_in_workspace(dict(SCHEDULED_TICK), order.run) == {'status': 'success', 'items_processed': 3}
+
+        assert order.mock_calls == [call.fan_out_once('test_source', SCHEDULED_TICK), call.run(None)]
+
+    def test_a_failing_deployment_run_on_a_tick_has_fanned_out_and_raises_as_before(self):
+        from _shared.base_ingestor import run_in_workspace
+
+        run = MagicMock(side_effect=RuntimeError('source down'))
+        with patch('_shared.base_ingestor.fan_out_once') as fan_out, pytest.raises(RuntimeError, match='source down'):
+            run_in_workspace(dict(SCHEDULED_TICK), run)
+
+        fan_out.assert_called_once_with('test_source', SCHEDULED_TICK)
+
+    def test_only_an_eventbridge_scheduled_event_is_a_tick(self):
+        from _shared.base_ingestor import is_scheduled_tick
+
+        assert is_scheduled_tick(dict(SCHEDULED_TICK))
+        assert not is_scheduled_tick({**SCHEDULED_TICK, 'workspace_id': WS})
+        assert not is_scheduled_tick({**SCHEDULED_TICK, 'source': 'aws.s3'})
+        assert not is_scheduled_tick({**SCHEDULED_TICK, 'detail-type': 'Object Created'})
+        assert not is_scheduled_tick({})
+        assert not is_scheduled_tick(None)
+
+
+class TestTheScheduledTickFansOut:
+    """One async invoke of this function per workspace ``workspaces_with_plugin`` names, with its id only."""
+
+    @pytest.fixture
+    def tick(self, monkeypatch):
+        monkeypatch.setenv('AWS_LAMBDA_FUNCTION_NAME', 'voc-ingestor-test_source')
+        monkeypatch.setattr('_shared.base_ingestor.WORKSPACES_TABLE', 'test-workspaces')
+        with patch('_shared.base_ingestor.get_dynamodb_resource') as dynamo, \
+                patch('_shared.base_ingestor.workspaces_with_plugin', return_value=[WS, OTHER_WS]) as listed, \
+                patch('_shared.self_invoke.invoke_lambda_async', return_value={'StatusCode': 202}) as invoke:
+            yield SimpleNamespace(dynamo=dynamo, listed=listed, invoke=invoke)
+
+    def test_each_workspace_with_the_plugin_gets_exactly_one_run_naming_it(self, tick):
+        from _shared.base_ingestor import fan_out_tick
+
+        result = fan_out_tick('test_source')
+
+        tick.dynamo.return_value.Table.assert_called_once_with('test-workspaces')
+        tick.listed.assert_called_once_with(tick.dynamo.return_value.Table.return_value, 'test_source')
+        assert tick.invoke.call_args_list == [
+            call('voc-ingestor-test_source', {'workspace_id': WS}),
+            call('voc-ingestor-test_source', {'workspace_id': OTHER_WS}),
+        ]
+        assert result == {'status': 'fanned_out', 'workspaces': 2, 'failed': 0}
+
+    def test_no_workspace_with_the_plugin_invokes_nothing(self, tick):
+        from _shared.base_ingestor import fan_out_tick
+
+        tick.listed.return_value = []
+
+        assert fan_out_tick('test_source') == {'status': 'fanned_out', 'workspaces': 0, 'failed': 0}
+        tick.invoke.assert_not_called()
+
+    @pytest.mark.parametrize('failure', [
+        ClientError({'Error': {'Code': 'TooManyRequestsException'}}, 'Invoke'), {'StatusCode': 500},
+    ])
+    def test_a_failed_invoke_is_counted_and_the_other_workspaces_still_run(self, tick, failure):
+        from _shared.base_ingestor import fan_out_tick
+
+        tick.invoke.side_effect = [failure, {'StatusCode': 202}]
+        with patch('_shared.base_ingestor.metrics') as metrics:
+            result = fan_out_tick('test_source')
+
+        assert tick.invoke.call_count == 2
+        assert result == {'status': 'fanned_out', 'workspaces': 1, 'failed': 1}
+        metrics.add_metric.assert_called_once_with(name='IngestFanOutFailures', unit='Count', value=1)
+
+    def test_a_list_that_cannot_be_read_raises(self, tick):
+        from _shared.base_ingestor import fan_out_tick
+
+        tick.listed.side_effect = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'Query')
+
+        with pytest.raises(ClientError):
+            fan_out_tick('test_source')
+        tick.invoke.assert_not_called()
+
+    def test_a_tick_without_the_workspaces_table_refuses_to_guess(self, tick, monkeypatch):
+        from _shared.base_ingestor import fan_out_tick
+        from shared.exceptions import ConfigurationError
+
+        monkeypatch.setattr('_shared.base_ingestor.WORKSPACES_TABLE', '')
+
+        with pytest.raises(ConfigurationError):
+            fan_out_tick('test_source')
+        tick.invoke.assert_not_called()
+
+    def test_without_its_function_name_every_workspaces_invoke_counts_as_failed(self, tick, monkeypatch):
+        from _shared.base_ingestor import fan_out_tick
+
+        monkeypatch.delenv('AWS_LAMBDA_FUNCTION_NAME')
+
+        assert fan_out_tick('test_source') == {'status': 'fanned_out', 'workspaces': 0, 'failed': 2}
+        tick.invoke.assert_not_called()
+
+
+def _cancelled(*codes: str) -> ClientError:
+    return ClientError({'Error': {'Code': 'TransactionCanceledException'},
+                        'CancellationReasons': [{'Code': code} for code in codes]}, 'TransactWriteItems')
+
+
+class _ClaimTable:
+    """voc-idempotency under a one-claim transaction (``attribute_not_exists(id)``, the only condition a claim
+    sends): a second claim of a key is cancelled as DynamoDB cancels it (moto cannot run here: plugins/conftest.py
+    refuses every call)."""
+
+    def __init__(self):
+        self.items: dict[str, dict] = {}
+        self.transact_write_items = MagicMock(side_effect=self._transact)
+
+    def _transact(self, *, TransactItems):
+        assert len(TransactItems) == 1
+        put = TransactItems[0]['Put']
+        assert (put['TableName'], put['ConditionExpression']) == ('test-idempotency', 'attribute_not_exists(id)')
+        if put['Item']['id'] in self.items:
+            raise _cancelled('ConditionalCheckFailed')
+        self.items[put['Item']['id']] = put['Item']
+
+
+class TestTheTickFansOutAtMostOnce:
+    """``fan_out_once``: a claim of the tick's EventBridge event id in voc-idempotency, so Lambda's retries of a
+    tick whose deployment-wide run raised never start the workspaces' runs twice."""
+
+    @pytest.fixture
+    def claims(self, monkeypatch):
+        monkeypatch.setattr('_shared.base_ingestor.IDEMPOTENCY_TABLE', 'test-idempotency')
+        table = _ClaimTable()
+        with patch('_shared.base_ingestor.get_dynamodb_resource') as resource, \
+                patch('_shared.base_ingestor.fan_out_tick') as fan_out, \
+                patch('_shared.base_ingestor.metrics') as metrics:
+            resource.return_value.meta.client = table
+            yield SimpleNamespace(table=table, fan_out=fan_out, metrics=metrics)
+
+    def test_a_retry_of_a_tick_whose_run_raised_fans_out_no_second_time(self, claims):
+        from _shared.base_ingestor import run_in_workspace
+
+        run = MagicMock(side_effect=RuntimeError('source down'))
+        for _ in range(2):  # the delivery, then Lambda's asynchronous retry of the same event
+            with pytest.raises(RuntimeError, match='source down'):
+                run_in_workspace(dict(SCHEDULED_TICK), run)
+
+        claims.fan_out.assert_called_once_with('test_source')
+        assert run.call_args_list == [call(None), call(None)]
+        claims.metrics.add_metric.assert_not_called()
+
+    def test_the_claim_is_the_ticks_event_id_with_the_normal_expiry(self, claims):
+        from _shared.base_ingestor import fan_out_once
+        from shared.idempotency import DEDUPE_CLAIM_TTL_SECONDS
+
+        with patch('_shared.base_ingestor.datetime') as clock:
+            clock.now.return_value.timestamp.return_value = 1_000_000.0
+            fan_out_once('test_source', dict(SCHEDULED_TICK))
+
+        assert claims.table.items == {'ingestor#fanout#test_source#tick-1': {
+            'id': 'ingestor#fanout#test_source#tick-1', 'expiration': 1_000_000 + DEDUPE_CLAIM_TTL_SECONDS}}
+
+    def test_a_new_tick_fans_out_again(self, claims):
+        from _shared.base_ingestor import fan_out_once
+
+        fan_out_once('test_source', dict(SCHEDULED_TICK))
+        fan_out_once('test_source', {**SCHEDULED_TICK, 'id': 'tick-2'})
+        fan_out_once('other_source', dict(SCHEDULED_TICK))
+
+        assert claims.fan_out.call_args_list == [call('test_source'), call('test_source'), call('other_source')]
+
+    def test_a_failing_fan_out_is_metered_and_never_changes_the_deployment_runs_outcome(self, claims):
+        from _shared.base_ingestor import run_in_workspace
+
+        claims.fan_out.side_effect = ClientError({'Error': {'Code': 'X'}}, 'Query')
+        run = MagicMock(return_value={'status': 'success'})
+
+        assert run_in_workspace(dict(SCHEDULED_TICK), run) == {'status': 'success'}
+        run.assert_called_once_with(None)
+        claims.metrics.add_metric.assert_called_once_with(name='IngestFanOutFailures', unit='Count', value=1)
+
+    @pytest.mark.parametrize('tick', [
+        {**SCHEDULED_TICK, 'id': ''}, {key: value for key, value in SCHEDULED_TICK.items() if key != 'id'},
+    ])
+    def test_a_tick_without_an_event_id_fans_out_nothing_and_still_runs(self, claims, tick):
+        from _shared.base_ingestor import run_in_workspace
+
+        run = MagicMock(return_value={'status': 'success'})
+
+        assert run_in_workspace(tick, run) == {'status': 'success'}
+        claims.fan_out.assert_not_called()
+        claims.metrics.add_metric.assert_called_once_with(name='IngestFanOutFailures', unit='Count', value=1)
+
+    def test_without_the_idempotency_table_it_fans_out_nothing(self, claims, monkeypatch):
+        from _shared.base_ingestor import fan_out_once
+
+        monkeypatch.setattr('_shared.base_ingestor.IDEMPOTENCY_TABLE', '')
+        fan_out_once('test_source', dict(SCHEDULED_TICK))
+
+        claims.fan_out.assert_not_called()
+        claims.metrics.add_metric.assert_called_once_with(name='IngestFanOutFailures', unit='Count', value=1)
+
+    @pytest.mark.parametrize('failure', [
+        ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'TransactWriteItems'),
+        _cancelled('TransactionConflict'), _cancelled('ThrottlingError'), _cancelled(),
+    ], ids=['throttled', 'conflict', 'throttled-in-transaction', 'no-reasons'])
+    def test_a_claim_that_is_not_made_fans_out_nothing(self, claims, failure):
+        """Only the claim's own ConditionalCheckFailed is a retried delivery; anything else is a failure, metered."""
+        from _shared.base_ingestor import fan_out_once
+
+        claims.table.transact_write_items.side_effect = failure
+        fan_out_once('test_source', dict(SCHEDULED_TICK))
+
+        claims.fan_out.assert_not_called()
+        claims.metrics.add_metric.assert_called_once_with(name='IngestFanOutFailures', unit='Count', value=1)
+
+
+class TestEverythingARunKeepsIsItsWorkspaces:
+    """Two workspaces of one plugin never share a watermark, a run row, a raw object, a breaker or a secret."""
+
+    def test_the_secret_read_is_the_workspaces_own(self, ingestor_aws):
+        ingestor_yielding()
+        ingestor_yielding(scope=OTHER_SCOPE)
+
+        assert [c.args[0] for c in ingestor_aws.get_secret.call_args_list] == [
+            SECRET_NAME, f'voc/ws/{OTHER_WS}/credentials']
+
+    def test_no_secret_is_read_without_the_prefix(self, ingestor_aws, monkeypatch):
+        monkeypatch.setattr('_shared.base_ingestor.WORKSPACE_SECRET_PREFIX', '')
+
+        assert ingestor_yielding().secrets == {}
+        ingestor_aws.get_secret.assert_not_called()
+
+    def test_watermarks_never_collide(self, ingestor_aws):
+        ingestor_yielding().set_watermark('last_id', 'a')
+        ingestor_yielding(scope=OTHER_SCOPE).set_watermark('last_id', 'b')
+
+        keys = [c.kwargs['Item']['source'] for c in ingestor_aws.table.put_item.call_args_list]
+        assert keys == [f'WS#{WS}#test_source#last_id', f'WS#{OTHER_WS}#test_source#last_id']
+
+    @patch('_shared.base_ingestor.AGGREGATES_TABLE', 'voc-aggregates-test')
+    def test_run_rows_never_collide(self, ingestor_aws):
+        ingestor_yielding(execution_id='exec-1')._update_source_run_status({'status': 'running'})
+        ingestor_yielding(scope=OTHER_SCOPE, execution_id='exec-1')._update_source_run_status({'status': 'running'})
+
+        keys = [c.kwargs['Key'] for c in ingestor_aws.table.update_item.call_args_list]
+        assert keys == [{'pk': f'WS#{WS}#SOURCE_RUN#test_source', 'sk': 'exec-1'},
+                        {'pk': f'WS#{OTHER_WS}#SOURCE_RUN#test_source', 'sk': 'exec-1'}]
+
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', 'test-bucket')
+    def test_raw_objects_go_under_each_workspaces_own_root(self, ingestor_aws):
+        item = {'id': 'review-1', 'text': 'Same review', 'created_at': '2025-01-02T10:00:00Z'}
+
+        first = ingestor_yielding().normalize_item(dict(item))
+        second = ingestor_yielding(scope=OTHER_SCOPE).normalize_item(dict(item))
+
+        keys = [c.kwargs['Key'] for c in ingestor_aws.s3.put_object.call_args_list]
+        assert keys[0].startswith(f'ws/{WS}/raw/test_source/2025/01/02/')
+        assert keys[1].startswith(f'ws/{OTHER_WS}/raw/test_source/2025/01/02/')
+        assert keys[0].removeprefix(f'ws/{WS}/') == keys[1].removeprefix(f'ws/{OTHER_WS}/')
+        assert first['s3_raw_uri'] == f's3://test-bucket/{keys[0]}'
+        assert second['s3_raw_uri'] == f's3://test-bucket/{keys[1]}'
+        assert all(c.kwargs['IfNoneMatch'] == '*' for c in ingestor_aws.s3.put_object.call_args_list)
+
+    @pytest.mark.usefixtures('ingestor_aws')
+    def test_the_breaker_is_the_workspaces(self):
+        assert ingestor_yielding().circuit_breaker.scope == SCOPE
+        assert ingestor_yielding(scope=OTHER_SCOPE).circuit_breaker.scope == OTHER_SCOPE
+
+    def test_a_key_of_another_workspace_is_refused_before_any_call(self, ingestor_aws):
+        from shared.ws_repo import OutOfScopeError
+
+        ingestor = ingestor_yielding()
+        with pytest.raises(OutOfScopeError):
+            ingestor.watermarks_table.get_item({'source': f'WS#{OTHER_WS}#test_source#last_id'})
+        ingestor_aws.table.get_item.assert_not_called()
+
+
+class TestEveryMessageNamesTheRunsWorkspace:
+    """``workspace_id`` is set from the scope after every field of the item, so no payload can choose it."""
+
+    def test_each_queued_message_carries_the_scope(self, ingestor_aws):
+        ingestor_aws.sqs.send_message_batch.side_effect = echo_batch_success
+        with patch('_shared.sqs_utils.metrics'):
+            ingestor_yielding().send_to_queue([{'id': 'a', 'text': 'One'}, {'id': 'b', 'text': 'Two'}])
+
+        assert [m['workspace_id'] for m in _sent_messages(ingestor_aws.sqs)] == [WS, WS]
+
+    def test_an_item_naming_another_workspace_cannot_override_it(self, ingestor_aws):
+        ingestor_aws.sqs.send_message_batch.side_effect = echo_batch_success
+        with patch('_shared.sqs_utils.metrics'):
+            ingestor_yielding().send_to_queue([{'id': 'a', 'text': 'One', 'workspace_id': OTHER_WS}])
+
+        assert [m['workspace_id'] for m in _sent_messages(ingestor_aws.sqs)] == [WS]
+
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_a_plugin_that_copies_source_fields_onto_its_message_cannot_override_it(self, ingestor_aws):
+        """A subclass whose normalize_item carries the source's own fields (as web_reviews and synthetic_reviews
+        carry theirs) still sends the run's workspace."""
+        from _shared.base_ingestor import BaseIngestor
+
+        class CopyingIngestor(BaseIngestor):
+            def fetch_new_items(self):
+                yield {'id': '1', 'text': 'Spoofed', 'created_at': '2025-01-01T00:00:00Z', 'workspace_id': OTHER_WS}
+
+            def normalize_item(self, item, raw_content=None):
+                return {**super().normalize_item(dict(item), raw_content), **item}
+
+        ingestor_aws.sqs.send_message_batch.side_effect = echo_batch_success
+        ingestor = with_mock_circuit_breaker(CopyingIngestor(SCOPE))
+        with patch('_shared.sqs_utils.metrics'), patch('_shared.base_ingestor.emit_audit_event'):
+            assert ingestor.run()['status'] == 'success'
+
+        assert [m['workspace_id'] for m in _sent_messages(ingestor_aws.sqs)] == [WS]
+
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_every_audit_event_of_a_run_names_its_workspace(self, ingestor_aws):
+        ingestor_aws.sqs.send_message_batch.side_effect = echo_batch_success
+        ingestor = with_mock_circuit_breaker(ingestor_yielding(THREE_REVIEWS[:1]))
+        with patch('_shared.sqs_utils.metrics'), patch('_shared.base_ingestor.emit_audit_event') as audit:
+            ingestor.run()
+
+        assert [c.args[0] for c in audit.call_args_list] == ['plugin.invoked', 'message.ingested', 'plugin.completed']
+        assert all(c.args[3]['workspace_id'] == WS for c in audit.call_args_list)
+
+
+class TestTheDeploymentWidePathIsUnchanged:
+    """A run whose event names no workspace (scope None) does exactly what it did before workspaces: the old keys,
+    the shared secret, ``raw/``, no ``workspace_id`` anywhere. It stays until phase 2's last slice."""
+
+    def test_it_reads_the_shared_secret(self, ingestor_aws):
+        with patch('_shared.base_ingestor.SECRETS_ARN', 'arn:shared'):
+            ingestor_yielding(scope=None)
+
+        ingestor_aws.get_secret.assert_called_once_with('arn:shared')
+
+    def test_without_the_shared_secret_it_reads_nothing(self, ingestor_aws):
+        with patch('_shared.base_ingestor.SECRETS_ARN', ''):
+            assert ingestor_yielding(scope=None).secrets == {}
+        ingestor_aws.get_secret.assert_not_called()
+
+    def test_its_watermarks_keep_the_deployment_wide_key(self, ingestor_aws):
+        ingestor_aws.table.get_item.return_value = {'Item': {'value': '42'}}
+        ingestor = ingestor_yielding(scope=None)
+
+        assert ingestor.get_watermark('last_id') == '42'
+        ingestor.set_watermark('last_id', '43')
+
+        ingestor_aws.table.get_item.assert_called_once_with(Key={'source': 'test_source#last_id'})
+        assert ingestor_aws.table.put_item.call_args.kwargs['Item']['source'] == 'test_source#last_id'
+
+    @patch('_shared.base_ingestor.AGGREGATES_TABLE', 'voc-aggregates-test')
+    def test_its_run_row_is_the_one_the_api_polls(self, ingestor_aws):
+        ingestor_yielding(scope=None, execution_id='exec-1')._update_source_run_status({'status': 'running'})
+
+        assert ingestor_aws.table.update_item.call_args.kwargs['Key'] == {'pk': 'SOURCE_RUN#test_source', 'sk': 'exec-1'}
+
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', 'test-bucket')
+    def test_its_raw_objects_stay_under_raw(self, ingestor_aws):
+        result = ingestor_yielding(scope=None).normalize_item(
+            {'id': 'review-1', 'text': 'Same review', 'created_at': '2025-01-02T10:00:00Z'})
+
+        key = ingestor_aws.s3.put_object.call_args.kwargs['Key']
+        assert key.startswith('raw/test_source/2025/01/02/')
+        assert result['s3_raw_uri'] == f's3://test-bucket/{key}'
+
+    def test_its_messages_carry_no_workspace(self, ingestor_aws):
+        ingestor_aws.sqs.send_message_batch.side_effect = echo_batch_success
+        with patch('_shared.sqs_utils.metrics'):
+            ingestor_yielding(scope=None).send_to_queue([{'id': 'a', 'text': 'One'}])
+
+        assert ['workspace_id' in m for m in _sent_messages(ingestor_aws.sqs)] == [False]
+
+    @patch('_shared.base_ingestor.RAW_DATA_BUCKET', '')
+    def test_its_audit_events_are_the_ones_it_always_emitted(self, ingestor_aws):
+        ingestor_aws.sqs.send_message_batch.side_effect = echo_batch_success
+        ingestor = with_mock_circuit_breaker(ingestor_yielding(THREE_REVIEWS[:1], scope=None))
+        with patch('_shared.sqs_utils.metrics'), patch('_shared.base_ingestor.emit_audit_event') as audit:
+            ingestor.run()
+
+        assert audit.call_args_list == [
+            call('plugin.invoked', 'test_source', True, {}),
+            call('message.ingested', 'test_source', True, {'message_id': '1'}),
+            call('plugin.completed', 'test_source', True, {'items_processed': 1}),
+        ]
+
+    @pytest.mark.usefixtures('ingestor_aws')
+    def test_its_breaker_is_the_deployment_wide_one(self):
+        assert ingestor_yielding(scope=None).circuit_breaker.scope is None

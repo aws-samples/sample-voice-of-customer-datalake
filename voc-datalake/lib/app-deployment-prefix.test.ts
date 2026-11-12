@@ -254,7 +254,7 @@ describe('a prefixed deployment', () => {
   });
 
   it('tells each ingestor the schedule rule its circuit breaker must disable', () => {
-    // The breaker disables the plugin's own schedule after repeated failures,
+    // A deployment-wide run's breaker disables the plugin's own schedule after repeated failures,
     // using the name CDK hands it. Under a prefix a name built any other way
     // would not exist, so a failing plugin would keep hammering the source —
     // the exact thing the breaker exists to stop. (The unprefixed half, and the
@@ -270,6 +270,26 @@ describe('a prefixed deployment', () => {
       .map((entry) => entry.slice('INGEST_SCHEDULE_RULE_NAME = '.length));
     // One per scheduled plugin, and each one an actual rule in this template.
     expect(new Set(declared)).toStrictEqual(new Set(ruleNames));
+  });
+
+  it('hands each ingestor this deployment\'s workspace secrets, and names no other copy\'s', () => {
+    // A run in a workspace reads `<prefix>-voc/ws/{ws}/credentials` (docs/multi-workspace.md, decision 8). Unprefixed,
+    // one copy's ingestors would read the other copy's workspaces' credentials.
+    const inventory = nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`));
+    const declared = inventory.environmentNames.filter((entry) => entry.startsWith('WORKSPACE_SECRET_PREFIX = '));
+    expect(new Set(declared)).toStrictEqual(new Set([`WORKSPACE_SECRET_PREFIX = ${PREFIX}-voc/ws`]));
+    const named = inventory.policyResources.filter((resource) => resource.includes(':secretsmanager:') && resource.includes('voc/ws'));
+    expect(named).toStrictEqual([`arn:aws:secretsmanager:${SYNTH_REGION}:${SYNTH_ACCOUNT}:secret:${PREFIX}-voc/ws/*`]);
+  });
+
+  it('lets a scheduled ingestor invoke only functions of this deployment that it creates (the tick\'s fan-out)', () => {
+    const inventory = nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`));
+    const functionPrefix = 'AWS::Lambda::Function FunctionName = ';
+    const created = inventory.physicalNames.filter((name) => name.startsWith(`${functionPrefix}${PREFIX}-voc-ingestor-`))
+      .map((name) => `arn:aws:lambda:${SYNTH_REGION}:${SYNTH_ACCOUNT}:function:${name.slice(functionPrefix.length)}`);
+    const invoked = inventory.policyResources.filter((resource) => resource.includes(':function:'));
+    expect(invoked.length).toBeGreaterThan(0);
+    expect(invoked.filter((resource) => !created.includes(resource))).toStrictEqual([]);
   });
 
   it('synthesizes with zero warnings', () => {

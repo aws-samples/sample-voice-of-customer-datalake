@@ -13,6 +13,7 @@ import type { VocApiStack } from '../stacks/api-stack';
 import type { VocCoreStack } from '../stacks/core-stack';
 import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
+import { WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX } from '../stacks/core-buckets';
 import { acknowledgeNag } from './nag-ack';
 import {
   rawDataPrefixSuppressions, s3ObjectSuppressions,
@@ -28,15 +29,23 @@ export interface CoreStacks {
 export function acknowledgeStackFindings({ core, ingestion, processing, api }: CoreStacks): void {
   const raw = core.rawDataBucket;
   acknowledgeNag(ingestion, [
-    ...s3ObjectSuppressions([raw.arnForObjects('raw/*'), ingestion.s3ImportBucket.arnForObjects('*')]),
+    // raw/* and ws/{one id}/raw/*: a plugin ingestor's deployment-wide run writes raw/, a run in a workspace only that
+    // workspace's bronze layer, ws/{ws}/raw/ (write-once Puts).
+    ...s3ObjectSuppressions([
+      raw.arnForObjects('raw/*'), raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}*`), ingestion.s3ImportBucket.arnForObjects('*'),
+    ]),
     ...rawDataPrefixSuppressions(raw, [
       'company-context/design/logo_preview_*', 'company-context/design/icons_*', 'raw/email_intake/*',
     ]),
   ]);
   acknowledgeNag(processing, [
     // silver/*: the processor and the reprocess worker keep an item's previous version (write-once Put), and
-    // voc-retention deletes those versions with the item (lambda/shared/silver_provenance.py).
-    ...s3ObjectSuppressions([raw.arnForObjects('raw/*'), raw.arnForObjects('silver/*')]),
+    // voc-retention deletes those versions with the item (lambda/shared/silver_provenance.py). ws/{one id}/raw/* and
+    // ws/{one id}/silver/*: the processor's write-once Puts for a workspace's message (docs/multi-workspace.md).
+    ...s3ObjectSuppressions([
+      raw.arnForObjects('raw/*'), raw.arnForObjects('silver/*'),
+      raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}*`), raw.arnForObjects(`${WORKSPACE_SILVER_HISTORY_PREFIX}*`),
+    ]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),
   ]);
   acknowledgeNag(api, [

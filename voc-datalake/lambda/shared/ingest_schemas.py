@@ -27,10 +27,12 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
-# Imports nothing else from shared/, so the processor bundle's import graph stays the same.
+# Imports nothing else from shared/ (workspace_ids imports only the standard library), so the processor bundle's
+# import graph stays the same.
 from shared.csv_datasets import CSV_INGESTION_METHOD, DATASET_NAME_MAX_LENGTH
 from shared.dimension_config import validate_tags
 from shared.timestamps import now_iso
+from shared.workspace_ids import is_workspace_id
 
 # ============================================
 # Constants
@@ -331,6 +333,14 @@ class IngestMessage(BaseModel):
     # the processor runs this record's model calls under it, then drops the field (never stored).
     model_profile: str | None = Field(None, pattern=r"^e2e$")
 
+    # The workspace the message belongs to (docs/multi-workspace.md): set by the plugin ingestors from their verified
+    # scope, after every field of the item (plugins/_shared/base_ingestor.py send_to_queue), so a source payload
+    # cannot choose it. Only the ingestors set it: the request-facing producers (forms, the Data Explorer, email,
+    # manual import) send none, and the source policy they apply drops one their content carries
+    # (shared/source_policy.py apply_source_policy). The processor stores the message in that workspace
+    # (shared/ws_repo.py message_scope); a message without it is stored deployment-wide.
+    workspace_id: str | None = None
+
     # Internal fields (set by platform)
     ingested_at: datetime | None = None
     s3_raw_uri: str | None = Field(None, max_length=512)
@@ -366,6 +376,13 @@ class IngestMessage(BaseModel):
         # and the `{source_platform}:{id}` idempotency key, so one spelling must
         # mean one key: see _normalized_source_platform.
         return _normalized_source_platform(v)
+
+    @field_validator("workspace_id")
+    def require_workspace_id(cls, v: str | None) -> str | None:
+        # A well-formed id or nothing: never cleaned into one (shared/workspace_ids.py).
+        if v is not None and not is_workspace_id(v):
+            raise ValueError("must be a workspace id")
+        return v
 
     @field_validator("text")
     def sanitize_text(cls, v: str) -> str:

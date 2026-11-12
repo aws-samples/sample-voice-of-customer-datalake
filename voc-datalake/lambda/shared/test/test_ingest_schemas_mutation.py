@@ -36,6 +36,7 @@ from shared.ingest_schemas import (
 from shared.test.clock import frozen_clock
 
 _CREATED_AT = '2025-01-01T12:00:00Z'
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 _INGESTED_AT = '2026-01-05T10:00:00+00:00'
 _FROZEN_NOW = datetime(2026, 3, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -140,7 +141,23 @@ class TestEveryStringBoundIsExact:
             'dimensions': None, 'tags': None, 'pii_policy_applied': None, 'radar_brand_key': None,
             'issue_attributes': None, 'ingested_at': None, 's3_raw_uri': None, 'raw_data': None,
             'is_webhook': None, 'is_update': None, 'is_deleted': None, 'model_profile': None,
+            'workspace_id': None,
         }
+
+    def test_a_workspace_id_is_kept_as_sent_when_well_formed(self):
+        """The plugin ingestors' messages carry their workspace (docs/multi-workspace.md); the others send none."""
+        assert validate_message(_raw(workspace_id=WS)).workspace_id == WS
+
+    @pytest.mark.parametrize('value', [
+        '', 'ws_', 'WS_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D', 'ws_81JC3Q8ZK6V7W9X2Y4A5B6C7D8',
+        'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DI', f' {WS}', f'{WS}\n', 'ws_01jc3q8zk6v7w9x2y4a5b6c7d8',
+    ])
+    def test_a_malformed_workspace_id_is_refused_never_cleaned(self, value):
+        assert _errors(_raw(workspace_id=value)) == ['workspace_id: Value error, must be a workspace id']
+
+    @pytest.mark.parametrize('value', [7, ['ws'], {'ws': WS}])
+    def test_a_workspace_id_that_is_not_a_string_is_refused(self, value):
+        assert _errors(_raw(workspace_id=value))[0].startswith('workspace_id: ')
 
     def test_source_platform_may_be_256_characters_and_257_is_refused_before_normalising(self):
         assert validate_message(_raw(source_platform='p' * 256)).source_platform == 'p' * 256

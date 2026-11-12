@@ -557,6 +557,20 @@ class TestSavingAnObject:
         info.assert_any_call('Sent new raw object to the processing queue')
 
     @pytest.mark.usefixtures('s3')
+    @pytest.mark.parametrize('named', ['ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', None])
+    def test_the_content_never_chooses_a_workspace(self, sqs, named, api_gateway_event, lambda_context):
+        """A body naming `workspace_id` (a real id, or null) is queued without it: deployment-wide, as every API
+        message is until the API moves onto workspaces (docs/multi-workspace.md)."""
+        response, _ = _put(api_gateway_event, lambda_context, '/data-explorer/s3', {
+            'key': 'raw/webscraper/a.json', 'sync_to_dynamo': True,
+            'content': {'feedback_id': 'f1', 'text': 't', 'workspace_id': named},
+        })
+        assert response['statusCode'] == 200
+        queued = json.loads(sqs.send_message.call_args.kwargs['MessageBody'])
+        assert 'workspace_id' not in queued
+        assert queued['text'] == 't'
+
+    @pytest.mark.usefixtures('s3')
     def test_sync_defaults_to_the_raw_data_bucket_when_none_is_named(self, sqs, api_gateway_event, lambda_context):
         _, body = _put(api_gateway_event, lambda_context, '/data-explorer/s3',
                        {'key': 'raw/a.json', 'content': '{"a": 1}', 'sync_to_dynamo': True})
@@ -749,8 +763,9 @@ class TestTheFeedbackWrite:
         assert response['statusCode'] == 200
         mock_table.query.assert_called_once_with(
             IndexName='gsi4-by-feedback-id',
-            KeyConditionExpression='feedback_id = :fid',
-            ExpressionAttributeValues={':fid': 'f1'},
+            KeyConditionExpression='#fid = :fid',
+            ExpressionAttributeNames={'#fid': 'gsi4pk'},
+            ExpressionAttributeValues={':fid': 'FEEDBACK#f1'},
             Limit=1,
         )
         mock_table.get_item.assert_called_once_with(Key={'pk': 'SOURCE#x', 'sk': 'FEEDBACK#f1'}, ConsistentRead=True)

@@ -16,8 +16,9 @@ The streaming Lambda has its own TypeScript mirror
 FEEDBACK_BY_DATE_INDEX = 'gsi1-by-date'
 FEEDBACK_BY_CATEGORY_INDEX = 'gsi2-by-category'
 FEEDBACK_BY_URGENCY_INDEX = 'gsi3-by-urgency'
+# gsi4pk (FEEDBACK#{id}, or WS#{ws}#FEEDBACK#{id} in a workspace)
 FEEDBACK_BY_ID_INDEX = 'gsi4-by-feedback-id'
-# source_channel + gsi1sk, slim projection (shared/channel_index.py)
+# gsi5pk (CHANNEL#{channel}, or WS#{ws}#CHANNEL#{channel}) + gsi1sk, slim projection (shared/channel_index.py)
 FEEDBACK_BY_CHANNEL_INDEX = 'gsi5-by-channel'
 
 # voc-aggregates table
@@ -25,9 +26,6 @@ AGGREGATES_BY_METRIC_TYPE_INDEX = 'gsi1-by-metric-type'
 
 # voc-projects table
 PROJECTS_BY_TYPE_INDEX = 'gsi1-by-type'
-
-# voc-jobs table (gsi1pk / gsi1sk; named by the workspace repository layer, shared/ws_repository.py)
-JOBS_BY_STATUS_INDEX = 'gsi1-by-status'
 
 # voc-memory table (gsi1pk MEMSTATUS#{scope}#{status}, gsi1sk last touched)
 MEMORY_BY_STATUS_INDEX = 'gsi1-by-memory-status'

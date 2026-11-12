@@ -1,15 +1,22 @@
-"""Plugin-scoped reads of the shared API-credentials secret.
+"""Plugin-scoped reads of an API-credentials secret.
 
 Named `plugin_secrets`, not `secrets`: `plugins/_shared` is on `sys.path` in the
 deployed bundle (the ingestor handler sits at the bundle root beside `_shared/`),
 and a module called `secrets.py` there shadows the stdlib `secrets` for anything
 that imports it — six modules in this tree do.
 
-Every plugin Lambda reads ONE Secrets Manager secret whose keys are namespaced
-`<plugin_id>_<key>` (CDK seeds them that way in `aggregateSecrets()`, and the
-only writers — `integrations_handler` and `scrapers_handler` — always prefix).
-The namespace prefix is therefore the entire isolation boundary: all ingestion
-Lambdas share one IAM role, so IAM cannot provide a second layer (issue #251).
+Which secret: an ingestor's run in a workspace reads that WORKSPACE's secret,
+`voc/ws/{ws}/credentials` (docs/multi-workspace.md, decision 8; the name built
+from the run's verified scope only); a deployment-wide run (an event that names
+no workspace) and a webhook still read the deployment's shared secret until
+their own slices. Either way the keys are namespaced
+`<plugin_id>_<key>` (the API's writers, `integrations_handler` and
+`scrapers_handler`, always prefix; they still write the shared secret, and the
+per-workspace plugin settings will write the workspace's), and inside one secret
+the namespace prefix is the entire isolation boundary between plugins: the
+ingestors share a role, so IAM cannot provide a second layer there (issue #251).
+Between workspaces IAM does not separate them either (soft isolation, decision
+1): the secret's name, built only from the verified scope, does.
 
 Two rules follow from that, and this module is the single choke point for both,
 so neither base class can drift from the other:
@@ -152,7 +159,7 @@ def filter_plugin_secrets(plugin_id: object, all_secrets: object) -> dict:
                    "payload_type": type(all_secrets).__name__},
         )
         raise ConfigurationError(
-            f"Cannot load plugin secrets for '{plugin_id}': the shared secret is not "
+            f"Cannot load plugin secrets for '{plugin_id}': the secret is not "
             f"a JSON object, so it cannot carry '{prefix}*' keys."
         )
 
@@ -166,14 +173,15 @@ def filter_plugin_secrets(plugin_id: object, all_secrets: object) -> dict:
         # Hence the narrower type. The caller has already evicted the cache entry
         # so the next invocation retries, and `BaseIngestor` reports this without
         # recording a circuit-breaker failure: counting it would let five transient
-        # Secrets Manager errors in one window disable a healthy plugin's
-        # EventBridge schedule, which nothing in this tree re-enables.
+        # Secrets Manager errors in one window stop a healthy plugin (in that
+        # workspace; deployment-wide, its schedule disabled, and with it every
+        # workspace's ticks) until a run succeeds or an operator resets it.
         logger.error(
             "Refusing to load plugin secrets: secret payload is empty",
             extra={"plugin_id": plugin_id, "expected_prefix": prefix},
         )
         raise SecretUnreadableError(
-            f"Cannot load plugin secrets for '{plugin_id}': the shared secret is "
+            f"Cannot load plugin secrets for '{plugin_id}': the secret is "
             f"empty or unreadable, so no '{prefix}*' keys could be read."
         )
 
@@ -191,7 +199,7 @@ def filter_plugin_secrets(plugin_id: object, all_secrets: object) -> dict:
             extra={"plugin_id": plugin_id, "expected_prefix": prefix},
         )
         raise ConfigurationError(
-            f"Cannot load plugin secrets for '{plugin_id}': the shared secret "
+            f"Cannot load plugin secrets for '{plugin_id}': the secret "
             f"contains no '{prefix}*' keys. Check the plugin id and that its "
             "credentials were saved under that prefix."
         )

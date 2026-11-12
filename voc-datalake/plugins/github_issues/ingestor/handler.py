@@ -35,11 +35,12 @@ from typing import SupportsFloat
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from _shared.github_api import GITHUB_API, GitHubClient, GitHubNotFound, StopRun
 from _shared.github_config import GitHubSourceConfig
 from _shared.github_mapping import comment_item, is_bot, is_pull_request, issue_item
 from shared.invocation_cost import measure_invocation_cost
+from shared.ws_repo import WorkspaceScope
 
 #: Hard cap per run across all repos (issues + comments), so one backfill of a
 #: busy repo cannot monopolise the processing queue — the rest comes next run.
@@ -98,10 +99,10 @@ class GitHubIssuesIngestor(BaseIngestor):
     #: Why the run ended early (``StopRun.reason``), or None when it ran to the end.
     stop_reason: str | None
 
-    def __init__(self, execution_id: str | None = None, deadline: float | None = None):
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None, deadline: float | None = None):
         # execution_id goes through the constructor: BaseIngestor clears the
         # secret cache on manual runs BEFORE the read (issues #141/#215).
-        super().__init__(execution_id=execution_id)
+        super().__init__(scope, execution_id=execution_id)
         # Never logged, never returned: it only ever reaches GitHubClient's header.
         self._token = str(self.secrets.get("token", "")).strip()
         self.config = GitHubSourceConfig.from_secrets(self.secrets)
@@ -225,7 +226,9 @@ def _deadline_for(context: object) -> float | None:
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event, context):
-    """Lambda entry point (EventBridge schedule or a manual "Run now")."""
+    """Lambda entry point (``run_in_workspace``): an event naming a workspace runs in it, one naming none (a manual
+    "Run now", the EventBridge tick's own run) runs deployment-wide, and the tick also fans out."""
     execution_id = event.get("execution_id") if isinstance(event, dict) else None
-    ingestor = GitHubIssuesIngestor(execution_id=execution_id, deadline=_deadline_for(context))
-    return ingestor.run()
+    deadline = _deadline_for(context)
+    return run_in_workspace(
+        event, lambda scope: GitHubIssuesIngestor(scope, execution_id=execution_id, deadline=deadline).run())

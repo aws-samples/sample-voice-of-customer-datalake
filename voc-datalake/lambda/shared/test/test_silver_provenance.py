@@ -10,6 +10,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import silver_provenance as sp
 from shared.test.fresh_module import fresh_module_copy
+from shared.ws_repo import WorkspaceScope
 
 ITEM = {
     'pk': 'SOURCE#webscraper', 'sk': 'FEEDBACK#fb1', 'feedback_id': 'fb1', 'source_platform': 'webscraper',
@@ -124,6 +125,35 @@ class TestKeepSilverVersion:
         assert sp.keep_silver_version({'source_platform': 's'}, actor=ACTOR, reason='r', changed_fields=[]) is None
         s3.put_object.assert_not_called()
         failures.assert_called_once()
+
+
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+WS_ITEM = {**ITEM, 'pk': f'WS#{WS}#SOURCE#webscraper'}
+
+
+class TestAWorkspaceItem:
+    """An item of a workspace keeps its versions under that workspace's ``ws/{ws}/silver/`` (docs/multi-workspace.md),
+    and never anywhere else."""
+
+    def test_its_prefix_is_the_workspaces(self):
+        assert sp.silver_item_prefix(WS_ITEM, WorkspaceScope(WS)) == f'ws/{WS}/silver/webscraper/fb1/'
+
+    def test_its_version_is_kept_there(self, s3):
+        uri = sp.keep_silver_version(WS_ITEM, actor=ACTOR, reason='source_update', changed_fields=[],
+                                     scope=WorkspaceScope(WS))
+        key = s3.put_object.call_args.kwargs['Key']
+        assert key.startswith(f'ws/{WS}/silver/webscraper/fb1/')
+        assert uri == f's3://raw-bucket/{key}'
+
+    @pytest.mark.parametrize(('item', 'scope'), [
+        (WS_ITEM, None),  # a workspace's item kept deployment-wide: its folder could be a deployment item's
+        (ITEM, WorkspaceScope(WS)),  # a deployment item kept in a workspace
+        (WS_ITEM, WorkspaceScope('ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ')),  # another workspace's
+    ])
+    def test_an_item_outside_its_scope_keeps_nothing_and_is_counted(self, s3, failures, item, scope):
+        assert sp.keep_silver_version(item, actor=ACTOR, reason='r', changed_fields=[], scope=scope) is None
+        s3.put_object.assert_not_called()
+        failures.assert_called_once_with(name='SilverVersionFailures', unit='Count', value=1)
 
 
 class TestReasons:

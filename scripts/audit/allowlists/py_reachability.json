@@ -1,7 +1,11 @@
 {
   "entries": [
-    {"key": "lambda/shared/ws_repository.py", "reason": "Phase 2's workspace-scoped repository layer (docs/multi-workspace.md, Request flow step 4): used by its tests until the data path moves onto it; scripts/audit/ws_raw_access.py ratchets the raw uses it replaces. Remove this entry with its first production import."},
-    {"key": "lambda/shared/indexes.py::JOBS_BY_STATUS_INDEX", "reason": "voc-jobs' gsi1-by-status, named only by the workspace repository layer's table registry (shared/ws_repository.py TABLES, phase 2's layer, allowlisted above as unreached until the data path moves onto it). Remove this entry with that one."},
+    {"key": "lambda/shared/ws_repo.py::scope_of", "reason": "Multi-workspace phase 2's repository layer (docs/multi-workspace.md, Request flow step 4): a request's scope, first called by the API slice; the ingestion slice uses the layer's message scope, keys and tables."},
+    {"key": "lambda/shared/ws_repo.py::ResolvedWorkspace", "reason": "A typing Protocol, named only in scope_of's annotation (shared/workspace.py's WorkspaceContext by its shape): an import of the context, even type-only, closes a module cycle CodeQL refuses. Never executed by design."},
+    {"key": "lambda/shared/ws_repo.py::scope_from_key", "reason": "Repository layer (docs/multi-workspace.md): a stored key's scope, first called by the stream and processor slices."},
+    {"key": "lambda/shared/ws_repo.py::metric_pk", "reason": "Repository layer (docs/multi-workspace.md): the counters' partition, first called by the aggregator slice."},
+    {"key": "lambda/shared/ws_repo.py::WorkspaceTable.iter_query", "reason": "Repository layer (docs/multi-workspace.md): the paged read of the feedback and metrics read APIs, first called by their slice."},
+    {"key": "lambda/shared/ws_repo.py::_BoundQuery", "reason": "The pager adapter behind WorkspaceTable.iter_query (above), reached when it is."},
     {"key": "lambda/agents/state_machine.py", "reason": "Build-time generator of state_machine.asl.json (the CDK loads the JSON); test_graph_and_state_machine.py keeps the two in lockstep. Never imported at run time by design."},
     {"key": "lambda/shared/api.py::clear_categories_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the module-level categories cache between API tests."},
     {"key": "lambda/shared/memory_store.py::clear_pool_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container embedding pool between memory tests."},

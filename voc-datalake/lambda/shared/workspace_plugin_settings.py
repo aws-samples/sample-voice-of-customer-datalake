@@ -42,10 +42,10 @@ from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
 from shared.workspace import ACTIVE, NOT_FOUND, WorkspaceContext, audit_key, audit_sort_key, ws_key
 from shared.workspace_members import NO_LONGER_ADMIN
+from shared.workspace_plugins import plugin_partition
 
 __all__ = ['offered_plugin', 'parse_plugin_change', 'set_plugin_enabled', 'workspace_plugins']
 
-PLUGIN_PREFIX: Final = 'PLUGIN#'
 PLUGIN_ENABLED: Final = 'plugin_enabled'
 PLUGIN_DISABLED: Final = 'plugin_disabled'
 PER_WORKSPACE_INGESTION: Final = False
@@ -57,10 +57,9 @@ CHANGED_MEANWHILE: Final = "The workspace's plugins changed meanwhile: reload th
 
 
 def plugin_key(plugin_id: str, ws: str) -> dict[str, str]:
-    """``PLUGIN#{plugin_id}`` / ``WS#{ws}``: the row that says the workspace enabled the plugin."""
-    if not is_valid_plugin_identifier(plugin_id):
-        raise ValueError('not a plugin id')
-    return {'pk': f'{PLUGIN_PREFIX}{plugin_id}', 'sk': ws_key(ws)}
+    """``PLUGIN#{plugin_id}`` / ``WS#{ws}``: the row that says the workspace enabled the plugin (its partition is
+    the one the ingestors' fan-out reads, shared/workspace_plugins.py ``plugin_partition``)."""
+    return {'pk': plugin_partition(plugin_id), 'sk': ws_key(ws)}
 
 
 def offered_plugin(plugin_id: object, ceiling: Sequence[str]) -> str:

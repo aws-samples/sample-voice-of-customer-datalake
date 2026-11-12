@@ -120,6 +120,22 @@ def test_the_rebuild_matches_what_the_aggregator_produced_for_the_same_items(reb
     assert meta['date'] == '2026-02-11'
 
 
+def test_a_workspace_item_is_left_out_as_the_aggregator_leaves_it_out(rebuild, tables):
+    """Workspace items are not aggregated yet (docs/multi-workspace.md): neither the stream nor the rebuild counts
+    them into the deployment-wide METRIC# rows."""
+    workspace = [{**item, 'pk': f"WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#{item['pk']}"} for item in ITEMS[:3]]
+    _put_feedback(tables['feedback'], ITEMS + workspace)
+    _aggregate(tables['live'], [_record('INSERT', new=item) for item in ITEMS + workspace])
+
+    plan = rebuild.run(tables['feedback'], tables['rebuilt'], apply=True)
+
+    assert _rows(tables['rebuilt']) == _rows(tables['live'])
+    assert rebuild.daily_total_sum(plan) == len(ITEMS)
+    assert plan.workspace_items == len(workspace)
+    assert any('MATCHES' in line for line in rebuild.summary_lines(plan, apply=True))
+    assert '  workspace items (not counted): 3' in rebuild.summary_lines(plan, apply=True)
+
+
 def test_rebuilt_rows_carry_no_ttl_and_overwrite_a_wrong_count(rebuild, tables):
     _put_feedback(tables['feedback'], ITEMS)
     tables['rebuilt'].put_item(Item={'pk': 'METRIC#daily_total', 'sk': '2026-02-11', 'count': 99,

@@ -18,8 +18,9 @@ from botocore.exceptions import BotoCoreError, ClientError
 from _shared import app_reviews_parts as parts
 from _shared.app_reviews_config import parse_int
 from _shared.app_reviews_health import StorefrontTally, check_review_drop
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 # Run-row ``errors`` entries one run keeps (one per app with a problem; the row is
 # shown on the Data sources page, so it stays short).
@@ -261,9 +262,9 @@ class AppReviewsIngestor[AppT: AppConfigLike](BaseIngestor):
     DATE_FIELD: ClassVar[str]
     DEFAULT_SORT_BY: ClassVar[str]
 
-    def __init__(self, execution_id: str | None = None):
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None):
         # execution_id → BaseIngestor manual-run cache clear (#141/#215).
-        super().__init__(execution_id=execution_id)
+        super().__init__(scope, execution_id=execution_id)
         self.app_configs: list[AppT] = self._load_app_configs()
         self.sort_by = self.secrets.get("sort_by", self.DEFAULT_SORT_BY)
         self.frequency_minutes = parse_int(
@@ -317,8 +318,8 @@ class AppReviewsIngestor[AppT: AppConfigLike](BaseIngestor):
         total = self.carried.items_found + items_this_part
         warnings = [*self.carried.warnings, *self.run_warnings][: MAX_RUN_WARNINGS - 1]
         apps = [(self.app_identifier(app), app.name) for app in self.pending_apps]
-        event = parts.continuation_event(execution_id=self.execution_id, apps=apps, items_found=total,
-                                         warnings=warnings, part=self.carried.part + 1)
+        event = parts.continuation_event(scope=self.scope, execution_id=self.execution_id, apps=apps,
+                                         items_found=total, warnings=warnings, part=self.carried.part + 1)
         super()._update_source_run_status({"items_found": total})
         try:
             parts.start_next_part(event)
@@ -359,7 +360,13 @@ class AppReviewsIngestor[AppT: AppConfigLike](BaseIngestor):
 
     @classmethod
     def run_for_event(cls, event: object, context: object = None) -> dict:
-        """Lambda body: build the ingestor and run it on the apps the event names
+        """Lambda body (``run_in_workspace``): a run in the workspace the event names (a continuation part carries
+        its run's) or deployment-wide, on the apps it names; the tick also fans out."""
+        return run_in_workspace(event, lambda scope: cls.run_in_scope(scope, event, context))
+
+    @classmethod
+    def run_in_scope(cls, scope: WorkspaceScope | None, event: object, context: object = None) -> dict:
+        """Build the ingestor in *scope* and run it on the apps the event names
         (``configs_for_event``: one ``app_id``, a continuation part's apps, or all),
         with the Lambda *context*'s remaining time as its budget.
 
@@ -367,7 +374,7 @@ class AppReviewsIngestor[AppT: AppConfigLike](BaseIngestor):
         BaseIngestor.__init__ — passing execution_id below triggers it.
         """
         execution_id = event.get("execution_id") if isinstance(event, dict) else None
-        ingestor = cls(execution_id=execution_id)
+        ingestor = cls(scope, execution_id=execution_id)
         ingestor.budget = parts.RunBudget.for_context(context)
         try:
             ingestor.carried = parts.parse_continuation(event)

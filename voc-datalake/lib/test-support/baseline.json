@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "40ffe5ca5dd1a05696cb7517ed3999bf2a1d414b26dd2e49d274a202c023dd87",
+      "templateSha256": "a258b0a85b261ce50b3bda2476092168db5f7d9130b56f56a8147565f9b248e2",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -183,7 +183,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "91dc6151f3c084c510f94b8b62413e0939ebf8f1f208072868c4fdc74b0d87df",
+      "templateSha256": "1da790bd98ec5cc05c3984e4ee86257cfccca0c496541f8a26c675c5f4b98a80",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -280,7 +280,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "4c63625157ea7a23fe4ee76ae14b767487366b161a5bcc369501df0299d4dd64",
+      "templateSha256": "7db7feda0b36a7667a366dd5aa1397d90e78d9cf0d1d07cc6c1bb18058b060e7",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -324,7 +324,11 @@
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>"
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-github_issues-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-web_reviews-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:secretsmanager:us-east-1:111111111111:secret:voc/ws/*"
         ],
         "environmentNames": [
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -333,12 +337,13 @@
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "POWERTOOLS_SERVICE_NAME = voc-design-capture",
-          "POWERTOOLS_SERVICE_NAME = voc-ingestion"
+          "POWERTOOLS_SERVICE_NAME = voc-ingestion",
+          "WORKSPACE_SECRET_PREFIX = voc/ws"
         ]
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "9a17252bef46125016dacecde5dec319cc897be060458db1d2cd19a6858c678f",
+      "templateSha256": "9e83e3a6e09c13153e698c7ca2843761fde683a57ed8a688c1395fdb9718235a",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",

@@ -27,6 +27,8 @@ ignore_names = [
     # ingestors/webhooks and read by the processor from the queued JSON, never by attribute.
     "channel", "brand_handles_matched", "ingested_at", "raw_data", "is_webhook", "is_update", "is_deleted",
     "ingestion_method", "manual_import_job_id",
+    # The ingestors' `workspace_id` (docs/multi-workspace.md): set by the plugin ingestors, read by key.
+    "workspace_id",
     # Same wire shape: the CSV dataset fields (issue #411) the manual-import API writes and the processor
     # reads by key (shared/csv_datasets.py is_csv_replace, shared/csv_updates.py).
     "csv_dataset", "csv_replace",
@@ -86,9 +88,6 @@ ignore_names = [
     # urllib3's connection protocols, which exist only under TYPE_CHECKING: shared/http_utils.py
     # imports them there and names them in its two `cast('type[...]', ...)` strings.
     "BaseHTTPConnection", "BaseHTTPSConnection",
-    # Phase 2's layer (lambda/shared/ws_repository.py, docs/multi-workspace.md Request flow step 4): used by its
-    # tests until the data path moves onto it; scripts/audit/ws_raw_access.py ratchets the raw uses it replaces.
-    "ws_table", "ws_s3_key",
 ]
 # Decorators that REGISTER the function with a framework, which then calls it: Powertools routes and
 # exception handlers, pydantic validators. Your own wrapper decorators (@api_handler, @tracer.*) are

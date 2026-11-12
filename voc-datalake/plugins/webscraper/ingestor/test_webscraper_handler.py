@@ -5,9 +5,11 @@ Focus: `_extract_rating` rating extraction, including the word-based star
 classes fix (issue #148, e.g. ``<p class="star-rating Three">``). Also
 characterizes the pre-existing digit-class, rating-attribute, and text
 fallbacks so a regression in any of them is caught. Plus the manual-run
-secret-cache clear (issue #141).
+secret-cache clear (issue #141) and the handler's workspace entry
+(docs/multi-workspace.md: a run happens in the workspace its event names, or deployment-wide when it names none).
 """
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +17,25 @@ from bs4 import BeautifulSoup
 
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.sqs_response_fixtures import echo_batch_success
+from _shared.test.workspace_fixtures import (
+    EVENTS_NAMING_NO_WORKSPACE,
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    OTHER_WS,
+    REFUSED,
+    SCHEDULED_TICK,
+    SCOPE,
+    SECRET_NAME,
+    TICK_ORDER,
+    WS,
+    fan_out_then_run,
+    ws_event,
+)
+
+# The execution id POST /scrapers/{id}/run names (shared/ids.py timestamped_id), and its invoke payload
+# (lambda/api/scrapers_handler.py run_scraper).
+SCRAPER_RUN_ID = "run_s1_20261112080000_0a1b2c3d"
+SCRAPERS_API_RUN = {"scraper_id": "s1", "execution_id": SCRAPER_RUN_ID, "manual_run": True}
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -30,7 +51,7 @@ def ingestor():
     """Create a WebScraperIngestor with mocked AWS dependencies."""
     with offline_ingestor_construction():
         from webscraper.ingestor.handler import WebScraperIngestor
-        return WebScraperIngestor()
+        return WebScraperIngestor(SCOPE)
 
 
 # ---------------------------------------------------------------------------
@@ -121,24 +142,25 @@ class TestLambdaHandlerSecretCache:
         MockIngestor.return_value.run.return_value = {"status": "success"}
 
         lambda_handler(
-            {"execution_id": "exec-1", "scraper_id": "s1"}, lambda_context
+            ws_event(execution_id="exec-1", scraper_id="s1"), lambda_context
         )
 
         MockIngestor.assert_called_once_with(
-            execution_id="exec-1", target_scraper_id="s1"
+            SCOPE, execution_id="exec-1", target_scraper_id="s1"
         )
 
     @patch("webscraper.ingestor.handler.WebScraperIngestor")
     def test_scheduled_run_passes_no_execution_id(
         self, MockIngestor, lambda_context
     ):
+        """A workspace's scheduled run: the fan-out's invoke names only the workspace."""
         from webscraper.ingestor.handler import lambda_handler
         MockIngestor.return_value.run.return_value = {"status": "success"}
 
-        lambda_handler({}, lambda_context)
+        lambda_handler(ws_event(), lambda_context)
 
         MockIngestor.assert_called_once_with(
-            execution_id=None, target_scraper_id=None
+            SCOPE, execution_id=None, target_scraper_id=None
         )
 
     @patch("_shared.base_ingestor.get_dynamodb_resource")
@@ -162,10 +184,171 @@ class TestLambdaHandlerSecretCache:
         mock_dynamo.return_value.Table.return_value = MagicMock()
 
         from webscraper.ingestor.handler import WebScraperIngestor
-        ingestor = WebScraperIngestor(execution_id="exec-1", target_scraper_id="s1")
+        ingestor = WebScraperIngestor(SCOPE, execution_id="exec-1", target_scraper_id="s1")
 
         assert call_order == ["clear", "get_secret"]
+        # The secret read is the workspace's own.
+        mock_get_secret.assert_called_once_with(SECRET_NAME)
         assert ingestor.execution_id == "exec-1"
+
+
+class TestLambdaHandlerWorkspace:
+    """The handler runs in the workspace its event names, deployment-wide when it names none, and refuses a
+    malformed one (``run_in_workspace``)."""
+
+    @pytest.mark.parametrize("event", [
+        *EVENTS_WITH_A_MALFORMED_WORKSPACE,
+        {"workspace_id": "not-a-workspace", "execution_id": "exec-1", "scraper_id": "s1"},
+    ])
+    @patch("webscraper.ingestor.handler.WebScraperIngestor")
+    def test_an_event_naming_a_malformed_workspace_is_refused_and_constructs_nothing(
+        self, MockIngestor, event, lambda_context
+    ):
+        from webscraper.ingestor.handler import lambda_handler
+
+        assert lambda_handler(event, lambda_context) == REFUSED
+        MockIngestor.assert_not_called()
+
+    @pytest.mark.parametrize(("event", "kwargs"), [
+        *((event, {"execution_id": event.get("execution_id"), "target_scraper_id": None})
+          for event in EVENTS_NAMING_NO_WORKSPACE),
+        # POST /scrapers/{id}/run (lambda/api/scrapers_handler.py run_scraper).
+        (SCRAPERS_API_RUN, {"execution_id": SCRAPER_RUN_ID, "target_scraper_id": "s1"}),
+        (None, {"execution_id": None, "target_scraper_id": None}),
+        ([], {"execution_id": None, "target_scraper_id": None}),
+    ])
+    @patch("_shared.base_ingestor.fan_out_once")
+    @patch("webscraper.ingestor.handler.WebScraperIngestor")
+    def test_an_event_naming_no_workspace_runs_deployment_wide(
+        self, MockIngestor, fan_out, event, kwargs, lambda_context
+    ):
+        from webscraper.ingestor.handler import lambda_handler
+        MockIngestor.return_value.run.return_value = {"status": "success", "items_processed": 2}
+
+        assert lambda_handler(event, lambda_context) == {"status": "success", "items_processed": 2}
+        MockIngestor.assert_called_once_with(None, **kwargs)
+        MockIngestor.return_value.run.assert_called_once_with()
+        fan_out.assert_not_called()
+
+    @patch("webscraper.ingestor.handler.WebScraperIngestor")
+    def test_the_events_scope_execution_id_and_scraper_id_reach_the_ingestor(
+        self, MockIngestor, lambda_context
+    ):
+        from webscraper.ingestor.handler import lambda_handler
+        MockIngestor.return_value.run.return_value = {"status": "success"}
+
+        result = lambda_handler(
+            {"workspace_id": OTHER_WS, "execution_id": "exec-9", "scraper_id": "s9"}, lambda_context
+        )
+
+        assert result == {"status": "success"}
+        (scope,), kwargs = MockIngestor.call_args
+        assert MockIngestor.call_count == 1
+        assert scope.ws == OTHER_WS
+        assert kwargs == {"execution_id": "exec-9", "target_scraper_id": "s9"}
+        MockIngestor.return_value.run.assert_called_once_with()
+
+    @patch("webscraper.ingestor.handler.WebScraperIngestor")
+    def test_the_scheduled_tick_fans_out_then_runs_deployment_wide(self, MockIngestor, lambda_context):
+        from webscraper.ingestor.handler import lambda_handler
+        MockIngestor.return_value.run.return_value = {"status": "success", "items_processed": 2}
+
+        result, order = fan_out_then_run(
+            MockIngestor.return_value.run, lambda: lambda_handler(dict(SCHEDULED_TICK), lambda_context))
+
+        assert result == {"status": "success", "items_processed": 2}
+        MockIngestor.assert_called_once_with(None, execution_id=None, target_scraper_id=None)
+        assert order == list(TICK_ORDER)
+
+
+class TestTheScrapersApiRunIsDeploymentWide:
+    """``POST /scrapers/{id}/run`` invokes the webscraper with ``scraper_id`` and ``execution_id`` and no workspace:
+    the run reads the shared secret and closes the deployment-wide rows the API wrote and polls."""
+
+    @staticmethod
+    def _run() -> tuple[dict, MagicMock, MagicMock, MagicMock]:
+        from _shared import base_ingestor
+        from webscraper.ingestor.handler import lambda_handler
+
+        config = {"id": "s1", "name": "Sample shop", "urls": ["https://shop.example.com/reviews"]}
+        item = {"id": "r1", "text": "Great product", "created_at": "2026-11-01T00:00:00Z"}
+        table = MagicMock()
+        context = MagicMock(function_name="test-webscraper", memory_limit_in_mb=512,
+                            invoked_function_arn="arn:aws:lambda:us-east-1:123456789:function:test",
+                            aws_request_id="req-1")
+        with (
+            offline_ingestor_construction(),
+            patch("_shared.base_ingestor.AGGREGATES_TABLE", "voc-aggregates"),
+            patch("_shared.base_ingestor.get_dynamodb_resource") as dynamo,
+            patch("_shared.base_ingestor.get_secret",
+                  return_value=scoped_secret(configs=json.dumps([config]))) as get_secret,
+            patch("_shared.base_ingestor.get_sqs_client") as get_sqs,
+            patch("_shared.base_ingestor.CircuitBreaker") as breaker,
+            patch("_shared.base_ingestor.emit_audit_event"),
+            patch("_shared.base_ingestor.fan_out_once") as fan_out,
+            patch("webscraper.ingestor.handler.WebScraperIngestor._scrape_page", return_value=iter([item])),
+            patch("webscraper.ingestor.handler.time.sleep"),
+        ):
+            dynamo.return_value.Table.return_value = table
+            get_sqs.return_value.send_message_batch.side_effect = echo_batch_success
+            breaker.return_value.is_open.return_value = False
+            result = lambda_handler(dict(SCRAPERS_API_RUN), context)
+        get_secret.assert_called_once_with(base_ingestor.SECRETS_ARN)
+        breaker.assert_called_once_with("test_source", None)
+        fan_out.assert_not_called()
+        return result, table, get_sqs.return_value, dynamo.return_value
+
+    def test_it_closes_the_scraper_run_row_the_api_wrote(self):
+        result, table, _, _ = self._run()
+        assert result == {"status": "success", "items_processed": 1}
+        scraper_rows = [c.kwargs for c in table.update_item.call_args_list
+                        if c.kwargs["Key"]["pk"].startswith("SCRAPER_RUN#")]
+        assert {tuple(sorted(row["Key"].items())) for row in scraper_rows} == {
+            (("pk", "SCRAPER_RUN#s1"), ("sk", SCRAPER_RUN_ID)),
+        }
+        last = scraper_rows[-1]
+        values = {last["ExpressionAttributeNames"][name]: last["ExpressionAttributeValues"][f":{name[1:]}"]
+                  for name in last["ExpressionAttributeNames"]}
+        assert (values["status"], values["items_found"], values["errors"]) == ("completed", 1, [])
+
+    def test_its_source_run_row_is_the_deployment_wide_one(self):
+        _, table, _, _ = self._run()
+        keys = {tuple(sorted(c.kwargs["Key"].items())) for c in table.update_item.call_args_list}
+        assert keys == {
+            (("pk", "SCRAPER_RUN#s1"), ("sk", SCRAPER_RUN_ID)),
+            (("pk", "SOURCE_RUN#test_source"), ("sk", SCRAPER_RUN_ID)),
+        }
+        assert not any(key[0][1].startswith("WS#") for key in keys)
+
+    def test_its_messages_name_no_workspace_and_its_watermark_is_deployment_wide(self):
+        _, table, sqs, _ = self._run()
+        (batch,) = sqs.send_message_batch.call_args_list
+        (entry,) = batch.kwargs["Entries"]
+        assert "workspace_id" not in json.loads(entry["MessageBody"])
+        sources = {c.kwargs["Item"]["source"] for c in table.put_item.call_args_list}
+        assert sources == {"test_source#scraper_s1_last_run", "test_source#last_id"}
+
+
+class TestScraperRunRowIsTheWorkspaces:
+    """A manual run's progress row lives in its workspace's partition: two workspaces never share one."""
+
+    @staticmethod
+    def _run_row_key(ws: str) -> dict:
+        from shared.ws_repo import WorkspaceScope
+        with offline_ingestor_construction(), \
+             patch("_shared.base_ingestor.AGGREGATES_TABLE", "voc-aggregates"), \
+             patch("_shared.base_ingestor.get_dynamodb_resource") as dynamo:
+            table = MagicMock()
+            dynamo.return_value.Table.return_value = table
+            from webscraper.ingestor.handler import WebScraperIngestor
+            ingestor = WebScraperIngestor(WorkspaceScope(ws), execution_id="exec-1", target_scraper_id="s1")
+        ingestor._update_run_status("s1", {"status": "running"})
+        table.update_item.assert_called_once()
+        return table.update_item.call_args.kwargs["Key"]
+
+    def test_the_row_of_a_run_in_each_workspace_is_that_workspaces(self):
+        assert self._run_row_key(WS) == {"pk": f"WS#{WS}#SCRAPER_RUN#s1", "sk": "exec-1"}
+        assert self._run_row_key(OTHER_WS) == {"pk": f"WS#{OTHER_WS}#SCRAPER_RUN#s1", "sk": "exec-1"}
 
 
 # ---------------------------------------------------------------------------

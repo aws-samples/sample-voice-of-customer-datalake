@@ -37,7 +37,7 @@ _FACTORY_SENTINELS = [
     ('get_secrets_client', '_secrets_client', 'client', 'secretsmanager'),
     ('get_bedrock_client', '_bedrock_client', 'client', 'bedrock-runtime'),
     ('get_lambda_client', '_lambda_client', 'client', 'lambda'),
-    # The plugin circuit breaker's DisableRule goes through this one.
+    # The plugin circuit breaker's DisableRule (its deployment-wide runs) goes through this one.
     ('get_eventbridge_client', '_eventbridge_client', 'client', 'events'),
 ]
 

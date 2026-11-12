@@ -31,6 +31,8 @@ export function synthIngestionStacks(
     env,
     watermarksTable: pkSkTable(deps, 'Watermarks'),
     aggregatesTable,
+    workspacesTable: pkSkTable(deps, 'Workspaces'),
+    idempotencyTable: pkSkTable(deps, 'Idempotency'),
     rawDataBucket: fixtureBucket(deps, 'RawData'),
     accessLogsBucket: fixtureBucket(deps, 'AccessLogs'),
     kmsKey: new kms.Key(deps, 'Key'),

@@ -50,7 +50,18 @@ from _shared.test.ingestor_fixtures import (
 )
 from _shared.test.scoped_secret import scoped_secret
 from _shared.test.sqs_response_fixtures import echo_batch_success
+from _shared.test.workspace_fixtures import (
+    EVENTS_NAMING_NO_WORKSPACE,
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    OTHER_WS,
+    REFUSED,
+    SCHEDULED_TICK,
+    SCOPE,
+    WS,
+    ws_event,
+)
 from shared.test.emf_fixtures import emf_metric_names
+from shared.ws_repo import ws_table
 
 IOS_DIR = Path(__file__).resolve().parent
 HANDLER_MODULE = "app_reviews_ios.ingestor.handler"
@@ -85,7 +96,7 @@ def _ingestor(handler, secret: dict | None = None, *, execution_id=None) -> Gene
         patch("_shared.base_ingestor.get_secret", return_value=scoped_secret(**(secret or {}))),
         patch.object(handler, "create_session", return_value=session) as create_session,
     ):
-        ingestor = handler.IOSAppReviewsIngestor(execution_id=execution_id)
+        ingestor = handler.IOSAppReviewsIngestor(SCOPE, execution_id=execution_id)
     ingestor.created_session = session
     ingestor.create_session_calls = create_session.call_args_list
     yield ingestor
@@ -101,7 +112,11 @@ ONE_APP = _configs({"app_name": "MyApp", "app_id": "123", "max_reviews_per_run":
 class TestConstruction:
     def test_a_bare_construction_has_no_execution_id(self, handler):
         with offline_ingestor_construction(), patch.object(handler, "create_session"):
-            assert handler.IOSAppReviewsIngestor().execution_id is None
+            assert handler.IOSAppReviewsIngestor(SCOPE).execution_id is None
+
+    def test_the_scope_is_the_runs_workspace(self, handler):
+        with _ingestor(handler) as ingestor:
+            assert ingestor.scope == SCOPE
 
     def test_the_execution_id_reaches_the_base_ingestor(self, handler):
         with _ingestor(handler, execution_id="exec-1") as ingestor:
@@ -298,8 +313,9 @@ class TestWatermarkUsesTheReviewDate:
     def test_a_scheduled_run_yields_only_reviews_newer_than_the_watermark(self, handler):
         with _ingestor(handler, ONE_APP) as ingestor:
             pass
-        ingestor.watermarks_table = MagicMock()
-        ingestor.watermarks_table.get_item.return_value = {
+        table = MagicMock()
+        ingestor.watermarks_table = ws_table(SCOPE, table, key='source')
+        table.get_item.return_value = {
             "Item": {"value": "2024-05-02T00:00:00+00:00"}
         }
         with (
@@ -313,11 +329,12 @@ class TestWatermarkUsesTheReviewDate:
             yielded = list(ingestor.fetch_new_items())
 
         assert [item["id"] for item in yielded] == ["ios_123_newer"]
+        assert call(Key={"source": f"WS#{WS}#test_source#MyApp_last_published_at"}) in table.get_item.call_args_list
         written = {
             c.kwargs["Item"]["source"]: c.kwargs["Item"]["value"]
-            for c in ingestor.watermarks_table.put_item.call_args_list
+            for c in table.put_item.call_args_list
         }
-        assert written["test_source#MyApp_last_published_at"] == "2024-05-03T00:00:00+00:00"
+        assert written[f"WS#{WS}#test_source#MyApp_last_published_at"] == "2024-05-03T00:00:00+00:00"
 
 
 class TestFormatReview:
@@ -434,7 +451,7 @@ class TestLambdaHandler:
             offline_ingestor_construction(),
             patch("_shared.base_ingestor.get_sqs_client") as get_sqs,
             patch("_shared.base_ingestor.get_secret", return_value=scoped_secret(**ONE_APP)),
-            patch.object(handler, "create_session", return_value=session),
+            patch.object(handler, "create_session", return_value=session) as create_session,
             patch.object(handler, "fetch_reviews_for_country") as fetch,
             patch.object(handler.random, "shuffle"),
             patch.object(handler.IOSAppReviewsIngestor, "run", autospec=True) as run,
@@ -448,36 +465,86 @@ class TestLambdaHandler:
             fetch.side_effect = lambda **kw: StorefrontFetch(
                 [_review("r1", _dated(1), rating=4)] if kw["country"] == "us" else []
             )
-            yield lambda event: handler.lambda_handler(event, lambda_context), fetch
+            # The Lambda, its review fetch, the per-construction session factory and the SQS client.
+            yield SimpleNamespace(
+                run=lambda event: handler.lambda_handler(event, lambda_context), fetch=fetch,
+                create_session=create_session, sqs=get_sqs.return_value,
+            )
         metrics.clear_metrics()
 
+    @staticmethod
+    def _queued_workspaces(sqs: MagicMock) -> list[str]:
+        return [json.loads(entry["MessageBody"])["workspace_id"]
+                for c in sqs.send_message_batch.call_args_list for entry in c.kwargs["Entries"]]
+
     def test_a_scheduled_run_ingests_every_configured_app(self, invoke):
-        run, fetch = invoke
-        assert run({}) == {"status": "success", "items_processed": 1}
-        assert fetch.call_count == 40
+        # A fan-out's per-workspace invoke carries only the workspace id.
+        assert invoke.run(ws_event()) == {"status": "success", "items_processed": 1}
+        assert invoke.fetch.call_count == 40
+        assert self._queued_workspaces(invoke.sqs) == [WS]
+
+    def test_a_run_in_another_workspace_queues_its_reviews_there(self, invoke):
+        assert invoke.run({"workspace_id": OTHER_WS}) == {"status": "success", "items_processed": 1}
+        assert self._queued_workspaces(invoke.sqs) == [OTHER_WS]
+
+    @pytest.mark.parametrize("event", EVENTS_WITH_A_MALFORMED_WORKSPACE)
+    def test_an_event_naming_a_malformed_workspace_is_refused_and_builds_nothing(self, invoke, event):
+        assert invoke.run(event) == REFUSED
+        invoke.create_session.assert_not_called()  # no ingestor was constructed
+        assert invoke.fetch.call_count == 0
+        invoke.sqs.send_message_batch.assert_not_called()
+
+    @pytest.mark.parametrize("event", [*EVENTS_NAMING_NO_WORKSPACE, {"execution_id": "e"}])
+    def test_an_event_naming_no_workspace_runs_deployment_wide(self, handler, invoke, event):
+        with (
+            patch.object(handler.IOSAppReviewsIngestor, "__init__", autospec=True,
+                         side_effect=handler.IOSAppReviewsIngestor.__init__) as init,
+            patch("_shared.base_ingestor.fan_out_once") as fan_out,
+        ):
+            assert invoke.run(event) == {"status": "success", "items_processed": 1}
+        (_, scope), kwargs = init.call_args
+        assert (scope, kwargs) == (None, {"execution_id": event.get("execution_id")})
+        assert invoke.fetch.call_count == 40
+        bodies = [json.loads(entry["MessageBody"])
+                  for c in invoke.sqs.send_message_batch.call_args_list for entry in c.kwargs["Entries"]]
+        assert len(bodies) == 1
+        assert "workspace_id" not in bodies[0]
+        fan_out.assert_not_called()
+
+    def test_the_scheduled_tick_fans_out_then_runs_deployment_wide(self, invoke):
+        order: list[str] = []
+
+        def queue(**kwargs) -> dict:
+            order.append("queued")
+            return echo_batch_success(**kwargs)
+
+        invoke.sqs.send_message_batch.side_effect = queue
+        with patch("_shared.base_ingestor.fan_out_once", side_effect=lambda *_: order.append("fan_out")) as fan_out:
+            assert invoke.run(SCHEDULED_TICK) == {"status": "success", "items_processed": 1}
+        fan_out.assert_called_once_with("test_source", SCHEDULED_TICK)
+        assert order == ["fan_out", "queued"]
+        body = json.loads(invoke.sqs.send_message_batch.call_args.kwargs["Entries"][0]["MessageBody"])
+        assert "workspace_id" not in body
 
     def test_the_event_app_id_narrows_the_run_to_that_app(self, invoke):
-        run, fetch = invoke
         with patch("_shared.app_reviews_utils.logger") as utils_logger:
-            assert run({"app_id": "999"}) == {"status": "success", "items_processed": 0}
-        assert fetch.call_count == 0
+            assert invoke.run(ws_event(app_id="999")) == {"status": "success", "items_processed": 0}
+        assert invoke.fetch.call_count == 0
         assert utils_logger.warning.call_args == call("No iOS app configurations found")
 
     def test_the_lambda_context_reaches_the_logger(self, invoke, lambda_context):
-        run, _ = invoke
-        run({})
+        invoke.run(ws_event())
         assert logger.get_current_keys()["function_name"] == lambda_context.function_name
 
     def test_the_review_count_and_cold_start_are_flushed_as_emf(self, invoke, capsys):
-        run, _ = invoke
-        run({})
+        invoke.run(ws_event())
         names = emf_metric_names(capsys.readouterr().out)
         assert {"iOS_MyApp_Reviews", "ColdStart"} <= names
 
     def test_the_lambda_context_reaches_run_for_event_as_the_time_budget(self, handler, lambda_context):
         with patch.object(handler.IOSAppReviewsIngestor, "run_for_event", return_value={}) as run_for_event:
-            handler.lambda_handler({"execution_id": "e"}, lambda_context)
-        assert run_for_event.call_args.args == ({"execution_id": "e"}, lambda_context)
+            handler.lambda_handler(ws_event(execution_id="e"), lambda_context)
+        assert run_for_event.call_args.args == (ws_event(execution_id="e"), lambda_context)
 
     def test_the_handler_is_registered_with_the_tracer(self):
         with patch.object(tracer, "capture_lambda_handler", side_effect=lambda f: f) as capture:

@@ -4,7 +4,6 @@ Supports multiple scraper configurations with custom selectors and frequencies.
 """
 import hashlib
 import json
-import os
 import re
 import secrets
 import time
@@ -16,13 +15,14 @@ import requests
 from botocore.exceptions import BotoCoreError, ClientError
 from bs4 import BeautifulSoup
 
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from _shared.raw_source import RAW_SOURCE_KEY
 from shared.http_utils import MAX_PAGE_BYTES, UnsafeURLError, fetch_public_url
 from shared.invocation_cost import measure_invocation_cost
 from shared.producer_labels import message_labels
 from shared.radar_brands import radar_stamp
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope, scraper_run_pk
 
 # Inter-page delay jitter only needs a uniform draw; it is not security-relevant.
 _jitter = secrets.SystemRandom()
@@ -67,9 +67,9 @@ def _jsonld_created_at(date_published: object) -> object:
 class WebScraperIngestor(BaseIngestor):
     """Configurable web scraper for extracting feedback from websites."""
 
-    def __init__(self, execution_id: str | None = None, target_scraper_id: str | None = None):
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None, target_scraper_id: str | None = None):
         # execution_id → BaseIngestor manual-run cache clear (#141/#215).
-        super().__init__(execution_id=execution_id)
+        super().__init__(scope, execution_id=execution_id)
         self.target_scraper_id = target_scraper_id
         self.scraper_configs = self._load_scraper_configs()
         self.headers = {
@@ -84,12 +84,7 @@ class WebScraperIngestor(BaseIngestor):
             'Sec-Fetch-User': '?1',
             'Upgrade-Insecure-Requests': '1',
         }
-        self.aggregates_table_name = os.environ.get('AGGREGATES_TABLE', '')
-        self.aggregates_table = None
-        if self.aggregates_table_name:
-            import boto3
-            dynamodb = boto3.resource('dynamodb')
-            self.aggregates_table = dynamodb.Table(self.aggregates_table_name)
+        # The scraper run rows go through BaseIngestor's aggregates table (seen through the run's workspace, if any).
 
     def _load_scraper_configs(self) -> list:
         """Load scraper configurations from secrets."""
@@ -104,6 +99,11 @@ class WebScraperIngestor(BaseIngestor):
             logger.exception("Invalid webscraper_configs JSON")
             return []
 
+    def _scraper_run_pk(self, scraper_id: str) -> str:
+        """The scraper run row's partition: ``SCRAPER_RUN#{id}`` deployment-wide (what ``POST /scrapers/{id}/run``
+        and the scrapers API poll), ``WS#{ws}#SCRAPER_RUN#{id}`` for a run in a workspace."""
+        return f'SCRAPER_RUN#{scraper_id}' if self.scope is None else scraper_run_pk(self.scope, scraper_id)
+
     def _update_run_status(self, scraper_id: str, updates: dict):
         """Update run status in DynamoDB for progress tracking."""
         if not self.aggregates_table or not self.execution_id:
@@ -114,7 +114,7 @@ class WebScraperIngestor(BaseIngestor):
             expr_values = {f':{k}': v for k, v in updates.items()}
 
             self.aggregates_table.update_item(
-                Key={'pk': f'SCRAPER_RUN#{scraper_id}', 'sk': self.execution_id},
+                {'pk': self._scraper_run_pk(scraper_id), 'sk': self.execution_id},
                 UpdateExpression=update_expr,
                 ExpressionAttributeNames=expr_names,
                 ExpressionAttributeValues=expr_values
@@ -507,14 +507,15 @@ def _run_error_text(url: str, error: Exception) -> str:
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event, context):
-    """Lambda entry point."""
-    execution_id = event.get('execution_id')
-    scraper_id = event.get('scraper_id')
+    """Lambda entry point (``run_in_workspace``): an event naming a workspace runs in it, one naming none
+    (``POST /scrapers/{id}/run``, the tick's own run) runs deployment-wide, and the tick also fans out."""
+    execution_id = event.get('execution_id') if isinstance(event, dict) else None
+    scraper_id = event.get('scraper_id') if isinstance(event, dict) else None
 
     # Manual-run secret-cache clearing (issue #141) is centralized in
     # BaseIngestor.__init__ — passing execution_id below triggers it.
-    ingestor = WebScraperIngestor(
+    return run_in_workspace(event, lambda scope: WebScraperIngestor(
+        scope,
         execution_id=execution_id,
-        target_scraper_id=scraper_id
-    )
-    return ingestor.run()
+        target_scraper_id=scraper_id,
+    ).run())

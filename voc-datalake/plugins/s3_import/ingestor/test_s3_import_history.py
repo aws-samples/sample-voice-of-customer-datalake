@@ -7,21 +7,34 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
+from _shared.test.workspace_fixtures import OTHER_SCOPE, OTHER_WS, SCOPE, WS
 from shared.import_runs import MAX_MESSAGES
+from shared.ws_repo import WorkspaceTable
 
 HANDLER = "s3_import.ingestor.handler"
 
 
-@pytest.fixture
-def ingestor():
+def _ingestor_in(scope, table: MagicMock):
+    """An S3ImportIngestor of *scope* whose aggregates table is *table* seen through the scope (as in production)."""
     with offline_ingestor_construction():
         from s3_import.ingestor.handler import S3ImportIngestor
 
-        ing = S3ImportIngestor()
-        ing.normalize_item = MagicMock(side_effect=lambda item, *_args, **_kwargs: item)
-        ing.send_to_queue = MagicMock(side_effect=len)
-        ing.aggregates_table = MagicMock()
-        return ing
+        ing = S3ImportIngestor(scope)
+    ing.normalize_item = MagicMock(side_effect=lambda item, *_args, **_kwargs: item)
+    ing.send_to_queue = MagicMock(side_effect=len)
+    ing.aggregates_table = WorkspaceTable(scope, table)
+    return ing
+
+
+@pytest.fixture
+def aggregates() -> MagicMock:
+    """The boto3 aggregates table under the ingestor's WorkspaceTable: it receives boto3-shaped kwargs."""
+    return MagicMock()
+
+
+@pytest.fixture
+def ingestor(aggregates):
+    return _ingestor_in(SCOPE, aggregates)
 
 
 @pytest.fixture
@@ -101,10 +114,10 @@ def test_a_long_file_keeps_at_most_max_messages_warnings_and_counts_the_rest(moc
 
 
 @patch(f"{HANDLER}.s3_client")
-def test_the_stored_warning_count_includes_the_warnings_not_kept(mock_s3, ingestor):
+def test_the_stored_warning_count_includes_the_warnings_not_kept(mock_s3, ingestor, aggregates):
     _serve(mock_s3, _csv_with_empty_rows(MAX_MESSAGES + 5))
     ingestor.process_file("bucket", "web/a.csv")
-    summary = ingestor.aggregates_table.put_item.call_args_list[1].kwargs["Item"]
+    summary = aggregates.put_item.call_args_list[1].kwargs["Item"]
     assert (summary["warning_count"], summary["truncated"]) == (MAX_MESSAGES + 5, True)
 
 
@@ -169,10 +182,30 @@ def test_a_queue_failure_is_recorded_before_the_error_propagates(mock_s3, ingest
 
 
 @patch(f"{HANDLER}.s3_client")
-def test_the_record_reaches_the_aggregates_table(mock_s3, ingestor):
-    """Without the capture: the shared writer puts the detail and the summary row."""
+def test_the_record_reaches_the_aggregates_table(mock_s3, ingestor, aggregates):
+    """Without the capture: the shared writer puts the detail and the summary row, under the run's workspace."""
     _serve(mock_s3, json.dumps([{"text": "A"}]).encode())
     ingestor.process_file("bucket", "web/a.json")
-    pks = [c.kwargs["Item"]["pk"] for c in ingestor.aggregates_table.put_item.call_args_list]
-    assert pks[1] == "IMPORT_RUN"
-    assert pks[0].startswith("IMPORT_RUN#")
+    pks = [c.kwargs["Item"]["pk"] for c in aggregates.put_item.call_args_list]
+    assert pks[1] == f"WS#{WS}#IMPORT_RUN"
+    assert pks[0].startswith(f"WS#{WS}#IMPORT_RUN#")
+
+
+@patch(f"{HANDLER}.s3_client")
+def test_the_same_file_in_two_workspaces_keeps_two_histories(mock_s3):
+    """The rows of a run are its workspace's: the same file imported in OTHER_WS lands under OTHER_WS, no collision."""
+    rows: dict[str, list[dict]] = {}
+    for scope, ws in ((SCOPE, WS), (OTHER_SCOPE, OTHER_WS)):
+        table = MagicMock()
+        _serve(mock_s3, b"id,text\n1,Good\n")
+        assert _ingestor_in(scope, table).process_file("bucket", "web/a.csv") == 1
+        rows[ws] = [c.kwargs["Item"] for c in table.put_item.call_args_list]
+
+    for ws, (detail, summary) in rows.items():
+        run_id = detail["pk"].removeprefix(f"WS#{ws}#IMPORT_RUN#")
+        assert run_id
+        assert detail["pk"] == f"WS#{ws}#IMPORT_RUN#{run_id}"
+        assert detail["sk"] == "RUN"
+        assert summary["pk"] == f"WS#{ws}#IMPORT_RUN"
+        assert summary["sk"].endswith(f"#{run_id}")
+    assert not {r["pk"] for r in rows[WS]} & {r["pk"] for r in rows[OTHER_WS]}

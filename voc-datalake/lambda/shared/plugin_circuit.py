@@ -1,19 +1,29 @@
 """
 API-side view of a plugin's circuit breaker (``plugins/_shared/circuit_breaker.py``).
 
-The breaker writes ``CIRCUIT#<plugin>`` / ``TRIPPED`` in the AGGREGATES table when a
-plugin fails too often, and every later run is skipped while that row exists.
-This module reads it for ``GET /sources/status`` and deletes it for
-``PUT /sources/{source}/enable`` and ``POST /sources/{source}/reset`` — the same
-key, pinned in lockstep by ``test_integrations_circuit.py``. Operational state, not
-customer data: deleting it only lets the next run go ahead.
+The breaker writes a ``TRIPPED`` row in the AGGREGATES table when a plugin fails too
+often: ``CIRCUIT#<plugin>`` (``tripped_key``) for its deployment-wide runs (an event that
+names no workspace; the trip also disables the plugin's schedule), and
+``WS#{ws}#CIRCUIT#<plugin>`` (``workspace_tripped_key``) for its runs in one workspace.
+Every later run on the same path is skipped while its row exists. This module reads
+the TRIPPED row for ``GET /sources/status`` and deletes it for
+``PUT /sources/{source}/enable`` and ``POST /sources/{source}/reset``. Those routes use
+the deployment-wide key only, until the integrations API is keyed by workspace (its own
+slice, docs/multi-workspace.md): until then they neither show nor reset a workspace's
+breaker. Both keys are pinned by ``test_integrations_circuit.py``.
+Operational state, not customer data: deleting it only lets the next run go ahead.
 """
 
+from __future__ import annotations
+
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from shared.batch_get import batch_get_all
 from shared.tables import get_aggregates_table
+
+if TYPE_CHECKING:
+    from shared.ws_repo import WorkspaceScope
 
 CIRCUIT_PK_PREFIX = 'CIRCUIT#'
 TRIPPED_SK = 'TRIPPED'
@@ -22,8 +32,14 @@ MAX_LAST_ERROR_CHARS = 500
 
 
 def tripped_key(source: str) -> dict[str, str]:
-    """The DynamoDB key of *source*'s TRIPPED row."""
+    """The DynamoDB key of *source*'s deployment-wide TRIPPED row (what the routes below read and clear)."""
     return {'pk': f'{CIRCUIT_PK_PREFIX}{source}', 'sk': TRIPPED_SK}
+
+
+def workspace_tripped_key(scope: WorkspaceScope, source: str) -> dict[str, str]:
+    """The key of *source*'s TRIPPED row in one workspace, ``WS#{ws}#CIRCUIT#<source>`` / ``TRIPPED``: the one the
+    breaker writes for a run in that workspace (docs/multi-workspace.md)."""
+    return {'pk': scope.key('CIRCUIT', source), 'sk': TRIPPED_SK}
 
 
 def closed_circuit() -> dict[str, Any]:

@@ -45,7 +45,6 @@ The caller's sub identifies a person: it is stored in the audit row and never lo
 """
 from __future__ import annotations
 
-import re
 import secrets
 import time
 from collections.abc import Callable, Mapping
@@ -61,10 +60,12 @@ from shared.logging import logger
 from shared.platform_admin import is_platform_admin
 from shared.timestamps import now_iso
 
+# The id's form and the keys built from it live in shared/workspace_ids.py (no request-path imports), kept importable
+# from here: the request path's modules take them with the middleware.
+from shared.workspace_ids import is_workspace_id, ws_key
+
 #: The request header that names the workspace (HTTP header names are case-insensitive).
 WORKSPACE_HEADER: Final = 'x-workspace-id'
-#: ``ws_`` + a ULID: 26 Crockford base32 characters (no I, L, O, U), the first one 0-7 (128 bits).
-_WORKSPACE_ID: Final = re.compile(r'ws_[0-7][0-9A-HJKMNP-TV-Z]{25}')
 ROLES: Final = frozenset({'viewer', 'editor', 'admin'})
 PLATFORM_ADMIN_ENTRY: Final = 'platform_admin_entry'
 ACTIVE: Final = 'active'
@@ -119,18 +120,6 @@ class MembershipCache:
         theirs until the TTL ends (30 s)."""
         for platform_admin in (False, True):
             self._entries.pop((ws, sub, platform_admin), None)
-
-
-def is_workspace_id(value: str) -> bool:
-    """Whether ``value`` is a well-formed workspace id (``ws_`` + a ULID)."""
-    return _WORKSPACE_ID.fullmatch(value) is not None
-
-
-def ws_key(ws: str, *parts: str) -> str:
-    """``WS#{ws}#a#b``: a key inside the workspace. Refuses (ValueError) an id that is not well formed."""
-    if not is_workspace_id(ws):
-        raise ValueError('not a workspace id')
-    return '#'.join(('WS', ws, *parts))
 
 
 def _workspace_id(event: Mapping[str, Any]) -> str:

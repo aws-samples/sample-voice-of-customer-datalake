@@ -19,7 +19,7 @@ def test_the_context_is_registered_before_any_record_runs(process, write, lambda
     order: list[str] = []
     config = MagicMock()
     config.register_lambda_context.side_effect = lambda _ctx: order.append('registered')
-    process.side_effect = lambda _raw: order.append('record') or {'feedback_id': 'ok', 'llm_metadata': {}}
+    process.side_effect = lambda _raw, _scope: order.append('record') or {'feedback_id': 'ok', 'llm_metadata': {}}
     with patch.object(handler, 'idempotency_config', config), patch.object(handler, 'persistence_layer', None):
         handler.lambda_handler({'Records': [sqs_record('m1', sample_sqs_record)]}, lambda_context)
     config.register_lambda_context.assert_called_once_with(lambda_context)

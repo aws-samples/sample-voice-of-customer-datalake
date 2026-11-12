@@ -132,7 +132,7 @@ def metrics_tables(stored_ticket) -> Iterator[tuple[MagicMock, MagicMock]]:
     def query(**kwargs):
         values = kwargs['KeyConditionExpression'].get_expression()['values']
         if kwargs.get('IndexName') == 'gsi4-by-feedback-id':
-            return {'Items': [i for i in items if i['feedback_id'] == values[1]]}
+            return {'Items': [i for i in items if f"FEEDBACK#{i['feedback_id']}" == values[1]]}
         return {'Items': list(items), 'ScannedCount': len(items)}
 
     feedback.query.side_effect = query

@@ -48,9 +48,10 @@ def tables():
 
     def feedback_query(**kwargs):
         if kwargs['IndexName'] == 'gsi5-by-channel':
-            # (source_channel = :c) AND (gsi1sk >= :cutoff): the channel is the first condition's value.
+            # (gsi5pk = CHANNEL#:c) AND (gsi1sk >= :cutoff): the partition is the first condition's value.
             channel = kwargs['KeyConditionExpression'].get_expression()['values'][0].get_expression()['values'][1]
-            return {'Items': [i for i in _items() if i.get('source_channel') == channel], 'ScannedCount': 0}
+            return {'Items': [i for i in _items() if f"CHANNEL#{i.get('source_channel')}" == channel],
+                    'ScannedCount': 0}
         partition = kwargs['KeyConditionExpression'].get_expression()['values'][1]
         return {'Items': _items() if partition == f'DATE#{_today()}' else [], 'ScannedCount': 0}
 

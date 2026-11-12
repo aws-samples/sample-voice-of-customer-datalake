@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import SCOPE
+from shared.ws_repo import WorkspaceScope
 
 # Three timestamped reviews: the run() tests feed these through fetch_new_items.
 THREE_REVIEWS = (
@@ -13,8 +15,9 @@ THREE_REVIEWS = (
 )
 
 
-def ingestor_yielding(items=(), **init_kwargs):
-    """Construct a minimal BaseIngestor whose fetch_new_items yields *items*.
+def ingestor_yielding(items=(), scope: WorkspaceScope | None = SCOPE, **init_kwargs):
+    """Construct a minimal BaseIngestor whose fetch_new_items yields *items*, running in *scope* (``WS``; None: a
+    deployment-wide run).
 
     Construction reads the secret and builds the AWS clients, so call it with
     the ``ingestor_aws`` fixture (or equivalent patches) active.
@@ -27,7 +30,22 @@ def ingestor_yielding(items=(), **init_kwargs):
             # another test through the shared THREE_REVIEWS constant.
             yield from (dict(item) for item in items)
 
-    return TestIngestor(**init_kwargs)
+    return TestIngestor(scope, **init_kwargs)
+
+
+class FakeWatermarks:
+    """voc-watermarks as one dict (`get_item` / `put_item` with boto3's keywords, as the workspace layer calls the
+    table): one table for every workspace, as the real one is."""
+
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    def get_item(self, *, Key) -> dict:
+        value = self.values.get(Key["source"])
+        return {"Item": {"value": value}} if value is not None else {}
+
+    def put_item(self, *, Item) -> None:
+        self.values[Item["source"]] = Item["value"]
 
 
 def with_mock_circuit_breaker(ingestor, is_open: bool = False):

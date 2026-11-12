@@ -239,7 +239,7 @@ class TestModuleWiring:
         ]
 
 
-def _fail_b_by_id(record: dict) -> dict:
+def _fail_b_by_id(record: dict, _scope: object = None) -> dict:
     """`process_feedback` stand-in: record `b` raises, the others become items."""
     if record['id'] == 'b':
         raise ValueError('boom')
@@ -259,7 +259,7 @@ class TestLambdaHandler:
         )
         with patch('processor.handler.persistence_layer', None), \
              patch('processor.handler.idempotency_config', None), \
-             patch('processor.handler.validate_sqs_message', side_effect=lambda r: (r, [])), \
+             patch('processor.handler.validate_sqs_message', side_effect=lambda r, _scope: (r, [])), \
              patch('processor.handler.process_feedback',
                    # Keyed by record, not by call order: records run concurrently.
                    side_effect=_fail_b_by_id), \
@@ -268,7 +268,7 @@ class TestLambdaHandler:
             response = handler.lambda_handler(event, context)
 
         assert response == {'batchItemFailures': [{'itemIdentifier': 'm2'}]}
-        assert write.call_args_list == [call({'feedback_id': 'fa'}), call({'feedback_id': 'fc'})]
+        assert write.call_args_list == [call({'feedback_id': 'fa'}, None), call({'feedback_id': 'fc'}, None)]
 
 
 # ============================================
@@ -400,7 +400,7 @@ class TestValidateSqsMessage:
         validate.assert_called_once_with(raw)
         log_failure.assert_called_once_with(
             'webscraper', 'msg-1', ['(message): invalid'],
-            {'record_keys': ['id', 'source_platform', 'text'], 'text_length': 600},
+            {'record_keys': ['id', 'source_platform', 'text'], 'text_length': 600}, None,
         )
         metrics.add_metric.assert_called_once_with(name="ValidationFailures", unit="Count", value=1)
 
@@ -413,7 +413,7 @@ class TestValidateSqsMessage:
 
         log_failure.assert_called_once_with(
             'unknown', 'unknown', ['id: missing', 'source_platform: missing'],
-            {'record_keys': ['text'], 'text_length': 5},
+            {'record_keys': ['text'], 'text_length': 5}, None,
         )
         metrics.add_metric.assert_called_once_with(name="ValidationFailures", unit="Count", value=1)
 
@@ -641,6 +641,8 @@ class TestProcessFeedbackItem:
             'gsi2sk': f'0.85#{FIXED_ISO}',
             'gsi3pk': 'URGENCY#low',
             'gsi3sk': FIXED_ISO,
+            'gsi4pk': f'FEEDBACK#{ID_SAMPLE_RECORD}',
+            'gsi5pk': 'CHANNEL#reviews',
             'feedback_id': ID_SAMPLE_RECORD,
             'source_id': 'test-source-id-123',
             'source_platform': 'webscraper',
@@ -671,7 +673,7 @@ class TestProcessFeedbackItem:
             'usefulness': 'medium',
         }
 
-        enrichment_steps['dup'].assert_called_once_with('TestBrand', ID_SAMPLE_RECORD)
+        enrichment_steps['dup'].assert_called_once_with('TestBrand', ID_SAMPLE_RECORD, None)
         enrichment_steps['detect'].assert_called_once_with(text)
         enrichment_steps['translate'].assert_called_once_with(text, 'en', 'en')
         enrichment_steps['sentiment'].assert_called_once_with(text, 'en')
@@ -692,6 +694,8 @@ class TestProcessFeedbackItem:
             'gsi2sk': f'0.0#{FIXED_ISO}',
             'gsi3pk': 'URGENCY#low',
             'gsi3sk': FIXED_ISO,
+            'gsi4pk': f'FEEDBACK#{ID_ALL_EMPTY}',
+            'gsi5pk': 'CHANNEL#unknown',
             'feedback_id': ID_ALL_EMPTY,
             'source_id': '',
             'source_platform': 'unknown',
@@ -713,7 +717,7 @@ class TestProcessFeedbackItem:
             'usefulness': 'low',
         }
 
-        enrichment_steps['dup'].assert_called_once_with('unknown', ID_ALL_EMPTY)
+        enrichment_steps['dup'].assert_called_once_with('unknown', ID_ALL_EMPTY, None)
         enrichment_steps['detect'].assert_called_once_with('')
         metrics.add_metric.assert_not_called()
 
@@ -727,7 +731,7 @@ class TestProcessFeedbackItem:
         assert item['feedback_id'] == ID_FALLBACK
         assert item['sk'] == f'FEEDBACK#{ID_FALLBACK}'
         assert item['source_id'] == ''
-        enrichment_steps['dup'].assert_called_once_with('TestBrand', ID_FALLBACK)
+        enrichment_steps['dup'].assert_called_once_with('TestBrand', ID_FALLBACK, None)
 
     def test_without_a_brand_the_platform_is_the_partition(self, enrichment_steps, sample_sqs_record):
         del sample_sqs_record['brand_name']
@@ -737,7 +741,7 @@ class TestProcessFeedbackItem:
         assert item is not None
         assert item['pk'] == 'SOURCE#webscraper'
         assert item['brand_name'] == 'webscraper'
-        enrichment_steps['dup'].assert_called_once_with('webscraper', ID_SAMPLE_RECORD)
+        enrichment_steps['dup'].assert_called_once_with('webscraper', ID_SAMPLE_RECORD, None)
 
     def test_enrichment_targets_the_configured_primary_language(self, enrichment_steps, sample_sqs_record):
         text = sample_sqs_record['text']
@@ -832,7 +836,7 @@ class TestRecordHandlerResponses:
 
         assert str(raised.value) == f"Message {who} failed validation: text: missing"
         assert raised.value.errors == ['text: missing']
-        validate.assert_called_once_with(body)
+        validate.assert_called_once_with(body, None)
         assert log.warning.call_args_list == [call(f"Validation failed for {who}: ['text: missing']")]
         process.assert_not_called()
 
@@ -858,8 +862,8 @@ class TestRecordHandlerResponses:
             result = handler.record_handler(_record(sample_sqs_record))
 
         assert result == {"status": "success", "feedback_id": 'fid-1'}
-        process.assert_called_once_with(validated)
-        write.assert_called_once_with({'feedback_id': 'fid-1', 'llm_metadata': {'model_name': 'haiku'}})
+        process.assert_called_once_with(validated, None)
+        write.assert_called_once_with({'feedback_id': 'fid-1', 'llm_metadata': {'model_name': 'haiku'}}, None)
         assert metrics.add_metric.call_args_list == [
             call(name="FeedbackProcessed", unit="Count", value=1),
             call(name="FeedbackProcessedWithLLM", unit="Count", value=1),
@@ -878,7 +882,7 @@ class TestRecordHandlerResponses:
             result = handler.record_handler(_record(sample_sqs_record))
 
         assert result == {"status": "success", "feedback_id": 'fid-2'}
-        write.assert_called_once_with(item)
+        write.assert_called_once_with(item, None)
         assert metrics.add_metric.call_args_list == [
             call(name="FeedbackProcessed", unit="Count", value=1),
             call(name=second_metric, unit="Count", value=1),
@@ -891,7 +895,7 @@ class TestRecordHandlerResponses:
             result = handler.record_handler(_record(sample_sqs_record))
 
         assert result == {"status": "skipped", "reason": "duplicate"}
-        process.assert_called_once_with(sample_sqs_record)
+        process.assert_called_once_with(sample_sqs_record, None)
         write.assert_not_called()
         metrics.add_metric.assert_not_called()
 
@@ -911,7 +915,7 @@ class TestRecordHandlerResponses:
             call("Bedrock throttled for webscraper, message will be retried by SQS"),
         ]
         metrics.add_metric.assert_called_once_with(name="BedrockThrottleRetry", unit="Count", value=1)
-        log_error.assert_called_once_with('webscraper', 'test-source-id-123', error)
+        log_error.assert_called_once_with('webscraper', 'test-source-id-123', error, None)
         write.assert_not_called()
         log.exception.assert_not_called()
 
@@ -928,7 +932,7 @@ class TestRecordHandlerResponses:
         assert log.exception.call_args_list == [
             call("Unexpected error processing webscraper/test-source-id-123: bad payload"),
         ]
-        log_error.assert_called_once_with('webscraper', 'test-source-id-123', error)
+        log_error.assert_called_once_with('webscraper', 'test-source-id-123', error, None)
         metrics.add_metric.assert_not_called()
         write.assert_not_called()
 
@@ -947,10 +951,10 @@ class TestRecordHandlerIdempotency:
         assert result == {"status": "success", "feedback_id": 'fid-3'}
         idempotent.assert_called_once_with(
             raw_record=validated, idempotency_key='webscraper:test-source-id-123',
-            persistence_store=layer, config=config,
+            persistence_store=layer, config=config, scope=None,
         )
         process.assert_not_called()
-        write.assert_called_once_with({'feedback_id': 'fid-3'})
+        write.assert_called_once_with({'feedback_id': 'fid-3'}, None)
 
     @pytest.mark.parametrize(('layer', 'config'), [(MagicMock(name='layer'), None), (None, MagicMock(name='config'))])
     @patch('processor.handler.write_to_dynamodb')
@@ -963,8 +967,8 @@ class TestRecordHandlerIdempotency:
 
         assert result == {"status": "success", "feedback_id": 'fid-4'}
         idempotent.assert_not_called()
-        process.assert_called_once_with(sample_sqs_record)
-        write.assert_called_once_with({'feedback_id': 'fid-4'})
+        process.assert_called_once_with(sample_sqs_record, None)
+        write.assert_called_once_with({'feedback_id': 'fid-4'}, None)
 
     @patch('processor.handler.write_to_dynamodb')
     @patch('processor.handler._process_feedback_idempotent', side_effect=IdempotencyAlreadyInProgressError('busy'))
@@ -975,7 +979,7 @@ class TestRecordHandlerIdempotency:
         assert result == {"status": "skipped", "reason": "idempotency_in_progress"}
         idempotent.assert_called_once_with(
             raw_record=sample_sqs_record, idempotency_key='webscraper:test-source-id-123',
-            persistence_store=layer, config=config,
+            persistence_store=layer, config=config, scope=None,
         )
         assert log.info.call_args_list == [
             call("Processing feedback from webscraper/test-source-id-123"),
@@ -1005,7 +1009,7 @@ class TestProcessFeedbackIdempotentWrapper:
 
         assert first == {'feedback_id': 'fid-5'}
         assert second == {'feedback_id': 'fid-5'}
-        process.assert_called_once_with({'id': 'abc'})
+        process.assert_called_once_with({'id': 'abc'}, None)
         key_hash = hashlib.md5(json.dumps('webscraper:abc', sort_keys=True).encode(), usedforsecurity=False).hexdigest()
         (row,) = rows
         assert _string_attribute(row, 'id').endswith(

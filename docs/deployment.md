@@ -319,6 +319,12 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 npm run deploy:infra    # Deploy all CDK stacks, then refresh the API stage
 ```
 
+> **Upgrading an existing deployment (7.00.00, multi-workspace):** release 7.00.00 re-keys the feedback table's
+> `gsi4-by-feedback-id` and `gsi5-by-channel` onto `gsi4pk` / `gsi5pk`. CloudFormation cannot change an index's key
+> in one update, and items stored before carry neither attribute, so lookups by id and channel filters would miss
+> them. Multi-workspace starts on a fresh deployment: do not deploy this onto an existing stack, or re-key in steps
+> and backfill as [Multi-workspace → Upgrading](multi-workspace.md#upgrading) describes.
+
 ### Faster deploys: skip what did not change
 
 Two ways a deploy avoids redoing work:

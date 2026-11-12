@@ -46,6 +46,7 @@ from shared.raw_versions import (
 )
 from shared.source_policy import ARCHIVE_NONE, archive_mode
 from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict, source_profile_configured
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'RawTarget',
@@ -60,15 +61,17 @@ _AWS_ERRORS = (ClientError, BotoCoreError)
 
 @dataclass(frozen=True)
 class RawTarget:
-    """Where one item's copies go: the bucket, the source folder, the partition day and the item stem."""
+    """Where one item's copies go: the bucket, the source folder, the partition day and the item stem, under the
+    workspace's ``ws/{ws}/raw/`` when a ``scope`` is given (the plugin ingestors), else the deployment-wide ``raw/``."""
 
     bucket: str
     source: str
     day: date
     stem: str
+    scope: WorkspaceScope | None = None
 
     def key(self, digest: str, extension: str) -> str:
-        return version_key(item_folder(self.source, self.day, self.stem), digest, extension)
+        return version_key(item_folder(self.source, self.day, self.stem, self.scope), digest, extension)
 
 
 def _unreadable[T](source: str, fallback: T) -> T:
@@ -140,10 +143,13 @@ def bytes_copy(s3: Any, target: RawTarget, body: bytes, connector: Connector, *,
     return _write(s3, target, key, body, connector, content_type=content_type, metadata=metadata)
 
 
-def app_json_copy(source: str, day: date, stem: str, content: object, connector_id: str) -> str | None:
+def app_json_copy(source: str, day: date, stem: str, content: object, connector_id: str,
+                  scope: WorkspaceScope | None = None) -> str | None:
     """An API-side writer's JSON copy in this Lambda's raw bucket (``RAW_DATA_BUCKET``), recorded as
-    ``connector_id`` at the app release (``APP_VERSION``); its URI, or None (no bucket, failed)."""
+    ``connector_id`` at the app release (``APP_VERSION``), under ``ws/{ws}/raw/`` for a ``scope`` (the processor's
+    workspace message); its URI, or None (no bucket, failed)."""
     bucket = os.environ.get('RAW_DATA_BUCKET', '')
     if not bucket:
         return None
-    return json_copy(get_s3_client(), RawTarget(bucket, source, day, stem), content, app_connector(connector_id))
+    return json_copy(get_s3_client(), RawTarget(bucket, source, day, stem, scope), content,
+                     app_connector(connector_id))

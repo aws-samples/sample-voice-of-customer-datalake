@@ -86,7 +86,6 @@ Every flag defaults to off, and a misspelt `capabilities` key fails `npm run val
 | Where | Flag | Effect |
 |-------|------|--------|
 | `capabilities` | `updatesItems` | The source re-sends an item when it changes; the processor refreshes the stored item in place (records must carry `issue_attributes`) instead of skipping it as a duplicate |
-| `infrastructure.ingestor` | `selfInvoke` | A run that reaches its time budget continues in a new invocation of its own function (an invoke grant on exactly that function) |
 | `infrastructure.ingestor` | `jobNotices` | A run the API started tells its starter when it ends (a dedicated role; docs/realtime.md) |
 | `infrastructure.ingestor` | `bedrock` / `browser` | A dedicated role with a Claude-only Bedrock grant / the AgentCore managed browser |
 | `infrastructure.webhook` | `memory` | The webhook receiver's MemorySize (128–1024, default 256) |

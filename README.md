@@ -111,6 +111,8 @@ npm run deploy:all
 
 Web search deploys a stack to us-east-1, so a deployment in another region also needs `cdk bootstrap aws://<account>/us-east-1` (or `-c enableWebSearch=false`). Before the first deploy, file Anthropic's use-case form in the Bedrock console if your account has not done so. The [Deployment Guide](docs/deployment.md) covers both, and the settings for production.
 
+> **Existing deployments (7.00.00, multi-workspace):** release 7.00.00 re-keys two indexes of the feedback table, which CloudFormation cannot do in one update, and items stored before would be missing from them. Do not deploy it onto an existing stack; see [Multi-workspace → Upgrading](docs/multi-workspace.md#upgrading).
+
 ## 🧪 Running the Tests
 
 ```bash

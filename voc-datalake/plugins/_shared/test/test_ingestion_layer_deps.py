@@ -16,6 +16,7 @@ import ast
 import re
 import sys
 from pathlib import Path
+from typing import TypeGuard
 
 import pytest
 
@@ -69,10 +70,24 @@ def _resolve(name: str, roots: list[Path]) -> Path | None:
     return None
 
 
+def _is_type_checking(node: ast.AST) -> TypeGuard[ast.If]:
+    """``if TYPE_CHECKING:`` (or ``typing.TYPE_CHECKING``): its body runs for the type checker only, never in Lambda."""
+    if not isinstance(node, ast.If):
+        return False
+    test = node.test
+    return (isinstance(test, ast.Name) and test.id == 'TYPE_CHECKING') or (
+        isinstance(test, ast.Attribute) and test.attr == 'TYPE_CHECKING')
+
+
 def _imported_names(tree: ast.AST, path: Path) -> set[str]:
-    """Absolute module names *tree* (the module at *path*) imports; relative imports resolved."""
+    """Absolute module names *tree* (the module at *path*) imports at run time; relative imports resolved. The
+    imports of an ``if TYPE_CHECKING:`` body never run (its ``else`` does)."""
     names: set[str] = set()
+    checker_only = {id(inner) for node in ast.walk(tree) if _is_type_checking(node)
+                    for statement in node.body for inner in ast.walk(statement)}
     for node in ast.walk(tree):
+        if id(node) in checker_only:
+            continue
         if isinstance(node, ast.Import):
             names |= {alias.name for alias in node.names}
         elif isinstance(node, ast.ImportFrom):
@@ -140,6 +155,14 @@ def test_the_scan_finds_the_plugin_handlers_and_follows_the_shared_code():
     web_reviews = PLUGINS / 'web_reviews' / 'ingestor' / 'handler.py'
     assert web_reviews in _entry_points()
     assert 'pydantic' in external_imports(web_reviews, _bundle_roots(web_reviews.parents[1]))
+
+
+def test_an_import_only_the_type_checker_runs_is_not_a_run_time_import():
+    source = ('from typing import TYPE_CHECKING\nimport typing\nif TYPE_CHECKING:\n    from stubs_only import A\n'
+              'else:\n    import at_run_time\nif typing.TYPE_CHECKING:\n    import also_stubs\nimport always\n')
+
+    assert _imported_names(ast.parse(source), PLUGINS / 'typed.py') == {
+        'typing', 'typing.TYPE_CHECKING', 'at_run_time', 'always'}
 
 
 def test_a_package_missing_from_the_layer_is_reported():

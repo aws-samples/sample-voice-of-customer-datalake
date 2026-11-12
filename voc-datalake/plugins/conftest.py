@@ -24,7 +24,11 @@ sys.path.insert(0, plugins_dir)
 os.environ.setdefault('WATERMARKS_TABLE', 'test-watermarks')
 os.environ.setdefault('PROCESSING_QUEUE_URL', 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue')
 os.environ.setdefault('RAW_DATA_BUCKET', '')
+# The webhooks' shared secret (base_webhook.py); the ingestors read their workspace's own secret,
+# `{WORKSPACE_SECRET_PREFIX}/{ws}/credentials`. (WORKSPACES_TABLE, the scheduled tick's, is not set here: the
+# users and workspaces APIs read it too in the same session; the tick's tests patch base_ingestor's.)
 os.environ.setdefault('SECRETS_ARN', 'arn:aws:secretsmanager:us-east-1:123456789:secret:test')
+os.environ.setdefault('WORKSPACE_SECRET_PREFIX', 'voc/ws')
 os.environ.setdefault('BRAND_NAME', 'TestBrand')
 os.environ.setdefault('SOURCE_PLATFORM', 'test_source')
 os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')

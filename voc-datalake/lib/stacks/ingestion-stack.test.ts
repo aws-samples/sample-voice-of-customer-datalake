@@ -206,12 +206,18 @@ describe('VocIngestionStack scheduled ingestion dead-letter queue', () => {
   });
 });
 
-// ── Circuit breaker: each ingestor may disable its OWN schedule, and only it ───
-// plugins/_shared/circuit_breaker.py calls events:DisableRule with
-// INGEST_SCHEDULE_RULE_NAME after repeated failures. It once never could (no
-// client factory, no grant), so a tripped plugin kept being invoked every tick.
-// A grant on the SHARED role, or a wildcard, would instead let any plugin switch
-// off a sibling's ingestion.
+// ── The scheduled tick fans out over the workspaces (docs/multi-workspace.md) ───
+// One rule per plugin fires for every workspace: the ingestor claims the tick in
+// voc-idempotency (ingestor#fanout#{plugin}#{event id}, so a retried delivery fans
+// out no second time), reads the workspaces that enabled it (voc-workspaces,
+// PLUGIN#{plugin}) and invokes its OWN function once per workspace
+// (plugins/_shared/base_ingestor.py fan_out_once), then runs its deployment-wide run.
+// So a scheduled role may put only its own claim keys, Query only the PLUGIN#
+// partitions and invoke only its own function, never on the shared role. A
+// workspace's tripped breaker stops that workspace's runs and disables no rule; a
+// deployment-wide trip still disables the plugin's own rule (and with it every
+// workspace's scheduled runs), so each scheduled role keeps events:DisableRule on
+// exactly that rule.
 
 const ScheduledRuleSchema = z.object({
   Properties: z.object({
@@ -226,8 +232,10 @@ const IngestorFunctionSchema = z.object({
   }),
 });
 const PolicyStatementSchema = z.object({
+  Effect: z.string().optional(),
   Action: z.union([z.string(), z.array(z.string())]),
   Resource: z.unknown(),
+  Condition: z.unknown().optional(),
 });
 const IamPolicySchema = z.object({
   Properties: z.object({
@@ -236,17 +244,32 @@ const IamPolicySchema = z.object({
   }),
 });
 
-/** Every `events:DisableRule` statement, with the role(s) its policy is attached to. */
-function disableRuleGrants(template: Template): { roles: string[]; resource: unknown }[] {
+/** One workspace id in an IAM pattern: `ws_` and one `?` per ULID character (26), never `*` (it crosses `/` and `#`). */
+const ONE_WORKSPACE = 'ws_??????????????????????????';
+
+const LeadingKeysConditionSchema = z.object({
+  'ForAllValues:StringLike': z.object({ 'dynamodb:LeadingKeys': z.union([z.string(), z.array(z.string())]) }).strict(),
+}).strict();
+
+/** The `dynamodb:LeadingKeys` patterns of a statement's only condition (a list; undefined when it has none). */
+function leadingKeys(condition: unknown): string[] | undefined {
+  if (condition === undefined) return undefined;
+  return [LeadingKeysConditionSchema.parse(condition)['ForAllValues:StringLike']['dynamodb:LeadingKeys']].flat();
+}
+
+/** Every Allow statement naming `action`, with the role(s) its policy is attached to (the audit-row Denies left out). */
+function grantsOf(template: Template, action: string): { roles: string[]; resource: unknown; condition: unknown }[] {
   return Object.values(template.findResources('AWS::IAM::Policy')).flatMap((resource) => {
     const policy = IamPolicySchema.parse(resource).Properties;
     return policy.PolicyDocument.Statement
-      .filter((statement) => [statement.Action].flat().includes('events:DisableRule'))
-      .map((statement) => ({ roles: policy.Roles.map((role) => role.Ref), resource: statement.Resource }));
+      .filter((statement) => statement.Effect !== 'Deny' && [statement.Action].flat().includes(action))
+      .map((statement) => ({
+        roles: policy.Roles.map((role) => role.Ref), resource: statement.Resource, condition: statement.Condition,
+      }));
   });
 }
 
-describe('VocIngestionStack circuit-breaker DisableRule grants', () => {
+describe('VocIngestionStack scheduled tick fan-out grants', () => {
   // Two scheduled plugins and one unscheduled one.
   let template: Template;
   beforeAll(() => {
@@ -255,54 +278,162 @@ describe('VocIngestionStack circuit-breaker DisableRule grants', () => {
 
   const functionResource = (logicalId: string) =>
     IngestorFunctionSchema.parse(template.findResources('AWS::Lambda::Function')[logicalId]).Properties;
+  const FunctionNameSchema = z.object({ Properties: z.object({ FunctionName: z.unknown() }) });
 
-  /** Per schedule rule: its name, the ingestor it invokes, and that ingestor's env and role. */
+  /** Per schedule rule: the ingestor it invokes, that ingestor's name, env and role. */
   const scheduledIngestors = () => Object.values(template.findResources('AWS::Events::Rule'))
     .map((resource) => {
       const rule = ScheduledRuleSchema.parse(resource).Properties;
       const [functionId] = itemAt(rule.Targets, 0).Arn['Fn::GetAtt'];
       const fn = functionResource(functionId);
+      const name = FunctionNameSchema.parse(template.findResources('AWS::Lambda::Function')[functionId]);
       return {
         ruleName: flattenJoin(rule.Name),
-        envRuleName: flattenJoin(fn.Environment.Variables.INGEST_SCHEDULE_RULE_NAME),
+        functionName: flattenJoin(name.Properties.FunctionName),
+        env: fn.Environment.Variables,
         roleId: fn.Role['Fn::GetAtt'][0],
       };
     });
-
-  it('names each ingestor its own schedule rule, for the breaker to disable', () => {
-    const scheduled = scheduledIngestors();
-    expect(scheduled).toHaveLength(2);
-    expect(scheduled.map((s) => s.envRuleName)).toStrictEqual(scheduled.map((s) => s.ruleName));
-  });
-
-  it('grants each scheduled ingestor DisableRule on exactly its own rule ARN, on its own role', () => {
-    const grants = disableRuleGrants(template);
-    const scheduled = scheduledIngestors();
-    expect(grants, 'one DisableRule statement per schedule rule').toHaveLength(scheduled.length);
-    expect(new Set(scheduled.map((s) => s.roleId)).size, 'one role per scheduled ingestor')
-      .toBe(scheduled.length);
-
-    const granted = scheduled.map(({ roleId }) => grants
-      .filter((grant) => grant.roles.includes(roleId))
-      .map((grant) => ({ roles: grant.roles, resource: flattenJoin(grant.resource) })));
-    expect(granted).toStrictEqual(scheduled.map(({ roleId, ruleName }) => [{
-      roles: [roleId],
-      resource: `arn:aws:events:${SYNTH_REGION}:${SYNTH_ACCOUNT}:rule/${ruleName}`,
-    }]));
-  });
-
-  it('never grants DisableRule on a wildcard or to an unscheduled ingestor', () => {
-    const grants = disableRuleGrants(template);
-    expect(grants.map((grant) => flattenJoin(grant.resource)).filter((arn) => arn.includes('*')))
-      .toStrictEqual([]);
-
+  const s3ImportIngestor = () => {
     const unscheduled = Object.keys(template.findResources('AWS::Lambda::Function'))
       .filter((id) => id.startsWith(`Ingestor${capitalize('s3_import')}`));
     expect(unscheduled).toHaveLength(1);
-    const fn = functionResource(itemAt(unscheduled, 0));
-    expect(fn.Environment.Variables).not.toHaveProperty('INGEST_SCHEDULE_RULE_NAME');
-    const [roleId] = fn.Role['Fn::GetAtt'];
+    return functionResource(itemAt(unscheduled, 0));
+  };
+
+  it('hands each scheduled ingestor voc-workspaces, voc-idempotency and its own schedule rule', () => {
+    const scheduled = scheduledIngestors();
+    expect(scheduled).toHaveLength(2);
+    for (const { env, ruleName } of scheduled) {
+      expect({
+        workspaces: env['WORKSPACES_TABLE'], idempotency: env['IDEMPOTENCY_TABLE'],
+        rule: flattenJoin(env['INGEST_SCHEDULE_RULE_NAME']),
+      }).toStrictEqual({
+        workspaces: { 'Fn::ImportValue': expect.stringContaining('Workspaces') },
+        idempotency: { 'Fn::ImportValue': expect.stringContaining('Idempotency') },
+        rule: ruleName,
+      });
+    }
+    const unscheduled = Object.keys(s3ImportIngestor().Environment.Variables);
+    expect(unscheduled.filter((name) => ['WORKSPACES_TABLE', 'IDEMPOTENCY_TABLE', 'INGEST_SCHEDULE_RULE_NAME']
+      .includes(name))).toStrictEqual([]);
+  });
+
+  it('lets each scheduled role put only its own plugin\'s tick claims in voc-idempotency, and nothing else there', () => {
+    const scheduled = scheduledIngestors();
+    const onIdempotency = (action: string) => grantsOf(template, action)
+      .filter((grant) => JSON.stringify(grant.resource).includes('Idempotency'));
+    expect(onIdempotency('dynamodb:PutItem').map((grant) => ({ roles: grant.roles, partitions: leadingKeys(grant.condition) })))
+      .toStrictEqual(scheduled.map(({ roleId, env }) => ({
+        roles: [roleId], partitions: [`ingestor#fanout#${String(env['SOURCE_PLATFORM'])}#*`],
+      })));
+    for (const action of ['dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:Query']) {
+      expect(onIdempotency(action), action).toStrictEqual([]);
+    }
+  });
+
+  it('lets each scheduled role Query voc-workspaces for its own plugin\'s PLUGIN# partition only, on its own role', () => {
+    const scheduled = scheduledIngestors();
+    const queries = grantsOf(template, 'dynamodb:Query')
+      .filter((grant) => JSON.stringify(grant.resource).includes('Workspaces'));
+    expect(new Set(scheduled.map((s) => s.roleId)).size, 'one role per scheduled ingestor').toBe(scheduled.length);
+    expect(scheduled.map(({ roleId }) => queries.filter((grant) => grant.roles.includes(roleId))
+      .map((grant) => ({ roles: grant.roles, partitions: leadingKeys(grant.condition) }))))
+      .toStrictEqual(scheduled.map(({ roleId, env }) => [{
+        roles: [roleId], partitions: [`PLUGIN#${String(env['SOURCE_PLATFORM'])}`],
+      }]));
+    expect(queries).toHaveLength(scheduled.length);
+  });
+
+  it('lets each scheduled role invoke exactly its own function, and the unscheduled one nothing', () => {
+    const invokes = grantsOf(template, 'lambda:InvokeFunction');
+    const scheduled = scheduledIngestors();
+    expect(scheduled.map(({ roleId }) => invokes.filter((grant) => grant.roles.includes(roleId))
+      .map((grant) => ({ roles: grant.roles, resource: flattenJoin(grant.resource) }))))
+      .toStrictEqual(scheduled.map(({ roleId, functionName }) => [{
+        roles: [roleId], resource: `arn:aws:lambda:${SYNTH_REGION}:${SYNTH_ACCOUNT}:function:${functionName}`,
+      }]));
+    const [roleId] = s3ImportIngestor().Role['Fn::GetAtt'];
+    expect(invokes.filter((grant) => grant.roles.includes(roleId))).toStrictEqual([]);
+    expect(grantsOf(template, 'dynamodb:Query').filter((grant) => grant.roles.includes(roleId)
+      && JSON.stringify(grant.resource).includes('Workspaces'))).toStrictEqual([]);
+  });
+
+  it('grants each scheduled ingestor DisableRule on exactly its own rule ARN, on its own role, and no other', () => {
+    // A deployment-wide run's breaker disables the plugin's own schedule (plugins/_shared/circuit_breaker.py); a
+    // grant on the shared role, or a wildcard, would let a plugin switch off a sibling's ingestion.
+    const grants = grantsOf(template, 'events:DisableRule');
+    const scheduled = scheduledIngestors();
+    expect(grants.map((grant) => ({ roles: grant.roles, resource: flattenJoin(grant.resource) })))
+      .toStrictEqual(scheduled.map(({ roleId, ruleName }) => ({
+        roles: [roleId], resource: `arn:aws:events:${SYNTH_REGION}:${SYNTH_ACCOUNT}:rule/${ruleName}`,
+      })));
+    const [roleId] = s3ImportIngestor().Role['Fn::GetAtt'];
     expect(grants.filter((grant) => grant.roles.includes(roleId))).toStrictEqual([]);
+  });
+});
+
+// ── Both runs' credentials and bronze layers (docs/multi-workspace.md) ───
+// A run in a workspace reads `voc/ws/{ws}/credentials` for the workspace its event names and writes under
+// ws/{ws}/raw/; a deployment-wide run (an event naming none) reads the shared secret and writes under raw/, as before.
+describe('VocIngestionStack ingestor secrets and raw writes', () => {
+  let template: Template;
+  beforeAll(() => {
+    template = synthIngestionTemplate(['webscraper', 'app_reviews_ios', 's3_import']);
+  });
+
+  const ingestorFunctions = () => Object.entries(template.findResources('AWS::Lambda::Function'))
+    .filter(([id]) => id.startsWith('Ingestor'))
+    .map(([, resource]) => IngestorFunctionSchema.parse(resource).Properties);
+
+  it('names the workspace secrets prefix and the shared secret on every ingestor', () => {
+    const functions = ingestorFunctions();
+    expect(functions).toHaveLength(3);
+    for (const fn of functions) {
+      expect(fn.Environment.Variables['WORKSPACE_SECRET_PREFIX']).toBe('voc/ws');
+      expect(fn.Environment.Variables['SECRETS_ARN']).toStrictEqual({ Ref: expect.stringMatching(/^VocApiSecrets/) });
+    }
+  });
+
+  it('lets every ingestor role read the voc/ws/* secrets and the shared secret, and write no secret', () => {
+    const roleIds = new Set(ingestorFunctions().map((fn) => fn.Role['Fn::GetAtt'][0]));
+    const reads = grantsOf(template, 'secretsmanager:GetSecretValue')
+      .filter((grant) => grant.roles.some((role) => roleIds.has(role)))
+      .map((grant) => JSON.stringify(grant.resource));
+    const workspaceSecrets = `arn:aws:secretsmanager:${SYNTH_REGION}:${SYNTH_ACCOUNT}:secret:voc/ws/*`;
+    expect(reads.filter((resource) => resource.includes(workspaceSecrets))).toHaveLength(roleIds.size);
+    expect(reads.filter((resource) => resource.includes('VocApiSecrets'))).toHaveLength(roleIds.size);
+    expect(reads.filter((resource) => !resource.includes(workspaceSecrets) && !resource.includes('VocApiSecrets')))
+      .toStrictEqual([]);
+    for (const action of ['secretsmanager:PutSecretValue', 'secretsmanager:CreateSecret']) {
+      expect(grantsOf(template, action).filter((grant) => grant.roles.some((role) => roleIds.has(role)))).toStrictEqual([]);
+    }
+  });
+
+  it('lets every ingestor role delete only its breaker rows in voc-aggregates, deployment-wide and per workspace', () => {
+    const roleIds = new Set(ingestorFunctions().map((fn) => fn.Role['Fn::GetAtt'][0]));
+    const deletes = grantsOf(template, 'dynamodb:DeleteItem')
+      .filter((grant) => grant.roles.some((role) => roleIds.has(role)) && JSON.stringify(grant.resource).includes('Aggregates'));
+    expect(deletes).toHaveLength(roleIds.size);
+    expect(deletes.map((grant) => leadingKeys(grant.condition)))
+      .toStrictEqual(deletes.map(() => ['CIRCUIT#*', `WS#${ONE_WORKSPACE}#CIRCUIT#*`]));
+  });
+
+  it('lets every ingestor role put raw objects only under raw/ and ws/{one id}/raw/ (no read, no delete)', () => {
+    const roleIds = new Set(ingestorFunctions().map((fn) => fn.Role['Fn::GetAtt'][0]));
+    const rawGrants = (action: string) => grantsOf(template, action)
+      .filter((grant) => grant.roles.some((role) => roleIds.has(role)) && JSON.stringify(grant.resource).includes('RawData'));
+    // One statement per role (the two prefixes folded into one by CDK's policy minimization).
+    const puts = rawGrants('s3:PutObject').map((grant) => JSON.stringify(grant.resource));
+    expect(puts).toHaveLength(roleIds.size);
+    const workspaceRaw = `/ws/${ONE_WORKSPACE}/raw/*`;
+    for (const resource of puts) {
+      expect([resource.includes(workspaceRaw), resource.includes('"/raw/*"')]).toStrictEqual([true, true]);
+      expect(resource.split(workspaceRaw).join('').split('"/raw/*"').join(''), 'no other raw-bucket prefix')
+        .not.toMatch(/\/[a-z*?_]+\/?\*?"/);
+    }
+    const readsOrDeletes = ['s3:GetObject*', 's3:DeleteObject*', 's3:DeleteObject'].flatMap((action) => rawGrants(action));
+    expect(readsOrDeletes).toStrictEqual([]);
   });
 });
 

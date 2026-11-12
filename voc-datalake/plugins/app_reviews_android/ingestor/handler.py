@@ -23,6 +23,7 @@ from _shared.base_ingestor import logger, metrics, tracer
 from _shared.raw_source import RAW_SOURCE_KEY
 from shared.invocation_cost import measure_invocation_cost
 from shared.radar_brands import radar_stamp
+from shared.ws_repo import WorkspaceScope
 
 
 class AndroidAppReviewsIngestor(AppReviewsIngestor[AndroidAppConfig]):
@@ -32,8 +33,8 @@ class AndroidAppReviewsIngestor(AppReviewsIngestor[AndroidAppConfig]):
     DATE_FIELD = "at"
     DEFAULT_SORT_BY = "newest"
 
-    def __init__(self, execution_id: str | None = None):
-        super().__init__(execution_id=execution_id)
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None):
+        super().__init__(scope, execution_id=execution_id)
         # Android Play Store returns the same global reviews regardless of country.
         # Multiple countries just fetch duplicates, so we hardcode to 1 to avoid
         # wasted API calls. The library paginates internally to get all available

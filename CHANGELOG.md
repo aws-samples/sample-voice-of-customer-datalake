@@ -17,6 +17,40 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.00.00] - 2026-11-12
+
+**Breaking (major):** this release re-keys the feedback table's `gsi4-by-feedback-id` and `gsi5-by-channel` onto new attributes, a change to a stack that CloudFormation cannot apply to an existing deployment in one update, and to stored data, whose existing items carry neither new key and need a backfill. Read the Upgrade notes before deploying over an existing stack; a fresh deployment needs nothing.
+
+Multi-workspace, phase 2 starts: the voc-multiplayer-b track merged: the data path's repository layer and its raw-access guard, plugin ingestion in a workspace beside the deployment-wide path, and the feedback processor storing a workspace's messages in that workspace. Nothing in the app starts a workspace's run yet: enabling a plugin still answers 409 and no API sends a workspace to an ingestor, until the retention slice lands ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- The data path's repository layer, `voc-datalake/lambda/shared/ws_repo.py`: a verified `WorkspaceScope` (from a resolved request, an asynchronous message's `workspace_id` or a stored `WS#{ws}#…` key, never from a request field), the builders of the data-path keys inside a workspace (feedback items and their index partitions, the counters and their metric type, source runs, watermarks, objects under `ws/{ws}/`), and `ws_table`, a table view that refuses any key, item, update, query or cursor outside the workspace before DynamoDB sees it. Each call takes only the parameters listed for it, so a `TableName` or a legacy parameter (`AttributeUpdates`, `Expected`, `KeyConditions`, `QueryFilter`, `ConditionalOperator`, `AttributesToGet`) is refused, and a table view's workspace cannot be changed once built ([docs/multi-workspace.md](docs/multi-workspace.md)).
+- The raw-access guard, `voc-datalake/lambda/shared/test/test_ws_raw_access.py`: per production module under `lambda/` and `plugins/` and per kind, the raw table and bucket calls (S3 writes, copies and deletes, a resource collection's batch delete), any reference to a data-path table getter, any `.meta.client`, the layer's private handle, and the strings that start an unscoped data-path key (`SOURCE#`, `METRIC#`, `raw/` …), held to an allowlist of the modules not moved yet (each with the phase that moves it, or the reason it stays raw) that must match exactly, so it can only shrink; and only the layer builds a workspace scope, no API module from a message, and no API module writes `workspace_id` into a message.
+- Plugin ingestors gain a per-workspace path. An event naming a `workspace_id` runs in that workspace: its own watermarks, run, history and breaker rows, `ws/{ws}/raw/…` objects, the workspace's `voc/ws/{ws}/credentials` secret, and `workspace_id` on queued messages. A malformed `workspace_id` is refused. An event naming none (Run now, scraper runs, S3 reprocess and uploads) runs deployment-wide exactly as before, until phase 2's last slice.
+- The scheduled tick runs the deployment-wide run as before and invokes the ingestor once per workspace that enabled the plugin (`PLUGIN#{plugin}` rows in voc-workspaces; nothing writes them yet, so every tick fans out to no workspace).
+- The feedback processor stores a message that names a workspace under that workspace: `WS#{ws}#` keys on the item and all five index partitions, `WS#{ws}#LOGS#` log rows, a workspace-scoped idempotency key, and Silver versions and inline raw copies under `ws/{ws}/`. Messages without one are stored as before. A malformed `workspace_id` is rejected to the DLQ. A workspace message that Radar would claim is refused (Radar is not keyed by workspace yet).
+
+### Changed
+
+- A workspace's breaker stops only that workspace's runs and disables no schedule rule; the deployment-wide breaker is unchanged.
+- `gsi4-by-feedback-id` and `gsi5-by-channel` are keyed on the new attributes `gsi4pk` (`FEEDBACK#{id}`) and `gsi5pk` (`CHANNEL#{channel}`), which the processor writes; gsi5 also projects `source_channel`. Every reader queries the deployment-wide partition.
+- The aggregator, `voc-retention`, the category reprocess and `rebuild_aggregates.py` leave workspace items out (`AggregatorWorkspaceRecordsSkipped`). Workspace items are not aggregated or erased yet.
+- IAM (`{ws}` below is exactly one workspace id in each pattern): every ingestor role also gets `secretsmanager:GetSecretValue` on the `voc/ws/*` secrets, `s3:PutObject` under `ws/{ws}/raw/*` in the raw bucket, and `dynamodb:DeleteItem` on its `WS#{ws}#CIRCUIT#*` rows in voc-aggregates. Every scheduled ingestor role also gets `dynamodb:PutItem` in voc-idempotency on its own tick claims only (`ingestor#fanout#{plugin}#*`), `dynamodb:Query` on voc-workspaces for its own `PLUGIN#{plugin}` partition only (with `kms:Decrypt` on that table's key), and `lambda:InvokeFunction` on its own function (before, only a manifest that set `selfInvoke` got it). The processor's role also gets `s3:PutObject` under `ws/{ws}/raw/*` and `ws/{ws}/silver/*`. The raw bucket's write-once policy covers `ws/{ws}/raw/` and `ws/{ws}/silver/`. Scheduled ingestors get the `WORKSPACES_TABLE` and `IDEMPOTENCY_TABLE` variables, and every ingestor gets `WORKSPACE_SECRET_PREFIX`.
+
+### Removed
+
+- The plugin manifest's `infrastructure.ingestor.selfInvoke`: every scheduled ingestor may invoke its own function, and a manifest that still names it fails to load.
+- 6.14.00's repository layer (`lambda/shared/ws_repository.py`) and its gate step `audit: ws_raw_access` (`scripts/audit/ws_raw_access.py` and its allowlist): `ws_repo.py` and the raw-access guard above replace them. Nothing in the data path used the old layer. The new guard does not scan the stream and plan-step Lambdas' TypeScript yet (phase 3 moves that code).
+
+### Upgrade notes
+
+- Do not deploy this release onto an existing deployment (decision 12: multi-workspace starts on a fresh deployment). Changing a GSI's key is a delete and re-create, one index change per table update, so CloudFormation rejects the update; existing items carry no `gsi4pk`/`gsi5pk`. An operator who must upgrade re-keys in steps (remove gsi4, deploy; add the new gsi4, deploy; the same for gsi5) and backfills `gsi4pk = FEEDBACK#{feedback_id}` and `gsi5pk = CHANNEL#{source_channel}` on every item first.
+- Deploy every stack together (`npm run deploy:all` from the repo root): the core stack (the two re-keyed indexes, the raw bucket's policy), the ingestion stack and the processing stack change. VocIngestionStack gains two cross-stack references to VocCoreStack, voc-workspaces and voc-idempotency (their names, ARNs and keys), so VocCoreStack deploys first, and while VocIngestionStack imports them neither table can be replaced or renamed without first removing that use.
+- IAM: the ingestor, scheduled-ingestor and processor roles gain the grants listed under Changed, the voc-idempotency claim put among them; review them if you restrict IAM changes. A plugin manifest of your own that names `selfInvoke` must drop it.
+- Workspace runs keep their own watermarks (`WS#{ws}#…`), separate from the deployment-wide ones, so a workspace's first run starts from no watermark.
+- Gate: `scripts/validate.sh` no longer runs `audit: ws_raw_access`; the raw-access guard runs with the Python tests. A local tool or CI job that called `scripts/audit/ws_raw_access.py` drops that call.
+
 ## [6.18.00] - 2026-11-12
 
 Multi-workspace, phase 1: the voc-multiplayer-c track merged: the cross-workspace suite over every API route, a workspace's own plugins, resolved problems and brand, the workspace carried by the assistant and plan steps, and what every workspace shares kept for platform admins. The data path is still not keyed by workspace (phase 2).

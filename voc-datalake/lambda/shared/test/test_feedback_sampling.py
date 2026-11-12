@@ -55,6 +55,7 @@ def _review(n: int, offset: int) -> dict:
         'pk': 'SOURCE#web' if n % 4 else 'SOURCE#app_store', 'sk': f'FEEDBACK#r{offset}-{n:05d}',
         'feedback_id': f'r{offset}-{n:05d}', 'date': day, 'source_created_at': f'{day}T09:00:00Z',
         'source_platform': 'web' if n % 4 else 'app_store', 'source_channel': 'email' if n % 5 == 0 else 'chat',
+        'gsi5pk': 'CHANNEL#email' if n % 5 == 0 else 'CHANNEL#chat',
         'category': category, 'sentiment_label': sentiment, 'rating': Decimal(n % 5 + 1),
         'gsi1pk': f'DATE#{day}', 'gsi1sk': f'{day}T09:{n % 60:02d}:00+00:00#r{n}',
         'gsi2pk': f'CATEGORY#{category}', 'gsi2sk': f'-0.5#{day}#{n:05d}',
@@ -65,7 +66,7 @@ def _review(n: int, offset: int) -> dict:
 _INDEXES = (  # (name, hash key, range key, INCLUDE fields or None for ALL), as in core-stack.ts
     ('gsi1-by-date', 'gsi1pk', 'gsi1sk', None),
     ('gsi2-by-category', 'gsi2pk', 'gsi2sk', None),
-    ('gsi5-by-channel', 'source_channel', 'gsi1sk', CHANNEL_INDEX_FIELDS),
+    ('gsi5-by-channel', 'gsi5pk', 'gsi1sk', CHANNEL_INDEX_FIELDS),
 )
 
 

@@ -516,7 +516,7 @@ class TestFeedbackById:
         assert response['statusCode'] == 200
         assert body == {'feedback_id': 'abc'}
         fb.query.assert_called_once_with(
-            IndexName=FEEDBACK_BY_ID_INDEX, KeyConditionExpression=Key('feedback_id').eq('abc'), Limit=1)
+            IndexName=FEEDBACK_BY_ID_INDEX, KeyConditionExpression=Key('gsi4pk').eq('FEEDBACK#abc'), Limit=1)
 
     def test_a_missing_item_is_named_in_the_404(self, fb, api_gateway_event, lambda_context):
         fb.query.return_value = {'Items': []}

@@ -1,8 +1,9 @@
 """Tests for circuit_breaker.py
 
 The exact rows, query, audit event and log lines are pinned in
-`test_circuit_breaker_mutation.py`; this file keeps the happy paths and the
-"no table configured" short-circuits.
+`test_circuit_breaker_mutation.py`; this file keeps the happy paths, the
+"no table configured" short-circuits, and the workspace boundary: one breaker per
+plugin AND workspace, and a trip that stops only that workspace's runs.
 """
 import os
 import re
@@ -12,7 +13,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
+from _shared.test.workspace_fixtures import OTHER_SCOPE, OTHER_WS, SCOPE, WS
+
 STACKS = Path(__file__).resolve().parents[3] / 'lib' / 'stacks'
+TRIPPED = {'pk': f'WS#{WS}#CIRCUIT#test_plugin', 'sk': 'TRIPPED'}
+#: Above every sort key the breaker writes (an open-ended range's top).
+HIGHEST = chr(0xFFFF)
 
 
 @pytest.fixture(autouse=True)
@@ -34,12 +40,10 @@ class TestCircuitBreakerIsOpen:
         mock_table.get_item.return_value = {}  # No Item key
         mock_get_dynamo.return_value.Table.return_value = mock_table
 
-        cb = CircuitBreaker('test_plugin')
+        cb = CircuitBreaker('test_plugin', SCOPE)
 
         assert cb.is_open() is False
-        mock_table.get_item.assert_called_once_with(
-            Key={'pk': 'CIRCUIT#test_plugin', 'sk': 'TRIPPED'}
-        )
+        mock_table.get_item.assert_called_once_with(Key=TRIPPED)
 
     @patch('_shared.circuit_breaker.get_dynamodb_resource')
     def test_returns_true_when_tripped_state_exists(self, mock_get_dynamo):
@@ -47,16 +51,10 @@ class TestCircuitBreakerIsOpen:
         from _shared.circuit_breaker import CircuitBreaker
 
         mock_table = MagicMock()
-        mock_table.get_item.return_value = {
-            'Item': {
-                'pk': 'CIRCUIT#test_plugin',
-                'sk': 'TRIPPED',
-                'tripped_at': '2025-01-01T00:00:00Z'
-            }
-        }
+        mock_table.get_item.return_value = {'Item': {**TRIPPED, 'tripped_at': '2025-01-01T00:00:00Z'}}
         mock_get_dynamo.return_value.Table.return_value = mock_table
 
-        cb = CircuitBreaker('test_plugin')
+        cb = CircuitBreaker('test_plugin', SCOPE)
 
         assert cb.is_open() is True
 
@@ -65,7 +63,7 @@ class TestCircuitBreakerIsOpen:
         """Returns False when AGGREGATES_TABLE not set."""
         from _shared.circuit_breaker import CircuitBreaker
 
-        cb = CircuitBreaker('test_plugin')
+        cb = CircuitBreaker('test_plugin', SCOPE)
         cb._table = None  # Force no table
 
         assert cb.is_open() is False
@@ -82,12 +80,10 @@ class TestCircuitBreakerRecordSuccess:
         mock_table = MagicMock()
         mock_get_dynamo.return_value.Table.return_value = mock_table
 
-        cb = CircuitBreaker('test_plugin')
+        cb = CircuitBreaker('test_plugin', SCOPE)
         cb.record_success()
 
-        mock_table.delete_item.assert_called_once_with(
-            Key={'pk': 'CIRCUIT#test_plugin', 'sk': 'TRIPPED'}
-        )
+        mock_table.delete_item.assert_called_once_with(Key=TRIPPED)
 
     @patch('_shared.circuit_breaker.AGGREGATES_TABLE', '')
     @patch('_shared.circuit_breaker.get_dynamodb_resource')
@@ -95,7 +91,7 @@ class TestCircuitBreakerRecordSuccess:
         """Silently returns when no table configured."""
         from _shared.circuit_breaker import CircuitBreaker
 
-        cb = CircuitBreaker('test_plugin')
+        cb = CircuitBreaker('test_plugin', SCOPE)
         cb._table = None
 
         assert cb.record_success() is None
@@ -113,7 +109,7 @@ class TestCircuitBreakerRecordFailure:
         """Logs warning when AGGREGATES_TABLE not set."""
         from _shared.circuit_breaker import CircuitBreaker
 
-        cb = CircuitBreaker('test_plugin')
+        cb = CircuitBreaker('test_plugin', SCOPE)
         cb._table = None
 
         cb.record_failure('Some error')
@@ -124,15 +120,34 @@ class TestCircuitBreakerRecordFailure:
         mock_get_dynamo.assert_not_called()
 
 
-class TestTrippingDisablesTheSchedule:
-    """The regression this breaker shipped with: it never disabled anything.
+class TestATripStopsOnlyThatWorkspace:
+    """The plugin's one EventBridge rule serves every workspace (the tick fans out), so a workspace's trip must
+    never disable it: one workspace's failing credentials would stop every other workspace's ingestion. The trip
+    is the workspace's TRIPPED row, which its own runs check (``is_open``)."""
 
-    It looked for `shared.aws.get_eventbridge_client`, which did not exist, so
-    a trip wrote the CIRCUIT row and skipped DisableRule — every later run
-    stopped at `is_open` while the schedule kept invoking the ingestor. Only
-    `boto3.client` is doubled here, so the real factory and the real call path
-    from `_trip_breaker` to `disable_rule` are what is exercised.
-    """
+    @patch.dict(os.environ, {'INGEST_SCHEDULE_RULE_NAME': 'voc-ingest-webscraper-schedule'})
+    @patch('_shared.audit.emit_audit_event')
+    @patch('_shared.circuit_breaker.get_eventbridge_client')
+    @patch('_shared.circuit_breaker.get_dynamodb_resource')
+    def test_a_trip_writes_the_workspaces_row_and_disables_no_rule_even_with_one_named(
+        self, mock_get_dynamo, mock_events, mock_emit
+    ):
+        from _shared.circuit_breaker import CircuitBreaker
+
+        mock_table = MagicMock()
+        mock_get_dynamo.return_value.Table.return_value = mock_table
+
+        CircuitBreaker('webscraper', SCOPE)._trip_breaker(5, 'boom')
+
+        mock_events.assert_not_called()
+        assert mock_table.put_item.call_args.kwargs['Item']['pk'] == f'WS#{WS}#CIRCUIT#webscraper'
+        mock_emit.assert_called_once()
+        assert mock_emit.call_args.args[3]['workspace_id'] == WS
+
+
+class TestTheDeploymentWideBreakerIsUnchanged:
+    """A run whose event names no workspace keeps the breaker it always had (until phase 2's last slice): the
+    deployment-wide rows, which the integrations API reads and resets, and the schedule disable on a trip."""
 
     RULE = 'voc-ingest-webscraper-schedule-123456789012-us-east-1'
 
@@ -141,7 +156,7 @@ class TestTrippingDisablesTheSchedule:
     @patch('shared.aws._eventbridge_client', None)
     @patch('shared.aws.boto3.client')
     @patch('_shared.circuit_breaker.get_dynamodb_resource')
-    def test_a_trip_disables_the_rule_cdk_named_through_the_shared_factory(
+    def test_a_trip_writes_the_api_s_row_and_disables_the_rule_cdk_named(
         self, mock_get_dynamo, mock_boto_client, mock_emit
     ):
         from _shared.circuit_breaker import CircuitBreaker
@@ -154,7 +169,30 @@ class TestTrippingDisablesTheSchedule:
         mock_boto_client.assert_called_once_with('events')
         mock_boto_client.return_value.disable_rule.assert_called_once_with(Name=self.RULE)
         assert mock_table.put_item.call_args.kwargs['Item']['pk'] == 'CIRCUIT#webscraper'
-        mock_emit.assert_called_once()
+        mock_emit.assert_called_once_with('plugin.disabled', 'webscraper', True, {
+            'reason': 'circuit_breaker', 'failure_count': 5, 'last_error': 'boom'})
+
+    def test_its_rows_are_the_deployment_wide_ones(self, real_aggregates_table):
+        from _shared.circuit_breaker import CircuitBreaker
+
+        breaker = CircuitBreaker('webscraper')
+        for attempt in range(3):
+            breaker.record_failure(f'boom {attempt}')
+
+        assert breaker.is_open() is True
+        assert {item['pk'] for item in real_aggregates_table.items.values()} == {
+            'FAILURES#webscraper', 'CIRCUIT#webscraper'}
+        breaker.record_success()
+        assert breaker.is_open() is False
+
+    @pytest.mark.usefixtures('real_aggregates_table')
+    def test_a_workspace_trip_leaves_the_deployment_wide_breaker_closed(self):
+        from _shared.circuit_breaker import CircuitBreaker
+
+        for attempt in range(3):
+            CircuitBreaker('webscraper', SCOPE).record_failure(f'boom {attempt}')
+
+        assert CircuitBreaker('webscraper').is_open() is False
 
 
 def _validation_error(operation: str, message: str) -> ClientError:
@@ -186,13 +224,18 @@ class _KeyedTable:
     def delete_item(self, Key: dict):
         self.items.pop(self._key(Key), None)
 
-    def query(self, KeyConditionExpression: str, ExpressionAttributeValues: dict):
-        if not KeyConditionExpression.startswith(f'{self.hash_key} = :pk'):
+    def query(self, KeyConditionExpression: str, ExpressionAttributeValues: dict,
+              ExpressionAttributeNames: dict | None = None):
+        names = ExpressionAttributeNames or {}
+        hash_name, _, rest = KeyConditionExpression.partition(' = :p')
+        if names.get(hash_name, hash_name) != self.hash_key:
             raise _validation_error('Query', 'Query condition missed key schema element')
-        start, end = ExpressionAttributeValues.get(':start', ''), ExpressionAttributeValues.get(':end', '\uffff')
+        if rest and not rest.startswith(f' AND {self.range_key} BETWEEN :start AND :end'):
+            raise _validation_error('Query', 'Query condition missed key schema element')
+        start, end = ExpressionAttributeValues.get(':start', ''), ExpressionAttributeValues.get(':end', HIGHEST)
         return {'Items': [
             item for item in self.items.values()
-            if item[self.hash_key] == ExpressionAttributeValues[':pk'] and start <= item[self.range_key] <= end
+            if item[self.hash_key] == ExpressionAttributeValues[':p'] and start <= item[self.range_key] <= end
         ]}
 
 
@@ -219,7 +262,7 @@ class TestTheBreakerWorksAgainstTheDeployedSchema:
         watermarks = _KeyedTable('source')
 
         with pytest.raises(ClientError):
-            watermarks.get_item(Key={'pk': 'CIRCUIT#webscraper', 'sk': 'TRIPPED'})
+            watermarks.get_item(Key=TRIPPED)
 
     def test_the_breaker_reads_the_aggregates_table_variable_not_the_watermarks_one(self):
         from _shared import circuit_breaker
@@ -240,17 +283,15 @@ class TestTheBreakerWorksAgainstTheDeployedSchema:
         assert 'keys:' not in aggregates  # default pk/sk pair (createEncryptedTable)
         assert "timeToLiveAttribute: 'ttl'" in aggregates
 
-    @patch.dict(os.environ, {}, clear=False)
     def test_threshold_failures_trip_it_and_a_success_closes_it(self, real_aggregates_table):
         from _shared.circuit_breaker import CircuitBreaker
 
-        os.environ.pop('INGEST_SCHEDULE_RULE_NAME', None)
-        breaker = CircuitBreaker('webscraper')
+        breaker = CircuitBreaker('webscraper', SCOPE)
         for attempt in range(3):
             breaker.record_failure(f'boom {attempt}')
 
         assert breaker.is_open() is True
-        row = real_aggregates_table.get_item(Key={'pk': 'CIRCUIT#webscraper', 'sk': 'TRIPPED'})['Item']
+        row = real_aggregates_table.get_item(Key={'pk': f'WS#{WS}#CIRCUIT#webscraper', 'sk': 'TRIPPED'})['Item']
         assert row['failure_count'] == 3
         assert row['last_error'] == 'boom 2'
 
@@ -261,12 +302,28 @@ class TestTheBreakerWorksAgainstTheDeployedSchema:
     def test_two_failures_under_a_threshold_of_three_leave_it_closed(self, real_aggregates_table):
         from _shared.circuit_breaker import CircuitBreaker
 
-        breaker = CircuitBreaker('webscraper')
+        breaker = CircuitBreaker('webscraper', SCOPE)
         breaker.record_failure('one')
         breaker.record_failure('two')
 
         assert breaker.is_open() is False
         failures = real_aggregates_table.query(
-            KeyConditionExpression='pk = :pk', ExpressionAttributeValues={':pk': 'FAILURES#webscraper'},
+            KeyConditionExpression='#p = :p', ExpressionAttributeNames={'#p': 'pk'},
+            ExpressionAttributeValues={':p': f'WS#{WS}#FAILURES#webscraper'},
         )['Items']
         assert len(failures) == 2
+
+    def test_one_workspaces_trip_leaves_another_workspaces_breaker_closed(self, real_aggregates_table):
+        from _shared.circuit_breaker import CircuitBreaker
+
+        tripped = CircuitBreaker('webscraper', SCOPE)
+        for attempt in range(3):
+            tripped.record_failure(f'boom {attempt}')
+        other = CircuitBreaker('webscraper', OTHER_SCOPE)
+        other.record_failure('one')
+
+        assert tripped.is_open() is True
+        assert other.is_open() is False
+        # The other workspace's single failure did not count towards this one's window, nor the reverse.
+        assert {item['pk'] for item in real_aggregates_table.items.values()} == {
+            f'WS#{WS}#FAILURES#webscraper', f'WS#{WS}#CIRCUIT#webscraper', f'WS#{OTHER_WS}#FAILURES#webscraper'}

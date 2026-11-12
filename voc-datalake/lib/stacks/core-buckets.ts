@@ -12,7 +12,8 @@
  * (ingestion-stack.ts `createS3ImportBucket`).
  *
  * The ONE exception is the raw data lake's append-only layers, `raw/` (bronze) and `silver/`
- * (Silver history) (TENETS.md D1): they keep history, so nothing under them ever expires,
+ * (Silver history), and the same two in every tenant workspace, `ws/{ws}/raw/` and `ws/{ws}/silver/`
+ * (TENETS.md D1): they keep history, so nothing under them ever expires,
  * current or noncurrent, and a bucket-policy statement refuses any PutObject under them that
  * could overwrite (no `If-None-Match`). Only voc-retention deletes there (lawful erasure / a declared retention period). The raw
  * bucket's workspace prefixes have no noncurrent rule either: a workspace delete removes every
@@ -47,8 +48,31 @@ export const RAW_LAYER_PREFIX = 'raw/';
  * (If-None-Match), never overwritten, no lifecycle rule expires it; only voc-retention deletes it, with its item.
  */
 export const SILVER_HISTORY_PREFIX = 'silver/';
-/** The append-only layers of the raw data bucket: write-once, kept forever (only voc-retention deletes). */
-export const APPEND_ONLY_PREFIXES = [RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX] as const;
+/**
+ * The multi-workspace data path's root (docs/multi-workspace.md): every object of a tenant workspace is under
+ * `ws/{ws}/` (lambda/shared/ws_repo.py `s3_key`). Not to be confused with RAW_BUCKET_WORKSPACE_PREFIXES, the
+ * deployment's artifact prefixes ("workspace" there is the older word for a deployment's shared content).
+ */
+export const WORKSPACE_DATA_PREFIX = 'ws/';
+/**
+ * Exactly one workspace id in an IAM pattern (S3 resources, DynamoDB `LeadingKeys`): `ws_` and the ULID's 26
+ * characters (lambda/shared/workspace_ids.py), one `?` each. Never `*`: IAM's `*` also matches `/` and `#`, so
+ * `ws/*\/raw/*` would reach `ws/{ws}/silver/raw/…` and `WS#*#CIRCUIT#*` a source named `x#CIRCUIT#y`.
+ */
+export const WORKSPACE_ID_PATTERN = `ws_${'?'.repeat(26)}`;
+/** A tenant workspace's bronze layer, `ws/{ws}/raw/` (the plugin ingestors since the ingestion slice): as `raw/`. */
+export const WORKSPACE_RAW_LAYER_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${RAW_LAYER_PREFIX}`;
+/** A tenant workspace's Silver history, `ws/{ws}/silver/`: as `silver/` (the processor writes it for a workspace's messages, 7.00.00). */
+export const WORKSPACE_SILVER_HISTORY_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${SILVER_HISTORY_PREFIX}`;
+/**
+ * The append-only layers of the raw data bucket: write-once, kept forever (only voc-retention deletes), at the
+ * bucket's root and in every workspace (D1 holds per workspace too). IAM resource patterns, so
+ * `WORKSPACE_ID_PATTERN` stands for one workspace id; a lifecycle rule cannot match them by prefix, and none may
+ * cover `ws/` (core-buckets.test.ts).
+ */
+export const APPEND_ONLY_PREFIXES = [
+  RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
+] as const;
 /**
  * `scratch/` objects (workflow claim-checks) expire after this many days, and so do their noncurrent versions (a
  * workflow's own delete leaves one): no workflow runs longer than 2 h.
@@ -113,9 +137,9 @@ function rawBucketVersionRules(): s3.LifecycleRule[] {
 }
 
 /**
- * Deny every PutObject / CompleteMultipartUpload under `raw/` and `silver/` (APPEND_ONLY_PREFIXES) that does
- * not send `If-None-Match`, so no writer (ours or out-of-band) can overwrite a bronze object or a kept Silver
- * version: a write either creates a new
+ * Deny every PutObject / CompleteMultipartUpload under `raw/` and `silver/`, and under each workspace's
+ * `ws/{ws}/raw/` and `ws/{ws}/silver/` (APPEND_ONLY_PREFIXES) that does not send `If-None-Match`, so no writer
+ * (ours or out-of-band) can overwrite a bronze object or a kept Silver version: a write either creates a new
  * key or gets 412. Multipart parts (CreateMultipartUpload, UploadPart, UploadPartCopy) cannot carry
  * the header and are exempted by `s3:ObjectCreationOperation`, as AWS documents
  * (https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes-enforce.html). A

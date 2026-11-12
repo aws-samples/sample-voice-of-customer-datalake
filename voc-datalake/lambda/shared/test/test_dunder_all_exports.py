@@ -37,7 +37,17 @@ EXCLUDED_PARTS = frozenset({'layers', 'node_modules', '__pycache__', '_template'
 
 # Exported names no other production module imports, each with its reason. Keyed by module path
 # without ``.py``. Real entry points belong here; an over-export is fixed by dropping it from ``__all__``.
-ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {}
+ALLOWED_UNUSED_EXPORTS: dict[str, frozenset[str]] = {
+    # Multi-workspace phase 2's repository layer (docs/multi-workspace.md, Request flow step 4), landed before the
+    # data path moves onto it; each slice that imports a name removes it here (the ingestion slice took the
+    # scope from a message, the watermark, run and object keys and the table view; the processor's slice the
+    # feedback item's keys and index partitions, through shared/feedback_partitions.py; the ingestors and the
+    # processor read a message's scope through message_scope, which wraps scope_from_message).
+    'lambda/shared/ws_repo': frozenset({
+        'OutOfScopeError', 'PARTITION_ATTRIBUTES', 'metric_pk', 'metric_type', 'scope_from_key', 'scope_from_message',
+        'scope_of',
+    }),
+}
 
 
 def is_production(relative: Path) -> bool:

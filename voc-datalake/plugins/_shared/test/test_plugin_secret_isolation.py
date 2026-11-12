@@ -169,6 +169,7 @@ import pytest
 import shared.aws as shared_aws
 from _shared import base_ingestor, base_webhook
 from _shared.plugin_secrets import filter_plugin_secrets, plugin_secret_prefix
+from _shared.test.workspace_fixtures import SCOPE, SECRET_NAME, WS
 from shared.exceptions import ConfigurationError, SecretUnreadableError
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 
@@ -219,7 +220,7 @@ def _make_ingestor(execution_id=None):
         def fetch_new_items(self):
             yield from []
 
-    return _Ingestor(execution_id=execution_id)
+    return _Ingestor(SCOPE, execution_id=execution_id)
 
 
 def _make_webhook():
@@ -505,15 +506,27 @@ class TestBothBaseClassesFailClosed:
         with pytest.raises(ConfigurationError):
             self._webhook_with(payload)
 
-    def test_an_unconfigured_secrets_arn_still_yields_an_empty_config(self):
-        """The one case that is NOT a namespace miss: no ARN means no secret was
+    def test_an_unconfigured_secret_name_still_yields_an_empty_config(self):
+        """The one case that is NOT a namespace miss: no secret prefix (the ingestor's
+        workspace secrets) or no ARN (the webhook's shared secret) means no secret was
         read at all, so there is nothing to over-share. Kept a warning so a local
         or partially-wired invocation is not turned into a hard failure by this
         change."""
-        with patch('_shared.base_ingestor.SECRETS_ARN', ''):
+        with patch('_shared.base_ingestor.WORKSPACE_SECRET_PREFIX', ''):
             assert self._ingestor_with({'unused': 'never-read'}).secrets == {}
         with patch('_shared.base_webhook.SECRETS_ARN', ''):
             assert self._webhook_with({'unused': 'never-read'}).secrets == {}
+
+    @patch('_shared.base_ingestor.get_dynamodb_resource', new=MagicMock())
+    @patch('_shared.base_ingestor.get_s3_client', new=MagicMock())
+    @patch('_shared.base_ingestor.get_sqs_client', new=MagicMock())
+    def test_the_ingestor_reads_only_its_workspaces_secret(self):
+        """Per-workspace credentials (decision 8): the name is the run's scope's, never the shared secret's."""
+        with patch('_shared.base_ingestor.get_secret', return_value=MIXED_SECRET) as get_secret:
+            _make_ingestor()
+
+        get_secret.assert_called_once_with(SECRET_NAME)
+        assert WS in SECRET_NAME
 
 
 class TestOneImplementationOfTheBoundary:
@@ -632,7 +645,7 @@ class TestTheOnlyOptOutIsOverridingLoadSecrets:
                 yield from []
 
         with pytest.raises(ConfigurationError) as raised:
-            _NeverReadsSecrets()
+            _NeverReadsSecrets(SCOPE)
 
         assert PREFIX in str(raised.value)
         # And it did not quietly receive the other plugin's credentials instead.
@@ -661,7 +674,7 @@ class TestTheOnlyOptOutIsOverridingLoadSecrets:
             def fetch_new_items(self):
                 yield from []
 
-        assert _OptsOut().secrets == {}
+        assert _OptsOut(SCOPE).secrets == {}
 
 
 class TestATransientReadFailureIsRetryable:
@@ -827,16 +840,17 @@ class TestAConstructionFailureIsReported:
         assert [type(error).__name__] in written, written
 
     def test_the_run_record_is_addressed_by_this_execution(self):
-        """The record the UI polls, not just any record: `run_source` keys it
-        `SOURCE_RUN#<source>` / `<execution_id>`, and a write to a different sort
-        key would leave the polled one at 'running' while this test passed."""
+        """The record of this run, not just any record: it is keyed
+        `WS#{ws}#SOURCE_RUN#<source>` / `<execution_id>` in the run's workspace, and
+        a write to a different sort key would leave it at 'running' while this test
+        passed."""
         _, table, _, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
 
         keys = [call.kwargs.get('Key') for call in table.update_item.call_args_list]
-        assert {'pk': f'SOURCE_RUN#{PLUGIN_ID}', 'sk': self.EXECUTION_ID} in keys
+        assert {'pk': f'WS#{WS}#SOURCE_RUN#{PLUGIN_ID}', 'sk': self.EXECUTION_ID} in keys
 
     def test_a_namespace_miss_records_a_circuit_breaker_failure(self):
-        """Otherwise a plugin broken this way never auto-disables its schedule —
+        """Otherwise a plugin broken this way never stops in its workspace —
         it just fails every fifteen minutes forever."""
         _, _, record_failure, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
 
@@ -920,7 +934,7 @@ class TestAConstructionFailureIsReported:
                 patch('_shared.circuit_breaker.get_dynamodb_resource',
                       side_effect=Exception('resource construction failed')), \
                 pytest.raises(Exception, match='resource construction failed'):
-            base_ingestor.CircuitBreaker(PLUGIN_ID).record_failure('boom')
+            base_ingestor.CircuitBreaker(PLUGIN_ID, SCOPE).record_failure('boom')
 
     def test_the_report_does_not_replace_the_error_the_operator_needs(self):
         """The reporting runs while a ConfigurationError is propagating. If a

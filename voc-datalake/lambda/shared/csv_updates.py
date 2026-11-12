@@ -13,7 +13,8 @@ as a duplicate, so a corrected spreadsheet amends its rows rather than doubling 
   a manual category is never moved, locked dimensions are kept, ``tags`` are never touched,
   and dimension / tag COLUMNS of the file are not applied to a stored row.
 * The keys and the import date stay (``pk``/``sk``, ``gsi1*``, ``date``), so the aggregator
-  rebuckets the stream's MODIFY on the item's own day (category, sentiment, urgency, channel).
+  rebuckets the stream's MODIFY on the item's own day (category, sentiment, urgency, channel);
+  ``gsi5pk`` follows the corrected channel (in the item's workspace for an item of one).
 * Conditional on the stored ``csv_dataset`` being the record's (a replace never touches an item
   another dataset, or no dataset, stored), on the digest still being what was read (and, when
   re-enriched, on the dimensions and on nobody having corrected the category meanwhile): a
@@ -35,9 +36,11 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
+from shared.feedback_partitions import CHANNEL_INDEX_PARTITION, channel_partition
 from shared.silver_provenance import REASON_CSV_CORRECTION, SYSTEM_ACTOR, change_stamp
 from shared.source_profiles import PII_ALLOW, PII_SUMMARY_ONLY
 from shared.source_updates import UPDATE_APPLY, UPDATE_UNCHANGED, ItemUpdate, text_changed
+from shared.ws_repo import WorkspaceScope
 
 __all__ = ['csv_update', 'csv_update_decision', 'needs_reenrichment']
 
@@ -57,9 +60,13 @@ def needs_reenrichment(stored: Mapping[str, Any], raw_record: Mapping[str, Any],
     return text_changed(stored, raw_record, pii_policy)
 
 
-def _row_fields(raw_record: Mapping[str, Any], pii_policy: str, now_iso: str) -> dict[str, Any]:
-    """The stored fields a CSV row itself carries (None = REMOVE), under ``pii_policy``."""
+def _row_fields(raw_record: Mapping[str, Any], pii_policy: str, now_iso: str,
+                scope: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The stored fields a CSV row itself carries (None = REMOVE), under ``pii_policy``; the channel moves the item's
+    ``gsi5pk`` with it (in ``scope``'s workspace for an item of one), so the channel index never keeps it under the
+    old channel."""
     rating = raw_record.get('rating')
+    channel = raw_record.get('source_channel') or 'unknown'
     fields: dict[str, Any] = {
         'csv_content_hash': raw_record['csv_content_hash'],
         'csv_dataset': raw_record['csv_dataset'],
@@ -67,7 +74,8 @@ def _row_fields(raw_record: Mapping[str, Any], pii_policy: str, now_iso: str) ->
         'rating': Decimal(str(rating)) if rating is not None else None,
         'source_url': raw_record.get('url'),
         'source_created_at': raw_record.get('created_at'),
-        'source_channel': raw_record.get('source_channel') or 'unknown',
+        'source_channel': channel,
+        CHANNEL_INDEX_PARTITION: channel_partition(scope, channel),
         'pii_policy': None if pii_policy == PII_ALLOW else pii_policy,
         'source_refreshed_at': now_iso,
         **change_stamp(SYSTEM_ACTOR, REASON_CSV_CORRECTION, now_iso),
@@ -84,9 +92,9 @@ def _row_fields(raw_record: Mapping[str, Any], pii_policy: str, now_iso: str) ->
 def csv_update(
     stored: Mapping[str, Any], raw_record: Mapping[str, Any], pii_policy: str, now_iso: str,
     reenriched: Mapping[str, Any] | None = None, moves_category: bool = False,
-    enrichment_failed: bool = False,
+    enrichment_failed: bool = False, scope: WorkspaceScope | None = None,
 ) -> dict:
-    """``update_item`` kwargs for a confirmed CSV correction.
+    """``update_item`` kwargs for a confirmed CSV correction (``scope``: the item's workspace, None deployment-wide).
 
     ``reenriched`` are the text + enrichment fields when the text changed (they win over
     the row's own ``title``); ``moves_category`` guards the move against a manual correction.
@@ -95,7 +103,7 @@ def csv_update(
     as they were and the row still previews as changed (a later confirmed upload retries it).
     """
     update = ItemUpdate(stored)
-    fields = _row_fields(raw_record, pii_policy, now_iso)
+    fields = _row_fields(raw_record, pii_policy, now_iso, scope)
     if enrichment_failed:
         fields.pop('csv_content_hash')
     update.assign({**fields, **(reenriched or {})})

@@ -47,7 +47,8 @@ def test_reads_every_page_newest_first_from_the_cutoff():
     assert ([r['sk'] for r in rows], partial) == (['2026-10-22', '2026-10-21'], False)
     first, second = (call.kwargs for call in table.query.call_args_list)
     key = first['KeyConditionExpression'].get_expression()
-    assert [part.get_expression()['values'][1] for part in key['values']] == ['google_play', '2026-10-20']
+    assert [part.get_expression()['values'][0].name for part in key['values']] == ['gsi5pk', 'gsi1sk']
+    assert [part.get_expression()['values'][1] for part in key['values']] == ['CHANNEL#google_play', '2026-10-20']
     assert (first['IndexName'], first['ScanIndexForward'], 'FilterExpression' in first) == ('gsi5-by-channel', False, True)
     assert second['ExclusiveStartKey'] == {'k': 1}
 

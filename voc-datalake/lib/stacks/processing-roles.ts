@@ -18,6 +18,7 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type * as sqs from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
 import { grantClaudeModels } from '../utils/claude-model-grant';
+import { WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX } from './core-buckets';
 import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { grantReadAndWrites, grantWrites } from '../utils/table-write-grants';
 
@@ -47,7 +48,9 @@ export interface ProcessorRoleProps {
  * - radar (another brand's reviews): the dedupe-marker read and one transaction of Put + counter Updates;
  * - idempotency: Powertools' record (Get / Put / Update / Delete);
  * - raw/: write-once Put of the inline raw_data fallback (lambda/shared/raw_fallback.py), no read, no delete;
+ *   a workspace message's under ws/{ws}/raw/ (docs/multi-workspace.md);
  * - silver/: write-once Put of an item's kept version before an in-place refresh (shared/silver_provenance.py);
+ *   a workspace item's under ws/{ws}/silver/;
  * - the processing queue, Bedrock (the 'enrichment' surface, any allowlisted model), Comprehend, Translate, KMS.
  */
 export function createProcessorRole(scope: Construct, props: ProcessorRoleProps): iam.Role {
@@ -65,10 +68,18 @@ export function createProcessorRole(scope: Construct, props: ProcessorRoleProps)
   props.kmsKey.grantEncryptDecrypt(role);
   props.radarTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
   // Write-once under raw/ (the bucket policy refuses a put without If-None-Match). Put only: no read, no delete.
+  // And under one workspace's ws/{ws}/raw/: a workspace message's inline raw_data fallback (docs/multi-workspace.md).
   props.rawDataBucket.grantPut(role, 'raw/*');
+  props.rawDataBucket.grantPut(role, `${WORKSPACE_RAW_LAYER_PREFIX}*`);
   // Write-once under silver/ too: the item as it was before a source refresh or a CSV correction
   // (lambda/shared/silver_provenance.py; the same If-None-Match bucket rule). Put only.
   grantSilverHistoryPut(props.rawDataBucket, role);
+  // And a workspace item's under one workspace's ws/{ws}/silver/: s3:PutObject only, as grantSilverHistoryPut.
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'KeepWorkspaceSilverVersions',
+    actions: ['s3:PutObject'],
+    resources: [props.rawDataBucket.arnForObjects(`${WORKSPACE_SILVER_HISTORY_PREFIX}*`)],
+  }));
   return role;
 }
 

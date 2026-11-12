@@ -31,8 +31,14 @@ type Scope = readonly string[];
 const WHOLE_TABLE: Scope = [ALL];
 interface Deleter { readonly scope: Scope; readonly why: string }
 
-/** The circuit breaker's own row (plugins/_shared/circuit_breaker.py, shared/plugin_circuit.py). */
+/** The circuit breaker's own row as the integrations API clears it (shared/plugin_circuit.py: deployment-wide until
+ * the API is keyed by workspace). */
 const CIRCUIT_ROW: Deleter = { scope: ['CIRCUIT#*'], why: 'clears its tripped circuit-breaker row' };
+/** The breaker's row as the plugin ingestors write and clear it: deployment-wide, and one per workspace for a run in
+ * one (plugins/_shared/circuit_breaker.py). */
+const WORKSPACE_CIRCUIT_ROW: Deleter = {
+  scope: ['CIRCUIT#*', 'WS#ws_??????????????????????????#CIRCUIT#*'], why: 'clears its tripped circuit-breaker row (deployment-wide or the run\'s workspace)',
+};
 /** Every ingestor role the default synth creates (lib/stacks/ingestion-roles.ts). */
 const INGESTOR_ROLES = [
   'IngestorRoleS3Import', 'IngestorRoleAppReviewsAndroid', 'IngestorRoleAppReviewsIos', 'IngestorRoleGithubIssues',
@@ -46,7 +52,7 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   },
   AggregatesTable: {
     'VocApiStack/IntegrationsLambdaRole': CIRCUIT_ROW,
-    ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, CIRCUIT_ROW])),
+    ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, WORKSPACE_CIRCUIT_ROW])),
     'VocApiStack/LogsLambdaRole': { scope: ['LOGS#validation#*'], why: 'DELETE /logs/validation/{source}' },
     'VocApiStack/FeedbackFormLambdaRole': { scope: ['FEEDBACK_FORM'], why: 'DELETE /feedback-forms/{id} (the config row)' },
     [PROJECTS_API]: {

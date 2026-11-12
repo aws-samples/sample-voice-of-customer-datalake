@@ -10,6 +10,18 @@ from page_reader import PageSnapshot
 
 from _shared.test.ingestor_fixtures import offline_ingestor_construction, with_mock_circuit_breaker
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import (
+    EVENTS_NAMING_NO_WORKSPACE,
+    EVENTS_WITH_A_MALFORMED_WORKSPACE,
+    OTHER_SCOPE,
+    OTHER_WS,
+    REFUSED,
+    SCHEDULED_TICK,
+    SCOPE,
+    WS,
+    ws_event,
+)
+from shared.ws_repo import WorkspaceScope, ws_table
 
 URL = 'https://www.trustpilot.com/review/example.com'
 JSONLD = json.dumps([
@@ -19,7 +31,14 @@ JSONLD = json.dumps([
 ])
 
 
+def wm(key: str, ws: str = WS) -> str:
+    """The exact voc-watermarks ``source`` of the test plugin's watermark *key* in workspace *ws*."""
+    return f'WS#{ws}#test_source#{key}'
+
+
 class WatermarkTable:
+    """voc-watermarks with boto3's ``Key=`` / ``Item=`` shape; the ingestor sees it through ``ws_table``."""
+
     def __init__(self, values: dict[str, str] | None = None):
         self.values = dict(values or {})
 
@@ -56,8 +75,10 @@ def target_config(**fields: str) -> dict[str, str]:
 
 @contextmanager
 def ingestor(configs: list[dict], pages: dict[str, PageSnapshot] | None = None, *, execution_id: str | None = 'run_1',
-             table: WatermarkTable | None = None, session: Any = None) -> Generator[Any, None, None]:
-    """The ingestor over *configs*, its watermarks in *table*, its browser session *session* (a mock)."""
+             table: WatermarkTable | None = None, session: Any = None,
+             scope: WorkspaceScope = SCOPE) -> Generator[Any, None, None]:
+    """The ingestor of a run in *scope* over *configs*, its watermarks in *table* (seen through the scope), its
+    browser session *session* (a mock)."""
     from web_reviews.ingestor import handler
 
     secret = scoped_secret(configs=json.dumps(configs))
@@ -66,14 +87,14 @@ def ingestor(configs: list[dict], pages: dict[str, PageSnapshot] | None = None, 
             patch('shared.web_review_targets.validate_url', return_value=(True, '')), \
             patch.object(handler, 'browser_session', return_value=session or MagicMock()), \
             patch.object(handler, 'BrowserTab', return_value=FakeTab(pages or {URL: page()})):
-        instance = handler.WebReviewsIngestor(execution_id=execution_id, complete=lambda _p, _s: '')
-        with patch.object(instance, 'watermarks_table', table or WatermarkTable()):
+        instance = handler.WebReviewsIngestor(scope, execution_id=execution_id, complete=lambda _p, _s: '')
+        with patch.object(instance, 'watermarks_table', ws_table(scope, table or WatermarkTable(), key='source')):
             yield with_mock_circuit_breaker(instance)
 
 
 class TestRun:
     def test_sends_the_reviews_newer_than_the_watermark(self):
-        table = WatermarkTable({'test_source#target_t1_newest_review': '2026-09-30'})
+        table = WatermarkTable({wm('target_t1_newest_review'): '2026-09-30'})
         with ingestor([target_config()], table=table) as run:
             items = list(run.fetch_new_items())
         assert [item['text'] for item in items] == ['Lost my bag.']
@@ -82,7 +103,7 @@ class TestRun:
         table = WatermarkTable()
         with ingestor([target_config()], table=table) as run:
             list(run.fetch_new_items())
-        assert table.values['test_source#target_t1_newest_review'] == '2026-10-01'
+        assert table.values[wm('target_t1_newest_review')] == '2026-10-01'
 
     def test_a_blocked_site_is_reported_not_empty(self):
         wall = page(status=403, text='', jsonld=(), html='<script src="https://ct.captcha-delivery.com/c.js">')
@@ -167,4 +188,89 @@ def test_run_now_for_one_target(app_id):
 
     with ingestor([target_config(), target_config(id='t2', url='https://www.yelp.com/biz/x')]), \
             patch.object(handler.WebReviewsIngestor, 'run', targets_read):
-        assert handler.WebReviewsIngestor.run_for_event({'execution_id': 'run_1', 'app_id': app_id}) == ['t2']
+        assert handler.WebReviewsIngestor.run_for_event(ws_event(execution_id='run_1', app_id=app_id)) == ['t2']
+
+
+class TestTheWorkspace:
+    """A run is one workspace's, or deployment-wide when its event names none; a malformed workspace runs nothing,
+    and two workspaces keep apart."""
+
+    @contextmanager
+    def constructed(self) -> Generator[MagicMock, None, None]:
+        """``WebReviewsIngestor.__init__`` replaced by a mock (and ``run`` by a stub), so a test sees what a run
+        would be built with, or that none is built."""
+        from web_reviews.ingestor import handler
+
+        with patch.object(handler.WebReviewsIngestor, '__init__', return_value=None) as init, \
+                patch.object(handler.WebReviewsIngestor, 'run', lambda _self: {'status': 'success'}):
+            yield init
+
+    @pytest.mark.parametrize('event', [
+        *EVENTS_WITH_A_MALFORMED_WORKSPACE, {'workspace_id': 'not-a-workspace', 'execution_id': 'run_1'},
+    ])
+    def test_an_event_naming_a_malformed_workspace_is_refused_and_builds_no_ingestor(self, event):
+        from web_reviews.ingestor import handler
+
+        with self.constructed() as init:
+            assert handler.WebReviewsIngestor.run_for_event(event) == REFUSED
+        init.assert_not_called()
+
+    @pytest.mark.parametrize(('event', 'execution_id'), [
+        *((event, event.get('execution_id')) for event in EVENTS_NAMING_NO_WORKSPACE),
+        # The integrations API's Run now (lambda/api/integrations_handler.py run_source), with its app_id.
+        ({'execution_id': 'run_1', 'app_id': 't1'}, 'run_1'),
+        (None, None), (['workspace_id'], None), ([], None),
+    ])
+    def test_an_event_naming_no_workspace_runs_deployment_wide(self, event, execution_id):
+        from web_reviews.ingestor import handler
+
+        with self.constructed() as init, patch('_shared.base_ingestor.fan_out_once') as fan_out:
+            assert handler.WebReviewsIngestor.run_for_event(event) == {'status': 'success'}
+        (scope,), kwargs = init.call_args
+        assert scope is None
+        assert kwargs == {'execution_id': execution_id, 'deadline': None}
+        init.assert_called_once()
+        fan_out.assert_not_called()
+
+    def test_the_run_is_built_in_the_events_workspace_with_its_execution_id(self):
+        from web_reviews.ingestor import handler
+
+        with self.constructed() as init:
+            assert handler.WebReviewsIngestor.run_for_event(ws_event(execution_id='run_1')) == {'status': 'success'}
+        (scope,), kwargs = init.call_args
+        assert scope == SCOPE
+        assert kwargs == {'execution_id': 'run_1', 'deadline': None}
+
+    def test_the_scheduled_tick_fans_out_then_runs_deployment_wide(self):
+        from web_reviews.ingestor import handler
+
+        order: list[str] = []
+
+        def run(_self) -> dict:
+            order.append('run')
+            return {'status': 'success'}
+
+        with self.constructed() as init, patch.object(handler.WebReviewsIngestor, 'run', run), \
+                patch('_shared.base_ingestor.fan_out_once',
+                      side_effect=lambda *_: order.append('fan_out')) as fan_out:
+            assert handler.WebReviewsIngestor.run_for_event(dict(SCHEDULED_TICK)) == {'status': 'success'}
+        (scope,), kwargs = init.call_args
+        assert (scope, kwargs) == (None, {'execution_id': None, 'deadline': None})
+        fan_out.assert_called_once_with('test_source', SCHEDULED_TICK)
+        assert order == ['fan_out', 'run']
+
+    def test_a_targets_watermarks_in_two_workspaces_do_not_collide(self):
+        # WS has read this target up to December: nothing on the page is new there. OTHER_WS never read it.
+        table = WatermarkTable({wm('target_t1_newest_review'): '2026-12-01'})
+        with ingestor([target_config()], table=table, scope=OTHER_SCOPE) as run:
+            other_items = list(run.fetch_new_items())
+        with ingestor([target_config()], table=table, scope=SCOPE) as run:
+            ws_items = list(run.fetch_new_items())
+        assert [item['text'] for item in other_items] == ['Lost my bag.', 'Old complaint.']
+        assert ws_items == []
+        assert table.values[wm('target_t1_newest_review', OTHER_WS)] == '2026-10-01'
+        assert table.values[wm('target_t1_newest_review')] == '2026-12-01'
+        # Every key either run wrote is inside its own workspace.
+        assert all(key.startswith((f'WS#{WS}#test_source#', f'WS#{OTHER_WS}#test_source#')) for key in table.values)
+        assert wm('target_t1_last_run') in table.values
+        assert wm('target_t1_last_run', OTHER_WS) in table.values

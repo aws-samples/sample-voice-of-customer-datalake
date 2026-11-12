@@ -169,12 +169,14 @@ except Exception as e:
 
 ## Workspace-Scoped Data Access (multi-workspace)
 
-Until phase 2 keys the data path by workspace, `lambda/shared/ws_repository.py` (`ws_table`, `ws_s3_key`) cannot read
-today's rows and nothing uses it; the `audit: ws_raw_access` step ([docs/code-audit.md](../../docs/code-audit.md))
-fails on a new raw table handle, client or S3 write outside it. So in phase 1, build new data code on the handles its
-module already has (a table passed into a function adds nothing); a change that truly needs a new one raises that
-file's count in `scripts/audit/allowlists/ws_raw_access.json` in the same change, in the group of the phase that moves
-it, so the reviewer sees it. A route that resolves the workspace gets its two-workspace case in `CASES` of
+Data-path keys inside a workspace are built only by `lambda/shared/ws_repo.py` (a verified `WorkspaceScope`, the key
+builders, `s3_key` for objects, `ws_table` for a table seen through the workspace); the plugin ingestors and the
+feedback processor run on it when a message names a `workspace_id`. Its raw-access guard,
+`lambda/shared/test/test_ws_raw_access.py`, fails on a new raw table call, getter reference, `.meta.client`, S3 write,
+copy or delete, or unscoped key literal (`SOURCE#`, `raw/` …) outside the layer, per module and per kind. So build new
+data code on the layer, or on the handles its module already has (a table passed into a function adds nothing); a
+change that truly needs a new raw access raises that module's entry in `ALLOWED` in the same change, with the phase
+that moves it, so the reviewer sees it, and a module that moves lowers its entry. A route that resolves the workspace gets its two-workspace case in `CASES` of
 `lambda/api/test/cross_workspace_worlds.py`, and leaves `cross_workspace_pending.py` if it was there; every route is
 in exactly one table of `lambda/api/test/test_cross_workspace_routes.py` (its docstring has the rules).
 

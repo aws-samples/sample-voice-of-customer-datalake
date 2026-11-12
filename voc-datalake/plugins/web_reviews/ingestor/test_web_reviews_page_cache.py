@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from page_cache import PageCache, normalised_url, page_digest
 from page_reader import PageSnapshot
-from test_web_reviews_handler import URL, WatermarkTable, ingestor, page, target_config
+from test_web_reviews_handler import URL, WatermarkTable, ingestor, page, target_config, wm
 
 from web_reviews.ingestor import handler
 
@@ -15,14 +15,20 @@ def text_page(text: str = 'Seat was broken. 2 stars.') -> PageSnapshot:
     return page(jsonld=(), text=text)
 
 
+def page_key(url: str = URL) -> str:
+    """The page's watermark key, as the cache names it (the ingestor scopes it to the workspace)."""
+    return f'target_t1_page_{hashlib.sha256(url.encode()).hexdigest()[:16]}'
+
+
 def cache_key(url: str = URL) -> str:
-    return f'test_source#target_t1_page_{hashlib.sha256(url.encode()).hexdigest()[:16]}'
+    """The exact voc-watermarks key the page's hash is stored under in the run's workspace."""
+    return wm(page_key(url))
 
 
 class TestTheKeyAndTheDigest:
     def test_the_key_hashes_the_normalised_url(self):
         cache = PageCache('target_t1', lambda _k: None, lambda _k, _v: None)
-        assert cache.key('HTTPS://WWW.Trustpilot.com/review/example.com#reviews') == cache_key()[len('test_source#'):]
+        assert cache.key('HTTPS://WWW.Trustpilot.com/review/example.com#reviews') == page_key()
 
     def test_the_path_and_query_are_kept(self):
         assert normalised_url('https://A.example/R?page=2#x') == 'https://a.example/R?page=2'
@@ -111,6 +117,6 @@ class TestTheCacheInARun:
     def test_a_backfill_reads_an_unchanged_page_anyway(self):
         table = WatermarkTable()
         run(table, text_page())
-        table.values['test_source#target_t1_resume'] = f'{{"url": "{URL}", "page": 0, "reviews": 0}}'
+        table.values[wm('target_t1_resume')] =f'{{"url": "{URL}", "page": 0, "reviews": 0}}'
         items, calls = run(table, text_page())
         assert (len(items), len(calls)) == (1, 1)

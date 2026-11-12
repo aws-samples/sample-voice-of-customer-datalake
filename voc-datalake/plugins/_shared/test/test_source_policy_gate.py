@@ -5,8 +5,9 @@ import pytest
 
 from _shared import base_ingestor, base_webhook
 from _shared.normalized_item import normalized_item_fields
-from _shared.raw_archive import archive_raw_item
+from _shared.raw_archive import WEBHOOK, archive_raw_item
 from _shared.source_policy_gate import policy_messages, raw_archive_permitted
+from _shared.test.workspace_fixtures import OTHER_SCOPE, OTHER_WS, SCOPE, WS
 from shared.source_profiles import SourceProfilesUnavailable
 from shared.test.source_profile_fixtures import seeded_source_profiles, unreadable_source_profiles
 
@@ -45,6 +46,25 @@ def test_archive_raw_item_still_writes_for_an_allow_source():
     assert uri.startswith('s3://bucket/raw/other/2026/01/15/x/')
 
 
+def test_an_ingestors_archive_is_the_workspaces_and_a_webhooks_stays_deployment_wide():
+    item = {'id': 'x', 'created_at': '2026-01-15T00:00:00Z'}
+    ingestor_s3, webhook_s3 = MagicMock(), MagicMock()
+    ingestor_uri = archive_raw_item(ingestor_s3, 'bucket', 'other', item, scope=SCOPE)
+    other_uri = archive_raw_item(MagicMock(), 'bucket', 'other', item, scope=OTHER_SCOPE)
+    webhook_uri = archive_raw_item(webhook_s3, 'bucket', 'other', item, transport=WEBHOOK)
+
+    assert ingestor_uri is not None
+    assert ingestor_uri.startswith(f's3://bucket/ws/{WS}/raw/other/2026/01/15/x/')
+    assert ingestor_s3.put_object.call_args.kwargs['Key'].startswith(f'ws/{WS}/raw/other/2026/01/15/x/')
+    assert other_uri is not None
+    assert other_uri.startswith(f's3://bucket/ws/{OTHER_WS}/raw/other/2026/01/15/x/')
+    assert webhook_uri is not None
+    assert webhook_uri.startswith('s3://bucket/raw/other/2026/01/15/x/')
+    assert webhook_s3.put_object.call_args.kwargs['Key'].startswith('raw/other/2026/01/15/x/')
+    # The same content: only the folder differs, so the version (sha16) is the same in all three.
+    assert ingestor_uri.rsplit('/', 1)[1] == other_uri.rsplit('/', 1)[1] == webhook_uri.rsplit('/', 1)[1]
+
+
 def test_an_unreadable_policy_fails_closed_before_archive_or_queue():
     s3 = MagicMock()
     with unreadable_source_profiles():
@@ -69,15 +89,41 @@ def test_a_webhook_answers_503_and_queues_nothing_when_the_policy_is_unreadable(
     send.assert_not_called()
 
 
+def test_a_deployment_wide_ingestor_run_queues_the_policy_applied_message_unchanged():
+    with seeded_source_profiles(_REDACTED), \
+            patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send:
+        base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=None), [_message()])
+    assert ingest_send.call_args.args[2] == [
+        {'id': 'x', 'source_platform': 'tickets', 'text': 'mail [EMAIL]', 'pii_policy_applied': 'redact'}]
+
+
 def test_ingestor_and_webhook_queue_the_policy_applied_messages():
     with seeded_source_profiles(_REDACTED), \
             patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send, \
             patch.object(base_webhook, 'send_messages_to_queue', return_value=1) as webhook_send:
-        base_ingestor.BaseIngestor.send_to_queue(MagicMock(), [_message()])
+        base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=SCOPE), [_message()])
         base_webhook.BaseWebhook.send_to_queue(MagicMock(), [_message()])
     expected = [{'id': 'x', 'source_platform': 'tickets', 'text': 'mail [EMAIL]', 'pii_policy_applied': 'redact'}]
-    assert ingest_send.call_args.args[2] == expected
+    # The ingestor's messages also name the run's workspace; a webhook's name none yet (its own slice).
+    assert ingest_send.call_args.args[2] == [{**expected[0], 'workspace_id': WS}]
     assert webhook_send.call_args.args[2] == expected
+
+
+def test_a_source_payload_cannot_choose_the_workspace_an_ingestors_message_lands_in():
+    with patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send:
+        base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=SCOPE), [{**_message('other'), 'workspace_id': OTHER_WS}])
+    assert [m['workspace_id'] for m in ingest_send.call_args.args[2]] == [WS]
+
+
+def test_a_deployment_wide_run_or_a_webhook_never_queues_a_workspace_from_its_payload():
+    """The source policy drops a payload's `workspace_id`; only a run in a workspace adds one, from its scope."""
+    spoofed = [{**_message('other'), 'workspace_id': OTHER_WS}]
+    with patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send, \
+            patch.object(base_webhook, 'send_messages_to_queue', return_value=1) as webhook_send:
+        base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=None), spoofed)
+        base_webhook.BaseWebhook.send_to_queue(MagicMock(), spoofed)
+    assert ['workspace_id' in m for m in ingest_send.call_args.args[2]] == [False]
+    assert ['workspace_id' in m for m in webhook_send.call_args.args[2]] == [False]
 
 
 def test_normalized_fields_carry_author_title_dimensions_and_tags_when_present():

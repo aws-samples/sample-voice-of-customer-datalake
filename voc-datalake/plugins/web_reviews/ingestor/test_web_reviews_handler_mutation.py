@@ -23,9 +23,10 @@ from cdp_client import CdpError
 from extract import ExtractedReview
 from page_reader import PageLoadError
 from target_reader import ReadLimits, ReadReview, TargetResult
-from test_web_reviews_handler import URL, WatermarkTable, ingestor, target_config
+from test_web_reviews_handler import URL, WatermarkTable, ingestor, target_config, wm
 
 from _shared.base_ingestor import BaseIngestor, metrics
+from _shared.test.workspace_fixtures import EVENTS_WITH_A_MALFORMED_WORKSPACE, REFUSED, ws_event
 from shared.test.clock import frozen_clock
 from shared.test.emf_fixtures import cold_start_metric_names
 from shared.test.instrumentation_fixtures import HAND_WRITTEN_HANDLER_LAYERS, TRACER_SOURCE, handler_layers
@@ -171,7 +172,7 @@ class TestTheReviewCap:
 class TestTheWatermarkCutoff:
     @pytest.mark.parametrize(('day', 'new'), [('2026-10-01', True), ('2026-09-30', False), (None, True)])
     def test_a_review_one_day_before_the_watermark_is_still_new(self, day, new):
-        table = WatermarkTable({f'test_source#{PREFIX}_newest_review': '2026-10-02'})
+        table = WatermarkTable({wm(f'{PREFIX}_newest_review'): '2026-10-02'})
         with ingestor([target_config()], table=table) as run:
             assert limits_of(run).is_new(review(day=day)) is new
 
@@ -183,7 +184,7 @@ class TestTheWatermarkCutoff:
 class TestTheWatermarkWrites:
     @contextmanager
     def written(self, result: TargetResult, stored: str | None) -> Generator[MagicMock, None, None]:
-        table = WatermarkTable({f'test_source#{PREFIX}_newest_review': stored} if stored else {})
+        table = WatermarkTable({wm(f'{PREFIX}_newest_review'): stored} if stored else {})
         with reading(result, table=table) as (run, _read), patch.object(run, 'set_watermark') as write, \
                 frozen_clock(handler) as clock_now:
             clock_now.now.return_value = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
@@ -274,13 +275,37 @@ class TestRunForEvent:
 
     def test_the_deadline_is_the_lambdas_remaining_time(self):
         context = SimpleNamespace(get_remaining_time_in_millis=lambda: 60_500)
-        assert self.deadline({}, context) == (1060.5, None)
+        assert self.deadline(ws_event(), context) == (1060.5, None)
 
     def test_without_a_context_the_default_deadline_applies(self):
-        assert self.deadline({}) == (1900.0, None)
+        assert self.deadline(ws_event()) == (1900.0, None)
 
-    def test_an_event_that_is_not_an_object_is_a_scheduled_run(self):
-        assert self.deadline(None) == (1900.0, None)
+    def test_the_events_app_id_limits_the_run_to_that_target(self):
+        assert self.deadline(ws_event(app_id='t1')) == (1900.0, 't1')
+
+    @pytest.mark.parametrize('app_id', [7, None, ['t1']])
+    def test_an_app_id_that_is_not_a_string_reads_every_target(self, app_id):
+        assert self.deadline(ws_event(app_id=app_id)) == (1900.0, None)
+
+    @pytest.mark.parametrize('event', [None, []])
+    def test_an_event_that_is_not_an_object_names_no_workspace_and_runs_deployment_wide(self, event):
+        # A scheduled run before workspaces: every target, the default deadline, no workspace.
+        with clock(), ingestor([target_config()]), \
+                patch.object(handler.WebReviewsIngestor, 'run',
+                             lambda self: (self.scope, self._deadline, self.only_target)):
+            assert handler.WebReviewsIngestor.run_for_event(event) == (None, 1900.0, None)
+
+    def test_a_deployment_wide_run_now_keeps_its_app_id(self):
+        assert self.deadline({'execution_id': 'run_1', 'app_id': 't1'}) == (1900.0, 't1')
+
+    @pytest.mark.parametrize('event', EVENTS_WITH_A_MALFORMED_WORKSPACE)
+    def test_an_event_naming_a_malformed_workspace_is_refused(self, event):
+        with clock(), ingestor([target_config()]), \
+                patch.object(handler.WebReviewsIngestor, '__init__', return_value=None) as init, \
+                patch.object(handler.WebReviewsIngestor, 'run') as run:
+            assert handler.WebReviewsIngestor.run_for_event(event) == REFUSED
+        init.assert_not_called()
+        run.assert_not_called()
 
 
 class TestTheLambdaInstrumentation:
@@ -293,7 +318,7 @@ class TestTheLambdaInstrumentation:
             invoked_function_arn='arn:aws:lambda:us-east-1:123456789012:function:voc-web-reviews',
             get_remaining_time_in_millis=lambda: 600_000)
         with patch.object(handler.WebReviewsIngestor, 'run_for_event', return_value={}):
-            names = cold_start_metric_names(metrics, lambda: handler.lambda_handler({}, context), capsys)
+            names = cold_start_metric_names(metrics, lambda: handler.lambda_handler(ws_event(), context), capsys)
         assert names == {'ColdStart'}
 
     def test_fetch_new_items_is_traced(self):

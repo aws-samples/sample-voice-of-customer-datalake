@@ -31,7 +31,8 @@ from shared.retention import (
 
 BUCKET = 'bkt'
 KEY = 'raw/web/2026/01/01/r1.json'
-FEEDBACK = Attr('sk').begins_with('FEEDBACK#')
+# Feedback rows of the deployment: a workspace's item (`WS#…`) is not reached yet (shared/retention.py `_store_items`).
+FEEDBACK = Attr('sk').begins_with('FEEDBACK#') & ~Attr('pk').begins_with('WS#')
 ITEM: Final = {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#r1', 'source_id': 'r1', 's3_raw_uri': f's3://{BUCKET}/{KEY}'}
 
 

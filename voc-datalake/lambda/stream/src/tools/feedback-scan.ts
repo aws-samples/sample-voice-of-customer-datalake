@@ -283,7 +283,11 @@ export interface DateScanResult {
   daysCovered: number;
 }
 
-/** The ID index's rows, or null when the query itself failed. */
+/**
+ * The ID index's rows, or null when the query itself failed. The index is keyed on `gsi4pk`, the
+ * deployment-wide partition `FEEDBACK#{id}` (the processor's `feedback_id_partition`); a workspace's
+ * item (`WS#{ws}#FEEDBACK#{id}`) is never found here (docs/multi-workspace.md).
+ */
 export async function queryFeedbackById(
   docClient: FeedbackQueryClient,
   feedbackTable: string,
@@ -294,8 +298,8 @@ export async function queryFeedbackById(
       new QueryCommand({
         TableName: feedbackTable,
         IndexName: FEEDBACK_BY_ID_INDEX,
-        KeyConditionExpression: 'feedback_id = :fid',
-        ExpressionAttributeValues: { ':fid': feedbackId.toLowerCase().trim() },
+        KeyConditionExpression: 'gsi4pk = :fid',
+        ExpressionAttributeValues: { ':fid': `FEEDBACK#${feedbackId.toLowerCase().trim()}` },
         Limit: 1,
       }),
     );

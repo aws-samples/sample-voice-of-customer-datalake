@@ -4,6 +4,21 @@ Processes raw feedback from SQS, enriches with LLM insights, writes to DynamoDB.
 
 Uses Powertools Idempotency to prevent duplicate processing on SQS retries.
 Validates incoming messages using Pydantic schemas before processing.
+
+Two paths (docs/multi-workspace.md, phase 2), chosen per message by ``workspace_id`` (shared/ws_repo.py
+``message_scope``):
+
+* A message that names a workspace is stored in it: the item ``WS#{ws}#SOURCE#{source}`` / ``FEEDBACK#{id}`` with
+  every index partition prefixed (shared/feedback_partitions.py), written, checked for a duplicate and refreshed in
+  place through the workspace layer (``ws_table``); its log rows ``WS#{ws}#LOGS#…``; its idempotency key
+  ``WS#{ws}#…``, so one source item in two workspaces is two items; its Silver versions and inline raw copy under
+  ``ws/{ws}/``. Settings (categories, dimensions, source profiles) are still the deployment's. A message that
+  Radar would claim is refused (the record fails, and after its retries the queue's DLQ holds it): Radar is not
+  keyed by workspace yet (phase 3), and a workspace's review is never written to the deployment's voc-radar.
+* A message that names none is stored deployment-wide exactly as before (``SOURCE#{source}``, ``LOGS#…``), with
+  ``gsi4pk`` ``FEEDBACK#{id}`` and ``gsi5pk`` ``CHANNEL#{channel}`` for the two re-keyed indexes.
+* A message whose ``workspace_id`` is there but is not a workspace id is rejected like any invalid message
+  (``MessageRejectedError``: the DLQ after its retries), never stored deployment-wide instead.
 """
 import json
 import os
@@ -48,6 +63,16 @@ from shared.data_version import BatchBump, bump_radar_version
 from shared.dimension_config import load_dimensions_config, with_builtin_dimensions
 from shared.feedback_dimensions import category_product, merged_tags, reinfer_dimensions, resolve_item_dimensions
 from shared.feedback_keys import FEEDBACK_ID_LENGTH, feedback_item_id
+from shared.feedback_partitions import (
+    CHANNEL_INDEX_PARTITION,
+    FEEDBACK_ID_INDEX_PARTITION,
+    category_partition,
+    channel_partition,
+    date_partition,
+    feedback_id_partition,
+    item_key,
+    urgency_partition,
+)
 from shared.idempotency import (
     IdempotencyAlreadyInProgressError,
     get_idempotency_config,
@@ -62,6 +87,7 @@ from shared.idempotency import (
 # tree, and a failure to import it fails the cold start — loud, alarmed by the
 # function's error metric, and impossible to mistake for a healthy processor.
 from shared.ingest_schemas import MAX_SOURCE_PLATFORM_LENGTH, IngestMessage, safe_validate_message
+from shared.ingest_tables import table_view
 from shared.logging import logger, metrics, tracer
 from shared.model_profile import PAYLOAD_KEY, model_profile_scope, profile_from_payload
 from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
@@ -98,6 +124,7 @@ from shared.source_updates import (
 )
 from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_FIELD, item_usefulness
+from shared.ws_repo import WorkspaceScope, message_scope
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -132,6 +159,13 @@ radar_table = dynamodb.Table(RADAR_TABLE) if RADAR_TABLE else None
 radar_brand_labels = BrandLabels()
 # Marked by every record that stored a Radar review; flushed once per batch.
 radar_changed = BatchBump(bump_radar_version)
+
+
+def _update_in(scope: WorkspaceScope | None, update_kwargs: dict) -> None:
+    """``update_item`` of an update built with its ``Key`` (shared/source_updates.py, shared/csv_updates.py)."""
+    kwargs = dict(update_kwargs)
+    key = kwargs.pop('Key')
+    table_view(scope,feedback_table).update_item(key, **kwargs)
 
 # Idempotency configuration - prevents duplicate processing on SQS retries
 # Records are tracked for 1 hour (3600 seconds) to handle delayed retries
@@ -218,11 +252,12 @@ def summarize_record(raw_record: dict) -> dict:
     return summary
 
 
-def _log_row_base(kind: str, source_platform: str, message_id: object) -> dict:
+def _log_row_base(kind: str, source_platform: str, message_id: object, scope: WorkspaceScope | None = None) -> dict:
     now = datetime.now(UTC)
     safe_id = str(message_id)[:MAX_LOGGED_MESSAGE_ID_LENGTH]
     return {
-        'pk': f"LOGS#{kind}#{source_platform}",
+        # A workspace message's row is the workspace's (``GET /logs/*`` reads the deployment's rows only, so far).
+        'pk': scope.key('LOGS', kind, source_platform or 'unknown') if scope else f"LOGS#{kind}#{source_platform}",
         'sk': f"{now.isoformat()}#{safe_id[:32]}",
         'source_platform': source_platform,
         'message_id': safe_id,
@@ -231,13 +266,15 @@ def _log_row_base(kind: str, source_platform: str, message_id: object) -> dict:
     }
 
 
-def log_validation_failure(source_platform: str, message_id: object, errors: list[str], record_summary: dict):
+def log_validation_failure(source_platform: str, message_id: object, errors: list[str], record_summary: dict,
+                           scope: WorkspaceScope | None = None):
     """
     Log a validation failure to DynamoDB for user visibility.
 
     `errors` must already be `summarize_validation_errors` output and `record_summary`
     `summarize_record` output: the row is readable by every signed-in user.
-    Stores in aggregates table with TTL for automatic cleanup.
+    Stores in aggregates table with TTL for automatic cleanup; a message of a workspace
+    (``scope``) under the workspace.
     """
     if not aggregates_table:
         logger.warning("Cannot log validation failure - aggregates table not configured")
@@ -245,40 +282,41 @@ def log_validation_failure(source_platform: str, message_id: object, errors: lis
 
     try:
         log_entry = {
-            **_log_row_base('validation', source_platform, message_id),
+            **_log_row_base('validation', source_platform, message_id, scope),
             'log_type': 'validation_failure',
             'errors': errors,
             **record_summary,
         }
-        aggregates_table.put_item(Item=log_entry)
+        table_view(scope,aggregates_table).put_item(log_entry)
         logger.info(f"Logged validation failure for {source_platform}/{log_entry['message_id']}")
     except (ClientError, BotoCoreError) as e:
         logger.exception(f"Failed to log validation failure: {e}")
 
 
-def log_processing_error(source_platform: str, message_id: object, error: BaseException):
+def log_processing_error(source_platform: str, message_id: object, error: BaseException,
+                         scope: WorkspaceScope | None = None):
     """
     Log a processing error to DynamoDB for user visibility: the exception's class
-    name and a fixed message, never `str(error)`.
+    name and a fixed message, never `str(error)` (a workspace message's under the workspace).
     """
     if not aggregates_table:
         return
 
     try:
         log_entry = {
-            **_log_row_base('processing', source_platform, message_id),
+            **_log_row_base('processing', source_platform, message_id, scope),
             'log_type': 'processing_error',
             'error_type': type(error).__name__,
             'error_message': THROTTLED_MESSAGE if isinstance(error, BedrockThrottlingError) else PROCESSING_FAILED_MESSAGE,
         }
-        aggregates_table.put_item(Item=log_entry)
+        table_view(scope,aggregates_table).put_item(log_entry)
     except (ClientError, BotoCoreError) as e:
         logger.exception(f"Failed to log processing error: {e}")
 
 
-def validate_sqs_message(raw_record: dict) -> tuple[dict | None, list[str]]:
+def validate_sqs_message(raw_record: dict, scope: WorkspaceScope | None = None) -> tuple[dict | None, list[str]]:
     """
-    Validate an SQS message using Pydantic schemas.
+    Validate an SQS message using Pydantic schemas (its failure row under ``scope``, the workspace it names).
 
     Returns:
         Tuple of (validated dict or None, list of PII-free errors)
@@ -294,7 +332,7 @@ def validate_sqs_message(raw_record: dict) -> tuple[dict | None, list[str]]:
         # so they are the redacted form there too.
         safe_errors = summarize_validation_errors(raw_record)
 
-        log_validation_failure(source_platform, message_id, safe_errors, summarize_record(raw_record))
+        log_validation_failure(source_platform, message_id, safe_errors, summarize_record(raw_record), scope)
         count_metric("ValidationFailures")
 
         return None, safe_errors
@@ -447,13 +485,11 @@ def generate_deterministic_id(source_platform: str, source_id: str, text: str = 
 
 
 @tracer.capture_method
-def check_duplicate(source_platform: str, feedback_id: str) -> bool:
-    """Check if feedback already exists in DynamoDB."""
+def check_duplicate(source_platform: str, feedback_id: str, scope: WorkspaceScope | None = None) -> bool:
+    """Check if feedback already exists in DynamoDB (in ``scope``'s workspace for a message of one)."""
     try:
-        response = feedback_table.get_item(
-            Key={'pk': f"SOURCE#{source_platform}", 'sk': f"FEEDBACK#{feedback_id}"},
-            ProjectionExpression='feedback_id'
-        )
+        response = table_view(scope,feedback_table).get_item(
+            item_key(scope, source_platform, feedback_id), ProjectionExpression='feedback_id')
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Duplicate check failed: {e}")
         return False
@@ -473,9 +509,9 @@ class CsvReplaceRefusedError(Exception):
 
 
 @tracer.capture_method
-def load_stored_item(pk: str, sk: str) -> dict | None:
-    """The stored item at (pk, sk), read consistently, or None when there is none."""
-    response = feedback_table.get_item(Key={'pk': pk, 'sk': sk}, ConsistentRead=True)
+def load_stored_item(pk: str, sk: str, scope: WorkspaceScope | None = None) -> dict | None:
+    """The stored item at (pk, sk), read consistently, or None when there is none (``pk`` in ``scope``)."""
+    response = table_view(scope,feedback_table).get_item({'pk': pk, 'sk': sk}, ConsistentRead=True)
     item = response.get('Item')
     return item if isinstance(item, dict) else None
 
@@ -501,7 +537,7 @@ def _reinferred_dimensions(stored: dict, enrichment: Enrichment, categories_conf
     )
 
 
-def _reenrichment_update(stored: dict, raw_record: dict, now_iso: str) -> dict:
+def _reenrichment_update(stored: dict, raw_record: dict, now_iso: str, scope: WorkspaceScope | None = None) -> dict:
     """Re-run the processor's enrichment for an edited issue; attributes-only when the model failed."""
     enrichment, categories_config = _enrich_again(raw_record)
     if enrichment.llm_failed:
@@ -511,16 +547,16 @@ def _reenrichment_update(stored: dict, raw_record: dict, now_iso: str) -> dict:
         return attributes_update(stored, raw_record, now_iso)
     dimensions = _reinferred_dimensions(stored, enrichment, categories_config)
     count_metric("SourceUpdatesReenriched")
-    return reenrichment_update(stored, raw_record, enrichment, dimensions, now_iso)
+    return reenrichment_update(stored, raw_record, enrichment, dimensions, now_iso, scope)
 
 
 @tracer.capture_method
-def refresh_stored_item(stored: dict, raw_record: dict) -> str:
+def refresh_stored_item(stored: dict, raw_record: dict, scope: WorkspaceScope | None = None) -> str:
     """Bring an already-stored issue up to date with a newer copy (see shared/source_updates.py).
 
     Returns the decision (``apply`` / ``stale`` / ``unchanged``). Raises
     ``ConcurrentSourceUpdateError`` when the item changed under us, so the record
-    is retried against the new state.
+    is retried against the new state. ``scope``: the workspace the item is in, for a message of one.
     """
     pii_policy = pii_policy_for(raw_record)
     decision = update_decision(stored, raw_record, pii_policy)
@@ -530,22 +566,23 @@ def refresh_stored_item(stored: dict, raw_record: dict) -> str:
         return decision
     refreshed_at = now_iso()
     if text_changed(stored, raw_record, pii_policy):
-        kwargs = _reenrichment_update(stored, raw_record, refreshed_at)
+        kwargs = _reenrichment_update(stored, raw_record, refreshed_at, scope)
     else:
         kwargs = attributes_update(stored, raw_record, refreshed_at)
     try:
-        feedback_table.update_item(**kwargs)
+        _update_in(scope, kwargs)
     except ClientError as e:
         if is_conditional_check_failure(e):
             raise ConcurrentSourceUpdateError(f"Feedback {stored.get('feedback_id')} changed during refresh") from e
         raise
-    _keep_previous(stored, kwargs, REASON_SOURCE_UPDATE)  # once the update landed: a refused one leaves no version
+    _keep_previous(stored, kwargs, REASON_SOURCE_UPDATE, scope)  # once it landed: a refused one leaves no version
     logger.info(f"Refreshed stored feedback {stored.get('feedback_id')} from a newer source copy")
     count_metric("SourceUpdatesApplied")
     return decision
 
 
-def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str) -> tuple[dict | None, bool]:
+def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str,
+                    scope: WorkspaceScope | None = None) -> tuple[dict | None, bool]:
     """The text + enrichment fields of a corrected CSV row, and whether its category moves.
 
     Enriched exactly like a new row; under summary-only the text is the model's summary and the
@@ -557,7 +594,7 @@ def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str) -> tuple[di
         count_metric("CsvUpdateEnrichmentFailed")
         return None, False
     dimensions = _reinferred_dimensions(stored, enrichment, categories_config)
-    fields = reenriched_fields(stored, raw_record, enrichment, dimensions)
+    fields = reenriched_fields(stored, raw_record, enrichment, dimensions, scope)
     if pii_policy == PII_SUMMARY_ONLY:
         fields.update(dict.fromkeys(SUMMARY_ONLY_DROPPED_FIELDS))
         fields['original_text'] = fields.get('problem_summary') or WITHHELD_TEXT
@@ -565,11 +602,11 @@ def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str) -> tuple[di
 
 
 @tracer.capture_method
-def refresh_csv_item(stored: dict, raw_record: dict) -> str:
+def refresh_csv_item(stored: dict, raw_record: dict, scope: WorkspaceScope | None = None) -> str:
     """Apply a confirmed CSV correction to its stored row (shared/csv_updates.py); the decision.
 
     Raises ``ConcurrentSourceUpdateError`` when the item changed under us (SQS retries), and
-    ``CsvReplaceRefusedError`` when the stored item is not this dataset's row.
+    ``CsvReplaceRefusedError`` when the stored item is not this dataset's row. ``scope``: the item's workspace.
     """
     if stored.get('csv_dataset') != raw_record['csv_dataset']:
         count_metric("CsvUpdatesRefused")
@@ -582,26 +619,29 @@ def refresh_csv_item(stored: dict, raw_record: dict) -> str:
     pii_policy = pii_policy_for(raw_record)
     wants_reenrichment = needs_reenrichment(stored, raw_record, pii_policy)
     reenriched, moves_category = (
-        _csv_reenriched(stored, raw_record, pii_policy) if wants_reenrichment else (None, False))
+        _csv_reenriched(stored, raw_record, pii_policy, scope) if wants_reenrichment else (None, False))
     # A failed re-enrichment applies the row's own fields only and keeps the stored digest,
     # so the row still previews as changed and a later confirmed upload retries the text.
     enrichment_failed = wants_reenrichment and reenriched is None
-    kwargs = csv_update(stored, raw_record, pii_policy, now_iso(), reenriched, moves_category, enrichment_failed)
+    kwargs = csv_update(stored, raw_record, pii_policy, now_iso(), reenriched, moves_category, enrichment_failed,
+                        scope)
     try:
-        feedback_table.update_item(**kwargs)
+        _update_in(scope, kwargs)
     except ClientError as e:
         if is_conditional_check_failure(e):
             raise ConcurrentSourceUpdateError(f"Feedback {stored.get('feedback_id')} changed during a CSV update") from e
         raise
-    _keep_previous(stored, kwargs, REASON_CSV_CORRECTION)  # once the update landed: a refused one leaves no version
+    _keep_previous(stored, kwargs, REASON_CSV_CORRECTION, scope)  # once it landed: a refused one leaves no version
     logger.info(f"Updated stored feedback {stored.get('feedback_id')} from a corrected CSV row")
     count_metric(_csv_update_metric(wants_reenrichment, enrichment_failed))
     return decision
 
 
-def _keep_previous(stored: dict, update_kwargs: dict, reason: str) -> None:
-    """Keep ``stored`` as it was before an in-place update that landed (TENETS.md D1; never fails it)."""
-    keep_silver_version(stored, actor=SYSTEM_ACTOR, reason=reason, changed_fields=fields_of_update(update_kwargs))
+def _keep_previous(stored: dict, update_kwargs: dict, reason: str, scope: WorkspaceScope | None = None) -> None:
+    """Keep ``stored`` as it was before an in-place update that landed (TENETS.md D1; never fails it), under
+    ``ws/{ws}/silver/`` for an item of a workspace."""
+    keep_silver_version(stored, actor=SYSTEM_ACTOR, reason=reason, changed_fields=fields_of_update(update_kwargs),
+                        scope=scope)
 
 
 def _csv_update_metric(wants_reenrichment: bool, enrichment_failed: bool) -> str:
@@ -616,19 +656,23 @@ def _refreshable(raw_record: dict) -> bool:
     return is_update_capable(raw_record) or is_csv_replace(raw_record)
 
 
-def _refresh(stored: dict, raw_record: dict) -> str:
-    return refresh_csv_item(stored, raw_record) if is_csv_replace(raw_record) else refresh_stored_item(stored, raw_record)
+def _refresh(stored: dict, raw_record: dict, scope: WorkspaceScope | None = None) -> str:
+    if is_csv_replace(raw_record):
+        return refresh_csv_item(stored, raw_record, scope)
+    return refresh_stored_item(stored, raw_record, scope)
 
 
-def _handled_as_existing(raw_record: dict, source_display: str, feedback_id: str) -> bool:
+def _handled_as_existing(raw_record: dict, source_display: str, feedback_id: str,
+                         scope: WorkspaceScope | None = None) -> bool:
     """True when the record names an item already stored: refreshed (issues, CSV corrections) or skipped."""
     if _refreshable(raw_record):
-        stored = load_stored_item(f"SOURCE#{source_display}", f"FEEDBACK#{feedback_id}")
+        key = item_key(scope, source_display, feedback_id)
+        stored = load_stored_item(key['pk'], key['sk'], scope)
         if stored is None:
             return False
-        _refresh(stored, raw_record)
+        _refresh(stored, raw_record, scope)
         return True
-    if check_duplicate(source_display, feedback_id):
+    if check_duplicate(source_display, feedback_id, scope):
         logger.info(f"Skipping duplicate feedback: {source_display}/{raw_record.get('id', '')}")
         count_metric("DuplicatesSkipped")
         return True
@@ -636,13 +680,13 @@ def _handled_as_existing(raw_record: dict, source_display: str, feedback_id: str
 
 
 @tracer.capture_method
-def process_feedback(raw_record: dict) -> dict | None:
+def process_feedback(raw_record: dict, scope: WorkspaceScope | None = None) -> dict | None:
     """
-    Process a single feedback record.
+    Process a single feedback record (``scope``: the workspace its message names, None deployment-wide).
 
     Idempotency protection lives in the caller, _process_feedback_idempotent,
     keyed on source_platform + source_id (+ a content fingerprint for issue-tracker
-    records) so the same copy of a feedback item is never processed twice, even
+    records, + the workspace) so the same copy of a feedback item is never processed twice, even
     across SQS retries. Returns the new item to write, or None when the id is
     already stored (skipped, or — for an issue — refreshed in place).
     """
@@ -654,9 +698,9 @@ def process_feedback(raw_record: dict) -> dict | None:
     # Check for an existing item before expensive Comprehend/Translate/Bedrock
     # processing. Uses source_display (brand_name) to match the PK used when
     # writing items. An issue-tracker item is refreshed in place instead of skipped.
-    if _handled_as_existing(raw_record, source_display, feedback_id):
+    if _handled_as_existing(raw_record, source_display, feedback_id, scope):
         return None
-    return build_feedback_item(raw_record, feedback_id, now)
+    return build_feedback_item(raw_record, feedback_id, now, scope)
 
 
 def feedback_id_of(raw_record: dict) -> str:
@@ -666,12 +710,16 @@ def feedback_id_of(raw_record: dict) -> str:
         raw_record.get('text', ''), raw_record.get('created_at', ''), raw_record.get('url', ''))
 
 
-def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> dict:
-    """Enrich ``raw_record`` and build the item to store, under its source's PII policy."""
+def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime, scope: WorkspaceScope | None = None) -> dict:
+    """Enrich ``raw_record`` and build the item to store, under its source's PII policy: keyed in ``scope``'s
+    workspace for a message of one (shared/feedback_partitions.py), deployment-wide otherwise."""
     now_iso = now.isoformat()
     date_str = now.strftime('%Y-%m-%d')
     source_platform = raw_record.get('source_platform', 'unknown')
     source_display = raw_record.get('brand_name', '') or source_platform
+    # One rule for a missing, null or empty channel, the one a CSV correction applies (shared/csv_updates.py): it
+    # is 'unknown', so every item has a channel and a gsi5 partition.
+    source_channel = raw_record.get('source_channel') or 'unknown'
     original_text = raw_record.get('text', '')
 
     # Same enrichment path as the category-reprocess worker's raw mode. The steps
@@ -692,20 +740,24 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> di
     # Build DynamoDB item with GSI keys
     item = {
         # Primary key - use brand_name for better source filtering
-        'pk': f"SOURCE#{source_display}",
-        'sk': f"FEEDBACK#{feedback_id}",
+        **item_key(scope, source_display, feedback_id),
 
         # GSI1: Query by date
-        'gsi1pk': f"DATE#{date_str}",
+        'gsi1pk': date_partition(scope, date_str),
         'gsi1sk': f"{now_iso}#{feedback_id}",
 
         # GSI2: Query by category
-        'gsi2pk': f"CATEGORY#{category}",
+        'gsi2pk': category_partition(scope, category),
         'gsi2sk': f"{sentiment_score}#{now_iso}",
 
         # GSI3: Query urgent items
-        'gsi3pk': f"URGENCY#{urgency}",
+        'gsi3pk': urgency_partition(scope, urgency),
         'gsi3sk': now_iso,
+
+        # GSI4: by feedback id; GSI5: by channel (sort key gsi1sk). Their own partition attributes, so a
+        # workspace's id or channel is never found by another workspace's (or the deployment's) read.
+        FEEDBACK_ID_INDEX_PARTITION: feedback_id_partition(scope, feedback_id),
+        CHANNEL_INDEX_PARTITION: channel_partition(scope, source_channel),
 
         # Data fields
         'feedback_id': feedback_id,
@@ -722,7 +774,7 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> di
         'csv_dataset': raw_record.get('csv_dataset'),
         'csv_content_hash': raw_record.get('csv_content_hash'),
         'source_platform': source_platform,
-        'source_channel': raw_record.get('source_channel', 'unknown'),
+        'source_channel': source_channel,
         # Ingestion-path provenance (e.g. 'manual', 'csv_upload', 'json_upload').
         # Optional: sources that don't send it omit the field via None-stripping.
         'ingestion_method': raw_record.get('ingestion_method'),
@@ -740,7 +792,7 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> di
         # came with `raw_data` inline (the producer's archive write failed) is archived
         # here once (shared/raw_fallback.py, policy-gated). Absent (None-stripped below)
         # when there is still no copy.
-        's3_raw_uri': raw_record.get('s3_raw_uri') or archive_inline_raw(raw_record, now),
+        's3_raw_uri': raw_record.get('s3_raw_uri') or archive_inline_raw(raw_record, now, scope),
         # Issue-tracker fields (github_issues): version, labels, component, error
         # signature… computed by the plugin, validated by schemas.IssueAttributes,
         # read by GET /metrics/github and the /feedback version/label filters.
@@ -828,15 +880,16 @@ def classification_attributes(raw_record: dict, categories_config: list, enrichm
     }
 
 
-def write_to_dynamodb(item: dict) -> bool:
+def write_to_dynamodb(item: dict, scope: WorkspaceScope | None = None) -> bool:
     """Write a NEW processed feedback item; False when the item is already stored.
 
     Conditional, never an overwrite: a replayed result (the idempotency store answers
     a redelivery with the item it built then) or a concurrent first ingest must not
-    clobber an in-place source refresh or a person's correction made since.
+    clobber an in-place source refresh or a person's correction made since. An item of a
+    workspace (``scope``) is written through it: every partition it carries must be the workspace's.
     """
     try:
-        feedback_table.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
+        table_view(scope,feedback_table).put_item(item, ConditionExpression='attribute_not_exists(pk)')
     except ClientError as e:
         if not is_conditional_check_failure(e):
             raise
@@ -851,6 +904,15 @@ class RadarTableUnavailableError(Exception):
 
     Never "store it in voc-feedback instead": that is exactly the leak the
     separate table prevents.
+    """
+
+
+class WorkspaceRadarRefusedError(Exception):
+    """A workspace's message that Radar would claim; the record fails (SQS → DLQ after its retries).
+
+    Radar is not keyed by workspace yet (docs/multi-workspace.md, phase 3): storing the review in the
+    deployment's voc-radar would put a workspace's data where every workspace's Radar reads, and storing
+    it as the workspace's own feedback would count another brand's review as its own.
     """
 
 
@@ -896,14 +958,50 @@ def process_radar_record(raw_record: dict, brand_label: str) -> dict:
     return {"status": "success", "feedback_id": feedback_id, "radar": True}
 
 
-def _after_lost_put(raw_record: dict, processed_item: dict) -> dict:
+def _radar_result(raw_record: dict, scope: WorkspaceScope | None) -> dict | None:
+    """The record's Radar outcome when Radar claims it, else None (it goes to voc-feedback).
+
+    A workspace's record Radar would claim raises ``WorkspaceRadarRefusedError`` (counted): never
+    written to the deployment's voc-radar, nor as the workspace's own feedback.
+    """
+    radar_brand = radar_brand_for(raw_record)
+    if not radar_brand:
+        return None
+    if scope is not None:
+        count_metric("WorkspaceRadarRefused")
+        raise WorkspaceRadarRefusedError('Radar is not keyed by workspace yet')
+    return process_radar_record(raw_record, radar_brand)
+
+
+def _after_lost_put(raw_record: dict, processed_item: dict, scope: WorkspaceScope | None = None) -> dict:
     """The item appeared between the existence check and the put: refresh it or skip."""
-    stored = load_stored_item(processed_item['pk'], processed_item['sk']) if _refreshable(raw_record) else None
+    stored = (load_stored_item(processed_item['pk'], processed_item['sk'], scope)
+              if _refreshable(raw_record) else None)
     if stored is None:
         count_metric("DuplicatesSkipped")
         return {"status": "skipped", "reason": "duplicate"}
-    return {"status": f"source_update_{_refresh(stored, raw_record)}",
+    return {"status": f"source_update_{_refresh(stored, raw_record, scope)}",
             "feedback_id": processed_item['feedback_id']}
+
+
+def _refuse_invalid_workspace(raw_record: dict) -> MessageRejectedError:
+    """A message whose ``workspace_id`` is there but is not a workspace id: logged deployment-wide (it names no
+    workspace one could trust), metered, and returned as the rejection to raise (the DLQ path)."""
+    source_platform = str(raw_record.get('source_platform', 'unknown')).replace('#', '_')[:MAX_SOURCE_PLATFORM_LENGTH]
+    message_id = raw_record.get('id', 'unknown')
+    errors = ['workspace_id: invalid_workspace']
+    log_validation_failure(source_platform, message_id, errors, summarize_record(raw_record))
+    count_metric("ValidationFailures")
+    count_metric("WorkspaceMessagesRefused")
+    return MessageRejectedError(source_platform, str(message_id), errors)
+
+
+def message_idempotency_key(raw_record: dict, scope: WorkspaceScope | None) -> str:
+    """``idempotency_key_for`` the record, inside its workspace (``WS#{ws}#…``) for a message of one, so the same
+    source item queued in two workspaces is processed in each (a ``source_platform`` holds no ``#``, so no
+    deployment-wide key starts ``WS#``)."""
+    key = idempotency_key_for(raw_record)
+    return key if scope is None else scope.key(key)
 
 
 def record_handler(record: SQSRecord) -> dict:
@@ -934,8 +1032,17 @@ def _process_record(raw_record: dict) -> dict:
     source_platform = raw_record.get('source_platform', 'unknown')
     source_id = raw_record.get('id', 'unknown')
 
+    # The workspace the message names (docs/multi-workspace.md): one that names none is processed
+    # deployment-wide as before; a `workspace_id` that is not a workspace id is rejected, never
+    # processed deployment-wide instead (the schema refuses a malformed string too; this also
+    # catches an explicit null, which the schema would read as "none").
+    refused, scope = message_scope(raw_record)
+    if refused:
+        logger.warning(f"Workspace refused for {source_platform}/{source_id}: not a workspace id")
+        raise _refuse_invalid_workspace(raw_record)
+
     # Validate the message before processing
-    validated_record, validation_errors = validate_sqs_message(raw_record)
+    validated_record, validation_errors = validate_sqs_message(raw_record, scope)
     if validation_errors or validated_record is None:
         logger.warning(f"Validation failed for {source_platform}/{source_id}: {validation_errors}")
         # Raise, do not return (issue #249): the BatchProcessor turns a raise into
@@ -951,15 +1058,15 @@ def _process_record(raw_record: dict) -> dict:
 
     # Create idempotency key from source + id (+ a content fingerprint for issues,
     # so a genuinely newer copy is not answered by the first copy's record).
-    idempotency_key = idempotency_key_for(raw_record)
+    idempotency_key = message_idempotency_key(raw_record, scope)
 
     logger.info(f"Processing feedback from {source_platform}/{source_id}")
 
     try:
         # A Radar source (another brand, docs/radar.md) never reaches voc-feedback.
-        radar_brand = radar_brand_for(raw_record)
-        if radar_brand:
-            return process_radar_record(raw_record, radar_brand)
+        radar_result = _radar_result(raw_record, scope)
+        if radar_result is not None:
+            return radar_result
 
         # Use idempotent wrapper if configured
         if persistence_layer and idempotency_config:
@@ -968,16 +1075,17 @@ def _process_record(raw_record: dict) -> dict:
                 idempotency_key=idempotency_key,
                 persistence_store=persistence_layer,
                 config=idempotency_config,
+                scope=scope,
             )
         else:
-            processed_item = process_feedback(raw_record)
+            processed_item = process_feedback(raw_record, scope)
 
         # Skip if duplicate was detected
         if processed_item is None:
             return {"status": "skipped", "reason": "duplicate"}
 
-        if not write_to_dynamodb(processed_item):
-            return _after_lost_put(raw_record, processed_item)
+        if not write_to_dynamodb(processed_item, scope):
+            return _after_lost_put(raw_record, processed_item, scope)
 
         count_metric("FeedbackProcessed")
 
@@ -999,25 +1107,27 @@ def _process_record(raw_record: dict) -> dict:
         # Re-raise to fail this record - SQS will retry after visibility timeout
         logger.warning(f"Bedrock throttled for {source_platform}, message will be retried by SQS")
         count_metric("BedrockThrottleRetry")
-        log_processing_error(source_platform, source_id, e)
+        log_processing_error(source_platform, source_id, e, scope)
         raise
 
     except Exception as e:
         # Log unexpected errors for visibility
         logger.exception(f"Unexpected error processing {source_platform}/{source_id}: {e}")
-        log_processing_error(source_platform, source_id, e)
+        log_processing_error(source_platform, source_id, e, scope)
         raise
 
 
 def _process_feedback_idempotent(
     raw_record: dict, idempotency_key: str,
     persistence_store: BasePersistenceLayer, config: IdempotencyConfig,
+    scope: WorkspaceScope | None = None,
 ) -> dict | None:
     """
     Wrapper to apply idempotency decorator dynamically.
 
     The @idempotent_function decorator ensures this function's result is cached
-    and returned on subsequent calls with the same idempotency_key.
+    and returned on subsequent calls with the same idempotency_key (which names the
+    workspace for a message of one: ``message_idempotency_key``).
     """
     @idempotent_function(
         data_keyword_argument="idempotency_key",
@@ -1027,7 +1137,7 @@ def _process_feedback_idempotent(
     # The decorator reads `idempotency_key` from the call's keyword arguments as the
     # payload to hash and passes it through; the body has no use for it.
     def _inner(raw_record: dict, **_idempotency_kwargs) -> dict | None:
-        return process_feedback(raw_record)
+        return process_feedback(raw_record, scope)
 
     return _inner(raw_record=raw_record, idempotency_key=idempotency_key)
 

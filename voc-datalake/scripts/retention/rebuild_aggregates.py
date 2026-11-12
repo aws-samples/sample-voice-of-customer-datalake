@@ -16,6 +16,8 @@ For each date D with dated feedback (optionally limited to `--from`/`--to`):
    category+sentiment, and per subcategory. The running average
    (`METRIC#daily_sentiment_avg`) gets `sum` and `count` from the items of D that
    carry a non-zero score — the same `if sentiment_score:` rule the aggregator uses.
+   An item of a workspace (a `WS#…` key, docs/multi-workspace.md) is skipped, as the
+   aggregator skips it: workspace items are not aggregated yet.
 2. ABSOLUTE `put_item`, NEVER A DELTA: `{pk, sk: D, count, updated_at}` plus
    `metric_type` on the source and persona partitions (the `gsi1-by-metric-type`
    index `/metrics/sources` and `/metrics/personas` read). No `ttl`: metric rows are
@@ -73,6 +75,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from retention_common import is_conditional_failure, resolve_tables, scan_all, table_parser
 
 from shared.earliest_date import METRIC_META_PK, lower_watermark_request, parse_iso_date
+from shared.ws_repo import is_workspace_key
 
 METRIC_PREFIX = 'METRIC#'
 TTL_ATTRIBUTE = 'ttl'
@@ -96,6 +99,8 @@ def _aggregator() -> ModuleType:
 class Plan:
     """What the recompute found, and what the writes did."""
     feedback_scanned: int = 0
+    #: Items of a workspace (`WS#…` keys, docs/multi-workspace.md): never in the deployment-wide counters.
+    workspace_items: int = 0
     undated_items: int = 0
     outside_window: int = 0
     recent_items: int = 0
@@ -126,6 +131,10 @@ def recompute(items: Iterable[dict], plan: Plan, window: tuple[str | None, str |
     first, last = window
     for item in items:
         plan.feedback_scanned += 1
+        if is_workspace_key(item.get('pk')):
+            # The aggregator skips them too (a workspace's counters are its own slice's).
+            plan.workspace_items += 1
+            continue
         processed_at = item.get('processed_at')
         if isinstance(processed_at, str):
             if processed_at >= recent_cutoff:
@@ -269,11 +278,12 @@ def summary_lines(plan: Plan, apply: bool) -> list[str]:
     item_totals: Counter = Counter()
     for (pk, _), values in plan.targets.items():
         item_totals[family(pk)] += int(values.get('count', 0))
-    dated = plan.feedback_scanned - plan.undated_items - plan.outside_window
+    dated = plan.feedback_scanned - plan.workspace_items - plan.undated_items - plan.outside_window
     totals_sum = daily_total_sum(plan)
     lines = [
         'APPLIED' if apply else 'DRY RUN (pass --apply to write)',
         f'  feedback items scanned:        {plan.feedback_scanned}',
+        *([f'  workspace items (not counted): {plan.workspace_items}'] if plan.workspace_items else []),
         f'  dated items rebuilt:           {dated}',
         f'  undated items (not bucketed):  {plan.undated_items}',
         f'  items outside --from/--to:     {plan.outside_window}',

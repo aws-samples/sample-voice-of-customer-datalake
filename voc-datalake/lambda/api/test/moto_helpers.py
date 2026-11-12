@@ -79,17 +79,17 @@ def conversations_table(name: str) -> Table:
 
 
 def feedback_by_id_table(name: str = 'feedback') -> Table:
-    """A (pk, sk) feedback table with the real ``gsi4-by-feedback-id`` index."""
+    """A (pk, sk) feedback table with the real ``gsi4-by-feedback-id`` index (keyed on ``gsi4pk``)."""
     return boto3.resource('dynamodb', region_name='us-east-1').create_table(
         TableName=name,
         KeySchema=_key_schema('pk', 'sk'),
         AttributeDefinitions=[
-            {'AttributeName': a, 'AttributeType': 'S'} for a in ('pk', 'sk', 'feedback_id')
+            {'AttributeName': a, 'AttributeType': 'S'} for a in ('pk', 'sk', 'gsi4pk')
         ],
         BillingMode='PAY_PER_REQUEST',
         GlobalSecondaryIndexes=[{
             'IndexName': 'gsi4-by-feedback-id',
-            'KeySchema': [{'AttributeName': 'feedback_id', 'KeyType': 'HASH'}],
+            'KeySchema': [{'AttributeName': 'gsi4pk', 'KeyType': 'HASH'}],
             'Projection': {'ProjectionType': 'ALL'},
         }],
     )
@@ -98,7 +98,7 @@ def feedback_by_id_table(name: str = 'feedback') -> Table:
 # The admin caller and the seeded feedback row the category-edit suites share.
 CATEGORY_EDIT_ADMIN_CLAIMS = {'sub': 'sub-admin', 'cognito:groups': 'admins', 'cognito:username': 'ada'}
 CATEGORY_EDIT_ITEM = {
-    'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'feedback_id': 'f1',
+    'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'feedback_id': 'f1', 'gsi4pk': 'FEEDBACK#f1',
     'category': 'delivery', 'subcategory': 'late', 'original_text': 'late parcel',
     'gsi2pk': 'CATEGORY#delivery', 'gsi2sk': '-0.5#2026-01-01T00:00:00Z',
 }

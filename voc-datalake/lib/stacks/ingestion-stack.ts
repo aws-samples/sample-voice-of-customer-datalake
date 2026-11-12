@@ -43,6 +43,7 @@ import { createDesignCapture } from './design-capture';
 import { PROCESSING_QUEUE_VISIBILITY_TIMEOUT } from './processor-timing';
 import { DESIGN_CAPTURE_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailConfig } from '../utils/inbound-email';
+import { WORKSPACE_SECRET_BASE_PREFIX, workspaceSecretsArn } from '../utils/workspace-secrets';
 
 /**
  * S3-import staging bucket retention. Noncurrent versions are recoverable for a
@@ -88,6 +89,10 @@ function denyInsecureTransport(queue: sqs.Queue): void {
 export interface VocIngestionStackProps extends VocStackProps {
   watermarksTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
+  /** voc-workspaces (VocCoreStack): the scheduled tick reads the workspaces that enabled a plugin (`PLUGIN#` rows). */
+  workspacesTable: dynamodb.ITable;
+  /** voc-idempotency (VocCoreStack): the scheduled tick's claim, so a retried delivery fans out no second time. */
+  idempotencyTable: dynamodb.ITable;
   rawDataBucket: s3.Bucket;
   accessLogsBucket: s3.Bucket;
   kmsKey: kms.Key;
@@ -109,6 +114,8 @@ export class VocIngestionStack extends VocStack {
 
   // Built in the constructor once the grant targets exist (see ingestion-roles.ts).
   private ingestorRoles!: IngestorRoles;
+  /** What a scheduled ingestor's tick fans out with: voc-workspaces (WORKSPACES_TABLE) and voc-idempotency (IDEMPOTENCY_TABLE). */
+  private scheduledTickEnv!: Record<string, string>;
 
   // Created on first use, so a deployment with no scheduled plugin gets no
   // queue it never writes to. Encrypted with the Core key (`scheduleDlqKey`).
@@ -120,7 +127,9 @@ export class VocIngestionStack extends VocStack {
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
 
-    const { watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
+    const {
+      watermarksTable, aggregatesTable, workspacesTable, idempotencyTable, rawDataBucket, accessLogsBucket, kmsKey, config,
+    } = props;
     this.scheduleDlqKey = kmsKey;
     this.realtime = props.realtime;
 
@@ -138,8 +147,12 @@ export class VocIngestionStack extends VocStack {
     // S3 Import Bucket
     this.s3ImportBucket = this.createS3ImportBucket(kmsKey, accessLogsBucket, corsAllowedOrigins);
 
-    // Secrets for API credentials - aggregated from all plugins
+    // The deployment's shared API-credentials secret, aggregated from all plugins: the integrations API writes it,
+    // the webhooks and an ingestor's deployment-wide run read it; a run in a workspace reads that workspace's own
+    // secret instead (docs/multi-workspace.md).
     const apiSecrets = this.createApiSecrets(allPlugins);
+    // The per-workspace credentials secrets' name prefix (the workspaces API creates them under it).
+    const workspaceSecretPrefix = this.prefixed(WORKSPACE_SECRET_BASE_PREFIX);
 
     // DLQ and Processing Queue
     const dlq = this.createDLQ(kmsKey);
@@ -147,11 +160,14 @@ export class VocIngestionStack extends VocStack {
 
     // Ingestor execution roles: shared, or dedicated where a plugin needs Bedrock or a schedule
     this.ingestorRoles = new IngestorRoles(this, {
-      watermarksTable, aggregatesTable, processingQueue: this.processingQueue, rawDataBucket, kmsKey, apiSecrets,
+      watermarksTable, aggregatesTable, workspacesTable, idempotencyTable, processingQueue: this.processingQueue,
+      rawDataBucket, kmsKey,
+      apiSecrets, workspaceSecretsArn: workspaceSecretsArn(this, workspaceSecretPrefix),
     });
 
     // Common environment variables
-    const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, config);
+    const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, workspaceSecretPrefix, config);
+    this.scheduledTickEnv = { WORKSPACES_TABLE: workspacesTable.tableName, IDEMPOTENCY_TABLE: idempotencyTable.tableName };
 
     // Lambda Layer for common dependencies
     const dependenciesLayer = this.createDependenciesLayer();
@@ -352,13 +368,17 @@ export class VocIngestionStack extends VocStack {
     watermarksTable: dynamodb.Table,
     rawDataBucket: s3.Bucket,
     apiSecrets: secretsmanager.Secret,
+    workspaceSecretPrefix: string,
     config: VocIngestionStackProps['config']
   ): Record<string, string> {
     return {
       WATERMARKS_TABLE: watermarksTable.tableName,
       PROCESSING_QUEUE_URL: this.processingQueue.queueUrl,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
+      // A deployment-wide run (an event that names no workspace) reads the shared secret, as before.
       SECRETS_ARN: apiSecrets.secretArn,
+      // Each run reads `{prefix}/{ws}/credentials` for the workspace its event names (plugins/_shared/base_ingestor.py).
+      WORKSPACE_SECRET_PREFIX: workspaceSecretPrefix,
       BRAND_NAME: config.brandName,
       POWERTOOLS_SERVICE_NAME: 'voc-ingestion',
       LOG_LEVEL: 'INFO',
@@ -387,11 +407,16 @@ export class VocIngestionStack extends VocStack {
     // ONE string names the schedule three times: on the Rule below, in the
     // role's events:DisableRule grant, and in INGEST_SCHEDULE_RULE_NAME, which
     // the circuit breaker inside the ingestor passes to DisableRule when the
-    // plugin keeps failing. Handing the breaker the resolved name (rather than
-    // letting it rebuild one) is what keeps all three in step under a
-    // deployment prefix too, and its absence tells the breaker there is no rule
-    // to disable. Built only when a rule actually exists, so an unscheduled
-    // plugin cannot spend name-length budget on a rule the app never creates.
+    // plugin's deployment-wide runs keep failing. The rule's tick also fans out
+    // to every workspace (plugins/_shared/base_ingestor.py `fan_out_once`), so
+    // that disable, like PUT /sources/{s}/disable, stops every workspace's
+    // scheduled runs too; a run in a workspace never disables it, its trip
+    // stops only that workspace's runs. Handing the breaker the
+    // resolved name (rather than letting it rebuild one) is what keeps all three
+    // in step under a deployment prefix too, and its absence tells the breaker
+    // there is no rule to disable. Built only when a rule actually exists, so an
+    // unscheduled plugin cannot spend name-length budget on a rule the app never
+    // creates.
     const scheduleRuleName = schedule
       ? this.uniqueName(`voc-ingest-${plugin.id}-schedule`)
       : undefined;
@@ -402,7 +427,8 @@ export class VocIngestionStack extends VocStack {
       SOURCE_PLATFORM: plugin.id,
       // The connector-version on every raw object the plugin archives (plugins/_shared/raw_archive.py).
       PLUGIN_VERSION: pluginVersion(plugin),
-      ...(scheduleRuleName ? { INGEST_SCHEDULE_RULE_NAME: scheduleRuleName } : {}),
+      // The tick's fan-out: its claim (voc-idempotency) and the workspaces that enabled the plugin (voc-workspaces).
+      ...(scheduleRuleName ? { INGEST_SCHEDULE_RULE_NAME: scheduleRuleName, ...this.scheduledTickEnv } : {}),
     };
 
     // All plugins need aggregates table for run status tracking
@@ -411,29 +437,14 @@ export class VocIngestionStack extends VocStack {
     // Bundle plugin code from plugins/ directory
     const ingestorCode = this.bundlePluginCode(plugin.id, allPluginIds);
 
-    // Bedrock-capable and scheduled plugins get a dedicated, scoped role; the rest share one.
-    const role = this.ingestorRoles.roleFor(plugin.id, {
-      bedrock: infra.bedrock, browser: infra.browser, scheduleRuleName, jobNotices: infra.jobNotices,
-    });
+    // Bedrock-capable and scheduled plugins get a dedicated, scoped role; the rest share one. A scheduled role
+    // may query voc-workspaces' PLUGIN# partitions and invoke its OWN function (the tick's fan-out, and the
+    // app-review continuation parts, plugins/_shared/app_reviews_parts.py), built from the NAME: a grant that
+    // GetAtts the function would be a cycle (the function depends on this role's policy).
     const functionName = this.uniqueName(ingestorFunctionBaseName(plugin.id));
-
-    // A many-app run continues in a fresh invocation of its own function when it
-    // would not fit another app before the timeout (plugins/_shared/app_reviews_parts.py):
-    // the plugin declares it in its manifest (`infrastructure.ingestor.selfInvoke`).
-    // Only on the plugin's DEDICATED role (scheduled plugins have one), and only on
-    // its own function, built from the NAME: a grant that GetAtts the function
-    // would be a cycle (the function depends on this role's policy).
-    if (infra.selfInvoke && scheduleRuleName) {
-      role.addToPolicy(new iam.PolicyStatement({
-        actions: ['lambda:InvokeFunction'],
-        resources: [this.formatArn({
-          service: 'lambda',
-          resource: 'function',
-          resourceName: functionName,
-          arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-        })],
-      }));
-    }
+    const role = this.ingestorRoles.roleFor(plugin.id, {
+      bedrock: infra.bedrock, browser: infra.browser, scheduleRuleName, functionName, jobNotices: infra.jobNotices,
+    });
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
       functionName,

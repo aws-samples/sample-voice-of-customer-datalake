@@ -17,24 +17,27 @@ from collections.abc import Generator
 # harmless and every plugin carries it, so it stays.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from shared.invocation_cost import measure_invocation_cost
+from shared.ws_repo import WorkspaceScope
 
 
 class MySourceIngestor(BaseIngestor):
     """Ingestor for My Source API."""
 
-    def __init__(self, execution_id: str | None = None):
-        # Pass execution_id through — BaseIngestor clears the shared secret
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None):
+        # Pass the run's workspace (None: deployment-wide) and execution_id through.
+        # In a workspace everything the run keeps (watermarks, run rows, raw objects,
+        # queued messages) and the credentials it reads are that workspace's. BaseIngestor clears the secret
         # cache on manual runs BEFORE secrets are read (issues #141/#215).
         # Never assign ingestor.execution_id after construction; that would
         # skip the guard (enforced by plugins/test_manual_run_guard.py).
-        super().__init__(execution_id=execution_id)
+        super().__init__(scope, execution_id=execution_id)
         # Access your secrets by their BARE name — the `<plugin_id>_` prefix they
         # are stored under is stripped for you. Declare every key in
-        # manifest.json's "secrets" block: construction FAILS if the shared secret
-        # holds no key under this plugin's prefix, rather than quietly handing you
-        # every other plugin's credentials (issue #251).
+        # manifest.json's "secrets" block: construction FAILS if the run's
+        # secret holds no key under this plugin's prefix, rather than quietly
+        # handing you every other plugin's credentials (issue #251).
         self.api_key = self.secrets.get("api_key", "")
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
@@ -101,7 +104,7 @@ class MySourceIngestor(BaseIngestor):
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event, context):
-    """Lambda entry point."""
+    """Lambda entry point (``run_in_workspace``): an event naming a workspace runs in it, one naming none runs
+    deployment-wide, and the scheduled tick also fans out to the workspaces that enabled the plugin."""
     execution_id = event.get("execution_id") if isinstance(event, dict) else None
-    ingestor = MySourceIngestor(execution_id=execution_id)
-    return ingestor.run()
+    return run_in_workspace(event, lambda scope: MySourceIngestor(scope, execution_id=execution_id).run())

@@ -114,8 +114,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests
 
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from shared.invocation_cost import measure_invocation_cost
+from shared.ws_repo import WorkspaceScope
 
 API_URL = "https://api.example.com/v1/reviews"
 REQUEST_TIMEOUT_SECONDS = 30
@@ -124,8 +125,8 @@ REQUEST_TIMEOUT_SECONDS = 30
 class MyReviewsIngestor(BaseIngestor):
     """Ingestor for the My Reviews API."""
 
-    def __init__(self, execution_id: str | None = None):
-        super().__init__(execution_id=execution_id)
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None):
+        super().__init__(scope, execution_id=execution_id)
         self.api_key = self.secrets.get("api_key", "")
         self.product_id = self.secrets.get("product_id", "")
 
@@ -167,14 +168,18 @@ class MyReviewsIngestor(BaseIngestor):
 def lambda_handler(event, context):
     """Lambda entry point."""
     execution_id = event.get("execution_id") if isinstance(event, dict) else None
-    ingestor = MyReviewsIngestor(execution_id=execution_id)
-    return ingestor.run()
+    return run_in_workspace(event, lambda scope: MyReviewsIngestor(scope, execution_id=execution_id).run())
 ```
 
-What the base class does for you when `run()` is called:
+`run_in_workspace` runs the ingestor deployment-wide (scope `None`) for an event that names no
+workspace, as every Run now and schedule tick does today, and in the workspace an event names in
+`workspace_id` otherwise; the tick first fans out (once per tick) to every workspace that enabled the plugin
+([multi-workspace.md](multi-workspace.md), since 7.00.00). What the base class does for you when
+`run()` is called:
 
 - skips the run while the plugin's circuit breaker is open;
 - archives each item to `raw/my_reviews/<yyyy>/<mm>/<dd>/<id>/<sha16>.json` in the raw data bucket
+  (`ws/<workspace>/raw/my_reviews/…` for a run in a workspace)
   (with the payload you put on it under `RAW_SOURCE_KEY`, `_shared/raw_source.py`, as `raw_content`),
   applies the source's PII policy and sends the items to the processing queue in batches of 100;
 - after the loop, saves the id of the **last** yielded item as the `last_id` watermark. That is
@@ -217,6 +222,7 @@ with this file, `test_my_reviews.py`:
 from unittest.mock import MagicMock, patch
 
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import SCOPE
 from my_reviews.ingestor.handler import MyReviewsIngestor
 
 
@@ -228,7 +234,7 @@ def build_ingestor(**secrets):
         patch("_shared.base_ingestor.get_sqs_client"),
         patch("_shared.base_ingestor.get_secret", return_value=scoped_secret(**secrets)),
     ):
-        return MyReviewsIngestor()
+        return MyReviewsIngestor(SCOPE)
 
 
 def test_maps_one_review():
@@ -360,5 +366,5 @@ The same manifest can declare other infrastructure. Each is described in
 - Set a timeout on every outbound request.
 - For a webhook, verify the signature with a constant-time compare before parsing the body.
 - Review a third-party plugin's code before you enable it: every ingestor role can read the whole
-  shared secret, and the `<id>_` namespace only protects against mistakes
+  shared secret and every workspace's credentials secret, and the `<id>_` namespace only protects against mistakes
   ([Plugin Architecture → Secrets](plugin-architecture.md#secrets)).

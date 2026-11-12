@@ -40,6 +40,18 @@ def test_allow_passes_the_message_through_and_marks_it():
     assert 'pii_policy_applied' not in message
 
 
+@pytest.mark.parametrize('pii', ['allow', 'redact', 'summary_only'])
+@pytest.mark.parametrize('named', ['ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', None, 'ws_nope'])
+def test_the_workspace_field_is_never_returned(pii, named):
+    """Only an ingestor's run in a workspace sets `workspace_id`, after this policy (docs/multi-workspace.md):
+    whatever a producer's content says, the policy's output names no workspace, and the input keeps its own."""
+    message = _message(workspace_id=named)
+    out = apply_source_policy(message, _profile(pii=pii))
+    assert out is not None
+    assert 'workspace_id' not in out
+    assert message['workspace_id'] == named
+
+
 @pytest.mark.parametrize('pii', ['redact', 'summary_only'])
 def test_non_allow_redacts_text_title_metadata_and_drops_author(pii):
     out = apply_source_policy(_message(), _profile(pii=pii))

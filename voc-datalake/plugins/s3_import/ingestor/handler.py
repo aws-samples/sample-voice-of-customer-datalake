@@ -3,7 +3,12 @@ S3 Import Ingestor - Imports feedback from S3 bucket files (CSV, JSON, JSONL).
 Triggered by S3 events when files are uploaded.
 Folder name becomes the source: {folder}/file.csv -> source = "S3 - {folder}"
 
-Raw copies: the staged file as uploaded goes to ``raw/s3_import/...`` before it is read
+A run is deployment-wide when its event names no workspace (an S3 upload's trigger, the API's reprocess and Run
+now), as always, and runs in the workspace an event names in ``workspace_id`` otherwise
+(``_shared/base_ingestor.py run_in_workspace``).
+
+Raw copies: the staged file as uploaded goes to ``raw/s3_import/...`` (a workspace run: ``ws/{ws}/raw/s3_import/...``)
+before it is read
 (``_shared/raw_original.py``, only when the s3_import source keeps whole files), and each item's
 own archive carries its source row (the CSV row / JSON object, ``raw_content``).
 """
@@ -19,13 +24,14 @@ from dataclasses import dataclass, field
 
 import boto3
 
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from _shared.raw_original import archive_original
 from _shared.raw_source import RAW_SOURCE_KEY
 from shared import job_notices
 from shared.import_runs import MAX_MESSAGES, S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 s3_client = boto3.client("s3")
 
@@ -243,12 +249,13 @@ class S3ImportIngestor(BaseIngestor):
 
     *execution_id* is set on a run started by the API (`POST /s3-import/reprocess`,
     or `POST /sources/s3_import/run`); `record_run_started` / `record_run_finished`
-    then move that run's `SOURCE_RUN#s3_import` row. An S3 trigger event has none,
-    and no row is written. *started_by* (the API's caller) is told when that run ends (docs/realtime.md).
+    then move that run's `SOURCE_RUN#s3_import` row (`WS#{ws}#SOURCE_RUN#s3_import` for a run in a
+    workspace, whose import-history records go under it too). An S3 trigger event has none, and no
+    row is written. *started_by* (the API's caller) is told when that run ends (docs/realtime.md).
     """
 
-    def __init__(self, execution_id: str | None = None, started_by: str | None = None):
-        super().__init__(execution_id=execution_id)
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None, started_by: str | None = None):
+        super().__init__(scope, execution_id=execution_id)
         self.started_by = started_by
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
@@ -317,7 +324,7 @@ class S3ImportIngestor(BaseIngestor):
         response = s3_client.get_object(Bucket=bucket, Key=key)
         # Read whole (at most MAX_FILE_SIZE_MB): the original goes to the raw lake before parsing.
         body = response["Body"].read()
-        archive_original(s3_client, os.environ.get("RAW_DATA_BUCKET", ""), key, body)
+        archive_original(s3_client, os.environ.get("RAW_DATA_BUCKET", ""), key, body, scope=self.scope)
         stream = io.BytesIO(body)
 
         report = FileReport()
@@ -425,11 +432,17 @@ def _file_counts(parsed: int, imported: int, report: FileReport, *, sent_all: bo
 def lambda_handler(event, context):
     """Handle S3 event notifications, and the API's reprocess input (an S3-shaped event).
 
-    `execution_id` (a run the API recorded) and `reprocess: True` (a re-run of one
-    file, issue #144) are the only additions to the trigger's event shape. A failed
-    reprocess answers `{"status": "error", "error": <type>}` instead of raising, so
-    Lambda does not retry it.
+    `workspace_id` (the workspace of the run), `execution_id` (a run the API recorded)
+    and `reprocess: True` (a re-run of one file, issue #144) are the only additions to
+    the trigger's event shape. An event without `workspace_id` (a plain S3 trigger, the
+    API's reprocess) runs deployment-wide as it always did (`run_in_workspace`). A failed reprocess answers
+    `{"status": "error", "error": <type>}` instead of raising, so Lambda does not retry it.
     """
+    return run_in_workspace(event, lambda scope: _handle_in_workspace(scope, event))
+
+
+def _handle_in_workspace(scope: WorkspaceScope | None, event: dict) -> dict:
+    """``lambda_handler``'s body, in the workspace the event named, or deployment-wide (scope None)."""
     execution_id = event.get("execution_id") if isinstance(event.get("execution_id"), str) else None
     records = event.get("Records") or []
     if not records and not execution_id:
@@ -438,7 +451,7 @@ def lambda_handler(event, context):
 
     reprocess = event.get("reprocess") is True
     started_by = event.get("started_by") if isinstance(event.get("started_by"), str) else None
-    ingestor = S3ImportIngestor(execution_id=execution_id, started_by=started_by)
+    ingestor = S3ImportIngestor(scope, execution_id=execution_id, started_by=started_by)
     # A run with no file (`POST /sources/s3_import/run`) still closes its row, as completed with 0 items.
     try:
         results = _process_records(ingestor, records, reprocess=reprocess)

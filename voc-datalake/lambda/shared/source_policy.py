@@ -30,6 +30,7 @@ from shared.ingest_schemas import MAX_METADATA_VALUE_LENGTH, MAX_TEXT_LENGTH, MA
 from shared.logging import logger, metrics
 from shared.pii_redaction import redact_text
 from shared.source_profiles import PII_ALLOW, PII_POLICIES, cached_source_profile_strict
+from shared.ws_repo import WORKSPACE_FIELD
 
 __all__ = [
     'ARCHIVE_FILE',
@@ -129,9 +130,14 @@ def apply_source_policy(message: Mapping[str, Any], profile: Mapping[str, Any]) 
     An ``allow`` message always passes (the queue schema judges it as before).
     Under a non-allow policy a message without text is None: there is nothing
     to redact and nothing worth queueing. The input is never mutated.
+
+    Never returns ``workspace_id`` (docs/multi-workspace.md): the field names the workspace the processor stores
+    the message in, so only a plugin ingestor's run in a workspace sets it, from its verified scope, AFTER this
+    policy (``BaseIngestor.send_to_queue``). A producer's content (a request body, a source payload) can never
+    choose it.
     """
     pii = _pii(profile)
-    message = _lower_cased_emails(message)
+    message = {key: value for key, value in _lower_cased_emails(message).items() if key != WORKSPACE_FIELD}
     if pii == PII_ALLOW:
         return {**message, 'pii_policy_applied': PII_ALLOW}
     if not isinstance(message.get('text'), str) or not message['text'].strip():

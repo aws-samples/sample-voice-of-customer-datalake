@@ -38,7 +38,8 @@ def _review(n: int, offset: int) -> dict:
     category = 'delivery' if n % 2 else 'billing'
     return {
         'pk': f'SOURCE#{"web" if n % 3 else "app_store"}', 'sk': f'FEEDBACK#r{offset}-{n:04d}',
-        'feedback_id': f'r{offset}-{n:04d}', 'date': day, 'source_created_at': f'{day}T09:00:00Z',
+        'feedback_id': f'r{offset}-{n:04d}', 'gsi4pk': f'FEEDBACK#r{offset}-{n:04d}',
+        'date': day, 'source_created_at': f'{day}T09:00:00Z',
         'source_platform': 'web' if n % 3 else 'app_store', 'category': category,
         'sentiment_label': 'negative' if n % 4 == 0 else 'positive',
         'gsi1pk': f'DATE#{day}', 'gsi1sk': f'{day}T09:00:00+00:00#{n:04d}',
@@ -61,14 +62,14 @@ def _index(name: str, hash_key: str, range_key: str | None = None) -> Any:
 @pytest.fixture(scope='module')
 def table():
     with mock_aws():
-        keys = ('pk', 'sk', 'gsi1pk', 'gsi1sk', 'gsi2pk', 'gsi2sk', 'feedback_id')
+        keys = ('pk', 'sk', 'gsi1pk', 'gsi1sk', 'gsi2pk', 'gsi2sk', 'gsi4pk')
         feedback = boto3.resource('dynamodb', region_name='us-east-1').create_table(
             TableName='feedback', BillingMode='PAY_PER_REQUEST',
             KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
             AttributeDefinitions=[{'AttributeName': k, 'AttributeType': 'S'} for k in keys],
             GlobalSecondaryIndexes=[
                 _index('gsi1-by-date', 'gsi1pk', 'gsi1sk'), _index('gsi2-by-category', 'gsi2pk', 'gsi2sk'),
-                _index('gsi4-by-feedback-id', 'feedback_id'),
+                _index('gsi4-by-feedback-id', 'gsi4pk'),
             ],
         )
         with feedback.batch_writer() as writer:
@@ -122,6 +123,16 @@ class TestTheEstimate:
         web = sum(1 for row in rows if row['source_platform'] == 'web')  # 66 of 100
         assert answer['matched'] == round(web / 100 * 10_000, -2)
         assert answer['estimated'] is True
+
+    def test_a_workspace_item_in_the_index_is_never_counted(self):
+        """gsi4 holds a workspace's items too (gsi4pk WS#{ws}#FEEDBACK#…): left out of the deployment's count, while
+        the sample's share still scales by the whole index."""
+        rows = [_review(n, 0) for n in range(100)]
+        rows[:50] = [{**row, 'pk': f'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#{row["pk"]}'} for row in rows[:50]]
+        stub = _stub_table(rows, item_count=10_000)
+        answer = preview.estimate_count(stub, {'days': 30, 'sources': ['web']}, pages=1)
+        deployment_web = sum(1 for row in rows[50:] if row['source_platform'] == 'web')
+        assert answer['matched'] == round(deployment_web / 100 * 10_000, -2)
 
     def test_a_thin_sample_says_nothing_rather_than_zero(self):
         stub = _stub_table([_review(n, 0) for n in range(5)], item_count=10_000)

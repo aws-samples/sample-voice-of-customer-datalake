@@ -71,7 +71,7 @@ describe('feedbackItemSchema', () => {
 });
 
 describe('queryFeedbackById', () => {
-  it('queries the ID index for the normalised id, one row', async () => {
+  it('queries the ID index for the normalised id in its deployment-wide gsi4pk partition, one row', async () => {
     const client = fakeDocClient(() => Promise.resolve({ Items: [VALID] }));
 
     await expect(queryFeedbackById(client, TABLE, '  AbC123  ')).resolves.toStrictEqual([VALID]);
@@ -80,8 +80,8 @@ describe('queryFeedbackById', () => {
     expect(command?.input).toStrictEqual({
       TableName: TABLE,
       IndexName: FEEDBACK_BY_ID_INDEX,
-      KeyConditionExpression: 'feedback_id = :fid',
-      ExpressionAttributeValues: { ':fid': 'abc123' },
+      KeyConditionExpression: 'gsi4pk = :fid',
+      ExpressionAttributeValues: { ':fid': 'FEEDBACK#abc123' },
       Limit: 1,
     });
   });

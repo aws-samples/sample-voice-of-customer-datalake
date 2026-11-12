@@ -12,9 +12,27 @@ import {
   SILVER_HISTORY_PREFIX,
   SCRATCH_EXPIRATION_DAYS,
   WEBSITE_NONCURRENT_VERSION_DAYS,
+  WORKSPACE_DATA_PREFIX,
+  WORKSPACE_ID_PATTERN,
+  WORKSPACE_RAW_LAYER_PREFIX,
+  WORKSPACE_SILVER_HISTORY_PREFIX,
 } from './core-buckets';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt } from '../test-support/guards';
+
+/** One workspace id in an IAM pattern, spelt out: `ws_` and 26 `?` (29 characters, lambda/shared/workspace_ids.py). */
+const ONE_WORKSPACE = 'ws_??????????????????????????';
+
+describe('the workspace id in an IAM pattern', () => {
+  it('is exactly one id: ws_ and one ? per ULID character, never *', () => {
+    expect(WORKSPACE_ID_PATTERN).toBe(ONE_WORKSPACE);
+    expect(ONE_WORKSPACE).toHaveLength(29);
+    // IAM's `?` is one character of any kind: the pattern matches a real id, and nothing longer or shorter.
+    const asRegExp = new RegExp(`^${WORKSPACE_ID_PATTERN.replaceAll('?', '.')}$`);
+    const ids = ['ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D', 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/x'];
+    expect(ids.map((id) => asRegExp.test(id))).toStrictEqual([true, false, false]);
+  });
+});
 
 /**
  * Every core bucket is versioned (recover from an accidental overwrite/delete —
@@ -88,10 +106,21 @@ describe('VocCoreStack bucket versioning', () => {
     const rules = versionedBucket('RawDataBucket').Properties.LifecycleConfiguration.Rules;
     const expiring = rules.filter((rule) => 'NoncurrentVersionExpiration' in rule || 'ExpirationInDays' in rule
       || 'ExpirationDate' in rule || 'Transitions' in rule || 'NoncurrentVersionTransitions' in rule);
+    // A lifecycle prefix is literal: a workspace layer (`ws/{ws}/raw/`) is reached by any rule on `ws/` or below it.
+    const literal = layer.split('*')[0] ?? layer;
     for (const rule of expiring) {
       const prefix = z.string().parse(rule['Prefix']);
-      expect(prefix.startsWith(layer) || layer.startsWith(prefix), String(rule['Id'])).toBe(false);
+      expect(prefix.startsWith(literal) || literal.startsWith(prefix), String(rule['Id'])).toBe(false);
     }
+  });
+
+  it('no raw-bucket lifecycle rule reaches the workspaces\' root ws/ (their raw/ and silver/ are kept forever)', () => {
+    const rules = versionedBucket('RawDataBucket').Properties.LifecycleConfiguration.Rules;
+    const prefixed = rules.filter((rule) => typeof rule['Prefix'] === 'string')
+      .map((rule) => z.string().parse(rule['Prefix']));
+    expect(prefixed.filter((prefix) => prefix.startsWith(WORKSPACE_DATA_PREFIX) || WORKSPACE_DATA_PREFIX.startsWith(prefix)))
+      .toStrictEqual([]);
+    expect(prefixed).toStrictEqual(['scratch/']);
   });
 
   it('never expires current raw-data versions outside scratch/ (raw customer data is kept forever)', () => {
@@ -134,11 +163,15 @@ describe('VocCoreStack raw bucket policy', () => {
       Resource: undefined,
     });
     const resources = JSON.stringify(statement['Resource']);
-    expect(APPEND_ONLY_PREFIXES.filter((prefix) => !resources.includes(`/${prefix}*`))).toStrictEqual([]);
+    // Each workspace's layers by name too: the plugin ingestors write ws/{ws}/raw/ (D1 holds per workspace).
+    const covered = [...APPEND_ONLY_PREFIXES.map((prefix) => `/${prefix}*`), `/ws/${ONE_WORKSPACE}/raw/*`, `/ws/${ONE_WORKSPACE}/silver/*`];
+    expect(covered.filter((resource) => !resources.includes(resource))).toStrictEqual([]);
   });
 
-  it('covers exactly the append-only layers: raw/ (bronze) and silver/ (Silver history)', () => {
-    expect(APPEND_ONLY_PREFIXES).toStrictEqual(['raw/', 'silver/']);
+  it('covers exactly the append-only layers: raw/ (bronze) and silver/ (Silver history), at the root and per workspace', () => {
+    expect(APPEND_ONLY_PREFIXES).toStrictEqual(['raw/', 'silver/', `ws/${ONE_WORKSPACE}/raw/`, `ws/${ONE_WORKSPACE}/silver/`]);
+    expect([WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX])
+      .toStrictEqual([`${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${RAW_LAYER_PREFIX}`, `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${SILVER_HISTORY_PREFIX}`]);
   });
 });
 
@@ -153,7 +186,11 @@ describe('raw bucket prefixes in lib/stacks', () => {
   const sources = readdirSync(stacksDir)
     .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
     .map((file) => readFileSync(join(stacksDir, file), 'utf-8'));
-  const constants = new Map<string, string>();
+  // Built from WORKSPACE_ID_PATTERN (a template, which the literal scan below cannot read): its value as imported.
+  const constants = new Map<string, string>([
+    ['WORKSPACE_RAW_LAYER_PREFIX', WORKSPACE_RAW_LAYER_PREFIX],
+    ['WORKSPACE_SILVER_HISTORY_PREFIX', WORKSPACE_SILVER_HISTORY_PREFIX],
+  ]);
   for (const source of sources) {
     for (const match of source.matchAll(/const ([A-Z][A-Z0-9_]*) = '([^']*)'/g)) {
       const [, name, value] = match;
@@ -183,7 +220,9 @@ describe('raw bucket prefixes in lib/stacks', () => {
   });
 
   it('names only raw/ or a known workspace prefix', () => {
-    const known: readonly string[] = [RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, ...RAW_BUCKET_WORKSPACE_PREFIXES];
+    const known: readonly string[] = [
+      RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_DATA_PREFIX, ...RAW_BUCKET_WORKSPACE_PREFIXES,
+    ];
     const tops = [...new Set(grantedPrefixes().map((prefix) => `${prefix.split('/')[0] ?? ''}/`))];
     expect(tops.filter((top) => !known.includes(top))).toStrictEqual([]);
   });

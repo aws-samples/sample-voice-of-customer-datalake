@@ -28,11 +28,12 @@ from target_reader import ReadLimits, TargetResult, read_target
 from web_items import WebTarget, queue_item, stored_configs, target_from_config
 
 from _shared.app_reviews_utils import is_due_for_run
-from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.base_ingestor import BaseIngestor, logger, metrics, run_in_workspace, tracer
 from shared.converse import converse
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
 from shared.web_review_targets import MAX_REVIEWS, TargetError
+from shared.ws_repo import WorkspaceScope
 
 #: Reviews one run sends at most, across every target (a target's own limit at most).
 MAX_REVIEWS_PER_RUN: Final = MAX_REVIEWS
@@ -58,9 +59,9 @@ def _model_completion(prompt: str, system_prompt: str) -> str:
 class WebReviewsIngestor(BaseIngestor):
     """Ingestor for reviews read from public web pages."""
 
-    def __init__(self, execution_id: str | None = None, *, deadline: float | None = None,
+    def __init__(self, scope: WorkspaceScope | None, execution_id: str | None = None, *, deadline: float | None = None,
                  complete: Completion = _model_completion):
-        super().__init__(execution_id=execution_id)
+        super().__init__(scope, execution_id=execution_id)
         self.run_errors: list[str] = []
         self.only_target: str | None = None  # pragma: no mutate  annotation unevaluated in a function; read only by truthiness
         self._deadline = deadline if deadline is not None else time.monotonic() + DEFAULT_TIMEOUT_SECONDS
@@ -218,14 +219,19 @@ class WebReviewsIngestor(BaseIngestor):
 
     @classmethod
     def run_for_event(cls, event: object, context: Any = None) -> dict:
-        """Lambda body: one run, optionally limited to one target (``event['app_id']``: its id or URL)."""
+        """Lambda body (``run_in_workspace``): one run, in the workspace the event names or deployment-wide,
+        optionally limited to one target (``event['app_id']``: its id or URL); the tick also fans out."""
         execution_id = event.get('execution_id') if isinstance(event, dict) else None
         remaining_ms = context.get_remaining_time_in_millis() if context is not None else None
         deadline = time.monotonic() + remaining_ms / 1000 if remaining_ms is not None else None
-        ingestor = cls(execution_id=execution_id, deadline=deadline)
-        if isinstance(event, dict) and isinstance(event.get('app_id'), str):
-            ingestor.only_target = event['app_id']
-        return ingestor.run()
+
+        def run(scope: WorkspaceScope | None) -> dict:
+            ingestor = cls(scope, execution_id=execution_id, deadline=deadline)
+            if isinstance(event, dict) and isinstance(event.get('app_id'), str):
+                ingestor.only_target = event['app_id']
+            return ingestor.run()
+
+        return run_in_workspace(event, run)
 
     def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
         """Base normalization plus the item's ``metadata`` (target name, page), which the queue schema accepts."""

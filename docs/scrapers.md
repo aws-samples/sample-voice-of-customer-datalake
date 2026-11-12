@@ -197,7 +197,8 @@ tick it runs every enabled scraper whose `frequency_minutes` have passed since i
 
 ## Run Status
 
-Each run is recorded in `voc-aggregates` (`SCRAPER_RUN#<scraper id>`). The card shows the last run's date and its
+Each run is recorded in `voc-aggregates` (`SCRAPER_RUN#<scraper id>`; `WS#{ws}#SCRAPER_RUN#<scraper id>` for a run
+in a workspace, [multi-workspace.md](multi-workspace.md), since 7.00.00). The card shows the last run's date and its
 pages and reviews; `GET /scrapers/{id}/status` returns the latest run, with stored errors redacted:
 
 - **Status**: running, completed, completed with errors, or failed

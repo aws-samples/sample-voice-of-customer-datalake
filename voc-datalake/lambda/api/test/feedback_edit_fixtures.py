@@ -18,7 +18,7 @@ import feedback_edit_handler
 
 ADMIN_CLAIMS = {'sub': 'sub-admin', 'cognito:groups': 'admins', 'cognito:username': 'ada'}
 ITEM = {
-    'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'feedback_id': 'f1',
+    'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'feedback_id': 'f1', 'gsi4pk': 'FEEDBACK#f1',
     'category': 'delivery', 'subcategory': 'late',
     'gsi2pk': 'CATEGORY#delivery', 'gsi2sk': '-0.5#2026-01-01T00:00:00Z',
 }

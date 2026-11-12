@@ -289,6 +289,7 @@ from shared.stream_claims import release as release_reversal
 from shared.stream_claims import reversal_key
 from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_UNRATED, stored_band
+from shared.ws_repo import is_workspace_key
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
@@ -361,6 +362,11 @@ REFUSED_METRIC = "AggregateWriteRefused"
 DECLINED_METRIC = "AggregateWriteDeclined"
 REPLAYED_METRIC = "AggregateRecordReplayed"
 CONFLICTED_METRIC = "AggregateTransactionConflicted"
+# WORKSPACE_SKIPPED_METRIC counts a stream record of a workspace's item (its `pk` starts
+# `WS#`, docs/multi-workspace.md) left out of the deployment-wide METRIC# counters. The
+# workspace counters (`WS#{ws}#METRIC#…`) are the aggregator's own slice; until then a
+# workspace's items are not aggregated at all, and this says how many were left out.
+WORKSPACE_SKIPPED_METRIC = "AggregatorWorkspaceRecordsSkipped"
 
 # The metric partitions are declared once in `shared.metric_keys`, which every reader
 # (`/metrics/*`, the agent heartbeat, the briefing) imports too, for the reason
@@ -2244,6 +2250,36 @@ def _dedupe_key(record: DynamoDBRecord) -> str | None:
     return f'aggregator#stream#{event_id}' if isinstance(event_id, str) and event_id else None
 
 
+def _stream_partition_key(raw: object) -> object:
+    """The record's item `pk`, read from the EVENT (`Keys`, else either image), as `_event_name` reads its
+    name: the attribute-value shape `{'S': '…'}`; None when the record carries none."""
+    if not isinstance(raw, Mapping):
+        return None
+    stream = raw.get('dynamodb')
+    if not isinstance(stream, Mapping):
+        return None
+    for part in ('Keys', 'NewImage', 'OldImage'):
+        image = stream.get(part)
+        value = image.get('pk') if isinstance(image, Mapping) else None
+        if isinstance(value, Mapping) and isinstance(value.get('S'), str):
+            return value['S']
+    return None
+
+
+def _is_workspace_record(raw: object) -> bool:
+    """Whether a stream record is a workspace's item (`WS#…`): never counted into the deployment-wide METRIC# rows,
+    which every workspace's numbers would otherwise include (docs/multi-workspace.md)."""
+    return is_workspace_key(_stream_partition_key(raw))
+
+
+def _skip_workspace_record() -> dict:
+    """A workspace's record: counted (`WORKSPACE_SKIPPED_METRIC`) and left alone, the data version unmoved (no
+    deployment-wide read sees the item)."""
+    logger.info("Skipping a workspace's feedback record: workspace items are not aggregated yet")
+    metrics.add_metric(name=WORKSPACE_SKIPPED_METRIC, unit="Count", value=1)
+    return {"status": "skipped", "reason": "workspace item"}
+
+
 def record_handler(record: DynamoDBRecord) -> dict:
     """Process a single DynamoDB Stream record.
 
@@ -2263,6 +2299,8 @@ def record_handler(record: DynamoDBRecord) -> dict:
     event_name = _event_name(record)
     logger.info(f"Processing record: event_name={event_name}")
 
+    if _is_workspace_record(getattr(record, 'raw_event', None)):
+        return _skip_workspace_record()
     if event_name not in ('INSERT', 'REMOVE', 'MODIFY'):
         logger.info(f"Skipping unrecognized event: {event_name}")
         return {"status": "skipped", "reason": "unrecognized event"}
@@ -2860,8 +2898,9 @@ _COALESCED_EVENTS = ('INSERT', 'REMOVE')
 
 
 def _run_kind(raw: object) -> str | None:
-    """The event a record joins a run of (INSERT or REMOVE), or None for one handled alone."""
-    if not isinstance(raw, Mapping):
+    """The event a record joins a run of (INSERT or REMOVE), or None for one handled alone (a workspace's record
+    too: `record_handler` skips it, so it never joins a run's transaction)."""
+    if not isinstance(raw, Mapping) or _is_workspace_record(raw):
         return None
     name = raw.get('eventName')
     return name if name in _COALESCED_EVENTS else None

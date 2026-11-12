@@ -14,8 +14,8 @@ Every processed feedback item (``voc-feedback``, the Silver tier) says how it wa
 An in-place change of a stored item keeps the item AS IT WAS once the change landed (``keep_silver_version``,
 so a refused change leaves no version):
 a write-once JSON object in the raw bucket,
-``silver/{source_platform}/{feedback_id}/{YYYYMMDDTHHMMSSffffffZ}-{sha8}.json``, holding the item,
-the actor ``{sub, kind}``, the reason and the changed fields. The item then carries
+``silver/{source_platform}/{feedback_id}/{YYYYMMDDTHHMMSSffffffZ}-{sha8}.json`` (an item of a workspace:
+``ws/{ws}/silver/…``, docs/multi-workspace.md), holding the item, the actor ``{sub, kind}``, the reason and the changed fields. The item then carries
 ``updated_by`` / ``updated_at`` / ``change_reason`` (``change_stamp``). A kept version is a copy of
 the Silver row, which is already policy-applied, and a summary-only item's version never holds the
 fields that policy drops (``_policy_safe``), even if an older item still does. Only ``voc-retention`` deletes these objects, with the item
@@ -42,6 +42,7 @@ from shared.dynamo_values import plain
 from shared.logging import logger, metrics
 from shared.raw_versions import UNKNOWN_VERSION
 from shared.source_profiles import PII_SUMMARY_ONLY, SUMMARY_ONLY_DROPPED_FIELDS
+from shared.ws_repo import WorkspaceScope, is_workspace_key, s3_key
 
 # Also part of the contract, imported by name (the reprocess worker, tests): PIPELINE_VERSION,
 # REASON_REPROCESS, EnrichmentMode, contract_llm_metadata.
@@ -62,6 +63,8 @@ __all__ = [
 
 PIPELINE_VERSION: Final[str] = os.environ.get('APP_VERSION') or UNKNOWN_VERSION
 SILVER_PREFIX: Final = 'silver/'
+#: The Silver history's folder inside a workspace: ``ws/{ws}/silver/`` (shared/ws_repo.py ``s3_key``).
+SILVER_TIER: Final = 'silver'
 
 EnrichmentMode = Literal[
     'llm', 'defaults', 'reprocess_processed', 'reprocess_raw', 'reprocess_dimensions', 'source_update',
@@ -138,12 +141,23 @@ def _source_of(item: Mapping[str, Any]) -> str:
     return pk.removeprefix('SOURCE#') if isinstance(pk, str) and pk.startswith('SOURCE#') else 'unknown'
 
 
-def silver_item_prefix(item: Mapping[str, Any]) -> str | None:
-    """``silver/{source}/{feedback_id}/``: the folder of every kept version of ``item`` (None without an id)."""
+def silver_item_prefix(item: Mapping[str, Any], scope: WorkspaceScope | None = None) -> str | None:
+    """``silver/{source}/{feedback_id}/``: the folder of every kept version of ``item`` (None without an id);
+    ``ws/{ws}/silver/{source}/{feedback_id}/`` for an item of the workspace ``scope`` (shared/ws_repo.py ``s3_key``)."""
     feedback_id = item.get('feedback_id')
     if not isinstance(feedback_id, str) or not feedback_id:
         return None
-    return f'{SILVER_PREFIX}{archive_key_stem(_source_of(item))}/{archive_key_stem(feedback_id)}/'
+    source, stem = archive_key_stem(_source_of(item)), archive_key_stem(feedback_id)
+    if scope is not None:
+        return s3_key(scope, SILVER_TIER, source, stem) + '/'
+    return f'{SILVER_PREFIX}{source}/{stem}/'
+
+
+def _in_its_scope(item: Mapping[str, Any], scope: WorkspaceScope | None) -> bool:
+    """Whether ``item``'s partition is ``scope``'s: a workspace item's version only under its workspace, and a
+    deployment-wide item's never under one (a mismatch keeps no version rather than one in the wrong place)."""
+    pk = item.get('pk')
+    return not is_workspace_key(pk) if scope is None else scope.owns(pk)
 
 
 def fields_of_update(update_kwargs: Mapping[str, Any]) -> list[str]:
@@ -191,18 +205,25 @@ def _s3() -> Any:
 
 def keep_silver_version(
     item: Mapping[str, Any], *, actor: Mapping[str, str], reason: str, changed_fields: Sequence[str],
+    scope: WorkspaceScope | None = None,
 ) -> str | None:
     """Write ``item`` as it was read before the caller's change write-once; its ``s3://`` URI or None.
 
-    Callers call it once their conditional update landed, so a refused change leaves no version.
+    Callers call it once their conditional update landed, so a refused change leaves no version. An item of a
+    workspace (``scope``, its ``pk`` in it) is kept under ``ws/{ws}/silver/``; an item whose ``pk`` is not in
+    ``scope`` (or a workspace item kept without one) is not kept at all, logged and counted.
 
     A 412 (the same version already kept) is a success. Any failure is logged, counted
     (``SilverVersionFailures``) and returns None: it never fails the change.
     """
     if reason not in CHANGE_REASONS:
         logger.warning('Silver version kept with an undeclared reason', extra={'reason': reason[:_MAX_REASON_CHARS]})
+    if not _in_its_scope(item, scope):
+        logger.warning('Silver version not kept: the item is not in the scope it was kept in', extra={'reason': reason})
+        metrics.add_metric(name=FAILURE_METRIC, unit='Count', value=1)
+        return None
     bucket = os.environ.get('RAW_DATA_BUCKET', '')
-    prefix = silver_item_prefix(item)
+    prefix = silver_item_prefix(item, scope)
     if not bucket or prefix is None:
         logger.warning('Silver version not kept: no bucket or no feedback id', extra={'reason': reason})
         metrics.add_metric(name=FAILURE_METRIC, unit='Count', value=1)
