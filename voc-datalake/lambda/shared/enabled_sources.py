@@ -21,7 +21,7 @@ import os
 from shared.logging import logger
 from shared.plugin_identity import is_valid_plugin_identifier
 
-__all__ = ["default_source_ids"]
+__all__ = ["default_source_ids", "enabled_plugin_ids"]
 
 ENABLED_SOURCES_ENV_VAR = "ENABLED_SOURCES"
 
@@ -29,8 +29,9 @@ ENABLED_SOURCES_ENV_VAR = "ENABLED_SOURCES"
 NON_PLUGIN_SOURCES = ("manual_import",)
 
 
-def _enabled_plugin_ids() -> list[str]:
-    """Parse ENABLED_SOURCES (a JSON array of plugin ids).
+def enabled_plugin_ids() -> list[str]:
+    """The plugins this deployment offers (enabled in cdk.context.json), in deploy order: ENABLED_SOURCES (a JSON
+    array of plugin ids). Also the ceiling a workspace picks its plugins from (shared/workspace_plugin_settings.py).
 
     Fails SOFT to no plugins, with a warning: a malformed or absent variable must
     not turn the Settings or Logs page into a 500. Entries that are not a valid
@@ -57,4 +58,4 @@ def _enabled_plugin_ids() -> list[str]:
 
 def default_source_ids() -> list[str]:
     """Enabled plugin ids in deploy order, then the non-plugin sources, de-duplicated."""
-    return list(dict.fromkeys([*_enabled_plugin_ids(), *NON_PLUGIN_SOURCES]))
+    return list(dict.fromkeys([*enabled_plugin_ids(), *NON_PLUGIN_SOURCES]))

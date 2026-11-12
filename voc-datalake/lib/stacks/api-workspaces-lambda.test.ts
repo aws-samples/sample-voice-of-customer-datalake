@@ -10,7 +10,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  actionsWithPrefix, apiMethods, apiTemplate, functionIdForHandler, nonOptions, policyStatementsOf, resolveMethod,
+  actionsWithPrefix, apiMethods, apiTemplate, apiTemplateAllPlugins, functionIdForHandler, nonOptions, policyStatementsOf,
+  resolveMethod,
   serviceEnvironment,
 } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
@@ -33,6 +34,15 @@ describe('the voc-workspaces-api Lambda', () => {
     expect(env.WORKSPACE_SECRET_PREFIX).toBe('voc/ws');
   });
 
+  it('names the plugins the deployment offers (cdk.context.json): the ceiling of a workspace\'s plugins', () => {
+    // The default fixture enables no plugin; the all-plugins one enables every plugin under plugins/.
+    expect(environment().ENABLED_SOURCES).toBe('[]');
+    // The one ceiling: the same list the integrations API (and the ingestors' track) is given.
+    const all = serviceEnvironment(apiTemplateAllPlugins(), 'voc-workspaces-api').ENABLED_SOURCES;
+    expect(all).toStrictEqual(serviceEnvironment(apiTemplateAllPlugins(), 'voc-integrations-api').ENABLED_SOURCES);
+    expect(JSON.parse(String(all))).toContain('webscraper');
+  }, SYNTH_TIMEOUT_MS);
+
   it('may Query, GetItem, PutItem, UpdateItem, DeleteItem and ConditionCheckItem on the workspaces table, nothing else', () => {
     expect(actionsWithPrefix(statements(), 'dynamodb:')).toStrictEqual([
       'dynamodb:ConditionCheckItem', 'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query',
@@ -45,10 +55,11 @@ describe('the voc-workspaces-api Lambda', () => {
     expect(shape).toStrictEqual([
       { actions: ['dynamodb:ConditionCheckItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } } },
       // A member's removal: their MEMBER# and USER# rows (IAM pins the partition, not the sort key).
-      { actions: ['dynamodb:DeleteItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] } } },
+      { actions: ['dynamodb:DeleteItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
+        'PLUGIN#*', 'USER#*', 'WS#*'] } } },
       { actions: ['dynamodb:GetItem', 'dynamodb:Query'], condition: undefined },
       { actions: ['dynamodb:PutItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
-        'AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'] } } },
+        'AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'] } } },
       // A role change: `role` alone, on the MEMBER# and USER# rows.
       { actions: ['dynamodb:UpdateItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] },

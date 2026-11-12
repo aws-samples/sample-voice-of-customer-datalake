@@ -393,11 +393,13 @@ def _leaves(value: Any) -> list[str]:
 def case_problems(route: str, case: RouteCase) -> list[str]:
     """Why ``case`` does not name every id ``route``'s request carries (empty when it does)."""
     params = {part[1:-1] for part in route.split()[1].split('/') if part.startswith('<')}
-    leaves = [*_leaves(case.body), *_leaves(case.query)]
-    named = params | {name for leaf in leaves if (name := _placeholder(leaf))}
+    leaves = [*_leaves(case.body), *_leaves(case.query), *case.shared.values()]
+    # A shared path parameter names something of the deployment (same value in every workspace), not an id.
+    named = (params - set(case.shared)) | {name for leaf in leaves if (name := _placeholder(leaf))}
     # Every other value of the body or query says why it is not an id: so an id cannot ride in as a literal.
     problems = [f'{leaf!r} is neither a placeholder nor in literals' for leaf in leaves
                 if not _placeholder(leaf) and not case.literals.get(leaf, '').strip()]
+    problems += [f'shared {name!r} is not a path parameter' for name in sorted(set(case.shared) - params)]
     if named:
         if set(case.ids) != {'A', 'B', UNKNOWN} or any(set(ids) != named for ids in case.ids.values()):
             problems.append(f'ids must name {sorted(named)} in A, B and {UNKNOWN}')
@@ -425,7 +427,12 @@ _ROLE_IDS = {'A': {'sub': 'a'}, 'B': {'sub': f'{B_MARK}-b'}, UNKNOWN: {'sub': 'u
     (RouteCase(ids=_ROLE_IDS, no_ids='none', body={'role': 'editor'}, literals={'editor': 'a role'}),
      'no_ids on a request'),
     (RouteCase(body={'role': 'editor'}, literals={'editor': 'a role'}), 'ids must name'),
-], ids=['an-id-as-a-literal', 'a-number', 'a-placeholder-not-in-ids', 'ids-and-no-ids', 'path-ids-missing'])
+    (RouteCase(ids=_ROLE_IDS, shared={'plugin_id': 'webscraper'}, literals={'webscraper': 'a plugin'},
+               body={'role': 'editor'}), 'shared'),
+    (RouteCase(no_ids='none', shared={'sub': 'sub-vic'}, body={'role': 'editor'}, literals={'editor': 'a role'}),
+     "'sub-vic' is neither"),
+], ids=['an-id-as-a-literal', 'a-number', 'a-placeholder-not-in-ids', 'ids-and-no-ids', 'path-ids-missing',
+        'a-shared-name-that-is-no-path-parameter', 'a-shared-value-with-no-reason'])
 def test_a_case_that_does_not_name_its_ids_is_caught(case, problem):
     assert [p for p in case_problems(_ROLE_ROUTE, case) if problem in p] != []
 
@@ -452,8 +459,8 @@ def _filled(value: Any, ids: dict[str, str]) -> Any:
 def _send(world: World, case: RouteCase, route: str, *, ws: str | None, ids: dict[str, str],
           caller: dict) -> tuple[int, Any]:
     """The case's request with ``ids`` in its path, body and query."""
-    return world.call(route.split(maxsplit=1)[0], _path(route, ids), ws=ws, body=_filled(case.body, ids),
-                      query=_filled(case.query, ids), caller=caller)
+    return world.call(route.split(maxsplit=1)[0], _path(route, {**case.shared, **ids}), ws=ws,
+                      body=_filled(case.body, ids), query=_filled(case.query, ids), caller=caller)
 
 
 def _external_writes(world: World, since: dict[str, int]) -> list[str]:

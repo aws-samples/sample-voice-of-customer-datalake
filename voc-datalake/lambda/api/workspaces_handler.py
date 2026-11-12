@@ -36,6 +36,12 @@ without the header, the one 404 for a non-member; a platform admin enters as adm
                                                 last admin's demotion or a membership changed meanwhile.
     DELETE /me/workspaces/current/members/{sub} -> {removed: sub}: workspace admins, or the member themselves
                                                 (leave); 409 for the last admin or a membership changed meanwhile.
+The plugins of the workspace X-Workspace-Id names (shared/workspace_plugin_settings.py; the deployment's
+plugins, ENABLED_SOURCES from cdk.context.json, are the ceiling), resolved the same way:
+    GET /me/workspaces/current/plugins          {plugins: [{id, enabled, enabled_at?, enabled_by?}]}: any member,
+                                                every plugin the deployment offers, in its order
+    PUT /me/workspaces/current/plugins/{id}     {enabled} -> {plugin: {id, enabled, ...}}: workspace admins only;
+                                                404 for a plugin the deployment does not offer; audited first.
 Each write resolves the caller's role from the table, never the 30 s cache (a demoted admin cannot undo it), commits
 only while the acting admin is still admin (a check in its transaction: 403 when they were demoted meanwhile), writes
 its AUDIT#WS#{ws} row first, and drops the changed member's cached membership in this container (other containers
@@ -57,6 +63,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.api import api_handler, create_api_resolver, get_caller_subject, is_admin, require_admin
 from shared.aws import get_cognito_idp_client, get_dynamodb_resource, get_secrets_client
+from shared.enabled_sources import enabled_plugin_ids
 from shared.exceptions import AuthorizationError, ConfigurationError, ServiceError, ValidationError
 from shared.import_runs import parse_limit
 from shared.logging import logger
@@ -93,6 +100,12 @@ from shared.workspace_members import (
     parse_role_change,
     remove_member,
 )
+from shared.workspace_plugin_settings import (
+    offered_plugin,
+    parse_plugin_change,
+    set_plugin_enabled,
+    workspace_plugins,
+)
 
 WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
@@ -109,6 +122,8 @@ FAILED_MEMBERS = 'Failed to list the members'
 FAILED_ADD_MEMBER = 'Failed to add the member'
 FAILED_CHANGE_ROLE = "Failed to change the member's role"
 FAILED_REMOVE_MEMBER = 'Failed to remove the member'
+FAILED_PLUGINS = "Failed to list the workspace's plugins"
+FAILED_CHANGE_PLUGIN = 'Failed to change the plugin'
 
 app = create_api_resolver()
 # The warm container's resolved memberships (30 s, shared/workspace.py).
@@ -255,6 +270,33 @@ def remove_workspace_member(sub: str) -> dict:
         raise ServiceError(FAILED_REMOVE_MEMBER) from exc
     memberships.invalidate(context.ws, target)
     return {'removed': target}
+
+
+@app.get('/me/workspaces/current/plugins')
+def workspace_plugin_list() -> dict:
+    context = _workspace(app.current_event.raw_event, FAILED_PLUGINS)
+    try:
+        plugins = workspace_plugins(get_workspaces_table(), context.ws, enabled_plugin_ids())
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error listing the workspace plugins')
+        raise ServiceError(FAILED_PLUGINS) from exc
+    return {'plugins': plugins}
+
+
+@app.put('/me/workspaces/current/plugins/<plugin_id>')
+def change_workspace_plugin(plugin_id: str) -> dict:
+    event = app.current_event.raw_event
+    # The plugin and the body first: refused before a platform admin's entry writes its audit row.
+    plugin = offered_plugin(plugin_id, enabled_plugin_ids())
+    enabled = parse_plugin_change(json_object_body(app))
+    context = _workspace(event, FAILED_CHANGE_PLUGIN, fresh=True)
+    require_workspace_admin(context)
+    try:
+        entry = set_plugin_enabled(get_workspaces_table(), context, plugin, enabled, get_caller_subject(event))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error changing a workspace plugin')
+        raise ServiceError(FAILED_CHANGE_PLUGIN) from exc
+    return {'plugin': entry}
 
 
 def _credentials_secret_status(table: Any, ws: str, name: str) -> str:

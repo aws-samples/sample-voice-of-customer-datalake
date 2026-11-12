@@ -268,7 +268,7 @@ export class VocApiStack extends VocStack {
     const jobs = createJobLambdas(ctx, projects);
     const radarLambda = createRadarLambda(ctx);
     const engagementLambda = createParticipantsLambda(ctx);
-    const workspacesLambda = createWorkspacesLambda(ctx);
+    const workspacesLambda = createWorkspacesLambda(ctx, { enabledSourcesEnv: data.enabledSourcesEnv });
     const assistant = createAssistantLambdas(ctx, {
       projectsLambda: projects.projectsLambda,
       metricsLambda: data.metricsLambda,

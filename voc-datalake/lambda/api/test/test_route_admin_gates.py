@@ -178,6 +178,8 @@ WORKSPACE_GATE = 'require_workspace_admin'
 WORKSPACE_ADMIN_ONLY: dict[str, frozenset[str]] = {
     'workspaces_handler.py': frozenset({
         'POST /me/workspaces/current/members', 'PUT /me/workspaces/current/members/<sub>',
+        # The workspace's plugins, within the deployment's ceiling (shared/workspace_plugin_settings.py).
+        'PUT /me/workspaces/current/plugins/<plugin_id>',
     }),
 }
 
@@ -649,6 +651,10 @@ OPEN_BY_DESIGN_READS: dict[tuple[str, str], str] = {
     ('workspaces_handler.py', 'GET /me/workspaces/current/members'): (
         "The members of the workspace X-Workspace-Id names, for any of its members (Roles: a viewer reads the "
         "workspace); a non-member gets the workspace's one 404 (shared/workspace.py)."
+    ),
+    ('workspaces_handler.py', 'GET /me/workspaces/current/plugins'): (
+        "The plugins the deployment offers and which of them the workspace X-Workspace-Id names enabled, for any of "
+        "its members (the menu shows what runs); a non-member gets the workspace's one 404 (shared/workspace.py)."
     ),
 }
 

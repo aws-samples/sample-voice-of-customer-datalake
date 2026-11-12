@@ -67,7 +67,9 @@ class RouteCase:
     ``ids`` names every id the request carries, in ``A``, in ``B`` and in neither (``UNKNOWN``): the route's path
     parameters, and every id its body or query string carries, written in ``body`` and ``query`` as a whole value
     ``'{name}'`` (filled in per workspace); every other value of the body or query is in ``literals``, with why it
-    is not an id. A route whose request carries no id but the header says why in ``no_ids``.
+    is not an id. A route whose request carries no id but the header says why in ``no_ids``. A path parameter that
+    names something of the deployment, the same in every workspace (a plugin of the catalogue), is in ``shared``
+    with its value, and that value in ``literals`` with why it is not a workspace's id.
 
     Check 2 sends B's ids under A's header and expects ``refused_status`` with exactly the answer for the unknown
     ids, so a refusal must not repeat the ids it was sent. ``ok_status`` is the answer inside A (check 4) and, with
@@ -78,6 +80,7 @@ class RouteCase:
     body: dict | None = None
     query: dict[str, str] | None = None
     literals: dict[str, str] = field(default_factory=dict)
+    shared: dict[str, str] = field(default_factory=dict)
     ok_status: int = 200
     refused_status: int = 404
 
@@ -103,6 +106,8 @@ def _seed_workspace(table: Any, ws: str, name: str, slug: str, members: dict[str
 
 
 _NO_ACCOUNT = 'nia@example.com'
+#: A plugin the deployment offers.
+PLUGIN = 'webscraper'
 
 
 def _list_users(**params: Any) -> dict:
@@ -133,11 +138,16 @@ def workspaces_world(lambda_context: Any) -> Generator[World]:
         stack.enter_context(patch.object(workspaces_handler, 'memberships', MembershipCache()))
         stack.enter_context(patch.object(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool'))
         stack.enter_context(patch.object(workspaces_handler, 'get_cognito_idp_client', return_value=cognito))
+        # The deployment's plugins (cdk.context.json): the ceiling a workspace picks from.
+        stack.enter_context(patch.dict('os.environ', {'ENABLED_SOURCES': f'["{PLUGIN}"]'}))
         table = pk_sk_table('workspaces')
         _seed_workspace(table, WS_A, 'Acme Outfitters', 'acme',
                         {'sub-ada': 'admin', 'sub-edi': 'editor', 'sub-vic': 'viewer'})
         _seed_workspace(table, WS_B, f'{B_MARK.title()} Bikes', B_MARK,
                         {f'sub-{B_MARK}-bea': 'admin', f'sub-{B_MARK}-bo': 'viewer'})
+        # B enabled the plugin (shared/workspace_plugin_settings.py): A's member must not see or change it.
+        table.put_item(Item={'pk': f'PLUGIN#{PLUGIN}', 'sk': f'WS#{WS_B}', 'enabled_by': f'sub-{B_MARK}-bea',
+                             'enabled_at': '2026-11-12T00:00:00Z'})
 
         def call(method: str, path: str, *, ws: str | None, body: dict | None = None,
                  query: dict[str, str] | None = None, caller: dict = ADA) -> tuple[int, Any]:
@@ -188,4 +198,10 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('workspaces_handler.py', 'PUT /me/workspaces/current/members/<sub>'): RouteCase(
         ids=_MEMBER_IDS, body={'role': 'editor'}, literals={'editor': _A_ROLE}),
     ('workspaces_handler.py', 'DELETE /me/workspaces/current/members/<sub>'): RouteCase(ids=_MEMBER_IDS),
+    ('workspaces_handler.py', 'GET /me/workspaces/current/plugins'): RouteCase(
+        no_ids='the header is its only id: check 1 (B enabled the plugin; A lists it as not enabled)'),
+    ('workspaces_handler.py', 'PUT /me/workspaces/current/plugins/<plugin_id>'): RouteCase(
+        no_ids='the plugin is the deployment\'s, the workspace is the header: check 1',
+        shared={'plugin_id': PLUGIN}, literals={PLUGIN: 'a plugin of the deployment, the same in every workspace'},
+        body={'enabled': True}),
 }

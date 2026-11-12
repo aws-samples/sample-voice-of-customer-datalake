@@ -86,7 +86,10 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   // Workspace delete is still an open tenet question for phase 4. The users API deletes a deleted user's memberships
   // (6.11.00, lambda/shared/workspace_members.py remove_user_memberships), each audited first, in the same scope.
   WorkspacesTable: {
-    'VocApiStack/WorkspacesLambdaRole': { scope: ['USER#*', 'WS#*'], why: 'membership removal: MEMBER# and USER# rows only' },
+    'VocApiStack/WorkspacesLambdaRole': {
+      scope: ['PLUGIN#*', 'USER#*', 'WS#*'],
+      why: 'membership removal (MEMBER# and USER# rows only) and a disabled plugin\'s PLUGIN# row: configuration',
+    },
     'VocApiStack/UsersLambdaRole': {
       scope: ['USER#*', 'WS#*'], why: 'a deleted user\'s memberships: their MEMBER# and USER# rows only, before the account goes',
     },
@@ -104,7 +107,7 @@ const DYNAMO_WRITE = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|Pa
  * voc-retention, for an erasure by email (updates `email` and `name` only, under `WS#`: lambda/jobs/retention/members.py).
  */
 const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
-  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
+  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
   'VocApiStack/UsersLambdaRole': ['AUDIT#WS#*', 'USER#*', 'WS#*'],
   [RETENTION_ROLE]: ['WS#*'],
 };
