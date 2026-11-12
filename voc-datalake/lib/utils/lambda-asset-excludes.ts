@@ -67,9 +67,10 @@ export const PY_LAMBDA_ASSET_EXCLUDES = [
 /**
  * The worker trees VocProcessingStack bundles on their own (memory
  * extraction/scanning/retention, the autonomous-agent runtime, the morning
- * brief, the engineering agents' connector broker). Every OTHER `fromAsset('lambda')`
- * site spreads this so an edit under lambda/memory/, lambda/agents/, lambda/briefing/
- * or lambda/engineering/ does not redeploy the ~25 unrelated functions; each worker bundle excludes only the OTHER trees (see
+ * brief, the engineering agents' broker, bus, board and runtime). Every OTHER
+ * `fromAsset('lambda')` site spreads this so an edit under lambda/memory/,
+ * lambda/agents/, lambda/briefing/ or lambda/engineering/ does not redeploy the
+ * ~25 unrelated functions; each worker bundle excludes only the OTHER trees (see
  * lib/utils/worker-lambda.ts).
  */
 export const WORKER_TREE_ASSET_EXCLUDES = ['/agents/', '/briefing/', '/engineering/', '/memory/'];
@@ -131,6 +132,7 @@ export function rootPluginAssetExcludes(pluginId: string, allPluginIds: string[]
     '/scripts/',
     '/schemas/',
     '/Workshop/',
+    '/engineering-images/',
     '/plugins/_template/',
     // lambda/: only shared/ ships in ingestor bundles.
     '/lambda/agents/',

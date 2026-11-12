@@ -25,12 +25,10 @@ from engineering.board.model import EVENT_OF, OPEN, Task
 from engineering.board.store import BoardError, BoardStore
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
 from engineering.bus.schema import ROLES, Message, Party, Refs
-from engineering.connectors.identity import Caller, UnknownCaller, caller_from_event, own_account
+from engineering.connectors.identity import WORKSPACE, Caller, UnknownCaller, caller_from_event, own_account
 from engineering.quality_gate.text import redact
 from shared.logging import logger
 
-#: The workspace dimension, ``default`` until multi-workspace lands (plan v3, 4.3).
-WORKSPACE = 'default'
 BOARD_SOURCE = 'voc.engineering/board'
 MAX_TITLE = 200
 #: Priorities and epochs are small numbers (DynamoDB's own limit is 38 digits).

@@ -130,16 +130,30 @@ describe('the engineering bus', () => {
     }]);
   });
 
-  it('lets EventBridge send only the inbox rule\'s undelivered events to the dead-letter queue', () => {
+  it('lets EventBridge send only the inbox rule\'s and the supervisor rule\'s undelivered events to the DLQ', () => {
     const on = template('on');
     const allows = Object.values(on.findResources('AWS::SQS::QueuePolicy'))
       .filter((policy) => JSON.stringify(policy.Properties?.Queues).includes(`"${dlqId(on)}"`))
       .flatMap((policy) => z.array(z.looseObject({ Effect: z.string() })).parse(policy.Properties?.PolicyDocument?.Statement))
-      .filter((statement) => statement.Effect === 'Allow');
-    expect(allows).toMatchObject([{
+      .filter((statement) => statement.Effect === 'Allow')
+      .sort((a, b) => byCodeUnit(JSON.stringify(a.Condition), JSON.stringify(b.Condition)));
+    const fromRule = (rule: RegExp) => ({
       Principal: { Service: 'events.amazonaws.com' }, Action: 'sqs:SendMessage',
-      Condition: { ArnEquals: { 'aws:SourceArn': { 'Fn::GetAtt': [expect.stringMatching(/InboxRule/), 'Arn'] } } },
-    }]);
+      Condition: { ArnEquals: { 'aws:SourceArn': { 'Fn::GetAtt': [expect.stringMatching(rule), 'Arn'] } } },
+    });
+    // EngineeringBus… sorts before EngineeringRuntime….
+    expect(allows).toHaveLength(2);
+    expect(allows).toMatchObject([fromRule(/InboxRule/), fromRule(/SupervisorRule/)]);
+  });
+
+  it('sends the runtime\'s undelivered supervisor ticks to the same dead-letter queue, on the stack\'s key', () => {
+    const on = template('on');
+    const supervisorRules = Object.values(on.findResources('AWS::Events::Rule'))
+      .filter((rule) => JSON.stringify(rule.Properties?.Name ?? '').includes('voc-engineering-supervisor'));
+    expect(supervisorRules.map((rule) => rule.Properties?.Targets)).toMatchObject([[{
+      DeadLetterConfig: { Arn: { 'Fn::GetAtt': [dlqId(on), 'Arn'] } },
+    }]]);
+    expect(on.findResources('AWS::SQS::Queue')[dlqId(on)]?.Properties?.KmsMasterKeyId).toBeDefined();
   });
 
   it('runs the inbox router as one arm64 Python function at its size', () => {

@@ -191,7 +191,7 @@ export class VocCoreStack extends VocStack {
       accessLogs: this.uniqueDnsName('voc-access-logs'),
       rawData: this.uniqueDnsName('voc-raw-data'),
       website: this.uniqueDnsName('voc-frontend'),
-    }, this.kmsKey, corsAllowedOriginsBase, data);
+    }, this.kmsKey, corsAllowedOriginsBase, data, engineeringAgentsEnabled(this));
     this.accessLogsBucket = buckets.accessLogsBucket;
     this.rawDataBucket = buckets.rawDataBucket;
     this.websiteBucket = buckets.websiteBucket;

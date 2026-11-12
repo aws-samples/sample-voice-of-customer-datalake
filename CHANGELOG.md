@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.08.00] - 2026-11-12
+
+Autonomous engineering agents: the MicroVM runtime (one MicroVM per agent, the launcher, the runner's sandbox, sparse checkouts, checkpoints, the supervisor) and the harness each agent runs in. Merged from the voc-autonomous-b branch. Off by default, and not yet run against AWS.
+
+### Added
+
+- The runtime (`voc-datalake/lambda/engineering/runtime/`, docs/autonomous-engineering.md "Runtime: one MicroVM per agent"): the MicroVM interface, a local fake and a Lambda MicroVMs implementation whose API names follow the design and are verified before the flag is turned on; the launcher (one fixed execution role per agent role, `voc-eng-{role}`, assumed with 15-minute sessions named `<run ULID>.<agent index>` and tagged with workspace, run, agent and connection, refused for a stopped run); the runner, each image's entry point (repository code as its own user in PID and network namespaces of its own, the dependency step first behind a firewall, nothing the agent writes writable by repository code, output scrubbed); sparse, blob-less checkouts from the read-only cache mount with the git directory closed to repository code; checkpoints; and the supervisor (no fixed task cap: 10 minutes without progress leads to a question, then the task re-posted; open waits held without a MicroVM; pause and continue before the 8-hour limit and after a crash; Stop ending every MicroVM at once; the 30-day stop and spent budgets at a human decision point; the run monitor's signals, inspection data and live cost counters).
+- The harness (`runtime/harness/`): one interface, two adapters chosen per agent in its skill: a Bedrock Converse loop, and a coding-agent CLI headless at one pinned version with every built-in tool off and only the platform's tools, in a fresh home outside the checkout. The platform's tools: file tools confined to the checkout (no link, no `.git`, no file with two hard links), repository commands through the runner as the sandbox user, the dependency step, progress through the board, checkpoints carrying the working tree, and the work handed to the broker as a patch under the agent's own keys. Repository text reaches the model fenced as data. The board, inbox and broker ports refuse every call until the runtime is wired to them.
+- The images (`voc-datalake/engineering-images/`): python, node, rust and java on one base and entry point, Mountpoint pinned by version and checksum, ready and validate hooks; they ship the harness, a pinned boto3 and the broker's agent identities (`connectors/identity.py`).
+- CDK, only with `-c engineeringAgents=true` (`voc-datalake/lib/stacks/engineering-runtime.ts`): the agent roles with each role's bus source pinned to its own session by an explicit deny (the run coordinator's to `voc.engineering/conductor/<ws>/<run>`), the launcher and the supervisor (`voc-engineering-runtime`), ticked every minute by an EventBridge rule created disabled and switched on only while a run is active, its undelivered ticks going to the bus's KMS-encrypted `voc-engineering-dlq` (watched by alerting); `-c engineeringSupervisorAlarm=true` adds an alarm on its errors (docs/deployment.md). An agent role can be assumed only with all four session tags. `-c engineeringImageArns='{"python":"arn:…",…}'` names the MicroVM image per language (checked at synth; `{}` by default, so every launch is refused until it is set). The raw bucket expires `engineering/runs/` at 90 days and `engineering/cache/` at 30.
+
+### Changed
+
+- The agent roles' list lives once, in `connectors/identity.py` (`AGENT_ROLES`), with the default workspace id (`WORKSPACE`); the runtime, the board and the images take them from there.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`. The runtime has not run against AWS: keep the flag off until its MicroVM calls are verified.
+
 ## [6.07.00] - 2026-11-12
 
 Autonomous engineering agents: the language gate packs and the quality gate step, the agents' event bus with its inbox router and the run's conversation, and the run's task board. Merged from the voc-autonomous-c branch and wired on this branch's infrastructure. Off by default.

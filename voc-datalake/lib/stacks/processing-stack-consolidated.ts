@@ -24,6 +24,7 @@ import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { ENGINEERING_ROLE_NAME_TEMPLATE, EngineeringBroker, engineeringAgentsEnabled } from './engineering-broker';
 import { EngineeringBus } from './engineering-bus';
+import { addEngineeringRuntime } from './engineering-runtime';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
@@ -112,7 +113,8 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
  * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
  * - Only with -c engineeringAgents=true: the engineering agents' connector broker (engineering-broker.ts), and their
- *   bus, inbox router, role queues and board API (engineering-bus.ts)
+ *   bus, inbox router, role queues and board API (engineering-bus.ts), and their MicroVM runtime: the supervisor,
+ *   its rule and the agent roles (engineering-runtime.ts)
  */
 export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;
@@ -354,16 +356,23 @@ export class VocProcessingStack extends VocStack {
         : undefined,
     });
     // The engineering agents' connector broker (docs/autonomous-engineering.md): only with -c engineeringAgents=true.
+    let engineeringBus: EngineeringBus | undefined;
     if (engineeringAgentsEnabled(this)) {
       const roleNamePattern = this.uniqueNamePattern(ENGINEERING_ROLE_NAME_TEMPLATE);
       new EngineeringBroker(this, 'EngineeringBroker', {
         uniqueName, layer: processingLayer, roleNamePattern, kmsKey, deploymentPrefix: this.deploymentPrefix,
       });
       if (!props.engineeringTable) throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table');
-      new EngineeringBus(this, 'EngineeringBus', {
+      engineeringBus = new EngineeringBus(this, 'EngineeringBus', {
         uniqueName, layer: processingLayer, roleNamePattern, kmsKey, engineeringTable: props.engineeringTable,
       });
     }
+    // The engineering agents' MicroVM runtime: only with `-c engineeringAgents=true` (engineering-runtime.ts); its
+    // supervisor rule's undelivered ticks go to the bus's dead-letter queue.
+    addEngineeringRuntime(this, {
+      uniqueName, layer: processingLayer, kmsKey, agentsTable: props.agentsTable, rawDataBucket,
+      deadLetterQueue: engineeringBus?.dlq,
+    });
 
     // ============================================
     // RESEARCH WORKFLOW (Step Functions)

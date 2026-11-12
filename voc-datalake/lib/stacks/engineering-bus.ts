@@ -18,7 +18,8 @@
  * - One task queue per role of lambda/engineering/bus/schema.py ROLES (pinned by the test). Nothing consumes them
  *   until the runtime's agents land.
  * - One dead-letter queue, voc-engineering-dlq: the role queues' redrives, the events the rule could not hand the
- *   router, and the router's invocations that failed every retry. Alerting watches it like the platform's other
+ *   router, the router's invocations that failed every retry, and the runtime's supervisor ticks EventBridge could
+ *   not deliver (engineering-runtime.ts). Alerting watches it like the platform's other
  *   failure queues (dlq-alarms.ts): its alarm exists only once an administrator turns alerting on, so no fixed cost.
  *
  * Grants, exactly what the code calls: both functions GetItem, PutItem and UpdateItem on the voc-engineering table
@@ -70,7 +71,8 @@ export interface EngineeringBusProps {
 
 export class EngineeringBus extends Construct {
   private readonly bus: events.EventBus;
-  private readonly dlq: sqs.Queue;
+  /** voc-engineering-dlq: also the dead-letter queue of the runtime's supervisor rule (engineering-runtime.ts). */
+  public readonly dlq: sqs.Queue;
 
   constructor(scope: Construct, id: string, props: EngineeringBusProps) {
     super(scope, id);

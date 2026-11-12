@@ -8,6 +8,8 @@ import {
   ACCESS_LOGS_NONCURRENT_VERSION_DAYS,
   RAW_BUCKET_WORKSPACE_PREFIXES,
   APPEND_ONLY_PREFIXES,
+  ENGINEERING_CACHE_EXPIRATION_DAYS,
+  ENGINEERING_RUNS_EXPIRATION_DAYS,
   RAW_LAYER_PREFIX,
   SILVER_HISTORY_PREFIX,
   SCRATCH_EXPIRATION_DAYS,
@@ -81,7 +83,7 @@ describe('VocCoreStack bucket versioning', () => {
       SCRATCH_RULE,
     ]);
     expect(RAW_BUCKET_WORKSPACE_PREFIXES).toStrictEqual(
-      ['avatars/', 'company-context/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/']);
+      ['avatars/', 'company-context/', 'engineering/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/']);
   });
 
   it.each(APPEND_ONLY_PREFIXES)('no raw-bucket lifecycle rule can expire anything under %s (kept forever)', (layer) => {
@@ -97,6 +99,35 @@ describe('VocCoreStack bucket versioning', () => {
   it('never expires current raw-data versions outside scratch/ (raw customer data is kept forever)', () => {
     const rules = versionedBucket('RawDataBucket').Properties.LifecycleConfiguration.Rules;
     expect(rules.filter((rule) => 'ExpirationInDays' in rule || 'ExpirationDate' in rule)).toStrictEqual([SCRATCH_RULE]);
+  });
+});
+
+/** With -c engineeringAgents=true the engineering workspace expires; nothing else about the raw bucket changes. */
+describe('VocCoreStack raw bucket with the engineering agents', () => {
+  const RulesSchema = z.object({
+    Properties: z.object({ LifecycleConfiguration: z.object({ Rules: z.array(z.record(z.string(), z.unknown())) }) }),
+  });
+  let rules: Record<string, unknown>[];
+  beforeAll(() => {
+    const found = Object.entries(synthCoreTemplate({ engineeringAgents: 'true' }).findResources('AWS::S3::Bucket'))
+      .filter(([logicalId]) => logicalId.startsWith('RawDataBucket'));
+    rules = RulesSchema.parse(itemAt(found, 0)[1]).Properties.LifecycleConfiguration.Rules;
+  });
+
+  it('expires the runs\' workspaces at 90 days and the caches at 30, with their noncurrent versions a day later', () => {
+    expect({ runs: ENGINEERING_RUNS_EXPIRATION_DAYS, cache: ENGINEERING_CACHE_EXPIRATION_DAYS })
+      .toStrictEqual({ runs: 90, cache: 30 });
+    expect(rules.filter((rule) => String(rule['Id']).startsWith('engineering-'))).toStrictEqual([
+      { Id: 'engineering-runs-expiry', Status: 'Enabled', Prefix: 'engineering/runs/', ExpirationInDays: 90,
+        NoncurrentVersionExpiration: { NoncurrentDays: 1 } },
+      { Id: 'engineering-cache-expiry', Status: 'Enabled', Prefix: 'engineering/cache/', ExpirationInDays: 30,
+        NoncurrentVersionExpiration: { NoncurrentDays: 1 } },
+    ]);
+  });
+
+  it.each(APPEND_ONLY_PREFIXES)('still expires nothing under %s', (layer) => {
+    const prefixes = rules.map((rule) => rule['Prefix']).filter((prefix) => typeof prefix === 'string');
+    expect(prefixes.filter((prefix) => prefix.startsWith(layer) || layer.startsWith(prefix))).toStrictEqual([]);
   });
 });
 

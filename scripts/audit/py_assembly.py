@@ -47,7 +47,9 @@ GATED_PREFIX = 'b'  # a one-letter prefix: plugin rule names hit the 64-char lim
 GATED_CONTEXT: dict[str, object] = {
     'deploymentPrefix': GATED_PREFIX,
     'enableVerificationFixtureProvider': True,
-    'engineeringAgents': True,       # the engineering agents' connector broker (lib/stacks/engineering-broker.ts)
+    # the engineering agents' connector broker, bus and board (lib/stacks/engineering-broker.ts, engineering-bus.ts)
+    # and their MicroVM runtime (lib/stacks/engineering-runtime.ts)
+    'engineeringAgents': True,
     'defaultModelId': 'global.anthropic.claude-sonnet-5-5',
     'inboundEmailDomain': 'voc.example.com',
     'emailFrom': 'noreply@voc.example.com',  # participant email + the board pool and its triggers
