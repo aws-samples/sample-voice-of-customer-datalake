@@ -64,6 +64,7 @@ __all__ = [
     'item_stem',
     'parse_item_key',
     'put_raw_version',
+    'raw_root',
     'version_key',
 ]
 
@@ -125,6 +126,13 @@ def item_folder(source: str, day: date, stem: str, scope: WorkspaceScope | None 
     if scope is None:
         return f'{RAW_PREFIX}{source}/{day.year}/{day.month:02d}/{day.day:02d}/{stem}/'
     return s3_key(scope, RAW_TIER, source, f'{day.year}', f'{day.month:02d}', f'{day.day:02d}', stem) + '/'
+
+
+def raw_root(scope: WorkspaceScope | None = None) -> str:
+    """Where the bronze tier starts: ``raw/`` deployment-wide, ``ws/{ws}/raw/`` in ``scope``. A reader or a delete of
+    an item's own raw objects (the category reprocess's raw mode, voc-retention) only follows a key under the root of
+    the item's own scope, so a deployment item never reaches a workspace's bronze, nor one workspace another's."""
+    return RAW_PREFIX if scope is None else s3_key(scope, RAW_TIER) + '/'
 
 
 def item_stem(item_id: object, digest: str) -> str:

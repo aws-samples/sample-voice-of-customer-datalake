@@ -2,14 +2,17 @@
 
 For every item a run deletes, a tombstone is written FIRST, in one batch per
 scanned page (``AUDIT#tombstone#{source}`` / ``{feedback_id}`` in
-voc-aggregates, no content and no ``ttl``: TENETS.md D4, D5). A crash or a
+voc-aggregates, no content and no ``ttl``: TENETS.md D4, D5; a workspace's item
+``{ws}#{feedback_id}`` with its ``workspace_id``, ``tombstone_key``). A crash or a
 hand-over can therefore leave a tombstone whose item is still there (the next
 generation deletes it, and re-writes the same key), never a delete without a
 tombstone.
 
 Then the item goes with its own raw archive (``retention.delete_item`` /
 ``retention.delete_radar_item``). The whole-file upload an item came from is
-deleted only by a whole-source erasure; any other run lists it for review.
+deleted only by a whole-source erasure; any other run lists it for review. An S3 import's
+original file is linked from no row, so a run that deletes an S3 import's item lists the
+originals folder of the item's scope for review instead (``shared/retention.py``).
 """
 
 from __future__ import annotations
@@ -20,8 +23,9 @@ from typing import Any, Final
 from jobs.retention.runs import MODE_ERASE, note_erased_source, note_review_file
 from shared import retention
 from shared.legal_basis import legal_basis_or_legacy
-from shared.retention import FEEDBACK_SK_PREFIX, SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR
+from shared.retention import FEEDBACK_SK_PREFIX, SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR, WORKSPACE_ITEM_COUNTER
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 TOMBSTONE_PK_PREFIX: Final = 'AUDIT#tombstone#'
 _UNKNOWN_SOURCE: Final = 'unknown'
@@ -40,9 +44,15 @@ def _feedback_id(item: Mapping[str, Any]) -> str:
     return str(item['sk']).removeprefix(FEEDBACK_SK_PREFIX)
 
 
-def tombstone_key(source: str, feedback_id: str) -> dict[str, str]:
-    """The key of one deleted item's tombstone in voc-aggregates."""
-    return {'pk': f'{TOMBSTONE_PK_PREFIX}{source}', 'sk': feedback_id}
+def tombstone_key(source: str, feedback_id: str, scope: WorkspaceScope | None = None) -> dict[str, str]:
+    """The key of one deleted item's tombstone in voc-aggregates.
+
+    A workspace's item keeps the same partition (``AUDIT#tombstone#{source}``, so the audit-row guard, which pins
+    ``AUDIT#*``, protects it like every other tombstone; a ``WS#{ws}#AUDIT#…`` partition would be outside it) and
+    names its workspace in the sort key, ``{ws}#{feedback_id}``: two workspaces' copies of one source item, and the
+    deployment's, share a ``feedback_id`` but never a tombstone.
+    """
+    return {'pk': f'{TOMBSTONE_PK_PREFIX}{source}', 'sk': feedback_id if scope is None else f'{scope.ws}#{feedback_id}'}
 
 
 def legal_basis_for(run: Mapping[str, Any], source: str) -> str:
@@ -53,18 +63,22 @@ def legal_basis_for(run: Mapping[str, Any], source: str) -> str:
     return legal_basis_or_legacy(bases.get(source) if isinstance(bases, Mapping) else None)
 
 
-def tombstone_record(run: Mapping[str, Any], source: str, item_id: str, store: str, now: str) -> dict[str, Any]:
-    """The fields every tombstone carries: its key, the run, the legal basis, the time; never content."""
+def tombstone_record(run: Mapping[str, Any], source: str, item_id: str, store: str, now: str,
+                     scope: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The fields every tombstone carries: its key, the run, the legal basis, the time, a workspace item's
+    ``workspace_id``; never content."""
     return {
-        **tombstone_key(source, item_id), 'source': source, 'store': store,
+        **tombstone_key(source, item_id, scope), 'source': source, 'store': store,
         'mode': run['mode'], 'run_id': run['run_id'], 'legal_basis': legal_basis_for(run, source),
         'deleted_at': now, **({'job_id': run['job_id']} if run.get('job_id') else {}),
+        **({'workspace_id': scope.ws} if scope is not None else {}),
     }
 
 
 def _tombstone(run: Mapping[str, Any], item: Mapping[str, Any], store: str, now: str) -> dict[str, Any]:
     feedback_id = _feedback_id(item)
-    return {**tombstone_record(run, item_source(item), feedback_id, store, now), 'feedback_id': feedback_id}
+    scope = retention.item_scope(item)
+    return {**tombstone_record(run, item_source(item), feedback_id, store, now, scope), 'feedback_id': feedback_id}
 
 
 def write_tombstones(aggregates_table: Any, run: Mapping[str, Any], items: Sequence[Mapping[str, Any]],
@@ -92,19 +106,36 @@ class ItemDeleter:
         self._tables = tables
         # Whole-file uploads already deleted in this invocation (a repeat would only list nothing).
         self._uploads_done: set[str] = set()
+        # S3 import originals folders already looked at in this invocation (listed once each).
+        self._originals_seen: set[str] = set()
 
     def delete(self, item: Mapping[str, Any], store: str) -> None:
         """The item's whole-file upload (see the module docstring), then the item with its own archive."""
         run = self._run
         self._whole_upload(item)
+        self._import_originals(item)
         if store == STORE_RADAR:
             _, objects = retention.delete_radar_item(self._tables[STORE_RADAR], self._s3, self._bucket, item)
             run['deleted_radar_items'] += 1
         else:
             _, objects = retention.delete_item(self._tables[STORE_FEEDBACK], self._s3, self._bucket, item)
             run['deleted_items'] += 1
+            if retention.item_scope(item) is not None:
+                run[WORKSPACE_ITEM_COUNTER] = int(run.get(WORKSPACE_ITEM_COUNTER) or 0) + 1
         run['deleted_objects'] += objects
+        # A workspace item's source too: the lineage pass looks up `{feedback_id}` tombstone keys, which a
+        # workspace tombstone (`{ws}#{feedback_id}`) never is.
         note_erased_source(run, item_source(item))
+
+    def _import_originals(self, item: Mapping[str, Any]) -> None:
+        """List the S3 import originals folder of the item's scope for review (no row says which file it came
+        from, shared/retention.py), when the folder holds any file."""
+        prefix = retention.import_originals_prefix(item)
+        if prefix is None or prefix in self._originals_seen or not self._bucket:
+            return
+        self._originals_seen.add(prefix)
+        if retention.holds_files(self._s3, self._bucket, prefix):
+            note_review_file(self._run, prefix)
 
     def _whole_upload(self, item: Mapping[str, Any]) -> None:
         key = retention.whole_upload_key(item, self._bucket)

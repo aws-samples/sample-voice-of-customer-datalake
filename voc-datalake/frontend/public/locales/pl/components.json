@@ -741,6 +741,9 @@
     "copies": "Usunięte opinie Radar: {{radar, number}}, oznaczone persony lub dokumenty: {{artifacts, number}}",
     "boards": "Zanonimizowane prośby z tablic i +1: {{rows, number}}",
     "members": "Zanonimizowane członkostwa w przestrzeniach roboczych: {{rows, number}}",
+    "workspaceItems": "Usunięte opinie w przestrzeniach roboczych: {{items, number}}",
+    "emailReachesWorkspaces": "Usunięcie według adresu e-mail usuwa też opinie tej osoby w każdej przestrzeni roboczej. Pozostałe pola obejmują tylko własne opinie tego wdrożenia.",
+    "reviewFolders": "Zachowane foldery oryginałów importu S3, które mogą zawierać usunięte wiersze: {{folders, number}}. Sprawdź je:",
     "reviewFiles": "Przesłane pliki zachowane, bo zawierają też wiersze, których nie usunięto: {{files, number}}. Sprawdź je:",
     "status": {
       "queued": "W kolejce",

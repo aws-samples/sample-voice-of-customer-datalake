@@ -31,8 +31,11 @@ from shared.retention import (
 
 BUCKET = 'bkt'
 KEY = 'raw/web/2026/01/01/r1.json'
-# Feedback rows of the deployment: a workspace's item (`WS#…`) is not reached yet (shared/retention.py `_store_items`).
+# Feedback rows of the deployment only: a whole-source erasure and an erasure by author, source id or CSV row leave
+# a workspace's item (`WS#…`, shared/retention.py `_store_items`).
 FEEDBACK = Attr('sk').begins_with('FEEDBACK#') & ~Attr('pk').begins_with('WS#')
+# Every feedback row, a workspace's included: an erasure by email and a retention window.
+EVERY_FEEDBACK = Attr('sk').begins_with('FEEDBACK#')
 ITEM: Final = {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#r1', 'source_id': 'r1', 's3_raw_uri': f's3://{BUCKET}/{KEY}'}
 
 
@@ -68,7 +71,7 @@ class TestRetentionCutoffs:
 
 class TestFiltersAreExact:
     def test_one_retained_source(self) -> None:
-        expected = FEEDBACK & (Attr('source_platform').eq('a') & Attr('date').lt('2026-01-01'))
+        expected = EVERY_FEEDBACK & (Attr('source_platform').eq('a') & Attr('date').lt('2026-01-01'))
         assert retention_filter({'a': '2026-01-01'}) == expected
 
     def test_several_sources_are_ored_in_order(self) -> None:
@@ -76,15 +79,21 @@ class TestFiltersAreExact:
         b = Attr('source_platform').eq('b') & Attr('date').lt('2026-02-01')
         c = Attr('source_platform').eq('c') & Attr('date').lt('2026-03-01')
         cutoffs = {'a': '2026-01-01', 'b': '2026-02-01', 'c': '2026-03-01'}
-        assert retention_filter(cutoffs) == FEEDBACK & ((a | b) | c)
+        assert retention_filter(cutoffs) == EVERY_FEEDBACK & ((a | b) | c)
 
     def test_no_source_is_refused(self) -> None:
         with pytest.raises(ValueError, match=r'^retention_filter needs at least one source$'):
             retention_filter({})
 
-    @pytest.mark.parametrize('field', ['author', 'source_id', 'csv_row_id'])
-    def test_a_plain_field_matches_by_equality(self, field: str) -> None:
-        assert erase_filter(field, 'Jane', None) == FEEDBACK & Attr(field).eq('Jane')
+    def test_an_author_matches_by_equality_in_the_deployment_only(self) -> None:
+        # A display name is not one person everywhere: a workspace's Jane is another person.
+        assert erase_filter('author', 'Jane', None) == FEEDBACK & Attr('author').eq('Jane')
+
+    @pytest.mark.parametrize('field', ['source_id', 'csv_row_id'])
+    def test_an_id_matches_by_equality_in_the_deployment_only(self, field: str) -> None:
+        # An id is unique only within one source account or upload: a workspace's 12345 is another item.
+        assert erase_filter(field, '12345', 'tickets') == (
+            (FEEDBACK & Attr(field).eq('12345')) & Attr('source_platform').eq('tickets'))
 
     def test_a_source_scopes_the_erasure(self) -> None:
         expected = (FEEDBACK & Attr('author').eq('Jane')) & Attr('source_platform').eq('tickets')
@@ -93,13 +102,16 @@ class TestFiltersAreExact:
     def test_an_empty_source_does_not_scope(self) -> None:
         assert erase_filter('author', 'Jane', '') == FEEDBACK & Attr('author').eq('Jane')
 
+    def test_a_whole_source_erasure_stays_the_deployments(self) -> None:
+        assert erase_filter('source', 'web', 'web') == FEEDBACK & Attr('source_platform').eq('web')
+
     @pytest.mark.parametrize(('value', 'spellings'), [
         (' Jane@Example.COM ', ['jane@example.com', ' Jane@Example.COM ']),
         ('jane@example.com', ['jane@example.com']),
     ])
     def test_an_email_matches_both_paths_and_both_spellings(self, value: str, spellings: list[str]) -> None:
         match = Attr('metadata.email').is_in(spellings) | Attr('metadata.submitter_email').is_in(spellings)
-        assert erase_filter('email', value, None) == FEEDBACK & match
+        assert erase_filter('email', value, None) == EVERY_FEEDBACK & match
 
     def test_an_unknown_field_is_refused_by_name(self) -> None:
         with pytest.raises(ValueError, match=r'^Unknown erasure field "text"$'):

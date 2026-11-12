@@ -100,7 +100,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/design_capture/capture_handler.py': (3, {'Table': 1}),
     'lambda/email_intake/handler.py': (2, {'Table': 2, 'delete_object': 1}),
     'lambda/email_intake/intake.py': (2, {'copy_object': 1}),
-    'lambda/jobs/category_reprocess/handler.py': (3, {'CATEGORY#': 2, 'Table': 2, 'URGENCY#': 1, 'raw/': 1}),
+    # The raw reader takes its root from the review's own scope (shared/raw_versions.py raw_root), no `raw/` literal.
+    'lambda/jobs/category_reprocess/handler.py': (3, {'CATEGORY#': 2, 'Table': 2, 'URGENCY#': 1}),
     'lambda/jobs/document_generator/handler.py': (3, {'Table': 6, 'delete_objects': 1, 'put_object': 2}),
     'lambda/jobs/document_merger/handler.py': (3, {'Table': 2}),
     'lambda/jobs/persona_importer/handler.py': (3, {'Table': 1}),

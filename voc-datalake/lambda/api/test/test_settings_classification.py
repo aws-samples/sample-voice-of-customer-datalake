@@ -181,6 +181,12 @@ class TestErasure:
         assert 'board_items_deidentified' not in bare
         assert 'member_rows_deidentified' not in bare
 
+    def test_the_job_view_says_how_many_deleted_items_were_a_workspaces(self):
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'deleted_items': 3, 'deleted_workspace_items': 2})
+        assert (view['deleted_items'], view['deleted_workspace_items']) == (3, 2)
+        assert 'deleted_workspace_items' not in settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
+
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize('field', ['source_id', 'csv_row_id'])
     def test_an_id_erasure_names_its_source(self, route, field):

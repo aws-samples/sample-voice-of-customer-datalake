@@ -16,7 +16,10 @@ what and how), and only for a legal obligation (TENETS.md D5). Two modes:
 
 A run walks its PHASES in order, each paged and time-budgeted:
 
-1. ``items`` — voc-feedback;
+1. ``items`` — voc-feedback. An erasure by email and a retention window reach every workspace's items too
+   (``WS#{ws}#SOURCE#…``, with their objects under ``ws/{ws}/``; counted in ``deleted_workspace_items`` as
+   well); an erasure by author (a display name), source id or CSV row (ids unique only within one account or
+   upload) and a whole-source erasure leave them (``shared/retention.reaches_workspaces``);
 2. ``radar`` — voc-radar (other brands' reviews), when ``RADAR_TABLE`` is set;
    then ``boards`` — an erasure by email only, when ``FEATURE_REQUESTS_TABLE`` is set:
    the person's board requests and +1s are de-identified and their raw copies deleted
@@ -58,9 +61,9 @@ from jobs.retention.runs import (
     MODE_RETENTION,
     carried_state,
     claim_erasure_job,
-    deidentified_counts,
     finish_erasure_job,
     new_run,
+    optional_counts,
     record_progress,
     write_audit,
 )
@@ -72,7 +75,14 @@ from shared.invocation_cost import instrumented_handler
 from shared.jobs import has_time_left
 from shared.legal_basis import legal_basis_or_legacy
 from shared.logging import logger, metrics
-from shared.retention import BOARD_COUNTER, SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR
+from shared.retention import (
+    BOARD_COUNTER,
+    SOURCE_FIELD,
+    STORE_FEEDBACK,
+    STORE_RADAR,
+    UNSCOPED_ROW_COUNTER,
+    WORKSPACE_ITEM_COUNTER,
+)
 from shared.source_erasure import refresh_source_lock, release_source_lock
 from shared.source_profiles import SOURCE_ID_RE, load_source_profiles
 from shared.warm_init import warm_at_init
@@ -273,12 +283,44 @@ def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[di
     return _walk(walk, phase, cursor, scan, handle)
 
 
+def _without_unscoped_rows(run: dict[str, Any], page: dict) -> dict:
+    """A retention run's page without the rows whose partition starts ``WS#`` but names no workspace.
+
+    Such a row is never deleted as the deployment's (``shared/retention.item_scope``). An erasure fails closed on
+    it (the job stops and says so); the daily retention run skips and counts it instead (``UNSCOPED_ROW_COUNTER``,
+    metric ``RetentionUnscopedRowsSkipped``, logged by count only), so one bad row never stalls every window.
+    """
+    items = page.get('Items', [])
+    kept = [item for item in items if not _unscoped(item)]
+    skipped = len(items) - len(kept)
+    if not skipped:
+        return page
+    run[UNSCOPED_ROW_COUNTER] = int(run.get(UNSCOPED_ROW_COUNTER) or 0) + skipped
+    metrics.add_metric(name='RetentionUnscopedRowsSkipped', unit='Count', value=skipped)
+    logger.warning('Retention skipped rows whose WS# partition names no workspace', extra={'rows': skipped})
+    return {**page, 'Items': kept}
+
+
+def _unscoped(item: dict) -> bool:
+    try:
+        retention.item_scope(item)
+    except ValueError:
+        return True
+    return False
+
+
 def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
     """Tombstone, then delete, every match of the phase's store from ``cursor`` on; a hand-over or None."""
     store = _PHASE_STORES[phase]
     table, condition, run = walk.tables[store], walk.filters(store), walk.run
     deleter = ItemDeleter(run, walk.s3, RAW_DATA_BUCKET, walk.tables)
-    return _erase_pages(walk, phase, cursor, lambda at: _scan_page(table, condition, at),
+    retention_run = run['mode'] == MODE_RETENTION
+
+    def scan(at: dict | None) -> dict:
+        page = _scan_page(table, condition, at)
+        return _without_unscoped_rows(run, page) if retention_run else page
+
+    return _erase_pages(walk, phase, cursor, scan,
                         lambda items: write_tombstones(walk.aggregates, run, items, store),
                         lambda item: deleter.delete(item, store))
 
@@ -350,7 +392,10 @@ def _phases(walk: Walk) -> list[str]:
 
 
 def _deleted_anything(run: dict[str, Any]) -> bool:
-    return run['deleted_items'] + run['deleted_radar_items'] + int(run.get(BOARD_COUNTER) or 0) > 0
+    """Whether the run deleted or de-identified anything the deployment's artifacts may cite (a workspace's item
+    is cited by none of them: projects are not keyed by workspace until phase 3)."""
+    deployment_items = run['deleted_items'] - int(run.get(WORKSPACE_ITEM_COUNTER) or 0)
+    return deployment_items + run['deleted_radar_items'] + int(run.get(BOARD_COUNTER) or 0) > 0
 
 
 def _walk_phases(walk: Walk) -> dict | None:
@@ -398,7 +443,7 @@ def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str 
                        value=run['deleted_items'] + run['deleted_radar_items'])
     return {'status': status, 'run_id': run['run_id'], 'deleted_items': run['deleted_items'],
             'deleted_radar_items': run['deleted_radar_items'], 'deleted_objects': run['deleted_objects'],
-            'artifacts_marked': run['artifacts_marked'], **deidentified_counts(run)}
+            'artifacts_marked': run['artifacts_marked'], **optional_counts(run)}
 
 
 def handle_event(event: dict[str, Any], context: Any) -> dict:

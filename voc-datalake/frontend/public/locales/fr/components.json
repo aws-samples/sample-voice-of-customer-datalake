@@ -718,6 +718,9 @@
     "copies": "{{radar, number}} avis Radar supprimés, {{artifacts, number}} personas ou documents marqués",
     "boards": "Demandes de tableau et +1 anonymisés : {{rows, number}}",
     "members": "Appartenances à des espaces de travail anonymisées : {{rows, number}}",
+    "workspaceItems": "Avis supprimés dans des espaces de travail : {{items, number}}",
+    "emailReachesWorkspaces": "Un effacement par e-mail supprime aussi les avis de cette personne dans chaque espace de travail. Les autres champs n'atteignent que les avis propres à ce déploiement.",
+    "reviewFolders": "Dossiers d'originaux d'import S3 conservés pouvant contenir des lignes effacées : {{folders, number}}. Vérifiez-les :",
     "reviewFiles": "Fichiers importés conservés parce qu'ils contiennent aussi des lignes non effacées : {{files, number}}. Vérifiez-les :",
     "status": {
       "queued": "En file d'attente",

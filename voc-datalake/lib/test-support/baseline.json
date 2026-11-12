@@ -343,7 +343,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "2e8b9408a7804a8655b18207ddccf303d5ea974c2ea15df93461f96458224e60",
+      "templateSha256": "e5cfbcb2d81bf67f2f42af4750fef13fe48ad311b3f4985c72d9a688c6414e3a",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",

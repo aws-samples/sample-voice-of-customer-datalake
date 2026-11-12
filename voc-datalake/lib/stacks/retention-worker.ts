@@ -16,8 +16,10 @@
  * cited a deleted item are marked. Least privilege, pinned exactly by
  * processing-stack-retention.test.ts:
  *   - feedback: GetItem / Query / Scan / DeleteItem — no Put, no Update;
- *   - raw bucket: DeleteObject + DeleteObjectVersion on `raw/*` and
- *     ListBucketVersions restricted to the `raw/` prefix — no read, no put. The
+ *   - raw bucket: DeleteObject + DeleteObjectVersion on `raw/*`, `silver/*` and each workspace's
+ *     `ws/{ws}/raw/*` and `ws/{ws}/silver/*` (an erasure by email or a retention window reaches a workspace's copies; the workspace
+ *     segment is one id, `WORKSPACE_ID_PATTERN`), and ListBucketVersions restricted to those prefixes — no read, no
+ *     put. The
  *     whole-file uploads (`raw/csv_upload/`, `raw/json_upload/`) are under it: a
  *     whole-source erasure deletes the source's own uploaded files (every row of one
  *     is filed under the one source its upload named, shared/retention.py);
@@ -50,6 +52,9 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
 import { grantCacheVersionBump, RADAR_VERSION_PARTITION } from '../utils/cache-version-grants';
+import {
+  RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
+} from './core-buckets';
 import { RETENTION_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
@@ -66,11 +71,15 @@ const MEMBER_PERSON_ATTRIBUTES = ['email', 'name', 'pk', 'sk'];
 /** Path-style handler: the bundle keeps `jobs/retention/` with `shared/` beside `jobs/`. */
 const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
 
-/** The raw-archive prefix the worker may delete under (and list versions of). */
-const RAW_PREFIX = 'raw/';
-/** The kept Silver versions of an item (lambda/shared/silver_provenance.py): deleted with the item. */
-const SILVER_PREFIX = 'silver/';
-
+/**
+ * The prefixes the worker may delete under (and list versions of): the deployment's raw archive and kept Silver
+ * versions (lambda/shared/silver_provenance.py), and each workspace's (`ws/{ws}/raw/`, `ws/{ws}/silver/`, one
+ * workspace id per pattern: `WORKSPACE_ID_PATTERN`), which an erasure by email and a retention window reach too
+ * (TENETS.md D5, legal obligations; lambda/shared/retention.py `reaches_workspaces`). A whole-source erasure, a
+ * request about the deployment's own source, never deletes there (in code).
+ */
+const DELETE_PREFIXES = [RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_RAW_LAYER_PREFIX,
+  WORKSPACE_SILVER_HISTORY_PREFIX] as const;
 export interface RetentionWorkerProps {
   uniqueName: (baseName: string) => string;
   layer: lambda.ILayerVersion;
@@ -137,13 +146,22 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',
     actions: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
-    resources: [rawDataBucket.arnForObjects(`${RAW_PREFIX}*`), rawDataBucket.arnForObjects(`${SILVER_PREFIX}*`)],
+    resources: DELETE_PREFIXES.map((prefix) => rawDataBucket.arnForObjects(`${prefix}*`)),
+  }));
+  // A workspace's S3 import originals (one file holds many people's rows; no row links an item to its file): no
+  // code deletes them, a run lists their folder for review (lambda/shared/retention.py), so IAM refuses it too.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'DenyWorkspaceImportOriginalDeletes',
+    effect: iam.Effect.DENY,
+    actions: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
+    // A workspace's S3 import originals (plugins/_shared/raw_original.py `S3_IMPORT_SOURCE`).
+    resources: [rawDataBucket.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}s3_import/*`)],
   }));
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'ListRawArchiveVersions',
     actions: ['s3:ListBucketVersions'],
     resources: [rawDataBucket.bucketArn],
-    conditions: { StringLike: { 's3:prefix': [`${RAW_PREFIX}*`, `${SILVER_PREFIX}*`] } },
+    conditions: { StringLike: { 's3:prefix': DELETE_PREFIXES.map((prefix) => `${prefix}*`) } },
   }));
   // Self hand-over before the 15-minute ceiling, by name (a GetAtt on the
   // function from its own role's policy would be a CloudFormation cycle).

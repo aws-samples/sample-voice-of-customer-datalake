@@ -6,7 +6,8 @@ only ever reads and writes its own rows and objects. This module is the one plac
 * ``WorkspaceScope``: a verified workspace. Made only from what the server trusts: the request's resolved
   membership (``scope_of``, after shared/workspace.py ``resolve_workspace``), an asynchronous message's
   ``workspace_id`` field (``scope_from_message``: SQS bodies, Lambda async payloads, written by our own code from
-  a scope), or a stored partition key (``scope_from_key``: DynamoDB Stream records). Never from a request field.
+  a scope), or a stored partition key (``scope_from_key``: DynamoDB Stream records; ``partition_scope`` for a
+  worker that reads both kinds of row, None for a deployment-wide one). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
   ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (the credentials secret's name is
@@ -36,13 +37,10 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final
+from typing import Any, Final, Protocol
 
 from shared.dynamo_paging import iter_query
 from shared.workspace_ids import is_workspace_id, ws_key
-
-if TYPE_CHECKING:  # the request middleware (shared/workspace.py): the asynchronous workers never import it
-    from shared.workspace import WorkspaceContext
 
 __all__ = [
     'PARTITION_ATTRIBUTES',
@@ -61,6 +59,7 @@ __all__ = [
     'metric_pk',
     'metric_type',
     'partition_query',
+    'partition_scope',
     's3_key',
     'scope_from_key',
     'scope_from_message',
@@ -119,7 +118,16 @@ class WorkspaceScope:
         return isinstance(value, str) and value.startswith(self.prefix) and len(value) > len(self.prefix)
 
 
-def scope_of(context: WorkspaceContext) -> WorkspaceScope:
+class ResolvedWorkspace(Protocol):
+    """What ``scope_of`` reads of a resolved request: shared/workspace.py ``WorkspaceContext``. A Protocol, not an
+    import: shared/workspace.py imports the API helpers, which reach this layer through the feedback readers, so
+    importing it here (even for typing only) would close an import cycle."""
+
+    @property
+    def ws(self) -> str: ...
+
+
+def scope_of(context: ResolvedWorkspace) -> WorkspaceScope:
     """The scope of a request whose membership shared/workspace.py ``resolve_workspace`` resolved."""
     return WorkspaceScope(context.ws)
 
@@ -165,6 +173,13 @@ def scope_from_key(partition_key: object) -> WorkspaceScope:
     if not separator or not rest:
         raise ValueError('not a workspace key')
     return WorkspaceScope(ws)
+
+
+def partition_scope(partition_key: object) -> WorkspaceScope | None:
+    """The workspace a stored row belongs to, by its partition key: None for a deployment-wide key, the scope for a
+    workspace's (``WS#{ws}#…``). ValueError for a key that starts ``WS#`` but names no workspace: a worker that
+    reaches every copy of a row (voc-retention's erasure) never treats such a row as deployment-wide."""
+    return scope_from_key(partition_key) if is_workspace_key(partition_key) else None
 
 
 def feedback_key(scope: WorkspaceScope, source: str, feedback_id: str) -> dict[str, str]:

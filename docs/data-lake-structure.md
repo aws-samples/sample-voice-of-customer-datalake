@@ -93,8 +93,8 @@ The raw envelope written by ingestors and webhooks (`plugins/_shared/raw_archive
 The bucket is versioned and KMS-encrypted. Ingestor roles may only put objects under `raw/` and each
 workspace's `ws/<ws>/raw/` (a run in a workspace archives there, [multi-workspace.md](multi-workspace.md)):
 they cannot read or delete. Only `voc-retention` deletes raw objects, for an opt-in per-source retention
-period or an erasure request; it does not reach `ws/<ws>/raw/` yet (the multi-workspace slice that moves it does,
-before workspaces ingest; nothing in the app starts a workspace's run yet, so nothing is written there). The bucket policy denies every PutObject under `raw/`, `silver/`, `ws/<ws>/raw/` and
+period or an erasure request; in `ws/<ws>/raw/` and `ws/<ws>/silver/` for an erasure by email or a retention
+window, never for a whole-source erasure (Unreleased, [Source policies → Workspace items](source-policies.md#retention-and-erasure)). The bucket policy denies every PutObject under `raw/`, `silver/`, `ws/<ws>/raw/` and
 `ws/<ws>/silver/` that does not send `If-None-Match` (the IAM patterns pin `<ws>` to one id, `ws_` and 26 `?`,
 as do the ingestor roles' puts: IAM's `*` also matches `/`) (statement `DenyRawWritesWithoutIfNoneMatch`, `lib/stacks/core-buckets.ts`),
 so no writer, ours or a custom out-of-band one, can overwrite a raw object; a CopyObject into `raw/`

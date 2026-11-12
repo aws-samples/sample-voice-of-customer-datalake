@@ -43,6 +43,13 @@ Invariants:
     replayed from its stored text and counted in ``raw_fallback`` (with its
     source in ``raw_fallback_sources``). A summary-only review never gets
     ``normalized_text`` / ``direct_customer_quote`` back (the processor's rule).
+    The raw reader follows a link only under the bronze root of the review's own
+    scope (``raw/``, or ``ws/{ws}/raw/`` for a workspace's review: ``_raw_key``).
+  * Deployment-wide: a job reads and rewrites the deployment's reviews only (a
+    workspace's ``WS#`` items are skipped, ``shared/reprocess_slices.py``) and
+    writes the unprefixed ``CATEGORY#`` / ``URGENCY#`` partitions. A workspace's
+    reprocess comes with the workspace's own settings (phase 3, another track);
+    its bronze is already readable by the raw reader above.
   * Every mode also (re)computes the heuristic ``usefulness`` band
     (``shared.usefulness``, no model call) from the stored text, so a reprocess
     backfills reviews stored before the band existed. A review whose category
@@ -90,12 +97,14 @@ from shared.jobs import has_time_left
 # CategoryReprocess bundling in processing-stack-consolidated.ts), and tests
 # import it as `jobs.category_reprocess.handler` from the lambda/ root.
 from shared.logging import logger, metrics
+from shared.raw_versions import raw_root
 from shared.reprocess_lineage import AnswerRecorder, change_stamps, job_actor, job_config
 from shared.reprocess_slices import ReprocessSlice, read_page, slice_from_job
 from shared.reprocess_slices import admits as slice_admits
 from shared.source_profiles import PII_SUMMARY_ONLY
 from shared.timestamps import now_iso, parse_iso
 from shared.usefulness import USEFULNESS_FIELD, USEFULNESS_UNRATED, item_usefulness, stored_band
+from shared.ws_repo import partition_scope
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -236,15 +245,28 @@ def _prompt_record(item: dict) -> dict:
     }
 
 
-def _raw_record_from_s3(item: dict) -> dict | None:
-    """The per-item raw payload the ingestors archive (``raw_item``), when linked."""
+def _raw_key(item: dict) -> str | None:
+    """The key of ``item``'s archived raw object in the raw bucket, under the bronze root of the item's own scope
+    (``raw/`` for a deployment item, ``ws/{ws}/raw/`` for a workspace's: TENETS.md D3, a workspace's bronze can be
+    replayed too); None for any other link."""
     uri = item.get('s3_raw_uri')
     if not RAW_DATA_BUCKET or not isinstance(uri, str) or not uri.startswith('s3://'):
         return None
+    try:
+        root = raw_root(partition_scope(item.get('pk')))
+    except ValueError:
+        return None  # a WS# key that names no workspace: its bronze is no scope's to read
     # No '/' leaves an empty key, which the prefix check below already rejects.
     bucket, _, key = uri.removeprefix('s3://').partition('/')
-    if bucket != RAW_DATA_BUCKET or not key.startswith('raw/'):
+    return key if bucket == RAW_DATA_BUCKET and key.startswith(root) else None
+
+
+def _raw_record_from_s3(item: dict) -> dict | None:
+    """The per-item raw payload the ingestors archive (``raw_item``), when linked."""
+    key = _raw_key(item)
+    if key is None:
         return None
+    bucket = RAW_DATA_BUCKET
     try:
         body = get_s3_client().get_object(Bucket=bucket, Key=key)['Body'].read()
         payload = json.loads(body)

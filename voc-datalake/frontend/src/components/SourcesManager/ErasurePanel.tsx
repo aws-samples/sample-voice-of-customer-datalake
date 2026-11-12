@@ -19,7 +19,9 @@ import { isLegalBasis } from '../../utils/legalBasis'
 import LegalBasisField from '../LegalBasisField/LegalBasisField'
 import type { ErasureField, ErasureJob, ErasureJobField, SourceProfile } from '../../api/sourceProfilesApi'
 import { sourceLabel } from '../../utils/displayLabels'
-import { ErasureJobDetails, ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
+import {
+  ErasureJobDetails, ErasureSection, ErasureStartError, ErasureStatusBadge, ErasureWorkspaceItems,
+} from './erasureParts'
 import { errorReason, useErasureJobs, useStartErasure } from './useErasureJobs'
 
 const FIELD_COPY: Record<ErasureJobField, { labelKey: string }> = {
@@ -47,6 +49,7 @@ function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
       {job.source !== undefined && <span className="font-mono text-muted">{job.source}</span>}
       <span className="font-mono text-muted" title={job.value_hash}>{job.value_hash.slice(0, 12)}</span>
       <span className="text-text">{t('counts', { items: job.deleted_items, objects: job.deleted_objects })}</span>
+      <ErasureWorkspaceItems job={job} />
       <span className="text-muted">{job.started_by} · {job.created_at}</span>
       {job.error !== undefined && <span className="text-danger">{job.error}</span>}
       <ErasureJobDetails job={job} />
@@ -54,10 +57,39 @@ function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
   )
 }
 
-export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly SourceProfile[] }>) {
+/** Only an email is one person everywhere: an erasure by email also reaches every workspace (the server's rule,
+ *  lambda/shared/retention.py `reaches_workspaces`); the other fields reach the deployment's own reviews only. */
+const reachesWorkspaces = (field: ErasureField) => field === 'email'
+
+/** The "Match on" picker, with the note that an erasure by email reaches every workspace. */
+function MatchOnField({ field, onChange }: Readonly<{ field: ErasureField; onChange: (field: ErasureField) => void }>) {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })
   const { t: tAll } = useTranslation()
   const fieldId = useId()
+  const reachId = useId()
+  const reaches = reachesWorkspaces(field)
+  return (
+    <div>
+      <label htmlFor={fieldId} className="block text-xs font-medium text-text mb-1">{t('fieldLabel')}</label>
+      <select id={fieldId} value={field} onChange={(e) => { if (isErasureField(e.target.value)) onChange(e.target.value) }} className="select"
+        aria-describedby={reaches ? reachId : undefined}>
+        {ERASURE_FIELDS.map((f) => <option key={f} value={f}>{tAll(FIELD_COPY[f].labelKey)}</option>)}
+      </select>
+      {reaches && <p id={reachId} className="text-xs text-muted mt-1">{t('emailReachesWorkspaces')}</p>}
+    </div>
+  )
+}
+
+/** The confirm dialog's text: what is erased where, and for an email that every workspace is reached too. */
+function useConfirmMessage(field: ErasureField, source: string): string {
+  const { t } = useTranslation('components', { keyPrefix: 'erasure' })
+  const { t: tAll } = useTranslation()
+  const message = t('confirmMessage', { field: tAll(FIELD_COPY[field].labelKey), source: source === '' ? t('allSources') : source })
+  return reachesWorkspaces(field) ? `${message} ${t('emailReachesWorkspaces')}` : message
+}
+
+export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly SourceProfile[] }>) {
+  const { t } = useTranslation('components', { keyPrefix: 'erasure' })
   const valueId = useId()
   const sourceId = useId()
   const [field, setField] = useState<ErasureField>('author')
@@ -68,6 +100,7 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
   const { data: jobs = [] } = useErasureJobs()
   const needsSource = SOURCE_SCOPED_FIELDS.has(field) && source === ''
   const hintId = useId()
+  const confirmMessage = useConfirmMessage(field, source)
   const start = useStartErasure(() => sourceProfilesApi.startErasure({
     field, value: value.trim(), source, legal_basis: legalBasis.trim(),
   }), {
@@ -82,12 +115,7 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
   return (
     <ErasureSection icon={Eraser} title={t('title')} description={t('description')}>
       <div className="grid gap-3 sm:grid-cols-3">
-        <div>
-          <label htmlFor={fieldId} className="block text-xs font-medium text-text mb-1">{t('fieldLabel')}</label>
-          <select id={fieldId} value={field} onChange={(e) => { if (isErasureField(e.target.value)) setField(e.target.value) }} className="select">
-            {ERASURE_FIELDS.map((f) => <option key={f} value={f}>{tAll(FIELD_COPY[f].labelKey)}</option>)}
-          </select>
-        </div>
+        <MatchOnField field={field} onChange={setField} />
         <div>
           <label htmlFor={valueId} className="block text-xs font-medium text-text mb-1">{t('valueLabel')}</label>
           <input id={valueId} type="text" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} className="input" />
@@ -117,7 +145,7 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
       <ConfirmModal
         isOpen={confirming}
         title={t('confirmTitle')}
-        message={t('confirmMessage', { field: tAll(FIELD_COPY[field].labelKey), source: source === '' ? t('allSources') : source })}
+        message={confirmMessage}
         confirmLabel={t('start')}
         variant="danger"
         isLoading={start.isPending}
