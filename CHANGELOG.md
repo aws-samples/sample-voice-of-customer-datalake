@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.05.00] - 2026-11-12
+
+Autonomous engineering agents, phase 1 begins: the repository connector's broker, the one place a host write could go, with its caller identity, operations per role and write rules. Nothing is deployed by default.
+
+### Added
+
+- Autonomous engineering agents, phase 1, first slice: the connector broker (`voc-datalake/lambda/engineering/connectors/`, docs/autonomous-engineering.md "Repository connectors"). It takes the caller's agent role, run and agent from the function URL's assumed-role identity (never the request; an assumed role of the broker's own account only), allows each role only its operations (every agent reads; the issue understander and PR reviewer comment, on the run's own issue or pull request only; the committer pushes a bundle; the PR author opens or updates the draft pull request), and applies the write rules before any host call: only the run's own `voc-agent/{run_id}/` branches under names git accepts, never the default branch or the CI definitions, a bundle of exactly one head ref whose every commit is authored and committed by the connection's bot address, no review sentence anywhere (reviews split at full stops and line breaks; compatibility forms and invisible format characters aside) and no personal data in prose (only the bot's address in a `Co-authored-by: Name <address>` or `Signed-off-by: Name <address>` trailer aside; any other such trailer is refused), a GO for the tree before a push to a branch with an open pull request and before a pull request, and the CI attestation. The host client is handed the checked tree's hash for every push and pull request, to enforce (push with a lease, verify the head's tree before opening). No GitHub or GitLab client exists yet, so every permitted, well-formed operation answers 503 (an unknown caller or a role without the operation 403, a bad body 400). Deployed only with `-c engineeringAgents=true` (VocProcessingStack, `voc-engineering-broker`: arm64, 256 MB, a function URL with IAM authentication and no resource-based permission, a role that writes only its own logs); the default synth adds no resource.
+
+### Upgrade notes
+
+- Nothing changes for a deployment without `-c engineeringAgents=true`, except that the other Python bundles leave `lambda/engineering/` out (`lib/utils/lambda-asset-excludes.ts`), so their asset hashes change once and the next deploy updates their code without a behaviour change.
+
 ## [6.04.09] - 2026-11-12
 
 The design of autonomous engineering agents: agents that learn how a connected GitHub or GitLab repository works and then hunt bugs, build features and review pull requests through a configurable quality gate, stopping at a pull request a person merges.

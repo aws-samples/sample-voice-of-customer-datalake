@@ -58,7 +58,9 @@ budgets, the run journal) and on [memory](memory.md).
 
 ## Repository connectors
 
-*Planned* (voc-datalake/lambda/engineering/connectors).
+*Partly built*: the broker's caller identity, operations per role and write rules
+(`voc-datalake/lambda/engineering/connectors/`), deployed only with `-c engineeringAgents=true`; the GitHub and GitLab
+clients, credentials and read paths are planned.
 
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
@@ -77,20 +79,27 @@ branch, being refused:
 | Role | Operations |
 |---|---|
 | every agent | read files, history, issues and pull requests through the broker; checkouts come from the cache it fills |
-| issue understander, PR reviewer | post a comment |
+| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
 | committer | push a git bundle to the agent's branch |
 | PR author | open or update the agent's draft pull request |
 
 Every operation goes through the connector's rules, which refuse, before the host would: a push to any branch but
 the run's own (`voc-agent/{run_id}/…`, the run from the caller's session name), the default branch above all; a push
-to a branch with an open pull request unless the board holds a GO for the new tree; a merge, an approval; any call to
+to a branch with an open pull request unless the board holds a GO for the new tree; a bundle with other than exactly
+one head ref; a merge, an approval; any call to
 settings, branch protection, members, webhooks or secrets; a change to the CI definition paths it knows (the GitHub
 workflows and actions folders, the GitLab CI files: best effort, since a pipeline can include other files; the CI
 attestation below is the real boundary, and the GitHub App holds no `workflows` permission); a write that carries
 customer text (below): a verbatim sentence of a cited review anywhere the agents wrote (comments, the pull request's
-body, commit messages, the lines a diff adds), and personal data in their prose (comments, the body, commit messages
-without their trailer lines), never in the authorship of commits or in what was already in the repository. A unit
-test pins each refusal. The setup guide asks
+body, commit messages, the lines a diff adds; split at full stops and line breaks, compared after Unicode
+compatibility normalisation, invisible format characters dropped), and personal data in their prose (comments, the
+body, commit messages), never in what was already in the repository. The agents write a commit's author and
+committer themselves, so both must be the connection's bot address, or the push is refused; a commit's
+`Co-authored-by:` and `Signed-off-by:` trailers take only the form `Name <address>` with the bot's address, their
+name part read as prose, and any other such trailer is refused. A branch name must also be one git accepts (no
+component starting with `.` or ending with `.lock`, no `..`, `@{` or trailing `.`). The broker hands the host the tree it checked (and the GO is for): the client pushes the bundle's head only
+when it has that tree, with a lease on the branch's head, and opens or updates a pull request only after verifying
+that the branch's head has it. A unit test pins each refusal. The setup guide asks
 the team to back them with the host's own rules: protect the default branch, and limit the App's or token's pushes to
 `voc-agent/*` (a GitHub ruleset; GitLab protected branches, plus a branch-name push rule on the tiers that offer one).
 
@@ -566,7 +575,7 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | planned |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules (no host client yet, so it refuses every operation) |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | planned |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | planned |

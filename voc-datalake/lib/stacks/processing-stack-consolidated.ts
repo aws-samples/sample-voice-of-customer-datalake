@@ -22,6 +22,7 @@ import { MemoryWorkers } from './memory-workers';
 import { AGGREGATOR_FUNCTION_BASE_NAME, AGGREGATOR_STREAM_FAILURES_BASE_NAME, FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME } from './dlq-alarms';
 import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
+import { ENGINEERING_ROLE_NAME_TEMPLATE, EngineeringBroker, engineeringAgentsEnabled } from './engineering-broker';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
@@ -107,6 +108,7 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Retention / erasure worker, voc-retention (daily + POST /settings/erasure; retention-worker.ts)
  * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
  * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
+ * - Only with -c engineeringAgents=true: the engineering agents' connector broker (engineering-broker.ts)
  */
 export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;
@@ -347,6 +349,12 @@ export class VocProcessingStack extends VocStack {
         ? { url: props.webSearchGatewayUrl, arn: props.webSearchGatewayArn, toolName: props.webSearchToolName }
         : undefined,
     });
+    // The engineering agents' connector broker (docs/autonomous-engineering.md): only with -c engineeringAgents=true.
+    if (engineeringAgentsEnabled(this)) {
+      new EngineeringBroker(this, 'EngineeringBroker', {
+        uniqueName, layer: processingLayer, roleNamePattern: this.uniqueNamePattern(ENGINEERING_ROLE_NAME_TEMPLATE),
+      });
+    }
 
     // ============================================
     // RESEARCH WORKFLOW (Step Functions)

@@ -404,6 +404,8 @@ export const MEMORY_SIZES: Readonly<Record<string, number | null>> = {
 export const OPTIONAL_FUNCTION_SIZES: Readonly<Record<string, number>> = {
   // `-c inboundEmailDomain` (docs/email-intake.md). 2026-10-18: 512 MB at 87.0 % CPU → 1024.
   'voc-email-intake': 1024,
+  // `-c engineeringAgents=true` (docs/autonomous-engineering.md): the connector broker, not measured yet.
+  'voc-engineering-broker': 256,
 };
 
 /** The size this checkout deploys, per function, under any context (capacity-report `--repo-sizes`). */

@@ -23,9 +23,9 @@ import { PY_LAMBDA_ASSET_EXCLUDES } from './lambda-asset-excludes';
 import { pythonLambdaAsset } from './python-lambda-asset';
 
 /** The worker trees under `lambda/`. */
-type WorkerTree = 'memory' | 'agents' | 'briefing';
+type WorkerTree = 'memory' | 'agents' | 'briefing' | 'engineering';
 
-const WORKER_TREES: readonly WorkerTree[] = ['memory', 'agents', 'briefing'];
+const WORKER_TREES: readonly WorkerTree[] = ['memory', 'agents', 'briefing', 'engineering'];
 
 /** Asset excludes for every worker tree except `tree`. */
 function otherTrees(tree: WorkerTree): string[] {

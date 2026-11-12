@@ -99,6 +99,7 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `skipFrontendBuildCheck` | `false` | Skips the frontend freshness guard ([below](#frontend-build-freshness-guard)) |
 | `omitUserPoolUsernameConfiguration` | `false` | Compatibility flag for old user pools ([Troubleshooting](#voccorestack-fails-updates-are-not-allowed-for-property---usernameconfiguration)) |
 | `skipFeedbackFormItemRoutes` | `false` | One-time upgrade step for old API stages ([Troubleshooting](#vocapistack-fails-a-sibling-proxy-of-this-resource-already-has-a-variable-path-part)) |
+| `engineeringAgents` | off | `true` deploys the engineering agents' connector broker, a Lambda behind an IAM-authenticated function URL that refuses every operation until a repository connection exists ([autonomous-engineering.md](autonomous-engineering.md#repository-connectors)); no fixed cost |
 | `enableVerificationFixtureProvider`, `verificationFixtureInvokerArn` | off | Test-only fixture Lambda, never on production ([below](#verification-fixture-provider-opt-in-never-on-production)) |
 
 ## Quality Checks
