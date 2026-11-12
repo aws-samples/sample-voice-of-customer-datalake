@@ -29,9 +29,10 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   ParticipantsTable: ['VocApiStack/EngagementLambdaRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
   ConversationsTable: ['VocApiStack/ChatLambdaRole'],
-  // A platform admin's entry and a workspace's creation (AUDIT#WS#<ws>); every other role writing voc-workspaces gets
-  // the forge Deny.
-  WorkspacesTable: ['VocApiStack/WorkspacesLambdaRole'],
+  // A platform admin's entry, a workspace's creation and its membership changes (AUDIT#WS#<ws>); the users API a
+  // deleted user's membership removals (AUDIT#WS#* only); every other role writing voc-workspaces (voc-retention's
+  // de-identification) gets the forge Deny.
+  WorkspacesTable: ['VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspacesLambdaRole'],
 };
 
 type Statement = IamStatement;
@@ -125,12 +126,27 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       .toStrictEqual(['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole']);
   });
 
-  it('the users API may not change or remove a platform-admin audit row', () => {
+  it('the users API may not change or remove a platform-admin or a workspace audit row', () => {
     const deny = denied(byRole.get('VocApiStack/UsersLambdaRole') ?? [], AUDIT_DENY_CHANGE_SID);
     expect({ effect: deny.Effect, actions: actionsOf(deny).sort(byCodeUnit), tables: tablesOf(deny) }).toStrictEqual({
       effect: 'Deny', actions: ['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem'],
-      tables: ['AggregatesTable'],
+      tables: ['AggregatesTable', 'WorkspacesTable'],
     });
+  });
+
+  it('the users API may put only AUDIT#WS#* rows in voc-workspaces (a pattern: StringNotLike)', () => {
+    const deny = denied(byRole.get('VocApiStack/UsersLambdaRole') ?? [], `${AUDIT_DENY_OTHER_PARTITION_SID}2`);
+    expect(deny.Effect).toBe('Deny');
+    expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:PutItem']);
+    expect(tablesOf(deny)).toStrictEqual(['WorkspacesTable']);
+    expect(deny.Condition).toStrictEqual({ ...AUDIT_CONDITION,
+      'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } });
+  });
+
+  it('voc-retention may not put, change or remove an audit row in voc-workspaces (it de-identifies members only)', () => {
+    const deny = denied(byRole.get('VocProcessingStack/RetentionWorkerRetentionRole') ?? [], AUDIT_DENY_WRITE_SID);
+    expect(tablesOf(deny)).toContain('WorkspacesTable');
+    expect(actionsOf(deny)).toContain('dynamodb:PutItem');
   });
 
   it('the workspaces API may not change or remove an entry audit row in voc-workspaces', () => {
@@ -185,6 +201,15 @@ describe('applyAuditRowGuard (one stack)', () => {
   it('a writer of one audit partition is denied puts on every other one', () => {
     expect(sids(guarded((table, role) => table.grant(role, 'dynamodb:PutItem'), ['/R'], 'AUDIT#delete')))
       .toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID]);
+  });
+
+  it('a writer of one audit partition pattern is denied puts outside it with StringNotLike', () => {
+    const template = guarded((table, role) => table.grant(role, 'dynamodb:PutItem'), ['/R'], 'AUDIT#WS#*');
+    const deny = Object.values(template.findResources('AWS::IAM::Policy'))
+      .flatMap((policy) => IamPolicySchema.parse(policy).Properties.PolicyDocument.Statement)
+      .find((statement) => statement.Sid === AUDIT_DENY_OTHER_PARTITION_SID);
+    expect(deny?.Condition).toStrictEqual({ ...AUDIT_CONDITION,
+      'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } });
   });
 
   it('a reader of the guarded table gets nothing (the unguarded table it writes does not count)', () => {

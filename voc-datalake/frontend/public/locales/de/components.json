@@ -694,6 +694,7 @@
     "legalBasisShown": "Rechtsgrundlage: {{basis}}",
     "copies": "{{radar, number}} Radar-Bewertungen gelöscht, {{artifacts, number}} Personas oder Dokumente markiert",
     "boards": "Anonymisierte Board-Anfragen und +1: {{rows, number}}",
+    "members": "Anonymisierte Workspace-Mitgliedschaften: {{rows, number}}",
     "reviewFiles": "Hochgeladene Dateien, die behalten wurden, weil sie auch nicht gelöschte Zeilen enthalten: {{files, number}}. Prüfen Sie sie:",
     "status": {
       "queued": "In der Warteschlange",
@@ -727,6 +728,7 @@
       "items": "Bewertungen werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
       "radar": "Radar-Bewertungen werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
       "boards": "Board-Anfragen und +1 werden anonymisiert. Bisher anonymisiert: {{rows, number}}.",
+      "members": "E-Mail und Name werden aus Workspace-Mitgliedschaften entfernt. Bisher anonymisiert: {{rows, number}}.",
       "raw": "Rohdateien werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
       "lineage": "Personas und Dokumente, die gelöschte Bewertungen zitiert haben, werden markiert. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
       "done": "Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}."

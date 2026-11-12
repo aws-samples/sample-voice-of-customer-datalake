@@ -83,9 +83,13 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   // customer data (D5 covers feedback and raw items); a removal is audited first (AUDIT#WS#, under the audit-row
   // guard). IAM pins the partition, not the sort key: `WS#*` also reaches META, which only the code keeps out
   // (lambda/shared/workspace_members.py; its tests pin the keys it deletes); SLUG#, WORKSPACES and AUDIT# stay out.
-  // Workspace delete is still an open tenet question for phase 4.
+  // Workspace delete is still an open tenet question for phase 4. The users API deletes a deleted user's memberships
+  // (6.11.00, lambda/shared/workspace_members.py remove_user_memberships), each audited first, in the same scope.
   WorkspacesTable: {
     'VocApiStack/WorkspacesLambdaRole': { scope: ['USER#*', 'WS#*'], why: 'membership removal: MEMBER# and USER# rows only' },
+    'VocApiStack/UsersLambdaRole': {
+      scope: ['USER#*', 'WS#*'], why: 'a deleted user\'s memberships: their MEMBER# and USER# rows only, before the account goes',
+    },
   },
 };
 
@@ -95,10 +99,14 @@ const DYNAMO_WRITE = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|Pa
  * Who may write voc-workspaces, and where: the workspaces API alone, in the partitions a workspace's creation writes
  * (lambda/shared/platform_workspaces.py: `SLUG#`, `WS#`, `USER#`, the `WORKSPACES` listing, `AUDIT#WS#`), its entry
  * audit rows and a membership's add, role change and removal (lambda/shared/workspace_members.py: `WS#` / `MEMBER#`,
- * `USER#`, `AUDIT#WS#`); its only delete is the removal's (TABLE_DELETERS above).
+ * `USER#`, `AUDIT#WS#`); its only delete is the removal's (TABLE_DELETERS above). Since 6.11.00 two more: the users
+ * API, for a deleted user's memberships (puts their `AUDIT#WS#` rows, deletes their `MEMBER#` and `USER#` rows), and
+ * voc-retention, for an erasure by email (updates `email` and `name` only, under `WS#`: lambda/jobs/retention/members.py).
  */
 const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
+  'VocApiStack/UsersLambdaRole': ['AUDIT#WS#*', 'USER#*', 'WS#*'],
+  [RETENTION_ROLE]: ['WS#*'],
 };
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */
@@ -238,9 +246,10 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   // a workspace (META) or a membership (MEMBER#, USER#) before the users-API safeguards for platform-admins (6.08.00)
   // and the live platform-admin check on entering a workspace (6.09.00, lambda/shared/workspace.py). Both landed; the
   // change that creates workspaces (6.09.00) is the one that widened WORKSPACE_WRITERS; the members routes (6.10.00)
-  // write within the same partitions (role updates and removals in `USER#*` and `WS#*`). A new writer or partition is
-  // a decision recorded here.
-  it('voc-workspaces: only the workspaces API writes, and only in its creation, membership and audit partitions', () => {
+  // write within the same partitions (role updates and removals in `USER#*` and `WS#*`); 6.11.00 adds the users API (a
+  // deleted user's memberships) and voc-retention (an erasure by email's de-identification). A new writer or partition
+  // is a decision recorded here.
+  it('voc-workspaces: only the workspaces API, the users API and voc-retention write, each in its partitions', () => {
     const writers: Record<string, Scope> = {};
     for (const grant of grants.filter(onTable('WorkspacesTable')).filter((g) => g.actions.some((a) => DYNAMO_WRITE.test(a)))) {
       writers[grant.role] = unionOf(writers[grant.role] ?? [], scopeOf(grant));
@@ -263,6 +272,17 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
       'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:Scan',
       'dynamodb:UpdateItem',
     ]);
+  });
+
+  it('voc-retention reaches voc-workspaces to de-identify only (Scan, UpdateItem of email and name under WS#*)', () => {
+    const onWorkspaces = grants.filter((g) => g.role === RETENTION_ROLE).filter(onTable('WorkspacesTable'));
+    expect([...new Set(onWorkspaces.flatMap((g) => g.actions))].sort(byCodeUnit))
+      .toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
+    const update = onWorkspaces.find((g) => g.actions.includes('dynamodb:UpdateItem'));
+    expect(update?.condition).toStrictEqual({
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['email', 'name', 'pk', 'sk'] },
+    });
   });
 
   it('no role deletes bucket-wide in the raw bucket', () => {

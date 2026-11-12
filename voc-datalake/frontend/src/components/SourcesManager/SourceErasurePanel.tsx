@@ -33,6 +33,9 @@ const PROGRESS_KEYS = {
   items: 'components:sourceErasure.progress.items',
   radar: 'components:sourceErasure.progress.radar',
   boards: 'components:sourceErasure.progress.boards',
+  // A whole-source job never runs the members phase (only an erasure by email without a source does); the key keeps
+  // this map total over the API's phases, so a job row that ever names it still reads right.
+  members: 'components:sourceErasure.progress.members',
   raw: 'components:sourceErasure.progress.raw',
   lineage: 'components:sourceErasure.progress.lineage',
   done: 'components:sourceErasure.progress.done',
@@ -56,7 +59,8 @@ function JobProgress({ job }: Readonly<{ job: ErasureJob }>) {
       <ErasureStatusBadge status={job.status} />
       <span className="font-mono text-muted">{job.source}</span>
       <span>{t(progressKey(job), {
-        items: job.deleted_items, objects: job.deleted_objects, rows: job.board_items_deidentified,
+        items: job.deleted_items, objects: job.deleted_objects,
+        rows: job.phase === 'members' ? job.member_rows_deidentified : job.board_items_deidentified,
       })}</span>
       {job.error !== undefined && <span className="text-danger">{job.error}</span>}
       <ErasureJobDetails job={job} />

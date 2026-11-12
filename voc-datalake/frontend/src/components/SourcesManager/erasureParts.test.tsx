@@ -19,6 +19,11 @@ describe('ErasureJobDetails', () => {
     expect(screen.getByText('Board requests and +1s de-identified: 5')).toBeInTheDocument()
   })
 
+  it('shows the workspace memberships an erasure by email de-identified', () => {
+    render(<ErasureJobDetails job={jobWith({ member_rows_deidentified: 3 })} />)
+    expect(screen.getByText('Workspace memberships de-identified: 3')).toBeInTheDocument()
+  })
+
   it('says nothing about boards when the job touched none', () => {
     render(<ErasureJobDetails job={jobWith({ artifacts_marked: 1 })} />)
     expect(screen.queryByText(/Board requests/)).not.toBeInTheDocument()

@@ -31,6 +31,11 @@
  *     requests: REMOVE their email and name) and PutItem / DeleteItem pinned to `FR#*` (a +1's id derives from the
  *     email, so it is RE-KEYED: put under a new random id, the old row deleted, totals recomputed); their raw
  *     copies under `raw/feature_requests/` go with the raw grant above;
+ *   - workspaces: Scan (an erasure by email finds the membership rows that hold the email: the table has no email
+ *     index; a paged, time-budgeted Scan once per job, never on a request path, lambda/jobs/retention/members.py) and
+ *     UpdateItem pinned to `WS#*` and to the attributes `email` and `name` (REMOVEd from a `MEMBER#` row; IAM cannot
+ *     pin the sort key, so `META` is in reach of IAM and kept out by the code) — no Put, no Delete, no other
+ *     attribute; the audit-row guard denies it any write of an `AUDIT#` row there;
  *   - lambda:InvokeFunction on its own unqualified name (time-budget hand-over).
  */
 import * as cdk from 'aws-cdk-lib';
@@ -53,6 +58,10 @@ import { grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-l
 
 /** The request partitions of voc-feature-requests (`FR#{id}`: META + its +1s), the only rows the worker re-keys. */
 const FEATURE_REQUEST_PARTITIONS = 'FR#*';
+/** The workspace partitions of voc-workspaces (`WS#{ws}`: META and the MEMBER# rows), the only rows it updates. */
+const WORKSPACE_PARTITIONS = 'WS#*';
+/** What an erasure by email removes from a membership row, and the key the update names. */
+const MEMBER_PERSON_ATTRIBUTES = ['email', 'name', 'pk', 'sk'];
 
 /** Path-style handler: the bundle keeps `jobs/retention/` with `shared/` beside `jobs/`. */
 const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
@@ -74,6 +83,8 @@ export interface RetentionWorkerProps {
   projectsTable: dynamodb.ITable;
   /** voc-feature-requests: an erasure by email de-identifies the person's board requests and +1s. */
   featureRequestsTable: dynamodb.ITable;
+  /** voc-workspaces: an erasure by email removes the email and name from the person's membership rows. */
+  workspacesTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
 }
 
@@ -102,7 +113,8 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   // A plain construct with the same id keeps every logical id the class form had.
   const worker = new Construct(scope, id);
   const {
-    uniqueName, kmsKey, feedbackTable, aggregatesTable, radarTable, projectsTable, featureRequestsTable, rawDataBucket,
+    uniqueName, kmsKey, feedbackTable, aggregatesTable, radarTable, projectsTable, featureRequestsTable, workspacesTable,
+    rawDataBucket,
   } = props;
   const functionName = uniqueName(RETENTION_FUNCTION_BASE_NAME);
 
@@ -117,6 +129,10 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   // random id, Delete the email-derived one), so Put/Delete are pinned to the request partitions (FR#*), never boards.
   featureRequestsTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem');
   grantKeyScopedWrites(featureRequestsTable, role, ['PutItem', 'DeleteItem'], [FEATURE_REQUEST_PARTITIONS]);
+  // Workspace memberships (lambda/jobs/retention/members.py): find the rows that hold the erased email (Scan: no
+  // email index), then REMOVE email and name, on `WS#*` and those two attributes only.
+  workspacesTable.grant(role, 'dynamodb:Scan');
+  grantKeyScopedWrites(workspacesTable, role, ['UpdateItem'], [WORKSPACE_PARTITIONS], MEMBER_PERSON_ATTRIBUTES);
   kmsKey.grantEncryptDecrypt(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',
@@ -152,6 +168,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
       RADAR_TABLE: radarTable.tableName,
       PROJECTS_TABLE: projectsTable.tableName,
       FEATURE_REQUESTS_TABLE: featureRequestsTable.tableName,
+      WORKSPACES_TABLE: workspacesTable.tableName,
       // No RETENTION_FUNCTION: the worker re-invokes itself via context.function_name.
       POWERTOOLS_SERVICE_NAME: RETENTION_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',

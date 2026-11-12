@@ -95,6 +95,31 @@ describe('the voc-workspaces-api Lambda', () => {
   });
 });
 
+// DELETE /users/{username} removes the user's memberships first (lambda/shared/workspace_members.py
+// plan_user_removal, remove_user_memberships; lib/stacks/api-engagement-lambdas.ts).
+describe('the users API on voc-workspaces (a deleted user\'s memberships)', () => {
+  const onWorkspaces = () => policyStatementsOf(apiTemplate(), 'UsersLambdaRole')
+    .filter((s) => s.actions.some((action) => action.startsWith('dynamodb:')))
+    .filter((s) => /ExportsOutputFnGetAttWorkspaces/.test(s.resource));
+  const keys = (partitions: string[]) => ({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } });
+
+  it('is told the table', () => {
+    expect(JSON.stringify(serviceEnvironment(apiTemplate(), 'voc-users-api').WORKSPACES_TABLE)).toMatch(/Workspaces/);
+  });
+
+  it('reads, checks, puts audit rows and deletes membership rows, each pinned to its partitions; no Scan or update', () => {
+    const shape = onWorkspaces().map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))
+      .sort((a, b) => byCodeUnit(a.actions.join(), b.actions.join()));
+    expect(shape).toStrictEqual([
+      { actions: ['dynamodb:ConditionCheckItem'], condition: keys(['WS#*']) },
+      { actions: ['dynamodb:DeleteItem'], condition: keys(['USER#*', 'WS#*']) },
+      { actions: ['dynamodb:GetItem'], condition: keys(['AUDIT#WS#*', 'WS#*']) },
+      { actions: ['dynamodb:PutItem'], condition: keys(['AUDIT#WS#*']) },
+      { actions: ['dynamodb:Query'], condition: keys(['USER#*', 'WS#*']) },
+    ]);
+  });
+});
+
 describe('/me/{proxy+} and /platform/{proxy+}', () => {
   it.each([
     ['GET', '/me/workspaces'], ['GET', '/me/workspaces/current'], ['GET', '/me/workspaces/current/members'],

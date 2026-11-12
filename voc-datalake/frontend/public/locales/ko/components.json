@@ -694,6 +694,7 @@
     "legalBasisShown": "법적 근거: {{basis}}",
     "copies": "Radar 리뷰 {{radar, number}}개 삭제, 페르소나 또는 문서 {{artifacts, number}}개 표시",
     "boards": "비식별 처리된 보드 요청 및 +1: {{rows, number}}",
+    "members": "비식별 처리된 워크스페이스 멤버십: {{rows, number}}",
     "reviewFiles": "삭제되지 않은 행도 포함하고 있어 보관한 업로드 파일: {{files, number}}개. 검토하세요:",
     "status": {
       "queued": "대기 중",
@@ -727,6 +728,7 @@
       "items": "리뷰를 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "radar": "Radar 리뷰를 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "boards": "보드 요청 및 +1을 비식별 처리하는 중입니다. 지금까지 비식별 처리: {{rows, number}}.",
+      "members": "워크스페이스 멤버십에서 이메일과 이름을 삭제하는 중입니다. 지금까지 비식별 처리: {{rows, number}}.",
       "raw": "원본 파일을 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "lineage": "삭제된 리뷰를 인용한 페르소나와 문서에 표시하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "done": "삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}."

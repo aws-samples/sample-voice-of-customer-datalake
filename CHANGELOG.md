@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.11.00] - 2026-11-12
+
+Multi-workspace, phase 1: a deleted user leaves their workspaces, and an erasure by email reaches workspace members.
+
+### Added
+
+- `DELETE /users/{username}` (users API) also removes the user's workspace memberships, before the Cognito delete, so a failure leaves the account in place (the memberships already removed stay removed): per workspace, a `member_removed` audit row (`via: user_deleted`) first, then one transaction deleting the `MEMBER#` and `USER#` rows (409 when the membership changed meanwhile). Deleting a workspace's last admin is refused (409, naming up to three workspaces) unless a live-checked platform admin asks, in which case the workspace has no admin until a platform admin enters and names one ([docs/multi-workspace.md](docs/multi-workspace.md#invites)). Asking again finishes a delete that stopped part-way.
+- An erasure by email (`voc-retention`, no source) reaches workspace members: each `MEMBER#` row holding the email (case-insensitive) gets a tombstone (`AUDIT#tombstone#workspace_members`) and loses `email` and `name`; the membership stays, as the feedback boards' entries do ([docs/source-policies.md](docs/source-policies.md)). The rows are found by a paged, time-budgeted Scan of `voc-workspaces` (keys and email only), once per erasure job, never on a request path. The erasure view shows the count, in all nine languages.
+
+### Changed
+
+- The users role reads and deletes membership rows of `voc-workspaces` (Query on `USER#*`/`WS#*`, GetItem on `WS#*`/`AUDIT#WS#*`, ConditionCheckItem on `WS#*`, DeleteItem on `USER#*`/`WS#*`) and puts only `AUDIT#WS#*` audit rows (the audit-row guard names it that partition's writer); the retention role may Scan `voc-workspaces` and update only `email` and `name` on `WS#*` rows. `lib/customer-data-deletes.test.ts` lists both. The audit-row guard takes a wildcard writer partition.
+- A disabled account still counts as a workspace admin (it can be re-enabled); an account deleted from 6.11.00 on no longer has rows. One deleted before 6.11.00 keeps its rows and still counts (Upgrade notes).
+
+### Fixed
+
+- The erasure job view returned no de-identified counts, so the web app always showed 0 feedback-board entries de-identified; it returns them now.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`): the retention stack now reads the workspaces table from the core stack (one more cross-stack export). An erasure by email does not remove the address from Cognito; deleting the user does.
+- Memberships of users deleted before 6.11.00 stay, and such a user still counts as a workspace's other admin. Check each workspace's members against Administration → Users, and remove any member whose account is gone (`DELETE /me/workspaces/current/members/{sub}`, with the workspace in `X-Workspace-Id`).
+
 ## [6.10.00] - 2026-11-12
 
 Multi-workspace, phase 1: workspace admins manage their workspace's members.

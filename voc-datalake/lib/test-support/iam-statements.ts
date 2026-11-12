@@ -23,7 +23,9 @@ const AUDIT_ROW_GUARD_SIDS: ReadonlySet<string> = new Set([AUDIT_DENY_CHANGE_SID
  * they still count them.
  */
 export function isAuditRowGuardStatement(statement: { readonly Sid?: string }): boolean {
-  return statement.Sid !== undefined && AUDIT_ROW_GUARD_SIDS.has(statement.Sid);
+  if (statement.Sid === undefined) return false;
+  // A role limited to one audit partition in two tables numbers the second Deny (`…OwnPartition2`).
+  return AUDIT_ROW_GUARD_SIDS.has(statement.Sid.replace(/(?<=OwnPartition)\d+$/, ''));
 }
 
 /** One raw IAM statement as synthesized (`Effect` defaults to Allow when absent). */

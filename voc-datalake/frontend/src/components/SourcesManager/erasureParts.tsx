@@ -72,6 +72,9 @@ export function ErasureJobDetails({ job }: Readonly<{ job: ErasureJob }>) {
       {job.board_items_deidentified > 0 && (
         <span className="text-text">{t('boards', { rows: job.board_items_deidentified })}</span>
       )}
+      {job.member_rows_deidentified > 0 && (
+        <span className="text-text">{t('members', { rows: job.member_rows_deidentified })}</span>
+      )}
       {review !== undefined && review.count > 0 && (
         <div className="basis-full text-warn">
           <p>{t('reviewFiles', { files: review.count })}</p>

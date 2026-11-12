@@ -96,6 +96,11 @@ _EMAIL_PATHS: Final = ('metadata.email', 'metadata.submitter_email')
 FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
 # The counters an erasure job's row records (voc-retention writes them, Settings lists them; 0 when absent).
 ERASURE_JOB_COUNTERS: Final = ('deleted_items', 'deleted_objects', 'deleted_radar_items', 'artifacts_marked')
+# Rows an erasure by email de-identified rather than deleted: board requests and +1s (jobs/retention/boards.py),
+# workspace memberships (jobs/retention/members.py). On the job and audit rows only once above 0.
+BOARD_COUNTER: Final = 'board_items_deidentified'
+MEMBER_COUNTER: Final = 'member_rows_deidentified'
+ERASURE_DEIDENTIFIED_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER)
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'

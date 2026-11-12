@@ -63,6 +63,8 @@ export interface VocProcessingStackProps extends VocStackProps {
   featureRequestsTable: dynamodb.Table;
   /** The memory scanner reads assistant sessions; the extractor reads one. */
   conversationsTable: dynamodb.Table;
+  /** voc-workspaces: the retention worker removes the email and name from membership rows on an erasure by email. */
+  workspacesTable: dynamodb.Table;
   /** The agent conductor re-checks a plan's approver in Cognito (docs/assistant-plan-mode.md). */
   userPool: cognito.IUserPool;
   processingQueue: sqs.Queue;
@@ -295,6 +297,7 @@ export class VocProcessingStack extends VocStack {
       radarTable: props.radarTable,
       projectsTable,
       featureRequestsTable: props.featureRequestsTable,
+      workspacesTable: props.workspacesTable,
       rawDataBucket,
     });
     // An erasure job's end reaches the admin who started it (jobs/retention/runs.py, docs/realtime.md): a publish

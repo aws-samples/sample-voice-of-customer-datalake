@@ -38,12 +38,13 @@ from botocore.exceptions import ClientError
 
 from jobs.retention import boards_rekey
 from jobs.retention.copies import tombstone_record
-from jobs.retention.runs import BOARD_COUNTER, MODE_ERASE, note_erased_source
+from jobs.retention.runs import MODE_ERASE, note_erased_source
 from shared import retention
 from shared.archive_keys import archive_key_stem
 from shared.aws import is_conditional_check_failure
 from shared.feature_requests_raw import FEATURE_REQUESTS_SOURCE
 from shared.feature_requests_store import request_key
+from shared.retention import BOARD_COUNTER
 from shared.timestamps import now_iso
 
 # The boards' source id (raw copies, tombstones) doubles as the table's key in ``Walk.tables``.
@@ -142,7 +143,12 @@ def _delete_folder(s3: Any, bucket: str, folder: str) -> int:
 
 def deidentify(table: Any, row: Mapping[str, Any]) -> bool:
     """REMOVE the reporter's email and name from a request row; False when the row is gone meanwhile."""
-    fields = _REPORTER_FIELDS
+    return remove_fields(table, row, _REPORTER_FIELDS)
+
+
+def remove_fields(table: Any, row: Mapping[str, Any], fields: Sequence[str]) -> bool:
+    """REMOVE ``fields`` from the row at ``row``'s key (conditional on the row still being there); False when it is
+    gone meanwhile. Shared with the membership pass (``members.py``)."""
     try:
         table.update_item(
             Key={'pk': row['pk'], 'sk': row['sk']},

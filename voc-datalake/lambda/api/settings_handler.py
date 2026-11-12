@@ -98,7 +98,14 @@ from shared.model_config import (
 from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body, reject_unknown_fields
-from shared.retention import ERASE_FIELDS, ERASURE_JOB_COUNTERS, ERASURE_JOB_PK, ERASURE_JOB_PREFIX, SOURCE_FIELD
+from shared.retention import (
+    ERASE_FIELDS,
+    ERASURE_DEIDENTIFIED_COUNTERS,
+    ERASURE_JOB_COUNTERS,
+    ERASURE_JOB_PK,
+    ERASURE_JOB_PREFIX,
+    SOURCE_FIELD,
+)
 from shared.scope_names import (
     HiddenNames,
     component_names_hidden,
@@ -1875,6 +1882,11 @@ def erasure_job_view(item: dict) -> dict:
     view = {field: item.get(field) for field in ERASURE_VIEW_FIELDS if item.get(field) is not None}
     for counter in ERASURE_JOB_COUNTERS:
         view[counter] = int(item.get(counter) or 0)
+    # An erasure by email's de-identified board rows and workspace membership rows (shared/retention.py): on the
+    # job row only once above 0, so shown only then.
+    for counter in ERASURE_DEIDENTIFIED_COUNTERS:
+        if item.get(counter):
+            view[counter] = int(item[counter])
     review = item.get('files_needing_review')
     if isinstance(review, dict):
         # Whole-file uploads that hold erased rows AND others (keys only, never content).

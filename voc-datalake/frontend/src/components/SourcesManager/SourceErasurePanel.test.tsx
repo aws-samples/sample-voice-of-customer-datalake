@@ -143,6 +143,13 @@ describe('SourceErasurePanel', () => {
     expect(within(region).queryByText(/Reviews deleted: 40/)).not.toBeInTheDocument()
   })
 
+  it('counts the de-identified membership rows while the members phase runs', async () => {
+    const region = await startDeletion(BASIS, [
+      { ...running, phase: 'members', legal_basis: BASIS, board_items_deidentified: 7, member_rows_deidentified: 2 }])
+    expect(await within(region).findByText(
+      'Removing the email and name from workspace memberships. De-identified so far: 2.')).toBeInTheDocument()
+  })
+
   it('shows why the server refused, such as a deletion already running', async () => {
     const user = userEvent.setup()
     route({ post: () => { throw new Error('An erasure of this source is already running') } })

@@ -8,8 +8,9 @@
  * a grant or revoke of the platform-admins group, written by the users API) and voc-projects /
  * voc-participants / voc-feature-requests / voc-conversations (`AUDIT#delete`, written by the API that deletes the
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row) and voc-workspaces (`AUDIT#WS#<ws>`, a platform
- * admin's entry into a workspace and the workspace's creation, written by the workspaces API,
- * lambda/shared/workspace.py and platform_workspaces.py). Every role that can write in one of those
+ * admin's entry into a workspace, the workspace's creation and its membership changes, written by the workspaces
+ * API, lambda/shared/workspace.py, platform_workspaces.py and workspace_members.py; a deleted user's membership
+ * removals, written by the users API, `AUDIT#WS#*` only). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
  *
  *   - a table the role is that table's audit writer for: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit
@@ -17,8 +18,8 @@
  *   - every other table it writes: ONE Deny of those actions plus PutItem (it cannot forge, overwrite, change or
  *     remove one). Each table's ARN appears in one of the two statements only, to keep the policies small;
  *   - a writer limited to one audit partition (the settings API's `AUDIT#delete` and the users API's
- *     `AUDIT#platform-admins` in voc-aggregates): Deny PutItem
- *     and BatchWriteItem on every OTHER audit partition (it cannot forge a retention row or a tombstone).
+ *     `AUDIT#platform-admins` in voc-aggregates; the users API's `AUDIT#WS#*` in voc-workspaces, a pattern): Deny
+ *     PutItem and BatchWriteItem on every OTHER audit partition (it cannot forge a retention row or a tombstone).
  *
  * The audit writers are NAMED ({@link AUDIT_WRITERS}: the role that runs the code writing that table's audit rows),
  * not inferred from the grants: a role that can delete in a table (the verification fixture provider, an operational
@@ -97,6 +98,9 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // A platform admin's entry into a workspace and a workspace's creation (AUDIT#WS#<ws>; the only audit partitions
   // its PutItem's LeadingKeys reach, lib/stacks/api-workspaces-lambda.ts).
   { table: 'workspacesTable', rolePathSuffix: '/WorkspacesLambdaRole' },
+  // The users API: the member_removed rows of a deleted user's memberships (AUDIT#WS#<ws> only,
+  // lambda/shared/workspace_members.py remove_user_memberships; lib/stacks/api-engagement-lambdas.ts).
+  { table: 'workspacesTable', rolePathSuffix: '/UsersLambdaRole', partitionKey: 'AUDIT#WS#*' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',
@@ -171,14 +175,18 @@ function guardRole(role: iam.Role, written: ReadonlySet<string>, writers: readon
     role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_WRITE_SID, [...new Set([...CHANGE_ACTIONS, ...PUT_ACTIONS])],
       none));
   }
-  //  - a writer limited to one partition: no put on any other audit partition.
-  for (const { arn, right } of rights) {
-    if (right.kind !== 'one') continue;
-    role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_OTHER_PARTITION_SID, PUT_ACTIONS, [arn], {
+  //  - a writer limited to one partition: no put on any other audit partition. A pattern (`AUDIT#WS#*`, one
+  //    workspace's audit partition each) is matched with StringNotLike, an exact key with StringNotEquals. A role
+  //    limited in two tables gets one statement per table, the second Sid numbered (Sids are unique in a policy).
+  const limited = rights.flatMap(({ arn, right }) => (right.kind === 'one' ? [{ arn, partitionKey: right.partitionKey }] : []));
+  limited.forEach(({ arn, partitionKey }, index) => {
+    const operator = partitionKey.includes('*') ? 'ForAnyValue:StringNotLike' : 'ForAnyValue:StringNotEquals';
+    const sid = index === 0 ? AUDIT_DENY_OTHER_PARTITION_SID : `${AUDIT_DENY_OTHER_PARTITION_SID}${index + 1}`;
+    role.addToPrincipalPolicy(denyOnAuditRows(sid, PUT_ACTIONS, [arn], {
       ...AUDIT_KEYS,
-      'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [right.partitionKey] },
+      [operator]: { 'dynamodb:LeadingKeys': [partitionKey] },
     }));
-  }
+  });
 }
 
 /** Add the audit-row Denies to every role under `scope` that writes a guarded table (see the module comment). */

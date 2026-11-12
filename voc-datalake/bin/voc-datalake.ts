@@ -246,6 +246,7 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
   radarTable: coreStack.radarTable,
   featureRequestsTable: coreStack.featureRequestsTable,
   conversationsTable: coreStack.conversationsTable,
+  workspacesTable: coreStack.workspacesTable,
   userPool: coreStack.userPool,
   realtime: coreStack.realtime,
   processingQueue: ingestionStack.processingQueue,

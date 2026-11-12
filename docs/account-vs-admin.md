@@ -45,7 +45,11 @@ nothing, when:
   `This is the last enabled administrator: make another user an administrator first.`;
 - the target is the LAST enabled member of `platform-admins` and the request demotes, disables, deletes or revokes
   it (`PUT /users/{username}/platform-admin` with `{"platform_admin": false}`, the caller's own revoke included):
-  `This is the last enabled platform admin: make another administrator a platform admin first.`
+  `This is the last enabled platform admin: make another administrator a platform admin first.`;
+- since 6.11.00, the request deletes the LAST member admin of a workspace and the caller is not a platform admin:
+  `This user is the last admin of the workspace "…": make another member an admin there first, or ask a platform
+  admin to delete the user and name a new admin afterwards.` A delete that passes removes the user's workspace
+  memberships, each audited, before the Cognito account ([multi-workspace.md](multi-workspace.md#invites) → Invites).
 
 It answers **403** when a caller outside `platform-admins` demotes, disables, enables, deletes or resets the password
 of a platform admin (`Only a platform admin can disable a platform admin.`, and so on), or calls

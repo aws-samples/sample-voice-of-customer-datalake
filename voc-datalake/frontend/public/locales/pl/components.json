@@ -740,6 +740,7 @@
     "legalBasisShown": "Podstawa prawna: {{basis}}",
     "copies": "Usunięte opinie Radar: {{radar, number}}, oznaczone persony lub dokumenty: {{artifacts, number}}",
     "boards": "Zanonimizowane prośby z tablic i +1: {{rows, number}}",
+    "members": "Zanonimizowane członkostwa w przestrzeniach roboczych: {{rows, number}}",
     "reviewFiles": "Przesłane pliki zachowane, bo zawierają też wiersze, których nie usunięto: {{files, number}}. Sprawdź je:",
     "status": {
       "queued": "W kolejce",
@@ -773,6 +774,7 @@
       "items": "Usuwanie opinii. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "radar": "Usuwanie opinii Radar. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "boards": "Anonimizowanie próśb z tablic i +1. Dotąd zanonimizowano: {{rows, number}}.",
+      "members": "Usuwanie adresu e-mail i imienia z członkostw w obszarach roboczych. Dotąd zanonimizowano: {{rows, number}}.",
       "raw": "Usuwanie surowych plików. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "lineage": "Oznaczanie person i dokumentów, które cytowały usunięte opinie. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "done": "Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}."

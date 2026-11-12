@@ -717,6 +717,7 @@
     "legalBasisShown": "Base legal: {{basis}}",
     "copies": "{{radar, number}} opiniones de Radar eliminadas, {{artifacts, number}} personas o documentos marcados",
     "boards": "Solicitudes de tablero y +1 anonimizados: {{rows, number}}",
+    "members": "Membresías de espacios de trabajo anonimizadas: {{rows, number}}",
     "reviewFiles": "Archivos subidos que se conservaron porque también contienen filas no borradas: {{files, number}}. Revíselos:",
     "status": {
       "queued": "En cola",
@@ -750,6 +751,7 @@
       "items": "Eliminando reseñas. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "radar": "Eliminando opiniones de Radar. Opiniones eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "boards": "Anonimizando solicitudes de tablero y +1. Anonimizados hasta ahora: {{rows, number}}.",
+      "members": "Eliminando el correo y el nombre de las membresías de espacios de trabajo. Anonimizadas hasta ahora: {{rows, number}}.",
       "raw": "Eliminando archivos sin procesar. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "lineage": "Marcando las personas y los documentos que citaban opiniones eliminadas. Opiniones eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "done": "Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}."

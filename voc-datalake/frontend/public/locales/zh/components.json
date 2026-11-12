@@ -694,6 +694,7 @@
     "legalBasisShown": "法律依据：{{basis}}",
     "copies": "已删除 {{radar, number}} 条 Radar 评论，已标记 {{artifacts, number}} 个角色或文档",
     "boards": "已去标识化的看板请求和 +1：{{rows, number}}",
+    "members": "已去标识化的工作区成员身份：{{rows, number}}",
     "reviewFiles": "因同时包含未删除的行而保留的上传文件：{{files, number}} 个。请检查：",
     "status": {
       "queued": "排队中",
@@ -727,6 +728,7 @@
       "items": "正在删除评论。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "radar": "正在删除 Radar 评论。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "boards": "正在对看板请求和 +1 去标识化。目前已去标识化：{{rows, number}}。",
+      "members": "正在从工作区成员资格中删除电子邮件和姓名。目前已去标识化：{{rows, number}}。",
       "raw": "正在删除原始文件。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "lineage": "正在标记引用过已删除评论的角色和文档。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "done": "已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。"

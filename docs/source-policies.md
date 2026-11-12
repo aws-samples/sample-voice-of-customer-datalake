@@ -187,8 +187,8 @@ How it works:
   from its lists and gains `erased_evidence: {count, job_id, mode, at}` (`count` adds up across
   runs; `artifacts_marked` on the job). Its text is never rewritten (it belongs to its owner); the
   update is conditional, so an artifact regenerated meanwhile is left for the next run.
-- The worker walks its phases in order (`items`, `radar`, `boards` for an email erasure, `raw` for a
-  whole source, `lineage`) and
+- The worker walks its phases in order (`items`, `radar`, `boards` for an email erasure, `members` for
+  an email erasure without a source, `raw` for a whole source, `lineage`) and
   hands over to a fresh invocation of itself, with its phase and cursor, before its 15-minute timeout.
 - `POST /settings/erasure` answers 202 `{job}`. `GET /settings/erasure` lists the newest 20
   jobs, and the sources a whole-source erasure may name. A job shows `legal_basis`,
@@ -216,6 +216,16 @@ How it works:
   new random id and still counts as a supporter). Counted as `board_items_deidentified`; artifacts that read
   such a request (`input_feature_request_ids`) are marked like for an erased review
   ([feature-requests.md → Erasure](feature-requests.md#erasure)).
+- **Workspace memberships** (since 6.11.00). An `email` erasure without a source also reaches
+  `voc-workspaces`: every membership row (`WS#{ws}` / `MEMBER#{sub}`) that holds the email, in any
+  case, is tombstoned (`AUDIT#tombstone#workspace_members` / `{ws}#{sub}#{job}`: the workspace, the run and
+  the legal basis) and de-identified: its `email` and `name` are removed and the membership stays
+  (its role, `invited_by`, `joined_at`). Counted as `member_rows_deidentified`. The worker finds the
+  rows with a paged Scan of the table (it has no email index), 100 items a page within the job's time
+  budget, projecting the key and the email only (`lambda/jobs/retention/members.py`;
+  [multi-workspace.md → Invites](multi-workspace.md#invites) says why not a look-up by account). The
+  person's Cognito account is not part of the lake: deleting the user (`DELETE /users/{username}`)
+  removes the account and its memberships.
 
 ### Delete all data from a source
 
@@ -311,6 +321,7 @@ workspace artifacts. Copies derived from a review before it was erased stay wher
 | Idempotency rows of the processor | `voc-idempotency` | Keyed by a hash of the message, they may cache the processor's response for up to an hour, then expire through the table's TTL (`expiration`); wait an hour, or delete the row by hand |
 | Whole-file CSV / JSON uploads that also hold rows that were not erased | `raw/csv_upload/…`, `raw/json_upload/…` in the raw bucket | Listed on the job as `files_needing_review` (Administration shows the keys). Remove the person's rows by hand (download, edit, delete every version with an admin role, re-upload if needed), or avoid it by giving the source a retention period or a non-`allow` policy |
 | Archives named before 3.06.00 for ids that were not filename-safe | `raw/<source>/…` | See the archive naming note above |
+| The person's account in the user pool (email, name) | Cognito, the deployment's directory (not the lake) | Delete the user (`DELETE /users/{username}`, Administration → Users), which also removes their workspace memberships; while the account exists, a workspace's members list shows its email from Cognito |
 | An old value kept only in a Silver version (an `author` or email a CSV correction or an edit replaced) | `silver/<source>/<feedback_id>/` | A field erasure matches items as they are stored now, so it reaches every kept version of an item that still holds the value, but not a version whose item has moved on. Erase by the item's current value as well, or delete every version under that item's folder with an admin role |
 
 **The corpus ids on generated artefacts.** A persona, research report, PRD, PR/FAQ or
@@ -331,6 +342,7 @@ Least-privilege grants (`lib/stacks/retention-worker.ts`):
 | Radar table | `Scan`, `DeleteItem`; `UpdateItem` on the `SETTINGS#radar` partition only (the Radar cache version) |
 | Projects table | `Scan`, `UpdateItem` (no delete, no put) |
 | Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |
+| Workspaces table | `Scan` (finds the membership rows that hold an erased email); `UpdateItem` pinned to `WS#*` and the attributes `email` and `name` (de-identifies a `MEMBER#` row). No put, no delete; the audit-row guard denies it any `AUDIT#` row |
 | Raw bucket | `DeleteObject` and `DeleteObjectVersion` on `raw/*` and `silver/*`, plus `ListBucketVersions` with the `raw/` and `silver/` prefixes. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source |
 | Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); no delete |
 | KMS | Encrypt/decrypt |

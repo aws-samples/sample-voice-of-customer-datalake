@@ -717,6 +717,7 @@
     "legalBasisShown": "Base légale : {{basis}}",
     "copies": "{{radar, number}} avis Radar supprimés, {{artifacts, number}} personas ou documents marqués",
     "boards": "Demandes de tableau et +1 anonymisés : {{rows, number}}",
+    "members": "Appartenances à des espaces de travail anonymisées : {{rows, number}}",
     "reviewFiles": "Fichiers importés conservés parce qu'ils contiennent aussi des lignes non effacées : {{files, number}}. Vérifiez-les :",
     "status": {
       "queued": "En file d'attente",
@@ -750,6 +751,7 @@
       "items": "Suppression des avis. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "radar": "Suppression des avis Radar. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "boards": "Anonymisation des demandes de tableau et des +1. Anonymisés jusqu’ici : {{rows, number}}.",
+      "members": "Suppression de l’e-mail et du nom des adhésions aux espaces de travail. Anonymisées jusqu’ici : {{rows, number}}.",
       "raw": "Suppression des fichiers bruts. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "lineage": "Marquage des personas et des documents qui citaient des avis supprimés. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "done": "Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}."

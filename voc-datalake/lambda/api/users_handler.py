@@ -17,6 +17,12 @@ and demoting, disabling, enabling, deleting or resetting the password of a platf
 admin, answer 403 to anyone else; no request may leave zero enabled platform admins
 (409). Every grant and revoke (a demotion and a delete of a platform admin too)
 writes an ``AUDIT#platform-admins`` row in voc-aggregates before the change.
+
+Deleting a user also removes their workspace memberships in voc-workspaces
+(docs/multi-workspace.md → Invites; shared/workspace_members.py ``plan_user_removal``
+and ``remove_user_memberships``), BEFORE ``AdminDeleteUser``, so a refusal or a
+fault leaves the account as it was: the last admin of a workspace is refused (409)
+unless the caller is a platform admin.
 """
 import os
 import secrets
@@ -27,7 +33,7 @@ from typing import Any, Final
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import ai_mode, category_access, user_admin_guard, user_flags
+from shared import ai_mode, category_access, user_admin_guard, user_flags, workspace_members
 from shared.api import (
     DEFAULT_CATEGORIES,
     api_handler,
@@ -64,6 +70,9 @@ cognito = boto3.client('cognito-idp')
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 aggregates_table = get_dynamodb_resource().Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+# voc-workspaces: a deleted user's memberships go with them (delete_user). The stack always sets it.
+WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
+workspaces_table = get_dynamodb_resource().Table(WORKSPACES_TABLE) if WORKSPACES_TABLE else None
 
 # Client-facing text for an unexpected Cognito failure (#263, after PR #403).
 # Each was `ServiceError(str(e))`, and `shared/api.py` returns that message
@@ -520,19 +529,46 @@ def _audit_platform_admin(username: str, kind: str, via: str, public_error: str)
 
 def _guarded_user_action(
     username: str, guard_action: str, action: Callable[..., Any], logged: tuple[str, str], message: str, *,
-    removes: bool = False, revokes: bool = False,
+    removes: bool = False,
 ) -> dict:
     """``_run_user_action`` after the platform-admin rules on its target; ``logged`` = (log line, public error).
 
-    ``removes``: the action takes a platform admin out of service (disable, delete), so the last enabled one is
-    refused. ``revokes``: it also ends the membership (a delete: Cognito drops a deleted user's groups itself), so
-    a platform admin's is audited as a revoke first.
+    ``removes``: the action takes a platform admin out of service (disable), so the last enabled one is refused.
     """
     failure, public_error = logged
     groups = _groups_or_fail(username, failure, public_error)
-    if _guard_platform_admin_target(username, groups, guard_action, public_error, removes=removes) and revokes:
-        _audit_platform_admin(username, PLATFORM_ADMIN_REVOKE, 'delete', public_error)
+    _guard_platform_admin_target(username, groups, guard_action, public_error, removes=removes)
     return _run_user_action(action, username, failure, public_error, message)
+
+
+def _plan_workspace_removal(username: str) -> workspace_members.UserRemoval | None:
+    """The user's workspace memberships, read and checked (shared/workspace_members.py ``plan_user_removal``): 409 for
+    the last admin of a workspace unless the caller is a platform admin (live), the route's fixed 500 for a fault.
+    None without the workspaces table."""
+    if workspaces_table is None:
+        return None
+    sub = _user_sub(username)
+    event = app.current_event.raw_event
+    try:
+        return workspace_members.plan_user_removal(
+            workspaces_table, sub,
+            caller_is_platform_admin=lambda: _caller_is_platform_admin(event, FAILED_DELETE_USER))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error reading the user workspace memberships')
+        raise ServiceError(FAILED_DELETE_USER) from exc
+
+
+def _remove_workspace_memberships(removal: workspace_members.UserRemoval | None) -> None:
+    """Remove the memberships ``_plan_workspace_removal`` read (each audited first); the route's fixed 500 for a
+    fault, 409 when one changed meanwhile. The ones already removed stay removed, and the account stays."""
+    if removal is None or workspaces_table is None:
+        return
+    try:
+        workspace_members.remove_user_memberships(
+            workspaces_table, removal, get_caller_subject(app.current_event.raw_event))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error removing the user workspace memberships')
+        raise ServiceError(FAILED_DELETE_USER) from exc
 
 
 @app.post('/users/<username>/reset-password')
@@ -567,12 +603,21 @@ def disable_user(username: str):
 @app.delete('/users/<username>')
 @tracer.capture_method
 def delete_user(username: str):
-    """Delete a user from Cognito."""
+    """Delete a user: every refusal first (own account, last administrator, a platform admin's rules, the last admin
+    of a workspace), then a platform admin's revoke audit row (Cognito drops a deleted user's groups itself), then
+    the user's workspace memberships (each audited first), and only then the Cognito account, so a refusal or a fault
+    before it leaves the account as it was."""
     require_admin(app.current_event.raw_event)
     _refuse_unsafe_admin_change(username, user_admin_guard.ACTION_DELETE, FAILED_DELETE_USER)
-    return _guarded_user_action(username, user_admin_guard.ACTION_DELETE, cognito.admin_delete_user,
-                                ('Error deleting user', FAILED_DELETE_USER), 'User deleted',
-                                removes=True, revokes=True)
+    failure = 'Error deleting user'
+    groups = _groups_or_fail(username, failure, FAILED_DELETE_USER)
+    platform_admin_target = _guard_platform_admin_target(
+        username, groups, user_admin_guard.ACTION_DELETE, FAILED_DELETE_USER, removes=True)
+    removal = _plan_workspace_removal(username)
+    if platform_admin_target:
+        _audit_platform_admin(username, PLATFORM_ADMIN_REVOKE, 'delete', FAILED_DELETE_USER)
+    _remove_workspace_memberships(removal)
+    return _run_user_action(cognito.admin_delete_user, username, failure, FAILED_DELETE_USER, 'User deleted')
 
 
 def _platform_admin_body() -> bool:

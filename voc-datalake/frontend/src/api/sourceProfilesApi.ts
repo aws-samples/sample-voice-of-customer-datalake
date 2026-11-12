@@ -103,7 +103,7 @@ const SOURCE_ERASURE_FIELD = 'source'
 const JOB_FIELDS = [...ERASURE_FIELDS, SOURCE_ERASURE_FIELD] as const
 export type ErasureJobField = typeof JOB_FIELDS[number]
 /** The worker's phases in order (lambda/jobs/retention/handler.py). */
-const ERASURE_PHASES = ['items', 'radar', 'boards', 'raw', 'lineage'] as const
+const ERASURE_PHASES = ['items', 'radar', 'boards', 'members', 'raw', 'lineage'] as const
 
 const ERASURE_STATUSES = ['queued', 'running', 'completed', 'failed'] as const
 export type ErasureStatus = typeof ERASURE_STATUSES[number]
@@ -134,12 +134,15 @@ const ErasureJobSchema = z.object({
   artifacts_marked: count,
   /** Board requests and +1s an erasure by email de-identified; absent (0) when it touched none. */
   board_items_deidentified: count,
+  /** Workspace membership rows whose email and name an erasure by email removed; absent (0) when it touched none. */
+  member_rows_deidentified: count,
   files_needing_review: FilesNeedingReviewSchema,
   started_by: z.string().catch(''),
   created_at: z.string().catch(''),
   finished_at: optionalText,
   error: optionalText,
-  /** Reviews, Radar reviews, (by email) board requests, (whole source) the raw folder, then the marking of artifacts. */
+  /** Reviews, Radar reviews, (by email) board requests and workspace memberships, (whole source) the raw folder, then
+   * the marking of artifacts. */
   phase: z.enum(ERASURE_PHASES).optional().catch(undefined),
 })
 

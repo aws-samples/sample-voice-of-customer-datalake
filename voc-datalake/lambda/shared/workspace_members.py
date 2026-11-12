@@ -25,13 +25,22 @@ Rules:
   member already has changes and records nothing.
 * The member's ``MEMBER#`` row and their ``USER#`` row ("my workspaces", the role copied there) change in ONE
   transaction. A new membership also checks that the workspace is still ``active``.
+* Deleting a user (the users API, ``DELETE /users/{username}``) removes every membership of theirs BEFORE the Cognito
+  account goes (``plan_user_removal`` then ``remove_user_memberships``): one transaction per workspace (the two rows,
+  and for an admin the check that the other admin still is one), each after its ``member_removed`` audit row (``via:
+  user_deleted``). The last member admin of a workspace is refused (409) unless the caller is a platform admin; then
+  the workspace keeps no member admin until a platform admin enters it and names one.
+* An admin whose Cognito account is disabled still counts as an admin (``_another_admin`` reads the table only): a
+  disabled account may be enabled again, and checking each admin's account would cost one Cognito call per row on
+  every demotion and removal. A deleted account no longer counts: its rows go with it.
 
 The rows (``voc-workspaces``):
 
     WS#{ws}       / MEMBER#{sub}     role, invited_by, joined_at, email, name (email and name as Cognito had them
                                      when the member was added; the creator's row from 6.09.00 has neither)
     USER#{sub}    / WS#{ws}          name, slug, role
-    AUDIT#WS#{ws} / {iso}#{random}   kind, actor, target, role_before, role_after, at, platform_admin (+ account)
+    AUDIT#WS#{ws} / {iso}#{random}   kind, actor, target, role_before, role_after, at, platform_admin (+ account;
+                                     a user's delete: via, left_without_admin)
 
 No row here carries ``ttl`` (only ``INVITE#`` rows may; lib/customer-data-deletes.test.ts and
 shared/test/test_platform_workspaces.py pin it). Emails and subs identify people: neither is ever logged.
@@ -57,12 +66,26 @@ from shared.ops_alerts import normalize_email
 from shared.persona_save import cancellation_codes
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
-from shared.workspace import ACTIVE, NOT_FOUND, ROLES, WorkspaceContext, audit_key, audit_sort_key, text_fields, ws_key
+from shared.workspace import (
+    ACTIVE,
+    NOT_FOUND,
+    ROLES,
+    WorkspaceContext,
+    audit_key,
+    audit_sort_key,
+    is_workspace_id,
+    text_fields,
+    ws_key,
+)
 
 MEMBER_ADDED: Final = 'member_added'
 MEMBER_ROLE_CHANGED: Final = 'member_role_changed'
 MEMBER_REMOVED: Final = 'member_removed'
 MEMBER_LEFT: Final = 'member_left'
+#: ``via`` on the ``member_removed`` rows of a user's delete (the users API).
+VIA_USER_DELETED: Final = 'user_deleted'
+#: At most this many workspace names in the refusal of a user's delete.
+MAX_NAMED_WORKSPACES: Final = 3
 #: The audit kind of a new Cognito account an add creates (written before the account exists).
 ACCOUNT_CREATION: Final = 'account_created'
 #: ``account`` on an add: the email's Cognito account existed, or the add created it.
@@ -289,7 +312,7 @@ def _still_admin(table_name: str, ws: str, sub: str) -> dict[str, Any]:
 
 
 def _audit(table: Any, context: WorkspaceContext, *, kind: str, actor: str, target: str,
-           before: str | None, after: str | None, **extra: str) -> None:
+           before: str | None, after: str | None, **extra: str | bool) -> None:
     """The audit row of a membership change, written before the change (it records the attempt)."""
     at = now_iso()
     row: dict[str, Any] = {'pk': audit_key(context.ws), 'sk': audit_sort_key(at), 'kind': kind, 'actor': actor,
@@ -466,3 +489,118 @@ def remove_member(table: Any, context: WorkspaceContext, sub: str, actor: str) -
         {'Delete': {'TableName': table.name, 'Key': _user_key(ws, sub)}},
     ], other_admin, context, actor, sub)
     logger.info('Workspace member removed', extra={'workspace_id': ws})
+
+
+# ── A deleted user's memberships (the users API, DELETE /users/{username}) ──
+
+@dataclass(frozen=True)
+class UserMembership:
+    """One workspace a user being deleted belongs to, as read before any write."""
+
+    ws: str
+    #: The workspace's name and slug, from the user's ``USER#`` row (the refusal names the workspace).
+    name: str
+    slug: str
+    #: The ``MEMBER#`` row's role (the authority); None when only the ``USER#`` row is left.
+    role: str | None
+    #: For an admin: another member admin the removal checks is still one; None when there is none.
+    other_admin: str | None
+
+    @property
+    def last_admin(self) -> bool:
+        return self.role == 'admin' and self.other_admin is None
+
+
+@dataclass(frozen=True)
+class UserRemoval:
+    """What ``remove_user_memberships`` removes: the user's memberships, read and checked."""
+
+    sub: str
+    memberships: tuple[UserMembership, ...]
+    #: True when the caller is a platform admin now (live-checked; only they may leave a workspace without an admin).
+    platform_admin: bool
+
+
+def last_admin_message(names: list[str]) -> str:
+    """The 409 of a user's delete that would leave workspaces without an admin, naming up to three of them."""
+    quoted = [f'"{name}"' if name else 'an unnamed workspace' for name in names[:MAX_NAMED_WORKSPACES]]
+    more = len(names) - len(quoted)
+    which = ', '.join(quoted) + (f' and {more} more' if more else '')
+    noun = 'workspace' if len(names) == 1 else 'workspaces'
+    return (f'This user is the last admin of the {noun} {which}: make another member an admin there first, '
+            'or ask a platform admin to delete the user and name a new admin afterwards.')
+
+
+def _user_workspace_rows(table: Any, sub: str) -> list[dict]:
+    """The user's ``USER#{sub}`` rows (every page, strongly consistent)."""
+    return list(iter_query(table, {
+        'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :ws)',
+        'ExpressionAttributeValues': {':pk': f'USER#{sub}', ':ws': 'WS#'},
+        'ConsistentRead': True,
+    }))
+
+
+def plan_user_removal(table: Any, sub: str, *, caller_is_platform_admin: Callable[[], bool]) -> UserRemoval:
+    """Read every membership of ``sub`` (one Query of their ``USER#`` rows; per workspace their ``MEMBER#`` role and,
+    for an admin, one Query for another admin) and check it may go: 409 when ``sub`` is the last member admin of a
+    workspace, unless ``caller_is_platform_admin()`` (the live check; asked once, only when the user has a membership,
+    and recorded on every audit row as ``platform_admin``) says yes. Writes nothing."""
+    memberships = []
+    malformed = 0
+    for row in _user_workspace_rows(table, sub):
+        sk, name, slug = text_fields(row, 'sk', 'name', 'slug')
+        ws = sk.removeprefix('WS#')
+        if not is_workspace_id(ws):
+            malformed += 1
+            continue
+        role = _stored_role(table, ws, sub)
+        other = _another_admin(table, ws, sub) if role == 'admin' else None
+        memberships.append(UserMembership(ws=ws, name=name, slug=slug, role=role, other_admin=other))
+    if malformed:
+        logger.warning('Left out malformed my-workspaces rows of a deleted user', extra={'count': malformed})
+    orphaned = [membership.name for membership in memberships if membership.last_admin]
+    platform_admin = bool(memberships) and caller_is_platform_admin()
+    if orphaned and not platform_admin:
+        raise ConflictError(last_admin_message(orphaned))
+    return UserRemoval(sub=sub, memberships=tuple(memberships), platform_admin=platform_admin)
+
+
+def _remove_deleted_users_membership(table: Any, removal: UserRemoval, membership: UserMembership,
+                                     actor: str) -> None:
+    ws, sub = membership.ws, removal.sub
+    context = WorkspaceContext(ws=ws, role='', name=membership.name, slug=membership.slug,
+                               platform_admin=removal.platform_admin)
+    _audit(table, context, kind=MEMBER_REMOVED, actor=actor, target=sub, before=membership.role, after=None,
+           via=VIA_USER_DELETED, left_without_admin=membership.last_admin)
+    member_delete: dict[str, Any] = {'TableName': table.name, 'Key': _member_key(ws, sub)}
+    if membership.role is not None:
+        # The role read above still holds (a promotion meanwhile would skip the last-admin check).
+        member_delete.update(ConditionExpression='#role = :before', ExpressionAttributeNames={'#role': 'role'},
+                             ExpressionAttributeValues={':before': membership.role})
+    items: list[dict[str, Any]] = [{'Delete': member_delete},
+                                   {'Delete': {'TableName': table.name, 'Key': _user_key(ws, sub)}}]
+    if membership.other_admin is not None:
+        items.append(_still_admin(table.name, ws, membership.other_admin))
+    try:
+        _transact(table, items)
+    except ClientError as exc:
+        codes = cancellation_codes(exc)
+        if 'ConditionalCheckFailed' in codes or 'TransactionConflict' in codes:
+            raise ConflictError(CHANGED_MEANWHILE) from exc
+        raise
+
+
+def remove_user_memberships(table: Any, removal: UserRemoval, actor: str) -> int:
+    """Remove every membership ``plan_user_removal`` read: per workspace, its ``member_removed`` audit row (``via:
+    user_deleted``; ``left_without_admin`` when the user was its last admin), then ONE transaction deleting the
+    ``MEMBER#`` and ``USER#`` rows (the ``MEMBER#`` delete conditional on the role read, and for an admin a check that
+    the other admin still is one). 409 when a membership changed meanwhile; any other fault propagates. The workspaces
+    already done stay done: a retried delete reads only what is left. The number of memberships removed."""
+    for membership in removal.memberships:
+        _remove_deleted_users_membership(table, removal, membership, actor)
+        if membership.last_admin:
+            logger.warning('A deleted user was the last admin of a workspace: a platform admin can name one',
+                           extra={'workspace_id': membership.ws})
+    if removal.memberships:
+        logger.info('Removed a deleted user from their workspaces', extra={'count': len(removal.memberships)})
+    return len(removal.memberships)

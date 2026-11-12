@@ -32,6 +32,34 @@ export interface EngagementInputs {
   enabledSourcesEnv: string;
 }
 
+/** A membership's two rows (lambda/shared/workspace_members.py): `WS#{ws}` / `MEMBER#{sub}` and `USER#{sub}` / `WS#{ws}`. */
+const MEMBERSHIP_PARTITIONS = ['USER#*', 'WS#*'];
+/** A workspace's audit partition, the only one the users API writes in voc-workspaces (lib/utils/audit-row-guard.ts). */
+const WORKSPACE_AUDIT_PARTITION = 'AUDIT#WS#*';
+
+/**
+ * DELETE /users/{username} also removes the user's workspace memberships (lambda/shared/workspace_members.py
+ * plan_user_removal, remove_user_memberships), so the users API reaches voc-workspaces in these keys only
+ * (`dynamodb:LeadingKeys`): Query on `USER#*` (the user's workspaces) and `WS#*` (another admin of a workspace);
+ * GetItem on `WS#*` (the user's MEMBER# role) and `AUDIT#WS#*` (an audit row read back after a retried put); PutItem on
+ * `AUDIT#WS#*` (each removal's audit row, written first; the audit-row guard names this role a writer of that
+ * partition only); DeleteItem on `USER#*` and `WS#*` (the two rows; IAM cannot pin a sort key, so `META` in `WS#*` is
+ * in reach of IAM and kept out by the code, which deletes MEMBER# keys only); ConditionCheckItem on `WS#*` (the other
+ * admin still is one). No Scan, no UpdateItem, no BatchWriteItem.
+ */
+function grantDeletedUserMemberships(ctx: ApiStackContext, role: iam.Role): void {
+  const { workspacesTable } = ctx.props;
+  const scoped = (actions: string[], partitions: string[]) => new iam.PolicyStatement({
+    actions, resources: [workspacesTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } },
+  });
+  role.addToPolicy(scoped(['dynamodb:Query'], MEMBERSHIP_PARTITIONS));
+  role.addToPolicy(scoped(['dynamodb:GetItem'], [WORKSPACE_AUDIT_PARTITION, 'WS#*']));
+  role.addToPolicy(scoped(['dynamodb:ConditionCheckItem'], ['WS#*']));
+  grantKeyScopedWrites(workspacesTable, role, ['PutItem'], [WORKSPACE_AUDIT_PARTITION]);
+  grantKeyScopedWrites(workspacesTable, role, ['DeleteItem'], MEMBERSHIP_PARTITIONS);
+}
+
 export function createEngagementLambdas(ctx: ApiStackContext, inputs: EngagementInputs): EngagementLambdas {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
@@ -100,6 +128,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   aggregatesTable.grant(usersRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:BatchGetItem');
   // The config_version bump after a category-access save (docs/caching.md).
   grantCacheVersionBump(aggregatesTable, usersRole, AGGREGATES_VERSION_PARTITION);
+  grantDeletedUserMemberships(ctx, usersRole);
   kmsKey.grantEncryptDecrypt(usersRole);
 
   const usersLambda = new lambda.Function(stack, 'UsersApi', {
@@ -111,7 +140,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     role: usersRole,
     timeout: cdk.Duration.seconds(30),
     memorySize: 512, // CPU: 63.2 % p95 at 256 MB, 2026-10-18 (lib/sizing/policy.ts)
-    environment: { USER_POOL_ID: userPool.userPoolId, AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-users-api', LOG_LEVEL: 'INFO' },
+    environment: { USER_POOL_ID: userPool.userPoolId, AGGREGATES_TABLE: aggregatesTable.tableName, WORKSPACES_TABLE: ctx.props.workspacesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-users-api', LOG_LEVEL: 'INFO' },
     layers: [apiLayer],
     logGroup: ctx.logGroup('UsersApiLogs', ctx.uniqueName('voc-users-api')),
   });

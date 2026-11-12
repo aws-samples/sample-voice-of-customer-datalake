@@ -85,6 +85,17 @@ describe('voc-retention worker', () => {
     expect(JSON.stringify(template.toJSON())).toContain('"ForAllValues:StringLike":{"dynamodb:LeadingKeys":["FR#*"]}');
   });
 
+  it('scans workspaces and updates only email and name under WS#* (it de-identifies membership rows)', () => {
+    expect(allowedActions(statements(), 'dynamodb:', 'Workspaces')).toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
+    const update = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Workspaces')
+      && s.actions.includes('dynamodb:UpdateItem'));
+    expect(update.map((s) => s.actions)).toStrictEqual([['dynamodb:UpdateItem']]);
+    expect(JSON.stringify(template.toJSON())).toContain(
+      '{"ForAllValues:StringLike":{"dynamodb:LeadingKeys":["WS#*"]},'
+      + '"ForAllValues:StringEquals":{"dynamodb:Attributes":["email","name","pk","sk"]}}');
+    expect(worker().Environment.Variables).toHaveProperty('WORKSPACES_TABLE');
+  });
+
   it('deletes objects and versions under raw/* and silver/* only, and lists versions of those prefixes only', () => {
     const s3 = statements().filter((s) => s.effect === 'Allow' && s.actions.some((a) => a.startsWith('s3:')));
     expect(s3.map((s) => [...s.actions].sort(byCodeUnit).join(','))).toStrictEqual([

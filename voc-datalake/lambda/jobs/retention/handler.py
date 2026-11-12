@@ -20,7 +20,9 @@ A run walks its PHASES in order, each paged and time-budgeted:
 2. ``radar`` — voc-radar (other brands' reviews), when ``RADAR_TABLE`` is set;
    then ``boards`` — an erasure by email only, when ``FEATURE_REQUESTS_TABLE`` is set:
    the person's board requests and +1s are de-identified and their raw copies deleted
-   (``boards.py``);
+   (``boards.py``); then ``members`` — an erasure by email without a source, when
+   ``WORKSPACES_TABLE`` is set: the email and name on the person's workspace membership
+   rows are removed (``members.py``);
 3. ``raw`` — whole-source erasure only: every object version left under
    ``raw/{source}/`` and ``silver/{source}/`` (``shared/retention.delete_raw_prefix_page``);
 4. ``lineage`` — when the run deleted anything and ``PROJECTS_TABLE`` is set:
@@ -34,7 +36,7 @@ duplicate delivery or an overlapping daily run only repeats no-ops. Every
 finished run (and every failure) writes one audit row (``pk AUDIT#retention``).
 
 Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``RAW_DATA_BUCKET``, ``RADAR_TABLE``, ``PROJECTS_TABLE``,
-``FEATURE_REQUESTS_TABLE``.
+``FEATURE_REQUESTS_TABLE``, ``WORKSPACES_TABLE``.
 """
 
 from __future__ import annotations
@@ -49,15 +51,14 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
-from jobs.retention import boards, lineage
+from jobs.retention import boards, lineage, members
 from jobs.retention.copies import ItemDeleter, write_tombstones
 from jobs.retention.runs import (
-    BOARD_COUNTER,
     MODE_ERASE,
     MODE_RETENTION,
-    board_count,
     carried_state,
     claim_erasure_job,
+    deidentified_counts,
     finish_erasure_job,
     new_run,
     record_progress,
@@ -71,16 +72,17 @@ from shared.invocation_cost import instrumented_handler
 from shared.jobs import has_time_left
 from shared.legal_basis import legal_basis_or_legacy
 from shared.logging import logger, metrics
-from shared.retention import SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR
+from shared.retention import BOARD_COUNTER, SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR
 from shared.source_erasure import refresh_source_lock, release_source_lock
 from shared.source_profiles import SOURCE_ID_RE, load_source_profiles
 from shared.warm_init import warm_at_init
 
 # Bundled beside `shared/` (no sys.path shim); tests import `jobs.retention.handler`.
-FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET, RADAR_TABLE, PROJECTS_TABLE, FEATURE_REQUESTS_TABLE = (
+(FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET, RADAR_TABLE, PROJECTS_TABLE, FEATURE_REQUESTS_TABLE,
+ WORKSPACES_TABLE) = (
     os.environ.get(name, '')
     for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE',
-                 'FEATURE_REQUESTS_TABLE'))
+                 'FEATURE_REQUESTS_TABLE', 'WORKSPACES_TABLE'))
 
 JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
 STATUS_COMPLETED: Final = 'completed'
@@ -88,6 +90,7 @@ STATUS_FAILED: Final = 'failed'
 PHASE_ITEMS: Final = 'items'
 PHASE_RADAR: Final = 'radar'
 PHASE_BOARDS: Final = 'boards'
+PHASE_MEMBERS: Final = 'members'
 PHASE_RAW: Final = 'raw'
 PHASE_LINEAGE: Final = 'lineage'
 _PHASE_STORES: Final = {PHASE_ITEMS: STORE_FEEDBACK, PHASE_RADAR: STORE_RADAR}
@@ -125,7 +128,8 @@ def _tables() -> dict[str, Any]:
     dynamodb = get_dynamodb_resource()
     tables = {STORE_FEEDBACK: dynamodb.Table(FEEDBACK_TABLE), 'aggregates': dynamodb.Table(AGGREGATES_TABLE)}
     for name, table_name in ((STORE_RADAR, RADAR_TABLE), ('projects', PROJECTS_TABLE),
-                             (boards.STORE_BOARDS, FEATURE_REQUESTS_TABLE)):
+                             (boards.STORE_BOARDS, FEATURE_REQUESTS_TABLE),
+                             (members.STORE_MEMBERS, WORKSPACES_TABLE)):
         if table_name:
             tables[name] = dynamodb.Table(table_name)
     return tables
@@ -310,6 +314,14 @@ def _erase_from_boards(walk: Walk, cursor: dict | None) -> dict | None:
                         eraser.tombstones, eraser.erase)
 
 
+def _erase_from_members(walk: Walk, cursor: dict | None) -> dict | None:
+    """Tombstone, then de-identify, every workspace membership row of the erased email (``members.py``)."""
+    table, value = walk.tables[members.STORE_MEMBERS], str(walk.event.get('value') or '')
+    eraser = members.MemberEraser(walk.run, walk.tables)
+    return _erase_pages(walk, PHASE_MEMBERS, cursor, lambda at: members.scan_page(table, value, at),
+                        eraser.tombstones, eraser.erase)
+
+
 def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
     """Mark the workspace artifacts that cited a deleted item (``lineage.py``), page by page."""
     projects = walk.tables['projects']
@@ -328,6 +340,8 @@ def _phases(walk: Walk) -> list[str]:
         phases.append(PHASE_RADAR)
     if boards.STORE_BOARDS in walk.tables and boards.applies(walk.run):
         phases.append(PHASE_BOARDS)
+    if members.STORE_MEMBERS in walk.tables and members.applies(walk.run):
+        phases.append(PHASE_MEMBERS)
     if walk.run.get('field') == SOURCE_FIELD:
         phases.append(PHASE_RAW)
     if 'projects' in walk.tables:
@@ -363,6 +377,7 @@ _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
     PHASE_ITEMS: lambda walk, cursor: _walk_store(walk, PHASE_ITEMS, cursor),
     PHASE_RADAR: lambda walk, cursor: _walk_store(walk, PHASE_RADAR, cursor),
     PHASE_BOARDS: _erase_from_boards,
+    PHASE_MEMBERS: _erase_from_members,
     PHASE_RAW: _sweep_raw,
     PHASE_LINEAGE: _mark_lineage,
 }
@@ -383,7 +398,7 @@ def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str 
                        value=run['deleted_items'] + run['deleted_radar_items'])
     return {'status': status, 'run_id': run['run_id'], 'deleted_items': run['deleted_items'],
             'deleted_radar_items': run['deleted_radar_items'], 'deleted_objects': run['deleted_objects'],
-            'artifacts_marked': run['artifacts_marked'], **board_count(run)}
+            'artifacts_marked': run['artifacts_marked'], **deidentified_counts(run)}
 
 
 def handle_event(event: dict[str, Any], context: Any) -> dict:

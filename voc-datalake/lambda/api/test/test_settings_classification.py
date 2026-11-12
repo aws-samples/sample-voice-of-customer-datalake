@@ -173,6 +173,14 @@ class TestErasure:
         assert view['files_needing_review'] == {'count': 1, 'keys': ['raw/csv_upload/2026/01/01/j.csv']}
         assert 'files_needing_review' not in settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
 
+    def test_the_job_view_carries_the_deidentified_rows_once_there_are_some(self):
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'board_items_deidentified': 2, 'member_rows_deidentified': 3})
+        assert (view['board_items_deidentified'], view['member_rows_deidentified']) == (2, 3)
+        bare = settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
+        assert 'board_items_deidentified' not in bare
+        assert 'member_rows_deidentified' not in bare
+
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize('field', ['source_id', 'csv_row_id'])
     def test_an_id_erasure_names_its_source(self, route, field):
