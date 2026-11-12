@@ -1,9 +1,11 @@
 /**
  * The workspaces API, `voc-workspaces-api` (lib/stacks/api-workspaces-lambda.ts, docs/multi-workspace.md):
- * GET /me/{proxy+} and GET + POST /platform/{proxy+} behind the Cognito authorizer, a role of its own with exactly
- * the actions its code uses: on the voc-workspaces table Query, GetItem, PutItem in the partitions a create and an
- * entry write, UpdateItem on `WS#*`; the live platform-admin check's two Cognito reads; and the per-workspace
- * credentials secrets' create, describe and tag on `voc/ws/*` only.
+ * GET, POST, PUT and DELETE /me/{proxy+} and GET + POST /platform/{proxy+} behind the Cognito authorizer, a role of
+ * its own with exactly the actions its code uses: on the voc-workspaces table Query, GetItem, PutItem in the
+ * partitions a create, an add and an audit write, UpdateItem on `WS#*` and `WORKSPACES` (attribute `secret_status`
+ * only) and on `WS#*` and `USER#*` (attribute `role` only), DeleteItem on `WS#*` and `USER#*` (a member's removal),
+ * ConditionCheckItem on `WS#*`; the live platform-admin check's two Cognito reads plus ListUsers and AdminCreateUser
+ * (adding a member); and the per-workspace credentials secrets' create, describe and tag on `voc/ws/*` only.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -31,18 +33,26 @@ describe('the voc-workspaces-api Lambda', () => {
     expect(env.WORKSPACE_SECRET_PREFIX).toBe('voc/ws');
   });
 
-  it('may Query, GetItem, PutItem and UpdateItem on the workspaces table, and no other DynamoDB action', () => {
-    expect(actionsWithPrefix(statements(), 'dynamodb:'))
-      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem']);
+  it('may Query, GetItem, PutItem, UpdateItem, DeleteItem and ConditionCheckItem on the workspaces table, nothing else', () => {
+    expect(actionsWithPrefix(statements(), 'dynamodb:')).toStrictEqual([
+      'dynamodb:ConditionCheckItem', 'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query',
+      'dynamodb:UpdateItem']);
   });
 
-  it('reads without a key condition, puts only in the create and audit partitions, updates only WS#*', () => {
+  it('reads without a key condition; puts, updates, deletes and checks only in their partitions and attributes', () => {
     const shape = withPrefix('dynamodb:').map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))
-      .sort((a, b) => byCodeUnit(a.actions.join(), b.actions.join()));
+      .sort((a, b) => byCodeUnit(a.actions.join() + JSON.stringify(a.condition), b.actions.join() + JSON.stringify(b.condition)));
     expect(shape).toStrictEqual([
+      { actions: ['dynamodb:ConditionCheckItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } } },
+      // A member's removal: their MEMBER# and USER# rows (IAM pins the partition, not the sort key).
+      { actions: ['dynamodb:DeleteItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] } } },
       { actions: ['dynamodb:GetItem', 'dynamodb:Query'], condition: undefined },
       { actions: ['dynamodb:PutItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
         'AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'] } } },
+      // A role change: `role` alone, on the MEMBER# and USER# rows.
+      { actions: ['dynamodb:UpdateItem'], condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'role', 'sk'] } } },
       { actions: ['dynamodb:UpdateItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WORKSPACES', 'WS#*'] },
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'secret_status', 'sk'] } } },
@@ -53,15 +63,16 @@ describe('the voc-workspaces-api Lambda', () => {
   // name the table alone. voc-workspaces has no index.
   it('names the workspaces table and no other table', () => {
     const resources = withPrefix('dynamodb:').map((s) => s.resource);
-    expect(resources).toHaveLength(3);
+    expect(resources).toHaveLength(6);
     expect(resources.join('\n').match(/ExportsOutputFnGetAtt[A-Za-z]+/g)?.sort(byCodeUnit))
-      .toStrictEqual(Array<string>(4).fill('ExportsOutputFnGetAttWorkspaces'));
+      .toStrictEqual(Array<string>(7).fill('ExportsOutputFnGetAttWorkspaces'));
   });
 
-  it('reads the caller\'s groups and account on the user pool only (the live platform-admin check)', () => {
+  it('reads the caller\'s groups and account, finds and creates accounts, on the user pool only', () => {
     const cognito = withPrefix('cognito-idp:');
-    expect(cognito.map((s) => [...s.actions].sort(byCodeUnit))).toStrictEqual([
-      ['cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser']]);
+    expect(cognito.map((s) => [...s.actions].sort(byCodeUnit))).toStrictEqual([[
+      'cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser',
+      'cognito-idp:ListUsers']]);
     expect(cognito[0]?.resource).toMatch(/UserPool/);
     expect(cognito[0]?.condition).toBeUndefined();
   });
@@ -84,9 +95,11 @@ describe('the voc-workspaces-api Lambda', () => {
   });
 });
 
-describe('GET /me/{proxy+} and /platform/{proxy+}', () => {
+describe('/me/{proxy+} and /platform/{proxy+}', () => {
   it.each([
-    ['GET', '/me/workspaces'], ['GET', '/me/workspaces/current'], ['GET', '/platform/workspaces'],
+    ['GET', '/me/workspaces'], ['GET', '/me/workspaces/current'], ['GET', '/me/workspaces/current/members'],
+    ['POST', '/me/workspaces/current/members'], ['PUT', '/me/workspaces/current/members/sub-ana'],
+    ['DELETE', '/me/workspaces/current/members/sub-ana'], ['GET', '/platform/workspaces'],
     ['POST', '/platform/workspaces'],
   ])('routes %s %s to the workspaces handler behind Cognito', (verb, path) => {
     const method = resolveMethod(apiMethods(apiTemplate()), verb, path);
@@ -94,10 +107,12 @@ describe('GET /me/{proxy+} and /platform/{proxy+}', () => {
     expect([method?.authorizationType, method?.hasAuthorizerId]).toStrictEqual(['COGNITO_USER_POOLS', true]);
   });
 
-  it('serves GET on /me and GET + POST on /platform, through their proxies only', () => {
+  it('serves GET, POST, PUT and DELETE on /me and GET + POST on /platform, through their proxies only', () => {
     const routes = nonOptions(apiTemplate())
       .filter((m) => ['/me', '/platform'].some((root) => m.path === root || m.path.startsWith(`${root}/`)))
       .map((m) => m.route).sort(byCodeUnit);
-    expect(routes).toStrictEqual(['GET /me/{proxy+}', 'GET /platform/{proxy+}', 'POST /platform/{proxy+}']);
+    expect(routes).toStrictEqual([
+      'DELETE /me/{proxy+}', 'GET /me/{proxy+}', 'GET /platform/{proxy+}', 'POST /me/{proxy+}',
+      'POST /platform/{proxy+}', 'PUT /me/{proxy+}']);
   });
 });

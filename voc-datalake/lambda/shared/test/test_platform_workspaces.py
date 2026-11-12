@@ -151,8 +151,10 @@ def test_no_row_the_create_writes_carries_a_ttl(table):
 
 # voc-workspaces holds primary data (members, audit) beside invites, and its TTL attribute is `ttl`: only an
 # `INVITE#` row may carry one (docs/multi-workspace.md, Open tenet questions). No writer of the table built so far
-# writes invites, so none of their modules may name the attribute at all.
-VOC_WORKSPACES_WRITERS = ('shared/workspace.py', 'shared/platform_workspaces.py', 'api/workspaces_handler.py')
+# writes invites (adding a member is immediate, shared/workspace_members.py), so none of their modules may name the
+# attribute at all.
+VOC_WORKSPACES_WRITERS = ('shared/workspace.py', 'shared/platform_workspaces.py', 'shared/workspace_members.py',
+                          'api/workspaces_handler.py')
 
 
 @pytest.mark.parametrize('module', VOC_WORKSPACES_WRITERS)
@@ -198,6 +200,18 @@ def test_mark_secret_ready_flips_the_meta_and_the_listing_row_of_a_pending_works
         mark_secret_ready(table, ws, name)
     with pytest.raises(ClientError, match='TransactionCanceled'):
         mark_secret_ready(table, 'ws_7ZZZZZZZZZZZZZZZZZZZZZZZZZ', name)
+
+
+def test_mark_secret_ready_sends_its_own_idempotency_token(table):
+    # A retried mark whose first attempt landed succeeds rather than failing its own `pending` condition: the token is
+    # the workspace's and stable across calls, and fits DynamoDB's 36 characters.
+    ws = _create(table)
+    with patch.object(table.meta.client, 'transact_write_items', wraps=table.meta.client.transact_write_items) as tx:
+        mark_secret_ready(table, ws, ACME.name)
+    [call] = tx.call_args_list
+    assert call.kwargs['ClientRequestToken'] == f'{ws}-ready'
+    assert len(call.kwargs['ClientRequestToken']) <= 36
+    assert call.kwargs['ClientRequestToken'] != ws  # not the create's own token
 
 
 # ── The credentials secret ───────────────────────────────────────────────────

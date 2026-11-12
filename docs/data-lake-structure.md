@@ -168,7 +168,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 | `voc-radar` | `pk`, `sk` | Other brands' reviews, kept out of your own metrics ([radar.md](radar.md)) |
 | `voc-participants` | `pk`, `sk` | People to ask for feedback, lists and asks ([participants.md](participants.md)) |
 | `voc-feature-requests` | `pk`, `sk` | Feedback boards and their requests ([feature-requests.md](feature-requests.md)) |
-| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs, the platform console's listing (`WORKSPACES`) and their audit; read and written only by the workspaces API (`GET /me/*`, `/platform/*`): platform admins create workspaces (one transaction, the creator as admin) and a platform admin's entry is audited; nothing adds members or invites yet ([multi-workspace.md](multi-workspace.md#control-plane)) |
+| `voc-workspaces` | `pk`, `sk` | Workspaces, members, invites, slugs, the platform console's listing (`WORKSPACES`) and their audit; read and written only by the workspaces API (`/me/*`, `/platform/*`): platform admins create workspaces (one transaction, the creator as admin), a platform admin's entry is audited, and a workspace's admins add members, change roles and remove members (a member may leave), each change audited first and written to the `MEMBER#` and `USER#` rows in one transaction (its one delete: a removal's two rows); no invite rows are written (membership is immediate) ([multi-workspace.md](multi-workspace.md#control-plane)) |
 
 ### Feedback table indexes
 

@@ -321,7 +321,7 @@ export function runtimeFixedCostFindings(templates: readonly StackTemplate[]): s
   return [...unlisted, ...gone];
 }
 
-const SNAPSTART_FINDINGS =SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
+const SNAPSTART_FINDINGS = SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
 
 // lib/utils/waf.ts: the CLOUDFRONT ACL (VocWebSearchStack), the REGIONAL ACL and its stage association (VocApiStack).
 const WAF_FINDINGS = [

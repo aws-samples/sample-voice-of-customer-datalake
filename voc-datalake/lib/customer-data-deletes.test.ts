@@ -79,17 +79,23 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   RadarTable: {
     [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure and retention reach Radar reviews and their dedupe markers (docs/radar.md)' },
   },
-  // The multi-workspace control plane (docs/multi-workspace.md): nothing deletes there yet (workspace delete is an
-  // open tenet question for phase 4).
-  WorkspacesTable: {},
+  // The multi-workspace control plane (docs/multi-workspace.md). Membership rows are access configuration, not
+  // customer data (D5 covers feedback and raw items); a removal is audited first (AUDIT#WS#, under the audit-row
+  // guard). IAM pins the partition, not the sort key: `WS#*` also reaches META, which only the code keeps out
+  // (lambda/shared/workspace_members.py; its tests pin the keys it deletes); SLUG#, WORKSPACES and AUDIT# stay out.
+  // Workspace delete is still an open tenet question for phase 4.
+  WorkspacesTable: {
+    'VocApiStack/WorkspacesLambdaRole': { scope: ['USER#*', 'WS#*'], why: 'membership removal: MEMBER# and USER# rows only' },
+  },
 };
 
 const DYNAMO_WRITE = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|PartiQL(Insert|Update|Delete)|\*)$/;
 
 /**
  * Who may write voc-workspaces, and where: the workspaces API alone, in the partitions a workspace's creation writes
- * (lambda/shared/platform_workspaces.py: `SLUG#`, `WS#`, `USER#`, the `WORKSPACES` listing, `AUDIT#WS#`) and its
- * entry audit rows; no role deletes there.
+ * (lambda/shared/platform_workspaces.py: `SLUG#`, `WS#`, `USER#`, the `WORKSPACES` listing, `AUDIT#WS#`), its entry
+ * audit rows and a membership's add, role change and removal (lambda/shared/workspace_members.py: `WS#` / `MEMBER#`,
+ * `USER#`, `AUDIT#WS#`); its only delete is the removal's (TABLE_DELETERS above).
  */
 const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
@@ -231,9 +237,10 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   // The order docs/multi-workspace.md (Control plane) asked for, held by a test rather than prose: no role could write
   // a workspace (META) or a membership (MEMBER#, USER#) before the users-API safeguards for platform-admins (6.08.00)
   // and the live platform-admin check on entering a workspace (6.09.00, lambda/shared/workspace.py). Both landed; the
-  // change that creates workspaces (6.09.00) is the one that widened WORKSPACE_WRITERS. A new writer or partition is a
-  // decision recorded here.
-  it('voc-workspaces: only the workspaces API writes, and only in its creation and audit partitions', () => {
+  // change that creates workspaces (6.09.00) is the one that widened WORKSPACE_WRITERS; the members routes (6.10.00)
+  // write within the same partitions (role updates and removals in `USER#*` and `WS#*`). A new writer or partition is
+  // a decision recorded here.
+  it('voc-workspaces: only the workspaces API writes, and only in its creation, membership and audit partitions', () => {
     const writers: Record<string, Scope> = {};
     for (const grant of grants.filter(onTable('WorkspacesTable')).filter((g) => g.actions.some((a) => DYNAMO_WRITE.test(a)))) {
       writers[grant.role] = unionOf(writers[grant.role] ?? [], scopeOf(grant));

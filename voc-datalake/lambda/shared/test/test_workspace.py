@@ -6,7 +6,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
-from shared.exceptions import NotFoundError, ValidationError
+from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 from shared.test.moto_tables import create_pk_sk_table
 from shared.workspace import (
     MAX_CACHED_MEMBERSHIPS,
@@ -17,6 +17,7 @@ from shared.workspace import (
     audit_key,
     is_workspace_id,
     list_my_workspaces,
+    require_workspace_admin,
     resolve_workspace,
     ws_key,
 )
@@ -443,3 +444,31 @@ def test_my_workspaces_leaves_out_rows_that_are_not_well_formed():
 def test_my_workspaces_is_empty_for_someone_with_none():
     with mock_aws():
         assert list_my_workspaces(create_pk_sk_table('workspaces'), 'sub-nobody') == []
+
+
+# ── Invalidation and the workspace-admin gate ────────────────────────────────
+
+def test_invalidate_forgets_one_membership_with_and_without_the_platform_admin_group():
+    cache = MembershipCache()
+    context = WorkspaceContext(ws=WS, role='editor', name='', slug='', platform_admin=False)
+    for ws, sub, elevated in ((WS, 'sub-ana', False), (WS, 'sub-ana', True), (WS, 'sub-sam', False),
+                              (OTHER_WS, 'sub-ana', False)):
+        cache.put(ws, sub, context, elevated)
+    cache.invalidate(WS, 'sub-ana')
+    assert [cache.get(WS, 'sub-ana', False), cache.get(WS, 'sub-ana', True)] == [None, None]
+    assert cache.get(WS, 'sub-sam') == context
+    assert cache.get(OTHER_WS, 'sub-ana') == context
+    cache.invalidate(WS, 'sub-nobody')  # nothing cached: no error
+
+
+@pytest.mark.parametrize(('role', 'platform_admin'), [('admin', False), ('admin', True)])
+def test_a_workspace_admin_passes_the_gate(role, platform_admin):
+    context = WorkspaceContext(ws=WS, role=role, name='', slug='', platform_admin=platform_admin)
+    require_workspace_admin(context)  # raises for anyone below admin
+    assert context.role == 'admin'
+
+
+@pytest.mark.parametrize('role', ['editor', 'viewer', ''])
+def test_everyone_below_admin_gets_403(role):
+    with pytest.raises(AuthorizationError, match='Workspace admin access required'):
+        require_workspace_admin(WorkspaceContext(ws=WS, role=role, name='', slug='', platform_admin=False))

@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.10.00] - 2026-11-12
+
+Multi-workspace, phase 1: workspace admins manage their workspace's members.
+
+### Added
+
+- Workspace members, in the workspace `X-Workspace-Id` names (the workspaces API, `lambda/shared/workspace_members.py`, on `/me/{proxy+}`): `GET /me/workspaces/current/members` (any member, paged), `POST …/members` with `{email, role}`, `PUT …/members/{sub}` with `{role}` and `DELETE …/members/{sub}` ([docs/multi-workspace.md](docs/multi-workspace.md#invites)). Writes are for the workspace's admins and platform admins, with the caller's role read fresh, not from the 30-second cache, and the write committing only while the acting admin is still admin (a check in its transaction; 403 when they were demoted meanwhile); editors and viewers get 403 and a non-member the same 404 as entering. A member may leave; demoting or removing the last admin, the caller included, is 409, and a demotion or removal of an admin checks in the same transaction that another admin remains.
+- An email with an account becomes a member at once (no invite to accept); a new email gets a Cognito account (temporary password email) only when the caller is a deployment admin (`admins`), because until the data is keyed by workspace (phase 2) every account reads the whole deployment. No notification email is sent to an existing account yet (the repository has no mail path for it; the add is logged). Adding by email tells a workspace admin whether the email has an account in the deployment (a trade-off of decision 4, written down in the design).
+- A new account's creation is recorded before it exists (an `account_created` row with the actor and the email's sha256, never the raw address, since no role can change or remove an audit row; written before `AdminCreateUser`: a row that cannot be written creates no account, and the row records the attempt). Every add, role change and removal first writes an `AUDIT#WS#{ws}` row (the attempt; a row that cannot be written changes nothing), then one transaction changes the `MEMBER#` and `USER#` rows together; the changed member's cache entry is dropped in that container (others within 30 s).
+
+### Changed
+
+- The workspaces API's role: UpdateItem on `WS#*` and `USER#*` limited to the attribute `role`; DeleteItem on `WS#*` and `USER#*` (IAM pins the partition only, so `WS#*` also reaches a workspace's `META`; the code deletes only `MEMBER#` and `USER#` keys, and tests pin that; `SLUG#`, `WORKSPACES` and `AUDIT#` rows are out of its reach); ConditionCheckItem on `WS#*`; Cognito ListUsers and AdminCreateUser on the user pool. `lib/customer-data-deletes.test.ts` lists the new deleter with its scope. The API stack's resource ceiling is 412.
+- Small: `mark_secret_ready`'s idempotency token is pinned by a test; a stale test header and a spacing slip are fixed.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`). The web app does not call these routes yet. A new account created this way joins no Cognito group.
+
 ## [6.09.00] - 2026-11-12
 
 Multi-workspace, phase 1: platform admins create and list workspaces; each new workspace gets its credentials secret.

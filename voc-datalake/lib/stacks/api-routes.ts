@@ -27,7 +27,7 @@ export interface RouteTargets extends DataLambdas, EngagementLambdas, AssistantL
   radarLambda: lambda.Function;
   /** voc-engagement-api: /participants/*, /feature-requests/*, POST /unsubscribe. */
   engagementLambda: lambda.Function;
-  /** voc-workspaces-api: GET /me/{proxy+}, GET + POST /platform/{proxy+} (docs/multi-workspace.md). */
+  /** voc-workspaces-api: GET, POST, PUT and DELETE /me/{proxy+}, GET + POST /platform/{proxy+} (docs/multi-workspace.md). */
   workspacesLambda: lambda.Function;
   webhookPlugins: PluginManifest[];
   webhookLambdas: Map<string, lambda.Function>;
@@ -272,10 +272,13 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // never addressable under /projects (the handler answers 404 there).
   cognitoCollectionWithProxy('company-personas', projectsIntegration, ['GET']);
 
-  // /me/* — the caller's own view of the workspaces (voc-workspaces-api, docs/multi-workspace.md): GET only,
-  // Cognito on the proxy, nothing on the bare /me. One proxy, so later /me reads cost no resource.
+  // /me/* — the caller's own view of the workspaces and of the members of the one they act in (voc-workspaces-api,
+  // docs/multi-workspace.md): GET, POST, PUT and DELETE, Cognito on the proxy, nothing on the bare /me. One proxy, so
+  // the members routes (6.10.00) cost three methods, not a resource tree; the handler gates each route (workspace role).
   const workspacesIntegration = frugalIntegration(workspacesLambda);
-  proxyServing(api.root.addResource('me'), { GET: workspacesIntegration });
+  proxyServing(api.root.addResource('me'), {
+    GET: workspacesIntegration, POST: workspacesIntegration, PUT: workspacesIntegration, DELETE: workspacesIntegration,
+  });
   // /platform/* — the platform console (the same Lambda and integration, so no new invoke permission): GET and POST,
   // Cognito on the proxy, nothing on the bare /platform; the handler admits platform admins only (live check).
   proxyServing(api.root.addResource('platform'), { GET: workspacesIntegration, POST: workspacesIntegration });

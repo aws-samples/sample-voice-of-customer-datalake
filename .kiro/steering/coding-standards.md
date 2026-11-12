@@ -167,7 +167,7 @@ lambda/api/
 ├── engagement_handler.py     # /participants/*, /feature-requests/*, POST /unsubscribe
 ├── ballots_handler.py        # /voting-sessions/*
 ├── radar_handler.py          # /radar/*
-├── workspaces_handler.py     # GET /me/* (the caller's workspaces), /platform/* (create and list workspaces)
+├── workspaces_handler.py     # /me/* (the caller's workspaces, a workspace's members), /platform/* (create and list workspaces)
 └── projects.py               # Shared business logic for projects
 
 lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (async, Processing stack)
@@ -198,7 +198,7 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | Engagement | `engagement_handler.py` | DynamoDB (participants, feature requests RW; projects, aggregates read), KMS, SES (with `-c emailFrom`), self-invoke |
 | Ballots | `ballots_handler.py` | DynamoDB (aggregates Get/Put/Update, projects GetItem), KMS |
 | Radar | `radar_handler.py` | DynamoDB (radar RW, aggregates read), KMS, invoke the Radar scan worker |
-| Workspaces | `workspaces_handler.py` | DynamoDB (workspaces Query/GetItem, PutItem scoped to `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`: a workspace's creation and the platform-admin entry's audit row; UpdateItem scoped to `WS#*` and `WORKSPACES` and to the attribute `secret_status` alone: of `META` and the listing row), KMS, Cognito (`AdminListGroupsForUser`, `AdminGetUser`: the live platform-admin check), Secrets Manager (`CreateSecret` with the customer-managed key, `DescribeSecret`, `TagResource` on `voc/ws/*`) |
+| Workspaces | `workspaces_handler.py` | DynamoDB (workspaces Query/GetItem, PutItem scoped to `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`: a workspace's creation, a member's add and the audit rows; UpdateItem scoped to `WS#*` and `WORKSPACES` and to the attribute `secret_status` alone (of `META` and the listing row), and to `WS#*` and `USER#*` and the attribute `role` alone (a member's role change); DeleteItem scoped to `WS#*` and `USER#*` (a member's removal); ConditionCheckItem scoped to `WS#*`), KMS, Cognito (`AdminListGroupsForUser`, `AdminGetUser`: the live platform-admin check; `ListUsers`, `AdminCreateUser`: adding a member), Secrets Manager (`CreateSecret` with the customer-managed key, `DescribeSecret`, `TagResource` on `voc/ws/*`) |
 | Category Reprocess worker (`voc-category-reprocess`) | `jobs/category_reprocess/handler.py` | DynamoDB (feedback Scan/Get/Update, aggregates), S3 read (`raw/*`), KMS, Bedrock, Comprehend, Translate, self-invoke |
 
 **When adding new API endpoints:**

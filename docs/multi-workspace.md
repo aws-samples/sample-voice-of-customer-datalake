@@ -13,6 +13,7 @@ and files named here are the planned ones unless the table lists them.
 | 6.07.00 | The workspace middleware `lambda/shared/workspace.py`: the `X-Workspace-Id` header (missing 400; malformed, unknown, `deleting` or not a member: one 404), the role from the `MEMBER#` row, a platform admin who is not a member admin entering as admin (decision 2) with an audit row `AUDIT#WS#{ws}` / `{iso}#{random}` (once per fill of the 30 s warm-container cache), `ws_key` and "my workspaces". The workspaces API `voc-workspaces-api` (`lambda/api/workspaces_handler.py`, `GET /me/{proxy+}`): `GET /me/workspaces` and `GET /me/workspaces/current`, with Query and GetItem on `voc-workspaces` and PutItem only where the partition key matches `AUDIT#WS#*`. The audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) covers `voc-workspaces`, with this role as its audit writer: no role can change or remove an entry row. Nothing creates workspaces or members yet, so every list is empty; the web app does not call these routes yet, and `X-Workspace-Id` is not yet in the CORS preflight. This is the first reader of `platform-admins`: the platform-admin safeguards below (Control plane) land before anything can create a workspace |
 | 6.08.00 | Platform-admin membership in the users API (`lambda/api/users_handler.py`, rules in `lambda/shared/user_admin_guard.py`). `PUT /users/{username}/platform-admin` with `{"platform_admin": true\|false}`: platform admins only (403 for everyone else, plain `admins` included; in the route-gate inventory as admin-only and platform-admin-only), a grant only to a member of `admins` (400 otherwise), a revoke refused (409) when it would leave no enabled platform admin, the caller's own included; asking for what already holds changes and records nothing. Demoting a user to `users` also removes them from `platform-admins`. Demoting, disabling, enabling, deleting or resetting the password of a platform admin answers 403 unless the caller is one too (the caller's membership is checked live in Cognito, not only in the token, with an enabled account, so a revoke or a disable takes effect in the users API at once; entering a workspace still reads the token, and the change that creates workspaces adds the live check there); demoting, disabling or deleting the last enabled one answers 409 (the last-`admins` guard is unchanged). Every grant and revoke (the route, a demotion, a delete) writes an `AUDIT#platform-admins` / `{iso}#{random}` row in `voc-aggregates` (kind, via, the target's and the actor's sub, the time) before the change, so it records the attempt (a change that then fails leaves the row; the group's live state is Cognito's): a row that cannot be written refuses the change; the audit-row guard names the users API's role that partition's only writer. `GET /users` reports `platform_admin` per user. The web app does not call the new route yet (the platform console will). Like the last-admin check, these checks read before they write |
 | 6.09.00 | Creating and listing workspaces, for platform admins only, in the workspaces API under `/platform/{proxy+}` (GET and POST, Cognito; logic in `lambda/shared/platform_workspaces.py`). Each route calls `require_admin` and `require_platform_admin`, then the live check, now shared by the users API and the workspaces API (`lambda/shared/platform_admin.py`: the token's group, the live Cognito membership and an enabled account; 403 otherwise). `POST /platform/workspaces` with `{name, slug}` (name 1 to 80 characters, trimmed; slug 3 to 40 of `a-z`, `0-9` and `-`, not starting or ending with `-`, not `admin`, `api`, `app`, `platform` or `www`; 400 otherwise) writes, in ONE transaction of conditional puts, `SLUG#{slug}` / `META` (409 when the slug is taken, nothing written), `WS#{ws}` / `META`, the creator's `MEMBER#` row (role `admin`), their `USER#` row, a `WORKSPACES` listing row and an `AUDIT#WS#{ws}` row (kind `workspace_created`); the id is `ws_` plus a new ULID. It answers 201 `{workspace: {id, name, slug, role: 'admin', secret_status}}`. The transaction's idempotency token covers the SDK's own retries; a client that retries after a lost answer gets 409 for the slug its first attempt took, and `GET /platform/workspaces` shows whether that workspace was made. Then it creates the workspace's credentials secret (Credentials, below); `secret_status` is `ready`, or `pending` when the secret could not be made (logged; the workspace stays). `GET /platform/workspaces` lists every workspace `{workspaces: [{id, name, slug, status, created_at, secret_status}], next_cursor}` by name (`?limit=` 1 to 100, default 25, `?cursor=`), one Query of the `WORKSPACES` partition. Entering a workspace as a platform admin (`GET /me/workspaces/current`, `lambda/shared/workspace.py`) now needs the live check too, on each fill of the 30 s cache that would elevate: a failed one enters with the member's own role, or answers the 404 for a non-member. The role's PutItem reaches `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES` and `WS#*`, its UpdateItem `WS#*` and `WORKSPACES` only (`secret_status` on `META` and the listing row, in one transaction); it reads the caller's groups and account in Cognito, and creates, describes and tags secrets under `voc/ws/*` only. The web app does not call the `/platform` routes yet (the platform console will); nothing adds members or invites yet |
+| 6.10.00 | A workspace's members, in the workspaces API under `/me/workspaces/current/members` (GET, POST, PUT and DELETE on the existing `/me/{proxy+}`; logic in `lambda/shared/workspace_members.py`), each acting in the workspace `X-Workspace-Id` names as `resolve_workspace` decides (400 without the header, the one 404 for a non-member, the deployment's `admins` group included; a platform admin enters as admin, live-checked and audited). `GET` lists the members `{members: [{sub, role, email, name, invited_by, joined_at}], next_cursor}` for any member, by sub (`?limit=` 1 to 100, default 25, `?cursor=`; one Query of the `MEMBER#` rows; email and name are the row's, and for up to 5 rows a page that hold none, such as the creator's, Cognito's by sub). `POST {email, role}` (admin, editor or viewer): workspace admins only (`require_workspace_admin`: 403 for an editor or a viewer); an email with a Cognito account is a member at once, a new email first gets an account (`AdminCreateUser`, the temporary password emailed, as the users API does) when the caller is in the deployment's `admins` group (platform admins are; 403 for any other workspace admin: until the data path is keyed by workspace, phase 2, every account reads the whole deployment, so creating one stays with the users API's administrators), then 201 `{member: {sub, role, email, name, invited_by, joined_at, account: 'existing'\|'created'}}`; 409 for a member already there, for two accounts sharing the email, or for an email Cognito holds for another account. An existing account gets no notification email: the deployment has no mail path for account notices, so the add is logged. No `INVITE#` row is written: membership is immediate either way, so there is nothing to accept. `PUT /{sub}` `{role}`: workspace admins only (asking for the role a member has changes and records nothing). `DELETE /{sub}`: workspace admins, or the member themselves (leave). Demoting or removing the last member admin, the caller included, is refused (409). Each add, role change and removal writes an `AUDIT#WS#{ws}` / `{iso}#{random}` row (kind `member_added`, `member_role_changed`, `member_removed` or `member_left`; actor, target sub, role before and after, `platform_admin`, and on an add `account`) before the change, so it records the attempt (a row that cannot be written refuses the change); then ONE transaction changes the `MEMBER#` row and the `USER#` row together (an add: two conditional puts and a check that `META` is still `active`; a role change: two updates, each only of `role` and only on existing rows; a removal: two deletes), and a demotion or removal of an admin also checks that another member is still an admin, so two admins demoting each other at once cannot both succeed. Each write resolves the caller's role from the table, not the 30 s cache, so an admin demoted or removed a moment ago cannot undo it; the change drops the member's cached membership in the container that made it, and other warm containers serve the old role to reads for up to 30 s. The role's new grants: UpdateItem on `WS#*` and `USER#*` with the attribute `role` only; DeleteItem on `WS#*` and `USER#*` (`dynamodb:LeadingKeys`; IAM cannot pin a sort key, so `META` in `WS#*` is in reach of IAM and kept out by the code, while `SLUG#`, `WORKSPACES` and `AUDIT#` are not); ConditionCheckItem on `WS#*`; Cognito `ListUsers` and `AdminCreateUser` on the user pool (IAM cannot limit ListUsers to an email filter; the code sends only an email or a sub). The web app does not call these routes yet |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -66,9 +67,9 @@ gets no stack of its own.
 | PK | SK | Holds |
 |---|---|---|
 | `WS#{ws}` | `META` | name, slug, status (`active` or `deleting`), created_by, created_at, secret_status (`pending` until the credentials secret exists, then `ready`) |
-| `WS#{ws}` | `MEMBER#{sub}` | role (`admin`, `editor` or `viewer`), invited_by, joined_at |
-| `USER#{sub}` | `WS#{ws}` | the inverse row behind "my workspaces" (name, slug, role), written in the same transaction as `MEMBER#` |
-| `WS#{ws}` | `INVITE#{id}` | email, role, invited_by, expires_at, and `ttl` (the table's TTL attribute) |
+| `WS#{ws}` | `MEMBER#{sub}` | role (`admin`, `editor` or `viewer`), invited_by, joined_at; since 6.10.00 a member added through the members routes also carries the email and name Cognito had then |
+| `USER#{sub}` | `WS#{ws}` | the inverse row behind "my workspaces" (name, slug, role), written, changed and deleted in the same transaction as `MEMBER#` |
+| `WS#{ws}` | `INVITE#{id}` | planned, not written: email, role, invited_by, expires_at, and `ttl` (the table's TTL attribute). Since 6.10.00 an add is immediate for a new email too (Invites), so nothing has an invite to accept; the row stays reserved, the only one allowed `ttl`, for a later invite that waits for acceptance |
 | `SLUG#{slug}` | `META` | slug → workspace id (`workspace_id`, created_at); uniqueness by a conditional put |
 | `WORKSPACES` | `{name, case-folded}#{ws}` | the platform console's listing (workspace_id, name, slug, status, created_at): one partition, sorted by name, so the list is a paged Query, never a Scan. Written once per created workspace and read by platform admins only; a later rename or status change moves or updates it too |
 | `AUDIT#WS#{ws}` | `{iso}#{random}` | the workspace's creation (since 6.09.00), membership changes, platform-admin entries, export and delete, share grants: an `AUDIT#` partition, so the audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) lets no role change or remove one |
@@ -130,13 +131,45 @@ agent runs, plan steps and assist jobs.
 | Platform admin | Create workspaces, see the platform console, enter any workspace as an admin (audited) |
 
 What an editor may write follows today's split between admin-only and open routes; the route-gate inventory pins it.
+Since 6.10.00 the members routes check the role (`require_workspace_admin`, `lambda/shared/workspace.py`: a member
+admin or an entered platform admin; the deployment's `admins` group grants nothing there), and the inventory
+(`lambda/api/test/test_route_admin_gates.py`) has a workspace-admin table for them. Every member, a viewer
+included, reads the member list; only admins add members, change roles or remove others; any member may leave.
 
 ## Invites
 
-- Workspace admins and platform admins invite, with any workspace role. Editors and viewers cannot.
-- An email that already has an account gets its membership row at once, and a notification email.
-- A new email gets a Cognito account (`AdminCreateUser`, which sends the temporary password) and the membership row.
-- Removing a workspace's last admin is refused. A person with no workspace left sees an empty picker.
+Built in 6.10.00 (`POST`, `PUT` and `DELETE /me/workspaces/current/members[/{sub}]`, `lambda/shared/workspace_members.py`).
+
+- Workspace admins and platform admins invite, with any workspace role. Editors and viewers cannot (403).
+- An email that already has an account gets its membership row at once. The notification email is not sent yet:
+  the deployment has no mail path for account notices (the participant mailer serves participant asks only), so the
+  add is logged and the answer says `account: 'existing'`.
+- A new email gets a Cognito account (`AdminCreateUser`, which sends the temporary password) and the membership row
+  at once (`account: 'created'`), when the caller is in the deployment's `admins` group (a platform admin is): any
+  other workspace admin gets 403 for a new email until the data path is keyed by workspace (phase 2), because until
+  then every account reads the whole deployment. The account joins no deployment group (neither `admins` nor `users`): inside a
+  workspace only the `MEMBER#` role counts. The creation is recorded before the account exists: an `AUDIT#WS#{ws}`
+  row of kind `account_created` (the actor and the email's sha256: no role can change or remove an audit row, so a
+  raw address there could never be erased), written before `AdminCreateUser`, so a row that cannot be
+  written creates no account. If the membership then fails (its audit row or its transaction), the account stays,
+  recorded; adding the email again finds it.
+- Membership is immediate in both cases, so no `INVITE#` row is written (Control plane).
+- Removing or demoting a workspace's last admin is refused (409), the admin themselves included. Any member may leave
+  (remove themselves). A person with no workspace left sees an empty picker.
+- A change takes effect at once in the container that made it; other warm containers serve the member's cached
+  role to reads for up to 30 s (`MembershipCache`, `lambda/shared/workspace.py`). The members writes never use the
+  cache: they read the caller's role from the table, and each transaction also checks that the acting admin is still
+  admin when it commits (403 when they were demoted in between).
+- Trade-off, accepted with decision 4 (an invitee may already have an account): adding by email tells any workspace
+  admin whether the email has an account in this deployment, and its name (201 for one with an account, 403 for a
+  new email from an admin outside `admins`). It is one deployment's own directory, which only `admins` list in full
+  (`GET /users`); a multi-company deployment would answer both cases alike.
+- Known gap, for the next change: deleting a user in the users API does not yet remove their `MEMBER#` and `USER#`
+  rows. The rows grant nothing (no account signs in with that sub), but a workspace whose only admin was deleted
+  has none until a platform admin enters it and names one.
+- History (D2: access rules are primary data): a removal deletes the `MEMBER#` and `USER#` rows and a role change
+  overwrites `role`, but each first writes its `AUDIT#WS#{ws}` row with the target, the role before and after, the
+  actor and the time, append-only under the audit-row guard: the membership's whole history is kept there.
 
 ## Public and non-user entry points
 
@@ -230,14 +263,20 @@ Also held to the tenets as built: the per-workspace secret is a fixed cost per w
 tenet 7's gap names a move of secrets to SSM Parameter Store), and since 6.09.00 the fixed-cost guard names it
 (`RUNTIME_FIXED_COSTS`, Credentials above); and `voc-workspaces` holds primary data (members, audit) beside
 invites, so 6.09.00, the first change that writes workspaces and members, pins that only `INVITE#` rows carry `ttl`
-(no writer of the table names the attribute: `voc-datalake/lambda/shared/test/test_platform_workspaces.py`). The
+(no writer of the table names the attribute, `lambda/shared/workspace_members.py` included since 6.10.00:
+`voc-datalake/lambda/shared/test/test_platform_workspaces.py`). The
 audit rows are protected: they are keyed `AUDIT#WS#{ws}` / `{iso}#{random}`, and the audit-row guard
 (`voc-datalake/lib/utils/audit-row-guard.ts`) covers `voc-workspaces` (since 6.07.00), so no role can change or
 remove one and only its named writer, `voc-workspaces-api`, can put one; every other role that comes to write the
 table is denied putting an `AUDIT#` row. That role's PutItem is scoped (`dynamodb:LeadingKeys`) to the partitions a
-creation and an entry write (`AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`), every put conditional on a
-new key, and its UpdateItem to `WS#*` and `WORKSPACES` (the `secret_status` of `META` and the listing row); it holds no DeleteItem. A phase that adds
-another audit writer names it in the guard.
+creation, an add and an audit write (`AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`), every put conditional
+on a new key, and its UpdateItem to `WS#*` and `WORKSPACES` for `secret_status` (of `META` and the listing row) and
+to `WS#*` and `USER#*` for `role` (a member's role change, since 6.10.00). Its one DeleteItem (since 6.10.00) is a
+member's removal, scoped to `WS#*` and `USER#*`: membership rows are access configuration, not customer data (D5
+covers feedback and raw items), each removal is audited first, and `voc-datalake/lib/customer-data-deletes.test.ts`
+names the grant with that reason. IAM pins the partition key only, so the grant also reaches a workspace's `META`;
+the code deletes `MEMBER#` and `USER#` keys only (its tests pin the keys). A phase that adds another audit writer
+names it in the guard.
 
 ## Phases
 

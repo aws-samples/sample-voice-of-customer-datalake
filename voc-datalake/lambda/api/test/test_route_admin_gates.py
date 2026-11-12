@@ -164,6 +164,17 @@ PLATFORM_ADMIN_ONLY: dict[str, frozenset[str]] = {
 #: The methods whose routes the platform-gate checks read: the writes and the reads.
 PLATFORM_GATED_METHODS = MUTATING_METHODS | {'get'}
 
+# Routes for a workspace's admins (docs/multi-workspace.md → Roles and Request flow, the workspace dimension): the
+# caller's role in the workspace X-Workspace-Id names, a member admin or an entered platform admin, never the
+# deployment's `admins` group. Their handler body calls `require_workspace_admin` (shared/workspace.py) as an
+# unconditional top-level statement, after resolving the workspace.
+WORKSPACE_GATE = 'require_workspace_admin'
+WORKSPACE_ADMIN_ONLY: dict[str, frozenset[str]] = {
+    'workspaces_handler.py': frozenset({
+        'POST /me/workspaces/current/members', 'PUT /me/workspaces/current/members/<sub>',
+    }),
+}
+
 
 @dataclass(frozen=True)
 class OpenGroup:
@@ -291,6 +302,9 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
     _open("caller's own morning brief: preferences, refresh (deliberately uncapped) and card states, self only",
           'settings_handler.py', 'PUT /settings/my-briefing', 'POST /settings/my-briefing/refresh',
           'PUT /settings/my-briefing/cards'),
+    _open('leaving a workspace (docs/multi-workspace.md → Invites): any member removes themselves; removing anyone '
+          'else calls require_workspace_admin first, and the last admin is refused either way',
+          'workspaces_handler.py', 'DELETE /me/workspaces/current/members/<sub>'),
 )
 
 
@@ -420,6 +434,10 @@ def _open_keys() -> Counter[tuple[str, str]]:
     return Counter((group.handler, route) for group in OPEN_BY_DECISION for route in group.routes)
 
 
+def _workspace_admin_keys() -> set[tuple[str, str]]:
+    return {(handler, route) for handler, routes in WORKSPACE_ADMIN_ONLY.items() for route in routes}
+
+
 # ── The inventory ────────────────────────────────────────────────────────────
 
 def test_the_inventory_finds_the_routes_it_is_about():
@@ -433,13 +451,14 @@ def test_the_inventory_finds_the_routes_it_is_about():
 
 
 def test_every_mutating_route_is_classified():
-    classified = _admin_keys() | set(_open_keys())
+    classified = _admin_keys() | set(_open_keys()) | _workspace_admin_keys()
     unclassified = sorted(key for key in _inventory() if key not in classified)
     assert not unclassified, (
         'Unclassified mutating route(s): '
         + ', '.join(f'{handler} {route}' for handler, route in unclassified)
         + '. Classify each one in lambda/api/test/test_route_admin_gates.py: add it to ADMIN_ONLY and call '
-        '`require_admin(app.current_event.raw_event)` first in its handler, or add it to OPEN_BY_DECISION '
+        '`require_admin(app.current_event.raw_event)` first in its handler, or to WORKSPACE_ADMIN_ONLY with '
+        '`require_workspace_admin(context)`, or add it to OPEN_BY_DECISION '
         'with a one-line reason recording who decided it may stay open.'
     )
 
@@ -447,6 +466,7 @@ def test_every_mutating_route_is_classified():
 def test_no_route_is_in_both_tables_or_listed_twice():
     open_keys = _open_keys()
     assert sorted(_admin_keys() & set(open_keys)) == []
+    assert sorted(_workspace_admin_keys() & (_admin_keys() | set(open_keys))) == []
     assert sorted(key for key, count in open_keys.items() if count > 1) == []
 
 
@@ -513,9 +533,42 @@ def test_every_workspaces_platform_route_runs_the_live_check(route):
     assert LIVE_PLATFORM_GATE in _top_level_calls(fn)
 
 
+def _workspace_gated(source: str) -> dict[str, bool]:
+    """Every mutating or read route in *source* -> whether its body calls `require_workspace_admin` unconditionally."""
+    functions = _module_functions(ast.parse(source))
+    return {key: WORKSPACE_GATE in _top_level_calls(fn)
+            for fn in functions.values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(_workspace_admin_keys()))
+def test_every_workspace_admin_route_carries_the_workspace_gate(handler, route):
+    assert _workspace_gated((API_DIR / handler).read_text(encoding='utf-8')).get(route) is True, (
+        f'{handler} {route} is missing or lost its require_workspace_admin gate')
+
+
+def test_only_the_listed_routes_carry_the_workspace_gate_unconditionally():
+    gated = {(path.name, key) for path in _handler_files()
+             for key, has in _workspace_gated(path.read_text(encoding='utf-8')).items() if has}
+    assert gated == _workspace_admin_keys()
+
+
+def test_the_workspace_gate_raises_authorization_error():
+    functions = _module_functions(ast.parse((SHARED_DIR / 'workspace.py').read_text(encoding='utf-8')))
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
+               for stmt in functions[WORKSPACE_GATE].body)
+
+
+@pytest.mark.parametrize('route', sorted(WORKSPACE_ADMIN_ONLY['workspaces_handler.py']))
+def test_removing_the_workspace_gate_is_detected(route):
+    tree = ast.parse((API_DIR / 'workspaces_handler.py').read_text(encoding='utf-8'))
+    for fn in _module_functions(tree).values():
+        fn.body = [s for s in fn.body if not (isinstance(s, ast.Expr) and _called_name(s.value) == WORKSPACE_GATE)]
+    assert _workspace_gated(ast.unparse(tree))[route] is False
+
+
 def test_every_table_entry_names_a_route_that_exists():
     inventory = _inventory()
-    stale = sorted(key for key in _admin_keys() | set(_open_keys()) if key not in inventory)
+    stale = sorted(key for key in _admin_keys() | set(_open_keys()) | _workspace_admin_keys() if key not in inventory)
     assert not stale, f'Table entries for routes that no longer exist: {stale}'
 
 
@@ -567,6 +620,10 @@ OPEN_BY_DESIGN_READS: dict[tuple[str, str], str] = {
     ('workspaces_handler.py', 'GET /me/workspaces/current'): (
         'The workspace the X-Workspace-Id header names, for its members (any role) and audited platform-admin '
         'entries; everyone else gets the same 404 (shared/workspace.py), so it confirms no other workspace.'
+    ),
+    ('workspaces_handler.py', 'GET /me/workspaces/current/members'): (
+        "The members of the workspace X-Workspace-Id names, for any of its members (Roles: a viewer reads the "
+        "workspace); a non-member gets the workspace's one 404 (shared/workspace.py)."
     ),
 }
 

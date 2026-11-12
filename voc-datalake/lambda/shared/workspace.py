@@ -28,14 +28,18 @@ Warm-container cache. A resolved membership is kept per ``(workspace, sub, token
 two GetItems (and, for an elevated entry, the two Cognito look-ups) once. A platform-admin entry writes its
 audit row once per cache fill, not once per request: one row per entry and per 30 s of continued use, per warm
 container. Refusals are not cached, so a new membership works at once; a removed membership, a changed role, a
-revoked platform admin or a workspace set to ``deleting`` takes effect within the TTL.
+revoked platform admin or a workspace set to ``deleting`` takes effect within the TTL. A membership change through
+the members routes (shared/workspace_members.py) drops the changed member's entry in the container that made it
+(``MembershipCache.invalidate``); other warm containers keep theirs for up to the 30 s.
 
-The table layout (``voc-workspaces``, VocCoreStack; the platform console's writes: shared/platform_workspaces.py):
+The table layout (``voc-workspaces``, VocCoreStack; the platform console's writes: shared/platform_workspaces.py;
+the members' writes: shared/workspace_members.py):
 
     WS#{ws}       / META             name, slug, status
-    WS#{ws}       / MEMBER#{sub}     role
+    WS#{ws}       / MEMBER#{sub}     role, invited_by, joined_at, email, name (this module reads role)
     USER#{sub}    / WS#{ws}          name, slug, role: the inverse row behind "my workspaces"
-    AUDIT#WS#{ws} / {iso}#{random}   kind, actor, at: a platform admin's entry (and the workspace's creation)
+    AUDIT#WS#{ws} / {iso}#{random}   kind, actor, at: a platform admin's entry (and the workspace's creation and
+                                     membership changes)
 
 The caller's sub identifies a person: it is stored in the audit row and never logged.
 """
@@ -51,7 +55,7 @@ from typing import Any, Final
 from shared.api import get_caller_subject
 from shared.audit_rows import put_new_audit_row
 from shared.dynamo_paging import iter_query
-from shared.exceptions import NotFoundError, ValidationError
+from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 from shared.http_cache import request_header
 from shared.logging import logger
 from shared.platform_admin import is_platform_admin
@@ -108,6 +112,13 @@ class MembershipCache:
         if len(self._entries) >= MAX_CACHED_MEMBERSHIPS:
             self._entries.clear()
         self._entries[(ws, sub, platform_admin)] = (self._clock() + self._ttl, context)
+
+    def invalidate(self, ws: str, sub: str) -> None:
+        """Forget ``sub``'s membership of ``ws`` (with and without the platform-admin group): a member added,
+        changed or removed in this container is resolved again on their next request. Other warm containers keep
+        theirs until the TTL ends (30 s)."""
+        for platform_admin in (False, True):
+            self._entries.pop((ws, sub, platform_admin), None)
 
 
 def is_workspace_id(value: str) -> bool:
@@ -202,6 +213,13 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
         context = _load(table, event, ws, platform_admin, confirm_platform_admin)
         cache.put(ws, sub, context, platform_admin)
     return context
+
+
+def require_workspace_admin(context: WorkspaceContext) -> None:
+    """403 unless the caller acts as ``admin`` in the workspace: a member admin, or a platform admin who entered
+    (decision 2, live-checked by ``resolve_workspace``). The deployment's ``admins`` group grants nothing here."""
+    if context.role != 'admin':
+        raise AuthorizationError('Workspace admin access required')
 
 
 def list_my_workspaces(table: Any, sub: str) -> list[dict[str, str]]:

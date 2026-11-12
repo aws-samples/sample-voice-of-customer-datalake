@@ -92,7 +92,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── engagement_handler.py     # /participants/*, /feature-requests/* (feedback boards), POST /unsubscribe (routers in shared/*_routes.py)
     │   │   ├── ballots_handler.py        # /voting-sessions/* (room votes on a Prioritization row; config + submit are public)
     │   │   ├── radar_handler.py          # /radar/* (other brands' reviews, docs/radar.md)
-    │   │   ├── workspaces_handler.py     # GET /me/* (the caller's workspaces), /platform/* (create and list workspaces, platform admins), docs/multi-workspace.md
+    │   │   ├── workspaces_handler.py     # /me/* (the caller's workspaces, a workspace's members), /platform/* (create and list workspaces, platform admins), docs/multi-workspace.md
     │   │   ├── manual_import_processor.py # Manual import processing logic
     │   │   ├── projects.py               # Projects business logic (shared)
     │   │   └── prompts/                  # LLM prompt templates (6 templates)
@@ -214,7 +214,7 @@ voice-of-customer-datalake/       # Root repository
 | `voc-radar` | `SETTINGS#radar`, `RELEASE#{brand}`, `RADAR#{brand}#…` | `brands` (the brand list `{brands: [{label, domains}]}`), `config` (scan settings), … | OTHER brands' reviews, counters and releases, kept out of our numbers (layout `lambda/shared/radar_store.py`, docs/radar.md) |
 | `voc-participants` | `PERSON#{id}`, `EMAIL#{sha}`, `LIST#{id}`, `PROJECT#{id}`, `ASK#{id}`, `TOKEN#{sha}`, `SETTINGS`, `SENDCOUNT#{day}` | `META`, `LIST#…`, `MEMBER#…`, `RCPT#…`, `RESPONSE\|UNSUB`, `engagement`, `COUNT` | People to ask for feedback, lists, project links, asks + recipients, email tokens (sha256 only), engagement settings (company domains) — layout `lambda/shared/participants_*.py`, docs/participants.md |
 | `voc-feature-requests` | `BOARD#{id}`, `SLUG#{slug}`, `FR#{id}`, `RATE#{board}#{hash}#{day}` | `META`, `BOARD`, `META\|SUP#{id}`, `COUNT` | Feedback boards (template, fields, statuses, audience; gsi1pk `BOARDS`), slug guards, requests (`board_id` absent = seeded `brd_sales`; `fields`, totals per template, status, promoted project; gsi1pk `FRS`) and supports (+1 field values), `anyone`-board rate counters (`ttl`) — docs/feature-requests.md |
-| `voc-workspaces` | `WS#{ws}`, `USER#{sub}`, `SLUG#{slug}`, `WORKSPACES`, `AUDIT#WS#{ws}` | `META\|MEMBER#{sub}\|INVITE#{id}`, `WS#{ws}`, `META`, `{name}#{ws}`, `{iso}#{random}` | The multi-workspace control plane: workspaces (`META`: name, slug, status, `secret_status`), members, invites (`ttl`, the only rows that carry it), "my workspaces" rows, slug guards, the platform console's listing, audit — read and written only by `voc-workspaces-api` (`GET /me/*`, `/platform/*`): a workspace's creation is one transaction (`lambda/shared/platform_workspaces.py`), plus a platform-admin entry's audit row; PutItem scoped to `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`, UpdateItem to `WS#*` and `WORKSPACES`, no delete; the audit-row guard (`lib/utils/audit-row-guard.ts`) names it the table's audit writer, so no role changes or removes one; nothing adds members or invites yet (docs/multi-workspace.md) |
+| `voc-workspaces` | `WS#{ws}`, `USER#{sub}`, `SLUG#{slug}`, `WORKSPACES`, `AUDIT#WS#{ws}` | `META\|MEMBER#{sub}\|INVITE#{id}`, `WS#{ws}`, `META`, `{name}#{ws}`, `{iso}#{random}` | The multi-workspace control plane: workspaces (`META`: name, slug, status, `secret_status`), members (`MEMBER#`: role, invited_by, joined_at, and email and name when added through the members routes), invites (planned, not written: the only rows allowed `ttl`), "my workspaces" rows, slug guards, the platform console's listing, audit — read and written only by `voc-workspaces-api` (`/me/*`, `/platform/*`): a workspace's creation is one transaction (`lambda/shared/platform_workspaces.py`), a member's add, role change or removal an audit row then one transaction of the `MEMBER#` and `USER#` rows (`lambda/shared/workspace_members.py`), plus a platform-admin entry's audit row; PutItem scoped to `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`, UpdateItem to `WS#*` and `WORKSPACES` (`secret_status`) and `WS#*` and `USER#*` (`role`), DeleteItem to `WS#*` and `USER#*` (a member's removal), ConditionCheckItem to `WS#*`; the audit-row guard (`lib/utils/audit-row-guard.ts`) names it the table's audit writer, so no role changes or removes one (docs/multi-workspace.md) |
 
 ## API Endpoints
 
@@ -392,7 +392,10 @@ Every mutating route in `lambda/api/*_handler.py` is listed as ADMIN_ONLY (struc
 `lambda/api/test/test_route_admin_gates.py`; a new unclassified route fails that test (#242). Its
 PLATFORM_ADMIN_ONLY table pins the routes that also call `require_platform_admin` (`shared/platform_admin.py`,
 which also holds the live check, `is_live_platform_admin`): `PUT /users/{username}/platform-admin`,
-`POST /platform/workspaces` and `GET /platform/workspaces` (the last in ADMIN_ONLY_READS).
+`POST /platform/workspaces` and `GET /platform/workspaces` (the last in ADMIN_ONLY_READS). Its WORKSPACE_ADMIN_ONLY
+table pins the routes gated by the caller's role in the workspace (`require_workspace_admin`, `shared/workspace.py`):
+`POST /me/workspaces/current/members` and `PUT /me/workspaces/current/members/{sub}`; the member `DELETE` is
+OPEN_BY_DECISION (a member leaves; removing someone else calls the gate first).
 
 ### Users (users_handler.py)
 | Method | Path | Description |
@@ -590,11 +593,15 @@ Rows (projects table): `DCOMMENTS#{project}#{series}` / `C#{id}` (threads) and `
 Scrapers, Web Reviews targets, app connectors and CSV / JSON uploads take `radar_brand: <brand key>`; their
 reviews go to `voc-radar`, never `voc-feedback`.
 
-### Workspaces (workspaces_handler.py, `voc-workspaces-api`) — `GET /me/{proxy+}`, `GET`/`POST /platform/{proxy+}`, see docs/multi-workspace.md
+### Workspaces (workspaces_handler.py, `voc-workspaces-api`) — `GET`/`POST`/`PUT`/`DELETE /me/{proxy+}`, `GET`/`POST /platform/{proxy+}`, see docs/multi-workspace.md
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/me/workspaces` | The caller's own workspaces `{workspaces: [{id, name, slug, role}]}`, by name (their `USER#{sub}` rows in `voc-workspaces`); each `role` is the membership row's, `/current` answers the role the caller acts with |
 | GET | `/me/workspaces/current` | The workspace `X-Workspace-Id` names `{workspace: {id, name, slug, role, platform_admin}}`: 400 without the header, the same 404 for a malformed id, a missing or deleting workspace and a non-member; a platform admin who is not a member admin enters as `admin` once the live check confirms them (`lambda/shared/platform_admin.py`; else the member's own role, or the 404), audited by an `AUDIT#WS#{ws}` row (`lambda/shared/workspace.py`) |
+| GET | `/me/workspaces/current/members` | Any member of the workspace `X-Workspace-Id` names (resolved like `/current`: 400, the one 404): `{members: [{sub, role, email, name, invited_by, joined_at}], next_cursor}` by sub, `?limit=` (1–100, default 25) and `?cursor=`; one Query of its `MEMBER#` rows (email and name from the row, or Cognito's by sub for up to 5 rows a page that hold none) — `lambda/shared/workspace_members.py` |
+| POST | `/me/workspaces/current/members` | Workspace admins only (`require_workspace_admin`: a member admin or an entered platform admin; 403 for an editor or a viewer): `{email, role}` (400 for a bad one) → 201 `{member: {sub, role, email, name, invited_by, joined_at, account: 'existing'\|'created'}}`. An email with a Cognito account is a member at once (no notification email: logged); a new email first gets an account (`AdminCreateUser`, temporary password emailed), only for a caller in `admins` (403 otherwise, until the data is keyed by workspace). 409 for a member already there or an email two accounts share. An `AUDIT#WS#` row first, then one transaction: the `MEMBER#` and `USER#` puts and a check that `META` is `active` |
+| PUT | `/me/workspaces/current/members/{sub}` | Workspace admins only: `{role}` → `{member: {sub, role}}` (unchanged = no write); 404 for a non-member, 409 for the last admin's demotion. An `AUDIT#WS#` row first, then one transaction updating `role` on the `MEMBER#` and `USER#` rows (and checking another admin is still admin) |
+| DELETE | `/me/workspaces/current/members/{sub}` | Workspace admins, or the member themselves (leave) → `{removed: sub}`; 404 for a non-member, 409 for the last admin. An `AUDIT#WS#` row first (`member_removed` or `member_left`), then one transaction deleting the `MEMBER#` and `USER#` rows |
 | POST | `/platform/workspaces` | Platform admins only (token group and live check, else 403): `{name, slug}` (400 for a bad one) → 201 `{workspace: {id, name, slug, role: 'admin', secret_status}}`. One transaction writes `SLUG#`, `META`, the creator's `MEMBER#` and `USER#` rows, the `WORKSPACES` listing row and an `AUDIT#WS#` row (409 when the slug is taken); then the `voc/ws/{ws}/credentials` secret (`secret_status` `ready`, or `pending` when it could not be made) — `lambda/shared/platform_workspaces.py` |
 | GET | `/platform/workspaces` | Platform admins only: every workspace `{workspaces: [{id, name, slug, status, created_at, secret_status}], next_cursor}` by name, `?limit=` (1–100, default 25) and `?cursor=`; one Query of the `WORKSPACES` partition |
 
