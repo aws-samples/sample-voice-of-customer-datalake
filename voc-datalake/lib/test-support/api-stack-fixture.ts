@@ -91,6 +91,7 @@ export function apiStackDependencyProps(
     radarTable: table('Radar'),
     participantsTable: table('Participants'),
     featureRequestsTable: table('FeatureRequests'),
+    workspacesTable: table('Workspaces'),
     designIntegrationsSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:design-integrations`,
     kmsKey: new kms.Key(deps, 'Key'),
     rawDataBucket: fixtureBucket(deps, 'RawData'),

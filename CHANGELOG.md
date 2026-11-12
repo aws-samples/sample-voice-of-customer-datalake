@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.07.00] - 2026-11-11
+
+Multi-workspace, phase 1: the workspace a request acts in, and the caller's own workspaces.
+
+### Added
+
+- `lambda/shared/workspace.py`: resolves the workspace named by the `X-Workspace-Id` header and the caller's role in it from `voc-workspaces` ([docs/multi-workspace.md](docs/multi-workspace.md#request-flow)). A missing header answers 400; a malformed id, an unknown or `deleting` workspace and a caller who is not a member all answer the same 404. A platform admin who is not a member admin enters as admin (decision 2) and leaves an audit row keyed `AUDIT#WS#{ws}` / `{iso}#{random}` (a conditional put that never overwrites, once per fill of the 30-second warm-container cache). Also `ws_key` and the caller's "my workspaces" list.
+- The workspaces API (`voc-workspaces-api`, `lambda/api/workspaces_handler.py`, `lib/stacks/api-workspaces-lambda.ts`) behind `GET /me/{proxy+}`: `GET /me/workspaces` (the caller's workspaces) and `GET /me/workspaces/current` (the workspace `X-Workspace-Id` names and the caller's role). Its role holds Query and GetItem on `voc-workspaces` and PutItem only where the partition key matches `AUDIT#WS#*` (`dynamodb:LeadingKeys`), nothing else. Both routes are classified in the route-gate inventory as open reads.
+- VocCoreStack hands `voc-workspaces` to VocApiStack (its first reader).
+- The audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) covers `voc-workspaces`, with the workspaces API's role as its one audit writer: no role can change or remove an entry row, and any other role that writes the table is denied putting an `AUDIT#` row.
+
+### Changed
+
+- The API stack's release ceiling of resources is 404 (+9: the function, role, policy, log group, permission and the `/me` routes with their preflight); the 425 gate is unchanged.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`). Nothing creates workspaces or members yet, so both routes answer an empty list or 404; the web app does not call them yet, and a browser cannot send `X-Workspace-Id` until the change that adds it to the CORS preflight. `lib/customer-data-deletes.test.ts` pins that no role writes a workspace or a membership yet (the workspaces API writes only its entry audit rows), so the change that adds one must also land the platform-admin safeguards (docs/multi-workspace.md, Control plane).
+
 ## [6.06.03] - 2026-11-11
 
 The review gate run over 6.05.00 and 6.06.00, which landed before it existed: what it found.

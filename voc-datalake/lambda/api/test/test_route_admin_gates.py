@@ -492,6 +492,14 @@ OPEN_BY_DESIGN_READS: dict[tuple[str, str], str] = {
         'the allowlist here; the answer is the per-surface model ids, the allowlist and the image '
         'model\'s status: no secret, no user data. Writes and the model test stay admin-only.'
     ),
+    ('workspaces_handler.py', 'GET /me/workspaces'): (
+        "Every signed-in person's own workspace list (docs/multi-workspace.md): one Query of the caller's "
+        'USER#{sub} partition, so it names only workspaces the caller is a member of.'
+    ),
+    ('workspaces_handler.py', 'GET /me/workspaces/current'): (
+        'The workspace the X-Workspace-Id header names, for its members (any role) and audited platform-admin '
+        'entries; everyone else gets the same 404 (shared/workspace.py), so it confirms no other workspace.'
+    ),
 }
 
 

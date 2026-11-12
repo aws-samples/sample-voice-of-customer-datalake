@@ -34,6 +34,11 @@
  * what deploys. That adds the one log group the aspect gives a function CDK creates without one (the website
  * BucketDeployment handler): the deployed performance-tier synth was already 395, one over the ceiling set against
  * the bare fixture. The ceiling is 395, the deployed count; the 425 gate is unchanged.
+ *
+ * 6.07.00 (the workspaces API, api-workspaces-lambda.ts, docs/multi-workspace.md) spends 9: its function, role,
+ * default policy, log group and one invoke permission, and `/me` + `/me/{proxy+}` with GET and its CORS preflight.
+ * One GET proxy rather than explicit routes, so the control plane's later `/me` reads cost nothing. Every shape
+ * grows by the same 9 (performance tier 395 → 404); the ceiling is 404, and the 425 gate is unchanged.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -44,9 +49,9 @@ import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
 /**
  * The release ceiling: 388 after 5.63.00 (MCP OAuth), + 4 in 5.77.00 (request validation) + 2 for the opt-in API web
  * ACL (5.77.00) + the BucketDeployment handler's log group the bare fixture did not count (5.78.00); the
- * performance-tier synth is 395, as deployed.
+ * performance-tier synth is 395, as deployed; + 9 for the workspaces API (6.07.00): 404.
  */
-const ENGAGEMENT_RELEASE_CEILING = 395;
+const ENGAGEMENT_RELEASE_CEILING = 404;
 
 function resourceCount(resources: Record<string, unknown> | undefined): number {
   return Object.keys(resources ?? {}).length;

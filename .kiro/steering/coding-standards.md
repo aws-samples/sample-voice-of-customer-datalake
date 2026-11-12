@@ -142,7 +142,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. When a single Lamb
 3. **Minimal permissions** - Each Lambda only gets IAM permissions for resources it actually uses
 4. **Naming convention** - Use `{domain}_handler.py` naming (e.g., `metrics_handler.py`, `chat_handler.py`)
 
-**Current API Lambda Structure (20 handlers):**
+**Current API Lambda Structure (21 handlers):**
 
 ```
 lambda/api/
@@ -167,12 +167,13 @@ lambda/api/
 ├── engagement_handler.py     # /participants/*, /feature-requests/*, POST /unsubscribe
 ├── ballots_handler.py        # /voting-sessions/*
 ├── radar_handler.py          # /radar/*
+├── workspaces_handler.py     # GET /me/* (the caller's workspaces)
 └── projects.py               # Shared business logic for projects
 
 lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (async, Processing stack)
 ```
 
-**Domain-to-Permission Mapping (20 handlers; the full per-Lambda grants are in tech.md "API Lambda Split"):**
+**Domain-to-Permission Mapping (21 handlers; the full per-Lambda grants are in tech.md "API Lambda Split"):**
 
 | Domain | Handler | AWS Permissions |
 |--------|---------|-----------------|
@@ -197,6 +198,7 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | Engagement | `engagement_handler.py` | DynamoDB (participants, feature requests RW; projects, aggregates read), KMS, SES (with `-c emailFrom`), self-invoke |
 | Ballots | `ballots_handler.py` | DynamoDB (aggregates Get/Put/Update, projects GetItem), KMS |
 | Radar | `radar_handler.py` | DynamoDB (radar RW, aggregates read), KMS, invoke the Radar scan worker |
+| Workspaces | `workspaces_handler.py` | DynamoDB (workspaces Query/GetItem, PutItem of the platform-admin entry's audit row, scoped to `AUDIT#WS#*`), KMS |
 | Category Reprocess worker (`voc-category-reprocess`) | `jobs/category_reprocess/handler.py` | DynamoDB (feedback Scan/Get/Update, aggregates), S3 read (`raw/*`), KMS, Bedrock, Comprehend, Translate, self-invoke |
 
 **When adding new API endpoints:**

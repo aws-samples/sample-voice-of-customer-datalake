@@ -71,7 +71,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── job_notices.py        # Job-end notices on /jobs/<starter sub> (project jobs, reprocess, erasure, imports, brief)
     │   │   ├── usefulness.py         # Heuristic usefulness band low|medium|high (processor, reprocess; docs/data-quality.md)
     │   │   └── data_quality.py       # Per-source band distribution for GET /metrics/data-quality
-    │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 20 handlers
+    │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 21 handlers
     │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
     │   │   ├── feedback_edit_handler.py  # PUT /feedback/{id}/category (the only feedback write route)
     │   │   ├── memory_handler.py         # /memory/* (company + personal memory)
@@ -92,6 +92,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── engagement_handler.py     # /participants/*, /feature-requests/* (feedback boards), POST /unsubscribe (routers in shared/*_routes.py)
     │   │   ├── ballots_handler.py        # /voting-sessions/* (room votes on a Prioritization row; config + submit are public)
     │   │   ├── radar_handler.py          # /radar/* (other brands' reviews, docs/radar.md)
+    │   │   ├── workspaces_handler.py     # GET /me/* (the caller's workspaces, docs/multi-workspace.md)
     │   │   ├── manual_import_processor.py # Manual import processing logic
     │   │   ├── projects.py               # Projects business logic (shared)
     │   │   └── prompts/                  # LLM prompt templates (6 templates)
@@ -213,7 +214,7 @@ voice-of-customer-datalake/       # Root repository
 | `voc-radar` | `SETTINGS#radar`, `RELEASE#{brand}`, `RADAR#{brand}#…` | `brands` (the brand list `{brands: [{label, domains}]}`), `config` (scan settings), … | OTHER brands' reviews, counters and releases, kept out of our numbers (layout `lambda/shared/radar_store.py`, docs/radar.md) |
 | `voc-participants` | `PERSON#{id}`, `EMAIL#{sha}`, `LIST#{id}`, `PROJECT#{id}`, `ASK#{id}`, `TOKEN#{sha}`, `SETTINGS`, `SENDCOUNT#{day}` | `META`, `LIST#…`, `MEMBER#…`, `RCPT#…`, `RESPONSE\|UNSUB`, `engagement`, `COUNT` | People to ask for feedback, lists, project links, asks + recipients, email tokens (sha256 only), engagement settings (company domains) — layout `lambda/shared/participants_*.py`, docs/participants.md |
 | `voc-feature-requests` | `BOARD#{id}`, `SLUG#{slug}`, `FR#{id}`, `RATE#{board}#{hash}#{day}` | `META`, `BOARD`, `META\|SUP#{id}`, `COUNT` | Feedback boards (template, fields, statuses, audience; gsi1pk `BOARDS`), slug guards, requests (`board_id` absent = seeded `brd_sales`; `fields`, totals per template, status, promoted project; gsi1pk `FRS`) and supports (+1 field values), `anyone`-board rate counters (`ttl`) — docs/feature-requests.md |
-| `voc-workspaces` | `WS#{ws}`, `USER#{sub}`, `SLUG#{slug}` | `META\|MEMBER#{sub}\|INVITE#{id}\|AUDIT#{iso}#{n}`, `WS#{ws}`, `META` | The multi-workspace control plane: workspaces, members, invites (`ttl`), "my workspaces" rows, slug guards, audit — created, nothing reads or writes it yet (docs/multi-workspace.md) |
+| `voc-workspaces` | `WS#{ws}`, `USER#{sub}`, `SLUG#{slug}`, `AUDIT#WS#{ws}` | `META\|MEMBER#{sub}\|INVITE#{id}`, `WS#{ws}`, `META`, `{iso}#{random}` | The multi-workspace control plane: workspaces, members, invites (`ttl`), "my workspaces" rows, slug guards, audit — read by `voc-workspaces-api` (`GET /me/*`), whose only write is a platform-admin entry's audit row (PutItem scoped to `AUDIT#WS#*`; the audit-row guard, `lib/utils/audit-row-guard.ts`, names it the table's audit writer, so no role changes or removes one); nothing creates workspaces or members yet (docs/multi-workspace.md) |
 
 ## API Endpoints
 
@@ -584,6 +585,12 @@ Rows (projects table): `DCOMMENTS#{project}#{series}` / `C#{id}` (threads) and `
 
 Scrapers, Web Reviews targets, app connectors and CSV / JSON uploads take `radar_brand: <brand key>`; their
 reviews go to `voc-radar`, never `voc-feedback`.
+
+### Workspaces (workspaces_handler.py, `voc-workspaces-api`) — `GET /me/{proxy+}`, see docs/multi-workspace.md
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/me/workspaces` | The caller's own workspaces `{workspaces: [{id, name, slug, role}]}`, by name (their `USER#{sub}` rows in `voc-workspaces`); each `role` is the membership row's, `/current` answers the role the caller acts with |
+| GET | `/me/workspaces/current` | The workspace `X-Workspace-Id` names `{workspace: {id, name, slug, role, platform_admin}}`: 400 without the header, the same 404 for a malformed id, a missing or deleting workspace and a non-member; a platform admin who is not a member admin enters as `admin`, audited by an `AUDIT#WS#{ws}` row (`lambda/shared/workspace.py`) |
 
 ### Participants + feedback boards (`engagement_handler.py`, `voc-engagement-api`; routers in `lambda/shared/*_routes.py`)
 | Method | Path | Description |

@@ -80,6 +80,8 @@ export class VocCoreStack extends VocStack {
   public readonly participantsTable: dynamodb.Table;
   /** voc-feature-requests — the internal feature-request board: requests and their supporters. */
   public readonly featureRequestsTable: dynamodb.Table;
+  /** voc-workspaces — the multi-workspace control plane: workspaces, members, invites, audit (docs/multi-workspace.md). */
+  public readonly workspacesTable: dynamodb.Table;
   /**
    * ARN of `voc/design-integrations` — `{figma_token?, github_token?}`, written
    * and read only by the settings API. A string for the same cycle reason as
@@ -354,13 +356,13 @@ export class VocCoreStack extends VocStack {
 
     // Workspaces Table — the multi-workspace control plane (docs/multi-workspace.md), here and not in a
     // stack of its own because the sample keeps to five stacks (docs/deployment.md#cdk-stacks). No index:
-    //   WS#{ws} / META | MEMBER#{sub} | INVITE#{id} | AUDIT#{iso}#{n}   workspace, members, invites, audit
-    //   USER#{sub} / WS#{ws}                                           "my workspaces", same transaction
-    //   SLUG#{slug} / META                                             slug -> workspace, conditional put
-    // TTL is meant for invites only, pinned by the phase that writes the table. The table is not kept in a
-    // field yet (nothing reads it, and ts_reachability refuses a write-only member); the change that adds the
-    // workspaces routes adds the field with its first reader.
-    this.createEncryptedTable('WorkspacesTable', 'voc-workspaces', {
+    //   WS#{ws} / META | MEMBER#{sub} | INVITE#{id}   workspace, members, invites
+    //   USER#{sub} / WS#{ws}                         "my workspaces", same transaction
+    //   SLUG#{slug} / META                           slug -> workspace, conditional put
+    //   AUDIT#WS#{ws} / {iso}#{random}               audit, under the audit-row guard (lib/utils/audit-row-guard.ts)
+    // TTL is meant for invites only, pinned by the phase that writes invites. Read by the workspaces API
+    // (VocApiStack, lib/stacks/api-workspaces-lambda.ts).
+    this.workspacesTable = this.createEncryptedTable('WorkspacesTable', 'voc-workspaces', {
       timeToLiveAttribute: 'ttl',
     });
 

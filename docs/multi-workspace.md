@@ -10,6 +10,7 @@ and files named here are the planned ones unless the table lists them.
 | 6.05.00 | The Cognito group `platform-admins`, with the bootstrapped `admin` in it (through a CloudFormation attachment, replaced in 6.06.02). Nothing reads it yet |
 | 6.06.00 | The `voc-workspaces` table in `VocCoreStack` (keys below, TTL `ttl` for invites). Nothing reads or writes it yet |
 | 6.06.02 | The bootstrap adds the first `admin` to `platform-admins` when it creates the user (no CloudFormation attachment); an older deployment adds one by hand (CHANGELOG 6.06.02, Upgrade notes) |
+| 6.07.00 | The workspace middleware `lambda/shared/workspace.py`: the `X-Workspace-Id` header (missing 400; malformed, unknown, `deleting` or not a member: one 404), the role from the `MEMBER#` row, a platform admin who is not a member admin entering as admin (decision 2) with an audit row `AUDIT#WS#{ws}` / `{iso}#{random}` (once per fill of the 30 s warm-container cache), `ws_key` and "my workspaces". The workspaces API `voc-workspaces-api` (`lambda/api/workspaces_handler.py`, `GET /me/{proxy+}`): `GET /me/workspaces` and `GET /me/workspaces/current`, with Query and GetItem on `voc-workspaces` and PutItem only where the partition key matches `AUDIT#WS#*`. The audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) covers `voc-workspaces`, with this role as its audit writer: no role can change or remove an entry row. Nothing creates workspaces or members yet, so every list is empty; the web app does not call these routes yet, and `X-Workspace-Id` is not yet in the CORS preflight. This is the first reader of `platform-admins`: the platform-admin safeguards above (Control plane) land before anything can create a workspace |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -67,14 +68,15 @@ gets no stack of its own.
 | `USER#{sub}` | `WS#{ws}` | the inverse row behind "my workspaces", written in the same transaction as `MEMBER#` |
 | `WS#{ws}` | `INVITE#{id}` | email, role, invited_by, expires_at, and `ttl` (the table's TTL attribute) |
 | `SLUG#{slug}` | `META` | slug → workspace id; uniqueness by a conditional put |
-| `WS#{ws}` | `AUDIT#{iso}#{n}` | membership changes, platform-admin entries, export and delete, share grants |
+| `AUDIT#WS#{ws}` | `{iso}#{random}` | membership changes, platform-admin entries, export and delete, share grants: an `AUDIT#` partition, so the audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) lets no role change or remove one |
 
 - **Platform admins** are the Cognito group `platform-admins`, bootstrapped at deploy time the way the first admin
   user is today ([README](../README.md#-initial-login)). Only they create workspaces and see the platform console
   (every workspace, its members and its cost).
-- Platform-admin membership is managed on its own, before anything reads the group. Today's users API changes only
+- Platform-admin membership is managed on its own, before the group can grant anything. Today's users API changes only
   `admins`/`users` and counts only `admins` for its last-admin guard, so a demoted user would stay a platform admin
-  and an admin could disable or delete the only one. The phase that first reads the group therefore adds:
+  and an admin could disable or delete the only one. Phase 1 therefore adds, before any route can create a workspace
+  or a membership (6.07.00 already reads the group, but with no workspace in the table it grants nothing yet):
   - a platform-admin route to grant and revoke the membership (platform admins only, audited, in the route-gate
     inventory), shown in the platform console;
   - in the users API: demoting a user also revokes it; disabling, enabling, deleting or resetting the password of a
@@ -195,9 +197,12 @@ to TENETS.md of its own:
 Also held to the tenets when built: the per-workspace secret is a fixed cost per workspace (decision 8 accepts it;
 tenet 7's gap names a move of secrets to SSM Parameter Store), so its phase extends the fixed-cost guard to count it
 per workspace; and `voc-workspaces` holds primary data (members, audit) beside invites, so the phase that writes it
-pins that only `INVITE#` rows carry `ttl` and protects the audit rows. The `AUDIT#` row guard
-(`voc-datalake/lib/utils/audit-row-guard.ts`) matches partition keys, and these rows are keyed `WS#{ws}` /
-`AUDIT#…`, so that phase either gives them an `AUDIT#`-prefixed partition key or adds a sort-key guard.
+pins that only `INVITE#` rows carry `ttl`. The audit rows are already protected: they are keyed `AUDIT#WS#{ws}` /
+`{iso}#{random}`, and the audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) covers `voc-workspaces` (since
+6.07.00), so no role can change or remove one and only its named writer, `voc-workspaces-api`, can put one; every
+other role that comes to write the table is denied putting an `AUDIT#` row. That role's PutItem is itself scoped to
+the `AUDIT#WS#*` partitions (`dynamodb:LeadingKeys`), with a conditional put that never overwrites, and it holds no
+UpdateItem or DeleteItem. A phase that adds another audit writer names it in the guard.
 
 ## Phases
 

@@ -279,6 +279,7 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   radarTable: coreStack.radarTable,
   participantsTable: coreStack.participantsTable,
   featureRequestsTable: coreStack.featureRequestsTable,
+  workspacesTable: coreStack.workspacesTable,
   designIntegrationsSecretArn: coreStack.designIntegrationsSecretArn,
   kmsKey: coreStack.kmsKey,
   rawDataBucket: coreStack.rawDataBucket,

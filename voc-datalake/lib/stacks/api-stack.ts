@@ -48,6 +48,7 @@ import { grantRealtimePublish } from '../utils/realtime';
 import { addApiRoutes } from './api-routes';
 import { createRadarLambda } from './api-radar-lambda';
 import { createParticipantsLambda } from './api-participants-lambda';
+import { createWorkspacesLambda } from './api-workspaces-lambda';
 import { emailSenderOf } from '../utils/email-sender';
 import { API_ASYNC_FAILURES_QUEUE_BASE_NAME, importApiAsyncFailureQueue } from './dlq-alarms';
 
@@ -70,6 +71,8 @@ export interface VocApiStackProps extends VocStackProps {
   participantsTable: dynamodb.Table;
   /** voc-feature-requests — the engagement API's feature-request board. */
   featureRequestsTable: dynamodb.Table;
+  /** voc-workspaces — the workspaces API reads it (docs/multi-workspace.md). */
+  workspacesTable: dynamodb.Table;
   /** `voc/design-integrations` (Figma/GitHub tokens) — settings API only. String for the KMS cycle reason above. */
   designIntegrationsSecretArn: string;
   kmsKey: kms.Key;
@@ -264,6 +267,7 @@ export class VocApiStack extends VocStack {
     const jobs = createJobLambdas(ctx, projects);
     const radarLambda = createRadarLambda(ctx);
     const engagementLambda = createParticipantsLambda(ctx);
+    const workspacesLambda = createWorkspacesLambda(ctx);
     const assistant = createAssistantLambdas(ctx, {
       projectsLambda: projects.projectsLambda,
       metricsLambda: data.metricsLambda,
@@ -321,7 +325,7 @@ export class VocApiStack extends VocStack {
     jobs.documentGeneratorLambda.addEnvironment('PIN_SUBMIT_API_BASE', restApiBaseUrl(this, gateway.api));
     addApiRoutes(this, gateway, {
       ...data, ...engagement, ...assistant, projectsLambda: projects.projectsLambda, radarLambda, engagementLambda,
-      webhookPlugins, webhookLambdas,
+      workspacesLambda, webhookPlugins, webhookLambdas,
     });
     // The global MCP endpoint (/mcp/global) and personal token API (/connect/tokens).
     createMcpApi(ctx, gateway, {

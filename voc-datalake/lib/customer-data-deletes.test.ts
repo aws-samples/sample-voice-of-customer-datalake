@@ -79,6 +79,16 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   RadarTable: {
     [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure and retention reach Radar reviews and their dedupe markers (docs/radar.md)' },
   },
+  // The multi-workspace control plane (docs/multi-workspace.md): nothing deletes there yet (workspace delete is an
+  // open tenet question for phase 4).
+  WorkspacesTable: {},
+};
+
+const DYNAMO_WRITE = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|PartiQL(Insert|Update|Delete)|\*)$/;
+
+/** Who may write voc-workspaces, and where: no role creates workspaces or members yet. */
+const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
+  'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*'],
 };
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */
@@ -199,7 +209,7 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   it('names every table and prefix it guards', () => {
     expect(Object.keys(TABLE_DELETERS).sort(byCodeUnit)).toStrictEqual([
       'AgentsTable', 'AggregatesTable', 'ConversationsTable', 'FeatureRequestsTable', 'FeedbackTable', 'JobsTable',
-      'MemoryTable', 'ParticipantsTable', 'ProjectsTable', 'RadarTable',
+      'MemoryTable', 'ParticipantsTable', 'ProjectsTable', 'RadarTable', 'WorkspacesTable',
     ]);
     expect(Object.keys(RAW_BUCKET_DELETERS)).toStrictEqual(Object.keys(RAW_BUCKET_PREFIXES));
   });
@@ -208,6 +218,17 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     const expected = Object.fromEntries(Object.entries(allowed).map(([role, deleter]) =>
       [role, [...deleter.scope].sort(byCodeUnit)]));
     expect(tableDeleters(table)).toStrictEqual(expected);
+  });
+
+  // The order docs/multi-workspace.md (Control plane) asks for, held by a test rather than prose: 6.07.00 reads the
+  // platform-admins group, so no role may write a workspace (META) or a membership (MEMBER#, USER#) until the change
+  // that does also lands the users-API safeguards for that group. That change edits WORKSPACE_WRITERS here.
+  it('voc-workspaces: only the workspaces API writes, and only its entry audit rows', () => {
+    const writers: Record<string, Scope> = {};
+    for (const grant of grants.filter(onTable('WorkspacesTable')).filter((g) => g.actions.some((a) => DYNAMO_WRITE.test(a)))) {
+      writers[grant.role] = unionOf(writers[grant.role] ?? [], scopeOf(grant));
+    }
+    expect(writers).toStrictEqual(WORKSPACE_WRITERS);
   });
 
   it.each(Object.entries(RAW_BUCKET_DELETERS))('raw bucket %s: exactly the allowlisted roles delete', (prefix, allowed) => {

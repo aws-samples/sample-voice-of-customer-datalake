@@ -50,7 +50,7 @@
 
 ### API Lambda Split (20KB IAM Policy Limit)
 
-AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into focused, domain-specific Lambdas, one per `lambda/api/*_handler.py` (20 handlers) plus the TypeScript assistant stream:
+AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into focused, domain-specific Lambdas, one per `lambda/api/*_handler.py` (21 handlers) plus the TypeScript assistant stream:
 
 | Lambda | Handler | Routes | Permissions |
 |--------|---------|--------|-------------|
@@ -74,6 +74,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-engagement-api` | `engagement_handler.py` (routers in `shared/*_routes.py`) | `/participants/*`, `/feature-requests/*` (board authorizer: app + board pools), public `POST /unsubscribe` | DynamoDB participants + feature-requests RW, projects read, aggregates GetItem, KMS, `ses:SendEmail` (only with `-c emailFrom`, `ses:FromAddress` pinned), invoke itself (async send slices, no retries) |
 | `voc-ballots-api` | `ballots_handler.py` | `/voting-sessions/*` (room votes on a Prioritization row; `GET .../config` and `POST .../submit` public) | DynamoDB aggregates Get/Put/Update, projects GetItem, KMS |
 | `voc-radar-api` | `radar_handler.py` | `/radar`, `/radar/{proxy+}` (other brands, docs/radar.md) | DynamoDB radar Get/Query/Put/BatchGet, aggregates read, KMS, invoke the Radar scan worker |
+| `voc-workspaces-api` | `workspaces_handler.py` (`lambda/shared/workspace.py`) | `GET /me/{proxy+}`: `GET /me/workspaces`, `GET /me/workspaces/current` (docs/multi-workspace.md) | DynamoDB workspaces Query/GetItem, and PutItem only where `dynamodb:LeadingKeys` matches `AUDIT#WS#*` (the platform-admin entry's audit row, a conditional put; the audit-row guard names this role the table's audit writer); KMS; no other table |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` (admin-only; incl. `POST /s3-import/reprocess`, `GET /s3-import/reprocess/{run_id}`) | S3 import bucket RW, KMS; with the `s3_import` plugin enabled (`lib/stacks/api-s3-import-lambda.ts`): `lambda:InvokeFunction` on exactly `voc-ingestor-s3_import` (by name, env `S3_IMPORT_INGESTOR_FUNCTION`) and aggregates Put/Get/UpdateItem + Query (the duplicate-run check, 409) pinned by `dynamodb:LeadingKeys` to `SOURCE_RUN#s3_import` (the reprocess run rows) |
 
 Push notices (6.04.00, docs/realtime.md): `appsync:EventPublish` on exactly one namespace each, as VocCoreStack's

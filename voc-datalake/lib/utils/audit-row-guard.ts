@@ -6,7 +6,8 @@
  * hold them ({@link AuditRowTables}): voc-aggregates (`AUDIT#retention`, `AUDIT#tombstone#<source>`, written by
  * voc-retention; `AUDIT#delete` for a design reference's copies, written by the settings API) and voc-projects /
  * voc-participants / voc-feature-requests / voc-conversations (`AUDIT#delete`, written by the API that deletes the
- * artifact, lambda/shared/delete_audit.py, which only PUTs a new row). Every role that can write in one of those
+ * artifact, lambda/shared/delete_audit.py, which only PUTs a new row) and voc-workspaces (`AUDIT#WS#<ws>`, a platform
+ * admin's entry into a workspace, written by the workspaces API, lambda/shared/workspace.py). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
  *
  *   - a table the role is that table's audit writer for: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit
@@ -55,6 +56,7 @@ export interface AuditRowTables {
   readonly participantsTable?: dynamodb.ITable;
   readonly featureRequestsTable?: dynamodb.ITable;
   readonly conversationsTable?: dynamodb.ITable;
+  readonly workspacesTable?: dynamodb.ITable;
 }
 
 /** An audit writer of one table, by the construct-path suffix of its role. */
@@ -70,7 +72,7 @@ export interface AuditGuardOptions {
   readonly writers: readonly NamedAuditWriter[];
 }
 
-/** Every audit writer, per table (lambda/shared/delete_audit.py's callers, voc-retention). Each entry is pinned over
+/** Every audit writer, per table (lambda/shared/delete_audit.py's callers, voc-retention, shared/workspace.py). Each entry is pinned over
  *  the whole app by audit-row-guard.test.ts. */
 const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly rolePathSuffix: string;
   readonly partitionKey?: string }[] = [
@@ -87,10 +89,12 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   { table: 'featureRequestsTable', rolePathSuffix: '/EngagementLambdaRole' },
   // A deleted conversation.
   { table: 'conversationsTable', rolePathSuffix: '/ChatLambdaRole' },
+  // A platform admin's entry into a workspace (AUDIT#WS#<ws>; the role may put only those partitions).
+  { table: 'workspacesTable', rolePathSuffix: '/WorkspacesLambdaRole' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',
-  'conversationsTable'] as const satisfies readonly (keyof AuditRowTables)[];
+  'conversationsTable', 'workspacesTable'] as const satisfies readonly (keyof AuditRowTables)[];
 
 /** The guard options for the audit tables `tables` names (the tables it leaves out are not guarded). */
 export function auditRowGuardFor(tables: AuditRowTables): AuditGuardOptions {
@@ -132,7 +136,7 @@ const PUT_ACTIONS = ['dynamodb:PutItem', 'dynamodb:BatchWriteItem'];
 /**
  * What no role may do to an audit row, writers included. BatchWriteItem too: IAM checks a batch as BatchWriteItem, so
  * a DeleteRequest inside it is NOT checked as DeleteItem; every audit writer puts its rows one PutItem at a time
- * (lambda/shared/delete_audit.py, participants_erasure.py, jobs/retention/copies.py), so none needs a batch there.
+ * (lambda/shared/delete_audit.py, participants_erasure.py, workspace.py, jobs/retention/copies.py), so none needs a batch there.
  * PartiQL is not listed: no role is granted a PartiQL action (grantReadWriteData and the exact grants hold none).
  */
 const CHANGE_ACTIONS = ['dynamodb:DeleteItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem'];

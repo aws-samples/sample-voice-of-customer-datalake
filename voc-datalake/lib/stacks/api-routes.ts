@@ -27,6 +27,8 @@ export interface RouteTargets extends DataLambdas, EngagementLambdas, AssistantL
   radarLambda: lambda.Function;
   /** voc-engagement-api: /participants/*, /feature-requests/*, POST /unsubscribe. */
   engagementLambda: lambda.Function;
+  /** voc-workspaces-api: GET /me/{proxy+} (docs/multi-workspace.md). */
+  workspacesLambda: lambda.Function;
   webhookPlugins: PluginManifest[];
   webhookLambdas: Map<string, lambda.Function>;
 }
@@ -37,7 +39,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
     metricsLambda, feedbackEditLambda, integrationsLambda, scrapersLambda, settingsLambda, usersLambda,
     feedbackFormLambda, chatLambda, chatStreamLambda, projectsLambda, manualImportLambda, logsLambda,
     s3ImportLambda, dataExplorerLambda, ballotsLambda, memoryLambda, agentsLambda, radarLambda, engagementLambda,
-    webhookPlugins, webhookLambdas,
+    workspacesLambda, webhookPlugins, webhookLambdas,
   } = targets;
 
   // Lambda integrations — every one frugal (see frugalIntegration below).
@@ -269,6 +271,10 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // every signed-in user, admin-only writes in the handler. Its own root resource: the container is
   // never addressable under /projects (the handler answers 404 there).
   cognitoCollectionWithProxy('company-personas', projectsIntegration, ['GET']);
+
+  // /me/* — the caller's own view of the workspaces (voc-workspaces-api, docs/multi-workspace.md): GET only,
+  // Cognito on the proxy, nothing on the bare /me. One proxy, so later /me reads cost no resource.
+  proxyServing(api.root.addResource('me'), { GET: frugalIntegration(workspacesLambda) });
 
   // Engagement (voc-engagement-api). ONE integration, so ONE invoke permission for all three trees.
   const engagementIntegration = frugalIntegration(engagementLambda);

@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "9017fa47742e37dbc9f94b617617faa5c7b7dd84aaeac443a11b35321c5f0474",
+      "templateSha256": "91cdaa97dda2938002b4ffd4037715c57da691be872ecfb2b3c1ab65991177f6",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -43,6 +43,7 @@
           "AWS::Lambda::Function FunctionName = voc-settings-assist-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-users-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-webhook-github_issues-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-workspaces-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-agents-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-ballots-api-<AWS::AccountId>-<AWS::Region>",
@@ -74,6 +75,7 @@
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-settings-assist-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-users-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-webhook-github_issues-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-workspaces-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-document-workflow-<AWS::AccountId>-<AWS::Region>",
           "AWS::StepFunctions::StateMachine StateMachineName = voc-document-workflow-<AWS::AccountId>-<AWS::Region>"
         ],
@@ -166,6 +168,7 @@
           "POWERTOOLS_SERVICE_NAME = voc-settings-api",
           "POWERTOOLS_SERVICE_NAME = voc-users-api",
           "POWERTOOLS_SERVICE_NAME = voc-webhook-github_issues",
+          "POWERTOOLS_SERVICE_NAME = voc-workspaces-api",
           "RADAR_EXA_PARAMETER = /voc/radar/exa-api-key",
           "RADAR_SCAN_FUNCTION = voc-radar-scan-<AWS::AccountId>-<AWS::Region>",
           "RETENTION_FUNCTION = voc-retention-<AWS::AccountId>-<AWS::Region>",
@@ -178,7 +181,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "0c1f23cd901c5c77cfeb38973810b394f7ec11233217592b9884b507b37b89a9",
+      "templateSha256": "d5ce87fb5388c132e814e74fa1b24b383c40ee1a88fecac1f2953a6a6efdb6d4",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -238,6 +241,7 @@
           "VocCoreStack:ExportsOutputFnGetAttVocUserPool8153B431Arn76E5BFD2",
           "VocCoreStack:ExportsOutputFnGetAttWatermarksTable48C36C42ArnC9FAD2C2",
           "VocCoreStack:ExportsOutputFnGetAttWebsiteBucket75C24D94ArnD093C6EC",
+          "VocCoreStack:ExportsOutputFnGetAttWorkspacesTable4AC35086ArnF4B03E3E",
           "VocCoreStack:ExportsOutputRefAccessLogsBucket8398268993F214BC",
           "VocCoreStack:ExportsOutputRefAgentsTable78E0948F50F42CF9",
           "VocCoreStack:ExportsOutputRefAggregatesTable0F8EFB129CB80975",
@@ -264,6 +268,7 @@
           "VocCoreStack:ExportsOutputRefVocUserPoolVocWebClient7C73DABFF26A108F",
           "VocCoreStack:ExportsOutputRefWatermarksTable48C36C42F5B0CC7C",
           "VocCoreStack:ExportsOutputRefWebsiteBucket75C24D94B5689ED3",
+          "VocCoreStack:ExportsOutputRefWorkspacesTable4AC3508647701744",
           "VocFrontendDomainName"
         ],
         "policyResources": [],
@@ -331,7 +336,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "7e28ef7dcf541cc118cc8d032021a84e572d098178c1db3478592c71ec57e5d7",
+      "templateSha256": "415980b6714fb4e6baa11004835704150f17727b36ad06852c3ec84466011272",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",

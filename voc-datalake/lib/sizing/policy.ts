@@ -331,6 +331,9 @@ export const RAISED_FOR_PEAK_MEMORY: Readonly<Record<string, number>> = {
 export const UNCHANGED: Readonly<Record<string, number | null>> = {
   // VocApiStack
   'voc-feedback-edit-api': 256,
+  // The workspaces API (6.07.00, docs/multi-workspace.md): one Query or two GetItems per call, the first call after
+  // sign-in; the size of voc-users-api, whose reads are alike (unmeasured, new).
+  'voc-workspaces-api': 512,
   'voc-manual-import-processor': 1024,
   'voc-job-persona-generator': 1024,
   'voc-job-document-generator': 1024,
