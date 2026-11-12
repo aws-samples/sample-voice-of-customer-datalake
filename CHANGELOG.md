@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.13.00] - 2026-11-12
+
+Multi-workspace, phase 1: the web app manages a workspace's members, and platform admins get the platform console.
+
+### Added
+
+- A members page inside a workspace, `/w/{slug}/members`, opened from Members in the header's workspace menu (the header now shows the workspace as a menu with one workspace too) ([docs/multi-workspace.md](docs/multi-workspace.md#invites)). Every member sees the list (name or email, role, the date they joined), a page at a time. A workspace admin adds a member by email with a role (an email with an account becomes a member at once, with no email sent, and the page says so; a new email gets an account and a temporary password by email, for a deployment administrator only), changes a role and removes a member after a confirmation; any member leaves after a confirmation, then lands on `/`. The server's refusals are said in words: the last admin, a membership changed meanwhile, an admin demoted meanwhile, a person already a member, a new email from a workspace admin outside `admins`. Outside a workspace the address shows "Page not found". The page says plainly that workspaces do not separate data yet.
+- The platform console, Administration → Privacy & access → Workspaces, shown only to platform admins (the `platform-admins` group in the session's token; the API checks it live and answers 403 to anyone else): every workspace by name with its slug, status and whether its credentials secret is ready or pending; a form that creates one (name, slug, checked in the browser by the server's rules; a taken slug is refused with 409 and said so), after which the caller is its admin; and Enter, a full page load to `/w/{slug}/`.
+- Under Administration → Privacy & access → Users, platform admins grant and revoke platform admin per user (`PUT /users/{username}/platform-admin`): only an administrator can be granted it, and the last enabled platform admin cannot be revoked; each refusal is said in words.
+- The dev mock serves the platform list and create, the members list, add, role change, removal and leave (with the last-admin and already-a-member refusals) and the platform-admin grant and revoke, all on the state its `PUT /__mock/workspaces` switch sets (on: two fictional workspaces with members; off: none, as before). A Playwright spec (`e2e/tests/workspace-admin.spec.ts`, dev mock only) covers creating and entering a workspace, adding a member, a role change, the last-admin refusal and leaving.
+
+### Changed
+
+- The workspace gate lets a platform admin into a workspace they are not a member of when they enter it from the platform console: the console records the workspace's id for the tab, and the gate opens the workspace only once `GET /me/workspaces/current` answers that workspace with that slug (the server's live check and audited entry, decision 2). Without that record, or when the server answers 404, the address shows the same "Workspace not found" page as before, so nothing changes for anyone else.
+
+### Upgrade notes
+
+- Only the web app changes: deploy VocApiStack as usual (`cd voc-datalake && npm run deploy:api`; it carries the web app). No API, table or permission changes.
+
 ## [6.12.00] - 2026-11-12
 
 Multi-workspace, phase 1: the web app knows the caller's workspaces, works inside `/w/{slug}/…` and names the current workspace on every API call.

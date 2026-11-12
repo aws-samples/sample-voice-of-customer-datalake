@@ -43,6 +43,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'csv-dataset-update',
   // 6.12.00: the workspace picker, /w/{slug} and X-Workspace-Id (the mock's two workspaces; mock only).
   'workspaces',
+  // 6.13.00: the platform console and the members page (creates workspaces and changes memberships; mock only).
+  'workspace-admin',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

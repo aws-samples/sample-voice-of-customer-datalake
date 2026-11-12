@@ -28,6 +28,7 @@ vi.mock('./workspacePath', async (importOriginal) => {
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { setCurrentWorkspace, useCurrentWorkspace, workspaceHeader } from './currentWorkspace'
 import WorkspaceGate from './WorkspaceGate'
+import { platformEntryFor, rememberPlatformEntry } from './platformEntry'
 import { ACME, JUNIPER } from '../test/workspaceFixtures'
 
 /** Every workspace the page behind the gate rendered with, in order: its first is what its first API call sends. */
@@ -217,5 +218,67 @@ describe('WorkspaceGate with a slug', () => {
     expect(screen.getByRole('link', { name: 'Go to the start page' })).toHaveAttribute('href', '/')
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(signOut).toHaveBeenCalledExactlyOnceWith()
+  })
+})
+
+describe('WorkspaceGate for a platform admin entering from the console (a workspace outside their list)', () => {
+  const FIELD_TEAM = { id: 'ws_01JCFLDT0000000000000000F1', slug: 'acme-field', name: 'Acme Outfitters Field Team' }
+
+  it('opens it as the server answers it, sending the recorded id, and renders nothing before', async () => {
+    page.workspace = { kind: 'slug', slug: FIELD_TEAM.slug }
+    rememberPlatformEntry(FIELD_TEAM)
+    const sent: Array<Record<string, string>> = []
+    serve([ACME], {
+      'GET /me/workspaces/current': () => {
+        sent.push(workspaceHeader('/api/me/workspaces/current'))
+        return { workspace: { ...FIELD_TEAM, role: 'admin', platform_admin: true } }
+      },
+    })
+    renderGate('/')
+    expect(await screen.findByText('App page in Acme Outfitters Field Team')).toHaveAttribute('title', 'admin')
+    expect(sent).toStrictEqual([{ 'X-Workspace-Id': FIELD_TEAM.id }])
+    // Every render of the page already had the workspace confirmed.
+    expect(rendered.every((name) => name === FIELD_TEAM.name)).toBe(true)
+  })
+
+  it('shows the plain not-found page, and drops the record, when the server answers 404', async () => {
+    page.workspace = { kind: 'slug', slug: FIELD_TEAM.slug }
+    rememberPlatformEntry(FIELD_TEAM)
+    serve([ACME]) // /current is not routed: the one 404 a non-member gets
+    renderGate('/')
+    expect(await screen.findByRole('heading', { name: 'Workspace not found' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Acme Outfitters/ })).toHaveAttribute('href', '/w/acme/')
+    expect(platformEntryFor(FIELD_TEAM.slug)).toBeNull()
+    expect(rendered).toStrictEqual([])
+  })
+
+  it('refuses an answer that names another workspace than the address', async () => {
+    page.workspace = { kind: 'slug', slug: FIELD_TEAM.slug }
+    rememberPlatformEntry(FIELD_TEAM)
+    serve([ACME], { 'GET /me/workspaces/current': () => ({ workspace: { ...FIELD_TEAM, slug: 'juniper', role: 'admin' } }) })
+    renderGate('/')
+    expect(await screen.findByRole('heading', { name: 'Workspace not found' })).toBeInTheDocument()
+    expect(rendered).toStrictEqual([])
+  })
+
+  it('offers Try again, never the app, when the confirmation fails for another reason', async () => {
+    page.workspace = { kind: 'slug', slug: FIELD_TEAM.slug }
+    rememberPlatformEntry(FIELD_TEAM)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    serve([ACME], { 'GET /me/workspaces/current': () => { throw new Error('API Error: 500') } })
+    renderGate('/')
+    expect(await screen.findByRole('heading', { name: 'Could not load your workspaces' })).toBeInTheDocument()
+    serve([ACME], { 'GET /me/workspaces/current': () => ({ workspace: { ...FIELD_TEAM, role: 'admin' } }) })
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('App page in Acme Outfitters Field Team')).toBeInTheDocument()
+  })
+
+  it('without a record, the slug is a plain not-found as for anyone', async () => {
+    page.workspace = { kind: 'slug', slug: FIELD_TEAM.slug }
+    const current = vi.fn(() => ({ workspace: { ...FIELD_TEAM, role: 'admin' } }))
+    serve([ACME], { 'GET /me/workspaces/current': current })
+    renderGate('/')
+    expect(await screen.findByRole('heading', { name: 'Workspace not found' })).toBeInTheDocument()
+    expect(current).not.toHaveBeenCalled()
   })
 })

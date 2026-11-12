@@ -15,15 +15,20 @@ import { fetchApi } from './client'
 import { isWorkspaceSlug } from '../workspace/workspacePath'
 import type { CurrentWorkspace } from '../workspace/currentWorkspace'
 
-const RoleSchema = z.enum(['admin', 'editor', 'viewer'])
+/** A member's role in a workspace (`ROLES`, lambda/shared/workspace.py), in the order the role menus offer them. */
+export const WORKSPACE_ROLES = ['admin', 'editor', 'viewer'] as const
+export const RoleSchema = z.enum(WORKSPACE_ROLES)
+export type WorkspaceRole = z.infer<typeof RoleSchema>
 
-const WorkspaceSchema = z.object({
+/** A workspace's id, name and slug, as every workspaces route answers them (the platform console's list too). */
+export const WorkspaceIdentitySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   // A slug that could not be a base path could never be entered, so it is not offered.
   slug: z.string().refine(isWorkspaceSlug),
-  role: RoleSchema,
 })
+
+const WorkspaceSchema = WorkspaceIdentitySchema.extend({ role: RoleSchema })
 
 const ListSchema = z.object({ workspaces: z.array(z.unknown()) })
 const CurrentSchema = z.object({ workspace: WorkspaceSchema })

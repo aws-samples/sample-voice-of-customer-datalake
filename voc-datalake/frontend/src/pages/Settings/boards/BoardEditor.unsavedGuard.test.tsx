@@ -111,7 +111,7 @@ describe('the Boards section', () => {
   it('renders nothing for a non-admin, even from a deep link', () => {
     const router = createMemoryRouter([{
       path: '/admin',
-      element: <AdminSectionContent tab="access" section="boards" apiEndpoint="https://api.example.com" isAdmin={false} />,
+      element: <AdminSectionContent tab="access" section="boards" apiEndpoint="https://api.example.com" isAdmin={false} isPlatformAdmin={false} />,
     }], { initialEntries: [EDITOR] })
     const { container } = renderWithQueryClient(<RouterProvider router={router} />)
     expect(container).toBeEmptyDOMElement()

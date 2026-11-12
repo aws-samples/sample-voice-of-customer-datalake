@@ -11,6 +11,14 @@ describe('gateDecision with a slug in the address', () => {
     expect(gateDecision({ kind: 'slug', slug: 'juniper' }, [ACME, JUNIPER], '/dashboard')).toStrictEqual({ kind: 'enter', workspace: JUNIPER })
   })
 
+  it('enters a slug outside the list only with the platform console\'s record for that slug, as admin until the server says', () => {
+    const entry = { id: 'ws_01JCFLDT0000000000000000F1', slug: 'acme-field' }
+    expect(gateDecision({ kind: 'slug', slug: 'acme-field' }, [ACME], '/', entry)).toStrictEqual({ kind: 'enter-unlisted', workspace: { ...entry, name: '', role: 'admin' } })
+    expect(gateDecision({ kind: 'slug', slug: 'juniper' }, [ACME], '/', entry)).toStrictEqual({ kind: 'not-found', workspaces: [ACME] })
+    // A listed workspace is entered by its membership row, whatever the record says.
+    expect(gateDecision({ kind: 'slug', slug: 'acme' }, [ACME], '/', { ...entry, slug: 'acme' })).toStrictEqual({ kind: 'enter', workspace: ACME })
+  })
+
   it('answers not-found, with the caller\'s own, for a slug that is not theirs or cannot exist', () => {
     expect(gateDecision({ kind: 'slug', slug: 'globex' }, [ACME], '/')).toStrictEqual({ kind: 'not-found', workspaces: [ACME] })
     expect(gateDecision({ kind: 'invalid' }, [], '/')).toStrictEqual({ kind: 'not-found', workspaces: [] })

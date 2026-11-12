@@ -32,7 +32,7 @@ import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
   DataExplorer, Vote, Memory, Company, Agents, AgentDetail,
-  WorkflowPage, Account, Connect, OAuthConsent, Radar, Participants,
+  WorkflowPage, Account, Members, Connect, OAuthConsent, Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
 } from './lazyPages'
 
@@ -148,6 +148,8 @@ export const routes: RouteObject[] = [
       { path: 'connect', ...page(<Connect />) },
       { path: 'oauth/authorize', ...page(<OAuthConsent />) },
       { path: 'account', ...page(<Account />) },
+      // The current workspace's members (the header's workspace menu); "Page not found" outside a workspace.
+      { path: 'members', ...page(<Members />) },
       // Administration (was Settings): admins only. The old
       // path keeps working — links, bookmarks and `?tab=` deep links redirect.
       { path: 'admin', ...page(<AdminRoute><Settings /></AdminRoute>) },

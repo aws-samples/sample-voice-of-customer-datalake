@@ -13,6 +13,9 @@
  * @module workspace/workspacePath
  */
 
+/** The longest slug `_SLUG` allows (the create form's input limit). */
+export const SLUG_MAX_LENGTH = 40
+
 /** `_SLUG` in lambda/shared/platform_workspaces.py, anchored. */
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/
 

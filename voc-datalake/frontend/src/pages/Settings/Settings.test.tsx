@@ -51,6 +51,8 @@ vi.mock('../../store/configStore', () => ({
 // Mock auth store
 vi.mock('../../store/authStore', () => ({
   useIsAdmin: vi.fn(() => true),
+  // The platform console has its own spec (PlatformWorkspacesSection.test.tsx).
+  useIsPlatformAdmin: vi.fn(() => false),
 }))
 
 // Mock child components
@@ -564,7 +566,7 @@ describe('Settings', () => {
 /** A fresh copy of the page whose `useIsAdmin` answers `isAdmin`. */
 async function importSettingsAs(isAdmin: boolean) {
   vi.resetModules()
-  vi.doMock('../../store/authStore', () => ({ useIsAdmin: () => isAdmin }))
+  vi.doMock('../../store/authStore', () => ({ useIsAdmin: () => isAdmin, useIsPlatformAdmin: () => false }))
   return (await import('./Settings')).default
 }
 
@@ -580,6 +582,7 @@ describe('Settings without admin access', () => {
     
     vi.doMock('../../store/authStore', () => ({
       useIsAdmin: vi.fn(() => false),
+      useIsPlatformAdmin: vi.fn(() => false),
     }))
   })
 

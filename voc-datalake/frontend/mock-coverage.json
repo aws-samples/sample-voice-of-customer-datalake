@@ -3043,6 +3043,110 @@
     ]
   },
   {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "GET",
+    "call": "'/me/workspaces/current/members'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members"
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "GET",
+    "call": "`/me/workspaces/current/members?${cursorQuery(cursor)}`",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members?cursor=25"
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "POST",
+    "call": "'/me/workspaces/current/members'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members",
+        "body": {
+          "email": "viewer@example.com",
+          "role": "viewer"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "PUT",
+    "call": "`/me/workspaces/current/members/${encodeURIComponent(sub)}`",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members/sub-viewer-demo",
+        "body": {
+          "role": "editor"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceMembersApi.ts",
+    "method": "DELETE",
+    "call": "`/me/workspaces/current/members/${encodeURIComponent(sub)}`",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/members/sub-viewer-demo"
+      }
+    ]
+  },
+  {
+    "file": "api/platformWorkspacesApi.ts",
+    "method": "GET",
+    "call": "'/platform/workspaces'",
+    "probes": [
+      {
+        "path": "/platform/workspaces"
+      }
+    ]
+  },
+  {
+    "file": "api/platformWorkspacesApi.ts",
+    "method": "GET",
+    "call": "`/platform/workspaces?${cursorQuery(cursor)}`",
+    "probes": [
+      {
+        "path": "/platform/workspaces?cursor=25"
+      }
+    ]
+  },
+  {
+    "file": "api/platformWorkspacesApi.ts",
+    "method": "POST",
+    "call": "'/platform/workspaces'",
+    "probes": [
+      {
+        "path": "/platform/workspaces",
+        "body": {
+          "name": "Acme Outfitters Field Team",
+          "slug": "acme-field"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "PUT",
+    "call": "userPath(username, '/platform-admin')",
+    "probes": [
+      {
+        "path": "/users/admin-demo/platform-admin",
+        "body": {
+          "platform_admin": true
+        }
+      }
+    ]
+  },
+  {
     "file": "api/memoryApi.ts",
     "method": "PUT",
     "call": "item(id)",

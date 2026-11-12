@@ -10,8 +10,8 @@
  *    whose calls carry juniper's id and never acme's.
  * 4. An unknown slug shows "Workspace not found" with the caller's own workspaces, and the app does not render.
  *
- * MOCK ONLY: a deployment's workspaces are made by its platform admins (the platform console is a later
- * change), so production has none to choose from. The spec turns the mock's workspaces on through its dev
+ * MOCK ONLY: it needs the mock's two fictional workspaces (a deployment's are made by its platform admins in the
+ * platform console, workspace-admin.spec.ts). The spec turns the mock's workspaces on through its dev
  * switch (`PUT /__mock/workspaces`) and off again afterwards, so the other mock specs keep the app without
  * workspaces.
  *
@@ -65,7 +65,7 @@ function workspaceIds(requests: readonly Request[]): string[] {
 }
 
 test.describe('workspaces', () => {
-  test.skip(!MOCK, 'production has no workspaces to choose from until the platform console: dev mock only')
+  test.skip(!MOCK, 'needs the mock\'s two fictional workspaces: dev mock only')
   test.describe.configure({ mode: 'serial' })
 
   let workspaces: Record<string, MockWorkspace> = {}

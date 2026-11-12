@@ -54,6 +54,8 @@ const EXEMPT: Readonly<Record<string, string>> = {
   CategoryGeneratePanel: 'Generate categories sits at the top of the Categories tab, above the list (saves are automatic)',
   PrototypeRenderer: 'the submit lives inside the sandboxed prototype preview, not the app page',
   GoHomeLink: 'error-state navigation link, centred in the page',
+  AddMemberForm: 'Members → Add a member: a one-line add form (email, role, Add) above the list, nothing left unsaved',
+  CreateWorkspaceForm: 'Administration → Workspaces: a two-field create form above the list, nothing left unsaved',
   McpJsonSnippets: 'Connect → mcp.json: the pressed client of a toggle group (aria-pressed) wears the primary style; nothing is saved',
   DataQualitySectionProfile: 'Data Explorer → Data quality: the pressed facet of a toggle group (aria-pressed) wears the primary style; nothing is saved',
   'RouteErrorBoundary/index': 'error-state retry, centred in the page',

@@ -434,12 +434,37 @@ const mockUsers = [
   },
 ];
 
+// PUT /users/{username}/platform-admin {platform_admin} (users_handler.put_user_platform_admin): platform admins
+// only (403), a grant only to a member of `admins` (400), never a revoke of the last enabled platform admin (409,
+// shared/user_admin_guard.py), and asking for what already holds changes nothing.
+const PLATFORM_ADMINS = 'platform-admins';
+function platformAdminChange(user, body) {
+  const refuse = (status, error) => ({ status, payload: { success: false, error } });
+  if (typeof body?.platform_admin !== 'boolean') return refuse(400, 'platform_admin must be true or false');
+  const caller = mockUsers.find((u) => u.username === MOCK_CALLER.username);
+  if (!caller?.enabled || !caller.groups.includes(PLATFORM_ADMINS)) return refuse(403, 'Platform admin access required');
+  const grant = body.platform_admin;
+  const answer = { success: true, username: user.username, platform_admin: grant };
+  if (grant === user.groups.includes(PLATFORM_ADMINS)) return { status: 200, payload: { ...answer, message: 'Platform admin membership unchanged' } };
+  if (grant && !user.groups.includes('admins')) {
+    return refuse(400, 'Only an administrator can be a platform admin: make the user an administrator first');
+  }
+  const others = mockUsers.filter((u) => u !== user && u.enabled && u.groups.includes(PLATFORM_ADMINS));
+  if (!grant && others.length === 0) {
+    return refuse(409, 'This is the last enabled platform admin: make another administrator a platform admin first.');
+  }
+  user.groups = grant ? [...user.groups, PLATFORM_ADMINS] : user.groups.filter((g) => g !== PLATFORM_ADMINS);
+  user.last_modified = new Date().toISOString();
+  return { status: 200, payload: { ...answer, message: grant ? 'Platform admin granted' : 'Platform admin revoked' } };
+}
+
 // Apply a user-admin mutation (issue #177). Returns { status, payload };
 // keeps the dispatch block small and the mutations in one auditable place.
 // Error payloads use the `error` key, matching the real API's shape
 // ({'success': False, 'error': ...} from lambda/shared/api.py).
 function handleUserAction(method, user, action, body) {
   const touch = () => { user.last_modified = new Date().toISOString(); };
+  if (method === 'PUT' && action === 'platform-admin') return platformAdminChange(user, body);
   if (method === 'PUT' && action === 'group') {
     const group = body?.group === 'admins' ? 'admins' : 'users';
     // Like users_handler: the role groups are replaced, other groups kept, and a demotion also revokes platform-admins.
@@ -1341,7 +1366,7 @@ function handleDomainModules(req, res, url) {
     mockScrapers, mockScraperRuns, mockCategoriesConfig,
     mockFeedbackForms, mockFormStats, mockProjectDetails, mockProductJobs,
     attributeFilterOf, sourceProfiles, dimensionsConfig, startOwnerAssistJob, startProjectAssistJob,
-    mockProjectSharing, mockCaller: MOCK_CALLER,
+    mockProjectSharing, mockCaller: MOCK_CALLER, mockUsers, mockSub,
   };
   return handlePrioritizationConfigRoutes(req, res, url, send, shared)
     || handleDimensionRoutes(req, res, url, send, shared)
@@ -3890,7 +3915,7 @@ const server = http.createServer((req, res) => {
 
   // User admin by username (issue #177). Exact-key routes ('GET /users',
   // 'POST /users') win; unknown usernames 404 like the real API.
-  const userMatch = url.pathname.match(/^\/users\/([^/]+)(?:\/(group|reset-password|enable|disable))?$/);
+  const userMatch = url.pathname.match(/^\/users\/([^/]+)(?:\/(group|reset-password|enable|disable|platform-admin))?$/);
   if (userMatch && !(key in handlers)) {
     const username = decodeURIComponent(userMatch[1]);
     const action = userMatch[2];

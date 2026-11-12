@@ -12,6 +12,7 @@ import RadarSection from './RadarSection'
 import EmailInboxCard from './EmailInboxCard'
 import ParticipantSettingsCard from './ParticipantSettingsCard'
 import BoardsSection from './boards/BoardsSection'
+import PlatformWorkspacesSection from './PlatformWorkspacesSection'
 import { DimensionsSection, SourcePoliciesSection } from './DataGovernanceSections'
 import { CategoriesSection, DataSourcesSection, UserAdminSection } from './SettingsSections'
 import type { AdminSectionId, AdminTabId } from './adminTabs'
@@ -51,11 +52,14 @@ function SectionContent({ section, apiEndpoint, isAdmin }: Readonly<ContentProps
   }
 }
 
-export default function AdminSectionContent({ tab, section, apiEndpoint, isAdmin }: Readonly<ContentProps & {
+export default function AdminSectionContent({ tab, section, apiEndpoint, isAdmin, isPlatformAdmin }: Readonly<ContentProps & {
   tab: AdminTabId
   section: AdminSectionId | null
+  isPlatformAdmin: boolean
 }>) {
   if (tab === 'ai') return <AiModelSection apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
   if (section === null) return null
+  // The platform console: platform admins only, like its tab (adminTabs.ts).
+  if (section === 'workspaces') return isAdmin && isPlatformAdmin && apiEndpoint ? <PlatformWorkspacesSection /> : null
   return <SectionContent section={section} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
 }

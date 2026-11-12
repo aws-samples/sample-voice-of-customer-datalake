@@ -119,6 +119,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'participants': 'standard', // lists, people, asks (an ask's detail polls itself while sending)
   'passkey': 'config', // whether the signed-in person has a passkey (Cognito, read once for the sign-in offer)
   'persona-copy-sources': 'standard', // a project's "Copy from…" sources (library + the caller's projects)
+  'platform-workspaces': 'standard', // the platform console's list of every workspace (GET /platform/workspaces)
   'prioritization-config': 'config', // the workspace scoring setup (metrics, weights)
   'prioritization-scores': 'standard',
   'processing-logs': 'live',
@@ -162,6 +163,8 @@ export const SUB_KEY_FAMILIES: readonly (readonly [QueryKey, CacheFamily])[] = [
   // The sidebar polls the agent list every 60 s (hooks/useAgentsNeedingDecision); a focus
   // refetch on top would only repeat it. Runs, run events and plans stay live.
   [['agents', 'list'], 'polled'],
+  // A workspace's members change by other admins' hand: read like the users list, not like the caller's own list.
+  [['my-workspaces', 'members'], 'standard'],
   [['radar', 'brands'], 'config'],
   [['settings', 'my-briefing'], 'live'],
   [['settings', 'my-onboarding'], 'live'],

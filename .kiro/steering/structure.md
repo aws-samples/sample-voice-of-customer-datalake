@@ -122,10 +122,10 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── projectsApi.ts    # Projects API (lazy-loaded)
     │   │   │   └── projectQueryKeys.ts # Query keys shared across features
     │   │   ├── assistant/            # Unified AI assistant (AG-UI client, thread reducer, sessions, approvals, panel UI)
-    │   │   ├── workspace/            # Multi-workspace (docs/multi-workspace.md): /w/{slug} base path, current workspace + X-Workspace-Id, the gate (picker, not-found), the header menu
+    │   │   ├── workspace/            # Multi-workspace (docs/multi-workspace.md): /w/{slug} base path, current workspace + X-Workspace-Id, the gate (picker, not-found, a platform admin's entry from the console), the header menu (Members), the refusals of the members and platform writes
     │   │   ├── services/auth.ts      # Cognito authentication service
     │   │   ├── realtime/             # Push notices (AppSync Events via aws-amplify events): connection, hub, Zod notices, jobRefresh (job views; docs/realtime.md)
-    │   │   ├── components/           # Each component in its own folder (58 folders; a selection below)
+    │   │   ├── components/           # Each component in its own folder (77 folders; a selection below)
     │   │   │   ├── AdminRoute/           # Admin-only route wrapper
     │   │   │   ├── Breadcrumbs/          # Navigation breadcrumbs
     │   │   │   ├── CategoriesManager/    # Category management UI
@@ -142,9 +142,9 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── SentimentBadge/       # Sentiment indicator
     │   │   │   ├── SocialFeed/           # Live social media feed
     │   │   │   ├── TimeRangeSelector/    # Date range picker
-    │   │   │   ├── UserAdmin/            # User administration
+    │   │   │   ├── UserAdmin/            # User administration (platform admins: grant and revoke platform admin)
     │   │   │   └── UserProfileModal/     # User profile modal
-    │   │   ├── pages/                # Each page in its own folder (25 folders; a selection below)
+    │   │   ├── pages/                # Each page in its own folder (28 folders; a selection below)
     │   │   │   ├── Categories/       # Category breakdown and analysis
     │   │   │   ├── Chat/             # Full-page view of the unified AI assistant
     │   │   │   ├── Dashboard/        # Overview with charts and social feed
@@ -152,12 +152,13 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── FeedbackDetail/   # Single feedback item view
     │   │   │   ├── FeedbackForms/    # Feedback form management
     │   │   │   ├── Login/            # Cognito login page
+    │   │   │   ├── Members/          # The current workspace's members (/w/{slug}/members; docs/multi-workspace.md)
     │   │   │   ├── Prioritization/   # Issue prioritization
     │   │   │   ├── ProblemAnalysis/  # Problem analysis dashboard
     │   │   │   ├── ProjectDetail/    # Single project view
     │   │   │   ├── Projects/         # Research projects list
     │   │   │   ├── Scrapers/         # The "Data sources" page (web scrapers, app/review pages, imports)
-    │   │   │   └── Settings/         # Configuration and integrations (uses getEnabledPlugins)
+    │   │   │   └── Settings/         # Configuration and integrations (uses getEnabledPlugins); the platform console (Privacy & access → Workspaces)
     │   │   ├── store/
     │   │   │   ├── configStore.ts    # Zustand state (config, time range, custom dates)
     │   │   │   ├── authStore.ts      # Authentication state

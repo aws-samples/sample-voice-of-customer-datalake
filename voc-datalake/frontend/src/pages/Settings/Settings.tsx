@@ -9,7 +9,8 @@
  *   "Reset local settings" moved to Account → This browser (docs/account-vs-admin.md)
  * - Sources: Data sources, Integrations, Email inbox, Radar
  * - Taxonomy: Categories, Dimensions
- * - Privacy & access: Source policies, Users, Boards (feedback boards + company domains)
+ * - Privacy & access: Source policies, Users, Boards (feedback boards + company domains), Workspaces (the
+ *   platform console, platform admins only)
  * - AI models
  * - System: Logs, Version
  */
@@ -23,7 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
-import { useIsAdmin } from '../../store/authStore'
+import { useIsAdmin, useIsPlatformAdmin } from '../../store/authStore'
 import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
 import { api } from '../../api/client'
 import clsx from 'clsx'
@@ -51,12 +52,13 @@ export default function Settings() {
   const queryClient = useQueryClient()
   const { config, setConfig } = useConfigStore()
   const isAdmin = useIsAdmin()
+  const isPlatformAdmin = useIsPlatformAdmin()
   // "Saved" clears itself after 3 s; the timer goes with the page.
   const [savedShown, showSaved, clearSaved] = useExpiringValue<true>(3000)
   const saved = savedShown !== null
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
-  const { location, selectTab, selectSection, redirectTo } = useAdminLocation(isAdmin)
+  const { location, selectTab, selectSection, redirectTo } = useAdminLocation(isAdmin, isPlatformAdmin)
   const activeTab = location.tab
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -128,8 +130,8 @@ export default function Settings() {
   // Brand edits live at page level, so switching tabs (a query change) keeps them; leaving the page asks (E2E F6).
   const guard = useUnsavedChangesGuard({ dirty: brandDirty, onSave: handleSave, onDiscard: discardBrand, shouldBlock: isLeavingAdmin })
 
-  const tabs = buildTabs(t, isAdmin)
-  const sections = buildSections(t, activeTab, isAdmin)
+  const tabs = buildTabs(t, isAdmin, isPlatformAdmin)
+  const sections = buildSections(t, activeTab, isAdmin, isPlatformAdmin)
 
   const activeTabData = tabs.find(t => t.id === activeTab)
 
@@ -212,7 +214,7 @@ export default function Settings() {
         </div>
       ) : (
         <SectionPanel labelledBy={sections.length > 1 && location.section !== null ? sectionTabId(location.section) : null}>
-          <AdminSectionContent tab={activeTab} section={location.section} apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+          <AdminSectionContent tab={activeTab} section={location.section} apiEndpoint={apiEndpoint} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} />
         </SectionPanel>
       )}
     </div>

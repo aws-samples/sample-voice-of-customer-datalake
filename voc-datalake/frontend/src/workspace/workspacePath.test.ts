@@ -3,9 +3,13 @@
  * `RESERVED_SLUGS`) becomes the router's base path; any other `/w/…` is a workspace nobody can be in.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { appPathname, isWorkspaceSlug, PAGE_BASENAME, pageHref, parseWorkspacePath, workspaceUrl } from './workspacePath'
+import { appPathname, isWorkspaceSlug, PAGE_BASENAME, pageHref, parseWorkspacePath, SLUG_MAX_LENGTH, workspaceUrl } from './workspacePath'
 
 describe('isWorkspaceSlug', () => {
+  it('takes slugs up to SLUG_MAX_LENGTH characters, the create form\'s limit, and no longer', () => {
+    expect([isWorkspaceSlug('a'.repeat(SLUG_MAX_LENGTH)), isWorkspaceSlug('a'.repeat(SLUG_MAX_LENGTH + 1))]).toStrictEqual([true, false])
+  })
+
   it.each(['acme', 'juniper', 'a1b', 'team-2', 'x'.repeat(40)])('accepts %s', (slug) => {
     expect(isWorkspaceSlug(slug)).toBe(true)
   })

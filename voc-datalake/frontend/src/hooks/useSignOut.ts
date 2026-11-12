@@ -6,6 +6,7 @@ import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { authService } from '../services/auth'
 import { setCurrentWorkspace } from '../workspace/currentWorkspace'
+import { forgetPlatformEntries } from '../workspace/platformEntry'
 import { forgetRefused } from '../workspace/refusedWorkspaces'
 
 /** Where a voluntary sign-out lands: the plain sign-in page, outside any `/w/{slug}` (docs/multi-workspace.md). */
@@ -20,6 +21,7 @@ export function useSignOut(): () => void {
     queryClient.clear()
     setCurrentWorkspace(null)
     forgetRefused()
+    forgetPlatformEntries()
     authService.signOut()
     window.location.assign(SIGNED_OUT_PATH)
   }, [queryClient])

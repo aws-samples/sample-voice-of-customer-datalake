@@ -23,6 +23,11 @@ export const del = (body?: unknown): RequestInit => jsonRequest('DELETE', body)
 /** The signature of `fetchApi` in `./client`. */
 export type FetchApi = <T>(endpoint: string, options?: RequestInit) => Promise<T>
 
+/** `cursor=…`, the query of a page after the first of a `next_cursor` list. */
+export function cursorQuery(cursor: string): string {
+  return new URLSearchParams({ cursor }).toString()
+}
+
 /**
  * Build URLSearchParams from an object, filtering out undefined/null values.
  * Accepts any object so domain interfaces (e.g. FeedbackListParams) can be

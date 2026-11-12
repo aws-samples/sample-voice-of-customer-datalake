@@ -1,6 +1,6 @@
 /**
- * The header's workspace menu: nothing outside a workspace, the name alone with one, and with two or more a
- * WAI-ARIA menu button whose items are full page loads to `/w/{slug}/dashboard`.
+ * The header's workspace menu: nothing outside a workspace; inside one a WAI-ARIA menu button whose menu lists the
+ * other workspaces (full page loads to `/w/{slug}/dashboard`), then Members (the in-app `/members` page).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createTestQueryClient } from '../test/query-client'
+import { TestRouter } from '../test/TestRouter'
 
 vi.mock('../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
@@ -20,11 +21,16 @@ function renderMenu(workspaces: readonly object[]) {
   routeFetchApi({ 'GET /me/workspaces': () => ({ workspaces }) })
   return render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <button type="button">Elsewhere</button>
-      <WorkspaceMenu />
+      <TestRouter initialEntries={['/dashboard']}>
+        <button type="button">Elsewhere</button>
+        <WorkspaceMenu />
+      </TestRouter>
     </QueryClientProvider>,
   )
 }
+
+/** Every menu item as [text, href]. */
+const items = () => screen.getAllByRole('menuitem').map((item) => [item.textContent, item.getAttribute('href')])
 
 beforeEach(() => resetFetchApi())
 afterEach(() => setCurrentWorkspace(null))
@@ -35,22 +41,21 @@ describe('WorkspaceMenu', () => {
     expect(container).toHaveTextContent(/^Elsewhere$/)
   })
 
-  it('shows the one workspace by name, with no menu', async () => {
+  it('with one workspace, names it and offers only Members', async () => {
     act(() => setCurrentWorkspace(ACME))
     renderMenu([ACME])
-    expect(await screen.findByText('Workspace: Acme Outfitters')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Switch workspace/ })).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'Workspace: Acme Outfitters, Admin. Workspace menu' }))
+    expect(items()).toStrictEqual([['Members', '/members']])
   })
 
-  it('opens a menu of the other workspaces, each a full page load to its dashboard', async () => {
+  it('opens a menu of the other workspaces, each a full page load to its dashboard, then Members', async () => {
     act(() => setCurrentWorkspace(ACME))
     renderMenu([ACME, JUNIPER])
     // The current workspace and its role are in the accessible names (inside role="menu" only items are read).
     const trigger = await screen.findByRole('button', { name: 'Workspace: Acme Outfitters, Admin. Switch workspace' })
     await userEvent.click(trigger)
     expect(screen.getByRole('menu', { name: 'Workspace: Acme Outfitters, Admin. Switch workspace' })).toHaveTextContent(/Current workspace.*Acme Outfitters.*Admin/)
-    expect(screen.getAllByRole('menuitem').map((item) => [item.textContent, item.getAttribute('href')]))
-      .toStrictEqual([['Juniper Trail Co.Editor', '/w/juniper/dashboard']])
+    expect(items()).toStrictEqual([['Juniper Trail Co.Editor', '/w/juniper/dashboard'], ['Members', '/members']])
     expect(screen.getByRole('menuitem', { name: /Juniper Trail Co./ })).toHaveFocus()
   })
 
@@ -64,5 +69,13 @@ describe('WorkspaceMenu', () => {
     await userEvent.keyboard('{Escape}')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
+  })
+
+  it('closes when Members is chosen', async () => {
+    act(() => setCurrentWorkspace(JUNIPER))
+    renderMenu([JUNIPER])
+    await userEvent.click(await screen.findByRole('button', { name: /Workspace menu/ }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Members' }))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })

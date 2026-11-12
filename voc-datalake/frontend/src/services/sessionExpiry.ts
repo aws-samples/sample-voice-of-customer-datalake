@@ -52,6 +52,8 @@ export function endExpiredSession(): void {
   authService.signOut()
   // Whoever signs in next in this tab asks the server afresh about every workspace.
   forgetRefused()
+  // A platform admin's entries stay (signing back in returns to the workspace's address): each one only names an id
+  // to ask the server about, so whoever signs in gets the server's answer for themselves (workspace/platformEntry.ts).
   // Inside a workspace the sign-in page is under its `/w/{slug}`, so signing back in returns there.
   window.location.replace(pageHref(SESSION_EXPIRED_PATH))
 }

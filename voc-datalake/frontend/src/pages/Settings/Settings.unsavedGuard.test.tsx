@@ -22,7 +22,7 @@ vi.mock('../../api/client', () => ({
     saveBrandSettings: () => Promise.resolve({ success: true }),
   },
 }))
-vi.mock('../../store/authStore', () => ({ useIsAdmin: () => true }))
+vi.mock('../../store/authStore', () => ({ useIsAdmin: () => true, useIsPlatformAdmin: () => false }))
 vi.mock('./LogsSection', () => ({ default: () => <p>Logs</p> }))
 
 const { default: Settings } = await import('./Settings')
