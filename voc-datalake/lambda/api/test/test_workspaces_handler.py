@@ -1,8 +1,10 @@
 """workspaces_handler.py: GET /me/workspaces and GET /me/workspaces/current (moto-backed, docs/multi-workspace.md)."""
+import json
 from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
@@ -14,6 +16,7 @@ OTHER_WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
 ANA = {'sub': 'sub-ana', 'cognito:groups': 'users'}
 SAM = {'sub': 'sub-sam', 'cognito:groups': 'users'}
 PAT = {'sub': 'sub-pat', 'cognito:groups': 'platform-admins'}
+DENIED = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': f'not on AUDIT#WS#{WS}'}}, 'PutItem')
 
 
 @pytest.fixture
@@ -78,6 +81,20 @@ def test_a_platform_admin_enters_as_admin_and_the_entry_is_audited(table, lambda
     assert [(row['kind'], row['actor']) for row in audit] == [('platform_admin_entry', 'sub-pat')]
 
 
+def test_an_entry_whose_audit_put_fails_is_a_generic_500(table, lambda_context):
+    with patch.object(table, 'put_item', side_effect=DENIED), patch.object(workspaces_handler, 'logger') as log:
+        status, body = _get(table, lambda_context, '/me/workspaces/current', PAT, {'X-Workspace-Id': WS})
+    # Refused, and the answer names neither the table, the key nor the AWS error (they are logged).
+    assert (status, body) == (500, {'success': False, 'error': 'Failed to open the workspace'})
+    log.exception.assert_called_once_with('Error resolving the workspace')
+
+
+def test_an_unreadable_workspace_list_is_a_generic_500(table, lambda_context):
+    with patch.object(table, 'query', side_effect=DENIED):
+        assert _get(table, lambda_context, '/me/workspaces', ANA) == (
+            500, {'success': False, 'error': 'Failed to list your workspaces'})
+
+
 def test_an_unconfigured_table_is_a_500(lambda_context):
     event = rest_event('GET', '/me/workspaces', claims=ANA)
     with patch.object(workspaces_handler, 'WORKSPACES_TABLE', ''):
@@ -91,4 +108,5 @@ def test_the_configured_table_is_read_by_name(lambda_context):
                                                      'slug': 'acme', 'role': 'admin'})
         with patch.object(workspaces_handler, 'WORKSPACES_TABLE', 'voc-workspaces'):
             response = workspaces_handler.lambda_handler(rest_event('GET', '/me/workspaces', claims=ANA), lambda_context)
-    assert (response['statusCode'], '"role":"admin"' in response['body'].replace(' ', '')) == (200, True)
+    assert (response['statusCode'], json.loads(response['body'])) == (200, {'workspaces': [
+        {'id': WS, 'name': 'Acme', 'slug': 'acme', 'role': 'admin'}]})

@@ -222,7 +222,8 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
 
   // The order docs/multi-workspace.md (Control plane) asks for, held by a test rather than prose: 6.07.00 reads the
   // platform-admins group, so no role may write a workspace (META) or a membership (MEMBER#, USER#) until the change
-  // that does also lands the users-API safeguards for that group. That change edits WORKSPACE_WRITERS here.
+  // that does also lands the users-API safeguards for that group (6.08.00) and the live platform-admin check on
+  // entering a workspace (docs/multi-workspace.md, Control plane). That change edits WORKSPACE_WRITERS here.
   it('voc-workspaces: only the workspaces API writes, and only its entry audit rows', () => {
     const writers: Record<string, Scope> = {};
     for (const grant of grants.filter(onTable('WorkspacesTable')).filter((g) => g.actions.some((a) => DYNAMO_WRITE.test(a)))) {

@@ -92,7 +92,11 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   }));
   // Per-user category access rows (CATEGORY_ACCESS / USER#{sub}) live in
   // aggregates: read and write one item. BatchGetItem: the user list reads
-  // every listed user's USERFLAGS row in one call (shared/user_flags.py).
+  // every listed user's USERFLAGS row in one call (shared/user_flags.py). PutItem also writes the
+  // AUDIT#platform-admins rows of a platform-admin grant or revoke, the one audit partition the audit-row guard
+  // lets this role put (lib/utils/audit-row-guard.ts); GetItem reads one back after a retried put.
+  // The platform-admin route needs no new Cognito action: AdminAddUserToGroup, AdminRemoveUserFromGroup,
+  // AdminListGroupsForUser and ListUsersInGroup are in the statement above.
   aggregatesTable.grant(usersRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:BatchGetItem');
   // The config_version bump after a category-access save (docs/caching.md).
   grantCacheVersionBump(aggregatesTable, usersRole, AGGREGATES_VERSION_PARTITION);

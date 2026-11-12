@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.08.00] - 2026-11-12
+
+Multi-workspace, phase 1: platform-admin membership is managed and protected, server-side, before the group can grant anything.
+
+### Added
+
+- `PUT /users/{username}/platform-admin` with `{"platform_admin": true|false}` (users API): platform admins only (a plain admin gets 403). A grant goes only to a member of `admins`; a revoke that would leave no enabled platform admin, the caller's own included, is refused (409); asking for the state the user already has changes nothing. Every grant and revoke (by this route, a demotion or a delete) writes an `AUDIT#platform-admins` row in `voc-aggregates` before the change, so the row records the attempt (a change that then fails leaves it; the group's live state is Cognito's), under the audit-row guard with the users API as that partition's one writer. It is in the route-gate inventory; the platform console that calls it comes later (allowlisted in `py_route_callers.json`).
+- `GET /users` reports `platform_admin` per user (the SPA type and the local mock carry it).
+
+### Changed
+
+- The users API, for every client: demoting a user to `users` also revokes `platform-admins`; demoting, disabling, enabling, deleting or resetting the password of a platform admin is for platform admins only (403 otherwise); demoting, disabling or deleting the last enabled platform admin is refused (409), beside the existing last-admin refusal. In the users API the caller's own platform-admin membership is checked live in Cognito, not only in the token, and the caller's account must be enabled, so a revoke or a disable takes effect there at once (a revoked or disabled platform admin's still-valid token cannot grant the group back); a demotion removes `platform-admins` before the role group, so a fault part-way never leaves a platform admin who is no administrator, and a request for the group the user already has neither removes nor re-adds it (it used to remove and re-add it, and a fault between the two stripped the group). Entering a workspace still reads the token's group; no workspace can exist yet, and the change that creates them adds the same live check there ([docs/multi-workspace.md](docs/multi-workspace.md#control-plane)).
+- `lambda/shared/audit_rows.py`: a conditional audit put that fails because the identical row is already stored (a retry of a put that succeeded) counts as written; the workspace entry audit uses it. The workspaces routes answer a fixed 500 on a DynamoDB fault instead of an unhandled error.
+
+### Fixed
+
+- The last-admin refusal of the users API compared the path's username as given, so a request naming the last admin by an email alias Cognito accepts got past it. It compares the canonical username now, as does the new platform-admin check.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`). An existing deployment with no platform admin (see 6.06.02) keeps the users API working as before for every other user; add the first platform admin by hand (`aws cognito-idp admin-add-user-to-group ... --group-name platform-admins`), after which the route above manages the group.
+
 ## [6.07.00] - 2026-11-11
 
 Multi-workspace, phase 1: the workspace a request acts in, and the caller's own workspaces.

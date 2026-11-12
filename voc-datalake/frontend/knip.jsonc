@@ -15,7 +15,8 @@
     "scripts/mock-scope.test.mjs",
     "scripts/mock-edit-stamp.test.mjs",
     "scripts/mock-reprocess.test.mjs",
-    "scripts/mock-methodology.test.mjs"
+    "scripts/mock-methodology.test.mjs",
+    "scripts/mock-users.test.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx,css}!",

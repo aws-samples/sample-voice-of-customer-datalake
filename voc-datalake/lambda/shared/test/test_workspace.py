@@ -6,7 +6,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
-from shared.exceptions import NotFoundError, ValidationError
+from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 from shared.test.moto_tables import create_pk_sk_table
 from shared.workspace import (
     MAX_CACHED_MEMBERSHIPS,
@@ -15,7 +15,9 @@ from shared.workspace import (
     MembershipCache,
     WorkspaceContext,
     audit_key,
+    is_platform_admin,
     list_my_workspaces,
+    require_platform_admin,
     resolve_workspace,
     ws_key,
 )
@@ -190,23 +192,69 @@ def test_an_audit_row_is_written_once_per_cache_fill_not_per_request(table):
     assert len(_audit_rows(table)) == 2
 
 
-def test_the_audit_put_never_overwrites_a_row(table):
-    with patch('shared.workspace.now_iso', return_value='2026-11-11T09:00:00+00:00'), \
-         patch('shared.workspace.secrets.token_hex', return_value='00000000'):
+_FIXED_SK = '2026-11-11T09:00:00+00:00#00000000'
+
+
+def _fixed_audit_key():
+    """The entry's audit row lands at ``_FIXED_SK``: its time and random suffix are pinned."""
+    return (patch('shared.workspace.now_iso', return_value='2026-11-11T09:00:00+00:00'),
+            patch('shared.workspace.secrets.token_hex', return_value='00000000'))
+
+
+def test_the_audit_put_never_overwrites_another_row(table):
+    other = {'pk': audit_key(WS), 'sk': _FIXED_SK, 'kind': PLATFORM_ADMIN_ENTRY, 'actor': 'sub-someone-else',
+             'at': '2026-11-11T09:00:00+00:00'}
+    table.put_item(Item=other)
+    clock, suffix = _fixed_audit_key()
+    with clock, suffix, pytest.raises(ClientError, match='ConditionalCheckFailed'):
         resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
-        with pytest.raises(ClientError, match='ConditionalCheckFailed'):
-            resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
-    assert len(_audit_rows(table)) == 1
+    assert _audit_rows(table) == [other]
+
+
+def test_a_retried_put_whose_first_attempt_landed_counts_as_audited(table):
+    # botocore retries a put whose answer was lost; the retry then fails the condition on the row it wrote itself.
+    real_put = table.put_item
+
+    def landed_then_lost(**kwargs):
+        real_put(**kwargs)
+        return real_put(**kwargs)
+
+    clock, suffix = _fixed_audit_key()
+    with clock, suffix, patch.object(table, 'put_item', side_effect=landed_then_lost):
+        context = resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+    assert (context.role, context.platform_admin) == ('admin', True)
+    assert [(row['sk'], row['actor']) for row in _audit_rows(table)] == [(_FIXED_SK, 'sub-pat')]
 
 
 def test_an_entry_whose_audit_row_cannot_be_written_is_refused_and_not_cached(table):
     cache = MembershipCache()
-    with patch('shared.workspace.now_iso', return_value='2026-11-11T09:00:00+00:00'), \
-         patch('shared.workspace.secrets.token_hex', return_value='00000000'):
-        resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
-        with pytest.raises(ClientError):
-            resolve_workspace(table, _ws_event(PLATFORM_ADMIN), cache)
+    table.put_item(Item={'pk': audit_key(WS), 'sk': _FIXED_SK, 'kind': 'other'})
+    clock, suffix = _fixed_audit_key()
+    with clock, suffix, pytest.raises(ClientError):
+        resolve_workspace(table, _ws_event(PLATFORM_ADMIN), cache)
     assert cache.get(WS, 'sub-pat') is None
+
+
+def test_an_audit_put_that_fails_otherwise_is_not_retried_as_audited(table):
+    denied = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'no'}}, 'PutItem')
+    with patch.object(table, 'put_item', side_effect=denied), patch.object(table, 'get_item', wraps=table.get_item) as get, \
+            pytest.raises(ClientError, match='AccessDenied'):
+        resolve_workspace(table, _ws_event(PLATFORM_ADMIN), MembershipCache())
+    # Only the membership and META reads: no look-up of the audit row for a failure that is not the condition.
+    assert [call.kwargs['Key']['sk'] for call in get.call_args_list] == ['MEMBER#sub-pat', 'META']
+
+
+# ── The platform-admin gate ──────────────────────────────────────────────────
+
+def test_require_platform_admin_admits_the_group():
+    assert (is_platform_admin(_event(PLATFORM_ADMIN)), require_platform_admin(_event(PLATFORM_ADMIN))) == (True, None)
+
+
+@pytest.mark.parametrize('claims', [MEMBER, {'sub': 'sub-ada', 'cognito:groups': 'admins'}], ids=['user', 'admin'])
+def test_require_platform_admin_refuses_everyone_else_an_administrator_too(claims):
+    assert is_platform_admin(_event(claims)) is False
+    with pytest.raises(AuthorizationError, match='Platform admin access required'):
+        require_platform_admin(_event(claims))
 
 
 # ── The cache ────────────────────────────────────────────────────────────────

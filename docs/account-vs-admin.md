@@ -42,12 +42,22 @@ nothing, when:
   `You cannot change the role of your own account. Ask another administrator.` (`disable` / `delete` in place of
   `change the role of`);
 - the target is the LAST enabled member of the `admins` group and the request demotes, disables or deletes it:
-  `This is the last enabled administrator: make another user an administrator first.`
+  `This is the last enabled administrator: make another user an administrator first.`;
+- the target is the LAST enabled member of `platform-admins` and the request demotes, disables, deletes or revokes
+  it (`PUT /users/{username}/platform-admin` with `{"platform_admin": false}`, the caller's own revoke included):
+  `This is the last enabled platform admin: make another administrator a platform admin first.`
 
-The SPA and the assistant's `update_user` card check the same rules before asking; the API is the rule (TENETS.md
-tenet 4). A Cognito fault during the check answers the route's own fixed error message (500). Cognito has no
-conditional write, so the last-admin check reads before it writes: two administrators who demote, disable or delete
-each other at the same moment can both pass it. An account administrator can always restore an admin in the AWS
+It answers **403** when a caller outside `platform-admins` demotes, disables, enables, deletes or resets the password
+of a platform admin (`Only a platform admin can disable a platform admin.`, and so on), or calls
+`PUT /users/{username}/platform-admin` at all. That route grants (`true`, only to an administrator: 400 otherwise) or
+revokes (`false`) the group; a demotion to `users` revokes it too. Every grant and revoke, a delete of a platform
+admin included, first writes an `AUDIT#platform-admins` row in `voc-aggregates`, which records the attempt (a change
+that then fails leaves the row) ([multi-workspace.md](multi-workspace.md) → Control plane). `GET /users` reports `platform_admin` per user.
+
+The SPA and the assistant's `update_user` card check the own-account and last-admin rules before asking (the
+platform-admin rules only the API checks); the API is the rule (TENETS.md tenet 4). A Cognito fault during the check answers the route's own fixed error message (500). Cognito has no
+conditional write, so the last-admin and last-platform-admin checks read before they write: two administrators who
+demote, disable or delete each other at the same moment can both pass them. An account administrator can always restore an admin in the AWS
 console.
 
 ## Account: five tabs

@@ -203,7 +203,7 @@ voice-of-customer-datalake/       # Root repository
 | Table | PK | SK | Purpose |
 |-------|----|----|---------|
 | `voc-feedback` | `SOURCE#{platform}` | `FEEDBACK#{id}` | Processed feedback with GSIs for date, category, urgency; optional `author`, `title`, `metadata`, `dimensions`, `dimension_sources`, `tags`, `pii_policy`, `usefulness` (`low\|medium\|high` heuristic band, absent = unrated, docs/data-quality.md), `csv_dataset` + `csv_content_hash` (a CSV dataset row, docs/csv-import.md) — kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false`; only `voc-retention` deletes at runtime (opt-in per source profile) |
-| `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`/`METRIC#daily_usefulness#<source>#<band>` (docs/data-quality.md), `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), `IMPORT_RUN`/`{started_at}#{run_id}` + `IMPORT_RUN#{run_id}`/`RUN` (import history, no `ttl`: an audit trail is kept; rows from earlier releases keep their 90-day `ttl`, docs/import-history.md), form configs — METRIC# rows kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` |
+| `voc-aggregates` | `METRIC#{type}` | `{date}` | Pre-computed metrics (no TTL), brand config, category config, `CATEGORY_ACCESS`/`USER#{sub}` (+ `sources`), `SETTINGS#dimensions`/`SETTINGS#sources` `config`, `METRIC#daily_dim…`/`METRIC#daily_tag#…`/`METRIC#daily_usefulness#<source>#<band>` (docs/data-quality.md), `JOB#erasure`/`er_…` (+ `SRCLOCK#{source}`, the whole-source erasure lock), `AUDIT#retention`, `AUDIT#platform-admins`/`{iso}#{random}` (a platform-admin grant or revoke, written only by `voc-users-api`), `JOB#category_reprocess`/`rp_…`, `METRIC#meta`/`earliest_date`, `data_version`, `config_version` (cache version counters, docs/caching.md), `IMPORT_RUN`/`{started_at}#{run_id}` + `IMPORT_RUN#{run_id}`/`RUN` (import history, no `ttl`: an audit trail is kept; rows from earlier releases keep their 90-day `ttl`, docs/import-history.md), form configs — METRIC# rows kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` |
 | `voc-watermarks` | `{source}` | - | Ingestion state tracking |
 | `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}\|PRD#{id}\|PRFAQ#{id}` | Projects with personas, PRDs, PR/FAQs — kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` |
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Long-running async jobs (research, persona generation) |
@@ -389,16 +389,19 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 
 Every mutating route in `lambda/api/*_handler.py` is listed as ADMIN_ONLY (structurally gated by
 `require_admin`, a helper reaching it, or an admin middleware) or OPEN_BY_DECISION (with its reason) in
-`lambda/api/test/test_route_admin_gates.py`; a new unclassified route fails that test (#242).
+`lambda/api/test/test_route_admin_gates.py`; a new unclassified route fails that test (#242). Its
+PLATFORM_ADMIN_ONLY table pins the routes that also call `require_platform_admin` (`shared/workspace.py`):
+`PUT /users/{username}/platform-admin`.
 
 ### Users (users_handler.py)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/users` | List Cognito users |
+| GET | `/users` | List Cognito users (each with `groups` and `platform_admin`) |
 | POST | `/users` | Create user |
 | PUT | `/users/{username}` | Update user |
-| DELETE | `/users/{username}` | Delete user (409 own account / the last enabled admin, like `PUT …/group` to non-admin and `PUT …/disable`: `shared/user_admin_guard.py`, docs/account-vs-admin.md → Users) |
+| DELETE | `/users/{username}` | Delete user (409 own account / the last enabled admin / the last enabled platform admin, like `PUT …/group` to non-admin and `PUT …/disable`: `shared/user_admin_guard.py`, docs/account-vs-admin.md → Users). On a platform admin, this, `PUT …/group`, `…/enable`, `…/disable` and `POST …/reset-password` are 403 unless the caller is a platform admin; a demotion to `users` also revokes `platform-admins`, and a demotion or delete of a platform admin is audited as a revoke |
 | POST | `/users/{username}/reset-password` | Reset password |
+| PUT | `/users/{username}/platform-admin` | Grant or revoke `platform-admins`: `{platform_admin: true\|false}` (platform admins only, 403 for a plain admin; a grant only to an admin, else 400; a revoke that would leave no enabled platform admin, the caller's own included, 409; unchanged = no write). Each grant and revoke first writes `AUDIT#platform-admins` / `{iso}#{random}` in `voc-aggregates` (docs/multi-workspace.md → Control plane) |
 | GET | `/users/{username}/category-access` | A user's category access (admin) |
 | PUT | `/users/{username}/category-access` | Set it: `{categories: ['*'] \| [names], sources?: ['*'] \| [ids] \| null}` (admin; omitted = unchanged, null = default rule) |
 | PUT | `/users/{username}/flags` | `{fallback_owner?, memory_reviewer?, ai_mode?: human_driven\|ai_assisted\|ai_driven, ai_writing_prfaq?, ai_writing_prd?}` (admin; the way of working is its own row `USERFLAGS#{sub}`/`ai_mode`, docs/ways-of-working.md) |

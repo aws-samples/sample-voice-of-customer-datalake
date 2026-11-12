@@ -408,7 +408,8 @@ const mockUsers = [
   {
     username: 'admin-demo', email: 'admin@example.com', name: 'Ada Admin',
     given_name: 'Ada', family_name: 'Admin', status: 'CONFIRMED', enabled: true,
-    groups: ['admins'], created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+    // The bootstrapped first admin is also a platform admin (docs/multi-workspace.md).
+    groups: ['admins', 'platform-admins'], created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
     last_modified: new Date().toISOString(),
   },
   {
@@ -440,7 +441,9 @@ function handleUserAction(method, user, action, body) {
   const touch = () => { user.last_modified = new Date().toISOString(); };
   if (method === 'PUT' && action === 'group') {
     const group = body?.group === 'admins' ? 'admins' : 'users';
-    user.groups = [group];
+    // Like users_handler: the role groups are replaced, other groups kept, and a demotion also revokes platform-admins.
+    const kept = user.groups.filter((g) => g !== 'admins' && g !== 'users' && !(group === 'users' && g === 'platform-admins'));
+    user.groups = [...kept, group];
     touch();
     return { status: 200, payload: { success: true, message: `Moved ${user.username} to ${group}` } };
   }
@@ -534,7 +537,10 @@ const handlers = {
   // User administration (issue #177) — stateful list; mutations live in the
   // parameterized /users/:username dispatch block.
   // `sub` is what category ownership and access grants are keyed by.
-  'GET /users': () => ({ success: true, users: mockUsers.map((u) => ({ ...u, sub: mockSub(u.username) })) }),
+  // `platform_admin` mirrors users_handler._user_row: membership of the platform-admins group.
+  'GET /users': () => ({ success: true, users: mockUsers.map((u) => ({
+    ...u, sub: mockSub(u.username), platform_admin: u.groups.includes('platform-admins'),
+  })) }),
   'POST /users': (body) => {
     if (!body || typeof body.username !== 'string' || body.username.trim() === '') {
       return { __status: 400, body: { success: false, error: 'username is required' } };

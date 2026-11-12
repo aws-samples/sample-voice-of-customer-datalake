@@ -187,7 +187,7 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | S3 Import | `s3_import_handler.py` | S3 import bucket RW, KMS; reprocess: invoke the `s3_import` ingestor, aggregates `SOURCE_RUN#s3_import` rows only |
 | Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
 | Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock, S3 |
-| Users | `users_handler.py` | Cognito admin |
+| Users | `users_handler.py` | Cognito admin; platform admin (live check) for `PUT /users/{username}/platform-admin` and for acting on a platform admin |
 | Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |
 | Data Explorer | `data_explorer_handler.py` | S3, DynamoDB (feedback) |
 | Logs | `logs_handler.py` | CloudWatch Logs read, its own CloudWatch alarms, the ops SNS topic |

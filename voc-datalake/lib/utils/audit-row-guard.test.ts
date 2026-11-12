@@ -20,9 +20,11 @@ const GUARDED_TABLES = ['AggregatesTable', 'ProjectsTable', 'ParticipantsTable',
 const WRITES = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|\*)$/;
 const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#*'] } };
 
-/** Table → the roles that may PUT an audit row there (the audit writers; the settings API only `AUDIT#delete`). */
+/** Table → the roles that may PUT an audit row there (the audit writers; the settings API only `AUDIT#delete`, the
+ *  users API only `AUDIT#platform-admins`). */
 const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
-  AggregatesTable: ['VocApiStack/SettingsLambdaRole', 'VocProcessingStack/RetentionWorkerRetentionRole'],
+  AggregatesTable: ['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole',
+    'VocProcessingStack/RetentionWorkerRetentionRole'],
   ProjectsTable: ['VocApiStack/PersonaGeneratorRole', 'VocApiStack/ProjectsLambdaRole'],
   ParticipantsTable: ['VocApiStack/EngagementLambdaRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
@@ -104,18 +106,30 @@ describe('audit rows (AUDIT#*) across every stack', () => {
     expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
   });
 
-  it('the settings API may put only AUDIT#delete in voc-aggregates (no retention row, no tombstone)', () => {
-    const deny = denied(byRole.get('VocApiStack/SettingsLambdaRole') ?? [], AUDIT_DENY_OTHER_PARTITION_SID);
+  it.each([
+    ['VocApiStack/SettingsLambdaRole', 'AUDIT#delete'],
+    ['VocApiStack/UsersLambdaRole', 'AUDIT#platform-admins'],
+  ])('%s may put only %s in voc-aggregates (no retention row, no tombstone, no other audit)', (role, partition) => {
+    const deny = denied(byRole.get(role) ?? [], AUDIT_DENY_OTHER_PARTITION_SID);
     expect(deny.Effect).toBe('Deny');
     expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:PutItem']);
     expect(tablesOf(deny)).toStrictEqual(['AggregatesTable']);
     expect(deny.Condition).toStrictEqual({ ...AUDIT_CONDITION,
-      'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#delete'] } });
+      'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings API carries a one-partition deny', () => {
+  it('only the settings and users APIs carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
-    expect(holders.map(([role]) => role)).toStrictEqual(['VocApiStack/SettingsLambdaRole']);
+    expect(holders.map(([role]) => role).sort(byCodeUnit))
+      .toStrictEqual(['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole']);
+  });
+
+  it('the users API may not change or remove a platform-admin audit row', () => {
+    const deny = denied(byRole.get('VocApiStack/UsersLambdaRole') ?? [], AUDIT_DENY_CHANGE_SID);
+    expect({ effect: deny.Effect, actions: actionsOf(deny).sort(byCodeUnit), tables: tablesOf(deny) }).toStrictEqual({
+      effect: 'Deny', actions: ['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem'],
+      tables: ['AggregatesTable'],
+    });
   });
 
   it('the workspaces API may not change or remove an entry audit row in voc-workspaces', () => {

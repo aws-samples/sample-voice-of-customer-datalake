@@ -15,7 +15,11 @@ workspace id is ``ws_`` plus a 26-character ULID in Crockford base32 (upper case
   with a conditional put, so it never overwrites a row. The partition starts with ``AUDIT#`` so the audit-row
   guard covers it (lib/utils/audit-row-guard.ts: no role may change or remove it, only this API's role may put
   one) and the role's PutItem is scoped to ``AUDIT#WS#*`` (lib/stacks/api-workspaces-lambda.ts).
-  When that row cannot be written, the entry is refused (the error propagates, nothing is cached).
+  When that row cannot be written, the entry is refused (the error propagates, nothing is cached); a retried put
+  whose first attempt had landed (the same row now stored at that key) counts as written (shared/audit_rows.py).
+
+``require_platform_admin`` gates the platform-admin routes (the users API's ``PUT /users/{username}/platform-admin``):
+403 unless the caller's token carries ``platform-admins``.
 
 Warm-container cache. A resolved membership is kept per ``(workspace, sub)`` for ``MEMBERSHIP_TTL_SECONDS``
 (30 s) in the ``MembershipCache`` the handler owns, so a page's burst of calls costs two GetItems once. A
@@ -42,8 +46,9 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from shared.api import get_caller_groups, get_caller_subject
+from shared.audit_rows import put_new_audit_row
 from shared.dynamo_paging import iter_query
-from shared.exceptions import NotFoundError, ValidationError
+from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 from shared.http_cache import request_header
 from shared.logging import logger
 from shared.timestamps import now_iso
@@ -135,13 +140,21 @@ def audit_key(ws: str) -> str:
     return f'AUDIT#{ws_key(ws)}'
 
 
+def is_platform_admin(event: dict) -> bool:
+    """Whether the caller's token carries the ``platform-admins`` group."""
+    return PLATFORM_ADMIN_GROUP in get_caller_groups(event)
+
+
+def require_platform_admin(event: dict) -> None:
+    """403 unless the caller is a platform admin (an administrator outside the group is refused too)."""
+    if not is_platform_admin(event):
+        raise AuthorizationError('Platform admin access required')
+
+
 def _audit_platform_admin_entry(table: Any, ws: str, sub: str) -> None:
     at = now_iso()
-    table.put_item(
-        Item={'pk': audit_key(ws), 'sk': f'{at}#{secrets.token_hex(4)}',
-              'kind': PLATFORM_ADMIN_ENTRY, 'actor': sub, 'at': at},
-        ConditionExpression='attribute_not_exists(pk)',
-    )
+    put_new_audit_row(table, {'pk': audit_key(ws), 'sk': f'{at}#{secrets.token_hex(8)}',
+                              'kind': PLATFORM_ADMIN_ENTRY, 'actor': sub, 'at': at})
     logger.info('Platform admin entered a workspace', extra={'workspace_id': ws})
 
 
@@ -169,7 +182,7 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache) -> Worksp
     ws = _workspace_id(event)
     sub = get_caller_subject(event)
     # Part of the cache key: a token that gained or lost the group is resolved again, not served the old answer.
-    platform_admin = PLATFORM_ADMIN_GROUP in get_caller_groups(event)
+    platform_admin = is_platform_admin(event)
     context = cache.get(ws, sub, platform_admin)
     if context is None:
         context = _load(table, ws, sub, platform_admin)

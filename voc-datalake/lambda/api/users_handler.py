@@ -7,11 +7,19 @@ Provides Cognito user management for admins:
 - Update user groups (admins/users)
 - Reset passwords
 - Enable/disable users
+- Grant and revoke the ``platform-admins`` group (``PUT /users/{username}/platform-admin``)
 
 Only accessible by users in the 'admins' group, except ``GET /users/me/ai-mode``
-(the caller's own way of working with AI, docs/ways-of-working.md).
+(the caller's own way of working with AI, docs/ways-of-working.md). A member of
+``platform-admins`` is managed by platform admins only (docs/multi-workspace.md →
+Control plane; the rules in shared/user_admin_guard.py): the platform-admin route,
+and demoting, disabling, enabling, deleting or resetting the password of a platform
+admin, answer 403 to anyone else; no request may leave zero enabled platform admins
+(409). Every grant and revoke (a demotion and a delete of a platform admin too)
+writes an ``AUDIT#platform-admins`` row in voc-aggregates before the change.
 """
 import os
+import secrets
 import uuid
 from collections.abc import Callable
 from typing import Any, Final
@@ -28,12 +36,14 @@ from shared.api import (
     require_admin,
     validate_bool,
 )
+from shared.audit_rows import put_new_audit_row
 from shared.aws import get_dynamodb_resource
 from shared.category_gate import read_categories_config
 from shared.concurrency import concurrently, ordered_map
 from shared.data_version import bump_config_version
 from shared.exceptions import (
     ApiError,
+    AuthorizationError,
     ConfigurationError,
     ConflictError,
     NotFoundError,
@@ -45,6 +55,7 @@ from shared.project_access import ADMIN_GROUP
 from shared.request_body import json_body_value, json_object_body
 from shared.source_profiles import load_source_profiles
 from shared.timestamps import now_iso
+from shared.workspace import PLATFORM_ADMIN_GROUP, is_platform_admin, require_platform_admin
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
@@ -71,6 +82,12 @@ FAILED_RESET_CREDENTIAL = 'Failed to reset password'
 FAILED_ENABLE_USER = 'Failed to enable user'
 FAILED_DISABLE_USER = 'Failed to disable user'
 FAILED_DELETE_USER = 'Failed to delete user'
+FAILED_UPDATE_PLATFORM_ADMIN = 'Failed to update platform admin membership'
+# The audit trail of platform-admin membership (voc-aggregates; the audit-row guard,
+# lib/utils/audit-row-guard.ts, lets this role put only this partition and no role change one).
+PLATFORM_ADMIN_AUDIT_PK: Final = 'AUDIT#platform-admins'
+PLATFORM_ADMIN_GRANT: Final = 'platform_admin_grant'
+PLATFORM_ADMIN_REVOKE: Final = 'platform_admin_revoke'
 # Cognito ListUsersInGroup calls GET /users makes at once. The pool has two
 # groups today; the cap keeps a pool with many groups well under Cognito's
 # per-account list-operation quota.
@@ -144,6 +161,7 @@ def _user_row(user: dict, groups: list[str]) -> dict:
         'status': user['UserStatus'],
         'enabled': user['Enabled'],
         'groups': groups,
+        'platform_admin': PLATFORM_ADMIN_GROUP in groups,
         'created_at': user['UserCreateDate'].isoformat() if user.get('UserCreateDate') else None,
         'last_modified': user['UserLastModifiedDate'].isoformat() if user.get('UserLastModifiedDate') else None,
     }
@@ -327,7 +345,7 @@ def update_user(username: str):
 @app.put('/users/<username>/group')
 @tracer.capture_method
 def update_user_group(username: str):
-    """Update user's group (admins/users)."""
+    """Update user's group (admins/users). A demotion also revokes ``platform-admins`` (audited)."""
     require_admin(app.current_event.raw_event)
 
     body = json_object_body(app)
@@ -335,32 +353,37 @@ def update_user_group(username: str):
 
     if new_group not in ROLE_GROUPS:
         raise ValidationError('Group must be "admins" or "users"')
-    if new_group != ADMIN_GROUP:
+    demotion = new_group != ADMIN_GROUP
+    if demotion:
         _refuse_unsafe_admin_change(username, user_admin_guard.ACTION_ROLE, FAILED_UPDATE_GROUP)
+    current_groups = _groups_or_fail(username, 'Error updating user group', FAILED_UPDATE_GROUP)
+    # Only an administrator is a platform admin: the demotion takes the group with it.
+    revokes = demotion and _guard_platform_admin_target(
+        username, current_groups, user_admin_guard.ACTION_ROLE, FAILED_UPDATE_GROUP, removes=True)
+    if revokes:
+        _audit_platform_admin(username, PLATFORM_ADMIN_REVOKE, 'demotion', FAILED_UPDATE_GROUP)
+    # platform-admins goes FIRST: a fault part-way then leaves an administrator without it (what the audit row
+    # says), never a platform admin who is no administrator.
+    # The target group is never removed: a "promotion" of an administrator to admins changes nothing, rather than
+    # removing and re-adding the group (a fault between the two would strip it).
+    leaving = ([PLATFORM_ADMIN_GROUP] if revokes else []) + [
+        group for group in current_groups if group in ROLE_GROUPS and group != new_group]
 
     try:
-        # Get current groups
-        groups_response = cognito.admin_list_groups_for_user(
-            Username=username,
-            UserPoolId=USER_POOL_ID
-        )
-        current_groups = [g['GroupName'] for g in groups_response.get('Groups', [])]
+        for group in leaving:
+            cognito.admin_remove_user_from_group(
+                UserPoolId=USER_POOL_ID,
+                Username=username,
+                GroupName=group
+            )
 
-        # Remove from old groups
-        for group in current_groups:
-            if group in ROLE_GROUPS:
-                cognito.admin_remove_user_from_group(
-                    UserPoolId=USER_POOL_ID,
-                    Username=username,
-                    GroupName=group
-                )
-
-        # Add to new group
-        cognito.admin_add_user_to_group(
-            UserPoolId=USER_POOL_ID,
-            Username=username,
-            GroupName=new_group
-        )
+        # Add to new group (a member already is: nothing to add)
+        if new_group not in current_groups:
+            cognito.admin_add_user_to_group(
+                UserPoolId=USER_POOL_ID,
+                Username=username,
+                GroupName=new_group
+            )
 
         # Only admins may be the fallback owner: a demotion drops the flag.
         if new_group != ADMIN_GROUP and aggregates_table:
@@ -417,7 +440,117 @@ def _refuse_unsafe_admin_change(username: str, action: str, public_error: str) -
     target_sub = next((a.get('Value') for a in target.get('UserAttributes', [])
                        if isinstance(a, dict) and a.get('Name') == 'sub'), '')
     user_admin_guard.refuse_own_account(caller_sub, str(target_sub or ''), action)
-    user_admin_guard.refuse_last_admin(username, admins)
+    # Compared by the canonical username: the path may name the user by its email alias.
+    canonical = target.get('Username')
+    user_admin_guard.refuse_last_admin(canonical if isinstance(canonical, str) and canonical else username, admins)
+
+
+# ============================================
+# Platform admins (docs/multi-workspace.md → Control plane)
+# ============================================
+
+
+def _groups_or_fail(username: str, logged: str, public_error: str) -> list[str]:
+    """``username``'s groups: 404 for an unknown user, the route's fixed 500 (``logged``) for a fault (#263)."""
+    try:
+        return _user_groups(username)
+    except cognito.exceptions.UserNotFoundException as exc:
+        raise NotFoundError('User not found') from exc
+    except ApiError:
+        raise
+    except Exception as e:
+        logger.exception(logged)
+        raise ServiceError(public_error) from e
+
+
+def _refuse_last_platform_admin(username: str, public_error: str) -> None:
+    """409 when ``username`` is the last enabled platform admin. The path may name the user by an alias (the
+    email), while the group lists canonical usernames: the target is compared by the name ``AdminGetUser`` answers."""
+    try:
+        found = cognito.admin_get_user(UserPoolId=USER_POOL_ID, Username=username).get('Username')
+        members = _paged(cognito.list_users_in_group, 'Users', UserPoolId=USER_POOL_ID,
+                         GroupName=PLATFORM_ADMIN_GROUP, Limit=60)
+    except cognito.exceptions.UserNotFoundException as exc:
+        raise NotFoundError('User not found') from exc
+    except Exception as e:
+        logger.exception('Error checking the platform admins')
+        raise ServiceError(public_error) from e
+    user_admin_guard.refuse_last_platform_admin(found if isinstance(found, str) and found else username, members)
+
+
+def _caller_is_platform_admin(event: dict, public_error: str) -> bool:
+    """Whether the caller is a platform admin NOW: the token's group, the caller's live Cognito membership and an
+    enabled account.
+
+    A token keeps its groups until it expires, so a revoked platform admin's token alone would still pass (and could
+    grant the group back); the live look-up makes a revoke take effect at once. A caller with no username claim, or a
+    failed look-up, is not admitted (the look-up's failure answers the route's fixed 500).
+    """
+    if not is_platform_admin(event):
+        return False
+    request_context = event.get('requestContext')
+    authorizer = request_context.get('authorizer') if isinstance(request_context, dict) else None
+    claims = authorizer.get('claims') if isinstance(authorizer, dict) else None
+    username = (claims.get('cognito:username') or claims.get('username')) if isinstance(claims, dict) else None
+    if not isinstance(username, str) or not username.strip():
+        return False
+    try:
+        # A disabled account keeps its groups, and its unexpired ID token still passes the authorizer: require both.
+        if PLATFORM_ADMIN_GROUP not in _user_groups(username.strip()):
+            return False
+        caller = cognito.admin_get_user(UserPoolId=USER_POOL_ID, Username=username.strip())
+    except cognito.exceptions.UserNotFoundException:
+        return False  # a deleted caller whose token is still valid: refused (403), not a fault
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error checking the caller platform admin membership')
+        raise ServiceError(public_error) from exc
+    return caller.get('Enabled') is True
+
+
+def _guard_platform_admin_target(username: str, groups: list[str], action: str, public_error: str, *,
+                                 removes: bool) -> bool:
+    """Whether ``username`` (in ``groups``) is a platform admin; for one, 403 unless the caller is one too (live,
+    ``_caller_is_platform_admin``) and, when the request ``removes`` it (demote, disable, delete), 409 for the last
+    enabled one."""
+    if PLATFORM_ADMIN_GROUP not in groups:
+        return False
+    user_admin_guard.refuse_platform_admin_target(
+        _caller_is_platform_admin(app.current_event.raw_event, public_error), action)
+    if removes:
+        _refuse_last_platform_admin(username, public_error)
+    return True
+
+
+def _audit_platform_admin(username: str, kind: str, via: str, public_error: str) -> None:
+    """Record a grant or revoke of ``platform-admins`` (``AUDIT#platform-admins`` / ``{iso}#{random}``: kind, via,
+    the target's and the actor's subs, the time), BEFORE the change, so no change goes unrecorded: a row that cannot
+    be written refuses the change with the route's fixed 500 (a failed look-up of the target's sub answers
+    ``_user_sub``'s own fixed 500). A change that fails after it leaves its row (and a 500)."""
+    at = now_iso()
+    item = {'pk': PLATFORM_ADMIN_AUDIT_PK, 'sk': f'{at}#{secrets.token_hex(8)}', 'kind': kind, 'via': via,
+            'target': _user_sub(username), 'actor': get_caller_subject(app.current_event.raw_event), 'at': at}
+    try:
+        put_new_audit_row(_access_table(), item)
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error recording a platform admin change')
+        raise ServiceError(public_error) from exc
+
+
+def _guarded_user_action(
+    username: str, guard_action: str, action: Callable[..., Any], logged: tuple[str, str], message: str, *,
+    removes: bool = False, revokes: bool = False,
+) -> dict:
+    """``_run_user_action`` after the platform-admin rules on its target; ``logged`` = (log line, public error).
+
+    ``removes``: the action takes a platform admin out of service (disable, delete), so the last enabled one is
+    refused. ``revokes``: it also ends the membership (a delete: Cognito drops a deleted user's groups itself), so
+    a platform admin's is audited as a revoke first.
+    """
+    failure, public_error = logged
+    groups = _groups_or_fail(username, failure, public_error)
+    if _guard_platform_admin_target(username, groups, guard_action, public_error, removes=removes) and revokes:
+        _audit_platform_admin(username, PLATFORM_ADMIN_REVOKE, 'delete', public_error)
+    return _run_user_action(action, username, failure, public_error, message)
 
 
 @app.post('/users/<username>/reset-password')
@@ -425,9 +558,9 @@ def _refuse_unsafe_admin_change(username: str, action: str, public_error: str) -
 def reset_user_password(username: str):
     """Reset user's password (sends new temporary password via email)."""
     require_admin(app.current_event.raw_event)
-    return _run_user_action(
-        cognito.admin_reset_user_password, username,
-        'Error resetting password', FAILED_RESET_CREDENTIAL, 'Password reset email sent to user')
+    return _guarded_user_action(
+        username, user_admin_guard.ACTION_RESET_CREDENTIAL, cognito.admin_reset_user_password,
+        ('Error resetting password', FAILED_RESET_CREDENTIAL), 'Password reset email sent to user')
 
 
 @app.put('/users/<username>/enable')
@@ -435,7 +568,8 @@ def reset_user_password(username: str):
 def enable_user(username: str):
     """Enable a disabled user."""
     require_admin(app.current_event.raw_event)
-    return _run_user_action(cognito.admin_enable_user, username, 'Error enabling user', FAILED_ENABLE_USER, 'User enabled')
+    return _guarded_user_action(username, user_admin_guard.ACTION_ENABLE, cognito.admin_enable_user,
+                                ('Error enabling user', FAILED_ENABLE_USER), 'User enabled')
 
 
 @app.put('/users/<username>/disable')
@@ -444,7 +578,8 @@ def disable_user(username: str):
     """Disable a user (prevents login)."""
     require_admin(app.current_event.raw_event)
     _refuse_unsafe_admin_change(username, user_admin_guard.ACTION_DISABLE, FAILED_DISABLE_USER)
-    return _run_user_action(cognito.admin_disable_user, username, 'Error disabling user', FAILED_DISABLE_USER, 'User disabled')
+    return _guarded_user_action(username, user_admin_guard.ACTION_DISABLE, cognito.admin_disable_user,
+                                ('Error disabling user', FAILED_DISABLE_USER), 'User disabled', removes=True)
 
 
 @app.delete('/users/<username>')
@@ -453,7 +588,53 @@ def delete_user(username: str):
     """Delete a user from Cognito."""
     require_admin(app.current_event.raw_event)
     _refuse_unsafe_admin_change(username, user_admin_guard.ACTION_DELETE, FAILED_DELETE_USER)
-    return _run_user_action(cognito.admin_delete_user, username, 'Error deleting user', FAILED_DELETE_USER, 'User deleted')
+    return _guarded_user_action(username, user_admin_guard.ACTION_DELETE, cognito.admin_delete_user,
+                                ('Error deleting user', FAILED_DELETE_USER), 'User deleted',
+                                removes=True, revokes=True)
+
+
+def _platform_admin_body() -> bool:
+    body = json_object_body(app)
+    if set(body) != {'platform_admin'} or not isinstance(body['platform_admin'], bool):
+        raise ValidationError('Body must be {"platform_admin": true} or {"platform_admin": false}')
+    return body['platform_admin']
+
+
+@app.put('/users/<username>/platform-admin')
+@tracer.capture_method
+def put_user_platform_admin(username: str):
+    """Grant (``{"platform_admin": true}``) or revoke (``false``) ``platform-admins`` (platform admins only).
+
+    Only an administrator can be granted it (400 otherwise); a revoke that would leave no enabled platform admin,
+    the caller's own included, is 409. Asking for what already holds changes nothing and records nothing; every
+    grant and revoke writes its audit row first (``_audit_platform_admin``).
+    """
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    grant = _platform_admin_body()
+    # The token's group is not enough: a revoked platform admin must not be able to grant it back (live check).
+    if not _caller_is_platform_admin(event, FAILED_UPDATE_PLATFORM_ADMIN):
+        raise AuthorizationError('Platform admin access required')
+    groups = _groups_or_fail(username, 'Error updating platform admin membership', FAILED_UPDATE_PLATFORM_ADMIN)
+    answer = {'success': True, 'username': username, 'platform_admin': grant}
+    if grant == (PLATFORM_ADMIN_GROUP in groups):
+        return {**answer, 'message': 'Platform admin membership unchanged'}
+    if grant and ADMIN_GROUP not in groups:
+        raise ValidationError('Only an administrator can be a platform admin: make the user an administrator first')
+    if not grant:
+        _refuse_last_platform_admin(username, FAILED_UPDATE_PLATFORM_ADMIN)
+    _audit_platform_admin(username, PLATFORM_ADMIN_GRANT if grant else PLATFORM_ADMIN_REVOKE,
+                          'platform_admin_route', FAILED_UPDATE_PLATFORM_ADMIN)
+    change = cognito.admin_add_user_to_group if grant else cognito.admin_remove_user_from_group
+    try:
+        change(UserPoolId=USER_POOL_ID, Username=username, GroupName=PLATFORM_ADMIN_GROUP)
+    except cognito.exceptions.UserNotFoundException as exc:
+        raise NotFoundError('User not found') from exc
+    except Exception as e:
+        logger.exception('Error updating platform admin membership')
+        raise ServiceError(FAILED_UPDATE_PLATFORM_ADMIN) from e
+    return {**answer, 'message': 'Platform admin granted' if grant else 'Platform admin revoked'}
 
 
 # ============================================

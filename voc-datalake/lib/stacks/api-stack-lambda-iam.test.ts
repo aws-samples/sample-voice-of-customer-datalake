@@ -217,6 +217,14 @@ describe('category access wiring', () => {
     const cognitoActions = roleStatements(apiTemplate(), 'UsersLambdaRole').flatMap((s) => s.actions);
     expect(cognitoActions).toContain('cognito-idp:AdminGetUser');
   });
+
+  it('gives the users Lambda the group reads and writes of PUT /users/{username}/platform-admin', () => {
+    // Grant = AdminAddUserToGroup, revoke = AdminRemoveUserFromGroup; the target's groups and the last enabled
+    // platform admin are read with AdminListGroupsForUser and ListUsersInGroup (users_handler.py).
+    const cognitoActions = roleStatements(apiTemplate(), 'UsersLambdaRole').flatMap((s) => s.actions);
+    expect(cognitoActions).toStrictEqual(expect.arrayContaining(['cognito-idp:AdminAddUserToGroup',
+      'cognito-idp:AdminRemoveUserFromGroup', 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:ListUsersInGroup']));
+  });
 });
 
 describe('category reprocess is started by the settings Lambda', () => {

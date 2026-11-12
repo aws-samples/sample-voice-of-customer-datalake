@@ -203,6 +203,7 @@ such as every source or persona counter. Common key families include:
 | `CATEGORY_ACCESS` / `USER#<sub>` | Which categories and sources a user may see (no row = all) |
 | `JOB#category_reprocess` / `rp_<hex>` | Category reprocess jobs |
 | `JOB#erasure` / `er_<hex>`, `AUDIT#retention` | Erasure jobs and the retention audit trail |
+| `AUDIT#platform-admins` / `<iso>#<random>` | Every grant and revoke of the `platform-admins` group (kept, no TTL; written only by the users API, [multi-workspace.md](multi-workspace.md#control-plane)) |
 | `LOGS#validation#<source>`, `LOGS#processing#<source>` | Validation and processing logs (7-day TTL) |
 | `FEEDBACK_FORM` | Feedback-form configuration and statistics |
 | `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor |

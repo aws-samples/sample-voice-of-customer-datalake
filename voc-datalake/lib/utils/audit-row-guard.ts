@@ -4,7 +4,8 @@
  *
  * Audit, tombstone and delete-record rows live under partition keys that start with `AUDIT#`, in the tables that
  * hold them ({@link AuditRowTables}): voc-aggregates (`AUDIT#retention`, `AUDIT#tombstone#<source>`, written by
- * voc-retention; `AUDIT#delete` for a design reference's copies, written by the settings API) and voc-projects /
+ * voc-retention; `AUDIT#delete` for a design reference's copies, written by the settings API; `AUDIT#platform-admins`,
+ * a grant or revoke of the platform-admins group, written by the users API) and voc-projects /
  * voc-participants / voc-feature-requests / voc-conversations (`AUDIT#delete`, written by the API that deletes the
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row) and voc-workspaces (`AUDIT#WS#<ws>`, a platform
  * admin's entry into a workspace, written by the workspaces API, lambda/shared/workspace.py). Every role that can write in one of those
@@ -14,7 +15,8 @@
  *     row is ever changed or removed, a batch delete included; every writer puts its rows one PutItem at a time);
  *   - every other table it writes: ONE Deny of those actions plus PutItem (it cannot forge, overwrite, change or
  *     remove one). Each table's ARN appears in one of the two statements only, to keep the policies small;
- *   - a writer limited to one audit partition (the settings API's `AUDIT#delete` in voc-aggregates): Deny PutItem
+ *   - a writer limited to one audit partition (the settings API's `AUDIT#delete` and the users API's
+ *     `AUDIT#platform-admins` in voc-aggregates): Deny PutItem
  *     and BatchWriteItem on every OTHER audit partition (it cannot forge a retention row or a tombstone).
  *
  * The audit writers are NAMED ({@link AUDIT_WRITERS}: the role that runs the code writing that table's audit rows),
@@ -80,6 +82,8 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   { table: 'aggregatesTable', rolePathSuffix: '/RetentionWorker/RetentionRole' },
   // The settings API (and its assist twin, same role): the AUDIT#delete row of an archived design reference's copies.
   { table: 'aggregatesTable', rolePathSuffix: '/SettingsLambdaRole', partitionKey: 'AUDIT#delete' },
+  // The users API: a grant or revoke of the platform-admins group (AUDIT#platform-admins, lambda/api/users_handler.py).
+  { table: 'aggregatesTable', rolePathSuffix: '/UsersLambdaRole', partitionKey: 'AUDIT#platform-admins' },
   // Project, persona, document, revision, product doc and comment deletes (the projects API and its assist twin);
   // a replace regeneration's removed personas (the persona generator).
   { table: 'projectsTable', rolePathSuffix: '/ProjectsLambdaRole' },

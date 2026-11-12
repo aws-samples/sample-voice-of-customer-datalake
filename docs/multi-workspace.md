@@ -10,7 +10,8 @@ and files named here are the planned ones unless the table lists them.
 | 6.05.00 | The Cognito group `platform-admins`, with the bootstrapped `admin` in it (through a CloudFormation attachment, replaced in 6.06.02). Nothing reads it yet |
 | 6.06.00 | The `voc-workspaces` table in `VocCoreStack` (keys below, TTL `ttl` for invites). Nothing reads or writes it yet |
 | 6.06.02 | The bootstrap adds the first `admin` to `platform-admins` when it creates the user (no CloudFormation attachment); an older deployment adds one by hand (CHANGELOG 6.06.02, Upgrade notes) |
-| 6.07.00 | The workspace middleware `lambda/shared/workspace.py`: the `X-Workspace-Id` header (missing 400; malformed, unknown, `deleting` or not a member: one 404), the role from the `MEMBER#` row, a platform admin who is not a member admin entering as admin (decision 2) with an audit row `AUDIT#WS#{ws}` / `{iso}#{random}` (once per fill of the 30 s warm-container cache), `ws_key` and "my workspaces". The workspaces API `voc-workspaces-api` (`lambda/api/workspaces_handler.py`, `GET /me/{proxy+}`): `GET /me/workspaces` and `GET /me/workspaces/current`, with Query and GetItem on `voc-workspaces` and PutItem only where the partition key matches `AUDIT#WS#*`. The audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) covers `voc-workspaces`, with this role as its audit writer: no role can change or remove an entry row. Nothing creates workspaces or members yet, so every list is empty; the web app does not call these routes yet, and `X-Workspace-Id` is not yet in the CORS preflight. This is the first reader of `platform-admins`: the platform-admin safeguards above (Control plane) land before anything can create a workspace |
+| 6.07.00 | The workspace middleware `lambda/shared/workspace.py`: the `X-Workspace-Id` header (missing 400; malformed, unknown, `deleting` or not a member: one 404), the role from the `MEMBER#` row, a platform admin who is not a member admin entering as admin (decision 2) with an audit row `AUDIT#WS#{ws}` / `{iso}#{random}` (once per fill of the 30 s warm-container cache), `ws_key` and "my workspaces". The workspaces API `voc-workspaces-api` (`lambda/api/workspaces_handler.py`, `GET /me/{proxy+}`): `GET /me/workspaces` and `GET /me/workspaces/current`, with Query and GetItem on `voc-workspaces` and PutItem only where the partition key matches `AUDIT#WS#*`. The audit-row guard (`voc-datalake/lib/utils/audit-row-guard.ts`) covers `voc-workspaces`, with this role as its audit writer: no role can change or remove an entry row. Nothing creates workspaces or members yet, so every list is empty; the web app does not call these routes yet, and `X-Workspace-Id` is not yet in the CORS preflight. This is the first reader of `platform-admins`: the platform-admin safeguards below (Control plane) land before anything can create a workspace |
+| 6.08.00 | Platform-admin membership in the users API (`lambda/api/users_handler.py`, rules in `lambda/shared/user_admin_guard.py`). `PUT /users/{username}/platform-admin` with `{"platform_admin": true\|false}`: platform admins only (403 for everyone else, plain `admins` included; in the route-gate inventory as admin-only and platform-admin-only), a grant only to a member of `admins` (400 otherwise), a revoke refused (409) when it would leave no enabled platform admin, the caller's own included; asking for what already holds changes and records nothing. Demoting a user to `users` also removes them from `platform-admins`. Demoting, disabling, enabling, deleting or resetting the password of a platform admin answers 403 unless the caller is one too (the caller's membership is checked live in Cognito, not only in the token, with an enabled account, so a revoke or a disable takes effect in the users API at once; entering a workspace still reads the token, and the change that creates workspaces adds the live check there); demoting, disabling or deleting the last enabled one answers 409 (the last-`admins` guard is unchanged). Every grant and revoke (the route, a demotion, a delete) writes an `AUDIT#platform-admins` / `{iso}#{random}` row in `voc-aggregates` (kind, via, the target's and the actor's sub, the time) before the change, so it records the attempt (a change that then fails leaves the row; the group's live state is Cognito's): a row that cannot be written refuses the change; the audit-row guard names the users API's role that partition's only writer. `GET /users` reports `platform_admin` per user. The web app does not call the new route yet (the platform console will). Like the last-admin check, these checks read before they write |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -73,15 +74,19 @@ gets no stack of its own.
 - **Platform admins** are the Cognito group `platform-admins`, bootstrapped at deploy time the way the first admin
   user is today ([README](../README.md#-initial-login)). Only they create workspaces and see the platform console
   (every workspace, its members and its cost).
-- Platform-admin membership is managed on its own, before the group can grant anything. Today's users API changes only
-  `admins`/`users` and counts only `admins` for its last-admin guard, so a demoted user would stay a platform admin
-  and an admin could disable or delete the only one. Phase 1 therefore adds, before any route can create a workspace
-  or a membership (6.07.00 already reads the group, but with no workspace in the table it grants nothing yet):
-  - a platform-admin route to grant and revoke the membership (platform admins only, audited, in the route-gate
-    inventory), shown in the platform console;
-  - in the users API: demoting a user also revokes it; disabling, enabling, deleting or resetting the password of a
-    platform admin is for platform admins only; and no route may leave the deployment without a platform admin.
-  (Cognito drops a deleted user's group memberships itself.)
+- Platform-admin membership is managed on its own, before the group can grant anything (6.07.00 already reads the
+  group, but with no workspace in the table it grants nothing yet). Built in 6.08.00, before any route can create a
+  workspace or a membership:
+  - a platform-admin route to grant and revoke the membership, `PUT /users/{username}/platform-admin`
+    (`{"platform_admin": true|false}`; platform admins only, granted only to an administrator, audited in
+    `AUDIT#platform-admins`, in the route-gate inventory). The platform console that will show it is not built yet;
+  - in the users API: demoting a user also revokes it; demoting, disabling, enabling, deleting or resetting the
+    password of a platform admin is for platform admins only (403); and no request may leave the deployment without
+    an enabled platform admin (409, also for a platform admin revoking themselves as the last one).
+  (Cognito drops a deleted user's group memberships itself; the users API records that delete as a revoke.) As with
+  the last-admin guard, these checks read before they write, so two concurrent requests can both pass them.
+  Still to come with the change that creates workspaces: entering a workspace as a platform admin checks the
+  membership live in Cognito on each cache fill, as the users API does, so a revoke also ends entries at once.
 - Today's `admins` group no longer grants anything inside a workspace: a person's role in a workspace comes only from
   its `MEMBER#` row.
 

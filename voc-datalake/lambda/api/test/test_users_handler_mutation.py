@@ -106,6 +106,7 @@ _EVERY_ROUTE = [
     pytest.param('GET', '/users/alice/category-access', None, id='get-category-access'),
     pytest.param('PUT', '/users/alice/category-access', {'categories': ['*']}, id='put-category-access'),
     pytest.param('PUT', '/users/alice/flags', {'memory_reviewer': True}, id='flags'),
+    pytest.param('PUT', '/users/alice/platform-admin', {'platform_admin': True}, id='platform-admin'),
 ]
 
 
@@ -131,7 +132,7 @@ class TestEveryEntryPointIsInstrumented:
     @pytest.mark.parametrize('route', [
         'list_users', 'create_user', 'update_user', 'update_user_group', 'reset_user_password',
         'enable_user', 'disable_user', 'delete_user', 'get_user_category_access',
-        'put_user_category_access', 'put_user_flags'])
+        'put_user_category_access', 'put_user_flags', 'put_user_platform_admin'])
     def test_every_route_is_the_tracer_wrapper(self, route):
         assert_tracer_wrapped(users_handler, route)
 
@@ -229,10 +230,12 @@ class TestListUsers:
         assert body == {'success': True, 'users': [
             {'username': 'full', 'sub': 'v-sub', 'email': 'v-email', 'name': 'v-name',
              'given_name': 'v-given_name', 'family_name': 'v-family_name', 'status': 'CONFIRMED',
-             'enabled': True, 'groups': ['admins', 'users'], 'created_at': '2025-01-01T00:00:00+00:00',
+             'enabled': True, 'groups': ['admins', 'users'], 'platform_admin': False,
+             'created_at': '2025-01-01T00:00:00+00:00',
              'last_modified': '2025-01-02T00:00:00+00:00', 'flags': no_flags, 'ai_mode': default_mode},
             {'username': 'bare', 'sub': '', 'email': '', 'name': '', 'given_name': '', 'family_name': '',
-             'status': 'FORCE_CHANGE_PASSWORD', 'enabled': False, 'groups': [], 'created_at': None,
+             'status': 'FORCE_CHANGE_PASSWORD', 'enabled': False, 'groups': [], 'platform_admin': False,
+             'created_at': None,
              'last_modified': None, 'flags': no_flags, 'ai_mode': default_mode},
         ]}
 
@@ -504,10 +507,11 @@ class TestUpdateUserGroup:
 
         assert status == 200
         cognito.admin_list_groups_for_user.assert_called_once_with(Username='alice', UserPoolId=POOL)
+        # The other role group goes; admins, already held, is neither removed nor added again (6.08.00), and the
+        # unmanaged beta group is left alone.
         assert cognito.admin_remove_user_from_group.call_args_list == [
-            call(UserPoolId=POOL, Username='alice', GroupName='users'),
-            call(UserPoolId=POOL, Username='alice', GroupName='admins')]
-        cognito.admin_add_user_to_group.assert_called_once_with(UserPoolId=POOL, Username='alice', GroupName='admins')
+            call(UserPoolId=POOL, Username='alice', GroupName='users')]
+        cognito.admin_add_user_to_group.assert_not_called()
         assert decoded == {'success': True, 'message': 'User group updated to admins',
                            'username': 'alice', 'group': 'admins'}
 

@@ -745,6 +745,8 @@ export interface CognitoUser {
   status: string
   enabled: boolean
   groups: string[]
+  /** Membership of `platform-admins` (`GET /users`; granted and revoked by platform admins only). */
+  platform_admin?: boolean
   created_at: string | null
   last_modified: string | null
 }

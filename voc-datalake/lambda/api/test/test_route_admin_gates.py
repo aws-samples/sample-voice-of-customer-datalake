@@ -146,7 +146,17 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /users/<username>/reset-password', 'PUT /users/<username>/enable',
         'PUT /users/<username>/disable', 'DELETE /users/<username>',
         'PUT /users/<username>/category-access', 'PUT /users/<username>/flags',
+        # Platform-admin membership: an admin gate, then the platform-admin one (PLATFORM_ADMIN_ONLY below).
+        'PUT /users/<username>/platform-admin',
     }),
+}
+
+# Routes for platform admins only (docs/multi-workspace.md → Control plane): each is also in ADMIN_ONLY, and its
+# handler body also calls `require_platform_admin` (shared/workspace.py) as an unconditional top-level statement,
+# so a plain administrator gets 403 too.
+PLATFORM_GATE = 'require_platform_admin'
+PLATFORM_ADMIN_ONLY: dict[str, frozenset[str]] = {
+    'users_handler.py': frozenset({'PUT /users/<username>/platform-admin'}),
 }
 
 
@@ -445,6 +455,41 @@ def test_no_open_by_decision_route_carries_an_admin_gate():
     inventory = _inventory()
     gated = sorted(key for key in _open_keys() if inventory.get(key) is True)
     assert not gated, f'Gated route(s) listed as OPEN_BY_DECISION; move them to ADMIN_ONLY: {gated}'
+
+
+def _platform_gated(source: str) -> dict[str, bool]:
+    """Every mutating route in *source* -> whether its body calls `require_platform_admin` unconditionally."""
+    functions = _module_functions(ast.parse(source))
+    return {key: PLATFORM_GATE in _top_level_calls(fn)
+            for fn in functions.values() for key in _route_keys(fn, MUTATING_METHODS)}
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler, routes in PLATFORM_ADMIN_ONLY.items() for route in routes))
+def test_every_platform_admin_route_is_admin_only_and_carries_the_platform_gate(handler, route):
+    assert route in ADMIN_ONLY[handler]
+    assert _platform_gated((API_DIR / handler).read_text(encoding='utf-8')).get(route) is True, (
+        f'{handler} {route} is missing or lost its require_platform_admin gate')
+
+
+def test_only_the_listed_routes_carry_the_platform_gate():
+    gated = {(path.name, key) for path in _handler_files()
+             for key, has in _platform_gated(path.read_text(encoding='utf-8')).items() if has}
+    assert gated == {(handler, route) for handler, routes in PLATFORM_ADMIN_ONLY.items() for route in routes}
+
+
+def test_the_platform_gate_raises_authorization_error():
+    functions = _module_functions(ast.parse((SHARED_DIR / 'workspace.py').read_text(encoding='utf-8')))
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
+               for stmt in functions[PLATFORM_GATE].body)
+
+
+def test_removing_the_platform_gate_is_detected():
+    tree = ast.parse((API_DIR / 'users_handler.py').read_text(encoding='utf-8'))
+    route = 'PUT /users/<username>/platform-admin'
+    for fn in _module_functions(tree).values():
+        fn.body = [s for s in fn.body if not (isinstance(s, ast.Expr) and _called_name(s.value) == PLATFORM_GATE)]
+    assert _platform_gated(ast.unparse(tree))[route] is False
 
 
 def test_every_table_entry_names_a_route_that_exists():
