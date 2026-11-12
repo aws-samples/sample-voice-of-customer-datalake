@@ -3,13 +3,13 @@
  * one persona; and the filter options offered (only what exists).
  */
 import { describe, it, expect } from 'vitest'
-import { DEFAULT_FILTER, authorKindsPresent, matchesFilter, personaOptions } from './commentFilters'
+import { DEFAULT_FILTER, SHOW_EVERY_THREAD, authorKindsPresent, matchesFilter, personaOptions } from './commentFilters'
 import type { CommentAuthor, CommentThread } from '../../api/documentReviewSchema'
 
 function thread(id: string, author: CommentAuthor, status: CommentThread['status'] = 'open'): CommentThread {
   return {
     comment_id: id, document_id: 'doc_1', version: 1, text: 'A comment', anchor: null, status, flagged: false,
-    created_at: '2026-10-28T00:00:00Z', author, replies: [], from_review_link: false,
+    created_at: '2026-10-28T00:00:00Z', author, replies: [], from_review_link: false, addressed: null,
   }
 }
 
@@ -40,6 +40,18 @@ describe('matchesFilter', () => {
 
   it('narrows personas to one persona when one is chosen', () => {
     expect(shown({ ...DEFAULT_FILTER, author: 'persona', personaId: 'p2' })).toStrictEqual(['c3'])
+  })
+
+  it('shows only the addressed threads when asked, resolved ones included', () => {
+    const addressed = { version: 3, at: '', by_kind: 'user' as const }
+    const threads = [TEAMMATE, { ...PRIYA, addressed }, { ...RESOLVED, addressed }]
+
+    expect(threads.filter((t) => matchesFilter(t, { ...DEFAULT_FILTER, addressedOnly: true })).map((t) => t.comment_id))
+      .toStrictEqual(['c2', 'c5'])
+  })
+
+  it('shows every thread, resolved too, with SHOW_EVERY_THREAD', () => {
+    expect(ALL.filter((t) => matchesFilter(t, SHOW_EVERY_THREAD))).toHaveLength(ALL.length)
   })
 
   it('ignores a persona choice under another author kind', () => {

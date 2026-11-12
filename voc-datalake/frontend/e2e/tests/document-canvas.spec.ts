@@ -19,8 +19,26 @@
  * 10. Keyboard only: Tab to the canvas (a visible focus ring), type, Ctrl+S saves.
  * 11. Drag a block: hover a block, press on its handle's grip, move and release over another block's end (the
  *     mouse, as a person would): the block moves, "Unsaved changes", Save stores the new order (moved, not copied).
- * 12. Widths 360 / 390 / 768 / 1024 / 1440: no sideways scroll; on a phone the dirty Save stays on screen, uncovered by
+ * 12. Focus view at 1440 and 390 ("Full screen", `?view=focus`): the button, focus in the canvas, the live note, nothing
+ *     else of the app on screen (sidebar, header, project tabs, list, launcher), the rail beside the text (1440) or under
+ *     it (390), Escape leaves (focus back on the button), Ctrl+Shift+F, a reload keeps it, the button leaves it; it adds
+ *     no history entry (after a save in it, Back goes to the page before, never the older version); a draft goes
+ *     through it without the leave guard.
+ * 13. The File menu: keyboard (Enter opens on Save, arrows wrap, End, Escape back to File, not leaving anything else),
+ *     Save with its state (Saved / Unsaved changes) and one PUT, Share opens its dialog; Download as Markdown is the
+ *     stored text (an unsaved edit is not in it); the PDF's print document without, then with "Include open comments"
+ *     (the quote and the comment), each rendered to a PDF file.
+ * 14. Widths 360 / 390 / 768 / 1024 / 1440: no sideways scroll; on a phone the dirty Save stays on screen, uncovered by
  *     the assistant launcher, and the outline is a "Contents" disclosure.
+ * 15. Revise from comments (its own describe, by the mock's MOCK_REVISE_OUTCOME): at 1440 and 390, the button is
+ *     disabled until a thread is answered; reply and resolve with the mouse (no two bubbles' boxes intersect, the
+ *     reply box open or not), Revise → the proposal (focused, two labelled groups, AA);
+ *     accept one, Discard (pending again), accept it again from the keyboard (into the draft, "Unsaved changes"),
+ *     reject one, Save → v2 and the addressed POST on v2 → the thread says "Addressed in v2", the "Addressed" filter,
+ *     "Ask personas to review again". With MOCK_REVISE_OUTCOME=recommendations: the panel, a link to its thread
+ *     (focused), nothing written; with =applied: the banner, the canvas on v2, Undo → v3 with the old text and the
+ *     thread's mark cleared (Revise offered again), Review again files persona comments; saved over (v3), Undo asks
+ *     first (Keep it focused; Undo anyway → v4).
  *
  * MOCK ONLY for now: the viewer step needs the mock's read-only project, and the rest has not been run on a
  * deployment yet. Mock run (from voc-datalake/frontend, mock + vite on your own ports, README "Local dev mock"):
@@ -28,19 +46,20 @@
  *   cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:3417 E2E_OUT=/tmp/e2e-mock \
  *     npx playwright test -c playwright.config.ts --reporter=line tests/document-canvas.spec.ts
  */
+import fs from 'node:fs'
 import path from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { apiCall, listOf, stringField } from '../lib/api'
 import {
-  CANVAS_TEXT, DOCUMENT_PUT, actionsBar, barButton, canvasOf, caretAtEnd, clickSave, createDocument, documentRow,
+  CANVAS_TEXT, DOCUMENT_PUT, REVISE_TEXT, actionsBar, addComment, addressedIn, barButton, revisePanel, canvasOf, caretAtEnd, clickSave, createDocument, documentRow, fileMenu, fileMenuItem,
   blockTexts, dragBlock, formatBar, openDocument, replaceCanvasText, saveStatus, savedAt, selectInCanvas, storedDocument,
 } from '../lib/canvas'
 import { dialogNamed } from '../lib/dialogs'
 import { MOCK, RUN_PREFIX, SCREENS_DIR } from '../lib/env'
 import { expectRefusal } from '../lib/expectedRefusal'
-import { assertStep, isApi, roleOf } from '../lib/fixtures'
+import { assertStep, escapeRegExp, isApi, roleOf, site } from '../lib/fixtures'
 import { isRecord } from '../lib/guards'
 
 /** The mock's editable project and its read-only one (mock-server.js mockProjectSharing: proj_2 is legacy-shaped). */
@@ -134,6 +153,63 @@ function writesOf(page: Page): string[] {
 
 /** The comments margin (components.json documentComments.margin). */
 const margin = (page: Page): Locator => page.getByRole('complementary', { name: 'Comments', exact: true })
+
+/** Is `locator` on screen: present, with a box that meets the window (an off-canvas drawer does not)? */
+async function onScreen(page: Page, locator: Locator): Promise<boolean> {
+  if (await locator.count() === 0) return false
+  const box = await locator.first().boundingBox()
+  const width = page.viewportSize()?.width ?? 0
+  return box !== null && box.width > 0 && box.height > 0 && box.x < width && box.x + box.width > 0
+}
+
+/** What of the app shows around the document page: the sidebar, the header, the project's tabs, the list, the launcher. */
+async function chromeShown(page: Page, title: string): Promise<Record<string, boolean>> {
+  return {
+    sidebar: await onScreen(page, page.getByRole('navigation', { name: 'Main', exact: true })),
+    header: await onScreen(page, page.getByTestId('header-title')),
+    tabs: await onScreen(page, page.getByRole('tablist', { name: 'Project sections', exact: true })),
+    list: await onScreen(page, documentRow(page, title)),
+    launcher: await onScreen(page, page.getByRole('button', { name: 'Open assistant', exact: true })),
+  }
+}
+
+/** The focus view's page is the window: edge to edge, and what sits at the window's top corners is the page. */
+async function expectPageIsTheWindow(page: Page): Promise<void> {
+  const fills = await page.getByTestId('document-detail-pane').evaluate((pane) => {
+    const box = pane.getBoundingClientRect()
+    const corners = [[4, 4], [window.innerWidth - 4, 4]].map(([x = 0, y = 0]) => pane.contains(document.elementFromPoint(x, y)))
+    return { left: Math.round(box.left), width: Math.round(box.width) === document.documentElement.clientWidth, corners }
+  })
+  expect(fills).toStrictEqual({ left: 0, width: true, corners: [true, true] })
+}
+
+/** From now on, keep every print document the PDF export builds (a hidden srcdoc frame it removes after printing). */
+async function capturePrintDocuments(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const printed: string[] = []
+    Reflect.set(window, '__canvasPrintDocs', printed)
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of Array.from(record.addedNodes)) {
+          if (node instanceof HTMLIFrameElement && node.srcdoc !== '') printed.push(node.srcdoc)
+        }
+      }
+    }).observe(document.body, { childList: true })
+  })
+}
+
+/** The `n`th print document built since capturePrintDocuments (1-based), once it exists. */
+async function nextPrintDocument(page: Page, n: number): Promise<string> {
+  const count = () => page.evaluate(() => {
+    const printed: unknown = Reflect.get(window, '__canvasPrintDocs')
+    return Array.isArray(printed) ? printed.length : 0
+  })
+  await expect.poll(count, { timeout: 10_000 }).toBeGreaterThanOrEqual(n)
+  return page.evaluate((index) => {
+    const printed: unknown = Reflect.get(window, '__canvasPrintDocs')
+    return Array.isArray(printed) ? String(printed[index] ?? '') : ''
+  }, n - 1)
+}
 
 test.describe('document canvas', () => {
   test.skip(!MOCK, 'dev mock only for now: needs the mock read-only project; not yet run on a deployment')
@@ -352,7 +428,7 @@ test.describe('document canvas', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await assertStep(page, 'admin', 'canvas-share', async (r) => {
       await openDocument(page, PROJECT, title)
-      await barButton(page, 'Share for review').click()
+      await (await fileMenuItem(page, 'Share for review')).click()
       const share = dialogNamed(page, 'Share for review')
       await expect(share).toBeVisible()
       await share.getByRole('button', { name: 'Create review link', exact: true }).click()
@@ -366,7 +442,9 @@ test.describe('document canvas', () => {
       await expect(share.getByRole('button', { name: 'Create review link', exact: true })).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(share).toHaveCount(0)
-      await expect(barButton(page, 'Share for review'), 'no active link: the bar says Share for review').toBeVisible()
+      await expect(await fileMenuItem(page, 'Share for review'), 'no active link: the menu says Share for review').toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(fileMenu(page)).toHaveCount(0)
     })
   })
 
@@ -380,7 +458,7 @@ test.describe('document canvas', () => {
       const canvas = await openDocument(page, PROJECT, title)
       await expect(canvas).toContainText('An edit saved as v2.')
       await expect(saveStatus(page)).toHaveText(savedAt(2))
-      await barButton(page, 'History').click()
+      await (await fileMenuItem(page, 'History')).click()
       const versions = dialogNamed(page, 'Versions')
       await expect(versions).toBeVisible()
       await expect(versions.getByRole('button', { name: 'Open v2', exact: true })).toBeVisible()
@@ -393,7 +471,7 @@ test.describe('document canvas', () => {
       await expect(canvas).not.toContainText('An edit saved as v2.')
       await expect(canvas).toContainText('Carrier webhooks arrive late during peak weeks.')
       await expect(saveStatus(page)).toHaveText(savedAt(3))
-      await barButton(page, 'History').click()
+      await (await fileMenuItem(page, 'History')).click()
       await expect(versions.getByText('Restored from v1', { exact: true })).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(versions).toHaveCount(0)
@@ -426,9 +504,11 @@ test.describe('document canvas', () => {
     await assertStep(page, 'admin', 'canvas-viewer', async () => {
       const canvas = await openDocument(page, VIEWER_PROJECT, title)
       await expect(canvas).toHaveAttribute('contenteditable', 'false')
-      for (const name of ['Save', 'Discard', 'Delete document', 'Share for review']) await expect(barButton(page, name)).toHaveCount(0)
-      await expect(barButton(page, 'History')).toBeVisible()
-      await expect(barButton(page, 'Download options')).toBeVisible()
+      for (const name of ['Save', 'Discard']) await expect(barButton(page, name)).toHaveCount(0)
+      await expect(await fileMenuItem(page, 'History')).toBeVisible()
+      await expect(await fileMenuItem(page, 'Download as Markdown')).toBeVisible()
+      for (const name of ['Save', 'Delete document', 'Share for review']) await expect(await fileMenuItem(page, name)).toHaveCount(0)
+      await page.keyboard.press('Escape')
       await expect(page.getByRole('textbox', { name: 'Document title' }), 'the title is not editable').toHaveCount(0)
       const before = (await canvas.textContent()) ?? ''
       await canvas.click()
@@ -497,6 +577,205 @@ test.describe('document canvas', () => {
     })
   })
 
+  for (const width of [1440, 390]) {
+    test(`focus view at ${width}: Full screen, Esc, Ctrl+Shift+F, the address, reload, the button; nothing else of the app`, async ({ page }) => {
+      const title = titled(`focus ${width}`)
+      await createDocument(PROJECT, { title, content: PRFAQ_BODY, document_type: 'prfaq' })
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+      await assertStep(page, 'admin', `canvas-focus-${width}`, async (r) => {
+        const canvas = await openDocument(page, PROJECT, title)
+        const toggle = barButton(page, 'Full screen')
+        await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+        expect(await chromeShown(page, title), 'the app around the page').toStrictEqual({ sidebar: width >= 1024, header: true, tabs: true, list: true, launcher: true })
+
+        // The button: in, the page is the window; focus in the canvas; the note says how to leave.
+        await toggle.click()
+        await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+        await expect(page).toHaveURL(/[?&]view=focus(&|$)/)
+        await expect(canvas).toBeFocused()
+        await expect(page.getByTestId('canvas-focus-note')).toHaveText('Full screen. Press Escape to leave.')
+        expect(await chromeShown(page, title), 'nothing else of the app').toStrictEqual({ sidebar: false, header: false, tabs: false, list: false, launcher: false })
+        await expectPageIsTheWindow(page)
+        await expectNoSidewaysScroll(page, `${width} focus`)
+        await expect(margin(page)).toBeVisible()
+        const [text, rail] = await Promise.all([canvas.boundingBox(), margin(page).boundingBox()])
+        if (text === null || rail === null) throw new Error('no boxes')
+        r.note(`canvas ${JSON.stringify(text)} rail ${JSON.stringify(rail)}`)
+        if (width >= 1280) expect(rail.x, 'the rail beside the text').toBeGreaterThanOrEqual(text.x + text.width - 1)
+        else expect(rail.y, 'one column: the rail under the text').toBeGreaterThanOrEqual(text.y + text.height - 1)
+        await page.screenshot({ path: path.join(SCREENS_DIR, `admin-dark-canvas-focus-on-${width}.png`) })
+
+        // Escape leaves; focus back on the button.
+        await page.keyboard.press('Escape')
+        await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+        await expect(toggle).toBeFocused()
+        await expect(page).not.toHaveURL(/view=focus/)
+        await expect(documentRow(page, title), 'the list is back').toBeAttached()
+
+        // The shortcut toggles it; a reload keeps it; the button leaves it.
+        await canvas.focus()
+        await page.keyboard.press('Control+Shift+F')
+        await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        await expect(canvasOf(page, title)).toBeVisible({ timeout: 20_000 })
+        await expect(barButton(page, 'Full screen'), 'a reload keeps it').toHaveAttribute('aria-pressed', 'true')
+        expect((await chromeShown(page, title)).list).toBe(false)
+        await barButton(page, 'Full screen').click()
+        await expect(barButton(page, 'Full screen')).toHaveAttribute('aria-pressed', 'false')
+        await expect(page).not.toHaveURL(/view=focus/)
+        await expect(documentRow(page, title)).toBeVisible()
+        await expect(canvasOf(page, title)).toBeVisible()
+      })
+    })
+  }
+
+  test('focus view adds no history entry: after a save in it, Back goes to the page before, never the older version', async ({ page }) => {
+    const title = titled('focus back')
+    const firstId = await createDocument(PROJECT, { title, content: PRFAQ_BODY, document_type: 'prfaq' })
+    await assertStep(page, 'admin', 'canvas-focus-back', async () => {
+      // The page before the document's: the project's overview.
+      await page.goto(site(`/projects/${encodeURIComponent(PROJECT)}`), { waitUntil: 'domcontentloaded' })
+      const canvas = await openDocument(page, PROJECT, title)
+      await expect(page).toHaveURL(new RegExp(`[?&]doc=${escapeRegExp(firstId)}(&|$)`))
+      await barButton(page, 'Full screen').click()
+      await expect(page).toHaveURL(/[?&]view=focus(&|$)/)
+
+      await caretAtEnd(canvas)
+      await page.keyboard.type(' Saved in full screen.')
+      expect((await clickSave(page)).status()).toBe(200)
+      await expect(saveStatus(page)).toHaveText(savedAt(2))
+      await expect(page, 'the saved version selected').not.toHaveURL(new RegExp(`[?&]doc=${escapeRegExp(firstId)}(&|$)`))
+
+      await page.goBack({ waitUntil: 'domcontentloaded' })
+      await expect(page, 'Back left the document page').not.toHaveURL(/[?&]doc=/)
+      await expect(page).not.toHaveURL(new RegExp(escapeRegExp(firstId)))
+      await expect(page).toHaveURL(new RegExp(`/projects/${escapeRegExp(PROJECT)}`))
+    })
+  })
+
+  test('focus view keeps a draft: entering and leaving with unsaved changes asks nothing and loses nothing', async ({ page }) => {
+    const title = titled('focus draft')
+    await createDocument(PROJECT, { title, content: BODY })
+    await assertStep(page, 'admin', 'canvas-focus-draft', async () => {
+      const canvas = await openDocument(page, PROJECT, title)
+      await caretAtEnd(canvas)
+      await page.keyboard.type(' Kept through full screen.')
+      await expect(saveStatus(page)).toHaveText(CANVAS_TEXT.unsaved)
+      await barButton(page, 'Full screen').click()
+      await expect(barButton(page, 'Full screen')).toHaveAttribute('aria-pressed', 'true')
+      await expect(dialogNamed(page, CANVAS_TEXT.guard), 'no leave guard').toHaveCount(0)
+      await expect(canvas).toContainText('Kept through full screen.')
+      await page.keyboard.press('Escape')
+      await expect(barButton(page, 'Full screen')).toHaveAttribute('aria-pressed', 'false')
+      await expect(dialogNamed(page, CANVAS_TEXT.guard)).toHaveCount(0)
+      await expect(canvas).toContainText('Kept through full screen.')
+      await expect(saveStatus(page)).toHaveText(CANVAS_TEXT.unsaved)
+      await barButton(page, 'Discard').click()
+    })
+  })
+
+  test('File menu: the keyboard (open, arrows, Esc), Save and its state, Share opens its dialog', async ({ page }) => {
+    const title = titled('menu')
+    await createDocument(PROJECT, { title, content: PRFAQ_BODY, document_type: 'prfaq' })
+    await assertStep(page, 'admin', 'canvas-menu-keyboard', async () => {
+      const canvas = await openDocument(page, PROJECT, title)
+      const file = barButton(page, 'File')
+      await expect(file).toHaveAttribute('aria-haspopup', 'menu')
+      await file.focus()
+      await page.keyboard.press('Enter')
+      await expect(fileMenu(page)).toBeVisible()
+      await expect(file).toHaveAttribute('aria-expanded', 'true')
+      const save = fileMenu(page).getByRole('menuitem', { name: 'Save', exact: true })
+      await expect(save, 'focus on the first item').toBeFocused()
+      await expect(save).toHaveAttribute('aria-disabled', 'true')
+      await expect(save).toHaveAccessibleDescription('Saved')
+      await page.keyboard.press('ArrowDown')
+      await expect(fileMenu(page).getByRole('menuitem', { name: 'Share for review', exact: true })).toBeFocused()
+      await page.keyboard.press('End')
+      await expect(fileMenu(page).getByRole('menuitem', { name: 'Delete document', exact: true })).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await expect(save, 'the arrows wrap').toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(fileMenu(page)).toHaveCount(0)
+      await expect(file).toBeFocused()
+      await expect(barButton(page, 'Full screen'), 'Escape in the menu is the menu\'s').toHaveAttribute('aria-pressed', 'false')
+
+      // Save from the menu: its state, one PUT, back to "Saved".
+      await caretAtEnd(canvas)
+      await page.keyboard.type(' Saved from the menu.')
+      await expect(await fileMenuItem(page, 'Save')).toHaveAccessibleDescription(CANVAS_TEXT.unsaved)
+      await expect(await fileMenuItem(page, 'Save')).toHaveAttribute('aria-disabled', 'false')
+      const saved = page.waitForResponse((res) => isApi(res, 'PUT', DOCUMENT_PUT))
+      await (await fileMenuItem(page, 'Save')).click()
+      expect((await saved).status()).toBe(200)
+      await expect(saveStatus(page)).toHaveText(savedAt(2))
+      await expect(await fileMenuItem(page, 'Save')).toHaveAccessibleDescription('Saved')
+      await page.keyboard.press('Escape')
+
+      // Share opens today's dialog.
+      await (await fileMenuItem(page, 'Share for review')).click()
+      const share = dialogNamed(page, 'Share for review')
+      await expect(share).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(share).toHaveCount(0)
+    })
+  })
+
+  test('File menu: Download as Markdown is the stored text; the PDF prints with and without the open comments', async ({ page }) => {
+    const title = titled('menu export')
+    const documentId = await createDocument(PROJECT, { title, content: PRFAQ_BODY, document_type: 'prfaq' })
+    const quote = 'an honest delivery date before they pay'
+    const comment = `${RUN_PREFIX} which carriers give us the date?`
+    const posted = await apiCall('admin', 'POST', `/projects/${PROJECT}/documents/${encodeURIComponent(documentId)}/comments`,
+      { text: comment, anchor: { exact: quote, prefix: '', suffix: '', heading: 'Press Release' } })
+    expect(posted.status, 'POST comment').toBeLessThan(300)
+    await assertStep(page, 'admin', 'canvas-menu-export', async (r) => {
+      const canvas = await openDocument(page, PROJECT, title)
+      await expect(margin(page).getByRole('article').filter({ hasText: comment })).toBeVisible()
+      // An unsaved edit: the downloads still carry the stored version.
+      await caretAtEnd(canvas)
+      await page.keyboard.type(' Not saved, not exported.')
+
+      const download = page.waitForEvent('download')
+      await (await fileMenuItem(page, 'Download as Markdown')).click()
+      const file = await download
+      const saved = path.join(SCREENS_DIR, '..', `canvas-export-${STAMP}.md`)
+      await file.saveAs(saved)
+      const stored = stringField(await storedDocument(PROJECT, documentId), 'content') ?? ''
+      expect(file.suggestedFilename()).toMatch(/\.md$/)
+      expect(fs.readFileSync(saved, 'utf8'), 'the file is the stored text').toBe(stored)
+      r.note(`markdown: ${file.suggestedFilename()} ${stored.length} chars`)
+
+      await capturePrintDocuments(page)
+      await (await fileMenuItem(page, 'Print or save as PDF')).click()
+      const plain = await nextPrintDocument(page, 1)
+      expect(plain).toContain('Honest delivery dates')
+      expect(plain, 'no comments unless asked').not.toContain(comment)
+
+      const include = await fileMenuItem(page, 'Include open comments')
+      await expect(include).toHaveAttribute('aria-checked', 'false')
+      await include.click()
+      await expect(include).toHaveAttribute('aria-checked', 'true')
+      await (await fileMenuItem(page, 'Print or save as PDF')).click()
+      const withComments = await nextPrintDocument(page, 2)
+      expect(withComments).toContain('Open comments')
+      expect(withComments).toContain(quote)
+      expect(withComments).toContain(comment)
+      expect(withComments).not.toContain('Not saved, not exported.')
+      for (const [name, html] of [['plain', plain], ['comments', withComments]] as const) {
+        const printPage = await page.context().newPage()
+        await printPage.setContent(html, { waitUntil: 'load' })
+        const pdfPath = path.join(SCREENS_DIR, '..', `canvas-export-${STAMP}-${name}.pdf`)
+        await printPage.pdf({ path: pdfPath, format: 'A4' })
+        await printPage.close()
+        const size = fs.statSync(pdfPath).size
+        r.note(`PDF (${name}): ${size} bytes`)
+        expect(size, `the ${name} print document makes a PDF file`).toBeGreaterThan(5_000)
+      }
+      await barButton(page, 'Discard').click()
+    })
+  })
+
   for (const width of [360, 390, 768, 1024, 1440]) {
     test(`width ${width}: no sideways scroll; the save and the outline stay in reach`, async ({ page }) => {
       const title = titled(`width ${width}`)
@@ -534,4 +813,245 @@ test.describe('document canvas', () => {
       })
     })
   }
+})
+
+/**
+ * Revise from comments (6.06; docs/document-review.md "Revise from comments"). The outcome is the mock's
+ * MOCK_REVISE_OUTCOME (default `proposal`); the launcher passes its environment to the mock and to this run alike, so
+ * `MOCK_REVISE_OUTCOME=recommendations` / `=applied` runs those outcomes' tests (and skips the proposal's).
+ * Each test files its own threads on a PR/FAQ it creates, quoting passages the mock rewrites (mock-document-review.js
+ * REWRITES), so its `before` is verbatim.
+ */
+const REVISE_OUTCOME = process.env['MOCK_REVISE_OUTCOME'] ?? 'proposal'
+const ONCE_A_DAY = 'at most once a day unless it moves again'
+const ONCE_A_DAY_AFTER = 'at most once a day per parcel, even if it moves again'
+const CONTACTS = 'Delivery contacts per 1,000 orders'
+const REVISE_BODY = [
+  '# PR/FAQ: Delivery messages',
+  '',
+  '## Customer FAQ',
+  '',
+  `How often will you message me? We message ${ONCE_A_DAY}.`,
+  '',
+  '## Internal FAQ',
+  '',
+  `${CONTACTS} fell from 42 to 30 in the pilot.`,
+  '',
+].join('\n')
+
+test.describe('document canvas: revise from comments', () => {
+  test.skip(!MOCK, 'dev mock only for now: the outcome is the mock\'s MOCK_REVISE_OUTCOME')
+  test.beforeEach(({}, testInfo) => {
+    test.skip(roleOf(testInfo) !== 'admin', 'the mock has one user, an admin')
+  })
+  test.afterAll(async () => {
+    const project = await apiCall('admin', 'GET', `/projects/${PROJECT}`)
+    const own = listOf(project.body, 'documents').filter((d) => (stringField(d, 'title') ?? '').startsWith(`${RUN_PREFIX}canvas revise`))
+    for (const doc of own) await apiCall('admin', 'DELETE', `/projects/${PROJECT}/documents/${encodeURIComponent(stringField(doc, 'document_id') ?? '')}`)
+  })
+
+  /** A PR/FAQ with one thread on each passage the mock rewrites; their texts. */
+  async function revisable(what: string): Promise<{ title: string; documentId: string; onceThread: string; contactsThread: string }> {
+    const title = titled(`revise ${what}`)
+    const documentId = await createDocument(PROJECT, { title, content: REVISE_BODY, document_type: 'prfaq' })
+    const onceThread = `${RUN_PREFIX} twice about one parcel and I turn messages off`
+    const contactsThread = `${RUN_PREFIX} where does the 42 come from?`
+    await addComment(PROJECT, documentId, onceThread, ONCE_A_DAY)
+    await addComment(PROJECT, documentId, contactsThread, CONTACTS)
+    return { title, documentId, onceThread, contactsThread }
+  }
+
+  const threadCard = (page: Page, text: string): Locator => margin(page).getByRole('article').filter({ hasText: text })
+
+  /**
+   * No two thread bubbles of the rail overlap: from xl up each sits beside its passage, pushed below the one above
+   * it by that one's measured height (useCommentLayout), so two nearby passages' cards never cover each other.
+   */
+  async function expectNoBubbleOverlap(page: Page, label: string): Promise<void> {
+    await expect.poll(async () => {
+      const boxes = (await Promise.all((await margin(page).getByRole('article').all()).map((card) => card.boundingBox())))
+        .filter((box) => box !== null)
+      return boxes.flatMap((a, i) => boxes.slice(i + 1).flatMap((b, j) => {
+        const apart = a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y
+        return apart ? [] : [`${i} and ${i + j + 1}`]
+      }))
+    }, `${label}: overlapping bubbles`).toEqual([])
+  }
+
+  /**
+   * Replies to the thread holding `text` in the rail, with the mouse: its Reply button is never covered by the
+   * bubble of a nearby passage (Playwright's click fails on a covered target), with the reply box open or not.
+   */
+  async function replyTo(page: Page, text: string, reply: string): Promise<void> {
+    const card = threadCard(page, text)
+    await expectNoBubbleOverlap(page, 'before the reply')
+    await card.getByRole('button', { name: 'Reply', exact: true }).click()
+    await card.getByRole('textbox', { name: 'Write a reply', exact: true }).fill(reply)
+    await expectNoBubbleOverlap(page, 'the reply box open')
+    await card.getByRole('button', { name: 'Reply', exact: true }).click()
+    await expect(card.getByText(reply)).toBeVisible()
+    await expectNoBubbleOverlap(page, 'after the reply')
+  }
+
+  for (const width of [1440, 390]) {
+    test(`proposal at ${width}: reply, Revise from comments, accept one, reject one, Save: the thread is addressed in v2`, async ({ page }) => {
+      test.skip(REVISE_OUTCOME !== 'proposal', 'the mock serves another outcome')
+      const { title, onceThread, contactsThread } = await revisable(`proposal ${width}`)
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+      await assertStep(page, 'admin', `canvas-revise-proposal-${width}`, async () => {
+        const canvas = await openDocument(page, PROJECT, title)
+        const revise = margin(page).getByRole('button', { name: REVISE_TEXT.button, exact: true })
+        await expect(revise, 'no thread answered yet').toBeDisabled()
+        await expect(margin(page).getByText(REVISE_TEXT.noThreads)).toBeVisible()
+
+        // Answer both threads: a reply, and a resolve.
+        await replyTo(page, onceThread, `${RUN_PREFIX} agreed: once a day per parcel`)
+        await threadCard(page, contactsThread).getByRole('button', { name: 'Resolve', exact: true }).click()
+        await expect(threadCard(page, contactsThread)).toHaveCount(0)
+        await expect(revise).toBeEnabled()
+
+        await revise.click()
+        const review = revisePanel(page, REVISE_TEXT.proposal)
+        await expect(review).toBeVisible({ timeout: 20_000 })
+        await expect(review.getByRole('heading', { name: REVISE_TEXT.proposal }), 'the review takes the focus').toBeFocused()
+        await expect(review.getByRole('status')).toHaveText('2 changes suggested.')
+        const first = review.getByRole('group', { name: 'Change 1', exact: true })
+        const second = review.getByRole('group', { name: 'Change 2', exact: true })
+        await expect(first.locator('del')).toHaveText(ONCE_A_DAY)
+        await expect(first.locator('ins')).toHaveText(ONCE_A_DAY_AFTER)
+        await expectNoSidewaysScroll(page, `${width} proposal`)
+        await page.screenshot({ path: path.join(SCREENS_DIR, `admin-dark-canvas-revise-proposal-${width}.png`) })
+        const axe = await new AxeBuilder({ page }).include('[data-testid="revise-proposal"]').withRules(['color-contrast']).analyze()
+        expect(axe.violations.flatMap((v) => v.nodes.map((n) => n.target.join(' '))), 'the review keeps AA contrast').toEqual([])
+
+        // Accept the first; Discard takes it out of the draft without a save: pending again, and accepted again
+        // (from the keyboard).
+        const acceptFirst = first.getByRole('button', { name: 'Accept change 1', exact: true })
+        await acceptFirst.click()
+        await expect(first).toContainText('Accepted')
+        await barButton(page, 'Discard').click()
+        await expect(canvas).not.toContainText(ONCE_A_DAY_AFTER)
+        await expect(first, 'pending again after Discard').not.toContainText('Accepted')
+        await expect(acceptFirst).toBeEnabled()
+        await acceptFirst.focus()
+        await page.keyboard.press('Enter')
+        await expect(first).toContainText('Accepted')
+        await expect(canvas).toContainText(ONCE_A_DAY_AFTER)
+        await expect(saveStatus(page)).toHaveText(CANVAS_TEXT.unsaved)
+        await second.getByRole('button', { name: 'Reject change 2', exact: true }).click()
+        await expect(second).toContainText('Rejected')
+        await expect(canvas).toContainText(CONTACTS)
+        await expect(review.getByRole('status')).toHaveText('Accepted changes are in your draft. Save to make them a new version.')
+
+        // Save: one new version, then the accepted change's thread is marked addressed by it.
+        const addressed = page.waitForResponse((res) => isApi(res, 'POST', /\/comments\/addressed$/))
+        expect((await clickSave(page)).status()).toBe(200)
+        const marked = await addressed
+        expect(marked.status()).toBe(200)
+        // The path names the saved version (v2); the server takes its number from it.
+        expect(marked.request().postDataJSON()).toStrictEqual({ thread_ids: [expect.any(String)], addressed: true })
+        await expect(saveStatus(page)).toHaveText(savedAt(2))
+        await expect(review.getByRole('status')).toHaveText('Saved: 1 comment is marked as addressed in v2.')
+        await expect(threadCard(page, onceThread).getByText(addressedIn(2), { exact: true })).toBeVisible()
+        await expect(margin(page).getByRole('button', { name: REVISE_TEXT.reviewAgain, exact: true })).toBeVisible()
+        await margin(page).getByRole('checkbox', { name: 'Addressed', exact: true }).check()
+        await expect(threadCard(page, onceThread)).toBeVisible()
+        await expect(margin(page).getByRole('article')).toHaveCount(1)
+        await expectNoSidewaysScroll(page, `${width} saved`)
+        await page.screenshot({ path: path.join(SCREENS_DIR, `admin-dark-canvas-revise-saved-${width}.png`) })
+      })
+    })
+  }
+
+  test('recommendations: one per thread, linked to it; nothing written', async ({ page }) => {
+    test.skip(REVISE_OUTCOME !== 'recommendations', 'run with MOCK_REVISE_OUTCOME=recommendations')
+    const { title, onceThread } = await revisable('recommendations')
+    await assertStep(page, 'admin', 'canvas-revise-recommendations', async () => {
+      const writes = writesOf(page)
+      await openDocument(page, PROJECT, title)
+      await replyTo(page, onceThread, `${RUN_PREFIX} agreed`)
+      await margin(page).getByRole('button', { name: REVISE_TEXT.button, exact: true }).click()
+      const panel = revisePanel(page, REVISE_TEXT.recommendations)
+      await expect(panel).toBeVisible({ timeout: 20_000 })
+      await expect(panel.getByRole('status')).toHaveText('1 recommendation. Nothing in the document was changed.')
+      await expect(panel).toContainText('recommendations only')
+      await panel.getByRole('button', { name: `Show the comment: ${ONCE_A_DAY}`, exact: true }).click()
+      await expect(threadCard(page, onceThread)).toBeFocused()
+      expect(writes.filter((w) => w.startsWith('PUT ')), 'nothing written').toEqual([])
+      await expect(margin(page).getByRole('button', { name: REVISE_TEXT.reviewAgain, exact: true })).toBeVisible()
+    })
+  })
+
+  test('applied: the next version is written and shown; Undo restores the previous one; Review again asks the personas', async ({ page }) => {
+    test.skip(REVISE_OUTCOME !== 'applied', 'run with MOCK_REVISE_OUTCOME=applied')
+    const { title, onceThread } = await revisable('applied')
+    await assertStep(page, 'admin', 'canvas-revise-applied', async () => {
+      await openDocument(page, PROJECT, title)
+      // The server's version is titled "<title> (v2)": the canvas is named by whichever version it shows.
+      const canvas = page.getByRole('textbox', { name: new RegExp(`^${escapeRegExp(title)}`) })
+      await replyTo(page, onceThread, `${RUN_PREFIX} agreed`)
+      await margin(page).getByRole('button', { name: REVISE_TEXT.button, exact: true }).click()
+      const banner = revisePanel(page, 'Revised from 1 comment as v2')
+      await expect(banner).toBeVisible({ timeout: 20_000 })
+      await expect(canvas).toContainText(ONCE_A_DAY_AFTER)
+      await expect(saveStatus(page)).toHaveText(savedAt(2))
+      await expect(threadCard(page, onceThread).getByText(addressedIn(2), { exact: true })).toBeVisible()
+
+      const restored = page.waitForResponse((res) => isApi(res, 'POST', /\/versions\/[^/]+\/restore$/))
+      const cleared = page.waitForResponse((res) => isApi(res, 'POST', /\/comments\/addressed$/))
+      await banner.getByRole('button', { name: 'Undo', exact: true }).click()
+      expect((await restored).status()).toBeLessThan(300)
+      // The undone revision answers its thread no more: the mark is cleared, and Revise may take it again.
+      const clear = await cleared
+      expect(clear.status()).toBe(200)
+      expect(clear.request().postDataJSON()).toStrictEqual({ thread_ids: [expect.any(String)], addressed: false })
+      await expect(banner.getByRole('status')).toHaveText('Undone: the previous version is restored as a new version.')
+      await expect(canvas).toContainText(ONCE_A_DAY)
+      await expect(canvas).not.toContainText(ONCE_A_DAY_AFTER)
+      await expect(saveStatus(page)).toHaveText(savedAt(3))
+      await expect(threadCard(page, onceThread).getByText(addressedIn(2), { exact: true })).toHaveCount(0)
+      await expect(margin(page).getByRole('button', { name: REVISE_TEXT.button, exact: true }), 'Revise is offered again').toBeEnabled()
+
+      await banner.getByRole('button', { name: 'Review again', exact: true }).click()
+      await expect(margin(page).getByText(/comments? filed/)).toBeVisible({ timeout: 20_000 })
+    })
+  })
+
+  test('applied, then saved over: Undo says a newer version would be reverted; Keep it, then Undo anyway', async ({ page }) => {
+    test.skip(REVISE_OUTCOME !== 'applied', 'run with MOCK_REVISE_OUTCOME=applied')
+    const { title, onceThread } = await revisable('applied then saved')
+    await assertStep(page, 'admin', 'canvas-revise-applied-newer', async () => {
+      await openDocument(page, PROJECT, title)
+      const canvas = page.getByRole('textbox', { name: new RegExp(`^${escapeRegExp(title)}`) })
+      await replyTo(page, onceThread, `${RUN_PREFIX} agreed`)
+      await margin(page).getByRole('button', { name: REVISE_TEXT.button, exact: true }).click()
+      const banner = revisePanel(page, 'Revised from 1 comment as v2')
+      await expect(banner).toBeVisible({ timeout: 20_000 })
+      await expect(saveStatus(page)).toHaveText(savedAt(2))
+
+      // Someone (here: this page) saves v3 on top of the revision.
+      await caretAtEnd(canvas)
+      await page.keyboard.type(' Saved after the revision.')
+      expect((await clickSave(page)).status()).toBe(200)
+      await expect(saveStatus(page)).toHaveText(savedAt(3))
+
+      const writes = writesOf(page)
+      await banner.getByRole('button', { name: 'Undo', exact: true }).click()
+      await expect(banner.getByRole('status')).toContainText('v3 was saved after this revision.')
+      await expect(banner.getByRole('button', { name: 'Keep it', exact: true }), 'the safe choice has the focus').toBeFocused()
+      expect(writes.filter((w) => w.includes('/restore')), 'nothing restored yet').toEqual([])
+      await banner.getByRole('button', { name: 'Keep it', exact: true }).click()
+      await expect(banner.getByRole('button', { name: 'Undo', exact: true })).toBeVisible()
+      await expect(canvas).toContainText('Saved after the revision.')
+
+      await banner.getByRole('button', { name: 'Undo', exact: true }).click()
+      const restored = page.waitForResponse((res) => isApi(res, 'POST', /\/versions\/[^/]+\/restore$/))
+      await banner.getByRole('button', { name: 'Undo anyway', exact: true }).click()
+      expect((await restored).status()).toBeLessThan(300)
+      await expect(banner.getByRole('status')).toHaveText('Undone: the previous version is restored as a new version.')
+      await expect(saveStatus(page)).toHaveText(savedAt(4))
+      await expect(canvas).toContainText(ONCE_A_DAY)
+      await expect(canvas).not.toContainText('Saved after the revision.')
+    })
+  })
 })

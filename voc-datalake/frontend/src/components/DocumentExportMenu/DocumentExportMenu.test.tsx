@@ -170,6 +170,38 @@ describe('DocumentExportMenu', () => {
     })
   })
 
+  describe('Keyboard (menu button)', () => {
+    it('focuses the first item, moves with the arrow keys, and Escape returns focus to the trigger', async () => {
+      const user = await openMenu()
+      expect(screen.getByRole('menuitem', { name: /^copy$/i })).toHaveFocus()
+      await user.keyboard('{ArrowDown}')
+      expect(screen.getByRole('menuitem', { name: /download as markdown/i })).toHaveFocus()
+      await user.keyboard('{End}')
+      expect(screen.getByRole('menuitem', { name: /copy to kiro/i })).toHaveFocus()
+      await user.keyboard('{Escape}')
+      expect({ menu: screen.queryByRole('menu'), focus: document.activeElement })
+        .toStrictEqual({ menu: null, focus: screen.getByRole('button', { name: TRIGGER }) })
+    })
+  })
+
+  describe('Labelled trigger and slots (the document page\'s File menu)', () => {
+    it('shows the label as the trigger\'s text and puts the slots around the exports', async () => {
+      const user = await openExportMenu(
+        <DocumentExportMenu document={mockDocument} triggerLabel="File"
+          leading={() => <button type="button" role="menuitem">First</button>}>
+          {({ close }) => <button type="button" role="menuitem" onClick={close}>Last</button>}
+        </DocumentExportMenu>,
+        'File',
+      )
+      const items = screen.getAllByRole('menuitem')
+      expect(items.at(0)).toHaveTextContent('First')
+      expect(items.at(-1)).toHaveTextContent('Last')
+      await user.click(screen.getByRole('menuitem', { name: 'Last' }))
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'File' })).toHaveFocus()
+    })
+  })
+
   describe('Click Outside', () => {
     it('closes menu when clicking outside', async () => {
       await openThenClickOutside(<DocumentExportMenu document={mockDocument} />, TRIGGER)

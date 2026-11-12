@@ -35,6 +35,7 @@ import { useUnsavedChangesGuard } from '../../UnsavedChangesGuard/useUnsavedChan
 import { ignoreRejection } from '../../../lib/rejections'
 import { noCleanup } from '../../../hooks/noCleanup'
 import { isEditedElsewhere } from './documentKinds'
+import { onlyFocusViewChanged } from '../page/focusView'
 import type { CanvasEditorHandle } from '../editor/CanvasEditor'
 import type { DocumentConflict } from './ConflictBanner'
 import type { DocumentEdits } from '../../../pages/ProjectDetail/useDocumentSave'
@@ -76,6 +77,26 @@ export interface CanvasDocument {
   readonly reloadLatest: () => void
   /** The unsaved-changes dialog: rendered once, by the action bar. */
   readonly guardDialog: ReactNode
+  /** This canvas's last save, as it landed (a new object per save; null until one): "Revise from comments" reads it. */
+  readonly lastSaved: SavedVersion | null
+  /**
+   * The canvas's generation (see the module's doc): it moves whenever the draft is replaced without a save (Discard,
+   * Load the latest, an approved edit's reload, following another version); a save keeps it. "Revise from comments"
+   * puts its accepted changes back to pending when it moves.
+   */
+  readonly generation: number
+  /**
+   * "Revise from comments" says how to tell whether a saved text keeps changes the person accepted from its proposal
+   * (null: it holds none): a PR/FAQ / PRD save whose text does is recorded as a revise (`edit_kind: 'revise'`, D4);
+   * otherwise as a plain edit.
+   */
+  readonly markRevised: (revised: ((content: string) => boolean) | null) => void
+}
+
+/** A save of this canvas: the version it stored and the text it sent. */
+interface SavedVersion {
+  readonly document: ProjectDocument
+  readonly content: string
 }
 
 interface Baseline {
@@ -187,6 +208,7 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
   const currentText = useCallback(() => handleRef.current?.getMarkdown() ?? held.current.draft, [])
 
   const toSelect = useRef<ToSelect | null>(null)
+  const [lastSaved, setLastSaved] = useState<SavedVersion | null>(null)
   // The post-save selection of a version while the canvas still holds newer text: the guard lets it through.
   const [passing, setPassing] = useState(false)
 
@@ -236,14 +258,23 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
     if (text !== baseline.content) handle.setMarkdown(baseline.content)
   }, [baseline, editable, setBaseline, setDraft, setTitle])
 
+  // A save that landed: the canvas moves on to it, and `lastSaved` says so (what the save sent, the version it made).
+  const adoptSaved = useCallback((saved: ProjectDocument, sent: DocumentEdits) => {
+    adopt(saved, sent)
+    setLastSaved({ document: saved, content: sent.content })
+  }, [adopt])
   const edits = useCallback(() => ({ title: held.current.title, content: currentText() }), [currentText])
   // Read through the ref: a save that waited for another is made on the version that one stored.
   const stored = useCallback(() => held.current.baseline.stored, [])
   const generation = useCallback(() => held.current.baseline.generation, [])
+  // Asked of the text a save sends: set by "Revise from comments" while it holds accepted changes.
+  const revisedRef = useRef<((content: string) => boolean) | null>(null)
+  const markRevised = useCallback((revised: ((content: string) => boolean) | null) => { revisedRef.current = revised }, [])
+  const revised = useCallback((content: string) => revisedRef.current?.(content) === true, [])
   const update = useUpdateDocument(project.project_id)
   const { save: saveChecked, saveAnyway: saveUnchecked, conflict, loadLatest, loading, clearConflict } = useDocumentSave({
-    projectId: project.project_id, stored, edits, generation, updateDoc: update.mutateAsync,
-    onSaved: adopt,
+    projectId: project.project_id, stored, edits, generation, revised, updateDoc: update.mutateAsync,
+    onSaved: adoptSaved,
     onLoaded: (latest) => { if (latest !== undefined) adopt(latest, null) },
   })
 
@@ -292,8 +323,10 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
     handleRef.current?.setMarkdown(next.content)
   }, [clearConflict, document, setBaseline, setDraft, setTitle])
 
+  // Entering or leaving the focus view keeps this page and its draft: never a leave.
   const shouldBlock = useCallback(
-    (current: Location, next: Location) => dirtyRef.current && pathOrQueryChanged(current, next),
+    (current: Location, next: Location) =>
+      dirtyRef.current && pathOrQueryChanged(current, next) && !onlyFocusViewChanged(current, next),
     [],
   )
   const guard = useUnsavedChangesGuard({
@@ -339,5 +372,8 @@ export function useCanvasDocument({ project, document, onSelectDoc }: CanvasDocu
     selectDoc: onSelectDoc,
     reloadLatest,
     guardDialog: guard.dialog,
+    lastSaved,
+    generation: baseline.generation,
+    markRevised,
   }
 }

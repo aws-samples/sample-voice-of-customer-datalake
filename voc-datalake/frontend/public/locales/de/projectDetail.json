@@ -55,6 +55,7 @@
       "label": "v{{n}}",
       "current": "Aktuell",
       "edited": "Bearbeitet",
+      "revised": "Anhand der Kommentare überarbeitet",
       "restoredFrom": "Wiederhergestellt aus v{{n}}",
       "open": "Öffnen",
       "openNamed": "{{label}} öffnen",
@@ -770,6 +771,87 @@
         "unsaved": "Ungespeicherte Änderungen"
       },
       "toolbarLabel": "Dokumentaktionen"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "Beantwortet durch eine Version, die die KI überarbeitet hat",
+        "user": "Beantwortet durch eine Version, die aus den vorgeschlagenen Änderungen gespeichert wurde"
+      },
+      "addressedIn": "Umgesetzt in v{{version}}",
+      "applied": {
+        "banner_one": "Anhand von {{count, number}} Kommentar überarbeitet als v{{version}}",
+        "banner_other": "Anhand von {{count, number}} Kommentaren überarbeitet als v{{version}}",
+        "reviewAgain": "Erneut prüfen lassen",
+        "status": "Ihre Arbeitsweise lässt die KI schreiben: Sie hat die Überarbeitung als neue Version gespeichert. Rückgängig stellt die vorherige wieder her.",
+        "undo": "Rückgängig",
+        "undoAnyway": "Trotzdem rückgängig machen",
+        "undoFailed": "Die vorherige Version konnte nicht wiederhergestellt werden. Stellen Sie sie über den Verlauf wieder her.",
+        "undoKeep": "Behalten",
+        "undoNewer": "v{{version}} wurde nach dieser Überarbeitung gespeichert. Rückgängig stellt die Version wieder her, von der die Überarbeitung ausging, und entfernt damit auch die seither gespeicherten Änderungen.",
+        "undoing": "Die vorherige Version wird wiederhergestellt…",
+        "undone": "Rückgängig gemacht: Die vorherige Version ist als neue Version wiederhergestellt."
+      },
+      "button": "Anhand der Kommentare überarbeiten",
+      "close": "Schließen",
+      "failed": "Die Überarbeitung anhand der Kommentare ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "filterAddressed": "Umgesetzt",
+      "hint": "Schlägt Änderungen an den Stellen vor, um die es in beantworteten oder gelösten Kommentaren geht, auf Grundlage der Kommentare und der Belege des Dokuments",
+      "noThreads": "Antworten Sie zuerst auf einen Kommentar oder lösen Sie ihn.",
+      "saveFirst": "Speichern oder verwerfen Sie zuerst die übernommenen Änderungen.",
+      "proposal": {
+        "accept": "Annehmen",
+        "acceptAll": "Alle annehmen",
+        "acceptNamed": "Änderung {{position}} annehmen",
+        "added": "Hinzugefügt",
+        "answers": "Beantwortet:",
+        "change": "Änderung {{position}}",
+        "deleted": "(die Stelle wird entfernt)",
+        "dropped_one": "{{count, number}} Vorschlag wurde weggelassen: Seine Stelle steht nicht im Text.",
+        "dropped_other": "{{count, number}} Vorschläge wurden weggelassen: Ihre Stellen stehen nicht im Text.",
+        "intro": "Nehmen Sie jede Änderung an oder lehnen Sie sie ab. Angenommene Änderungen kommen in Ihren Entwurf; Speichern macht daraus eine neue Version.",
+        "listLabel": "Vorgeschlagene Änderungen",
+        "markFailed": "Gespeichert, aber die Kommentare konnten nicht als umgesetzt markiert werden. Bitte versuchen Sie es später erneut.",
+        "marked_one": "Gespeichert: {{count, number}} Kommentar ist als umgesetzt in v{{version}} markiert.",
+        "marked_other": "Gespeichert: {{count, number}} Kommentare sind als umgesetzt in v{{version}} markiert.",
+        "none": "Aus diesen Kommentaren ließ sich keine Änderung vorschlagen. Die Empfehlungen sagen, was stattdessen zu tun ist.",
+        "reject": "Ablehnen",
+        "rejectAll": "Alle ablehnen",
+        "rejectNamed": "Änderung {{position}} ablehnen",
+        "removed": "Entfernt",
+        "saveNote": "Angenommene Änderungen sind in Ihrem Entwurf. Speichern Sie, um daraus eine neue Version zu machen.",
+        "state": {
+          "accepted": "Angenommen",
+          "addressed": "Gespeichert",
+          "outOfDate": "Veraltet: Die Stelle hat sich geändert",
+          "rejected": "Abgelehnt"
+        },
+        "status_one": "{{count, number}} Änderung vorgeschlagen.",
+        "status_other": "{{count, number}} Änderungen vorgeschlagen.",
+        "title": "Vorgeschlagene Änderungen"
+      },
+      "recommendations": {
+        "listLabel": "Empfehlungen",
+        "status_one": "{{count, number}} Empfehlung. Am Dokument wurde nichts geändert.",
+        "status_other": "{{count, number}} Empfehlungen. Am Dokument wurde nichts geändert.",
+        "title": "Empfehlungen aus den Kommentaren",
+        "why": "Ihre Arbeitsweise mit KI sieht nur Empfehlungen vor: Die KI schreibt dieses Dokument nicht für Sie."
+      },
+      "reviewAgain": "Personas erneut prüfen lassen",
+      "running": "Wird anhand der Kommentare überarbeitet…",
+      "showThread": "Kommentar anzeigen: {{label}}",
+      "threadGone": "(Kommentar gelöscht)"
+    },
+    "focus": {
+      "announce": "Vollbild. Mit Escape verlassen.",
+      "button": "Vollbild",
+      "hint": "Vollbild (Strg+Umschalt+F oder ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "Offene Kommentare",
+      "includeComments": "Offene Kommentare einbeziehen",
+      "saved": "Gespeichert",
+      "trigger": "Datei",
+      "wholeDocument": "Zum ganzen Dokument"
     }
   }
 }

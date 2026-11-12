@@ -17,7 +17,7 @@ import path from 'node:path'
 import { expect, type Locator, type Page, type Response } from '@playwright/test'
 import { test } from '../lib/test'
 import { saveSession } from '../lib/context'
-import { CANVAS_TEXT, barButton, canvasOf, caretAtEnd, clickSave, saveStatus } from '../lib/canvas'
+import { CANVAS_TEXT, canvasOf, caretAtEnd, clickSave, fileMenuItem, saveStatus } from '../lib/canvas'
 import { dialogNamed } from '../lib/dialogs'
 import { apiCall, listOf, stringField } from '../lib/api'
 import { askAssistant, type AssistantTurn } from '../lib/assistant'
@@ -163,7 +163,7 @@ const historyDialog = (page: Page): Locator => dialogNamed(page, DIALOG.versions
 
 /** Opens the selected document's History (unless open) and waits for its rows. */
 async function openVersions(page: Page): Promise<void> {
-  if (await historyDialog(page).count() === 0) await barButton(page, 'History').click()
+  if (await historyDialog(page).count() === 0) await (await fileMenuItem(page, 'History')).click()
   await expect(historyDialog(page).getByRole('button', { name: OPEN_VERSION }).first()).toBeVisible({ timeout: 20_000 })
 }
 
@@ -817,7 +817,7 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
       await openTab(page, 'documents')
       await docButton(page, title, 'prd').click()
       for (const [item, ext] of [['Download as Markdown', 'md'], ['Download as TXT', 'txt']] as const) {
-        await page.getByRole('button', { name: 'Download options' }).first().click()
+        await page.getByRole('button', { name: 'File', exact: true }).first().click()
         const download = page.waitForEvent('download')
         await page.getByRole('menuitem', { name: item }).or(page.getByRole('button', { name: item })).first().click()
         const file = await download
@@ -838,7 +838,7 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
           }
         }).observe(document.body, { childList: true })
       })
-      await page.getByRole('button', { name: 'Download options' }).first().click()
+      await page.getByRole('button', { name: 'File', exact: true }).first().click()
       // 5.35 relabel: the PDF export opens the browser's print dialog, so it says so.
       const pdfItem = 'Print or save as PDF'
       await page.getByRole('menuitem', { name: pdfItem }).or(page.getByRole('button', { name: pdfItem })).first().click()

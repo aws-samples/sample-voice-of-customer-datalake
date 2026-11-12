@@ -21,6 +21,8 @@ Live testing with Cowork / Copilot / Amazon Quick / Kiro needs a deployment
 """
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from global_mcp_world import ALPHA, ALPHA_DOC, BETA, GAMMA, global_mcp_world, tool_payload
 
@@ -206,6 +208,37 @@ class TestProjectScopedToken:
         assert world.projects.get_item(
             Key={'pk': f'PROJECT#{ALPHA}', 'sk': f"DOC#{created['document']['document_id']}"},
         ).get('Item')
+
+    def test_marks_comments_addressed_through_generate_revise_in_its_project_only(self, world):
+        from shared import document_comments, document_series
+
+        prd = {'pk': f'PROJECT#{ALPHA}', 'sk': 'PRD#prd_a1', 'document_id': 'prd_a1', 'document_type': 'prd',
+               'version': 1, 'title': 'Refunds (v1)', 'base_title': 'Refunds', 'content': 'Refund in 3 days.'}
+        world.projects.put_item(Item=prd)
+        series = document_series.series_of(ALPHA, prd)['series_id']
+        thread = document_comments.thread_item(project_id=ALPHA, series_id=series, document=prd,
+                                               author=document_comments.user_author('s', 'Ann'), text='Faster?',
+                                               anchor=None)
+        document_comments.put_thread(world.projects, thread)
+        client = _connected(world, world.mint('alice', scope='write', project_id=ALPHA))
+        args = {'step': 'revise', 'document_id': 'prd_a1', 'thread_ids': [thread['comment_id']],
+                'mark_addressed': True}
+
+        with patch('shared.document_review_routes.get_projects_table', return_value=world.projects):
+            is_error, marked = tool_payload(client.call('generate', args))
+            assert not is_error, marked
+            assert marked['threads'][0]['addressed'] == {
+                'version': 1, 'at': marked['threads'][0]['addressed']['at'], 'by_kind': 'ai'}
+            is_error, cleared = tool_payload(client.call('generate', {**args, 'mark_addressed': False}))
+            assert not is_error, cleared
+            assert cleared['threads'][0]['addressed'] is None
+            # The tool passes thread_ids through: the route's 400 is the tool's error.
+            is_error, refused = tool_payload(client.call('generate', {**args, 'thread_ids': ['not a comment id']}))
+            assert is_error
+            assert 'thread_ids must be a list of 1 to 50 comment ids' in refused
+        is_error, message = tool_payload(client.call('generate', {**args, 'project_id': GAMMA}))
+        assert is_error
+        assert f'scoped to project {ALPHA}' in message
 
     def test_cannot_be_minted_for_a_project_the_minter_cannot_see(self, world):
         status, body = world.tokens_api('alice', 'POST', '/connect/tokens',

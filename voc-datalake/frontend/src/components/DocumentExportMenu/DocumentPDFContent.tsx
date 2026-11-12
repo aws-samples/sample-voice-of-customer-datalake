@@ -5,12 +5,24 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import type { CommentThread } from '../../api/documentReviewSchema'
 import type { ProjectDocument } from '../../api/types'
 import { documentText } from './documentText'
 import { PDF_REPORT_LOCALE } from '../PdfParts/pdfParts'
 import { formatDate } from '../../utils/dateUtils'
 
-interface DocumentPDFContentProps { readonly document: ProjectDocument }
+/** The open comment threads printed after the text ("Include comments"), with their translated labels. */
+interface PdfComments {
+  readonly heading: string
+  /** Shown in place of the quote for a thread on the whole document. */
+  readonly wholeDocument: string
+  readonly threads: readonly CommentThread[]
+}
+
+interface DocumentPDFContentProps {
+  readonly document: ProjectDocument
+  readonly comments?: PdfComments | null
+}
 
 interface MarkdownComponentProps { readonly children?: React.ReactNode }
 
@@ -149,7 +161,47 @@ const markdownComponents = {
   ),
 }
 
-export default function DocumentPDFContent({ document: doc }: DocumentPDFContentProps) {
+const COMMENT_LINE_STYLE = { marginTop: '4px', marginBottom: '4px', color: '#19161d', fontSize: '12px' } as const
+
+/** One line of a thread: its author (when named) and the text. */
+function CommentLine({ name, text, reply = false }: Readonly<{ name: string; text: string; reply?: boolean }>) {
+  return (
+    <p style={reply ? { ...COMMENT_LINE_STYLE, paddingLeft: '16px', color: '#4a464f' } : COMMENT_LINE_STYLE}>
+      {name === '' ? null : <strong style={{ fontWeight: '600' }}>{name}: </strong>}
+      {text}
+    </p>
+  )
+}
+
+/** The open threads, each with the passage it is about (its quote), the comment and the replies. */
+function PdfCommentsSection({ comments }: Readonly<{ comments: PdfComments }>) {
+  if (comments.threads.length === 0) return null
+  return (
+    <section aria-label={comments.heading} style={{ marginTop: '32px', borderTop: '2px solid #e4e4e7', paddingTop: '16px' }}>
+      <h2 style={{ fontSize: '17px', fontWeight: '600', color: '#19161d', marginBottom: '8px' }}>{comments.heading}</h2>
+      {comments.threads.map((thread) => (
+        <div key={thread.comment_id} data-pdf-section="" style={{ marginBottom: '16px' }}>
+          <blockquote style={{ borderLeft: '4px solid #d7bfff', paddingLeft: '12px', color: '#4a464f', margin: '0 0 6px 0', fontSize: '12px' }}>
+            {thread.anchor?.exact ?? comments.wholeDocument}
+          </blockquote>
+          <CommentLine name={thread.author.name} text={thread.text} />
+          {thread.replies.map((reply) => <CommentLine key={reply.reply_id} name={reply.author.name} text={reply.text} reply />)}
+        </div>
+      ))}
+    </section>
+  )
+}
+
+/** The document's text as printed: its Markdown, rendered. */
+export function DocumentBody({ document: doc }: Readonly<{ document: Pick<ProjectDocument, 'content'> }>) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      {documentText(doc)}
+    </ReactMarkdown>
+  )
+}
+
+export default function DocumentPDFContent({ document: doc, comments = null }: DocumentPDFContentProps) {
   return (
     <div style={{
       padding: '40px',
@@ -181,10 +233,9 @@ export default function DocumentPDFContent({ document: doc }: DocumentPDFContent
         lineHeight: '1.7',
         color: '#19161d',
       }}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-          {documentText(doc)}
-        </ReactMarkdown>
+        <DocumentBody document={doc} />
       </div>
+      {comments === null ? null : <PdfCommentsSection comments={comments} />}
     </div>
   )
 }

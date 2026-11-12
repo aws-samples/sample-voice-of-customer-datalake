@@ -31,7 +31,7 @@ import type { ProjectDocument } from '../../../api/types'
 import type { CanvasEditorProps } from '../editor/CanvasEditor'
 
 const api = vi.hoisted(() => ({
-  updateDocument: vi.fn<(projectId: string, documentId: string, body: Record<string, unknown>) => Promise<unknown>>(),
+  updateDocument: vi.fn<(projectId: string, documentId: string, body: Record<string, unknown>, editKind?: string) => Promise<unknown>>(),
   getProject: vi.fn<(projectId: string) => Promise<unknown>>(),
 }))
 vi.mock('../../../api/projectsApi', () => ({ projectsApi: api }))
@@ -58,9 +58,13 @@ function Harness({ document, onSelectDoc, canvasProject = project, Editor = Fake
         onChange={state.onChange} handleRef={state.handleRef} />
       <input aria-label="title" value={state.title} onChange={(event) => state.setTitle(event.target.value)} />
       <p data-testid="dirty">{String(state.dirty)}</p>
+      <p data-testid="last-saved">{state.lastSaved === null ? 'none' : `${state.lastSaved.document.document_id}:${state.lastSaved.content}`}</p>
+      <p data-testid="generation">{state.generation}</p>
       <p data-testid="editable">{`${String(state.editable)}/${String(state.titleEditable)}`}</p>
       <button type="button" onClick={() => { state.save().catch(ignoreRejection) }}>save</button>
       <button type="button" onClick={state.discard}>discard</button>
+      <button type="button" onClick={() => state.markRevised(() => true)}>revised</button>
+      <button type="button" onClick={() => state.markRevised(null)}>not revised</button>
       {state.conflict === null ? null : (
         <>
           <button type="button" onClick={() => { void state.conflict?.onLoadLatest() }}>load latest</button>
@@ -98,6 +102,23 @@ async function dirtyWithNewer(content: string) {
   return { ...mounted, latest }
 }
 
+/** dirtyWithNewer, then Save: the PUT answers 409 (the conflict is on screen). */
+async function saveIntoConflict(content: string) {
+  api.updateDocument.mockRejectedValue(new ApiError(409, 'stale'))
+  const mounted = await dirtyWithNewer(content)
+  await mounted.user.click(screen.getByRole('button', { name: 'save' }))
+  return mounted
+}
+
+/** A save into a 409 (the server holds "theirs"), then Load the latest: the canvas is on "theirs". */
+async function loadLatestAfterConflict(onConflict?: () => void) {
+  const mounted = await saveIntoConflict('theirs')
+  onConflict?.()
+  await mounted.user.click(await screen.findByRole('button', { name: 'load latest' }))
+  await waitFor(() => expect(canvas()).toHaveValue('theirs'))
+  return mounted
+}
+
 /** The first save's (project, document, body), with the fresh edit id reduced to its type. */
 function firstSave(): unknown {
   const call = api.updateDocument.mock.calls[0]
@@ -132,6 +153,72 @@ describe('useCanvasDocument', () => {
     expect(screen.getByTestId('dirty')).toHaveTextContent('false')
   })
 
+  /** The PRD typed on ("!") and saved; resolves once the save landed (lastSaved). */
+  async function savePrdEdit() {
+    putStores(prd)
+    const mounted = mount(prd)
+    expect(screen.getByTestId('last-saved')).toHaveTextContent('none')
+    await mounted.user.type(canvas(), '!')
+    await mounted.user.click(screen.getByRole('button', { name: 'save' }))
+    await waitFor(() => expect(screen.getByTestId('last-saved')).toHaveTextContent('prd-2:# PRD!'))
+    return mounted
+  }
+
+  it('says what its last save stored and sent (lastSaved: "Revise from comments" marks threads by it), none before one', async () => {
+    expect((await savePrdEdit()).onSelectDoc).toHaveBeenCalledExactlyOnceWith({ ...prd, content: '# PRD!', revision: 1 })
+  })
+
+  const generation = () => screen.getByTestId('generation').textContent
+
+  it('its generation stays on a save, and moves on Discard (the draft replaced without a save)', async () => {
+    const { user } = await savePrdEdit()
+    expect(generation(), 'a save keeps it').toBe('0')
+
+    await user.type(canvas(), '?')
+    await user.click(screen.getByRole('button', { name: 'discard' }))
+    expect(generation(), 'Discard').toBe('1')
+  })
+
+  it('its generation moves on Load the latest after a 409', async () => {
+    await loadLatestAfterConflict(() => expect(generation(), 'the 409 keeps it').toBe('0'))
+
+    expect(generation()).toBe('1')
+  })
+
+  // markRevised is "Revise from comments" saying its accepted changes are (or are no longer) in the draft.
+  describe('a save holding changes accepted from "Revise from comments" (markRevised)', () => {
+    const editKinds = () => api.updateDocument.mock.calls.map((call) => call[3] ?? 'none')
+    /** `document` typed on, marked revised, then saved. */
+    async function saveRevised(document: ProjectDocument) {
+      putStores(document)
+      const { user } = mount(document)
+      await user.type(canvas(), '!')
+      await user.click(screen.getByRole('button', { name: 'revised' }))
+      await user.click(screen.getByRole('button', { name: 'save' }))
+    }
+
+    it('is recorded as a revise: the PRD\'s PUT carries edit_kind "revise"', async () => {
+      await saveRevised(prd)
+      await waitFor(() => expect(editKinds()).toStrictEqual(['revise']))
+    })
+
+    it('a plain edit, or one after the accepted changes left the draft, sends no edit_kind', async () => {
+      const { user } = await savePrdEdit()
+      await user.click(screen.getByRole('button', { name: 'revised' }))
+      await user.click(screen.getByRole('button', { name: 'not revised' }))
+      await user.type(canvas(), '?')
+
+      await user.click(screen.getByRole('button', { name: 'save' }))
+
+      await waitFor(() => expect(editKinds()).toStrictEqual(['none', 'none']))
+    })
+
+    it('never on a research / custom document (only a PR/FAQ / PRD is revised from comments)', async () => {
+      await saveRevised(custom)
+      await waitFor(() => expect(editKinds()).toStrictEqual(['none']))
+    })
+  })
+
   it('never sends a PRD title (its series owns it), and the title is not editable', async () => {
     putStores(prd)
     const { user } = mount(prd)
@@ -150,12 +237,8 @@ describe('useCanvasDocument', () => {
   })
 
   it('a 409 offers Load the latest, which reloads the editor on the newest version and selects it', async () => {
-    api.updateDocument.mockRejectedValue(new ApiError(409, 'stale'))
-    const { user, onSelectDoc, latest } = await dirtyWithNewer('theirs')
-    await user.click(screen.getByRole('button', { name: 'save' }))
-    await user.click(await screen.findByRole('button', { name: 'load latest' }))
+    const { onSelectDoc, latest } = await loadLatestAfterConflict()
 
-    await waitFor(() => expect(canvas()).toHaveValue('theirs'))
     expect(onSelectDoc).toHaveBeenCalledWith(latest)
     expect(screen.getByTestId('dirty')).toHaveTextContent('false')
   })

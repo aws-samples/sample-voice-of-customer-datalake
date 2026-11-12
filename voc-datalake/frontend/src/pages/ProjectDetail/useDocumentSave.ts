@@ -40,6 +40,11 @@ interface DocumentSaveDeps {
    * answer (the version, a 409 or an error) changes nothing there; the version it stored is in the history.
    */
   readonly generation: () => number
+  /**
+   * Asked of the text a save sends: it keeps changes accepted from "Revise from comments". A PR/FAQ / PRD save (the
+   * only documents it revises) is then recorded as a revise (`edit_kind: 'revise'`, D4); absent or false, a plain edit.
+   */
+  readonly revised?: (content: string) => boolean
   readonly updateDoc: (variables: DocumentUpdate) => Promise<{ readonly document: ProjectDocument | null }>
   /** The version just saved (a PRD / PR/FAQ version has a new id), and the edits the save sent. */
   readonly onSaved: (saved: ProjectDocument, sent: DocumentEdits) => void
@@ -66,8 +71,24 @@ export interface DocumentSave {
   readonly clearConflict: () => void
 }
 
+/**
+ * The PUT's variables for `sent` over `document`: the revision check when `checked`; the title only for a research /
+ * custom document (a PRD / PR/FAQ title is the series' own); `revised` only for a PRD / PR/FAQ (the only documents
+ * "Revise from comments" works on).
+ */
+function updateOf(document: ProjectDocument, sent: DocumentEdits, checked: boolean, revised: boolean): DocumentUpdate {
+  const versionManaged = isVersionManagedDocument(document)
+  return {
+    docId: document.document_id,
+    ...(versionManaged ? {} : { title: sent.title }),
+    content: sent.content,
+    ...(checked ? { expectedRevision: documentRevision(document) } : {}),
+    ...(versionManaged && revised ? { editKind: 'revise' as const } : {}),
+  }
+}
+
 export function useDocumentSave({
-  projectId, stored, edits, generation, updateDoc, onSaved, onLoaded,
+  projectId, stored, edits, generation, revised, updateDoc, onSaved, onLoaded,
 }: DocumentSaveDeps): DocumentSave {
   const queryClient = useQueryClient()
   const [conflict, setConflict] = useState(false)
@@ -87,15 +108,8 @@ export function useDocumentSave({
     const current = () => generation() === sentOn
     const sent = edits()
     const document = stored()
-    // A PRD / PR/FAQ title is the series' own; only research / custom titles change.
-    const sentTitle = isVersionManagedDocument(document) ? undefined : sent.title
     try {
-      const result = await updateDoc({
-        docId: document.document_id,
-        ...(sentTitle === undefined ? {} : { title: sentTitle }),
-        content: sent.content,
-        ...(checked ? { expectedRevision: documentRevision(document) } : {}),
-      })
+      const result = await updateDoc(updateOf(document, sent, checked, revised?.(sent.content) === true))
       if (!current()) return
       setConflict(false)
       // Every edit is a new version: show the one just saved (the edited one stays in Versions). An answer without
@@ -110,7 +124,7 @@ export function useDocumentSave({
       if (checked && apiErrorStatus(error) === HTTP_CONFLICT) setConflict(true)
       throw error
     }
-  }, [edits, fetchLatest, generation, onSaved, stored, updateDoc])
+  }, [edits, fetchLatest, generation, onSaved, revised, stored, updateDoc])
 
   const save = useCallback(() => update(true), [update])
 

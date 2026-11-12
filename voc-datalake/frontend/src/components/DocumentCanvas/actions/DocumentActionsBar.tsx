@@ -1,55 +1,37 @@
 /**
- * @fileoverview The document page's action bar: the save status, Discard and Save,
- * Share (PR/FAQ and PRD), Export, History and Delete, then the stale-save conflict.
+ * @fileoverview The document page's action bar: the save status, Discard and Save, "Full screen" (the focus view) and
+ * the "File" menu (DocumentMenu: Save, Share, every export, History, Delete), then the stale-save conflict.
  *
- * A viewer sees the status, Export and History only: every other control would 403.
- * Export always exports the SAVED version (what the link, the review page and the
- * assistant read); while the canvas holds unsaved changes the menu says so. On a
- * phone the bar wraps, and while there is something to save, Discard and Save sit in
- * a bar fixed to the bottom of the screen, registered as the bottom safe area
+ * A viewer sees the status, Full screen and the menu with the exports and History only: every other control would
+ * 403. Export always exports the SAVED version (what the link, the review page and the assistant read); while the
+ * canvas holds unsaved changes the menu says so. On a phone the bar wraps, and while there is something to save,
+ * Discard and Save sit in a bar fixed to the bottom of the screen, registered as the bottom safe area
  * (components/StickyActionBar/actionBarRegistry) so the assistant launcher lifts above it.
  *
  * @module components/DocumentCanvas/actions/DocumentActionsBar
  */
 import clsx from 'clsx'
-import { History, Loader2, Save, Share2, Undo2 } from 'lucide-react'
-import { useId, useRef, useState } from 'react'
+import { Loader2, Maximize2, Minimize2, Save, Undo2 } from 'lucide-react'
+import { useRef } from 'react'
+import type { RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNow } from '../../../hooks/useNow'
-import DialogClose from '../../DialogClose/DialogClose'
-import DocumentExportMenu from '../../DocumentExportMenu/DocumentExportMenu'
-import ModalShell from '../../ModalShell/ModalShell'
 import { useRegisterActionBar } from '../../StickyActionBar/actionBarRegistry'
 import { isVersionManagedDocument } from '../../../api/documentLineage'
 import { ConflictBanner } from './ConflictBanner'
-import DeleteDocumentButton from './DeleteDocumentButton'
-import { isEditedElsewhere } from './documentKinds'
-import DocumentVersions from '../../../pages/ProjectDetail/DocumentVersions'
-import ShareForReviewDialog from '../../../pages/ProjectDetail/ShareForReviewDialog'
+import DocumentMenu from './DocumentMenu'
 import { saveIgnoringFailure } from '../../UnsavedChangesGuard/useSnapshotGuard'
 import { formatRelativeDate } from '../../../utils/dateUtils'
+import type { DocumentMenuProps } from './DocumentMenu'
 import type { CanvasDocument } from './useCanvasDocument'
-import type { ShareSettings } from '../../../api/documentReviewApi'
-import type { ReviewShare } from '../../../api/documentReviewSchema'
-import type { Project } from '../../../api/projectTypes'
+import type { FocusViewControls } from '../page/useFocusView'
 import type { ProjectDocument } from '../../../api/types'
 
-/** The review link's state and its two writes (the comments hook's own fields: pass it as is). */
-interface DocumentShareControls {
-  readonly share: ReviewShare | null
-  readonly createShare: (settings: ShareSettings) => Promise<unknown>
-  readonly revokeShare: () => Promise<unknown>
-}
-
-interface DocumentActionsBarProps {
-  readonly project: Project
-  readonly document: ProjectDocument
-  readonly canEdit: boolean
-  readonly state: CanvasDocument
-  /** Null for a document type without comments (only a PR/FAQ or PRD has a review link), or while they load. */
-  readonly share: DocumentShareControls | null
-  readonly onDeleteDoc: () => void
-  readonly isDeleting: boolean
+interface DocumentActionsBarProps extends DocumentMenuProps {
+  /** The page's focus view ("Full screen"). */
+  readonly focus: FocusViewControls
+  /** The "Full screen" button: the page puts focus back on it when the focus view closes. */
+  readonly focusButtonRef: RefObject<HTMLButtonElement | null>
 }
 
 /** The stored version's number: a PRD / PR/FAQ series version, or a research / custom edit count. */
@@ -100,60 +82,24 @@ function SaveButtons({ state }: Readonly<{ state: CanvasDocument }>) {
   )
 }
 
-function ExportSaved({ project, document, dirty }: Readonly<{ project: Project; document: ProjectDocument; dirty: boolean }>) {
-  const { t } = useTranslation('projectDetail')
-  const hintId = useId()
-  if (!dirty) return <DocumentExportMenu document={document} project={project} />
-  return (
-    <span title={t('canvas.actions.exportSavedHint')} aria-describedby={hintId} className="inline-flex">
-      <DocumentExportMenu document={document} project={project} />
-      <span id={hintId} className="sr-only">{t('canvas.actions.exportSavedHint')}</span>
-    </span>
-  )
-}
-
-function HistoryDialog({ project, document, canEdit, state, onClose }: Readonly<{
-  project: Project; document: ProjectDocument; canEdit: boolean; state: CanvasDocument; onClose: () => void
+/** "Full screen": a toggle button (its name stays, `aria-pressed` says whether the focus view is on). */
+function FocusButton({ active, onToggle, buttonRef }: Readonly<{
+  active: boolean; onToggle: () => void; buttonRef: RefObject<HTMLButtonElement | null>
 }>) {
   const { t } = useTranslation('projectDetail')
-  const headingId = useId()
+  const Icon = active ? Minimize2 : Maximize2
   return (
-    <ModalShell isOpen onClose={onClose} ariaLabelledBy={headingId} panelClassName="w-full max-w-2xl">
-      <div className="dialog-header justify-between">
-        <h2 id={headingId} className="dialog-title">{t('documents.versions.title')}</h2>
-        <DialogClose onClick={onClose} />
-      </div>
-      <div className="dialog-body max-h-[70vh] space-y-2 overflow-y-auto">
-        <p className="text-[12px] text-muted">{t('documents.versions.hint')}</p>
-        <DocumentVersions key={document.document_id} projectId={project.project_id} document={document} canEdit={canEdit}
-          // A restore is a new version: close, and let the canvas reload on it.
-          onSelectDoc={(restored) => { onClose(); state.selectDoc(restored) }} />
-      </div>
-    </ModalShell>
+    <button ref={buttonRef} type="button" className="icon-btn p-2 rounded-lg" aria-pressed={active}
+      aria-label={t('canvas.focus.button')} title={t('canvas.focus.hint')} aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
+      onClick={onToggle} data-testid="canvas-focus-button">
+      <Icon size={16} aria-hidden="true" />
+    </button>
   )
 }
 
-function ShareButton({ share }: Readonly<{ share: DocumentShareControls }>) {
-  const { t } = useTranslation('components')
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(true)}>
-        <Share2 size={14} aria-hidden="true" />{share.share === null ? t('reviewShare.open') : t('reviewShare.openActive')}
-      </button>
-      {open ? (
-        <ShareForReviewDialog share={share.share} onCreate={share.createShare} onRevoke={share.revokeShare}
-          onClose={() => setOpen(false)} />
-      ) : null}
-    </>
-  )
-}
-
-export default function DocumentActionsBar({
-  project, document, canEdit, state, share, onDeleteDoc, isDeleting,
-}: DocumentActionsBarProps) {
+export default function DocumentActionsBar({ focus, focusButtonRef, ...menu }: DocumentActionsBarProps) {
   const { t } = useTranslation('projectDetail')
-  const [history, setHistory] = useState(false)
+  const { document, state } = menu
   return (
     <div className="space-y-2">
       <div role="group" aria-label={t('canvas.actions.toolbarLabel')} data-testid="document-actions-bar"
@@ -161,19 +107,10 @@ export default function DocumentActionsBar({
         <SaveStatus document={document} state={state} />
         {/* The canvas's own rule: an editor of the project, a document edited on its canvas. */}
         {state.editable ? <SaveButtons state={state} /> : null}
-        {canEdit && share !== null ? <ShareButton share={share} /> : null}
-        <ExportSaved project={project} document={document} dirty={state.dirty} />
-        {isEditedElsewhere(document.document_type) ? null : (
-          <button type="button" className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setHistory(true)}>
-            <History size={14} aria-hidden="true" />{t('canvas.actions.history')}
-          </button>
-        )}
-        {canEdit ? <DeleteDocumentButton isDeleting={isDeleting} onDeleteDoc={onDeleteDoc} /> : null}
+        <FocusButton active={focus.active} onToggle={focus.toggle} buttonRef={focusButtonRef} />
+        <DocumentMenu {...menu} />
       </div>
       {state.conflict === null ? null : <ConflictBanner conflict={state.conflict} />}
-      {history ? (
-        <HistoryDialog project={project} document={document} canEdit={canEdit} state={state} onClose={() => setHistory(false)} />
-      ) : null}
       {state.guardDialog}
     </div>
   )

@@ -1491,6 +1491,17 @@ def _counter_moved(table, key: dict[str, str], observed: int | None) -> bool:
 STALE_SERIES_MESSAGE = 'The document was changed by someone else; reload it and try again'
 
 
+def series_head_version(table, project_id: str, document_type: str, requested_title: str) -> int:
+    """The series' head as ``persist_versioned_document`` judges ``expected_last_version`` against it: its
+    counter, or every version in use past it (0 for a series with none)."""
+    requested_base, _ = split_versioned_title(requested_title)
+    normalized = normalized_base_title(requested_base, document_type)
+    _, high_water = _series_state(_query_project_documents(table, project_id), document_type, normalized, requested_base)
+    counter = _get_item(table, _counter_key(project_id, document_type, normalized))
+    observed = _positive_int(counter.get('last_version')) if counter else None
+    return high_water if observed is None else max(observed, high_water)
+
+
 def _require_expected_version(expected: int | None, current: int) -> None:
     """A ConflictError when the caller loaded the series at another version than its head."""
     if expected is not None and expected != current:

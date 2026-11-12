@@ -60,6 +60,7 @@
       "label": "v{{n}}",
       "current": "Actuelle",
       "edited": "Modifiée",
+      "revised": "Révisée à partir des commentaires",
       "restoredFrom": "Restaurée depuis v{{n}}",
       "open": "Ouvrir",
       "openNamed": "Ouvrir {{label}}",
@@ -796,6 +797,92 @@
         "unsaved": "Modifications non enregistrées"
       },
       "toolbarLabel": "Actions du document"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "Traité par une version que l'IA a révisée",
+        "user": "Traité par une version enregistrée à partir des modifications suggérées"
+      },
+      "addressedIn": "Traité dans la v{{version}}",
+      "applied": {
+        "banner_one": "Révisé à partir de {{count, number}} commentaire en v{{version}}",
+        "banner_many": "Révisé à partir de {{count, number}} commentaires en v{{version}}",
+        "banner_other": "Révisé à partir de {{count, number}} commentaires en v{{version}}",
+        "reviewAgain": "Faire relire",
+        "status": "Votre façon de travailler laisse l'IA écrire : elle a enregistré la révision comme nouvelle version. Annuler rétablit la précédente.",
+        "undo": "Annuler",
+        "undoAnyway": "Annuler quand même",
+        "undoFailed": "La version précédente n'a pas pu être rétablie. Rétablissez-la depuis l'historique.",
+        "undoKeep": "Conserver",
+        "undoNewer": "La v{{version}} a été enregistrée après cette révision. Annuler rétablit la version dont la révision est partie : les modifications enregistrées depuis seraient aussi retirées.",
+        "undoing": "Rétablissement de la version précédente…",
+        "undone": "Annulé : la version précédente est rétablie comme nouvelle version."
+      },
+      "button": "Réviser à partir des commentaires",
+      "close": "Fermer",
+      "failed": "La révision à partir des commentaires a échoué. Veuillez réessayer.",
+      "filterAddressed": "Traités",
+      "hint": "Suggère des modifications des passages dont parlent les commentaires répondus ou résolus, à partir des commentaires et des preuves du document",
+      "noThreads": "Répondez d'abord à un commentaire ou résolvez-le.",
+      "saveFirst": "Enregistrez ou annulez d'abord les modifications acceptées.",
+      "proposal": {
+        "accept": "Accepter",
+        "acceptAll": "Tout accepter",
+        "acceptNamed": "Accepter la modification {{position}}",
+        "added": "Ajouté",
+        "answers": "Répond à :",
+        "change": "Modification {{position}}",
+        "deleted": "(le passage est supprimé)",
+        "dropped_one": "{{count, number}} suggestion a été écartée : son passage n'est pas dans le texte.",
+        "dropped_many": "{{count, number}} suggestions ont été écartées : leurs passages ne sont pas dans le texte.",
+        "dropped_other": "{{count, number}} suggestions ont été écartées : leurs passages ne sont pas dans le texte.",
+        "intro": "Acceptez ou refusez chaque modification. Les modifications acceptées vont dans votre brouillon ; Enregistrer en fait une nouvelle version.",
+        "listLabel": "Modifications suggérées",
+        "markFailed": "Enregistré, mais les commentaires n'ont pas pu être marqués comme traités. Veuillez réessayer plus tard.",
+        "marked_one": "Enregistré : {{count, number}} commentaire est marqué comme traité dans la v{{version}}.",
+        "marked_many": "Enregistré : {{count, number}} commentaires sont marqués comme traités dans la v{{version}}.",
+        "marked_other": "Enregistré : {{count, number}} commentaires sont marqués comme traités dans la v{{version}}.",
+        "none": "Aucune modification n'a pu être suggérée à partir de ces commentaires. Les recommandations disent quoi faire à la place.",
+        "reject": "Refuser",
+        "rejectAll": "Tout refuser",
+        "rejectNamed": "Refuser la modification {{position}}",
+        "removed": "Supprimé",
+        "saveNote": "Les modifications acceptées sont dans votre brouillon. Enregistrez pour en faire une nouvelle version.",
+        "state": {
+          "accepted": "Acceptée",
+          "addressed": "Enregistrée",
+          "outOfDate": "Obsolète : le passage a changé",
+          "rejected": "Refusée"
+        },
+        "status_one": "{{count, number}} modification suggérée.",
+        "status_many": "{{count, number}} modifications suggérées.",
+        "status_other": "{{count, number}} modifications suggérées.",
+        "title": "Modifications suggérées"
+      },
+      "recommendations": {
+        "listLabel": "Recommandations",
+        "status_one": "{{count, number}} recommandation. Rien n'a été modifié dans le document.",
+        "status_many": "{{count, number}} recommandations. Rien n'a été modifié dans le document.",
+        "status_other": "{{count, number}} recommandations. Rien n'a été modifié dans le document.",
+        "title": "Recommandations tirées des commentaires",
+        "why": "Votre façon de travailler avec l'IA ne demande que des recommandations : l'IA n'écrit pas ce document à votre place."
+      },
+      "reviewAgain": "Demander aux personas de relire",
+      "running": "Révision à partir des commentaires…",
+      "showThread": "Afficher le commentaire : {{label}}",
+      "threadGone": "(commentaire supprimé)"
+    },
+    "focus": {
+      "announce": "Plein écran. Appuyez sur Échap pour quitter.",
+      "button": "Plein écran",
+      "hint": "Plein écran (Ctrl+Maj+F ou ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "Commentaires ouverts",
+      "includeComments": "Inclure les commentaires ouverts",
+      "saved": "Enregistré",
+      "trigger": "Fichier",
+      "wholeDocument": "Sur l’ensemble du document"
     }
   }
 }

@@ -4257,6 +4257,28 @@
   },
   {
     "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${documentPath(projectId, documentId)}/revise-from-comments`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prd_1/revise-from-comments",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${documentPath(projectId, documentId)}/comments/addressed`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prd_1/comments/addressed",
+        "body": { "thread_ids": ["dc_00000000000000000000000000"], "addressed": true }
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
     "method": "GET",
     "call": "reviewPath(shareId)",
     "probes": [

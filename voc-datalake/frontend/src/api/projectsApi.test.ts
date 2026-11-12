@@ -220,6 +220,12 @@ describe('projectsApi', () => {
       ['updateDocument sends PUT request with document updates',
         () => projectsApi.updateDocument('p1', 'd1', { title: 'Updated Title', content: '# Updated Content' }),
         '/projects/p1/documents/d1', 'PUT', { title: 'Updated Title', content: '# Updated Content' }],
+      ['updateDocument sends edit_kind revise for a saved revise proposal',
+        () => projectsApi.updateDocument('p1', 'd1', { content: 'C', edit_id: 'e1' }, 'revise'),
+        '/projects/p1/documents/d1', 'PUT', { content: 'C', edit_id: 'e1', edit_kind: 'revise' }],
+      ['updateDocument sends edit_kind edit when asked',
+        () => projectsApi.updateDocument('p1', 'd1', { content: 'C' }, 'edit'),
+        '/projects/p1/documents/d1', 'PUT', { content: 'C', edit_kind: 'edit' }],
       ['deleteDocument sends DELETE request for document',
         () => projectsApi.deleteDocument('p1', 'd1'), '/projects/p1/documents/d1', 'DELETE', undefined],
     ])('%s', async (_title, call, path, method, body, response = OK) => {

@@ -43,6 +43,7 @@ from shared.document_versions import (
     normalize_document_versions,
     normalized_base_title,
     persist_versioned_document,
+    series_head_version,
     split_versioned_title,
     version_partition_key,
 )
@@ -59,6 +60,8 @@ UNMANAGED_VERSION_RE = re.compile(r'^r([1-9]\d{0,5})\Z')
 
 EDIT_KIND_EDIT = 'edit'
 EDIT_KIND_RESTORE = 'restore'
+# "Revise from comments" applied for an AI-driven person (shared/document_revision.py).
+EDIT_KIND_REVISE = 'revise'
 # One wording for both kinds of document (the managed series check lives in document_versions).
 STALE_DOCUMENT_MESSAGE = STALE_SERIES_MESSAGE
 
@@ -67,7 +70,7 @@ STALE_DOCUMENT_MESSAGE = STALE_SERIES_MESSAGE
 # (content, timestamps, edit_kind and edited_from_id are always set afresh.)
 _ROW_IDENTITY_FIELDS = frozenset({
     'pk', 'sk', 'document_id', 'title', 'base_title', 'version', 'version_allocation_id',
-    'restored_from_id', 'restored_from_version',
+    'restored_from_id', 'restored_from_version', 'edited_by',
 })
 
 
@@ -82,6 +85,20 @@ def validated_edit_id(raw: object, content: str) -> str:
     if not isinstance(raw, str) or not OPAQUE_ID_RE.fullmatch(raw):
         raise ValidationError('edit_id must be 1-64 letters, digits, "-" or "_"')
     return raw
+
+
+#: What a person's save may say it is (``PUT …/documents/{doc}`` ``edit_kind``): a plain edit, or a
+#: "Revise from comments" proposal they accepted on the canvas (D4: recorded like the applied pass).
+SAVED_EDIT_KINDS = (EDIT_KIND_EDIT, EDIT_KIND_REVISE)
+
+
+def validated_edit_kind(raw: object) -> str:
+    """``edit`` (absent) or ``revise``; anything else is a 400."""
+    if raw is None:
+        return EDIT_KIND_EDIT
+    if raw not in SAVED_EDIT_KINDS:
+        raise ValidationError('edit_kind must be "edit" or "revise"')
+    return str(raw)
 
 
 def validated_expected_revision(raw: object) -> int | None:
@@ -229,19 +246,28 @@ def _unmanaged_version_view(row: dict, revision: int, *, current: bool, created_
 # ── Public operations ────────────────────────────────────────────────────────
 
 def edit_document(table: Any, project_id: str, document: dict, body: dict, *, now: str,
-                  title: str | None = None) -> dict:
+                  title: str | None = None, edit_kind: str = EDIT_KIND_EDIT,
+                  edited_by: dict[str, str] | None = None) -> dict:
     """Apply an edit as a new version. ``title`` is the new title of an UNMANAGED document.
 
     ``body['expected_revision']`` (optional) is the revision the caller loaded; a
     document that moved on since is a ConflictError (409), never a silent overwrite.
     Checked after the no-change return: an edit that saves nothing clobbers nothing.
+
+    ``edit_kind`` ``revise`` (``validated_edit_kind``) is a person saving the "Revise from
+    comments" proposal they accepted: a PR/FAQ / PRD only, recorded like the applied pass
+    (``edit_kind`` ``revise``, ``edited_by`` the person's ``{sub, kind}``).
     """
     expected = validated_expected_revision(body.get('expected_revision'))
+    if edit_kind == EDIT_KIND_REVISE:
+        _revised_type(document)
     content = _content_of(body, document)
     new_title = title if title is not None else str(document.get('title') or '')
     if content == (document.get('content') or '') and new_title == (document.get('title') or ''):
         return {'success': True, 'unchanged': True, 'document': document}
-    provenance = {'edit_kind': EDIT_KIND_EDIT}
+    provenance: dict[str, Any] = {'edit_kind': EDIT_KIND_EDIT}
+    if edit_kind == EDIT_KIND_REVISE:
+        provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_by': dict(edited_by or {})}
     document_type = managed_document_type(document)
     if document_type is not None:
         allocation_id = f"edit:{document['document_id']}:{validated_edit_id(body.get('edit_id'), content)}"
@@ -304,6 +330,40 @@ def _restore_managed(table: Any, project_id: str, document_type: str, document: 
                                             'restored_from_id': version_id,
                                             'restored_from_version': source['version']})
     return {'success': True, 'document': item}
+
+
+def _revised_type(document: dict) -> str:
+    document_type = managed_document_type(document)
+    if document_type is None or document_type == 'prototype':
+        raise ValidationError('Only a PR/FAQ or PRD is revised from comments')
+    return document_type
+
+
+def _revise_allocation_id(document: dict, revise_id: str) -> str:
+    return f"revise:{document['document_id']}:{revise_id}"
+
+
+def require_series_head(table: Any, project_id: str, document: dict) -> None:
+    """The stale-series ConflictError (409) when the PR/FAQ / PRD ``document`` is no longer its series' head:
+    a version was saved since it was read. ``revise_document`` checks it again in its write."""
+    document_type = _revised_type(document)
+    if series_head_version(table, project_id, document_type, series_base(document)) != int(document['version']):
+        raise ConflictError(STALE_SERIES_MESSAGE)
+
+
+def revise_document(table: Any, project_id: str, document: dict, content: str, *, revise_id: str, now: str,
+                    actor: dict[str, str]) -> dict:
+    """The revised ``content`` of a PR/FAQ / PRD as the NEXT version of its series (never an overwrite).
+
+    Conditioned on ``document`` still being the series head (409 otherwise: someone saved since the
+    pass read it); ``revise_id`` is the version's allocation id (the write is idempotent). The row
+    records who asked (``edited_by``: the starter's ``{sub, kind}``) and ``edit_kind`` ``revise``.
+    """
+    document_type = _revised_type(document)
+    provenance = {'edit_kind': EDIT_KIND_REVISE, 'edited_from_id': document['document_id'], 'edited_by': dict(actor)}
+    return _new_managed_version(table, project_id, document_type, document, content,
+                                allocation_id=_revise_allocation_id(document, revise_id), now=now,
+                                provenance=provenance, expected_last_version=int(document['version']))
 
 
 def _restore_unmanaged(table: Any, project_id: str, document: dict, version_id: str, *, now: str) -> dict:

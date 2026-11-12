@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import {
   useParams, useNavigate, useSearchParams,
 } from 'react-router-dom'
+import { useFocusViewActive } from '../../components/DocumentCanvas/page/focusView'
 import ProjectSharingModal from '../../components/ProjectSharingModal/ProjectSharingModal'
 import { useGuardedAction } from '../../components/UnsavedChangesGuard/guardRegistry'
 import { useConfigStore } from '../../store/configStore'
@@ -39,6 +40,31 @@ import WizardSection from './WizardSection'
 import { parseTab } from './types'
 import type { Tab } from './types'
 import type { ProjectDocument } from '../../api/types'
+import type { Project } from '../../api/projectTypes'
+import type { ComponentProps } from 'react'
+
+/** The project's header (with its jobs badge) and, for a viewer, the read-only banner. */
+function ProjectHeading({ project, canEdit, jobs, onShare, onDismissJob, onBack }: Readonly<{
+  project: Project; canEdit: boolean; jobs: ComponentProps<typeof JobsBadge>['jobs']
+  onShare: () => void; onDismissJob: (jobId: string) => void; onBack: () => void
+}>) {
+  return (
+    <>
+      <ProjectHeader
+        name={project.name}
+        description={project.description}
+        visibility={project.visibility}
+        onShare={onShare}
+        projectId={project.project_id}
+        // Background jobs: one header badge on every tab, opening the jobs panel. Dismissing a
+        // job is a DELETE the gate refuses for viewers, so they get no handler and no button.
+        status={<JobsBadge jobs={jobs} onDismiss={canEdit ? onDismissJob : undefined} />}
+        onBack={onBack}
+      />
+      {canEdit ? null : <ReadOnlyBanner />}
+    </>
+  )
+}
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -92,6 +118,7 @@ export default function ProjectDetail() {
   // first (its canvas registers the guard: DocumentCanvas/actions/useCanvasDocument). A route
   // change and closing the window are caught by that guard itself.
   const guarded = useGuardedAction()
+  const focusView = useFocusViewActive()
   const { setSelectedDoc } = docSelection
   const selectDoc = useCallback((doc: ProjectDocument) => guarded(() => setSelectedDoc(doc)), [guarded, setSelectedDoc])
   const changeTab = useCallback((tab: Tab) => guarded(() => setActiveTab(tab)), [guarded, setActiveTab])
@@ -209,21 +236,13 @@ export default function ProjectDetail() {
   const canEdit = canEditProject(project)
 
   return (
-    <div className="space-y-6">
-      <ProjectHeader
-        name={project.name}
-        description={project.description}
-        visibility={project.visibility}
-        onShare={() => setShowSharing(true)}
-        projectId={project.project_id}
-        // Background jobs: one header badge on every tab, opening the jobs panel. Dismissing a
-        // job is a DELETE the gate refuses for viewers, so they get no handler and no button.
-        status={<JobsBadge jobs={jobs} onDismiss={canEdit ? (jobId: string) => dismissJobMut.mutate(jobId) : undefined} />}
-        onBack={() => {
-          void navigate('/projects')
-        }}
-      />
-      {canEdit ? null : <ReadOnlyBanner />}
+    // A document page in focus view has the window: the project's header, banner and tabs step aside (in place, so
+    // the tab's content never remounts).
+    <div className={focusView ? undefined : 'space-y-6'}>
+      {focusView ? null : (
+        <ProjectHeading project={project} canEdit={canEdit} jobs={jobs} onShare={() => setShowSharing(true)}
+          onDismissJob={(jobId) => dismissJobMut.mutate(jobId)} onBack={() => { void navigate('/projects') }} />
+      )}
       <ProjectSharingModal
         isOpen={showSharing}
         onClose={() => setShowSharing(false)}
@@ -233,12 +252,14 @@ export default function ProjectDetail() {
           void navigate('/projects')
         }}
       />
-      <ProjectTabs
-        activeTab={activeTab}
-        personasCount={personas.length}
-        documentsCount={documents.length}
-        onTabChange={changeTab}
-      />
+      {focusView ? null : (
+        <ProjectTabs
+          activeTab={activeTab}
+          personasCount={personas.length}
+          documentsCount={documents.length}
+          onTabChange={changeTab}
+        />
+      )}
 
       <WizardSection
         activeWizard={wizard.activeWizard}

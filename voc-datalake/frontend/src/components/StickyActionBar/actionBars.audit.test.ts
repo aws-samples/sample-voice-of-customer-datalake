@@ -54,6 +54,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   CategoryGeneratePanel: 'Generate categories sits at the top of the Categories tab, above the list (saves are automatic)',
   PrototypeRenderer: 'the submit lives inside the sandboxed prototype preview, not the app page',
   GoHomeLink: 'error-state navigation link, centred in the page',
+  ProposalReview: 'Revise from comments: per-change Accept and Accept all put text into the draft; the save is the page bar\'s own Save',
   McpJsonSnippets: 'Connect → mcp.json: the pressed client of a toggle group (aria-pressed) wears the primary style; nothing is saved',
   DataQualitySectionProfile: 'Data Explorer → Data quality: the pressed facet of a toggle group (aria-pressed) wears the primary style; nothing is saved',
   'RouteErrorBoundary/index': 'error-state retry, centred in the page',
@@ -108,6 +109,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   DocumentComments: 'the Comment button floats next to the selected text in the document, not a form row',
   CommentComposer: 'inline Post in the margin beside one thread or selection, one of many in the comment rail',
   ReferenceDesignPreview: 'per-reference Use as design system, one of many in the references list (it only loads a draft)',
+  DocumentActionsBar: 'the canvas\'s Save and Discard register themselves as an action bar (useRegisterActionBar) and pin to the bottom on a phone while dirty',
 }
 
 const isDialog = (text: string): boolean => /ModalShell|dialog-footer/.test(text)

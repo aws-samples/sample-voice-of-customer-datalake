@@ -81,6 +81,9 @@ export interface FeedbackPreviewBody {
   readonly days: number
 }
 
+/** What a save says it is (`PUT …/documents/{doc}` `edit_kind`): a plain edit, or an accepted revise proposal. */
+type DocumentEditKind = 'edit' | 'revise'
+
 export const projectsApi = {
   getProjects: async (): Promise<{ projects: Project[] }> => {
     const raw = await fetchApi<unknown>('/projects')
@@ -320,15 +323,18 @@ export const projectsApi = {
    * fresh `edit_id` per save so a retried request replays instead of duplicating,
    * and the `expected_revision` the editor loaded (`documentRevision`) so a save
    * over someone else's newer one is a 409 rather than a silent overwrite.
+   * `editKind: 'revise'` saves a "Revise from comments" proposal the person accepted (a PR/FAQ or
+   * PRD; recorded as a revise by them, D4); absent, the save is a plain edit.
    */
   updateDocument: async (projectId: string, documentId: string, data: {
     title?: string;
     content?: string;
     edit_id?: string;
     expected_revision?: number
-  }): Promise<{ document: ProjectDocument | null }> => {
+  }, editKind?: DocumentEditKind): Promise<{ document: ProjectDocument | null }> => {
     // A failed save throws (fetchApi); the answer's `success` adds nothing to that.
-    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, put(data))
+    const body = editKind === undefined ? data : { ...data, edit_kind: editKind }
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, put(body))
     return { document: normalizeProjectDocument(asRecord(raw)?.document) }
   },
 

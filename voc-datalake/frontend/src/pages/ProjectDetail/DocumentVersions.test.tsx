@@ -53,6 +53,19 @@ describe('DocumentVersions', () => {
     expect(within(required(rows[0], 'the newest row')).getByText('Current')).toBeInTheDocument()
   })
 
+  it('marks a version saved from "Revise from comments" (edit_kind revise), and only that one', async () => {
+    getDocumentVersions.mockResolvedValue([
+      version(3, '# Launch\nShip on Friday', { current: true, edit_kind: 'revise' }),
+      version(2, '# Launch\nShip on Tuesday', { edit_kind: 'edit' }),
+      version(1, '# Launch\nShip on Monday'),
+    ])
+    renderWithQueryClient(<DocumentVersions projectId="proj_1" document={doc} canEdit onSelectDoc={vi.fn()} />)
+
+    const rows = await screen.findAllByRole('listitem')
+    expect(rows.map((row) => within(row).queryByText('Revised from comments') !== null)).toStrictEqual([true, false, false])
+    expect(within(required(rows[1], 'the edited row')).getByText('Edited')).toBeInTheDocument()
+  })
+
   it('compares an earlier version with the current one', async () => {
     const { user } = await openVersions()
 

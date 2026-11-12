@@ -47,6 +47,7 @@ from shared.decision_records import DECISION_DOCUMENT_TYPE
 from shared.delete_audit import record_delete
 from shared.deleted_sources import DOCUMENT_SORT_KEY_PREFIXES, DeletedSource, mark_citing_documents
 from shared.document_history import (
+    EDIT_KIND_EDIT,
     delete_document_revisions,
     edit_document,
     list_document_versions,
@@ -3080,12 +3081,14 @@ def _refuse_decision_edit(document: dict) -> None:
 
 
 @tracer.capture_method
-def update_document(project_id: str, document_id: str, body: dict) -> dict:
+def update_document(project_id: str, document_id: str, body: dict, *, edit_kind: str = EDIT_KIND_EDIT,
+                    edited_by: dict[str, str] | None = None) -> dict:
     """Save an edit as a NEW version; the previous content stays retrievable.
 
     A PRD / PR/FAQ edit is the next version of its series (a new document, like a
     regeneration); a research / custom edit keeps its id and saves what it replaces
-    as a revision. See ``shared.document_history``. Answers the saved document.
+    as a revision. See ``shared.document_history`` (``edit_kind`` / ``edited_by``: a
+    saved "Revise from comments" proposal). Answers the saved document.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -3114,7 +3117,8 @@ def update_document(project_id: str, document_id: str, body: dict) -> dict:
             'Prototype content is stored in S3 and cannot be updated through '
             'generic document CRUD. Use the prototype revision workflow.'
         )
-    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title)
+    return edit_document(projects_table, project_id, document, body, now=now_iso(), title=title,
+                         edit_kind=edit_kind, edited_by=edited_by)
 
 
 @tracer.capture_method

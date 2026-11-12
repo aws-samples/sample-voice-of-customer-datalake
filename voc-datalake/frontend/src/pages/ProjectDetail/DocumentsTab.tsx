@@ -24,6 +24,7 @@ import { PrototypeView } from './DocumentPrototypeView'
 import { DocumentCoachingNotice } from '../../components/AiCoach/HumanDrivenNotice'
 import DocumentProvenance from '../../components/DocumentCanvas/page/DocumentProvenance'
 import DeleteDocumentButton from '../../components/DocumentCanvas/actions/DeleteDocumentButton'
+import { useFocusViewActive } from '../../components/DocumentCanvas/page/focusView'
 
 const DocumentPage = lazy(() => import('../../components/DocumentCanvas/page/DocumentPage'))
 
@@ -66,10 +67,12 @@ export default function DocumentsTab({
   const { t } = useTranslation('projectDetail')
   // Viewers read and export documents; create / edit / delete / revise would only 403.
   const canEdit = canEditProject(project)
+  // The page in focus view has the window: "New document" and the list step aside (null in place: no remount).
+  const focusView = useFocusViewActive()
 
   return (
-    <div className="space-y-4">
-      {canEdit ? (
+    <div className={focusView ? undefined : 'space-y-4'}>
+      {canEdit && !focusView ? (
         <div className="flex justify-end">
           <button
             type="button"
@@ -82,8 +85,8 @@ export default function DocumentsTab({
       ) : null}
       {/* The list is a narrow column from xl, a strip above the page below it: the page needs the width for its
           outline, text and rail. */}
-      <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[13rem_minmax(0,1fr)] xl:gap-6">
-        <DocumentList documents={documents} selectedDoc={selectedDoc} onSelectDoc={onSelectDoc} />
+      <div className={focusView ? undefined : 'flex flex-col gap-4 xl:grid xl:grid-cols-[13rem_minmax(0,1fr)] xl:gap-6'}>
+        {focusView ? null : <DocumentList documents={documents} selectedDoc={selectedDoc} onSelectDoc={onSelectDoc} />}
         {selectedDoc === null ? (
           <div data-testid="document-detail-pane" className={clsx(PANE, 'lg:min-h-[500px]')}>
             <div className="flex flex-col items-center justify-center gap-3 h-full min-h-[240px] text-sm text-muted text-center">

@@ -43,7 +43,7 @@ CONTEXT_CHARS: Final = 32
 STANCES: Final = ('positive', 'mixed', 'negative')
 SURFACE: Final = 'documents'
 
-_TYPE_LABELS: Final = {'prfaq': 'PR/FAQ (press release and FAQ)', 'prd': 'product requirements document (PRD)'}
+TYPE_LABELS: Final = {'prfaq': 'PR/FAQ (press release and FAQ)', 'prd': 'product requirements document (PRD)'}
 
 _INSTRUCTIONS: Final = (
     'Review the document as yourself: your goals, frustrations and context. You review; you never '
@@ -83,7 +83,7 @@ def pick_personas(personas: Sequence[dict[str, Any]], wanted: list[str] | None) 
 
 
 def system_prompt(persona: Mapping[str, Any], document_type: str) -> str:
-    label = _TYPE_LABELS.get(document_type, 'document')
+    label = TYPE_LABELS.get(document_type, 'document')
     return (f'You are a synthetic customer persona asked to review a {label}. Stay in character.\n\n'
             f'{data_block("reference", persona_prompt_block(dict(persona)))}\n\n{_INSTRUCTIONS}')
 

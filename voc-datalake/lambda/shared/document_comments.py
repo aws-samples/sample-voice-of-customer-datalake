@@ -12,8 +12,16 @@ A thread carries the version it was made on (``document_id`` + ``version``), an 
 re-anchors a thread on a newer version by its quote; one it cannot place is listed as "not
 found in this version" and kept.
 
+Once a version answers a thread ("Revise from comments", shared/document_revision.py), the mark is
+appended to the thread's ``addressed_history`` (D1: added to, never rewritten or trimmed; at most
+``MAX_ADDRESSED_HISTORY`` entries, one more is 409): ``{version, document_id, at, by_kind: user | ai,
+by_sub, addressed: bool}``, ``addressed: false`` being a clear (the canvas's Undo of an applied pass). The
+thread's current ``addressed`` is the newest entry when it is a mark, else null; the API shows
+``{version, at, by_kind}``. A reply or a status change clears nothing.
+
 Text is type-checked and capped here; text that reads like an instruction to a model is kept
-but ``flagged`` (shared.prompt_safety), as prototype pins are. Nothing here logs content.
+but ``flagged`` (shared.prompt_safety), as prototype pins are. An anchor's free-text ``heading`` is
+screened where it reaches a prompt (shared/document_revision.py). Nothing here logs content.
 """
 from __future__ import annotations
 
@@ -26,10 +34,12 @@ from itertools import islice
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
+from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
-from shared.exceptions import ValidationError
+from shared.exceptions import ConflictError, ValidationError
 from shared.prompt_safety import injection_findings
 from shared.request_body import validated_text
 from shared.timestamps import now_iso
@@ -51,6 +61,16 @@ MAX_HEADING_CHARS: Final = 200
 MAX_NAME_CHARS: Final = 120
 MAX_THREADS_LISTED: Final = 500
 COMMENT_NOT_FOUND: Final = 'Comment not found'
+#: "Revise from comments" (shared/document_revision.py) and the addressed route take at most this many threads.
+MAX_ADDRESSED_THREADS: Final = 50
+#: Marks and clears a thread keeps (append-only, D1); one more is refused (409), like replies past ``MAX_REPLIES``.
+MAX_ADDRESSED_HISTORY: Final = 100
+ADDRESSED_FULL: Final = 'This comment has reached its limit of addressed marks; start a new comment'
+ADDRESSED_SOME_FULL: Final = ('Some comments have reached their limit of addressed marks and were not marked; '
+                              'the others were. Start a new comment for those')
+ADDRESSED_BY_USER: Final = 'user'
+ADDRESSED_BY_AI: Final = 'ai'
+ADDRESSED_BY_KINDS: Final = (ADDRESSED_BY_USER, ADDRESSED_BY_AI)
 
 _COMMENT_ID_PREFIX: Final = 'dc_'
 _COMMENT_ID_RE: Final = re.compile(r'^dc_[0-9]{20}[0-9a-f]{6}\Z')
@@ -201,6 +221,91 @@ def set_status(table: Any, item: Mapping[str, Any], status: str, actor_name: str
     return response.get('Attributes', {})
 
 
+def validate_addressed(body: Mapping[str, Any]) -> tuple[list[str], bool]:
+    """``{thread_ids: [1..MAX_ADDRESSED_THREADS comment ids], addressed?: bool = true}`` (duplicates folded).
+
+    The version is the path's document (the route reads it), never the body's.
+    """
+    if set(body) - {'thread_ids', 'addressed'}:
+        raise ValidationError('body must be {thread_ids, addressed?}')
+    addressed = body.get('addressed', True)
+    if not isinstance(addressed, bool):
+        raise ValidationError('addressed must be true or false')
+    return validate_thread_ids(body.get('thread_ids'), required=True) or [], addressed
+
+
+def validate_thread_ids(raw: object, *, required: bool = False) -> list[str] | None:
+    """A list of 1 to ``MAX_ADDRESSED_THREADS`` comment ids, duplicates folded; None when absent and optional."""
+    if raw is None and not required:
+        return None
+    if (not isinstance(raw, list) or not raw or len(raw) > MAX_ADDRESSED_THREADS
+            or not all(is_comment_id(value) for value in raw)):
+        raise ValidationError(f'thread_ids must be a list of 1 to {MAX_ADDRESSED_THREADS} comment ids')
+    return list(dict.fromkeys(raw))
+
+
+def addressed_entry(*, version: int, document_id: str, by_kind: str, by_sub: str,
+                    addressed: bool = True) -> dict[str, Any]:
+    """One ``addressed_history`` entry: ``version`` (``document_id``) marked or cleared the thread.
+
+    ``by_sub`` stays server-side (D4).
+    """
+    return {'version': version, 'document_id': document_id, 'at': now_iso(),
+            'by_kind': by_kind if by_kind in ADDRESSED_BY_KINDS else ADDRESSED_BY_USER, 'by_sub': by_sub,
+            'addressed': addressed is True}
+
+
+def record_addressed(table: Any, item: Mapping[str, Any], entry: Mapping[str, Any]) -> dict[str, Any]:
+    """Append ``entry`` to the thread's history and set ``addressed`` to it when it is a mark, else
+    to null: one update, in ``append_reply``'s shape, so two writers never drop each other's entry
+    and nothing already written is rewritten (D1).
+
+    Raises the conditional failure when the thread is gone; 409 (``ADDRESSED_FULL``) once the
+    history holds ``MAX_ADDRESSED_HISTORY`` entries.
+    """
+    try:
+        response = table.update_item(
+            Key={'pk': item['pk'], 'sk': item['sk']},
+            UpdateExpression=('SET addressed_history = list_append(if_not_exists(addressed_history, :empty), :entry), '
+                              'addressed = :current, updated_at = :now'),
+            ConditionExpression=('attribute_exists(sk) AND (attribute_not_exists(addressed_history) '
+                                 'OR size(addressed_history) < :max)'),
+            ExpressionAttributeValues={
+                ':empty': [], ':entry': [dict(entry)], ':max': MAX_ADDRESSED_HISTORY, ':now': entry['at'],
+                ':current': dict(entry) if entry.get('addressed') is True else None},
+            ReturnValues='ALL_NEW',
+            ReturnValuesOnConditionCheckFailure='ALL_OLD',
+        )
+    except ClientError as error:
+        # The failed check hands back the row when it still exists: then it is the cap, not a deletion.
+        if is_conditional_check_failure(error) and error.response.get('Item'):
+            raise ConflictError(ADDRESSED_FULL) from error
+        raise
+    return response.get('Attributes', {})
+
+
+def record_threads_addressed(table: Any, threads: Iterable[Mapping[str, Any]],
+                             entry: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """``record_addressed`` on each of ``threads``; one deleted meanwhile is skipped.
+
+    A thread whose history is full does not stop the others: every thread is tried, then a 409 says
+    so (``ADDRESSED_FULL`` when none was marked, else ``ADDRESSED_SOME_FULL``: the others are marked).
+    """
+    marked = []
+    full = False
+    for thread in threads:
+        try:
+            marked.append(record_addressed(table, thread, entry))
+        except ConflictError:
+            full = True
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+    if full:
+        raise ConflictError(ADDRESSED_SOME_FULL if marked else ADDRESSED_FULL)
+    return marked
+
+
 def delete_thread(table: Any, item: Mapping[str, Any]) -> None:
     table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
 
@@ -234,7 +339,17 @@ def thread_view(item: Mapping[str, Any], *, team: bool) -> dict[str, Any]:
         for r in replies if isinstance(r, Mapping)
     ]
     view['from_review_link'] = bool(item.get('share_id'))
+    view['addressed'] = _addressed_view(item.get('addressed'))
     return plain(view)
+
+
+def _addressed_view(raw: object) -> dict[str, Any] | None:
+    """``{version, at, by_kind}`` (never who: the sub is the audit's, not the reader's)."""
+    if not isinstance(raw, Mapping) or raw.get('version') is None:
+        return None
+    by_kind = raw.get('by_kind')
+    return {'version': raw.get('version'), 'at': raw.get('at') or '',
+            'by_kind': by_kind if by_kind in ADDRESSED_BY_KINDS else ADDRESSED_BY_USER}
 
 
 def is_reviewer_thread(item: Mapping[str, Any], email_lc: str) -> bool:

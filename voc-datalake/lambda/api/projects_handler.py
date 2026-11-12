@@ -81,14 +81,18 @@ from projects import (
     update_project_member,
 )
 from shared import (
+    ai_mode,
     ai_writing,
     assist_jobs,
     category_access,
     category_gate,
     company_personas_routes,
     decision_records,
+    document_comments,
+    document_history,
     document_review,
     document_review_routes,
+    document_revision,
     document_series,
     draft_intent,
     feature_request_context,
@@ -249,23 +253,25 @@ def _request_caller() -> Caller:
     return caller
 
 
-def _require_ai_writing(project_id: str, doc_type: object) -> None:
+def _require_ai_writing(project_id: str, doc_type: object) -> ai_mode.AiMode | None:
     """403 with a coaching message unless the AI may write ``doc_type`` here (shared/ai_writing.py).
 
     Only prfaq / prd are gated. An autonomous call (agent, plan step, MCP token) writes for
     the person it acts as AND for the project's owner when that is someone else (an agent
-    hands its project to a category owner): both must work AI-driven.
+    hands its project to a category owner): both must work AI-driven. Answers the caller's
+    mode it read (None for an ungated type).
     """
     if not ai_writing.is_gated(doc_type):
-        return
+        return None
     kind = ai_writing.writing_kind(app.current_event.raw_event)
     subject = _request_caller().subject
     table = get_aggregates_table()
-    ai_writing.require_ai_writing(table, subject, doc_type, kind)
+    caller_mode = ai_writing.require_ai_writing(table, subject, doc_type, kind)
     if kind == ai_writing.KIND_AUTONOMOUS:
         owner = (_gate_meta(project_id) or {}).get('owner_sub')
         if isinstance(owner, str) and owner and owner != subject and not project_access.is_synthetic_subject(owner):
             ai_writing.require_ai_writing(table, owner, doc_type, kind)
+    return caller_mode
 
 
 def _require_autonomous_edit_allowed(project_id: str, document_id: str) -> None:
@@ -1104,9 +1110,16 @@ def api_merge_documents(project_id: str):
 @app.put("/projects/<project_id>/documents/<document_id>")
 @tracer.capture_method
 def api_update_document(project_id: str, document_id: str):
+    """``{title?, content?, edit_id?, expected_revision?, edit_kind?: edit | revise}``: one new version.
+
+    ``edit_kind: revise`` = the person saving a "Revise from comments" proposal they accepted on the
+    canvas (D4: ``edit_kind`` ``revise``, ``edited_by`` them, like the applied pass); 400 otherwise.
+    """
     body = json_object_body(app)
+    edit_kind = document_history.validated_edit_kind(body.get('edit_kind'))
     _require_autonomous_edit_allowed(project_id, document_id)
-    return update_document(project_id, document_id, body)
+    return update_document(project_id, document_id, body, edit_kind=edit_kind,
+                           edited_by=actor_from_event(app.current_event.raw_event))
 
 
 @app.get("/projects/<project_id>/documents/<document_id>/versions")
@@ -5127,16 +5140,77 @@ def start_persona_review(project_id: str, document_id: str):
     })
 
 
-def _persona_review_work(config: dict) -> dict:
+def _assist_document(config: dict) -> tuple[Any, str, dict, dict]:
+    """A document assist job's projects table, project id, document and its series, from the job config."""
     table = get_projects_table()
     project_id = config['project_id']
     document = document_series.find_document(table, project_id, config['document_id'])
-    series = document_series.series_of(project_id, document)
+    return table, project_id, document, document_series.series_of(project_id, document)
+
+
+def _persona_review_work(config: dict) -> dict:
+    table, project_id, document, series = _assist_document(config)
     personas = document_review.pick_personas(
         document_review.project_personas(table, project_id), _assist_body(config).get('persona_ids'))
     return document_review.run_review(
         table, project_id=project_id, series_id=series['series_id'], document=document,
         document_type=series['document_type'], personas=personas)
+
+
+# ---- Revise a PR/FAQ / PRD from its comments (shared/document_revision.py, docs/document-review.md) ----
+#
+# EDIT on the project (a POST's default), like the persona review. The outcome follows the caller's way
+# of working (recommendations / proposal / applied), decided here from the request's claims and stored
+# in the job config: the worker never sees the request.
+
+ASSIST_REVISE_FROM_COMMENTS = 'assist_revise_from_comments'
+
+
+def _revise_outcome(project_id: str, doc_type: str) -> str:
+    """What the pass may do for this caller: the one AI-writing gate decides whether the AI may write
+    (a refusal recommends only); then the caller's mode, as the gate read it, decides. A mode that
+    could not be read fails the start, as it fails every other AI-writing route."""
+    try:
+        caller_mode = _require_ai_writing(project_id, doc_type)
+    except ai_writing.ModeUnreadableError:
+        raise
+    except AuthorizationError:
+        return document_revision.OUTCOME_RECOMMENDATIONS
+    return document_revision.writing_outcome(caller_mode)
+
+
+@app.post("/projects/<project_id>/documents/<document_id>/revise-from-comments")
+@tracer.capture_method
+def start_revise_from_comments(project_id: str, document_id: str):
+    """202 + an assist job: ``{thread_ids?: [≤50]}``; ``result`` = ``{outcome, recommendations, changes, …}``."""
+    wanted = document_revision.validate_body(json_object_body(app))
+    table = get_projects_table()
+    if not table:
+        raise ConfigurationError('Projects table not configured')
+    document = document_series.find_document(table, project_id, document_id)
+    series = document_series.series_of(project_id, document)
+    threads = document_revision.select_threads(
+        document_comments.list_threads(table, project_id, series['series_id']), document, wanted)
+    document_revision.require_revisable(document, threads)
+    return _started_assist(project_id, ASSIST_REVISE_FROM_COMMENTS, {
+        'project_id': project_id, 'document_id': document_id,
+        'body_json': json.dumps({'thread_ids': [t['comment_id'] for t in threads]}),
+        'outcome': _revise_outcome(project_id, series['document_type']),
+        'revise_id': document_revision.new_revise_id(),
+        'actor': actor_from_event(app.current_event.raw_event),
+        category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
+    })
+
+
+def _revise_work(config: dict) -> dict:
+    table, project_id, document, series = _assist_document(config)
+    evidence = document_revision.read_evidence(
+        projects.feedback_table, document, config.get(category_access.SCOPE_CONFIG_KEY))
+    return document_revision.run_revision(
+        table, project_id=project_id, series_id=series['series_id'], document=document,
+        document_type=series['document_type'], wanted=_assist_body(config).get('thread_ids'),
+        outcome=str(config.get('outcome')), revise_id=str(config['revise_id']),
+        actor=dict(config.get('actor') or {}), evidence=evidence)
 
 
 ASSIST_WORK = {
@@ -5152,6 +5226,8 @@ ASSIST_WORK = {
     # The message the route already answered when the model call failed.
     ASSIST_PERSONA_AVATAR: assist_jobs.Work(_avatar_assist_work, 'Avatar generation failed'),
     ASSIST_PERSONA_REVIEW: assist_jobs.Work(_persona_review_work, 'The persona review failed. Please try again.'),
+    ASSIST_REVISE_FROM_COMMENTS: assist_jobs.Work(
+        _revise_work, 'Revising from comments failed. Please try again.'),
 }
 
 # Document comments and review links (shared/document_review_routes.py, docs/document-review.md). Included

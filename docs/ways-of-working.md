@@ -79,6 +79,32 @@ Gated routes (PR/FAQ / PRD only):
 A refused agent step fails with a plain sentence in the run log. A refused MCP call is audited as
 `denied`.
 
+## Revise from comments
+
+[Revise from comments](document-review.md#revise-from-comments) on a PR/FAQ or PRD is never refused for
+the way of working: it does as much as the mode allows, and the outcome is decided when the pass starts.
+The route asks the gate above itself (the same check, the owner rule included): if the gate would
+refuse the write, the pass recommends; if it would allow it, the caller's own mode, as the gate read
+it (one read), picks `applied` (AI-driven) or `proposal`.
+
+| Caller | Human-driven | Human-driven, type unlocked | AI-assisted | AI-driven |
+|---|---|---|---|---|
+| interactive (the person in the SPA) | `recommendations` | `proposal` | `proposal` | `applied` |
+| autonomous (agent, plan step, MCP token) | `recommendations` | `recommendations` | `recommendations` | `applied` (the project's owner too must be AI-driven, else `recommendations`) |
+
+- `recommendations`: one suggestion per thread; nothing is written (like persona review).
+- `proposal`: the changes come back to the canvas; the person accepts or rejects each and saves the
+  version themselves (their own save, so allowed in every mode, sent with `edit_kind: revise` and
+  recorded like an applied pass: `edit_kind` `revise`, the person in `edited_by`).
+- `applied`: the server writes the next version itself (who asked is recorded on it) and marks the
+  threads addressed; History restores the previous one, and the canvas's Undo also clears the marks
+  (`POST …/comments/addressed` with `addressed: false`).
+
+No person to evaluate (a legacy MCP token without a minter) gives `recommendations`. An unreadable
+mode row (the caller's, or for an autonomous call the owner's) fails the start with the gate's
+"Could not check your way of working with AI. Please retry." (403), as on every gated route: it is
+not a decision about the person, so it never quietly downgrades the pass.
+
 The read fails closed: an unreadable mode row refuses the write (Projects API) or locks AI writing
 for the run (assistant). There is no mode row = AI-driven.
 

@@ -46,6 +46,8 @@ function VersionBadges({ version }: Readonly<{ version: DocumentVersion }>) {
         <span className="badge badge-info">{t('documents.versions.restoredFrom', { n: version.restored_from_version })}</span>
       ) : null}
       {version.edit_kind === 'edit' ? <span className="badge badge-muted">{t('documents.versions.edited')}</span> : null}
+      {/* Saved from the changes a person accepted from "Revise from comments" (D4). */}
+      {version.edit_kind === 'revise' ?<span className="badge badge-info">{t('documents.versions.revised')}</span> : null}
     </>
   )
 }

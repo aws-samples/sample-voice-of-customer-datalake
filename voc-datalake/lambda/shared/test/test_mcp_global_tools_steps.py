@@ -42,6 +42,59 @@ class TestGenerate:
             'step': 'prd', 'job_id': 'j1', 'status': 'pending', 'message': 'm', 'methodology': {'skipped': []}}
 
 
+THREAD = 'dc_00000000000000000001abcdef'
+
+
+class TestRevise:
+    """``generate`` step ``revise``: the two "Revise from comments" routes (docs/document-review.md)."""
+
+    @pytest.mark.parametrize(('args', 'body'), [
+        ({'step': 'revise', 'document_id': 'd1'}, {}),
+        ({'step': 'revise', 'document_id': 'd1', 'thread_ids': [THREAD]}, {'thread_ids': [THREAD]}),
+    ])
+    def test_a_pass_is_the_revise_route(self, args, body):
+        request = _build('generate', args)
+        assert (request.domain, request.method, request.path, request.body) == (
+            'projects', 'POST', '/projects/proj_1/documents/d1/revise-from-comments', body)
+
+    @pytest.mark.parametrize('mark', [True, False])
+    def test_mark_addressed_marks_or_clears_the_threads_by_the_named_version(self, mark):
+        request = _build('generate', {'step': 'revise', 'document_id': 'd1', 'thread_ids': [THREAD],
+                                      'mark_addressed': mark})
+        assert (request.method, request.path, request.body) == (
+            'POST', '/projects/proj_1/documents/d1/comments/addressed', {'thread_ids': [THREAD], 'addressed': mark})
+
+    @pytest.mark.parametrize(('args', 'body'), [
+        ({'thread_ids': []}, {'thread_ids': []}),
+        ({'thread_ids': ['a/b'] * 51}, {'thread_ids': ['a/b'] * 51}),
+        ({'mark_addressed': 'yes'}, {'addressed': 'yes'}),
+    ])
+    def test_thread_ids_and_mark_addressed_go_to_the_route_unchanged(self, args, body):
+        """The route checks them (its 400 is the tool's error: test_global_mcp_e2e)."""
+        request = _build('generate', {'step': 'revise', 'document_id': 'd1', **args})
+        assert request.body == body
+
+    @pytest.mark.parametrize(('args', 'message'), [
+        ({'step': 'revise'}, 'document_id is required'),
+        ({'step': 'revise', 'document_id': 'd/1'}, 'document_id is required'),
+    ])
+    def test_its_arguments_are_checked(self, args, message):
+        with pytest.raises(InvalidToolArgument, match=message):
+            _build('generate', args)
+
+    def test_a_project_is_required(self):
+        with pytest.raises(InvalidToolArgument, match='project_id is required'):
+            _build('generate', {'step': 'revise', 'document_id': 'd1'}, project=None)
+
+    def test_the_answers(self):
+        shape = TOOLS_BY_NAME['generate'].shape
+        assert shape({'success': True, 'job_id': 'j1', 'status': 'pending'}, {'step': 'revise'}) == {
+            'step': 'revise', 'job_id': 'j1', 'status': 'pending'}
+        marked = {'threads': [{'comment_id': THREAD, 'pk': 'x', 'addressed': {'version': 4}}]}
+        assert shape(marked, {'step': 'revise', 'mark_addressed': False}) == {
+            'threads': [{'comment_id': THREAD, 'addressed': {'version': 4}}]}
+
+
 class TestGetJob:
     def test_the_route(self):
         assert _build('get_job', {'job_id': 'j1'}).path == '/projects/proj_1/jobs/j1'

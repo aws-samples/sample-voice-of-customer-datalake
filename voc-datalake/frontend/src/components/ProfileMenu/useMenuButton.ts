@@ -28,7 +28,7 @@ interface MenuButton {
 
 function menuItems(menu: HTMLElement | null): HTMLElement[] {
   if (menu === null) return []
-  return [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+  return [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')]
 }
 
 export function useMenuButton(): MenuButton {

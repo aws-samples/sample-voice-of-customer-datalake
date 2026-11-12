@@ -5,7 +5,7 @@
  * @module components/DocumentComments/CommentThreadCard
  */
 import clsx from 'clsx'
-import { CheckCircle2, ExternalLink, MessageSquare, RotateCcw, ShieldAlert, Trash2, User, UserRound } from 'lucide-react'
+import { CheckCheck, CheckCircle2, ExternalLink, MessageSquare, RotateCcw, ShieldAlert, Trash2, User, UserRound } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CommentComposer from './CommentComposer'
@@ -45,6 +45,11 @@ function ThreadBadges({ thread, viewed }: Readonly<{ thread: CommentThread; view
       )}
       {otherVersion ? <span className="badge badge-muted">{t('documentComments.onVersion', { version: thread.version })}</span> : null}
       {thread.status === 'resolved' ? <span className="badge badge-ok">{t('documentComments.resolved')}</span> : null}
+      {thread.addressed === null ? null : (
+        <span className="badge badge-info" title={thread.addressed.by_kind === 'ai' ? t('projectDetail:canvas.revise.addressedBy.ai') : t('projectDetail:canvas.revise.addressedBy.user')}>
+          <CheckCheck size={10} aria-hidden />{t('projectDetail:canvas.revise.addressedIn', { version: thread.addressed.version })}
+        </span>
+      )}
       {thread.flagged ? (
         <span className="badge badge-warn" title={t('documentComments.flaggedHint')}>
           <ShieldAlert size={10} aria-hidden />{t('documentComments.flagged')}
@@ -100,9 +105,11 @@ export default function CommentThreadCard({ thread, actions, viewed, active, onA
   return (
     <article
       aria-label={t('documentComments.threadBy', { name: thread.author.name })}
+      // Focusable from a link to it (a recommendation's "Show the comment"), never a Tab stop of its own.
+      data-thread-id={thread.comment_id} tabIndex={-1}
       // A resolved thread recedes through its surface (a quieter background, a dashed edge) and its badge,
       // never through opacity: its text keeps the theme's own contrast (AA).
-      className={clsx('rounded-lg border p-3 space-y-2 text-sm transition-shadow',
+      className={clsx('rounded-lg border p-3 space-y-2 text-sm transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
         resolved ? 'bg-bg-accent border-dashed' : 'bg-card', active ? 'border-warn shadow-md' : 'border-border')}
       onFocus={() => onActivate(thread.comment_id)}
       onMouseEnter={() => onActivate(thread.comment_id)}

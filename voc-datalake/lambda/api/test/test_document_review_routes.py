@@ -332,3 +332,385 @@ def test_the_persona_review_work_files_verbatim_comments_on_the_document(table):
     assert converse.call_args.kwargs['surface'] == 'documents'
     assert (result['filed'], result['personas'][0]['dropped']) == (2, 1)
     assert table.get_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d1'})['Item']['content'] == V1['content']
+
+
+# ── revise from comments ────────────────────────────────────────────────────
+
+REVISE = '/projects/p1/documents/d2/revise-from-comments'
+ADDRESSED = '/projects/p1/documents/d2/comments/addressed'
+MCP_EDITOR = {'sub': 'mcp:tok_1', 'voc:acting_subject': 'editor-sub'}
+
+
+@pytest.fixture
+def aggregates(request):
+    """The aggregates table the way-of-working rows live in (the moto world of ``table``).
+
+    The suite's autouse default (conftest) answers every caller AI-driven; here the stored row decides.
+    """
+    request.getfixturevalue('table')
+    from shared import ai_mode
+    from shared.test.moto_tables import create_pk_sk_table
+
+    rows = create_pk_sk_table('aggregates')
+
+    def stored(tbl, sub):
+        return ai_mode.ai_mode_of(tbl.get_item(Key=ai_mode.ai_mode_key(sub), ConsistentRead=True).get('Item'))
+    with patch('projects_handler.get_aggregates_table', return_value=rows), \
+            patch('shared.ai_mode.get_ai_mode', side_effect=stored):
+        yield rows
+
+
+def _mode(aggregates, sub, mode, **unlocks):
+    aggregates.put_item(Item={'pk': f'USERFLAGS#{sub}', 'sk': 'ai_mode', 'mode': mode, **unlocks})
+
+
+def _answered(call, claims=OWNER):
+    thread = _comment(call, claims, text='Say which launch', path='/projects/p1/documents/d2/comments',
+                      anchor={'exact': 'Second draft'})
+    call('POST', f'/projects/p1/documents/d2/comments/{thread["comment_id"]}/resolve', claims)
+    return thread
+
+
+def _start_revise(call, claims=EDITOR, body=None):
+    with patch('projects_handler.assist_jobs.start', return_value={'success': True, 'job_id': 'job_r'}) as start:
+        response, answer = call('POST', REVISE, claims, body if body is not None else {})
+    return response, answer, start
+
+
+MCP_OWNER = {'sub': 'mcp:tok_2', 'voc:acting_subject': 'owner-sub'}
+
+
+@pytest.mark.parametrize(('mode', 'unlocks', 'interactive', 'autonomous'), [
+    ('human_driven', {}, 'recommendations', 'recommendations'),
+    ('human_driven', {'ai_writing_prfaq': True}, 'proposal', 'recommendations'),
+    ('human_driven', {'ai_writing_prd': True}, 'recommendations', 'recommendations'),
+    ('ai_assisted', {}, 'proposal', 'recommendations'),
+    ('ai_driven', {}, 'applied', 'applied'),
+])
+def test_the_outcome_is_the_ai_writing_gate_then_the_callers_mode(call, aggregates, mode, unlocks, interactive,
+                                                                  autonomous):
+    """The full matrix: the person in the app (interactive) and their MCP token (autonomous, as the owner)."""
+    _answered(call)
+    _mode(aggregates, 'editor-sub', mode, **unlocks)
+    _mode(aggregates, 'owner-sub', mode, **unlocks)
+    assert _start_revise(call, EDITOR)[2].call_args.args[2]['outcome'] == interactive
+    assert _start_revise(call, MCP_OWNER)[2].call_args.args[2]['outcome'] == autonomous
+
+
+@pytest.mark.parametrize(('claims', 'failing_sub'), [(EDITOR, 'editor-sub'), (MCP_EDITOR, 'editor-sub'),
+                                                     (MCP_EDITOR, 'owner-sub')])
+@pytest.mark.usefixtures('aggregates')
+def test_a_mode_that_cannot_be_read_fails_the_start_not_recommends(call, claims, failing_sub):
+    """Like every other AI-writing route: the caller's (or, autonomous, the owner's) read failing is an error."""
+    from botocore.exceptions import ClientError
+
+    from shared import ai_mode
+
+    _answered(call)
+
+    def flaky(_table, sub):
+        if sub == failing_sub:
+            raise ClientError({'Error': {'Code': 'ThrottlingException'}}, 'GetItem')
+        return ai_mode.AiMode(mode=ai_mode.MODE_AI_DRIVEN)
+    with patch('shared.ai_mode.get_ai_mode', side_effect=flaky):
+        response, body, start = _start_revise(call, claims)
+    assert response['statusCode'] == 403
+    assert 'Could not check your way of working' in json.dumps(body)
+    start.assert_not_called()
+
+
+@pytest.mark.usefixtures('aggregates')
+def test_the_callers_mode_is_read_once(call):
+    from shared import ai_mode
+
+    _answered(call)
+    with patch('shared.ai_mode.get_ai_mode', return_value=ai_mode.AiMode(mode=ai_mode.MODE_AI_DRIVEN)) as read:
+        _, _, start = _start_revise(call)
+    assert start.call_args.args[2]['outcome'] == 'applied'
+    assert [c.args[1] for c in read.call_args_list] == ['editor-sub']
+
+
+@pytest.mark.parametrize(('mode', 'outcome'), [('ai_assisted', 'proposal'), ('ai_driven', 'applied')])
+def test_starting_a_revision_answers_202_with_the_outcome_of_the_way_of_working(call, aggregates, mode, outcome):
+    thread = _answered(call)
+    _mode(aggregates, 'editor-sub', mode)
+    response, body, start = _start_revise(call)
+    assert (response['statusCode'], body['job_id']) == (202, 'job_r')
+    args, kwargs = start.call_args
+    config = args[2]
+    assert args[1] == 'assist_revise_from_comments'
+    assert (config['document_id'], config['outcome']) == ('d2', outcome)
+    assert json.loads(config['body_json']) == {'thread_ids': [thread['comment_id']]}
+    assert config['actor'] == {'sub': 'editor-sub', 'kind': 'user'}
+    assert config['category_scope']['all'] is True
+    assert len(config['revise_id']) == 24
+    assert kwargs['initiated_by'] == 'editor-sub'
+
+
+@pytest.mark.parametrize(('editor_mode', 'owner_mode', 'outcome'), [
+    ('ai_driven', 'ai_driven', 'applied'),
+    ('ai_driven', 'ai_assisted', 'recommendations'),
+    ('ai_assisted', 'ai_driven', 'recommendations'),
+])
+def test_an_mcp_caller_revises_only_when_it_and_the_owner_are_ai_driven(call, aggregates, editor_mode, owner_mode,
+                                                                        outcome):
+    _answered(call)
+    _mode(aggregates, 'editor-sub', editor_mode)
+    _mode(aggregates, 'owner-sub', owner_mode)
+    response, _, start = _start_revise(call, MCP_EDITOR)
+    assert response['statusCode'] == 202
+    assert start.call_args.args[2]['outcome'] == outcome
+    assert start.call_args.args[2]['actor']['kind'] == 'mcp'
+
+
+def test_the_owner_revising_through_mcp_is_checked_once(call, aggregates):
+    _answered(call)
+    _mode(aggregates, 'owner-sub', 'ai_driven')
+    _, _, start = _start_revise(call, MCP_OWNER)
+    assert start.call_args.args[2]['outcome'] == 'applied'
+
+
+@pytest.mark.usefixtures('aggregates')
+def test_a_viewer_cannot_start_a_revision(call):
+    _answered(call)
+    assert _start_revise(call, VIEWER)[0]['statusCode'] == 403
+
+
+@pytest.mark.usefixtures('aggregates')
+def test_a_revision_with_nothing_to_revise_from_is_400(call):
+    _comment(call, OWNER, path='/projects/p1/documents/d2/comments')
+    response, body, start = _start_revise(call)
+    assert response['statusCode'] == 400
+    assert 'No comments to revise from' in json.dumps(body)
+    start.assert_not_called()
+
+
+@pytest.mark.parametrize('body', [{'thread_ids': []}, {'thread_ids': ['x']}, {'personas': []}])
+@pytest.mark.usefixtures('aggregates')
+def test_a_malformed_revision_body_is_400(call, body):
+    assert _start_revise(call, body=body)[0]['statusCode'] == 400
+
+
+@pytest.mark.usefixtures('aggregates')
+def test_revising_a_custom_document_is_400(call):
+    response, _ = call('POST', '/projects/p1/documents/c1/revise-from-comments', OWNER, {})
+    assert response['statusCode'] == 400
+
+
+def _revise_work(config, reply):
+    import projects_handler
+
+    with patch('shared.document_review.converse'), patch('shared.document_revision.converse',
+                                                         return_value=json.dumps(reply)) as converse:
+        result = projects_handler._revise_work(config)
+    return result, converse
+
+
+def _work_config(thread_ids, outcome):
+    return {'project_id': 'p1', 'document_id': 'd2', 'body_json': json.dumps({'thread_ids': thread_ids}),
+            'outcome': outcome, 'revise_id': 'rid', 'actor': {'sub': 'editor-sub', 'kind': 'user'},
+            'category_scope': {'all': True, 'categories': []}}
+
+
+REVISE_REPLY = {'recommendations': [{'thread': 'T1', 'text': 'Name the launch.'}],
+                'changes': [{'threads': ['T1'], 'before': 'Second draft', 'after': 'Final draft', 'reason': 'Asked'},
+                            {'threads': ['T1'], 'before': 'not in it', 'after': 'x'}]}
+
+
+def test_the_revision_work_proposes_grounded_changes_and_writes_nothing(call, table):
+    thread = _answered(call)
+    with patch('projects_handler.projects.feedback_table', None):
+        result, converse = _revise_work(_work_config([thread['comment_id']], 'proposal'), REVISE_REPLY)
+    assert converse.call_args.kwargs['surface'] == 'documents'
+    assert (result['outcome'], result['base_document_id'], result['base_version'], result['dropped']) == (
+        'proposal', 'd2', 2, 1)
+    assert [c['after'] for c in result['changes']] == ['Final draft']
+    assert table.get_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d2'})['Item']['content'] == V2['content']
+
+
+def test_the_applied_revision_is_a_new_version_and_its_threads_show_addressed(call, table):
+    thread = _answered(call)
+    with patch('projects_handler.projects.feedback_table', None):
+        result, _ = _revise_work(_work_config([thread['comment_id']], 'applied'), REVISE_REPLY)
+    assert result['applied_version']['version'] == 3
+    assert result['addressed_thread_ids'] == [thread['comment_id']]
+    [listed] = call('GET', COMMENTS, VIEWER)[1]['threads']
+    assert (listed['addressed']['version'], listed['addressed']['by_kind']) == (3, 'ai')
+    assert 'by_sub' not in listed['addressed']
+    v3 = table.query(KeyConditionExpression='pk = :p', ExpressionAttributeValues={':p': 'PROJECT#p1'})['Items']
+    [new] = [row for row in v3 if row.get('document_id') == result['applied_version']['document_id']]
+    assert (new['version'], new['edit_kind'], new['content'], new['edited_by']) == (
+        3, 'revise', 'Final draft of the launch.', {'sub': 'editor-sub', 'kind': 'user'})
+    assert table.get_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d2'})['Item']['content'] == V2['content']
+
+
+def test_the_revision_work_reads_the_documents_evidence(call, table):
+    thread = _answered(call)
+    table.update_item(Key={'pk': 'PROJECT#p1', 'sk': 'PRFAQ#d2'}, UpdateExpression='SET input_feedback_ids = :i',
+                      ExpressionAttributeValues={':i': ['fb1']})
+    with patch('projects_handler.projects.feedback_table') as feedback:
+        feedback.query.return_value = {'Items': [{'feedback_id': 'fb1', 'original_text': 'Launch it soon'}]}
+        _, converse = _revise_work(_work_config([thread['comment_id']], 'recommendations'), REVISE_REPLY)
+    assert '[fb1]' in converse.call_args.kwargs['prompt']
+
+
+# ── addressed ───────────────────────────────────────────────────────────────
+
+def _stored_thread(table, comment_id):
+    from shared import document_comments, document_series
+
+    series = document_series.series_of('p1', V2)['series_id']
+    return document_comments.get_thread(table, 'p1', series, comment_id)
+
+
+def test_an_editor_marks_threads_addressed_by_the_paths_version(call, table):
+    thread = _answered(call)
+    other = _comment(call, OWNER)
+    response, body = call('POST', ADDRESSED, EDITOR, {'thread_ids': [thread['comment_id'], f'dc_{"0" * 26}']})
+    assert response['statusCode'] == 200
+    [marked] = body['threads']
+    assert marked['comment_id'] == thread['comment_id']
+    assert (marked['addressed']['version'], marked['addressed']['by_kind']) == (2, 'user')
+    assert 'addressed_history' not in marked
+    stored = _stored_thread(table, thread['comment_id'])
+    assert stored is not None
+    [entry] = stored['addressed_history']
+    assert (entry['version'], entry['document_id'], entry['by_sub'], entry['addressed']) == (2, 'd2', 'editor-sub', True)
+    listed = {t['comment_id']: t for t in call('GET', COMMENTS, OWNER)[1]['threads']}
+    assert listed[other['comment_id']]['addressed'] is None
+    replied = call('POST', f'{COMMENTS}/{thread["comment_id"]}/replies', OWNER, {'text': 'later'})[1]['thread']
+    assert replied['addressed']['version'] == 2
+
+
+def test_the_version_is_the_paths_document_and_a_body_version_is_refused(call):
+    thread = _answered(call)
+    response, body = call('POST', '/projects/p1/documents/d1/comments/addressed', OWNER,
+                          {'thread_ids': [thread['comment_id']]})
+    assert (response['statusCode'], body['threads'][0]['addressed']['version']) == (200, 1)
+    assert call('POST', ADDRESSED, OWNER, {'thread_ids': [thread['comment_id']], 'version': 7})[0]['statusCode'] == 400
+
+
+def test_clearing_appends_to_the_history_and_answers_null(call, table):
+    """The canvas's Undo of an applied pass: the restored version clears the mark (D1: nothing rewritten)."""
+    thread = _answered(call)
+    call('POST', ADDRESSED, OWNER, {'thread_ids': [thread['comment_id']]})
+    response, body = call('POST', '/projects/p1/documents/d1/comments/addressed', OWNER,
+                          {'thread_ids': [thread['comment_id']], 'addressed': False})
+    assert (response['statusCode'], body['threads'][0]['addressed']) == (200, None)
+    stored = _stored_thread(table, thread['comment_id'])
+    assert stored is not None
+    history = stored['addressed_history']
+    assert [(e['document_id'], e['addressed']) for e in history] == [('d2', True), ('d1', False)]
+    [listed] = call('GET', COMMENTS, OWNER)[1]['threads']
+    assert listed['addressed'] is None
+
+
+def test_a_document_without_a_version_is_400(call, table):
+    table.put_item(Item={**V1, 'sk': 'PRFAQ#d0', 'document_id': 'd0', 'version': None})
+    thread = _answered(call)
+    response, body = call('POST', '/projects/p1/documents/d0/comments/addressed', OWNER,
+                          {'thread_ids': [thread['comment_id']]})
+    assert response['statusCode'] == 400
+    assert 'no saved version' in json.dumps(body)
+
+
+def test_an_mcp_caller_marks_threads_addressed_by_the_ai(call):
+    thread = _answered(call)
+    body = call('POST', ADDRESSED, MCP_EDITOR, {'thread_ids': [thread['comment_id']]})[1]
+    assert body['threads'][0]['addressed']['by_kind'] == 'ai'
+
+
+def test_a_viewer_cannot_mark_threads_addressed(call):
+    thread = _answered(call)
+    assert call('POST', ADDRESSED, VIEWER, {'thread_ids': [thread['comment_id']]})[0]['statusCode'] == 403
+
+
+@pytest.mark.parametrize('body', [{}, {'addressed': True}, {'thread_ids': []},
+                                  {'thread_ids': [f'dc_{"0" * 26}'], 'addressed': 'yes'}])
+def test_a_malformed_addressed_body_is_400(call, body):
+    assert call('POST', ADDRESSED, OWNER, body)[0]['statusCode'] == 400
+
+
+def test_marking_unknown_threads_addressed_is_404(call):
+    assert call('POST', ADDRESSED, OWNER, {'thread_ids': [f'dc_{"0" * 26}']})[0]['statusCode'] == 404
+
+
+def test_marking_past_the_history_cap_is_409_and_writes_nothing(call, table, monkeypatch):
+    from shared import document_comments
+
+    monkeypatch.setattr(document_comments, 'MAX_ADDRESSED_HISTORY', 2)
+    thread = _answered(call)
+    for _ in range(2):
+        call('POST', ADDRESSED, OWNER, {'thread_ids': [thread['comment_id']]})
+    response, body = call('POST', ADDRESSED, OWNER, {'thread_ids': [thread['comment_id']], 'addressed': False})
+    assert response['statusCode'] == 409
+    assert document_comments.ADDRESSED_FULL in json.dumps(body)
+    stored = _stored_thread(table, thread['comment_id'])
+    assert stored is not None
+    assert len(stored['addressed_history']) == 2
+    assert stored['addressed']['version'] == 2
+
+
+def test_marking_past_the_cap_still_marks_the_other_threads_then_is_409(call, table, monkeypatch):
+    from shared import document_comments
+
+    monkeypatch.setattr(document_comments, 'MAX_ADDRESSED_HISTORY', 1)
+    full, other = _answered(call), _answered(call)
+    call('POST', ADDRESSED, OWNER, {'thread_ids': [full['comment_id']]})
+    response, body = call('POST', ADDRESSED, OWNER, {'thread_ids': [full['comment_id'], other['comment_id']]})
+    assert response['statusCode'] == 409
+    assert document_comments.ADDRESSED_SOME_FULL in json.dumps(body)
+    marked, kept = _stored_thread(table, other['comment_id']), _stored_thread(table, full['comment_id'])
+    assert marked is not None
+    assert kept is not None
+    assert marked['addressed']['version'] == 2
+    assert len(kept['addressed_history']) == 1
+
+
+# ── saving a proposal (PUT edit_kind, D4) ───────────────────────────────────
+
+DOCUMENT_PUT = '/projects/p1/documents/d2'
+
+
+@pytest.fixture
+def documents(table):
+    """The document routes (api/projects.py) write through their own table handle."""
+    with patch('projects.projects_table', table):
+        yield table
+
+
+def _saved_version(table, document_id):
+    rows = table.query(KeyConditionExpression='pk = :p', ExpressionAttributeValues={':p': 'PROJECT#p1'})['Items']
+    [row] = [r for r in rows if r.get('document_id') == document_id]
+    return row
+
+
+def test_a_saved_proposal_is_recorded_as_a_revise_by_the_person(call, documents):
+    response, body = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Final draft of the launch.', 'edit_id': 'e1',
+                                                        'expected_revision': 2, 'edit_kind': 'revise'})
+    assert response['statusCode'] == 200, body
+    row = _saved_version(documents, body['document']['document_id'])
+    assert (row['version'], row['edit_kind'], row['edited_by']) == (3, 'revise', {'sub': 'editor-sub', 'kind': 'user'})
+
+
+@pytest.mark.parametrize('body', [{}, {'edit_kind': 'edit'}])
+def test_a_plain_save_stays_an_edit_with_no_edited_by(call, documents, body):
+    response, saved = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'edit_id': 'e2', **body})
+    assert response['statusCode'] == 200, saved
+    row = _saved_version(documents, saved['document']['document_id'])
+    assert row['edit_kind'] == 'edit'
+    assert 'edited_by' not in row
+
+
+@pytest.mark.parametrize('kind', ['restore', 'REVISE', 1, True, ['revise']])
+def test_any_other_edit_kind_is_400(call, documents, kind):
+    response, body = call('PUT', DOCUMENT_PUT, EDITOR, {'content': 'Mine.', 'edit_kind': kind})
+    assert response['statusCode'] == 400
+    assert 'edit_kind must be' in json.dumps(body)
+    assert len([r for r in documents.scan()['Items'] if r['sk'].startswith('PRFAQ#')]) == 2
+
+
+@pytest.mark.usefixtures('documents')
+def test_a_revise_save_of_a_custom_document_is_400(call):
+    response, _ = call('PUT', '/projects/p1/documents/c1', OWNER, {'content': 'x', 'edit_kind': 'revise'})
+    assert response['statusCode'] == 400

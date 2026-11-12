@@ -4,8 +4,9 @@
  * components.json `documentComments`, `reviewShare`, `unsavedChanges`), so a renamed label fails loudly here.
  *
  * - the canvas: a `textbox` named by the document's title (CanvasEditor, contenteditable);
- * - the page's action bar: the group "Document actions" with the save status (`role=status`), Discard, Save, Share for
- *   review, Download options, History, Delete document;
+ * - the page's action bar: the group "Document actions" with the save status (`role=status`), Discard, Save, Full
+ *   screen (the focus view, `?view=focus`) and the "File" menu (Save, Share for review, Copy, Download as Markdown,
+ *   Print or save as PDF, Include open comments, Download as TXT, Copy to Kiro, History, Delete document);
  * - the outline: the navigation "Contents"; the floating format bar: the toolbar "Text formatting"; the "/" menu: the
  *   listbox "Blocks".
  */
@@ -38,6 +39,16 @@ export const actionsBar = (page: Page): Locator => page.getByRole('group', { nam
 export const saveStatus = (page: Page): Locator => actionsBar(page).getByRole('status')
 
 export const barButton = (page: Page, name: string): Locator => actionsBar(page).getByRole('button', { name, exact: true })
+
+/** The page's "File" menu (DocumentMenu) and its button in the bar. */
+export const fileMenu = (page: Page): Locator => page.getByRole('menu', { name: 'File', exact: true })
+
+/** Opens the File menu (unless open) and returns its item `name` (a menuitem, or the "Include open comments" checkbox). */
+export async function fileMenuItem(page: Page, name: string): Promise<Locator> {
+  if (await fileMenu(page).count() === 0) await barButton(page, 'File').click()
+  await expect(fileMenu(page)).toBeVisible()
+  return fileMenu(page).getByRole('menuitem', { name, exact: true }).or(fileMenu(page).getByRole('menuitemcheckbox', { name, exact: true }))
+}
 
 export const formatBar = (page: Page): Locator => page.getByRole('toolbar', { name: 'Text formatting', exact: true })
 
@@ -141,6 +152,31 @@ export async function dragBlock(page: Page, from: Locator, to: Locator): Promise
   if (target === null) throw new Error('the drop target has no box')
   await page.mouse.move(target.x + target.width - 4, target.y + target.height / 2, { steps: 12 })
   await page.mouse.up()
+}
+
+/** projectDetail.json canvas.revise: "Revise from comments" and what it answers. */
+export const REVISE_TEXT = {
+  button: 'Revise from comments',
+  noThreads: 'Reply to a comment or resolve it first.',
+  proposal: 'Suggested changes',
+  recommendations: 'Recommendations from the comments',
+  reviewAgain: 'Ask personas to review again',
+} as const
+
+/** `Addressed in v<n>` (canvas.revise.addressedIn), a thread's badge. */
+export const addressedIn = (version: number): string => `Addressed in v${version}`
+
+/** The outcome's region above the canvas, by its heading (`Suggested changes`, `Revised from 1 comment as v2`, …). */
+export const revisePanel = (page: Page, name: string | RegExp): Locator => page.getByRole('region', { name, exact: typeof name === 'string' })
+
+/** Files a comment on `documentId` through the team route, quoting `exact` (null: the whole document); its id. */
+export async function addComment(projectId: string, documentId: string, text: string, exact: string | null): Promise<string> {
+  const anchor = exact === null ? {} : { anchor: { exact, prefix: '', suffix: '', heading: '' } }
+  const res = await apiCall('admin', 'POST', `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/comments`, { text, ...anchor })
+  const thread = isRecord(res.body) && isRecord(res.body['thread']) ? res.body['thread'] : undefined
+  const id = stringField(thread, 'comment_id') ?? ''
+  if (res.status >= 300 || id === '') throw new Error(`POST …/comments -> ${res.status}`)
+  return id
 }
 
 /** Clicks Save in the action bar and returns the PUT's response. */

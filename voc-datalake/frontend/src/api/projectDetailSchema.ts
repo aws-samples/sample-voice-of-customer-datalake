@@ -320,7 +320,8 @@ const DocumentVersionSchema = z.object({
   content: z.string().catch(''),
   created_at: z.string().nullable().catch(null),
   current: z.boolean().catch(false),
-  edit_kind: z.enum(['edit', 'restore']).nullable().optional().catch(null),
+  // `revise`: a "Revise from comments" pass applied, or its proposal saved by the person (D4).
+  edit_kind: z.enum(['edit', 'restore', 'revise']).nullable().optional().catch(null),
   restored_from_version: z.number().int().positive().nullable().optional().catch(null),
 })
 export type DocumentVersion = z.output<typeof DocumentVersionSchema>

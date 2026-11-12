@@ -8,8 +8,10 @@ Decisions tab.
 
 Nothing about storage changes: a document is still Markdown in its `content` field, saved through the same
 `PUT /projects/{id}/documents/{document_id}` as before, so exports, the review page, the assistant, MCP tools
-and the REST API read and write it exactly as they did. The canvas adds no route and no tool: what it can do,
-the API already does (tenet 4).
+and the REST API read and write it exactly as they did. Editing adds no route: the canvas saves through that PUT
+(with `edit_kind: revise` when the saved text holds changes accepted from Revise from comments; the server records
+what the canvas says, since the person saves the text). Revise from comments has its own two routes and an MCP step
+([document-review.md](document-review.md#revise-from-comments)): what the canvas can do, the API and MCP do (tenet 4).
 
 ## Reading
 
@@ -61,6 +63,47 @@ anchored to that quote. Threads, replies, resolve, filters, **Ask personas to re
 link, in the page header) work as described in [document-review.md](document-review.md). While you edit, a
 thread whose quote you change is listed under **Not found in this version** at once.
 
+## Full screen
+
+**Full screen** in the page header (or Ctrl/⌘+Shift+F) gives the page the whole window for reading and answering
+comments: the canvas and the comment rail side by side from 1280 px wide (one column below), the app's sidebar,
+header, project tabs and document list hidden. Esc (when no menu, dialog or format bar is open), the same button or
+the shortcut leaves. The address keeps it as `?view=focus`, so a reload stays in it; entering and leaving add no
+history entry, so the browser's Back goes to the page you came from (never to an older version of a document you
+saved in full screen). Unsaved
+changes stay as they are; entering or leaving never asks.
+
+## The File menu
+
+**File** in the page header holds the document's actions: **Save** (with its state: Saved, Saving…, Unsaved changes;
+the Save button stays beside it), **Share for review** (PR/FAQ, PRD), the export formats (Copy, **Download as
+Markdown**: the saved version's stored text; **Print or save as PDF**, with **Include open comments** to append each
+open thread whose quote is in the printed version (or on the whole document) with its quote and replies; Download as TXT; Copy to Kiro for a PR/FAQ or PRD), **History** and
+**Delete**. Exports use the saved version; the menu says so while there are unsaved changes. Arrow keys move through
+it, Esc returns to the button.
+
+## Revise from comments
+
+On a PR/FAQ or PRD, once threads are answered or resolved, **Revise from comments** in the comment rail asks the AI
+to work through them, grounded in the threads and the document's evidence
+([document-review.md](document-review.md#revise-from-comments)). What comes back depends on your way of working
+([ways-of-working.md](ways-of-working.md#revise-from-comments)):
+
+- **Recommendations**: one per thread, each linking to its thread; nothing is written.
+- **A proposal**: each change shown on the canvas as the old text struck and the new text added, with the threads it
+  answers and **Accept** / **Reject** (and Accept all / Reject all). Accepting puts the change into your draft; a
+  change whose passage you have since edited is marked **Out of date**. **Save** writes the new version, and the
+  threads of the changes it kept are marked **Addressed in vN** (a change counts as kept only while the saved text
+  still holds it where you accepted it). **Discard** or **Load the latest** takes your draft away without a save:
+  the accepted changes are pending again.
+- **Applied**: the server wrote the revised text as a new version and marked the threads; the banner offers **Undo**
+  (restores the version the pass read, as a new version, and takes the **Addressed** marks off its threads) and
+  **Review again** (Ask personas to review). If someone saved a version after the revision, Undo says so first and
+  offers **Undo anyway** (their change is reverted too) or **Keep it**.
+
+Addressed threads carry their badge and an **Addressed** filter; after any pass the rail offers **Ask personas to
+review again**, so a new round of comments can start.
+
 ## The assistant's changes
 
 When the assistant proposes a change to the open document, the page shows a banner. **Review** shows the
@@ -73,5 +116,6 @@ path. A proposal is refused before it is shown when your way of working does not
 
 The canvas is in `voc-datalake/frontend/src/components/DocumentCanvas/`: `markdown/` (the Markdown ↔ editor
 mapping, on TipTap and ProseMirror, MIT), `editor/` (the editor, its menus and format bar), `page/` (the page,
-outline and evidence), `comments/` and `actions/` (save, the header, the assistant's diff). It is loaded only
+outline, evidence and the full-screen view), `comments/`, `actions/` (save, the header and File menu, the
+assistant's diff) and `revise/` (Revise from comments). It is loaded only
 when the Documents tab opens a document.

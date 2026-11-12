@@ -55,6 +55,7 @@
       "label": "v{{n}}",
       "current": "Current",
       "edited": "Edited",
+      "revised": "Revised from comments",
       "restoredFrom": "Restored from v{{n}}",
       "open": "Open",
       "openNamed": "Open {{label}}",
@@ -770,6 +771,87 @@
         "unsaved": "Unsaved changes"
       },
       "toolbarLabel": "Document actions"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "Answered by a version the AI revised",
+        "user": "Answered by a version saved from the suggested changes"
+      },
+      "addressedIn": "Addressed in v{{version}}",
+      "applied": {
+        "banner_one": "Revised from {{count, number}} comment as v{{version}}",
+        "banner_other": "Revised from {{count, number}} comments as v{{version}}",
+        "reviewAgain": "Review again",
+        "status": "Your way of working lets the AI write: it saved the revision as a new version. Undo restores the previous one.",
+        "undo": "Undo",
+        "undoAnyway": "Undo anyway",
+        "undoFailed": "The previous version could not be restored. Restore it from History.",
+        "undoKeep": "Keep it",
+        "undoNewer": "v{{version}} was saved after this revision. Undo restores the version the revision started from, so it would also remove the changes saved since.",
+        "undoing": "Restoring the previous version…",
+        "undone": "Undone: the previous version is restored as a new version."
+      },
+      "button": "Revise from comments",
+      "close": "Close",
+      "failed": "Revise from comments failed. Please try again.",
+      "filterAddressed": "Addressed",
+      "hint": "Suggests changes to the parts the answered or resolved comments are about, from the comments and the document's evidence",
+      "noThreads": "Reply to a comment or resolve it first.",
+      "saveFirst": "Save or discard the accepted changes first.",
+      "proposal": {
+        "accept": "Accept",
+        "acceptAll": "Accept all",
+        "acceptNamed": "Accept change {{position}}",
+        "added": "Added",
+        "answers": "Answers:",
+        "change": "Change {{position}}",
+        "deleted": "(the passage is removed)",
+        "dropped_one": "{{count, number}} suggestion was left out: its passage is not in the text.",
+        "dropped_other": "{{count, number}} suggestions were left out: their passages are not in the text.",
+        "intro": "Accept or reject each change. Accepted changes go into your draft; Save makes them a new version.",
+        "listLabel": "Suggested changes",
+        "markFailed": "Saved, but the comments could not be marked as addressed. Please try again later.",
+        "marked_one": "Saved: {{count, number}} comment is marked as addressed in v{{version}}.",
+        "marked_other": "Saved: {{count, number}} comments are marked as addressed in v{{version}}.",
+        "none": "No change could be suggested from these comments. The recommendations say what to do instead.",
+        "reject": "Reject",
+        "rejectAll": "Reject all",
+        "rejectNamed": "Reject change {{position}}",
+        "removed": "Removed",
+        "saveNote": "Accepted changes are in your draft. Save to make them a new version.",
+        "state": {
+          "accepted": "Accepted",
+          "addressed": "Saved",
+          "outOfDate": "Out of date: the passage has changed",
+          "rejected": "Rejected"
+        },
+        "status_one": "{{count, number}} change suggested.",
+        "status_other": "{{count, number}} changes suggested.",
+        "title": "Suggested changes"
+      },
+      "recommendations": {
+        "listLabel": "Recommendations",
+        "status_one": "{{count, number}} recommendation. Nothing in the document was changed.",
+        "status_other": "{{count, number}} recommendations. Nothing in the document was changed.",
+        "title": "Recommendations from the comments",
+        "why": "Your way of working with AI asks for recommendations only: the AI does not write this document for you."
+      },
+      "reviewAgain": "Ask personas to review again",
+      "running": "Revising from comments…",
+      "showThread": "Show the comment: {{label}}",
+      "threadGone": "(comment deleted)"
+    },
+    "focus": {
+      "announce": "Full screen. Press Escape to leave.",
+      "button": "Full screen",
+      "hint": "Full screen (Ctrl+Shift+F or ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "Open comments",
+      "includeComments": "Include open comments",
+      "saved": "Saved",
+      "trigger": "File",
+      "wholeDocument": "On the whole document"
     }
   }
 }

@@ -13,6 +13,7 @@ import { renderWithQueryClient as render } from '@test/query-client'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
 import { VIEWER_ACCESS } from '../../../pages/ProjectDetail/projectAccess-fixtures'
 import DocumentPage from './DocumentPage'
+import { useFocusViewActive } from './focusView'
 import type { ReactNode } from 'react'
 import type { ProjectDocument } from '../../../api/types'
 import type { OutlineItem } from '../editor/CanvasEditor'
@@ -28,8 +29,14 @@ const outline: OutlineItem[] = []
 
 vi.mock('../actions/useCanvasDocument', () => ({ useCanvasDocument: vi.fn(() => canvasState) }))
 vi.mock('../actions/DocumentActionsBar', () => ({
-  default: ({ share, canEdit }: { share: unknown; canEdit: boolean }) => (
-    <div data-testid="actions-bar" data-share={share === null ? 'none' : 'comments'} data-can-edit={String(canEdit)} />
+  default: ({ share, threads, canEdit, focus, focusButtonRef }: {
+    share: unknown; threads: readonly unknown[] | null; canEdit: boolean
+    focus: { active: boolean; toggle: () => void }; focusButtonRef: React.Ref<HTMLButtonElement>
+  }) => (
+    <div data-testid="actions-bar" data-share={share === null ? 'none' : 'comments'} data-can-edit={String(canEdit)}
+      data-threads={threads === null ? 'none' : String(threads.length)}>
+      <button ref={focusButtonRef} type="button" aria-pressed={focus.active} onClick={focus.toggle}>Full screen</button>
+    </div>
   ),
 }))
 vi.mock('../editor/CanvasEditor', () => ({
@@ -60,7 +67,10 @@ vi.mock('../actions/AssistantDiffOnCanvas', () => ({
 vi.mock('../../AiCoach/HumanDrivenNotice', () => ({
   DocumentCoachingNotice: () => <div data-testid="document-coaching-notice" />,
 }))
-const comments = { query: { isSuccess: true }, share: null, createShare: vi.fn(), revokeShare: vi.fn() }
+const comments = {
+  query: { isSuccess: true, data: { threads: [{ comment_id: 'c1' }] } },
+  share: null, createShare: vi.fn(), revokeShare: vi.fn(),
+}
 vi.mock('../../../pages/ProjectDetail/useDocumentComments', () => ({ useDocumentComments: vi.fn(() => comments) }))
 
 const editor = makeProject({ project_id: 'proj-1', name: 'P', description: '' })
@@ -76,12 +86,12 @@ function doc(overrides: Partial<ProjectDocument>): ProjectDocument {
 }
 
 /** `onCanvas`: the stored text the canvas is on (its baseline); the selected document's own by default. */
-function renderPage(document: ProjectDocument, canEdit = true, onCanvas = document.content) {
+function renderPage(document: ProjectDocument, canEdit = true, onCanvas = document.content, entry = '/projects/proj-1?tab=documents') {
   // The canvas's own rule (useCanvasDocument): a viewer's canvas is never editable.
   if (!canEdit) canvasState.editable = false
   canvasState.content = onCanvas
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <DocumentPage project={canEdit ? editor : viewer} document={document} documents={[document]} canEdit={canEdit}
         onSelectDoc={vi.fn()} onDeleteDoc={vi.fn()} isDeleting={false} />
     </MemoryRouter>,
@@ -201,6 +211,12 @@ describe('DocumentPage: a PR/FAQ or PRD', () => {
     comments.query.isSuccess = false
     renderPage(prd)
     expect(screen.getByTestId('actions-bar')).toHaveAttribute('data-share', 'none')
+    expect(screen.getByTestId('actions-bar')).toHaveAttribute('data-threads', 'none')
+  })
+
+  it('hands the bar the threads for the PDF\'s "Include open comments" once they load', () => {
+    renderPage(prd)
+    expect(screen.getByTestId('actions-bar')).toHaveAttribute('data-threads', '1')
   })
 
   it('is read-only on the display text for a viewer', () => {
@@ -244,6 +260,40 @@ describe('DocumentPage: around the canvas', () => {
     expect(screen.getByTestId('document-detail-pane')).toHaveClass('max-sm:pb-20')
   })
 })
+
+describe('DocumentPage: the focus view', () => {
+  it('fills the window from `?view=focus` (no card edge), says how to leave, and the shell steps aside', () => {
+    render(<ShellProbe />)
+    renderPage(doc({}), true, STORED, '/projects/proj-1?tab=documents&doc=doc-1&view=focus')
+    expect(paneLook()).toStrictEqual({ focus: true, card: false, fullHeight: true, note: 'Full screen. Press Escape to leave.' })
+    expect(screen.getByTestId('canvas-focus-note')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByTestId('shell')).toHaveTextContent('true')
+  })
+
+  it('is the card on the page otherwise; the toggle enters it and moves focus to the canvas', async () => {
+    const user = userEvent.setup()
+    renderPage(doc({}))
+    expect(paneLook()).toStrictEqual({ focus: false, card: true, fullHeight: false, note: '' })
+    await user.click(screen.getByRole('button', { name: 'Full screen' }))
+    expect(paneLook().focus).toBe(true)
+    expect(handle.focus).toHaveBeenCalledTimes(1)
+  })
+})
+
+/** How the page pane looks: in focus view or not, a card on the page or the window's full height, its live note. */
+function paneLook() {
+  const pane = screen.getByTestId('document-detail-pane')
+  return {
+    focus: pane.hasAttribute('data-focus-view'),
+    card: pane.classList.contains('rounded-xl'),
+    fullHeight: pane.classList.contains('min-h-screen'),
+    note: screen.getByTestId('canvas-focus-note').textContent,
+  }
+}
+
+function ShellProbe() {
+  return <p data-testid="shell">{String(useFocusViewActive())}</p>
+}
 
 describe('DocumentPage: the outline', () => {
   it('lists the headings the canvas reports and scrolls the canvas to one', async () => {

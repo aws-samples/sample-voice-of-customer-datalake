@@ -8,6 +8,7 @@
  * - Breadcrumb navigation
  * - Account menu (avatar, top right): My profile, Sign out
  * - Urgent feedback count badge
+ * - Steps aside (sidebar, header, launcher) while a document page is in focus view (DocumentCanvas/page/focusView)
  *
  * @module components/Layout
  */
@@ -56,6 +57,7 @@ import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import ProfileMenu from '../ProfileMenu/ProfileMenu'
 import PasskeyPrompt from '../PasskeyPrompt/PasskeyPrompt'
 import { Sidebar, type NavItem } from './SidebarComponents'
+import { useFocusViewActive } from '../DocumentCanvas/page/focusView'
 
 /**
  * Navigation items (decided 2026-10-04). Home and Dashboard
@@ -174,6 +176,16 @@ function MainHeader({ onOpenMenu, menuButtonRef, showTimeRange, account }: Reado
   )
 }
 
+/**
+ * The page scroller's classes. The launcher floats over the page's bottom-right corner (not on /chat, which has no
+ * launcher): reserve room below the content so the last control (e.g. the Categories CSV export) can always scroll
+ * clear of it (5.35, E2E 5.34). A document page in focus view is the window: no padding, no launcher.
+ */
+function pageScrollerClass(focusView: boolean, pathname: string): string {
+  if (focusView) return 'relative flex-1 overflow-auto'
+  return clsx('relative flex-1 overflow-auto p-4 sm:p-6', !isChatRoute(pathname) && LAUNCHER_RESERVE_CLASS)
+}
+
 // Custom hook for mobile menu management
 function useMobileMenu(pathname: string) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -211,6 +223,7 @@ export default function Layout() {
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { mobileMenuOpen, openMenu, closeMenu } = useMobileMenu(location.pathname)
+  const focusView = useFocusViewActive()
   // Mobile drawer keyboard contract: focus moves into it, Escape closes it, Tab
   // leaving it closes it (it covers the page), and focus returns to the menu
   // button (design audit D-NAV).
@@ -255,54 +268,56 @@ export default function Layout() {
 
   return (
     <div className="app-ambient h-screen flex overflow-hidden bg-bg text-text">
-      {/* Mobile menu overlay */}
-      {mobileMenuOpen && (
-        <div
-          className="fixed inset-0 bg-overlay backdrop-blur-sm z-40 lg:hidden"
-          onClick={closeMenu}
-          aria-hidden="true"
-        />
-      )}
+      {/* A document page in focus view has the whole window: the overlay, the sidebar, the header, the passkey
+          prompt and the assistant's launcher step aside (in place, so the page under <Outlet /> never remounts). */}
+      {focusView ? null : (
+        <>
+          {/* Mobile menu overlay */}
+          {mobileMenuOpen && (
+            <div
+              className="fixed inset-0 bg-overlay backdrop-blur-sm z-40 lg:hidden"
+              onClick={closeMenu}
+              aria-hidden="true"
+            />
+          )}
 
-      {/* Sidebar */}
-      <Sidebar
-        panelRef={sidebarRef}
-        sidebarCollapsed={sidebarCollapsed}
-        mobileMenuOpen={mobileMenuOpen}
-        brandName={brand.brandName}
-        brandLoading={brand.isLoading}
-        visibleNavItems={visibleNavItems}
-        urgentCount={urgentCount}
-        decisionCount={decisionCount}
-        onClose={closeMenu}
-        onToggleCollapse={toggleSidebar}
-      />
+          {/* Sidebar */}
+          <Sidebar
+            panelRef={sidebarRef}
+            sidebarCollapsed={sidebarCollapsed}
+            mobileMenuOpen={mobileMenuOpen}
+            brandName={brand.brandName}
+            brandLoading={brand.isLoading}
+            visibleNavItems={visibleNavItems}
+            urgentCount={urgentCount}
+            decisionCount={decisionCount}
+            onClose={closeMenu}
+            onToggleCollapse={toggleSidebar}
+          />
+        </>
+      )}
 
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        <MainHeader
-          onOpenMenu={openMenu}
-          menuButtonRef={menuButtonRef}
-          showTimeRange={isTimeScoped(location.pathname)}
-          account={isAuthenticated && user ? <ProfileMenu user={user} isAdmin={isAdmin} onSignOut={handleLogout} /> : null}
-        />
+        {focusView ? null : (
+          <MainHeader
+            onOpenMenu={openMenu}
+            menuButtonRef={menuButtonRef}
+            showTimeRange={isTimeScoped(location.pathname)}
+            account={isAuthenticated && user ? <ProfileMenu user={user} isAdmin={isAdmin} onSignOut={handleLogout} /> : null}
+          />
+        )}
         {/* `relative`: the page scroller is the containing block of every absolute element inside it
             (e.g. `.sr-only` spans). Without it they resolve against the initial containing block and
             their offset grows the document, so the window shows a second scrollbar (/radar, 5.12.00). */}
-        {/* The launcher floats over the page's bottom-right corner (not on /chat, which has no
-            launcher): reserve room below the content so the last control (e.g. the Categories
-            CSV export) can always scroll clear of it (5.35, E2E 5.34). */}
-        <div
-          className={clsx('relative flex-1 overflow-auto p-4 sm:p-6', !isChatRoute(location.pathname) && LAUNCHER_RESERVE_CLASS)}
-          data-testid="page-scroller"
-        >
-          <PasskeyPrompt />
+        <div className={pageScrollerClass(focusView, location.pathname)} data-testid="page-scroller">
+          {focusView ? null : <PasskeyPrompt />}
           <Outlet />
         </div>
       </main>
 
       {/* The open mobile drawer covers the page: the launcher hides instead of floating over it. */}
-      <AssistantRoot launcherHidden={mobileMenuOpen} />
+      <AssistantRoot launcherHidden={mobileMenuOpen || focusView} />
       {/* After the assistant: the review modal opens over the full-screen assistant too. */}
       <ReviewModalHost />
     </div>

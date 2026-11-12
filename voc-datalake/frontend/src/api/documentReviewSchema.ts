@@ -38,6 +38,13 @@ const replySchema = z.object({
 })
 const STANCES = ['positive', 'mixed', 'negative'] as const
 
+/** Marked by "Revise from comments": the version that answered the thread (kept; a later reply clears nothing). */
+const addressedSchema = z.object({
+  version: z.number(),
+  at: z.string().catch(''),
+  by_kind: z.enum(['user', 'ai']).catch('user'),
+})
+
 const threadSchema = z.object({
   comment_id: z.string().min(1),
   document_id: z.string().catch(''),
@@ -51,6 +58,7 @@ const threadSchema = z.object({
   replies: z.array(replySchema).catch([]),
   verdict: z.enum(STANCES).optional().catch(undefined),
   from_review_link: z.boolean().catch(false),
+  addressed: addressedSchema.nullable().catch(null),
 })
 export type CommentThread = z.infer<typeof threadSchema>
 
@@ -112,6 +120,38 @@ const personaReviewResultSchema = z.object({
 })
 export type PersonaReviewResult = z.infer<typeof personaReviewResultSchema>
 
+const REVISE_OUTCOMES = ['recommendations', 'proposal', 'applied'] as const
+
+const reviseChangeSchema = z.object({
+  change_id: z.string().min(1),
+  thread_ids: z.array(z.string()).catch([]),
+  before: z.string().min(1),
+  after: z.string().catch(''),
+  reason: z.string().catch(''),
+})
+export type ReviseChange = z.infer<typeof reviseChangeSchema>
+
+/** Changes, dropping any row that is not one (a change without its exact `before` cannot be applied). */
+const reviseChangeListSchema = z.array(z.unknown()).catch([]).transform((rows) =>
+  rows.flatMap((row) => {
+    const parsedRow = reviseChangeSchema.safeParse(row)
+    return parsedRow.success ? [parsedRow.data] : []
+  }))
+
+const reviseResultSchema = z.object({
+  outcome: z.enum(REVISE_OUTCOMES),
+  base_document_id: z.string().catch(''),
+  base_version: z.number().nullable().catch(null),
+  recommendations: z.array(z.object({ thread_id: z.string().catch(''), text: z.string().catch('') })).catch([]),
+  changes: reviseChangeListSchema,
+  applied_version: z.object({ document_id: z.string(), version: z.number() }).nullable().catch(null),
+  addressed_thread_ids: z.array(z.string()).catch([]),
+  dropped: z.number().catch(0),
+})
+export type ReviseFromCommentsResult = z.infer<typeof reviseResultSchema>
+
+const threadsAnswerSchema = z.object({ threads: threadListSchema })
+
 function parsed<S extends z.ZodType>(schema: S, answer: unknown): z.output<S> {
   const result = schema.safeParse(answer)
   if (!result.success) throw new Error('Unexpected response from the server.')
@@ -123,3 +163,5 @@ export const parseThreadAnswer = (answer: unknown): CommentThread => parsed(thre
 export const parseShareAnswer = (answer: unknown): ReviewShare | null => parsed(shareAnswerSchema, answer).share
 export const parseReviewAnswer = (answer: unknown): ReviewPageAnswer => parsed(reviewAnswerSchema, answer)
 export const parsePersonaReviewResult = (answer: unknown): PersonaReviewResult => parsed(personaReviewResultSchema, answer)
+export const parseReviseResult = (answer: unknown): ReviseFromCommentsResult => parsed(reviseResultSchema, answer)
+export const parseThreadsAnswer = (answer: unknown): readonly CommentThread[] => parsed(threadsAnswerSchema, answer).threads

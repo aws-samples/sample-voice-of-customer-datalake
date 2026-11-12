@@ -1469,7 +1469,8 @@ class TestUpdateDocument:
         result, edit = self._update({'sk': 'DOC#d1', 'document_type': 'custom', 'title': 'Old'},
                                     {'title': 'New', 'content': '# new'})
         assert result == {'success': True}
-        assert edit.call_args.kwargs == {'now': '2026-03-04T05:06:07+00:00', 'title': 'New'}
+        assert edit.call_args.kwargs == {'now': '2026-03-04T05:06:07+00:00', 'title': 'New', 'edit_kind': 'edit',
+                                         'edited_by': None}
         assert edit.call_args.args[3] == {'title': 'New', 'content': '# new'}
 
     @pytest.mark.parametrize('title', ['', '   ', 7])

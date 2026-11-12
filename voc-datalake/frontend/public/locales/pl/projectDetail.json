@@ -61,6 +61,7 @@
       "label": "v{{n}}",
       "current": "Bieżąca",
       "edited": "Edytowana",
+      "revised": "Poprawiona na podstawie komentarzy",
       "restoredFrom": "Przywrócona z v{{n}}",
       "open": "Otwórz",
       "openNamed": "Otwórz {{label}}",
@@ -824,6 +825,97 @@
         "unsaved": "Niezapisane zmiany"
       },
       "toolbarLabel": "Działania na dokumencie"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "Uwzględniony w wersji poprawionej przez AI",
+        "user": "Uwzględniony w wersji zapisanej z proponowanych zmian"
+      },
+      "addressedIn": "Uwzględniony w v{{version}}",
+      "applied": {
+        "banner_one": "Poprawiono na podstawie {{count, number}} komentarza jako v{{version}}",
+        "banner_few": "Poprawiono na podstawie {{count, number}} komentarzy jako v{{version}}",
+        "banner_many": "Poprawiono na podstawie {{count, number}} komentarzy jako v{{version}}",
+        "banner_other": "Poprawiono na podstawie {{count, number}} komentarza jako v{{version}}",
+        "reviewAgain": "Poproś o ponowną ocenę",
+        "status": "Twój sposób pracy pozwala AI pisać: zapisała poprawki jako nową wersję. Cofnij przywraca poprzednią.",
+        "undo": "Cofnij",
+        "undoAnyway": "Cofnij mimo to",
+        "undoFailed": "Nie udało się przywrócić poprzedniej wersji. Przywróć ją z historii.",
+        "undoKeep": "Zostaw",
+        "undoNewer": "Po tej poprawce zapisano v{{version}}. Cofnięcie przywraca wersję, od której zaczęła się poprawka, więc usunie też zmiany zapisane od tego czasu.",
+        "undoing": "Przywracanie poprzedniej wersji…",
+        "undone": "Cofnięto: poprzednia wersja została przywrócona jako nowa wersja."
+      },
+      "button": "Popraw na podstawie komentarzy",
+      "close": "Zamknij",
+      "failed": "Poprawianie na podstawie komentarzy nie powiodło się. Spróbuj ponownie.",
+      "filterAddressed": "Uwzględnione",
+      "hint": "Proponuje zmiany w miejscach, których dotyczą komentarze z odpowiedzią lub rozwiązane, na podstawie komentarzy i dowodów dokumentu",
+      "noThreads": "Najpierw odpowiedz na komentarz lub go rozwiąż.",
+      "saveFirst": "Najpierw zapisz lub odrzuć zaakceptowane zmiany.",
+      "proposal": {
+        "accept": "Akceptuj",
+        "acceptAll": "Akceptuj wszystkie",
+        "acceptNamed": "Akceptuj zmianę {{position}}",
+        "added": "Dodano",
+        "answers": "Odpowiada na:",
+        "change": "Zmiana {{position}}",
+        "deleted": "(fragment zostaje usunięty)",
+        "dropped_one": "Pominięto {{count, number}} propozycję: jej fragmentu nie ma w tekście.",
+        "dropped_few": "Pominięto {{count, number}} propozycje: ich fragmentów nie ma w tekście.",
+        "dropped_many": "Pominięto {{count, number}} propozycji: ich fragmentów nie ma w tekście.",
+        "dropped_other": "Pominięto {{count, number}} propozycji: ich fragmentów nie ma w tekście.",
+        "intro": "Zaakceptuj lub odrzuć każdą zmianę. Zaakceptowane zmiany trafiają do szkicu; Zapisz tworzy z nich nową wersję.",
+        "listLabel": "Proponowane zmiany",
+        "markFailed": "Zapisano, ale nie udało się oznaczyć komentarzy jako uwzględnionych. Spróbuj ponownie później.",
+        "marked_one": "Zapisano: {{count, number}} komentarz oznaczono jako uwzględniony w v{{version}}.",
+        "marked_few": "Zapisano: {{count, number}} komentarze oznaczono jako uwzględnione w v{{version}}.",
+        "marked_many": "Zapisano: {{count, number}} komentarzy oznaczono jako uwzględnione w v{{version}}.",
+        "marked_other": "Zapisano: {{count, number}} komentarza oznaczono jako uwzględnione w v{{version}}.",
+        "none": "Na podstawie tych komentarzy nie udało się zaproponować żadnej zmiany. Rekomendacje mówią, co zrobić zamiast tego.",
+        "reject": "Odrzuć",
+        "rejectAll": "Odrzuć wszystkie",
+        "rejectNamed": "Odrzuć zmianę {{position}}",
+        "removed": "Usunięto",
+        "saveNote": "Zaakceptowane zmiany są w Twoim szkicu. Zapisz, aby utworzyć z nich nową wersję.",
+        "state": {
+          "accepted": "Zaakceptowana",
+          "addressed": "Zapisana",
+          "outOfDate": "Nieaktualna: fragment się zmienił",
+          "rejected": "Odrzucona"
+        },
+        "status_one": "Zaproponowano {{count, number}} zmianę.",
+        "status_few": "Zaproponowano {{count, number}} zmiany.",
+        "status_many": "Zaproponowano {{count, number}} zmian.",
+        "status_other": "Zaproponowano {{count, number}} zmiany.",
+        "title": "Proponowane zmiany"
+      },
+      "recommendations": {
+        "listLabel": "Rekomendacje",
+        "status_one": "{{count, number}} rekomendacja. W dokumencie nic nie zmieniono.",
+        "status_few": "{{count, number}} rekomendacje. W dokumencie nic nie zmieniono.",
+        "status_many": "{{count, number}} rekomendacji. W dokumencie nic nie zmieniono.",
+        "status_other": "{{count, number}} rekomendacji. W dokumencie nic nie zmieniono.",
+        "title": "Rekomendacje z komentarzy",
+        "why": "Twój sposób pracy z AI przewiduje tylko rekomendacje: AI nie pisze tego dokumentu za Ciebie."
+      },
+      "reviewAgain": "Poproś persony o ponowną ocenę",
+      "running": "Poprawianie na podstawie komentarzy…",
+      "showThread": "Pokaż komentarz: {{label}}",
+      "threadGone": "(komentarz usunięty)"
+    },
+    "focus": {
+      "announce": "Pełny ekran. Naciśnij Escape, aby wyjść.",
+      "button": "Pełny ekran",
+      "hint": "Pełny ekran (Ctrl+Shift+F lub ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "Otwarte komentarze",
+      "includeComments": "Dołącz otwarte komentarze",
+      "saved": "Zapisano",
+      "trigger": "Plik",
+      "wholeDocument": "Do całego dokumentu"
     }
   }
 }

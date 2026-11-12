@@ -15,12 +15,13 @@ import { runAssistJob } from './assistJobs'
 import { projectsApi } from './projectsApi'
 import { del, post } from './requestKit'
 import {
-  parseCommentsAnswer, parsePersonaReviewResult, parseReviewAnswer, parseShareAnswer, parseThreadAnswer,
+  parseCommentsAnswer, parsePersonaReviewResult, parseReviewAnswer, parseReviseResult, parseShareAnswer,
+  parseThreadAnswer, parseThreadsAnswer,
 } from './documentReviewSchema'
 import type { FetchApi } from './requestKit'
 import type {
-  CommentThread, DocumentCommentsAnswer, PersonaReviewResult, ReviewPageAnswer, ReviewShare, ShareAudience,
-  TextQuoteAnchor,
+  CommentThread, DocumentCommentsAnswer, PersonaReviewResult, ReviewPageAnswer, ReviewShare,
+  ReviseFromCommentsResult, ShareAudience, TextQuoteAnchor,
 } from './documentReviewSchema'
 
 export interface NewComment {
@@ -53,6 +54,14 @@ function commentBody(comment: NewComment): { text: string; anchor?: TextQuoteAnc
 
 /** The team's calls (app session). */
 function createDocumentCommentsApi(fetchApi: FetchApi) {
+  /** `documentId` is the version that marks (or clears) the threads; the server reads its version number. */
+  async function recordAddressed(
+    projectId: string, documentId: string, threadIds: readonly string[], addressed: boolean,
+  ): Promise<readonly CommentThread[]> {
+    return parseThreadsAnswer(await fetchApi<unknown>(
+      `${documentPath(projectId, documentId)}/comments/addressed`, post({ thread_ids: threadIds, addressed }),
+    ))
+  }
   return {
     async list(projectId: string, documentId: string): Promise<DocumentCommentsAnswer> {
       return parseCommentsAnswer(await fetchApi<unknown>(`${documentPath(projectId, documentId)}/comments`))
@@ -86,6 +95,23 @@ function createDocumentCommentsApi(fetchApi: FetchApi) {
         (jobId) => projectsApi.getJobStatus(projectId, jobId),
         parsePersonaReviewResult,
       )
+    },
+    /** 202 + an assist job: recommendations, a proposal of grounded changes, or (AI-driven) an applied version. */
+    reviseFromComments(projectId: string, documentId: string, threadIds?: readonly string[]): Promise<ReviseFromCommentsResult> {
+      const body = threadIds === undefined ? {} : { thread_ids: threadIds }
+      return runAssistJob(
+        () => fetchApi<unknown>(`${documentPath(projectId, documentId)}/revise-from-comments`, post(body)),
+        (jobId) => projectsApi.getJobStatus(projectId, jobId),
+        parseReviseResult,
+      )
+    },
+    /** Marks threads answered by the saved version `documentId` (after a proposal's accepted changes are saved). */
+    markAddressed(projectId: string, documentId: string, threadIds: readonly string[]): Promise<readonly CommentThread[]> {
+      return recordAddressed(projectId, documentId, threadIds, true)
+    },
+    /** Clears the threads' mark, recorded on the version `documentId` (the restored one, when an applied pass is undone). */
+    clearAddressed(projectId: string, documentId: string, threadIds: readonly string[]): Promise<readonly CommentThread[]> {
+      return recordAddressed(projectId, documentId, threadIds, false)
     },
   }
 }

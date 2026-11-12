@@ -60,6 +60,7 @@
       "label": "v{{n}}",
       "current": "Atual",
       "edited": "Editada",
+      "revised": "Revisada a partir dos comentários",
       "restoredFrom": "Restaurada de v{{n}}",
       "open": "Abrir",
       "openNamed": "Abrir {{label}}",
@@ -796,6 +797,92 @@
         "unsaved": "Alterações não salvas"
       },
       "toolbarLabel": "Ações do documento"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "Atendido por uma versão que a IA revisou",
+        "user": "Atendido por uma versão salva a partir das alterações sugeridas"
+      },
+      "addressedIn": "Atendido na v{{version}}",
+      "applied": {
+        "banner_one": "Revisado a partir de {{count, number}} comentário como v{{version}}",
+        "banner_many": "Revisado a partir de {{count, number}} comentários como v{{version}}",
+        "banner_other": "Revisado a partir de {{count, number}} comentários como v{{version}}",
+        "reviewAgain": "Revisar novamente",
+        "status": "Sua forma de trabalhar deixa a IA escrever: ela salvou a revisão como uma nova versão. Desfazer restaura a anterior.",
+        "undo": "Desfazer",
+        "undoAnyway": "Desfazer mesmo assim",
+        "undoFailed": "Não foi possível restaurar a versão anterior. Restaure-a pelo histórico.",
+        "undoKeep": "Manter",
+        "undoNewer": "A v{{version}} foi salva depois desta revisão. Desfazer restaura a versão da qual a revisão partiu, então também removeria as alterações salvas desde então.",
+        "undoing": "Restaurando a versão anterior…",
+        "undone": "Desfeito: a versão anterior foi restaurada como uma nova versão."
+      },
+      "button": "Revisar a partir dos comentários",
+      "close": "Fechar",
+      "failed": "A revisão a partir dos comentários falhou. Tente novamente.",
+      "filterAddressed": "Atendidos",
+      "hint": "Sugere alterações nas partes de que tratam os comentários respondidos ou resolvidos, a partir dos comentários e das evidências do documento",
+      "noThreads": "Primeiro responda a um comentário ou resolva-o.",
+      "saveFirst": "Primeiro salve ou descarte as alterações aceitas.",
+      "proposal": {
+        "accept": "Aceitar",
+        "acceptAll": "Aceitar todas",
+        "acceptNamed": "Aceitar a alteração {{position}}",
+        "added": "Adicionado",
+        "answers": "Responde a:",
+        "change": "Alteração {{position}}",
+        "deleted": "(o trecho é removido)",
+        "dropped_one": "{{count, number}} sugestão foi deixada de fora: o trecho dela não está no texto.",
+        "dropped_many": "{{count, number}} sugestões foram deixadas de fora: os trechos delas não estão no texto.",
+        "dropped_other": "{{count, number}} sugestões foram deixadas de fora: os trechos delas não estão no texto.",
+        "intro": "Aceite ou rejeite cada alteração. As alterações aceitas vão para o seu rascunho; Salvar as transforma em uma nova versão.",
+        "listLabel": "Alterações sugeridas",
+        "markFailed": "Salvo, mas não foi possível marcar os comentários como atendidos. Tente novamente mais tarde.",
+        "marked_one": "Salvo: {{count, number}} comentário está marcado como atendido na v{{version}}.",
+        "marked_many": "Salvo: {{count, number}} comentários estão marcados como atendidos na v{{version}}.",
+        "marked_other": "Salvo: {{count, number}} comentários estão marcados como atendidos na v{{version}}.",
+        "none": "Não foi possível sugerir nenhuma alteração a partir destes comentários. As recomendações dizem o que fazer em vez disso.",
+        "reject": "Rejeitar",
+        "rejectAll": "Rejeitar todas",
+        "rejectNamed": "Rejeitar a alteração {{position}}",
+        "removed": "Removido",
+        "saveNote": "As alterações aceitas estão no seu rascunho. Salve para transformá-las em uma nova versão.",
+        "state": {
+          "accepted": "Aceita",
+          "addressed": "Salva",
+          "outOfDate": "Desatualizada: o trecho mudou",
+          "rejected": "Rejeitada"
+        },
+        "status_one": "{{count, number}} alteração sugerida.",
+        "status_many": "{{count, number}} alterações sugeridas.",
+        "status_other": "{{count, number}} alterações sugeridas.",
+        "title": "Alterações sugeridas"
+      },
+      "recommendations": {
+        "listLabel": "Recomendações",
+        "status_one": "{{count, number}} recomendação. Nada no documento foi alterado.",
+        "status_many": "{{count, number}} recomendações. Nada no documento foi alterado.",
+        "status_other": "{{count, number}} recomendações. Nada no documento foi alterado.",
+        "title": "Recomendações a partir dos comentários",
+        "why": "Sua forma de trabalhar com IA pede apenas recomendações: a IA não escreve este documento por você."
+      },
+      "reviewAgain": "Pedir às personas que revisem novamente",
+      "running": "Revisando a partir dos comentários…",
+      "showThread": "Mostrar o comentário: {{label}}",
+      "threadGone": "(comentário excluído)"
+    },
+    "focus": {
+      "announce": "Tela cheia. Pressione Esc para sair.",
+      "button": "Tela cheia",
+      "hint": "Tela cheia (Ctrl+Shift+F ou ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "Comentários abertos",
+      "includeComments": "Incluir comentários abertos",
+      "saved": "Salvo",
+      "trigger": "Arquivo",
+      "wholeDocument": "Sobre o documento inteiro"
     }
   }
 }

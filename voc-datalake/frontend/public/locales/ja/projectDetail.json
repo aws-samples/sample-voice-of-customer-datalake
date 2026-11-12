@@ -55,6 +55,7 @@
       "label": "v{{n}}",
       "current": "現在",
       "edited": "編集済み",
+      "revised": "コメントをもとに改訂",
       "restoredFrom": "v{{n}} から復元",
       "open": "開く",
       "openNamed": "{{label}} を開く",
@@ -770,6 +771,87 @@
         "unsaved": "未保存の変更"
       },
       "toolbarLabel": "ドキュメントの操作"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "AI が改訂したバージョンで対応済み",
+        "user": "提案された変更から保存したバージョンで対応済み"
+      },
+      "addressedIn": "v{{version}} で対応済み",
+      "applied": {
+        "banner_one": "{{count, number}} 件のコメントをもとに v{{version}} として改訂しました",
+        "banner_other": "{{count, number}} 件のコメントをもとに v{{version}} として改訂しました",
+        "reviewAgain": "もう一度レビュー",
+        "status": "あなたの AI との働き方では AI が書けるため、改訂を新しいバージョンとして保存しました。元に戻すと前のバージョンを復元します。",
+        "undo": "元に戻す",
+        "undoAnyway": "それでも元に戻す",
+        "undoFailed": "前のバージョンを復元できませんでした。履歴から復元してください。",
+        "undoKeep": "このままにする",
+        "undoNewer": "この改訂の後に v{{version}} が保存されています。元に戻すと改訂の元になったバージョンを復元するため、その後に保存された変更も取り消されます。",
+        "undoing": "前のバージョンを復元しています…",
+        "undone": "元に戻しました。前のバージョンを新しいバージョンとして復元しました。"
+      },
+      "button": "コメントをもとに改訂",
+      "close": "閉じる",
+      "failed": "コメントをもとにした改訂に失敗しました。もう一度お試しください。",
+      "filterAddressed": "対応済み",
+      "hint": "返信済みまたは解決済みのコメントが指摘している箇所について、コメントとドキュメントの根拠をもとに変更を提案します",
+      "noThreads": "まずコメントに返信するか、解決してください。",
+      "saveFirst": "まず承認した変更を保存するか、破棄してください。",
+      "proposal": {
+        "accept": "承認",
+        "acceptAll": "すべて承認",
+        "acceptNamed": "変更 {{position}} を承認",
+        "added": "追加",
+        "answers": "対応するコメント:",
+        "change": "変更 {{position}}",
+        "deleted": "(この箇所は削除されます)",
+        "dropped_one": "{{count, number}} 件の提案を除外しました。該当する箇所が本文にありません。",
+        "dropped_other": "{{count, number}} 件の提案を除外しました。該当する箇所が本文にありません。",
+        "intro": "変更ごとに承認または却下してください。承認した変更は下書きに入り、保存すると新しいバージョンになります。",
+        "listLabel": "提案された変更",
+        "markFailed": "保存しましたが、コメントを対応済みにできませんでした。後でもう一度お試しください。",
+        "marked_one": "保存しました。{{count, number}} 件のコメントを v{{version}} で対応済みにしました。",
+        "marked_other": "保存しました。{{count, number}} 件のコメントを v{{version}} で対応済みにしました。",
+        "none": "これらのコメントからは変更を提案できませんでした。代わりに何をすべきかは推奨事項を参照してください。",
+        "reject": "却下",
+        "rejectAll": "すべて却下",
+        "rejectNamed": "変更 {{position}} を却下",
+        "removed": "削除",
+        "saveNote": "承認した変更は下書きに入っています。保存すると新しいバージョンになります。",
+        "state": {
+          "accepted": "承認済み",
+          "addressed": "保存済み",
+          "outOfDate": "古い提案: 該当箇所が変更されています",
+          "rejected": "却下済み"
+        },
+        "status_one": "{{count, number}} 件の変更が提案されました。",
+        "status_other": "{{count, number}} 件の変更が提案されました。",
+        "title": "提案された変更"
+      },
+      "recommendations": {
+        "listLabel": "推奨事項",
+        "status_one": "推奨事項 {{count, number}} 件。ドキュメントは何も変更されていません。",
+        "status_other": "推奨事項 {{count, number}} 件。ドキュメントは何も変更されていません。",
+        "title": "コメントからの推奨事項",
+        "why": "あなたの AI との働き方では推奨事項のみです。AI がこのドキュメントを代わりに書くことはありません。"
+      },
+      "reviewAgain": "ペルソナにもう一度レビューを依頼",
+      "running": "コメントをもとに改訂しています…",
+      "showThread": "コメントを表示: {{label}}",
+      "threadGone": "(コメントは削除されました)"
+    },
+    "focus": {
+      "announce": "全画面表示です。Esc キーで終了します。",
+      "button": "全画面",
+      "hint": "全画面 (Ctrl+Shift+F または ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "未解決のコメント",
+      "includeComments": "未解決のコメントを含める",
+      "saved": "保存済み",
+      "trigger": "ファイル",
+      "wholeDocument": "ドキュメント全体について"
     }
   }
 }

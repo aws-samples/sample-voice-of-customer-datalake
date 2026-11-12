@@ -14,7 +14,11 @@ the newest version of the series and their own threads, and comments or replies 
 daily budget. A reviewer never sees another reviewer's threads, the team's internal threads, or any
 address but their own.
 
-The persona review start (``…/persona-review``) lives in the handler, beside the other assist jobs.
+``…/comments/addressed`` (EDIT: the gate's default for that path) marks threads answered by the
+path's saved version, or clears that ("Revise from comments", shared/document_revision.py).
+
+The persona review and "Revise from comments" starts (``…/persona-review``,
+``…/revise-from-comments``) live in the handler, beside the other assist jobs.
 """
 from __future__ import annotations
 
@@ -26,10 +30,11 @@ from botocore.exceptions import ClientError
 
 from shared import document_comments as comments
 from shared import document_series, document_share
+from shared.ai_writing import KIND_AUTONOMOUS, writing_kind
 from shared.aws import is_conditional_check_failure
 from shared.delete_audit import actor_from_event, record_delete
 from shared.engagement_identity import BoardViewer, board_viewer
-from shared.exceptions import AuthorizationError, ConflictError, NotFoundError
+from shared.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
 from shared.logging import tracer
 from shared.project_access import LEVEL_EDIT, Caller, ProjectAccess, claim_text, claims_from_event
 from shared.request_body import json_object_body
@@ -145,6 +150,34 @@ def resolve_document_comment(project_id: str, document_id: str, comment_id: str)
 @tracer.capture_method
 def reopen_document_comment(project_id: str, document_id: str, comment_id: str):
     return _status_change(project_id, document_id, comment_id, comments.STATUS_OPEN)
+
+
+@app.post('/projects/<project_id>/documents/<document_id>/comments/addressed')
+@tracer.capture_method
+def mark_document_comments_addressed(project_id: str, document_id: str):
+    """``{thread_ids: [≤50], addressed?: bool = true}`` (edit): THIS version (the path's document)
+    answers the threads, or with ``addressed: false`` no longer does (the canvas's Undo of an
+    applied pass, on the restored version).
+
+    The canvas calls it after a "Revise from comments" proposal is saved; so does MCP's
+    ``generate`` step ``revise`` with ``mark_addressed``. Each call is appended to the threads'
+    ``addressed_history`` (D1). Ids not in the series are skipped; none found is 404.
+    """
+    thread_ids, addressed = comments.validate_addressed(json_object_body(app))
+    document, series = _series(project_id, document_id)
+    if document.get('version') is None:
+        raise ValidationError('This document has no saved version to mark comments by')
+    table = _table()
+    wanted = set(thread_ids)
+    threads = [thread for thread in comments.list_threads(table, project_id, series['series_id'])
+               if thread.get('comment_id') in wanted]
+    if not threads:
+        raise NotFoundError(comments.COMMENT_NOT_FOUND)
+    by_kind = (comments.ADDRESSED_BY_AI if writing_kind(app.current_event.raw_event) == KIND_AUTONOMOUS
+               else comments.ADDRESSED_BY_USER)
+    entry = comments.addressed_entry(version=int(document['version']), document_id=document_id, by_kind=by_kind,
+                                     by_sub=_caller().subject, addressed=addressed)
+    return {'threads': comments.threads_view(comments.record_threads_addressed(table, threads, entry), team=True)}
 
 
 @app.delete('/projects/<project_id>/documents/<document_id>/comments/<comment_id>')

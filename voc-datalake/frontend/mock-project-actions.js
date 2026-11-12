@@ -700,6 +700,31 @@ function expectedRevisionOf(body) {
     : [null, bad('expected_revision must be the revision you loaded (a whole number ≥ 1)')];
 }
 
+/**
+ * validated_edit_kind: `edit` (absent / null) or `revise`, a person saving the "Revise from comments"
+ * proposal they accepted (a PR/FAQ / PRD only, recorded like the applied pass: D4).
+ */
+function editKindOf(body) {
+  if (!own(body, 'edit_kind') || body.edit_kind === null) return ['edit', null];
+  return body.edit_kind === 'edit' || body.edit_kind === 'revise'
+    ? [body.edit_kind, null]
+    : [null, bad('edit_kind must be "edit" or "revise"')];
+}
+
+/** document_history._revised_type: only a PR/FAQ or PRD is saved as a revise. */
+function reviseRefusal(editKind, doc) {
+  return editKind === 'revise' && doc.document_type !== 'prfaq' && doc.document_type !== 'prd'
+    ? bad('Only a PR/FAQ or PRD is revised from comments')
+    : null;
+}
+
+/** The new version's provenance: a revise records the person who saved it (`edited_by`, D4). */
+function editProvenance(ctx, doc, editKind) {
+  const provenance = { edit_kind: editKind, edited_from_id: doc.document_id };
+  if (editKind !== 'revise') return provenance;
+  return { ...provenance, edited_by: { sub: ctx.shared.mockCaller?.sub ?? '', kind: 'user' } };
+}
+
 const STALE_DOCUMENT = [409, { success: false, error: 'The document was changed by someone else; reload it and try again' }];
 const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -740,7 +765,9 @@ function updateDocument(ctx, documentId) {
     return bad('Prototype content is stored in S3 and cannot be updated through generic document CRUD. Use the prototype revision workflow.');
   }
   const [expected, expectedError] = expectedRevisionOf(ctx.body);
-  if (expectedError) return expectedError;
+  const [editKind, editKindError] = editKindOf(ctx.body);
+  const refusal = expectedError ?? editKindError ?? reviseRefusal(editKind, doc);
+  if (refusal) return refusal;
   if (own(ctx.body, 'content') && typeof ctx.body.content !== 'string') return bad('content must be a string');
   const content = own(ctx.body, 'content') ? ctx.body.content : (doc.content ?? '');
   if (content === (doc.content ?? '') && title === doc.title) return [200, { success: true, unchanged: true, document: doc }];
@@ -748,7 +775,7 @@ function updateDocument(ctx, documentId) {
   if (editIdError) return editIdError;
   if (managed) {
     return allocatedManagedVersion(ctx, doc, `edit:${doc.document_id}:${editId}`, expected,
-      () => newManagedVersion(ctx, doc, content, { edit_kind: 'edit', edited_from_id: doc.document_id }));
+      () => newManagedVersion(ctx, doc, content, editProvenance(ctx, doc, editKind)));
   }
   if (expected !== null && expected !== currentRevision(doc)) return STALE_DOCUMENT;
   return [200, { success: true, document: replaceUnmanaged(ctx, doc, { content, title, provenance: { edit_kind: 'edit' } }) }];

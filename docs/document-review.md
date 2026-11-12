@@ -2,9 +2,10 @@
 
 A PR/FAQ or PRD in a project shows its comment threads in the margin, like comments in a word
 processor. The team comments, asks the project's personas to review, and shares a review link with
-people outside the app. Nothing here edits the document, so every
-[way of working with AI](ways-of-working.md) has all of it. The document itself is shown and edited on the
-[document canvas](document-canvas.md); the threads sit in its side rail.
+people outside the app. Comments, persona review and the link never edit the document, so every
+[way of working with AI](ways-of-working.md) has all of them; **Revise from comments** (below) proposes
+or writes changes only as far as the person's way of working allows. The document itself is shown and
+edited on the [document canvas](document-canvas.md); the threads sit in its side rail.
 
 ## Comments
 
@@ -40,6 +41,59 @@ The server keeps a comment only when its quote is found **verbatim** in the docu
 (whitespace and markdown symbols aside), and files it anchored to that quote. Others are dropped
 and counted. Running it again on the same version files nothing twice (same persona, version and
 quote). It is an assist job: `POST …/persona-review` answers 202 and the page polls the job.
+
+## Revise from comments
+
+Once threads are answered (resolved, or open with a reply), **Revise from comments** (anyone who can
+edit the project) reads them and the document's evidence and suggests changes to the parts the threads
+are about. By default it takes every thread of the series that is resolved or replied to, not yet
+**addressed**, and either on the whole document or whose quote is found in this version; the canvas, an
+API caller or MCP may name up to 50 threads instead. It is one model call on the `documents` surface
+(as persona review), an assist job: `POST …/revise-from-comments` answers 202 and the page polls the job.
+
+What it reads: this version's Markdown (at most 60,000 characters; a longer document is refused), each
+thread's quote and heading, status, comment and its last 10 replies with their author kind (never a
+name or address), and at most 20 of the reviews the document was written from (`input_feedback_ids`,
+read under the starter's category access: a review they cannot see never reaches the model). All of it
+goes to the model as data, never as instructions. A comment, reply, quote heading or review that reads
+like an instruction to the AI (the **Check wording** screen) is withheld from the prompt and says so.
+
+What it answers depends on the person's [way of working](ways-of-working.md#revise-from-comments):
+
+| Outcome | When | What happens |
+|---|---|---|
+| `recommendations` | The AI may not write this PR/FAQ or PRD for the caller (Human-driven without the unlock, or an agent / MCP token whose person is not AI-driven) | One recommendation per thread; nothing is written |
+| `proposal` | The person may have the AI write it and works Human-driven with the unlock or AI-assisted | The changes are shown as a diff on the canvas: accept or reject each, then **Save** (one new version, sent with `edit_kind: revise`, so History records it like an applied pass: `edit_kind` `revise`, the person in `edited_by`); the canvas then marks the accepted changes' threads addressed by that version |
+| `applied` | The person (and, for an agent or MCP token, the project's owner) works AI-driven | The server writes the revised text as the **next version** of the series (never an overwrite; `edit_kind` `revise`, who asked in `edited_by`) and marks the changes' threads addressed by it, best effort: a thread it cannot mark (deleted meanwhile, its history full, a failed write) is logged and left out of `addressed_thread_ids`, and the pass still answers `applied` (mark it from the canvas). **Undo** restores the previous version from History (a new version again) and clears those marks on the restored version (`addressed: false`); when someone saved a version after the revision, it says so first and offers **Undo anyway** or **Keep it**, since the restore would revert that save too. A pass that keeps no change writes nothing and answers `recommendations` |
+
+Every change is **grounded**: its `before` must occur exactly once in the Markdown of the version the
+pass read, must not overlap another kept change and must name one of the threads; at most 20 are kept.
+The others are dropped and counted (`dropped`). An applied pass on a version someone saved over since
+fails with the stale-version message before the model is asked (run it again on the newest version). The way of working is read
+once when the pass starts; when it cannot be read the start fails ("Could not check your way of working
+with AI. Please retry.", as on every AI-writing route), never a quiet `recommendations`. A job runs once
+(assist jobs are claimed once and never retried); its version is written under the pass's own
+allocation id (`revise_id`), so the write itself is idempotent.
+
+The job's `result`:
+
+```
+{"outcome": "recommendations" | "proposal" | "applied",
+ "base_document_id": str, "base_version": int,
+ "recommendations": [{"thread_id", "text"}],
+ "changes": [{"change_id", "thread_ids", "before", "after", "reason"}],
+ "applied_version": {"document_id", "version"} | null,
+ "addressed_thread_ids": [str], "dropped": int}
+```
+
+A thread answered by a version shows **Addressed in vN** (`addressed: {version, at, by_kind: user | ai}`,
+null when none). `POST …/comments/addressed` on that version's path marks it (`addressed: true`, the
+default) or clears it (`addressed: false`, the canvas's Undo of an applied pass, on the restored
+version). Each call is one append to the thread's history, never written over or trimmed (D1); the
+current mark is the newest entry when it is a mark. A thread's history holds at most 100 marks and
+clears: one more answers **409** ("This comment has reached its limit of addressed marks; start a new
+comment"), as a reply past 50 does. A full thread does not stop the others of the same call: they are
+marked, then the call answers 409 saying some comments could not be marked and the others were. A reply or a status change clears nothing.
 
 ## Share for review
 
@@ -87,6 +141,8 @@ The API re-checks the link and the verified email on every call.
 | DELETE | `/projects/{id}/documents/{doc}/comments/{cid}` | view + author or edit | Remove the thread |
 | GET · POST · DELETE | `/projects/{id}/documents/{doc}/share` | view · edit · edit | The series' link; create `{audience?: {mode: anyone\|list, domains?, emails?}, expires_in_days?: 1–90}` (an active link is returned as is); turn it off |
 | POST | `/projects/{id}/documents/{doc}/persona-review` | edit | `{persona_ids?: [≤ 6]}` → 202 assist job; poll `GET /projects/{id}/jobs/{job_id}` |
+| POST | `/projects/{id}/documents/{doc}/revise-from-comments` | edit | `{thread_ids?: [≤ 50]}` → 202 assist job (result above); 400 when no thread is waiting |
+| POST | `/projects/{id}/documents/{doc}/comments/addressed` | edit | `{thread_ids: [≤ 50], addressed?: bool = true}` → `{threads}` marked addressed by `{doc}`'s own version (the server reads it), or cleared with `addressed: false`; ids not in the series are skipped, 404 when none is; 409 when a thread's history is full (the others still marked) |
 | GET | `/review/{share_id}` | board authorizer | `{share, document, threads (own), viewer}` |
 | POST | `/review/{share_id}/comments` | board authorizer | New thread on the newest version; 429 `rate_limited` past 40 a day |
 | POST | `/review/{share_id}/comments/{cid}/replies` | board authorizer | A reply on one's own thread |
@@ -101,7 +157,8 @@ All in the projects table:
 
 | Item | Key | Notes |
 |---|---|---|
-| Thread | `DCOMMENTS#{project}#{series}` / `C#{comment_id}` | Version, anchor, author (`user` / `persona` / `reviewer`), status, replies |
+| Thread | `DCOMMENTS#{project}#{series}` / `C#{comment_id}` | Version, anchor, author (`user` / `persona` / `reviewer`), status, replies, `addressed_history` (append-only, at most 100 entries, never trimmed: `[{version, document_id, at, by_kind, by_sub, addressed: bool}]`, one `list_append` per call so two writers never drop each other's entry; past 100 a 409), `addressed` (the newest entry when it is a mark, else null; the API shows `{version, at, by_kind}`) |
+| Revised version | `PROJECT#{project}` / the series' next row | A normal version row with `edit_kind: revise`, `edited_from_id` and `edited_by: {sub, kind}` (not carried to later versions): written by an applied pass (who asked) or by the person's save of a proposal (`PUT …/documents/{doc}` with `edit_kind: revise`) |
 | Series' current link | `DCOMMENTS#{project}#{series}` / `SHARE` | Points at the link |
 | Link | `DOCSHARE#{share_id}` / `META` | Audience, expiry, revoked; `ttl` 30 days past expiry |
 | Reviewer's daily writes | `DCRATE#{share_id}#{email digest}` / `{day}` | `ttl` 2 days |

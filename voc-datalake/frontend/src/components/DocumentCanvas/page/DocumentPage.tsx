@@ -13,10 +13,14 @@
  * Widths: from `xl` the evidence rail sits right of the text, below it otherwise; from `lg` the outline is a sticky
  * column left of it, a "Contents" disclosure above it otherwise. The page scrolls as one with the app.
  *
+ * Focus view ("Full screen", `?view=focus`, useFocusView): the page takes the whole window, the canvas and its rail
+ * side by side (one column on a phone, the rail under the text); the app's chrome steps aside (focusView). A polite
+ * live note says how to leave it.
+ *
  * @module components/DocumentCanvas/page/DocumentPage
  */
 import clsx from 'clsx'
-import { useId, useState } from 'react'
+import { useCallback, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DocumentCoachingNotice } from '../../AiCoach/HumanDrivenNotice'
 import { DocumentTypeBadge } from '../../DocumentTypeBadge/DocumentTypeBadge'
@@ -32,7 +36,9 @@ import CanvasEditor from '../editor/CanvasEditor'
 import DocumentProvenance from './DocumentProvenance'
 import EvidenceCards from './EvidenceCards'
 import Outline from './Outline'
-import type { KeyboardEvent } from 'react'
+import { useFocusView } from './useFocusView'
+import type { FocusViewControls } from './useFocusView'
+import type { KeyboardEvent, RefObject } from 'react'
 import type { Project } from '../../../api/projectTypes'
 import type { ProjectDocument } from '../../../api/types'
 import type { CanvasDocument as CanvasDocumentState } from '../actions/useCanvasDocument'
@@ -54,16 +60,18 @@ interface DocumentPageProps {
 
 type BarProps = Readonly<{
   project: Project; document: ProjectDocument; canEdit: boolean; state: CanvasDocumentState
-  onDeleteDoc: () => void; isDeleting: boolean
+  onDeleteDoc: () => void; isDeleting: boolean; focus: FocusViewControls
+  focusButtonRef: RefObject<HTMLButtonElement | null>
 }>
 
 /**
- * The bar of a PR/FAQ or PRD: its review link is the comments' (the same query DocumentReviewView reads), offered
- * once they have loaded.
+ * The bar of a PR/FAQ or PRD: its review link and the threads its PDF may include are the comments' (the same query
+ * DocumentReviewView reads), offered once they have loaded.
  */
 function CommentableActionsBar(props: BarProps) {
   const comments = useDocumentComments(props.project.project_id, props.document.document_id)
-  return <DocumentActionsBar {...props} share={comments.query.isSuccess ? comments : null} />
+  const { query } = comments
+  return <DocumentActionsBar {...props} share={query.isSuccess ? comments : null} threads={query.isSuccess ? query.data.threads : null} />
 }
 
 function DocumentTitle({ document, state, editable }: Readonly<{
@@ -108,11 +116,19 @@ export default function DocumentPage({
     <EvidenceCards feedbackIds={document.input_feedback_ids} featureRequestIds={featureRequestIdsOf(document)}
       erasedEvidence={document.erased_evidence} titled={titled} />
   )
-  const barProps: BarProps = { project, document, canEdit, state, onDeleteDoc, isDeleting }
+  const { handleRef } = state
+  const focusCanvas = useCallback(() => { handleRef.current?.focus() }, [handleRef])
+  const focusButtonRef = useRef<HTMLButtonElement>(null)
+  const focus = useFocusView(focusCanvas, focusButtonRef)
+  const { t } = useTranslation('projectDetail')
+  const barProps: BarProps = { project, document, canEdit, state, onDeleteDoc, isDeleting, focus, focusButtonRef }
   return (
-    // Unsaved, a phone pins the Save bar over the page's foot: the padding keeps it off the last lines.
-    <div data-testid="document-detail-pane"
-      className={clsx('bg-card rounded-xl border p-4 sm:p-6 min-w-0 lg:min-h-[500px]', state.dirty && 'max-sm:pb-20')}>
+    // Unsaved, a phone pins the Save bar over the page's foot: the padding keeps it off the last lines. In focus view
+    // the page is the window (the shell has stepped aside): no card edge, its full height.
+    <div data-testid="document-detail-pane" data-focus-view={focus.active ? '' : undefined}
+      className={clsx('bg-card p-4 sm:p-6 min-w-0',
+        focus.active ? 'min-h-screen lg:px-10' : 'rounded-xl border lg:min-h-[500px]', state.dirty && 'max-sm:pb-20')}>
+      <p aria-live="polite" className="sr-only" data-testid="canvas-focus-note">{focus.active ? t('canvas.focus.announce') : ''}</p>
       {/* The title, its type, then the bar as one row: its save status (the version and when) on the left, the
           actions on the right, wrapping on a phone. */}
       <header className="mb-4 space-y-2">
@@ -122,7 +138,7 @@ export default function DocumentPage({
           </div>
           <DocumentTypeBadge type={document.document_type} />
         </div>
-        {commentable ? <CommentableActionsBar {...barProps} /> : <DocumentActionsBar {...barProps} share={null} />}
+        {commentable ? <CommentableActionsBar {...barProps} /> : <DocumentActionsBar {...barProps} share={null} threads={null} />}
       </header>
       <AssistantDiffOnCanvas projectId={project.project_id} document={document} state={state} />
       {canEdit ? (
@@ -135,7 +151,7 @@ export default function DocumentPage({
           {commentable ? (
             <DocumentReviewView projectId={project.project_id} document={document} markdown={markdown}
               hasPersonas={project.persona_count > 0} editable={editable} onChange={state.onChange}
-              handleRef={state.handleRef} onOutlineChange={setOutline} evidence={evidence(false)} />
+              handleRef={state.handleRef} onOutlineChange={setOutline} evidence={evidence(false)} canvas={state} />
           ) : (
             <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_16rem] xl:gap-8">
               <article className={READING_COLUMN_CLASS}>

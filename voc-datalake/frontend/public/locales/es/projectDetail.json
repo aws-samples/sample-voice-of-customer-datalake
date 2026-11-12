@@ -60,6 +60,7 @@
       "label": "v{{n}}",
       "current": "Actual",
       "edited": "Editada",
+      "revised": "Revisada a partir de los comentarios",
       "restoredFrom": "Restaurada desde v{{n}}",
       "open": "Abrir",
       "openNamed": "Abrir {{label}}",
@@ -796,6 +797,92 @@
         "unsaved": "Cambios sin guardar"
       },
       "toolbarLabel": "Acciones del documento"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "Respondido por una versión que revisó la IA",
+        "user": "Respondido por una versión guardada a partir de los cambios sugeridos"
+      },
+      "addressedIn": "Atendido en v{{version}}",
+      "applied": {
+        "banner_one": "Revisado a partir de {{count, number}} comentario como v{{version}}",
+        "banner_many": "Revisado a partir de {{count, number}} comentarios como v{{version}}",
+        "banner_other": "Revisado a partir de {{count, number}} comentarios como v{{version}}",
+        "reviewAgain": "Revisar de nuevo",
+        "status": "Tu forma de trabajar permite que la IA escriba: guardó la revisión como una versión nueva. Deshacer restaura la anterior.",
+        "undo": "Deshacer",
+        "undoAnyway": "Deshacer de todos modos",
+        "undoFailed": "No se pudo restaurar la versión anterior. Restáurala desde el historial.",
+        "undoKeep": "Mantener",
+        "undoNewer": "La v{{version}} se guardó después de esta revisión. Deshacer restaura la versión de la que partió la revisión, así que también quitaría los cambios guardados desde entonces.",
+        "undoing": "Restaurando la versión anterior…",
+        "undone": "Deshecho: la versión anterior se ha restaurado como una versión nueva."
+      },
+      "button": "Revisar a partir de los comentarios",
+      "close": "Cerrar",
+      "failed": "La revisión a partir de los comentarios ha fallado. Inténtalo de nuevo.",
+      "filterAddressed": "Atendidos",
+      "hint": "Sugiere cambios en las partes de las que tratan los comentarios respondidos o resueltos, a partir de los comentarios y la evidencia del documento",
+      "noThreads": "Primero responde a un comentario o resuélvelo.",
+      "saveFirst": "Primero guarda o descarta los cambios aceptados.",
+      "proposal": {
+        "accept": "Aceptar",
+        "acceptAll": "Aceptar todos",
+        "acceptNamed": "Aceptar el cambio {{position}}",
+        "added": "Añadido",
+        "answers": "Responde a:",
+        "change": "Cambio {{position}}",
+        "deleted": "(se elimina el pasaje)",
+        "dropped_one": "Se omitió {{count, number}} sugerencia: su pasaje no está en el texto.",
+        "dropped_many": "Se omitieron {{count, number}} sugerencias: sus pasajes no están en el texto.",
+        "dropped_other": "Se omitieron {{count, number}} sugerencias: sus pasajes no están en el texto.",
+        "intro": "Acepta o rechaza cada cambio. Los cambios aceptados pasan a tu borrador; Guardar los convierte en una versión nueva.",
+        "listLabel": "Cambios sugeridos",
+        "markFailed": "Guardado, pero no se pudieron marcar los comentarios como atendidos. Inténtalo de nuevo más tarde.",
+        "marked_one": "Guardado: {{count, number}} comentario queda marcado como atendido en v{{version}}.",
+        "marked_many": "Guardado: {{count, number}} comentarios quedan marcados como atendidos en v{{version}}.",
+        "marked_other": "Guardado: {{count, number}} comentarios quedan marcados como atendidos en v{{version}}.",
+        "none": "No se pudo sugerir ningún cambio a partir de estos comentarios. Las recomendaciones dicen qué hacer en su lugar.",
+        "reject": "Rechazar",
+        "rejectAll": "Rechazar todos",
+        "rejectNamed": "Rechazar el cambio {{position}}",
+        "removed": "Eliminado",
+        "saveNote": "Los cambios aceptados están en tu borrador. Guarda para convertirlos en una versión nueva.",
+        "state": {
+          "accepted": "Aceptado",
+          "addressed": "Guardado",
+          "outOfDate": "Desactualizado: el pasaje ha cambiado",
+          "rejected": "Rechazado"
+        },
+        "status_one": "{{count, number}} cambio sugerido.",
+        "status_many": "{{count, number}} cambios sugeridos.",
+        "status_other": "{{count, number}} cambios sugeridos.",
+        "title": "Cambios sugeridos"
+      },
+      "recommendations": {
+        "listLabel": "Recomendaciones",
+        "status_one": "{{count, number}} recomendación. No se ha cambiado nada en el documento.",
+        "status_many": "{{count, number}} recomendaciones. No se ha cambiado nada en el documento.",
+        "status_other": "{{count, number}} recomendaciones. No se ha cambiado nada en el documento.",
+        "title": "Recomendaciones a partir de los comentarios",
+        "why": "Tu forma de trabajar con IA pide solo recomendaciones: la IA no escribe este documento por ti."
+      },
+      "reviewAgain": "Pedir a las personas que revisen de nuevo",
+      "running": "Revisando a partir de los comentarios…",
+      "showThread": "Mostrar el comentario: {{label}}",
+      "threadGone": "(comentario eliminado)"
+    },
+    "focus": {
+      "announce": "Pantalla completa. Pulsa Escape para salir.",
+      "button": "Pantalla completa",
+      "hint": "Pantalla completa (Ctrl+Mayús+F o ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "Comentarios abiertos",
+      "includeComments": "Incluir comentarios abiertos",
+      "saved": "Guardado",
+      "trigger": "Archivo",
+      "wholeDocument": "Sobre todo el documento"
     }
   }
 }

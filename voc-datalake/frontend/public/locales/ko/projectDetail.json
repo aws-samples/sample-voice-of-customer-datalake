@@ -55,6 +55,7 @@
       "label": "v{{n}}",
       "current": "현재",
       "edited": "편집됨",
+      "revised": "댓글을 바탕으로 수정됨",
       "restoredFrom": "v{{n}}에서 복원",
       "open": "열기",
       "openNamed": "{{label}} 열기",
@@ -770,6 +771,87 @@
         "unsaved": "저장하지 않은 변경 사항"
       },
       "toolbarLabel": "문서 작업"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "AI가 수정한 버전에서 반영됨",
+        "user": "제안된 변경 사항으로 저장한 버전에서 반영됨"
+      },
+      "addressedIn": "v{{version}}에서 반영됨",
+      "applied": {
+        "banner_one": "댓글 {{count, number}}개를 바탕으로 v{{version}}(으)로 수정했습니다",
+        "banner_other": "댓글 {{count, number}}개를 바탕으로 v{{version}}(으)로 수정했습니다",
+        "reviewAgain": "다시 검토",
+        "status": "AI와 일하는 방식상 AI가 작성할 수 있어 수정본을 새 버전으로 저장했습니다. 실행 취소하면 이전 버전을 복원합니다.",
+        "undo": "실행 취소",
+        "undoAnyway": "그래도 실행 취소",
+        "undoFailed": "이전 버전을 복원하지 못했습니다. 기록에서 복원하세요.",
+        "undoKeep": "유지",
+        "undoNewer": "이 수정 이후에 v{{version}}이(가) 저장되었습니다. 실행 취소하면 수정의 기준이 된 버전을 복원하므로 그 뒤에 저장된 변경도 사라집니다.",
+        "undoing": "이전 버전을 복원하는 중…",
+        "undone": "실행 취소됨: 이전 버전이 새 버전으로 복원되었습니다."
+      },
+      "button": "댓글을 바탕으로 수정",
+      "close": "닫기",
+      "failed": "댓글을 바탕으로 한 수정에 실패했습니다. 다시 시도하세요.",
+      "filterAddressed": "반영됨",
+      "hint": "답글이 달렸거나 해결된 댓글이 다루는 부분에 대해 댓글과 문서의 근거를 바탕으로 변경을 제안합니다",
+      "noThreads": "먼저 댓글에 답글을 달거나 해결하세요.",
+      "saveFirst": "먼저 수락한 변경 사항을 저장하거나 취소하세요.",
+      "proposal": {
+        "accept": "수락",
+        "acceptAll": "모두 수락",
+        "acceptNamed": "변경 {{position}} 수락",
+        "added": "추가됨",
+        "answers": "관련 댓글:",
+        "change": "변경 {{position}}",
+        "deleted": "(이 부분이 삭제됩니다)",
+        "dropped_one": "제안 {{count, number}}개를 제외했습니다. 해당 부분이 본문에 없습니다.",
+        "dropped_other": "제안 {{count, number}}개를 제외했습니다. 해당 부분이 본문에 없습니다.",
+        "intro": "변경마다 수락하거나 거절하세요. 수락한 변경은 초안에 들어가고, 저장하면 새 버전이 됩니다.",
+        "listLabel": "제안된 변경",
+        "markFailed": "저장했지만 댓글을 반영됨으로 표시하지 못했습니다. 나중에 다시 시도하세요.",
+        "marked_one": "저장됨: 댓글 {{count, number}}개가 v{{version}}에서 반영됨으로 표시되었습니다.",
+        "marked_other": "저장됨: 댓글 {{count, number}}개가 v{{version}}에서 반영됨으로 표시되었습니다.",
+        "none": "이 댓글들로는 변경을 제안할 수 없었습니다. 대신 할 일은 권장 사항을 참고하세요.",
+        "reject": "거절",
+        "rejectAll": "모두 거절",
+        "rejectNamed": "변경 {{position}} 거절",
+        "removed": "삭제됨",
+        "saveNote": "수락한 변경이 초안에 있습니다. 저장하면 새 버전이 됩니다.",
+        "state": {
+          "accepted": "수락됨",
+          "addressed": "저장됨",
+          "outOfDate": "오래됨: 해당 부분이 바뀌었습니다",
+          "rejected": "거절됨"
+        },
+        "status_one": "변경 {{count, number}}개가 제안되었습니다.",
+        "status_other": "변경 {{count, number}}개가 제안되었습니다.",
+        "title": "제안된 변경"
+      },
+      "recommendations": {
+        "listLabel": "권장 사항",
+        "status_one": "권장 사항 {{count, number}}개. 문서는 변경되지 않았습니다.",
+        "status_other": "권장 사항 {{count, number}}개. 문서는 변경되지 않았습니다.",
+        "title": "댓글에서 나온 권장 사항",
+        "why": "AI와 일하는 방식상 권장 사항만 제공합니다. AI가 이 문서를 대신 작성하지 않습니다."
+      },
+      "reviewAgain": "페르소나에게 다시 검토 요청",
+      "running": "댓글을 바탕으로 수정하는 중…",
+      "showThread": "댓글 보기: {{label}}",
+      "threadGone": "(삭제된 댓글)"
+    },
+    "focus": {
+      "announce": "전체 화면입니다. Esc 키를 눌러 종료하세요.",
+      "button": "전체 화면",
+      "hint": "전체 화면 (Ctrl+Shift+F 또는 ⌘⇧F)"
+    },
+    "menu": {
+      "commentsHeading": "열린 댓글",
+      "includeComments": "열린 댓글 포함",
+      "saved": "저장됨",
+      "trigger": "파일",
+      "wholeDocument": "문서 전체에 대한 댓글"
     }
   }
 }

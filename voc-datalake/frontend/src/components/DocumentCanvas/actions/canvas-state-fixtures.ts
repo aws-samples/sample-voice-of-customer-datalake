@@ -12,6 +12,6 @@ export function canvasState(overrides: Partial<CanvasDocument> = {}): CanvasDocu
     content: '', title: '', setTitle: vi.fn(), onChange: vi.fn(), dirty: false, saving: false,
     save: vi.fn(() => Promise.resolve()), discard: vi.fn(), conflict: null, titleEditable: false,
     handleRef: createRef<CanvasEditorHandle | null>(), editable: true, selectDoc: vi.fn(), reloadLatest: vi.fn(),
-    guardDialog: null, ...overrides,
+    guardDialog: null, lastSaved: null, generation: 0, markRevised: vi.fn(), ...overrides,
   }
 }

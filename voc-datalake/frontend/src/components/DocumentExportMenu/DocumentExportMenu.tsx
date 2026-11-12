@@ -4,12 +4,17 @@
  * Export options for PRDs, PR/FAQs, and research documents:
  * - Copy as Markdown
  * - Copy as Kiro prompt (with project context)
- * - Print or save as PDF (the browser print dialog; its "Save as PDF" writes the file)
+ * - Print or save as PDF (the browser print dialog; its "Save as PDF" writes the file), with the option "Include open
+ *   comments" for a commented document (PR/FAQ, PRD): the open threads placed in the printed text (or on the whole
+ *   document), each with its quote, after the text
+ *
+ * The document page's "File" menu is this menu with the page's own items around the exports (`leading`, `children`).
  *
  * @module components/DocumentExportMenu
  */
 
 import { Check, Sparkles } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   downloadFile, sanitizeFilename,
@@ -19,6 +24,11 @@ import ExportMenuShell from '../ExportMenuShell/ExportMenuShell'
 import { useCopiedFlag } from '../../hooks/useCopiedFlag'
 import DocumentPDFContent from './DocumentPDFContent'
 import { documentText } from './documentText'
+import { printedThreads } from './printedThreads'
+import type { ReactNode } from 'react'
+import type { TFunction } from 'i18next'
+import type { MenuSlot } from '../ExportMenuShell/ExportMenuShell'
+import type { CommentThread } from '../../api/documentReviewSchema'
 import type {
   ProjectDocument,
 } from '../../api/types'
@@ -29,6 +39,28 @@ import type {
 interface DocumentExportMenuProps {
   document: ProjectDocument | null
   project?: Project | null
+  /** The document's comment threads (a PR/FAQ or PRD, once loaded): offers "Include open comments" for the PDF. */
+  threads?: readonly CommentThread[] | null
+  /** A labelled trigger with this text instead of the "Download options" kebab. */
+  triggerLabel?: string
+  /** Items before the exports, and after them (ExportMenuShell's slots). */
+  leading?: (menu: MenuSlot) => ReactNode
+  children?: (menu: MenuSlot) => ReactNode
+  exportDescribedBy?: string
+}
+
+/** "Include open comments": a checkbox item of the menu; it keeps the menu open. */
+function IncludeCommentsItem({ checked, onToggle }: Readonly<{ checked: boolean; onToggle: () => void }>) {
+  const { t } = useTranslation('projectDetail')
+  return (
+    <button type="button" role="menuitemcheckbox" aria-checked={checked} onClick={onToggle}
+      className="menu-item py-2.5 sm:py-1.5 pl-9 active:bg-bg-hover">
+      <span aria-hidden="true" className="inline-flex size-4 flex-shrink-0 items-center justify-center rounded-sm border border-border">
+        {checked ? <Check size={12} /> : null}
+      </span>
+      <span className="truncate">{t('canvas.menu.includeComments')}</span>
+    </button>
+  )
 }
 
 // Helper to find all markdown link positions
@@ -122,7 +154,8 @@ function KiroSection({
   doc: ProjectDocument
   copiedKiro: boolean
   onCopyToKiro: () => void
-  t: (key: string) => string
+  /** The menu's `components` t: typed so the i18n audit charges its keys to `components`, not this file's first hook. */
+  t: TFunction<'components'>
 }>) {
   if (doc.document_type !== 'prd' && doc.document_type !== 'prfaq') return null
   return (
@@ -141,10 +174,12 @@ function KiroSection({
 }
 
 export default function DocumentExportMenu({
-  document: doc, project,
+  document: doc, project, threads = null, triggerLabel, leading, children, exportDescribedBy,
 }: Readonly<DocumentExportMenuProps>) {
   const [copiedKiro, flashCopiedKiro] = useCopiedFlag()
+  const [includeComments, setIncludeComments] = useState(false)
   const { t } = useTranslation('components')
+  const { t: tPage } = useTranslation('projectDetail')
 
   // Prototype artifacts own their open/download controls in PrototypeView. Raw
   // prototype content is never a prose or Kiro export, including legacy inline
@@ -187,9 +222,18 @@ export default function DocumentExportMenu({
 
   // A throw is logged and swallowed by the shell.
   const downloadAsPDF = () => {
+    // The open threads on this (saved) version's text with their quotes, when asked for (resolved ones are
+    // settled: not part of the read-out).
+    const pdfComments = threads !== null && includeComments
+      ? {
+          heading: tPage('canvas.menu.commentsHeading'),
+          wholeDocument: tPage('canvas.menu.wholeDocument'),
+          threads: printedThreads(doc, threads.filter((thread) => thread.status === 'open')),
+        }
+      : null
     const printWindow = openPrintWindow({
       title: doc.title,
-      content: <DocumentPDFContent document={doc} />,
+      content: <DocumentPDFContent document={doc} comments={pdfComments} />,
     })
     if (!printWindow && import.meta.env.DEV) {
       console.error('Failed to prepare the print document.')
@@ -199,20 +243,29 @@ export default function DocumentExportMenu({
   return (
     <ExportMenuShell
       labels={{
-        trigger: t('documentExport.downloadOptions'),
+        trigger: triggerLabel ?? t('documentExport.downloadOptions'),
         copy: t('documentExport.copy'),
         copied: t('documentExport.copied'),
         downloadMarkdown: t('documentExport.downloadMarkdown'),
         downloadPDF: t('documentExport.downloadPDF'),
         downloadTXT: t('documentExport.downloadTXT'),
       }}
+      labelled={triggerLabel !== undefined}
       onCopy={copyContent}
       onDownloadMarkdown={downloadAsMarkdown}
       onDownloadPDF={downloadAsPDF}
       onDownloadTXT={downloadAsTxt}
+      leading={leading}
+      exportDescribedBy={exportDescribedBy}
+      afterPdf={threads === null ? null : (
+        <IncludeCommentsItem checked={includeComments} onToggle={() => setIncludeComments((on) => !on)} />
+      )}
     >
-      {({ close }) => (
-        <KiroSection doc={doc} copiedKiro={copiedKiro} onCopyToKiro={() => void copyToKiro(close)} t={t} />
+      {(menu) => (
+        <>
+          <KiroSection doc={doc} copiedKiro={copiedKiro} onCopyToKiro={() => void copyToKiro(menu.close)} t={t} />
+          {children?.(menu)}
+        </>
       )}
     </ExportMenuShell>
   )

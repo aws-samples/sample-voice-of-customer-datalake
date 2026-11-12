@@ -11,14 +11,20 @@
  * button that calls `onCommentSelection`.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { stubRangeLayout } from '@test/stubRangeLayout'
 import { selectText } from '@test/selectText'
+import { stubElementScrollIntoView } from '@test/stubScrollTo'
 import { useAuthStore } from '../../store/authStore'
+import { ignoreRejection } from '../../lib/rejections'
+import { makeProject } from './project-detail-fixtures'
+import { parsedJson } from '@test/jsonText'
+import { asRecord } from '../../api/wireRecord'
 import type { ProjectDocument } from '../../api/types'
 import type { CanvasEditorHandle, CanvasEditorProps } from '../../components/DocumentCanvas/editor/CanvasEditor'
+import type { ReviseCanvas } from '../../components/DocumentCanvas/revise/useRevisePass'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 const runAssistJob = vi.fn<() => Promise<unknown>>()
@@ -60,6 +66,7 @@ vi.mock('../../components/DocumentCanvas/editor/CanvasEditor', async () => {
 })
 
 const { default: DocumentReviewView } = await import('./DocumentReviewView')
+const { useCanvasDocument } = await import('../../components/DocumentCanvas/actions/useCanvasDocument')
 
 const BASE = '/projects/proj_1/documents/doc_2'
 const MARKDOWN = '## Customer problem\n\nCustomers wait two weeks for a refund.'
@@ -86,21 +93,44 @@ const THREADS = [
   thread('c_done', { text: 'Fixed typo', status: 'resolved' }),
 ]
 
+/** A write's JSON body, as a record. */
+const sentBody = (options?: RequestInit) => asRecord(parsedJson(options?.body)) ?? {}
+
 function serve({ canEdit = true, threads = THREADS }: { canEdit?: boolean; threads?: unknown[] } = {}) {
   fetchApi.mockImplementation((endpoint, options) => {
     if (endpoint === `${BASE}/comments` && options?.method === undefined) {
       return Promise.resolve({ threads, share: null, can_edit: canEdit })
     }
+    if (endpoint.endsWith('/comments/addressed')) return Promise.resolve({ threads: [] })
+    // The page's Save (its own canvas): the next version, v3, with the content sent.
+    if (endpoint === BASE && options?.method === 'PUT') {
+      const { content } = sentBody(options)
+      return Promise.resolve({ document: { ...DOCUMENT, document_id: 'doc_3', version: 3, content: typeof content === 'string' ? content : '' } })
+    }
     return Promise.resolve({ thread: thread('c_new', {}) })
   })
 }
 
-function renderView({ hasPersonas = true, evidence }: { hasPersonas?: boolean; evidence?: string } = {}) {
+function renderView({ hasPersonas = true, evidence, editable = true }: { hasPersonas?: boolean; evidence?: string; editable?: boolean } = {}) {
   const handleRef: { current: CanvasEditorHandle | null } = { current: null }
   const onChange = vi.fn<(markdown: string) => void>()
-  renderWithQueryClient(<DocumentReviewView projectId="proj_1" document={DOCUMENT} markdown={MARKDOWN} hasPersonas={hasPersonas}
-    editable onChange={onChange} handleRef={handleRef} evidence={evidence === undefined ? undefined : <p>{evidence}</p>} />)
-  return { handleRef, onChange }
+  const canvas: ReviseCanvas = { lastSaved: null, generation: 0, reloadLatest: vi.fn(), selectDoc: vi.fn(), markRevised: vi.fn() }
+  const view = (lastSaved: ReviseCanvas['lastSaved'], generation = 0) => (
+    <DocumentReviewView projectId="proj_1" document={DOCUMENT} markdown={MARKDOWN} hasPersonas={hasPersonas}
+      editable={editable} onChange={onChange} handleRef={handleRef} evidence={evidence === undefined ? undefined : <p>{evidence}</p>}
+      canvas={{ ...canvas, lastSaved, generation }} />
+  )
+  const { rerender } = renderWithQueryClient(view(null))
+  /** The page's canvas saved `content` as `version` (its lastSaved). */
+  const saved = (content: string, version: number) => rerender(view({
+    document: { ...DOCUMENT, document_id: `doc_${String(version)}`, version, content }, content,
+  }))
+  /** The page's Discard: the stored text back in the editor (no onChange), a new generation of the canvas. */
+  const discarded = () => {
+    act(() => { handleRef.current?.setMarkdown(MARKDOWN) })
+    rerender(view(null, 1))
+  }
+  return { handleRef, onChange, canvas, saved, discarded }
 }
 
 const threadBy = (name: string) => screen.findByRole('article', { name: `Comment by ${name}` })
@@ -287,7 +317,7 @@ describe('the persona review, in the rail', () => {
     const rail = await screen.findByRole('complementary', { name: 'Comments' })
     await user.click(await within(rail).findByRole('button', { name: 'Ask personas to review' }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('3 comments filed (2 personas asked)')
+    expect(await within(rail).findByText('3 comments filed (2 personas asked)')).toHaveAttribute('role', 'status')
   })
 
   it('shows the review running, with the button disabled', async () => {
@@ -323,6 +353,233 @@ describe('the persona review, in the rail', () => {
 
     expect(screen.queryByRole('button', { name: 'Ask personas to review' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Share for review|Review link/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('Revise from comments', () => {
+  const QUOTE_CHANGE = { change_id: 'ch_1', thread_ids: ['c_quote'], before: 'two weeks', after: 'five days', reason: 'Answers the method question' }
+  const revised = (outcome: string, extra: Record<string, unknown> = {}) => ({
+    outcome, base_document_id: 'doc_2', base_version: 2, recommendations: [{ thread_id: 'c_done', text: 'Say which typo was fixed.' }],
+    changes: outcome === 'recommendations' ? [] : [QUOTE_CHANGE], applied_version: null, addressed_thread_ids: [], dropped: 0, ...extra,
+  })
+  const REPLIED = { replies: [{ reply_id: 'r1', author: author('user', 'Rui'), text: 'Bank transfer', flagged: false, at: '' }] }
+  const rail = () => screen.findByRole('complementary', { name: 'Comments' })
+
+  beforeAll(() => { stubElementScrollIntoView() })
+
+  it('sits beside "Ask personas to review", disabled with the reason until a thread is answered', async () => {
+    serve({ threads: [thread('c_whole', { text: 'Who is the customer?' })] })
+    renderView()
+
+    const button = await within(await rail()).findByRole('button', { name: 'Revise from comments' })
+    await waitFor(() => expect(button).toBeDisabled())
+    expect(button).toHaveAccessibleDescription('Reply to a comment or resolve it first.')
+    expect(within(await rail()).getByRole('button', { name: 'Ask personas to review' })).toBeInTheDocument()
+  })
+
+  it('is not offered to a viewer, nor on a read-only canvas', async () => {
+    serve({ canEdit: false })
+    renderView()
+    await screen.findByText('Who is the customer?')
+    expect(screen.queryByRole('button', { name: 'Revise from comments' })).not.toBeInTheDocument()
+  })
+
+  /** Renders (`mount`), waits for "Revise from comments" to be enabled, and starts a pass. */
+  async function startRevising<T extends object>(mount: () => T) {
+    const user = userEvent.setup()
+    const view = mount()
+    const button = await within(await rail()).findByRole('button', { name: 'Revise from comments' })
+    await waitFor(() => expect(button).toBeEnabled())
+    await user.click(button)
+    return { ...view, user, button }
+  }
+
+  /** Starts a pass that proposes QUOTE_CHANGE and accepts it on the canvas. */
+  async function acceptTheProposal<T extends object>(mount: () => T) {
+    serve({ threads: [...THREADS.slice(0, 1), thread('c_quote', { text: 'Name the refund method.', anchor: anchored('two weeks'), ...REPLIED })] })
+    runAssistJob.mockResolvedValue(revised('proposal'))
+    const started = await startRevising(mount)
+    const review = await screen.findByRole('region', { name: 'Suggested changes' })
+    await started.user.click(within(review).getByRole('button', { name: 'Accept change 1' }))
+    return { ...started, review }
+  }
+  const NEXT = '## Customer problem\n\nCustomers wait five days for a refund.'
+  const addressedWrites = () => writes().filter(([endpoint]) => endpoint.endsWith('/addressed'))
+  /** The one "addressed" write: c_quote marked (or unmarked) on `documentId`. */
+  const expectAddressed = (documentId: string, addressed: boolean) => waitFor(() => expect(addressedWrites()).toStrictEqual([
+    [`/projects/proj_1/documents/${documentId}/comments/addressed`, expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ thread_ids: ['c_quote'], addressed }),
+    })],
+  ]))
+  /** Answers `route` first (a value), every other call as before. */
+  const answerAlso = (route: (endpoint: string, options?: RequestInit) => unknown) => {
+    const answers = fetchApi.getMockImplementation()
+    fetchApi.mockImplementation((endpoint, options) => {
+      const answer = route(endpoint, options)
+      return answer === undefined ? answers?.(endpoint, options) ?? Promise.resolve({}) : Promise.resolve(answer)
+    })
+  }
+
+  it('proposal: accepting a change puts it into the canvas and the page\'s draft (dirty), and marks nothing yet', async () => {
+    const { onChange, review } = await acceptTheProposal(renderView)
+
+    expect(onChange).toHaveBeenLastCalledWith(NEXT)
+    expect(screen.getByTestId('fake-canvas')).toHaveTextContent('Customers wait five days for a refund.')
+    expect(within(review).getByRole('status')).toHaveTextContent('Accepted changes are in your draft. Save to make them a new version.')
+    expect(addressedWrites()).toStrictEqual([])
+  })
+
+  it('proposal: Discard puts the accepted change back to pending, and it can be accepted again', async () => {
+    const { discarded, review, onChange } = await acceptTheProposal(renderView)
+    const accept = () => within(review).getByRole('button', { name: 'Accept change 1' })
+
+    discarded()
+
+    expect(accept()).toBeEnabled()
+    await userEvent.setup().click(accept())
+    expect(onChange).toHaveBeenLastCalledWith(NEXT)
+    expect(screen.getByTestId('fake-canvas')).toHaveTextContent('Customers wait five days for a refund.')
+  })
+
+  it('proposal: after the save, the accepted change\'s thread is marked addressed by the saved version', async () => {
+    const { saved, review } = await acceptTheProposal(renderView)
+
+    saved(NEXT, 3)
+
+    await expectAddressed('doc_3', true)
+    expect(await within(review).findByRole('status')).toHaveTextContent('Saved: 1 comment is marked as addressed in v3.')
+    expect(within(await rail()).getByRole('button', { name: 'Ask personas to review again' })).toBeInTheDocument()
+  })
+
+  it('recommendations: nothing written; a recommendation\'s link shows its thread, focused, even a resolved one hidden by the filter', async () => {
+    runAssistJob.mockResolvedValue(revised('recommendations'))
+
+    const { onChange, user } = await startRevising(renderView)
+    const panel = await screen.findByRole('region', { name: 'Recommendations from the comments' })
+    const resolvedCard = () => within(screen.getByRole('complementary', { name: 'Comments' }))
+      .queryAllByRole('article').find((card) => card.textContent.includes('Fixed typo'))
+    expect(resolvedCard()).toBeUndefined()
+    await user.click(within(panel).getByRole('button', { name: 'Show the comment: Fixed typo' }))
+
+    await waitFor(() => expect(resolvedCard()).toHaveFocus())
+    expect(screen.getByRole('checkbox', { name: 'Show resolved' })).toBeChecked()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('applied: the canvas reloads on the new version; Review again asks the personas', async () => {
+    runAssistJob.mockResolvedValueOnce(revised('applied', { applied_version: { document_id: 'doc_3', version: 3 }, addressed_thread_ids: ['c_quote'] }))
+      .mockResolvedValueOnce({ filed: 2, personas: [{ persona_id: 'p1' }, { persona_id: 'p2' }] })
+
+    const { canvas, user } = await startRevising(renderView)
+    const banner = await screen.findByRole('region', { name: 'Revised from 1 comment as v3' })
+    expect(canvas.reloadLatest).toHaveBeenCalledTimes(1)
+    await user.click(within(banner).getByRole('button', { name: 'Review again' }))
+
+    expect(await within(await rail()).findByText('2 comments filed (2 personas asked)')).toBeInTheDocument()
+  })
+
+  it('applied: Undo restores the version the pass read, then clears the pass\'s "addressed" marks on the restored version', async () => {
+    runAssistJob.mockResolvedValueOnce(revised('applied', { applied_version: { document_id: 'doc_3', version: 3 }, addressed_thread_ids: ['c_quote'] }))
+    answerAlso((endpoint) => {
+      if (endpoint === '/projects/proj_1/documents/doc_3/versions') {
+        return { versions: [{ version_id: 'doc_3', version: 3, title: 'Faster refunds', content: NEXT, current: true }] }
+      }
+      return endpoint.endsWith('/versions/doc_2/restore') ? { document: { ...DOCUMENT, document_id: 'doc_4', version: 4 } } : undefined
+    })
+    const { user } = await startRevising(renderView)
+    const banner = await screen.findByRole('region', { name: 'Revised from 1 comment as v3' })
+
+    await user.click(within(banner).getByRole('button', { name: 'Undo' }))
+
+    await expectAddressed('doc_4', false)
+    expect(await within(banner).findByRole('status')).toHaveTextContent('Undone: the previous version is restored as a new version.')
+  })
+
+  it('offers the "Addressed" filter once a thread is addressed, showing only those', async () => {
+    serve({ threads: [...THREADS, thread('c_fixed', { text: 'Addressed one', status: 'resolved', addressed: { version: 2, at: '', by_kind: 'user' } })] })
+    const user = userEvent.setup()
+    renderView()
+    await screen.findByText('Who is the customer?')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Addressed' }))
+
+    expect(await screen.findByText('Addressed one')).toBeInTheDocument()
+    expect(screen.getByText('Addressed in v2')).toBeInTheDocument()
+    expect(screen.queryByText('Who is the customer?')).not.toBeInTheDocument()
+  })
+
+  describe('on the page\'s own canvas (useCanvasDocument): what its Save sends', () => {
+    /** The view on a real canvas, as DocumentPage composes them, with the page's Save and Discard. */
+    function CanvasPage() {
+      const state = useCanvasDocument({ project: makeProject({ project_id: 'proj_1' }), document: DOCUMENT, onSelectDoc: vi.fn() })
+      return (
+        <>
+          <DocumentReviewView projectId="proj_1" document={DOCUMENT} markdown={state.content} hasPersonas editable={state.editable}
+            onChange={state.onChange} handleRef={state.handleRef} canvas={state} />
+          <button type="button" onClick={() => { state.save().catch(ignoreRejection) }}>Save the page</button>
+          <button type="button" onClick={state.discard}>Discard the page</button>
+        </>
+      )
+    }
+    const mountPage = () => renderWithQueryClient(<CanvasPage />)
+    /** Each PUT's edit_kind ("none": absent). */
+    const editKinds = () => writes().filter(([, options]) => options?.method === 'PUT')
+      .map(([, options]) => sentBody(options).edit_kind ?? 'none')
+
+    it('after an accepted change: edit_kind "revise", and the thread is marked addressed by the saved version', async () => {
+      const { user } = await acceptTheProposal(mountPage)
+
+      await user.click(screen.getByRole('button', { name: 'Save the page' }))
+
+      await waitFor(() => expect(editKinds()).toStrictEqual(['revise']))
+      await expectAddressed('doc_3', true)
+    })
+
+    /** A plain edit on the canvas, then the page's Save: its PUT sends no edit_kind. */
+    async function savePlainEdit(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: 'Simulate an edit' }))
+      await user.click(screen.getByRole('button', { name: 'Save the page' }))
+      await waitFor(() => expect(editKinds()).toStrictEqual(['none']))
+    }
+
+    it('after a plain edit: no edit_kind', async () => {
+      const user = userEvent.setup()
+      mountPage()
+
+      await savePlainEdit(user)
+
+      expect(addressedWrites()).toStrictEqual([])
+    })
+
+    it('after the accepted change was discarded (then a plain edit): no edit_kind, nothing marked', async () => {
+      const { user } = await acceptTheProposal(mountPage)
+      await user.click(screen.getByRole('button', { name: 'Discard the page' }))
+
+      await savePlainEdit(user)
+
+      expect(addressedWrites()).toStrictEqual([])
+    })
+
+    it('after the accepted change was removed by hand: no edit_kind, nothing marked', async () => {
+      const { user } = await acceptTheProposal(mountPage)
+
+      await savePlainEdit(user)
+
+      expect(addressedWrites()).toStrictEqual([])
+    })
+
+    it('Close keeps the accepted change: a new pass waits (with the reason), and Save still revises and marks', async () => {
+      const { user, review, button } = await acceptTheProposal(mountPage)
+
+      await user.click(within(review).getByRole('button', { name: 'Close' }))
+
+      expect(screen.queryByRole('region', { name: 'Suggested changes' })).not.toBeInTheDocument()
+      expect([button.matches(':disabled'), button.getAttribute('aria-describedby') === null]).toStrictEqual([true, false])
+      expect(button).toHaveAccessibleDescription('Save or discard the accepted changes first.')
+      await user.click(screen.getByRole('button', { name: 'Save the page' }))
+      await waitFor(() => expect([editKinds(), button.matches(':disabled')]).toStrictEqual([['revise'], false]))
+      await expectAddressed('doc_3', true)
+    })
   })
 })
 

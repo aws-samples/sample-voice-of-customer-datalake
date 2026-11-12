@@ -393,6 +393,8 @@ export interface DocumentUpdate {
   content: string
   /** The revision the editor loaded (documentEdit.documentRevision); absent = no stale check. */
   expectedRevision?: number
+  /** `'revise'`: the content holds changes accepted from "Revise from comments" (the version's `edit_kind`, D4). */
+  editKind?: 'revise'
 }
 
 interface UseDocumentMutationsProps {
@@ -443,14 +445,19 @@ export function useUpdateDocument(id: string | undefined) {
   const queryClient = useQueryClient()
   const projectId = id ?? ''
   return useMutation({
-    mutationFn: (data: DocumentUpdate) =>
-      projectsApi.updateDocument(projectId, data.docId, {
+    mutationFn: (data: DocumentUpdate) => {
+      const body = {
         ...(data.title === undefined ? {} : { title: data.title }),
         content: data.content,
         ...(data.expectedRevision === undefined ? {} : { expected_revision: data.expectedRevision }),
         // A fresh id per save, so the server can tell a replayed request from a second save.
         edit_id: crypto.randomUUID(),
-      }),
+      }
+      // A plain edit sends no edit_kind (the server's default).
+      return data.editKind === undefined
+        ? projectsApi.updateDocument(projectId, data.docId, body)
+        : projectsApi.updateDocument(projectId, data.docId, body, data.editKind)
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     },

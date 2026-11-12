@@ -15,6 +15,7 @@
  *
  * @module assistant/approvals/lineDiff
  */
+import { commonPrefixLength } from '../../utils/commonPrefix'
 
 type DiffLineKind = 'same' | 'add' | 'del'
 
@@ -35,12 +36,6 @@ export const MAX_DIFF_CHARS = 400_000
 
 function splitLines(text: string): string[] {
   return text === '' ? [] : text.replace(/\r\n/g, '\n').split('\n')
-}
-
-function commonPrefixLength(a: readonly string[], b: readonly string[]): number {
-  const limit = Math.min(a.length, b.length)
-  const index = Array.from({ length: limit }, (_, i) => i).find((i) => a[i] !== b[i])
-  return index ?? limit
 }
 
 function commonSuffixLength(a: readonly string[], b: readonly string[], prefix: number): number {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { normalizeProjectDetail } from './projectDetailSchema'
+import { normalizeDocumentVersions, normalizeProjectDetail } from './projectDetailSchema'
 import { at } from '@test/defined'
 
 function envelope(personas: unknown[] = [], documents: unknown[] = []) {
@@ -183,5 +183,14 @@ describe('normalizeProjectDetail', () => {
         document_type: 'decision_record',
       }),
     ])
+  })
+})
+
+describe('normalizeDocumentVersions', () => {
+  it('keeps a revise version as one, and an unknown kind as null', () => {
+    const row = { version_id: 'd3', document_id: 'd3', version: 3, title: 'T (v3)', content: 'C', created_at: null, current: true }
+    const versions = normalizeDocumentVersions({ versions: [{ ...row, edit_kind: 'revise' }, { ...row, edit_kind: 'rewrite' }] })
+
+    expect(versions.map((v) => v.edit_kind)).toStrictEqual(['revise', null])
   })
 })

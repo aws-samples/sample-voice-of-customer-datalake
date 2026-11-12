@@ -38,7 +38,7 @@ LIMIT = {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 20}
 FILTER = {'type': 'string', 'maxLength': 64}
 BOOL = {'type': 'boolean', 'default': False}
 ID = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}
-PROJECT_ID = {**ID, 'description': 'Optional with a pinned token.'}
+PROJECT_ID = ID  # optional with a pinned token: the server's instructions say so once
 TITLE = {'type': 'string', 'maxLength': 200}
 CONTENT = {'type': 'string', 'maxLength': 200000}
 NO_ARGS = {'type': 'object', 'properties': {}, 'additionalProperties': False}
@@ -139,13 +139,15 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         _object({'agent_id': ID}, 'agent_id'), True, True, False),    'generate': (
         'Start a methodology step',
         ('Start personas, research, prfaq, prd or prototype in a project (write token); `brief` = the idea or '
-         'question. Answers job_id and `methodology` (skipped steps); poll get_job.'),
-        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$', 'description': 'Optional with a pinned token.'}, 'step': {'type': 'string', 'enum': ['personas', 'research', 'prfaq', 'prd', 'prototype']}, 'title': {'type': 'string', 'maxLength': 200}, 'brief': {'type': 'string', 'maxLength': 4000}, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, 'additionalProperties': False, 'required': ['step']},
+         'question. Answers job_id and `methodology` (skipped steps); poll get_job. `revise`: a PR/FAQ or PRD '
+         '(`document_id`) from its answered comments; `mark_addressed` true/false marks/clears `thread_ids` '
+         'by that version.'),
+        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}, 'step': {'type': 'string', 'enum': ['personas', 'research', 'prfaq', 'prd', 'prototype', 'revise']}, 'title': {'type': 'string', 'maxLength': 200}, 'brief': {'type': 'string', 'maxLength': 4000}, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 10}, 'document_id': ID, 'thread_ids': {'type': 'array'}, 'mark_addressed': {'type': 'boolean'}}, 'additionalProperties': False, 'required': ['step']},
         True, False, True),
     'get_job': (
         'Get a job',
         "A project job's status and result (with its methodology block), by job_id.",
-        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$', 'description': 'Optional with a pinned token.'}, 'job_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}}, 'additionalProperties': False, 'required': ['job_id']},
+        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}, 'job_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}}, 'additionalProperties': False, 'required': ['job_id']},
         False, False, True),
     'read_radar': (
         'Read Radar',

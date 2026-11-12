@@ -48,6 +48,9 @@ MAX_LABEL_CHARS: Final = 128
 _JOB_FIELDS: Final = ('job_id', 'status', 'progress', 'current_step', 'job_type', 'created_at', 'updated_at',
                       'completed_at', 'error', 'result')
 _START_FIELDS: Final = ('job_id', 'status', 'message', 'methodology')
+#: Not a methodology step of its own: the review loop on a PR/FAQ or PRD (docs/document-review.md).
+STEP_REVISE: Final = 'revise'
+GENERATE_STEPS: Final = (*STEPS, STEP_REVISE)
 
 
 def _step_request(step: str, project: str, title: str | None, brief: str | None,
@@ -70,15 +73,40 @@ def _step_request(step: str, project: str, title: str | None, brief: str | None,
 
 def _generate(args: Mapping[str, Any], project: str | None) -> RouteRequest:
     step = args.get('step')
+    if step == STEP_REVISE:
+        return _revise(args, project)
     if step not in STEPS:
-        raise InvalidToolArgument(f'step must be one of: {", ".join(STEPS)}')
+        raise InvalidToolArgument(f'step must be one of: {", ".join(GENERATE_STEPS)}')
     title = text_arg(args, 'title', max_length=MAX_TITLE_CHARS)
     brief = text_arg(args, 'brief', max_length=MAX_BRIEF_CHARS)
     return _step_request(str(step), require_project(project), title, brief, args)
 
 
-def _started(payload: object, args: Mapping[str, Any]) -> dict:
-    """The start answer: the job and the route's methodology block (absent for personas)."""
+def _revise(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    """``revise``: start a pass (POST …/revise-from-comments), or with ``mark_addressed`` mark (true) or
+    clear (false) the threads by the version ``document_id`` names (POST …/comments/addressed).
+
+    The route decides the pass's outcome: an MCP token is an autonomous caller, so it gets
+    recommendations unless its minter (and the project's owner) work AI-driven, when the server
+    applies the revision as a new version and marks the threads itself. ``thread_ids`` and
+    ``mark_addressed`` go to the route as given: it checks them, and its 400 is the tool's error.
+    """
+    d = id_arg(args, 'document_id')
+    p = require_project(project)
+    passed = {} if args.get('thread_ids') is None else {'thread_ids': args['thread_ids']}
+    if args.get('mark_addressed') is None:
+        return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/documents/{d}/revise-from-comments', body=passed)
+    body = {**passed, 'addressed': args['mark_addressed']}
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/documents/{d}/comments/addressed', body=body)
+
+
+def _started(payload: object, args: Mapping[str, Any]) -> object:
+    """The start answer: the job and the route's methodology block (absent for personas and revise).
+
+    ``revise`` with ``mark_addressed`` answers the threads as marked or cleared.
+    """
+    if args.get('step') == STEP_REVISE and args.get('mark_addressed') is not None:
+        return stripped(payload, args)
     answer = payload if isinstance(payload, Mapping) else {}
     return {'step': args.get('step'), **{key: answer[key] for key in _START_FIELDS if key in answer}}
 
@@ -145,11 +173,15 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'generate', 'Start a methodology step',
         'Start personas, research, prfaq, prd or prototype in a project (write token); `brief` = the idea or '
-        'question. Answers job_id and `methodology` (skipped steps); poll get_job.',
-        schema({'project_id': PROJECT_ID_SCHEMA, 'step': {'type': 'string', 'enum': list(STEPS)},
+        'question. Answers job_id and `methodology` (skipped steps); poll get_job. `revise`: a PR/FAQ or PRD '
+        '(`document_id`) from its answered comments; `mark_addressed` true/false marks/clears `thread_ids` '
+        'by that version.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'step': {'type': 'string', 'enum': list(GENERATE_STEPS)},
                 'title': {'type': 'string', 'maxLength': MAX_TITLE_CHARS},
                 'brief': {'type': 'string', 'maxLength': MAX_BRIEF_CHARS},
-                'count': {'type': 'integer', 'minimum': 1, 'maximum': MAX_PERSONAS_PER_GENERATION}}, ('step',)),
+                'count': {'type': 'integer', 'minimum': 1, 'maximum': MAX_PERSONAS_PER_GENERATION},
+                'document_id': ID_SCHEMA, 'thread_ids': {'type': 'array'},
+                'mark_addressed': {'type': 'boolean'}}, ('step',)),
         _generate, _started, write=True, project_scoped=True),
     GlobalTool(
         'get_job', 'Get a job', "A project job's status and result (with its methodology block), by job_id.",

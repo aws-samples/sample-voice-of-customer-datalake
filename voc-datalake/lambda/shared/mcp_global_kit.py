@@ -161,7 +161,9 @@ def schema(properties: dict, required: tuple[str, ...] = ()) -> dict:
 
 BOOL_SCHEMA = {'type': 'boolean', 'default': False}
 ID_SCHEMA = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}
-PROJECT_ID_SCHEMA = {**ID_SCHEMA, 'description': 'Optional with a pinned token.'}
+# Optional with a project-pinned token, which fills it (said once, in the server's instructions:
+# repeating it on every project tool cost tools/list ~120 tokens of its budget).
+PROJECT_ID_SCHEMA = dict(ID_SCHEMA)
 
 
 # ── Projections ─────────────────────────────────────────────────────────────

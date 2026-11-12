@@ -16,6 +16,7 @@
  *
  * @module components/DocumentComments/anchors
  */
+import { commonPrefixLength } from '../../utils/commonPrefix'
 import type { TextQuoteAnchor } from '../../api/documentReviewSchema'
 
 /** How much text around a selection is kept to tell repeated quotes apart. */
@@ -104,18 +105,11 @@ function collapse(text: string): string {
   return collapseRuns(text).trim()
 }
 
-/** How many leading characters `a` and `b` share. */
-function commonHead(a: string, b: string): number {
-  const limit = Math.min(a.length, b.length)
-  const firstMiss = Array.from({ length: limit }, (_, at) => at).find((at) => a.charAt(at) !== b.charAt(at))
-  return firstMiss ?? limit
-}
-
 const reversed = (text: string) => Array.from(text).reverse().join('')
 
 /** How many trailing characters `a` and `b` share. */
 function commonTail(a: string, b: string): number {
-  return commonHead(reversed(a), reversed(b))
+  return commonPrefixLength(reversed(a), reversed(b))
 }
 
 const escapeRegExp = (text: string) => text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
@@ -134,7 +128,7 @@ function locate(index: TextIndex, anchor: TextQuoteAnchor): number | null {
   const suffix = collapseRuns(anchor.suffix)
   const score = (start: number) =>
     commonTail(index.text.slice(Math.max(0, start - CONTEXT_CHARS), start), prefix)
-    + commonHead(index.text.slice(start + exact.length, start + exact.length + CONTEXT_CHARS), suffix)
+    + commonPrefixLength(index.text.slice(start + exact.length, start + exact.length + CONTEXT_CHARS), suffix)
   const best = occurrences(index.text, exact).reduce<{ start: number; score: number } | null>((winner, start) => {
     const candidate = { start, score: score(start) }
     return winner === null || candidate.score > winner.score ? candidate : winner
@@ -157,6 +151,11 @@ function rangeOf(index: TextIndex, start: number, length: number): Range | null 
 export function anchorRange(root: Node, anchor: TextQuoteAnchor, index: TextIndex = indexText(root)): Range | null {
   const start = locate(index, anchor)
   return start === null ? null : rangeOf(index, start, collapse(anchor.exact).length)
+}
+
+/** The anchor's quote is found in the indexed text (located as anchorRange locates it). */
+export function anchorFound(index: TextIndex, anchor: TextQuoteAnchor): boolean {
+  return locate(index, anchor) !== null
 }
 
 /** The collapsed position of a DOM point (the first indexed character at or after it). */

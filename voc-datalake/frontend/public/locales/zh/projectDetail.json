@@ -55,6 +55,7 @@
       "label": "v{{n}}",
       "current": "当前",
       "edited": "已编辑",
+      "revised": "根据评论修订",
       "restoredFrom": "从 v{{n}} 恢复",
       "open": "打开",
       "openNamed": "打开 {{label}}",
@@ -770,6 +771,87 @@
         "unsaved": "未保存的更改"
       },
       "toolbarLabel": "文档操作"
+    },
+    "revise": {
+      "addressedBy": {
+        "ai": "已由 AI 修订的版本处理",
+        "user": "已由根据建议更改保存的版本处理"
+      },
+      "addressedIn": "已在 v{{version}} 中处理",
+      "applied": {
+        "banner_one": "已根据 {{count, number}} 条评论修订为 v{{version}}",
+        "banner_other": "已根据 {{count, number}} 条评论修订为 v{{version}}",
+        "reviewAgain": "再次评审",
+        "status": "按照你与 AI 的工作方式，AI 可以写作：它已将修订保存为新版本。撤销会恢复上一个版本。",
+        "undo": "撤销",
+        "undoAnyway": "仍然撤销",
+        "undoFailed": "无法恢复上一个版本。请从历史记录中恢复。",
+        "undoKeep": "保留",
+        "undoNewer": "此修订之后已保存 v{{version}}。撤销会恢复此修订所依据的版本，因此也会移除之后保存的更改。",
+        "undoing": "正在恢复上一个版本…",
+        "undone": "已撤销：上一个版本已恢复为新版本。"
+      },
+      "button": "根据评论修订",
+      "close": "关闭",
+      "failed": "根据评论修订失败。请重试。",
+      "filterAddressed": "已处理",
+      "hint": "根据评论和文档的依据，针对已回复或已解决的评论所涉及的部分提出更改建议",
+      "noThreads": "请先回复或解决一条评论。",
+      "saveFirst": "请先保存或放弃已接受的更改。",
+      "proposal": {
+        "accept": "接受",
+        "acceptAll": "全部接受",
+        "acceptNamed": "接受更改 {{position}}",
+        "added": "新增",
+        "answers": "对应评论：",
+        "change": "更改 {{position}}",
+        "deleted": "（此段落将被删除）",
+        "dropped_one": "已略去 {{count, number}} 条建议：其段落不在正文中。",
+        "dropped_other": "已略去 {{count, number}} 条建议：其段落不在正文中。",
+        "intro": "逐条接受或拒绝更改。接受的更改会进入你的草稿；保存后成为新版本。",
+        "listLabel": "建议的更改",
+        "markFailed": "已保存，但无法将评论标记为已处理。请稍后重试。",
+        "marked_one": "已保存：{{count, number}} 条评论已标记为在 v{{version}} 中处理。",
+        "marked_other": "已保存：{{count, number}} 条评论已标记为在 v{{version}} 中处理。",
+        "none": "无法根据这些评论提出更改。建议说明了可以改做什么。",
+        "reject": "拒绝",
+        "rejectAll": "全部拒绝",
+        "rejectNamed": "拒绝更改 {{position}}",
+        "removed": "删除",
+        "saveNote": "接受的更改已在你的草稿中。保存即可成为新版本。",
+        "state": {
+          "accepted": "已接受",
+          "addressed": "已保存",
+          "outOfDate": "已过时：该段落已更改",
+          "rejected": "已拒绝"
+        },
+        "status_one": "建议了 {{count, number}} 处更改。",
+        "status_other": "建议了 {{count, number}} 处更改。",
+        "title": "建议的更改"
+      },
+      "recommendations": {
+        "listLabel": "建议",
+        "status_one": "{{count, number}} 条建议。文档未做任何更改。",
+        "status_other": "{{count, number}} 条建议。文档未做任何更改。",
+        "title": "来自评论的建议",
+        "why": "按照你与 AI 的工作方式，只提供建议：AI 不会替你撰写此文档。"
+      },
+      "reviewAgain": "请角色再次评审",
+      "running": "正在根据评论修订…",
+      "showThread": "显示评论：{{label}}",
+      "threadGone": "（评论已删除）"
+    },
+    "focus": {
+      "announce": "全屏。按 Esc 键退出。",
+      "button": "全屏",
+      "hint": "全屏（Ctrl+Shift+F 或 ⌘⇧F）"
+    },
+    "menu": {
+      "commentsHeading": "未解决的评论",
+      "includeComments": "包含未解决的评论",
+      "saved": "已保存",
+      "trigger": "文件",
+      "wholeDocument": "针对整个文档"
     }
   }
 }

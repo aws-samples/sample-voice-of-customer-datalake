@@ -17,6 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.06.00] - 2026-11-12
+
+The document canvas gets a full-screen view, one File menu, and a revision pass from the comments.
+
+### Added
+
+- **Revise from comments** on a PR/FAQ or PRD ([docs/document-review.md](docs/document-review.md#revise-from-comments)): `POST /projects/{id}/documents/{doc}/revise-from-comments` (an assist job on the `documents` model surface) reads the answered threads (resolved, or open with a reply, not yet addressed) and up to 20 of the document's source reviews, and answers by the caller's way of working ([docs/ways-of-working.md](docs/ways-of-working.md#revise-from-comments)): recommendations (one per thread, nothing written), a proposal (changes whose `before` is found exactly once in the version, accepted or rejected one by one on the canvas, then saved as a new version), or, for AI-driven, applied (the server writes the next version with `edit_kind: revise` and `edited_by`, D1/D4, and marks the threads). An autonomous caller that may not write gets recommendations. `POST …/comments/addressed` (`{thread_ids, addressed?}`) marks threads addressed by the version in the path, or clears the mark with `addressed: false` (the canvas's Undo of an applied pass); each thread keeps an append-only `addressed_history` and shows `addressed: {version, at, by_kind}`. A proposal saved from the canvas is recorded with `edit_kind: revise`. MCP: `generate` with `step: revise` (with `mark_addressed: true|false` and `thread_ids` it marks or clears instead, by the version `document_id` names); one step, not two tools, because `tools/list` sits at its 4,000-token budget (the repeated pinned-token note moved into the server instructions to make room). The canvas shows the outcome (recommendations linked to their threads; the proposal as a per-change diff with Accept / Reject / Out of date; the applied banner with Undo and Review again), "Addressed in vN" badges and an Addressed filter, and "Ask personas to review again" after a pass.
+- **Full screen** on the document page (Ctrl/⌘+Shift+F, Esc leaves; `?view=focus` in the address): the canvas and comment rail fill the window, the rest of the app hidden.
+- **The File menu** on the document page: Save with its state, Share for review, Download as Markdown, Print or save as PDF (optionally with the open comments), the other export formats, History and Delete. The export menus now share the app's menu-button keyboard handling.
+
+### Fixed
+
+- Comment bubbles in the margin are laid out from their measured heights, so a tall card no longer covers the next one's Reply button.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`) and the frontend (`npm run deploy:frontend`): two new routes on the projects Lambda (no new resource, permission or cost). Existing threads read `addressed: null`.
+
 ## [6.05.00] - 2026-11-11
 
 Projects > Documents opens each document as a page you edit in place, and every commit can be held to a recorded review gate.

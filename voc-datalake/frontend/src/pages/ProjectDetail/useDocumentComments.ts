@@ -13,8 +13,10 @@ import type { NewComment, ShareSettings } from '../../api/documentReviewApi'
 import type { CommentThread } from '../../api/documentReviewSchema'
 import type { CommentActions } from '../../components/DocumentComments/commentTypes'
 
+/** Every version's comments of one project (a prefix of `documentCommentsKey`). */
+const projectDocumentCommentsKey = (projectId: string) => ['document-comments', projectId] as const
 const documentCommentsKey = (projectId: string, documentId: string) =>
-  ['document-comments', projectId, documentId] as const
+  [...projectDocumentCommentsKey(projectId), documentId] as const
 
 /**
  * Read by the comment rail (DocumentReviewView: threads, actions, persona review) and by the
@@ -48,6 +50,8 @@ export function useDocumentComments(projectId: string, documentId: string) {
     }
   }, [queryClient, projectId, documentId, canEdit, mySub])
   const refresh = () => queryClient.invalidateQueries({ queryKey: key })
+  // A save moves the page to another version (another id, the same series): every version's comments are re-read.
+  const refreshSeries = () => queryClient.invalidateQueries({ queryKey: projectDocumentCommentsKey(projectId) })
   return {
     query,
     actions,
@@ -65,6 +69,22 @@ export function useDocumentComments(projectId: string, documentId: string) {
       const result = await appDocumentCommentsApi.personaReview(projectId, documentId)
       await refresh()
       return result
+    },
+    /** "Revise from comments" on this version (an applied pass marks threads: they are read again). */
+    revise: async () => {
+      const result = await appDocumentCommentsApi.reviseFromComments(projectId, documentId)
+      await refreshSeries()
+      return result
+    },
+    /** Marks threads addressed by a saved version (`savedId`: that version, whose number the server takes). */
+    markAddressed: async (savedId: string, threadIds: readonly string[]) => {
+      await appDocumentCommentsApi.markAddressed(projectId, savedId, threadIds)
+      await refreshSeries()
+    },
+    /** Takes the "addressed" marks off threads (an undone revision), through any version of the series. */
+    clearAddressed: async (versionId: string, threadIds: readonly string[]) => {
+      await appDocumentCommentsApi.clearAddressed(projectId, versionId, threadIds)
+      await refreshSeries()
     },
   }
 }

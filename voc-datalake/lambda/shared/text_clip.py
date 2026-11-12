@@ -15,6 +15,11 @@ WHITESPACE_RE: Final = re.compile(r'\s+')
 _TRAILING_PUNCTUATION = ' ,;:.-\u2014\u2013'  # space, comma, …, em dash, en dash
 
 
+def stripped_head(value: object, limit: int) -> str:
+    """A model's string field trimmed and cut at ``limit`` characters ('' for anything else)."""
+    return value.strip()[:limit] if isinstance(value, str) else ''
+
+
 def collapse_whitespace(text: str) -> str:
     """``text`` with every whitespace run turned into one space, trimmed."""
     return WHITESPACE_RE.sub(' ', text).strip()

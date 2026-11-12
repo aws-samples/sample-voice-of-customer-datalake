@@ -19,19 +19,18 @@
  * @module components/DocumentComments/CommentedDocument
  */
 import clsx from 'clsx'
-import { useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CommentComposer from './CommentComposer'
 import CommentFiltersBar from './CommentFiltersBar'
 import CommentThreadCard from './CommentThreadCard'
 import { anchorOfSelection } from './anchors'
-import { DEFAULT_FILTER, matchesFilter } from './commentFilters'
+import { DEFAULT_FILTER, SHOW_EVERY_THREAD, matchesFilter } from './commentFilters'
 import { BUBBLE_MIN_GAP_PX, useCommentLayout } from './useCommentLayout'
 import { READING_COLUMN_CLASS } from '../DocumentCanvas/comments/readingColumn'
 import type { CSSProperties, KeyboardEvent, ReactNode, Ref } from 'react'
 import type { CommentActions, ViewedVersion } from './commentTypes'
 import type { CommentFilter } from './commentFilters'
-import type { ThreadPlacement } from './useCommentLayout'
 import type { CommentThread, TextQuoteAnchor } from '../../api/documentReviewSchema'
 
 type BubbleStyle = CSSProperties & Record<'--bubble-top', string>
@@ -54,6 +53,8 @@ interface Draft {
 export interface CommentedDocumentHandle {
   /** Opens a new thread on the text selected in the content; false (and says why) when none is usable. */
   readonly commentOnSelection: () => boolean
+  /** Brings a thread into view, active and focused (the filter shows every thread if it hid it). */
+  readonly showThread: (commentId: string) => void
 }
 
 interface CommentedDocumentProps {
@@ -106,11 +107,11 @@ function DraftCard({ draft, onCreate, onCancel, onTextChange }: Readonly<{
   )
 }
 
-/** Margin height from xl up: the lowest bubble (or the draft) plus room for it to open. */
-const MARGIN_TAIL_PX = BUBBLE_MIN_GAP_PX * 4
+/** Margin height from xl up: the lowest bubble's bottom (or the draft's top) plus room for it to open. */
+const MARGIN_TAIL_PX = BUBBLE_MIN_GAP_PX * 3
 
-function marginStyle(placed: readonly ThreadPlacement[], draft: Draft | null): MarginStyle {
-  const lowest = Math.max(draft?.top ?? 0, ...placed.map((p) => p.top ?? 0))
+function marginStyle(bottom: number, draft: Draft | null): MarginStyle {
+  const lowest = Math.max(draft === null ? 0 : draft.top + BUBBLE_MIN_GAP_PX, bottom)
   return { '--margin-height': `${lowest + MARGIN_TAIL_PX}px` }
 }
 
@@ -163,7 +164,27 @@ export default function CommentedDocument({
     const origin = (marginRef.current ?? root).getBoundingClientRect().top
     return openDraft({ anchor, top: Math.max(0, box.top - origin) })
   }, [contentRoot, canComment, t, openDraft])
-  useImperativeHandle(commentRef, () => ({ commentOnSelection }), [commentOnSelection])
+  // A thread asked for by `showThread`: focused once it is rendered (a filter it was hidden by is lifted first).
+  const railRef = useRef<HTMLElement>(null)
+  const [shown, setShown] = useState<string | null>(null)
+  const showThread = useCallback((commentId: string) => {
+    const thread = threads.find((row) => row.comment_id === commentId)
+    if (thread === undefined) return
+    if (!matchesFilter(thread, filter)) setFilter(SHOW_EVERY_THREAD)
+    setActiveId(commentId)
+    setShown(commentId)
+  }, [threads, filter])
+  useEffect(() => {
+    if (shown === null) return
+    const card = [...(railRef.current?.querySelectorAll<HTMLElement>('[data-thread-id]') ?? [])]
+      .find((element) => element.dataset['threadId'] === shown)
+    if (card === undefined) return
+    setShown(null)
+    card.scrollIntoView({ block: 'center' })
+    card.focus({ preventScroll: true })
+    // The layout places threads a frame later: once it holds the thread, its card is there.
+  }, [shown, layout])
+  useImperativeHandle(commentRef, () => ({ commentOnSelection, showThread }), [commentOnSelection, showThread])
   const card = (thread: CommentThread) => (
     <CommentThreadCard key={thread.comment_id} thread={thread} actions={actions} viewed={viewed}
       active={thread.comment_id === activeId} onActivate={setActiveId} />
@@ -174,7 +195,7 @@ export default function CommentedDocument({
     closeDraft()
   }
   const rail = (
-    <aside aria-label={t('documentComments.margin')} className="space-y-3 min-w-0">
+    <aside ref={railRef} aria-label={t('documentComments.margin')} className="space-y-3 min-w-0">
       {notice}
       <div className="flex flex-wrap items-center gap-2">
         <CommentFiltersBar threads={threads} filter={filter} onFilterChange={setFilter}
@@ -189,7 +210,7 @@ export default function CommentedDocument({
         </div>
       ) : null}
       <div ref={marginRef} className="relative space-y-2 xl:space-y-0 xl:min-h-[var(--margin-height)]"
-        style={marginStyle(layout.placed, draft)}>
+        style={marginStyle(layout.bottom, draft)}>
         {draft === null ? null : (
           <div ref={draftBox} className={clsx(BUBBLE_CLASS, 'z-30')} style={bubbleStyle(draft.top)}>
             {/* Keyed by its passage: an empty draft moved to another passage starts afresh, focused. */}
@@ -198,7 +219,7 @@ export default function CommentedDocument({
           </div>
         )}
         {layout.placed.map((placement) => (
-          <div key={placement.thread.comment_id} style={bubbleStyle(placement.top)}
+          <div key={placement.thread.comment_id} ref={layout.bubbleRef(placement.thread.comment_id)} style={bubbleStyle(placement.top)}
             className={clsx(BUBBLE_CLASS, placement.thread.comment_id === activeId && 'z-10')}>
             {card(placement.thread)}
           </div>
