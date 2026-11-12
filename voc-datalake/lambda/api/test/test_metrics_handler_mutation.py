@@ -56,7 +56,10 @@ from shared.indexes import (
 from shared.test.clock import today_utc
 from shared.time_budget import WalkBudget
 
-AT = datetime(2026, 3, 10, 12, 0, tzinfo=UTC)
+# Many cases here call the data helpers directly (outside a request): deployment-wide, as the middleware sets it.
+pytestmark = pytest.mark.usefixtures('deployment_wide_metrics_request')
+
+AT =datetime(2026, 3, 10, 12, 0, tzinfo=UTC)
 
 
 def _days_ago(n: int) -> str:
@@ -197,7 +200,7 @@ class TestOnePartitionPage:
     def _query(self, fb, pages, max_matched=10, sources=()):
         fb.query.side_effect = pages
         return metrics_handler._query_partition(
-            FEEDBACK_BY_DATE_INDEX, Key('gsi1pk').eq('DATE#2026-03-10'), max_matched=max_matched, sources=sources)
+            FEEDBACK_BY_DATE_INDEX, 'gsi1pk', 'DATE#2026-03-10', max_matched=max_matched, sources=sources)
 
     def test_the_read_is_a_500_row_page_newest_first_with_no_filter_by_default(self, fb):
         items, has_more = self._query(fb, [_page(_rows(2))])

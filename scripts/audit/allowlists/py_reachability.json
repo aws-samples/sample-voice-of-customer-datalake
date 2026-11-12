@@ -1,8 +1,5 @@
 {
   "entries": [
-    {"key": "lambda/shared/ws_repo.py::scope_of", "reason": "Multi-workspace phase 2's repository layer (docs/multi-workspace.md, Request flow step 4): a request's scope, first called by the API slice; the ingestion slice uses the layer's message scope, keys and tables."},
-    {"key": "lambda/shared/ws_repo.py::ResolvedWorkspace", "reason": "The Protocol scope_of takes (shared/workspace.py WorkspaceContext without importing it: that import closed a module cycle); reached with scope_of."},
-    {"key": "lambda/shared/ws_repo.py::metric_pk", "reason": "Repository layer (docs/multi-workspace.md): the counters' partition, first called by the aggregator slice."},
     {"key": "lambda/shared/ws_repo.py::WorkspaceTable.iter_query", "reason": "Repository layer (docs/multi-workspace.md): the paged read of the feedback and metrics read APIs, first called by their slice."},
     {"key": "lambda/shared/ws_repo.py::_BoundQuery", "reason": "The pager adapter behind WorkspaceTable.iter_query (above), reached when it is."},
     {"key": "lambda/agents/state_machine.py", "reason": "Build-time generator of state_machine.asl.json (the CDK loads the JSON); test_graph_and_state_machine.py keeps the two in lockstep. Never imported at run time by design."},
@@ -10,7 +7,6 @@
     {"key": "lambda/shared/memory_store.py::clear_pool_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container embedding pool between memory tests."},
     {"key": "lambda/shared/memory_store.py::clear_objective_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container objectives cache between memory tests."},
     {"key": "lambda/shared/model_capacity.py::clear_quota_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the Service Quotas listing cache between cases."},
-    {"key": "lambda/shared/response_cache.py::ResponseCache.clear", "reason": "Test seam (pyproject.toml vulture ignore_names `clear`): lambda/api/test/conftest.py empties the process-wide read memo around every API test."},
     {"key": "lambda/shared/mcp_delegate.py::SYNTHETIC_CLAIM_KEYS", "reason": "Named set pinned EXACTLY by test_mcp_delegate_mutation so a claim nobody considered fails a test (pyproject.toml ignore_names)."},
     {"key": "lambda/shared/mcp_delegate.py::OPTIONAL_SYNTHETIC_CLAIM_KEYS", "reason": "Named set pinned EXACTLY by test_mcp_delegate_mutation (pyproject.toml ignore_names)."},
     {"key": "lambda/api/product_context.py::PRODUCT_DOC_STATUSES", "reason": "Lockstep contract: product_doc_extractor/test/test_status_lockstep.py pins the extractor's status partition against this tuple (pyproject.toml ignore_names)."},

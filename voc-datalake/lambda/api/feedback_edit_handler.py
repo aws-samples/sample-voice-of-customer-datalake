@@ -21,12 +21,23 @@ Rules:
 - the new category must exist in the categories config (400), and a given
   subcategory must belong to it when the category lists subcategories (400);
 - a concurrent change of the category between the read and the write is 409.
+
+Two paths (docs/multi-workspace.md; shared/workspace_request.py): a request that sends ``X-Workspace-Id`` edits an
+item of that workspace (resolved before the route runs: 400 for an empty header, the one 404 for a non-member, an
+unknown or deleting workspace; a platform admin enters as admin, live-checked and audited): the item is found by
+its workspace's id partition (``WS#{ws}#FEEDBACK#…``, so another workspace's id or the deployment's is not found),
+read, updated (its ``gsi2pk`` to ``WS#{ws}#CATEGORY#…``) through shared/ws_repo.py ``ws_table``, its previous
+version kept under ``ws/{ws}/silver/`` and the workspace's own data_version bumped. In a workspace an edit is a
+write, so it is for its editors and admins (docs/multi-workspace.md, "Roles"): a viewer gets 403, after the
+membership check. A request with no such header edits the deployment's item, exactly as before (any signed-in
+caller who sees the item's categories). The categories and dimensions config, and the caller's category access,
+stay the deployment's (phase 3).
 """
 
 from collections.abc import Mapping
 from typing import Any
 
-from boto3.dynamodb.conditions import Attr, ConditionBase, Key
+from boto3.dynamodb.conditions import Attr, ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import category_access
@@ -37,7 +48,7 @@ from shared.category_override import public_override
 from shared.data_version import bump_data_version
 from shared.delete_audit import actor_from_event
 from shared.dimension_config import load_dimensions_config, validate_tags
-from shared.exceptions import ConfigurationError, NotFoundError, ServiceError, ValidationError
+from shared.exceptions import AuthorizationError, ConfigurationError, NotFoundError, ServiceError, ValidationError
 from shared.feedback_category import (
     CATEGORY_SOURCE_MANUAL,
     ManualEdit,
@@ -56,16 +67,48 @@ from shared.feedback_category import (
 from shared.feedback_dimensions import apply_dimension_edit
 from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
 from shared.indexes import FEEDBACK_BY_ID_INDEX
+from shared.ingest_tables import table_view, update_with_key
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
+from shared.scoped_query import query_partition
 from shared.silver_provenance import REASON_CATEGORY_EDIT, REASON_DIMENSIONS_EDIT
 from shared.tables import get_aggregates_table, get_feedback_table
 from shared.timestamps import now_iso
+from shared.workspace_request import RequestWorkspace
+from shared.ws_repo import WorkspaceScope, scope_of
 
 FEEDBACK_NOT_FOUND = 'Feedback not found'
+#: The workspace roles that may edit a review (docs/multi-workspace.md, "Roles": an edit is a write).
+EDITING_ROLES = frozenset({'editor', 'admin'})
 
 app = create_api_resolver()
+# The workspace an edit acts in (shared/workspace_request.py): its warm container's memberships (30 s).
+_workspace = RequestWorkspace()
+
+
+def _edit_scope(event: dict) -> WorkspaceScope | None:
+    """The workspace this edit acts in (None: deployment-wide), resolved first in each route, before the body is
+    validated or anything is read, so a non-member always gets the one 404; 403 for a workspace viewer. The role is
+    read from the table (``fresh``), never the 30 s cache: an editor demoted or removed a moment ago cannot edit."""
+    context = _workspace.context(event, fresh=True)
+    if context is None:
+        return None
+    if context.role not in EDITING_ROLES:
+        raise AuthorizationError('Editing feedback needs the editor or admin role in this workspace')
+    return scope_of(context)
+
+
+class _ItemWriter:
+    """The feedback table as shared/feedback_category.py ``apply_conditional_update`` calls it
+    (``update_item(Key=…, …)``), in the edit's scope (shared/ingest_tables.py ``table_view``: the table itself
+    deployment-wide, ``ws_table`` in a workspace)."""
+
+    def __init__(self, scope: WorkspaceScope | None, table: Any) -> None:
+        self._view = table_view(scope, table)
+
+    def update_item(self, **kwargs: Any) -> dict:
+        return update_with_key(self._view, kwargs)
 
 
 def _tables() -> tuple[Any, Any]:
@@ -75,18 +118,19 @@ def _tables() -> tuple[Any, Any]:
     return feedback_table, aggregates_table
 
 
-def _current_item(feedback_table: Any, feedback_id: str) -> dict:
-    """The item with ``feedback_id`` (gsi4's deployment-wide partition), strongly read from the base table, or 404."""
+def _current_item(feedback_table: Any, feedback_id: str, scope: WorkspaceScope | None = None) -> dict:
+    """The item with ``feedback_id`` (gsi4's partition in ``scope``: deployment-wide, or the workspace's only),
+    strongly read from the base table (through ``ws_table`` in a workspace), or 404."""
     try:
-        hits = feedback_table.query(
+        hits = query_partition(
+            scope, feedback_table, FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition(scope, feedback_id),
             IndexName=FEEDBACK_BY_ID_INDEX,
-            KeyConditionExpression=Key(FEEDBACK_ID_INDEX_PARTITION).eq(feedback_id_partition(None, feedback_id)),
             Limit=1,
         ).get('Items', [])
         if not hits:
             raise NotFoundError(FEEDBACK_NOT_FOUND)
         key = {'pk': hits[0]['pk'], 'sk': hits[0]['sk']}
-        item = feedback_table.get_item(Key=key, ConsistentRead=True).get('Item')
+        item = table_view(scope, feedback_table).get_item(key, ConsistentRead=True).get('Item')
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Feedback read failed')
         raise ServiceError('Could not read feedback. Please retry.') from exc
@@ -107,9 +151,11 @@ def _edit(event: Mapping[str, Any], reason: str) -> ManualEdit:
 
 def _update_kwargs(
     item: Mapping[str, Any], category: str, subcategory: str | None, override: dict, edit: ManualEdit,
+    scope: WorkspaceScope | None = None,
 ) -> dict:
-    """The conditional ``update_item`` that moves ``item`` to ``category`` (``shared.feedback_category``)."""
-    change = category_change(item, category, subcategory, override)
+    """The conditional ``update_item`` that moves ``item`` to ``category`` (``shared.feedback_category``; its
+    ``gsi2pk`` in ``scope``'s partitions)."""
+    change = category_change(item, category, subcategory, override, scope)
     sets, names, values = assignment_clauses(manual_edit_fields(edit, override['at']), 'edit')
     return {
         'Key': {'pk': item['pk'], 'sk': item['sk']},
@@ -126,6 +172,7 @@ def _update_kwargs(
 def set_feedback_category(feedback_id: str):
     """Correct one review's category: ``{category, subcategory?}``."""
     event = app.current_event.raw_event
+    workspace = _edit_scope(event)
     caller = caller_from_event(event)
     body = json_body_value(app)
     if not isinstance(body, dict):
@@ -135,17 +182,17 @@ def set_feedback_category(feedback_id: str):
     feedback_table, aggregates_table = _tables()
 
     scope = scope_for_caller(caller, aggregates_table)
-    item = _current_item(feedback_table, feedback_id)
+    item = _current_item(feedback_table, feedback_id, workspace)
     _require_visible(scope, item, category)
     validate_target(categories_config(aggregates_table), category, subcategory)
 
     override = override_record(item, caller)
     edit = _edit(event, REASON_CATEGORY_EDIT)
-    kwargs = _update_kwargs(item, category, subcategory, override, edit)
-    updated = apply_conditional_update(feedback_table, kwargs)
-    keep_before_edit(item, edit, kwargs)  # once the edit landed: a refused one leaves no version
+    kwargs = _update_kwargs(item, category, subcategory, override, edit, workspace)
+    updated = apply_conditional_update(_ItemWriter(workspace, feedback_table), kwargs)
+    keep_before_edit(item, edit, kwargs, workspace)  # once the edit landed: a refused one leaves no version
     # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
-    bump_data_version(aggregates_table)
+    bump_data_version(aggregates_table, workspace)
 
     return {
         'success': True,
@@ -171,12 +218,13 @@ def set_feedback_dimensions(feedback_id: str):
     its dimensions or tags changed since they were read.
     """
     event = app.current_event.raw_event
+    workspace = _edit_scope(event)
     caller = caller_from_event(event)
     edits, tags = _dimensions_body(json_body_value(app))
     feedback_table, aggregates_table = _tables()
 
     scope = scope_for_caller(caller, aggregates_table)
-    item = _current_item(feedback_table, feedback_id)
+    item = _current_item(feedback_table, feedback_id, workspace)
     if not category_access.admits_item(scope, item):
         raise NotFoundError(FEEDBACK_NOT_FOUND)
     try:
@@ -186,9 +234,9 @@ def set_feedback_dimensions(feedback_id: str):
     new_tags = item.get('tags') if tags is None else tags
     edit = _edit(event, REASON_DIMENSIONS_EDIT)
     kwargs = _dimensions_update_kwargs(item, dimensions, sources, new_tags, edit)
-    updated = apply_conditional_update(feedback_table, kwargs)
-    keep_before_edit(item, edit, kwargs)  # once the edit landed: a refused one leaves no version
-    bump_data_version(aggregates_table)
+    updated = apply_conditional_update(_ItemWriter(workspace, feedback_table), kwargs)
+    keep_before_edit(item, edit, kwargs, workspace)  # once the edit landed: a refused one leaves no version
+    bump_data_version(aggregates_table, workspace)
     return {
         'success': True,
         'feedback_id': feedback_id,

@@ -163,15 +163,51 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
       ['Projects', 'Conversations', 'Jobs'].some((t) => s.resource.includes(t))
       || s.actions.some((a) => a.startsWith('sqs:') || a.startsWith('bedrock:')));
     expect(offenders).toStrictEqual([]);
-    // Its one S3 grant: a write-once PutObject of the review as it was (lambda/shared/silver_provenance.py).
+    // Its S3 grants: a write-once PutObject of the review as it was (lambda/shared/silver_provenance.py), under
+    // silver/ and, for a workspace's review, under one workspace's ws/{ws}/silver/ (one id: `ws_` and 26 `?`).
     const s3 = statements.filter((s) => s.actions.some((a) => a.startsWith('s3:')));
-    expect(s3.map((s) => s.actions)).toStrictEqual([['s3:PutObject']]);
-    expect(s3.every((s) => s.resource.includes('/silver/*'))).toBe(true);
+    expect(s3.map((s) => s.actions)).toStrictEqual([['s3:PutObject'], ['s3:PutObject']]);
+    expect(s3.map((s) => (s.resource.includes(`/ws/ws_${'?'.repeat(26)}/silver/*`) ? 'ws' : 'deployment')).sort(byCodeUnit))
+      .toStrictEqual(['deployment', 'ws']);
+    expect(s3.every((s) => s.resource.includes('silver/*'))).toBe(true);
   });
 
   it('is handed both table names and the raw bucket', () => {
     expect(Object.keys(lambdaEnv(apiTemplate(), 'feedback_edit_handler.lambda_handler')))
       .toStrictEqual(expect.arrayContaining(['FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET']));
+  });
+});
+
+// ── X-Workspace-Id on the data path (docs/multi-workspace.md, lib/utils/workspace-request-grants.ts) ──────────
+// The metrics API and the feedback edits resolve a request's workspace (lambda/shared/workspace_request.py): they
+// read voc-workspaces' WS#* and AUDIT#WS#* rows, put only an entry audit row (AUDIT#WS#*), and run the live
+// platform-admin check in Cognito; nothing else of the control plane.
+describe.each([
+  ['MetricsLambdaRole', 'metrics_handler.lambda_handler'],
+  ['FeedbackEditLambdaRole', 'feedback_edit_handler.lambda_handler'],
+])('%s resolves X-Workspace-Id', (role, handler) => {
+  // The DynamoDB statements on voc-workspaces (the table's key grants name no `dynamodb:` action).
+  const onWorkspaces = () => policyStatementsOf(apiTemplate(), role)
+    .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:')));
+
+  it('reads WS#* and AUDIT#WS#* and puts only AUDIT#WS#* in voc-workspaces', () => {
+    expect(onWorkspaces().map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition })))
+      .toStrictEqual([
+        { actions: ['dynamodb:GetItem'],
+          condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*', 'WS#*'] } } },
+        { actions: ['dynamodb:PutItem'],
+          condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } } },
+      ]);
+  });
+
+  it('may run the live platform-admin check and nothing else in Cognito', () => {
+    expect(actionsWithPrefix(roleStatements(apiTemplate(), role), 'cognito-idp:').sort(byCodeUnit))
+      .toStrictEqual(['cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser']);
+  });
+
+  it('is handed the workspaces table and the user pool', () => {
+    expect(Object.keys(lambdaEnv(apiTemplate(), handler)))
+      .toStrictEqual(expect.arrayContaining(['WORKSPACES_TABLE', 'USER_POOL_ID']));
   });
 });
 

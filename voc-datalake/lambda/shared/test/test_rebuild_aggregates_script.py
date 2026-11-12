@@ -19,6 +19,7 @@ from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import 
 from moto import mock_aws
 
 from aggregator.test.aggregator_fixtures import stream_record as _record
+from shared.data_version import BatchBump
 from shared.test.moto_tables import create_pk_sk_table
 from shared.test.repo_paths import load_module_from_path, repo_root
 
@@ -77,7 +78,9 @@ def _aggregate(table, records: list[DynamoDBRecord]) -> None:
     """Run the REAL aggregator over stream records, writing into `table`."""
     from aggregator import handler
 
-    with patch.object(handler, 'aggregates_table', table), patch.object(handler, 'IDEMPOTENCY_TABLE', ''):
+    # A fresh batch counter: the marks these direct record_handler calls leave are never flushed into another test.
+    with patch.object(handler, 'aggregates_table', table), patch.object(handler, 'IDEMPOTENCY_TABLE', ''), \
+            patch.object(handler, 'data_changed', BatchBump(handler.bump_data_version)):
         handler._known_earliest_date = None
         for record in records:
             handler.record_handler(record)
@@ -89,14 +92,20 @@ def _put_feedback(table, items: list[dict]) -> None:
         table.put_item(Item=item)
 
 
-def _rows(table) -> dict[tuple[str, str], dict[str, Any]]:
-    """Every METRIC# counter row, reduced to the attributes the read paths use."""
+def _rows(table, prefix: str = '') -> dict[tuple[str, str], dict[str, Any]]:
+    """Every METRIC# counter row of one scope (`prefix`: '' the deployment's, `WS#{ws}#` a workspace's), reduced to
+    the attributes the read paths use."""
     out = {}
     for row in table.scan()['Items']:
-        if row['pk'] == 'METRIC#meta':
+        pk = row['pk']
+        if pk == f'{prefix}METRIC#meta' or not pk.startswith(f'{prefix}METRIC#'):
             continue
-        out[(row['pk'], row['sk'])] = {k: row[k] for k in ('count', 'sum', 'metric_type') if k in row}
+        out[(pk, row['sk'])] = {k: row[k] for k in ('count', 'sum', 'metric_type') if k in row}
     return out
+
+
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+OTHER_WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
 
 
 def test_the_rebuild_matches_what_the_aggregator_produced_for_the_same_items(rebuild, tables):
@@ -120,20 +129,54 @@ def test_the_rebuild_matches_what_the_aggregator_produced_for_the_same_items(reb
     assert meta['date'] == '2026-02-11'
 
 
-def test_a_workspace_item_is_left_out_as_the_aggregator_leaves_it_out(rebuild, tables):
-    """Workspace items are not aggregated yet (docs/multi-workspace.md): neither the stream nor the rebuild counts
-    them into the deployment-wide METRIC# rows."""
-    workspace = [{**item, 'pk': f"WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#{item['pk']}"} for item in ITEMS[:3]]
+def test_a_workspace_item_is_left_out_of_the_deployments_rebuild(rebuild, tables):
+    """A workspace's items count in the workspace (docs/multi-workspace.md): the deployment's rebuild leaves them out
+    of the deployment-wide METRIC# rows, as the stream does."""
+    workspace = [{**item, 'pk': f"WS#{WS}#{item['pk']}"} for item in ITEMS[:3]]
     _put_feedback(tables['feedback'], ITEMS + workspace)
     _aggregate(tables['live'], [_record('INSERT', new=item) for item in ITEMS + workspace])
 
     plan = rebuild.run(tables['feedback'], tables['rebuilt'], apply=True)
 
     assert _rows(tables['rebuilt']) == _rows(tables['live'])
+    assert _rows(tables['rebuilt'], f'WS#{WS}#') == {}
     assert rebuild.daily_total_sum(plan) == len(ITEMS)
     assert plan.workspace_items == len(workspace)
     assert any('MATCHES' in line for line in rebuild.summary_lines(plan, apply=True))
     assert '  workspace items (not counted): 3' in rebuild.summary_lines(plan, apply=True)
+
+
+def test_a_workspace_rebuild_matches_what_the_aggregator_produced_in_it(rebuild, tables):
+    """`--workspace`: that workspace's counters (WS#{ws}#METRIC#…, its metric_type and watermark) from its items
+    only; the deployment's and another workspace's items and rows are left alone."""
+    mine = [{**item, 'pk': f"WS#{WS}#{item['pk']}"} for item in ITEMS]
+    theirs = [{**item, 'pk': f"WS#{OTHER_WS}#{item['pk']}"} for item in ITEMS[:2]]
+    unscoped = [{**ITEMS[0], 'pk': 'WS#garbage#SOURCE#web'}]
+    _put_feedback(tables['feedback'], ITEMS + mine + theirs + unscoped)
+    _aggregate(tables['live'], [_record('INSERT', new=item) for item in mine])
+
+    plan = rebuild.run(tables['feedback'], tables['rebuilt'], apply=True, scope=rebuild._workspace(WS))
+
+    expected = _rows(tables['live'], f'WS#{WS}#')
+    assert _rows(tables['rebuilt'], f'WS#{WS}#') == expected
+    assert expected[(f'WS#{WS}#METRIC#daily_source#webscraper', '2026-02-11')]['metric_type'] == f'WS#{WS}#source'
+    assert _rows(tables['rebuilt']) == {}  # no deployment row
+    assert _rows(tables['rebuilt'], f'WS#{OTHER_WS}#') == {}
+    assert (plan.workspace_items, plan.unscoped_items) == (len(ITEMS) + len(theirs), 1)
+    assert rebuild.daily_total_sum(plan) == len(ITEMS)
+    meta = tables['rebuilt'].get_item(Key={'pk': f'WS#{WS}#METRIC#meta', 'sk': 'earliest_date'})['Item']
+    assert meta['date'] == '2026-02-11'
+    lines = rebuild.summary_lines(plan, apply=True)
+    assert f'  counters rebuilt:              {WS}' in lines
+    assert any('MATCHES' in line for line in lines)
+
+    again = rebuild.run(tables['feedback'], tables['rebuilt'], apply=True, scope=rebuild._workspace(WS))
+    assert sum(again.written.values()) == 0  # idempotent: the stored rows are read back under the workspace
+
+
+def test_the_workspace_option_refuses_what_is_not_a_workspace_id(rebuild):
+    with pytest.raises(rebuild.argparse.ArgumentTypeError):
+        rebuild._workspace('ws_not-an-id')
 
 
 def test_rebuilt_rows_carry_no_ttl_and_overwrite_a_wrong_count(rebuild, tables):

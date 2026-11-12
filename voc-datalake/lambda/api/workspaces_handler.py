@@ -60,7 +60,7 @@ from shared.aws import get_cognito_idp_client, get_dynamodb_resource, get_secret
 from shared.exceptions import AuthorizationError, ConfigurationError, ServiceError, ValidationError
 from shared.import_runs import parse_limit
 from shared.logging import logger
-from shared.platform_admin import is_live_platform_admin, require_platform_admin
+from shared.platform_admin import live_platform_admin_check, require_platform_admin
 from shared.platform_workspaces import (
     CREDENTIALS_PENDING,
     CREDENTIALS_READY,
@@ -75,6 +75,7 @@ from shared.request_body import json_object_body
 from shared.tables import cached_table
 from shared.warm_init import warm_at_init
 from shared.workspace import (
+    WORKSPACE_FAULT,
     MembershipCache,
     WorkspaceContext,
     list_my_workspaces,
@@ -102,7 +103,7 @@ KMS_KEY_ARN = os.environ.get('KMS_KEY_ARN', '')
 WORKSPACE_SECRET_PREFIX = os.environ.get('WORKSPACE_SECRET_PREFIX', '')
 # The fixed answers of a fault (#263: never the AWS text).
 FAILED_LIST = 'Failed to list your workspaces'
-FAILED_CURRENT = 'Failed to open the workspace'
+FAILED_CURRENT = WORKSPACE_FAULT
 FAILED_CREATE = 'Failed to create the workspace'
 FAILED_PLATFORM_LIST = 'Failed to list the workspaces'
 FAILED_MEMBERS = 'Failed to list the members'
@@ -129,9 +130,13 @@ def _user_pool() -> str:
     return USER_POOL_ID
 
 
-def _confirm_platform_admin(event: dict) -> bool:
-    """The live platform-admin check (shared/platform_admin.py); a Cognito fault raises."""
-    return is_live_platform_admin(event, get_cognito_idp_client(), _user_pool())
+def _cognito() -> Any:
+    """The Cognito client, looked up at call time (tests patch this module's ``get_cognito_idp_client``)."""
+    return get_cognito_idp_client()
+
+
+#: The live platform-admin check (shared/platform_admin.py); a Cognito fault raises.
+_confirm_platform_admin = live_platform_admin_check(_cognito, _user_pool)
 
 
 def _require_live_platform_admin(event: dict, public_error: str) -> None:

@@ -16,8 +16,13 @@ For each date D with dated feedback (optionally limited to `--from`/`--to`):
    category+sentiment, and per subcategory. The running average
    (`METRIC#daily_sentiment_avg`) gets `sum` and `count` from the items of D that
    carry a non-zero score — the same `if sentiment_score:` rule the aggregator uses.
-   An item of a workspace (a `WS#…` key, docs/multi-workspace.md) is skipped, as the
-   aggregator skips it: workspace items are not aggregated yet.
+   ONE SCOPE PER RUN (docs/multi-workspace.md): by default the deployment's counters,
+   from the deployment's items only (an item of a workspace, a `WS#…` key, is left
+   out, as the aggregator counts it in its workspace); with `--workspace ws_…` that
+   workspace's counters (`WS#{ws}#METRIC#…`, `metric_type` `WS#{ws}#<type>`, its own
+   watermark `WS#{ws}#METRIC#meta`), from that workspace's items only, every row put
+   through the workspace layer (`ws_table`). A `WS#` key naming no workspace is
+   counted in neither and reported.
 2. ABSOLUTE `put_item`, NEVER A DELTA: `{pk, sk: D, count, updated_at}` plus
    `metric_type` on the source and persona partitions (the `gsi1-by-metric-type`
    index `/metrics/sources` and `/metrics/personas` read). No `ttl`: metric rows are
@@ -56,6 +61,7 @@ Usage:
     python scripts/retention/rebuild_aggregates.py [--stack VocCoreStack] [--region us-west-2]
     python scripts/retention/rebuild_aggregates.py --apply --feedback-table T1 --aggregates-table T2
     python scripts/retention/rebuild_aggregates.py --from 2026-02-01 --to 2026-02-28   (one window)
+    python scripts/retention/rebuild_aggregates.py --workspace ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8   (one workspace)
 """
 import argparse
 import os
@@ -74,8 +80,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from retention_common import is_conditional_failure, resolve_tables, scan_all, table_parser
 
-from shared.earliest_date import METRIC_META_PK, lower_watermark_request, parse_iso_date
-from shared.ws_repo import is_workspace_key
+from shared.earliest_date import lower_watermark_request, meta_partition, parse_iso_date
+from shared.metric_keys import metric_partition, metric_type_partition
+from shared.workspace_ids import is_workspace_id
+from shared.ws_repo import WorkspaceScope, partition_scope, ws_table
 
 METRIC_PREFIX = 'METRIC#'
 TTL_ATTRIBUTE = 'ttl'
@@ -98,9 +106,14 @@ def _aggregator() -> ModuleType:
 @dataclass
 class Plan:
     """What the recompute found, and what the writes did."""
+    #: The counters rebuilt: the deployment's (None), or one workspace's (`--workspace`).
+    scope: WorkspaceScope | None = None
     feedback_scanned: int = 0
-    #: Items of a workspace (`WS#…` keys, docs/multi-workspace.md): never in the deployment-wide counters.
+    #: Items of another scope (a workspace's in a deployment run; the deployment's or another workspace's in a
+    #: workspace run, docs/multi-workspace.md): never in this run's counters.
     workspace_items: int = 0
+    #: Items whose key starts `WS#` but names no workspace: counted nowhere, as the aggregator skips them.
+    unscoped_items: int = 0
     undated_items: int = 0
     outside_window: int = 0
     recent_items: int = 0
@@ -122,6 +135,21 @@ def family(pk: str) -> str:
     return f'{METRIC_PREFIX}{head}{"#*" if sep else ""}'
 
 
+def _in_scope(item: dict, plan: Plan) -> bool:
+    """Whether `item` counts in this run's counters (its `pk` names the run's scope); the others are counted on
+    the plan: another scope's item (the aggregator counts it in that scope), or a `WS#` key naming no workspace
+    (the aggregator skips it too)."""
+    try:
+        scope = partition_scope(item.get('pk'))
+    except ValueError:
+        plan.unscoped_items += 1
+        return False
+    if scope != plan.scope:
+        plan.workspace_items += 1
+        return False
+    return True
+
+
 def recompute(items: Iterable[dict], plan: Plan, window: tuple[str | None, str | None],
               recent_cutoff: str) -> None:
     """Bucket every dated item exactly as the aggregator's INSERT path would."""
@@ -131,9 +159,7 @@ def recompute(items: Iterable[dict], plan: Plan, window: tuple[str | None, str |
     first, last = window
     for item in items:
         plan.feedback_scanned += 1
-        if is_workspace_key(item.get('pk')):
-            # The aggregator skips them too (a workspace's counters are its own slice's).
-            plan.workspace_items += 1
+        if not _in_scope(item, plan):
             continue
         processed_at = item.get('processed_at')
         if isinstance(processed_at, str):
@@ -162,15 +188,22 @@ def recompute(items: Iterable[dict], plan: Plan, window: tuple[str | None, str |
         plan.targets[(agg.SENTIMENT_AVG_PK, day)] = {'sum': total, 'count': scored}
 
 
+def _scope_prefix(plan: Plan) -> str:
+    """What the run's stored counter rows start with before `METRIC#`: '' deployment-wide, `WS#{ws}#`."""
+    return plan.scope.prefix if plan.scope is not None else ''
+
+
 def load_existing(aggregates_table, plan: Plan) -> None:
-    """Every stored METRIC# counter row (the watermark excluded)."""
+    """Every stored METRIC# counter row of the run's scope (the watermark excluded), keyed by the deployment's
+    spelling of its pk (the workspace prefix taken off), as the recompute names its targets."""
+    prefix = _scope_prefix(plan)
     rows = scan_all(
         aggregates_table,
         FilterExpression='begins_with(pk, :metric) AND pk <> :meta',
-        ExpressionAttributeValues={':metric': METRIC_PREFIX, ':meta': METRIC_META_PK},
+        ExpressionAttributeValues={':metric': f'{prefix}{METRIC_PREFIX}', ':meta': meta_partition(plan.scope)},
     )
     for row in rows:
-        key = (row['pk'], row['sk'])
+        key = (row['pk'].removeprefix(prefix), row['sk'])
         plan.existing[key] = row
         if row['sk'] not in plan.dates:
             plan.untouched_existing_dates.add(row['sk'])
@@ -186,12 +219,14 @@ def zero_targets(plan: Plan) -> None:
             plan.zeroed[family(pk)] += 1
 
 
-def desired_item(pk: str, day: str, values: dict[str, Any], now_iso: str) -> dict[str, Any]:
-    """The full row a put writes: values, `updated_at`, `metric_type` where the GSI needs it, no ttl."""
-    item: dict[str, Any] = {'pk': pk, 'sk': day, **values, 'updated_at': now_iso}
+def desired_item(pk: str, day: str, values: dict[str, Any], now_iso: str,
+                 scope: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The full row a put writes: values, `updated_at`, `metric_type` where the GSI needs it, no ttl; `pk` (the
+    deployment's spelling) and `metric_type` named in the workspace with `scope`, as the aggregator names them."""
+    item: dict[str, Any] = {'pk': metric_partition(scope, pk), 'sk': day, **values, 'updated_at': now_iso}
     metric_type = _aggregator().get_metric_type(pk)
     if metric_type:
-        item['metric_type'] = metric_type
+        item['metric_type'] = metric_type_partition(scope, metric_type)
     return item
 
 
@@ -205,21 +240,24 @@ def _already_holds(existing: dict[str, Any] | None, desired: dict[str, Any]) -> 
 def write_rows(aggregates_table, plan: Plan, started_iso: str, apply: bool) -> None:
     """Put every target row whose stored value differs, unless an aggregator write beat us to it."""
     for (pk, day), values in sorted(plan.targets.items()):
-        desired = desired_item(pk, day, values, started_iso)
+        desired = desired_item(pk, day, values, started_iso, plan.scope)
         if _already_holds(plan.existing.get((pk, day)), desired):
             plan.unchanged[family(pk)] += 1
             continue
         plan.written[family(pk)] += 1
         if not apply:
             continue
+        condition = {
+            'ConditionExpression': (
+                'attribute_not_exists(pk) OR attribute_not_exists(updated_at) '
+                'OR updated_at < :started'),
+            'ExpressionAttributeValues': {':started': started_iso},
+        }
         try:
-            aggregates_table.put_item(
-                Item=desired,
-                ConditionExpression=(
-                    'attribute_not_exists(pk) OR attribute_not_exists(updated_at) '
-                    'OR updated_at < :started'),
-                ExpressionAttributeValues={':started': started_iso},
-            )
+            if plan.scope is None:
+                aggregates_table.put_item(Item=desired, **condition)
+            else:
+                ws_table(plan.scope, aggregates_table).put_item(desired, **condition)
         except Exception as error:  # botocore ClientError; imported lazily with boto3
             if not is_conditional_failure(error):
                 raise
@@ -231,8 +269,13 @@ def write_watermark(aggregates_table, plan: Plan, now_iso: str, apply: bool) -> 
     """Lower the earliest-date watermark to the oldest rebuilt date (conditional)."""
     if not apply or not plan.dates:
         return
+    request = lower_watermark_request(min(plan.dates), now_iso, plan.scope)
     try:
-        aggregates_table.update_item(**lower_watermark_request(min(plan.dates), now_iso))
+        if plan.scope is None:
+            aggregates_table.update_item(**request)
+        else:
+            key = request.pop('Key')
+            ws_table(plan.scope, aggregates_table).update_item(key, **request)
     except Exception as error:
         if is_conditional_failure(error):
             return  # already as old or older
@@ -247,12 +290,13 @@ class RecentFeedbackError(RuntimeError):
 def run(feedback_table, aggregates_table, apply: bool, *,
         window: tuple[str | None, str | None] = (None, None),
         settle_hours: int = DEFAULT_SETTLE_HOURS, allow_recent: bool = False,
-        now: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Plan:
-    """Recompute, then (with `apply`) write. The start instant is taken BEFORE the scan."""
+        now: Callable[[], datetime] = lambda: datetime.now(UTC), scope: WorkspaceScope | None = None) -> Plan:
+    """Recompute, then (with `apply`) write, the counters of `scope` (None: the deployment's). The start instant is
+    taken BEFORE the scan."""
     started = now()
     started_iso = started.isoformat()
     recent_cutoff = (started - timedelta(hours=settle_hours)).isoformat()
-    plan = Plan()
+    plan = Plan(scope=scope)
     recompute(scan_all(feedback_table), plan, window, recent_cutoff)
     if apply and plan.recent_items and not allow_recent:
         raise RecentFeedbackError(
@@ -278,12 +322,16 @@ def summary_lines(plan: Plan, apply: bool) -> list[str]:
     item_totals: Counter = Counter()
     for (pk, _), values in plan.targets.items():
         item_totals[family(pk)] += int(values.get('count', 0))
-    dated = plan.feedback_scanned - plan.workspace_items - plan.undated_items - plan.outside_window
+    dated = (plan.feedback_scanned - plan.workspace_items - plan.unscoped_items - plan.undated_items
+             - plan.outside_window)
     totals_sum = daily_total_sum(plan)
+    other_scope = 'other scopes' if plan.scope is not None else 'workspace items'
     lines = [
         'APPLIED' if apply else 'DRY RUN (pass --apply to write)',
+        f'  counters rebuilt:              {plan.scope.ws if plan.scope is not None else "the deployment"}',
         f'  feedback items scanned:        {plan.feedback_scanned}',
-        *([f'  workspace items (not counted): {plan.workspace_items}'] if plan.workspace_items else []),
+        *([f'  {other_scope + " (not counted):":<31}{plan.workspace_items}'] if plan.workspace_items else []),
+        *([f'  WS# keys naming no workspace:  {plan.unscoped_items}'] if plan.unscoped_items else []),
         f'  dated items rebuilt:           {dated}',
         f'  undated items (not bucketed):  {plan.undated_items}',
         f'  items outside --from/--to:     {plan.outside_window}',
@@ -316,6 +364,13 @@ def _iso_day(value: str) -> str:
     return value
 
 
+def _workspace(value: str) -> WorkspaceScope:
+    """The operator's `--workspace`: a workspace id (`ws_` and a ULID), as the scope itself checks it."""
+    if not is_workspace_id(value):
+        raise argparse.ArgumentTypeError(f'{value!r} is not a workspace id (ws_ and 26 characters)')
+    return WorkspaceScope(value)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = table_parser((__doc__ or '').split('\n\n')[0])
     parser.add_argument('--from', dest='first', type=_iso_day, help='first date to rebuild (default: oldest)')
@@ -324,6 +379,9 @@ def main(argv: list[str] | None = None) -> int:
                         help='refuse --apply if feedback was processed this recently (default 24)')
     parser.add_argument('--allow-recent', action='store_true',
                         help='apply even with recent feedback (check the aggregator IteratorAge first)')
+    parser.add_argument('--workspace', type=_workspace, default=None,
+                        help="rebuild this workspace's counters (WS#{ws}#METRIC#...) from its items only "
+                             "(default: the deployment's counters, from the deployment's items)")
     args = parser.parse_args(argv)
     session = resolve_tables(args)
 
@@ -339,7 +397,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         plan = run(dynamodb.Table(args.feedback_table), dynamodb.Table(args.aggregates_table), args.apply,
                    window=(args.first, args.last), settle_hours=args.settle_hours,
-                   allow_recent=args.allow_recent)
+                   allow_recent=args.allow_recent, scope=args.workspace)
     except RecentFeedbackError as error:
         print(f'REFUSED: {error}', file=sys.stderr)
         return 2

@@ -113,6 +113,10 @@ const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
   'VocApiStack/UsersLambdaRole': ['AUDIT#WS#*', 'USER#*', 'WS#*'],
   [RETENTION_ROLE]: ['WS#*'],
+  // The data-path APIs that resolve X-Workspace-Id: a platform admin's entry audit row only (PutItem, a new row;
+  // lib/utils/workspace-request-grants.ts).
+  'VocApiStack/MetricsLambdaRole': ['AUDIT#WS#*'],
+  'VocApiStack/FeedbackEditLambdaRole': ['AUDIT#WS#*'],
 };
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */
@@ -266,9 +270,10 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   // and the live platform-admin check on entering a workspace (6.09.00, lambda/shared/workspace.py). Both landed; the
   // change that creates workspaces (6.09.00) is the one that widened WORKSPACE_WRITERS; the members routes (6.10.00)
   // write within the same partitions (role updates and removals in `USER#*` and `WS#*`); 6.11.00 adds the users API (a
-  // deleted user's memberships) and voc-retention (an erasure by email's de-identification). A new writer or partition
+  // deleted user's memberships) and voc-retention (an erasure by email's de-identification); the read APIs' slice adds
+  // the metrics API and the feedback edits (a platform admin's entry audit, AUDIT#WS#* only). A new writer or partition
   // is a decision recorded here.
-  it('voc-workspaces: only the workspaces API, the users API and voc-retention write, each in its partitions', () => {
+  it('voc-workspaces: only the workspaces API, the users API, voc-retention and the entry audits write, each in its partitions', () => {
     const writers: Record<string, Scope> = {};
     for (const grant of grants.filter(onTable('WorkspacesTable')).filter((g) => g.actions.some((a) => DYNAMO_WRITE.test(a)))) {
       writers[grant.role] = unionOf(writers[grant.role] ?? [], scopeOf(grant));

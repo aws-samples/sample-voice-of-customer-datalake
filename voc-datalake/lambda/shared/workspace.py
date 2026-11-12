@@ -74,6 +74,8 @@ MEMBERSHIP_TTL_SECONDS: Final = 30.0
 MAX_CACHED_MEMBERSHIPS: Final = 1024
 #: The one answer for a malformed id, a missing or deleting workspace and a caller who is not a member.
 NOT_FOUND: Final = 'Workspace not found'
+#: The fixed 500 of a fault while a request's workspace is resolved (a failed read, live check or entry audit).
+WORKSPACE_FAULT: Final = 'Failed to open the workspace'
 
 
 @dataclass(frozen=True)

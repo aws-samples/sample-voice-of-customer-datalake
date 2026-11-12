@@ -31,8 +31,10 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   ConversationsTable: ['VocApiStack/ChatLambdaRole'],
   // A platform admin's entry, a workspace's creation and its membership changes (AUDIT#WS#<ws>); the users API a
   // deleted user's membership removals (AUDIT#WS#* only); every other role writing voc-workspaces (voc-retention's
-  // de-identification) gets the forge Deny.
-  WorkspacesTable: ['VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspacesLambdaRole'],
+  // de-identification) gets the forge Deny. The data-path APIs that resolve X-Workspace-Id (the metrics API, the
+  // feedback edits) write a platform admin's entry (AUDIT#WS#* only).
+  WorkspacesTable: ['VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/MetricsLambdaRole', 'VocApiStack/UsersLambdaRole',
+    'VocApiStack/WorkspacesLambdaRole'],
 };
 
 type Statement = IamStatement;
@@ -120,11 +122,27 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings and users APIs carry a one-partition deny', () => {
+  it('only the settings, users, metrics and feedback-edit APIs carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
-    expect(holders.map(([role]) => role).sort(byCodeUnit))
-      .toStrictEqual(['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole']);
+    expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual([
+      'VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/MetricsLambdaRole', 'VocApiStack/SettingsLambdaRole',
+      'VocApiStack/UsersLambdaRole']);
   });
+
+  it.each(['VocApiStack/MetricsLambdaRole', 'VocApiStack/FeedbackEditLambdaRole'])(
+    '%s may put only AUDIT#WS#* rows in voc-workspaces and change or remove none',
+    (role) => {
+      const statements = byRole.get(role) ?? [];
+      const other = denied(statements, AUDIT_DENY_OTHER_PARTITION_SID);
+      expect(tablesOf(other)).toStrictEqual(['WorkspacesTable']);
+      expect(other.Condition).toStrictEqual({ ...AUDIT_CONDITION,
+        'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } });
+      const change = denied(statements, AUDIT_DENY_CHANGE_SID);
+      expect(tablesOf(change)).toContain('WorkspacesTable');
+      expect(actionsOf(change).sort(byCodeUnit))
+        .toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem']);
+    },
+  );
 
   it('the users API may not change or remove a platform-admin or a workspace audit row', () => {
     const deny = denied(byRole.get('VocApiStack/UsersLambdaRole') ?? [], AUDIT_DENY_CHANGE_SID);
@@ -161,8 +179,11 @@ describe('audit rows (AUDIT#*) across every stack', () => {
   });
 
   it('leaves a read-only role alone', () => {
-    // The metrics API only reads voc-aggregates, so it holds no audit Deny at all.
-    expect(denied(byRole.get('VocApiStack/MetricsLambdaRole') ?? [], AUDIT_DENY_CHANGE_SID)).toBe(NO_STATEMENT);
+    // A role that writes none of the audit tables holds no audit Deny at all.
+    const readOnly = [...byRole].filter(([, statements]) => writtenBy(statements).length === 0);
+    expect(readOnly.length).toBeGreaterThan(0);
+    expect(readOnly.filter(([, statements]) => denied(statements, AUDIT_DENY_CHANGE_SID) !== NO_STATEMENT
+      || denied(statements, AUDIT_DENY_WRITE_SID) !== NO_STATEMENT).map(([role]) => role)).toStrictEqual([]);
   });
 }, SYNTH_TIMEOUT_MS);
 

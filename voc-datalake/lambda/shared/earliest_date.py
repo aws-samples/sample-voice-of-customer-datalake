@@ -8,16 +8,35 @@ that predate it. The metrics routes read it to turn `days=0` (all time) — or a
 window longer than the data's history — into a concrete day count, see
 `shared.api.effective_window_days`.
 
+A workspace (docs/multi-workspace.md) has its own watermark, the same row under its meta partition
+``WS#{ws}#METRIC#meta`` (``meta_partition``): the aggregator lowers it from the workspace's items only, and the
+read routes of a request in that workspace read it.
+
 Data-layer only (no API-resolver imports), so the aggregator can use it.
 """
 from collections.abc import Mapping
 from datetime import date
+
+from shared.metric_keys import metric_partition
+from shared.ws_repo import WorkspaceScope
 
 #: The meta partition of voc-aggregates (also the cache version counters, shared/data_version.py).
 METRIC_META_PK = 'METRIC#meta'
 EARLIEST_DATE_SK = 'earliest_date'
 EARLIEST_DATE_KEY = {'pk': METRIC_META_PK, 'sk': EARLIEST_DATE_SK}
 EARLIEST_DATE_ATTRIBUTE = 'date'
+
+
+def meta_partition(scope: WorkspaceScope | None) -> str:
+    """``METRIC#meta`` deployment-wide, ``WS#{ws}#METRIC#meta`` in a workspace."""
+    return metric_partition(scope, METRIC_META_PK)
+
+
+def earliest_date_key(scope: WorkspaceScope | None = None) -> dict[str, str]:
+    """The watermark row's key: the deployment's (``EARLIEST_DATE_KEY``), or the workspace's."""
+    if scope is None:
+        return dict(EARLIEST_DATE_KEY)
+    return {'pk': meta_partition(scope), 'sk': EARLIEST_DATE_SK}
 
 
 def parse_iso_date(value: object) -> date | None:
@@ -45,15 +64,15 @@ def earliest_date_from_item(item: object) -> str | None:
     return value if parse_iso_date(value) is not None else None
 
 
-def lower_watermark_request(new_date: str, now_iso: str) -> dict:
-    """`update_item` arguments that set the watermark to `new_date` iff it is earlier.
+def lower_watermark_request(new_date: str, now_iso: str, scope: WorkspaceScope | None = None) -> dict:
+    """`update_item` arguments that set the watermark (the workspace's, with `scope`) to `new_date` iff it is earlier.
 
     The condition failing is the common, benign outcome (the stored date is already
     as old or older). `ReturnValuesOnConditionCheckFailure='ALL_OLD'` lets the caller
     learn the stored date from the refusal and skip later writes it cannot win.
     """
     return {
-        'Key': dict(EARLIEST_DATE_KEY),
+        'Key': earliest_date_key(scope),
         'UpdateExpression': 'SET #date = :date, updated_at = :now',
         'ConditionExpression': 'attribute_not_exists(#date) OR #date > :date',
         'ExpressionAttributeNames': {'#date': EARLIEST_DATE_ATTRIBUTE},

@@ -87,7 +87,7 @@ from shared.idempotency import (
 # tree, and a failure to import it fails the cold start — loud, alarmed by the
 # function's error metric, and impossible to mistake for a healthy processor.
 from shared.ingest_schemas import MAX_SOURCE_PLATFORM_LENGTH, IngestMessage, safe_validate_message
-from shared.ingest_tables import table_view
+from shared.ingest_tables import table_view, update_with_key
 from shared.logging import logger, metrics, tracer
 from shared.model_profile import PAYLOAD_KEY, model_profile_scope, profile_from_payload
 from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
@@ -163,9 +163,7 @@ radar_changed = BatchBump(bump_radar_version)
 
 def _update_in(scope: WorkspaceScope | None, update_kwargs: dict) -> None:
     """``update_item`` of an update built with its ``Key`` (shared/source_updates.py, shared/csv_updates.py)."""
-    kwargs = dict(update_kwargs)
-    key = kwargs.pop('Key')
-    table_view(scope,feedback_table).update_item(key, **kwargs)
+    update_with_key(table_view(scope, feedback_table), update_kwargs)
 
 # Idempotency configuration - prevents duplicate processing on SQS retries
 # Records are tracked for 1 hour (3600 seconds) to handle delayed retries

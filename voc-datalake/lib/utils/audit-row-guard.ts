@@ -10,7 +10,8 @@
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row) and voc-workspaces (`AUDIT#WS#<ws>`, a platform
  * admin's entry into a workspace, the workspace's creation and its membership changes, written by the workspaces
  * API, lambda/shared/workspace.py, platform_workspaces.py and workspace_members.py; a deleted user's membership
- * removals, written by the users API, `AUDIT#WS#*` only). Every role that can write in one of those
+ * removals, written by the users API, `AUDIT#WS#*` only; a platform admin's entry through the metrics API or the
+ * feedback edits, each `AUDIT#WS#*` only). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
  *
  *   - a table the role is that table's audit writer for: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit
@@ -101,6 +102,10 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // The users API: the member_removed rows of a deleted user's memberships (AUDIT#WS#<ws> only,
   // lambda/shared/workspace_members.py remove_user_memberships; lib/stacks/api-engagement-lambdas.ts).
   { table: 'workspacesTable', rolePathSuffix: '/UsersLambdaRole', partitionKey: 'AUDIT#WS#*' },
+  // The data-path APIs that resolve X-Workspace-Id (lambda/shared/workspace_request.py): a platform admin's entry
+  // into a workspace (AUDIT#WS#<ws> only; lib/utils/workspace-request-grants.ts).
+  { table: 'workspacesTable', rolePathSuffix: '/MetricsLambdaRole', partitionKey: 'AUDIT#WS#*' },
+  { table: 'workspacesTable', rolePathSuffix: '/FeedbackEditLambdaRole', partitionKey: 'AUDIT#WS#*' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',

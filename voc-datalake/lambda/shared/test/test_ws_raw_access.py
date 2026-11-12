@@ -68,7 +68,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/agents/nodes/select_or_create_project.py': (3, {'get_aggregates_table': 2}),
     'lambda/agents/plan_waits.py': (3, {'SOURCE_RUN#': 1, 'get_aggregates_table': 1}),
     'lambda/agents/store.py': (3, {'Table': 1}),
-    'lambda/aggregator/handler.py': (2, {'METRIC#': 2, 'Table': 2}),
+    # Both paths since the aggregator's slice: a workspace's record writes through `ws_table` (its keys from
+    # shared/metric_keys.py `metric_partition`); METRIC#urgent moved to metric_keys (URGENT_PK). Left: the
+    # category+sentiment prefix and the module-level voc-aggregates / voc-idempotency tables.
+    'lambda/aggregator/handler.py': (2, {'METRIC#': 1, 'Table': 2}),
     'lambda/api/agents_handler.py': (3, {'get_aggregates_table': 1}),
     'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1}),
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
@@ -81,7 +84,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/manual_import_handler.py': (2, {'Table': 2, 'raw/': 3}),
     'lambda/api/manual_import_processor.py': (2, {'Table': 1}),
     'lambda/api/memory_handler.py': (3, {'Table': 1, 'get_aggregates_table': 9, 'put_object': 1}),
-    'lambda/api/metrics_handler.py': (2, {'CATEGORY#': 2, 'DATE#': 3, 'METRIC#': 1, 'Table': 2, 'URGENCY#': 1}),
+    # Both paths since the read APIs' slice: every query through shared/scoped_query.py (`ws_table` in a
+    # workspace), its partitions from shared/feedback_partitions.py and shared/metric_keys.py. Table: the
+    # module-level voc-feedback and voc-aggregates the views are taken of.
+    'lambda/api/metrics_handler.py': (2, {'Table': 2}),
     'lambda/api/product_context.py': (3, {'generate_presigned_url': 1}),
     'lambda/api/projects.py': (3, {'copy_object': 1, 'get_feedback_table': 1}),
     'lambda/api/projects_handler.py': (3, {'get_aggregates_table': 12}),
@@ -126,13 +132,14 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/engagement_config.py': (3, {'cached_table': 1, 'get_aggregates_table': 1}),
     'lambda/shared/feature_requests_enrich.py': (3, {'get_aggregates_table': 1}),
     'lambda/shared/feedback.py': (2, {'CATEGORY#': 1, 'DATE#': 1, 'METRIC#': 1}),
-    'lambda/shared/feedback_category.py': (2, {'CATEGORY#': 1}),
     'lambda/shared/feedback_form_participants.py': (2, {'Table': 1}),
     'lambda/shared/feedback_keys.py': (2, {'SOURCE#': 1}),
     'lambda/shared/image_model_quota.py': (3, {'get_aggregates_table': 1}),
     'lambda/shared/job_knowledge.py': (3, {'get_aggregates_table': 1}),
     'lambda/shared/memory_store.py': (3, {'Table': 1}),
-    'lambda/shared/metric_keys.py': (2, {'METRIC#': 14}),
+    # The counter partitions' one declaration (writer and readers), consolidated: METRIC#urgent from the aggregator
+    # and the metrics API (URGENT_PK), and the prefix `metric_partition` names a workspace's counters from.
+    'lambda/shared/metric_keys.py': (2, {'METRIC#': 16}),
     'lambda/shared/model_config.py': (3, {'Table': 1}),
     'lambda/shared/model_quota_store.py': (3, {'get_aggregates_table': 1}),
     'lambda/shared/participants_ask_routes.py': (3, {'get_aggregates_table': 1}),

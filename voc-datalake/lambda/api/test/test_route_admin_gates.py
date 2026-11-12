@@ -207,7 +207,8 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'PUT /chat/conversations/<conversation_id>/title',
           'DELETE /chat/conversations/<conversation_id>',
           'POST /chat/conversations/<conversation_id>/cancel'),
-    _open("feedback edit: limited to the caller's category scope (shared/category_access.py)",
+    _open("feedback edit: limited to the caller's category scope (shared/category_access.py); with X-Workspace-Id "
+          "to the workspace's editors and admins (WORKSPACE_SCOPED below)",
           'feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/category',
           'PUT /feedback/<feedback_id>/dimensions'),
     _open('participants: every signed-in app user manages lists and people (engagement brief, 5.33)',
@@ -564,6 +565,86 @@ def test_removing_the_workspace_gate_is_detected(route):
     for fn in _module_functions(tree).values():
         fn.body = [s for s in fn.body if not (isinstance(s, ast.Expr) and _called_name(s.value) == WORKSPACE_GATE)]
     assert _workspace_gated(ast.unparse(tree))[route] is False
+
+
+# ── The data path's workspace dimension (docs/multi-workspace.md → Request flow, phase 2) ─────────────────────
+# Routes that serve both paths: with X-Workspace-Id they act in that workspace (shared/workspace_request.py
+# `RequestWorkspace`: the one 404 for a non-member, a platform admin's entry live-checked and audited) and read and
+# write only its partitions; without it, deployment-wide as before. Every route of a module that resolves a request's
+# workspace is listed (so a new route there is classified), and each resolves it before it reads: the metrics API in
+# a resolver middleware that runs before every route, the feedback edits as an unconditional top-level call.
+WORKSPACE_RESOLVER = 'RequestWorkspace'
+WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
+    # Reads: any member (Roles: a viewer reads the workspace's feedback and dashboards).
+    'metrics_handler.py': frozenset({
+        'GET /feedback', 'GET /feedback/urgent', 'GET /feedback/entities', 'GET /feedback/search',
+        'GET /feedback/problems', 'GET /feedback/access', 'GET /feedback/catalogue', 'GET /feedback/<feedback_id>',
+        'GET /feedback/<feedback_id>/similar', 'GET /metrics/summary', 'GET /metrics/sentiment',
+        'GET /metrics/categories', 'GET /metrics/sources', 'GET /metrics/personas', 'GET /metrics/dimensions',
+        'GET /metrics/data-quality', 'GET /metrics/github', 'GET /metrics/release-watch',
+    }),
+    # Writes: the workspace's editors and admins (a viewer 403), the category scope as before.
+    'feedback_edit_handler.py': frozenset({
+        'PUT /feedback/<feedback_id>/category', 'PUT /feedback/<feedback_id>/dimensions',
+    }),
+}
+#: How each module resolves the workspace before a route reads: a middleware (module-wide) or a per-route call.
+WORKSPACE_FIRST_MIDDLEWARE = {'metrics_handler.py': '_workspace_first'}
+WORKSPACE_FIRST_CALL = {'feedback_edit_handler.py': '_edit_scope'}
+ALL_METHODS = PLATFORM_GATED_METHODS
+
+
+def _source(handler: str) -> str:
+    return (API_DIR / handler).read_text(encoding='utf-8')
+
+
+def test_only_the_listed_modules_resolve_a_requests_workspace_for_the_data_path():
+    resolving = {path.name for path in _handler_files() if f'{WORKSPACE_RESOLVER}(' in path.read_text(encoding='utf-8')}
+    assert resolving == set(WORKSPACE_SCOPED)
+    assert set(WORKSPACE_FIRST_MIDDLEWARE) | set(WORKSPACE_FIRST_CALL) == set(WORKSPACE_SCOPED)
+
+
+@pytest.mark.parametrize('handler', sorted(WORKSPACE_SCOPED))
+def test_every_route_of_a_two_path_module_is_workspace_scoped(handler):
+    routes = {key for fn in _module_functions(ast.parse(_source(handler))).values()
+              for key in _route_keys(fn, ALL_METHODS)}
+    assert routes == WORKSPACE_SCOPED[handler], 'classify the new route in WORKSPACE_SCOPED'
+
+
+@pytest.mark.parametrize(('handler', 'middleware'), sorted(WORKSPACE_FIRST_MIDDLEWARE.items()))
+def test_the_workspace_is_resolved_before_every_route(handler, middleware):
+    tree = ast.parse(_source(handler))
+    assert middleware in _middlewares(tree)
+    body = [s for s in _module_functions(tree)[middleware].body if not (isinstance(s, ast.Expr)
+                                                                       and isinstance(s.value, ast.Constant))]
+    first = body[0]
+    assert isinstance(first, ast.Expr), 'the middleware must resolve the workspace first'
+    calls = {_called_name(node) for node in ast.walk(first)}
+    assert '_request_scope' in calls, 'the middleware must resolve the workspace first, afresh for each request'
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler in WORKSPACE_FIRST_CALL for route in WORKSPACE_SCOPED[handler]))
+def test_every_edit_resolves_its_workspace_unconditionally(handler, route):
+    [fn] = [fn for fn in _module_functions(ast.parse(_source(handler))).values() if route in _route_keys(fn, ALL_METHODS)]
+    assert WORKSPACE_FIRST_CALL[handler] in _top_level_calls(fn)
+    # Before the body is read, so a non-member's malformed body still gets the one 404.
+    order = [name for stmt in fn.body if isinstance(stmt, _VALUE_STATEMENTS)
+             for name in [_called_name(stmt.value)] if name in (WORKSPACE_FIRST_CALL[handler], 'json_body_value',
+                                                                 '_dimensions_body')]
+    assert order[0] == WORKSPACE_FIRST_CALL[handler], order
+
+
+def test_a_workspace_edit_needs_the_editor_role():
+    functions = _module_functions(ast.parse(_source('feedback_edit_handler.py')))
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
+               for stmt in functions[WORKSPACE_FIRST_CALL['feedback_edit_handler.py']].body)
+
+
+def test_removing_the_workspace_middleware_is_detected():
+    tree = ast.parse(_source('metrics_handler.py'))
+    tree.body = [s for s in tree.body if not (isinstance(s, ast.Expr) and _called_name(s.value) == 'use')]
+    assert WORKSPACE_FIRST_MIDDLEWARE['metrics_handler.py'] not in _middlewares(tree)
 
 
 def test_every_table_entry_names_a_route_that_exists():

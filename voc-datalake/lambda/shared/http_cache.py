@@ -4,7 +4,7 @@ Applied to the proxy response ``create_api_resolver``'s resolver builds, after t
 body is serialized (so the tag is the hash of the exact bytes sent):
 
 * a GET answering 200 with a JSON body gets ``ETag: W/"<32 hex of its SHA-256>"``,
-  ``Cache-Control: private, no-cache`` and ``Vary: Authorization``. The browser may
+  ``Cache-Control: private, no-cache`` and ``Vary: Authorization, X-Workspace-Id``. The browser may
   keep it but must revalidate on every use; when the request's ``If-None-Match``
   names the same tag the answer becomes ``304 Not Modified`` with an empty body (the
   data is not sent twice). Never ``max-age``: a browser cache is keyed by URL, not by
@@ -28,7 +28,9 @@ from typing import Any, Final
 ETAG_HEX_LENGTH: Final = 32
 REVALIDATE: Final = 'private, no-cache'
 NO_STORE: Final = 'private, no-store'
-VARY: Final = 'Authorization'
+# The answer depends on the caller (Authorization) and on the workspace the request acts in (X-Workspace-Id,
+# docs/multi-workspace.md): a browser must not reuse one workspace's tagged answer for another's request.
+VARY: Final = 'Authorization, X-Workspace-Id'
 NOT_MODIFIED: Final = 304
 
 # Request paths (no stage prefix in a REST proxy event) whose GET answers are live,

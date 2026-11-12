@@ -40,8 +40,11 @@ def _earliest_date_watermark(request, monkeypatch):
     `lower_earliest_date` also memoises per container; reset both ways.
     """
     from aggregator import handler
+    from shared.data_version import BatchBump
 
     handler._known_earliest_date = None
+    # A fresh batch counter per test: marks another test left are never flushed into this one's data_version.
+    monkeypatch.setattr(handler, 'data_changed', BatchBump(handler.bump_data_version))
     if request.node.get_closest_marker('real_watermark') is None:
         monkeypatch.setattr(handler, 'lower_earliest_date', lambda _date: None)
     yield

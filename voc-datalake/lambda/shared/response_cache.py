@@ -12,6 +12,9 @@ The key is everything the answer depends on:
 * the query string, normalized (sorted, multi-values kept);
 * today's UTC date (windows end today) — the resolved ``days`` follows from the
   query, the watermark (part of the versions read) and today;
+* the workspace the request acts in (``X-Workspace-Id``, resolved for THIS request;
+  None deployment-wide), so no answer crosses from the deployment to a workspace or
+  between workspaces;
 * the caller's scope fingerprint: their category/source scope, resolved for THIS
   request before the memo is consulted, plus the admin and delegated flags;
 * the data / config (/ Radar) versions of ``shared.data_version``. A write bumps a
@@ -46,6 +49,7 @@ from shared.category_access import CategoryScope
 from shared.data_version import VersionRead, read_versions
 from shared.logging import logger
 from shared.project_gate import caller_from_event
+from shared.ws_repo import WorkspaceScope
 
 MAX_ENTRIES: Final = 200
 MAX_BYTES: Final = 5 * 1024 * 1024
@@ -169,12 +173,14 @@ def scope_fingerprint(scope: CategoryScope, event: Mapping[str, Any]) -> str:
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 
-def request_versions(app: Any, aggregates_table: Any, radar_table: Any = None) -> VersionRead:
-    """This request's versions read, made at most once per request (the resolver's context)."""
+def request_versions(app: Any, aggregates_table: Any, radar_table: Any = None,
+                     scope: WorkspaceScope | None = None) -> VersionRead:
+    """This request's versions read, made at most once per request (the resolver's context); the workspace's own
+    data_version and watermark with ``scope`` (one request acts in one scope)."""
     cached = app.context.get(VERSIONS_CONTEXT_KEY)
     if isinstance(cached, VersionRead):
         return cached
-    read = read_versions(aggregates_table, radar_table)
+    read = read_versions(aggregates_table, radar_table, scope)
     app.append_context(**{VERSIONS_CONTEXT_KEY: read})
     return read
 
@@ -183,14 +189,20 @@ def _today_utc() -> str:
     return datetime.now(UTC).date().isoformat()
 
 
+def _deployment_wide() -> WorkspaceScope | None:
+    return None
+
+
 def memoized_route(
     app: Any, *, scope: Callable[[], CategoryScope], versions: Callable[[], VersionRead],
-    cache: ResponseCache | None = None,
+    cache: ResponseCache | None = None, workspace: Callable[[], WorkspaceScope | None] = _deployment_wide,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Opt a read-only GET route into the memo (the decorator sits under ``@app.get``).
 
-    ``scope`` resolves the caller's scope for THIS request (never memoized across
-    requests) and runs first; ``versions`` is the request's ``request_versions`` read.
+    ``workspace`` resolves the workspace THIS request acts in (None: deployment-wide) and runs first, so a caller
+    who is no member is refused before anything is read or served; ``scope`` resolves the caller's category scope
+    (never memoized across requests); ``versions`` is the request's ``request_versions`` read. The workspace is part
+    of the key: a deployment-wide answer is never served to a workspace's request, nor one workspace's to another's.
     """
     def decorate(route: Callable[..., Any]) -> Callable[..., Any]:
         route_id = f'{route.__module__}.{route.__qualname__}'
@@ -199,12 +211,13 @@ def memoized_route(
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             store = cache if cache is not None else DEFAULT_CACHE
             event = app.current_event.raw_event
+            acting_in = workspace()
             fingerprint = scope_fingerprint(scope(), event)
             read = versions()
             if read.versions is None:
                 return route(*args, **kwargs)
-            key = (route_id, str(event.get('path') or ''), normalized_query(event), _today_utc(),
-                   fingerprint, read.versions.key(), read.earliest_date)
+            key = (route_id, acting_in.ws if acting_in is not None else None, str(event.get('path') or ''),
+                   normalized_query(event), _today_utc(), fingerprint, read.versions.key(), read.earliest_date)
             hit = store.get(key)
             if hit is not None:
                 logger.debug('Response cache hit', extra={'route': route_id})

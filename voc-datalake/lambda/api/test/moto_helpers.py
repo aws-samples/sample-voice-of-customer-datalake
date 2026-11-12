@@ -63,6 +63,21 @@ def pk_sk_table(name: str, *, gsi1_index: str | None = None) -> Table:
     )
 
 
+def indexed_table(dynamodb: Any, name: str, indexes: dict[str, tuple[str, str | None]]) -> Table:
+    """A (pk, sk) table with one all-attributes GSI per ``{index: (hash, range or None)}``."""
+    attributes = {'pk', 'sk', *(a for keys in indexes.values() for a in keys if a)}
+    kwargs: dict[str, Any] = {}
+    if indexes:
+        kwargs['GlobalSecondaryIndexes'] = [
+            {'IndexName': index, 'Projection': {'ProjectionType': 'ALL'},
+             'KeySchema': [{'AttributeName': h, 'KeyType': 'HASH'},
+                           *([{'AttributeName': r, 'KeyType': 'RANGE'}] if r else [])]}
+            for index, (h, r) in indexes.items()]
+    return dynamodb.create_table(
+        TableName=name, BillingMode='PAY_PER_REQUEST', KeySchema=_key_schema('pk', 'sk'),
+        AttributeDefinitions=[{'AttributeName': a, 'AttributeType': 'S'} for a in sorted(attributes)], **kwargs)
+
+
 def conversations_table(name: str) -> Table:
     """A (pk, sk) voc-conversations table with the real ``kind`` / ``updated_at`` index (core-stack.ts)."""
     return boto3.resource('dynamodb', region_name='us-east-1').create_table(

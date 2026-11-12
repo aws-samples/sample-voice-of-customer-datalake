@@ -24,14 +24,17 @@ import {
   assistWorkerName, createAssistWorker, functionArnByName, grantAssistWorkerInvoke,
 } from './api-assist-workers';
 import type { ApiStackContext } from './api-context';
-import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
+import {
+  AGGREGATES_VERSION_PARTITION, grantCacheVersionBump, grantWorkspaceCacheVersionBump,
+} from '../utils/cache-version-grants';
+import { grantWorkspaceResolution, workspaceResolutionEnv } from '../utils/workspace-request-grants';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
 import { appVersion } from '../utils/connector-version';
-import { grantSilverHistoryPut } from '../utils/silver-history-grants';
+import { grantSilverHistoryPut, grantWorkspaceSilverHistoryPut } from '../utils/silver-history-grants';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailSettingsEnv } from '../utils/inbound-email';
 
 export interface DataLambdas {
@@ -65,12 +68,18 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     secretsArn, designIntegrationsSecretArn,
   } = ctx.props;
 
+  const { workspacesTable, userPool } = ctx.props;
+
   // Metrics API
   const metricsRole = ctx.role('MetricsLambdaRole');
   feedbackTable.grantReadData(metricsRole);
   // Read-only: the metrics routes never write (lib/customer-data-deletes.test.ts).
   aggregatesTable.grantReadData(metricsRole);
   kmsKey.grantEncryptDecrypt(metricsRole);
+  // A request's X-Workspace-Id (docs/multi-workspace.md): its membership read in voc-workspaces, a platform admin's
+  // entry audited (AUDIT#WS#* puts only) and live-checked in Cognito (lib/utils/workspace-request-grants.ts). The
+  // workspace's own partitions of voc-feedback and voc-aggregates are in the read grants above.
+  grantWorkspaceResolution(metricsRole, workspacesTable, userPool);
 
   const metricsLambda = new lambda.Function(stack, 'MetricsApi', {
     functionName: ctx.uniqueName(METRICS_API_FUNCTION_BASE_NAME),
@@ -89,6 +98,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       ALLOWED_ORIGIN: allowedOrigin,
       // GET /feedback/catalogue imports the writers' modules, which read the pipeline version at import.
       APP_VERSION: appVersion(),
+      ...workspaceResolutionEnv(workspacesTable, userPool),
       POWERTOOLS_SERVICE_NAME: 'voc-metrics-api',
       LOG_LEVEL: 'INFO',
     },
@@ -106,11 +116,17 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   const feedbackEditRole = ctx.role('FeedbackEditLambdaRole');
   feedbackTable.grant(feedbackEditRole, 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem');
   aggregatesTable.grant(feedbackEditRole, 'dynamodb:GetItem', 'dynamodb:Query');
-  // The data_version bump after an edit (read-your-write for the read cache, docs/caching.md).
+  // The data_version bump after an edit (read-your-write for the read cache, docs/caching.md); an edit in a
+  // workspace bumps the workspace's own (`WS#{one id}#METRIC#meta`).
   grantCacheVersionBump(aggregatesTable, feedbackEditRole, AGGREGATES_VERSION_PARTITION);
+  grantWorkspaceCacheVersionBump(aggregatesTable, feedbackEditRole);
   kmsKey.grantEncryptDecrypt(feedbackEditRole);
-  // The review as it was before each edit (lambda/shared/silver_provenance.py): write-once Put under silver/ only.
+  // The review as it was before each edit (lambda/shared/silver_provenance.py): write-once Put under silver/ only,
+  // and a workspace's review under one workspace's ws/{ws}/silver/.
   grantSilverHistoryPut(rawDataBucket, feedbackEditRole);
+  grantWorkspaceSilverHistoryPut(rawDataBucket, feedbackEditRole);
+  // A request's X-Workspace-Id, as the metrics API resolves it (lib/utils/workspace-request-grants.ts).
+  grantWorkspaceResolution(feedbackEditRole, workspacesTable, userPool);
 
   const feedbackEditLambda = new lambda.Function(stack, 'FeedbackEditApi', {
     functionName: ctx.uniqueName(FEEDBACK_EDIT_API_FUNCTION_BASE_NAME),
@@ -128,6 +144,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       // pipeline_version (the enrichment provenance stays), so the app release is not needed here.
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       ALLOWED_ORIGIN: allowedOrigin,
+      ...workspaceResolutionEnv(workspacesTable, userPool),
       POWERTOOLS_SERVICE_NAME: 'voc-feedback-edit-api',
       LOG_LEVEL: 'INFO',
     },

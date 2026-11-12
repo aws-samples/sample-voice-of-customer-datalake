@@ -62,7 +62,7 @@ class TestTaggedGet:
     def test_it_must_be_revalidated_and_varies_by_credential(self):
         response = _call('/metrics/summary')
         assert _header(response, 'Cache-Control') == 'private, no-cache'
-        assert _header(response, 'Vary') == 'Authorization'
+        assert _header(response, 'Vary') == 'Authorization, X-Workspace-Id'
         assert 'max-age' not in (_header(response, 'Cache-Control') or '')
 
     def test_a_matching_if_none_match_is_a_304_with_no_body(self):

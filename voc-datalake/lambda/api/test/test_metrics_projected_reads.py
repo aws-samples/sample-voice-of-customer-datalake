@@ -21,6 +21,7 @@ import boto3
 import pytest
 from category_access_fixtures import RESTRICTED_CLAIMS, RESTRICTED_SUB
 from moto import mock_aws
+from moto_helpers import indexed_table
 
 import metrics_handler
 from shared import dynamodb_fast_items
@@ -81,18 +82,7 @@ def _review(day_offset: int, n: int) -> dict[str, Any]:
     return item
 
 
-def _table(dynamodb: Any, name: str, indexes: dict[str, tuple[str, str]]) -> Any:
-    attributes = {'pk', 'sk', *(a for keys in indexes.values() for a in keys)}
-    kwargs: dict[str, Any] = {}
-    if indexes:
-        kwargs['GlobalSecondaryIndexes'] = [
-            {'IndexName': index, 'Projection': {'ProjectionType': 'ALL'},
-             'KeySchema': [{'AttributeName': h, 'KeyType': 'HASH'}, {'AttributeName': r, 'KeyType': 'RANGE'}]}
-            for index, (h, r) in indexes.items()]
-    return dynamodb.create_table(
-        TableName=name, BillingMode='PAY_PER_REQUEST',
-        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-        AttributeDefinitions=[{'AttributeName': a, 'AttributeType': 'S'} for a in sorted(attributes)], **kwargs)
+_table = indexed_table
 
 
 @pytest.fixture

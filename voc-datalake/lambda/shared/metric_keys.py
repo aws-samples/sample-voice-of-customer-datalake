@@ -4,11 +4,22 @@ Declared once because the writer (``aggregator/handler.py``) and its readers (``
 ``agents/heartbeat``, ``briefing``) are separate Lambda bundles; each used to spell the prefixes itself. A row
 is ``pk = <PREFIX><value>``, ``sk = <YYYY-MM-DD>``; the ``metric_type`` index carries ``<type>#<key>`` for the
 breakdowns ``/metrics/*`` read by type (``dim_sentiment#<key>``, tags, channels).
+
+These are the deployment-wide spellings. A workspace's counters (docs/multi-workspace.md) are the same rows under
+``WS#{ws}#METRIC#…`` with ``metric_type`` ``WS#{ws}#<type>``: ``metric_partition`` and ``metric_type_partition``
+turn one into the other through shared/ws_repo.py (``metric_pk``, ``metric_type``), so the writer and the readers
+build both from one name.
 """
 from collections.abc import Iterator, Mapping
 from typing import Final
 
+from shared.ws_repo import WorkspaceScope, metric_pk, metric_type
+
+#: How every deployment-wide counter partition starts (the workspace's starts ``WS#{ws}#`` before it).
+METRIC_PARTITION_PREFIX: Final = 'METRIC#'
 DAILY_TOTAL_PK: Final = 'METRIC#daily_total'
+#: The high-urgency daily count (alerts, ``/metrics/summary``'s ``urgent_count``).
+URGENT_PK: Final = 'METRIC#urgent'
 SENTIMENT_AVG_PK: Final = 'METRIC#daily_sentiment_avg'
 SOURCE_PREFIX: Final = 'METRIC#daily_source#'
 CATEGORY_PREFIX: Final = 'METRIC#daily_category#'
@@ -34,6 +45,23 @@ PROFILE_METRIC_TYPES: Final = {
     PROFILE_SENTIMENT_PREFIX: 'profile_sentiment',
     PROFILE_LENGTH_PREFIX: 'profile_length',
 }
+
+
+def metric_partition(scope: WorkspaceScope | None, pk: str) -> str:
+    """The counter partition ``pk`` (a deployment-wide ``METRIC#…``) names: itself deployment-wide (``scope``
+    None, unchanged), ``WS#{ws}#METRIC#…`` in a workspace (ValueError there for a ``pk`` that is not a counter
+    partition: nothing outside ``METRIC#`` is moved under a workspace by accident)."""
+    if scope is None:
+        return pk
+    name = pk.removeprefix(METRIC_PARTITION_PREFIX)
+    if name == pk or not name:
+        raise ValueError('not a counter partition')
+    return metric_pk(scope, name)
+
+
+def metric_type_partition(scope: WorkspaceScope | None, kind: str) -> str:
+    """The ``metric_type`` index partition of ``kind``: itself deployment-wide, ``WS#{ws}#{kind}`` in a workspace."""
+    return kind if scope is None else metric_type(scope, kind)
 
 
 def source_keyed_counts(counts: Mapping[str, int]) -> Iterator[tuple[str, str, int]]:
