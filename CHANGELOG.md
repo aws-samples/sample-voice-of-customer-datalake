@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.17.00] - 2026-11-12
+
+Multi-workspace, phase 1: a follow-up to 6.16.00's sign-out in the browser's other tabs. The data path is still not keyed by workspace (phase 2).
+
+### Changed
+
+- When another tab signs out, or its session expires, a signed-in tab showing one of the pages that open without an account of the app (a ballot, the feedback boards, a document shared for review, an unsubscribe link, or the sign-in page) no longer goes to the sign-in page: it removes the same saved state as every other tab and reloads the page it shows, which then opens without the app's session (the boards and a review use that session when there is one). Every other signed-in tab reloads to the sign-in page, as in 6.16.00, and a signed-out tab stays as it is.
+- The sign-out and the expired-session redirect are now tested to sign the session out before they tell the other tabs; told first, the other tabs would still read a signed-in session and keep the last person's state.
+
+### Fixed
+
+- Correction to the 6.16.00 entry: since 6.16.00, the other tabs also clear the list of workspaces the server refused in that tab and a platform admin's console entries, as the tab that signs out does.
+
+### Upgrade notes
+
+- Only the web app changes: deploy VocApiStack as usual (`cd voc-datalake && npm run deploy:api`; it carries the web app). No API, table or permission changes.
+
 ## [6.16.00] - 2026-11-12
 
 Multi-workspace, phase 1: signing out in one browser tab now ends the session in the browser's other open tabs too. The data path is still not keyed by workspace (phase 2).

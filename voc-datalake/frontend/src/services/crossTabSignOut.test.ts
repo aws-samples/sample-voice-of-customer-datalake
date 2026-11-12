@@ -1,14 +1,11 @@
 /**
  * Another tab's sign-out or expired session: an open tab forgets every workspace's saved records and, when it is
  * signed in, leaves for the plain sign-in page with a full page load, so its stores cannot write the last person's
- * records back. Only the explicit signal counts: a signed-out write of the session's record (a refresh that fails for
- * a moment, then succeeds), a sign-in elsewhere or another key changes nothing.
+ * records back; on a public page (a ballot, the boards, a review, an unsubscribe, the sign-in page) the load is of the
+ * same page. Only the explicit signal counts: a signed-out write of the session's record (a refresh that fails for a
+ * moment, then succeeds), a sign-in elsewhere or another key changes nothing.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createElement, type ReactNode } from 'react'
-import { act, renderHook } from '@testing-library/react'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { createTestQueryClient } from '../test/query-client'
 import { withMemoryLocalStorage } from '../test/memoryLocalStorage'
 
 /** The browser's localStorage, kept in a map for this file. */
@@ -18,7 +15,7 @@ const saved = withMemoryLocalStorage()
 vi.mock('./auth', () => ({ authService: { signOut: () => { saved.set('voc-auth', SIGNED_OUT) } } }))
 
 import { useAuthStore } from '../store/authStore'
-import { useSignOut } from '../hooks/useSignOut'
+import { runSignOut } from '../test/signOut'
 import { refusedWorkspaceIds, rememberRefused } from '../workspace/refusedWorkspaces'
 import { platformEntryFor, rememberPlatformEntry } from '../workspace/platformEntry'
 import { endExpiredSession, resetSessionExpiryForTests } from './sessionExpiry'
@@ -36,23 +33,24 @@ const sorted = (keys: Iterable<string>) => [...keys].sort((a, b) => a.localeComp
 const savedRecords = () => sorted([...saved.keys()].filter((key) => key !== AUTH_KEY && key !== SESSION_ENDED_KEY))
 
 /** `window.location` with its full page loads recorded. */
-function stubLocation() {
+function stubLocation(pathname: string) {
   const replace = vi.fn<(url: string) => void>()
   const assign = vi.fn<(url: string) => void>()
+  const reload = vi.fn<() => void>()
   const { origin } = window.location
   Object.defineProperty(window, 'location', {
-    value: { origin, href: `${origin}/w/acme/dashboard`, pathname: '/w/acme/dashboard', replace, assign },
+    value: { origin, href: `${origin}${pathname}`, pathname, replace, assign, reload },
     writable: true, configurable: true,
   })
-  return { replace, assign }
+  return { replace, assign, reload }
 }
 
-/** This tab, signed in or not, with records of acme and outside workspaces saved. */
-function thisTab(signedIn = true) {
+/** This tab, signed in or not and showing `pathname`, with records of acme and outside workspaces saved. */
+function thisTab(signedIn = true, pathname = '/w/acme/dashboard') {
   useAuthStore.setState({ isAuthenticated: signedIn })
   for (const key of RECORDS) saved.set(key, '{}')
   rememberRefused('ws-juniper')
-  return stubLocation()
+  return stubLocation(pathname)
 }
 
 /** The browser tells this tab that another one wrote `key` (in localStorage unless `storageArea` says otherwise). */
@@ -75,18 +73,11 @@ function signalOf(end: () => void): string {
  * Another tab runs `end`, then this tab is set up: one window plays both, so the other tab's own forgetting and page
  * load come first, and its signed-out write of the session's record is put back last, as the browser would hold it.
  */
-function thisTabAfter(end: () => void, signedIn = true) {
+function thisTabAfter(end: () => void, signedIn = true, pathname?: string) {
   const value = signalOf(end)
-  const { replace } = thisTab(signedIn)
+  const { replace, reload } = thisTab(signedIn, pathname)
   saved.set(AUTH_KEY, SIGNED_OUT)
-  return { replace, value }
-}
-
-function signOutElsewhere(): void {
-  const client = createTestQueryClient()
-  const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children)
-  const { result } = renderHook(() => useSignOut(), { wrapper })
-  act(() => result.current())
+  return { replace, reload, value }
 }
 
 function expireElsewhere(): void {
@@ -97,15 +88,16 @@ function expireElsewhere(): void {
 beforeEach(() => window.sessionStorage.clear())
 
 describe('another tab ending its session', () => {
-  it.each([['signs out', signOutElsewhere], ['has its session expire', expireElsewhere]])(
+  it.each([['signs out', runSignOut], ['has its session expire', expireElsewhere]])(
     'when it %s, this tab forgets every workspace\'s records and leaves for /login',
     (_name, end) => {
-      const { replace, value } = thisTabAfter(end)
+      const { replace, reload, value } = thisTabAfter(end)
       otherTabWrote(SESSION_ENDED_KEY, value)
       // The plain draft and filters are kept, as after this tab's own sign-out.
       expect(savedRecords()).toStrictEqual(['voc-config', 'voc-manual-import'])
       expect(refusedWorkspaceIds()).toStrictEqual([])
       expect(replace).toHaveBeenCalledExactlyOnceWith('/login')
+      expect(reload).not.toHaveBeenCalled()
     },
   )
 
@@ -125,6 +117,26 @@ describe('another tab ending its session', () => {
     otherTabWrote(SESSION_ENDED_KEY, value)
     expect(savedRecords()).toStrictEqual(['voc-config', 'voc-manual-import'])
     expect(replace).not.toHaveBeenCalled()
+  })
+
+  it.each(['/vote/s-123', '/board', '/board/roadmap', '/review/r-9', '/unsubscribe', '/login'].flatMap((pathname) => [
+    ['signs out', runSignOut, pathname] as const, ['has its session expire', expireElsewhere, pathname] as const,
+  ]))(
+    'when it %s, this tab forgets the records and, signed in, reloads the public page %s where it is, not to /login',
+    (_name, end, pathname) => {
+      // The boards and a review use the app's session when the tab has one: the reload drops this page load's copy.
+      const { replace, reload, value } = thisTabAfter(end, true, pathname)
+      otherTabWrote(SESSION_ENDED_KEY, value)
+      expect(savedRecords()).toStrictEqual(['voc-config', 'voc-manual-import'])
+      expect(refusedWorkspaceIds()).toStrictEqual([])
+      expect([replace.mock.calls, reload.mock.calls.length]).toStrictEqual([[], 1])
+    },
+  )
+
+  it('leaves a public page alone in a tab that is signed out already', () => {
+    const { replace, reload, value } = thisTabAfter(expireElsewhere, false, '/review/r-9')
+    otherTabWrote(SESSION_ENDED_KEY, value)
+    expect([replace.mock.calls, reload.mock.calls.length]).toStrictEqual([[], 0])
   })
 
   it('neither wipes nor reloads on a late signal, once a person has signed in since', () => {

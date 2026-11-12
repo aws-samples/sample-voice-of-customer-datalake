@@ -23,6 +23,7 @@ import type { RouteObject } from 'react-router-dom'
 
 import { routes } from './routes'
 import { BALLOT_PAGE_PATH_PREFIX } from './api/ballotPageUrl'
+import { PUBLIC_ROUTE_ROOTS } from './publicRoutes'
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
 
 /** The ballot route as `routes.tsx` declares it — a TOP-LEVEL entry, which is
@@ -80,5 +81,17 @@ describe('the public ballot route', () => {
     expect(unguarded).toStrictEqual(sortedStrings([
       '/login', `${BALLOT_PAGE_PATH_PREFIX}:sessionId`, '/board/*', '/review/:shareId', '/unsubscribe',
     ]))
+  })
+})
+
+describe('the public pages list (publicRoutes.ts)', () => {
+  it('names the first segment of every unguarded route, and nothing else', () => {
+    // Another tab's sign-out reloads these pages where they are, and every other page to /login
+    // (services/crossTabSignOut.ts): a public route missing from the list would send its visitor away.
+    const roots = routes
+      .filter((route) => !guardsChildren(route))
+      .map((route) => `/${String(route.path).split('/')[1] ?? ''}`)
+
+    expect(sortedStrings(PUBLIC_ROUTE_ROOTS)).toStrictEqual(sortedStrings(roots))
   })
 })

@@ -10,23 +10,29 @@
  *
  * On the signal a tab does what its own sign-out would: it forgets every workspace's saved records, the refused
  * list and a platform admin's console entries (workspace/workspaceStorage.ts, workspace/refusedWorkspaces.ts,
- * workspace/platformEntry.ts) and, when it is signed in, leaves with a full
- * page load to the plain `/login`. The full load is what stops its three persisted stores from writing the last
- * person's conversation in view, draft or filters back: they live in this page load's memory, and a store writes on
- * every change. It also drops every in-memory cache and in-flight request, as the app's own sign-out does. `replace`:
- * the page left can no longer load its data.
+ * workspace/platformEntry.ts) and, when it is signed in, leaves with a full page load to the plain `/login`. On a
+ * public page (publicRoutes.ts: a ballot, the feedback boards, a shared review, an unsubscribe, the sign-in page
+ * itself), which opens without a session of the app, the full load is of the same page instead, so the person stays
+ * where they are and the page opens without the app's session. The full load is what stops its three persisted stores from writing
+ * the last person's conversation in view, draft or filters back: they live in this page load's memory, and a store
+ * writes on every change. It also drops every in-memory cache and in-flight request and the page load's copy of the
+ * session, as the app's own sign-out does. `replace`: the page left can no longer load its data.
  *
  * It writes nothing to the session's record, and acts only while the stored session is still signed out: a late
  * signal, after a person signed in meanwhile in another tab, neither clears what they have saved nor reloads a tab.
+ * So a tab that ends its session writes `voc-auth` signed out before it announces the end: both callers do, and
+ * sessionEndOrder.test.ts fails if either order flips.
  *
  * The listener is installed when this module loads; main.tsx imports it for that (build/bootGraph.test.ts).
  *
  * @module services/crossTabSignOut
  */
 import { z } from 'zod'
+import { isPublicPath } from '../publicRoutes'
 import { useAuthStore } from '../store/authStore'
 import { forgetPlatformEntries } from '../workspace/platformEntry'
 import { forgetRefused } from '../workspace/refusedWorkspaces'
+import { appPathname } from '../workspace/workspacePath'
 import { forgetWorkspaceStores } from '../workspace/workspaceStorage'
 
 /** The localStorage key whose every new value says "a session of this browser ended". */
@@ -64,7 +70,11 @@ function onStorage(event: StorageEvent): void {
   forgetRefused()
   forgetPlatformEntries()
   forgetWorkspaceStores()
-  if (useAuthStore.getState().isAuthenticated) window.location.replace(SIGNED_OUT_PATH)
+  if (!useAuthStore.getState().isAuthenticated) return
+  // A public page opens without a session of the app, so it is reloaded where it is; the boards and a review use the
+  // session when there is one, so this page load's copy of it must go all the same.
+  if (isPublicPath(appPathname())) window.location.reload()
+  else window.location.replace(SIGNED_OUT_PATH)
 }
 
 window.addEventListener('storage', onStorage)
