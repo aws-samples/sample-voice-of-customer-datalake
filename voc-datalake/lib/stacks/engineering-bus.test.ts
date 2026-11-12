@@ -323,7 +323,7 @@ describe('the engineering bus', () => {
     const reports = functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME);
     expect(actionsOf(on, reports)).toStrictEqual([
       'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem', ...KEY_ACTIONS, 'logs:CreateLogStream',
-      'logs:PutLogEvents', 's3:GetObject', 's3:ListBucket', 's3:PutObject', 'sqs:SendMessage',
+      'logs:PutLogEvents', 's3:GetObject', 's3:PutObject', 'sqs:SendMessage',
     ].sort(byCodeUnit));
     expect(keyServices(on, reports)).toStrictEqual(
       ['dynamodb.us-east-1.amazonaws.com', 's3.us-east-1.amazonaws.com', 'sqs.us-east-1.amazonaws.com']);
@@ -334,21 +334,11 @@ describe('the engineering bus', () => {
     const statements = statementsOf(on, functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME));
     const resourceOf = (action: string) => JSON.stringify(statements.find((statement) => statement.Action === action)
       ?.Resource);
-    expect({
-      get: resourceOf('s3:GetObject'), put: resourceOf('s3:PutObject'), list: resourceOf('s3:ListBucket'),
-    }).toStrictEqual({
+    expect({ get: resourceOf('s3:GetObject'), put: resourceOf('s3:PutObject') }).toStrictEqual({
       // The one workspace spelled out: an IAM `*` crosses `/`, so `ws/*/reports/*` would reach run objects too.
       get: expect.stringMatching(/"\/ws\/default\/runs\/\*"/), put: expect.stringMatching(/"\/ws\/default\/reports\/\*"/),
-      list: expect.stringMatching(WORKSPACE_IMPORT),
     });
     expect(JSON.parse(resourceOf('sqs:SendMessage'))).toStrictEqual({ 'Fn::GetAtt': [dlqId(on), 'Arn'] });
-  });
-
-  it('lets the report builder list only under the runs\' keys', () => {
-    const on = template('on');
-    const list = statementsOf(on, functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME))
-      .find((statement) => statement.Action === 's3:ListBucket');
-    expect(list?.['Condition']).toStrictEqual({ StringLike: { 's3:prefix': ['ws/default/runs/*'] } });
   });
 
   it('lets only the rule invoke the router', () => {

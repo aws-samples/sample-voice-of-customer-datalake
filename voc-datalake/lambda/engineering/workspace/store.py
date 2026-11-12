@@ -38,7 +38,8 @@ class WorkspaceStore:
     def __init__(self, s3: Any, bucket: str, *, denied_is_missing: bool = False,
                  sleep: Callable[[float], None] = time.sleep) -> None:
         """``denied_is_missing``: a reader whose role may read every key it asks for but holds no unconditioned
-        ``s3:ListBucket`` (S3 then answers a missing key 403, not 404) reads a denied object as missing. ``sleep``:
+        ``s3:ListBucket`` (S3 then answers a missing key 403, not 404) reads a denied object as missing, and logs
+        each such read (a KMS or policy denial looks the same). ``sleep``:
         the wait between a write's tries (a test's records them)."""
         self.s3 = s3
         self.sleep = sleep
@@ -52,6 +53,9 @@ class WorkspaceStore:
         except ClientError as exc:
             code = _code(exc)
             if code in self.missing:
+                if code in _DENIED:
+                    # Most likely a missing key, but a KMS or policy denial reads the same: logged, so it shows.
+                    logger.warning('workspace: a denied read taken as missing', extra={'key': key, 'code': code})
                 return None
             if code == 'InvalidRange':   # an empty object: S3 has no byte 0 to range over
                 return ''

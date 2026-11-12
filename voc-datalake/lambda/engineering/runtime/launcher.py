@@ -1,6 +1,6 @@
 """The launcher: the only code that gives an agent's MicroVM AWS credentials.
 
-It runs outside every MicroVM (in voc-engineering-runtime). For each agent it assumes that agent role's ONE
+It runs outside every MicroVM (in voc-engineering-runtime and voc-engineering-delivery). For each agent it assumes that agent role's ONE
 fixed execution role (never a role per run), with session tags naming the workspace, the run, the agent and the
 connection (``ws``, ``run``, ``agent``, ``connection``: the roles' IAM conditions read them) and the session name
 ``<run ULID>.<agent index>`` (the broker and the board's API read identity from it: connectors/identity.py). Sessions last 15 minutes; the supervisor renews them each tick through

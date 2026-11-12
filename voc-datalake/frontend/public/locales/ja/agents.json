@@ -674,6 +674,7 @@
     "ended": "終了: {{when}}",
     "totals": "MicroVM 時間: {{seconds, number}} 秒 · メッセージ: {{messages, number}}",
     "byModel": "モデル別のトークン",
+    "actionsUnavailable": "このデプロイからはまだシグナルや回答を送信できません。実行モニターがエンジニアリングのランタイムとバスに接続されていません。",
     "runSignals": "実行全体",
     "agentSignals": "エージェント {{agent}}",
     "signals": {

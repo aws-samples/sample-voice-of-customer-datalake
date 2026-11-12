@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from engineering.bus.test.messages import message
+from engineering.runtime import delivery
 from engineering.runtime.caps import Timings
 from engineering.runtime.delivery import AddresseeBusy, deliver
 from engineering.runtime.interface import MicroVm, RuntimeRefused
@@ -79,11 +80,46 @@ def test_a_message_is_recorded_once_in_its_runs_inbox_in_the_agreed_shape(world:
     assert _deliver(world, raw, 1005)['recorded'] is False
     [row] = _inbox(world)
     assert row['pk'] == f'WS#default#RUN#{RUN}'
-    assert row['sk'] == f'INBOX#agent:fixer-1#{7:012d}#{raw["event_id"]}'
-    assert (row['seq'], row['type'], row['from_kind'], row['from_id'], row['task_id'], row['at']) == (
-        7, 'msg.question', 'conductor', 'conductor', 'task-1', 1000)
+    # Under its write-order number (the run's first notice), the conversation's seq kept beside it.
+    assert row['sk'] == f'INBOX#agent:fixer-1#{1:012d}#{raw["event_id"]}'
+    assert (row['inbox_seq'], row['seq'], row['type'], row['from_kind'], row['from_id'], row['task_id'],
+            row['at']) == (1, 7, 'msg.question', 'conductor', 'conductor', 'task-1', 1000)
+    table = world.store._table
+    marker = table.get_item(Key={'pk': row['pk'], 'sk': f'INBOXEVT#{raw["event_id"]}'})['Item']
+    meta = table.get_item(Key={'pk': row['pk'], 'sk': 'META'})['Item']
+    # The redelivery found the marker: it took no number.
+    assert (marker['inbox_seq'], marker['addressee'], meta['inbox_seq']) == (1, 'agent:fixer-1', 1)
     assert json.loads(row['refs']) == {'s3': [f'ws/default/runs/{RUN}/coordinator-0/notes/plan.md']}
     assert row['summary'] == raw['summary']
+
+
+def test_a_notice_delivered_late_gets_a_number_above_every_one_already_read(world: World):
+    late = _for({'kind': 'agent', 'id': 'fixer-1'})
+    for seq in (11, 12):
+        _deliver(world, _for({'kind': 'agent', 'id': 'fixer-1'}), 1000, seq=seq)
+    # Conversation seq 10, retried a minute later: its write-order number is the next one, so a reader whose
+    # cursor passed 11 and 12 still reads it.
+    _deliver(world, late, 1060, seq=10)
+    rows = {row['event_id']: row for row in _inbox(world)}
+    assert (rows[late['event_id']]['inbox_seq'], rows[late['event_id']]['seq']) == (3, 10)
+
+
+def test_a_redelivery_racing_the_first_writes_nothing_and_its_number_is_a_gap(world: World,
+                                                                              monkeypatch: pytest.MonkeyPatch):
+    raw = _for({'kind': 'agent', 'id': 'fixer-1'})
+    _deliver(world, raw, 1000)
+    # The second delivery read before the first's marker was written: it takes a number, and its marker is refused.
+    monkeypatch.setattr(delivery, 'consistent_item', lambda _table, _key: None)
+    assert _deliver(world, raw, 1001)['recorded'] is False
+    meta = world.store._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'META'})['Item']
+    assert (len(_inbox(world)), meta['inbox_seq']) == (1, 2)
+
+
+def test_a_run_without_its_meta_has_no_inbox(world: World):
+    world.store._table.delete_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'META'})
+    with pytest.raises(RuntimeRefused, match='no META'):
+        _deliver(world, _for({'kind': 'agent', 'id': 'fixer-1'}), 1000)
+    assert _inbox(world) == []
 
 
 @pytest.mark.parametrize(('to', 'kind', 'key'), [

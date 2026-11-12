@@ -54,7 +54,8 @@ ALLOWED = {
     'msg.': _TALK,
     'msg.answer': _TALK | {'api'},
     'review.': _TALK,
-    'skill.proposed': frozenset({'coach'}),
+    # The run's coach proposes; an administrator proposes, accepts, promotes and rolls back through the API.
+    'skill.proposed': frozenset({'coach', 'api'}),
     'skill.accepted': frozenset({'api'}),
     'skill.rolled_back': frozenset({'api'}),
 }

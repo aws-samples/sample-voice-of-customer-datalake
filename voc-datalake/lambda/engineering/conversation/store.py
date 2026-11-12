@@ -10,7 +10,7 @@ transaction, each only if absent. A redelivered message changes nothing; an even
 reported, so it is never delivered without its record.
 
 Readers: the sequence has gaps (a redelivery or a failed write uses a number) and two writers may commit their
-numbers out of order, so a reader that follows the tail re-reads a short window behind the last number it saw.
+numbers out of order, so a reader re-reads a short window behind the last number it saw on every page.
 """
 from __future__ import annotations
 

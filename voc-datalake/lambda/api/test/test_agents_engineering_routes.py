@@ -46,7 +46,7 @@ def test_the_board_conversation_and_reports_read_through_the_routes(lambda_conte
     assert status == 200
     assert board['tasks'][0]['task_id'] == engineering.task_id
     status, page = _call(lambda_context, 'GET', f'{BASE}/conversation', query={'after': '1', 'limit': '1'})
-    assert (status, [item['seq'] for item in page['items']], page['next_after']) == (200, [2], 2)
+    assert (status, [item['seq'] for item in page['items']], page['next_after']) == (200, [1, 2], 2)
     status, reports = _call(lambda_context, 'GET', f'{BASE}/reports')
     assert (status, reports['items'][0]['latest_version']) == (200, 1)
     status, report = _call(lambda_context, 'GET', f'{BASE}/reports/goal/{RUN}')
@@ -58,6 +58,8 @@ def test_the_board_conversation_and_reports_read_through_the_routes(lambda_conte
 #: An MCP credential an administrator minted: delegated, so never an administrator here.
 DELEGATED_ADMIN = {'sub': 'mcp:tok_1', 'cognito:username': 'alice', 'voc:acting_subject': 'admin-sub',
                    'cognito:groups': 'admins'}
+#: A well-formed run id no run has.
+UNKNOWN = '01JD0000000000000000000009'
 PATHS = (f'{BASE}/board', f'{BASE}/conversation', f'{BASE}/reports', f'{BASE}/reports/goal/{RUN}')
 
 
@@ -121,7 +123,6 @@ def test_without_the_engineering_package_every_route_is_404_not_500(lambda_conte
             assert _call(lambda_context, 'POST', path, body={'signal': 'save'})[0] == 404
 
 
-
 class Bus:
     """EventBridge as the routes see it: records each entry; ``failed`` makes it refuse them."""
 
@@ -138,18 +139,21 @@ class Bus:
 
 @dataclass
 class Actions:
-    """What the actions reach: the bus, the supervisor's function (its answer), the session rows' table."""
+    """What the actions reach: the bus and the supervisor's function (its answer)."""
     bus: Bus
     runtime: LambdaClient
 
 
 @pytest.fixture
 def actions(monkeypatch: pytest.MonkeyPatch, run: tuple[Any, EngineeringRun]) -> Iterator[Actions]:
-    del run   # (the run's table first)
-    rows = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
-    rows.update_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'META'}, UpdateExpression='SET #s = :active',
-                     ExpressionAttributeNames={'#s': 'status'}, ExpressionAttributeValues={':active': 'active'})
-    SessionStore(rows, RunStore(rows)).create(FIXER)   # (a session is written only while its run is active)
+    _, engineering = run
+    # The supervisor's session row, in the run's partition, written while the run is active (as its start leaves it).
+    engineering.client.update_item(
+        TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'META'}},
+        UpdateExpression='SET #status = :active', ExpressionAttributeNames={'#status': 'status'},
+        ExpressionAttributeValues={':active': {'S': 'active'}})
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    SessionStore(table, RunStore(table)).create(FIXER)
     monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
     monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
     reached = Actions(Bus(), LambdaClient({'agents': {'fixer-1': 'pause_requested'}, 'applied': {'fixer-1': True}}))
@@ -163,7 +167,25 @@ def test_the_run_monitor_reads_the_run_and_the_supervisors_sessions(lambda_conte
     status, view = _call(lambda_context, 'GET', BASE)
     assert status == 200
     assert (view['run']['run_id'], [agent['agent'] for agent in view['agents']]) == (RUN, ['fixer-1'])
+    assert view['actions_available'] is True
     assert _call(lambda_context, 'GET', '/agents/engineering/01JD0000000000000000000009')[0] == 404
+
+
+@pytest.mark.usefixtures('actions')
+@pytest.mark.parametrize('missing', ['ENGINEERING_RUNTIME_FUNCTION', 'ENGINEERING_BUS_NAME'])
+def test_the_overview_says_the_actions_are_unavailable_until_the_runtime_and_the_bus_are_named(
+        lambda_context: Any, monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
+    monkeypatch.delenv(missing)
+    status, view = _call(lambda_context, 'GET', BASE)
+    assert (status, view['actions_available']) == (200, False)
+
+
+@pytest.mark.parametrize('path', [f'/agents/engineering/{UNKNOWN}/signals', f'/agents/engineering/{UNKNOWN}/messages'])
+@pytest.mark.parametrize('body', [{}, {'signal': 'save'}, {'to': 'conductor', 'text': 'Hi'}])
+def test_an_unknown_run_is_404_before_the_body_is_read(lambda_context: Any, actions: Actions, path: str,
+                                                       body: dict[str, str]) -> None:
+    assert _call(lambda_context, 'POST', path, body=body)[0] == 404
+    assert (actions.bus.entries, actions.runtime.requests) == ([], [])
 
 
 def test_an_admin_signals_the_agent_on_a_task_at_the_attempt_seen(lambda_context: Any,

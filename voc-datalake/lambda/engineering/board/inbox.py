@@ -5,18 +5,15 @@ create-only, never changed or deleted: ``WS#<ws>#RUN#<run>`` / ``INBOX#<addresse
 the addressee ``agent:<agent>`` (a message to that agent), ``role:<role>`` (a posted task: every live agent of the
 role reads it) or ``conductor`` (a message to the run's conductor, which the coordinator plays). ``inbox_seq`` is the
 run's write-order counter (``ADD inbox_seq`` on its META, taken once per notice behind an ``INBOXEVT#<event_id>``
-marker), so a notice delivered late (an asynchronous retry) still numbers above everything already read. That counter
-is voc-auto-b's delivery from their a3f5eb13 on; the delivery merged here (6.11.00) still keys the row by the
-conversation seq, so until that commit merges, a notice delivered more than 20 numbers late can fall behind a reader's
-cursor. This reader reads the key's number either way. Its
+marker), so a notice delivered late (an asynchronous retry) still numbers above everything already read. Its
 attributes: ``event_id``, ``type``, ``from_kind``, ``from_id``, ``task_id`` (when the message has one), ``summary``,
 ``at`` (epoch seconds), ``refs`` (the message's refs, as JSON), ``inbox_seq`` and ``seq`` (the message's conversation
 seq).
 
 A reader reads its own addressees only (the board API takes them from its session), after an ``inbox_seq``: one
-cursor for all of them, since the counter is the run's. Two deliveries may commit their numbers out of order, so a
-page that reached the tail starts the next one a window behind (``rows.next_after``); the reader keeps each notice
-once by its event id.
+cursor for all of them, since the counter is the run's. Two deliveries may commit their numbers out of order, so
+every read starts a window below its cursor (``rows.window_start``), on a full page as at the tail, and the next
+one's cursor is the last number read (``rows.next_after``); the reader keeps each notice once by its event id.
 """
 from __future__ import annotations
 
@@ -24,7 +21,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Final
 
-from engineering.rows import next_after, run_pk, string_attr
+from engineering.rows import TAIL_WINDOW, next_after, run_pk, string_attr, window_page, window_start
 from shared.dynamo_paging import query_all
 from shared.logging import logger
 
@@ -89,14 +86,16 @@ class Inbox:
                                           ':to': {'S': f'INBOX#{addressee}#~'}}}, max_items=limit)
 
     def read(self, ws: str, run_id: str, *, role: str, agent: str, after: int, limit: int) -> dict[str, Any]:
-        """``{messages, next}``: the agent's notices after ``after`` in seq order (then by event id), at most
-        ``limit``, and where its next read starts."""
+        """``{messages, next}``: the agent's notices in seq order (then by event id), at most ``limit`` above
+        ``after`` and the window below it again (``TAIL_WINDOW``), and where its next read starts."""
+        start, size = window_start(after), limit + TAIL_WINDOW
         items = [item for addressee in addressees(role, agent)
-                 for item in self._after(ws, run_id, addressee, after, limit)]
+                 for item in self._after(ws, run_id, addressee, start, size)]
         # Ordered by the key (seq, then event id); a malformed row still counts for the cursor, never as a message. A
         # row whose key is malformed is dropped before the cut, so its page may read as shorter than it was (the
-        # reader then re-reads the tail window, which its event-id dedupe absorbs).
-        rows = sorted((row for row in map(_sequenced, items) if row is not None), key=lambda row: row[:2])[:limit]
+        # next read re-reads the window, which its event-id dedupe absorbs).
+        rows = sorted((row for row in map(_sequenced, items) if row is not None), key=lambda row: row[:2])
+        rows = window_page(after, rows, limit, lambda row: row[0])
         notices = [_notice(item, seq) for seq, _, item in rows]
         return {'messages': [notice for notice in notices if notice is not None],
-                'next': next_after(after, [seq for seq, _, _ in rows], limit)}
+                'next': next_after(after, [seq for seq, _, _ in rows])}

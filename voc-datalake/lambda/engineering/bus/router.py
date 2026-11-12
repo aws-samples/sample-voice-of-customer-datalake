@@ -2,11 +2,12 @@
 
 For each event it checks the schema and the sender (``senders.judge``), writes the message to the run's
 conversation, then fans it out (``routing.route``): a posted task, and a message for an agent or the run conductor, to
-the delivery function, with the message's conversation seq (``{"message": …, "seq": N}``: the delivery function keys
-its ``INBOX#`` row on it and refuses a payload without one). Anything refused is dropped and journalled with its reason (never its
+the delivery function, with the message's conversation seq (``{"message": …, "seq": N}``: the delivery function keeps
+it on its ``INBOX#`` row and refuses a payload without one). Anything refused is dropped and journalled with its reason (never its
 content): a malformed message, a sender that may not send it, a run that does not exist, an event id reused for
 other content. A redelivered message (the bus is at-least-once) is fanned out again under the seq it was first written with, since
-the first attempt may have stopped before its fan-out; the delivery function's conditional put makes that a no-op.
+the first attempt may have stopped before its fan-out; the delivery function's once-per-event marker makes it write
+nothing (only the wake repeats).
 """
 from __future__ import annotations
 

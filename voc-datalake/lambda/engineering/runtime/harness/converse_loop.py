@@ -14,6 +14,7 @@ import contextlib
 from typing import Any, Final
 
 from engineering.runtime.harness.interface import AgentSession, Ending
+from engineering.runtime.harness.skills import skill_for
 from engineering.runtime.harness.tools import as_data, bedrock_tools
 
 MAX_TURNS: Final = 150
@@ -29,6 +30,12 @@ SYSTEM_PROMPT: Final = (
     'with save_checkpoint, and call finish when the task is done.'
 )
 NUDGE: Final = 'Continue with your tools, or call finish if the task is done.'
+
+
+def system_prompt(role: str) -> str:
+    """The role's skill's instructions and examples, or the platform's own for a role without a skill."""
+    skill = skill_for(role)
+    return SYSTEM_PROMPT if skill is None else skill.system_prompt()
 
 
 def opening(session: AgentSession) -> str:
@@ -80,7 +87,8 @@ class ConverseAdapter:
                 messages[-1]['content'].append({'text': '\n'.join(
                     as_data(f'message:{note.kind}', note.summary) for note in notes)})
             answer = self._client.converse(modelId=self._model_id, messages=messages,
-                                           system=[{'text': SYSTEM_PROMPT}], toolConfig=tools,
+                                           system=[{'text': system_prompt(session.context.role)}],
+                                           toolConfig=tools,
                                            inferenceConfig={'maxTokens': MAX_TOKENS})
             usage = answer.get('usage', {})
             session.context.status.add_tokens(self._model_id, int(usage.get('inputTokens', 0)),

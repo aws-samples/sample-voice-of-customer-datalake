@@ -11,8 +11,8 @@ to the same answers by the shared fixture ``frontend/src/test/engineeringFlows.j
   text; ``budget_share`` above 0 and at most 1, and a flow's shares add up to at most 1 (the run's budget);
 - ``map``: ``shard_by`` packages | history | pr_pages, ``shard_cap`` 1 to 200; every map reaches exactly one reduce,
   and every reduce has a map before it;
-- ``board``: ``posters`` (roles the board lets post: ``BOARD_POSTERS``) and ``claimers`` (roles with a task queue:
-  ``BOARD_CLAIMERS``), each a non-empty list; ``until`` drained | caps;
+- ``board``: ``posters`` (roles the board lets post: ``BOARD_POSTERS``) and ``claimers`` (roles that claim posted
+  tasks: ``BOARD_CLAIMERS``), each a non-empty list; ``until`` drained | caps;
 - ``quality_gate``: the gate's own settings only (``engineering.quality_gate.gate``): ``max_rounds`` 1 to 5 (3 if left
   out), ``packs`` ``auto`` or a list of gate packs, ``final_go_model`` optional text, ``reviewers`` as the gate takes
   them; its arrows are labelled ``pass`` (GO) and ``fail`` (NO-GO), the ``fail`` one to a human decision point;

@@ -334,12 +334,14 @@ What exists:
   minutes; the holder claiming again, on a task that has not ended, reads it as it is (a continuation reads its
   brief so, with its lease's epoch, which is always the task's attempt). Renew, progress and move need the lease and
   its epoch, on a task that has not ended. Before it continues an agent (a pause resumed, a slow boot), the supervisor
-  refreshes its lease (`refresh`), even one that ran out, for that agent at that epoch. The supervisor re-posts a task at the attempt it judged (`repost_task`): open again at the next attempt,
+  is to refresh its lease (`BoardStore.refresh`), even one that ran out, for that agent at that epoch, and it is to
+  re-post a task at the attempt it judged (`repost_task`); its Board port (`runtime/ports.py`) calls neither yet, so
+  the board's tests drive them. A re-posted task is open again at the next attempt,
   its lease cleared, published again as `task.posted` to its role, its reason in the history row. The run's
   `coordinate` task (role `coordinator`) is to be written only by the run's start (`coordinate_items`, in its own
   transaction; the runtime's run start does not call it yet, nor record the run's `commit` and `connection`, which
   `launch` and `knowledge` read from META: until it does, a run has no coordinate task, so the coordinator's claim and its `knowledge` answer 404, and an
-  agent's `knowledge` answers 503),
+  agent's `knowledge` and a `launch` answer 503, the launch before it numbers an agent),
   never posted, and claimed only by the run's coordinator, which renews and reports progress on it like
   any agent. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
@@ -353,7 +355,7 @@ What exists:
   the board's launch is refused (409) until the runtime derives the harness from the role's skill. An agent reads
   the approved knowledge pack (`knowledge`, as data) of one of its task's paths (the spec's `paths` and the ones its
   agent was launched on) or of the root (`''`, the knowledge store's `.`), never another's; a package the store
-  cannot key is a 400. Each change is published
+  cannot key is a 400, and an approved version whose object is missing or whose row changed a 503. Each change is published
   on the bus as the board's `task.*` event after the row is written. A failed publish answers 503, and the retry
   publishes the same event again. Each post, claim and move also writes a `TASKLOG#<task>#<at>#<state>` row in the
   same transaction (the actor and the operation; no past state is overwritten; a renewal or a progress report is
@@ -373,15 +375,18 @@ What exists:
   yet ([docs/mcp.md](mcp.md)).
 - **No task queues**: every message is pushed per run by the delivery function ([below](#how-the-agents-work-together),
   "Inboxes and roles"). The one queue is `voc-engineering-dlq`, encrypted with the stack's key: the events the rule
-  could not hand the router, the router's invocations that failed every retry, the report builder's failed builds and
+  could not hand the router, the router's and the delivery function's invocations that failed every retry, the report
+  builder's failed builds and
   the runtime's undelivered supervisor ticks; alerting watches it like the platform's other failure queues.
 - **The agents' access**: the [runtime](#runtime-one-microvm-per-agent)'s agent roles call the board's and the
   broker's function URLs, and put events on the bus only with their own source; the bus's policy admits the board's
   role and the agent roles with a voice (all but the coach: Runtime → Not aligned yet) and nothing else, and denies
   each agent role every source but its own.
 
-Not built yet: the run coordinator's own work (its `coordinate` task and `launch` on the board are next); the
-agents' findings in the workspace (the runtime writes their checkpoints and patches there). The rest of this section is the
+Not built yet: the harness's side (its board, inbox and broker interfaces still refuse every call, and so do the run
+coordinator's: [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); a person's board actions (POST), planned
+as the run monitor's board controls; the agents' findings in the workspace (the runtime writes their checkpoints and patches
+there). The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
 holds, and the design's type table is what the next slices bring the code to or the table to.
 
@@ -419,8 +424,8 @@ the event's `source`, which the bus's policy pins to the session's own agent tag
 run, so no agent can forge another's message or write into another run. The router also holds which sender may send
 which type, and drops (and journals) anything else: `decision` and `stop` only from the API's own source, `gate.go`
 and `gate.no_go` only from the run's final-go agent, the `task.*` events only from the board's API (agents report
-progress and moves through it), the `skill.*` announcements only from the API (`skill.accepted`, `skill.rolled_back`) and the run's coach
-(`skill.proposed`, from its run-scoped source), and the talk (`finding`, `question`, `answer`,
+progress and moves through it), the `skill.*` announcements only from the API (all three: an administrator's proposal, acceptance, promotion or
+rollback, as the signed-in person) and the run's coach (`skill.proposed`, from its run-scoped source), and the talk (`finding`, `question`, `answer`,
 `review.*`, `handoff`) from the run's own agents, with a person's `answer` from the API; the runtime's `pause`,
 `continued`, `timed_out` and `run.health` only from the supervisor (on the bus: `signal.check_in` to an agent,
 `run.agent_continued`, `run.agent_timed_out`, `run.agent_failed` and `run.health` to the run, and the `task.posted`
@@ -439,16 +444,18 @@ runtime's), invoked asynchronously with the message and its conversation seq (`{
 the seq the message was first written under). It records each notice once in the run's own partition, as an
 `INBOX#<addressee>#<inbox_seq>#<event_id>` row (the addressee `agent:<agent>`, `role:<role>` for a posted task, or
 `conductor`; `inbox_seq` the run's write-order counter, so a notice delivered late still numbers above everything
-already read; the row keeps the conversation seq too; the delivery merged here still keys by the conversation seq:
-the counter comes with the runtime's next merge, and until then a notice delivered more than 20 late can fall behind
-the cursor), and wakes an addressed agent or conductor (a posted task wakes nobody: an agent is launched for its task, so none of its role is idle; its role's agents read the notice on their next inbox read). An agent reads its
+already read; the row keeps the conversation seq too), and wakes the addressee: the agent, or the run's
+coordinator for the conductor. A posted task wakes nobody: an agent is launched for its task, so none of its role is
+idle, and one held on a wait keeps its one continuation for what it waits for; its role's agents read the row on their next
+inbox read. An agent reads its
 notices with the board API's `inbox` op (`board/inbox.py`): its own, its role's and, for the coordinator, the
 conductor's, after an `inbox_seq`, merged in write order (each with its `conversation_seq`); its session gives
-its run, so it never reads another run's. A page that reached the tail starts the next one 20 behind (two deliveries
-may commit their numbers out of order), and the reader keeps each notice once by its event id. A message to the run (a signal's record, run health, an outcome) stays in the
+its run, so it never reads another run's. Every read starts 20 below its cursor, a full page's as much as the
+tail's (two deliveries may commit their numbers out of order), and moves the cursor to the last number read; the
+reader keeps each notice once by its event id. A message to the run (a signal's record, run health, an outcome) stays in the
 conversation, where the supervisor, the coordinator and the run view read it. The rule is fixed, never made per run,
-so the bus's rule quota does not limit how many runs work at once. EventBridge is the bus; until the delivery
-function is deployed, a push fails into `voc-engineering-dlq` after the router's retries.
+so the bus's rule quota does not limit how many runs work at once. EventBridge is the bus; a push the router could
+not make ends in `voc-engineering-dlq` after its retries.
 
 **The board.** A run's work is a board of tasks: open → claimed → in progress → in review → done, failed or needs a
 human. An agent takes a task through the board's API, which claims it with a conditional write on its row (DynamoDB,
@@ -631,7 +638,11 @@ next slice):
   `review.result`; a verdict stays the final-go agent's). The coach speaks as `voc.engineering/coach/<ws>/<run>`, a
   run-scoped source (the run and refs checks apply) whose `from.kind` is `coach`; there is no service-wide coach
   source. The coach role's session pin is to name that source (the stack's side).
-- **The harness.** Its board, inbox and broker interfaces still refuse every call.
+- **The harness.** Its board, inbox and broker interfaces still refuse every call, and so do the run
+  coordinator's (the board's task list, posting a task, launching its agent; the knowledge pack's agent reader).
+  The board's side of them is built: its `tasks`, `post`, `launch` and `knowledge` ops, `launch` checking the
+  caller is its run's coordinator (rather than an invoke grant on the runtime function, which would also reach its
+  tick, its end of a run and its signals); the harness's ports are to call them.
 
 Each agent of a run runs in its own Lambda MicroVM, from its language's image, with its own sparse checkout from the
 cache. The idle policy suspends a MicroVM after 5 minutes without a request and ends one suspended for an hour; the
@@ -644,8 +655,7 @@ continues it in a new one once the wait closes.
 - **No host token in any MicroVM.** Nothing in a MicroVM reaches the repository host: the
   [broker](#repository-connectors) holds the credential, fills the cache and makes every host write. An agent's egress
   allowlist is Bedrock, its two buckets' own S3 endpoints (the raw bucket's for the cache, the workspace bucket's for
-  its keys; never the regional one, which reaches every bucket) and SQS
-  in its region, the broker's and the board's function URLs by name once the runtime is wired to them, and, for the agents that run
+  its keys; never the regional one, which reaches every bucket) in its region, the broker's and the board's function URLs by name once the runtime is wired to them, and, for the agents that run
   repository code, its language's package registries (plus at most 10 configured hosts, a registry mirror for example).
 - **Credentials from a launcher, never in the image.** A MicroVM starts with no AWS credential. The launcher (the
   supervisor's own code, outside every MicroVM) assumes the agent role's ONE fixed execution role (one per agent role,
@@ -658,9 +668,10 @@ continues it in a new one once the wait closes.
   15 minutes and goes to the runner, which keeps it as the agent user's `credential_process` answer in `/run/voc`, a
   directory only root writes (so nothing planted there can redirect root's writes), readable by the agent user only
   and named to the agent's own commands, never to repository code. The supervisor renews it each tick it has under
-  6 minutes left, and the launcher refuses a stopped run's agents, so a stop cuts that run's sessions within
+  6 minutes left (or a wake renews it), and the launcher refuses a stopped run's agents, so a stop cuts that run's sessions within
   15 minutes although the roles are shared (its MicroVMs are ended at once anyway). The agent roles trust only the
-  launcher's role, which alone may tag their sessions; they may assume no role themselves.
+  two launchers' roles (the supervisor's and the delivery function's, whose wake renews a session), which alone may
+  tag their sessions; they may assume no role themselves.
 - **Repository code in a box of its own.** The runner (each image's entry point) starts as root only to drop every
   command to an unprivileged user, and runs its own tools by absolute path only: repository code (builds, tests, gate
   tools) to `code`, in a PID namespace and `/proc` of its own (no view of the agent's processes) and, except the
@@ -697,19 +708,34 @@ continues it in a new one once the wait closes.
 - **Scoped roles.** Each agent role reads only its connection's cache prefix (in the raw bucket) and its run's keys
   in the workspace bucket, `voc-eng-workspace` (`ws/<ws>/runs/<run>/`), writes only its own keys there
   (`ws/<ws>/runs/<run>/<agent>/`: the agent comes right after the run, so no other agent's key matches; create-only,
-  since the bucket refuses a put without `If-None-Match`), reads no queue (the role queues serve every run; the delivery
-  function records its run's messages in the run's inbox and wakes it, once the router invokes it), calls the board's and the broker's function URLs (`lambda:InvokeFunctionUrl`, and the invoke behind it only through a function URL), may
+  since the bucket refuses a put without `If-None-Match`), reads no queue (there are none: the router invokes the delivery
+  function, which records its run's messages in the run's inbox and wakes it), calls the board's and the broker's function URLs (`lambda:InvokeFunctionUrl`, and the invoke behind it only through a function URL), may
   put events on the bus only with its own source
   (`voc.engineering/agent/<role>/<ws>/<run>/<agent>`, the run coordinator's `voc.engineering/conductor/<ws>/<run>`;
   an explicit deny in its own policy and another in the bus's, which admits only the board's role and the agent
   roles with a voice), calls the allowlisted models, and deletes nothing. No MicroVM
   auth token is ever put in an event, a log, a row or a checkpoint: it is minted when needed (at most 60 minutes),
   refreshed 5 minutes before it lapses, held in memory only, and refuses to be serialised.
+- **The run coordinator.** It plans; it changes no code. It runs in the harness's Converse loop on its skill
+  record (`runtime/harness/skills.py`): a versioned record of its instructions, worked examples, tool policy, the
+  model it was written for and the harness that runs it, in the shape the skills store keeps (a change is a new
+  version, never an edit, and a session row's `skill_version` says which one ran, `coordinator@1`). Its tools are
+  exactly its skill's tool policy: read the board, post a task for one role with instructions a person could follow,
+  launch one agent for a task (on its run's connection and commit, which the board takes from the verified caller's
+  run: neither the model nor anything in the MicroVM names them), read the knowledge pack on a topic (only through
+  the pack's agent reader: its run's connection's latest approved version), read the checkout, and report
+  progress, save a checkpoint and finish. It has no tool that writes files or runs repository code (a skill's tool
+  policy is bounded by its role: code tools only for a role that runs code, the planner's only for the
+  coordinator), and everything the board or the pack returns is fenced as data.
 - **Delivery.** voc-engineering-delivery, the function the inbox router invokes for a message to an agent, the
   run's conductor or a role of the run (a posted task): the supervisor's code, with a role of its own (below). It records the message
-  once in that run's inbox, `WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<seq>#<event_id>` in voc-engineering (the
-  addressee `agent:<agent>`, `conductor` or `role:<role>`; the seq its place in the conversation, kept on a
-  redelivery, so a conditional put makes a redelivery write nothing; a message without its seq is refused), and
+  once in that run's inbox, `WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<inbox_seq>#<event_id>` in voc-engineering
+  (the addressee `agent:<agent>`, `conductor` or `role:<role>`; `inbox_seq` the run's write-order counter, taken
+  just before the write, so a delivery retried a minute later sorts after every notice already read, with the
+  conversation's seq kept on the row; two deliveries at once can commit out of order by a moment, and a number can
+  go unused, so the reader re-reads a window behind its cursor on every page and keeps each message once by its
+  event id; a marker, `INBOXEVT#<event_id>`, written in the same transaction, makes a
+  redelivery write nothing; a message without its seq is refused), and
   wakes the run's live addressees (a posted task, addressed to a role, wakes nobody: an agent is launched for its
   task, so none of the role is idle, and one held on its wait keeps its one wake for the message it waits for): a
   working agent's MicroVM suspended for an open wait is resumed with a fresh
@@ -725,7 +751,7 @@ continues it in a new one once the wait closes.
   push. An addressee another move holds, or whose wake failed, fails the invocation; Lambda retries it twice (the
   row already there, only the wake repeats), then it goes to `voc-engineering-dlq`, and that agent is reached only
   when its wait's hold or a later message wakes it. Nothing deletes an inbox row; the board's `inbox` op reads the
-  caller's run's rows after a seq cursor, and the harness keeps each message once by its event id. Its role is its
+  caller's run's rows after an `inbox_seq` cursor, and the harness keeps each message once by its event id. Its role is its
   own, with only what a wake needs: Get, Put, Update and Query on the runs' partitions (`WS#*#RUN#*`: the inbox
   rows, META and the agents' session rows; never the registry of active runs, and no delete), resuming a MicroVM
   and minting its auth token, running a new one and ending the old one (a continuation), reading the agents'
@@ -740,7 +766,7 @@ continues it in a new one once the wait closes.
   (`done`, `failed` or `stopped`) and end time, ends every MicroVM of it, and the run stops being listed once none
   of its agents is live (one busy with another move is ended by the next tick, which sees the run ended). A retried
   start or end does what the first one left undone. After that first write only the run's own attributes are ever
-  updated, never the board's or the router's counters. A run's agents are launched only while it is active, checked
+  updated, never the board's, the router's or the inbox's counters. A run's agents are launched only while it is active, checked
   in the same write as the agent's row, so a run that ends meanwhile gets no agent nothing supervises. The
   supervisor reads its caps, its spend (its agents' tokens and what was priced on their rows), its start and its
   end from there; a human decision point is the run's status, and a Resume of the whole run makes it active again
@@ -900,7 +926,9 @@ v8, two more examples, a stricter test rule").
 What exists: the `voc-skill/1` record (`skills/model.py`: the role, a model from the deployment's allowlist, the
 `converse` or `cli` harness, the tool policy as tool names, bounded instructions of at most 500 lines and bounded
 examples; a record naming a
-budget, a cap, the dial, permissions or safety instructions is refused, since none of them is ever in a skill), the
+budget, a cap, the dial, permissions or safety instructions is refused, since none of them is ever in a skill; its
+schema name, harness names and stored shape are the harness's own, `runtime/harness/skills.py`, which ships alone in
+the agents' images, so the store writes exactly what the harness reads), the
 diff of two versions and its one-line summary, made by rule from the diff and never by a model (`skills/diff.py`),
 and the store (`skills/store.py`), in the `voc-engineering` table: rows `WS#<ws>#SKILL#<connection>#<role>` (the
 connection empty for the shared skill) with a `HEAD` row (the version counter and the current version), one
@@ -1028,7 +1056,7 @@ and the phase that ships them names them in that row.
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
-| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox` op, `progress` and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
+| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)); the templates, live cost, skill histories, the reports' view and the assistant drafting flows planned |

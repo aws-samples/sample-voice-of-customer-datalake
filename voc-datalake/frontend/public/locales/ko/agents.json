@@ -674,6 +674,7 @@
     "ended": "종료: {{when}}",
     "totals": "MicroVM 시간: {{seconds, number}}초 · 메시지: {{messages, number}}",
     "byModel": "모델별 토큰",
+    "actionsUnavailable": "이 배포에서는 아직 신호와 답변을 보낼 수 없습니다. 실행 모니터가 엔지니어링 런타임과 버스에 연결되어 있지 않습니다.",
     "runSignals": "실행 전체",
     "agentSignals": "에이전트 {{agent}}",
     "signals": {

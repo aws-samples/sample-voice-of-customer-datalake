@@ -252,7 +252,7 @@ describe('with -c engineeringAgents=true', () => {
     expect(agent).toContain('ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
     expect(agent).not.toContain('engineering/runs/');
     expect(agent).toContain('engineering/cache/${aws:PrincipalTag/connection}/*');
-    // The role queues serve every run: no agent reads one (its run's messages are pushed to it).
+    // No queue: an agent's run's messages are pushed to it (the delivery function) and read through the board.
     expect(agent).not.toMatch(/s3:DeleteObject|s3:\*|dynamodb:|iam:|lambda:\*|sqs:/);
   });
 
@@ -296,6 +296,14 @@ describe('with -c engineeringAgents=true', () => {
       })).toBe(1);
       expect(policyText(template, role)).not.toMatch(/kms:Encrypt"|kms:ReEncrypt/);
     }
+    // The delivery's failed invocations go to the encrypted DLQ: without SQS here their records would be lost.
+    expect(count(template, 'AWS::IAM::Policy', {
+      Roles: [{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }],
+      PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([Match.objectLike({
+        Action: ['kms:Decrypt', 'kms:GenerateDataKey'],
+        Condition: { StringEquals: { 'kms:ViaService': Match.arrayWith(['sqs.us-east-1.amazonaws.com']) } },
+      })]) }),
+    })).toBe(1);
   });
 
   it('lets the run coordinator speak on the bus only as its run\'s conductor', () => {

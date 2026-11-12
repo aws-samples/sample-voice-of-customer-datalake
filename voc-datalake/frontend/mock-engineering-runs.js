@@ -3,7 +3,7 @@
 // (`/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3`), its flow seeded in the workflow library by mock-server.js:
 //   GET  …            the overview (run, each agent's session, totals per model; no cost yet)
 //   GET  …/board      the tasks with their history
-//   GET  …/conversation?after=   a page after `after`; `next_after` 20 below the tail, as the server reads it
+//   GET  …/conversation?after=   the 20 below `after` again, a page above it; `next_after` its last seq (the server's)
 //   POST …/signals    {signal, task_id?, attempt?, note?, confirm?}: admin; 409 when the attempt moved on or the
 //                     task is over, and the supervisor's reason for resuming a run out of budget; stop_now needs
 //                     confirm: true; the request is recorded first as a signal.* message to the run, then its
@@ -90,7 +90,7 @@ const run = {
       lease: { agent: 'fixer-1', epoch: 2, expires: 0 }, result_keys: [], posted_by: 'coordinator-0',
       updated_by: 'fixer-1', updated_at: minutesAgo(1), spec_hash: 'a1',
       history: [
-        { state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 0, result_keys: 0 },
+        { state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 },
         { state: 'claimed', at: minutesAgo(28), by: 'fixer-2', op: 'claim', attempt: 1, result_keys: 0 },
         { state: 'failed', at: minutesAgo(26), by: 'fixer-2', op: 'move', attempt: 1, result_keys: 0 },
         { state: 'claimed', at: minutesAgo(25), by: 'fixer-1', op: 'claim', attempt: 2, result_keys: 0 },
@@ -99,16 +99,16 @@ const run = {
     },
     {
       task_id: 'task-fix-sort', role: 'fixer', state: 'open', title: 'Sorting by date ignores the time zone',
-      spec: { issue: 9 }, depth: 1, priority: 2, attempt: 0, parent_task: null, lease: null, result_keys: [],
+      spec: { issue: 9 }, depth: 1, priority: 2, attempt: 1, parent_task: null, lease: null, result_keys: [],
       posted_by: 'coordinator-0', updated_by: 'coordinator-0', updated_at: minutesAgo(30), spec_hash: 'b2',
-      history: [{ state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 0, result_keys: 0 }],
+      history: [{ state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 }],
     },
     {
       task_id: 'task-fix-empty', role: 'fixer', state: 'done', title: 'An empty search shows an error',
       spec: { issue: 4 }, depth: 1, priority: 1, attempt: 1, parent_task: null, lease: null, result_keys: ['k1'],
       posted_by: 'coordinator-0', updated_by: 'fixer-3', updated_at: minutesAgo(14), spec_hash: 'c3',
       history: [
-        { state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 0, result_keys: 0 },
+        { state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 },
         { state: 'done', at: minutesAgo(14), by: 'fixer-3', op: 'move', attempt: 1, result_keys: 1 },
       ],
     },
@@ -162,6 +162,8 @@ function overview() {
   return {
     run: run.meta,
     agents: run.agents,
+    // The dev mock plays a stack that names the runtime and the bus, so its actions answer.
+    actions_available: true,
     totals: {
       messages: run.messages.length, microvm_seconds: run.agents.reduce((sum, a) => sum + a.microvm_seconds, 0),
       by_model: [...byModel.values()].sort((a, b) => a.model.localeCompare(b.model)),
@@ -172,10 +174,11 @@ function overview() {
 function conversation(url) {
   const after = Math.max(Number(url.searchParams.get('after')) || 0, 0);
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
-  const items = run.messages.filter((m) => m.seq > after).slice(0, limit);
-  if (items.length === 0) return { items: [], next_after: after };
-  const last = items.at(-1).seq;
-  return { items, next_after: items.length === limit ? last : Math.max(after, last - TAIL_WINDOW) };
+  // Every page reads the window below `after` again, then at most `limit` above it, and moves on to its last seq.
+  const window = run.messages.filter((m) => m.seq > after - TAIL_WINDOW && m.seq <= after);
+  const above = run.messages.filter((m) => m.seq > after).slice(0, limit);
+  const items = [...window, ...above];
+  return { items, next_after: Math.max(after, ...items.map((m) => m.seq)) };
 }
 
 /** The agent a signal reaches, or the refusal: the task's holder at the attempt the person saw. */

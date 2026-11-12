@@ -48,6 +48,9 @@ def test_sources(source, expected):
     ({'type': 'run.ended', 'from': {'kind': 'system', 'id': 'board'}, 'to': {'kind': 'run', 'id': RUN}}, BOARD),
     ({'type': 'msg.handoff', 'from': {'kind': 'conductor', 'id': 'c'}}, CONDUCTOR),
     ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, COACH),
+    # An administrator's proposal, acceptance (or promotion) and rollback, published by the API as its user.
+    *(({'type': kind, 'from': {'kind': 'human', 'id': 'user-1'}, 'refs': {'s3': []}}, 'voc.engineering/api')
+      for kind in ('skill.proposed', 'skill.accepted', 'skill.rolled_back')),
     ({'type': 'msg.finding', 'from': {'kind': 'agent', 'id': 'gate-runner-1'}, 'refs': {'s3': []}}, GATE_RUNNER),
     ({'type': 'review.result', 'from': {'kind': 'agent', 'id': 'gate-runner-1'}, 'refs': {'s3': []}}, GATE_RUNNER),
     ({'type': 'signal.check_in', 'from': {'kind': 'supervisor', 'id': 'supervisor'}}, SUPERVISOR),
@@ -85,6 +88,16 @@ def test_allowed(changes, source):
     ({'type': 'msg.answer'}, 'voc.engineering/api', 'from.kind agent is not what the source api proves'),
     ({'type': 'skill.accepted', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, COACH,
      'coach may not send skill.accepted'),
+    ({'type': 'skill.rolled_back', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, COACH,
+     'coach may not send skill.rolled_back'),
+    *(({'type': kind, 'refs': {'s3': []}}, AGENT_SOURCE, f'agent may not send {kind}')
+      for kind in ('skill.proposed', 'skill.accepted', 'skill.rolled_back')),
+    *(({'type': kind, 'from': {'kind': 'system', 'id': 'b'}, 'refs': {'s3': []}}, BOARD, f'board may not send {kind}')
+      for kind in ('skill.proposed', 'skill.rolled_back')),
+    ({'type': 'skill.accepted', 'from': {'kind': 'system', 'id': 'b'}, 'refs': {'s3': []}}, BOARD,
+     'board may not send skill.accepted'),
+    ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, 'voc.engineering/api',
+     'from.kind coach is not what the source api proves'),
     ({'type': 'skill.proposed', 'from': {'kind': 'system', 'id': 'coach'}, 'refs': {'s3': []}}, COACH,
      'from.kind system is not what the source coach proves'),
     ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'run_id': 'other-run',

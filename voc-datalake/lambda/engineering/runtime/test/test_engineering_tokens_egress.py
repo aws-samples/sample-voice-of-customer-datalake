@@ -67,7 +67,7 @@ def test_an_agent_that_runs_code_reaches_its_registries_bedrock_and_the_bucket_o
     hosts = egress.egress_allowlist(role='fixer', language='python', region='eu-west-1', bucket='voc-raw-test')
     # The bucket's own endpoint only: the regional path-style one reaches every bucket in the region.
     assert hosts == ('bedrock-runtime.eu-west-1.amazonaws.com', 'files.pythonhosted.org', 'pypi.org',
-                     'sqs.eu-west-1.amazonaws.com', 'voc-raw-test.s3.eu-west-1.amazonaws.com')
+                     'voc-raw-test.s3.eu-west-1.amazonaws.com')
 
 
 def test_an_agent_that_runs_no_code_gets_no_registry_and_no_extra_host():

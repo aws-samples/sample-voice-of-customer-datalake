@@ -28,8 +28,8 @@ Own role (20 KB policy limit): the agents table (read/write), the aggregates tab
 their table and workspace bucket; it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
-answer 503). Nothing while the module is off. The supervisor's session rows (the run's ``AGENT#`` rows) are in
-the engineering table it already reads (GetItem, Query).
+answer 503). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
+are in the engineering table, read with the Query its stack already grants.
 """
 
 from __future__ import annotations
@@ -874,24 +874,35 @@ def _engineering(run_id: str) -> Any:
 
 def _monitor(run_id: str) -> Any:
     """The run monitor, for an administrator (as the views): the agents from the supervisor's session rows (the
-    run's ``AGENT#`` rows in the engineering table); its actions need the runtime (ENGINEERING_RUNTIME_FUNCTION) and
-    the bus (ENGINEERING_BUS_NAME)."""
+    run's partition of the engineering table, read only); its actions need the runtime (ENGINEERING_RUNTIME_FUNCTION)
+    and the bus (ENGINEERING_BUS_NAME)."""
     table, _ = _engineering_tables(run_id)
     from engineering.bus.publish import EventBridgePublisher
     from engineering.monitor import API_SOURCE, LambdaRuntime, RunMonitor
     from engineering.runtime.runs import RunStore
     from engineering.runtime.sessions import SessionStore
-    from shared.aws import get_dynamodb_client, get_eventbridge_client, get_lambda_client
+    from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_eventbridge_client, get_lambda_client
 
     bus, runtime = os.environ.get('ENGINEERING_BUS_NAME', ''), os.environ.get('ENGINEERING_RUNTIME_FUNCTION', '')
-    rows = get_dynamodb_resource().Table(table)
-    return RunMonitor(get_dynamodb_client(), table, SessionStore(rows, RunStore(rows)),
+    engineering = get_dynamodb_resource().Table(table)
+    return RunMonitor(get_dynamodb_client(), table, SessionStore(engineering, RunStore(engineering)),
                       runtime=LambdaRuntime(get_lambda_client(), runtime) if runtime else None,
                       publisher=EventBridgePublisher(get_eventbridge_client(), bus, API_SOURCE) if bus else None)
 
 
 _MONITOR_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'conflict': ConflictError,
                    'unavailable': ServiceUnavailableError}
+
+
+def _acting_monitor(run_id: str) -> tuple[Any, Caller]:
+    """The monitor and its caller for an action, checked before the body is read: while the module is off every
+    caller gets 404, then anyone but an administrator 403, then a bad or unknown run id 404."""
+    monitor = _monitor(run_id)
+    if not monitor.run_exists(run_id):
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    caller = _caller()
+    require_admin_caller(caller)
+    return monitor, caller
 
 
 def _monitor_action(monitor: Any, caller: Caller, act: Any) -> dict:
@@ -955,9 +966,7 @@ def get_engineering_run(run_id: str):
 def signal_engineering_run(run_id: str):
     """``{signal, task_id?, attempt?, note?, confirm?}`` → ``{signal}``: an admin acting for themselves (never a
     delegated credential), like a run's decision; the supervisor applies it (engineering/monitor.py)."""
-    monitor = _monitor(run_id)   # (first: while the module is off, and for an unknown run, every caller gets 404)
-    caller = _caller()
-    require_admin_caller(caller)
+    monitor, caller = _acting_monitor(run_id)
     from engineering.monitor import parse_signal  # (the package ships only with the module)
 
     sent = _monitor_action(monitor, caller, lambda m, body, actor: m.signal(run_id, parse_signal(body), actor))
@@ -969,9 +978,7 @@ def signal_engineering_run(run_id: str):
 @tracer.capture_method
 def message_engineering_run(run_id: str):
     """``{to: conductor | agent, agent?, text, thread_id?}`` → ``{message}``: an admin's answer in the run."""
-    monitor = _monitor(run_id)
-    caller = _caller()
-    require_admin_caller(caller)
+    monitor, caller = _acting_monitor(run_id)
     from engineering.monitor import parse_message  # (the package ships only with the module)
 
     sent = _monitor_action(monitor, caller,

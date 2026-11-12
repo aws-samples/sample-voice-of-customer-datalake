@@ -11,8 +11,8 @@
  * role, or the delivery function's, whose wake renews a session: the only principals the agent roles trust and the
  * only ones that may tag their sessions): ONE fixed role per agent role, narrowed by the session's tags (ws, run,
  * agent, connection). It calls the board's and the broker's function URLs and puts events on the bus only with its
- * own source (its policy and the bus's both deny any other); it reads no queue (the role queues serve every run;
- * voc-engineering-delivery records its run's messages in the run's inbox and wakes it, once the router invokes it).
+ * own source (its policy and the bus's both deny any other); it reads no queue (there are none: the router invokes
+ * voc-engineering-delivery, which records its run's messages in the run's inbox and wakes it).
  * No MicroVM holds a host token (the connector's broker does). The supervisor's role: the run and session rows and
  * the registry, the checkpoints it reads, its own rule, the MicroVM operations and the launcher's AssumeRole. The
  * delivery's role: the runs' rows only (no registry, no delete), the checkpoints, resuming, continuing and ending a
@@ -382,8 +382,8 @@ class EngineeringRuntime extends Construct {
     }));
     // Create-only: the bucket refuses a put without If-None-Match, so no object is ever written over.
     role.addToPolicy(new iam.PolicyStatement({ sid: 'WriteOwnKeys', actions: ['s3:PutObject'], resources: [ownObjects] }));
-    // No queue: the role queues (voc-eng-tasks-<role>) serve every run, so no agent reads them; its run's messages,
-    // posted tasks included, are pushed to it by the delivery function, and the board (its run's only) is the record.
+    // No queue: its run's messages, posted tasks included, are pushed to it by the delivery function and read
+    // through the board's inbox op (its run's only).
     // The board's and the broker's function URLs (IAM-authenticated, no resource policy): the URL call, and the
     // invoke behind it only through a function URL.
     const urls = [peers.board.functionArn, peers.broker.functionArn];

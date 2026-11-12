@@ -707,6 +707,7 @@
     "ended": "Zakończony {{when}}",
     "totals": "Czas MicroVM: {{seconds, number}} s · Wiadomości: {{messages, number}}",
     "byModel": "Tokeny według modelu",
+    "actionsUnavailable": "To wdrożenie nie może jeszcze wysyłać sygnałów ani odpowiedzi: nie łączy monitora przebiegu ze środowiskiem uruchomieniowym i magistralą inżynierii.",
     "runSignals": "Cały przebieg",
     "agentSignals": "Agent {{agent}}",
     "signals": {
