@@ -462,7 +462,8 @@ def plan(detections: Sequence[Detection], repo: RepoView, *, changed_paths: Sequ
     """The ordered checks for the detected packs.
 
     ``changed_paths`` limits the checks to the roots the change touches (a round's first pass); ``None`` checks
-    every root. A repository a pack covers that has ``OWN_GATE_FILE`` runs that instead of every pack step.
+    every root. A repository a pack covers that has ``OWN_GATE_FILE`` runs that instead of every pack step but the
+    dependency steps (``setup``), which run first so the own gate finds its dependencies offline.
     Steps shared by two packs (the TypeScript half of rust-ts and python-ts) run once per root. ``python`` is
     the sandbox's interpreter, put where a manifest says ``{python}``.
     """
@@ -473,11 +474,9 @@ def plan(detections: Sequence[Detection], repo: RepoView, *, changed_paths: Sequ
                          for d in detections for tool in d.pack.needs.tools}.values()),
             network=tuple(sorted({host for d in detections for host in d.pack.needs.network})),
             image={name: version for d in detections for name, version in d.pack.needs.image.items()}))
-    if detections and OWN_GATE_FILE in repo.files:
-        own = PlannedCheck(key=f'own:{OWN_GATE_FILE}', pack_id=detections[0].pack.id, step_id='own', kind='test',
-                           name=f"the repository's own gate ({OWN_GATE_FILE})", language='repo', root='',
-                           argv=OWN_GATE_ARGV, timeout_s=OWN_GATE_TIMEOUT_S)
-        return dataclasses.replace(empty, checks=(own,), own_gate=True)
+    own_gate = bool(detections) and OWN_GATE_FILE in repo.files
+    if own_gate:
+        changed_paths = None   # the own gate checks the whole repository, so every root's dependencies come first
     all_roots = frozenset(root for d in detections for roots in d.roots.values() for root in roots)
     checks: dict[str, PlannedCheck] = {}
     skipped: dict[str, str] = {}
@@ -495,6 +494,13 @@ def plan(detections: Sequence[Detection], repo: RepoView, *, changed_paths: Sequ
                 else:
                     skipped[key] = 'not touched by the change'
     ordered = sorted(checks.values(), key=lambda c: KIND_ORDER.index(c.kind))
+    if own_gate:
+        # The repository's own gate replaces every pack step but the dependency step: it runs offline after it.
+        own = PlannedCheck(key=f'own:{OWN_GATE_FILE}', pack_id=detections[0].pack.id, step_id='own', kind='test',
+                           name=f"the repository's own gate ({OWN_GATE_FILE})", language='repo', root='',
+                           argv=OWN_GATE_ARGV, timeout_s=OWN_GATE_TIMEOUT_S)
+        setup = tuple(c for c in ordered if c.kind == 'setup')
+        return dataclasses.replace(empty, checks=(*setup, own), own_gate=True)
     return dataclasses.replace(empty, checks=tuple(ordered), skipped=tuple(skipped.items()))
 
 

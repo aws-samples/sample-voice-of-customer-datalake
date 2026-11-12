@@ -15,8 +15,8 @@ They follow the quality gates this repository holds itself to (format, lint, typ
 zero findings, and proof that each gate looked), adapted for running **inside a target repository** instead of
 setting the gates up in one:
 
-- **The repository's own gate first.** A repository a pack covers that has `scripts/validate.sh` runs that and
-  nothing else; a step uses the repository's own npm script (`lint`, `typecheck`, `test`) when it has one. A change
+- **The repository's own gate first.** A repository a pack covers that has `scripts/validate.sh` runs that instead
+  of the pack's checks, after the pack's dependency steps (it runs offline, like every check); a step uses the repository's own npm script (`lint`, `typecheck`, `test`) when it has one. A change
   whose diff (in any round) adds, edits or deletes `scripts/validate.sh` stops at a human decision point: the gate
   never lets a change rewrite the gate script it is judged by. A change can still weaken a check through the files
   that choose it (an npm `test` script, a lint config it deletes): the reviewers read that in the diff, and the

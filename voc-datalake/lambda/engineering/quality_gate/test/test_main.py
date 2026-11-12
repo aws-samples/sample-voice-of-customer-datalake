@@ -120,6 +120,16 @@ def test_gate_reviews_the_change_and_writes_the_pr_section(tmp_path, capsys):
     assert markdown.read_text().startswith('## Quality gate\n\n**Verdict: GO**')
 
 
+def test_gate_refuses_bad_params_as_a_usage_error(tmp_path, capsys):
+    repo = _repo(tmp_path, 'ok.py')
+    gate_input = tmp_path / 'input.json'
+    gate_input.write_text(json.dumps({'task': 't', 'diff': '+x\n', 'params': {'max_rounds': 9}}))
+    with pytest.raises(SystemExit):
+        main(['gate', '--repo', str(repo), '--packs', str(_packs(tmp_path)), '--input', str(gate_input)],
+             model=RecordedModel({}))
+    assert 'the input: max_rounds must be from 1 to 5' in capsys.readouterr().err
+
+
 def test_gate_needs_an_input(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main(['gate', '--repo', str(tmp_path)])

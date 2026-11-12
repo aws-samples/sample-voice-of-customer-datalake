@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from engineering.quality_gate.checks import run_plan
-from engineering.quality_gate.gate import GateConfig, GateInput, QualityGate
+from engineering.quality_gate.gate import GateConfig, GateConfigError, GateInput, QualityGate
 from engineering.quality_gate.models import BedrockModel, ModelClient
 from engineering.quality_gate.packs import GatePlan, RepoView, default_packs_dir, detect, load_packs, plan
 from engineering.quality_gate.review import changed_paths
@@ -53,7 +53,7 @@ def _changed(path: str | None) -> list[str] | None:
 
 def _gate(args: argparse.Namespace, model: ModelClient | None) -> int:
     data = json.loads(Path(args.input).read_text(encoding='utf-8'))
-    changed = [str(path) for path in data.get('changed_paths', [])]
+    changed = sorted({*map(str, data.get('changed_paths', [])), *changed_paths(str(data.get('diff', '')))})
     round_plan, final_plan = _plans(args, changed)
     gate_input = GateInput(task=str(data.get('task', '')), diff=str(data.get('diff', '')),
                            review_guide=str(data.get('review_guide', '')),
@@ -85,7 +85,10 @@ def main(argv: Sequence[str] | None = None, *, model: ModelClient | None = None)
     if args.command == 'gate':
         if not args.input:
             parser.error('gate needs --input')
-        return _gate(args, model)
+        try:
+            return _gate(args, model)
+        except GateConfigError as exc:
+            parser.error(f'the input: {exc}')
     round_plan, _ = _plans(args, _changed(args.changed))
     if args.command == 'plan':
         print(json.dumps(_plan_json(round_plan), indent=2))  # noqa: T201 — the CLI's output

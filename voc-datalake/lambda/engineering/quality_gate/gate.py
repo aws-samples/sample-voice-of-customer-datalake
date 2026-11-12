@@ -39,6 +39,7 @@ from engineering.quality_gate.review import (
 from engineering.quality_gate.runner import CommandRunner
 from engineering.quality_gate.text import clip, nonce, redact
 from shared.agent_run_decisions import needs_human_payload
+from shared.logging import logger
 
 DEFAULT_ROUNDS = 3
 MAX_ROUNDS = 5
@@ -305,10 +306,15 @@ class QualityGate:
         return found
 
     def _ask(self, agent: str, model_id: str, system: str, prompt: str, parse: Callable[[str], Any]) -> Any:
-        """The parsed answer; one retry when the first does not follow the contract; ``_Stop`` after that."""
+        """The parsed answer; one retry when the first does not follow the contract; ``_Stop`` after that, or when
+        the model call itself fails (the gate still writes its record)."""
         for _ in range(2):
-            parsed = parse(self.model.complete(ModelRequest(agent=agent, model_id=model_id, system=system,
-                                                            prompt=prompt)))
+            request = ModelRequest(agent=agent, model_id=model_id, system=system, prompt=prompt)
+            try:
+                answer = self.model.complete(request)
+            except Exception as exc:   # any model failure stops the gate at a person, with its record
+                raise _Stop('verification', f'{agent}: the model call failed ({type(exc).__name__})') from exc
+            parsed = parse(answer)
             if parsed is not None:
                 return parsed
         raise _Stop('verification', f'{agent} answered twice without following its contract')
@@ -386,6 +392,10 @@ class QualityGate:
             stop, final = self._loop(state)
         except _Stop as exc:
             stop, objection = exc.reason, exc.objection
+        except Exception as exc:
+            # A reviser, a re-plan or a runner that fails still leaves a record and a person's decision.
+            logger.exception('quality gate: stopped by an unexpected error')
+            stop, objection, final = 'verification', f'the gate stopped on an error ({type(exc).__name__})', None
         try:
             tree = tree_hash(self.git_runner)
         except GateError as exc:

@@ -18,7 +18,7 @@ from engineering.quality_gate.gate import (
     ReviewerSpec,
     Revision,
 )
-from engineering.quality_gate.models import OPUS, SONNET
+from engineering.quality_gate.models import OPUS, SONNET, ModelClient
 from engineering.quality_gate.packs import GatePlan, Needs, Tool
 from engineering.quality_gate.review import FINAL_GO_SYSTEM, REVIEWER_SYSTEM, Finding
 from engineering.quality_gate.runner import CommandResult
@@ -61,7 +61,7 @@ def _replies(rounds: list[str], *, quality: list[str] | None = None, final: list
             FINAL: final if final is not None else [GO]}
 
 
-def _gate(model: RecordedModel, **kwargs: Any) -> QualityGate:
+def _gate(model: ModelClient, **kwargs: Any) -> QualityGate:
     kwargs.setdefault('config', GateConfig())
     kwargs.setdefault('round_plan', one_check_plan())
     kwargs.setdefault('runner', ScriptedRunner())
@@ -331,6 +331,27 @@ class TestNeedsHuman:
         model = RecordedModel(_replies([CLEAN, CLEAN], quality=[BUG, CLEAN]))
         outcome = _gate(model, reviser=Leaky([FIXED])).run()
         assert outcome.record.outcomes == {'R1-quality-1': ('fixed', 'key <redacted>')}
+
+    def test_a_failing_model_call_stops_the_gate_with_its_record(self):
+        class Down:
+            def complete(self, request: Any) -> str:
+                raise TimeoutError(request.agent)
+
+        outcome = _gate(Down()).run()
+        assert (outcome.record.verdict, outcome.record.stop_reason, outcome.record.model_calls) == (
+            'STOPPED', 'verification', 1)
+        assert outcome.message == 'Quality gate: reviewer:security: the model call failed (TimeoutError)'
+
+    def test_a_failing_reviser_stops_the_gate_with_its_record(self):
+        class Broken:
+            def revise(self, round_no: int, findings: Sequence[Finding],  # noqa: ARG002 — the protocol's signature
+                       check_output: Mapping[str, str]) -> Revision:  # noqa: ARG002 — the protocol's signature
+                raise RuntimeError(findings[0].id)
+
+        outcome = _gate(RecordedModel(_replies([CLEAN], quality=[BUG])), reviser=Broken()).run()
+        assert (outcome.record.verdict, outcome.record.stop_reason, len(outcome.record.rounds)) == (
+            'STOPPED', 'verification', 1)
+        assert outcome.message == 'Quality gate: the gate stopped on an error (RuntimeError)'
 
     def test_a_final_go_off_contract_is_never_a_go(self):
         outcome = _gate(RecordedModel(_replies([CLEAN], final=['GO!', 'yes']))).run()

@@ -160,8 +160,10 @@ class TestPlanning:
     def test_the_own_gate_replaces_every_step(self):
         gate_plan = _plan({'Cargo.toml': '', 'src/lib.rs': '', 'scripts/validate.sh': ''})
         assert gate_plan.own_gate is True
-        assert [(c.key, c.argv) for c in gate_plan.checks] == [
-            ('own:scripts/validate.sh', ('bash', 'scripts/validate.sh'))]
+        assert [(c.key, c.argv[-1]) for c in gate_plan.checks] == [
+            ('rust.fetch@.', 'fetch'), ('own:scripts/validate.sh', 'scripts/validate.sh')]
+        mono = {'a/Cargo.toml': '', 'a/src/lib.rs': '', 'b/Cargo.toml': '', 'b/src/lib.rs': '', 'scripts/validate.sh': ''}
+        assert _keys(mono, changed_paths=['a/src/lib.rs']) == ['rust.fetch@a', 'rust.fetch@b', 'own:scripts/validate.sh']
         assert _plan({'scripts/validate.sh': '', 'notes.md': ''}).checks == ()
 
     def test_a_change_checks_only_the_roots_it_touches(self):
