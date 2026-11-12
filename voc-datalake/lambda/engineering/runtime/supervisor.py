@@ -228,23 +228,41 @@ class Supervisor:
         MicroVM nears its 8-hour limit); wake it after."""
         waiting = lease is not None and lease.waiting
         if not waiting:
-            return self._wake(session)
+            woken = self._wake(session)
+            return woken if woken.wait_since is None else replace(woken, wait_since=None)
         if session.status != 'working':
             return session
-        long_wait = session.suspended and now - (session.suspended_at or now) >= self.timings.wait_suspend_limit
+        if session.wait_since is None:
+            session = replace(session, wait_since=now)
+        # A message woke it: it reads the message before it is suspended again.
+        in_grace = session.woken_at is not None and now - session.woken_at < self.timings.wake_grace
+        # The wait's own clock, whether its MicroVM is suspended or a message keeps it awake. Only the one
+        # continuation a message makes per wait (``woken_wait``) reads its message before the clock holds it again:
+        # a resumed agent's grace never stops the clock, so no stream of messages keeps a MicroVM running.
+        continued_for_it = in_grace and self._continued_for_a_message(session)
+        long_wait = not continued_for_it and now - (session.wait_since or now) >= self.timings.wait_suspend_limit
         if long_wait or now - session.started_at >= self.timings.pause_after:
             self.bus.emit(session.run_id, session.agent_id, 'pause', 'Your wait is long: checkpoint and pause.')
             return replace(self._wake(session), status='pause_requested', pause_requested_at=now, after_pause='wait')
         if not session.suspended:
+            if in_grace:
+                # Its harness reads the message (and closes the wait) before it is suspended again.
+                return session
             self._vm_call(lambda: self.runtime.suspend(session.vm))
-            return replace(session, suspended=True, suspended_at=now)
+            return replace(session, suspended=True)
         return session
+
+    @staticmethod
+    def _continued_for_a_message(session: AgentSession) -> bool:
+        """This MicroVM is the one continuation a message made for the agent's current wait (not one after it)."""
+        return (session.woken_wait is not None and session.woken_wait == session.wait_since
+                and session.woken_continuation == session.continuation)
 
     def _wake(self, session: AgentSession) -> AgentSession:
         if not session.suspended:
             return session
         self._vm_call(lambda: self.runtime.resume(session.vm))
-        return replace(session, suspended=False, suspended_at=None)
+        return replace(session, suspended=False)
 
     def _renew(self, session: AgentSession, now: int) -> AgentSession:
         """Hand the MicroVM a fresh role session when it has none or its session lapses within 6 minutes."""
@@ -299,6 +317,9 @@ class Supervisor:
         command = commands[session.boot_index]
         exec_id = self._vm_call(lambda: self.runtime.start_exec(vm, command))
         last = session.boot_index == len(commands) - 1
+        if last and self._continued_for_a_message(session):
+            # The continuation a message made for this wait: its grace to read the message starts with its harness.
+            session = replace(session, woken_at=now)
         return self._save(replace(session, exec_id=exec_id, status='working' if last else 'booting'))
 
     def _work(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession:
@@ -423,7 +444,7 @@ class Supervisor:
 
     def _end(self, session: AgentSession, status: Status, now: int) -> AgentSession:
         self._terminate(session)
-        return self._save(replace(session, status=status, exec_id=None, suspended=False, suspended_at=None,
+        return self._save(replace(session, status=status, exec_id=None, suspended=False,
                                   microvm_seconds=session.microvm_seconds + self._elapsed(session, now),
                                   last_tick_at=now))
 
@@ -458,6 +479,55 @@ class Supervisor:
                 # Another move is under way on this agent: nothing was done; the caller sends the signal again.
                 answers[session.agent_id] = 'busy'
         return answers
+
+    def wake(self, run_id: str, addressee: Callable[[AgentSession], bool], now: int) -> dict[str, str]:
+        """A message for these agents of the run is in their inbox (``delivery.py``): each working or waiting one is
+        woken to read it (a booting or pausing one reads its inbox once it runs, so it is left alone); each woken
+        one's status, or ``busy`` when another move holds it (the caller tries again).
+
+        Nobody is woken in a run that ended, is past its 30 days or spent its budget: the message waits in the inbox
+        (this runs outside the tick, so it checks the run itself rather than the tick's view of it).
+        """
+        if (self.control.stop_requested(run_id) or now - self.control.started_at(run_id) >= THIRTY_DAYS
+                or self.control.budget(run_id).exceeded):
+            return {}
+        answers: dict[str, str] = {}
+        done: set[str] = set()
+
+        def woken(session: AgentSession) -> AgentSession:
+            moved = self._woken(session, now)
+            done.add(session.agent_id)
+            return moved
+
+        for session in self.sessions.of_run(run_id):
+            if session.status not in ('working', 'waiting') or not addressee(session):
+                continue
+            try:
+                answer = self._guarded(session, now, woken).status
+            except SessionBusy:
+                answer = 'busy'
+            # A wake that failed (a MicroVM or launcher call; ``_guarded`` records it) is tried again, like a busy one.
+            answers[session.agent_id] = answer if session.agent_id in done else 'busy'
+        return answers
+
+    def _woken(self, session: AgentSession, now: int) -> AgentSession:
+        """Held without a MicroVM on a long wait: continued in a new one, which reads the message, once per wait (a
+        later message waits for the wait to close). Working (its MicroVM suspended for an open wait, or about to be):
+        resumed with a fresh role session and kept awake for ``wake_grace``, which a later message does not extend;
+        the wait's 45-minute hold still counts meanwhile."""
+        if session.status == 'waiting':
+            # Held for a wait the tick saw open (one held before ``wait_since`` existed: this wait, from now).
+            wait = session.wait_since if session.wait_since is not None else now
+            if session.woken_wait == wait:
+                return session
+            # The once-per-wait record goes in the same write that names the new MicroVM; its grace starts when its
+            # harness does (``_boot``), so a slow checkout does not eat it.
+            return self._continue(replace(session, wait_since=wait, woken_wait=wait,
+                                          woken_continuation=session.continuation + 1), now, crashed=False)
+        in_grace = session.woken_at is not None and now - session.woken_at < self.timings.wake_grace
+        # A continuation's one grace is never moved by a later message; nor is a running one.
+        keep = in_grace or self._continued_for_a_message(session)
+        return self._save(replace(self._renew(self._wake(session), now), woken_at=session.woken_at if keep else now))
 
     def _signal_paused(self, session: AgentSession, kind: str, now: int) -> AgentSession:
         if kind == 'resume':

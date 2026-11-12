@@ -12,6 +12,8 @@ An agent runs as long as its task needs and it makes progress. These are the onl
   not acknowledged by ``hard_stop`` (7 h 50) is treated as a crash, so no MicroVM reaches its limit.
 - ``max_crash_continuations``: a crash is continued this many times in a row; then the task goes back
   to the board (or, for the conductor, the run to a person).
+- ``wake_grace``: a MicroVM woken for a message (``delivery.py``) is not suspended again for an open wait for
+  this long, so its harness reads its inbox and closes the wait first.
 
 Model tokens and cost stay hard caps set by a person, per run; they are read from the run, never here.
 """
@@ -46,6 +48,8 @@ class Timings:
     boot_deadline: int = 30 * MINUTE
     #: MicroVM calls failing this many ticks in a row are a crash (the MicroVM is gone or never came up).
     max_runtime_failures: int = 3
+    #: A MicroVM woken for a message stays awake this long on an open wait (its harness reads the message).
+    wake_grace: int = 10 * MINUTE
 
 
 #: The clocks a deployment may set (``ENGINEERING_TIMINGS``), each with its bounds in seconds.

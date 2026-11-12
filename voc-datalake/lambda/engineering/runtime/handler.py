@@ -16,6 +16,9 @@
 - ``{"action": "signal", "run_id", "agent_id"?, "signal"}``: the run monitor's Save, Pause, Resume, Shut down
   and Stop now (``Supervisor.signal``).
 
+``delivery_handler`` is voc-engineering-delivery's entry point, the same code and role: the router's message for
+an agent, the conductor or a role of a run, recorded in the run's inbox and its addressees woken (``delivery.py``).
+
 The board and the bus are not this track's: until they are wired they are ``ports.PendingPorts``, which refuse,
 and the runtime stays behind ``-c engineeringAgents=true``. The run's controls are its own rows
 (``runs.TableRunControl``); a Resume of the whole run also takes it off its decision point (``RunStore.resume``).
@@ -35,6 +38,7 @@ from aws_lambda_powertools.metrics import MetricUnit
 from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import CheckpointReader
+from engineering.runtime.delivery import deliver
 from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused
 from engineering.runtime.launcher import Launcher
 from engineering.runtime.ports import PendingPorts
@@ -214,6 +218,17 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
         supervisor.runtime.terminate(vm)
         raise
     return {'run_id': session.run_id, 'agent_id': session.agent_id, 'status': session.status}
+
+
+@metrics.log_metrics
+@measure_invocation_cost
+def delivery_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
+    """voc-engineering-delivery: the router's asynchronous ``{"message", "seq"}`` (``delivery.deliver``)."""
+    from shared.aws import get_dynamodb_resource
+    table = get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE'])
+    answer = deliver(event, table=table, supervisor=_supervisor(), now=int(clock()))
+    logger.info('engineering delivery', extra={'event_id': answer['event_id'], 'recorded': answer['recorded']})
+    return answer
 
 
 ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {

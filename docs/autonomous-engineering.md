@@ -274,8 +274,10 @@ What exists:
   role and the agent roles with a voice (all but the coach: Runtime → Not aligned yet) and nothing else, and denies
   each agent role every source but its own.
 
-Not built yet: the delivery function the router names (it holds no invoke on it yet), so a run's posted tasks reach
-its agents only through the board; the run coordinator; the workspace. The rest of this section is the
+Not built yet: the router's side of delivery (it holds no invoke on the [runtime](#runtime-one-microvm-per-agent)'s
+delivery function yet, sends a posted task to its role's queue rather than to it, and invokes it with the bare message
+rather than `{"message", "seq"}`), and the board's
+`inbox` op, so a run's posted tasks reach its agents only through the board; the run coordinator; the workspace. The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
 holds, and the design's type table and per-run inboxes are what the next slices bring the code to or the table to.
 
@@ -506,8 +508,9 @@ next slice):
   system, in any run. It gets a voice with a run-scoped coach source.
 - **Posted tasks.** A role's task queue (`voc-eng-tasks-<role>`) serves every run, and IAM cannot narrow a queue
   to a run, so no agent role reads one (one run's agent would see, and could delete, another run's task notices).
-  Until the delivery function pushes a run's posted tasks to its own agents (the runtime's next slice), an agent
-  learns of its run's tasks only from the board, which serves the caller's run only.
+  The delivery function (below) records a run's posted tasks in that run's inbox, but the router still sends them
+  to the role queues, and the board's `inbox` op is not built: until both are, an agent learns of its run's tasks
+  only from the board, which serves the caller's run only.
 - **The harness.** Its board, inbox and broker interfaces still refuse every call.
 
 Each agent of a run runs in its own Lambda MicroVM, from its language's image, with its own sparse checkout from the
@@ -580,6 +583,25 @@ continues it in a new one once the wait closes.
   roles with a voice), calls the allowlisted models, and deletes nothing. No MicroVM
   auth token is ever put in an event, a log, a row or a checkpoint: it is minted when needed (at most 60 minutes),
   refreshed 5 minutes before it lapses, held in memory only, and refuses to be serialised.
+- **Delivery.** voc-engineering-delivery, the function the inbox router invokes for a message to an agent, the
+  run's conductor or a role of the run (a posted task): the supervisor's code and role. It records the message
+  once in that run's inbox, `WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<seq>#<event_id>` in voc-engineering (the
+  addressee `agent:<agent>`, `conductor` or `role:<role>`; the seq its place in the conversation, kept on a
+  redelivery, so a conditional put makes a redelivery write nothing; a message without its seq is refused), and
+  wakes the run's live addressees: a working agent's MicroVM suspended for an open wait is resumed with a fresh
+  session and kept awake 10 minutes (`wake_grace`, which a later message does not extend) so its harness reads the
+  message and closes the wait, an agent held without a MicroVM is continued in a new one (once per wait), and a
+  booting or pausing one reads its inbox once it runs. The wait's 45-minute hold counts from the wait's start,
+  awake or not, so messages cannot keep a MicroVM running; only the one continuation a message makes per wait gets
+  one grace before the hold applies again, to read the message, starting when its harness starts (a slow checkout
+  does not eat it) and moved by no later message; a continuation after it (a crash, its own pause) gets none. (The wait's start is when a tick first saw it open: a
+  wait closed and reopened between two ticks counts as one, held sooner; the board's lease carrying its wait's
+  own start would end that.) Nobody is woken in a run that ended, is past its 30 days
+  or spent its budget: the message waits in the inbox. No queue: a suspended MicroVM cannot poll, so delivery is a
+  push. An addressee another move holds, or whose wake failed, fails the invocation; Lambda retries it twice (the
+  row already there, only the wake repeats), then it goes to `voc-engineering-dlq`, and that agent is reached only
+  when its wait's hold or a later message wakes it. Nothing deletes an inbox row; the board's `inbox` op reads the
+  caller's run's rows after a seq cursor, and the harness keeps each message once by its event id.
 - **The run's start and end.** The runtime's `start_run` writes the run's `META` row in voc-engineering
   (`WS#<ws>#RUN#<run>` / `META`: its task cap, which the board counts its tasks against, its hard caps on tokens and
   cost, its goal, repository, flow, status and start time, on which the router numbers the conversation) once, and

@@ -138,6 +138,22 @@ describe('with -c engineeringAgents=true', () => {
     expect(() => runtimeStack({ engineeringAgents: 'true' }, false)).toThrow(/engineering bus/);
   });
 
+  it('runs voc-engineering-delivery as the supervisor (its code and role), retried twice, failures to the DLQ', () => {
+    const [dlq] = Object.keys(template.findResources('AWS::SQS::Queue'));
+    const functions = template.findResources('AWS::Lambda::Function', {
+      Properties: { FunctionName: Match.stringLikeRegexp('^voc-engineering-(runtime|delivery)$') },
+    });
+    const roles = new Set(Object.values(functions).map((fn) => JSON.stringify(fn.Properties?.Role)));
+    expect([Object.keys(functions).length, roles.size]).toStrictEqual([2, 1]);
+    expect(count(template, 'AWS::Lambda::Function', {
+      FunctionName: 'voc-engineering-delivery', Handler: 'engineering/runtime/handler.delivery_handler',
+    })).toBe(1);
+    expect(count(template, 'AWS::Lambda::EventInvokeConfig', {
+      MaximumRetryAttempts: 2,
+      DestinationConfig: { OnFailure: { Destination: { 'Fn::GetAtt': [dlq, 'Arn'] } } },
+    })).toBe(1);
+  });
+
   it('configures no MicroVM image by default, so every launch is refused until one is set', () => {
     expect(supervisorEnv(template).ENGINEERING_IMAGE_ARNS).toBe('{}');
   });

@@ -68,7 +68,6 @@ class AgentSession:
     after_pause: After = 'continue'
     #: The supervisor suspended this MicroVM for an open wait (resumed when the wait ends), since when.
     suspended: bool = False
-    suspended_at: int | None = None
     #: Calls to this MicroVM that failed in a row (the third is a crash: it is gone or never came up).
     failures: int = 0
     #: A tick or a signal is moving this session until then (epoch seconds): nobody else may (``SessionStore.claim``).
@@ -77,6 +76,15 @@ class AgentSession:
     restore_key: str | None = None
     #: When the launcher's role session handed to this MicroVM lapses (None: none handed yet).
     session_expires_at: int | None = None
+    #: When a message last woke it (``Supervisor.wake``): an open wait does not suspend it again for a while.
+    woken_at: int | None = None
+    #: When its current open wait began (None: no open wait): the 45-minute hold counts from here, awake or not.
+    wait_since: int | None = None
+    #: The wait (its ``wait_since``) a message already continued it in a new MicroVM for: once per wait, whatever
+    #: continuations (a crashed boot) follow.
+    woken_wait: int | None = None
+    #: The continuation that message made: it alone gets the grace to read it (none that follows it does).
+    woken_continuation: int | None = None
     #: Live cost and inspection data for the run monitor.
     microvm_seconds: int = 0
     last_tick_at: int | None = None
@@ -125,13 +133,13 @@ class AgentSession:
         """This session continued in ``vm``: booting again, the next continuation, nothing in flight."""
         return replace(self, vm_id=vm.vm_id, endpoint=vm.endpoint, started_at=now, status='booting',
                        continuation=self.continuation + 1, boot_index=0, exec_id=None, asked_at=None,
-                       pause_requested_at=None, after_pause='continue', suspended=False, suspended_at=None,
-                       failures=0, restore_key=restore_key, tokens_before=self.tokens,
+                       pause_requested_at=None, after_pause='continue', suspended=False,
+                       failures=0, restore_key=restore_key, tokens_before=self.tokens, woken_at=None,
                        session_expires_at=None, last_tick_at=now)
 
 
-_OPTIONAL_INTS: Final = ('asked_at', 'pause_requested_at', 'session_expires_at', 'last_tick_at', 'suspended_at',
-                         'claimed_until')
+_OPTIONAL_INTS: Final = ('asked_at', 'pause_requested_at', 'session_expires_at', 'last_tick_at',
+                         'claimed_until', 'woken_at', 'wait_since', 'woken_wait', 'woken_continuation')
 _OPTIONAL_STRS: Final = ('exec_id', 'restore_key')
 
 

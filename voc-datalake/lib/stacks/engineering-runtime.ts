@@ -4,6 +4,7 @@
  *   EventBridge rule, rate(1 minute), created DISABLED ───▶ voc-engineering-runtime {action: tick}  (the supervisor)
  *   the run coordinator ───────────────────────────────────▶ voc-engineering-runtime {action: launch}
  *   the run monitor ───────────────────────────────────────▶ voc-engineering-runtime {action: signal}
+ *   the inbox router (async) ──────────────────────────────▶ voc-engineering-delivery {message, seq}
  *   a run's start / its end ──────────────▶ voc-engineering-runtime {action: start_run / end_run} (and the rule)
  *
  * One MicroVM per agent. Its agent user gets a 15-minute session of its agent role from the launcher (this function's
@@ -177,9 +178,64 @@ class EngineeringRuntime extends Construct {
     const supervisorRole = workerRole(this, 'EngineeringSupervisorRole');
     const agentRoles = new Map(AGENT_ROLES.map((agentRole) => [agentRole, this.createAgentRole(props, agentRole,
       supervisorRole)]));
-    const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName);
+    const environment = this.environment(props, agentRoles, ruleName);
+    const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName, environment);
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
+    this.createDelivery(props, supervisorRole, environment);
     if (flag(this, SUPERVISOR_ALARM_FLAG)) this.createAlarms(fn);
+  }
+
+  /** The supervisor's and the delivery function's environment (one code, one role). */
+  private environment(props: WiredProps, agentRoles: Map<string, iam.Role>, ruleName: string): Record<string, string> {
+    const stack = cdk.Stack.of(this);
+    return {
+      ENGINEERING_TABLE: props.engineeringTable.tableName,
+      RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
+      SUPERVISOR_RULE_NAME: ruleName,
+      ENGINEERING_AGENT_ROLE_ARNS: stack.toJsonString(Object.fromEntries(
+        [...agentRoles.entries()].map(([agentRole, agentIam]) => [agentRole, agentIam.roleArn]))),
+      // Image ARN per language, from `-c engineeringImageArns` once the images are built (docs/deployment.md);
+      // a language without one is refused at launch (aws.py AwsMicroVmRuntime.run).
+      ENGINEERING_IMAGE_ARNS: JSON.stringify(imageArns(this)),
+      ENGINEERING_EXTRA_EGRESS: '[]',
+      // The supervisor's settable clocks (lambda/engineering/runtime/caps.py SETTABLE); {} keeps the defaults.
+      ENGINEERING_TIMINGS: '{}',
+    };
+  }
+
+  /**
+   * voc-engineering-delivery, the name the inbox router invokes (engineering-bus.ts ENGINEERING_DELIVERY_FUNCTION):
+   * a message for an agent, the conductor or a role of a run goes into that run's inbox (its rows in voc-engineering)
+   * and its addressees are woken (lambda/engineering/runtime/delivery.py). The supervisor's code and role: a wake
+   * renews an agent's role session, and the agent roles trust the launcher's role alone, so a role of its own would
+   * have to be the launcher too (the supervisor's rule switch and registry delete come with it, unused here). An
+   * invocation fails while an addressee is busy or its wake failed: Lambda retries it twice, then records it in
+   * voc-engineering-dlq.
+   */
+  private createDelivery(props: WiredProps, role: iam.Role, environment: Record<string, string>): void {
+    const dlq = props.peers.deadLetterQueue;
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'DeliveryFailureRecords', actions: ['sqs:SendMessage'], resources: [dlq.queueArn],
+    }));
+    createWorkerFunction(this, 'EngineeringDelivery', {
+      tree: 'engineering',
+      functionName: props.uniqueName('voc-engineering-delivery'),
+      handler: 'engineering/runtime/handler.delivery_handler',
+      role,
+      layer: props.layer,
+      // A wake can start a MicroVM (a continuation); no model call.
+      timeout: cdk.Duration.minutes(2),
+      memorySize: 512,
+      serviceName: 'voc-engineering-delivery',
+      // Its code launches nothing and switches no rule: neither the extra egress nor the rule's name.
+      environment: Object.fromEntries(Object.entries(environment)
+        .filter(([name]) => !['ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME'].includes(name))),
+      // The inbox row is written once (a conditional put), so a retry only wakes again.
+      retryAttempts: 2,
+      // Not destinations.SqsDestination, whose grant adds every key action: the send above and the key's use
+      // through SQS below are all a failure record needs.
+      onFailure: { bind: () => ({ destination: dlq.queueArn }) },
+    });
   }
 
   /**
@@ -262,6 +318,7 @@ class EngineeringRuntime extends Construct {
 
   private createSupervisor(
     props: WiredProps, role: iam.Role, agentRoles: Map<string, iam.Role>, ruleName: string,
+    environment: Record<string, string>,
   ): lambda.Function {
     const { uniqueName, kmsKey, engineeringTable, rawDataBucket } = props;
     const stack = cdk.Stack.of(this);
@@ -286,8 +343,9 @@ class EngineeringRuntime extends Construct {
       actions: ['s3:ListBucket'], resources: [rawDataBucket.bucketArn],
       conditions: { StringLike: { 's3:prefix': [`${ENGINEERING_RUNS_PREFIX}*`] } },
     }));
-    // The key, only through S3 (checkpoint reads) and DynamoDB (the session rows): never a direct KMS call.
-    role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb']));
+    // The key, only through S3 (checkpoint reads), DynamoDB (the session and inbox rows) and SQS (the delivery's
+    // failure records): never a direct KMS call.
+    role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb', 'sqs']));
     const microvms = ['microvm', 'microvm-image'].map((resource) => stack.formatArn({
       service: 'lambda', resource, resourceName: '*', arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
     }));
@@ -318,19 +376,7 @@ class EngineeringRuntime extends Construct {
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
       serviceName: 'voc-engineering-runtime',
-      environment: {
-        ENGINEERING_TABLE: engineeringTable.tableName,
-        RAW_DATA_BUCKET: rawDataBucket.bucketName,
-        SUPERVISOR_RULE_NAME: ruleName,
-        ENGINEERING_AGENT_ROLE_ARNS: stack.toJsonString(Object.fromEntries(
-          [...agentRoles.entries()].map(([agentRole, agentIam]) => [agentRole, agentIam.roleArn]))),
-        // Image ARN per language, from `-c engineeringImageArns` once the images are built (docs/deployment.md);
-        // a language without one is refused at launch (aws.py AwsMicroVmRuntime.run).
-        ENGINEERING_IMAGE_ARNS: JSON.stringify(imageArns(this)),
-        ENGINEERING_EXTRA_EGRESS: '[]',
-        // The supervisor's settable clocks (lambda/engineering/runtime/caps.py SETTABLE); {} keeps the defaults.
-        ENGINEERING_TIMINGS: '{}',
-      },
+      environment,
     });
   }
 

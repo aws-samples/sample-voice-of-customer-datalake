@@ -7,6 +7,7 @@ from typing import Any
 import boto3
 import pytest
 
+from engineering.bus.test.messages import message
 from engineering.runtime import handler
 from engineering.runtime.aws import AwsMicroVmRuntime
 from engineering.runtime.interface import AgentSpec, MicroVm, RuntimeRefused
@@ -274,6 +275,19 @@ def test_until_the_board_and_bus_land_a_tick_with_live_sessions_moves_nothing_ra
 def test_every_pending_port_refuses_rather_than_guesses(method: str, args: tuple[str, ...]):
     with pytest.raises(PortNotWired, match='not wired yet'):
         getattr(PendingPorts(), method)(*args)
+
+
+def test_the_delivery_entry_point_records_the_message_in_its_runs_inbox(wired: Any):
+    assert wired is not None
+    handler.lambda_handler(LAUNCH, None)
+    raw = message(run_id=RUN, to={'kind': 'agent', 'id': 'fixer-1'}, refs={'s3': []})
+    answer = handler.delivery_handler({'message': raw, 'seq': 3}, None)
+    # A booting agent reads its inbox once it runs: recorded, and left alone.
+    assert answer == {'event_id': raw['event_id'], 'recorded': True, 'woken': {}}
+    rows = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE).query(
+        KeyConditionExpression='pk = :run AND begins_with(sk, :inbox)',
+        ExpressionAttributeValues={':run': f'WS#default#RUN#{RUN}', ':inbox': 'INBOX#agent:fixer-1#'})['Items']
+    assert [row['event_id'] for row in rows] == [raw['event_id']]
 
 
 def test_an_unknown_action_is_refused():

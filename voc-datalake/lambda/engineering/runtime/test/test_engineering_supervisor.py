@@ -551,6 +551,21 @@ def test_a_long_open_wait_is_checkpointed_and_held_without_a_microvm_then_contin
     assert (world.session().status, world.session().continuation) == ('booting', 1)
 
 
+def test_a_new_wait_is_held_45_minutes_after_its_own_start_not_the_last_ones(world: World):
+    _, lease = _on_an_open_wait(world, SLEEP)
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(lease, waiting=False)
+    world.supervisor.tick(1060)
+    assert world.session().wait_since is None
+    second = 1001 + T.wait_suspend_limit - 60
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(lease, waiting=True)
+    world.supervisor.tick(second)
+    # Past 45 minutes from the first wait's start, but not from its own.
+    world.supervisor.tick(1001 + T.wait_suspend_limit + 60)
+    assert (world.session().status, world.session().suspended) == ('working', True)
+    world.supervisor.tick(second + T.wait_suspend_limit)
+    assert world.session().status == 'pause_requested'
+
+
 def test_save_on_a_suspended_agent_wakes_it_renews_its_session_and_saves(world: World):
     working, _ = _on_an_open_wait(world, SLEEP)
     calls = len(world.sts.calls)
