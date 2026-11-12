@@ -15,6 +15,7 @@ numbers out of order, so a reader that follows the tail re-reads a short window 
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,6 +44,18 @@ class ConversationStore:
         """``client`` is a low-level DynamoDB client (boto3's, or a test's)."""
         self.client = client
         self.table = table
+
+    def page(self, ws: str, run_id: str, *, after: int, limit: int) -> list[dict[str, Any]]:
+        """The conversation from ``after`` on, in order: ``{seq, message}`` (the message as voc-msg/1 data)."""
+        answer = self.client.query(
+            TableName=self.table, ConsistentRead=True, Limit=limit,
+            KeyConditionExpression='pk = :pk AND sk BETWEEN :from AND :to',
+            ExpressionAttributeValues={':pk': {'S': run_key(ws, run_id)},
+                                       ':from': {'S': f'MSG#{after + 1:0{SEQ_DIGITS}d}'},
+                                       ':to': {'S': f'MSG#{10 ** SEQ_DIGITS - 1}'}})
+        return [{'seq': int(item['sk']['S'].removeprefix('MSG#')), 'event_id': item['event_id']['S'],
+                 'type': item['type']['S'], 'at': item['at']['S'], 'message': json.loads(item['message']['S'])}
+                for item in answer.get('Items', [])]
 
     def append_to_conversation(self, message: Message) -> Appended:
         pk = run_key(message.ws, message.run_id)

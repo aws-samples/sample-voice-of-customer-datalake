@@ -26,9 +26,9 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from engineering.board.model import CLAIMED, FINAL, MOVES, OPEN, Move, Task, task_key
+from engineering.rows import run_pk, run_rows
 from engineering.workspace.layout import parse_agent_key
 from shared.aws import is_conditional_check_failure
-from shared.dynamo_paging import query_all
 from shared.ids import is_key_collision
 
 LEASE_S = 300
@@ -90,6 +90,10 @@ class BoardStore:
     def _get(self, key: Mapping[str, Any]) -> dict[str, Any] | None:
         return self.client.get_item(TableName=self.table, Key=key, ConsistentRead=True).get('Item')
 
+    def run_exists(self, ws: str, run_id: str) -> bool:
+        """The run's META row is there (the run's start writes it)."""
+        return self._get({'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': 'META'}}) is not None
+
     def task(self, ws: str, run_id: str, task_id: str) -> Task:
         item = self._get(task_key(ws, run_id, task_id))
         if item is None:
@@ -98,9 +102,7 @@ class BoardStore:
 
     def tasks(self, ws: str, run_id: str) -> list[Task]:
         """Every task of the run (at most its ``max_tasks``), in id order."""
-        return [Task.from_item(item) for item in query_all(self.client, {
-            'TableName': self.table, 'ConsistentRead': True, 'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :t)',
-            'ExpressionAttributeValues': {':pk': {'S': f'WS#{ws}#RUN#{run_id}'}, ':t': {'S': 'TASK#'}}})]
+        return [Task.from_item(item) for item in run_rows(self.client, self.table, ws, run_id, 'TASK#')]
 
     def post(self, ws: str, run_id: str, *, role: str, title: str, spec: Mapping[str, Any], parent_task: str,
              priority: int, actor: str) -> Posted:
@@ -157,10 +159,7 @@ class BoardStore:
     def history(self, ws: str, run_id: str) -> dict[str, list[Move]]:
         """Every task's moves, oldest first (D1: the past is kept, never overwritten)."""
         moves: dict[str, list[Move]] = {}
-        for item in query_all(self.client, {
-                'TableName': self.table, 'ConsistentRead': True,
-                'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :log)',
-                'ExpressionAttributeValues': {':pk': {'S': f'WS#{ws}#RUN#{run_id}'}, ':log': {'S': 'TASKLOG#'}}}):
+        for item in run_rows(self.client, self.table, ws, run_id, 'TASKLOG#'):
             move = Move.from_item(item)
             moves.setdefault(move.task_id, []).append(move)
         return moves

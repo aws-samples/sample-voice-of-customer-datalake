@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from shared.dynamo_paging import count_query, query_all
+from engineering.rows import count_run_rows, run_pk, run_rows
 
 
 @dataclass(frozen=True)
@@ -61,19 +61,14 @@ class FactsReader:
         self.client = client
         self.table = table
 
-    def _rows(self, pk: str, prefix: str) -> dict[str, Any]:
-        return {'TableName': self.table, 'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :p)',
-                'ExpressionAttributeValues': {':pk': {'S': pk}, ':p': {'S': prefix}}}
-
     def read(self, ws: str, run_id: str) -> RunFacts | None:
         """The run's facts, or None when the run does not exist."""
-        pk = f'WS#{ws}#RUN#{run_id}'
-        meta = self.client.get_item(TableName=self.table, Key={'pk': {'S': pk}, 'sk': {'S': 'META'}},
+        meta = self.client.get_item(TableName=self.table, Key={'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': 'META'}},
                                     ConsistentRead=True).get('Item')
         if meta is None:
             return None
-        agent_rows = query_all(self.client, self._rows(pk, 'AGENT#'))
-        events = count_query(self.client, self._rows(pk, 'MSG#'))
+        agent_rows = run_rows(self.client, self.table, ws, run_id, 'AGENT#')
+        events = count_run_rows(self.client, self.table, ws, run_id, 'MSG#')
         agents = tuple(sorted((AgentFacts(
             agent=_s(row, 'sk').removeprefix('AGENT#'), role=_s(row, 'role'), skill_version=_s(row, 'skill_version'),
             model=_s(row, 'model'), microvm_seconds=int(_n(row, 'microvm_seconds')),

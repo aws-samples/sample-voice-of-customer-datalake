@@ -163,7 +163,6 @@ def build_report(level: str, subject: str, inputs: Inputs, *, version: int, buil
         report['tasks']['tree'] = [{
             'task_id': t.task_id, 'parent_task': t.parent_task or None, 'role': t.role, 'title': t.title,
             'state': t.state, 'attempt': t.attempt,
-            'history': [{'state': m.state, 'at': m.at, 'by': m.actor, 'op': m.op, 'attempt': m.attempt,
-                         'result_keys': len(m.result_keys)} for m in inputs.history.get(t.task_id, ())]}
+            'history': [move.view() for move in inputs.history.get(t.task_id, ())]}
             for t in inputs.tasks]
     return report

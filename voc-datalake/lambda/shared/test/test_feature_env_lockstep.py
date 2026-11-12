@@ -25,11 +25,17 @@ _MODULES = (
     'shared/embeddings.py', 'shared/company_context.py', 'shared/design_references.py',
     'shared/user_flags.py', 'shared/mcp_delegate.py', 'shared/assist_jobs.py',
     'shared/briefing_subscription.py', 'shared/briefing_requests.py',
-    'api/radar_handler.py', 'jobs/radar_scan/handler.py',
+    'api/radar_handler.py', 'jobs/radar_scan/handler.py', 'shared/engineering_agents.py',
 )
 # Names that are legitimately absent from the stack, each with its reason.
 _NOT_SET_BY_CDK = {
     'AWS_LAMBDA_FUNCTION_NAME': 'provided by the Lambda runtime',
+    # The engineering agents are an opt-in module (shared/engineering_agents.py): only its own stack (behind
+    # -c engineeringAgents=true, not yet written) is to set these, and a Lambda without them answers the engineering
+    # routes 404 and offers no engineering tool. Drop these when that stack sets them.
+    'ENGINEERING_AGENTS': 'set only by the opt-in engineering stack (not yet written)',
+    'ENGINEERING_TABLE': 'set only by the opt-in engineering stack (not yet written)',
+    'ENGINEERING_WORKSPACE_BUCKET': 'set only by the opt-in engineering stack (not yet written)',
 }
 
 _ENV_READ = re.compile(r"environ(?:\.get)?[(\[]\s*'([A-Z0-9_]+)'")

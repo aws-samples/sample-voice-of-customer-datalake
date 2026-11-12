@@ -48,6 +48,11 @@ class Move:
                    attempt=_n(item, 'attempt'), op=_s(item, 'op'),
                    result_keys=tuple(sorted(item.get('result_keys', {}).get('SS', ()))))
 
+    def view(self) -> dict[str, Any]:
+        """The move as the board and the reports show it."""
+        return {'state': self.state, 'at': self.at, 'by': self.actor, 'op': self.op, 'attempt': self.attempt,
+                'result_keys': len(self.result_keys)}
+
     def item(self, ws: str, run_id: str) -> dict[str, Any]:
         row: dict[str, Any] = {
             'pk': {'S': f'WS#{ws}#RUN#{run_id}'}, 'sk': {'S': f'TASKLOG#{self.task_id}#{self.at}#{self.state}'},

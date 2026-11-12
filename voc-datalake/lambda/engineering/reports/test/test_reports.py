@@ -13,7 +13,7 @@ from moto import mock_aws
 
 from engineering.board.model import Task
 from engineering.board.store import BoardStore
-from engineering.board.test.table import RUN, TABLE, engineering_table
+from engineering.board.test.table import RUN, TABLE, create_table, engineering_table
 from engineering.quality_gate.test.test_record import _record
 from engineering.reports import handler as handler_module
 from engineering.reports.build import gather
@@ -253,12 +253,7 @@ def test_facts_and_tasks_follow_every_page() -> None:
 
 def test_facts_read_what_is_there_and_zero_for_the_rest() -> None:
     with mock_aws():
-        client = boto3.client('dynamodb', region_name='us-east-1')
-        client.create_table(TableName=TABLE, BillingMode='PAY_PER_REQUEST',
-                            KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'},
-                                       {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-                            AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
-                                                  {'AttributeName': 'sk', 'AttributeType': 'S'}])
+        client = create_table()
         client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'META'}})
         client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'AGENT#a-1'}, 'cost_usd': {'N': '-1'}})
         facts = FactsReader(client, TABLE).read('default', RUN)

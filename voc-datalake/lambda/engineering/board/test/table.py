@@ -15,18 +15,29 @@ TABLE = 'voc-engineering'
 RUN = '01JD0000000000000000000000'
 
 
+def create_table(region: str = 'us-east-1') -> Any:
+    """Inside a moto context: the table, empty; a low-level client on it."""
+    dynamo = boto3.client('dynamodb', region_name=region)
+    dynamo.create_table(TableName=TABLE, BillingMode='PAY_PER_REQUEST',
+                        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'},
+                                   {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
+                        AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
+                                              {'AttributeName': 'sk', 'AttributeType': 'S'}])
+    return dynamo
+
+
+def start_run(dynamo: Any, run_id: str = RUN, max_tasks: int = 10) -> None:
+    """The run's META row, as the run's start writes it (with its task cap)."""
+    dynamo.put_item(TableName=TABLE, Item={'pk': {'S': f'WS#default#RUN#{run_id}'}, 'sk': {'S': 'META'},
+                                           'max_tasks': {'N': str(max_tasks)}})
+
+
 @contextmanager
 def engineering_table(max_tasks: int = 10, run_id: str = RUN) -> Generator[Any]:
     """A low-level DynamoDB client on the table; the run exists (the run's start writes its META row)."""
     with mock_aws():
-        dynamo = boto3.client('dynamodb', region_name='us-east-1')
-        dynamo.create_table(TableName=TABLE, BillingMode='PAY_PER_REQUEST',
-                            KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'},
-                                       {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-                            AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
-                                                  {'AttributeName': 'sk', 'AttributeType': 'S'}])
-        dynamo.put_item(TableName=TABLE, Item={'pk': {'S': f'WS#default#RUN#{run_id}'}, 'sk': {'S': 'META'},
-                                               'max_tasks': {'N': str(max_tasks)}})
+        dynamo = create_table()
+        start_run(dynamo, run_id, max_tasks)
         yield dynamo
 
 

@@ -15,16 +15,21 @@ Permissions:
 - any signed-in user reads the agents whose WHOLE scope their category access
   covers (``shared.category_gate``); any other agent, and its runs, answers 404;
 - workflows hold no customer data, so every signed-in user may read and
-  validate them.
+  validate them;
+- an engineering run's board, conversation and reports (``/agents/engineering/<run_id>/*``,
+  read-only, lambda/engineering/views.py) are read by a viewer whose category scope hides
+  nothing; anyone else, and every caller while the engineering agents are off, gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
-``states:StopExecution`` on ``voc-agent-run`` only.
+``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
+their table and workspace bucket (nothing while the module is off).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -45,6 +50,7 @@ from shared.api import api_handler, create_api_resolver, validate_int
 from shared.aws import get_dynamodb_resource
 from shared.category_access import CategoryScope
 from shared.category_gate import read_categories_config, scope_for_caller
+from shared.engineering_agents import engineering_agents_on
 from shared.exceptions import (
     AuthorizationError,
     ConfigurationError,
@@ -795,6 +801,72 @@ def approve_plan_step(plan_id: str, step_id: str):
 @tracer.capture_method
 def decline_plan_step(plan_id: str, step_id: str):
     return _resolve_paused_step(plan_id, step_id, approve=False)
+
+
+# --------------------------------------------------------------------------
+# Engineering runs (lambda/engineering/views.py): the board, the conversation, the reports. On only when the
+# deployment turned the engineering agents on (shared.engineering_agents, with their table and bucket); otherwise 404.
+# Read by a viewer whose category scope hides nothing: an engineering run is not scoped to categories yet, and its
+# conversation may name feedback ids, so a narrower viewer gets the 404 an unknown run gets (nothing leaks).
+# --------------------------------------------------------------------------
+
+ENGINEERING_RUN_NOT_FOUND = 'Engineering run not found'
+_VERSION = re.compile(r'[0-9]{1,4}\Z')
+
+
+def _engineering(run_id: str) -> Any:
+    """The views, for a run the caller may read (404 otherwise, and while the engineering agents are off)."""
+    table, bucket = os.environ.get('ENGINEERING_TABLE', ''), os.environ.get('ENGINEERING_WORKSPACE_BUCKET', '')
+    if not (engineering_agents_on() and table and bucket):
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    # Imported here: the package ships only in a deployment with the engineering agents on.
+    from engineering.views import EngineeringViews
+    from engineering.workspace.layout import ID
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_dynamodb_client, get_s3_client
+
+    if not (ID.fullmatch(run_id) and _viewer_scope(_caller()).all):
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    return EngineeringViews(get_dynamodb_client(), table, WorkspaceStore(get_s3_client(), bucket))
+
+
+def _found(value: Any) -> Any:
+    if value is None:
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    return value
+
+
+@app.get('/agents/engineering/<run_id>/board')
+@tracer.capture_method
+def get_engineering_board(run_id: str):
+    return _found(_engineering(run_id).board(run_id))
+
+
+@app.get('/agents/engineering/<run_id>/conversation')
+@tracer.capture_method
+def get_engineering_conversation(run_id: str):
+    views = _engineering(run_id)
+    after = validate_int(_query('after'), default=0, min_val=0, max_val=99_999_998)
+    limit = validate_int(_query('limit'), default=MAX_EVENTS_PAGE, min_val=1, max_val=MAX_EVENTS_PAGE)
+    return _found(views.conversation(run_id, after=after, limit=limit))
+
+
+@app.get('/agents/engineering/<run_id>/reports')
+@tracer.capture_method
+def list_engineering_reports(run_id: str):
+    return _found(_engineering(run_id).reports(run_id))
+
+
+@app.get('/agents/engineering/<run_id>/reports/<level>/<subject>')
+@tracer.capture_method
+def get_engineering_report(run_id: str, level: str, subject: str):
+    views = _engineering(run_id)
+    version = _query('version')
+    if version is not None and not (_VERSION.fullmatch(version) and int(version) >= 1):
+        raise ValidationError('version is a whole number from 1 to 9999 (leave it out for the latest)')
+    wanted = None if version is None else int(version)
+    report = _found(views.report(run_id, level, subject, wanted))
+    return {'report': report.document, 'markdown': report.markdown}
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).
