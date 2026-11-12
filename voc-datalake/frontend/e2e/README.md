@@ -163,6 +163,11 @@ Escape closing an empty reply box (focus back on Reply), Ctrl+Enter posting a re
 outcome (Close on its heading's line). The stale-save banner at 1440 and 360 in both themes; the read-only page of
 `proj_2` at 1440 and 390 in light. The editor's own menus are `document-canvas`'s.
 
+`document-canvas-perf.spec.ts` (the canvas on long documents) runs ONLY there too: it creates a 60,000- and a 200,000-character document in
+`proj_1` (`e2e-<run id>-canvas perf …`), types three bursts with pauses into a paragraph with a citation, and reads the
+browser's Event Timing and Long Tasks: no keystroke and no main-thread task over 200 ms (the numbers go to
+`$E2E_OUT/canvas-perf-<size>.json`).
+
 ## QA track s1 (`E2E_TRACK=s1` only)
 
 `tests/s1-a-data.spec.ts` and `tests/s1-b-assistant.spec.ts` skip unless `E2E_TRACK=s1`, because they write feedback that cannot be deleted:

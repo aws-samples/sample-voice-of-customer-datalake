@@ -45,6 +45,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'document-canvas',
   // The document canvas's accessibility and widths (mock only, as document-canvas).
   'document-canvas-a11y',
+  // The canvas on 60,000- and 200,000-character documents (creates them; mock only, as the canvas spec).
+  'document-canvas-perf',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

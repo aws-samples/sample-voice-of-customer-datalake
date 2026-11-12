@@ -4,7 +4,7 @@
  * serialiser's cautious escapes (`\[FR:fr_1]`, `a \* b`) are dropped whenever the result reads back as the same
  * tree, so citations and plain prose stay the way people wrote them.
  */
-import type { Blockquote, Parents, PhrasingContent, Root, RootContent, Text } from 'mdast'
+import type { Blockquote, Nodes, Parents, PhrasingContent, Root, RootContent, Text } from 'mdast'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { gfmFromMarkdown, gfmToMarkdown } from 'mdast-util-gfm'
 import { defaultHandlers, type Info, type Join, type Options, type State, toMarkdown } from 'mdast-util-to-markdown'
@@ -70,18 +70,110 @@ function options(unescape: Unescape | null, joins: VerbatimJoins | null): Option
 
 const UNESCAPES = [unescapeOnly('[]_*'), unescapeOnly('[]')] as const
 
+const stripPositions = (tree: Root): string => JSON.stringify(tree, (key, value: unknown) => (key === 'position' ? undefined : value))
+
 /** Positions aside, the tree a Markdown text reads as. */
 export function readTree(markdown: string): string {
-  return JSON.stringify(parseMarkdown(markdown), (key, value: unknown) => (key === 'position' ? undefined : value))
+  return stripPositions(parseMarkdown(markdown))
 }
 
-export function serialize(tree: Root, joins: VerbatimJoins | null = null): string {
-  const cautious = toMarkdown(tree, options(null, joins))
-  const boldest = toMarkdown(tree, options(UNESCAPES[0], joins))
+/** A serialisation and the text of each top-level block in it (the separators between them are not blocks). */
+interface Rendering { readonly text: string; readonly blocks: readonly string[] }
+
+function render(tree: Root, unescape: Unescape | null, joins: VerbatimJoins | null): Rendering {
+  const blocks: string[] = []
+  const base = options(unescape, joins)
+  const root = (node: Root, parent: Parents | undefined, state: State, info: Info): string => {
+    const handle = state.handle
+    // containerFlow writes each child through state.handle: note the text of each child of this root. Handlers
+    // read the state as `this`, and the phrasing writer reads `state.handle.handlers`: both stay as they were.
+    const noting: State['handle'] = (child, childParent, childState, childInfo) => {
+      const text = handle.call(state, child, childParent, childState, childInfo)
+      if (childParent === node) blocks.push(text)
+      return text
+    }
+    state.handle = Object.assign(noting, handle)
+    try {
+      return defaultHandlers.root(node, parent, state, info)
+    } finally {
+      state.handle = handle
+    }
+  }
+  return { text: toMarkdown(tree, { ...base, handlers: { ...base.handlers, root } }), blocks }
+}
+
+const RAW_TYPES: ReadonlySet<string> = new Set(['rawBlock', 'rawInline'])
+
+/** True when a node or any node inside it is one of `types`. */
+export function containsType(node: Nodes, types: ReadonlySet<string>): boolean {
+  if (types.has(node.type)) return true
+  return 'children' in node && node.children.some((child: Nodes) => containsType(child, types))
+}
+
+/** The node types that make a reading depend on text elsewhere in the document (a reference finds its definition). */
+export const DEFINITION_TYPES: ReadonlySet<string> = new Set(['definition', 'footnoteDefinition'])
+
+const OPENING_FENCE = /^ {0,3}(`{3,}|~{3,})/
+/** CommonMark's HTML blocks 1-5, which end only at their own end marker (6 and 7 end at a blank line). */
+const OPENING_HTML = /^ {0,3}<(?:(script|pre|style|textarea)(?=[\s>]|$)|(!--)|(\?)|(!\[CDATA\[)|(![a-z]))/i
+
+function htmlEnd(match: RegExpExecArray): RegExp {
+  const [, tag, comment, instruction, cdata] = match
+  if (tag !== undefined) return new RegExp(`</${tag}>`, 'i')
+  if (comment !== undefined) return /-->/
+  if (instruction !== undefined) return /\?>/
+  return cdata === undefined ? />/ : /\]\]>/
+}
+
+/**
+ * A stored block that runs on past the blank line after it, so it swallows every block written after it: a fenced
+ * code block without its closing fence, or an HTML block (`<!--`, `<pre>`, `<script>`, `<?`, `<![CDATA[`, `<!X`)
+ * without its end marker. Each block's stored source is its own text: a closed one ends with its closing fence or
+ * holds its end marker.
+ */
+export function mayStayOpen(source: string): boolean {
+  const fence = OPENING_FENCE.exec(source)?.[1]
+  if (fence !== undefined) {
+    const lines = source.split('\n')
+    const closing = new RegExp(`^ {0,3}${fence.startsWith('`') ? '`' : '~'}{${String(fence.length)},}[ \\t]*$`)
+    return lines.length < 2 || !closing.test(lines.at(-1) ?? '')
+  }
+  const html = OPENING_HTML.exec(source)
+  return html !== null && !htmlEnd(html).test(source.slice(html[0].length))
+}
+
+/**
+ * Whether two serialisations of one tree read as the same tree. They differ only inside the blocks the unescape
+ * touched; every block is a blank line (or a `<!---->` comment) from the next, so each block reads the same alone as in
+ * the document, except where a reference meets a definition elsewhere in the text or a block before it never closes.
+ * Without either (no definition in the blocks written as stored, `definedElsewhere` false, none in the editor's raw
+ * Markdown, none in either reading of a touched block, and no stored fence or HTML block) comparing the touched blocks
+ * alone gives the answer comparing the whole text does, at the cost of the touched blocks instead of the whole
+ * document; otherwise the whole text is compared.
+ */
+function readsTheSame(tree: Root, a: Rendering, b: Rendering, definedElsewhere: boolean): boolean {
+  const touched = a.blocks.flatMap((block, index) => (block === b.blocks[index] ? [] : [index]))
+  const local = !definedElsewhere && a.blocks.length === tree.children.length && b.blocks.length === tree.children.length &&
+    !tree.children.some((child) => (child.type === 'verbatim' ? mayStayOpen(child.value) : containsType(child, RAW_TYPES)))
+  if (!local) return readTree(a.text) === readTree(b.text)
+  return touched.every((index) => {
+    const [left, right] = [parseMarkdown(a.blocks[index] ?? ''), parseMarkdown(b.blocks[index] ?? '')]
+    if (containsType(left, DEFINITION_TYPES) || containsType(right, DEFINITION_TYPES)) return readTree(a.text) === readTree(b.text)
+    return stripPositions(left) === stripPositions(right)
+  })
+}
+
+/**
+ * `definedElsewhere`: the caller cannot rule out a definition (`[id]: url`, `[^id]: note`) in the blocks it passes as
+ * `verbatim`, so every reading compares the whole text (the default). False only where the caller knows (convert.ts:
+ * the stored text's own parse, or no stored blocks at all).
+ */
+export function serialize(tree: Root, joins: VerbatimJoins | null = null, definedElsewhere = true): string {
+  const cautious = render(tree, null, joins)
+  const boldest = render(tree, UNESCAPES[0], joins)
   // The boldest unescape changed nothing: no escape can be dropped.
-  if (boldest === cautious) return cautious
-  const expected = readTree(cautious)
-  if (readTree(boldest) === expected) return boldest
-  const brackets = toMarkdown(tree, options(UNESCAPES[1], joins))
-  return brackets !== cautious && readTree(brackets) === expected ? brackets : cautious
+  if (boldest.text === cautious.text) return cautious.text
+  if (readsTheSame(tree, cautious, boldest, definedElsewhere)) return boldest.text
+  const brackets = render(tree, UNESCAPES[1], joins)
+  return brackets.text !== cautious.text && readsTheSame(tree, cautious, brackets, definedElsewhere) ? brackets.text : cautious.text
 }
