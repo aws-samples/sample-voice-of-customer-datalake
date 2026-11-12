@@ -180,10 +180,13 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 | `gsi1-by-date` | `gsi1pk = DATE#<processing date>` | `gsi1sk = <processing timestamp>#<id>` | Date-window queries |
 | `gsi2-by-category` | `gsi2pk = CATEGORY#<category>` | `gsi2sk = <sentiment score>#<timestamp>` | Category queries |
 | `gsi3-by-urgency` | `gsi3pk = URGENCY#<urgency>` | `gsi3sk = <timestamp>` | Urgent-item queries (slim projection) |
-| `gsi4-by-feedback-id` | `feedback_id` | — | Direct lookup independent of source partition |
-| `gsi5-by-channel` | `source_channel` | `gsi1sk` (processing time) | Channel-filtered lists and metrics; slim projection (`CHANNEL_INDEX_FIELDS` in `lambda/shared/channel_index.py`), so a small channel in a big import is read without reading the whole day |
+| `gsi4-by-feedback-id` | `gsi4pk = FEEDBACK#<id>` | — | Direct lookup independent of source partition |
+| `gsi5-by-channel` | `gsi5pk = CHANNEL#<source_channel>` | `gsi1sk` (processing time) | Channel-filtered lists and metrics; slim projection (`CHANNEL_INDEX_FIELDS` in `lambda/shared/channel_index.py`, `source_channel` included), so a small channel in a big import is read without reading the whole day |
 
 The date index is keyed by when the processor stored the item, not by the review's own date.
+
+gsi4 and gsi5 are keyed on `gsi4pk` / `gsi5pk` (Unreleased; a workspace's item carries `WS#<ws>#…` in every key):
+an existing deployment does not take that release in place ([Multi-workspace → Upgrading](multi-workspace.md#upgrading)).
 
 Feedback items do not expire: the table has no TTL and the processor stamps none. Only
 `voc-retention` deletes feedback, when a source profile sets `retention_days` or an administrator
@@ -207,7 +210,7 @@ such as every source or persona counter. Common key families include:
 | `JOB#category_reprocess` / `rp_<hex>` | Category reprocess jobs |
 | `JOB#erasure` / `er_<hex>`, `AUDIT#retention` | Erasure jobs and the retention audit trail |
 | `AUDIT#platform-admins` / `<iso>#<random>` | Every grant and revoke of the `platform-admins` group (kept, no TTL; written only by the users API, [multi-workspace.md](multi-workspace.md#control-plane)) |
-| `LOGS#validation#<source>`, `LOGS#processing#<source>` | Validation and processing logs (7-day TTL) |
+| `LOGS#validation#<source>`, `LOGS#processing#<source>` | Validation and processing logs (7-day TTL); a workspace's message (Unreleased, [multi-workspace.md](multi-workspace.md)) logs under `WS#<ws>#LOGS#validation#<source>` and `WS#<ws>#LOGS#processing#<source>`, which `GET /logs/*` does not read yet |
 | `FEEDBACK_FORM` | Feedback-form configuration and statistics |
 | `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor (`WS#<ws>#SOURCE_RUN#<source>` for a run in a workspace) |
 | `SCRAPER_RUN#<scraper id>` | Scraper run state (`WS#<ws>#SCRAPER_RUN#<scraper id>` in a workspace) |

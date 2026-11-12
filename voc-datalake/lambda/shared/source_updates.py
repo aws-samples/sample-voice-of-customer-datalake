@@ -50,9 +50,11 @@ from typing import Any
 from shared.categorization import Enrichment
 from shared.csv_datasets import is_csv_replace
 from shared.feedback_category import CATEGORY_SOURCE_MANUAL
+from shared.feedback_partitions import category_partition, urgency_partition
 from shared.silver_provenance import REASON_SOURCE_UPDATE, SYSTEM_ACTOR, change_stamp, provenance
 from shared.source_profiles import PII_SUMMARY_ONLY
 from shared.usefulness import USEFULNESS_FIELD, item_usefulness
+from shared.ws_repo import WorkspaceScope
 
 UPDATE_APPLY = 'apply'
 UPDATE_STALE = 'stale'
@@ -243,9 +245,10 @@ def _sentiment_index_key(stored: Mapping[str, Any], score: object) -> str:
 
 def reenriched_fields(
     stored: Mapping[str, Any], raw_record: Mapping[str, Any], enrichment: Enrichment,
-    dimensions: tuple[dict, dict],
+    dimensions: tuple[dict, dict], scope: WorkspaceScope | None = None,
 ) -> dict:
-    """The stored fields a re-enrichment replaces (None = REMOVE)."""
+    """The stored fields a re-enrichment replaces (None = REMOVE); the index partitions in ``scope``'s workspace
+    for an item of one (shared/feedback_partitions.py)."""
     enriched = dict(enrichment.attributes)
     keep_category = keeps_stored_category(stored, enrichment)
     if keep_category:
@@ -261,10 +264,10 @@ def reenriched_fields(
         'dimensions': resolved or None,
         'dimension_sources': sources or None,
         'gsi2sk': _sentiment_index_key(stored, enriched['sentiment_score']),
-        'gsi3pk': f"URGENCY#{enriched['urgency']}",
+        'gsi3pk': urgency_partition(scope, enriched['urgency']),
     }
     if not keep_category:
-        fields['gsi2pk'] = f"CATEGORY#{enriched['category']}"
+        fields['gsi2pk'] = category_partition(scope, enriched['category'])
     # The text changed, so its usefulness band may have (the aggregator re-buckets the MODIFY).
     # Rated from the fields being written, like the processor rates the item it builds: never the
     # stored item, whose translation or summary may belong to the old text.
@@ -274,9 +277,10 @@ def reenriched_fields(
 
 def reenrichment_update(
     stored: Mapping[str, Any], raw_record: Mapping[str, Any], enrichment: Enrichment,
-    dimensions: tuple[dict, dict], now_iso: str,
+    dimensions: tuple[dict, dict], now_iso: str, scope: WorkspaceScope | None = None,
 ) -> dict:
-    """Refresh ``issue_attributes``, the text and the enriched fields after a text edit.
+    """Refresh ``issue_attributes``, the text and the enriched fields after a text edit (an item of the workspace
+    ``scope``: its index partitions there).
 
     Besides the attributes guard, the update is conditional on the dimensions being
     what was read and — when the category is being moved — on nobody having
@@ -287,7 +291,7 @@ def reenrichment_update(
     update.assign({
         ISSUE_ATTRIBUTES: raw_record[ISSUE_ATTRIBUTES],
         'source_refreshed_at': now_iso,
-        **reenriched_fields(stored, raw_record, enrichment, dimensions),
+        **reenriched_fields(stored, raw_record, enrichment, dimensions, scope),
         **change_stamp(SYSTEM_ACTOR, REASON_SOURCE_UPDATE, now_iso),
     })
     update.require_unchanged(stored, ISSUE_ATTRIBUTES)

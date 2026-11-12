@@ -33,6 +33,7 @@ from shared.feedback import context_request, read_context_pool, window_cutoff
 from shared.feedback_sampling import POOL_FIELDS
 from shared.indexes import FEEDBACK_BY_ID_INDEX
 from shared.time_budget import WalkBudget
+from shared.ws_repo import is_workspace_key
 
 MODE_EXACT: Final = 'exact'
 MODE_ESTIMATE: Final = 'estimate'
@@ -169,8 +170,12 @@ def estimate_count(
     if request is None:
         return _answer(0, lower_bound=False, estimated=False)
     sample, complete = _scan_sample(feedback_table, pages)
-    floor = import_floor(request, sample)
-    matched = sum(1 for row in sample if str(row.get('date') or '') >= floor and request.admits(row))
+    # A workspace's item is in the index too (its gsi4pk is `WS#{ws}#FEEDBACK#…`) but never in this deployment-wide
+    # count: it is left out of the floor's days and of `matched`, while `len(sample)` keeps it, so the sample's share
+    # of matches still scales by the whole index.
+    deployment = [row for row in sample if not is_workspace_key(row.get('pk'))]
+    floor = import_floor(request, deployment)
+    matched = sum(1 for row in deployment if str(row.get('date') or '') >= floor and request.admits(row))
     if complete:
         # The sample was the whole index: still an estimate (the exact read's caps can differ).
         return _answer(matched or None, lower_bound=False, estimated=True)

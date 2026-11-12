@@ -9,7 +9,7 @@ parsed, and each raw access is counted by its kind:
   ``.generate_presigned_post(…)``, ``.delete_object(…)``, ``.delete_objects(…)``, or a data-path table getter of
   shared/tables.py (``get_feedback_table()``, ``get_aggregates_table()``, ``cached_table(…)``, also under an
   ``import … as`` alias), or the ingestors' deployment-wide table (``DeploymentTable(…)``, and
-  ``ingest_table(None, …)`` with the literal None; a call passing a scope variable that may be None at run time
+  ``ingest_table(None, …)`` or ``table_view(None, …)`` with the literal None; a call passing a scope variable that may be None at run time
   is not counted);
 * a string that STARTS a data-path partition or object key without the workspace (``'SOURCE#…'``,
   ``f'METRIC#{name}'``, ``'raw/'`` …: ``UNSCOPED_KEY_PREFIXES``): such a key can only name the deployment-wide
@@ -35,7 +35,7 @@ from __future__ import annotations
 import ast
 from collections import Counter
 from pathlib import Path
-from typing import Final
+from typing import Final, TypeGuard
 
 ROOT: Final = Path(__file__).resolve().parents[3]
 SCANNED: Final = ('lambda', 'plugins')
@@ -109,7 +109,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/jobs/retention/handler.py': (3, {'Table': 3}),
     'lambda/memory/extractor/handler.py': (3, {'Table': 1, 'get_aggregates_table': 3}),
     'lambda/memory/scanner/handler.py': (3, {'Table': 1}),
-    'lambda/processor/handler.py': (2, {'CATEGORY#': 1, 'DATE#': 1, 'SOURCE#': 3, 'Table': 3, 'URGENCY#': 1}),
+    # The processor's two paths (docs/multi-workspace.md) go through shared/ingest_tables.py `table_view` (its message's
+    # scope, or None deployment-wide); its five key literals moved to shared/feedback_partitions.py. Table: the
+    # module-level voc-feedback, voc-aggregates and voc-radar the view is taken of.
+    'lambda/processor/handler.py': (2, {'Table': 3}),
     'lambda/product_doc_extractor/handler.py': (3, {'Table': 1, 'put_object': 1}),
     'lambda/research/research_step_handler.py': (3, {'delete_object': 1, 'get_feedback_table': 1, 'put_object': 2}),
     'lambda/shared/agents_store.py': (3, {'Table': 1}),
@@ -144,7 +147,6 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/s3_versions.py': (3, {'delete_objects': 1}),
     'lambda/shared/silver_provenance.py': (2, {'SOURCE#': 2, 'put_object': 1, 'silver/': 1}),
     'lambda/shared/source_profiles.py': (2, {'Table': 1}),
-    'lambda/shared/source_updates.py': (2, {'CATEGORY#': 1, 'URGENCY#': 1}),
     'lambda/shared/tables.py': (2, {'Table': 2}),
     'lambda/shared/user_flags.py': (3, {'Table': 1}),
     # The deployment-wide run's SOURCE_RUN# row (an event that names no workspace: kept until phase 2's last slice).
@@ -153,6 +155,11 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # The one place an ingestor run opens a table by name, for both paths: the three call sites base_ingestor,
     # circuit_breaker and the webscraper held, consolidated (the deployment-wide tables and voc-workspaces).
     'lambda/shared/ingest_tables.py': (2, {'DeploymentTable': 1, 'Table': 1}),
+    # The deployment-wide keys and index partitions of a feedback item, one place for the processor, the in-place
+    # refreshes and the gsi4/gsi5 readers (consolidated: the processor's DATE#, CATEGORY#, URGENCY# and SOURCE#,
+    # source_updates' CATEGORY# and URGENCY#; CHANNEL# is gsi5pk's, new with the re-key).
+    'lambda/shared/feedback_partitions.py': (
+        2, {'CATEGORY#': 1, 'CHANNEL#': 1, 'DATE#': 1, 'SOURCE#': 1, 'URGENCY#': 1}),
 }
 
 
@@ -215,7 +222,7 @@ def _kinds(tree: ast.AST) -> Counter[str]:
                 kinds[getters[name]] += 1
             elif name == DEPLOYMENT_TABLE:
                 kinds[DEPLOYMENT_TABLE] += 1
-            elif (name == 'ingest_table' and node.args and isinstance(node.args[0], ast.Constant)
+            elif (name in ('ingest_table', 'table_view') and node.args and isinstance(node.args[0], ast.Constant)
                   and node.args[0].value is None):
                 kinds[UNSCOPED_INGEST_TABLE] += 1
         elif id(node) not in inside_fstring and (prefix := _unscoped_prefix(node)) is not None:
@@ -302,6 +309,59 @@ def test_the_rules_see_aliases(tmp_path):
     assert not _request_facing('lambda/processor/handler.py')
 
 
+#: The message field naming the workspace (shared/ws_repo.py WORKSPACE_FIELD), by its literal and its name.
+WORKSPACE_FIELD_LITERAL: Final = 'workspace_id'
+WORKSPACE_FIELD_NAME: Final = 'WORKSPACE_FIELD'
+
+
+def _names_the_workspace_field(node: ast.AST | None) -> bool:
+    return ((isinstance(node, ast.Constant) and node.value == WORKSPACE_FIELD_LITERAL)
+            or (isinstance(node, ast.Name) and node.id == WORKSPACE_FIELD_NAME)
+            or (isinstance(node, ast.Attribute) and node.attr == WORKSPACE_FIELD_NAME))
+
+
+def _workspace_field_writes(tree: ast.AST) -> list[int]:
+    """Lines that put ``workspace_id`` into a mapping: a dict display key, ``x['workspace_id'] = …``, or a
+    keyword ``workspace_id=`` of a call (``dict(...)``). A logger's ``extra={…}`` is a log line, not a message."""
+    log_extras = {id(keyword.value) for node in ast.walk(tree) if isinstance(node, ast.Call)
+                  for keyword in node.keywords if keyword.arg == 'extra'}
+
+    def writes(node: ast.AST) -> TypeGuard[ast.Dict | ast.Subscript | ast.Call]:
+        if isinstance(node, ast.Dict):
+            return id(node) not in log_extras and any(map(_names_the_workspace_field, node.keys))
+        if isinstance(node, ast.Subscript):
+            return isinstance(node.ctx, ast.Store) and _names_the_workspace_field(node.slice)
+        if isinstance(node, ast.Call):
+            return any(keyword.arg == WORKSPACE_FIELD_LITERAL for keyword in node.keywords)
+        return False
+
+    return sorted(node.lineno for node in ast.walk(tree) if writes(node))
+
+
+def test_no_request_facing_module_writes_the_workspace_field_into_a_message():
+    """A request's body never chooses the workspace its feedback lands in: no module under ``lambda/api/`` (nor a
+    webhook) puts ``workspace_id`` into a mapping it could queue, and the source policy every producer applies drops
+    it (shared/source_policy.py ``apply_source_policy``). Only a plugin ingestor's run in a workspace sets it, from
+    its verified scope (plugins/_shared/base_ingestor.py ``send_to_queue``)."""
+    found = {_rel(path): lines for path in _modules()
+             if _request_facing(_rel(path)) or _rel(path) in ASYNC_API_WORKERS
+             if (lines := _workspace_field_writes(_parse(path)))}
+    assert found == {}
+
+
+def test_the_workspace_field_rule_sees_each_write(tmp_path):
+    sample = tmp_path / 'sample.py'
+    sample.write_text(
+        "a = {'workspace_id': ws}\n"
+        "b = {WORKSPACE_FIELD: ws}\n"
+        "message['workspace_id'] = ws\n"
+        "c = dict(text='t', workspace_id=ws)\n"
+        "logger.info('x', extra={'workspace_id': ws})\n"
+        "d = body.get('workspace_id')\n",
+        encoding='utf-8')
+    assert _workspace_field_writes(_parse(sample)) == [1, 2, 3, 4]
+
+
 def test_the_async_api_workers_exist():
     assert all((ROOT / module).is_file() for module in ASYNC_API_WORKERS)
 
@@ -332,13 +392,15 @@ def test_the_scan_sees_each_kind_of_raw_access(tmp_path):
         "l = DeploymentTable(table)\n"
         "m = ingest_tables.DeploymentTable(table)\n"
         "n = ingest_table(None, resource, 'voc-workspaces')\n"
-        "o = ingest_table(scope, resource, 'voc-aggregates')\n",
+        "o = ingest_table(scope, resource, 'voc-aggregates')\n"
+        "p = table_view(None, table)\n"
+        "q = table_view(scope, table)\n",
         encoding='utf-8')
     assert _kinds(_parse(sample)) == Counter({
         'Table': 1, 'put_object': 1, 'copy_object': 1, 'get_feedback_table': 1, 'get_aggregates_table': 1,
         'SOURCE#': 1, 'METRIC#': 1, 'raw/': 1, 'silver/': 1, 'upload_file': 1, 'upload_fileobj': 1,
         'cached_table': 1, 'generate_presigned_url': 1, 'delete_object': 1, 'DeploymentTable': 2,
-        'ingest_table(None)': 1})
+        'ingest_table(None)': 2})
 
 
 def test_the_layer_modules_exist():

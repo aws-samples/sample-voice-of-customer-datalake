@@ -54,6 +54,7 @@ from shared.feedback_category import (
     validate_target,
 )
 from shared.feedback_dimensions import apply_dimension_edit
+from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
 from shared.indexes import FEEDBACK_BY_ID_INDEX
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
@@ -75,11 +76,11 @@ def _tables() -> tuple[Any, Any]:
 
 
 def _current_item(feedback_table: Any, feedback_id: str) -> dict:
-    """The item with ``feedback_id``, strongly read from the base table, or 404."""
+    """The item with ``feedback_id`` (gsi4's deployment-wide partition), strongly read from the base table, or 404."""
     try:
         hits = feedback_table.query(
             IndexName=FEEDBACK_BY_ID_INDEX,
-            KeyConditionExpression=Key('feedback_id').eq(feedback_id),
+            KeyConditionExpression=Key(FEEDBACK_ID_INDEX_PARTITION).eq(feedback_id_partition(None, feedback_id)),
             Limit=1,
         ).get('Items', [])
         if not hits:

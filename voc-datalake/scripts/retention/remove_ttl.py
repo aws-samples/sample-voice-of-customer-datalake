@@ -45,6 +45,7 @@ from retention_common import resolve_tables, table_parser
 from retention_common import scan_all as _scan
 
 from shared.earliest_date import METRIC_META_PK, lower_watermark_request, parse_iso_date
+from shared.ws_repo import is_workspace_key
 
 TTL_ATTRIBUTE = 'ttl'
 METRIC_PREFIX = 'METRIC#'
@@ -53,6 +54,8 @@ METRIC_PREFIX = 'METRIC#'
 @dataclass
 class Report:
     feedback_scanned: int = 0
+    #: Items of a workspace (`WS#…` keys, docs/multi-workspace.md): left alone, never the deployment's earliest date.
+    workspace_items: int = 0
     feedback_with_ttl: int = 0
     feedback_updated: int = 0
     aggregate_rows_with_ttl: int = 0
@@ -79,7 +82,9 @@ def _remove_ttl(table, key: dict) -> bool:
 
 
 def migrate_feedback(feedback_table, report: Report, apply: bool) -> None:
-    """Strip `ttl` from feedback items and find the oldest `date`."""
+    """Strip `ttl` from feedback items and find the oldest `date`. A workspace's item is skipped (as the aggregator
+    and `rebuild_aggregates.py` skip it): it never lowers the deployment-wide earliest-date watermark, and a
+    workspace's items never carry a `ttl` (the processor stamps none)."""
     items = _scan(
         feedback_table,
         ProjectionExpression='pk, sk, #ttl, #date',
@@ -87,6 +92,9 @@ def migrate_feedback(feedback_table, report: Report, apply: bool) -> None:
     )
     for item in items:
         report.feedback_scanned += 1
+        if is_workspace_key(item.get('pk')):
+            report.workspace_items += 1
+            continue
         day = item.get('date')
         if (isinstance(day, str) and parse_iso_date(day) is not None
                 and (report.earliest_date is None or day < report.earliest_date)):

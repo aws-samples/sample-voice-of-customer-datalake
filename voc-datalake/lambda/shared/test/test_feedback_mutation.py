@@ -301,7 +301,8 @@ class TestTheQueriesTheWalkSends:
         kwargs = table.query.call_args.kwargs
         key = kwargs['KeyConditionExpression'].get_expression()
         assert kwargs['IndexName'] == 'gsi5-by-channel'
-        assert [part.get_expression()['values'][1] for part in key['values']] == ['google_play', window_cutoff(1)]
+        assert [part.get_expression()['values'][1] for part in key['values']] == [
+            'CHANNEL#google_play', window_cutoff(1)]
         assert [item['id'] for item in items] == ['1']
 
     # Regression (customer import, 5.23.04): the channel was matched only in memory after the

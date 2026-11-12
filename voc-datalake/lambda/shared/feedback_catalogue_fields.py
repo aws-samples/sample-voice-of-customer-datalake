@@ -61,7 +61,8 @@ _E: Final[tuple[Step, ...]] = ('enrichment', 'source_update', 'reprocess', 'edit
 
 FIELDS: Final[tuple[CatalogueField, ...]] = (
     # ── keys and indexes ─────────────────────────────────────────────────────
-    _f('pk', 'string', _P, '`SOURCE#{brand_name}`: the partition of the source the item came from', always=True, key=True),
+    _f('pk', 'string', _P, '`SOURCE#{brand_name}`: the partition of the source the item came from (an item of a '
+       'workspace: every partition key here starts `WS#{ws}#`, docs/multi-workspace.md)', always=True, key=True),
     _f('sk', 'string', _P, '`FEEDBACK#{feedback_id}`', always=True, key=True),
     _f('gsi1pk', 'string', _P, '`DATE#{YYYY-MM-DD}` of processing (index gsi1-by-date)', always=True, key=True),
     _f('gsi1sk', 'string', _P, '`{processed_at}#{feedback_id}` (gsi1-by-date, gsi5-by-channel)', always=True, key=True),
@@ -71,14 +72,18 @@ FIELDS: Final[tuple[CatalogueField, ...]] = (
     _f('gsi3pk', 'string', ('processor', 'source_update'), '`URGENCY#{urgency}` (index gsi3-by-urgency)',
        always=True, key=True),
     _f('gsi3sk', 'string', _P, '`processed_at` (gsi3-by-urgency)', always=True, key=True),
+    _f('gsi4pk', 'string', _P, '`FEEDBACK#{feedback_id}` (index gsi4-by-feedback-id)', always=True, key=True),
+    _f('gsi5pk', 'string', ('processor', 'source_update'), '`CHANNEL#{source_channel}` (index gsi5-by-channel); absent when the channel is empty',
+       key=True),
     # ── identity and source ──────────────────────────────────────────────────
-    _f('feedback_id', 'string', _P, 'The item id, unique in the deployment (index gsi4-by-feedback-id)', always=True),
+    _f('feedback_id', 'string', _P, 'The item id: the same source item has the same id in every workspace, so '
+       'gsi4-by-feedback-id is keyed on `gsi4pk`', always=True),
     _f('source_id', 'string', ('producer',), "The id the source gave the item (its own review / issue id)", always=True),
     _f('source_platform', 'string', ('producer',), 'The source (plugin id or import path) that sent the item',
        always=True),
     _f('source_channel', 'string', ('producer', 'source_update'),
        "The source's channel (e.g. `review`, `issue`, `form`); `unknown` when the source sends none "
-       '(index gsi5-by-channel)', always=True),
+       '(index gsi5-by-channel, through `gsi5pk`)', always=True),
     _f('brand_name', 'string', _P, 'The label the item is filed under: the message `brand_name`, else the source',
        always=True),
     _f('ingestion_method', 'string', ('producer',), 'How the item entered: `manual`, `csv_upload`, `json_upload`, …'),

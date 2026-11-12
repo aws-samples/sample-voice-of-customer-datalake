@@ -19,7 +19,7 @@ from typing import Any, overload
 
 from shared.ws_repo import WorkspaceScope, WorkspaceTable, partition_query, ws_table
 
-__all__ = ['DeploymentTable', 'ingest_table']
+__all__ = ['DeploymentTable', 'ingest_table', 'table_view']
 
 
 class DeploymentTable:
@@ -69,7 +69,11 @@ def ingest_table(scope: WorkspaceScope | None, resource: Any, name: str,
 def ingest_table(scope: WorkspaceScope | None, resource: Any, name: str,
                  key: str = 'pk') -> WorkspaceTable | DeploymentTable:
     """The table ``name`` for a run in ``scope`` (``ws_table``), or for a deployment-wide run (``scope`` None)."""
-    table = resource.Table(name)
-    if scope is None:
-        return DeploymentTable(table)
-    return ws_table(scope, table, key)
+    return table_view(scope, resource.Table(name), key)
+
+
+def table_view(scope: WorkspaceScope | None, table: Any, key: str = 'pk') -> WorkspaceTable | DeploymentTable:
+    """An already-open ``table`` on either path: seen through ``scope`` (``ws_table``: a key, item or update outside
+    it is refused before DynamoDB), or deployment-wide (``scope`` None, the same calls on the table). The feedback
+    processor's view of its module-level tables, one message at a time."""
+    return DeploymentTable(table) if scope is None else ws_table(scope, table, key)

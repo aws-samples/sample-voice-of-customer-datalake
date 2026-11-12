@@ -187,7 +187,10 @@ describe('raw bucket prefixes in lib/stacks', () => {
     .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
     .map((file) => readFileSync(join(stacksDir, file), 'utf-8'));
   // Built from WORKSPACE_ID_PATTERN (a template, which the literal scan below cannot read): its value as imported.
-  const constants = new Map<string, string>([['WORKSPACE_RAW_LAYER_PREFIX', WORKSPACE_RAW_LAYER_PREFIX]]);
+  const constants = new Map<string, string>([
+    ['WORKSPACE_RAW_LAYER_PREFIX', WORKSPACE_RAW_LAYER_PREFIX],
+    ['WORKSPACE_SILVER_HISTORY_PREFIX', WORKSPACE_SILVER_HISTORY_PREFIX],
+  ]);
   for (const source of sources) {
     for (const match of source.matchAll(/const ([A-Z][A-Z0-9_]*) = '([^']*)'/g)) {
       const [, name, value] = match;

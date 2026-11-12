@@ -67,6 +67,7 @@ from shared.logging import logger
 from shared.radar_store import marker_key
 from shared.raw_versions import RAW_PREFIX, parse_item_key
 from shared.silver_provenance import SILVER_PREFIX, silver_item_prefix
+from shared.ws_repo import WORKSPACE_KEY_PREFIX
 
 __all__ = [
     'ERASURE_JOB_COUNTERS',
@@ -132,7 +133,10 @@ def _store_items(store: str) -> ConditionBase:
                 & Attr('feedback_id').exists() & Attr('radar_brand').exists())
     if store != STORE_FEEDBACK:
         raise ValueError(f'Unknown item store "{store}"')
-    return Attr('sk').begins_with(FEEDBACK_SK_PREFIX)
+    # A workspace's item (`WS#{ws}#SOURCE#…`, docs/multi-workspace.md) is not reached yet: its raw objects and
+    # Silver versions live under `ws/{ws}/`, which this deployment-wide job does not delete, and a version
+    # folder `silver/{source}/{id}/` here could be a deployment item's with the same source and id.
+    return Attr('sk').begins_with(FEEDBACK_SK_PREFIX) & ~Attr('pk').begins_with(WORKSPACE_KEY_PREFIX)
 
 
 def retention_filter(cutoffs: Mapping[str, str], store: str = STORE_FEEDBACK) -> ConditionBase:

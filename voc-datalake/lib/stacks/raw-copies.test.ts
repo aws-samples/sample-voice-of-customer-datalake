@@ -12,6 +12,7 @@ import { synthIngestionStacks } from '../test-support/ingestion-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { appVersion } from '../utils/connector-version';
 import { byCodeUnit } from '../utils/compare';
+import { WORKSPACE_ID_PATTERN } from './core-buckets';
 import { IMPORT_STAGED_EXPIRATION_DAYS } from './ingestion-stack';
 
 interface Statement { actions: string[]; resource: string }
@@ -64,6 +65,17 @@ describe('raw copies: the processor fallback', () => {
   it('may put under raw/ (any source: the fallback writes the message source) but never read or delete it', () => {
     const statements = policyStatementsOf(template, 'ProcessingLambdaRole');
     expectPutOnly(statements, 'raw/*');
+  });
+
+  it('may put a workspace message\'s copies under ws/{one id}/raw/ and ws/{one id}/silver/, put only', () => {
+    const statements = policyStatementsOf(template, 'ProcessingLambdaRole');
+    const oneWorkspace = `ws/${WORKSPACE_ID_PATTERN}`;
+    expectPutOnly(statements, `${oneWorkspace}/raw/*`);
+    expect(s3ActionsUnder(statements, `${oneWorkspace}/silver/*`)).toStrictEqual(['s3:PutObject']);
+    // Never the whole ws/ tree, nor a pattern that crosses a workspace's folder (IAM's * matches /).
+    const workspaceGrants = statements.filter((s) => s.resource.includes('/ws/'));
+    expect(workspaceGrants.length).toBeGreaterThan(0);
+    for (const s of workspaceGrants) expect(s.resource).toContain(`/${oneWorkspace}/`);
   });
 
   it('the processor gets the bucket and the app version', () => {

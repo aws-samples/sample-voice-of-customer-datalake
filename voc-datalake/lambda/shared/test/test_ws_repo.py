@@ -6,11 +6,11 @@ from unittest.mock import MagicMock
 import pytest
 from moto import mock_aws
 
+from shared import feedback_partitions as partitions
 from shared.test.moto_tables import create_pk_sk_table
 from shared.workspace import WorkspaceContext
 from shared.ws_repo import (
     PARTITION_ATTRIBUTES,
-    UNSCOPED_INDEX_ATTRIBUTES,
     WATERMARK_PARTITION,
     OutOfScopeError,
     WorkspaceScope,
@@ -19,6 +19,8 @@ from shared.ws_repo import (
     date_pk,
     feedback_id_pk,
     feedback_key,
+    is_workspace_key,
+    message_scope,
     metric_pk,
     metric_type,
     s3_key,
@@ -150,13 +152,13 @@ class TestWorkspaceTable:
         lambda repo: repo.put_item(feedback_key(B, 'web', 'f1')),
         lambda repo: repo.put_item({**feedback_key(A, 'web', 'f1'), 'gsi1pk': date_pk(B, '2026-01-15')}),
         lambda repo: repo.put_item({**feedback_key(A, 'web', 'f1'), 'gsi4pk': 'FEEDBACK#f1'}),
-        lambda repo: repo.put_item({**feedback_key(A, 'web', 'f1'), 'feedback_id': 'f1'}),
-        lambda repo: repo.put_item({**feedback_key(A, 'web', 'f1'), 'source_channel': 'email'}),
-        lambda repo: repo.update_item(feedback_key(A, 'web', 'f1'), UpdateExpression='SET source_channel = :c',
-                                      ExpressionAttributeValues={':c': channel_pk(A, 'email')}),
+        lambda repo: repo.put_item({**feedback_key(A, 'web', 'f1'), 'gsi4pk': feedback_id_pk(B, 'f1')}),
+        lambda repo: repo.put_item({**feedback_key(A, 'web', 'f1'), 'gsi5pk': 'CHANNEL#email'}),
+        lambda repo: repo.update_item(feedback_key(A, 'web', 'f1'), UpdateExpression='SET gsi5pk = :c',
+                                      ExpressionAttributeValues={':c': 'CHANNEL#email'}),
         lambda repo: repo.update_item(feedback_key(A, 'web', 'f1'), UpdateExpression='SET #f = :f',
-                                      ExpressionAttributeNames={'#f': 'feedback_id'},
-                                      ExpressionAttributeValues={':f': 'f1'}),
+                                      ExpressionAttributeNames={'#f': 'gsi4pk'},
+                                      ExpressionAttributeValues={':f': feedback_id_pk(B, 'f1')}),
         lambda repo: repo.put_item({**feedback_key(A, 'web', 'f1'), 'metric_type': 'source'}),
         lambda repo: repo.update_item(feedback_key(B, 'web', 'f1'), UpdateExpression='SET a = :a',
                                       ExpressionAttributeValues={':a': 1}),
@@ -256,14 +258,72 @@ def _feedback_index_partitions() -> set[str]:
     return named | paired
 
 
-def test_every_feedback_index_partition_is_scoped_or_refused():
-    """Lockstep with lib/stacks/core-stack.ts: each voc-feedback index partition is either one the layer checks
-    for the workspace prefix or one it refuses to write; and a refused one that no index uses any more (the
-    re-key landed) leaves UNSCOPED_INDEX_ATTRIBUTES."""
+def test_every_feedback_index_partition_is_scoped():
+    """Lockstep with lib/stacks/core-stack.ts: each voc-feedback index partition is one the layer checks for the
+    workspace prefix. gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``, never again on a raw attribute
+    (``feedback_id``, ``source_channel``) that holds the same value in every workspace."""
     partitions = _feedback_index_partitions()
-    assert partitions >= {'gsi1pk', 'gsi2pk', 'gsi3pk'}
-    assert partitions <= set(PARTITION_ATTRIBUTES) | set(UNSCOPED_INDEX_ATTRIBUTES)
-    assert set(UNSCOPED_INDEX_ATTRIBUTES) <= partitions
+    assert partitions == {'gsi1pk', 'gsi2pk', 'gsi3pk', 'gsi4pk', 'gsi5pk'}
+    assert partitions <= set(PARTITION_ATTRIBUTES)
+
+
+@pytest.mark.parametrize(('body', 'expected'), [
+    ({'id': 'x'}, (False, None)),
+    ({'workspace_id': WS}, (False, A)),
+    ({'workspace_id': 'ws_nope'}, (True, None)),
+    ({'workspace_id': None}, (True, None)),
+    ({'workspace_id': ''}, (True, None)),
+    ({'workspace_id': 7}, (True, None)),
+    ('not a message', (False, None)),
+])
+def test_a_message_scope_is_its_workspace_none_or_refused(body, expected):
+    """Two paths: a workspace's, the deployment's (no field); a field that is no workspace id is refused."""
+    assert message_scope(body) == expected
+
+
+@pytest.mark.parametrize(('key', 'expected'), [
+    (f'WS#{WS}#SOURCE#web', True), ('WS#anything', True), ('SOURCE#web', False), ('ws#x', False), (None, False),
+])
+def test_a_workspace_key_is_any_key_that_starts_ws(key, expected):
+    assert is_workspace_key(key) is expected
+
+
+class TestTheFeedbackPartitionsOnEitherPath:
+    """shared/feedback_partitions.py: the layer's builders in a workspace, the deployment's keys without one."""
+
+    def test_deployment_wide(self):
+        assert partitions.item_key(None, 'web', 'f1') == {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}
+        assert [partitions.date_partition(None, '2026-01-15'), partitions.category_partition(None, 'c'),
+                partitions.urgency_partition(None, 'high'), partitions.feedback_id_partition(None, 'f1'),
+                partitions.channel_partition(None, 'email')] == [
+            'DATE#2026-01-15', 'CATEGORY#c', 'URGENCY#high', 'FEEDBACK#f1', 'CHANNEL#email']
+
+    def test_in_a_workspace(self):
+        assert partitions.item_key(A, 'web', 'f1') == feedback_key(A, 'web', 'f1')
+        assert [partitions.date_partition(A, '2026-01-15'), partitions.category_partition(A, 'c'),
+                partitions.urgency_partition(A, 'high'), partitions.feedback_id_partition(A, 'f1'),
+                partitions.channel_partition(A, 'email')] == [
+            date_pk(A, '2026-01-15'), category_pk(A, 'c'), urgency_pk(A, 'high'), feedback_id_pk(A, 'f1'),
+            channel_pk(A, 'email')]
+
+    def test_two_workspaces_and_the_deployment_never_share_an_id_or_channel_partition(self):
+        ids = {partitions.feedback_id_partition(scope, 'f1') for scope in (None, A, B)}
+        channels = {partitions.channel_partition(scope, 'email') for scope in (None, A, B)}
+        assert (len(ids), len(channels)) == (3, 3)
+        assert (partitions.FEEDBACK_ID_INDEX_PARTITION, partitions.CHANNEL_INDEX_PARTITION) == ('gsi4pk', 'gsi5pk')
+
+
+def test_an_item_carries_its_id_and_channel_as_plain_attributes():
+    """``feedback_id`` and ``source_channel`` are plain attributes since the re-key: written and updated freely."""
+    backing = MagicMock()
+    repo = ws_table(A, backing)
+    item = {**feedback_key(A, 'web', 'f1'), 'feedback_id': 'f1', 'source_channel': 'email',
+            'gsi4pk': feedback_id_pk(A, 'f1'), 'gsi5pk': channel_pk(A, 'email')}
+    repo.put_item(item)
+    repo.update_item(feedback_key(A, 'web', 'f1'), UpdateExpression='SET source_channel = :c, gsi5pk = :g',
+                     ExpressionAttributeValues={':c': 'chat', ':g': channel_pk(A, 'chat')})
+    assert backing.put_item.call_args.kwargs['Item'] == item
+    assert backing.update_item.call_count == 1
 
 
 def _table_section(start: str, end: str) -> str:

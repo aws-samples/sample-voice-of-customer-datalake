@@ -49,7 +49,7 @@ def _feedback_table(items: list[dict] | None = None):
     def query(**kwargs):
         if kwargs.get('IndexName') == 'gsi4-by-feedback-id':
             wanted = kwargs['KeyConditionExpression'].get_expression()['values'][1]
-            return {'Items': [i for i in items if i['feedback_id'] == wanted]}
+            return {'Items': [i for i in items if f"FEEDBACK#{i['feedback_id']}" == wanted]}
         return {'Items': list(items)}
 
     wire_urgency_index(table, items)

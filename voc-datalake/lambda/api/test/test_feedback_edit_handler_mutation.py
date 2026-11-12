@@ -150,7 +150,7 @@ class TestTheReadIsAnIndexedLookupThenAStrongRead:
         status, _ = _put((feedback, aggregates), lambda_context, {'category': 'billing'})
         assert status == 200
         feedback.query.assert_called_once_with(
-            IndexName=FEEDBACK_BY_ID_INDEX, KeyConditionExpression=Key('feedback_id').eq('f1'), Limit=1)
+            IndexName=FEEDBACK_BY_ID_INDEX, KeyConditionExpression=Key('gsi4pk').eq('FEEDBACK#f1'), Limit=1)
         feedback.get_item.assert_called_once_with(Key={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}, ConsistentRead=True)
         assert feedback.update_item.call_args.kwargs['Key'] == {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}
         assert feedback.update_item.call_args.kwargs['ReturnValues'] == 'ALL_NEW'

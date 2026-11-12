@@ -48,6 +48,7 @@ from shared.feedback import (
     window_cutoff,
 )
 from shared.feedback_cursor import decode_key_cursor, decode_offset_cursor, encode_key_cursor, encode_offset_cursor
+from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
 from shared.feedback_similarity import rank_similar
 from shared.feedback_types import FEEDBACK_TYPE_KEY
 from shared.github_metrics import GITHUB_SOURCE, github_breakdown, issue_attributes, matches_issue_filters
@@ -130,11 +131,11 @@ SIMILAR_CANDIDATE_ROWS = 100
 # What the day walks of the metric routes and the `/feedback` candidate window read
 # off a review: the table keys (a list page is fetched in full by key), every field a
 # metric or a list filter reads (`CHANNEL_INDEX_FIELDS`, the same contract the channel
-# index serves those routes with) and the channel. A projected row is a tenth of a
+# index serves those routes with, the channel included). A projected row is a tenth of a
 # full review, and decoding thousands of full reviews was most of these routes' CPU.
 # The caps and page size are the full-row walk's, so the walk reads exactly the same
 # rows, pages and partial flags as before; only the attributes decoded shrink.
-METRIC_ROW_FIELDS = ('pk', 'sk', *CHANNEL_INDEX_FIELDS, 'source_channel')
+METRIC_ROW_FIELDS = ('pk', 'sk', *CHANNEL_INDEX_FIELDS)
 # `/feedback/entities`' issue sample reads only the problem summary.
 ISSUE_SAMPLE_PROJECTION = {'ProjectionExpression': '#ps', 'ExpressionAttributeNames': {'#ps': 'problem_summary'}}
 
@@ -875,9 +876,10 @@ def _feedback_by_id(feedback_id: str) -> dict:
     Also a 404 when the item's category is outside the caller's scope — the same
     answer as a missing item, so restricted callers learn nothing about it.
     """
+    # The deployment-wide partition of gsi4 (shared/feedback_partitions.py): a workspace's item never answers.
     response = _feedback_table().query(
         IndexName=FEEDBACK_BY_ID_INDEX,
-        KeyConditionExpression=Key('feedback_id').eq(feedback_id),
+        KeyConditionExpression=Key(FEEDBACK_ID_INDEX_PARTITION).eq(feedback_id_partition(None, feedback_id)),
         Limit=1
     )
     items = response.get('Items', [])

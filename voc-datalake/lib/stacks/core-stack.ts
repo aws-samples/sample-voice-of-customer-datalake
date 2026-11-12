@@ -234,26 +234,30 @@ export class VocCoreStack extends VocStack {
       nonKeyAttributes: ['feedback_id', 'source_platform', 'problem_summary', 'direct_customer_quote', 'source_url'],
     });
 
+    // By feedback id. Keyed on `gsi4pk` (`FEEDBACK#{id}`, a workspace's `WS#{ws}#FEEDBACK#{id}`:
+    // lambda/shared/feedback_partitions.py), not on the raw `feedback_id`, which is the same in every
+    // workspace (docs/multi-workspace.md). Changing a GSI's key is a delete and a create: an existing
+    // deployment cannot take this in one update (docs/multi-workspace.md, "Upgrading").
     this.feedbackTable.addGlobalSecondaryIndex({
       indexName: 'gsi4-by-feedback-id',
-      partitionKey: { name: 'feedback_id', type: dynamodb.AttributeType.STRING },
+      partitionKey: { name: 'gsi4pk', type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
     // Channel-filtered reads (lambda/shared/channel_index.py): one key range per channel,
     // newest first, so a small channel in a big import is read without reading the day.
-    // Keyed on attributes every processed review already has, so DynamoDB builds it from
-    // the existing items itself. Slim projection: CHANNEL_INDEX_FIELDS (pinned by
-    // lambda/shared/test/test_channel_index.py).
+    // Keyed on `gsi5pk` (`CHANNEL#{channel}`, a workspace's `WS#{ws}#CHANNEL#{channel}`), not on
+    // the raw `source_channel`, so `source_channel` is projected now that it is no index key.
+    // Slim projection: CHANNEL_INDEX_FIELDS (pinned by lambda/shared/test/test_channel_index.py).
     this.feedbackTable.addGlobalSecondaryIndex({
       indexName: 'gsi5-by-channel',
-      partitionKey: { name: 'source_channel', type: dynamodb.AttributeType.STRING },
+      partitionKey: { name: 'gsi5pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.INCLUDE,
       nonKeyAttributes: [
         'feedback_id', 'source_platform', 'category', 'subcategory', 'sentiment_label', 'sentiment_score',
         'date', 'source_created_at', 'urgency', 'persona_type', 'problem_summary', 'dimensions', 'tags',
-        'rating', 'issue_attributes',
+        'rating', 'issue_attributes', 'source_channel',
       ],
     });
 

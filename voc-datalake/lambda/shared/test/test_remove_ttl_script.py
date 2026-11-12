@@ -51,6 +51,19 @@ FEEDBACK_PAGES = (
 METRIC_ROWS = ([{'pk': 'METRIC#daily_total', 'sk': '2025-06-01'}],)
 
 
+def test_a_workspace_item_never_lowers_the_deployments_earliest_date(remove_ttl):
+    """Workspace items (`WS#…`, docs/multi-workspace.md) are left alone, as the aggregator leaves them out."""
+    workspace = {'pk': 'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#SOURCE#web', 'sk': 'FEEDBACK#9', 'ttl': 3,
+                 'date': '2020-01-01'}
+    feedback, aggregates = _table([*FEEDBACK_PAGES[0], workspace], *FEEDBACK_PAGES[1:]), _table(*METRIC_ROWS)
+
+    report = remove_ttl.run(feedback, aggregates, apply=True)
+
+    assert report.earliest_date == '2025-03-15'
+    assert (report.feedback_scanned, report.workspace_items, report.feedback_with_ttl) == (4, 1, 2)
+    assert all(call.kwargs['Key']['sk'] != 'FEEDBACK#9' for call in feedback.update_item.call_args_list)
+
+
 def test_the_dry_run_writes_nothing(remove_ttl):
     feedback, aggregates = _table(*FEEDBACK_PAGES), _table(*METRIC_ROWS)
 

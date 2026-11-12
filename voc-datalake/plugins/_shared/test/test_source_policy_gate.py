@@ -115,6 +115,17 @@ def test_a_source_payload_cannot_choose_the_workspace_an_ingestors_message_lands
     assert [m['workspace_id'] for m in ingest_send.call_args.args[2]] == [WS]
 
 
+def test_a_deployment_wide_run_or_a_webhook_never_queues_a_workspace_from_its_payload():
+    """The source policy drops a payload's `workspace_id`; only a run in a workspace adds one, from its scope."""
+    spoofed = [{**_message('other'), 'workspace_id': OTHER_WS}]
+    with patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send, \
+            patch.object(base_webhook, 'send_messages_to_queue', return_value=1) as webhook_send:
+        base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=None), spoofed)
+        base_webhook.BaseWebhook.send_to_queue(MagicMock(), spoofed)
+    assert ['workspace_id' in m for m in ingest_send.call_args.args[2]] == [False]
+    assert ['workspace_id' in m for m in webhook_send.call_args.args[2]] == [False]
+
+
 def test_normalized_fields_carry_author_title_dimensions_and_tags_when_present():
     item = {'id': 'x', 'text': 't', 'author': ' Jane ', 'title': 'T' * 600,
             'dimensions': {'product': 'app', 'bad key': 'x'}, 'tags': 'vip;beta'}

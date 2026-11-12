@@ -5,7 +5,7 @@ from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
-from boto3.dynamodb.conditions import ConditionExpressionBuilder
+from boto3.dynamodb.conditions import Attr, ConditionExpressionBuilder
 from botocore.exceptions import ClientError
 
 from shared import reprocess_lineage as lineage
@@ -124,7 +124,16 @@ class TestReadPage:
         assert table.scan.call_args.kwargs['ExclusiveStartKey'] == cursor
 
     def test_the_filter_always_keeps_to_feedback_rows(self):
-        assert _names(slices.read_filter(slices.ReprocessSlice(), (None, None))) == {'sk'}
+        """Feedback rows of the deployment: `sk` FEEDBACK#…, and `pk` never a workspace's (WS#…)."""
+        condition = slices.read_filter(slices.ReprocessSlice(), (None, None))
+        assert _names(condition) == {'sk', 'pk'}
+        assert condition == Attr('sk').begins_with('FEEDBACK#') & ~Attr('pk').begins_with('WS#')
+
+    def test_a_workspace_item_is_never_in_a_slice(self):
+        workspace_item = {'pk': 'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#SOURCE#web', 'source_platform': 'web',
+                          'category': 'delivery', 'date': '2026-01-15'}
+        assert slices.admits(workspace_item, slices.ReprocessSlice(), (None, None)) is False
+        assert slices.admits({**workspace_item, 'pk': 'SOURCE#web'}, slices.ReprocessSlice(), (None, None)) is True
 
 
 class TestLineage:

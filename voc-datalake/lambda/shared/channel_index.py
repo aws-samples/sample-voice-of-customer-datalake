@@ -6,17 +6,20 @@ reviews on one day; a channel of 70 among them came back empty, because the day 
 at its row caps long before it has read the day (a benchmark on that shape: 14 s to read
 the day in full, 0.1 s to read the 70 through this index).
 
-The index is keyed ``source_channel`` + ``gsi1sk`` (the processing time, the same sort key
+The index is keyed ``gsi5pk`` + ``gsi1sk`` (the processing time, the same sort key
 ``gsi1-by-date`` uses), so a window is one key range per channel, newest first, and a read
-costs what the CHANNEL holds, not what the day holds. It projects only
+costs what the CHANNEL holds, not what the day holds. ``gsi5pk`` is the processor's
+``CHANNEL#{source_channel}`` (shared/feedback_partitions.py; a workspace's item
+``WS#{ws}#CHANNEL#…``, which this deployment-wide read never names), not the raw
+``source_channel``, which is the same in every workspace (docs/multi-workspace.md). It projects only
 ``CHANNEL_INDEX_FIELDS``: what the metric routes read off an item. That keeps each row
 small (a whole channel of 25,000 reviews reads in about 2 s), so the walk can afford a far
 larger cap than the day walk's 5,000. A route that shows full reviews (the feedback list)
 reads its page of keys here and fetches those items from the table.
 
-DynamoDB builds the index from existing items by itself: every processed review already
-carries both key attributes. Items without a ``source_channel`` are simply not in it, which
-is right, since they can never match a channel filter.
+Only items the processor wrote with ``gsi5pk`` are in it: an item stored before the re-key carries
+none (multi-workspace starts on a fresh deployment; docs/multi-workspace.md, "Upgrading"). Items without a
+channel are not in it either, which is right, since they can never match a channel filter.
 """
 from __future__ import annotations
 
@@ -26,6 +29,7 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import ConditionBase, Key
 from botocore.exceptions import ClientError
 
+from shared.feedback_partitions import CHANNEL_INDEX_PARTITION, channel_partition
 from shared.indexes import FEEDBACK_BY_CHANNEL_INDEX
 from shared.time_budget import ROW_CAP_PARTIAL_REASON, TIME_BUDGET_PARTIAL_REASON, WalkBudget
 
@@ -34,12 +38,13 @@ __all__ = ['CHANNEL_INDEX_FIELDS', 'ChannelIndexUnavailable', 'walk_channel']
 # The non-key attributes gsi5-by-channel projects (its `nonKeyAttributes` in core-stack.ts;
 # test_channel_index.py pins the two together). Everything a channel-filtered metric reads:
 # category / scope (category, subcategory), sentiment, the date bases, urgency, persona,
-# issues (problem_summary), dims / tags / stars filters, GitHub metrics (issue_attributes).
-# The table keys (pk, sk) and the index keys (source_channel, gsi1sk) come with every row.
+# issues (problem_summary), dims / tags / stars filters, GitHub metrics (issue_attributes), and the
+# channel itself (source_channel: no index key since the re-key, and the item filters compare it).
+# The table keys (pk, sk) and the index keys (gsi5pk, gsi1sk) come with every row.
 CHANNEL_INDEX_FIELDS: Final = (
     'feedback_id', 'source_platform', 'category', 'subcategory', 'sentiment_label', 'sentiment_score',
     'date', 'source_created_at', 'urgency', 'persona_type', 'problem_summary', 'dimensions', 'tags',
-    'rating', 'issue_attributes',
+    'rating', 'issue_attributes', 'source_channel',
 )
 
 # Rows one request may hold (a projected row is a few hundred bytes). The walk budget still
@@ -90,7 +95,8 @@ def walk_channel(
     kwargs: dict[str, Any] = {
         'IndexName': FEEDBACK_BY_CHANNEL_INDEX,
         # gsi1sk starts with the ISO processing time, so a date compares as its prefix.
-        'KeyConditionExpression': Key('source_channel').eq(channel) & Key('gsi1sk').gte(cutoff_date),
+        'KeyConditionExpression': (Key(CHANNEL_INDEX_PARTITION).eq(channel_partition(None, channel))
+                                   & Key('gsi1sk').gte(cutoff_date)),
         'ScanIndexForward': False,
         'Limit': _PAGE_LIMIT,
     }

@@ -11,8 +11,9 @@ only ever reads and writes its own rows and objects. This module is the one plac
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
   ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (the credentials secret's name is
   shared/workspace_ids.py ``credentials_secret_name``).
-* ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions, and any
-  write of gsi4's and gsi5's partitions while those stay shared by every workspace (``UNSCOPED_INDEX_ATTRIBUTES``).
+* ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions (every index
+  partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
+  no longer on the raw ``feedback_id`` and ``source_channel``).
 
 shared/test/test_ws_raw_access.py counts, per module outside this layer, the raw table and bucket calls and the
 unscoped data-path keys, against an allowlist of the modules not moved yet that must match exactly.
@@ -22,8 +23,7 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
     voc-feedback    pk WS#{ws}#SOURCE#{source}   sk FEEDBACK#{feedback_id}
                     gsi1pk WS#{ws}#DATE#{yyyy-mm-dd}      gsi2pk WS#{ws}#CATEGORY#{category}
                     gsi3pk WS#{ws}#URGENCY#{urgency}
-                    gsi4pk WS#{ws}#FEEDBACK#{feedback_id}  gsi5pk WS#{ws}#CHANNEL#{channel}   (planned: today
-                    gsi4 and gsi5 are keyed on the raw feedback_id and source_channel, re-keyed with the processor)
+                    gsi4pk WS#{ws}#FEEDBACK#{feedback_id}  gsi5pk WS#{ws}#CHANNEL#{channel}
     voc-aggregates  pk WS#{ws}#METRIC#{name}     metric_type WS#{ws}#{type}
                     pk WS#{ws}#SOURCE_RUN#{source}        pk WS#{ws}#SCRAPER_RUN#{scraper_id}
                     pk WS#{ws}#FAILURES#{plugin}          pk WS#{ws}#CIRCUIT#{plugin} (the plugins' breaker)
@@ -46,8 +46,8 @@ if TYPE_CHECKING:  # the request middleware (shared/workspace.py): the asynchron
 
 __all__ = [
     'PARTITION_ATTRIBUTES',
-    'UNSCOPED_INDEX_ATTRIBUTES',
     'WORKSPACE_FIELD',
+    'WORKSPACE_KEY_PREFIX',
     'OutOfScopeError',
     'WorkspaceScope',
     'WorkspaceTable',
@@ -56,6 +56,8 @@ __all__ = [
     'date_pk',
     'feedback_id_pk',
     'feedback_key',
+    'is_workspace_key',
+    'message_scope',
     'metric_pk',
     'metric_type',
     'partition_query',
@@ -72,17 +74,15 @@ __all__ = [
 
 #: The field an asynchronous message (SQS body, Lambda async payload) names its workspace in.
 WORKSPACE_FIELD: Final = 'workspace_id'
+#: How every partition key of a workspace starts (``ws_key``): a deployment-wide reader that pages a whole table
+#: (a Scan, a stream) leaves rows whose partition starts with it to the workspace paths.
+WORKSPACE_KEY_PREFIX: Final = 'WS#'
 #: Item attributes that are partition keys of the table or of one of its indexes: each must be in the scope.
 PARTITION_ATTRIBUTES: Final = ('pk', 'source', 'gsi1pk', 'gsi2pk', 'gsi3pk', 'gsi4pk', 'gsi5pk', 'metric_type')
 #: voc-watermarks' partition key (its only key), never a ``pk`` table's partition nor an index's.
 WATERMARK_PARTITION: Final = 'source'
 #: The partition keys of the data-path tables: ``pk`` (voc-feedback, voc-aggregates), ``source`` (voc-watermarks).
 TABLE_PARTITION_KEYS: Final = ('pk', WATERMARK_PARTITION)
-#: The partitions of gsi4 (``feedback_id``) and gsi5 (``source_channel``) of voc-feedback today: raw values, the same
-#: in every workspace. The processor's slice re-keys both indexes onto ``gsi4pk`` / ``gsi5pk`` (``feedback_id_pk``,
-#: ``channel_pk``); until then the layer refuses to write either attribute, so nothing it writes is found across
-#: workspaces through them (shared/test/test_ws_repo.py pins this list against lib/stacks/core-stack.ts).
-UNSCOPED_INDEX_ATTRIBUTES: Final = ('feedback_id', 'source_channel')
 #: ``= :placeholder`` right after an attribute in an UpdateExpression: the one checked way to set a partition.
 _ASSIGNED_PLACEHOLDER: Final = re.compile(r'\s*=\s*(:\w+)(?![\w(])\s*(?:,|\Z|\b(?:SET|REMOVE|ADD|DELETE)\b)',
                                           re.IGNORECASE)
@@ -134,6 +134,27 @@ def scope_from_message(body: Mapping[str, Any]) -> WorkspaceScope:
     if not isinstance(value, str):
         raise ValueError('the message names no workspace')
     return WorkspaceScope(value)
+
+
+def is_workspace_key(partition_key: object) -> bool:
+    """Whether ``partition_key`` is a workspace's (``WS#…``), well formed or not: a deployment-wide reader skips
+    it either way (``scope_from_key`` is the one that checks the workspace it names)."""
+    return isinstance(partition_key, str) and partition_key.startswith(WORKSPACE_KEY_PREFIX)
+
+
+def message_scope(body: object) -> tuple[bool, WorkspaceScope | None]:
+    """``(refused, scope)`` of an asynchronous message on a path that serves both a workspace and the deployment.
+
+    A message that names a workspace in ``workspace_id`` runs in it; one that names none (no such field) runs
+    deployment-wide (``scope`` None); one whose field is there but is not a workspace id (``None`` included) is
+    refused, never run deployment-wide instead.
+    """
+    if not isinstance(body, Mapping) or WORKSPACE_FIELD not in body:
+        return False, None
+    try:
+        return False, scope_from_message(body)
+    except ValueError:
+        return True, None
 
 
 def scope_from_key(partition_key: object) -> WorkspaceScope:
@@ -244,8 +265,6 @@ class WorkspaceTable:
 
     def _check_item(self, item: Mapping[str, Any]) -> None:
         self._check_key(item)
-        if any(attribute in item for attribute in UNSCOPED_INDEX_ATTRIBUTES):
-            raise OutOfScopeError('an index partition shared by every workspace')
         for attribute in PARTITION_ATTRIBUTES:
             # ``source`` is voc-watermarks' key and no index's partition (test_ws_repo pins both against
             # core-stack.ts): on a table keyed on ``pk`` it is a plain attribute (an import run's source label).
@@ -281,8 +300,6 @@ class WorkspaceTable:
         values = kwargs.get('ExpressionAttributeValues') or {}
         if not isinstance(expression, str):
             raise OutOfScopeError('an update needs an UpdateExpression')
-        if _names_any(expression, names, UNSCOPED_INDEX_ATTRIBUTES):
-            raise OutOfScopeError('an index partition shared by every workspace')
         for attribute in PARTITION_ATTRIBUTES:
             for spelling in _spellings(attribute, names):
                 for match in _mentions(spelling, expression):
@@ -341,11 +358,6 @@ def _mentions(spelling: str, expression: str) -> Iterator[re.Match[str]]:
     """Each place ``expression`` names ``spelling`` as a top-level attribute (not a part of another name, a
     placeholder, or a nested ``a.b`` path)."""
     return re.finditer(rf'(?<![\w#:.]){re.escape(spelling)}(?![\w.])', expression)
-
-
-def _names_any(expression: str, names: Mapping[str, Any], attributes: tuple[str, ...]) -> bool:
-    return any(next(_mentions(spelling, expression), None) is not None
-               for attribute in attributes for spelling in _spellings(attribute, names))
 
 
 def ws_table(scope: WorkspaceScope, table: Any, key: str = 'pk') -> WorkspaceTable:

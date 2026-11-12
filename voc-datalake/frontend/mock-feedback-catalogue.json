@@ -65,7 +65,7 @@
     {
       "name": "pk",
       "type": "string",
-      "meaning": "`SOURCE#{brand_name}`: the partition of the source the item came from",
+      "meaning": "`SOURCE#{brand_name}`: the partition of the source the item came from (an item of a workspace: every partition key here starts `WS#{ws}#`, docs/multi-workspace.md)",
       "set_by": [
         "processor"
       ],
@@ -172,9 +172,36 @@
       "under_summary_only": "kept"
     },
     {
+      "name": "gsi4pk",
+      "type": "string",
+      "meaning": "`FEEDBACK#{feedback_id}` (index gsi4-by-feedback-id)",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "gsi5pk",
+      "type": "string",
+      "meaning": "`CHANNEL#{source_channel}` (index gsi5-by-channel); absent when the channel is empty",
+      "set_by": [
+        "processor",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
       "name": "feedback_id",
       "type": "string",
-      "meaning": "The item id, unique in the deployment (index gsi4-by-feedback-id)",
+      "meaning": "The item id: the same source item has the same id in every workspace, so gsi4-by-feedback-id is keyed on `gsi4pk`",
       "set_by": [
         "processor"
       ],
@@ -213,7 +240,7 @@
     {
       "name": "source_channel",
       "type": "string",
-      "meaning": "The source's channel (e.g. `review`, `issue`, `form`); `unknown` when the source sends none (index gsi5-by-channel)",
+      "meaning": "The source's channel (e.g. `review`, `issue`, `form`); `unknown` when the source sends none (index gsi5-by-channel, through `gsi5pk`)",
       "set_by": [
         "producer",
         "source_update"

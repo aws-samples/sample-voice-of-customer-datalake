@@ -61,6 +61,7 @@ from shared.feedback_category import (
     validate_target,
 )
 from shared.feedback_field_edits import EDITABLE_FIELDS, FieldEdits, field_edits
+from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
 from shared.indexes import FEEDBACK_BY_ID_INDEX
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
@@ -421,11 +422,12 @@ CATEGORY_FIELDS = ('category', 'subcategory')
 
 
 def _feedback_key_by_id(table, feedback_id: str) -> dict:
-    """The record's primary key via the by-id GSI, or 404."""
+    """The record's primary key via the by-id GSI (its deployment-wide partition), or 404."""
     response = table.query(
         IndexName=FEEDBACK_BY_ID_INDEX,
-        KeyConditionExpression='feedback_id = :fid',
-        ExpressionAttributeValues={':fid': feedback_id},
+        KeyConditionExpression='#fid = :fid',
+        ExpressionAttributeNames={'#fid': FEEDBACK_ID_INDEX_PARTITION},
+        ExpressionAttributeValues={':fid': feedback_id_partition(None, feedback_id)},
         Limit=1
     )
     items = response.get('Items') or []

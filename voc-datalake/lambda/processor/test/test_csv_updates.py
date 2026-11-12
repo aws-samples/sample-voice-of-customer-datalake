@@ -232,6 +232,65 @@ class TestMarker:
         assert idempotency_key_for(correction) == f'manual_import:{ROW_ID}:csv:{HASH_B}'
 
 
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+
+def _channel_indexed_table(name: str):
+    """voc-feedback with gsi5-by-channel as core-stack.ts keys it (gsi5pk + gsi1sk; all projected here)."""
+    import boto3
+
+    return boto3.resource('dynamodb', region_name='us-east-1').create_table(
+        TableName=name, BillingMode='PAY_PER_REQUEST',
+        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
+        AttributeDefinitions=[{'AttributeName': key, 'AttributeType': 'S'} for key in ('pk', 'sk', 'gsi5pk', 'gsi1sk')],
+        GlobalSecondaryIndexes=[{
+            'IndexName': 'gsi5-by-channel', 'Projection': {'ProjectionType': 'ALL'},
+            'KeySchema': [{'AttributeName': 'gsi5pk', 'KeyType': 'HASH'}, {'AttributeName': 'gsi1sk', 'KeyType': 'RANGE'}],
+        }],
+    )
+
+
+class TestACorrectedChannelMovesTheChannelIndex:
+    """A correction that changes the channel moves ``gsi5pk`` with it: the item is found under the new channel only."""
+
+    def test_deployment_wide(self):
+        from shared.channel_index import walk_channel
+        from shared.time_budget import WalkBudget
+
+        with world() as (_, _llm):
+            table = _channel_indexed_table('test-feedback-csv-channel')
+            with patch.object(handler, 'feedback_table', table):
+                deliver(csv_message())
+                deliver(csv_message(content_hash=HASH_B, replace=True, source_channel='email'))
+            (item,) = table.scan()['Items']
+            new, _ = walk_channel(table, 'email', '2000-01-01', WalkBudget(seconds=60))
+            old, _ = walk_channel(table, 'csv_upload', '2000-01-01', WalkBudget(seconds=60))
+
+        assert (item['source_channel'], item['gsi5pk']) == ('email', 'CHANNEL#email')
+        assert [row['sk'] for row in new] == [item['sk']]
+        assert old == []
+
+    def test_in_a_workspace(self):
+        from boto3.dynamodb.conditions import Key
+
+        with world() as (_, _llm):
+            table = _channel_indexed_table('test-feedback-csv-channel-ws')
+            with patch.object(handler, 'feedback_table', table):
+                deliver(csv_message(workspace_id=WS))
+                deliver(csv_message(content_hash=HASH_B, replace=True, source_channel='email', workspace_id=WS))
+            (item,) = table.scan()['Items']
+
+            def under(channel: str) -> list[dict]:
+                return table.query(IndexName='gsi5-by-channel',
+                                   KeyConditionExpression=Key('gsi5pk').eq(channel))['Items']
+
+            found = (under(f'WS#{WS}#CHANNEL#email'), under(f'WS#{WS}#CHANNEL#csv_upload'), under('CHANNEL#email'))
+
+        assert str(item['pk']).startswith(f'WS#{WS}#')
+        assert item['gsi5pk'] == f'WS#{WS}#CHANNEL#email'
+        assert ([row['sk'] for row in found[0]], found[1], found[2]) == ([item['sk']], [], [])
+
+
 def test_the_corrections_modify_moves_the_aggregates_without_double_counting():
     """Same precedent and helper as test_source_update_aggregates: the INSERT, then the real MODIFY images."""
     answers = [insights('product_quality', 0.6, 'low', 'positive'), insights('performance', -0.9, 'high')]

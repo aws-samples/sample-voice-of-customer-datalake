@@ -48,7 +48,7 @@ from shared.ws_repo import (
     WATERMARK_PARTITION,
     WORKSPACE_FIELD,
     WorkspaceScope,
-    scope_from_message,
+    message_scope,
     source_run_pk,
     watermark_key,
 )
@@ -99,18 +99,6 @@ def is_scheduled_tick(event: object) -> TypeGuard[Mapping]:
     return (isinstance(event, Mapping) and WORKSPACE_FIELD not in event
             and event.get("source") == SCHEDULED_EVENT_SOURCE
             and event.get("detail-type") == SCHEDULED_EVENT_DETAIL_TYPE)
-
-
-def _event_scope(event: object) -> tuple[bool, WorkspaceScope | None]:
-    """``(refused, scope)``: the scope *event* names in ``workspace_id``; None when it names none (the
-    deployment-wide path); refused when it names one that is not a well-formed workspace id (never run
-    deployment-wide instead)."""
-    if not isinstance(event, Mapping) or WORKSPACE_FIELD not in event:
-        return False, None
-    try:
-        return False, scope_from_message(event)
-    except ValueError:
-        return True, None
 
 
 def fan_out_tick(plugin_id: str) -> dict:
@@ -191,7 +179,9 @@ def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]
     * The scheduled tick first fans out to the workspaces that enabled the plugin (``fan_out_tick``, each its own
       invoke), at most once per tick (``fan_out_once``), then runs the deployment-wide run as before.
     """
-    refused, scope = _event_scope(event)
+    # The scope the event names (shared/ws_repo.py message_scope, as the feedback processor reads its messages):
+    # None when it names none, refused when its workspace_id is not a workspace id (never run deployment-wide).
+    refused, scope = message_scope(event)
     if refused:
         logger.error("Ingestor event refused: its workspace_id is not a workspace id", extra={"plugin_id": SOURCE_PLATFORM})
         metrics.add_metric(name="IngestorEventRefused", unit="Count", value=1)

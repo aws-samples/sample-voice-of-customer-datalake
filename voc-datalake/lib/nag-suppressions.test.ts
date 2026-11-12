@@ -228,7 +228,9 @@ describe('cdk-nag acknowledgements', () => {
       // The exact number of acknowledged findings, so a change that adds or removes an acknowledgement says so
       // in its diff (and a recorder that misses some fails). Update it with the acknowledgement.
       // 77: the plugin ingestors' raw writes under ws/{one id}/raw/* and their read of the voc/ws/* credentials secrets.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 77, used: 77 });
+      // 78: the processor's write-once Silver versions under ws/{one id}/silver/* (its ws/{one id}/raw/* puts share
+      // the ingestors' finding).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 78, used: 78 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

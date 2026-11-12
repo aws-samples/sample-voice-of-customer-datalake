@@ -186,7 +186,7 @@ def test_a_stale_editor_is_asked_to_reload_before_its_fields_are_checked(tables,
 
 def test_a_branded_review_is_found_by_id_when_its_source_partition_misses(tables, lambda_context):
     """A branded review lives under SOURCE#{brand_name}; the editor sends back its source_platform."""
-    branded = {**ITEM, 'pk': 'SOURCE#example_air', 'feedback_id': 'f2', 'sk': 'FEEDBACK#f2',
+    branded = {**ITEM, 'pk': 'SOURCE#example_air', 'feedback_id': 'f2', 'sk': 'FEEDBACK#f2', 'gsi4pk': 'FEEDBACK#f2',
                'source_platform': SOURCE, 'original_text': 'The lounge was full'}
     tables[0].put_item(Item=branded)
     event = rest_event('PUT', '/data-explorer/feedback', claims=ADMIN_CLAIMS,

@@ -52,7 +52,7 @@ def _review(n: int, channel: str) -> dict:
         'pk': 'SOURCE#manual_import', 'sk': f'FEEDBACK#r{n:04d}', 'feedback_id': f'r{n:04d}',
         'gsi1pk': f'DATE#{day}', 'gsi1sk': f'{stamp}#r{n:04d}', 'date': stamp,
         'source_created_at': (datetime.now(UTC) - timedelta(days=n % 3)).strftime('%Y-%m-%d'),
-        'source_platform': 'manual_import', 'source_channel': channel,
+        'source_platform': 'manual_import', 'source_channel': channel, 'gsi5pk': f'CHANNEL#{channel}',
         'category': CATEGORIES[n % 2], 'subcategory': ['blad', 'jak_to_zrobic'][n % 2],
         'sentiment_label': ['negative', 'neutral', 'positive'][n % 3],
         'sentiment_score': Decimal(['-0.5', '0', '0.6'][n % 3]),
@@ -67,7 +67,7 @@ def _review(n: int, channel: str) -> dict:
 def _feedback_table(name: str, with_index: bool):
     if not with_index:
         return pk_sk_table(name, gsi1_index='gsi1-by-date')
-    keys = ['pk', 'sk', 'gsi1pk', 'gsi1sk', 'source_channel']
+    keys = ['pk', 'sk', 'gsi1pk', 'gsi1sk', 'gsi5pk']
 
     def schema(hash_key: str, range_key: str) -> list:
         return [{'AttributeName': hash_key, 'KeyType': 'HASH'}, {'AttributeName': range_key, 'KeyType': 'RANGE'}]
@@ -77,7 +77,7 @@ def _feedback_table(name: str, with_index: bool):
         AttributeDefinitions=[{'AttributeName': k, 'AttributeType': 'S'} for k in keys],
         GlobalSecondaryIndexes=[
             {'IndexName': 'gsi1-by-date', 'KeySchema': schema('gsi1pk', 'gsi1sk'), 'Projection': {'ProjectionType': 'ALL'}},
-            {'IndexName': 'gsi5-by-channel', 'KeySchema': schema('source_channel', 'gsi1sk'),
+            {'IndexName': 'gsi5-by-channel', 'KeySchema': schema('gsi5pk', 'gsi1sk'),
              'Projection': {'ProjectionType': 'INCLUDE', 'NonKeyAttributes': list(CHANNEL_INDEX_FIELDS)}},
         ],
     )
@@ -185,10 +185,11 @@ class TestSlimRowsAnswerLikeFullReviews:
         table = metrics_handler.feedback_table
         assert table is not None
         rows = table.query(
-            IndexName='gsi5-by-channel', KeyConditionExpression=Key('source_channel').eq(SMALL))['Items']
+            IndexName='gsi5-by-channel', KeyConditionExpression=Key('gsi5pk').eq(f'CHANNEL#{SMALL}'))['Items']
         assert len(rows) == SMALL_COUNT
         assert {'original_text', 'normalized_text', 'gsi1pk'} & set(rows[0]) == set()
-        assert set(rows[0]) <= {*CHANNEL_INDEX_FIELDS, 'pk', 'sk', 'source_channel', 'gsi1sk'}
+        assert set(rows[0]) <= {*CHANNEL_INDEX_FIELDS, 'pk', 'sk', 'gsi5pk', 'gsi1sk'}
+        assert rows[0]['source_channel'] == SMALL  # projected: no index key since the re-key, and filters read it
 
     @pytest.mark.parametrize(('path', 'params'), [
         ('/feedback/entities', {}),

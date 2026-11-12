@@ -183,7 +183,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "2bb2e1253efd0e278a68e7930cc5deb2c8c90861dc58f3b9906821e9e938bcd4",
+      "templateSha256": "1da790bd98ec5cc05c3984e4ee86257cfccca0c496541f8a26c675c5f4b98a80",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -343,7 +343,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "b73920abf6087efdd5f1f8bbfd97785112aef077d3256e4a7d50c17d0ae9837e",
+      "templateSha256": "2e8b9408a7804a8655b18207ddccf303d5ea974c2ea15df93461f96458224e60",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
