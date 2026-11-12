@@ -4,8 +4,8 @@ An agent saves a checkpoint as a plain S3 put under its own keys (its role may w
 agent comes right after the run, as in the workspace's layout):
 ``engineering/runs/<run>/<agent>/checkpoints/<seq:06d>-<nonce>.json``, a new object each time,
 never overwritten. It holds plain JSON: ``position`` (the task and the step it reached), ``plan``,
-``notes``, ``cursor`` (the conversation's last event read) and ``patch`` (the S3 key of its working
-tree as a patch, or the commit on its branch). Never a token or credential.
+``notes`` and ``patch`` (the S3 key of its working tree as a patch, under its own ``patches/``). Never a
+token or credential.
 
 Before a continuation, the supervisor reads the agent's newest checkpoint and refuses one that is
 over 256 KB, is not that shape, or holds an ``AuthToken`` or a key that names a secret: the new

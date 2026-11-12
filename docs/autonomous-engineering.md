@@ -478,14 +478,14 @@ continues it in a new one once the wait closes.
   sends a `pause`; the agent finishes its step, saves its checkpoint and exits its harness with code 75, its
   acknowledgement (it may also say `pause.ack` on the bus); the supervisor ends that MicroVM and starts a continuation
   in a new one, as the same agent and task, from the newest valid checkpoint, and emits `continued` (the continuation
-  number, after a pause or a crash, the checkpoint). An agent may pause itself the same way, before a step longer
-  than its MicroVM has left. One that has not paused by 7 h 50 is treated as a crash, on an open wait too; one asked to pause for a long wait
+  number, after a pause or a crash, the checkpoint). An agent pausing itself the same way, before a step longer
+  than its MicroVM has left, is *planned* (the harness has no such tool yet). One that has not paused by 7 h 50 is treated as a crash, on an open wait too; one asked to pause for a long wait
   whose checkpoint does not come within 3 minutes is held as waiting, without its MicroVM, from its last checkpoint. A crash (an exit other than 0
   and 75, a lapsed lease) is continued twice in a row at most, then the task is re-posted (the run coordinator: the
   run goes to a person). Any number of continuations otherwise.
 - **Checkpoints.** An agent saves each checkpoint as a new object,
-  `engineering/runs/<run>/<agent>/checkpoints/<seq>-<nonce>.json`: its position, plan, notes, conversation cursor and
-  the key of its working tree as a patch. The supervisor restores from the newest of the last 5 that is at most
+  `engineering/runs/<run>/<agent>/checkpoints/<seq>-<nonce>.json`: its position, plan, notes and the key of its
+  working tree as a patch (a continuation starts a fresh conversation from its notes). The supervisor restores from the newest of the last 5 that is at most
   256 KB, plain JSON with a `position`, and holds no token and no key that names a secret; with none, the task starts
   afresh.
 - **Output.** The runner masks anything shaped like a credential (AWS keys, host tokens, bearer headers, private

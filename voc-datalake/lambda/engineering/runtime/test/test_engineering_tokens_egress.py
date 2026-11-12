@@ -108,6 +108,17 @@ def test_a_run_and_agent_id_too_long_for_one_session_name_are_refused_never_cut(
     assert session_name('run-1', 'fixer-1') == 'run-1.fixer-1'
 
 
+def test_a_ulid_run_id_and_a_short_agent_index_fit_one_session_name():
+    # A run id is a 26-character ULID; an agent is its role and a short index: well within STS's 64 characters.
+    run_id = '01JCZQ3N8K4V7R2T6W9Y0XB5MD'
+    for agent_id in ('fixer-1', 'gate-runner-12', 'commit-reviewer-3'):
+        spec = AgentSpec(run_id=run_id, agent_id=agent_id, role='fixer', task_id='t', language='python', egress=(),
+                         connection='k')
+        name = session_name(spec.run_id, spec.agent_id)
+        assert name == f'{run_id}.{agent_id}'
+        assert len(name) <= 64
+
+
 def test_a_spec_refuses_an_unknown_role_and_its_environment_holds_no_credential():
     with pytest.raises(RuntimeRefused, match='role'):
         AgentSpec(run_id='r', agent_id='a', role='admin', task_id='t', language='python', egress=(), connection='k')
