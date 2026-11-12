@@ -222,6 +222,7 @@
     "validationFailures": "验证失败",
     "periodLabel": "时间段",
     "alerts": {
+      "platformAdminOnly": "只有平台管理员可以更改告警：告警监视整个部署。你可以在这里查看。",
       "title": "告警",
       "on": "开",
       "off": "关",
@@ -964,7 +965,7 @@
   "appearance": {
     "title": "默认主题",
     "hint": "在每个人于 账户 → 偏好设置 中选择自己的主题之前，所有人看到的配色主题。",
-    "adminOnlyNotice": "只有管理员可以更改默认主题。你可以在此查看。",
+    "adminOnlyNotice": "只有平台管理员可以更改默认主题：所有工作区共用它。你可以在这里查看。",
     "loading": "正在加载默认主题…",
     "loadFailed": "无法从服务器加载默认主题。",
     "save": "保存主题",

@@ -275,4 +275,12 @@ describe('useIsPlatformAdmin', () => {
 
     expect(result.current).toBe(true)
   })
+
+  it('denies when no user is present', () => {
+    stubCognito(true)
+
+    const { result } = renderHook(() => useIsPlatformAdmin())
+
+    expect(result.current).toBe(false)
+  })
 })

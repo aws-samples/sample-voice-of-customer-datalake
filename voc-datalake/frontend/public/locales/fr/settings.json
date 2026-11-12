@@ -232,6 +232,7 @@
     "runErrors_many": "{{count, number}} erreurs",
     "textLength_many": "Longueur du texte : {{count, number}} caractères",
     "alerts": {
+      "platformAdminOnly": "Seuls les administrateurs de la plateforme peuvent modifier les alertes : les alarmes surveillent tout le déploiement. Vous pouvez les consulter ici.",
       "title": "Alertes",
       "on": "Activées",
       "off": "Désactivées",
@@ -992,7 +993,7 @@
   "appearance": {
     "title": "Thème par défaut",
     "hint": "Le thème de couleurs que tout le monde voit jusqu’à choisir le sien dans Compte → Préférences.",
-    "adminOnlyNotice": "Seuls les administrateurs peuvent changer le thème par défaut. Vous pouvez le consulter ici.",
+    "adminOnlyNotice": "Seuls les administrateurs de la plateforme peuvent modifier le thème par défaut : tous les espaces de travail le partagent. Vous pouvez le consulter ici.",
     "loading": "Chargement du thème par défaut…",
     "loadFailed": "Impossible de charger le thème par défaut depuis le serveur.",
     "save": "Enregistrer le thème",

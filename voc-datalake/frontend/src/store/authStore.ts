@@ -160,9 +160,10 @@ const PLATFORM_ADMIN_GROUP = 'platform-admins'
 
 /**
  * Whether the signed-in user is a platform admin: the ID token's `platform-admins` group (docs/multi-workspace.md
- * → Control plane). It only decides what the web app shows (the platform console, the platform-admin column of
- * Users); the API checks the group live on every platform route and answers 403 to anyone else. A grant or a
- * revoke reaches the token at its next refresh. The local-dev bypass of {@link useIsAdmin} applies.
+ * → Control plane): the people who run the platform console and change what every workspace shares (the default
+ * theme, the operational alerts, the platform-admin column of Users). It only decides what the web app shows; the
+ * API checks the group live on every such route and answers 403 to anyone else. A grant or a revoke reaches the
+ * token at its next refresh. The local-dev bypass of {@link useIsAdmin} applies.
  */
 export const useIsPlatformAdmin = (): boolean => useInGroup(PLATFORM_ADMIN_GROUP)
 

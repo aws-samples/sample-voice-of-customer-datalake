@@ -34,6 +34,7 @@ import AdminSectionContent from './AdminSectionContent'
 import { SECTION_PANEL_ID, buildSections, buildTabs, sectionTabId } from './adminTabLabels'
 import { isLeavingAdmin, useAdminLocation } from './useAdminLocation'
 import { useApiEndpointField, useBrandForm } from './useSettingsSync'
+import { useBrandEditRight } from './useBrandEditRight'
 import { Header, ApiConfigSection, BrandConfigSection } from './SettingsSections'
 import DefaultThemeCard from './DefaultThemeCard'
 
@@ -53,6 +54,7 @@ export default function Settings() {
   const { config, setConfig } = useConfigStore()
   const isAdmin = useIsAdmin()
   const isPlatformAdmin = useIsPlatformAdmin()
+  const canEditBrand = useBrandEditRight(isAdmin)
   // "Saved" clears itself after 3 s; the timer goes with the page.
   const [savedShown, showSaved, clearSaved] = useExpiringValue<true>(3000)
   const saved = savedShown !== null
@@ -140,7 +142,7 @@ export default function Settings() {
     // would otherwise stretch the page past 390px instead of scrolling itself.
     <div className="max-w-5xl mx-auto min-w-0 w-full">
       {redirectTo !== null && <Navigate to={redirectTo} replace />}
-      <Header saved={saved} saving={saving} saveFailed={saveFailed} canSave={isAdmin} showSave={activeTab === 'brand'} onSave={() => void handleSave()} />
+      <Header saved={saved} saving={saving} saveFailed={saveFailed} canSave={canEditBrand} showSave={activeTab === 'brand'} onSave={() => void handleSave()} />
       {guard.dialog}
 
       {/* Mobile Tab Dropdown */}
@@ -208,9 +210,9 @@ export default function Settings() {
             onBrandHandlesChange={setBrandHandles}
             onHashtagsChange={setHashtags}
             onUrlsToTrackChange={setUrlsToTrack}
-            readOnly={!isAdmin}
+            readOnly={!canEditBrand}
           />
-          <DefaultThemeCard apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+          <DefaultThemeCard apiEndpoint={apiEndpoint} canEdit={isPlatformAdmin} />
         </div>
       ) : (
         <SectionPanel labelledBy={sections.length > 1 && location.section !== null ? sectionTabId(location.section) : null}>

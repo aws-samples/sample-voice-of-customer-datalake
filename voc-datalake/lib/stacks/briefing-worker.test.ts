@@ -91,7 +91,10 @@ describe('VocApiStack: the settings API serves /settings/my-briefing', () => {
     expect(snsStatements.map((s) => [s.actions, s.resource.includes('voc-briefing-')])).toStrictEqual([
       [['sns:Subscribe', 'sns:Unsubscribe', 'sns:GetSubscriptionAttributes'], true],
     ]);
-    expect(actionsWithPrefix(statements, 'cognito-idp:')).toStrictEqual(['cognito-idp:AdminGetUser']);
+    // AdminGetUser: the brief's email; with AdminListGroupsForUser, the live platform-admin check of
+    // PUT /settings/appearance (lambda/shared/platform_admin_gate.py). Reads only.
+    expect([...actionsWithPrefix(statements, 'cognito-idp:')].sort((a, b) => a.localeCompare(b))).toStrictEqual(
+      ['cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser']);
     expect(actionsWithPrefix(statements, 'sns:')).not.toContain('sns:Publish');
   });
 });

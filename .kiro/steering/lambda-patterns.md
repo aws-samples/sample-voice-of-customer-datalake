@@ -174,8 +174,9 @@ today's rows and nothing uses it; the `audit: ws_raw_access` step ([docs/code-au
 fails on a new raw table handle, client or S3 write outside it. So in phase 1, build new data code on the handles its
 module already has (a table passed into a function adds nothing); a change that truly needs a new one raises that
 file's count in `scripts/audit/allowlists/ws_raw_access.json` in the same change, in the group of the phase that moves
-it, so the reviewer sees it. A route that resolves the workspace goes into `WORKSPACE_SCOPED_ROUTES` in
-`lambda/api/test/test_cross_workspace.py`.
+it, so the reviewer sees it. A route that resolves the workspace gets its two-workspace case in `CASES` of
+`lambda/api/test/cross_workspace_worlds.py`, and leaves `cross_workspace_pending.py` if it was there; every route is
+in exactly one table of `lambda/api/test/test_cross_workspace_routes.py` (its docstring has the rules).
 
 ## Environment Variables
 

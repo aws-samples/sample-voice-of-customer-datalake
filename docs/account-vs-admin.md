@@ -105,7 +105,7 @@ everyone who uses the same browser.
 | Personal memories | Memory → Personal | a working tool, not a setting |
 | My conversations | the assistant sidebar | content, not a setting |
 | Brand (name, handles, hashtags, URLs) | Administration → General | |
-| Default theme (the colour theme everyone sees until they pick their own) | Administration → General | `GET /settings/appearance` (everyone) / `PUT` (admins); non-admins see it read-only |
+| Default theme (the colour theme everyone sees until they pick their own) | Administration → General | `GET /settings/appearance` (everyone) / `PUT` (platform admins, checked live: one colour scheme for the whole deployment, [Multi-workspace](multi-workspace.md#per-workspace-configuration)); everyone else, a plain admin included, sees it read-only |
 | Data sources, credentials, schedules, circuit breakers | Administration → Sources | |
 | Integrations (Figma and GitHub tokens), Email inbox, Radar | Administration → Sources | |
 | Categories, AI generation, reprocess; Dimensions | Administration → Taxonomy | |

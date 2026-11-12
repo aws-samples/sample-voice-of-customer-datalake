@@ -40,6 +40,8 @@ from shared.ops_alerts_service import (
     set_alerting,
     unconfigured_status,
 )
+from shared.platform_admin import require_platform_admin
+from shared.platform_admin_gate import require_live_platform_admin
 from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
 from shared.request_body import json_object_body
 from shared.scraper_run_errors import ERROR_TYPE_SHAPE, MAX_RETURNED_ERRORS, redacted_scraper_errors
@@ -426,11 +428,17 @@ def _redacted_processing_fields(item: dict) -> dict:
 
 
 # ============================================
-# Alerts (Settings → Logs → Alerts): admin-only, every route
+# Alerts (Settings → Logs → Alerts): admins read, platform admins write
 # ============================================
 # Runtime CloudWatch alarms + SNS email recipients (shared/ops_alerts*.py). The
 # `/logs/{proxy+}` resource already forwards these paths, so no API Gateway
-# resource is added for them.
+# resource is added for them. The alarms watch the deployment's own Lambdas and
+# their recipients hear about every workspace, so each write is a platform admin's
+# (docs/multi-workspace.md, "Per-workspace configuration"), checked live
+# (shared/platform_admin_gate.py); the status read stays the administrators'.
+
+#: The fixed answer of a failed platform-admin look-up (#263: never the AWS text).
+FAILED_ALERTS = 'Failed to update the alerts'
 
 @cache
 def _alert_clients() -> tuple[Any, Any]:
@@ -467,7 +475,10 @@ def get_alerts():
 @app.put("/logs/alerts")
 @tracer.capture_method
 def put_alerts():
-    require_admin(app.current_event.raw_event)
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    require_live_platform_admin(event, FAILED_ALERTS)
     table, targets = _alerts_context()
     return set_alerting(table, _alert_clients()[0], targets, json_object_body(app), _actor())
 
@@ -475,7 +486,10 @@ def put_alerts():
 @app.post("/logs/alerts/recipients")
 @tracer.capture_method
 def post_alert_recipient():
-    require_admin(app.current_event.raw_event)
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    require_live_platform_admin(event, FAILED_ALERTS)
     table, targets = _alerts_context()
     return add_recipient(table, _alert_clients()[1], targets, json_object_body(app))
 
@@ -483,7 +497,10 @@ def post_alert_recipient():
 @app.post("/logs/alerts/recipients/remove")
 @tracer.capture_method
 def remove_alert_recipient():
-    require_admin(app.current_event.raw_event)
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    require_live_platform_admin(event, FAILED_ALERTS)
     table, targets = _alerts_context()
     return remove_recipient(table, _alert_clients()[1], targets, json_object_body(app))
 

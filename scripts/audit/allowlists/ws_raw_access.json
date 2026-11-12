@@ -3,11 +3,13 @@
   "entries": [
     {
       "group": "control plane",
-      "reason": "voc-workspaces: workspaces, members and their audit rows, the control plane, not a workspace's data (docs/multi-workspace.md, Control plane). It stays raw; its keys are built by shared/workspace.py.",
+      "reason": "voc-workspaces: workspaces, members, each workspace's enabled plugins and their audit rows, the control plane, not a workspace's data (docs/multi-workspace.md, Control plane). It stays raw; its keys are built by shared/workspace.py. Since 6.18.00 also the domain APIs' resolution of the request's workspace (shared/request_workspace.py, the voc-workspaces handle) and the plugin choices' transaction on that table's client (shared/workspace_plugin_settings.py).",
       "files": {
         "lambda/api/workspaces_handler.py": 2,
         "lambda/shared/platform_workspaces.py": 2,
-        "lambda/shared/workspace_members.py": 1
+        "lambda/shared/request_workspace.py": 2,
+        "lambda/shared/workspace_members.py": 1,
+        "lambda/shared/workspace_plugin_settings.py": 1
       }
     },
     {

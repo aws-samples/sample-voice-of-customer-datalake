@@ -19,6 +19,11 @@ const LEVEL_ORDER = { error: 0, warning: 1, note: 2, none: 3 };
  */
 const ACCEPTED = [
   {
+    rule: 'js/superfluous-trailing-arguments',
+    prefix: 'voc-datalake/frontend/src/services/crossTabSignOut.test.ts',
+    reason: 'new StorageEvent(type, init) takes its init dictionary by the DOM standard; CodeQL models the constructor with one parameter',
+  },
+  {
     rule: 'js/http-to-file-access',
     prefix: 'voc-datalake/frontend/e2e/',
     reason: 'the e2e suite saves API responses as evidence files by design (ledger, ops, step records)',

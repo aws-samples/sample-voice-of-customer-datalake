@@ -89,6 +89,10 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     findings: opsAlerts.alarmArns.map(resourceFinding),
   }]);
 
+  // The alert writes are a platform admin's (alarms on the deployment's own Lambdas, docs/multi-workspace.md): the
+  // live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py).
+  userPool.grant(logsRole, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
+
   // Administration → System → Logs diagnostics: log search, failure-queue peek (api-logs-diagnostics.ts).
   const diagnosticsEnv = grantLogsDiagnostics(ctx, logsRole, {
     opsAlertsQueues: opsAlerts.environment.OPS_ALERTS_QUEUES ?? '',
@@ -105,7 +109,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     role: logsRole,
     timeout: cdk.Duration.seconds(30),
     memorySize: 1769, // one vCPU 2026-10-23: single-threaded Python gains nothing above it (lib/sizing/policy.ts)
-    environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO', ENABLED_SOURCES: inputs.enabledSourcesEnv, ...diagnosticsEnv, WEB_SEARCH_ENABLED: ctx.props.webSearchGatewayUrl !== undefined ? 'true' : 'false', ...opsAlerts.environment },
+    environment: { AGGREGATES_TABLE: aggregatesTable.tableName, USER_POOL_ID: userPool.userPoolId, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO', ENABLED_SOURCES: inputs.enabledSourcesEnv, ...diagnosticsEnv, WEB_SEARCH_ENABLED: ctx.props.webSearchGatewayUrl !== undefined ? 'true' : 'false', ...opsAlerts.environment },
     layers: [apiLayer],
     logGroup: ctx.logGroup('LogsApiLogs', ctx.uniqueName('voc-logs-api')),
   });

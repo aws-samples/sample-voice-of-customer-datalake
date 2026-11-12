@@ -232,6 +232,7 @@
     "runErrors_many": "{{count, number}} erros",
     "textLength_many": "Comprimento do texto: {{count, number}} caracteres",
     "alerts": {
+      "platformAdminOnly": "Somente administradores da plataforma podem alterar os alertas: os alarmes monitoram toda a implantação. Você pode visualizá-los aqui.",
       "title": "Alertas",
       "on": "Ativados",
       "off": "Desativados",
@@ -992,7 +993,7 @@
   "appearance": {
     "title": "Tema padrão",
     "hint": "O tema de cores que todos veem até escolherem o seu em Conta → Preferências.",
-    "adminOnlyNotice": "Somente administradores podem alterar o tema padrão. Você pode vê-lo aqui.",
+    "adminOnlyNotice": "Somente administradores da plataforma podem alterar o tema padrão: todos os espaços de trabalho o compartilham. Você pode visualizá-lo aqui.",
     "loading": "Carregando o tema padrão…",
     "loadFailed": "Não foi possível carregar o tema padrão do servidor.",
     "save": "Salvar tema",

@@ -29,6 +29,7 @@ function claimsOf(event: PlanStepEvent): CallerClaims {
     ...optional('cognito:groups'),
     ...optional('voc:acting_subject'),
     ...optional('voc:principal'),
+    ...optional('voc:workspace'),
   };
 }
 

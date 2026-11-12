@@ -50,6 +50,13 @@
  * `/workspace/{proxy+}` (7: two resources, four methods, a preflight) because the routes are the members of
  * `/me/workspaces/current`, the workspace the caller acts in. Every shape grows by 3 (performance tier 409 → 412);
  * the ceiling is 412, and the 425 gate is unchanged.
+ *
+ * 6.18.00 (the first workspace settings, docs/multi-workspace.md, "Per-workspace configuration") spends 1: the
+ * stack's one workspace-resolution policy (lib/utils/workspace-resolution-grants.ts), a customer-managed policy every
+ * domain API that acts in a workspace attaches, rather than its statements and audit Denies in each role's inline
+ * policy (the settings role's would pass the 70% inline-size alarm, api-stack-mcp.test.ts). One resource for the
+ * whole phase: each later domain API attaches it for nothing. Every shape grows by 1 (performance tier 412 → 413);
+ * the ceiling is 413, and the 425 gate is unchanged.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -61,9 +68,10 @@ import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
  * The release ceiling: 388 after 5.63.00 (MCP OAuth), + 4 in 5.77.00 (request validation) + 2 for the opt-in API web
  * ACL (5.77.00) + the BucketDeployment handler's log group the bare fixture did not count (5.78.00); the
  * performance-tier synth is 395, as deployed; + 9 for the workspaces API (6.07.00): 404; + 5 for `/platform`
- * (6.09.00): 409; + 3 for the members routes' methods on `/me/{proxy+}` (6.10.00): 412.
+ * (6.09.00): 409; + 3 for the members routes' methods on `/me/{proxy+}` (6.10.00): 412; + 1 for the workspace-resolution
+ * policy (6.18.00): 413.
  */
-const ENGAGEMENT_RELEASE_CEILING = 412;
+const ENGAGEMENT_RELEASE_CEILING = 413;
 
 function resourceCount(resources: Record<string, unknown> | undefined): number {
   return Object.keys(resources ?? {}).length;

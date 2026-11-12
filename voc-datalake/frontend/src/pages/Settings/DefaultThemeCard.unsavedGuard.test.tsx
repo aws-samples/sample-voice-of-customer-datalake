@@ -30,7 +30,7 @@ describe('Default theme — Cancel keeps the pick and stays guarded (R2)', () =>
     const server = { theme: 'kiro' }
     routeFetchApi({ 'GET /settings/appearance': () => ({ default_theme: server.theme }) })
     const { scenario } = adminGuardScenario({
-      page: () => <DefaultThemeCard apiEndpoint={API} isAdmin />,
+      page: () => <DefaultThemeCard apiEndpoint={API} canEdit />,
       ready: async () => { await screen.findByRole('radio', { name: 'Kiro' }) },
       edit: async (user: GuardUser) => { await user.click(screen.getByRole('radio', { name: 'Nord' })) },
       expectDraft: () => expect(screen.getByRole('radio', { name: 'Nord' })).toHaveAttribute('aria-checked', 'true'),
@@ -46,7 +46,7 @@ describe('Default theme — Cancel keeps the pick and stays guarded (R2)', () =>
   // Only what can unmount the card asks: an overlay such as the review modal (?review=) keeps it.
   it('lets a ?review= overlay through with a pick unsaved, but asks before a tab switch', async () => {
     routeFetchApi({ 'GET /settings/appearance': () => ({ default_theme: 'kiro' }) })
-    const { router } = mountAtAdmin(<DefaultThemeCard apiEndpoint={API} isAdmin />)
+    const { router } = mountAtAdmin(<DefaultThemeCard apiEndpoint={API} canEdit />)
     await userEvent.click(await screen.findByRole('radio', { name: 'Nord' }))
     await act(() => router.navigate('/admin?review=fb_1'))
     expect([router.state.location.search, screen.queryByRole('dialog')]).toStrictEqual(['?review=fb_1', null])
@@ -56,7 +56,7 @@ describe('Default theme — Cancel keeps the pick and stays guarded (R2)', () =>
 
   it('does not guard a read-only viewer', async () => {
     routeFetchApi({ 'GET /settings/appearance': () => ({ default_theme: 'kiro' }) })
-    mountAtAdmin(<DefaultThemeCard apiEndpoint={API} isAdmin={false} />)
+    mountAtAdmin(<DefaultThemeCard apiEndpoint={API} canEdit={false} />)
     await screen.findByRole('radio', { name: 'Kiro' })
     await userEvent.click(screen.getByRole('radio', { name: 'Nord' }))
     await userEvent.click(screen.getByRole('link', { name: 'Home' }))

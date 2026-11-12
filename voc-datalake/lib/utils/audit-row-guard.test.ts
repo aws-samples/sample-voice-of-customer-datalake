@@ -30,9 +30,11 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
   ConversationsTable: ['VocApiStack/ChatLambdaRole'],
   // A platform admin's entry, a workspace's creation and its membership changes (AUDIT#WS#<ws>); the users API a
-  // deleted user's membership removals (AUDIT#WS#* only); every other role writing voc-workspaces (voc-retention's
-  // de-identification) gets the forge Deny.
-  WorkspacesTable: ['VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspacesLambdaRole'],
+  // deleted user's membership removals (AUDIT#WS#* only); the stack's workspace-resolution policy a platform admin's
+  // entry from a domain API (AUDIT#WS#* only, lib/utils/workspace-resolution-grants.ts); every other role writing
+  // voc-workspaces (voc-retention's de-identification) gets the forge Deny.
+  WorkspacesTable: ['VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
+    'VocApiStack/WorkspacesLambdaRole'],
 };
 
 type Statement = IamStatement;
@@ -40,14 +42,15 @@ type Statement = IamStatement;
 const synthed = synthApp();
 afterAll(cleanupAssemblyDirs);
 
-/** `<Stack>/<RoleId>` → its default policy's statements. */
+/** `<Stack>/<RoleId>` → its default policy's statements; `<Stack>/<PolicyId>` → a customer-managed policy's (the
+ *  guard guards both, lib/utils/audit-row-guard.ts). */
 function statementsByRole(): Map<string, Statement[]> {
   const out = new Map<string, Statement[]>();
   for (const stack of synthed.stackNames) {
     for (const [id, resource] of Object.entries(TemplateResourcesSchema.parse(synthed.template(stack)).Resources)) {
       const policy = IamPolicySchema.safeParse(resource);
       if (!policy.success) continue;
-      const role = `${stack}/${id.replace(/DefaultPolicy[0-9A-F]{8}$/, '')}`;
+      const role = `${stack}/${id.replace(/(?:DefaultPolicy)?[0-9A-F]{8}$/, '')}`;
       out.set(role, [...(out.get(role) ?? []), ...policy.data.Properties.PolicyDocument.Statement]);
     }
   }
@@ -120,10 +123,10 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings and users APIs carry a one-partition deny', () => {
+  it('only the settings and users APIs and the workspace-resolution policy carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
     expect(holders.map(([role]) => role).sort(byCodeUnit))
-      .toStrictEqual(['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole']);
+      .toStrictEqual(['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy']);
   });
 
   it('the users API may not change or remove a platform-admin or a workspace audit row', () => {
@@ -214,5 +217,24 @@ describe('applyAuditRowGuard (one stack)', () => {
 
   it('a reader of the guarded table gets nothing (the unguarded table it writes does not count)', () => {
     expect(sids(guarded((table, role) => table.grantReadData(role)))).toStrictEqual([]);
+  });
+
+  /** The Sids a customer-managed policy that puts in the guarded table ends with, named a writer by `suffixes`. */
+  function managedSids(suffixes: string[], partitionKey?: string): string[] {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, 'S');
+    const table = new dynamodb.Table(stack, 'T', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
+    const policy = new iam.ManagedPolicy(stack, 'M', { statements: [
+      new iam.PolicyStatement({ actions: ['dynamodb:PutItem'], resources: [table.tableArn] })] });
+    new iam.Role(stack, 'R', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'), managedPolicies: [policy] });
+    applyAuditRowGuard(app, { tables: [table], writers: [{ table, rolePathSuffixes: suffixes, partitionKey }] });
+    return Object.values(Template.fromStack(stack).findResources('AWS::IAM::ManagedPolicy'))
+      .flatMap((resource) => IamPolicySchema.parse(resource).Properties.PolicyDocument.Statement)
+      .flatMap((statement) => statement.Sid ?? []).sort(byCodeUnit);
+  }
+
+  it('a customer-managed policy that puts is guarded in itself, like a role', () => {
+    expect(managedSids([])).toStrictEqual([AUDIT_DENY_WRITE_SID]);
+    expect(managedSids(['/M'], 'AUDIT#WS#*')).toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID]);
   });
 }, SYNTH_TIMEOUT_MS);

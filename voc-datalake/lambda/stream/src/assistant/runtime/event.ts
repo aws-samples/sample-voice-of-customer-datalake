@@ -44,7 +44,20 @@ function claimString(claims: Record<string, unknown>, key: string): string | und
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
-/** Only these claims are forwarded to internal API invocations. */
+/**
+ * The request's `X-Workspace-Id` header as it came (HTTP header names are case-insensitive); undefined when absent.
+ * Nothing is judged here: the value is forwarded as the domain call's own `X-Workspace-Id`, and each domain Lambda
+ * answers it exactly as it answers the caller's own request (lambda/shared/workspace.py trims it: 400 for a blank or
+ * missing one, the one 404 for a malformed id, a workspace that does not exist or one the caller is not a member of).
+ */
+function requestWorkspace(event: LambdaEvent): string | undefined {
+  for (const [name, value] of Object.entries(event.headers ?? {})) {
+    if (name.toLowerCase() === 'x-workspace-id' && typeof value === 'string') return value;
+  }
+  return undefined;
+}
+
+/** Only these claims are forwarded to internal API invocations, with the request's workspace (`voc:workspace`). */
 export function extractCallerClaims(event: LambdaEvent): CallerClaims {
   const claims = event.requestContext?.authorizer?.claims ?? {};
   const sub = claimString(claims, 'sub');
@@ -58,6 +71,7 @@ export function extractCallerClaims(event: LambdaEvent): CallerClaims {
   const email = claimString(claims, 'email');
   const issuer = claimString(claims, 'iss');
   const emailVerified = claimString(claims, 'email_verified');
+  const workspace = requestWorkspace(event);
   return {
     sub,
     ...(groups ? { 'cognito:groups': groups } : {}),
@@ -65,6 +79,7 @@ export function extractCallerClaims(event: LambdaEvent): CallerClaims {
     ...(email ? { email } : {}),
     ...(issuer ? { iss: issuer } : {}),
     ...(emailVerified ? { email_verified: emailVerified } : {}),
+    ...(workspace === undefined ? {} : { 'voc:workspace': workspace }),
   };
 }
 

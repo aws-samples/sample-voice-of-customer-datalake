@@ -12,6 +12,7 @@ from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
 import workspaces_handler
+from shared import platform_admin_gate
 from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
 from shared.workspace_members import NEW_ACCOUNT_ADMINS_ONLY
@@ -58,7 +59,9 @@ def world() -> Iterator[World]:
     cognito.admin_create_user.return_value = {'User': _user('sub-new', 'new@example.com')}
     with mock_aws(), patch.object(workspaces_handler, 'memberships', MembershipCache()), \
             patch.object(workspaces_handler, 'USER_POOL_ID', 'us-east-1_pool'), \
-            patch.object(workspaces_handler, 'get_cognito_idp_client', return_value=cognito):
+            patch.object(workspaces_handler, 'get_cognito_idp_client', return_value=cognito), \
+            patch.dict('os.environ', {'USER_POOL_ID': 'us-east-1_pool'}), \
+            patch.object(platform_admin_gate, 'get_cognito_idp_client', return_value=cognito):
         table = pk_sk_table('workspaces')
         table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'META', 'name': 'Acme Outfitters', 'slug': 'acme',
                              'status': 'active'})

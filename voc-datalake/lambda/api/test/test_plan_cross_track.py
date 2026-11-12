@@ -38,6 +38,10 @@ JOBS_TABLE = 'test-cross-track-jobs'
 AGGREGATES_TABLE = 'test-aggregates-agents'  # the aggregates table agents_env creates
 
 
+#: The workspace the plan is approved in (docs/multi-workspace.md): every step's claims name it.
+WORKSPACE = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+
 def _subset(recorded: dict, actual: dict) -> bool:
     return all(actual.get(key) == value for key, value in recorded.items())
 
@@ -55,7 +59,7 @@ class RecordedPlanStep(PlanStep):
 
     def _matches(self, recorded: dict, event: dict) -> bool:
         principal = f"plan:{event['plan_id']}"
-        claims = {**recorded['claims'], 'voc:principal': principal}
+        claims = {**recorded['claims'], 'voc:principal': principal, 'voc:workspace': WORKSPACE}
         return (event['step'] == recorded['step'] and event['claims'] == claims
                 and _subset(recorded['resolved'], event['resolved'])
                 and _subset(recorded['think_outputs'], event['think_outputs'])
@@ -124,7 +128,8 @@ def cross_track(lambda_context) -> Iterator[CrossTrack]:
                 patch('agents.plan_waits.get_aggregates_table', return_value=env.aggregates), \
                 patch('agents.plan_waits.get_jobs_table', return_value=jobs):
             status, body = call(lambda_context, 'POST', '/agents/plans', claims=ADMIN,
-                                body={'plan': FIXTURE['plan'], 'conversation_id': 'conv-example'})
+                                body={'plan': FIXTURE['plan'], 'conversation_id': 'conv-example'},
+                                headers={'X-Workspace-Id': WORKSPACE})
             assert status == 202, body
             plan_id = background.plan_id = body['plan_id']
             plan_step = RecordedPlanStep()
@@ -144,6 +149,11 @@ def test_the_example_plan_runs_to_completed_on_the_recorded_runner_answers(cross
 def test_every_conductor_event_is_one_the_runner_was_given_and_every_recorded_answer_is_used(cross_track: CrossTrack):
     assert cross_track.plan_step.mismatches == []
     assert [run for runs in cross_track.plan_step.queue.values() for run in runs] == []
+
+
+def test_every_step_names_the_workspace_the_plan_was_approved_in(cross_track: CrossTrack):
+    assert cross_track.meta['workspace_id'] == WORKSPACE
+    assert {event['claims']['voc:workspace'] for event in cross_track.plan_step.events} == {WORKSPACE}
 
 
 def test_the_first_write_is_the_app_connector_with_exactly_the_planned_arguments(cross_track: CrossTrack):

@@ -1,7 +1,8 @@
 /**
  * The workspaces API, `voc-workspaces-api` (VocApiStack, docs/multi-workspace.md; handler
  * lambda/api/workspaces_handler.py): the multi-workspace control plane, on GET, POST, PUT and DELETE /me/{proxy+}
- * (`/me/workspaces`, `/me/workspaces/current`, `/me/workspaces/current/members[/{sub}]`) and GET + POST
+ * (`/me/workspaces`, `/me/workspaces/current`, `/me/workspaces/current/members[/{sub}]`,
+ * `/me/workspaces/current/plugins[/{plugin_id}]`) and GET + POST
  * /platform/{proxy+} (`/platform/workspaces`, platform admins only).
  *
  * Built ON the stack (stable logical id `WorkspacesApi…`, like every api-*.ts builder). Its own role:
@@ -13,7 +14,8 @@
  *     UpdateItem on `WS#*` and `WORKSPACES` with the attribute `secret_status` only (a new workspace's `META` and
  *     listing row), and on `WS#*` and `USER#*` with the attribute `role` only (a role change); DeleteItem on `WS#*`
  *     and `USER#*` ({@link MEMBERSHIP_PARTITIONS}: a removal's `MEMBER#` and `USER#` rows; IAM cannot pin a sort key,
- *     so `META` in `WS#*` is in reach of IAM and kept out by the code); ConditionCheckItem on `WS#*`. The audit-row
+ *     so `META` in `WS#*` is in reach of IAM and kept out by the code) and on `PLUGIN#*` (a workspace's plugin
+ *     disabled, lambda/shared/workspace_plugin_settings.py; no PutItem there until a workspace may enable one); ConditionCheckItem on `WS#*`. The audit-row
  *     guard (lib/utils/audit-row-guard.ts, which names this role the table's audit writer) denies it changing or
  *     removing an audit row. No BatchWriteItem or Scan;
  *   - Cognito AdminListGroupsForUser + AdminGetUser on the user pool: the live platform-admin check
@@ -37,10 +39,14 @@ const WORKSPACES_HANDLER_FILE = 'workspaces_handler.py';
 /** The name prefix of every per-workspace credentials secret (`{prefix}/{ws}/credentials`). */
 const WORKSPACE_SECRET_BASE_PREFIX = 'voc/ws';
 /** Where the workspaces API puts (platform_workspaces.py, workspace.py, workspace_members.py): a create's rows, an
- * add's rows, the audits. */
+ * add's rows, the audits. Not `PLUGIN#*` yet: a workspace enables no plugin until phase 2's data path is in
+ * (PER_WORKSPACE_INGESTION, lambda/shared/workspace_plugin_settings.py); the change that turns it on adds it back. */
 const WORKSPACE_WRITE_PARTITIONS = ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'];
 /** A membership's two rows (lambda/shared/workspace_members.py): `WS#{ws}` / `MEMBER#{sub}` and `USER#{sub}` / `WS#{ws}`. */
 const MEMBERSHIP_PARTITIONS = ['USER#*', 'WS#*'];
+/** What the workspaces API deletes: a removal's two membership rows, and a disabled plugin's
+ * `PLUGIN#{plugin}` / `WS#{ws}` row (lambda/shared/workspace_plugin_settings.py). */
+const DELETE_PARTITIONS = ['PLUGIN#*', ...MEMBERSHIP_PARTITIONS];
 
 /** Create, describe and tag the per-workspace credentials secrets, and no other secret. */
 function grantWorkspaceSecrets(ctx: ApiStackContext, role: iam.Role, prefix: string): void {
@@ -67,7 +73,12 @@ function grantWorkspaceSecrets(ctx: ApiStackContext, role: iam.Role, prefix: str
   }]);
 }
 
-export function createWorkspacesLambda(ctx: ApiStackContext): lambda.Function {
+/** The deployment's enabled plugins (lib/stacks/api-data-lambdas.ts `enabledSourcesEnv`): a workspace's ceiling. */
+export interface WorkspacesInputs {
+  readonly enabledSourcesEnv: string;
+}
+
+export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesInputs): lambda.Function {
   const { workspacesTable, kmsKey, userPool } = ctx.props;
   const functionName = ctx.uniqueName(WORKSPACES_API_FUNCTION_BASE_NAME);
   const secretPrefix = ctx.prefixed(WORKSPACE_SECRET_BASE_PREFIX);
@@ -85,7 +96,8 @@ export function createWorkspacesLambda(ctx: ApiStackContext): lambda.Function {
   // A member's removal (remove_member): their MEMBER# and USER# rows. IAM pins only the partition key, so `WS#*` also
   // reaches that partition's META row; the code names MEMBER# keys only (tested), and SLUG#, WORKSPACES and AUDIT#
   // (the audit-row guard's Deny as well) stay out of reach.
-  grantKeyScopedWrites(workspacesTable, role, ['DeleteItem'], MEMBERSHIP_PARTITIONS);
+  // A disabled plugin's row (shared/workspace_plugin_settings.py): `PLUGIN#{plugin}` / `WS#{ws}`, configuration.
+  grantKeyScopedWrites(workspacesTable, role, ['DeleteItem'], DELETE_PARTITIONS);
   // A transaction's checks: the workspace is still active (an add), another member is still an admin (a demotion or
   // removal of an admin), both in `WS#*`. A ConditionCheck tests one item's condition and writes nothing.
   role.addToPolicy(new iam.PolicyStatement({
@@ -106,6 +118,8 @@ export function createWorkspacesLambda(ctx: ApiStackContext): lambda.Function {
     USER_POOL_ID: userPool.userPoolId,
     KMS_KEY_ARN: kmsKey.keyArn,
     WORKSPACE_SECRET_PREFIX: secretPrefix,
+    // The deployment's plugins (cdk.context.json): the ceiling a workspace picks its plugins from.
+    ENABLED_SOURCES: inputs.enabledSourcesEnv,
     ALLOWED_ORIGIN: ctx.allowedOrigin,
     POWERTOOLS_SERVICE_NAME: WORKSPACES_API_FUNCTION_BASE_NAME,
     LOG_LEVEL: 'INFO',

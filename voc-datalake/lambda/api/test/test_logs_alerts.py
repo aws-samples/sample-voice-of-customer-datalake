@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from handler_events_fixtures import call_route
 from moto import mock_aws
 from moto_helpers import pk_sk_table
@@ -25,6 +26,7 @@ from shared.ops_alerts import (
     billed_metric_count,
     load_targets,
 )
+from shared.test.cognito_doubles import live_cognito
 
 TOPIC = 'arn:aws:sns:us-east-1:123456789012:voc-ops-alarms-123456789012-us-east-1'
 PREFIX = 'voc-alerts-123456789012-us-east-1'
@@ -42,6 +44,16 @@ ALERT_ENV = {
 # 2 queues + processor errors + aggregator errors + aggregator iterator age + 1 ingestor SUM.
 EXPECTED_ALARMS = 6
 USER_CLAIMS = {'sub': 'user-1', 'email': 'user@example.com', 'cognito:groups': 'users'}
+#: An administrator outside `platform-admins`: reads the alerts, writes none (docs/multi-workspace.md).
+ADMIN_CLAIMS = {'sub': 'admin-1', 'email': 'admin@example.com', 'cognito:username': 'ada', 'cognito:groups': 'admins'}
+#: The default caller here: a platform admin, confirmed live by the world's Cognito double.
+PLATFORM_CLAIMS = {'sub': 'test-user-id', 'email': 'test@example.com', 'cognito:username': 'pat',
+                   'cognito:groups': '[admins, platform-admins]'}
+WRITES = [
+    ('PUT', '/logs/alerts', {'enabled': True}),
+    ('POST', '/logs/alerts/recipients', {'email': 'ops@example.com'}),
+    ('POST', '/logs/alerts/recipients/remove', {'email': 'ops@example.com'}),
+]
 
 
 class FakeSns:
@@ -87,14 +99,16 @@ def world(monkeypatch):
         table = pk_sk_table('test-aggregates')
         cloudwatch = boto3.client('cloudwatch', region_name='us-east-1')
         sns = FakeSns()
+        cognito = live_cognito(sub='test-user-id')
         with patch.object(logs_handler, 'aggregates_table', table), \
-                patch.object(logs_handler, '_alert_clients', lambda: (cloudwatch, sns)):
-            yield {'table': table, 'cloudwatch': cloudwatch, 'sns': sns}
+                patch.object(logs_handler, '_alert_clients', lambda: (cloudwatch, sns)), \
+                patch('shared.platform_admin_gate.get_cognito_idp_client', return_value=cognito):
+            yield {'table': table, 'cloudwatch': cloudwatch, 'sns': sns, 'cognito': cognito}
 
 
 def _call(api_gateway_event, lambda_context, method: str, path: str, body: dict | None = None, claims=None):
     return call_route(lambda_handler, api_gateway_event, lambda_context,
-                      method=method, path=path, body=body, claims=claims)
+                      method=method, path=path, body=body, claims=PLATFORM_CLAIMS if claims is None else claims)
 
 
 def _alarm_names(cloudwatch) -> list[str]:
@@ -115,6 +129,44 @@ class TestAdminOnly:
         assert response['statusCode'] == 403
         assert _alarm_names(world['cloudwatch']) == []
         assert world['sns'].subs == []
+
+
+class TestPlatformAdminWrites:
+    """The alarms watch the deployment's own Lambdas: an administrator reads them, a platform admin writes them."""
+
+    @pytest.mark.parametrize(('method', 'path', 'body'), WRITES)
+    def test_refuses_an_administrator_outside_platform_admins(
+        self, world, api_gateway_event, lambda_context, method, path, body,
+    ):
+        response, payload = _call(api_gateway_event, lambda_context, method, path, body, claims=ADMIN_CLAIMS)
+        assert (response['statusCode'], payload['error']) == (403, 'Platform admin access required')
+        assert _alarm_names(world['cloudwatch']) == []
+        assert world['sns'].subs == []
+        world['cognito'].admin_list_groups_for_user.assert_not_called()
+
+    @pytest.mark.parametrize(('method', 'path', 'body'), WRITES)
+    def test_refuses_a_platform_admin_whose_membership_was_revoked(
+        self, world, api_gateway_event, lambda_context, method, path, body,
+    ):
+        world['cognito'].admin_list_groups_for_user.return_value = {'Groups': [{'GroupName': 'admins'}]}
+        response, _ = _call(api_gateway_event, lambda_context, method, path, body)
+        assert response['statusCode'] == 403
+        assert (_alarm_names(world['cloudwatch']), world['sns'].subs) == ([], [])
+
+    @pytest.mark.parametrize(('method', 'path', 'body'), WRITES)
+    def test_a_failed_live_check_answers_the_fixed_500_and_writes_nothing(
+        self, world, api_gateway_event, lambda_context, method, path, body,
+    ):
+        world['cognito'].admin_list_groups_for_user.side_effect = ClientError(
+            {'Error': {'Code': 'InternalErrorException', 'Message': 'us-east-1_pool arn'}}, 'AdminListGroupsForUser')
+        response, payload = _call(api_gateway_event, lambda_context, method, path, body)
+        assert (response['statusCode'], payload['error']) == (500, logs_handler.FAILED_ALERTS)
+        assert (_alarm_names(world['cloudwatch']), world['sns'].subs) == ([], [])
+
+    @pytest.mark.usefixtures('world')
+    def test_an_administrator_still_reads_the_status(self, api_gateway_event, lambda_context):
+        response, _ = _call(api_gateway_event, lambda_context, 'GET', '/logs/alerts', claims=ADMIN_CLAIMS)
+        assert response['statusCode'] == 200
 
 
 class TestAlarmLifecycle:

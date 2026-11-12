@@ -139,7 +139,7 @@ aws cloudformation describe-stacks \
   --output text
 ```
 
-On a new deployment the admin is also the first member of the `platform-admins` group, which will create workspaces ([Multi-workspace](docs/multi-workspace.md)); an older deployment adds one by hand ([CHANGELOG 6.06.02](CHANGELOG.md#60602---2026-11-11), Upgrade notes). The site address is the `WebsiteURL` output of the same stack. You are asked to change the password on first sign-in. Later deploys leave the admin user untouched: no new user is created, the password is never reset, and the output shows a placeholder.
+On a new deployment the admin is also the first member of the `platform-admins` group, which creates workspaces and changes what every workspace shares, such as the default theme and the operational alerts ([Multi-workspace](docs/multi-workspace.md)); an older deployment adds one by hand ([CHANGELOG 6.06.02](CHANGELOG.md#60602---2026-11-11), Upgrade notes). The site address is the `WebsiteURL` output of the same stack. You are asked to change the password on first sign-in. Later deploys leave the admin user untouched: no new user is created, the password is never reset, and the output shows a placeholder.
 
 ## ⚙️ Configuration
 

@@ -12,6 +12,7 @@ from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
 import workspaces_handler
+from shared import platform_admin_gate
 from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
 
@@ -42,7 +43,9 @@ def world() -> Iterator[World]:
                 patch.object(workspaces_handler, 'KMS_KEY_ARN', key), \
                 patch.object(workspaces_handler, 'WORKSPACE_SECRET_PREFIX', 'voc/ws'), \
                 patch.object(workspaces_handler, 'get_secrets_client', return_value=secrets), \
-                patch.object(workspaces_handler, 'get_cognito_idp_client', side_effect=lambda: state.cognito):
+                patch.object(workspaces_handler, 'get_cognito_idp_client', side_effect=lambda: state.cognito), \
+                patch.dict('os.environ', {'USER_POOL_ID': 'us-east-1_pool'}), \
+                patch.object(platform_admin_gate, 'get_cognito_idp_client', side_effect=lambda: state.cognito):
             yield state
 
 
@@ -171,7 +174,7 @@ def test_an_unconfigured_secret_refuses_the_create_before_writing(world, lambda_
 
 
 def test_an_unconfigured_user_pool_refuses_the_live_check(world, lambda_context):
-    with patch.object(workspaces_handler, 'USER_POOL_ID', ''):
+    with patch.dict('os.environ', {'USER_POOL_ID': ''}):
         assert _call(world, lambda_context, 'GET', '/platform/workspaces')[0] == 500
 
 

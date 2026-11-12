@@ -187,6 +187,7 @@
         "failed": "Nie udało się zapisać zmiany. Spróbuj ponownie.",
         "load": "Nie udało się wczytać ustawień alertów."
       },
+      "platformAdminOnly": "Tylko administratorzy platformy mogą zmieniać alerty: alarmy obserwują całe wdrożenie. Możesz je tu zobaczyć.",
       "title": "Alerty",
       "on": "Włączone",
       "off": "Wyłączone",
@@ -1020,7 +1021,7 @@
   "appearance": {
     "title": "Domyślny motyw",
     "hint": "Motyw kolorystyczny widoczny dla wszystkich, dopóki nie wybiorą własnego w Konto → Preferencje.",
-    "adminOnlyNotice": "Tylko administratorzy mogą zmienić domyślny motyw. Możesz go tutaj zobaczyć.",
+    "adminOnlyNotice": "Tylko administratorzy platformy mogą zmienić domyślny motyw: współdzielą go wszystkie obszary robocze. Możesz go tu zobaczyć.",
     "loading": "Wczytywanie domyślnego motywu…",
     "loadFailed": "Nie udało się wczytać domyślnego motywu z serwera.",
     "save": "Zapisz motyw",

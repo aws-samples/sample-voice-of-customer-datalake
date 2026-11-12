@@ -69,6 +69,13 @@ describe('write steps that match their definition', () => {
     expect(h.calls[0]?.claims).toStrictEqual(USER_CLAIMS);
   });
 
+  it('name the workspace the plan was approved in to the write, as the claims the invoker sends as a header', async () => {
+    const h = harness(CREATED);
+    const claims = { ...USER_CLAIMS, 'voc:workspace': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8' };
+    await runPlanStep(event(writeStep('create_project', { name: 'Ancillaries' }), { claims }), h.deps);
+    expect(h.calls[0]?.claims).toStrictEqual(claims);
+  });
+
   it('report the methodology block a methodology step\u2019s route answered, for the conductor to journal', async () => {
     const block = { step: 'prd', skipped: [{ step: 'prfaq', reason: 'missing' }], warnings: [{ code: 'missing_upstream', message: 'm', step: 'prfaq' }], evidence: null };
     const h = harness({ 'POST /projects/proj_9/document': { success: true, job_id: 'job_prd', methodology: block } });

@@ -5,7 +5,7 @@
  * platform admin): the address `/w/juniper/members`, of a workspace the caller is not a member of, shows "Workspace
  * not found" with the caller's own workspace, and the app does not render.
  *
- * The API's side of the same rule, route by route, is lambda/api/test/test_cross_workspace.py. MOCK ONLY: a
+ * The API's side of the same rule, route by route, is lambda/api/test/test_cross_workspace_routes.py. MOCK ONLY: a
  * deployment's workspaces are made by its platform admins. The switch is set for this spec only (each call starts
  * the mock's workspaces afresh) and off again afterwards, so the other mock specs keep the app without workspaces.
  *
