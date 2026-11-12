@@ -23,6 +23,10 @@ list: GetItem on ``voc-workspaces``' ``WS#*`` rows and on ``AUDIT#WS#*``, an aud
 PutItem on ``AUDIT#WS#*`` only) and has Cognito ``AdminListGroupsForUser`` and ``AdminGetUser`` on the user pool.
 
 ``require_workspace_writer``: 403 for a viewer (docs/multi-workspace.md, Roles: a viewer reads, an editor writes).
+``require_settings_admin``: who changes an admin's settings kind that moved into its workspace (the brand): an admin of
+the workspace the request names (the deployment's ``admins`` group grants nothing there), or, for a request that names
+none, the deployment's ``admins`` as before. Both branches refuse (403), so the route-gate inventory counts it as a gate
+(lambda/api/test/test_route_admin_gates.py ``GATE_PRIMITIVES``).
 """
 from __future__ import annotations
 
@@ -31,15 +35,22 @@ from typing import Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared.api import require_admin
 from shared.aws import get_dynamodb_resource
 from shared.exceptions import AuthorizationError, ConfigurationError, ServiceError
 from shared.http_cache import request_header
 from shared.logging import logger
 from shared.platform_admin_gate import confirm_live_platform_admin
 from shared.tables import cached_table
-from shared.workspace import WORKSPACE_HEADER, MembershipCache, WorkspaceContext, resolve_workspace
+from shared.workspace import (
+    WORKSPACE_HEADER,
+    MembershipCache,
+    WorkspaceContext,
+    require_workspace_admin,
+    resolve_workspace,
+)
 
-__all__ = ['request_workspace', 'require_workspace_writer']
+__all__ = ['request_workspace', 'require_settings_admin', 'require_workspace_writer']
 
 #: The roles that write in a workspace (an editor's and an admin's; a viewer reads).
 WRITER_ROLES: Final = frozenset({'editor', 'admin'})
@@ -74,3 +85,12 @@ def require_workspace_writer(context: WorkspaceContext) -> None:
     """403 unless the caller writes in the workspace: an editor or an admin (a viewer reads only)."""
     if context.role not in WRITER_ROLES:
         raise AuthorizationError('Workspace editor access required')
+
+
+def require_settings_admin(event: dict, context: WorkspaceContext | None) -> None:
+    """403 unless the caller is an admin of the workspace the request names, or, when it names none (``context`` is
+    ``None``: the deployment as before), in the deployment's ``admins`` group."""
+    if context is None:
+        require_admin(event)
+    else:
+        require_workspace_admin(context)

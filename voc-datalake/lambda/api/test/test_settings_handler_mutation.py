@@ -60,6 +60,8 @@ FIXED_NOW = datetime(2026, 10, 5, 12, 0, 0, 1, tzinfo=UTC)
 FIXED_NOW_ISO = '2026-10-05T12:00:00.000001+00:00'
 USER = {'sub': 'user-sub', 'cognito:username': 'bob', 'cognito:groups': 'users'}
 RESOLVED_KEY = {'pk': f'WS#{WS}#SETTINGS#resolved_problems', 'sk': 'config'}
+#: The workspace's brand row (the request acts in WS, stubbed above).
+BRAND_KEY = {'pk': f'WS#{WS}#SETTINGS#brand', 'sk': 'config'}
 
 
 def _client_error(code: str, message: str = 'from the table') -> ClientError:
@@ -143,7 +145,7 @@ class TestTheColdStartModuleState:
             sys.path[:] = saved
 
     def test_the_module_constants_are_the_documented_values(self):
-        assert (settings_handler.SETTINGS_PK, settings_handler.SETTINGS_SK) == ('SETTINGS#brand', 'config')
+        assert settings_handler.BRAND_KIND == 'brand'
         assert (settings_handler.CATEGORIES_PK, settings_handler.CATEGORIES_SK) == ('SETTINGS#categories', 'config')
         assert settings_handler.RESOLVED_PROBLEMS_KIND == 'resolved_problems'
         assert (settings_handler.MAX_PROBLEM_KEY_LEN, settings_handler.MAX_PROBLEM_KEY_BYTES,
@@ -732,11 +734,14 @@ class TestExpiry:
 DEPLOYMENT_RESOLVED_KEY = {'pk': 'SETTINGS#resolved_problems', 'sk': 'config'}
 
 
-class TestWithoutAWorkspace:
-    @pytest.fixture(autouse=True)
-    def _no_workspace(self, monkeypatch):
-        monkeypatch.setattr(settings_handler, 'request_workspace', lambda _event, _public_error, **_options: None)
+@pytest.fixture
+def no_workspace(monkeypatch):
+    """The request names no workspace: the deployment as before (shared/request_workspace.py answers None)."""
+    monkeypatch.setattr(settings_handler, 'request_workspace', lambda _event, _public_error, **_options: None)
 
+
+@pytest.mark.usefixtures('no_workspace')
+class TestWithoutAWorkspace:
     def test_get_reads_the_deployment_row(self, route, table):
         table.get_item.return_value = {'Item': {'resolved': {}}}
         response, _ = route('GET', '/settings/resolved-problems')
@@ -837,11 +842,11 @@ class TestTheModelSettingsRow:
 
 class TestBrand:
     def test_a_row_missing_every_field_reads_as_the_defaults(self, route, table):
-        table.get_item.return_value = {'Item': {'pk': 'SETTINGS#brand', 'sk': 'config'}}
+        table.get_item.return_value = {'Item': BRAND_KEY}
         response, payload = route('GET', '/settings/brand')
         assert response['statusCode'] == 200
         assert payload == {'brand_name': '', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []}
-        table.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#brand', 'sk': 'config'})
+        table.get_item.assert_called_once_with(Key=BRAND_KEY)
 
     @pytest.mark.usefixtures('fixed_now')
     def test_a_partial_save_writes_the_whole_row_with_defaults(self, route, table):
@@ -852,7 +857,7 @@ class TestBrand:
             'settings': {'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []},
         }
         table.put_item.assert_called_once_with(Item={
-            'pk': 'SETTINGS#brand', 'sk': 'config', 'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [],
+            **BRAND_KEY, 'brand_name': 'Acme', 'brand_handles': [], 'hashtags': [],
             'urls_to_track': [], 'updated_at': FIXED_NOW_ISO,
         })
 
@@ -1556,3 +1561,48 @@ class TestTheWorkerBranch:
             assert lambda_handler({'action': 'other', 'ref_id': REF_ID}, lambda_context) == {'statusCode': 200}
         process.assert_not_called()
         resolve.assert_called_once_with({'action': 'other', 'ref_id': REF_ID}, lambda_context)
+
+
+@pytest.mark.usefixtures('no_workspace')
+class TestTheBrandWithoutAWorkspace:
+    """A request that names no workspace keeps the deployment's brand row and its admins (as before)."""
+
+    def test_get_reads_the_deployment_row(self, route, table):
+        table.get_item.return_value = {'Item': {'brand_name': 'Acme'}}
+        assert route('GET', '/settings/brand')[1]['brand_name'] == 'Acme'
+        table.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#brand', 'sk': 'config'})
+
+    def test_put_is_the_deployment_admins_and_writes_the_deployment_row(self, route, table):
+        response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'})
+        assert response['statusCode'] == 200
+        assert table.put_item.call_args.kwargs['Item']['pk'] == 'SETTINGS#brand'
+
+    def test_put_is_refused_to_a_user_outside_the_admins_group(self, route, table):
+        response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'}, claims=USER)
+        assert response['statusCode'] == 403
+        table.put_item.assert_not_called()
+
+
+@pytest.mark.parametrize(('role', 'status'), [('viewer', 403), ('editor', 403), ('admin', 200)])
+def test_in_a_workspace_only_its_admins_change_the_brand(monkeypatch, route, table, role, status):
+    """The route's caller is in the deployment's admins group: it grants nothing inside a workspace."""
+    act_in_workspace(monkeypatch, settings_handler, role)
+    response, _ = route('PUT', '/settings/brand', {'brand_name': 'Acme'})
+    assert response['statusCode'] == status
+    assert table.put_item.called is (status == 200)
+
+
+def test_the_brand_s_write_resolves_the_role_fresh_and_its_read_from_the_cache(monkeypatch, route, table):
+    """A workspace admin demoted a moment ago cannot change the brand from another container's warm cache."""
+    seen: list[dict] = []
+    context = act_in_workspace(monkeypatch, settings_handler)
+
+    def recording(_event, _public_error, **options):
+        seen.append(options)
+        return context
+
+    monkeypatch.setattr(settings_handler, 'request_workspace', recording)
+    table.get_item.return_value = {'Item': {}}
+    route('GET', '/settings/brand')
+    route('PUT', '/settings/brand', {'brand_name': 'Acme'})
+    assert seen == [{}, {'fresh': True}]

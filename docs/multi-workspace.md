@@ -19,6 +19,7 @@ and files named here are the planned ones unless the table lists them.
 | Unreleased | The scope of every settings row, per workspace or for the deployment, held to the code (`lambda/shared/test/test_settings_scopes.py`, Per-workspace configuration below). See the resolved problems' row for the first key moved |
 | Unreleased | The assistant's reads carry the caller's `X-Workspace-Id` to the domain Lambdas (Request flow below); the workspaces API reads it, and the settings API's resolved-problems routes (below) |
 | Unreleased | A workspace's plugins: `GET` and `PUT /me/workspaces/current/plugins[/{plugin_id}]` in the workspaces API, the `PLUGIN#{plugin_id}` / `WS#{ws}` rows the ingestors' fan-out reads, within the deployment's ceiling (Per-workspace configuration below); enabling is refused (409) and writes nothing until phase 2's data path is in |
+| Unreleased | A workspace's brand: `GET` and `PUT /settings/brand` with `X-Workspace-Id` read and write `WS#{ws}#SETTINGS#brand` (any member reads; the workspace's admins change it, `require_settings_admin`; the deployment's `admins` group grants nothing there); without the header, the deployment's row and its admins as before. The engagement API's emails and boards still read the deployment's brand name until they move (Per-workspace configuration below) |
 | Unreleased | The first settings kind under its workspace: a team's resolved problems (`GET` and `PUT /settings/resolved-problems` with `X-Workspace-Id` read and write `WS#{ws}#SETTINGS#resolved_problems`; a viewer reads, an editor or admin marks; without the header, the deployment's row as before), through the domain APIs' shared resolution (`lambda/shared/request_workspace.py`) and the stack's one workspace-resolution managed policy, which the audit-row guard now guards like a role (Per-workspace configuration below) |
 | Unreleased | Plan steps carry the workspace their plan was approved in: `workspace_id` on the plan's META, `voc:workspace` in each step's claims, sent as the domain calls' `X-Workspace-Id` header (Request flow below) |
 | Unreleased | The deployment-wide settings' writes are platform admins', checked live: `PUT /settings/appearance` and the alert writes (Per-workspace configuration below; in the route-gate inventory as admin-only and platform-admin-only) |
@@ -281,8 +282,15 @@ settings API reads `voc-workspaces`' `WS#*` rows and puts only a new entry audit
 the stack's one workspace-resolution managed policy (`voc-datalake/lib/utils/workspace-resolution-grants.ts`), which
 every domain API that moves into its workspace attaches; the audit-row guard now guards a customer-managed policy in
 itself, like a role, and names this one a writer of that partition only. The Lambda gets `WORKSPACES_TABLE` and
-keeps the Cognito reads it already had. The cross-workspace suite runs both routes (its check 3 expects, for a route
-whose case says why, the deployment's answer with no row of either workspace touched instead of the 400). The
+keeps the Cognito reads it already had. The brand follows (Unreleased), the same way: with
+`X-Workspace-Id`, `GET /settings/brand` reads `WS#{ws}#SETTINGS#brand` for any member and `PUT` writes it for the
+workspace's admins only (`require_settings_admin` in `lambda/shared/request_workspace.py`: an admin of the workspace;
+the deployment's `admins` group grants nothing inside a workspace, decision 2); without it, the deployment's
+`SETTINGS#brand` and its `admins`, as before. A new workspace starts with an empty brand (nothing is copied). Still on
+the deployment's brand until they move: the engagement API's participant emails and feedback boards
+(`lambda/shared/engagement_config.py` `brand_name`, phase 3 with the participants' settings). The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
+whose case says why, the deployment's answer with no row of either workspace touched instead of the 400; for the
+brand's `PUT`, 403 to a caller outside the deployment's `admins`). The
 deployment kinds' writes are platform admins' (since Unreleased): `PUT /settings/appearance` and the three alert writes
 (`PUT /logs/alerts`, `POST /logs/alerts/recipients`, `POST /logs/alerts/recipients/remove`) call `require_admin`,
 `require_platform_admin` and the live check (`lambda/shared/platform_admin_gate.py`: the live Cognito membership and an
@@ -298,7 +306,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 
 | Kind (`SETTINGS#…`) | Scope | Why |
 |---|---|---|
-| `brand`, `company_context`, `design_system` | workspace | the brand the AI writes for, the team's vision and objectives, its design tokens and references (decision 6) |
+| `brand`, `company_context`, `design_system` | workspace | the brand the AI writes for, the team's vision and objectives, its design tokens and references (decision 6; `brand` moved, a request with no workspace keeps the deployment's row, as before) |
 | `categories`, `dimensions`, `sources` | workspace | the team's taxonomy and source profiles (decision 6) |
 | `resolved_problems` | workspace | the problems a team marked resolved (moved; a request with no workspace keeps the deployment's row, as before) |
 | `email_intake` | workspace | the team's inbox caps (its address is `{slug}@`, [Public and non-user entry points](#public-and-non-user-entry-points)) |

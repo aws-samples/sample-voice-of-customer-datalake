@@ -53,7 +53,9 @@ PARTICIPANTS = 'participants'
 
 #: Moved under ``WS#{ws}#`` in phase 3 (decision 6: everything per workspace).
 WORKSPACE_KINDS: dict[str, frozenset[str]] = {
-    'brand': frozenset({'lambda/api/settings_handler.py', 'lambda/shared/engagement_config.py'}),
+    # Moved under its workspace; the deployment's row (a request with no workspace, the engagement API) is spelled
+    # once, in engagement_config.py.
+    'brand': frozenset({'lambda/shared/engagement_config.py'}),
     'company_context': frozenset({'lambda/shared/company_context.py', 'lambda/shared/memory_store.py'}),
     'design_system': frozenset({'lambda/shared/company_context.py', 'lib/stacks/design-capture.ts'}),
     'categories': frozenset({'lambda/shared/api.py', 'lambda/shared/categorization.py',

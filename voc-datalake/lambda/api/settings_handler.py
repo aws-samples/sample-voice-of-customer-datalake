@@ -76,6 +76,7 @@ from shared.dimension_config import (
     validate_dimensions,
     with_builtin_dimensions,
 )
+from shared.engagement_config import BRAND_KEY
 from shared.exceptions import (
     ConfigurationError,
     ConflictError,
@@ -98,7 +99,7 @@ from shared.model_config import (
 from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body, reject_unknown_fields
-from shared.request_workspace import request_workspace, require_workspace_writer
+from shared.request_workspace import request_workspace, require_settings_admin, require_workspace_writer
 from shared.retention import (
     ERASE_FIELDS,
     ERASURE_DEIDENTIFIED_COUNTERS,
@@ -141,8 +142,11 @@ CATEGORY_REPROCESS_FUNCTION = os.environ.get("CATEGORY_REPROCESS_FUNCTION", "")
 # The retention / erasure worker (`voc-retention`), started by POST /settings/erasure.
 RETENTION_FUNCTION = os.environ.get("RETENTION_FUNCTION", "")
 
-SETTINGS_PK = "SETTINGS#brand"
-SETTINGS_SK = "config"
+# The brand is a workspace's (decision 6): its row is under the workspace the request names; a request that names
+# none keeps the deployment's row, as before (shared/request_workspace.py), the one engagement_config reads.
+BRAND_KIND = "brand"
+FAILED_BRAND_READ = 'Failed to retrieve brand settings'
+FAILED_BRAND_SAVE = 'Failed to save brand settings'
 # The resolved problems are a workspace's (docs/multi-workspace.md, "Per-workspace configuration"): their row is
 # under the workspace the request names (shared/request_workspace.py), keyed by shared/workspace_settings.py. A request
 # that names none keeps the deployment's row, as before.
@@ -626,11 +630,12 @@ def _unresolve_problem_key(row: dict[str, str], key: str) -> None:
 @app.get("/settings/brand")
 @tracer.capture_method
 def get_brand_settings():
-    """Get brand configuration from DynamoDB."""
+    """The brand of the workspace the request names (any member), or the deployment's when it names none."""
+    context = request_workspace(app.current_event.raw_event, FAILED_BRAND_READ)
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
     try:
-        response = aggregates_table.get_item(Key={'pk': SETTINGS_PK, 'sk': SETTINGS_SK})
+        response = aggregates_table.get_item(Key=_brand_key(context))
         item = response.get('Item')
         if not item:
             return {'brand_name': '', 'brand_handles': [], 'hashtags': [], 'urls_to_track': []}
@@ -640,7 +645,7 @@ def get_brand_settings():
         raise
     except Exception as e:
         logger.exception(f"Failed to get brand settings: {e}")
-        raise ServiceError('Failed to retrieve brand settings') from e
+        raise ServiceError(FAILED_BRAND_READ) from e
     else:
         return result
 
@@ -648,28 +653,39 @@ def get_brand_settings():
 @app.put("/settings/brand")
 @tracer.capture_method
 def save_brand_settings():
-    """Save brand configuration to DynamoDB (admin only).
+    """Save the brand (an admin's).
 
-    The brand name, handles, hashtags and tracked URLs are shared deployment
-    configuration every AI surface reads, so only admins may change them
-    (#242). The gate runs before the body is
-    parsed or anything is written. GET /settings/brand stays open.
+    The brand name, handles, hashtags and tracked URLs are the configuration
+    every AI surface of the workspace reads, so only its admins may change
+    them (#242; with no workspace, the deployment's admins, as before). The
+    gate runs before the body is parsed or anything is written. GET
+    /settings/brand stays open to every member.
     """
-    require_admin(app.current_event.raw_event)
+    event = app.current_event.raw_event
+    # A write: the caller's role from the table, not the warm cache.
+    context = request_workspace(event, FAILED_BRAND_SAVE, fresh=True)
+    require_settings_admin(event, context)
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
     body = json_object_body(app)
     try:
-        item = {'pk': SETTINGS_PK, 'sk': SETTINGS_SK, 'brand_name': body.get('brand_name', ''),
+        item = {**_brand_key(context), 'brand_name': body.get('brand_name', ''),
                 'brand_handles': body.get('brand_handles', []), 'hashtags': body.get('hashtags', []),
                 'urls_to_track': body.get('urls_to_track', []), 'updated_at': now_iso()}
         aggregates_table.put_item(Item=item)
         bump_config_version(aggregates_table)
     except Exception as e:
         logger.exception(f"Failed to save brand settings: {e}")
-        raise ServiceError('Failed to save brand settings') from e
+        raise ServiceError(FAILED_BRAND_SAVE) from e
     else:
         return {'success': True, 'message': 'Brand settings saved', 'settings': {k: item[k] for k in ['brand_name', 'brand_handles', 'hashtags', 'urls_to_track']}}
+
+
+def _brand_key(context: WorkspaceContext | None) -> dict[str, str]:
+    """The workspace's brand row; the deployment's when the request names no workspace."""
+    if context is None:
+        return dict(BRAND_KEY)
+    return settings_key(context.ws, BRAND_KIND)
 
 
 @app.get("/settings/categories")

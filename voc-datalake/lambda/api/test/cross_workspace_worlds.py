@@ -88,6 +88,9 @@ class RouteCase:
     ok_status: int = 200
     refused_status: int = 404
     without_a_workspace: str = ''
+    #: Without a workspace the route is the deployment's ``admins`` group's (as before): check 3 expects 403 for a
+    #: caller outside it.
+    deployment_admins_without_a_workspace: bool = False
 
 
 def table_snapshot() -> dict[str, list[str]]:
@@ -201,6 +204,10 @@ def settings_world(lambda_context: Any) -> Generator[World]:
         stack.enter_context(patch.object(settings_handler, 'aggregates_table', aggregates))
         _seed_workspace(workspaces, WS_A, 'Acme Outfitters', 'acme', {'sub-ada': 'admin', 'sub-vic': 'viewer'})
         _seed_workspace(workspaces, WS_B, f'{B_MARK.title()} Bikes', B_MARK, {f'sub-{B_MARK}-bea': 'admin'})
+        # Each workspace's brand, and the deployment's (for a request that names no workspace).
+        aggregates.put_item(Item={**settings_handler.BRAND_KEY, 'brand_name': 'Before Workspaces'})
+        aggregates.put_item(Item={**settings_key(WS_A, settings_handler.BRAND_KIND), 'brand_name': f'{A_MARK} Outfitters'})
+        aggregates.put_item(Item={**settings_key(WS_B, settings_handler.BRAND_KIND), 'brand_name': f'{B_MARK} Bikes'})
         # The deployment (before workspaces) and each workspace marked one of its problems resolved (moto cannot
         # evaluate the resolve write's size() condition on a missing map, which DynamoDB answers as a failed
         # condition): A's member must not see B's, nor change B's row.
@@ -268,4 +275,11 @@ CASES: dict[tuple[str, str], RouteCase] = {
         body={'key': PROBLEM_KEY, 'resolved': True},
         literals={PROBLEM_KEY: 'a problem key (category:subcategory:problem text), not a row of a workspace'},
         without_a_workspace=_AS_BEFORE),
+    ('settings_handler.py', 'GET /settings/brand'): RouteCase(
+        no_ids='the header is its only id: check 1 (each workspace has its own brand)',
+        without_a_workspace=_AS_BEFORE),
+    ('settings_handler.py', 'PUT /settings/brand'): RouteCase(
+        no_ids='the brand is text the admin wrote, the workspace is the header: check 1',
+        body={'brand_name': 'Trailhead'}, literals={'Trailhead': 'a brand name the admin typed, not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
 }

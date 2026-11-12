@@ -121,3 +121,19 @@ def test_a_workspace_settings_key_is_under_its_workspace():
 def test_no_settings_key_from_a_bad_workspace_or_kind(ws, kind):
     with pytest.raises(ValueError, match=r'not a (workspace id|settings kind)'):
         settings_key(ws, kind)
+
+
+@pytest.mark.parametrize(('groups', 'role', 'refused'), [
+    ('admins', None, False), ('users', None, True),
+    ('users', 'admin', False), ('admins', 'editor', True), ('admins', 'viewer', True),
+], ids=['no-workspace-admins', 'no-workspace-user', 'workspace-admin', 'deployment-admin-as-editor',
+        'deployment-admin-as-viewer'])
+def test_a_settings_admin_is_the_workspace_s_admin_or_without_one_the_deployment_s(groups, role, refused):
+    """Both branches refuse: the route-gate inventory counts require_settings_admin as a gate."""
+    context = None if role is None else WorkspaceContext(ws=WS, role=role, name='', slug='', platform_admin=False)
+    event = _event(groups=groups)
+    if refused:
+        with pytest.raises(AuthorizationError):
+            rw.require_settings_admin(event, context)
+    else:
+        rw.require_settings_admin(event, context)

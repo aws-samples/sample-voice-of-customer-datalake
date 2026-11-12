@@ -81,6 +81,7 @@ from test_route_admin_gates import (
     _router_files,
 )
 
+from shared.api import get_caller_groups
 from shared.workspace import NOT_FOUND
 
 RESOLVER = 'resolve_workspace'
@@ -531,14 +532,17 @@ def _workspace_rows() -> dict[str, list[str]]:
 
 def check_missing_header(world: World, case: RouteCase, route: str, caller: dict = ADA) -> None:
     """Check 3: no header -> the 400 of shared/workspace.py, nothing changed; for a route that keeps the deployment's
-    row without a workspace, its normal status, no row of A or B changed, nothing of A's or B's answered."""
+    row without a workspace, its normal status (403 for a caller outside the deployment's ``admins`` when the case
+    says the route is theirs without a workspace), no row of A or B changed, nothing of A's or B's answered."""
     if not case.without_a_workspace:
         answer = _refused(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=caller)
         assert answer == (400, {'success': False, 'error': MISSING_HEADER}), f'{route}: {answer}'
         return
     before = _workspace_rows()
     status, body = _send(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=caller)
-    assert status == case.ok_status, f'{route} without a workspace: {status} {body}'
+    in_admins = 'admins' in get_caller_groups({'requestContext': {'authorizer': {'claims': caller}}})
+    expected = 403 if case.deployment_admins_without_a_workspace and not in_admins else case.ok_status
+    assert status == expected, f'{route} without a workspace: {status} {body}'
     assert _workspace_rows() == before, f'{route} without a workspace changed a workspace row'
     assert not _holds_b(body), f'{route} answered with B data without a workspace: {body}'
     assert not _holds_a(body), f'{route} answered with A data without a workspace: {body}'
@@ -807,3 +811,10 @@ def test_dropping_the_resolution_of_a_real_route_is_detected():
     scoped = [route for file, route in WORKSPACE_SCOPED if file == 'workspaces_handler.py']
     assert scoped
     assert not any(resolved[route] for route in scoped)
+
+
+def test_inside_a_the_brand_is_a_s(lambda_context):
+    """The moto world's read: A's admin gets A's own brand row, not the deployment's nor B's."""
+    with WORLDS['settings_handler.py'](lambda_context) as world:
+        assert world.call('GET', '/settings/brand', ws=WS_A)[1]['brand_name'] == f'{A_MARK} Outfitters'
+        assert world.call('GET', '/settings/brand', ws=None)[1]['brand_name'] == 'Before Workspaces'

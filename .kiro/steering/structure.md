@@ -367,8 +367,8 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 ### Settings (settings_handler.py)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/settings/brand` | Get brand configuration (any signed-in user) |
-| PUT | `/settings/brand` | Save brand configuration — admin-only (#242: shared deployment config every AI surface reads); the Admin page's brand form is read-only for non-admins |
+| GET | `/settings/brand` | The brand: with `X-Workspace-Id` the workspace's (`WS#{ws}#SETTINGS#brand`, any member); without it the deployment's (`SETTINGS#brand`, any signed-in user), as before |
+| PUT | `/settings/brand` | Save it — with `X-Workspace-Id` the workspace's admins only (`require_settings_admin`, `shared/request_workspace.py`; the `admins` group grants nothing there); without it the deployment's `admins` (#242), as before; the Admin page's brand form is read-only for non-admins |
 | GET | `/settings/appearance` | The deployment's start theme `{default_theme}` (any signed-in user; no row or an unknown stored id = `kiro`; `shared/appearance_routes.py`, ids in `shared/appearance.py` mirror `frontend/src/theme/themeCatalog.ts`) |
 | PUT | `/settings/appearance` | Set it `{default_theme}` — platform admins only, checked live (`shared/platform_admin_gate.py`; 403 for a plain admin); 400 unless one of `kiro\|nord\|dracula\|highcontrast\|quick`; answers `{success, settings: {default_theme}}` (aggregates `SETTINGS#appearance`/`config`; no `config_version` bump: no read depends on it). A person's own pick lives in the browser (`/account` → Preferences) |
 | GET | `/settings/resolved-problems` | The problems marked resolved `{resolved: {key: {resolved_at}}}`, only those under the categories the caller may see. With `X-Workspace-Id`: the workspace's (`WS#{ws}#SETTINGS#resolved_problems`, any member; `shared/request_workspace.py`: the one 404 for a non-member); without it: the deployment's (`SETTINGS#resolved_problems`), as before |

@@ -364,7 +364,6 @@ PHASE_3: dict[str, frozenset[str]] = {
     # Settings, categories, dimensions, sources, brand, models.
     'settings_handler.py': frozenset({
         'DELETE /settings/design-system/references/<ref_id>',
-        'GET /settings/brand',
         'GET /settings/categories',
         'GET /settings/categories/reprocess',
         'GET /settings/company-context',
@@ -392,7 +391,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /settings/erasure',
         'POST /settings/model/test',
         'POST /settings/my-briefing/refresh',
-        'PUT /settings/brand',
         'PUT /settings/categories',
         'PUT /settings/company-context',
         'PUT /settings/design-system',
