@@ -185,10 +185,7 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_global_tokens_mutation': 147,
     # 121 -> 137 (5.63.00): get_metrics github/entities views, the urgent filter.
     'test_mcp_global_tools_mutation': 137,
-    # 1 -> 2: the catalogue with the opt-in engineering agents' tool has its own ceiling.
-    'test_mcp_global_tools_budget': 2,
-    # The engineering agents' read tool (offered only where they are on), its routes and its refusals.
-    'test_mcp_global_tools_engineering': 17,
+    'test_mcp_global_tools_budget': 1,
     # 5.63.00: the tools' new reach (urgent, github/entities, include_similar), their
     # follow-up reads, the prompts/resources catalogue, and the endpoint's alarms.
     'test_mcp_global_tools_reach': 16,

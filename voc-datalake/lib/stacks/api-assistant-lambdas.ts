@@ -17,6 +17,8 @@ import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction
 import { appVersion } from '../utils/connector-version';
 import type { ApiStackContext } from './api-context';
 import { createS3ImportLambda } from './api-s3-import-lambda';
+import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
+import { engineeringAgentsEnabled } from './engineering-broker';
 
 /**
  * The assistant's run ceiling: the Lambda timeout AND the /chat/stream
@@ -49,6 +51,35 @@ export interface AssistantLambdas {
   dataExplorerLambda: lambda.Function;
   /** The AgentCore web-search gateway, when deployed. */
   webSearch: { gatewayUrl: string; gatewayArn: string; toolName: string } | undefined;
+}
+
+/**
+ * With `-c engineeringAgents=true`, the agents API's reads of an engineering run (`/agents/engineering/<run_id>/…`,
+ * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows) and GetObject on the workspace
+ * bucket's reports only; its key comes with the role's grant on the stack's key. No ListBucket (it would list every
+ * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
+ * missing (404), since the role may read every report key. Returns the env that turns the routes on (shared/engineering_agents.py),
+ * or undefined: off, the role gets nothing and the routes answer 404.
+ */
+function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, string> | undefined {
+  if (!engineeringAgentsEnabled(ctx.stack)) return undefined;
+  const { engineeringTable, engineeringWorkspaceBucket } = ctx.props;
+  if (!engineeringTable || !engineeringWorkspaceBucket) {
+    throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table and voc-eng-workspace bucket');
+  }
+  engineeringTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query');
+  const reports = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
+  role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [reports] }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'Read-only on the engineering workspace\'s report objects (one per run, level, subject and version, known only at run time); never the runs\' own objects',
+    findings: [resourceFinding(reports)],
+  }]);
+  return {
+    ENGINEERING_AGENTS: 'on',
+    ENGINEERING_TABLE: engineeringTable.tableName,
+    ENGINEERING_WORKSPACE_BUCKET: engineeringWorkspaceBucket.bucketName,
+  };
 }
 
 export function createAssistantLambdas(
@@ -137,12 +168,13 @@ export function createAssistantLambdas(
     findings: [resourceFinding(agentExecutionsArn)],
   }]);
 
+  const engineering = engineeringReads(ctx, agentsRole);
   const agentsLambda = new lambda.Function(stack, 'AgentsApi', {
     functionName: ctx.uniqueName(AGENTS_API_FUNCTION_BASE_NAME),
     runtime: lambda.Runtime.PYTHON_3_14,
     architecture: lambda.Architecture.ARM_64,
     handler: 'agents_handler.lambda_handler',
-    code: createApiLambdaCode('agents_handler.py'),
+    code: createApiLambdaCode('agents_handler.py', { engineering: engineering !== undefined }),
     role: agentsRole,
     timeout: cdk.Duration.seconds(30),
     // Power Tuning 2026-10-06 pinned 1024; superseded 2026-10-18 (94.6 % p95 at 1024 MB, lib/sizing/policy.ts)
@@ -154,6 +186,7 @@ export function createAssistantLambdas(
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: 'voc-agents-api',
       LOG_LEVEL: 'INFO',
+      ...engineering,
     },
     layers: [apiLayer],
     logGroup: ctx.logGroup('AgentsApiLogs', ctx.uniqueName('voc-agents-api')),

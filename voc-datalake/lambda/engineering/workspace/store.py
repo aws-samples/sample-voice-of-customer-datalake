@@ -13,12 +13,18 @@ from botocore.exceptions import ClientError
 
 MAX_READ_BYTES = 4 * 1024 * 1024
 _EXISTS = frozenset({'PreconditionFailed', '412', 'ConditionalRequestConflict'})
+_MISSING = frozenset({'NoSuchKey', '404'})
+#: What S3 answers a missing key to a role without ListBucket on it.
+_DENIED = frozenset({'AccessDenied', '403'})
 
 
 class WorkspaceStore:
-    def __init__(self, s3: Any, bucket: str) -> None:
+    def __init__(self, s3: Any, bucket: str, *, denied_is_missing: bool = False) -> None:
+        """``denied_is_missing``: a reader whose role may read every key it asks for but holds no unconditioned
+        ``s3:ListBucket`` (S3 then answers a missing key 403, not 404) reads a denied object as missing."""
         self.s3 = s3
         self.bucket = bucket
+        self.missing = _MISSING | _DENIED if denied_is_missing else _MISSING
 
     def read_text(self, key: str) -> str | None:
         """The object's text (at most ``MAX_READ_BYTES``; more is cut), or None when it does not exist."""
@@ -27,7 +33,7 @@ class WorkspaceStore:
         except ClientError as exc:
             response: Mapping[str, Any] = exc.response
             code = response.get('Error', {}).get('Code')
-            if code in {'NoSuchKey', '404'}:
+            if code in self.missing:
                 return None
             if code == 'InvalidRange':   # an empty object: S3 has no byte 0 to range over
                 return ''

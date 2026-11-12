@@ -1,0 +1,566 @@
+"""The supervisor on the local fake: boot, done, stall, pause and continue, crash, stop, budget."""
+import json
+import sys
+import time
+from collections.abc import Callable
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from engineering.runtime.caps import Timings
+from engineering.runtime.checkpoints import checkpoint_prefix
+from engineering.runtime.interface import Command, RuntimeRefused
+from engineering.runtime.launcher import Launcher, RunStopped
+from engineering.runtime.ports import Budget, Lease
+from engineering.runtime.sessions import AgentSession, StaleSession
+from engineering.runtime.supervisor import THIRTY_DAYS
+from engineering.runtime.test.conftest import BUCKET, ROLE_ARNS, FakeSts, World
+
+T = Timings()
+SLEEP = 'import time; time.sleep(60)'
+#: A harness that, once asked (a file `pause` appears in its directory), checkpoints and exits 75.
+PAUSE_WHEN_ASKED = ('import os, sys, time\n'
+                    'while not os.path.exists("pause"): time.sleep(0.02)\n'
+                    'sys.exit(75)')
+#: A harness that reports its status the way the real one does, then works.
+REPORTS_STATUS = ('import json, os, time\n'
+                  'os.makedirs("../home/.voc", exist_ok=True)\n'
+                  'json.dump({"step": "running tests", "recent_tools": ["run", "read_file"],'
+                  ' "tokens": {"model-a": {"in": 10, "out": 20}}}, open("../home/.voc/status.json", "w"))\n'
+                  'time.sleep(60)')
+
+
+def _workdir(world: World) -> Path:
+    return Path(world.session().endpoint)
+
+
+def _until(world: World, now: int, done: Callable[[AgentSession], bool], agent_id: str = 'fixer-1',
+           progress: bool | None = True) -> AgentSession:
+    """Tick at ``now`` until ``done`` holds for the agent's session.
+
+    Before each tick the lease is renewed with progress (``True``), renewed by the heartbeat only
+    (``False``), or left alone (``None``).
+    """
+    for _ in range(300):
+        if progress is not None:
+            world.renew(now, progress=progress, agent_id=agent_id, task_id=world.session(agent_id).task_id)
+        world.supervisor.tick(now)
+        session = world.session(agent_id)
+        if done(session):
+            return session
+        time.sleep(0.02)
+    raise AssertionError(f'the session never got there: {world.session(agent_id)}')
+
+
+def _assert_terminated(world: World, session: AgentSession) -> None:
+    with pytest.raises(RuntimeRefused, match='terminated'):
+        world.runtime.mint_token(session.vm)
+
+
+def test_a_session_boots_its_checkout_then_its_harness_and_ends_its_microvm_when_done(world: World):
+    world.launch(code="import os; assert os.path.exists('checked-out')")
+    working = _until(world, 1000, lambda s: s.status != 'booting')
+    done = _until(world, 1000, lambda s: s.status == 'done')
+    assert working.status in ('working', 'done')
+    assert done.exec_id is None
+    _assert_terminated(world, done)
+
+
+def test_with_nothing_live_a_tick_does_nothing(world: World):
+    world.launch()
+    _until(world, 1000, lambda s: s.status == 'done')
+    events = len(world.bus.events)
+    assert world.supervisor.tick(1000) == {}
+    assert len(world.bus.events) == events
+
+
+def _on_an_open_wait(world: World, code: str) -> tuple[AgentSession, Lease]:
+    """A working agent whose lease turns to an open wait, after the tick that sees it; and its lease before."""
+    world.launch(code=code)
+    working = _until(world, 1000, lambda s: s.status == 'working')
+    lease = world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1']
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(lease, waiting=True)
+    world.supervisor.tick(1001)
+    return working, lease
+
+
+def test_an_agent_on_an_open_wait_is_suspended_neither_polled_nor_stopped_and_resumed_after(world: World):
+    working, _ = _on_an_open_wait(world, SLEEP)
+    world.supervisor.tick(1000 + T.stall_after + T.lease_ttl + T.answer_window)
+    with pytest.raises(RuntimeRefused, match='suspended'):
+        world.runtime.mint_token(working.vm)
+    assert (world.session().status, world.session().asked_at, world.session().suspended) == ('working', None, True)
+    assert world.bus.kinds() == []
+    world.renew(2000)
+    world.supervisor.tick(2000)
+    assert world.session().suspended is False
+    assert world.runtime.mint_token(working.vm).value
+
+
+def test_a_long_wait_whose_checkpoint_never_comes_is_held_without_its_microvm(world: World):
+    working, _ = _on_an_open_wait(world, SLEEP)
+    asked = 1001 + T.wait_suspend_limit
+    world.supervisor.tick(asked)
+    assert (world.session().status, world.session().after_pause) == ('pause_requested', 'wait')
+    world.supervisor.tick(asked + T.answer_window)
+    assert world.session().status == 'waiting'
+    _assert_terminated(world, working)
+
+
+def test_a_crash_leaves_its_last_output_for_the_run_monitor(world: World):
+    world.launch(code="import sys; sys.stderr.write('boom'); sys.exit(3)")
+    continued = _until(world, 1000, lambda s: s.continuation >= 1)
+    assert continued.inspect['last_exit']['exit_code'] == 3
+    assert continued.inspect['last_exit']['stderr_tail'] == 'boom'
+
+
+def test_a_quiet_agent_is_asked_for_its_state_then_its_task_is_reposted(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    _until(world, 1000 + T.stall_after, lambda s: s.asked_at is not None, progress=False)
+    stopped = _until(world, 1000 + T.stall_after + T.answer_window, lambda s: s.status == 'reposted', progress=False)
+    assert world.bus.kinds()[:2] == ['question', 'timed_out']
+    assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'stalled')]
+    _assert_terminated(world, stopped)
+
+
+def test_progress_after_the_question_clears_it(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    _until(world, 1000 + T.stall_after, lambda s: s.asked_at is not None, progress=False)
+    cleared = _until(world, 1000 + T.stall_after + 30, lambda s: s.asked_at is None)
+    assert cleared.status == 'working'
+
+
+def test_a_paused_harness_is_continued_in_a_new_microvm_from_its_newest_valid_checkpoint(world: World):
+    prefix = checkpoint_prefix('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
+    world.s3.put_object(Bucket=BUCKET, Key=f'{prefix}000001-a.json', Body=json.dumps({'position': {'step': 1}}))
+    world.s3.put_object(Bucket=BUCKET, Key=f'{prefix}000002-b.json', Body=json.dumps({'position': 2, 'token': 'x'}))
+    first = world.launch(code='import sys; sys.exit(75)')
+    continued = _until(world, 1000, lambda s: s.continuation >= 1)
+    event = next(event for event in world.bus.events if event['kind'] == 'continued')
+    assert (continued.vm_id != first.vm_id, continued.crashes, continued.restore_key) == (
+        True, 0, f'{prefix}000001-a.json')
+    assert event['refs'] == {'continuation': '1', 'after': 'pause', 'checkpoint': f'{prefix}000001-a.json'}
+    _assert_terminated(world, first)
+
+
+def test_the_supervisor_asks_for_a_pause_ahead_of_the_limit_and_a_silent_agent_is_continued_at_the_hard_stop(
+        world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    pausing = _until(world, 1000 + T.pause_after, lambda s: s.status == 'pause_requested')
+    continued = _until(world, 1000 + T.hard_stop, lambda s: s.continuation == 1)
+    assert pausing.pause_requested_at == 1000 + T.pause_after
+    assert (continued.crashes, continued.restore_key) == (1, None)
+    assert 'pause' in world.bus.kinds()
+
+
+def test_a_crashing_agent_is_continued_twice_then_its_task_is_reposted(world: World):
+    world.launch(code='import sys; sys.exit(1)')
+    ended = _until(world, 1000, lambda s: s.status == 'reposted')
+    assert ended.crashes == T.max_crash_continuations
+    assert world.bus.kinds().count('continued') == T.max_crash_continuations
+    assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'crashed')]
+
+
+def test_a_run_coordinator_that_keeps_crashing_goes_to_a_person_not_to_the_board(world: World):
+    world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code='import sys; sys.exit(1)')
+    ended = _until(world, 1000, lambda s: s.status == 'failed', agent_id='coordinator-0')
+    assert ended.status == 'failed'
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'coordinator')]
+    assert not world.board.reposted
+
+
+def test_a_lost_lease_is_a_crash(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    del world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1']
+    continued = _until(world, 1001, lambda s: s.continuation == 1, progress=None)
+    assert continued.crashes == 1
+
+
+def test_a_stop_ends_every_microvm_at_once_and_renews_no_session(world: World):
+    first = world.launch(code=SLEEP)
+    second = world.launch(agent_id='hunter-1', role='hunter', task_id='task-2', code=SLEEP)
+    world.control.stops.add('01JD3R4NZXQ7Y2W8K4M6P9T0AB')
+    world.supervisor.tick(2000)
+    assert [world.session(agent).status for agent in ('fixer-1', 'hunter-1')] == ['stopped', 'stopped']
+    assert world.sts.calls == []
+    for session in (first, second):
+        _assert_terminated(world, session)
+
+
+def test_the_launcher_refuses_a_stopped_runs_agents():
+    with pytest.raises(RunStopped):
+        Launcher(FakeSts(), ROLE_ARNS).session_for(role='fixer', connection='c', run_id='r', agent_id='a', stopped=True)
+
+
+def test_each_agent_gets_its_roles_session_named_and_tagged_and_renewed_before_it_lapses(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    (first, *_) = world.sts.calls
+    # The session name the broker and the board read (<run ULID>.<agent index>), the tags the roles' conditions read.
+    assert (first['RoleArn'], first['RoleSessionName'], first['DurationSeconds']) == (
+        ROLE_ARNS['fixer'], '01JD3R4NZXQ7Y2W8K4M6P9T0AB.1', 900)
+    assert {tag['Key']: tag['Value'] for tag in first['Tags']} == {
+        'ws': 'default', 'run': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent': 'fixer-1', 'connection': 'conn-1'}
+    calls = len(world.sts.calls)
+    world.renew(1000 + 300)
+    world.supervisor.tick(1000 + 300)
+    assert len(world.sts.calls) == calls
+    world.renew(1000 + 600)
+    world.supervisor.tick(1000 + 600)
+    assert len(world.sts.calls) == calls + 1
+
+
+def test_a_run_is_stopped_at_thirty_days_at_a_decision_point_offering_only_stop(world: World):
+    world.launch(code=SLEEP)
+    world.supervisor.tick(1000 + THIRTY_DAYS)
+    assert world.session().status == 'stopped'
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'thirty_days')]
+
+
+def test_pause_holds_the_agent_after_its_checkpoint_and_resume_continues_it(world: World):
+    world.launch(code=PAUSE_WHEN_ASKED)
+    _until(world, 1000, lambda s: s.status == 'working')
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1001) == {'fixer-1': 'pause_requested'}
+    (_workdir(world) / 'pause').write_text('x')
+    held = _until(world, 1002, lambda s: s.status == 'paused')
+    assert held.continuation == 0
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1003) == {'fixer-1': 'booting'}
+    assert world.session().continuation == 1
+
+
+def test_a_run_coordinator_that_keeps_stalling_goes_to_a_person_after_its_continuations(world: World):
+    world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code=SLEEP)
+    now = 1000
+    for _ in range(200):
+        world.renew(now, progress=False, agent_id='coordinator-0', task_id='coordinate')
+        world.supervisor.tick(now)
+        if world.session('coordinator-0').status == 'failed':
+            break
+        now += 60
+        time.sleep(0.01)
+    ended = world.session('coordinator-0')
+    assert (ended.status, ended.continuation) == ('failed', T.max_crash_continuations)
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'coordinator')]
+    assert world.board.reposted == []
+
+
+def test_an_agent_that_stalls_while_pausing_is_held_never_reposted(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1001)
+    _until(world, 1000 + T.stall_after, lambda s: s.asked_at is not None or s.status != 'pause_requested',
+           progress=False)
+    held = _until(world, 1000 + T.stall_after + T.answer_window, lambda s: s.status != 'pause_requested',
+                  progress=False)
+    assert (held.status, held.continuation, world.board.reposted) == ('paused', 0, [])
+    _assert_terminated(world, held)
+
+
+def test_shut_down_on_a_paused_agent_stops_it_and_resume_leaves_it_alone(world: World):
+    world.launch(code=PAUSE_WHEN_ASKED)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1001)
+    (_workdir(world) / 'pause').write_text('x')
+    _until(world, 1002, lambda s: s.status == 'paused')
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'save', 1003) == {'fixer-1': 'paused'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'shutdown', 1003) == {'fixer-1': 'stopped'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1004) == {'fixer-1': 'stopped'}
+    assert world.session().continuation == 0
+
+
+def test_stop_now_on_a_paused_agent_stops_it(world: World):
+    world.launch(code='import sys; sys.exit(75)')
+    world.control.spend = Budget(tokens=10, cost_usd=0.0, max_tokens=10, max_cost_usd=None)
+    _until(world, 1000, lambda s: s.status == 'paused')
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'stop_now', 1001) == {'fixer-1': 'stopped'}
+
+
+def test_a_crash_that_cannot_be_recorded_keeps_its_count_and_lets_go_of_the_row(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    working = _until(world, 1000, lambda s: s.status == 'working')
+
+    def gone(*_args: object) -> None:
+        raise OSError('the MicroVM is gone')
+
+    def no_new_microvm(*_args: object) -> None:
+        raise OSError('no capacity')
+
+    monkeypatch.setattr(world.runtime, 'poll_exec', gone)
+    monkeypatch.setattr(world.runtime, 'run', no_new_microvm)
+    for now in range(1001, 1001 + T.max_runtime_failures + 1):
+        world.renew(now)
+        world.supervisor.tick(now)
+    kept = world.session()
+    assert (kept.vm_id, kept.claimed_until) == (working.vm_id, None)
+    assert kept.failures >= T.max_runtime_failures
+
+
+def test_resume_is_refused_for_a_stopped_run(world: World):
+    world.launch()
+    world.control.stops.add('01JD3R4NZXQ7Y2W8K4M6P9T0AB')
+    with pytest.raises(RuntimeRefused, match='cannot be resumed'):
+        world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1000)
+
+
+def test_shut_down_stops_the_agent_when_no_checkpoint_comes(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'shutdown', 1001)
+    stopped = _until(world, 1001 + T.answer_window, lambda s: s.status == 'stopped')
+    assert stopped.after_pause == 'shutdown'
+
+
+def test_save_asks_for_a_checkpoint_and_stop_now_ends_at_once(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'save', 1001)
+    assert world.bus.kinds() == ['save']
+    stopped = world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'stop_now', 1002)
+    assert stopped == {'fixer-1': 'stopped'}
+    with pytest.raises(RuntimeRefused, match='no agent'):
+        world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'ghost', 'save', 1003)
+
+
+def test_the_row_carries_inspection_data_and_live_cost_counters(world: World):
+    world.launch(code=REPORTS_STATUS)
+    _until(world, 1000, lambda s: s.status == 'working')
+    observed = _until(world, 1060, lambda s: s.inspect.get('step') == 'running tests')
+    assert observed.tokens == {'model-a': {'in': 10, 'out': 20}}
+    assert observed.inspect['recent_tools'] == ['run', 'read_file']
+    assert (observed.inspect['microvm_state'], observed.inspect['heartbeat_age']) == ('running', 0)
+    assert observed.microvm_seconds == 60
+
+
+def test_a_spent_budget_asks_every_agent_to_pause_and_waits_for_a_person(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.control.spend = Budget(tokens=10, cost_usd=5.0, max_tokens=None, max_cost_usd=5.0)
+    world.supervisor.tick(1001)
+    assert world.session().status == 'pause_requested'
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'budget')]
+    assert world.bus.kinds() == ['pause']
+
+
+def test_under_a_spent_budget_agents_are_held_for_a_person_and_no_new_microvm_starts(world: World):
+    world.launch(code='import sys; sys.exit(75)')
+    world.control.spend = Budget(tokens=10, cost_usd=0.0, max_tokens=10, max_cost_usd=None)
+    held = _until(world, 1000, lambda s: s.status == 'paused')
+    assert held.continuation == 0
+    assert ('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'budget') in world.control.humans
+    with pytest.raises(RuntimeRefused, match='spent its budget'):
+        world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1001)
+
+
+def test_once_the_budget_is_raised_resume_brings_a_held_agent_back(world: World):
+    world.launch(code='import sys; sys.exit(75)')
+    world.control.spend = Budget(tokens=10, cost_usd=0.0, max_tokens=10, max_cost_usd=None)
+    _until(world, 1000, lambda s: s.status == 'paused')
+    world.control.spend = Budget(tokens=10, cost_usd=0.0, max_tokens=100, max_cost_usd=None)
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1001) == {'fixer-1': 'booting'}
+    assert world.session().continuation == 1
+
+
+def test_shut_down_during_an_eight_hour_pause_stops_the_agent_instead_of_continuing_it(world: World):
+    world.launch(code=PAUSE_WHEN_ASKED)
+    working = _until(world, 1000, lambda s: s.status == 'working')
+    _until(world, 1000 + T.pause_after, lambda s: s.status == 'pause_requested')
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'shutdown', 1001 + T.pause_after) == {
+        'fixer-1': 'pause_requested'}
+    (Path(working.endpoint) / 'pause').write_text('x')
+    stopped = _until(world, 1002 + T.pause_after, lambda s: s.status == 'stopped')
+    assert stopped.continuation == 0
+
+
+def test_a_failing_board_never_counts_against_a_healthy_microvm(world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    working = _until(world, 1000, lambda s: s.status == 'working')
+
+    def outage(_run_id: str, _task_id: str) -> None:
+        raise ConnectionError('the board is down')
+
+    monkeypatch.setattr(world.board, 'lease', outage)
+    for now in range(1001, 1006):
+        world.supervisor.tick(now)
+    assert (world.session().status, world.session().failures, world.session().continuation) == ('working', 0, 0)
+    assert world.session().claimed_until is None
+    assert world.runtime.mint_token(working.vm).value
+
+
+@pytest.mark.parametrize(('kind', 'status'), [('shutdown', 'stopped'), ('pause', 'paused')])
+def test_shut_down_or_pause_on_an_agent_still_booting_takes_effect_at_once(world: World, kind: str, status: str):
+    booting = world.launch(code=SLEEP)
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, kind, 1000) == {'fixer-1': status}
+    with pytest.raises(RuntimeRefused, match='terminated'):
+        world.runtime.mint_token(booting.vm)
+
+
+def test_one_run_failing_does_not_keep_the_supervisor_from_the_others(world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code='pass')
+    other = replace(world.session(), run_id='01JD3R4NZXQ7Y2W8K4M6P9T0CD', seq=0, claimed_until=None)
+    world.store.create(other)
+    real_budget = world.control.budget
+
+    def budget(run_id: str) -> Budget:
+        if run_id == '01JD3R4NZXQ7Y2W8K4M6P9T0AB':
+            raise ConnectionError('run control is down')
+        return real_budget(run_id)
+
+    monkeypatch.setattr(world.control, 'budget', budget)
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0CD/task-1'] = world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1']
+    world.supervisor.tick(1000)
+    found = world.store.get('01JD3R4NZXQ7Y2W8K4M6P9T0CD', 'fixer-1')
+    assert found is not None
+    assert found.seq > 1
+
+
+def test_a_signal_on_a_session_another_move_holds_answers_busy(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.store.claim(world.session(), 1001, 300)
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'stop_now', 1002) == {'fixer-1': 'busy'}
+    assert world.session().status == 'working'
+
+
+@pytest.mark.parametrize(('kind', 'status'), [('shutdown', 'stopped'), ('pause', 'paused')])
+def test_shut_down_or_pause_on_an_agent_held_for_a_long_wait_decides_instead_of_the_wait(
+        world: World, kind: str, status: str):
+    working, lease = _on_an_open_wait(world, PAUSE_WHEN_ASKED)
+    _until(world, 1001 + T.wait_suspend_limit, lambda s: s.status == 'pause_requested', progress=None)
+    (Path(working.endpoint) / 'pause').write_text('x')
+    _until(world, 1002 + T.wait_suspend_limit, lambda s: s.status == 'waiting', progress=None)
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', kind, 1003 + T.wait_suspend_limit) == {'fixer-1': status}
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(lease, waiting=False)
+    world.supervisor.tick(1004 + T.wait_suspend_limit)
+    assert (world.session().status, world.session().continuation) == (status, 0)
+
+
+def test_resume_while_a_hold_is_still_pausing_continues_the_agent_once_it_has_paused(world: World):
+    world.launch(code=PAUSE_WHEN_ASKED)
+    working = _until(world, 1000, lambda s: s.status == 'working')
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1001)
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'resume', 1002) == {'fixer-1': 'pause_requested'}
+    (Path(working.endpoint) / 'pause').write_text('x')
+    continued = _until(world, 1003, lambda s: s.continuation == 1)
+    assert continued.status == 'booting'
+
+
+def test_a_failure_after_a_save_in_the_same_move_still_releases_the_claim_and_counts(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+
+    def down(_vm: object) -> None:
+        raise ConnectionError('the runner is gone')
+
+    monkeypatch.setattr(world.runtime, 'status', down)
+    after_boot = _until(world, 1000, lambda s: s.failures >= 1)
+    assert after_boot.claimed_until is None
+    assert after_boot.status == 'working'
+
+
+def test_a_session_claimed_by_another_move_is_left_alone(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    held = world.store.claim(world.session(), 1001, 300)
+    world.supervisor.tick(1002)
+    assert world.session() == held
+    world.supervisor.tick(1001 + 301)
+    assert world.session().claimed_until is None
+    assert world.session().seq > held.seq
+
+
+def test_one_failing_session_does_not_stop_the_others_and_a_gone_microvm_becomes_a_crash(world: World):
+    world.launch(code='pass')
+    broken = world.launch(agent_id='hunter-1', role='hunter', task_id='task-2', code=SLEEP)
+    world.store.save(replace(broken, vm_id='gone', status='working', exec_id='x'))
+    done = _until(world, 1000, lambda s: s.status == 'done')
+    assert done.status == 'done'
+    continued = _until(world, 1000, lambda s: s.continuation == 1, agent_id='hunter-1')
+    assert (continued.vm_id != 'gone', continued.crashes, continued.failures) == (True, 1, 0)
+    assert continued.inspect['last_failure'] == 'the MicroVM stopped answering'
+
+
+def test_a_boot_that_takes_too_long_is_a_crash(world: World):
+    world.launch(code=SLEEP)
+    world.supervisor.checkout = lambda _commit, _paths: [
+        Command(argv=(sys.executable, '-c', 'import time; time.sleep(60)'), timeout_seconds=600,
+                repository_code=False)]
+    world.supervisor.tick(1000)
+    continued = _until(world, 1000 + T.boot_deadline, lambda s: s.continuation == 1)
+    assert continued.inspect['last_failure'] == 'the boot took too long'
+
+
+def test_a_long_open_wait_is_checkpointed_and_held_without_a_microvm_then_continued_when_it_closes(world: World):
+    working, lease = _on_an_open_wait(world, PAUSE_WHEN_ASKED)
+    assert world.session().suspended
+    asked = _until(world, 1001 + T.wait_suspend_limit, lambda s: s.status == 'pause_requested', progress=None)
+    assert (asked.after_pause, asked.suspended) == ('wait', False)
+    (Path(working.endpoint) / 'pause').write_text('x')
+    held = _until(world, 1002 + T.wait_suspend_limit, lambda s: s.status == 'waiting', progress=None)
+    assert held.crashes == 0
+    world.supervisor.tick(1000 + 2 * T.hard_stop)
+    assert world.session().status == 'waiting'
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(lease, waiting=False)
+    world.supervisor.tick(2000 + 2 * T.hard_stop)
+    assert (world.session().status, world.session().continuation) == ('booting', 1)
+
+
+def test_save_on_a_suspended_agent_wakes_it_renews_its_session_and_saves(world: World):
+    working, _ = _on_an_open_wait(world, SLEEP)
+    calls = len(world.sts.calls)
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'save', 1001 + 20 * 60)
+    assert world.session().suspended is False
+    assert len(world.sts.calls) == calls + 1
+    assert world.runtime.mint_token(working.vm).value
+
+
+def test_a_lost_claim_on_a_continuation_ends_the_microvm_it_started(world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code='import sys; sys.exit(75)')
+    started = []
+    original_run = world.runtime.run
+
+    def run(spec):
+        started.append(original_run(spec))
+        return started[-1]
+
+    real_save = world.store.save
+
+    def save(session):
+        if session.continuation == 1:
+            raise StaleSession('someone else moved it')
+        return real_save(session)
+
+    monkeypatch.setattr(world.runtime, 'run', run)
+    monkeypatch.setattr(world.store, 'save', save)
+    for now in range(1000, 1010):
+        world.supervisor.tick(now)
+        if started:
+            break
+        time.sleep(0.05)
+    assert started
+    with pytest.raises(RuntimeRefused, match='terminated'):
+        world.runtime.mint_token(started[0])
+
+
+def test_time_without_a_microvm_is_not_counted_as_microvm_seconds(world: World):
+    world.launch(code=PAUSE_WHEN_ASKED)
+    working = _until(world, 1000, lambda s: s.status == 'working')
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1060)
+    (Path(working.endpoint) / 'pause').write_text('x')
+    held = _until(world, 1120, lambda s: s.status == 'paused')
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'resume', 1120 + 86400)
+    assert world.session().microvm_seconds == held.microvm_seconds
+
+
+def test_run_health_reports_counts_spend_and_backlog(world: World):
+    world.launch(code=SLEEP)
+    world.bus.depths['01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1'] = 3
+    world.supervisor.tick(1000)
+    health = [event for event in world.bus.events if event['kind'] == 'run.health'][-1]
+    assert health['summary'] == '1 booting'
+    assert health['refs'] == {'tokens': '0', 'cost_usd': '0.00', 'inbox_backlog': '3'}

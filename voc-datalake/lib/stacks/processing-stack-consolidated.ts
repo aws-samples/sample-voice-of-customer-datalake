@@ -22,6 +22,9 @@ import { MemoryWorkers } from './memory-workers';
 import { AGGREGATOR_FUNCTION_BASE_NAME, AGGREGATOR_STREAM_FAILURES_BASE_NAME, FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME } from './dlq-alarms';
 import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
+import { ENGINEERING_ROLE_NAME_TEMPLATE, EngineeringBroker, engineeringAgentsEnabled } from './engineering-broker';
+import { EngineeringBus } from './engineering-bus';
+import { addEngineeringRuntime } from './engineering-runtime';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
@@ -56,6 +59,10 @@ export interface VocProcessingStackProps extends VocStackProps {
   memoryTable: dynamodb.Table;
   /** voc-agents — agents, workflows, runs, run events, crewmate transcripts. */
   agentsTable: dynamodb.Table;
+  /** voc-engineering — the engineering bus's board and conversations; VocCoreStack makes it only with -c engineeringAgents=true. */
+  engineeringTable?: dynamodb.ITable;
+  /** voc-eng-workspace — the engineering runs' findings and reports; VocCoreStack makes it only with -c engineeringAgents=true. */
+  engineeringWorkspaceBucket?: s3.IBucket;
   /** voc-radar — the processor routes Radar sources' reviews here; the release scan writes here (docs/radar.md). */
   radarTable: dynamodb.Table;
   /** voc-feature-requests: research reads board requests as a separate evidence source (Query only); the
@@ -107,6 +114,9 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Retention / erasure worker, voc-retention (daily + POST /settings/erasure; retention-worker.ts)
  * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
  * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
+ * - Only with -c engineeringAgents=true: the engineering agents' connector broker (engineering-broker.ts), and their
+ *   bus, inbox router, role queues, board API and report builder (engineering-bus.ts), and their MicroVM runtime: the supervisor,
+ *   its rule and the agent roles (engineering-runtime.ts)
  */
 export class VocProcessingStack extends VocStack {
   public readonly processingLambda: lambda.Function;
@@ -346,6 +356,28 @@ export class VocProcessingStack extends VocStack {
       webSearch: props.webSearchGatewayUrl && props.webSearchGatewayArn && props.webSearchToolName
         ? { url: props.webSearchGatewayUrl, arn: props.webSearchGatewayArn, toolName: props.webSearchToolName }
         : undefined,
+    });
+    // The engineering agents' connector broker (docs/autonomous-engineering.md): only with -c engineeringAgents=true.
+    let engineeringBus: EngineeringBus | undefined;
+    if (engineeringAgentsEnabled(this)) {
+      const roleNamePattern = this.uniqueNamePattern(ENGINEERING_ROLE_NAME_TEMPLATE);
+      new EngineeringBroker(this, 'EngineeringBroker', {
+        uniqueName, layer: processingLayer, roleNamePattern, kmsKey, deploymentPrefix: this.deploymentPrefix,
+      });
+      if (!props.engineeringTable) throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table');
+      if (!props.engineeringWorkspaceBucket) {
+        throw new Error('engineeringAgents needs VocCoreStack\'s voc-eng-workspace bucket');
+      }
+      engineeringBus = new EngineeringBus(this, 'EngineeringBus', {
+        uniqueName, layer: processingLayer, roleNamePattern, kmsKey, engineeringTable: props.engineeringTable,
+        workspaceBucket: props.engineeringWorkspaceBucket,
+      });
+    }
+    // The engineering agents' MicroVM runtime: only with `-c engineeringAgents=true` (engineering-runtime.ts); its
+    // supervisor rule's undelivered ticks go to the bus's dead-letter queue.
+    addEngineeringRuntime(this, {
+      uniqueName, layer: processingLayer, kmsKey, agentsTable: props.agentsTable, rawDataBucket,
+      deadLetterQueue: engineeringBus?.dlq,
     });
 
     // ============================================

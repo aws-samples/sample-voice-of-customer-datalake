@@ -2,8 +2,8 @@
  * Test support: synth context with every context-gated feature on.
  *
  * The default synth leaves out the inbound-email intake, participant email + the board pool, the
- * verification fixture provider, a model pin and Bedrock model access (data protection is on by default since
- * 5.74.00; this shape sets it explicitly). A template gate that
+ * verification fixture provider, the engineering agents' connector broker, a model pin and Bedrock model access
+ * (data protection is on by default since 5.74.00; this shape sets it explicitly). A template gate that
  * reads only the default shape never sees those resources, so suites that judge the WHOLE app (the nag
  * suppression audit, the template gates) synthesize this shape as well. It mirrors the audit synth's
  * GATED_CONTEXT (scripts/audit/py_assembly.py) plus data protection.
@@ -18,6 +18,7 @@
  */
 export const ALL_FEATURES_CONTEXT: Readonly<Record<string, unknown>> = {
   enableVerificationFixtureProvider: true,
+  engineeringAgents: true,
   defaultModelId: 'global.anthropic.claude-sonnet-5-5',
   inboundEmailDomain: 'voc.example.com',
   emailFrom: 'noreply@voc.example.com',

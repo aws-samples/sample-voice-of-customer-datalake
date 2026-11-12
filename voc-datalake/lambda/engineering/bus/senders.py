@@ -1,9 +1,11 @@
 """Who may send what: the router's sender allowlist.
 
-The router knows a sender only from the event's ``source``, which the bus's resource policy pins to the publisher's
-identity (each agent role may put events only with its own source; the workspace, run and agent come from the
-launcher's session name). A message must also say, in its ``from``, the sender the source proves, and an agent or a
-run conductor may speak only in its own workspace and run. Everything else is dropped and journalled, so no agent can
+The router knows a sender only from the event's ``source``, so the bus's resource policy must pin each source to its
+publisher's identity. Today it lets only the board API's role put events at all (lib/stacks/engineering-bus.ts), and
+the board publishes only as ``voc.engineering/board``; the per-publisher pins (each agent role only with its own
+source, the workspace, run and agent from the launcher's session name) come with the agent roles. A message must
+also say, in its ``from``, the sender the source proves, and an agent or a run conductor may speak only in its own
+workspace and run. Everything else is dropped and journalled, so no agent can
 speak for another, for a person, for the board or for the supervisor.
 
 Sources: ``voc.engineering/api`` (a signed-in person, through the API), ``voc.engineering/board`` (the board API,

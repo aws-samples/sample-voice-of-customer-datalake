@@ -23,7 +23,11 @@ export function dependencyLayer(scope: Construct, id: string, layerDir: string, 
   });
 }
 
-/** cryptography (+ cffi, pycparser): the RSA-SHA1 primitive of `shared/cloudfront_signing.py`. */
+/**
+ * cryptography (+ cffi, pycparser): the RSA-SHA1 primitive of `shared/cloudfront_signing.py`, and the RS256
+ * signature of the engineering broker's GitHub App JWT (`engineering/connectors/github.py`; its own copy of the
+ * layer, lib/stacks/engineering-broker.ts).
+ */
 export const SIGNING_LAYER_DIR = 'lambda/layers/signing-deps';
 
 /**

@@ -144,7 +144,7 @@ def test_a_storage_error_that_is_not_a_duplicate_is_raised(store):
 
 def test_the_handler_builds_its_clients_from_the_environment(client, monkeypatch):
     monkeypatch.setattr(router_module, '_router', None)
-    monkeypatch.setenv('ENGINEERING_ROLE_QUEUE_URL_PREFIX', 'https://sqs.example/123/voc-eng-')
+    monkeypatch.setenv('ENGINEERING_ROLE_QUEUE_URLS', json.dumps({'fixer': 'https://sqs.example/123/voc-eng-tasks-fixer-1'}))
     monkeypatch.setenv('ENGINEERING_DELIVERY_FUNCTION', 'voc-eng-delivery')
     monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
     sqs = MagicMock()
@@ -154,7 +154,7 @@ def test_the_handler_builds_its_clients_from_the_environment(client, monkeypatch
         assert handler({'source': BOARD, 'detail': message(**TASK)}, None) == {
             'status': 'routed', 'reason': '', 'seq': 1}
         handler({'source': AGENT_SOURCE, 'detail': message(event_id='01HZZZZZZZZZZZZZZZZZZZZZZZ')}, None)
-    assert sqs.send_message.call_args.kwargs['QueueUrl'] == 'https://sqs.example/123/voc-eng-fixer'
+    assert sqs.send_message.call_args.kwargs['QueueUrl'] == 'https://sqs.example/123/voc-eng-tasks-fixer-1'
     assert json.loads(sqs.send_message.call_args.kwargs['MessageBody'])['task_id'] == 'task-1'
     assert invoke.call_args.args[0] == 'voc-eng-delivery'
     assert invoke.call_args.args[1]['to'] == {'kind': 'agent', 'id': 'reviewer-1'}

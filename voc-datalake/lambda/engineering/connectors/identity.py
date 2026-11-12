@@ -17,6 +17,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
+#: The workspace dimension (the board's and the bus's ``ws``, the runtime's ``ws`` session tag), ``default`` until
+#: multi-workspace lands (plan v3, 4.3).
+WORKSPACE: Final = 'default'
 ROLE_PLACEHOLDER: Final = '{role}'
 #: The agent catalog's roles, as their IAM role names spell them.
 AGENT_ROLES: Final = frozenset({

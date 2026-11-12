@@ -138,6 +138,23 @@ End), its settings panels set each step's settings (no step role and no loops: i
 graph rules are mirrored as you edit (`WorkflowEditor/engineeringRules.ts`, held to the
 server by the shared fixture `frontend/src/test/engineeringFlows.json`).
 
+### An engineering run: monitor, board, conversation, reports
+
+Where the engineering agents are on (`ENGINEERING_AGENTS=on`, with their table and workspace bucket), the Agents API
+lets an administrator acting for themselves read a run and act on it (403 for anyone else, a delegated MCP or agent
+credential included, like a run's decision; 404 for an unknown run, and for everyone while the module is off). There is
+no MCP tool for engineering runs yet (docs/mcp.md). The web app's page for a run is `/agents/engineering/<run_id>`.
+
+| Method | Path | Answers |
+|---|---|---|
+| GET | `/agents/engineering/{run_id}` | the run monitor (`lambda/engineering/monitor.py`): the run (goal, repository, flow, status, times, messages numbered), and each agent as the supervisor last saw it (its session row in the agents table, `ENGRUN#<run>` / `AGENT#<agent>`: role, task, status, continuation, step, MicroVM state and age, heartbeat age, last progress, why it looks stuck, its recent tool calls, MicroVM-seconds, tokens in and out per model), with the totals per model and for the run. Cost and budget come when the run control is wired |
+| GET | `…/board`, `…/conversation?after=&limit=`, `…/reports`, `…/reports/{level}/{subject}?version=` | the task board with each task's history, a page of the conversation, the report index, one report (a full conversation page moves on to its last seq, one that reached the tail to 20 below it: keep each message once by `seq`) |
+| POST | `…/signals` `{signal, task_id?, attempt?, note?, confirm?}` | `save`, `pause`, `resume`, `shutdown` or `stop_now` (no checkpoint: needs `confirm: true`), to the agent on a task at the attempt you saw, or (no `task_id`) to the whole run: 409 when the task has moved on since (another attempt, no holder, back to open, or ended), the run has ended, or the supervisor refuses it (its reason: a stopped run, a spent budget). The supervisor applies it (`voc-engineering-runtime`, `{action: signal}`; idempotent per agent: an agent another move holds answers busy, a 503 "send the signal again" with nothing recorded), and the conversation records it as `signal.<name>` (who, what, each agent's status, the note). Answers `{signal: {…, agents: {agent: status}}}` |
+| POST | `…/messages` `{to: 'conductor' \| 'agent', agent?, text, thread_id?}` | a person's answer (`msg.answer`, at most 1 KB, refused if it holds something shaped like a credential) to the run's conductor or one of its agents, on the thread it answers (a new one if left out); the conversation records it |
+
+A failed call to the supervisor or the bus answers 503 (retry: the signal is idempotent), and so does a deployment
+without the runtime (`ENGINEERING_RUNTIME_FUNCTION`, for signals) or the bus (`ENGINEERING_BUS_NAME`).
+
 ### Methodology warnings
 
 A valid workflow can still skip the methodology (TENETS.md tenet 2): `start → write_prd → end` writes a PRD with no

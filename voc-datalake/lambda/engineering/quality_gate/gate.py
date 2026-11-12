@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from engineering.quality_gate.checks import GateError, GateRun, reset_checkout, run_plan, tree_hash
-from engineering.quality_gate.models import OPUS, SONNET, CountingModel, ModelClient, ModelRequest
+from engineering.quality_gate.models import FINAL_GO_MODEL, REVIEW_MODEL, CountingModel, ModelClient, ModelRequest
 from engineering.quality_gate.packs import OWN_GATE_FILE, GatePlan
 from engineering.quality_gate.record import REVISION_OUTCOMES, FinalGoRecord, GateRecord, RoundRecord
 from engineering.quality_gate.review import (
@@ -65,7 +65,7 @@ class GateConfigError(ValueError):
 class ReviewerSpec:
     name: str
     focus: str
-    model_id: str = SONNET
+    model_id: str = REVIEW_MODEL
     advisory: bool = False
 
     @property
@@ -88,7 +88,7 @@ DEFAULT_REVIEWERS = (
 class GateConfig:
     max_rounds: int = DEFAULT_ROUNDS
     reviewers: tuple[ReviewerSpec, ...] = DEFAULT_REVIEWERS
-    final_go_model: str = OPUS
+    final_go_model: str = FINAL_GO_MODEL
     node_id: str = 'quality_gate'
     node_title: str = 'Quality gate'
     max_diff_chars: int = 150_000
@@ -149,7 +149,7 @@ def _reviewer(item: Any) -> ReviewerSpec:
         raise GateConfigError(f'reviewer "{item["name"]}": unknown settings {sorted(unknown)}')
     base = {reviewer.name: reviewer for reviewer in DEFAULT_REVIEWERS}.get(item['name'])
     focus = item.get('focus', base.focus if base else '')
-    model_id = item.get('model_id', base.model_id if base else SONNET)
+    model_id = item.get('model_id', base.model_id if base else REVIEW_MODEL)
     advisory = item.get('advisory', base.advisory if base else False)
     if not isinstance(focus, str) or not focus or not isinstance(model_id, str) or not model_id:
         raise GateConfigError(f'reviewer "{item["name"]}" needs a focus and a model id')

@@ -104,6 +104,15 @@ max-returns = 8
 "lambda/shared/test/test_snapstart.py" = ["S311"]  # tests the `random` reseed itself
 "lambda/shared/test/test_model_agreement_handler.py" = ["S102"]  # execs the handler inlined in the CDK stack
 "scripts/mcp_gate.py" = ["S314"]                          # parses the JUnit XML our own pytest run just wrote
+# The engineering agents' runner runs an agent's own argv without a shell, in the agent's checkout, dropped to an
+# unprivileged user; the AWS runtime and its test call that runner (https only in production), and the harness
+# calls it on the MicroVM's own loopback (a constant URL). The images run the runner with their system python3,
+# 3.11 on the Debian 12 based ones: its guarded `override` (UP036, UP047; A002 on the overridden method) stays.
+"lambda/engineering/runtime/unit_runner.py" = ["S603", "UP036", "UP047", "A002"]
+"lambda/engineering/runtime/harness/runner_client.py" = ["S310"]
+"lambda/engineering/runtime/test/test_engineering_harness_main.py" = ["S603"]  # fixed argv: sys.executable -I <the image's entry script> --help
+"lambda/engineering/runtime/aws.py" = ["S310"]
+"lambda/engineering/runtime/test/test_engineering_local_runtime.py" = ["S310"]
 # Per-review isolation and the job-level belt log the error TYPE only (privacy, see the handler), so
 # they neither narrow the catch nor log the exception itself.
 "lambda/jobs/category_reprocess/handler.py" = ["BLE001", "TRY400"]

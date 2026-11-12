@@ -30,12 +30,9 @@ _MODULES = (
 # Names that are legitimately absent from the stack, each with its reason.
 _NOT_SET_BY_CDK = {
     'AWS_LAMBDA_FUNCTION_NAME': 'provided by the Lambda runtime',
-    # The engineering agents are an opt-in module (shared/engineering_agents.py): only its own stack (behind
-    # -c engineeringAgents=true, not yet written) is to set these, and a Lambda without them answers the engineering
-    # routes 404 and offers no engineering tool. Drop these when that stack sets them.
-    'ENGINEERING_AGENTS': 'set only by the opt-in engineering stack (not yet written)',
-    'ENGINEERING_TABLE': 'set only by the opt-in engineering stack (not yet written)',
-    'ENGINEERING_WORKSPACE_BUCKET': 'set only by the opt-in engineering stack (not yet written)',
+    # The run monitor's signals (api/agents_handler.py): voc-engineering-runtime's name on the Agents API, which
+    # the opt-in stack is to set beside the reads' table and bucket. Drop this when it does.
+    'ENGINEERING_RUNTIME_FUNCTION': 'set only by the opt-in engineering stack (not yet on the Agents API)',
 }
 
 _ENV_READ = re.compile(r"environ(?:\.get)?[(\[]\s*'([A-Z0-9_]+)'")

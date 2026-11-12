@@ -12,6 +12,7 @@ from moto import mock_aws
 from engineering.reports.store import ReportStore
 from engineering.test.run_fixture import RUN, TABLE, EngineeringRun, engineering_run
 from engineering.views import EngineeringViews
+from engineering.workspace.store import WorkspaceStore
 
 
 @pytest.fixture
@@ -92,6 +93,42 @@ def test_a_version_counted_but_not_written_is_not_offered(views: EngineeringView
     assert [item['level'] for item in reports['items']] == ['goal']
     run.s3.delete_object(Bucket='voc-engineering-workspace', Key=f'ws/default/reports/{RUN}/goal/{RUN}/v0001.md')
     assert views.report(RUN, 'goal', RUN, 1) is None
+
+
+def test_a_page_dynamodb_cut_at_1_mb_is_followed_not_read_as_the_tail(run: EngineeringRun) -> None:
+    """DynamoDB returns LastEvaluatedKey with fewer items than Limit when a page reaches 1 MB."""
+    client: Any = MagicMock()
+    client.get_item.return_value = {'Item': {'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'META'}}}
+    cursor = {'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'MSG#00000002'}}
+    client.query.side_effect = [{'Items': [_message_row(1), _message_row(2)], 'LastEvaluatedKey': cursor},
+                                {'Items': [_message_row(3), _message_row(4)], 'LastEvaluatedKey': {'sk': {'S': 'x'}}}]
+    page = EngineeringViews(client, TABLE, run.workspace).conversation(RUN, after=0, limit=3)
+    assert page is not None
+    # A full page of 3 (read over two DynamoDB pages): it moves on to its last seq, not to 20 below the tail.
+    assert ([item['seq'] for item in page['items']], page['next_after']) == ([1, 2, 3], 3)
+    assert client.query.call_args_list[1].kwargs['ExclusiveStartKey'] == cursor
+
+
+def _s3_answering(code: str) -> Any:
+    s3: Any = MagicMock()
+    s3.get_object.side_effect = ClientError({'Error': {'Code': code, 'Message': code}}, 'GetObject')
+    return s3
+
+
+def test_an_older_version_never_written_is_none_though_s3_denies_it(run: EngineeringRun) -> None:
+    """The Agents API holds no ListBucket, so S3 answers a key that is not there 403: read as missing, not a 500."""
+    run.client.update_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': f'REPORT#goal#{RUN}'}},
+                           UpdateExpression='SET latest_version = :v', ExpressionAttributeValues={':v': {'N': '3'}})
+    for code in ('AccessDenied', '403'):
+        store = WorkspaceStore(_s3_answering(code), 'voc-engineering-workspace', denied_is_missing=True)
+        assert EngineeringViews(run.client, TABLE, store).report(RUN, 'goal', RUN, 2) is None
+
+
+def test_any_other_read_failure_of_a_report_is_raised(run: EngineeringRun) -> None:
+    store = WorkspaceStore(_s3_answering('SlowDown'), 'voc-engineering-workspace', denied_is_missing=True)
+    views = EngineeringViews(run.client, TABLE, store)
+    with pytest.raises(ClientError):
+        views.report(RUN, 'goal', RUN, 1)
 
 
 def test_an_unknown_run_reads_as_none(views: EngineeringViews) -> None:

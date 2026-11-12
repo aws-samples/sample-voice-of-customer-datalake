@@ -1,6 +1,6 @@
 {
   "name": "voice-of-customer-datalake",
-  "version": "6.4.8",
+  "version": "6.9.0",
   "description": "Voice of the Customer Data Lake - Unified customer feedback intelligence platform",
   "private": true,
   "scripts": {

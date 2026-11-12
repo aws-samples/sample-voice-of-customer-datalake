@@ -41,9 +41,10 @@ TYPES = frozenset({
 FIELDS = frozenset({'schema', 'event_id', 'ws', 'run_id', 'thread_id', 'task_id', 'attempt', 'from', 'to', 'type',
                     'summary', 'refs', 'at'})
 REF_KEYS = frozenset({'s3', 'commit', 'pr', 'files'})
-_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z')
+#: A run, thread, task or party id; and a workspace (the workspace's key layout, workspace/layout.py, takes both).
+ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z')
 _ULID = re.compile(r'[0-9A-HJKMNP-TV-Z]{26}\Z')
-_WS = re.compile(r'[a-z0-9][a-z0-9-]{0,62}\Z')
+WS = re.compile(r'[a-z0-9][a-z0-9-]{0,62}\Z')
 _SHA = re.compile(r'[0-9a-f]{7,64}\Z')
 _AT = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z\Z')
 
@@ -114,7 +115,7 @@ def _party(raw: Any, key: str, kinds: frozenset[str]) -> Party:
         raise MessageError(f'"{key}" must be {{kind, id}}')
     if not isinstance(raw['kind'], str) or raw['kind'] not in kinds:
         raise MessageError(f'"{key}.kind" must be one of {sorted(kinds)}')
-    return Party(kind=raw['kind'], id=_text(raw, 'id', _ID))
+    return Party(kind=raw['kind'], id=_text(raw, 'id', ID))
 
 
 def _s3_key(key: Any, prefix: str) -> str:
@@ -144,7 +145,8 @@ def _refs(raw: Any, ws: str) -> Refs:
     return Refs(s3=tuple(_s3_key(key, f'ws/{ws}/') for key in s3), commit=commit, pr=pr, files=tuple(files))
 
 
-def _summary(raw: Any) -> str:
+def summary_text(raw: Any) -> str:
+    """A message's summary (or a text bound for one): short, and nothing shaped like a credential."""
     if not isinstance(raw, str) or len(raw.encode('utf-8')) > MAX_SUMMARY_BYTES:
         raise MessageError(f'"summary" is a string of at most {MAX_SUMMARY_BYTES} bytes (the payload goes to S3)')
     if redact(raw) != raw:
@@ -167,12 +169,12 @@ def parse(data: Any) -> Message:
     attempt = data.get('attempt')
     if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 0:
         raise MessageError('"attempt" is a whole number')
-    ws = _text(data, 'ws', _WS)
+    ws = _text(data, 'ws', WS)
     message = Message(
-        event_id=_text(data, 'event_id', _ULID), ws=ws, run_id=_text(data, 'run_id', _ID),
-        thread_id=_text(data, 'thread_id', _ID), task_id=_text(data, 'task_id', _ID, required=False),
+        event_id=_text(data, 'event_id', _ULID), ws=ws, run_id=_text(data, 'run_id', ID),
+        thread_id=_text(data, 'thread_id', ID), task_id=_text(data, 'task_id', ID, required=False),
         attempt=attempt, sender=_party(data.get('from'), 'from', FROM_KINDS), to=_party(data.get('to'), 'to', TO_KINDS),
-        type=data['type'], summary=_summary(data.get('summary')), refs=_refs(data.get('refs'), ws),
+        type=data['type'], summary=summary_text(data.get('summary')), refs=_refs(data.get('refs'), ws),
         at=_text(data, 'at', _AT))
     if message.to.kind == 'role' and message.to.id not in ROLES:
         raise MessageError('unknown role')

@@ -17,12 +17,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+# A run or agent id, and a workspace: the bus's shapes (callers check a run id with this module's ID too).
+from engineering.bus.schema import ID
+from engineering.bus.schema import WS as _WS
+
 #: The kinds of non-finding artifact an agent writes under a commit.
 ARTIFACTS = frozenset({'gate', 'logs', 'patches', 'checkpoints'})
 REPORT_LEVELS = frozenset({'commit', 'pr', 'goal'})
-#: A run or agent id (the bus's id shape).
-ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z')
-_WS = re.compile(r'[a-z0-9][a-z0-9-]{0,62}\Z')
 #: A commit, by its full hash (SHA-1 or SHA-256): the workspace is content-addressed by commit, never abbreviated.
 SHA = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
 _NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z')

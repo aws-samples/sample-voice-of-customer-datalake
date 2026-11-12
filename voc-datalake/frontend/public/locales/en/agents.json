@@ -612,5 +612,99 @@
         "help": "Nothing more runs. What the run produced stays in the project."
       }
     }
+  },
+  "engineeringRun": {
+    "untitled": "Engineering run",
+    "statusUnknown": "status unknown",
+    "started": "Started {{when}}",
+    "ended": "Ended {{when}}",
+    "totals": "MicroVM time: {{seconds, number}} s · Messages: {{messages, number}}",
+    "byModel": "Tokens per model",
+    "runSignals": "The whole run",
+    "agentSignals": "Agent {{agent}}",
+    "signals": {
+      "save": "Save",
+      "pause": "Pause",
+      "resume": "Resume",
+      "shutdown": "Shut down",
+      "stop_now": "Stop now"
+    },
+    "signalSent": "Sent.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "Stop now, without saving?",
+    "stopNowMessage": "The work is stopped at once, with no checkpoint: anything not saved yet is lost. To keep it, use Shut down instead.",
+    "errors": {
+      "forbidden": "Only an admin can do this.",
+      "notFound": "This run or task is no longer there: reload the run.",
+      "movedOn": "This has moved on since you looked (another attempt, or the run ended): reload the run and try again.",
+      "unavailable": "The run could not be reached just now: try again in a moment.",
+      "generic": "That did not go through: try again."
+    },
+    "agent": {
+      "step": "Step",
+      "vm": "MicroVM",
+      "heartbeat": "Heartbeat",
+      "progress": "Last progress",
+      "metering": "Use",
+      "stuck": "Looks stuck: {{reason}}",
+      "inspect": "Recent tool calls ({{n, number}})",
+      "noTools": "No tool calls yet.",
+      "for": "for {{age}}",
+      "ago": "{{age}} ago",
+      "started": "Started",
+      "continuation": "continuation {{n, number}}",
+      "microvmTime": "{{seconds, number}} s of MicroVM time"
+    },
+    "noAgents": "No agent has started yet.",
+    "noTasks": "The board has no tasks yet.",
+    "task": {
+      "meta": "{{role}} · attempt {{attempt}}",
+      "heldBy": "held by {{agent}}",
+      "history": "History ({{n, number}})",
+      "move": "{{state}} by {{by}}, {{when}} (attempt {{attempt}})"
+    },
+    "states": {
+      "open": "Open",
+      "claimed": "Claimed",
+      "in_progress": "In progress",
+      "in_review": "In review",
+      "needs_human": "Needs a person",
+      "failed": "Failed",
+      "done": "Done"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Reply",
+    "replyTo": "Reply to {{who}}",
+    "answerTo": "Answer",
+    "conductor": "The run’s conductor",
+    "replyingIn": "Replying in thread {{thread}}",
+    "newThread": "Start a new thread",
+    "answer": "Your message",
+    "bytes": "{{used, number}} / {{max, number}} bytes",
+    "send": "Send",
+    "noMessages": "No messages yet.",
+    "tabs": {
+      "agents": "Agents",
+      "board": "Board",
+      "conversation": "Conversation"
+    },
+    "panels": "The run’s agents, board and conversation",
+    "flow": "The run’s flow, with the steps its agents are on",
+    "noFlow": "The run’s flow could not be read: the rest of the run is shown.",
+    "notFound": "Engineering run not found",
+    "notFoundHint": "Check the run id. Engineering runs are shown only where the engineering agents are turned on, to people who can see every category.",
+    "modelTokens": "{{model}}: {{input, number}} in, {{output, number}} out",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "Booting",
+      "working": "Working",
+      "pause_requested": "Pause requested",
+      "waiting": "Waiting",
+      "paused": "Paused",
+      "done": "Done",
+      "failed": "Failed",
+      "stopped": "Stopped",
+      "reposted": "Posted again"
+    }
   }
 }

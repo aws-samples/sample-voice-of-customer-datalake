@@ -21,6 +21,7 @@ import { handleBriefingRoutes } from './mock-briefing.js';
 import { handleAlertRoutes } from './mock-alerts.js';
 import { handleEmailInboxRoutes } from './mock-email-inbox.js';
 import { handlePlanRoutes } from './mock-plans.js';
+import { SAMPLE_FLOW_ID, handleEngineeringRunRoutes, sampleEngineeringFlow } from './mock-engineering-runs.js';
 import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
@@ -1355,6 +1356,7 @@ function handleDomainModules(req, res, url) {
     || handleAlertRoutes(req, res, url, send, shared)
     || handleEmailInboxRoutes(req, res, url, send, shared)
     || handlePlanRoutes(req, res, url, send, shared)
+    || handleEngineeringRunRoutes(req, res, url, send, shared)
     || handleDecisionRoutes(req, res, url, send, shared)
     || handleRadarRoutes(req, res, url, send, shared)
     || handleParticipantsRoutes(req, res, url, send, shared)
@@ -3130,6 +3132,8 @@ function workflowView(entry, { withDefinition = true } = {}) {
 }
 
 storeMockWorkflow('wf_default', defaultWorkflowDefinition(), { builtin: true });
+// The sample engineering run's flow (mock-engineering-runs.js), so its run monitor draws its graph.
+storeMockWorkflow(SAMPLE_FLOW_ID, sampleEngineeringFlow(), { at: daysAgo(3) });
 {
   const fast = storeMockWorkflow('wf_3b9e1c0d7a42', fastWorkflowDefinition(2), { derivedFrom: 'wf_default', at: daysAgo(9) });
   fast.revisions.push({ revision: 2, saved_at: daysAgo(2), saved_by_username: 'admin-demo', definition: fastWorkflowDefinition(3) });

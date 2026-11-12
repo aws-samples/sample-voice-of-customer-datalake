@@ -15,6 +15,7 @@ from typing import Any
 
 from engineering.board.store import BoardStore
 from engineering.bus.publish import new_event_id
+from engineering.connectors.identity import WORKSPACE
 from engineering.reports.build import build_report, gather
 from engineering.reports.facts import FactsReader
 from engineering.reports.render import render_markdown
@@ -24,7 +25,6 @@ from engineering.workspace.store import WorkspaceStore
 from shared.logging import logger
 from shared.timestamps import now_iso
 
-WORKSPACE = 'default'
 _PR = re.compile(r'[1-9][0-9]{0,9}\Z')
 USAGE = 'run_id, and level commit (subject: its full sha) | pr (subject: its number, head: its full sha) | goal'
 
@@ -84,5 +84,7 @@ def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
         from shared.aws import get_dynamodb_client, get_s3_client
 
         _reports = Reports(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'],
+                           # Its ListBucket on the runs' keys (engineering-bus.ts) makes a missing one 404; any denial
+                           # is a real one and fails the build.
                            WorkspaceStore(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET']))
     return _reports.build(*request)

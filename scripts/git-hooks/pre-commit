@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Pre-commit hook: the review gate. Refuses a commit whose staged tree has no GO record
+# (scripts/ai-review/gate.mjs check). Install: CONTRIBUTING.md -> "The review gate".
+# On a checkout without the gate (an older branch), it says so and lets the commit through.
+set -euo pipefail
+gate="$(git rev-parse --show-toplevel)/scripts/ai-review/gate.mjs"
+if [ ! -f "$gate" ]; then
+  echo "review gate: this checkout has no scripts/ai-review/gate.mjs; commit not gated" >&2
+  exit 0
+fi
+exec node "$gate" check

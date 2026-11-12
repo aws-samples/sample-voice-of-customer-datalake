@@ -61,6 +61,8 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'agents': { labelKey: 'common:breadcrumbs.agents' },
   // `/agents/workflows/:id` — the library is the Workflows tab of /agents, so the crumb links there.
   'workflows': { labelKey: 'common:breadcrumbs.workflows', path: '/agents?tab=workflows' },
+  // `/agents/engineering/:runId` — no list of engineering runs yet, so the crumb goes back to the agents.
+  'engineering': { labelKey: 'common:breadcrumbs.engineering', path: '/agents' },
   'connect': { labelKey: 'common:breadcrumbs.connect' },
   // `/oauth/authorize`, the MCP sign-in consent: its parent is Connect, where the sign-in is managed.
   'oauth': { labelKey: 'common:breadcrumbs.connect', path: '/connect' },
@@ -92,6 +94,7 @@ export const RECORD_CRUMBS: Readonly<Partial<Record<string, CrumbLabel>>> = {
   'feedback': { labelKey: 'common:breadcrumbs.feedbackItem' },
   'agents': { labelKey: 'common:breadcrumbs.agent' },
   'workflows': { labelKey: 'common:breadcrumbs.workflow' },
+  'engineering': { labelKey: 'common:breadcrumbs.engineeringRun' },
   // `/feature-requests/:slug` — one feedback board, named once its page loaded it.
   'feature-requests': { labelKey: 'common:breadcrumbs.board' },
 }

@@ -14,6 +14,7 @@ import { del, post, put } from './requestKit'
 import { z } from 'zod'
 import { AGENT_SCHEDULE_EVERY, AGENT_THRESHOLD_PER, AGENT_VISIBILITIES } from '@stream/assistant/tools/agent-limits'
 import { fetchApi } from './client'
+import { nextAfterOf } from './seqPages'
 import { lenientList } from './lenientFields'
 import { optionalMethodologyBlock } from './methodologySchema'
 import { NeedsHumanSchema, RunActionsSchema, RunDecisionSchema } from './agentRunDecision'
@@ -290,8 +291,7 @@ function normalizeRunPage(raw: unknown): { items: AgentRun[] } {
 
 function normalizeEventPage(raw: unknown, after: number): { items: RunEvent[]; nextAfter: number } {
   const items = lenientList(guard(RunEventSchema)).parse(isRecord(raw) ? raw.items : undefined)
-  const next = isRecord(raw) && typeof raw.next_after === 'number' ? raw.next_after : (items.at(-1)?.seq ?? after)
-  return { items, nextAfter: next }
+  return { items, nextAfter: nextAfterOf(raw, items, after) }
 }
 
 export const isActiveRun = (run: Pick<AgentRun, 'status'>) => ACTIVE_RUN_STATUSES.includes(run.status)

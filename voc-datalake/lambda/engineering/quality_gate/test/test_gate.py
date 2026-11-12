@@ -18,7 +18,7 @@ from engineering.quality_gate.gate import (
     ReviewerSpec,
     Revision,
 )
-from engineering.quality_gate.models import OPUS, SONNET, ModelClient
+from engineering.quality_gate.models import FINAL_GO_MODEL, REVIEW_MODEL, ModelClient
 from engineering.quality_gate.packs import GatePlan, Needs, Tool
 from engineering.quality_gate.review import FINAL_GO_SYSTEM, REVIEWER_SYSTEM, Finding
 from engineering.quality_gate.runner import CommandResult
@@ -77,7 +77,7 @@ class TestGo:
         record = outcome.record
         assert (record.verdict, record.tree_hash, len(record.rounds), record.model_calls) == ('GO', TREE, 1, 4)
         assert [(r.agent, r.model_id) for r in model.requests] == [
-            (SEC, SONNET), (QUAL, SONNET), (FP, SONNET), (FINAL, OPUS)]
+            (SEC, REVIEW_MODEL), (QUAL, REVIEW_MODEL), (FP, REVIEW_MODEL), (FINAL, FINAL_GO_MODEL)]
         assert record.final_go is not None
         assert record.final_go.reasons == ('every blocking finding is fixed in the diff',)
 

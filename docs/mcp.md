@@ -143,7 +143,6 @@ MCP call never sees an archived board.
 | `get_document` | read | `GET /projects/{id}` (projects) — one document in full |
 | `list_agents` | read | `GET /agents` (agents) |
 | `get_agent_run` | read | `GET /agents/{id}/runs/{run_id}`, or without `run_id` `GET /agents/{id}/runs?limit=` (agents) — follow a run `run_agent` started |
-| `get_engineering_run` | read | `GET /agents/engineering/{run_id}/board` (agents; the default `view`), or `…/conversation?after=&limit=` (1–200, default 50; `next_after` is the next page's start: a full page's last seq, or 20 below the tail's, so a tailing client reads the newest again and keeps each message once by `seq`), `…/reports`, `…/reports/{level}/{subject}?version=` (latest if omitted) — an engineering run's task board with each task's history, its conversation, its report index, or one report's document and Markdown. Only for a minter whose category scope hides nothing (404 otherwise). Listed only in a deployment with the engineering agents on (`ENGINEERING_AGENTS=on`, the opt-in module's stack); anywhere else the tool is not in `tools/list` and a call answers "Unknown tool" |
 | `search_feature_requests` | read | `GET /feature-requests/search` (engagement) — feedback-board requests the minter may see; `query` → `q`, `board` / `category` / `status` (comma lists), `days` (0–3650, 0 = all time, not sent), `limit` (1–50, default 25). Only the slim fields reach the client (`request_id`, `board_id`, `title`, `description` ≤ 1000 chars, `status`, `supporters`, `category`, `sentiment`, `problem_summary`, `created_at`; never an email or a name), with `total` and `truncated`. Board requests are a separate source from feedback, cited as `[FR:<request_id>]` ([feature-requests.md](feature-requests.md)). `boards: true` reads `GET /feature-requests/boards` instead: the boards the minter can see, without storage keys |
 | `get_job` | read | `GET /projects/{id}/jobs/{job_id}` (projects) — a job `generate` started: `job_id`, `status`, `progress`, `current_step`, `job_type`, timestamps, `error`, `result` (a PR/FAQ, PRD or prototype result carries its `methodology` block); never who started it |
 | `read_radar` | read | `GET /radar` (radar) without `brand`: the brands and their totals (the scan settings dropped); with `brand`: `GET /radar/brands/{brand}/reviews?days=&limit=` (`days` 1–365, default 90; `limit` 1–50, default 20). Other brands' reviews, never counted as ours ([radar.md](radar.md)) |
@@ -159,8 +158,10 @@ MCP call never sees an archived board.
 
 **Not tools, and why.** Every import route (`/scrapers/manual/*` paste / CSV / JSON, `/s3-import/*`) is admin-only
 (the handlers' `admins_only` middleware, #242: importing writes customer data), and an MCP token is never admin, so
-there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes and a board
-request's status.
+there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes, a board
+request's status, and, for now, reading an engineering run: its board, conversation and reports
+(`GET /agents/engineering/{run_id}/…`, only with `-c engineeringAgents=true`) are for administrators only until a
+repository connection can be shared ([autonomous-engineering.md](autonomous-engineering.md)), so they have no tool yet.
 
 The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Radar and feedback-edit tools in
 `lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in

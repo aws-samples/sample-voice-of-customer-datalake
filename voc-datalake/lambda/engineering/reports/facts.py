@@ -9,12 +9,13 @@ A missing attribute reads as empty or zero: a report of a run still under way sa
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
+from engineering.rows import amount_attr as _n
 from engineering.rows import count_run_rows, run_pk, run_rows
+from engineering.rows import string_attr as _s
 
 
 @dataclass(frozen=True)
@@ -43,23 +44,12 @@ class RunFacts:
     events: int
 
 
-def _s(item: Mapping[str, Any], key: str) -> str:
-    return str(item.get(key, {}).get('S', ''))
 
-
-def _n(item: Mapping[str, Any], key: str) -> Decimal:
-    try:
-        value = Decimal(str(item.get(key, {}).get('N', '0')))
-    except InvalidOperation:
-        return Decimal(0)
-    return value if value.is_finite() and value >= 0 else Decimal(0)
-
-
+@dataclass(frozen=True)
 class FactsReader:
-    def __init__(self, client: Any, table: str) -> None:
-        """``client`` is a low-level DynamoDB client."""
-        self.client = client
-        self.table = table
+    #: A low-level DynamoDB client.
+    client: Any
+    table: str
 
     def read(self, ws: str, run_id: str) -> RunFacts | None:
         """The run's facts, or None when the run does not exist."""

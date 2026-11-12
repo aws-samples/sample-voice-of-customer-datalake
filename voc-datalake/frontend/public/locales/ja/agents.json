@@ -666,5 +666,99 @@
         "help": "これ以上何も実行されません。作成された成果物はプロジェクトに残ります。"
       }
     }
+  },
+  "engineeringRun": {
+    "untitled": "エンジニアリング実行",
+    "statusUnknown": "状態不明",
+    "started": "開始: {{when}}",
+    "ended": "終了: {{when}}",
+    "totals": "MicroVM 時間: {{seconds, number}} 秒 · メッセージ: {{messages, number}}",
+    "byModel": "モデル別のトークン",
+    "runSignals": "実行全体",
+    "agentSignals": "エージェント {{agent}}",
+    "signals": {
+      "save": "保存",
+      "pause": "一時停止",
+      "resume": "再開",
+      "shutdown": "シャットダウン",
+      "stop_now": "今すぐ停止"
+    },
+    "signalSent": "送信しました。",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "保存せずに今すぐ停止しますか？",
+    "stopNowMessage": "作業はチェックポイントなしで直ちに停止し、まだ保存されていない内容は失われます。残したい場合はシャットダウンを使ってください。",
+    "errors": {
+      "forbidden": "この操作は管理者のみ行えます。",
+      "notFound": "この実行またはタスクはもうありません。実行を再読み込みしてください。",
+      "movedOn": "確認した後に状況が変わりました（別の試行、または実行の終了）。実行を再読み込みして、もう一度お試しください。",
+      "unavailable": "今は実行に接続できませんでした。少し待ってからもう一度お試しください。",
+      "generic": "処理できませんでした。もう一度お試しください。"
+    },
+    "agent": {
+      "step": "ステップ",
+      "vm": "MicroVM",
+      "heartbeat": "ハートビート",
+      "progress": "最新の進捗",
+      "metering": "使用量",
+      "stuck": "停滞しているようです: {{reason}}",
+      "inspect": "最近のツール呼び出し（{{n, number}}）",
+      "noTools": "まだツール呼び出しはありません。",
+      "for": "{{age}} 経過",
+      "ago": "{{age}} 前",
+      "started": "開始",
+      "continuation": "継続 {{n, number}}",
+      "microvmTime": "MicroVM 時間 {{seconds, number}} 秒"
+    },
+    "noAgents": "まだ開始したエージェントはいません。",
+    "noTasks": "ボードにはまだタスクがありません。",
+    "task": {
+      "meta": "{{role}} · 試行 {{attempt}}",
+      "heldBy": "担当: {{agent}}",
+      "history": "履歴（{{n, number}}）",
+      "move": "{{state}} · {{by}} · {{when}}（試行 {{attempt}}）"
+    },
+    "states": {
+      "open": "未着手",
+      "claimed": "担当済み",
+      "in_progress": "進行中",
+      "in_review": "レビュー中",
+      "needs_human": "人の対応が必要",
+      "failed": "失敗",
+      "done": "完了"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "返信",
+    "replyTo": "{{who}} に返信",
+    "answerTo": "宛先",
+    "conductor": "実行のコンダクター",
+    "replyingIn": "スレッド {{thread}} で返信中",
+    "newThread": "新しいスレッドを始める",
+    "answer": "メッセージ",
+    "bytes": "{{used, number}} / {{max, number}} バイト",
+    "send": "送信",
+    "noMessages": "まだメッセージはありません。",
+    "tabs": {
+      "agents": "エージェント",
+      "board": "ボード",
+      "conversation": "会話"
+    },
+    "panels": "実行のエージェント、ボード、会話",
+    "flow": "実行のフロー（エージェントがいるステップを表示）",
+    "noFlow": "実行のフローを読み込めませんでした。その他の情報は表示されています。",
+    "notFound": "エンジニアリング実行が見つかりません",
+    "notFoundHint": "実行 ID を確認してください。エンジニアリング実行は、エンジニアリングエージェントが有効な環境でのみ、すべてのカテゴリを閲覧できる人に表示されます。",
+    "modelTokens": "{{model}}: 入力 {{input, number}}、出力 {{output, number}}",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "起動中",
+      "working": "作業中",
+      "pause_requested": "一時停止を要求済み",
+      "waiting": "待機中",
+      "paused": "一時停止中",
+      "done": "完了",
+      "failed": "失敗",
+      "stopped": "停止",
+      "reposted": "再投稿"
+    }
   }
 }

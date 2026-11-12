@@ -28,6 +28,8 @@
     "account": "アカウント",
     "workflows": "ワークフロー一覧",
     "workflow": "ワークフロー",
+    "engineering": "エンジニアリング",
+    "engineeringRun": "エンジニアリング実行",
     "radar": "レーダー",
     "featureRequests": "フィードバックボード",
     "participants": "参加者",

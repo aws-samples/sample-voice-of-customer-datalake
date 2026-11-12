@@ -71,13 +71,13 @@ from shared.mcp_delegate import (
 )
 from shared.mcp_global_tools import (
     DOMAIN_FUNCTION_ENV,
+    TOOLS,
+    TOOLS_BY_NAME,
     GlobalTool,
     InvalidToolArgument,
     MinterIdentity,
     RouteRequest,
     board_route_claims,
-    deployment_tool,
-    deployment_tools,
 )
 from shared.mcp_tokens import parse_token, secret_matches
 from shared.project_access import ADMIN_GROUP, MCP_AGENT_RUN_CLAIM
@@ -501,7 +501,7 @@ def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
 @tracer.capture_method
 def _tools_call(req_id: Any, params: Mapping[str, Any], row: Mapping[str, Any]) -> dict:
     name = params.get('name')
-    tool = deployment_tool(name) if isinstance(name, str) else None
+    tool = TOOLS_BY_NAME.get(name) if isinstance(name, str) else None
     if tool is None:
         _audit(row, tool='unknown', project_id=None, outcome=gt.OUTCOME_ERROR)
         return _response(200, _error(req_id, JSONRPC_INVALID_PARAMS, f'Unknown tool: {str(name)[:64]}'))
@@ -528,8 +528,7 @@ def _tools_call(req_id: Any, params: Mapping[str, Any], row: Mapping[str, Any]) 
 
 
 def _tools_list(req_id: Any, _params: Mapping[str, Any], row: Mapping[str, Any]) -> dict:
-    offered = [t.declaration() for t in deployment_tools() if _may_offer(t, row)]
-    return _response(200, _result(req_id, {'tools': offered}))
+    return _response(200, _result(req_id, {'tools': [t.declaration() for t in TOOLS if _may_offer(t, row)]}))
 
 
 def _catalogue(req_id: Any, params: Mapping[str, Any], row: Mapping[str, Any], *, method: str) -> dict:

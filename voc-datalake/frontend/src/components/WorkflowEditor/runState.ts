@@ -51,10 +51,3 @@ export function stepStates(events: readonly RunEvent[], currentNodeId?: string |
   }
   return states
 }
-
-/** Merge a new page of events into the known ones (dedup by seq, ordered). */
-export function mergeEvents(known: readonly RunEvent[], page: readonly RunEvent[]): RunEvent[] {
-  const bySeq = new Map(known.map((e) => [e.seq, e]))
-  for (const event of page) bySeq.set(event.seq, event)
-  return [...bySeq.values()].sort((a, b) => a.seq - b.seq)
-}

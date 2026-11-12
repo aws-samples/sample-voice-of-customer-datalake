@@ -672,5 +672,99 @@
         "help": "No se ejecuta nada más. Lo que produjo la ejecución queda en el proyecto."
       }
     }
+  },
+  "engineeringRun": {
+    "untitled": "Ejecución de ingeniería",
+    "statusUnknown": "estado desconocido",
+    "started": "Empezó {{when}}",
+    "ended": "Terminó {{when}}",
+    "totals": "Tiempo de MicroVM: {{seconds, number}} s · Mensajes: {{messages, number}}",
+    "byModel": "Tokens por modelo",
+    "runSignals": "Toda la ejecución",
+    "agentSignals": "Agente {{agent}}",
+    "signals": {
+      "save": "Guardar",
+      "pause": "Pausar",
+      "resume": "Reanudar",
+      "shutdown": "Apagar",
+      "stop_now": "Parar ya"
+    },
+    "signalSent": "Enviado.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "¿Parar ya, sin guardar?",
+    "stopNowMessage": "El trabajo se para de inmediato, sin punto de control: se pierde lo que aún no esté guardado. Para conservarlo, usa Apagar.",
+    "errors": {
+      "forbidden": "Solo un administrador puede hacerlo.",
+      "notFound": "Esta ejecución o tarea ya no existe: vuelve a cargar la ejecución.",
+      "movedOn": "Ha cambiado desde que lo miraste (otro intento, o la ejecución terminó): vuelve a cargar la ejecución e inténtalo de nuevo.",
+      "unavailable": "No se pudo contactar con la ejecución ahora: inténtalo de nuevo en un momento.",
+      "generic": "No se pudo hacer: inténtalo de nuevo."
+    },
+    "agent": {
+      "step": "Paso",
+      "vm": "MicroVM",
+      "heartbeat": "Latido",
+      "progress": "Último avance",
+      "metering": "Uso",
+      "stuck": "Parece atascado: {{reason}}",
+      "inspect": "Llamadas a herramientas recientes ({{n, number}})",
+      "noTools": "Aún no hay llamadas a herramientas.",
+      "for": "desde hace {{age}}",
+      "ago": "hace {{age}}",
+      "started": "Empezó",
+      "continuation": "continuación {{n, number}}",
+      "microvmTime": "{{seconds, number}} s de MicroVM"
+    },
+    "noAgents": "Aún no ha empezado ningún agente.",
+    "noTasks": "El tablero aún no tiene tareas.",
+    "task": {
+      "meta": "{{role}} · intento {{attempt}}",
+      "heldBy": "la tiene {{agent}}",
+      "history": "Historial ({{n, number}})",
+      "move": "{{state}} por {{by}}, {{when}} (intento {{attempt}})"
+    },
+    "states": {
+      "open": "Abierta",
+      "claimed": "Tomada",
+      "in_progress": "En curso",
+      "in_review": "En revisión",
+      "needs_human": "Necesita a una persona",
+      "failed": "Fallida",
+      "done": "Hecha"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Responder",
+    "replyTo": "Responder a {{who}}",
+    "answerTo": "Responder a",
+    "conductor": "El conductor de la ejecución",
+    "replyingIn": "Respondiendo en el hilo {{thread}}",
+    "newThread": "Empezar un hilo nuevo",
+    "answer": "Tu mensaje",
+    "bytes": "{{used, number}} / {{max, number}} bytes",
+    "send": "Enviar",
+    "noMessages": "Aún no hay mensajes.",
+    "tabs": {
+      "agents": "Agentes",
+      "board": "Tablero",
+      "conversation": "Conversación"
+    },
+    "panels": "Los agentes, el tablero y la conversación de la ejecución",
+    "flow": "El flujo de la ejecución, con los pasos en los que están sus agentes",
+    "noFlow": "No se pudo leer el flujo de la ejecución: se muestra el resto.",
+    "notFound": "No se encontró la ejecución de ingeniería",
+    "notFoundHint": "Comprueba el id de la ejecución. Las ejecuciones de ingeniería solo se muestran donde los agentes de ingeniería están activados, a quien puede ver todas las categorías.",
+    "modelTokens": "{{model}}: {{input, number}} de entrada, {{output, number}} de salida",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "Arrancando",
+      "working": "Trabajando",
+      "pause_requested": "Pausa pedida",
+      "waiting": "Esperando",
+      "paused": "En pausa",
+      "done": "Hecho",
+      "failed": "Fallido",
+      "stopped": "Detenido",
+      "reposted": "Publicado de nuevo"
+    }
   }
 }

@@ -1,0 +1,489 @@
+"""The supervisor: every minute while any run is active, it keeps each agent's MicroVM honest.
+
+For every live session it first claims the session's row (a conditional write), so a tick and a run monitor
+signal never move one agent at once; then it renews the agent's role session through the launcher (refused
+for a stopped run), boots the checkout and the agent's harness, and while the harness runs it reads the
+task's lease and the MicroVM's age (``liveness.judge``): it asks a quiet agent for its state, stops one that
+does not answer and re-posts its task, asks an agent to pause ahead of the 8-hour limit and continues it in
+a new MicroVM once it has checkpointed, continues a crashed one from its last checkpoint (twice in a row at
+most), and ends a finished one's MicroVM at once. A MicroVM whose calls fail three ticks in a row, or whose
+boot takes over 30 minutes, has crashed. It records the run monitor's inspection data and the live cost
+counters on the session row.
+
+An agent on an open wait (its lease says so) keeps its task and is outside every clock: its MicroVM is
+suspended, and a wait still open after 45 minutes (the idle policy would end a suspended MicroVM at 60) is
+checkpointed and held without a MicroVM (``waiting``) until the wait closes, then continued.
+
+Per run it honours a stop (a person's, an agent's kill switch, or the 30-day stop, which also opens a human
+decision point offering only "stop"): every MicroVM is ended at once without waiting for the agents, and the
+launcher renews none of their sessions. A spent budget opens a human decision point and holds every agent
+(checkpointed, without a MicroVM) for a person to resume; no new MicroVM starts while it is spent. It emits
+``run.health``. It never switches its own schedule: the runs' own start and end do (``handler.switch``).
+
+``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
+held for a person), Resume (a held agent continued from its checkpoint; refused for a stopped run or a spent
+budget), Shut down (checkpoint, then stopped; stopped anyway when no checkpoint comes) and Stop now (ended at
+once).
+"""
+from __future__ import annotations
+
+import contextlib
+from collections import Counter, defaultdict
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
+from typing import Final
+
+from engineering.runtime.caps import MICROVM_LIFE_SECONDS, Timings
+from engineering.runtime.checkout import checkout_commands
+from engineering.runtime.checkpoints import CheckpointReader
+from engineering.runtime.interface import CacheMount, Command, ExecResult, MicroVmRuntime, RuntimeRefused
+from engineering.runtime.launcher import RENEW_MARGIN_SECONDS, Launcher
+from engineering.runtime.liveness import ended, judge
+from engineering.runtime.ports import Board, Bus, Lease, RunControl
+from engineering.runtime.sessions import (
+    LIVE_STATUSES,
+    WITH_MICROVM,
+    After,
+    AgentSession,
+    SessionStore,
+    StaleSession,
+    Status,
+)
+from shared.logging import logger
+
+THIRTY_DAYS: Final = 30 * 24 * 60 * 60
+SIGNALS: Final = frozenset({'save', 'pause', 'resume', 'shutdown', 'stop_now'})
+#: Where a held agent goes once it has paused (or crashed while a pause was asked of it).
+HELD_AS: Final[dict[After, Status]] = {'hold': 'paused', 'wait': 'waiting', 'shutdown': 'stopped'}
+#: How long one move may hold a session's claim: the function's own timeout (lib/stacks/engineering-runtime.ts).
+CLAIM_SECONDS: Final = 5 * 60
+
+
+class MicroVmCallFailed(RuntimeError):
+    """A call to an agent's MicroVM failed (only these count towards a crash; a port's failure does not)."""
+
+
+class SessionBusy(RuntimeRefused):
+    """Another move holds the session's claim: a signal answers ``busy`` (try again), a tick skips it."""
+
+
+@dataclass
+class Supervisor:
+    runtime: MicroVmRuntime
+    sessions: SessionStore
+    board: Board
+    bus: Bus
+    control: RunControl
+    launcher: Launcher
+    checkpoints: CheckpointReader
+    #: The run bucket: the connections' caches are mounted from it.
+    bucket: str
+    timings: Timings = field(default_factory=Timings)
+    #: The checkout an agent boots with (``checkout.checkout_commands``; the tests give a local one).
+    checkout: Callable[[str, Sequence[str]], list[Command]] = field(default_factory=lambda: checkout_commands)
+    #: Runs whose budget is spent, as of their last tick: no new MicroVM starts for them.
+    _spent: set[str] = field(default_factory=set, init=False, repr=False)
+
+    def tick(self, now: int) -> dict[str, int]:
+        """One pass over every live session; the number of sessions in each status afterwards."""
+        by_run: dict[str, list[AgentSession]] = defaultdict(list)
+        for session in self.sessions.active():
+            by_run[session.run_id].append(session)
+        statuses: Counter[str] = Counter()
+        for run_id, run_sessions in by_run.items():
+            try:
+                statuses.update(self._run(run_id, run_sessions, now))
+            except Exception:
+                # One run's failing control or bus call must not keep the supervisor from every later run.
+                logger.exception('engineering supervisor: a run could not be checked', extra={'run_id': run_id})
+                statuses.update(session.status for session in run_sessions)
+        return dict(statuses)
+
+    def _stopping(self, run_id: str, now: int) -> bool:
+        if now - self.control.started_at(run_id) >= THIRTY_DAYS:
+            self.control.needs_human(run_id, 'thirty_days')
+            return True
+        return self.control.stop_requested(run_id)
+
+    def _run(self, run_id: str, run_sessions: list[AgentSession], now: int) -> list[str]:
+        if self._stopping(run_id, now):
+            results = [self._ticked(session, now, lambda s: self._end(s, 'stopped', now)) for session in run_sessions]
+            self.bus.emit(run_id, 'run', 'run.health', f'Stopped: {len(results)} MicroVM(s) ended.')
+            return [session.status for session in results]
+        budget = self.control.budget(run_id)
+        if budget.exceeded:
+            self._spent.add(run_id)
+            self.control.needs_human(run_id, 'budget')
+        else:
+            self._spent.discard(run_id)
+        results = [self._ticked(session, now, lambda s: self._advance(s, now)) for session in run_sessions]
+        counts = Counter(session.status for session in results)
+        backlog = sum(self.bus.inbox_depth(run_id, session.agent_id) for session in results
+                      if session.status in WITH_MICROVM)
+        self.bus.emit(run_id, 'run', 'run.health',
+                      ', '.join(f'{count} {status}' for status, count in sorted(counts.items())),
+                      {'tokens': str(budget.tokens), 'cost_usd': f'{budget.cost_usd:.2f}',
+                       'inbox_backlog': str(backlog)})
+        return [session.status for session in results]
+
+    def _guarded(self, session: AgentSession, now: int, move: Callable[[AgentSession], AgentSession]) -> AgentSession:
+        """``move`` on the session, claimed for this move only (a claim someone else holds leaves it to them).
+
+        A failing MicroVM call is counted, and the third in a row is a crash (the MicroVM is gone or never came
+        up); any other failure (the board, the bus, the launcher) is logged and the session left for the next tick.
+        """
+        try:
+            claimed = self.sessions.claim(session, now, CLAIM_SECONDS)
+        except StaleSession as busy:
+            raise SessionBusy(session.agent_id) from busy
+        try:
+            return self._release(move(claimed))
+        except StaleSession:
+            return claimed
+        except MicroVmCallFailed:
+            logger.exception('engineering supervisor: a MicroVM call failed',
+                             extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+            return self._failed(self._latest(claimed), now)
+        except Exception:
+            # One agent's failing move must not stop the supervisor for every other agent.
+            logger.exception('engineering supervisor: a session could not move',
+                             extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+            with contextlib.suppress(Exception):
+                return self._release(self._latest(claimed))
+            return claimed
+
+    def _latest(self, claimed: AgentSession) -> AgentSession:
+        """The row as this move last wrote it (a move may save before it fails), while the claim is still ours."""
+        current = self.sessions.get(claimed.run_id, claimed.agent_id)
+        return current if current is not None and current.claimed_until == claimed.claimed_until else claimed
+
+    def _release(self, session: AgentSession) -> AgentSession:
+        return self._save(replace(session, claimed_until=None)) if session.claimed_until is not None else session
+
+    def _ticked(self, session: AgentSession, now: int, move: Callable[[AgentSession], AgentSession]) -> AgentSession:
+        """``move`` for the tick: a session another move holds is left to it until the next tick."""
+        try:
+            return self._guarded(session, now, move)
+        except SessionBusy:
+            return session
+
+    def _failed(self, session: AgentSession, now: int) -> AgentSession:
+        failed = replace(session, failures=session.failures + 1)
+        try:
+            if failed.failures >= self.timings.max_runtime_failures and failed.status in WITH_MICROVM:
+                gone = {**failed.inspect, 'last_failure': 'the MicroVM stopped answering'}
+                return self._release(self._crashed(replace(failed, failures=0, inspect=gone), now))
+            return self._release(failed)
+        except Exception:
+            logger.exception('engineering supervisor: a failing session could not be recorded',
+                             extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+            # The count is kept and the claim let go, so the next tick (or a person's Stop now) is not held off.
+            with contextlib.suppress(Exception):
+                latest = self._latest(failed)
+                # A MicroVM continued meanwhile starts its own count.
+                kept = failed.failures if latest.vm_id == failed.vm_id else latest.failures
+                return self._release(replace(latest, failures=kept))
+            return failed
+
+    @staticmethod
+    def _vm_call[R](call: Callable[[], R]) -> R:
+        """``call()`` on an agent's MicroVM; its failure is a ``MicroVmCallFailed`` (it counts towards a crash)."""
+        try:
+            return call()
+        except Exception as error:
+            raise MicroVmCallFailed(f'{type(error).__name__}: {error}'[:300]) from error
+
+    # --- one tick of one agent ------------------------------------------------------------------
+
+    def _advance(self, session: AgentSession, now: int) -> AgentSession:
+        lease = self.board.lease(session.run_id, session.task_id)
+        if session.status == 'waiting':
+            return session if lease is not None and lease.waiting else self._continue(session, now, crashed=False)
+        if session.run_id in self._spent and session.after_pause not in ('hold', 'shutdown'):
+            return self._hold(session, now)
+        session = self._follow_wait(session, lease, now)
+        if not session.suspended:
+            session = self._renew(session, now)
+        if session.status == 'booting':
+            moved = self._boot(session, now)
+        else:
+            moved = self._work(session, lease, now)
+        return self._observe(moved, lease, now) if moved.status in WITH_MICROVM else moved
+
+    def _hold(self, session: AgentSession, now: int) -> AgentSession:
+        """A spent budget: a working agent checkpoints and is held; one still booting is held at once."""
+        if session.status == 'working':
+            self.bus.emit(session.run_id, session.agent_id, 'pause', 'The run reached its budget: checkpoint and pause.')
+            return self._ask_pause(self._wake(session), now, 'hold')
+        if session.status == 'booting':
+            return self._end(session, 'paused', now)
+        return self._save(replace(session, after_pause='hold'))
+
+    def _follow_wait(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession:
+        """Suspend a working agent's MicroVM on an open wait; hold it without one past 45 minutes (or once its
+        MicroVM nears its 8-hour limit); wake it after."""
+        waiting = lease is not None and lease.waiting
+        if not waiting:
+            return self._wake(session)
+        if session.status != 'working':
+            return session
+        long_wait = session.suspended and now - (session.suspended_at or now) >= self.timings.wait_suspend_limit
+        if long_wait or now - session.started_at >= self.timings.pause_after:
+            self.bus.emit(session.run_id, session.agent_id, 'pause', 'Your wait is long: checkpoint and pause.')
+            return replace(self._wake(session), status='pause_requested', pause_requested_at=now, after_pause='wait')
+        if not session.suspended:
+            self._vm_call(lambda: self.runtime.suspend(session.vm))
+            return replace(session, suspended=True, suspended_at=now)
+        return session
+
+    def _wake(self, session: AgentSession) -> AgentSession:
+        if not session.suspended:
+            return session
+        self._vm_call(lambda: self.runtime.resume(session.vm))
+        return replace(session, suspended=False, suspended_at=None)
+
+    def _renew(self, session: AgentSession, now: int) -> AgentSession:
+        """Hand the MicroVM a fresh role session when it has none or its session lapses within 6 minutes."""
+        if session.session_expires_at is not None and session.session_expires_at - now > RENEW_MARGIN_SECONDS:
+            return session
+        role_session = self.launcher.session_for(
+            role=session.role, connection=session.connection, run_id=session.run_id, agent_id=session.agent_id,
+            stopped=self.control.stop_requested(session.run_id))
+        mount = CacheMount(bucket=self.bucket, connection=session.connection)
+        self._vm_call(lambda: self.runtime.hand_session(session.vm, role_session, mount))
+        return replace(session, session_expires_at=int(role_session.expires_at))
+
+    def _observe(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession:
+        """The live cost counters and the run monitor's inspection data, on the session row."""
+        status = (None if session.suspended or session.status != 'working'
+                  else self._vm_call(lambda: self.runtime.status(session.vm)))
+        last_progress = int(lease.last_progress_at) if lease is not None else None
+        inspect = {
+            **session.inspect,
+            'step': status.step if status else session.inspect.get('step', ''),
+            'recent_tools': list(status.recent_tools) if status else session.inspect.get('recent_tools', []),
+            'last_progress_at': last_progress,
+            'heartbeat_age': None if lease is None else int(now - lease.renewed_at),
+            'microvm_state': 'suspended (open wait)' if session.suspended else 'running',
+            'microvm_age': now - session.started_at,
+            'stuck_why': (f'no progress for {(now - last_progress) // 60} minutes'
+                          if session.asked_at is not None and last_progress is not None else ''),
+        }
+        return self._save(replace(session, inspect=inspect, tokens=status.tokens if status else session.tokens,
+                                  microvm_seconds=session.microvm_seconds + self._elapsed(session, now),
+                                  last_tick_at=now, failures=0))
+
+    def _boot_commands(self, session: AgentSession) -> list[Command]:
+        harness = Command(argv=session.harness, timeout_seconds=MICROVM_LIFE_SECONDS, repository_code=False,
+                          network=True)
+        return [*self.checkout(session.commit, session.paths), harness]
+
+    def _boot(self, session: AgentSession, now: int) -> AgentSession:
+        if now - session.started_at >= self.timings.boot_deadline:
+            return self._crashed(replace(session, inspect={**session.inspect, 'last_failure': 'the boot took too long'}),
+                                 now)
+        commands = self._boot_commands(session)
+        vm, running = session.vm, session.exec_id
+        if running is not None:
+            result = self._vm_call(lambda: self.runtime.poll_exec(vm, running))
+            if result is None:
+                return session
+            if not result.ok:
+                return self._crashed(self._with_exit(session, result), now)
+            session = replace(session, boot_index=session.boot_index + 1, exec_id=None)
+        command = commands[session.boot_index]
+        exec_id = self._vm_call(lambda: self.runtime.start_exec(vm, command))
+        last = session.boot_index == len(commands) - 1
+        return self._save(replace(session, exec_id=exec_id, status='working' if last else 'booting'))
+
+    def _work(self, session: AgentSession, lease: Lease | None, now: int) -> AgentSession:
+        if not session.suspended:
+            vm, running = session.vm, str(session.exec_id)
+            result = self._vm_call(lambda: self.runtime.poll_exec(vm, running))
+            if result is not None:
+                return self._harness_ended(session, result, now)
+        if (session.status == 'pause_requested' and session.after_pause in ('shutdown', 'wait')
+                and session.pause_requested_at is not None
+                and now - session.pause_requested_at >= self.timings.answer_window):
+            # A Shut down, or a long wait's pause, whose checkpoint does not come: held as asked (stopped, or
+            # waiting without a MicroVM) from its last checkpoint, rather than kept awake.
+            return self._end(session, HELD_AS[session.after_pause], now)
+        verdict = judge(session, lease, now, self.timings)
+        if verdict == 'clear_ask':
+            return replace(session, asked_at=None)
+        if verdict == 'ask_state':
+            minutes = self.timings.stall_after // 60
+            self.bus.emit(session.run_id, session.agent_id, 'question',
+                          f'No progress for {minutes} minutes: what is your state?')
+            return replace(session, asked_at=now)
+        if verdict == 'pause':
+            self.bus.emit(session.run_id, session.agent_id, 'pause',
+                          'This MicroVM nears its limit: finish the step, checkpoint, and pause.')
+            return replace(session, status='pause_requested', pause_requested_at=now, after_pause='continue')
+        if verdict == 'stalled':
+            return self._stalled(session, now)
+        if verdict == 'crashed':
+            return self._crashed(session, now)
+        return session
+
+    @staticmethod
+    def _with_exit(session: AgentSession, result: ExecResult) -> AgentSession:
+        """The failed command's outcome in the inspection data, so the run monitor can say why it crashed."""
+        # Whole seconds: DynamoDB takes no floats.
+        last_exit = {'exit_code': result.exit_code, 'timed_out': result.timed_out,
+                     'duration_seconds': round(result.duration_seconds),
+                     'stdout_tail': result.stdout_tail[-500:], 'stderr_tail': result.stderr_tail[-500:]}
+        return replace(session, inspect={**session.inspect, 'last_exit': last_exit})
+
+    def _harness_ended(self, session: AgentSession, result: ExecResult, now: int) -> AgentSession:
+        outcome = ended(result.exit_code, result.timed_out)
+        if outcome == 'done':
+            return self._end(session, 'done', now)
+        if outcome == 'crashed':
+            return self._crashed(self._with_exit(session, result), now)
+        held = HELD_AS.get(session.after_pause)
+        if held is not None:
+            return self._end(session, held, now)
+        return self._continue(session, now, crashed=False)
+
+    def _stalled(self, session: AgentSession, now: int) -> AgentSession:
+        self.bus.emit(session.run_id, 'run', 'timed_out', f'{session.agent_id} stopped answering.')
+        held = HELD_AS.get(session.after_pause)
+        if held is not None:
+            # A person's Pause or Shut down (or a spent budget) is kept: the agent is held from its last checkpoint.
+            return self._end(session, held, now)
+        if session.role == 'coordinator':
+            # Not a task on the board: restarted like a crash, and after too many in a row, the run goes to a person.
+            return self._crashed(session, now)
+        self.board.repost(session.run_id, session.task_id, 'stalled')
+        return self._end(session, 'reposted', now)
+
+    def _crashed(self, session: AgentSession, now: int) -> AgentSession:
+        held = HELD_AS.get(session.after_pause)
+        if held is not None:
+            return self._end(session, held, now)
+        if session.crashes < self.timings.max_crash_continuations:
+            return self._continue(session, now, crashed=True)
+        self.bus.emit(session.run_id, 'run', 'failed', f'{session.agent_id} crashed {session.crashes + 1} times.')
+        if session.role == 'coordinator':
+            self.control.needs_human(session.run_id, 'coordinator')
+            return self._end(session, 'failed', now)
+        self.board.repost(session.run_id, session.task_id, 'crashed')
+        return self._end(session, 'reposted', now)
+
+    def _continue(self, session: AgentSession, now: int, *, crashed: bool) -> AgentSession:
+        """End the MicroVM and go on as the same agent and task in a new one, from the last checkpoint."""
+        if session.run_id in self._spent:
+            return self._end(session, 'paused', now)
+        self._terminate(session)
+        restore = self.checkpoints.latest(session.run_id, session.agent_id)
+        spec = session.spec(restore)
+        vm = self._vm_call(lambda: self.runtime.run(spec))
+        continued = replace(session.on(vm, now, restore), crashes=session.crashes + 1 if crashed else 0,
+                            microvm_seconds=session.microvm_seconds + self._elapsed(session, now))
+        try:
+            saved = self._save(continued)
+        except Exception:
+            # The row does not name the MicroVM just started (someone else moved it, or the write failed): it would
+            # belong to nobody.
+            with contextlib.suppress(Exception):
+                self.runtime.terminate(vm)
+            raise
+        refs = {'continuation': str(saved.continuation), 'after': 'crash' if crashed else 'pause',
+                'checkpoint': restore or 'none'}
+        self.bus.emit(session.run_id, 'run', 'continued',
+                      f'{session.agent_id} continued in a new MicroVM ({saved.continuation}).', refs)
+        return saved
+
+    def _ask_pause(self, session: AgentSession, now: int, after: After) -> AgentSession:
+        return self._save(replace(session, status='pause_requested', pause_requested_at=now, after_pause=after))
+
+    @staticmethod
+    def _elapsed(session: AgentSession, now: int) -> int:
+        """Seconds of MicroVM time since the last tick: none without a MicroVM or while it is suspended."""
+        if session.status not in WITH_MICROVM or session.suspended or session.last_tick_at is None:
+            return 0
+        return max(now - session.last_tick_at, 0)
+
+    def _terminate(self, session: AgentSession) -> None:
+        """End the session's MicroVM, if it has one. One already gone, or a refused call, does not stop the move:
+        it is logged, and the idle policy ends a MicroVM nothing uses."""
+        if session.status not in WITH_MICROVM:
+            return
+        try:
+            self.runtime.terminate(session.vm)
+        except Exception:
+            logger.exception('engineering supervisor: a MicroVM could not be ended',
+                             extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+
+    def _end(self, session: AgentSession, status: Status, now: int) -> AgentSession:
+        self._terminate(session)
+        return self._save(replace(session, status=status, exec_id=None, suspended=False, suspended_at=None,
+                                  microvm_seconds=session.microvm_seconds + self._elapsed(session, now),
+                                  last_tick_at=now))
+
+    def _save(self, session: AgentSession) -> AgentSession:
+        return self.sessions.save(session)
+
+    # --- the run monitor's controls -------------------------------------------------------------
+
+    def signal(self, run_id: str, agent_id: str | None, kind: str, now: int) -> dict[str, str]:
+        """The run monitor's control on one agent (``agent_id``) or every agent of the run; each one's status."""
+        if kind not in SIGNALS:
+            raise RuntimeRefused(f'unknown signal {kind!r}')
+        if kind == 'resume':
+            if self.control.stop_requested(run_id):
+                raise RuntimeRefused(f'run {run_id} is stopped: it cannot be resumed')
+            if self.control.budget(run_id).exceeded:
+                raise RuntimeRefused(f'run {run_id} has spent its budget: raise it before resuming')
+            # Its budget is no longer spent: a held run may start MicroVMs again.
+            self._spent.discard(run_id)
+        targets = [session for session in self.sessions.of_run(run_id)
+                   if agent_id is None or session.agent_id == agent_id]
+        if agent_id is not None and not targets:
+            raise RuntimeRefused(f'run {run_id} has no agent {agent_id}')
+        answers: dict[str, str] = {}
+        for session in targets:
+            try:
+                answers[session.agent_id] = self._guarded(session, now,
+                                                          lambda s: self._signal_one(s, kind, now)).status
+            except SessionBusy:
+                # Another move is under way on this agent: nothing was done; the caller sends the signal again.
+                answers[session.agent_id] = 'busy'
+        return answers
+
+    def _signal_paused(self, session: AgentSession, kind: str, now: int) -> AgentSession:
+        if kind == 'resume':
+            return self._continue(session, now, crashed=False)
+        if kind in ('shutdown', 'stop_now'):
+            # Already checkpointed and without a MicroVM: either makes it final, so a later Resume skips it.
+            return self._end(session, 'stopped', now)
+        return session
+
+    def _signal_one(self, session: AgentSession, kind: str, now: int) -> AgentSession:
+        if session.status == 'paused':
+            return self._signal_paused(session, kind, now)
+        if kind == 'stop_now' and session.status in LIVE_STATUSES:
+            return self._end(session, 'stopped', now)
+        if session.status in ('waiting', 'booting') and kind in ('pause', 'shutdown'):
+            # Held for a long wait (its checkpoint saved, no MicroVM), or still booting (nothing to checkpoint yet:
+            # Resume continues it from its last checkpoint): a person's call decides at once.
+            return self._end(session, 'stopped' if kind == 'shutdown' else 'paused', now)
+        if kind == 'resume' and session.status == 'pause_requested' and session.after_pause == 'hold':
+            return self._save(replace(session, after_pause='continue'))
+        if session.status not in ('working', 'pause_requested'):
+            return session
+        # A signal is a message to the agent: a MicroVM suspended for an open wait is woken (and its session
+        # renewed) to read it.
+        session = self._renew(self._wake(session), now)
+        if kind == 'save':
+            self.bus.emit(session.run_id, session.agent_id, 'save', 'Save a checkpoint now.')
+            return self._save(session)
+        if kind in ('pause', 'shutdown'):
+            # Already pausing (its 8-hour pause, a long wait): a person's pause or shut down decides what follows;
+            # shut down outranks a hold.
+            after: After = 'shutdown' if kind == 'shutdown' or session.after_pause == 'shutdown' else 'hold'
+            if session.status == 'working':
+                self.bus.emit(session.run_id, session.agent_id, 'pause', 'Finish the step, checkpoint, and pause.')
+            return self._ask_pause(session, now, after)
+        return self._save(session)

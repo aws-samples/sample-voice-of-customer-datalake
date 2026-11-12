@@ -1,6 +1,18 @@
 {
   "entries": [
     {
+      "key": "MEMORY_MODES|SCOPE_NAMES::*",
+      "reason": "an engineering flow's memory step modes (shared/workflow_engineering.py) and the MCP OAuth scopes: both read and write by coincidence, different meanings"
+    },
+    {
+      "key": "REVIEWER_KEYS|REVIEWER_SETTINGS::*",
+      "reason": "the quality gate's own reviewer settings (engineering/quality_gate/gate.py) and the workflow editor's copy (shared/workflow_engineering.py): shared/ ships in the agents API without the engineering package (only with -c engineeringAgents=true), so it cannot import the gate's; engineering/test/test_workflow_lockstep.py holds the two equal"
+    },
+    {
+      "key": "_NAME|_REVIEWER_NAME::*",
+      "reason": "the quality gate's reviewer name shape and the workflow editor's copy: shared/ cannot import the engineering package (see REVIEWER_KEYS|REVIEWER_SETTINGS); test_workflow_lockstep.py's pairwise test holds the editor to the gate"
+    },
+    {
       "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PK_PREFIX::*",
       "reason": "three unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row and a category-access row"
     },
@@ -69,12 +81,16 @@
       "reason": "each feature's own model-surface choice (both the utility surface today); one may move without the other"
     },
     {
-      "key": "GATE_LABELS|_CUSTOM_STEP_VERDICT_LABELS::*",
-      "reason": "an engineering quality gate's arrow labels and the verdict labels an agents workflow's custom step can no longer carry: two kinds of workflow, each free to change its own"
-    },
-    {
       "key": "MEMORY_MODES|SCOPE_NAMES::*",
       "reason": "an engineering memory step's modes and the MCP OAuth scopes: unrelated words that happen to be the same pair"
+    },
+    {
+      "key": "REVIEWER_KEYS|REVIEWER_SETTINGS::*",
+      "reason": "the quality gate's reviewer settings and the workflow validator's copy: shared/ cannot import the opt-in engineering package (it ships only where the module is on); engineering/test/test_workflow_lockstep.py holds the two equal"
+    },
+    {
+      "key": "_NAME|_REVIEWER_NAME::*",
+      "reason": "the gate's reviewer-name shape and the workflow validator's copy, for the same reason; the lockstep test pairs the validator with GateConfig.from_params"
     }
   ]
 }

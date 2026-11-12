@@ -672,5 +672,99 @@
         "help": "Plus rien ne s’exécute. Ce que l’exécution a produit reste dans le projet."
       }
     }
+  },
+  "engineeringRun": {
+    "untitled": "Exécution d’ingénierie",
+    "statusUnknown": "statut inconnu",
+    "started": "Commencée {{when}}",
+    "ended": "Terminée {{when}}",
+    "totals": "Temps MicroVM : {{seconds, number}} s · Messages : {{messages, number}}",
+    "byModel": "Jetons par modèle",
+    "runSignals": "Toute l’exécution",
+    "agentSignals": "Agent {{agent}}",
+    "signals": {
+      "save": "Enregistrer",
+      "pause": "Mettre en pause",
+      "resume": "Reprendre",
+      "shutdown": "Arrêter proprement",
+      "stop_now": "Arrêter tout de suite"
+    },
+    "signalSent": "Envoyé.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "Arrêter tout de suite, sans enregistrer ?",
+    "stopNowMessage": "Le travail s’arrête aussitôt, sans point de reprise : ce qui n’est pas encore enregistré est perdu. Pour le garder, choisissez plutôt Arrêter proprement.",
+    "errors": {
+      "forbidden": "Seul un administrateur peut faire cela.",
+      "notFound": "Cette exécution ou cette tâche n’existe plus : rechargez l’exécution.",
+      "movedOn": "Cela a changé depuis que vous avez regardé (une autre tentative, ou l’exécution est terminée) : rechargez l’exécution et réessayez.",
+      "unavailable": "L’exécution n’a pas pu être jointe pour l’instant : réessayez dans un moment.",
+      "generic": "Cela n’a pas abouti : réessayez."
+    },
+    "agent": {
+      "step": "Étape",
+      "vm": "MicroVM",
+      "heartbeat": "Signal de vie",
+      "progress": "Dernier progrès",
+      "metering": "Utilisation",
+      "stuck": "Semble bloqué : {{reason}}",
+      "inspect": "Appels d’outils récents ({{n, number}})",
+      "noTools": "Aucun appel d’outil pour l’instant.",
+      "for": "depuis {{age}}",
+      "ago": "il y a {{age}}",
+      "started": "Démarré",
+      "continuation": "reprise {{n, number}}",
+      "microvmTime": "{{seconds, number}} s de MicroVM"
+    },
+    "noAgents": "Aucun agent n’a encore commencé.",
+    "noTasks": "Le tableau n’a encore aucune tâche.",
+    "task": {
+      "meta": "{{role}} · tentative {{attempt}}",
+      "heldBy": "tenue par {{agent}}",
+      "history": "Historique ({{n, number}})",
+      "move": "{{state}} par {{by}}, {{when}} (tentative {{attempt}})"
+    },
+    "states": {
+      "open": "Ouverte",
+      "claimed": "Prise",
+      "in_progress": "En cours",
+      "in_review": "En revue",
+      "needs_human": "Attend une personne",
+      "failed": "Échouée",
+      "done": "Terminée"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Répondre",
+    "replyTo": "Répondre à {{who}}",
+    "answerTo": "Répondre à",
+    "conductor": "Le chef d’orchestre de l’exécution",
+    "replyingIn": "Réponse dans le fil {{thread}}",
+    "newThread": "Commencer un nouveau fil",
+    "answer": "Votre message",
+    "bytes": "{{used, number}} / {{max, number}} octets",
+    "send": "Envoyer",
+    "noMessages": "Aucun message pour l’instant.",
+    "tabs": {
+      "agents": "Agents",
+      "board": "Tableau",
+      "conversation": "Conversation"
+    },
+    "panels": "Les agents, le tableau et la conversation de l’exécution",
+    "flow": "Le flux de l’exécution, avec les étapes où se trouvent ses agents",
+    "noFlow": "Le flux de l’exécution n’a pas pu être lu : le reste est affiché.",
+    "notFound": "Exécution d’ingénierie introuvable",
+    "notFoundHint": "Vérifiez l’identifiant de l’exécution. Les exécutions d’ingénierie ne s’affichent que là où les agents d’ingénierie sont activés, pour les personnes qui voient toutes les catégories.",
+    "modelTokens": "{{model}} : {{input, number}} en entrée, {{output, number}} en sortie",
+    "agentStatus": "{{agent}} : {{status}}",
+    "status": {
+      "booting": "Démarrage",
+      "working": "Au travail",
+      "pause_requested": "Pause demandée",
+      "waiting": "En attente",
+      "paused": "En pause",
+      "done": "Terminé",
+      "failed": "Échoué",
+      "stopped": "Arrêté",
+      "reposted": "Republié"
+    }
   }
 }

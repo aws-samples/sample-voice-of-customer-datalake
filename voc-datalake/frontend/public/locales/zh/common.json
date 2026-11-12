@@ -28,6 +28,8 @@
     "account": "账户",
     "workflows": "工作流列表",
     "workflow": "工作流",
+    "engineering": "工程",
+    "engineeringRun": "工程运行",
     "radar": "雷达",
     "featureRequests": "反馈看板",
     "participants": "参与者",

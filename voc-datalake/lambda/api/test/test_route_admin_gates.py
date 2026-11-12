@@ -64,6 +64,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/<agent_id>/run', 'POST /agents/<agent_id>/runs/<run_id>/cancel',
         # A human's decision on a needs_human run: admins only, never a delegated credential.
         'POST /agents/<agent_id>/runs/<run_id>/decision',
+        # An engineering run's signals and a person's answers in it: the same, an admin acting for themselves.
+        'POST /agents/engineering/<run_id>/signals', 'POST /agents/engineering/<run_id>/messages',
         'POST /workflows', 'PUT /workflows/<workflow_id>',
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',

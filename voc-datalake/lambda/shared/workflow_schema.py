@@ -80,8 +80,9 @@ PERSONA_LABELS: Final = frozenset({'agreed', 'not_agreed'})
 LOOP_UNTIL: Final = ('persona_agreement', 'review_pass')
 REVIEW_TARGETS: Final = ('prfaq', 'prd', 'prototype')
 END_STATUSES: Final = ('completed', 'needs_human')
-# Verdict labels a custom step's arrows used to be offered and can no longer carry.
-_CUSTOM_STEP_VERDICT_LABELS: Final = frozenset({'pass', 'fail'})
+# Verdict labels a custom step's arrows used to be offered and can no longer carry: the pass/fail pair, which a
+# quality gate's arrows carry in an engineering flow.
+_CUSTOM_STEP_VERDICT_LABELS: Final = engineering.GATE_LABELS
 
 MAX_NODES: Final = 60
 MAX_EDGES: Final = 240

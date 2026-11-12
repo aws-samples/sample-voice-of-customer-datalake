@@ -666,5 +666,99 @@
         "help": "더 이상 실행되지 않습니다. 실행 결과는 프로젝트에 남습니다."
       }
     }
+  },
+  "engineeringRun": {
+    "untitled": "엔지니어링 실행",
+    "statusUnknown": "상태 알 수 없음",
+    "started": "시작: {{when}}",
+    "ended": "종료: {{when}}",
+    "totals": "MicroVM 시간: {{seconds, number}}초 · 메시지: {{messages, number}}",
+    "byModel": "모델별 토큰",
+    "runSignals": "실행 전체",
+    "agentSignals": "에이전트 {{agent}}",
+    "signals": {
+      "save": "저장",
+      "pause": "일시 중지",
+      "resume": "다시 시작",
+      "shutdown": "종료",
+      "stop_now": "즉시 중지"
+    },
+    "signalSent": "보냈습니다.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "저장하지 않고 즉시 중지할까요?",
+    "stopNowMessage": "작업이 체크포인트 없이 바로 중지되며, 아직 저장되지 않은 내용은 사라집니다. 보존하려면 대신 종료를 사용하세요.",
+    "errors": {
+      "forbidden": "관리자만 할 수 있습니다.",
+      "notFound": "이 실행 또는 작업이 더 이상 없습니다. 실행을 다시 불러오세요.",
+      "movedOn": "확인한 뒤로 상황이 바뀌었습니다(다른 시도이거나 실행이 끝남). 실행을 다시 불러온 뒤 다시 시도하세요.",
+      "unavailable": "지금은 실행에 연결할 수 없습니다. 잠시 후 다시 시도하세요.",
+      "generic": "처리하지 못했습니다. 다시 시도하세요."
+    },
+    "agent": {
+      "step": "단계",
+      "vm": "MicroVM",
+      "heartbeat": "하트비트",
+      "progress": "최근 진행",
+      "metering": "사용량",
+      "stuck": "멈춘 것 같습니다: {{reason}}",
+      "inspect": "최근 도구 호출 ({{n, number}})",
+      "noTools": "아직 도구 호출이 없습니다.",
+      "for": "{{age}} 동안",
+      "ago": "{{age}} 전",
+      "started": "시작",
+      "continuation": "계속 {{n, number}}",
+      "microvmTime": "MicroVM 시간 {{seconds, number}}초"
+    },
+    "noAgents": "아직 시작한 에이전트가 없습니다.",
+    "noTasks": "보드에 아직 작업이 없습니다.",
+    "task": {
+      "meta": "{{role}} · 시도 {{attempt}}",
+      "heldBy": "담당: {{agent}}",
+      "history": "기록 ({{n, number}})",
+      "move": "{{state}} · {{by}} · {{when}} (시도 {{attempt}})"
+    },
+    "states": {
+      "open": "열림",
+      "claimed": "맡음",
+      "in_progress": "진행 중",
+      "in_review": "검토 중",
+      "needs_human": "사람이 필요함",
+      "failed": "실패",
+      "done": "완료"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "답장",
+    "replyTo": "{{who}}에게 답장",
+    "answerTo": "받는 사람",
+    "conductor": "실행의 지휘자",
+    "replyingIn": "스레드 {{thread}}에서 답장 중",
+    "newThread": "새 스레드 시작",
+    "answer": "메시지",
+    "bytes": "{{used, number}} / {{max, number}}바이트",
+    "send": "보내기",
+    "noMessages": "아직 메시지가 없습니다.",
+    "tabs": {
+      "agents": "에이전트",
+      "board": "보드",
+      "conversation": "대화"
+    },
+    "panels": "실행의 에이전트, 보드, 대화",
+    "flow": "실행의 흐름(에이전트가 있는 단계 표시)",
+    "noFlow": "실행의 흐름을 읽을 수 없었습니다. 나머지 정보는 표시됩니다.",
+    "notFound": "엔지니어링 실행을 찾을 수 없습니다",
+    "notFoundHint": "실행 ID를 확인하세요. 엔지니어링 실행은 엔지니어링 에이전트가 켜진 곳에서, 모든 카테고리를 볼 수 있는 사람에게만 표시됩니다.",
+    "modelTokens": "{{model}}: 입력 {{input, number}}, 출력 {{output, number}}",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "부팅 중",
+      "working": "작업 중",
+      "pause_requested": "일시 중지 요청됨",
+      "waiting": "대기 중",
+      "paused": "일시 중지됨",
+      "done": "완료",
+      "failed": "실패",
+      "stopped": "중지됨",
+      "reposted": "다시 게시됨"
+    }
   }
 }

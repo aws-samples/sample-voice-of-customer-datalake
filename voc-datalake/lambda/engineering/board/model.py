@@ -11,6 +11,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from engineering.rows import string_attr as _s
+
 OPEN, CLAIMED, IN_PROGRESS, IN_REVIEW, DONE, FAILED, NEEDS_HUMAN = (
     'open', 'claimed', 'in_progress', 'in_review', 'done', 'failed', 'needs_human')
 FINAL = frozenset({DONE, FAILED, NEEDS_HUMAN})
@@ -61,10 +63,6 @@ class Move:
         if self.result_keys:
             row['result_keys'] = {'SS': list(self.result_keys)}
         return row
-
-
-def _s(item: Mapping[str, Any], key: str) -> str:
-    return str(item.get(key, {}).get('S', ''))
 
 
 def _n(item: Mapping[str, Any], key: str) -> int:

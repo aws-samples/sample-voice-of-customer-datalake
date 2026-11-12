@@ -148,6 +148,26 @@ def _reset_counted_sources():
     _clear_counted_sources()
 
 
+def _clear_source_profiles() -> None:
+    module = sys.modules.get('shared.source_profiles')
+    if module is not None:
+        module.clear_source_profiles_cache()
+
+
+@pytest.fixture(autouse=True)
+def _reset_source_profiles():
+    """Forget shared.source_profiles' warm-container cache of the source profiles.
+
+    A test whose read fails caches the failure for 30 seconds, and a later test in the
+    same worker then answered 503 from `cached_source_profile_strict` (the feedback-form
+    submits in api/test/test_prototype_pins.py, under pytest-xdist). Cleared only when the
+    module is already loaded, like the memos above.
+    """
+    _clear_source_profiles()
+    yield
+    _clear_source_profiles()
+
+
 #: The random tail every `shared.ids.timestamped_id` gets under `fixed_id_suffix`.
 FIXED_ID_SUFFIX = 'a1b2c3d4'
 

@@ -14,7 +14,7 @@ import {
   BOARD_CLAIMERS, BOARD_POSTERS, BOARD_UNTIL, ENGINEERING_ROLES, GATE_PACKS, MAX_GATE_ROUNDS, MAX_MEMORY_LIMIT,
   MAX_SHARD_CAP, MEMORY_MODES, MEMORY_SCOPES, SHARD_BY,
 } from './engineeringRules'
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { WorkflowNode } from '../../api/workflowsApi'
 
 interface Props {
@@ -98,7 +98,7 @@ function SettingList({ panel, name, label, options }: Readonly<{
 }
 
 /** A free-text setting (a model id, a skill version). */
-function SettingText({ panel, name, label, hint }: Readonly<{ panel: Panel; name: string; label: string; hint?: string }>) {
+function SettingText({ panel, name, label, hint }: Readonly<{ panel: Panel; name: string; label: string; hint: string }>) {
   const value = panel.params[name]
   return (
     <Field label={label} hint={hint}>
@@ -198,7 +198,7 @@ function MemoryPanel({ panel }: Readonly<{ panel: Panel }>) {
 }
 
 /** Each engineering step with settings, and its panel (the others have none). */
-const PANELS: Readonly<Partial<Record<string, (props: Readonly<{ panel: Panel }>) => ReactElement>>> = {
+const PANELS: Readonly<Partial<Record<string, typeof AgentPanel>>> = {
   agent: AgentPanel, map: MapPanel, board: BoardPanel, quality_gate: GatePanel, memory: MemoryPanel,
 }
 

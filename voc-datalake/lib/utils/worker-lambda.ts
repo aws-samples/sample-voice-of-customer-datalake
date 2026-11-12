@@ -23,9 +23,9 @@ import { PY_LAMBDA_ASSET_EXCLUDES } from './lambda-asset-excludes';
 import { pythonLambdaAsset } from './python-lambda-asset';
 
 /** The worker trees under `lambda/`. */
-type WorkerTree = 'memory' | 'agents' | 'briefing';
+type WorkerTree = 'memory' | 'agents' | 'briefing' | 'engineering';
 
-const WORKER_TREES: readonly WorkerTree[] = ['memory', 'agents', 'briefing'];
+const WORKER_TREES: readonly WorkerTree[] = ['memory', 'agents', 'briefing', 'engineering'];
 
 /** Asset excludes for every worker tree except `tree`. */
 function otherTrees(tree: WorkerTree): string[] {
@@ -84,6 +84,8 @@ export interface WorkerFunctionSpec {
    * retries, visibly) — a hidden Lambda re-drive would double-pay model calls.
    */
   retryAttempts?: number;
+  /** Where an async invocation that failed every attempt goes (a dead-letter queue); none by default. */
+  onFailure?: lambda.IDestination;
 }
 
 /**
@@ -115,6 +117,7 @@ export function createWorkerFunction(scope: Construct, id: string, spec: WorkerF
     timeout: spec.timeout,
     memorySize: spec.memorySize,
     retryAttempts: spec.retryAttempts ?? 0,
+    onFailure: spec.onFailure,
     environment: {
       ...spec.environment,
       POWERTOOLS_SERVICE_NAME: spec.serviceName,

@@ -1,9 +1,9 @@
 """The one switch of the opt-in engineering agents module (tenet 7: off, it adds nothing).
 
-The module's own stack, deployed only with ``-c engineeringAgents=true`` (a later change of this track: until it lands
-no deployment sets these), is to set ``ENGINEERING_AGENTS=on`` on every Lambda that serves the module: the Agents API
-(its ``/agents/engineering/*`` routes, which also need the module's table and bucket) and the global MCP server (its
-engineering tool). Anywhere else the routes answer 404 and the tool is not offered.
+Only a deployment with ``-c engineeringAgents=true`` sets ``ENGINEERING_AGENTS=on``, on the Agents API (its
+``/agents/engineering/*`` routes, which also get the module's table and workspace bucket,
+lib/stacks/api-assistant-lambdas.ts). Anywhere else those routes answer 404. They are admin-only, so the global MCP
+server, whose tokens never act as an admin, has no engineering tool.
 """
 from __future__ import annotations
 

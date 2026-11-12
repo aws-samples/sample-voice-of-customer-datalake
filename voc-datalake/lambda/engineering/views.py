@@ -13,12 +13,12 @@ from typing import Any
 
 from engineering.board.store import BoardStore
 from engineering.bus.publish import new_event_id
+from engineering.connectors.identity import WORKSPACE
 from engineering.conversation.store import ConversationStore
 from engineering.reports.store import ReportStore
 from engineering.workspace.layout import REPORT_LEVELS, report_key
 from engineering.workspace.store import WorkspaceStore
 
-WORKSPACE = 'default'
 #: How far behind the tail a reader re-reads: more than the messages of a run in flight at once.
 TAIL_WINDOW = 20
 
@@ -78,6 +78,8 @@ class EngineeringViews:
             return None   # (so a report was published under this subject, which makes it a valid key)
         keys = (report_key(WORKSPACE, run_id, level, subject, wanted),
                 report_key(WORKSPACE, run_id, level, subject, wanted, 'md'))
+        # A version below the latest can have been counted and never written (its build failed between the counter and
+        # the put): it reads as missing (the Agents API builds its store with denied_is_missing, having no ListBucket).
         document, markdown = (self.report_store.workspace.read_text(key) for key in keys)
         if document is None or markdown is None:
             return None

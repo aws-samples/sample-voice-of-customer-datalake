@@ -699,5 +699,99 @@
     "reviewRun": "Przejrzyj przebieg",
     "verdicts_few": "{{count, number}} opinie person",
     "verdicts_many": "{{count, number}} opinii person"
+  },
+  "engineeringRun": {
+    "untitled": "Przebieg inżynieryjny",
+    "statusUnknown": "stan nieznany",
+    "started": "Rozpoczęty {{when}}",
+    "ended": "Zakończony {{when}}",
+    "totals": "Czas MicroVM: {{seconds, number}} s · Wiadomości: {{messages, number}}",
+    "byModel": "Tokeny według modelu",
+    "runSignals": "Cały przebieg",
+    "agentSignals": "Agent {{agent}}",
+    "signals": {
+      "save": "Zapisz",
+      "pause": "Wstrzymaj",
+      "resume": "Wznów",
+      "shutdown": "Zamknij",
+      "stop_now": "Zatrzymaj od razu"
+    },
+    "signalSent": "Wysłano.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "Zatrzymać od razu, bez zapisu?",
+    "stopNowMessage": "Praca zostanie przerwana natychmiast, bez punktu kontrolnego: to, co nie zostało jeszcze zapisane, przepadnie. Aby to zachować, wybierz Zamknij.",
+    "errors": {
+      "forbidden": "Może to zrobić tylko administrator.",
+      "notFound": "Tego przebiegu lub zadania już nie ma: odśwież przebieg.",
+      "movedOn": "Od ostatniego odczytu coś się zmieniło (inna próba albo przebieg się zakończył): odśwież przebieg i spróbuj ponownie.",
+      "unavailable": "Nie udało się teraz połączyć z przebiegiem: spróbuj ponownie za chwilę.",
+      "generic": "Nie udało się: spróbuj ponownie."
+    },
+    "agent": {
+      "step": "Krok",
+      "vm": "MicroVM",
+      "heartbeat": "Sygnał życia",
+      "progress": "Ostatni postęp",
+      "metering": "Zużycie",
+      "stuck": "Wygląda na zablokowanego: {{reason}}",
+      "inspect": "Ostatnie wywołania narzędzi ({{n, number}})",
+      "noTools": "Nie ma jeszcze wywołań narzędzi.",
+      "for": "od {{age}}",
+      "ago": "{{age}} temu",
+      "started": "Start",
+      "continuation": "kontynuacja {{n, number}}",
+      "microvmTime": "{{seconds, number}} s czasu MicroVM"
+    },
+    "noAgents": "Żaden agent jeszcze nie zaczął.",
+    "noTasks": "Tablica nie ma jeszcze zadań.",
+    "task": {
+      "meta": "{{role}} · próba {{attempt}}",
+      "heldBy": "trzyma {{agent}}",
+      "history": "Historia ({{n, number}})",
+      "move": "{{state}}: {{by}}, {{when}} (próba {{attempt}})"
+    },
+    "states": {
+      "open": "Otwarte",
+      "claimed": "Przejęte",
+      "in_progress": "W toku",
+      "in_review": "W przeglądzie",
+      "needs_human": "Potrzebna osoba",
+      "failed": "Nieudane",
+      "done": "Gotowe"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Odpowiedz",
+    "replyTo": "Odpowiedz: {{who}}",
+    "answerTo": "Odpowiedź do",
+    "conductor": "Dyrygent przebiegu",
+    "replyingIn": "Odpowiedź w wątku {{thread}}",
+    "newThread": "Zacznij nowy wątek",
+    "answer": "Twoja wiadomość",
+    "bytes": "{{used, number}} / {{max, number}} bajtów",
+    "send": "Wyślij",
+    "noMessages": "Nie ma jeszcze wiadomości.",
+    "tabs": {
+      "agents": "Agenci",
+      "board": "Tablica",
+      "conversation": "Rozmowa"
+    },
+    "panels": "Agenci, tablica i rozmowa przebiegu",
+    "flow": "Przepływ przebiegu, z krokami, na których są jego agenci",
+    "noFlow": "Nie udało się odczytać przepływu przebiegu: pokazano resztę.",
+    "notFound": "Nie znaleziono przebiegu inżynieryjnego",
+    "notFoundHint": "Sprawdź identyfikator przebiegu. Przebiegi inżynieryjne są widoczne tylko tam, gdzie agenci inżynieryjni są włączeni, i tylko dla osób, które widzą wszystkie kategorie.",
+    "modelTokens": "{{model}}: {{input, number}} na wejściu, {{output, number}} na wyjściu",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "Uruchamia się",
+      "working": "Pracuje",
+      "pause_requested": "Poproszono o pauzę",
+      "waiting": "Czeka",
+      "paused": "Wstrzymany",
+      "done": "Gotowe",
+      "failed": "Nieudane",
+      "stopped": "Zatrzymany",
+      "reposted": "Opublikowane ponownie"
+    }
   }
 }

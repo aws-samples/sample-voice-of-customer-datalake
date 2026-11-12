@@ -9,6 +9,7 @@ stopped before its fan-out; the receivers are idempotent (the event id, the leas
 """
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -68,11 +69,13 @@ class Router:
 def _from_environment() -> Router:
     from shared.aws import get_dynamodb_client, get_sqs_client, invoke_lambda_async
 
-    prefix = os.environ['ENGINEERING_ROLE_QUEUE_URL_PREFIX']
+    # {role: queue URL}, one queue per role of ``schema.ROLES`` (lib/stacks/engineering-bus.ts): a posted task is
+    # always for one of them (``schema.parse``), so a missing role is a deployment error and raises.
+    queues: dict[str, str] = json.loads(os.environ['ENGINEERING_ROLE_QUEUE_URLS'])
     delivery = os.environ['ENGINEERING_DELIVERY_FUNCTION']
 
     def to_role_queue(role: str, message: Message) -> None:
-        get_sqs_client().send_message(QueueUrl=f'{prefix}{role}', MessageBody=message.to_json())
+        get_sqs_client().send_message(QueueUrl=queues[role], MessageBody=message.to_json())
 
     def deliver(message: Message) -> None:
         invoke_lambda_async(delivery, message.to_dict())

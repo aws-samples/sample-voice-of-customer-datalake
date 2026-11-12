@@ -9,8 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-SONNET = 'global.anthropic.claude-sonnet-5-5'
-OPUS = 'global.anthropic.claude-opus-5-5'
+from shared.model_config import SURFACE_DEFAULTS
+
+#: The models come from the one table of built-in defaults (shared/model_config.py), by the agents' surfaces: the
+#: reviewers work as the agents' crewmates do, the final go decides as their final reviewer does.
+REVIEW_MODEL = SURFACE_DEFAULTS['agent_worker']
+FINAL_GO_MODEL = SURFACE_DEFAULTS['agent_reviewer']
 
 
 @dataclass(frozen=True)
@@ -43,7 +47,6 @@ class BedrockModel:
 
     def __init__(self) -> None:
         # Imported here, before any check runs: nothing a repository's dependency step installs is imported later.
-        # (The tests, and a run with another client, need no AWS SDK.)
         from shared import converse
 
         self._converse = converse.converse

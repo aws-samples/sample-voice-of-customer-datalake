@@ -47,6 +47,9 @@ GATED_PREFIX = 'b'  # a one-letter prefix: plugin rule names hit the 64-char lim
 GATED_CONTEXT: dict[str, object] = {
     'deploymentPrefix': GATED_PREFIX,
     'enableVerificationFixtureProvider': True,
+    # the engineering agents' connector broker, bus and board (lib/stacks/engineering-broker.ts, engineering-bus.ts)
+    # and their MicroVM runtime (lib/stacks/engineering-runtime.ts)
+    'engineeringAgents': True,
     'defaultModelId': 'global.anthropic.claude-sonnet-5-5',
     'inboundEmailDomain': 'voc.example.com',
     'emailFrom': 'noreply@voc.example.com',  # participant email + the board pool and its triggers
@@ -238,6 +241,30 @@ def _functions(templates: dict[str, dict], records: list[dict], cdk_dir: Path, p
     return found
 
 
+def merge_gated(functions: dict[str, Function], gated: dict[str, Function]) -> None:
+    """Fold the gated synth's functions into the default synth's, in place.
+
+    A function in both keeps its default env (``default_env``) and gains the names only a gated feature sets
+    (``gated_env``). Its bundle is the gated synth's when that one is staged by another command: a gated feature only
+    ships more code into a bundle (the agents API's lambda/engineering/ with -c engineeringAgents=true), so the larger
+    bundle is the one every reachability judgement must see. A function only the gated synth has is ``context_only``.
+    """
+    for fn in functions.values():
+        fn.default_env = set(fn.env)
+    for fid, fn in gated.items():
+        known = functions.get(fid)
+        if known is None:
+            fn.context_only = True
+            functions[fid] = fn
+            continue
+        known.gated_env = set(fn.env)
+        for name, value in fn.env.items():   # vars only a gated feature sets
+            known.env.setdefault(name, value)
+        if fn.asset_command is not None and fn.asset_command != known.asset_command \
+                and fn.asset_source == known.asset_source:
+            known.asset_command = fn.asset_command
+
+
 def _strip_prefix(templates: dict[str, dict], prefix: str) -> dict[str, dict]:
     return {k.removeprefix(f'{prefix}-'): v for k, v in templates.items()}
 
@@ -268,16 +295,7 @@ def load_assembly(cdk_dir: Path = CDK_DIR, *, refresh: bool = False, cache_dir: 
     gated_templates, gated_records = _synth(cdk_dir, GATED_CONTEXT, GATED_REGION)
     gated = _functions(gated_templates, gated_records, cdk_dir, GATED_PREFIX)
     layers = {**_layers(gated_templates, gated_records, cdk_dir, GATED_PREFIX), **_layers(templates, records, cdk_dir)}
-    for fn in functions.values():
-        fn.default_env = set(fn.env)
-    for fid, fn in gated.items():
-        if fid in functions:
-            functions[fid].gated_env = set(fn.env)
-            for name, value in fn.env.items():   # vars only a gated feature sets
-                functions[fid].env.setdefault(name, value)
-        else:
-            fn.context_only = True
-            functions[fid] = fn
+    merge_gated(functions, gated)
     for stack, template in _strip_prefix(gated_templates, GATED_PREFIX).items():
         merged = templates.setdefault(stack, {'Resources': {}, 'Outputs': {}})
         for section in ('Resources', 'Outputs'):

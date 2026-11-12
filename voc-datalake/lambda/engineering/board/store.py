@@ -26,7 +26,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from engineering.board.model import CLAIMED, FINAL, MOVES, OPEN, Move, Task, task_key
-from engineering.rows import run_pk, run_rows
+from engineering.rows import Refused, run_pk, run_rows
 from engineering.workspace.layout import parse_agent_key
 from shared.aws import is_conditional_check_failure
 from shared.ids import is_key_collision
@@ -39,12 +39,8 @@ MAX_RESULT_KEYS = 16
 MAX_KEY_LENGTH = 512
 
 
-class BoardError(Exception):
+class BoardError(Refused):
     """A board operation refused: ``kind`` is not_found, conflict, forbidden, cap or invalid."""
-
-    def __init__(self, kind: str, message: str) -> None:
-        super().__init__(message)
-        self.kind = kind
 
 
 @dataclass(frozen=True)

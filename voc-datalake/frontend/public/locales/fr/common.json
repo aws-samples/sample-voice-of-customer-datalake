@@ -28,6 +28,8 @@
     "account": "Compte",
     "workflows": "Workflows",
     "workflow": "Workflow",
+    "engineering": "Ingénierie",
+    "engineeringRun": "Exécution d’ingénierie",
     "radar": "Radar",
     "featureRequests": "Tableaux de retours",
     "participants": "Participants",

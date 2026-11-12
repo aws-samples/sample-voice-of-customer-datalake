@@ -27,7 +27,6 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
-from shared.engineering_agents import engineering_agents_on
 from shared.mcp_global_kit import (
     BOOL_SCHEMA,
     DOMAIN_AGENTS,
@@ -83,13 +82,6 @@ MAX_DOCUMENT_CHARS: Final = 200_000
 MIN_SEARCH_QUERY_LENGTH: Final = 2  # /feedback/search refuses shorter queries
 MAX_RUNS_LIMIT: Final = 50          # agents_handler.MAX_RUNS_PAGE
 DEFAULT_RUNS_LIMIT: Final = 5
-#: An engineering run's views (agents_handler's /agents/engineering/<run_id>/... routes); the board is the default.
-ENGINEERING_VIEWS: Final[tuple[str, ...]] = ('board', 'conversation', 'reports', 'report')
-REPORT_LEVELS: Final[tuple[str, ...]] = ('commit', 'pr', 'goal')
-MAX_CONVERSATION_LIMIT: Final = 200  # agents_handler.MAX_EVENTS_PAGE
-MAX_CONVERSATION_SEQ: Final = 99_999_998  # the conversation's seq is 8 digits (engineering/conversation/store.py)
-DEFAULT_CONVERSATION_LIMIT: Final = 50
-MAX_REPORT_VERSION: Final = 9999
 METRIC_VIEWS: Final[tuple[str, ...]] = ('summary', 'sentiment', 'categories', 'sources', 'personas', 'dimensions',
                                          'github', 'entities')
 # The views a route other than `/metrics/{view}` serves: the filter values with their counts.
@@ -362,31 +354,6 @@ def _get_agent_run(args: Mapping[str, Any], _project: str | None) -> RouteReques
     return RouteRequest(DOMAIN_AGENTS, 'GET', f"/agents/{agent_id}/runs/{id_arg(args, 'run_id')}")
 
 
-def _get_engineering_run(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
-    """An engineering run's board (the default), a page of its conversation, its reports, or one report."""
-    run_id = id_arg(args, 'run_id')
-    view = args.get('view', 'board')
-    if view == 'conversation':
-        query = {'after': int_arg(args, 'after', default=0, low=0, high=MAX_CONVERSATION_SEQ),
-                 'limit': int_arg(args, 'limit', default=DEFAULT_CONVERSATION_LIMIT, low=1,
-                                  high=MAX_CONVERSATION_LIMIT)}
-        return RouteRequest(DOMAIN_AGENTS, 'GET', f'/agents/engineering/{run_id}/conversation', query=query)
-    if view == 'reports':
-        return RouteRequest(DOMAIN_AGENTS, 'GET', f'/agents/engineering/{run_id}/reports')
-    if view == 'report':
-        level = args.get('level')
-        if level not in REPORT_LEVELS:
-            raise InvalidToolArgument(f'level is one of {", ".join(REPORT_LEVELS)} for view report')
-        subject = id_arg(args, 'subject')
-        version = {} if args.get('version') is None else {
-            'version': int_arg(args, 'version', default=1, low=1, high=MAX_REPORT_VERSION)}
-        return RouteRequest(DOMAIN_AGENTS, 'GET', f'/agents/engineering/{run_id}/reports/{level}/{subject}',
-                            query=version)
-    if view != 'board':
-        raise InvalidToolArgument(f'view is one of {", ".join(ENGINEERING_VIEWS)}')
-    return RouteRequest(DOMAIN_AGENTS, 'GET', f'/agents/engineering/{run_id}/board')
-
-
 def _search_feature_requests(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     if bool_arg(args, 'boards'):
         # The boards the minter can see (GET /feature-requests/boards), folded in to keep tools/list small.
@@ -509,31 +476,3 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
 )
 
 TOOLS_BY_NAME: Final[dict[str, GlobalTool]] = {tool.name: tool for tool in TOOLS}
-
-#: The engineering agents' read tool. The engineering agents are an opt-in module (tenet 7: off, it adds nothing),
-#: so its tool is offered only where the deployment turned them on (shared.engineering_agents, the one switch the
-#: Agents API's engineering routes read too): the default catalogue keeps its budget.
-ENGINEERING_TOOLS: Final[tuple[GlobalTool, ...]] = (
-    GlobalTool(
-        'get_engineering_run', 'Get an engineering run',
-        "An engineering run's task board, or (`view`) its conversation from `after`, its reports, or one report "
-        '(`level`, `subject`, `version`: latest if omitted).',
-        schema({'run_id': ID_SCHEMA, 'view': {'type': 'string', 'enum': list(ENGINEERING_VIEWS)},
-                 'after': {'type': 'integer', 'minimum': 0, 'maximum': MAX_CONVERSATION_SEQ},
-                 'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_CONVERSATION_LIMIT},
-                 'level': {'type': 'string', 'enum': list(REPORT_LEVELS)}, 'subject': ID_SCHEMA,
-                 'version': {'type': 'integer', 'minimum': 1, 'maximum': MAX_REPORT_VERSION}}, ('run_id',)),
-        _get_engineering_run, stripped),
-)
-
-
-def deployment_tools() -> tuple[GlobalTool, ...]:
-    """The catalogue this deployment offers (``tools/list``): with the engineering agents' tool only where they are on."""
-    return TOOLS + ENGINEERING_TOOLS if engineering_agents_on() else TOOLS
-
-
-def deployment_tool(name: str) -> GlobalTool | None:
-    """The tool of that name this deployment offers (``tools/call``), or None."""
-    if name in TOOLS_BY_NAME:
-        return TOOLS_BY_NAME[name]
-    return next((tool for tool in ENGINEERING_TOOLS if tool.name == name), None) if engineering_agents_on() else None
