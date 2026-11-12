@@ -43,6 +43,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'csv-dataset-update',
   // 6.05: the document canvas (needs the mock's read-only project; mock only until run on a deployment).
   'document-canvas',
+  // The document canvas's accessibility and widths (mock only, as document-canvas).
+  'document-canvas-a11y',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

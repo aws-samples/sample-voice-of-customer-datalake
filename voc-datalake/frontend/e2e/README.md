@@ -154,6 +154,15 @@ format bar's Bold), Save as one PUT with the loaded `expected_revision` ("Saved 
 Copy, Turn off link), History (Restore v1 → v3 on the canvas), the outline, the read-only canvas of `proj_2`, a
 keyboard-only save (Tab, Ctrl+S) and widths 360 / 390 / 768 / 1024 / 1440 with no sideways scroll.
 
+`document-canvas-a11y.spec.ts` (the same page's accessibility and widths; checks in `lib/a11y.ts`) runs ONLY there too,
+on a PR/FAQ and a research note it creates in `proj_1`, with reduced motion; each state passes axe (WCAG 2.2 AA and best
+practice) with no serious or critical finding and scrolls nothing sideways. At 1440 / 1024 / 768 / 390 / 360 in dark
+and light: reading, the File menu (inside the window), History, Share for review, the Evidence tab, a reply box and
+Full screen (opening with the page's header on screen). At 360 dark: Escape out of History and Share back to File,
+Escape closing an empty reply box (focus back on Reply), Ctrl+Enter posting a reply, and the Revise from comments
+outcome (Close on its heading's line). The stale-save banner at 1440 and 360 in both themes; the read-only page of
+`proj_2` at 1440 and 390 in light. The editor's own menus are `document-canvas`'s.
+
 ## QA track s1 (`E2E_TRACK=s1` only)
 
 `tests/s1-a-data.spec.ts` and `tests/s1-b-assistant.spec.ts` skip unless `E2E_TRACK=s1`, because they write feedback that cannot be deleted:

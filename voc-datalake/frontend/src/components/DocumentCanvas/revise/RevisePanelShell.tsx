@@ -28,14 +28,20 @@ export default function RevisePanelShell({ title, status, actions, onClose, chil
   return (
     <section aria-labelledby={headingId} data-testid={testId}
       className="mb-4 space-y-3 rounded-lg border border-accent/30 bg-bg-accent p-3 min-w-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <Sparkles size={16} className="text-accent shrink-0" aria-hidden />
-        <h3 id={headingId} ref={heading} tabIndex={-1}
-          className="mr-auto min-w-0 break-words text-sm font-medium text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-          {title}
-        </h3>
-        {actions}
-        <button type="button" className="icon-btn p-1" onClick={onClose} aria-label={t('canvas.revise.close')} title={t('canvas.revise.close')}>
+      {/* Close keeps the top right corner; the icon and the title share a line that takes the room left, and the
+          actions wrap under them on a phone (never the icon, the title and Close each on a line of their own). */}
+      <div data-testid="revise-panel-header" className="flex items-start gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-1 basis-48 items-start gap-2">
+            <Sparkles size={16} className="mt-0.5 text-accent shrink-0" aria-hidden />
+            <h3 id={headingId} ref={heading} tabIndex={-1}
+              className="min-w-0 break-words text-sm font-medium text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+              {title}
+            </h3>
+          </div>
+          {actions}
+        </div>
+        <button type="button" className="icon-btn p-1 shrink-0" onClick={onClose} aria-label={t('canvas.revise.close')} title={t('canvas.revise.close')}>
           <X size={14} aria-hidden />
         </button>
       </div>

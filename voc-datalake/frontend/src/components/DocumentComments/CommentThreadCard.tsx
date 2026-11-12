@@ -9,6 +9,7 @@ import { CheckCheck, CheckCircle2, ExternalLink, MessageSquare, RotateCcw, Shiel
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CommentComposer from './CommentComposer'
+import { useInlineEditor } from '../../hooks/useInlineEditor'
 import { formatDateTime } from '../../utils/dateUtils'
 import type { CommentActions, ViewedVersion } from './commentTypes'
 import type { CommentAuthor, CommentThread } from '../../api/documentReviewSchema'
@@ -100,7 +101,9 @@ interface CommentThreadCardProps {
 
 export default function CommentThreadCard({ thread, actions, viewed, active, onActivate }: CommentThreadCardProps) {
   const { t } = useTranslation('components')
-  const [replying, setReplying] = useState(false)
+  // The reply box opens in place of Reply and, closed (sent, cancelled, Escape), hands focus back to it. Its Escape is
+  // the composer's own (an empty box closes, text stays), so the hook's onKeyDown is not used.
+  const { open: replying, openEditor: openReply, close: closeReply, triggerRef: replyButton, editorRef: replyBox } = useInlineEditor()
   const resolved = thread.status === 'resolved'
   return (
     <article
@@ -135,11 +138,13 @@ export default function CommentThreadCard({ thread, actions, viewed, active, onA
         </ul>
       )}
       {replying ? (
-        <CommentComposer label={t('documentComments.replyPlaceholder')} submitLabel={t('documentComments.reply')} autoFocus
-          onSubmit={async (text) => { await actions.reply(thread.comment_id, text); setReplying(false) }}
-          onCancel={() => setReplying(false)} />
+        <div ref={replyBox}>
+          <CommentComposer label={t('documentComments.replyPlaceholder')} submitLabel={t('documentComments.reply')}
+            onSubmit={async (text) => { await actions.reply(thread.comment_id, text); closeReply() }}
+            onCancel={closeReply} />
+        </div>
       ) : (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReplying(true)}>
+        <button ref={replyButton} type="button" className="btn btn-ghost btn-sm" onClick={openReply}>
           <MessageSquare size={14} aria-hidden />{t('documentComments.reply')}
         </button>
       )}

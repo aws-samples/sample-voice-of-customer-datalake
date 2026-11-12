@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import CommentThreadCard from './CommentThreadCard'
 import type { CommentThread } from '../../api/documentReviewSchema'
 
@@ -62,4 +63,14 @@ describe('CommentThreadCard', () => {
     expect(name).not.toHaveClass('truncate')
     expect(name.parentElement).toHaveClass('flex-wrap')
   })
+
+  it.each([['Escape on the empty box', '{Escape}'], ['a sent reply', 'North first.{Control>}{Enter}{/Control}']])(
+    'gives focus back to Reply once the reply box closes (%s)', async (_case, keys) => {
+      const user = userEvent.setup()
+      renderCard(THREAD)
+      await user.click(screen.getByRole('button', { name: 'Reply' }))
+      await user.keyboard(keys)
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Reply' })).toHaveFocus()
+    })
 })

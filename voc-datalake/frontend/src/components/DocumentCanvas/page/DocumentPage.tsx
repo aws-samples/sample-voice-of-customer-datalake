@@ -98,6 +98,29 @@ function DocumentTitle({ document, state, editable }: Readonly<{
   )
 }
 
+/**
+ * The element the caret is in (the selection's focus: its text's element, or the element itself on an empty line),
+ * measured rather than the caret's own box, which is empty there. On an empty document it is the canvas itself.
+ */
+function caretElement(): Element | null {
+  const node = window.getSelection()?.focusNode ?? null
+  return node instanceof Element ? node : (node?.parentElement ?? null)
+}
+
+const onScreen = (element: Element): boolean => {
+  const box = element.getBoundingClientRect()
+  return box.bottom > 0 && box.top < window.innerHeight
+}
+
+/** Scrolls `pane` to its top (its header in view); a caret that was on screen and would leave it is brought back. */
+function showHeaderKeepingCaret(pane: HTMLElement | null): void {
+  if (pane === null) return
+  const caret = caretElement()
+  const caretWasShown = caret !== null && onScreen(caret)
+  pane.scrollIntoView({ block: 'start' })
+  if (caretWasShown && !onScreen(caret)) caret.scrollIntoView({ block: 'nearest' })
+}
+
 export default function DocumentPage({
   project, document, documents, canEdit, onSelectDoc, onDeleteDoc, isDeleting,
 }: DocumentPageProps) {
@@ -117,7 +140,14 @@ export default function DocumentPage({
       erasedEvidence={document.erased_evidence} titled={titled} />
   )
   const { handleRef } = state
-  const focusCanvas = useCallback(() => { handleRef.current?.focus() }, [handleRef])
+  const paneRef = useRef<HTMLDivElement>(null)
+  // The focus view drops the chrome above the page, and focusing the canvas (a tall editable box) scrolls its top to
+  // the window's: a phone opened it scrolled past the header (the title, Save, the way out). Once the editor has
+  // taken focus (its next frame), the page starts at its top, unless that would hide the caret.
+  const focusCanvas = useCallback(() => {
+    handleRef.current?.focus()
+    requestAnimationFrame(() => { showHeaderKeepingCaret(paneRef.current) })
+  }, [handleRef])
   const focusButtonRef = useRef<HTMLButtonElement>(null)
   const focus = useFocusView(focusCanvas, focusButtonRef)
   const { t } = useTranslation('projectDetail')
@@ -125,7 +155,7 @@ export default function DocumentPage({
   return (
     // Unsaved, a phone pins the Save bar over the page's foot: the padding keeps it off the last lines. In focus view
     // the page is the window (the shell has stepped aside): no card edge, its full height.
-    <div data-testid="document-detail-pane" data-focus-view={focus.active ? '' : undefined}
+    <div ref={paneRef} data-testid="document-detail-pane" data-focus-view={focus.active ? '' : undefined}
       className={clsx('bg-card p-4 sm:p-6 min-w-0',
         focus.active ? 'min-h-screen lg:px-10' : 'rounded-xl border lg:min-h-[500px]', state.dirty && 'max-sm:pb-20')}>
       <p aria-live="polite" className="sr-only" data-testid="canvas-focus-note">{focus.active ? t('canvas.focus.announce') : ''}</p>

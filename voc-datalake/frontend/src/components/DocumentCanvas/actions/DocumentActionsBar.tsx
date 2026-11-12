@@ -105,10 +105,14 @@ export default function DocumentActionsBar({ focus, focusButtonRef, ...menu }: D
       <div role="group" aria-label={t('canvas.actions.toolbarLabel')} data-testid="document-actions-bar"
         className="flex flex-wrap items-center gap-2">
         <SaveStatus document={document} state={state} />
-        {/* The canvas's own rule: an editor of the project, a document edited on its canvas. */}
-        {state.editable ? <SaveButtons state={state} /> : null}
-        <FocusButton active={focus.active} onToggle={focus.toggle} buttonRef={focusButtonRef} />
-        <DocumentMenu {...menu} />
+        {/* One group at the row's end: on a phone it wraps under the status as a whole, so "File" stays at the right
+            edge and its menu (right-aligned to it) opens inside the screen, never past its left edge. */}
+        <div data-testid="document-actions-controls" className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {/* The canvas's own rule: an editor of the project, a document edited on its canvas. */}
+          {state.editable ? <SaveButtons state={state} /> : null}
+          <FocusButton active={focus.active} onToggle={focus.toggle} buttonRef={focusButtonRef} />
+          <DocumentMenu {...menu} />
+        </div>
       </div>
       {state.conflict === null ? null : <ConflictBanner conflict={state.conflict} />}
       {state.reviseRefused === null ? null : <ReviseRefusedBanner refused={state.reviseRefused} />}

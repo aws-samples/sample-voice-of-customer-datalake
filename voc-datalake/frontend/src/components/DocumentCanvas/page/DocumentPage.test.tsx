@@ -4,12 +4,13 @@
  * the action bar's seam and what sits around the canvas. The editor, the review view, the save hook, the bar and the
  * assistant's pending edit are other tracks' and mocked.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient as render } from '@test/query-client'
+import { stubElementScrollIntoView } from '@test/stubScrollTo'
 import { makeProject } from '../../../pages/ProjectDetail/project-detail-fixtures'
 import { VIEWER_ACCESS } from '../../../pages/ProjectDetail/projectAccess-fixtures'
 import DocumentPage from './DocumentPage'
@@ -262,6 +263,9 @@ describe('DocumentPage: around the canvas', () => {
 })
 
 describe('DocumentPage: the focus view', () => {
+  // jsdom has no scrollIntoView: entering the view scrolls the page to its top.
+  beforeEach(() => stubElementScrollIntoView())
+
   it('fills the window from `?view=focus` (no card edge), says how to leave, and the shell steps aside', () => {
     render(<ShellProbe />)
     renderPage(doc({}), true, STORED, '/projects/proj-1?tab=documents&doc=doc-1&view=focus')
@@ -278,7 +282,67 @@ describe('DocumentPage: the focus view', () => {
     expect(paneLook().focus).toBe(true)
     expect(handle.focus).toHaveBeenCalledTimes(1)
   })
+
+  it('starts the focus view at the page\'s top (its header in view), then focuses the canvas', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    vi.mocked(Element.prototype.scrollIntoView).mockImplementation(function (this: Element, options?: boolean | ScrollIntoViewOptions) {
+      calls.push(`scroll ${this.getAttribute('data-testid') ?? ''} ${JSON.stringify(options)}`)
+    })
+    handle.focus.mockImplementation(() => { calls.push('focus') })
+    onTestFinished(() => { handle.focus.mockReset() })
+    const nextFrame = queuedFrames(calls)
+    renderPage(doc({}))
+    await user.click(screen.getByRole('button', { name: 'Full screen' }))
+    window.getSelection()?.removeAllRanges()
+    nextFrame()
+    expect(calls).toStrictEqual(['focus', 'frame', 'scroll document-detail-pane {"block":"start"}'])
+  })
+
+  /** Where the caret goes in the line: a text offset, or the line element itself (an empty line). */
+  const inText = (line: HTMLElement) => window.getSelection()?.collapse(line.firstChild, 2)
+  const onEmptyLine = (line: HTMLElement) => window.getSelection()?.collapse(line, 0)
+  // The caret's line before and after the page's scroll (the window is 768 tall): what the page scrolls, in order.
+  it.each([
+    ['on screen, in a line of text, pushed off by the page top: brought back', inText, [400, 2000], ['scroll document-detail-pane', 'scroll canvas']],
+    ['on screen, on an empty line (the line itself is the focus): brought back', onEmptyLine, [400, 2000], ['scroll document-detail-pane', 'scroll canvas']],
+    ['already off the screen: left there, the page keeps its top', inText, [2000, 2000], ['scroll document-detail-pane']],
+  ] as const)('keeps a caret %s', async (_case, placeCaret, lineTops, scrolls) => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    vi.mocked(Element.prototype.scrollIntoView).mockImplementation(function (this: Element) {
+      calls.push(`scroll ${this.getAttribute('data-testid') ?? ''}`)
+    })
+    const tops = [...lineTops]
+    const lineBox = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const top = this.dataset['testid'] === 'canvas' ? (tops.shift() ?? 2000) : 0
+      return { top, bottom: top + 16, left: 0, right: 1, width: 1, height: 16, x: 0, y: top, toJSON: () => ({}) }
+    })
+    onTestFinished(() => { lineBox.mockRestore() })
+    const nextFrame = queuedFrames(calls)
+    renderPage(doc({}))
+    await user.click(screen.getByRole('button', { name: 'Full screen' }))
+    placeCaret(screen.getByTestId('canvas'))
+    nextFrame()
+    expect(calls).toStrictEqual(['frame', ...scrolls])
+  })
 })
+
+/**
+ * Holds the next animation frame's callbacks (the editor focuses, and scrolls, in its own next frame: the page's
+ * scroll is queued after it); the returned function runs them, each noted as "frame".
+ */
+function queuedFrames(calls: string[]): () => void {
+  const queued: FrameRequestCallback[] = []
+  const frames = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((run) => queued.push(run))
+  onTestFinished(() => { frames.mockRestore() })
+  return () => {
+    for (const run of queued.splice(0)) {
+      calls.push('frame')
+      run(0)
+    }
+  }
+}
 
 /** How the page pane looks: in focus view or not, a card on the page or the window's full height, its live note. */
 function paneLook() {
