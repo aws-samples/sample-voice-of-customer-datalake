@@ -52,7 +52,7 @@ GATE_LOOP_INDEX = 0
 FINAL_GO_AGENT = 'final-go'
 NO_PATHS: tuple[str, ...] = ()
 NO_AUTHORS: frozenset[str] = frozenset()
-PARAMS = frozenset({'max_rounds', 'reviewers', 'final_go_model', 'node_id', 'node_title'})
+PARAMS = frozenset({'max_rounds', 'reviewers', 'final_go_model', 'node_id', 'node_title', 'packs'})
 REVIEWER_KEYS = frozenset({'name', 'focus', 'model_id', 'advisory'})
 _NAME = re.compile(r'[a-z][a-z0-9-]{0,39}\Z')
 
@@ -92,6 +92,8 @@ class GateConfig:
     node_id: str = 'quality_gate'
     node_title: str = 'Quality gate'
     max_diff_chars: int = 150_000
+    #: The gate packs a workflow step pinned; empty: the packs detected in the repository (``packs: 'auto'``).
+    packs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_rounds <= MAX_ROUNDS:
@@ -115,7 +117,18 @@ class GateConfig:
         for key, value in texts.items():
             if not isinstance(value, str) or not value.strip():
                 raise GateConfigError(f'{key} must be a non-empty string')
-        return cls(max_rounds=rounds, reviewers=_reviewers(params.get('reviewers')), **texts)
+        return cls(max_rounds=rounds, reviewers=_reviewers(params.get('reviewers')), packs=_packs(params.get('packs')),
+                   **texts)
+
+
+def _packs(raw: Any) -> tuple[str, ...]:
+    """``'auto'`` (or nothing): the detected packs; otherwise a non-empty list of pack ids, each once."""
+    if raw is None or raw == 'auto':
+        return ()
+    if not isinstance(raw, list) or not raw or not all(isinstance(pack, str) and pack.strip() for pack in raw) \
+            or len(set(raw)) != len(raw):
+        raise GateConfigError("packs must be 'auto' or a list of gate pack ids, each once")
+    return tuple(raw)
 
 
 def _reviewers(raw: Any) -> tuple[ReviewerSpec, ...]:

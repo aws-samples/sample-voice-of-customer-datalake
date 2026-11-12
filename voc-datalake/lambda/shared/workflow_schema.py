@@ -29,6 +29,10 @@ Rules (each failure is reported, none is silently repaired):
 - at most 60 nodes; bounded text everywhere; the stored JSON is bounded so a
   revision always fits one DynamoDB item.
 
+An engineering flow is ``schema: 'voc-workflow/2'`` (plan v3 4.9): ``start``, ``end`` and the engineering steps
+(never an agents step, and no loops), a ``stop_at_pr`` being an end too; its steps' settings and its own rules are in
+``shared.workflow_engineering``. The agents' interpreter runs only ``voc-workflow/1``.
+
 Unknown top-level keys (``exported_from`` on an imported file, say) are dropped by
 normalisation; unknown keys inside nodes and edges are dropped too.
 
@@ -49,9 +53,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from shared import workflow_engineering as engineering
 from shared.workflow_loop_rules import loop_gate_issues
 
 SCHEMA: Final = 'voc-workflow/1'
+#: An engineering flow (shared.workflow_engineering): start, end and the engineering steps, never an agents step.
+SCHEMA_V2: Final = engineering.SCHEMA_V2
 DEFAULT_WORKFLOW_ID: Final = 'wf_default'
 DEFAULT_WORKFLOW_SLUG: Final = 'reviews-to-prototype'
 
@@ -65,6 +72,8 @@ NODE_TYPES: Final = (
     'deep_research', 'write_prfaq', 'write_prd', NODE_PERSONA_REVIEW, 'revise_document', 'build_prototype',
     'collect_prototype_feedback', 'revise_prototype', NODE_FINAL_REVIEW, 'duplicate_document', 'handoff', NODE_CUSTOM_LLM, NODE_END,
 )
+#: The steps of an engineering flow (``voc-workflow/2``).
+V2_NODE_TYPES: Final = (NODE_START, *engineering.ENGINEERING_NODE_TYPES, NODE_END)
 ROLES: Final = ('orchestrator', 'worker', 'reviewer', 'persona')
 EDGE_LABELS: Final = ('pass', 'fail', 'agreed', 'not_agreed')
 PERSONA_LABELS: Final = frozenset({'agreed', 'not_agreed'})
@@ -185,6 +194,8 @@ def _params(node_type: str, value: object, out: _Collector, node_id: str) -> dic
         out.add(f"persona_review needs params.target: one of {', '.join(REVIEW_TARGETS)}", node_id)
     if node_type == NODE_END and params.get('status', 'completed') not in END_STATUSES:
         out.add(f"end params.status must be one of {', '.join(END_STATUSES)}", node_id)
+    for message in engineering.params_issues(node_type, params):
+        out.add(message, node_id)
     return params
 
 
@@ -200,7 +211,9 @@ def _node_data(node_type: str, value: object, out: _Collector, node_id: str) -> 
     if instructions:
         data['instructions'] = instructions
     role = value.get('role')
-    if role is not None:
+    if role is not None and node_type in engineering.ENGINEERING_NODE_TYPES:
+        out.add("an engineering step takes no data.role (an agent's role is its params.role)", node_id)
+    elif role is not None:
         if role in ROLES:
             data['role'] = role
         else:
@@ -209,7 +222,7 @@ def _node_data(node_type: str, value: object, out: _Collector, node_id: str) -> 
     return data
 
 
-def _node(value: object, index: int, out: _Collector) -> dict[str, Any] | None:
+def _node(value: object, index: int, out: _Collector, schema: str) -> dict[str, Any] | None:
     if not isinstance(value, Mapping):
         out.add(f'node {index + 1} must be an object')
         return None
@@ -217,8 +230,13 @@ def _node(value: object, index: int, out: _Collector) -> dict[str, Any] | None:
     if node_id is None:
         return None
     node_type = value.get('type')
-    if node_type not in NODE_TYPES:
-        out.add('unknown node type', node_id)
+    if not isinstance(node_type, str) or node_type not in (V2_NODE_TYPES if schema == SCHEMA_V2 else NODE_TYPES):
+        if schema == SCHEMA_V2 and node_type in NODE_TYPES:
+            out.add(f"an agents step belongs in an agents workflow (schema '{SCHEMA}')", node_id)
+        elif node_type in engineering.ENGINEERING_NODE_TYPES:
+            out.add(f"an engineering step belongs in an engineering flow (schema '{SCHEMA_V2}')", node_id)
+        else:
+            out.add('unknown node type', node_id)
         return None
     return {
         'id': node_id,
@@ -291,8 +309,9 @@ def _parse(raw: object, out: _Collector) -> dict[str, Any] | None:
     if not isinstance(raw, Mapping):
         out.add('definition must be a JSON object')
         return None
-    if raw.get('schema') != SCHEMA:
-        out.add(f"schema must be '{SCHEMA}'")
+    schema = SCHEMA_V2 if raw.get('schema') == SCHEMA_V2 else SCHEMA
+    if raw.get('schema') not in (SCHEMA, SCHEMA_V2):
+        out.add(f"schema must be '{SCHEMA}' (an agents workflow) or '{SCHEMA_V2}' (an engineering flow)")
     name = _text(raw.get('name'), 'name', MAX_NAME_CHARS, out, required=True)
     description = _text(raw.get('description'), 'description', MAX_DESCRIPTION_CHARS, out, required=False)
     raw_nodes = _elements(raw, 'nodes', MAX_NODES, out)
@@ -300,12 +319,14 @@ def _parse(raw: object, out: _Collector) -> dict[str, Any] | None:
     raw_loops = _elements(raw, 'loops', MAX_LOOPS, out)
     if raw_nodes is None or raw_edges is None or raw_loops is None:
         return None
-    nodes = [node for i, value in enumerate(raw_nodes) if (node := _node(value, i, out))]
+    if schema == SCHEMA_V2 and raw_loops:
+        out.add('an engineering flow repeats through its board, so it declares no loops')
+    nodes = [node for i, value in enumerate(raw_nodes) if (node := _node(value, i, out, schema))]
     edges = [edge for i, value in enumerate(raw_edges) if (edge := _edge(value, i, out))]
     loops = [loop for i, value in enumerate(raw_loops) if (loop := _loop(value, i, out))]
     _unique(nodes, 'node', out)
     _unique(edges, 'edge', out)
-    return {'schema': SCHEMA, 'name': name, 'description': description,
+    return {'schema': schema, 'name': name, 'description': description,
             'nodes': nodes, 'edges': edges, 'loops': loops}
 
 
@@ -334,9 +355,13 @@ def _check_edges(definition: dict[str, Any], types: Mapping[str, str], out: _Col
             continue
         if types[source] == NODE_END:
             out.add('an end step cannot have outgoing arrows', source)
+        if types[source] == engineering.NODE_STOP_AT_PR:
+            out.add('a stop at PR ends the flow: no arrow leaves it', source)
         if types[target] == NODE_START:
             out.add('the start step cannot have incoming arrows', target)
-        if label in PERSONA_LABELS and types[source] != NODE_PERSONA_REVIEW:
+        # (An engineering flow's labels follow its own rule: only a quality gate's arrows carry one.)
+        v1 = definition['schema'] == SCHEMA
+        if v1 and label in PERSONA_LABELS and types[source] != NODE_PERSONA_REVIEW:
             out.add(f"'{label}' arrows can only leave a persona review", source)
         if label in _CUSTOM_STEP_VERDICT_LABELS and types[source] == NODE_CUSTOM_LLM:
             out.add(f"a custom step reports no pass/fail verdict, so its arrows cannot be '{label}'"
@@ -350,7 +375,7 @@ def _check_reachability(definition: dict[str, Any], types: Mapping[str, str],
                         forward: Mapping[str, list[str]], backward: Mapping[str, list[str]],
                         out: _Collector) -> None:
     starts = [node_id for node_id, kind in types.items() if kind == NODE_START]
-    ends = [node_id for node_id, kind in types.items() if kind == NODE_END]
+    ends = [node_id for node_id, kind in types.items() if kind in (NODE_END, engineering.NODE_STOP_AT_PR)]
     if len(starts) != 1:
         out.add('a workflow needs exactly one start step')
     if not ends:
@@ -418,6 +443,10 @@ def _check_graph(definition: dict[str, Any], out: _Collector) -> None:
     _check_edges(definition, types, out)
     _check_reachability(definition, types, forward, backward, out)
     _check_loops(definition, types, forward, out)
+    if definition['schema'] == SCHEMA_V2 and not out.errors:
+        for message, node_id in engineering.graph_issues(definition['nodes'], definition['edges'], forward, backward,
+                                                         lambda node_id: reach_from(node_id, forward)):
+            out.add(message, node_id)
 
 
 def validate_definition(raw: object) -> ValidationResult:
