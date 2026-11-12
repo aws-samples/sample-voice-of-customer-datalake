@@ -2,8 +2,8 @@
 
 No MicroVM reaches the repository host: the connector's broker holds the host credential, fills the
 checkout cache and makes every write (docs/autonomous-engineering.md → Repository connectors). So an
-agent reaches only Amazon Bedrock in its region, the run's bucket in S3 (the cache mount and its own
-puts) and, for the agents that run repository code, its language's package registries (the dependency
+agent reaches only Amazon Bedrock in its region, two buckets in S3 (the raw bucket for the cache mount,
+the workspace bucket for its run's keys and its own puts) and, for the agents that run repository code, its language's package registries (the dependency
 step is the only command with network: ``unit_runner.sandboxed_argv``). The list is checked host by host
 (a plain DNS name: no scheme, port, path, wildcard or IP address) and travels with the agent
 (``AgentSpec.egress``).
@@ -41,7 +41,7 @@ def check_host(host: str) -> str:
 def aws_hosts(region: str, *buckets: str) -> tuple[str, ...]:
     """What the agent process itself reaches in ``region``: Bedrock, its buckets (the cache's and the workspace's;
     their virtual-hosted endpoints only: the regional path-style endpoint would reach every bucket in the region)
-    and its queues (SQS).
+    (no SQS: there are no task queues, and an agent's messages reach it through the board).
 
     The broker's and the board's function URLs are added by name when the runtime is wired to them (their hosts
     are known only then); no generic Lambda endpoint is ever on the list.
@@ -51,8 +51,7 @@ def aws_hosts(region: str, *buckets: str) -> tuple[str, ...]:
     for bucket in buckets:
         if not _BUCKET_RE.match(bucket):
             raise RuntimeRefused(f'{bucket!r} is not an S3 bucket name')
-    return (f'bedrock-runtime.{region}.amazonaws.com', *(f'{bucket}.s3.{region}.amazonaws.com' for bucket in buckets),
-            f'sqs.{region}.amazonaws.com')
+    return (f'bedrock-runtime.{region}.amazonaws.com', *(f'{bucket}.s3.{region}.amazonaws.com' for bucket in buckets))
 
 
 def egress_allowlist(

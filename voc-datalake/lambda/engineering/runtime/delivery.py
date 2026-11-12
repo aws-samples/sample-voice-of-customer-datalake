@@ -19,8 +19,9 @@ There is no queue: a suspended MicroVM runs no code, so delivery is a push (``Su
 MicroVM is resumed and kept awake to read it, an agent held without a MicroVM on a long wait is continued in a new
 one, and a booting or pausing one reads its inbox once it runs. An addressee another move holds is ``busy``: the
 invocation fails, and Lambda's own retry (twice) delivers again; the row is already there, so only the wake repeats.
-It runs as the supervisor (its role and its code, ``handler.delivery_handler``), which alone resumes and continues
-MicroVMs. A deployment has one workspace (``connectors/identity.py`` WORKSPACE): a message of another is refused.
+It runs the supervisor's code (``handler.delivery_handler``) with a role of its own (lib/stacks/engineering-runtime.ts
+createDelivery): only what a wake needs, the runs' rows, resuming and continuing MicroVMs and the launcher's
+AssumeRole; never the supervisor's rule or the registry of active runs. A deployment has one workspace (``connectors/identity.py`` WORKSPACE): a message of another is refused.
 """
 from __future__ import annotations
 

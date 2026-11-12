@@ -139,13 +139,17 @@ describe('with -c engineeringAgents=true', () => {
     expect(() => runtimeStack({ engineeringAgents: 'true' }, false)).toThrow(/engineering bus/);
   });
 
-  it('runs voc-engineering-delivery as the supervisor (its code and role), retried twice, failures to the DLQ', () => {
+  it('runs voc-engineering-delivery on the supervisor\'s code with a role of its own, retried twice, failures to the DLQ', () => {
     const [dlq] = Object.keys(template.findResources('AWS::SQS::Queue'));
     const functions = template.findResources('AWS::Lambda::Function', {
       Properties: { FunctionName: Match.stringLikeRegexp('^voc-engineering-(runtime|delivery)$') },
     });
     const roles = new Set(Object.values(functions).map((fn) => JSON.stringify(fn.Properties?.Role)));
-    expect([Object.keys(functions).length, roles.size]).toStrictEqual([2, 1]);
+    expect([Object.keys(functions).length, roles.size]).toStrictEqual([2, 2]);
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      FunctionName: 'voc-engineering-delivery',
+      Role: { 'Fn::GetAtt': [Match.stringLikeRegexp('EngineeringDeliveryRole'), 'Arn'] },
+    });
     expect(count(template, 'AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-delivery', Handler: 'engineering/runtime/handler.delivery_handler',
     })).toBe(1);
@@ -193,34 +197,35 @@ describe('with -c engineeringAgents=true', () => {
     expect(count(withAlarm, 'AWS::CloudWatch::Alarm')).toBe(1);
   });
 
-  it('has one fixed role per agent role, trusted only by the launcher', () => {
+  it('has one fixed role per agent role, trusted only by the two launchers (the supervisor, the delivery)', () => {
     const roles = template.findResources('AWS::IAM::Role', { Properties: { RoleName: Match.stringLikeRegexp('^voc-eng-') } });
     // The broker's and the board's 13 roles (connectors/identity.py AGENT_ROLES), named as their pattern reads them.
     expect(Object.keys(roles)).toHaveLength(13);
     template.hasResourceProperties('AWS::IAM::Role', { RoleName: 'voc-eng-gate-runner' });
+    const launcher = (roleId: string) => Match.objectLike({
+      Action: ['sts:AssumeRole', 'sts:TagSession'],
+      Principal: { AWS: { 'Fn::GetAtt': [Match.stringLikeRegexp(roleId), 'Arn'] } },
+    });
     template.hasResourceProperties('AWS::IAM::Role', {
       RoleName: 'voc-eng-fixer',
       AssumeRolePolicyDocument: Match.objectLike({
-        Statement: [Match.objectLike({
-          Action: ['sts:AssumeRole', 'sts:TagSession'],
-          Principal: { AWS: { 'Fn::GetAtt': [Match.stringLikeRegexp('EngineeringSupervisorRole'), 'Arn'] } },
-        })],
+        Statement: [launcher('EngineeringSupervisorRole'), launcher('EngineeringDeliveryRole')],
       }),
     });
   });
 
-  it('lets the launcher assume an agent role only with all four session tags', () => {
-    const trust = {
-      Statement: [Match.objectLike({
-        Action: ['sts:AssumeRole', 'sts:TagSession'],
-        Condition: { Null: {
-          'aws:RequestTag/ws': 'false', 'aws:RequestTag/run': 'false', 'aws:RequestTag/agent': 'false',
-          'aws:RequestTag/connection': 'false',
-        } },
-      })],
-    };
-    // Every one of the 13 agent roles.
-    expect(count(template, 'AWS::IAM::Role', { AssumeRolePolicyDocument: Match.objectLike(trust) })).toBe(13);
+  it('lets each launcher assume an agent role only with all four session tags', () => {
+    const tagged = Match.objectLike({
+      Action: ['sts:AssumeRole', 'sts:TagSession'],
+      Condition: { Null: {
+        'aws:RequestTag/ws': 'false', 'aws:RequestTag/run': 'false', 'aws:RequestTag/agent': 'false',
+        'aws:RequestTag/connection': 'false',
+      } },
+    });
+    // Every one of the 13 agent roles, both of its trust statements.
+    expect(count(template, 'AWS::IAM::Role', {
+      AssumeRolePolicyDocument: Match.objectLike({ Statement: [tagged, tagged] }),
+    })).toBe(13);
   });
 
   it('reads and lists the same keys: its cache in the raw bucket, its run in the workspace bucket', () => {
@@ -284,13 +289,21 @@ describe('with -c engineeringAgents=true', () => {
       Action: ['kms:Decrypt', 'kms:GenerateDataKey'],
       Condition: { StringEquals: { 'kms:ViaService': Match.anyValue() } },
     });
-    for (const role of ['EngineeringAgentFixerRole', 'EngineeringSupervisorRole']) {
+    for (const role of ['EngineeringAgentFixerRole', 'EngineeringSupervisorRole', 'EngineeringDeliveryRole']) {
       expect(count(template, 'AWS::IAM::Policy', {
         Roles: [{ Ref: Match.stringLikeRegexp(role) }],
         PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([via]) }),
       })).toBe(1);
       expect(policyText(template, role)).not.toMatch(/kms:Encrypt"|kms:ReEncrypt/);
     }
+    // The delivery's failed invocations go to the encrypted DLQ: without SQS here their records would be lost.
+    expect(count(template, 'AWS::IAM::Policy', {
+      Roles: [{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }],
+      PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([Match.objectLike({
+        Action: ['kms:Decrypt', 'kms:GenerateDataKey'],
+        Condition: { StringEquals: { 'kms:ViaService': Match.arrayWith(['sqs.us-east-1.amazonaws.com']) } },
+      })]) }),
+    })).toBe(1);
   });
 
   it('lets the run coordinator speak on the bus only as its run\'s conductor', () => {
@@ -335,5 +348,49 @@ describe('with -c engineeringAgents=true', () => {
       FunctionName: 'voc-engineering-runtime',
       Environment: { Variables: Match.objectLike({ ENGINEERING_TABLE: Match.anyValue() }) },
     });
+  });
+
+  it('gives the delivery only what a wake needs: the runs\' rows, its MicroVM calls, the checkpoints, the launch, its DLQ', () => {
+    const policies = template.findResources('AWS::IAM::Policy', {
+      Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }]) },
+    });
+    const statements = Object.values(policies)
+      .flatMap((policy) => z.array(z.looseObject({ Action: z.union([z.string(), z.array(z.string())]) }))
+        .parse(policy.Properties?.PolicyDocument?.Statement));
+    expect(new Set(statements.flatMap((statement) => [statement.Action].flat()))).toStrictEqual(new Set([
+      'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem',
+      'kms:Decrypt', 'kms:GenerateDataKey',
+      'lambda:CreateMicrovmAuthToken', 'lambda:ResumeMicrovm', 'lambda:RunMicrovm', 'lambda:TerminateMicrovm',
+      's3:GetObject', 's3:ListBucket',
+      'sqs:SendMessage',
+      'sts:AssumeRole', 'sts:TagSession',
+    ]));
+  });
+
+  it('lets the delivery touch the runs\' partitions only: never the registry of active runs, its rule or a delete', () => {
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      Roles: [{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }],
+      PolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([Match.objectLike({
+          Sid: 'RunRows',
+          Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } },
+        })]),
+      }),
+    });
+    const delivery = policyText(template, 'EngineeringDeliveryRole');
+    expect(delivery).not.toMatch(/WS#\*#RUNS|events:|s3:PutObject|dynamodb:DeleteItem|SuspendMicrovm|iam:/);
+    expect(delivery).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
+  });
+
+  it('runs the delivery without what only the supervisor uses (its rule\'s name, the extra egress of a launch)', () => {
+    const [fn] = Object.values(template.findResources('AWS::Lambda::Function', {
+      Properties: { FunctionName: 'voc-engineering-delivery' },
+    }));
+    const env = Object.keys(EnvSchema.parse(fn?.Properties?.Environment).Variables);
+    expect(env).toStrictEqual(expect.arrayContaining(['ENGINEERING_AGENT_ROLE_ARNS', 'ENGINEERING_IMAGE_ARNS',
+      'ENGINEERING_MICROVM_USD_PER_SECOND', 'ENGINEERING_TABLE', 'ENGINEERING_TIMINGS', 'ENGINEERING_WORKSPACE_BUCKET',
+      'RAW_DATA_BUCKET']));
+    expect(env).not.toContain('SUPERVISOR_RULE_NAME');
+    expect(env).not.toContain('ENGINEERING_EXTRA_EGRESS');
   });
 });

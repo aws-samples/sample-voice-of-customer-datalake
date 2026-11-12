@@ -609,8 +609,6 @@ next slice):
   coordinator's (the board's task list, posting a task, launching its agent; the knowledge pack's agent reader). The
   coordinator's launch is to go through the board's API, which checks the caller is its run's coordinator, rather
   than an invoke grant on the runtime function, which would also reach its tick, its end of a run and its signals.
-- **Egress.** The agents' allowlist still names SQS's endpoint (`egress.py`), which no agent calls: there are no
-  task queues.
 
 Each agent of a run runs in its own Lambda MicroVM, from its language's image, with its own sparse checkout from the
 cache. The idle policy suspends a MicroVM after 5 minutes without a request and ends one suspended for an hour; the
@@ -623,8 +621,7 @@ continues it in a new one once the wait closes.
 - **No host token in any MicroVM.** Nothing in a MicroVM reaches the repository host: the
   [broker](#repository-connectors) holds the credential, fills the cache and makes every host write. An agent's egress
   allowlist is Bedrock, its two buckets' own S3 endpoints (the raw bucket's for the cache, the workspace bucket's for
-  its keys; never the regional one, which reaches every bucket) and SQS
-  in its region, the broker's and the board's function URLs by name once the runtime is wired to them, and, for the agents that run
+  its keys; never the regional one, which reaches every bucket) in its region, the broker's and the board's function URLs by name once the runtime is wired to them, and, for the agents that run
   repository code, its language's package registries (plus at most 10 configured hosts, a registry mirror for example).
 - **Credentials from a launcher, never in the image.** A MicroVM starts with no AWS credential. The launcher (the
   supervisor's own code, outside every MicroVM) assumes the agent role's ONE fixed execution role (one per agent role,
@@ -637,9 +634,10 @@ continues it in a new one once the wait closes.
   15 minutes and goes to the runner, which keeps it as the agent user's `credential_process` answer in `/run/voc`, a
   directory only root writes (so nothing planted there can redirect root's writes), readable by the agent user only
   and named to the agent's own commands, never to repository code. The supervisor renews it each tick it has under
-  6 minutes left, and the launcher refuses a stopped run's agents, so a stop cuts that run's sessions within
+  6 minutes left (or a wake renews it), and the launcher refuses a stopped run's agents, so a stop cuts that run's sessions within
   15 minutes although the roles are shared (its MicroVMs are ended at once anyway). The agent roles trust only the
-  launcher's role, which alone may tag their sessions; they may assume no role themselves.
+  two launchers' roles (the supervisor's and the delivery function's, whose wake renews a session), which alone may
+  tag their sessions; they may assume no role themselves.
 - **Repository code in a box of its own.** The runner (each image's entry point) starts as root only to drop every
   command to an unprivileged user, and runs its own tools by absolute path only: repository code (builds, tests, gate
   tools) to `code`, in a PID namespace and `/proc` of its own (no view of the agent's processes) and, except the
@@ -696,7 +694,7 @@ continues it in a new one once the wait closes.
   policy is bounded by its role: code tools only for a role that runs code, the planner's only for the
   coordinator), and everything the board or the pack returns is fenced as data.
 - **Delivery.** voc-engineering-delivery, the function the inbox router invokes for a message to an agent, the
-  run's conductor or a role of the run (a posted task): the supervisor's code and role. It records the message
+  run's conductor or a role of the run (a posted task): the supervisor's code, with a role of its own (below). It records the message
   once in that run's inbox, `WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<inbox_seq>#<event_id>` in voc-engineering
   (the addressee `agent:<agent>`, `conductor` or `role:<role>`; `inbox_seq` the run's write-order counter, taken
   just before the write, so a delivery retried a minute later sorts after every notice already read, with the
@@ -719,7 +717,14 @@ continues it in a new one once the wait closes.
   push. An addressee another move holds, or whose wake failed, fails the invocation; Lambda retries it twice (the
   row already there, only the wake repeats), then it goes to `voc-engineering-dlq`, and that agent is reached only
   when its wait's hold or a later message wakes it. Nothing deletes an inbox row; the board's `inbox` op reads the
-  caller's run's rows after an `inbox_seq` cursor, and the harness keeps each message once by its event id.
+  caller's run's rows after an `inbox_seq` cursor, and the harness keeps each message once by its event id. Its role is its
+  own, with only what a wake needs: Get, Put, Update and Query on the runs' partitions (`WS#*#RUN#*`: the inbox
+  rows, META and the agents' session rows; never the registry of active runs, and no delete), resuming a MicroVM
+  and minting its auth token, running a new one and ending the old one (a continuation), reading the agents'
+  checkpoints, the key only through DynamoDB, S3 and SQS, its failure records in `voc-engineering-dlq`, and the
+  launcher's AssumeRole of the agent roles, which trust it as they trust the supervisor (with all four session
+  tags), since a wake hands the MicroVM a fresh agent session. It cannot switch the supervisor's rule, suspend a
+  MicroVM or touch the registry.
 - **The run's start and end.** The runtime's `start_run` writes the run's `META` row in voc-engineering
   (`WS#<ws>#RUN#<run>` / `META`: its task cap, which the board counts its tasks against, its hard caps on tokens and
   cost, its goal, repository, flow, status and start time, on which the router numbers the conversation) once, and
@@ -727,7 +732,7 @@ continues it in a new one once the wait closes.
   (`done`, `failed` or `stopped`) and end time, ends every MicroVM of it, and the run stops being listed once none
   of its agents is live (one busy with another move is ended by the next tick, which sees the run ended). A retried
   start or end does what the first one left undone. After that first write only the run's own attributes are ever
-  updated, never the board's or the router's counters. A run's agents are launched only while it is active, checked
+  updated, never the board's, the router's or the inbox's counters. A run's agents are launched only while it is active, checked
   in the same write as the agent's row, so a run that ends meanwhile gets no agent nothing supervises. The
   supervisor reads its caps, its spend (its agents' tokens and what was priced on their rows), its start and its
   end from there; a human decision point is the run's status, and a Resume of the whole run makes it active again

@@ -7,13 +7,17 @@
  *   the inbox router (async) ──────────────────────────────▶ voc-engineering-delivery {message, seq}
  *   a run's start / its end ──────────────▶ voc-engineering-runtime {action: start_run / end_run} (and the rule)
  *
- * One MicroVM per agent. Its agent user gets a 15-minute session of its agent role from the launcher (this function's
- * role, the only principal the agent roles trust and the only one that may tag their sessions): ONE fixed role per
- * agent role, narrowed by the session's tags (ws, run, agent, connection). It calls the board's and the broker's
- * function URLs and puts events on the bus only with its own source (its policy and the bus's both deny any other);
- * it reads no queue (there are none: the router invokes voc-engineering-delivery, which records its run's messages
- * in the run's inbox and wakes it). No MicroVM holds a host token (the connector's broker does). The supervisor's role: the session rows, the checkpoints it reads, its own rule, the
- * MicroVM operations and the launcher's AssumeRole; no IAM write: a stop cuts a run's sessions by not renewing them.
+ * One MicroVM per agent. Its agent user gets a 15-minute session of its agent role from a launcher (the supervisor's
+ * role, or the delivery function's, whose wake renews a session: the only principals the agent roles trust and the
+ * only ones that may tag their sessions): ONE fixed role per agent role, narrowed by the session's tags (ws, run,
+ * agent, connection). It calls the board's and the broker's function URLs and puts events on the bus only with its
+ * own source (its policy and the bus's both deny any other); it reads no queue (there are none: the router invokes
+ * voc-engineering-delivery, which records its run's messages in the run's inbox and wakes it).
+ * No MicroVM holds a host token (the connector's broker does). The supervisor's role: the run and session rows and
+ * the registry, the checkpoints it reads, its own rule, the MicroVM operations and the launcher's AssumeRole. The
+ * delivery's role: the runs' rows only (no registry, no delete), the checkpoints, resuming, continuing and ending a
+ * MicroVM, the launcher's AssumeRole and its failure records; no rule. No IAM write: a stop cuts a run's sessions by
+ * not renewing them.
  *
  * Deployed only with `-c engineeringAgents=true`: the default synth has none of it, so no fixed cost and nothing for
  * fixed-cost-guard.test.ts to see. Pay per use with the flag on too: the rule runs only while a run is active,
@@ -210,16 +214,45 @@ class EngineeringRuntime extends Construct {
     super(scope, id);
     const ruleName = props.uniqueName('voc-engineering-supervisor');
     const supervisorRole = workerRole(this, 'EngineeringSupervisorRole');
+    // The delivery function's own role (least privilege): a wake renews agent sessions, so it is a launcher too.
+    const deliveryRole = workerRole(this, 'EngineeringDeliveryRole');
     const agentRoles = new Map(AGENT_ROLES.map((agentRole) => [agentRole, this.createAgentRole(props, agentRole,
-      supervisorRole)]));
+      [supervisorRole, deliveryRole])]));
     const environment = this.environment(props, agentRoles, ruleName);
     const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName, environment);
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
-    this.createDelivery(props, supervisorRole, environment);
+    this.createDelivery(props, deliveryRole, agentRoles, environment);
     if (flag(this, SUPERVISOR_ALARM_FLAG)) this.createAlarms(fn);
   }
 
-  /** The supervisor's and the delivery function's environment (one code, one role). */
+  /** The MicroVMs of this account and region (created per agent session: no name is known at deploy time). */
+  private microvmArns(): string[] {
+    const stack = cdk.Stack.of(this);
+    return ['microvm', 'microvm-image'].map((resource) => stack.formatArn({
+      service: 'lambda', resource, resourceName: '*', arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+    }));
+  }
+
+  /** Read only, the agents' checkpoints in the workspace bucket: a continuation restores from the latest one. */
+  private grantCheckpointReads(role: iam.Role, workspaceBucket: s3.IBucket): string {
+    const checkpoints = workspaceBucket.arnForObjects(CHECKPOINT_KEYS);
+    role.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [checkpoints] }));
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['s3:ListBucket'], resources: [workspaceBucket.bucketArn],
+      conditions: { StringLike: { 's3:prefix': [CHECKPOINT_KEYS] } },
+    }));
+    return checkpoints;
+  }
+
+  /** The launcher's AssumeRole of the agent roles (their trust also requires all four session tags). */
+  private grantLaunch(role: iam.Role, agentRoles: Map<string, iam.Role>): void {
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['sts:AssumeRole', 'sts:TagSession'],
+      resources: [...agentRoles.values()].map((agentRole) => agentRole.roleArn),
+    }));
+  }
+
+  /** The supervisor's and the delivery function's environment (one code; the delivery takes a subset). */
   private environment(props: WiredProps, agentRoles: Map<string, iam.Role>, ruleName: string): Record<string, string> {
     const stack = cdk.Stack.of(this);
     return {
@@ -243,14 +276,40 @@ class EngineeringRuntime extends Construct {
   /**
    * voc-engineering-delivery, the name the inbox router invokes (engineering-bus.ts ENGINEERING_DELIVERY_FUNCTION):
    * a message for an agent, the conductor or a role of a run goes into that run's inbox (its rows in voc-engineering)
-   * and its addressees are woken (lambda/engineering/runtime/delivery.py). The supervisor's code and role: a wake
-   * renews an agent's role session, and the agent roles trust the launcher's role alone, so a role of its own would
-   * have to be the launcher too (the supervisor's rule switch and registry delete come with it, unused here). An
-   * invocation fails while an addressee is busy or its wake failed: Lambda retries it twice, then records it in
-   * voc-engineering-dlq.
+   * and its addressees are woken (lambda/engineering/runtime/delivery.py, through Supervisor.wake). The supervisor's
+   * code, but a role of its own with only what a wake needs: the runs' partitions (never the registry, no delete),
+   * resuming a MicroVM and handing it a fresh agent session (the agent roles trust it as a launcher, with the same
+   * four session tags), continuing a held agent in a new MicroVM from its checkpoint, and its failure records. No
+   * rule switch. An invocation fails while an addressee is busy or its wake failed: Lambda retries it twice, then
+   * records it in voc-engineering-dlq.
    */
-  private createDelivery(props: WiredProps, role: iam.Role, environment: Record<string, string>): void {
+  private createDelivery(
+    props: WiredProps, role: iam.Role, agentRoles: Map<string, iam.Role>, environment: Record<string, string>,
+  ): void {
+    const { kmsKey, engineeringTable, workspaceBucket } = props;
     const dlq = props.peers.deadLetterQueue;
+    // The run's inbox rows, META and its agents' session rows (claim, save, release), in the runs' partitions only.
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'RunRows',
+      actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
+      resources: [engineeringTable.tableArn],
+      conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS] } },
+    }));
+    const checkpoints = this.grantCheckpointReads(role, workspaceBucket);
+    role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb', 'sqs']));
+    // Waking (resume, a fresh session over the MicroVM's auth token) and continuing (a new MicroVM, the old one ended).
+    const microvms = this.microvmArns();
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'WakeMicrovms',
+      actions: ['lambda:ResumeMicrovm', 'lambda:CreateMicrovmAuthToken', 'lambda:RunMicrovm', 'lambda:TerminateMicrovm'],
+      resources: microvms,
+    }));
+    acknowledgeNag(role, [{
+      id: 'AwsSolutions-IAM5',
+      reason: 'Read-only on the agents\' checkpoint objects of every run (a continuation restores from the latest), and the MicroVMs of this account and region, which are created per agent session and have no name known at deploy time',
+      findings: [checkpoints, ...microvms].map(resourceFinding),
+    }]);
+    this.grantLaunch(role, agentRoles);
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       sid: 'DeliveryFailureRecords', actions: ['sqs:SendMessage'], resources: [dlq.queueArn],
     }));
@@ -281,19 +340,27 @@ class EngineeringRuntime extends Construct {
    * keys, call the board's and the broker's function URLs and the allowlisted models, and put events on the bus with
    * its own source. It can assume no role and use no other source.
    */
-  private createAgentRole(props: WiredProps, agentRole: string, launcher: iam.IRole): iam.Role {
+  private createAgentRole(props: WiredProps, agentRole: string, launchers: [iam.IRole, ...iam.IRole[]]): iam.Role {
     const { rawDataBucket, workspaceBucket, kmsKey, uniqueName, peers } = props;
     const id = capitalize(agentRole.replace(/-/g, '_'));
+    // Only the launchers (the supervisor; the delivery function, whose wake renews a session) may assume it and tag
+    // the session, and only with every session tag the conditions read (an untagged session would match no key, but
+    // it is refused outright rather than relied on).
+    const tagged = { Null: Object.fromEntries(SESSION_TAGS.map((tag) => [`aws:RequestTag/${tag}`, 'false'])) };
+    const [first, ...others] = launchers;
     const role = new iam.Role(this, `EngineeringAgent${id}Role`, {
       // The broker's AGENT_ROLE_NAME_PATTERN reads the role back from this name (`voc-eng-{role}` + the naming).
       roleName: uniqueName(`voc-eng-${agentRole}`),
-      // Only the launcher may assume it and tag the session, and only with every session tag the conditions read
-      // (an untagged session would match no key, but it is refused outright rather than relied on).
-      assumedBy: new iam.SessionTagsPrincipal(new iam.ArnPrincipal(launcher.roleArn)).withConditions({
-        Null: Object.fromEntries(SESSION_TAGS.map((tag) => [`aws:RequestTag/${tag}`, 'false'])),
-      }),
+      assumedBy: new iam.SessionTagsPrincipal(new iam.ArnPrincipal(first.roleArn)).withConditions(tagged),
       maxSessionDuration: cdk.Duration.hours(1),
     });
+    for (const launcher of others) {
+      role.assumeRolePolicy?.addStatements(new iam.PolicyStatement({
+        actions: ['sts:AssumeRole', 'sts:TagSession'],
+        principals: [new iam.ArnPrincipal(launcher.roleArn)],
+        conditions: tagged,
+      }));
+    }
     const cacheObjects = rawDataBucket.arnForObjects(CACHE_KEYS);
     const runObjects = workspaceBucket.arnForObjects(RUN_KEYS);
     const ownObjects = workspaceBucket.arnForObjects(OWN_KEYS);
@@ -376,18 +443,11 @@ class EngineeringRuntime extends Construct {
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_REGISTRY] } },
     }));
     // The agents' checkpoints, to pick the one a continuation restores from: read only.
-    const checkpoints = workspaceBucket.arnForObjects(CHECKPOINT_KEYS);
-    role.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [checkpoints] }));
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      actions: ['s3:ListBucket'], resources: [workspaceBucket.bucketArn],
-      conditions: { StringLike: { 's3:prefix': [CHECKPOINT_KEYS] } },
-    }));
-    // The key, only through S3 (checkpoint reads), DynamoDB (the session and inbox rows) and SQS (the delivery's
-    // failure records): never a direct KMS call.
-    role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb', 'sqs']));
-    const microvms = ['microvm', 'microvm-image'].map((resource) => stack.formatArn({
-      service: 'lambda', resource, resourceName: '*', arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-    }));
+    const checkpoints = this.grantCheckpointReads(role, workspaceBucket);
+    // The key, only through S3 (checkpoint reads) and DynamoDB (the run and session rows): never a direct KMS call.
+    // (Its rule's undelivered ticks reach the DLQ through EventBridge, not this role.)
+    role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb']));
+    const microvms = this.microvmArns();
     role.addToPrincipalPolicy(new iam.PolicyStatement({ actions: MICROVM_ACTIONS, resources: microvms }));
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
@@ -396,11 +456,7 @@ class EngineeringRuntime extends Construct {
     }]);
     // The launcher: a 15-minute session of an agent role, with its tags (launcher.py). No IAM write anywhere: a
     // stop cuts a run's sessions by not renewing them.
-    const agentRoleArns = [...agentRoles.values()].map((agentRole) => agentRole.roleArn);
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      actions: ['sts:AssumeRole', 'sts:TagSession'],
-      resources: agentRoleArns,
-    }));
+    this.grantLaunch(role, agentRoles);
     // Its own rule only, by name (a reference to the rule would be a cycle: the rule targets this function).
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['events:EnableRule', 'events:DisableRule'],

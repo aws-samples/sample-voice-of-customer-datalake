@@ -17,7 +17,8 @@
   Shut down and Stop now (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
   (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given).
 
-``delivery_handler`` is voc-engineering-delivery's entry point, the same code and role: the router's message for
+``delivery_handler`` is voc-engineering-delivery's entry point, the same code with a role of its own
+(engineering-runtime.ts createDelivery): the router's message for
 an agent, the conductor or a role of a run, recorded in the run's inbox and its addressees woken (``delivery.py``).
 
 The board and the bus are not this track's: until they are wired they are ``ports.PendingPorts``, which refuse,
