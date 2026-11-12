@@ -6,7 +6,7 @@ import pytest
 from engineering.runtime.interface import MicroVm
 from engineering.runtime.sessions import AgentSession, SessionStore, StaleSession
 
-SESSION = AgentSession(run_id='run-1', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
+SESSION = AgentSession(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
                        egress=('pypi.org',), connection='repo-1', commit='a' * 40, paths=('src',),
                        harness=('python3', '-m', 'harness'), vm_id='vm-1', endpoint='https://vm-1.example.org',
                        started_at=1000)
@@ -15,7 +15,7 @@ SESSION = AgentSession(run_id='run-1', agent_id='fixer-1', role='fixer', task_id
 def test_a_created_session_reads_back_and_is_listed_while_live(aws):
     store = SessionStore(aws[1])
     created = store.create(SESSION)
-    assert store.get('run-1', 'fixer-1') == created
+    assert store.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1') == created
     assert list(store.active()) == [created]
 
 
@@ -23,7 +23,7 @@ def test_an_ended_session_leaves_the_active_list(aws):
     store = SessionStore(aws[1])
     store.save(replace(store.create(SESSION), status='done'))
     assert list(store.active()) == []
-    row = aws[1].get_item(Key={'pk': 'ENGRUN#run-1', 'sk': 'AGENT#fixer-1'})['Item']
+    row = aws[1].get_item(Key={'pk': 'ENGRUN#01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'sk': 'AGENT#fixer-1'})['Item']
     assert 'gsi1pk' not in row
 
 
@@ -40,7 +40,7 @@ def test_a_write_from_a_stale_read_is_refused(aws):
     store.save(replace(read, asked_at=1100))
     with pytest.raises(StaleSession):
         store.save(replace(read, status='done'))
-    found = store.get('run-1', 'fixer-1')
+    found = store.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
     assert found is not None
     assert (found.asked_at, found.status, found.seq) == (1100, 'booting', 2)
 

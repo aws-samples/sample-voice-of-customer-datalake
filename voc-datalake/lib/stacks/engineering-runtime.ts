@@ -8,7 +8,7 @@
  *
  * One MicroVM per agent. Its agent user gets a 15-minute session of its agent role from the launcher (this function's
  * role, the only principal the agent roles trust and the only one that may tag their sessions): ONE fixed role per
- * agent role, narrowed by the session's tags (connection, run_id, agent_id). No MicroVM holds a host token (the
+ * agent role, narrowed by the session's tags (ws, run, agent, connection). No MicroVM holds a host token (the
  * connector's broker does). The supervisor's role: the session rows, the checkpoints it reads, its own rule, the
  * MicroVM operations and the launcher's AssumeRole; no IAM write: a stop cuts a run's sessions by not renewing them.
  *
@@ -48,12 +48,12 @@ const MICROVM_ACTIONS = [
   'lambda:CreateMicrovmAuthToken',
 ];
 /**
- * The agent roles of lambda/engineering/runtime/interface.py ROLES (one execution role each); a Python test keeps
- * the two lists equal.
+ * The agent roles of lambda/engineering/runtime/interface.py ROLES (one execution role each, spelled as the broker's
+ * connectors/identity.py AGENT_ROLES on its branch); a Python test keeps this list and ROLES equal.
  */
 const AGENT_ROLES = [
-  'builder', 'coach', 'commit_reviewer', 'committer', 'coordinator', 'final_go', 'fixer', 'gate_runner', 'hunter',
-  'pr_author', 'pr_reviewer', 'understander',
+  'builder', 'coach', 'commit-reviewer', 'committer', 'coordinator', 'final-go', 'fixer', 'gate-runner', 'hunter',
+  'mapper', 'pr-author', 'pr-reviewer', 'understander',
 ];
 /** `actions` on `key`, only when one of `services` (in this region) calls KMS for the role. */
 function viaServices(key: kms.IKey, actions: string[], services: string[]): iam.PolicyStatement {
@@ -65,8 +65,17 @@ function viaServices(key: kms.IKey, actions: string[], services: string[]): iam.
   });
 }
 
-/** The only bus source an agent's session may put events with (the bus's schema names it). */
-const EVENT_SOURCE = `voc.engineering.\${aws:PrincipalTag/run_id}.\${aws:PrincipalTag/agent_id}`;
+/**
+ * The only bus source a session of `agentRole` may put events with (lambda/engineering/bus/senders.py, on the bus's
+ * branch): an agent's
+ * own, from the tags only the launcher sets; the run coordinator speaks as its run's conductor.
+ */
+function eventSource(agentRole: string): string {
+  const run = '${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}';
+  return agentRole === 'coordinator'
+    ? `voc.engineering/conductor/${run}`
+    : `voc.engineering/agent/${agentRole}/${run}/\${aws:PrincipalTag/agent}`;
+}
 
 
 interface EngineeringRuntimeProps {
@@ -99,25 +108,26 @@ class EngineeringRuntime extends Construct {
 
   /**
    * ONE fixed execution role per agent role (never per run), narrowed per session by the tags only the launcher
-   * sets (connection, run_id, agent_id): read its connection's cache and its run's workspace, write only its own
+   * sets (ws, run, agent, connection): read its connection's cache and its run's workspace, write only its own
    * keys, read only its own inbox and its run's queue for its role, call the allowlisted models. It can assume no
    * role and put no event on the bus with any source but its own.
    */
   private createAgentRole(props: EngineeringRuntimeProps, agentRole: string, launcher: iam.IRole): iam.Role {
     const { rawDataBucket, kmsKey, uniqueName } = props;
     const stack = cdk.Stack.of(this);
-    const role = new iam.Role(this, `EngineeringAgent${capitalize(agentRole)}Role`, {
-      roleName: uniqueName(`voc-eng-${agentRole.replace(/_/g, '-')}`),
+    const role = new iam.Role(this, `EngineeringAgent${capitalize(agentRole.replace(/-/g, '_'))}Role`, {
+      // The broker's AGENT_ROLE_NAME_PATTERN reads the role back from this name (`voc-eng-{role}` + the naming).
+      roleName: uniqueName(`voc-eng-${agentRole}`),
       // Only the launcher may assume it, and only the launcher may tag the session.
       assumedBy: new iam.SessionTagsPrincipal(new iam.ArnPrincipal(launcher.roleArn)),
       maxSessionDuration: cdk.Duration.hours(1),
     });
     const cacheKeys = `${CACHE_PREFIX}/\${aws:PrincipalTag/connection}/*`;
-    const runKeys = `${RUNS_PREFIX}/\${aws:PrincipalTag/run_id}/*`;
+    const runKeys = `${RUNS_PREFIX}/\${aws:PrincipalTag/run}/*`;
     const cacheObjects = rawDataBucket.arnForObjects(`${CACHE_PREFIX}/\${aws:PrincipalTag/connection}/*`);
-    const runObjects = rawDataBucket.arnForObjects(`${RUNS_PREFIX}/\${aws:PrincipalTag/run_id}/*`);
+    const runObjects = rawDataBucket.arnForObjects(`${RUNS_PREFIX}/\${aws:PrincipalTag/run}/*`);
     // The agent comes right after the run in every workspace key, so this cannot match another agent's keys.
-    const ownObjects = rawDataBucket.arnForObjects(`${RUNS_PREFIX}/\${aws:PrincipalTag/run_id}/\${aws:PrincipalTag/agent_id}/*`);
+    const ownObjects = rawDataBucket.arnForObjects(`${RUNS_PREFIX}/\${aws:PrincipalTag/run}/\${aws:PrincipalTag/agent}/*`);
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
       reason: 'Object keys under ONE session-tagged prefix (the connection\'s cache, the run\'s workspace, the agent\'s own keys); the trailing wildcard is the object key, never another connection, run or agent',
@@ -137,9 +147,9 @@ class EngineeringRuntime extends Construct {
     role.addToPolicy(new iam.PolicyStatement({
       sid: 'OwnQueues',
       actions: ['sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:ChangeMessageVisibility', 'sqs:GetQueueAttributes'],
-      // Ids hold no "_" (interface.py check_id), so "_" separates them: no two (run, agent) pairs share a name.
-      resources: [`voc-eng_\${aws:PrincipalTag/run_id}_\${aws:PrincipalTag/agent_id}`,
-        `voc-eng_\${aws:PrincipalTag/run_id}_role_${agentRole}`].map((queue) => stack.formatArn({
+      // Ids hold no "_" (a ULID run, a `<role>-<index>` agent), so "_" separates them.
+      resources: [`voc-eng_\${aws:PrincipalTag/run}_\${aws:PrincipalTag/agent}`,
+        `voc-eng_\${aws:PrincipalTag/run}_role_${agentRole}`].map((queue) => stack.formatArn({
         service: 'sqs', resource: queue, arnFormat: cdk.ArnFormat.NO_RESOURCE_NAME,
       })),
     }));
@@ -154,7 +164,7 @@ class EngineeringRuntime extends Construct {
       effect: iam.Effect.DENY,
       actions: ['events:PutEvents'],
       resources: ['*'],
-      conditions: { StringNotEquals: { 'events:source': EVENT_SOURCE } },
+      conditions: { StringNotEquals: { 'events:source': eventSource(agentRole) } },
     }));
     // The bucket's key, only through S3 (its reads and its own puts): never a direct KMS call.
     role.addToPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3']));

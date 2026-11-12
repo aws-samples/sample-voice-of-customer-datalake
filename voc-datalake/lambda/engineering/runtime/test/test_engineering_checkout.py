@@ -18,7 +18,7 @@ from engineering.runtime.interface import AgentSpec, Command, ExecResult, MicroV
 from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
 
 COMMIT = 'b' * 40
-SPEC = AgentSpec(run_id='run-1', agent_id='fixer-1', role='fixer', task_id='task-1', language='python', egress=(),
+SPEC = AgentSpec(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='python', egress=(),
                  connection='repo-1')
 SETUP = '''
 import os, pathlib

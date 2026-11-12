@@ -79,8 +79,8 @@ def _on_an_open_wait(world: World, code: str) -> tuple[AgentSession, Lease]:
     """A working agent whose lease turns to an open wait, after the tick that sees it; and its lease before."""
     world.launch(code=code)
     working = _until(world, 1000, lambda s: s.status == 'working')
-    lease = world.board.leases['run-1/task-1']
-    world.board.leases['run-1/task-1'] = replace(lease, waiting=True)
+    lease = world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1']
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(lease, waiting=True)
     world.supervisor.tick(1001)
     return working, lease
 
@@ -121,7 +121,7 @@ def test_a_quiet_agent_is_asked_for_its_state_then_its_task_is_reposted(world: W
     _until(world, 1000 + T.stall_after, lambda s: s.asked_at is not None, progress=False)
     stopped = _until(world, 1000 + T.stall_after + T.answer_window, lambda s: s.status == 'reposted', progress=False)
     assert world.bus.kinds()[:2] == ['question', 'timed_out']
-    assert world.board.reposted == [('run-1/task-1', 'stalled')]
+    assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'stalled')]
     _assert_terminated(world, stopped)
 
 
@@ -134,7 +134,7 @@ def test_progress_after_the_question_clears_it(world: World):
 
 
 def test_a_paused_harness_is_continued_in_a_new_microvm_from_its_newest_valid_checkpoint(world: World):
-    prefix = checkpoint_prefix('run-1', 'fixer-1')
+    prefix = checkpoint_prefix('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
     world.s3.put_object(Bucket=BUCKET, Key=f'{prefix}000001-a.json', Body=json.dumps({'position': {'step': 1}}))
     world.s3.put_object(Bucket=BUCKET, Key=f'{prefix}000002-b.json', Body=json.dumps({'position': 2, 'token': 'x'}))
     first = world.launch(code='import sys; sys.exit(75)')
@@ -162,21 +162,21 @@ def test_a_crashing_agent_is_continued_twice_then_its_task_is_reposted(world: Wo
     ended = _until(world, 1000, lambda s: s.status == 'reposted')
     assert ended.crashes == T.max_crash_continuations
     assert world.bus.kinds().count('continued') == T.max_crash_continuations
-    assert world.board.reposted == [('run-1/task-1', 'crashed')]
+    assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'crashed')]
 
 
 def test_a_run_coordinator_that_keeps_crashing_goes_to_a_person_not_to_the_board(world: World):
-    world.launch(agent_id='coordinator', role='coordinator', task_id='coordinate', code='import sys; sys.exit(1)')
-    ended = _until(world, 1000, lambda s: s.status == 'failed', agent_id='coordinator')
+    world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code='import sys; sys.exit(1)')
+    ended = _until(world, 1000, lambda s: s.status == 'failed', agent_id='coordinator-0')
     assert ended.status == 'failed'
-    assert world.control.humans == [('run-1', 'coordinator')]
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'coordinator')]
     assert not world.board.reposted
 
 
 def test_a_lost_lease_is_a_crash(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
-    del world.board.leases['run-1/task-1']
+    del world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1']
     continued = _until(world, 1001, lambda s: s.continuation == 1, progress=None)
     assert continued.crashes == 1
 
@@ -184,7 +184,7 @@ def test_a_lost_lease_is_a_crash(world: World):
 def test_a_stop_ends_every_microvm_at_once_and_renews_no_session(world: World):
     first = world.launch(code=SLEEP)
     second = world.launch(agent_id='hunter-1', role='hunter', task_id='task-2', code=SLEEP)
-    world.control.stops.add('run-1')
+    world.control.stops.add('01JD3R4NZXQ7Y2W8K4M6P9T0AB')
     world.supervisor.tick(2000)
     assert [world.session(agent).status for agent in ('fixer-1', 'hunter-1')] == ['stopped', 'stopped']
     assert world.sts.calls == []
@@ -201,10 +201,11 @@ def test_each_agent_gets_its_roles_session_named_and_tagged_and_renewed_before_i
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
     (first, *_) = world.sts.calls
+    # The session name the broker and the board read (<run ULID>.<agent index>), the tags the roles' conditions read.
     assert (first['RoleArn'], first['RoleSessionName'], first['DurationSeconds']) == (
-        ROLE_ARNS['fixer'], 'run-1.fixer-1', 900)
-    assert {tag['Key']: tag['Value'] for tag in first['Tags']} == {'connection': 'conn-1', 'run_id': 'run-1',
-                                                                   'agent_id': 'fixer-1'}
+        ROLE_ARNS['fixer'], '01JD3R4NZXQ7Y2W8K4M6P9T0AB.1', 900)
+    assert {tag['Key']: tag['Value'] for tag in first['Tags']} == {
+        'ws': 'default', 'run': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent': 'fixer-1', 'connection': 'conn-1'}
     calls = len(world.sts.calls)
     world.renew(1000 + 300)
     world.supervisor.tick(1000 + 300)
@@ -218,40 +219,40 @@ def test_a_run_is_stopped_at_thirty_days_at_a_decision_point_offering_only_stop(
     world.launch(code=SLEEP)
     world.supervisor.tick(1000 + THIRTY_DAYS)
     assert world.session().status == 'stopped'
-    assert world.control.humans == [('run-1', 'thirty_days')]
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'thirty_days')]
 
 
 def test_pause_holds_the_agent_after_its_checkpoint_and_resume_continues_it(world: World):
     world.launch(code=PAUSE_WHEN_ASKED)
     _until(world, 1000, lambda s: s.status == 'working')
-    assert world.supervisor.signal('run-1', 'fixer-1', 'pause', 1001) == {'fixer-1': 'pause_requested'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1001) == {'fixer-1': 'pause_requested'}
     (_workdir(world) / 'pause').write_text('x')
     held = _until(world, 1002, lambda s: s.status == 'paused')
     assert held.continuation == 0
-    assert world.supervisor.signal('run-1', None, 'resume', 1003) == {'fixer-1': 'booting'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1003) == {'fixer-1': 'booting'}
     assert world.session().continuation == 1
 
 
 def test_a_run_coordinator_that_keeps_stalling_goes_to_a_person_after_its_continuations(world: World):
-    world.launch(agent_id='coordinator', role='coordinator', task_id='coordinate', code=SLEEP)
+    world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code=SLEEP)
     now = 1000
     for _ in range(200):
-        world.renew(now, progress=False, agent_id='coordinator', task_id='coordinate')
+        world.renew(now, progress=False, agent_id='coordinator-0', task_id='coordinate')
         world.supervisor.tick(now)
-        if world.session('coordinator').status == 'failed':
+        if world.session('coordinator-0').status == 'failed':
             break
         now += 60
         time.sleep(0.01)
-    ended = world.session('coordinator')
+    ended = world.session('coordinator-0')
     assert (ended.status, ended.continuation) == ('failed', T.max_crash_continuations)
-    assert world.control.humans == [('run-1', 'coordinator')]
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'coordinator')]
     assert world.board.reposted == []
 
 
 def test_an_agent_that_stalls_while_pausing_is_held_never_reposted(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
-    world.supervisor.signal('run-1', 'fixer-1', 'pause', 1001)
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1001)
     _until(world, 1000 + T.stall_after, lambda s: s.asked_at is not None or s.status != 'pause_requested',
            progress=False)
     held = _until(world, 1000 + T.stall_after + T.answer_window, lambda s: s.status != 'pause_requested',
@@ -263,12 +264,12 @@ def test_an_agent_that_stalls_while_pausing_is_held_never_reposted(world: World)
 def test_shut_down_on_a_paused_agent_stops_it_and_resume_leaves_it_alone(world: World):
     world.launch(code=PAUSE_WHEN_ASKED)
     _until(world, 1000, lambda s: s.status == 'working')
-    world.supervisor.signal('run-1', 'fixer-1', 'pause', 1001)
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1001)
     (_workdir(world) / 'pause').write_text('x')
     _until(world, 1002, lambda s: s.status == 'paused')
-    assert world.supervisor.signal('run-1', None, 'save', 1003) == {'fixer-1': 'paused'}
-    assert world.supervisor.signal('run-1', None, 'shutdown', 1003) == {'fixer-1': 'stopped'}
-    assert world.supervisor.signal('run-1', None, 'resume', 1004) == {'fixer-1': 'stopped'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'save', 1003) == {'fixer-1': 'paused'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'shutdown', 1003) == {'fixer-1': 'stopped'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1004) == {'fixer-1': 'stopped'}
     assert world.session().continuation == 0
 
 
@@ -276,7 +277,7 @@ def test_stop_now_on_a_paused_agent_stops_it(world: World):
     world.launch(code='import sys; sys.exit(75)')
     world.control.spend = Budget(tokens=10, cost_usd=0.0, max_tokens=10, max_cost_usd=None)
     _until(world, 1000, lambda s: s.status == 'paused')
-    assert world.supervisor.signal('run-1', 'fixer-1', 'stop_now', 1001) == {'fixer-1': 'stopped'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'stop_now', 1001) == {'fixer-1': 'stopped'}
 
 
 def test_a_crash_that_cannot_be_recorded_keeps_its_count_and_lets_go_of_the_row(
@@ -302,15 +303,15 @@ def test_a_crash_that_cannot_be_recorded_keeps_its_count_and_lets_go_of_the_row(
 
 def test_resume_is_refused_for_a_stopped_run(world: World):
     world.launch()
-    world.control.stops.add('run-1')
+    world.control.stops.add('01JD3R4NZXQ7Y2W8K4M6P9T0AB')
     with pytest.raises(RuntimeRefused, match='cannot be resumed'):
-        world.supervisor.signal('run-1', None, 'resume', 1000)
+        world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1000)
 
 
 def test_shut_down_stops_the_agent_when_no_checkpoint_comes(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
-    world.supervisor.signal('run-1', 'fixer-1', 'shutdown', 1001)
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'shutdown', 1001)
     stopped = _until(world, 1001 + T.answer_window, lambda s: s.status == 'stopped')
     assert stopped.after_pause == 'shutdown'
 
@@ -318,12 +319,12 @@ def test_shut_down_stops_the_agent_when_no_checkpoint_comes(world: World):
 def test_save_asks_for_a_checkpoint_and_stop_now_ends_at_once(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
-    world.supervisor.signal('run-1', 'fixer-1', 'save', 1001)
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'save', 1001)
     assert world.bus.kinds() == ['save']
-    stopped = world.supervisor.signal('run-1', 'fixer-1', 'stop_now', 1002)
+    stopped = world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'stop_now', 1002)
     assert stopped == {'fixer-1': 'stopped'}
     with pytest.raises(RuntimeRefused, match='no agent'):
-        world.supervisor.signal('run-1', 'ghost', 'save', 1003)
+        world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'ghost', 'save', 1003)
 
 
 def test_the_row_carries_inspection_data_and_live_cost_counters(world: World):
@@ -342,7 +343,7 @@ def test_a_spent_budget_asks_every_agent_to_pause_and_waits_for_a_person(world: 
     world.control.spend = Budget(tokens=10, cost_usd=5.0, max_tokens=None, max_cost_usd=5.0)
     world.supervisor.tick(1001)
     assert world.session().status == 'pause_requested'
-    assert world.control.humans == [('run-1', 'budget')]
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'budget')]
     assert world.bus.kinds() == ['pause']
 
 
@@ -351,9 +352,9 @@ def test_under_a_spent_budget_agents_are_held_for_a_person_and_no_new_microvm_st
     world.control.spend = Budget(tokens=10, cost_usd=0.0, max_tokens=10, max_cost_usd=None)
     held = _until(world, 1000, lambda s: s.status == 'paused')
     assert held.continuation == 0
-    assert ('run-1', 'budget') in world.control.humans
+    assert ('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'budget') in world.control.humans
     with pytest.raises(RuntimeRefused, match='spent its budget'):
-        world.supervisor.signal('run-1', None, 'resume', 1001)
+        world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1001)
 
 
 def test_once_the_budget_is_raised_resume_brings_a_held_agent_back(world: World):
@@ -361,7 +362,7 @@ def test_once_the_budget_is_raised_resume_brings_a_held_agent_back(world: World)
     world.control.spend = Budget(tokens=10, cost_usd=0.0, max_tokens=10, max_cost_usd=None)
     _until(world, 1000, lambda s: s.status == 'paused')
     world.control.spend = Budget(tokens=10, cost_usd=0.0, max_tokens=100, max_cost_usd=None)
-    assert world.supervisor.signal('run-1', None, 'resume', 1001) == {'fixer-1': 'booting'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, 'resume', 1001) == {'fixer-1': 'booting'}
     assert world.session().continuation == 1
 
 
@@ -369,7 +370,7 @@ def test_shut_down_during_an_eight_hour_pause_stops_the_agent_instead_of_continu
     world.launch(code=PAUSE_WHEN_ASKED)
     working = _until(world, 1000, lambda s: s.status == 'working')
     _until(world, 1000 + T.pause_after, lambda s: s.status == 'pause_requested')
-    assert world.supervisor.signal('run-1', 'fixer-1', 'shutdown', 1001 + T.pause_after) == {
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'shutdown', 1001 + T.pause_after) == {
         'fixer-1': 'pause_requested'}
     (Path(working.endpoint) / 'pause').write_text('x')
     stopped = _until(world, 1002 + T.pause_after, lambda s: s.status == 'stopped')
@@ -394,26 +395,26 @@ def test_a_failing_board_never_counts_against_a_healthy_microvm(world: World, mo
 @pytest.mark.parametrize(('kind', 'status'), [('shutdown', 'stopped'), ('pause', 'paused')])
 def test_shut_down_or_pause_on_an_agent_still_booting_takes_effect_at_once(world: World, kind: str, status: str):
     booting = world.launch(code=SLEEP)
-    assert world.supervisor.signal('run-1', None, kind, 1000) == {'fixer-1': status}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, kind, 1000) == {'fixer-1': status}
     with pytest.raises(RuntimeRefused, match='terminated'):
         world.runtime.mint_token(booting.vm)
 
 
 def test_one_run_failing_does_not_keep_the_supervisor_from_the_others(world: World, monkeypatch: pytest.MonkeyPatch):
     world.launch(code='pass')
-    other = replace(world.session(), run_id='run-2', seq=0, claimed_until=None)
+    other = replace(world.session(), run_id='01JD3R4NZXQ7Y2W8K4M6P9T0CD', seq=0, claimed_until=None)
     world.store.create(other)
     real_budget = world.control.budget
 
     def budget(run_id: str) -> Budget:
-        if run_id == 'run-1':
+        if run_id == '01JD3R4NZXQ7Y2W8K4M6P9T0AB':
             raise ConnectionError('run control is down')
         return real_budget(run_id)
 
     monkeypatch.setattr(world.control, 'budget', budget)
-    world.board.leases['run-2/task-1'] = world.board.leases['run-1/task-1']
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0CD/task-1'] = world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1']
     world.supervisor.tick(1000)
-    found = world.store.get('run-2', 'fixer-1')
+    found = world.store.get('01JD3R4NZXQ7Y2W8K4M6P9T0CD', 'fixer-1')
     assert found is not None
     assert found.seq > 1
 
@@ -422,7 +423,7 @@ def test_a_signal_on_a_session_another_move_holds_answers_busy(world: World):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
     world.store.claim(world.session(), 1001, 300)
-    assert world.supervisor.signal('run-1', 'fixer-1', 'stop_now', 1002) == {'fixer-1': 'busy'}
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'stop_now', 1002) == {'fixer-1': 'busy'}
     assert world.session().status == 'working'
 
 
@@ -433,8 +434,8 @@ def test_shut_down_or_pause_on_an_agent_held_for_a_long_wait_decides_instead_of_
     _until(world, 1001 + T.wait_suspend_limit, lambda s: s.status == 'pause_requested', progress=None)
     (Path(working.endpoint) / 'pause').write_text('x')
     _until(world, 1002 + T.wait_suspend_limit, lambda s: s.status == 'waiting', progress=None)
-    assert world.supervisor.signal('run-1', 'fixer-1', kind, 1003 + T.wait_suspend_limit) == {'fixer-1': status}
-    world.board.leases['run-1/task-1'] = replace(lease, waiting=False)
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', kind, 1003 + T.wait_suspend_limit) == {'fixer-1': status}
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(lease, waiting=False)
     world.supervisor.tick(1004 + T.wait_suspend_limit)
     assert (world.session().status, world.session().continuation) == (status, 0)
 
@@ -442,8 +443,8 @@ def test_shut_down_or_pause_on_an_agent_held_for_a_long_wait_decides_instead_of_
 def test_resume_while_a_hold_is_still_pausing_continues_the_agent_once_it_has_paused(world: World):
     world.launch(code=PAUSE_WHEN_ASKED)
     working = _until(world, 1000, lambda s: s.status == 'working')
-    world.supervisor.signal('run-1', 'fixer-1', 'pause', 1001)
-    assert world.supervisor.signal('run-1', 'fixer-1', 'resume', 1002) == {'fixer-1': 'pause_requested'}
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1001)
+    assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'resume', 1002) == {'fixer-1': 'pause_requested'}
     (Path(working.endpoint) / 'pause').write_text('x')
     continued = _until(world, 1003, lambda s: s.continuation == 1)
     assert continued.status == 'booting'
@@ -504,7 +505,7 @@ def test_a_long_open_wait_is_checkpointed_and_held_without_a_microvm_then_contin
     assert held.crashes == 0
     world.supervisor.tick(1000 + 2 * T.hard_stop)
     assert world.session().status == 'waiting'
-    world.board.leases['run-1/task-1'] = replace(lease, waiting=False)
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = replace(lease, waiting=False)
     world.supervisor.tick(2000 + 2 * T.hard_stop)
     assert (world.session().status, world.session().continuation) == ('booting', 1)
 
@@ -512,7 +513,7 @@ def test_a_long_open_wait_is_checkpointed_and_held_without_a_microvm_then_contin
 def test_save_on_a_suspended_agent_wakes_it_renews_its_session_and_saves(world: World):
     working, _ = _on_an_open_wait(world, SLEEP)
     calls = len(world.sts.calls)
-    world.supervisor.signal('run-1', 'fixer-1', 'save', 1001 + 20 * 60)
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'save', 1001 + 20 * 60)
     assert world.session().suspended is False
     assert len(world.sts.calls) == calls + 1
     assert world.runtime.mint_token(working.vm).value
@@ -549,16 +550,16 @@ def test_a_lost_claim_on_a_continuation_ends_the_microvm_it_started(world: World
 def test_time_without_a_microvm_is_not_counted_as_microvm_seconds(world: World):
     world.launch(code=PAUSE_WHEN_ASKED)
     working = _until(world, 1000, lambda s: s.status == 'working')
-    world.supervisor.signal('run-1', 'fixer-1', 'pause', 1060)
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'pause', 1060)
     (Path(working.endpoint) / 'pause').write_text('x')
     held = _until(world, 1120, lambda s: s.status == 'paused')
-    world.supervisor.signal('run-1', 'fixer-1', 'resume', 1120 + 86400)
+    world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'resume', 1120 + 86400)
     assert world.session().microvm_seconds == held.microvm_seconds
 
 
 def test_run_health_reports_counts_spend_and_backlog(world: World):
     world.launch(code=SLEEP)
-    world.bus.depths['run-1/fixer-1'] = 3
+    world.bus.depths['01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1'] = 3
     world.supervisor.tick(1000)
     health = [event for event in world.bus.events if event['kind'] == 'run.health'][-1]
     assert health['summary'] == '1 booting'

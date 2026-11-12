@@ -127,22 +127,22 @@ class World:
     def launch(self, agent_id: str = 'fixer-1', role: str = 'fixer', code: str = 'pass', now: int = 1000,
                task_id: str = 'task-1') -> AgentSession:
         session = AgentSession(
-            run_id='run-1', agent_id=agent_id, role=role, task_id=task_id, language='python', egress=('pypi.org',),
+            run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id=agent_id, role=role, task_id=task_id, language='python', egress=('pypi.org',),
             connection='conn-1', commit=COMMIT, paths=('src',), harness=harness(code), vm_id='', endpoint='',
             started_at=now, last_tick_at=now)
         vm = self.runtime.run(session.spec())
-        self.board.leases[f'run-1/{task_id}'] = Lease(task_id=task_id, agent_id=agent_id, renewed_at=now,
+        self.board.leases[f'01JD3R4NZXQ7Y2W8K4M6P9T0AB/{task_id}'] = Lease(task_id=task_id, agent_id=agent_id, renewed_at=now,
                                                      last_progress_at=now)
         return self.store.create(replace(session, vm_id=vm.vm_id, endpoint=vm.endpoint))
 
     def session(self, agent_id: str = 'fixer-1') -> AgentSession:
-        found = self.store.get('run-1', agent_id)
+        found = self.store.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id)
         assert found is not None
         return found
 
     def renew(self, now: int, progress: bool = True, task_id: str = 'task-1', agent_id: str = 'fixer-1') -> None:
-        lease = self.board.leases[f'run-1/{task_id}']
-        self.board.leases[f'run-1/{task_id}'] = Lease(
+        lease = self.board.leases[f'01JD3R4NZXQ7Y2W8K4M6P9T0AB/{task_id}']
+        self.board.leases[f'01JD3R4NZXQ7Y2W8K4M6P9T0AB/{task_id}'] = Lease(
             task_id=task_id, agent_id=agent_id, renewed_at=now,
             last_progress_at=now if progress else lease.last_progress_at)
 

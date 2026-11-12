@@ -23,7 +23,7 @@ from engineering.runtime.test.harness_fakes import FakeBedrock, FakeBoard, FakeB
 from engineering.runtime.test.test_engineering_images import IMAGES, RUNTIME, SHIPPED
 from engineering.runtime.unit_runner import Runner, serve
 
-PREFIX = 'engineering/runs/run-1/fixer-1/'
+PREFIX = 'engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/'
 #: The test's own git, by absolute path (the fixture repository it builds is the test's, not a MicroVM's).
 GIT_BIN = shutil.which('git') or '/usr/bin/git'
 
@@ -43,7 +43,7 @@ class BeatingBoard(FakeBoard):
 
 def _env(tmp_path: Any, **extra: str) -> dict[str, str]:
     (tmp_path / 'home').mkdir(exist_ok=True)
-    return {'VOC_RUN_ID': 'run-1', 'VOC_AGENT_ID': 'fixer-1', 'VOC_TASK_ID': 'task-1', 'VOC_ROLE': 'fixer',
+    return {'VOC_RUN_ID': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'VOC_AGENT_ID': 'fixer-1', 'VOC_TASK_ID': 'task-1', 'VOC_ROLE': 'fixer',
             'VOC_BUCKET': BUCKET, 'AWS_REGION': 'us-east-1', 'AWS_CONFIG_FILE': '/run/voc/aws-config',
             'HOME': str(tmp_path / 'home'), **extra}
 
@@ -143,7 +143,7 @@ def test_a_working_tree_that_does_not_apply_is_a_crash_never_a_silent_loss(aws, 
         _session(s3, tmp_path, FakeRunner(apply_exit=1), VOC_RESTORE_KEY=_checkpoint_with_a_tree(s3))
 
 
-@pytest.mark.parametrize('key', ['engineering/runs/run-1/other-1/checkpoints/000001-a.json',
+@pytest.mark.parametrize('key', ['engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/other-1/checkpoints/000001-a.json',
                                  f'{PREFIX}checkpoints/sub/000001-a.json', f'{PREFIX}notes.json'],
                          ids=['another-agent', 'nested', 'not-a-checkpoint'])
 def test_a_restore_key_that_is_not_one_of_the_agents_own_checkpoints_starts_afresh(aws, tmp_path, key):
@@ -163,7 +163,7 @@ def test_an_invalid_checkpoint_is_not_restored(aws, tmp_path):
 def test_the_store_puts_only_under_the_agents_own_keys(aws):
     s3, _ = aws
     store = S3Store(s3, BUCKET, PREFIX)
-    for key in ('engineering/runs/run-1/other-1/x', f'{PREFIX}../other-1/x'):
+    for key in ('engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/other-1/x', f'{PREFIX}../other-1/x'):
         with pytest.raises(ValueError, match='own keys'):
             store.put(key, b'x')
     store.put(f'{PREFIX}patches/p.diff', b'x')
@@ -193,7 +193,7 @@ def test_the_lease_is_renewed_while_the_session_runs(aws, tmp_path, monkeypatch)
                 bedrock=lambda: SlowBedrock([[use('finish', summary='ok')]])) == 0
     # The first renewal is main's own; the second can only come from the thread renewing while the session runs.
     assert len(board.heartbeats) >= 2
-    assert board.heartbeats[1] == ('run-1', 'task-1', 'fixer-1')
+    assert board.heartbeats[1] == ('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'fixer-1')
 
 
 @dataclass
@@ -212,7 +212,7 @@ class FlakyBoard(BeatingBoard):
 def test_a_failed_heartbeat_does_not_end_the_renewals(monkeypatch):
     monkeypatch.setattr(harness_main, 'HEARTBEAT_SECONDS', 0.01)
     board, stop = FlakyBoard(), threading.Event()
-    ids = {'VOC_RUN_ID': 'run-1', 'VOC_TASK_ID': 'task-1', 'VOC_AGENT_ID': 'fixer-1'}
+    ids = {'VOC_RUN_ID': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'VOC_TASK_ID': 'task-1', 'VOC_AGENT_ID': 'fixer-1'}
     harness_main._renew(board, ids)  # fails, and is said
     beating = threading.Thread(target=harness_main._heartbeat, args=(board, ids, stop), daemon=True)
     beating.start()
@@ -220,7 +220,7 @@ def test_a_failed_heartbeat_does_not_end_the_renewals(monkeypatch):
     stop.set()
     beating.join(5)
     assert board.failed == 1
-    assert board.heartbeats[0] == ('run-1', 'task-1', 'fixer-1')
+    assert board.heartbeats[0] == ('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'fixer-1')
 
 
 @dataclass
@@ -276,7 +276,7 @@ def test_the_images_entry_script_imports_the_harness_from_its_own_directory_unde
     # The image's layout: /opt/voc/harness.py beside /opt/voc/engineering/..., run with -I (no path but its own).
     opt = tmp_path / 'opt-voc'
     for module in SHIPPED:
-        target = opt / 'engineering' / 'runtime' / module.relative_to(RUNTIME)
+        target = opt / 'engineering' / module.relative_to(RUNTIME.parent)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(module, target)
     shutil.copy(RUNTIME.parent / '__init__.py', opt / 'engineering' / '__init__.py')

@@ -1,9 +1,9 @@
 """The launcher: the only code that gives an agent's MicroVM AWS credentials.
 
 It runs outside every MicroVM (in voc-engineering-runtime). For each agent it assumes that agent role's ONE
-fixed execution role (never a role per run), with session tags naming the connection, the run and the agent
-(the roles' IAM conditions read them) and a session name naming the run and the agent (the broker and the
-board's API read identity from it). Sessions last 15 minutes; the supervisor renews them each tick through
+fixed execution role (never a role per run), with session tags naming the workspace, the run, the agent and the
+connection (``ws``, ``run``, ``agent``, ``connection``: the roles' IAM conditions read them) and the session name
+``<run ULID>.<agent index>`` (the broker and the board's API read identity from it: connectors/identity.py). Sessions last 15 minutes; the supervisor renews them each tick through
 the launcher, which refuses the agents of a stopped run, so a stop cuts that run's sessions within 15
 minutes although the roles are shared, and its MicroVMs are ended at once anyway.
 
@@ -16,10 +16,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, NoReturn
 
-from engineering.runtime.interface import MAX_SESSION_NAME, ROLES, RuntimeRefused, check_id
+from engineering.runtime.interface import (
+    MAX_SESSION_NAME,
+    ROLES,
+    WORKSPACE,
+    RuntimeRefused,
+    agent_index,
+    check_id,
+    check_run_id,
+)
 from engineering.runtime.tokens import TokenNotStorable
 
 SESSION_SECONDS: Final = 15 * 60
+MAX_AGENT_INDEX: Final = 999
 #: A session with less than this left is renewed at the next tick.
 RENEW_MARGIN_SECONDS: Final = 6 * 60
 
@@ -48,9 +57,12 @@ class RoleSession:
                 'Expiration': datetime.fromtimestamp(self.expires_at, UTC).isoformat()}
 
 
-def session_name(run_id: str, agent_id: str) -> str:
-    """``<run>.<agent>``: refused, never cut, past IAM's 64 characters, so no two agents share one identity."""
-    name = f'{check_id("run_id", run_id)}.{check_id("agent_id", agent_id)}'
+def session_name(run_id: str, index: int) -> str:
+    """``<run ULID>.<agent index>``, as the broker and the board read it (connectors/identity.py); refused, never
+    cut, past IAM's 64 characters, so no two agents share one identity."""
+    if not 0 <= index <= MAX_AGENT_INDEX:
+        raise RuntimeRefused(f'an agent index is 0-{MAX_AGENT_INDEX}')
+    name = f'{check_run_id(run_id)}.{index}'
     if len(name) > MAX_SESSION_NAME:
         raise RuntimeRefused(f'session name {name!r} is over {MAX_SESSION_NAME} characters')
     return name
@@ -67,11 +79,13 @@ class Launcher:
     def session_for(self, *, role: str, connection: str, run_id: str, agent_id: str, stopped: bool) -> RoleSession:
         if stopped:
             raise RunStopped(f'run {run_id} is stopped: its agents get no new session')
+        # The tags the roles' conditions read (the bus source, the S3 prefixes, the queues); the session name the
+        # broker and the board read. Both from the same ids, so they never disagree.
         answer = self._sts.assume_role(
-            RoleArn=self._roles[role], RoleSessionName=session_name(run_id, agent_id),
+            RoleArn=self._roles[role], RoleSessionName=session_name(run_id, agent_index(agent_id, role)),
             DurationSeconds=SESSION_SECONDS,
-            Tags=[{'Key': 'connection', 'Value': connection}, {'Key': 'run_id', 'Value': run_id},
-                  {'Key': 'agent_id', 'Value': agent_id}])
+            Tags=[{'Key': 'ws', 'Value': WORKSPACE}, {'Key': 'run', 'Value': run_id},
+                  {'Key': 'agent', 'Value': agent_id}, {'Key': 'connection', 'Value': check_id('connection', connection)}])
         credentials = answer['Credentials']
         expiration = credentials['Expiration']
         expires = expiration.timestamp() if isinstance(expiration, datetime) else float(expiration)

@@ -10,7 +10,7 @@ from engineering.runtime.ports import Lease
 from engineering.runtime.sessions import AgentSession
 
 T = caps.Timings()
-SESSION = AgentSession(run_id='run-1', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
+SESSION = AgentSession(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
                        egress=(), connection='repo-1', commit='a' * 40, paths=(), harness=('true',), vm_id='vm',
                        endpoint='https://vm.example.org', started_at=0, status='working', exec_id='e1')
 

@@ -88,7 +88,9 @@ describe('with -c engineeringAgents=true', () => {
 
   it('has one fixed role per agent role, trusted only by the launcher', () => {
     const roles = template.findResources('AWS::IAM::Role', { Properties: { RoleName: Match.stringLikeRegexp('^voc-eng-') } });
-    expect(Object.keys(roles)).toHaveLength(12);
+    // The broker's and the board's 13 roles (connectors/identity.py AGENT_ROLES), named as their pattern reads them.
+    expect(Object.keys(roles)).toHaveLength(13);
+    template.hasResourceProperties('AWS::IAM::Role', { RoleName: 'voc-eng-gate-runner' });
     template.hasResourceProperties('AWS::IAM::Role', {
       RoleName: 'voc-eng-fixer',
       AssumeRolePolicyDocument: Match.objectLike({
@@ -102,9 +104,9 @@ describe('with -c engineeringAgents=true', () => {
 
   it('scopes an agent role to its session: its cache and run, its own keys and queues, its own bus source', () => {
     const agent = policyText(template, 'EngineeringAgentFixerRole');
-    expect(agent).toContain('engineering/runs/${aws:PrincipalTag/run_id}/${aws:PrincipalTag/agent_id}/*');
+    expect(agent).toContain('engineering/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
     expect(agent).toContain('engineering/cache/${aws:PrincipalTag/connection}/*');
-    expect(agent).toContain('voc-eng_${aws:PrincipalTag/run_id}_role_fixer');
+    expect(agent).toContain('voc-eng_${aws:PrincipalTag/run}_role_fixer');
     expect(agent).not.toMatch(/s3:DeleteObject|s3:\*|dynamodb:|iam:|lambda:/);
   });
 
@@ -122,6 +124,11 @@ describe('with -c engineeringAgents=true', () => {
     }
   });
 
+  it('lets the run coordinator speak on the bus only as its run\'s conductor', () => {
+    expect(policyText(template, 'EngineeringAgentCoordinatorRole'))
+      .toContain('voc.engineering/conductor/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}');
+  });
+
   it('denies an agent role any role chaining and any bus source but its own', () => {
     expect(count(template, 'AWS::IAM::Policy', {
       Roles: [{ Ref: Match.stringLikeRegexp('EngineeringAgentFixerRole') }],
@@ -130,7 +137,7 @@ describe('with -c engineeringAgents=true', () => {
           Match.objectLike({ Sid: 'NoRoleChaining', Effect: 'Deny', Action: ['sts:AssumeRole', 'sts:TagSession'] }),
           Match.objectLike({
             Sid: 'OwnEventSourceOnly', Effect: 'Deny', Action: 'events:PutEvents',
-            Condition: { StringNotEquals: { 'events:source': 'voc.engineering.${aws:PrincipalTag/run_id}.${aws:PrincipalTag/agent_id}' } },
+            Condition: { StringNotEquals: { 'events:source': 'voc.engineering/agent/fixer/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}' } },
           }),
         ]),
       }),

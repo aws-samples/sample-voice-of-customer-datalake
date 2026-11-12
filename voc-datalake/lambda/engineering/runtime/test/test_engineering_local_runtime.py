@@ -25,7 +25,7 @@ from engineering.runtime.unit_runner import (
     serve,
 )
 
-SPEC = AgentSpec(run_id='run-1', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
+SPEC = AgentSpec(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
                  egress=('pypi.org',), connection='repo-1')
 
 
@@ -167,7 +167,7 @@ def test_commands_see_only_the_passed_environment_and_only_repository_code_the_t
 
 def test_the_agents_own_commands_get_its_ids_and_bucket_and_repository_code_none_of_them(
         tmp_path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv('VOC_RUN_ID', 'run-1')
+    monkeypatch.setenv('VOC_RUN_ID', '01JD3R4NZXQ7Y2W8K4M6P9T0AB')
     monkeypatch.setenv('VOC_AGENT_ID', 'fixer-1')
     runner = _runner(tmp_path)
     runner.keep_session({'Version': 1, 'AccessKeyId': 'ASIAFAKE', 'SecretAccessKey': 'fake', 'SessionToken': 'fake',
@@ -176,7 +176,7 @@ def test_the_agents_own_commands_get_its_ids_and_bucket_and_repository_code_none
     show = [sys.executable, '-c', "import os; print(os.environ.get('VOC_RUN_ID'), os.environ.get('VOC_BUCKET'))"]
     agent = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10, 'repository_code': False}))
     code = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10}))
-    assert agent['stdout_tail'].split() == ['run-1', 'voc-raw-test']
+    assert agent['stdout_tail'].split() == ['01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'voc-raw-test']
     assert code['stdout_tail'].split() == ['None', 'None']
 
 

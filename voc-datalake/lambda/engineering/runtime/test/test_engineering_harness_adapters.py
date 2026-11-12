@@ -56,9 +56,9 @@ def test_a_pause_in_the_inbox_saves_a_checkpoint_and_pauses(tmp_path):
     assert saved[-1]['plan'] == ['fix', 'test']
     assert saved[-1]['position']['task_id'] == 'task-1'
     keys = sorted(key for key in w.store.objects if '/checkpoints/' in key)
-    assert keys[-1].startswith('engineering/runs/run-1/fixer-1/checkpoints/000002-')
+    assert keys[-1].startswith('engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/checkpoints/000002-')
     # Each checkpoint carries the working tree as a patch under the agent's own keys.
-    assert saved[-1]['patch'].startswith('engineering/runs/run-1/fixer-1/patches/checkpoint-000002-')
+    assert saved[-1]['patch'].startswith('engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/patches/checkpoint-000002-')
     assert saved[-1]['patch'] in w.store.objects
 
 
@@ -147,7 +147,7 @@ def _cli(tmp_path: Any, **kwargs: Any) -> ClaudeCli:
     binary.chmod(0o755)
     defaults: dict[str, Any] = {
         'binary': str(binary), 'version': '9.9.9', 'model_id': 'model-a', 'home_root': str(tmp_path / 'home' / 'cli'),
-        'region': 'eu-west-1', 'aws_config': '/run/voc/aws-config', 'tool_env': {'VOC_RUN_ID': 'run-1'},
+        'region': 'eu-west-1', 'aws_config': '/run/voc/aws-config', 'tool_env': {'VOC_RUN_ID': '01JD3R4NZXQ7Y2W8K4M6P9T0AB'},
         'run': lambda *args, **_kw: subprocess.CompletedProcess(args, 0, stdout='9.9.9 (CLI)\n', stderr=''),
         'killpg': _killpg, 'sleep': lambda _s: None}
     return ClaudeCli(**{**defaults, **kwargs})

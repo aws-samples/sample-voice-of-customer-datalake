@@ -13,7 +13,7 @@ from engineering.runtime.launcher import RoleSession
 from engineering.runtime.tokens import MAX_TOKEN_SECONDS
 from engineering.runtime.unit_runner import MASK
 
-SPEC = AgentSpec(run_id='run-1', agent_id='fixer-1', role='fixer', task_id='task-1', language='rust',
+SPEC = AgentSpec(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='rust',
                  egress=('crates.io',), connection='repo-1')
 IMAGES = {'rust': 'arn:aws:lambda:us-east-1:111111111111:microvm-image/voc-engineering-rust:1'}
 VM = MicroVm('mvm-1', 'fixer-1', 'https://x.example.org')

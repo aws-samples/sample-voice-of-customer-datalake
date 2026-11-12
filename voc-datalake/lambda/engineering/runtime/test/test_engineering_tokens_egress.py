@@ -1,11 +1,12 @@
 """Auth tokens are never stored; egress is an allowlist of plain hosts, and no MicroVM reaches the host."""
 import json
 import pickle
+import re
 
 import pytest
 
 from engineering.runtime import egress
-from engineering.runtime.interface import AgentSpec, CacheMount, Command, RuntimeRefused
+from engineering.runtime.interface import ROLES, AgentSpec, CacheMount, Command, RuntimeRefused, agent_index
 from engineering.runtime.launcher import session_name
 from engineering.runtime.tokens import (
     MAX_TOKEN_SECONDS,
@@ -67,7 +68,7 @@ def test_an_agent_that_runs_no_code_gets_no_registry_and_no_extra_host():
 
 
 def test_no_allowlist_holds_a_repository_host():
-    for role in ('fixer', 'committer', 'pr_author'):
+    for role in ('fixer', 'committer', 'pr-author'):
         hosts = egress.egress_allowlist(role=role, language='node', region='us-east-1', bucket='voc-raw-test')
         assert not [host for host in hosts if 'github' in host or 'gitlab' in host]
 
@@ -93,36 +94,64 @@ def test_bad_configuration_is_refused(language, region, bucket, extras):
 @pytest.mark.parametrize('value', ['', 'a/b', '../x', 'x' * 64, 'a_b'],
                          ids=['empty', 'slash', 'dots', 'long', 'underscore'])
 def test_a_spec_refuses_ids_that_are_not_safe_keys(field, value):
-    fields = {'run_id': 'run-1', 'agent_id': 'a-1', 'role': 'fixer', 'task_id': 't-1', 'language': 'python',
-              'egress': (), 'connection': 'repo-1', field: value}
-    with pytest.raises(RuntimeRefused):
+    # A valid spec but for ``field``, so each case is refused for its own field (the message names it).
+    fields = {'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id': 'fixer-1', 'role': 'fixer', 'task_id': 't-1',
+              'language': 'python', 'egress': (), 'connection': 'repo-1', field: value}
+    AgentSpec(**{**fields, field: {'agent_id': 'fixer-1', 'task_id': 't-1', 'connection': 'repo-1'}[field]})
+    with pytest.raises(RuntimeRefused, match=field):
         AgentSpec(**fields)
 
 
-def test_a_run_and_agent_id_too_long_for_one_session_name_are_refused_never_cut():
-    with pytest.raises(RuntimeRefused, match='session name'):
-        AgentSpec(run_id='r' * 40, agent_id='a' * 30, role='fixer', task_id='t', language='python', egress=(),
+RUN = '01JCZQ3N8K4V7R2T6W9Y0XB5MD'
+
+
+@pytest.mark.parametrize(('run_id', 'agent_id', 'refused'), [
+    ('run-1', 'fixer-1', 'ULID'), (RUN.lower(), 'fixer-1', 'ULID'), (RUN, 'fixer', 'fixer-<index>'),
+    (RUN, 'hunter-1', 'fixer-<index>'), (RUN, 'fixer-01', 'fixer-<index>'), (RUN, 'fixer-1000', 'fixer-<index>'),
+], ids=['not-a-ulid', 'lower-case', 'no-index', 'another-role', 'leading-zero', 'index-too-big'])
+def test_a_spec_takes_only_a_ulid_run_and_an_agent_of_its_own_role(run_id, agent_id, refused):
+    with pytest.raises(RuntimeRefused, match=refused):
+        AgentSpec(run_id=run_id, agent_id=agent_id, role='fixer', task_id='t', language='python', egress=(),
                   connection='k')
-    with pytest.raises(RuntimeRefused, match='over 64'):
-        session_name('r' * 40, 'a' * 30)
-    assert session_name('run-1', 'fixer-1') == 'run-1.fixer-1'
 
 
 def test_a_ulid_run_id_and_a_short_agent_index_fit_one_session_name():
     # A run id is a 26-character ULID; an agent is its role and a short index: well within STS's 64 characters.
-    run_id = '01JCZQ3N8K4V7R2T6W9Y0XB5MD'
-    for agent_id in ('fixer-1', 'gate-runner-12', 'commit-reviewer-3'):
-        spec = AgentSpec(run_id=run_id, agent_id=agent_id, role='fixer', task_id='t', language='python', egress=(),
+    for role, agent_id, index in (('fixer', 'fixer-1', 1), ('gate-runner', 'gate-runner-12', 12),
+                                  ('commit-reviewer', 'commit-reviewer-999', 999)):
+        spec = AgentSpec(run_id=RUN, agent_id=agent_id, role=role, task_id='t', language='python', egress=(),
                          connection='k')
-        name = session_name(spec.run_id, spec.agent_id)
-        assert name == f'{run_id}.{agent_id}'
+        name = session_name(spec.run_id, agent_index(spec.agent_id, spec.role))
+        assert name == f'{RUN}.{index}'
         assert len(name) <= 64
+    for index in (-1, 1000):
+        with pytest.raises(RuntimeRefused, match='0-999'):
+            session_name(RUN, index)
+
+
+#: The broker's and the board's reading of a caller (connectors/identity.py, on the broker's branch): the session
+#: name and the roles, quoted from there.
+BROKER_SESSION = re.compile(r'(?P<run>[0-9A-HJKMNP-TV-Z]{26})\.(?P<agent>0|[1-9][0-9]{0,2})')
+BROKER_ROLES = frozenset({
+    'mapper', 'understander', 'hunter', 'fixer', 'builder', 'committer', 'commit-reviewer', 'gate-runner',
+    'pr-author', 'pr-reviewer', 'final-go', 'coordinator', 'coach',
+})
+
+
+def test_the_launchers_session_is_one_the_broker_and_the_board_read_as_that_agent():
+    assert ROLES == BROKER_ROLES
+    for role, agent_id in (('fixer', 'fixer-1'), ('gate-runner', 'gate-runner-2'), ('coordinator', 'coordinator-0')):
+        index = agent_index(agent_id, role)
+        read = BROKER_SESSION.fullmatch(session_name(RUN, index))
+        assert read is not None
+        assert (read.group('run'), int(read.group('agent'))) == (RUN, index)
 
 
 def test_a_spec_refuses_an_unknown_role_and_its_environment_holds_no_credential():
     with pytest.raises(RuntimeRefused, match='role'):
-        AgentSpec(run_id='r', agent_id='a', role='admin', task_id='t', language='python', egress=(), connection='k')
-    env = AgentSpec(run_id='r', agent_id='a', role='fixer', task_id='t', language='python', egress=(),
+        AgentSpec(run_id=RUN, agent_id='admin-1', role='admin', task_id='t', language='python', egress=(),
+                  connection='k')
+    env = AgentSpec(run_id=RUN, agent_id='fixer-1', role='fixer', task_id='t', language='python', egress=(),
                     connection='k', restore_key='engineering/runs/r/a/checkpoints/000001-x.json').environment()
     assert env['VOC_RESTORE_KEY'] == 'engineering/runs/r/a/checkpoints/000001-x.json'
     assert not [name for name in env if 'TOKEN' in name or 'SECRET' in name or name.startswith('AWS_')]

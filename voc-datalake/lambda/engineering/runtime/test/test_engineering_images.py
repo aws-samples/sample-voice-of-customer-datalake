@@ -37,7 +37,7 @@ def _newer_than_3_11(path: Path) -> list[str]:
     return found
 
 
-@pytest.mark.parametrize('path', SHIPPED, ids=lambda path: str(path.relative_to(RUNTIME)))
+@pytest.mark.parametrize('path', SHIPPED, ids=lambda path: str(path.relative_to(RUNTIME.parent)))
 def test_what_the_images_run_needs_nothing_newer_than_python_3_11(path):
     assert _newer_than_3_11(path) == []
 
@@ -73,7 +73,7 @@ def _module(path: Path) -> str:
     return '.'.join(parts[:-1] if parts[-1] == '__init__' else parts)
 
 
-@pytest.mark.parametrize('path', SHIPPED, ids=lambda path: str(path.relative_to(RUNTIME)))
+@pytest.mark.parametrize('path', SHIPPED, ids=lambda path: str(path.relative_to(RUNTIME.parent)))
 def test_what_the_images_run_imports_only_the_standard_library_boto3_and_each_other(path):
     shipped = {_module(module) for module in SHIPPED} | {'engineering'}
     foreign = {name for name in _imports(path)
@@ -147,7 +147,7 @@ def test_the_stack_has_an_execution_role_for_exactly_the_runtimes_agent_roles():
     stack = (IMAGES.parent / 'lib' / 'stacks' / 'engineering-runtime.ts').read_text()
     listed = re.search(r'const AGENT_ROLES = \[(.*?)\];', stack, re.DOTALL)
     assert listed is not None
-    assert set(re.findall(r"'([a-z_]+)'", listed.group(1))) == set(ROLES)
+    assert set(re.findall(r"'([a-z-]+)'", listed.group(1))) == set(ROLES)
 
 
 def test_the_base_keeps_the_agents_home_from_repository_code():

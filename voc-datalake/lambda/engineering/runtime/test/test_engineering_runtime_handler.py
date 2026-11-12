@@ -16,7 +16,7 @@ from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
 from shared import aws as shared_aws
 
 SCHEDULE = 'voc-engineering-supervisor'
-LAUNCH = {'action': 'launch', 'run_id': 'run-1', 'agent_id': 'fixer-1', 'role': 'fixer', 'task_id': 'task-1',
+LAUNCH = {'action': 'launch', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id': 'fixer-1', 'role': 'fixer', 'task_id': 'task-1',
           'language': 'python', 'connection': 'conn-1', 'commit': COMMIT, 'paths': ['src'],
           'harness': [sys.executable, '-c', 'pass']}
 
@@ -44,8 +44,8 @@ def _state(events: Any) -> str:
 
 def test_launch_starts_the_agents_microvm_and_records_its_session(wired: Any):
     answer = handler.lambda_handler(LAUNCH, None)
-    session = handler._supervisor().sessions.get('run-1', 'fixer-1')
-    assert answer == {'run_id': 'run-1', 'agent_id': 'fixer-1', 'status': 'booting'}
+    session = handler._supervisor().sessions.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
+    assert answer == {'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id': 'fixer-1', 'status': 'booting'}
     assert session is not None
     assert ('pypi.org' in session.egress, session.paths, session.connection) == (True, ('src',), 'conn-1')
     assert _state(wired) == 'DISABLED'
@@ -114,9 +114,9 @@ def test_until_the_board_and_bus_land_a_tick_with_live_sessions_moves_nothing_ra
         wired: Any, capsys: pytest.CaptureFixture[str]):
     assert wired is not None
     handler.lambda_handler(LAUNCH, None)
-    before = handler._supervisor().sessions.get('run-1', 'fixer-1')
+    before = handler._supervisor().sessions.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
     assert handler.lambda_handler({'action': 'tick'}, None) == {'sessions': {'booting': 1}}
-    after = handler._supervisor().sessions.get('run-1', 'fixer-1')
+    after = handler._supervisor().sessions.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
     assert before is not None
     assert after == before
     assert _metric(capsys.readouterr().out, 'EngineeringLiveSessions') == 1
@@ -145,7 +145,7 @@ def test_a_signal_reaches_the_supervisor_and_an_unknown_one_is_refused(wired: An
     assert wired is not None
     handler.lambda_handler(LAUNCH, None)
     with pytest.raises(RuntimeRefused, match='unknown signal'):
-        handler.lambda_handler({'action': 'signal', 'run_id': 'run-1', 'signal': 'reboot'}, None)
-    answer = handler.lambda_handler({'action': 'signal', 'run_id': 'run-1', 'agent_id': 'fixer-1',
+        handler.lambda_handler({'action': 'signal', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'signal': 'reboot'}, None)
+    answer = handler.lambda_handler({'action': 'signal', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id': 'fixer-1',
                                      'signal': 'stop_now'}, None)
     assert answer == {'agents': {'fixer-1': 'stopped'}}

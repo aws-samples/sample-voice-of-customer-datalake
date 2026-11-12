@@ -128,9 +128,9 @@ def world(tmp_path: Any, *, role: str = 'fixer') -> World:
     with open(os.path.join(checkout, 'src', 'parse.py'), 'w') as stream:
         stream.write('def parse(text):\n    return text.split()\n')
     runner, board, inbox, broker, store = FakeRunner(), FakeBoard(), FakeInbox(), FakeBroker(), FakeStore()
-    context = AgentContext(run_id='run-1', agent_id='fixer-1', task_id='task-1', role=role, brief=BRIEF,
+    context = AgentContext(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', task_id='task-1', role=role, brief=BRIEF,
                            workspace=Workspace(checkout), runner=runner, board=board, broker=broker,
                            store=store, status=StatusReport(home), patch_dir=os.path.join(home, '.voc', 'patches'),
-                           own_prefix='engineering/runs/run-1/fixer-1/')
+                           own_prefix='engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/')
     session = AgentSession(context=context, tools=ToolBox(context), inbox=inbox, store=store)
     return World(session, runner, board, inbox, broker, store, checkout, home)

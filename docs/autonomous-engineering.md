@@ -382,9 +382,12 @@ continues it in a new one once the wait closes.
   repository code, its language's package registries (plus at most 10 configured hosts, a registry mirror for example).
 - **Credentials from a launcher, never in the image.** A MicroVM starts with no AWS credential. The launcher (the
   supervisor's own code, outside every MicroVM) assumes the agent role's ONE fixed execution role (one per agent role,
-  never one per run) with session tags naming the connection, the run and the agent, and a session name naming the
-  run and the agent (`<run>.<agent>`, which the broker and the board's API read as the caller's identity; ids that
-  would not fit IAM's 64 characters are refused, never cut, so no two agents share an identity). The session lasts
+  never one per run; its IAM name `voc-eng-<role>` with the stack's naming, the roles spelled as the broker spells
+  them, `commit-reviewer`, `gate-runner`) with session tags naming the workspace, the run, the agent and the
+  connection (`ws`, `run`, `agent`, `connection`), and the session name `<run>.<agent index>` (a ULID run id and an
+  index of 0 to 999, which the broker and the board's API read as the caller's identity, the agent being
+  `<role>-<index>`: an agent's identity is its role's IAM name and that session name together, which always fit IAM's
+  limits, so no two agents of a run share one). The session lasts
   15 minutes and goes to the runner, which keeps it as the agent user's `credential_process` answer in `/run/voc`, a
   directory only root writes (so nothing planted there can redirect root's writes), readable by the agent user only
   and named to the agent's own commands, never to repository code. The supervisor renews it each tick it has under
@@ -429,7 +432,8 @@ continues it in a new one once the wait closes.
   after the run, so no other agent's key matches), reads only its own inbox and its run's queue for its role (queues
   `voc-eng_<run>_<agent>` and `voc-eng_<run>_role_<role>`; ids hold no `_`, so no two pairs of ids share a name), may
   put events on the bus only with its own source
-  (`voc.engineering.<run>.<agent>`, an explicit deny), calls the allowlisted models, and deletes nothing. No MicroVM
+  (`voc.engineering/agent/<role>/<ws>/<run>/<agent>`, the run coordinator's `voc.engineering/conductor/<ws>/<run>`;
+  an explicit deny), calls the allowlisted models, and deletes nothing. No MicroVM
   auth token is ever put in an event, a log, a row or a checkpoint: it is minted when needed (at most 60 minutes),
   refreshed 5 minutes before it lapses, held in memory only, and refuses to be serialised.
 - **Sessions.** One row per agent of a run in voc-agents, `ENGRUN#<run>` / `AGENT#<agent>` (partitions of their own,

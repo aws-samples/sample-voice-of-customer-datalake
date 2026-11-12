@@ -19,17 +19,24 @@ if TYPE_CHECKING:
     from engineering.runtime.launcher import RoleSession
 
 MAX_ID_LENGTH: Final = 63
-#: A run, agent, task or connection id: it becomes S3 keys, DynamoDB sort keys, session tags and queue names.
-#: No "_": the queue names join ids with it (``voc-eng_<run>_<agent>``), so no two pairs of ids share a name.
+#: A task or connection id: it becomes S3 keys, DynamoDB sort keys and session tags.
 _ID_RE: Final = re.compile(rf'^[A-Za-z0-9-]{{1,{MAX_ID_LENGTH}}}\Z')
-#: IAM's limit on a session name, ``<run>.<agent>`` (launcher.session_name): never cut, so never shared.
+#: A run id is a ULID (Crockford base32, upper case), as the broker and the board read it from the session name.
+_RUN_RE: Final = re.compile(r'^[0-9A-HJKMNP-TV-Z]{26}\Z')
+#: An agent is ``<role>-<index>`` (``fixer-1``), as the board and the bus name it; the index is 0-999.
+_AGENT_RE: Final = re.compile(r'^(?P<role>[a-z]+(?:-[a-z]+)*)-(?P<index>0|[1-9][0-9]{0,2})\Z')
+#: IAM's limit on a session name, ``<run>.<agent index>`` (launcher.session_name): never cut, so never shared.
 MAX_SESSION_NAME: Final = 64
+#: The workspace every run belongs to until there is more than one (the board's and the bus's ``ws``).
+WORKSPACE: Final = 'default'
 
-#: The agents of the catalog (docs/autonomous-engineering.md → The agent catalog). The first set runs
-#: repository code; the writers (committer, pr_author, pr_reviewer) reach the host through the broker only.
-CODE_ROLES: Final = frozenset({'hunter', 'fixer', 'builder', 'gate_runner'})
+#: The agents of the catalog, spelled as the broker's identity spells them (connectors/identity.py AGENT_ROLES,
+#: on the broker's branch: the merge makes this that import). The first set runs repository code; the writers
+#: (committer, pr-author, pr-reviewer) reach the host through the broker only.
+CODE_ROLES: Final = frozenset({'hunter', 'fixer', 'builder', 'gate-runner'})
 ROLES: Final = CODE_ROLES | frozenset({
-    'committer', 'pr_author', 'pr_reviewer', 'understander', 'commit_reviewer', 'final_go', 'coordinator', 'coach'})
+    'mapper', 'understander', 'committer', 'commit-reviewer', 'pr-author', 'pr-reviewer', 'final-go', 'coordinator',
+    'coach'})
 
 
 class RuntimeRefused(ValueError):
@@ -37,10 +44,25 @@ class RuntimeRefused(ValueError):
 
 
 def check_id(kind: str, value: str) -> str:
-    """``value`` when it is a safe id (1-63 of ``[A-Za-z0-9-]``: no ``_``), else ``RuntimeRefused``."""
+    """``value`` when it is a safe id (1-63 of ``[A-Za-z0-9-]``), else ``RuntimeRefused``."""
     if not _ID_RE.match(value):
         raise RuntimeRefused(f'{kind} must be 1-{MAX_ID_LENGTH} letters, digits or "-"')
     return value
+
+
+def check_run_id(run_id: str) -> str:
+    """``run_id`` when it is a ULID, else ``RuntimeRefused``."""
+    if not _RUN_RE.match(run_id):
+        raise RuntimeRefused('run_id must be a ULID (26 characters of Crockford base32, upper case)')
+    return run_id
+
+
+def agent_index(agent_id: str, role: str) -> int:
+    """The index of ``agent_id`` (``<role>-<index>``) when it is an agent of ``role``, else ``RuntimeRefused``."""
+    match = _AGENT_RE.match(agent_id)
+    if match is None or match.group('role') != role:
+        raise RuntimeRefused(f'agent_id must be "{role}-<index>" (an index of 0-999)')
+    return int(match.group('index'))
 
 
 @dataclass(frozen=True)
@@ -61,14 +83,12 @@ class AgentSpec:
     restore_key: str | None = None
 
     def __post_init__(self) -> None:
-        check_id('run_id', self.run_id)
-        check_id('agent_id', self.agent_id)
-        check_id('task_id', self.task_id)
-        check_id('connection', self.connection)
-        if len(self.run_id) + 1 + len(self.agent_id) > MAX_SESSION_NAME:
-            raise RuntimeRefused(f'run_id and agent_id together must fit a {MAX_SESSION_NAME}-character session name')
         if self.role not in ROLES:
             raise RuntimeRefused(f'unknown agent role {self.role!r}')
+        check_run_id(self.run_id)
+        agent_index(self.agent_id, self.role)
+        check_id('task_id', self.task_id)
+        check_id('connection', self.connection)
 
     def environment(self) -> dict[str, str]:
         """What the harness reads: ids and keys, never a credential (those come from the launcher)."""

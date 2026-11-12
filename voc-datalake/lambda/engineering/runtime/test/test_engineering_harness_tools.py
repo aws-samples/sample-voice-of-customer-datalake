@@ -124,7 +124,7 @@ def test_an_agent_that_runs_no_code_gets_no_code_tools(tmp_path):
 def test_progress_goes_to_the_board_and_the_status_report(tmp_path):
     w = world(tmp_path)
     w.session.tools.call('report_progress', {'step': 'reproduced the failure'})
-    assert w.board.progress_seen == [('run-1', 'task-1', 'fixer-1', 'reproduced the failure')]
+    assert w.board.progress_seen == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'fixer-1', 'reproduced the failure')]
     status = json.loads((tmp_path / 'home' / '.voc' / 'status.json').read_text())
     assert (status['step'], status['recent_tools']) == ('reproduced the failure', ['report_progress'])
 
@@ -133,9 +133,9 @@ def test_work_is_submitted_as_a_patch_under_the_agents_own_keys_through_the_agen
     w = world(tmp_path)
     result = w.session.tools.call('submit_work', {'summary': 'fixed the split'})
     key = json.loads(result.text)['patch']
-    assert key.startswith('engineering/runs/run-1/fixer-1/patches/task-1-')
+    assert key.startswith('engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/patches/task-1-')
     assert w.store.objects[key].startswith(b'diff --git')
-    assert w.broker.submitted == [('run-1', 'fixer-1', 'task-1', key, 'fixed the split')]
+    assert w.broker.submitted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'task-1', key, 'fixed the split')]
     # Git ran as the agent with the checkout's hardened prefix, never as repository code.
     for call in w.runner.calls:
         assert call['argv'][:3] == ['/usr/bin/env', '-C', 'repo']
@@ -217,7 +217,7 @@ def test_a_hard_link_the_patch_does_not_hold_is_fine(tmp_path):
     (tmp_path / 'repo' / 'target' / 'bin').write_text('x')
     os.link(tmp_path / 'repo' / 'target' / 'bin', tmp_path / 'repo' / 'target' / 'bin-copy')
     saved = json.loads(w.store.objects[w.session.checkpoint(turn=1)])
-    assert saved['patch'].startswith('engineering/runs/run-1/fixer-1/patches/checkpoint-000001-')
+    assert saved['patch'].startswith('engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/patches/checkpoint-000001-')
 
 
 @pytest.mark.parametrize('path', ['src/../x', 'src/.git/config', 'src/gone-dir/x'],
