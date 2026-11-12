@@ -57,6 +57,13 @@ describe('sessionExpiry', () => {
       expect(refusedWorkspaceIds()).toStrictEqual([])
     })
 
+    it("forgets every workspace's saved assistant, draft and filter records for whoever signs in next", () => {
+      window.sessionStorage.setItem('voc-assistant-ui:w/juniper', '{"state":{"open":true}}')
+      endExpiredSession()
+
+      expect(window.sessionStorage.getItem('voc-assistant-ui:w/juniper')).toBeNull()
+    })
+
     it('navigates once however many callers discover the dead session', () => {
       // Concurrent requests 401 together, and all three callers share this
       // seam, so this is the normal case rather than an edge one.

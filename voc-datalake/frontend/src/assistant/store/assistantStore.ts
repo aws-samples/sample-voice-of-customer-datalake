@@ -9,7 +9,10 @@
  * notifications and the active thread id in localStorage, and open/closed in
  * sessionStorage (per tab: opening the panel in one tab never opens it in
  * another; `tabScopedStorage`). Thread contents never touch either storage:
- * they live in memory here and in DynamoDB through the sessions API.
+ * they live in memory here and in DynamoDB through the sessions API. Inside a
+ * workspace both halves are that workspace's own record
+ * (`workspace/workspaceStorage.ts`), so the conversation in view in one
+ * workspace never opens in another.
  *
  * Both stores reset when the user signs out (auth store `isAuthenticated`
  * flips to false), so the next person on the machine never sees the previous
@@ -24,6 +27,7 @@ import { newId } from '../agui/client'
 import { isValidSessionId } from '../sessions/schema'
 import { createThreadState, threadReducer } from '../thread/reducer'
 import { tabScopedStorage } from './tabScopedStorage'
+import { workspaceStorageName } from '../../workspace/workspaceStorage'
 import type { ThreadAction } from '../thread/reducer'
 import type { ThreadState } from '../thread/types'
 
@@ -110,7 +114,8 @@ export const useAssistantUiStore = create<AssistantUiState>()(
       reset: () => set({ ...UI_DEFAULTS, ...MEMORY_DEFAULTS }),
     }),
     {
-      name: 'voc-assistant-ui',
+      // Per workspace inside one (workspace/workspaceStorage.ts); unchanged outside.
+      name: workspaceStorageName('voc-assistant-ui'),
       // `open` is per tab (sessionStorage); the preferences stay shared (localStorage).
       storage: createJSONStorage(() => tabScopedStorage(['open'])),
       partialize: (s): PersistedUi => ({

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { z } from 'zod'
 import { versionedPersist } from './persistVersion'
+import { workspaceStorageName } from '../workspace/workspaceStorage'
 
 export interface ParsedReview {
   text: string
@@ -163,7 +164,8 @@ export const useManualImportStore = create<ManualImportState>()(
       }),
     }),
     {
-      name: 'voc-manual-import',
+      // Per workspace inside one (workspace/workspaceStorage.ts); unchanged outside.
+      name: workspaceStorageName('voc-manual-import'),
       partialize: (state): z.infer<typeof PersistedDraftSchema> => ({
         // Only persist draft data, not UI state. A text over the limit is never
         // stored: it could never be parsed, and reopening it in a later session

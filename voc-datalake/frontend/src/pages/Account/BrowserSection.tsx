@@ -1,7 +1,9 @@
 /**
  * @fileoverview Account → "This browser": what this browser keeps in its local
- * storage (`voc-config`: the API endpoint and a cached copy of the brand), and
- * "Reset local settings", which clears it. Moved from Administration → General's
+ * storage (`voc-config`: the API endpoint and a cached copy of the brand; inside
+ * a workspace its own `voc-config:w/{slug}`, workspace/workspaceStorage.ts), and
+ * "Reset local settings", which clears it: this page's config, and every other
+ * record of it in this browser (outside workspaces and in every workspace). Moved from Administration → General's
  * Danger zone in 5.09: it changes nothing on the server, so it is personal, and
  * a non-admin could not reach it on `/admin`. The "Go to settings" buttons shown
  * when no API endpoint is set (Dashboard, Feedback Forms, Scrapers) land here.
@@ -13,6 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { Monitor } from 'lucide-react'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { useConfigStore } from '../../store/configStore'
+import { forgetOtherRecords } from '../../workspace/workspaceStorage'
 
 /** What "Reset local settings" writes: the browser's config with nothing in it. */
 const CLEARED_CONFIG = { apiEndpoint: '', brandName: '', brandHandles: [], hashtags: [], urlsToTrack: [] }
@@ -36,7 +39,7 @@ function ResetLocalSettings() {
         message={t('dangerZone.resetConfirmMessage')}
         confirmLabel={t('dangerZone.resetConfirmLabel')}
         variant="danger"
-        onConfirm={() => { setConfig(CLEARED_CONFIG); setConfirming(false) }}
+        onConfirm={() => { setConfig(CLEARED_CONFIG); forgetOtherRecords('voc-config'); setConfirming(false) }}
         onCancel={() => { setConfirming(false) }}
       />
     </div>

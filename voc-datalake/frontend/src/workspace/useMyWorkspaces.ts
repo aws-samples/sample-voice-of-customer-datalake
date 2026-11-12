@@ -1,15 +1,26 @@
 /**
  * @fileoverview The caller's workspaces (`GET /me/workspaces`), one cache entry shared by the workspace gate and
- * the header's workspace menu (rendered only under the gate), and the last workspace this browser entered, which
+ * the header's workspace menu (rendered only under the gate), the server's answer for the current one
+ * (`GET /me/workspaces/current`), and the last workspace this browser entered, which
  * the picker highlights. The workspaces the server refused in this tab are in `refusedWorkspaces.ts`.
  *
  * @module workspace/useMyWorkspaces
  */
 import { useQuery } from '@tanstack/react-query'
-import { myWorkspacesKey, workspacesApi } from '../api/workspacesApi'
+import { currentWorkspaceKey, myWorkspacesKey, workspacesApi } from '../api/workspacesApi'
 
 export function useMyWorkspaces() {
   return useQuery({ queryKey: myWorkspacesKey(), queryFn: workspacesApi.list })
+}
+
+/**
+ * `GET /me/workspaces/current` for the workspace `id` (null: not asked): the workspace as the server resolves it,
+ * with the role it applies there. One cache entry per id, shared by the gate (which asks on entering) and the
+ * members page (which waits for that role). Not retried: both act on the first answer (a failure keeps the
+ * membership's role, or offers Try again for an unlisted entry), never a spinner through the client's retries.
+ */
+export function useServerWorkspace(id: string | null) {
+  return useQuery({ queryKey: currentWorkspaceKey(id ?? ''), queryFn: workspacesApi.current, enabled: id !== null, retry: false })
 }
 
 /** localStorage: the slug of the workspace last entered in this browser (a highlight, never a redirect). */

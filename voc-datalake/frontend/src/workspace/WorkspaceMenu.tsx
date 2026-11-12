@@ -1,7 +1,7 @@
 /**
  * @fileoverview The current workspace in the header (docs/multi-workspace.md): a WAI-ARIA menu button (the account
  * menu's behaviour, `useMenuButton`) named after the workspace and the caller's role there. Its menu lists the
- * caller's other workspaces, if any, then Members (`/members`, the workspace's members page). Choosing another
+ * caller's other workspaces, if any (not one the server refused in this tab, refusedWorkspaces.ts), then Members (`/members`, the workspace's members page). Choosing another
  * workspace is a full page load to `/w/{slug}/dashboard`, which starts with an empty cache (so once phase 2 keys the
  * data by workspace, no answer of this one is shown in the next). Nothing renders outside a workspace.
  *
@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom'
 import { Building2, ChevronDown, Users } from 'lucide-react'
 import { menuButtonParts, useMenuButton } from '../components/ProfileMenu/useMenuButton'
 import { useCurrentWorkspace } from './currentWorkspace'
+import { withoutRefused } from './refusedWorkspaces'
 import { useMyWorkspaces } from './useMyWorkspaces'
 import { workspaceUrl } from './workspacePath'
 
@@ -26,7 +27,8 @@ export default function WorkspaceMenu() {
   const menu = useMenuButton()
   const menuId = useId()
   if (current === null) return null
-  const others = (data ?? []).filter((workspace) => workspace.id !== current.id)
+  // A workspace the server refused in this tab is not offered (the gate would only answer not-found there).
+  const others = withoutRefused(data ?? []).filter((workspace) => workspace.id !== current.id)
 
   // The current workspace and its role are in the button's and the menu's accessible name (WAI-ARIA menu
   // pattern: inside role="menu" only the menu items are announced, so the block below is visual only).

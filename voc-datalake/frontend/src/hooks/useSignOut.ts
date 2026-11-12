@@ -8,6 +8,7 @@ import { authService } from '../services/auth'
 import { setCurrentWorkspace } from '../workspace/currentWorkspace'
 import { forgetPlatformEntries } from '../workspace/platformEntry'
 import { forgetRefused } from '../workspace/refusedWorkspaces'
+import { forgetWorkspaceStores } from '../workspace/workspaceStorage'
 
 /** Where a voluntary sign-out lands: the plain sign-in page, outside any `/w/{slug}` (docs/multi-workspace.md). */
 const SIGNED_OUT_PATH = '/login'
@@ -23,6 +24,7 @@ export function useSignOut(): () => void {
     forgetRefused()
     forgetPlatformEntries()
     authService.signOut()
+    forgetWorkspaceStores()
     window.location.assign(SIGNED_OUT_PATH)
   }, [queryClient])
 }

@@ -1,6 +1,7 @@
 /**
  * The header's workspace menu: nothing outside a workspace; inside one a WAI-ARIA menu button whose menu lists the
- * other workspaces (full page loads to `/w/{slug}/dashboard`), then Members (the in-app `/members` page).
+ * other workspaces (full page loads to `/w/{slug}/dashboard`; not one the server refused in this tab), then Members
+ * (the in-app `/members` page).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -14,6 +15,7 @@ vi.mock('../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetc
 
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { setCurrentWorkspace } from './currentWorkspace'
+import { forgetRefused, rememberRefused } from './refusedWorkspaces'
 import WorkspaceMenu from './WorkspaceMenu'
 import { ACME, JUNIPER } from '../test/workspaceFixtures'
 
@@ -33,7 +35,10 @@ function renderMenu(workspaces: readonly object[]) {
 const items = () => screen.getAllByRole('menuitem').map((item) => [item.textContent, item.getAttribute('href')])
 
 beforeEach(() => resetFetchApi())
-afterEach(() => setCurrentWorkspace(null))
+afterEach(() => {
+  setCurrentWorkspace(null)
+  forgetRefused()
+})
 
 describe('WorkspaceMenu', () => {
   it('renders nothing outside a workspace', () => {
@@ -41,9 +46,13 @@ describe('WorkspaceMenu', () => {
     expect(container).toHaveTextContent(/^Elsewhere$/)
   })
 
-  it('with one workspace, names it and offers only Members', async () => {
+  it.each<[string, readonly object[], readonly string[]]>([
+    ['with one workspace', [ACME], []],
+    ['when every other workspace was refused in this tab', [ACME, JUNIPER], [JUNIPER.id]],
+  ])('%s, names the current one and offers only Members', async (_case, workspaces, refused) => {
+    for (const id of refused) rememberRefused(id)
     act(() => setCurrentWorkspace(ACME))
-    renderMenu([ACME])
+    renderMenu(workspaces)
     await userEvent.click(await screen.findByRole('button', { name: 'Workspace: Acme Outfitters, Admin. Workspace menu' }))
     expect(items()).toStrictEqual([['Members', '/members']])
   })
@@ -57,6 +66,15 @@ describe('WorkspaceMenu', () => {
     expect(screen.getByRole('menu', { name: 'Workspace: Acme Outfitters, Admin. Switch workspace' })).toHaveTextContent(/Current workspace.*Acme Outfitters.*Admin/)
     expect(items()).toStrictEqual([['Juniper Trail Co.Editor', '/w/juniper/dashboard'], ['Members', '/members']])
     expect(screen.getByRole('menuitem', { name: /Juniper Trail Co./ })).toHaveFocus()
+  })
+
+  it('leaves out a workspace the server refused in this tab', async () => {
+    const field = { id: 'ws_01JCFLDT0000000000000000F1', slug: 'acme-field', name: 'Acme Outfitters Field Team', role: 'viewer' }
+    rememberRefused(JUNIPER.id)
+    act(() => setCurrentWorkspace(ACME))
+    renderMenu([ACME, field, JUNIPER])
+    await userEvent.click(await screen.findByRole('button', { name: /Switch workspace/ }))
+    expect(items()).toStrictEqual([['Acme Outfitters Field TeamViewer', '/w/acme-field/dashboard'], ['Members', '/members']])
   })
 
   it('opens from the keyboard and closes on Escape with focus back on the button', async () => {

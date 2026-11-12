@@ -30,14 +30,19 @@ export type PinnedRange = 'all' | '24h' | '48h' | '7d' | '14d' | '30d' | '90d'
  * Pins the time range before the SPA boots (configStore `voc-config`, persist
  * version 3, partial state; an older version would migrate a pinned `7d` to the
  * 14-day default): the saved session already carries a `voc-config`;
- * only the range changes.
+ * only the range changes. Under `/w/{slug}/` the page's own record,
+ * `voc-config:w/{slug}` (src/workspace/workspaceStorage.ts), is pinned instead,
+ * read from the address at each page load (the app's slug shape; a reserved
+ * word such as `/w/admin/` is a not-found page there, which shows no range).
  */
 export async function pinTimeRange(page: Page, range: PinnedRange): Promise<void> {
   await page.addInitScript((timeRange: string) => {
-    const raw = window.localStorage.getItem('voc-config')
+    const slug = /^\/w\/([a-z0-9][a-z0-9-]{1,38}[a-z0-9])(?=\/|$)/.exec(window.location.pathname)?.[1]
+    const key = slug === undefined ? 'voc-config' : `voc-config:w/${slug}`
+    const raw = window.localStorage.getItem(key)
     let blob: { state?: Record<string, unknown>; version?: number } = {}
     try { blob = raw === null ? {} : JSON.parse(raw) } catch { blob = {} }
-    window.localStorage.setItem('voc-config', JSON.stringify({ ...blob, state: { ...(blob.state ?? {}), timeRange }, version: 3 }))
+    window.localStorage.setItem(key, JSON.stringify({ ...blob, state: { ...(blob.state ?? {}), timeRange }, version: 3 }))
   }, range)
 }
 

@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createTestQueryClient } from '../../test/query-client'
 import { TestRouter } from '../../test/TestRouter'
 import { stubLocationAssign } from '../../test/location'
@@ -27,7 +27,13 @@ const ADA = { sub: 'sub-ada', role: 'admin', email: 'ada@example.com', name: 'Ad
 const VIC = { sub: 'sub-vic', role: 'viewer', email: 'vic@example.com', name: '', invited_by: 'sub-ada', joined_at: '' }
 
 function renderPage(workspace: CurrentWorkspace | null, routes: Record<string, RouteHandler> = {}, client = createTestQueryClient()) {
-  routeFetchApi({ 'GET /me/workspaces': () => ({ workspaces: [ACME, JUNIPER] }), [`GET ${MEMBERS}`]: () => ({ members: [ADA, VIC], next_cursor: null }), ...routes })
+  routeFetchApi({
+    'GET /me/workspaces': () => ({ workspaces: [ACME, JUNIPER] }),
+    // The role the server applies: the membership's, unless a spec routes its own.
+    'GET /me/workspaces/current': () => ({ workspace }),
+    [`GET ${MEMBERS}`]: () => ({ members: [ADA, VIC], next_cursor: null }),
+    ...routes,
+  })
   act(() => setCurrentWorkspace(workspace))
   return render(
     <QueryClientProvider client={client}>
@@ -167,6 +173,31 @@ describe('Members for a workspace admin', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Show more' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('The next page could not be loaded. Choose Show more to try again.')
     expect(screen.getByRole('button', { name: 'Show more' })).toBeEnabled()
+  })
+})
+
+describe('Members for a platform admin who is also an editor here', () => {
+  const READ_ONLY = 'Only the workspace\'s admins can add members, change roles or remove members.'
+
+  it('shows the loading state, never the read-only page, until /current gives the role the server applies', async () => {
+    const server: { answer?: (body: unknown) => void } = {}
+    const current = new Promise<unknown>((resolve) => { server.answer = resolve })
+    renderPage(JUNIPER, { 'GET /me/workspaces/current': () => current })
+    expect(screen.getByRole('status')).toHaveTextContent('Loading')
+    expect(screen.queryByText(READ_ONLY)).not.toBeInTheDocument()
+    act(() => server.answer?.({ workspace: { ...JUNIPER, role: 'admin' } }))
+    expect(await screen.findByRole('button', { name: 'Add member' })).toBeInTheDocument()
+    expect(screen.queryByText(READ_ONLY)).not.toBeInTheDocument()
+  })
+
+  it('keeps the membership\'s role at the first failure of /current other than a 404, even where the client retries', async () => {
+    const failed = vi.fn<RouteHandler>(() => { throw new ApiError(500, 'Internal server error') })
+    // Retries on, as the app's own client has them: the page must not spin through them.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 10_000 } } })
+    renderPage(JUNIPER, { 'GET /me/workspaces/current': failed }, client)
+    expect(await screen.findByText(READ_ONLY)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add member' })).not.toBeInTheDocument()
+    expect(failed).toHaveBeenCalledExactlyOnceWith(undefined)
   })
 })
 

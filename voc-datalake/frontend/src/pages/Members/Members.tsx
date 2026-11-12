@@ -10,7 +10,8 @@
  * - Every refusal is said in words (`workspace/workspaceRefusals.ts`): the last admin, a membership changed
  *   meanwhile, an admin demoted meanwhile, a new email from someone who may not create accounts.
  *
- * The server decides every one of these; the page only hides what the caller's role cannot do. Outside a workspace
+ * The server decides every one of these; the page only hides what the caller's role cannot do, and shows the loading
+ * state until it knows the role the server applies (`/current`). Outside a workspace
  * the address is not a page (the app's "Page not found"), and the header offers no link to it.
  *
  * @module pages/Members
@@ -21,12 +22,13 @@ import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import CursorPagesList from '../../components/CursorPagesList/CursorPagesList'
 import Notice from '../../components/Notice/Notice'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
+import PageLoader from '../../components/PageLoader/PageLoader'
 import NotFound from '../../components/RouteErrorBoundary/NotFound'
 import type { CursorPagesQuery } from '../../hooks/useCursorPages'
 import { useAuthStore } from '../../store/authStore'
 import RefusalAlert from '../../workspace/RefusalAlert'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
-import { useMyWorkspaces } from '../../workspace/useMyWorkspaces'
+import { useMyWorkspaces, useServerWorkspace } from '../../workspace/useMyWorkspaces'
 import { MEMBER_REFUSALS } from '../../workspace/workspaceRefusals'
 import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
 import type { WorkspaceMember } from '../../api/workspaceMembersApi'
@@ -40,16 +42,29 @@ import type { PendingWrite } from './useMembers'
 export default function Members() {
   const current = useCurrentWorkspace()
   if (current === null) return <NotFound />
-  return <MembersView workspace={current} />
+  return <MembersFor workspace={current} />
 }
 
-function MembersView({ workspace }: Readonly<{ workspace: CurrentWorkspace }>) {
+/**
+ * The page once the role the server applies here is known (`/current`, which the gate asked on entering): until
+ * then the store holds the membership row's role, so a platform admin who is also an editor or a viewer would be
+ * shown the read-only page for a moment. If that read fails for another reason than a 404 (the gate's not-found),
+ * the membership's role stays, as in the gate; the server decides every write either way.
+ */
+function MembersFor({ workspace }: Readonly<{ workspace: CurrentWorkspace }>) {
+  const server = useServerWorkspace(workspace.id)
+  if (server.isPending) return <PageLoader />
+  const role = server.data?.id === workspace.id ? server.data.role : workspace.role
+  return <MembersView workspace={workspace} role={role} />
+}
+
+function MembersView({ workspace, role }: Readonly<{ workspace: CurrentWorkspace; role: WorkspaceRole }>) {
   const { t } = useTranslation()
   const selfSub = useAuthStore((state) => state.user?.sub)
   const { data: mine } = useMyWorkspaces()
   const { query, members } = useMembersList(workspace.id)
   const actions = useMemberActions(selfSub)
-  const isAdmin = workspace.role === 'admin'
+  const isAdmin = role === 'admin'
   // Leave is for a member (a platform admin who entered without a membership has nothing to leave).
   const canLeave = selfSub !== undefined && (mine ?? []).some((own) => own.id === workspace.id)
 

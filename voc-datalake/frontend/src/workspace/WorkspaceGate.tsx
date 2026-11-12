@@ -17,16 +17,16 @@
  */
 import { useEffect, useLayoutEffect, useMemo } from 'react'
 import type { ReactElement, ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import PageLoader from '../components/PageLoader/PageLoader'
 import { apiErrorStatus, HTTP_NOT_FOUND } from '../api/apiErrorStatus'
-import { currentWorkspaceKey, myWorkspacesKey, workspacesApi } from '../api/workspacesApi'
+import { myWorkspacesKey } from '../api/workspacesApi'
 import { setCurrentWorkspace, useCurrentWorkspace } from './currentWorkspace'
 import { gateDecision } from './gateDecision'
 import { forgetPlatformEntry, platformEntryFor } from './platformEntry'
-import { refusedWorkspaceIds, rememberRefused } from './refusedWorkspaces'
-import { rememberWorkspace, useMyWorkspaces } from './useMyWorkspaces'
+import { refusedWorkspaceIds, rememberRefused, withoutRefused } from './refusedWorkspaces'
+import { rememberWorkspace, useMyWorkspaces, useServerWorkspace } from './useMyWorkspaces'
 import { PAGE_WORKSPACE } from './workspacePath'
 import WorkspaceChoice, { WorkspaceUnavailable } from './WorkspaceChoice'
 import type { CurrentWorkspace } from './currentWorkspace'
@@ -60,8 +60,7 @@ function useGateDecision(): GateState {
 
   if (list.isPending) return { decision: null, workspaces: [], entered: null, retry, retrying: list.isFetching }
   // A workspace the server refused in this tab is no longer offered, entered or redirected into.
-  const refused = refusedWorkspaceIds()
-  const workspaces = list.data?.filter((workspace) => !refused.includes(workspace.id)) ?? null
+  const workspaces = list.data === undefined ? null : withoutRefused(list.data)
   const entry = PAGE_WORKSPACE.kind === 'slug' ? platformEntryFor(PAGE_WORKSPACE.slug) : null
   const decision = gateDecision(PAGE_WORKSPACE, workspaces, `${pathname}${search}${hash}`, entry)
   const entered = decision.kind === 'enter' || decision.kind === 'enter-unlisted' ? decision.workspace : null
@@ -101,11 +100,7 @@ interface EnterState {
  * role stays; an unlisted one (the platform console's entry) waits for the answer.
  */
 function useEnterWorkspace(entered: CurrentWorkspace | null, unlisted: boolean): EnterState {
-  const server = useQuery({
-    queryKey: currentWorkspaceKey(entered?.id ?? ''),
-    queryFn: workspacesApi.current,
-    enabled: entered !== null,
-  })
+  const server = useServerWorkspace(entered?.id ?? null)
   const answer = readAnswer(entered, unlisted, server.data, server.error)
   useForgetRefused(answer.refusedId, answer.droppedSlug)
 

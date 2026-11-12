@@ -18,6 +18,15 @@ import { ACME } from '../test/workspaceFixtures'
 import { refusedWorkspaceIds, rememberRefused } from '../workspace/refusedWorkspaces'
 import { useSignOut } from './useSignOut'
 
+/** Sign out from a page of acme. */
+function signOutInAcme(): void {
+  stubLocationAssign('/w/acme/account')
+  const client = createTestQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useSignOut(), { wrapper })
+  act(() => result.current())
+}
+
 describe('useSignOut', () => {
   it('clears the cache and the current workspace, signs out, then loads /login outside the workspace', () => {
     const client = createTestQueryClient()
@@ -37,11 +46,13 @@ describe('useSignOut', () => {
 
   it("forgets the tab's refused workspaces, so the next person asks the server afresh", () => {
     rememberRefused(ACME.id)
-    stubLocationAssign('/w/acme/account')
-    const client = createTestQueryClient()
-    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    const { result } = renderHook(() => useSignOut(), { wrapper })
-    act(() => result.current())
+    signOutInAcme()
     expect(refusedWorkspaceIds()).toStrictEqual([])
+  })
+
+  it("forgets every workspace's saved assistant, draft and filter records, not only this one's", () => {
+    window.sessionStorage.setItem('voc-assistant-ui:w/juniper', '{"state":{"open":true}}')
+    signOutInAcme()
+    expect(window.sessionStorage.getItem('voc-assistant-ui:w/juniper')).toBeNull()
   })
 })

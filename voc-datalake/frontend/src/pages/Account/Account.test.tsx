@@ -18,6 +18,7 @@ import { useBubbleStore } from '../../assistant/bubble/bubbleStore'
 import { languageNames, supportedLanguages } from '../../i18n/languages'
 import { parsedJson } from '@test/jsonText'
 import { stubLocationAssign } from '@test/location'
+import { withMemoryLocalStorage } from '@test/memoryLocalStorage'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 const signOut = vi.fn<() => void>()
@@ -394,6 +395,22 @@ describe('Account — this browser, under "Advanced" (moved from Administration 
     await userEvent.click(within(advanced()).getByRole('button', { name: 'Reset Settings' }))
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset' }))
     expect(useConfigStore.getState().config).toMatchObject({ apiEndpoint: '', brandName: '' })
+  })
+
+})
+
+describe('Account — Reset local settings, in every workspace', () => {
+  const saved = withMemoryLocalStorage()
+
+  it("clears this browser's config in every workspace too, not only the page's own", async () => {
+    // Where the config store keeps a workspace's record (store/configStore.ts, workspace/workspaceStorage.ts).
+    saved.set('voc-config:w/juniper', '{"state":{"timeRange":"7d"},"version":3}')
+    saved.set('voc-assistant-ui:w/juniper', '{}')
+    renderAt('?tab=preferences')
+    await userEvent.click(within(advanced()).getByRole('button', { name: 'Reset Settings' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset' }))
+    // The page's own config, cleared; juniper's gone; another store's record untouched.
+    expect([...saved.keys()].filter((key) => key.startsWith('voc-config') || key.startsWith('voc-assistant-ui'))).toStrictEqual(['voc-assistant-ui:w/juniper', 'voc-config'])
   })
 
   it('is collapsed while an API endpoint is configured', () => {

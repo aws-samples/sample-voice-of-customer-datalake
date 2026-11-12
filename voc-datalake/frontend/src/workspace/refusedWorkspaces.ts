@@ -2,7 +2,8 @@
  * @fileoverview The workspaces the server refused in this tab (sessionStorage): ids whose `/current` answered 404
  * though the list still names them (one being deleted, or a membership removed a moment ago:
  * lambda/shared/workspace.py). The gate leaves them out of the list for the rest of the tab, so the one-workspace
- * redirect cannot send the caller back into one, also after a full page load (which reads the list again). A new
+ * redirect cannot send the caller back into one, also after a full page load (which reads the list again), and the
+ * header's workspace menu does not offer to switch to one. A new
  * tab asks the server again, and so does the next person after a sign-out or an expired session.
  *
  * No imports: the session-expiry service clears it without pulling in the API client.
@@ -19,6 +20,12 @@ export function refusedWorkspaceIds(): readonly string[] {
     // Storage blocked or a value this build cannot read: nothing is left out.
     return []
   }
+}
+
+/** `workspaces` without the ones refused in this tab: what the gate enters or offers, and the header's menu switches to. */
+export function withoutRefused<T extends { readonly id: string }>(workspaces: readonly T[]): T[] {
+  const refused = refusedWorkspaceIds()
+  return workspaces.filter((workspace) => !refused.includes(workspace.id))
 }
 
 export function rememberRefused(id: string): void {

@@ -17,6 +17,20 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.15.00] - 2026-11-12
+
+Multi-workspace, phase 1: what the browser saves stays in its workspace, and two follow-ups to the header menu and the members page. The data path is still not keyed by workspace (phase 2).
+
+### Changed
+
+- Inside a workspace, the state the web app saves in the browser is that workspace's own ([docs/multi-workspace.md](docs/multi-workspace.md#phases)): the assistant panel's saved state (the conversation in view, the panel mode, web search, desktop notifications, the folded sidebar and, per tab, whether the panel is open), the manual-import draft and the dashboard's filters (time range, custom days, date basis) and the rest of the browser's config. A draft or a filter left in one workspace no longer opens in another, and is back on return to it. Each is saved under its usual name with the workspace's slug added (`voc-config:w/acme`). Outside a workspace, and in a deployment without workspaces, nothing changes: the same names and the same saved state as before. Entering a workspace for the first time after this release starts from the defaults; the state saved before stays outside workspaces. Signing out, or an expired session, removes every workspace's saved state of these three, and the assistant panel's saved state outside workspaces, from the browser, so the next person finds none of it; Account → "Reset local settings" clears this browser's config outside workspaces and in every workspace.
+- The header's workspace menu no longer offers to switch to a workspace the server refused in this browser tab (one being deleted, or a membership removed a moment ago), as the not-found page already did.
+- The members page waits for the role the server applies in the workspace before it shows what the caller may do: a platform admin who is also an editor or a viewer there no longer sees the read-only page for a moment before the admin controls appear. The confirmation of the current workspace (`GET /me/workspaces/current`) is asked once, not retried: when it fails for another reason than a 404, the page and the header keep the membership's role at once (a platform console's entry offers Try again, as before).
+
+### Upgrade notes
+
+- Only the web app changes: deploy VocApiStack as usual (`cd voc-datalake && npm run deploy:api`; it carries the web app). No API, table or permission changes. Inside a workspace, people find the assistant panel, the manual-import draft and the dashboard filters at their defaults the first time; nothing is lost outside workspaces.
+
 ## [6.14.00] - 2026-11-12
 
 Multi-workspace, phase 1: the workspace-scoped repository layer, and the three guards that keep workspaces apart from now on. The data path is still not keyed by workspace (phase 2).
