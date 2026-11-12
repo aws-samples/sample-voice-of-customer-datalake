@@ -67,6 +67,14 @@
     {
       "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py",
       "reason": "each feature's own model-surface choice (both the utility surface today); one may move without the other"
+    },
+    {
+      "key": "GATE_LABELS|_CUSTOM_STEP_VERDICT_LABELS::*",
+      "reason": "an engineering quality gate's arrow labels and the verdict labels an agents workflow's custom step can no longer carry: two kinds of workflow, each free to change its own"
+    },
+    {
+      "key": "MEMORY_MODES|SCOPE_NAMES::*",
+      "reason": "an engineering memory step's modes and the MCP OAuth scopes: unrelated words that happen to be the same pair"
     }
   ]
 }

@@ -67,7 +67,11 @@
     "renameNamed": "Renombrar {{name}}",
     "renameTitle": "Renombrar este flujo",
     "renameConflict": "Alguien cambió este flujo mientras tanto, o es el integrado. Recarga e inténtalo de nuevo.",
-    "renameFailed": "No se pudo renombrar el flujo."
+    "renameFailed": "No se pudo renombrar el flujo.",
+    "newEngineeringFlow": "Nuevo flujo de ingeniería",
+    "createEngineeringTitle": "Nuevo flujo de ingeniería",
+    "createEngineeringHint": "Un flujo de ingeniería ejecuta agentes de ingeniería autónomos sobre un repositorio y termina en un pull request para que lo revisen personas. Empieza como Inicio → Fin: añade los pasos de Ingeniería desde la paleta.",
+    "engineeringKind": "Ingeniería"
   },
   "fields": {
     "name": "Nombre",
@@ -403,7 +407,46 @@
     "switchMessage": "Se perderán tus cambios sin guardar en {{name}}.",
     "switchConfirm": "Cambiar de flujo de trabajo",
     "switched": "Este agente ahora ejecuta {{name}}.",
-    "switchFailed": "No se pudo cambiar el agente a ese flujo de trabajo."
+    "switchFailed": "No se pudo cambiar el agente a ese flujo de trabajo.",
+    "engineering": {
+      "role": "Rol",
+      "skillVersion": "Versión de la habilidad",
+      "skillVersionHint": "'latest' (la última aceptada) o una versión como v3.",
+      "model": "Modelo",
+      "modelHint": "Un id de modelo; déjalo vacío para el predeterminado.",
+      "budgetShare": "Parte del presupuesto de la ejecución",
+      "budgetShareHint": "Una fracción de 0,01 a 1; las partes de los agentes suman como mucho 1. Vacío: sin parte propia.",
+      "shardBy": "Dividir por",
+      "shardByOptions": {
+        "packages": "Paquetes",
+        "history": "Ventanas del historial",
+        "pr_pages": "Páginas de PR"
+      },
+      "shardCap": "Máximo de partes",
+      "posters": "Quién publica tareas",
+      "claimers": "Quién toma tareas",
+      "until": "Dura hasta que",
+      "untilOptions": {
+        "drained": "Todas las tareas están hechas",
+        "caps": "Se alcanza un límite"
+      },
+      "maxRounds": "Rondas de revisión (máximo)",
+      "packsAuto": "Detectar los paquetes de control en el repositorio",
+      "packs": "Paquetes de control",
+      "finalGoModel": "Modelo de la aprobación final",
+      "mode": "Modo",
+      "modeOptions": {
+        "read": "Leer",
+        "write": "Escribir"
+      },
+      "scope": "Memoria de quién",
+      "scopeOptions": {
+        "repo": "El repositorio",
+        "role": "El rol",
+        "person": "La persona"
+      },
+      "limit": "Máximo de recuerdos leídos"
+    }
   },
   "paletteGroups": {
     "flow": "Flujo",
@@ -411,7 +454,8 @@
     "documents": "Documentos",
     "review": "Revisión",
     "prototype": "Prototipo",
-    "delivery": "Entrega"
+    "delivery": "Entrega",
+    "engineering": "Ingeniería"
   },
   "edgeLabels": {
     "pass": "Aprobado",
@@ -504,6 +548,42 @@
     "end": {
       "label": "Fin",
       "description": "Donde termina la ejecución."
+    },
+    "agent": {
+      "label": "Agente",
+      "description": "Un agente con un rol (fixer, hunter, committer…), su versión de habilidad y su parte del presupuesto."
+    },
+    "map": {
+      "label": "Mapa",
+      "description": "Divide el trabajo en partes (paquetes, ventanas del historial, páginas de PR) que los agentes hacen en paralelo."
+    },
+    "reduce": {
+      "label": "Reducción",
+      "description": "Donde vuelven a unirse las partes de un mapa: un resultado de todas ellas."
+    },
+    "board": {
+      "label": "Tablero",
+      "description": "Un tablero de tareas: unos roles publican tareas y otros las toman y las hacen, hasta vaciarlo."
+    },
+    "quality_gate": {
+      "label": "Control de calidad",
+      "description": "Comprobaciones y rondas de revisión del cambio: GO sigue al PR, NO-GO va a una persona."
+    },
+    "learning_loop": {
+      "label": "Ciclo de aprendizaje",
+      "description": "Una retrospectiva que guarda en la memoria lo que aprendió la ejecución."
+    },
+    "self_improvement": {
+      "label": "Automejora",
+      "description": "El coach propone una versión mejor de una habilidad y la mide."
+    },
+    "memory": {
+      "label": "Memoria",
+      "description": "Lee o escribe en la memoria del repositorio, de un rol o de una persona."
+    },
+    "stop_at_pr": {
+      "label": "Parar en el PR",
+      "description": "El flujo termina en un pull request para que lo revisen personas: nunca se fusiona nada."
     }
   },
   "loopUntilHint": {

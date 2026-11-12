@@ -129,8 +129,14 @@ board does the repeating) and holds no agents step; an agents workflow holds no 
 
 The two kinds never mix: no agent runs an engineering flow (`POST`/`PUT /agents` refuse one), a saved workflow keeps
 its kind (a save of the other kind over it is refused: save it as a new workflow), and the agents' runtime refuses a
-`voc-workflow/2` definition. Until the editor opens engineering flows, `GET /workflows` leaves them out of the library
-(they are read by id).
+`voc-workflow/2` definition. `GET /workflows` lists both kinds, each with its `kind` (`agents` | `engineering`): the
+editor opens either, and an agent's workflow picker offers only `agents` ones. An engineering flow can be designed
+and saved in every deployment (it is a definition, like any workflow); it runs only where the opt-in engineering
+module is on. The library has **New workflow** (an
+agents workflow) and **New engineering flow**; an engineering flow's palette shows **Engineering** (with Start and
+End), its settings panels set each step's settings (no step role and no loops: its board does the repeating), and its
+graph rules are mirrored as you edit (`WorkflowEditor/engineeringRules.ts`, held to the
+server by the shared fixture `frontend/src/test/engineeringFlows.json`).
 
 ### Methodology warnings
 

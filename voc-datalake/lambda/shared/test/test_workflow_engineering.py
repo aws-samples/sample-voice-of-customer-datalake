@@ -43,14 +43,18 @@ def test_a_bug_fix_flow_that_ends_at_a_pr_is_valid() -> None:
     assert result.definition['schema'] == SCHEMA_V2
 
 
+def understand() -> dict[str, Any]:
+    """start -> map -> mapper -> reduce -> memory write -> learning loop -> end (pushes nothing: no stop at PR)."""
+    return flow([node('start', 'start'), node('map', 'map', shard_by='packages', shard_cap=50),
+                 node('read', 'agent', role='mapper'), node('reduce', 'reduce'),
+                 node('memory', 'memory', mode='write', scope='repo'), node('learn', 'learning_loop'),
+                 node('end', 'end')],
+                [arrow('start', 'map'), arrow('map', 'read'), arrow('read', 'reduce'), arrow('reduce', 'memory'),
+                 arrow('memory', 'learn'), arrow('learn', 'end')])
+
+
 def test_a_map_reduce_understand_flow_with_a_learning_loop_needs_no_stop_at_pr() -> None:
-    understand = flow([node('start', 'start'), node('map', 'map', shard_by='packages', shard_cap=50),
-                       node('read', 'agent', role='mapper'), node('reduce', 'reduce'),
-                       node('memory', 'memory', mode='write', scope='repo'), node('learn', 'learning_loop'),
-                       node('end', 'end')],
-                      [arrow('start', 'map'), arrow('map', 'read'), arrow('read', 'reduce'), arrow('reduce', 'memory'),
-                       arrow('memory', 'learn'), arrow('learn', 'end')])
-    assert errors(understand) == []
+    assert errors(understand()) == []
 
 
 def test_self_improvement_alone_in_its_flow() -> None:
@@ -149,11 +153,16 @@ def test_a_stop_at_pr_ends_the_flow() -> None:
     ([arrow('gate', 'pr', 'pass'), arrow('gate', 'pr', 'fail')], GATE_FAIL),
 ])
 def test_a_gate_goes_to_the_pr_on_go_and_to_a_person_on_no_go(edges: list[dict[str, Any]], expected: str) -> None:
+    assert (expected, 'gate') in errors(gate_edges(*edges))
+
+
+def gate_edges(*edges: dict[str, Any]) -> dict[str, Any]:
+    """The bug fix flow with its gate's arrows replaced (and the human end gone when no arrow reaches it)."""
     definition = bug_fix()
     definition['edges'] = [*definition['edges'][:3], *edges]
     if not any(edge['target'] == 'human' for edge in edges):   # an end no arrow reaches is another error
         definition['nodes'] = [n for n in definition['nodes'] if n['id'] != 'human']
-    assert (expected, 'gate') in errors(definition)
+    return definition
 
 
 def test_only_a_gate_labels_its_arrows() -> None:

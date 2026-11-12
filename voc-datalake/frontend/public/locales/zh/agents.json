@@ -66,7 +66,11 @@
     "renameNamed": "重命名 {{name}}",
     "renameTitle": "重命名此工作流",
     "renameConflict": "在此期间有人修改了此工作流，或它是内置工作流。请刷新后重试。",
-    "renameFailed": "无法重命名该工作流。"
+    "renameFailed": "无法重命名该工作流。",
+    "newEngineeringFlow": "新建工程流程",
+    "createEngineeringTitle": "新建工程流程",
+    "createEngineeringHint": "工程流程让自主工程智能体在一个仓库上工作，并以供人审阅的拉取请求结束。它从“开始 → 结束”起步：从面板添加“工程”步骤。",
+    "engineeringKind": "工程"
   },
   "fields": {
     "name": "名称",
@@ -398,7 +402,46 @@
     "switchMessage": "您对 {{name}} 未保存的更改将丢失。",
     "switchConfirm": "切换工作流",
     "switched": "此代理现在运行 {{name}}。",
-    "switchFailed": "无法将代理切换到该工作流。"
+    "switchFailed": "无法将代理切换到该工作流。",
+    "engineering": {
+      "role": "角色",
+      "skillVersion": "技能版本",
+      "skillVersionHint": "'latest'（最新已接受的版本）或像 v3 这样的版本。",
+      "model": "模型",
+      "modelHint": "模型 ID；留空则使用默认模型。",
+      "budgetShare": "运行预算份额",
+      "budgetShareHint": "0.01 到 1 之间的比例；各智能体的份额合计不超过 1。留空：没有自己的份额。",
+      "shardBy": "拆分依据",
+      "shardByOptions": {
+        "packages": "包",
+        "history": "历史时间窗",
+        "pr_pages": "PR 页面"
+      },
+      "shardCap": "分片上限",
+      "posters": "谁发布任务",
+      "claimers": "谁领取任务",
+      "until": "运行到",
+      "untilOptions": {
+        "drained": "所有任务完成",
+        "caps": "达到上限"
+      },
+      "maxRounds": "评审轮次（上限）",
+      "packsAuto": "在仓库中自动检测检查包",
+      "packs": "检查包",
+      "finalGoModel": "最终放行模型",
+      "mode": "模式",
+      "modeOptions": {
+        "read": "读取",
+        "write": "写入"
+      },
+      "scope": "谁的记忆",
+      "scopeOptions": {
+        "repo": "仓库",
+        "role": "角色",
+        "person": "个人"
+      },
+      "limit": "读取记忆上限"
+    }
   },
   "paletteGroups": {
     "flow": "流程",
@@ -406,7 +449,8 @@
     "documents": "文档",
     "review": "评审",
     "prototype": "原型",
-    "delivery": "交付"
+    "delivery": "交付",
+    "engineering": "工程"
   },
   "edgeLabels": {
     "pass": "通过",
@@ -499,6 +543,42 @@
     "end": {
       "label": "结束",
       "description": "运行结束的位置。"
+    },
+    "agent": {
+      "label": "智能体",
+      "description": "带有角色（fixer、hunter、committer 等）、技能版本和预算份额的智能体。"
+    },
+    "map": {
+      "label": "拆分",
+      "description": "将工作拆成分片（包、历史时间窗、PR 页面），由智能体并行处理。"
+    },
+    "reduce": {
+      "label": "汇总",
+      "description": "拆分出的分片在此汇合，得出一个结果。"
+    },
+    "board": {
+      "label": "看板",
+      "description": "任务看板：一些角色发布任务，另一些角色领取并完成，直到清空。"
+    },
+    "quality_gate": {
+      "label": "质量关卡",
+      "description": "对变更的检查和评审轮次：GO 继续到 PR，NO-GO 交给人来决定。"
+    },
+    "learning_loop": {
+      "label": "学习循环",
+      "description": "一次回顾，把这次运行学到的内容写入记忆。"
+    },
+    "self_improvement": {
+      "label": "自我改进",
+      "description": "教练提出更好的技能版本并进行基准测试。"
+    },
+    "memory": {
+      "label": "记忆",
+      "description": "读取或写入仓库、某个角色或某个人的记忆。"
+    },
+    "stop_at_pr": {
+      "label": "止于 PR",
+      "description": "流程以一个供人审阅的拉取请求结束：从不合并任何内容。"
     }
   },
   "loopUntilHint": {

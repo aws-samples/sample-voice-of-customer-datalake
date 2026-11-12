@@ -465,10 +465,9 @@ def list_workflows():
     include_archived = _query('include_archived') == 'true'
     if include_archived:
         require_admin_caller(caller)
-    # Engineering flows (voc-workflow/2) stay out of the library until the editor opens them (it would read them as
-    # agents workflows); they are saved, validated and read by id.
+    # Both kinds are listed, each with its `kind`: the editor opens either; an agent's picker offers only `agents`.
     rows = [row for row in store.list_workflows(_agents_table())
-            if (include_archived or not store.is_archived_workflow(row)) and not _engineering_flow(row)]
+            if include_archived or not store.is_archived_workflow(row)]
     builtin, stored = rows[:1], sorted(rows[1:], key=lambda row: str(row.get('gsi1sk') or ''))
     items = [store.workflow_view(row, include_definition=False) for row in builtin + stored]
     return {'items': items, 'count': len(items)}

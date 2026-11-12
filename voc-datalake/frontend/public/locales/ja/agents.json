@@ -66,7 +66,11 @@
     "renameNamed": "{{name}} の名前を変更",
     "renameTitle": "ワークフローの名前を変更",
     "renameConflict": "その間に誰かがこのワークフローを変更したか、組み込みのワークフローです。再読み込みしてやり直してください。",
-    "renameFailed": "ワークフローの名前を変更できませんでした。"
+    "renameFailed": "ワークフローの名前を変更できませんでした。",
+    "newEngineeringFlow": "新しいエンジニアリングフロー",
+    "createEngineeringTitle": "新しいエンジニアリングフロー",
+    "createEngineeringHint": "エンジニアリングフローは、自律エンジニアリングエージェントをリポジトリで動かし、人がレビューするプルリクエストで終わります。開始 → 終了 から始め、パレットからエンジニアリングのステップを追加してください。",
+    "engineeringKind": "エンジニアリング"
   },
   "fields": {
     "name": "名前",
@@ -398,7 +402,46 @@
     "switchMessage": "{{name}} への未保存の変更は失われます。",
     "switchConfirm": "ワークフローを切り替え",
     "switched": "このエージェントは {{name}} を実行するようになりました。",
-    "switchFailed": "エージェントをそのワークフローに切り替えられませんでした。"
+    "switchFailed": "エージェントをそのワークフローに切り替えられませんでした。",
+    "engineering": {
+      "role": "ロール",
+      "skillVersion": "スキルのバージョン",
+      "skillVersionHint": "'latest'（最新の承認済み）または v3 のようなバージョン。",
+      "model": "モデル",
+      "modelHint": "モデル ID。空欄なら既定のモデル。",
+      "budgetShare": "実行予算の配分",
+      "budgetShareHint": "0.01 から 1 までの割合。エージェントの配分の合計は 1 以下。空欄なら独自の配分なし。",
+      "shardBy": "分割の単位",
+      "shardByOptions": {
+        "packages": "パッケージ",
+        "history": "履歴の期間",
+        "pr_pages": "PR のページ"
+      },
+      "shardCap": "シャードの上限",
+      "posters": "タスクを投稿するロール",
+      "claimers": "タスクを引き受けるロール",
+      "until": "終了条件",
+      "untilOptions": {
+        "drained": "すべてのタスクが完了",
+        "caps": "上限に到達"
+      },
+      "maxRounds": "レビューの回数（上限）",
+      "packsAuto": "リポジトリのゲートパックを自動検出",
+      "packs": "ゲートパック",
+      "finalGoModel": "最終承認のモデル",
+      "mode": "モード",
+      "modeOptions": {
+        "read": "読み取り",
+        "write": "書き込み"
+      },
+      "scope": "誰のメモリ",
+      "scopeOptions": {
+        "repo": "リポジトリ",
+        "role": "ロール",
+        "person": "個人"
+      },
+      "limit": "読み取るメモリの上限"
+    }
   },
   "paletteGroups": {
     "flow": "フロー",
@@ -406,7 +449,8 @@
     "documents": "ドキュメント",
     "review": "レビュー",
     "prototype": "プロトタイプ",
-    "delivery": "引き渡し"
+    "delivery": "引き渡し",
+    "engineering": "エンジニアリング"
   },
   "edgeLabels": {
     "pass": "合格",
@@ -499,6 +543,42 @@
     "end": {
       "label": "終了",
       "description": "実行の終了点。"
+    },
+    "agent": {
+      "label": "エージェント",
+      "description": "ロール（fixer、hunter、committer など）、スキルのバージョン、予算の配分を持つエージェント。"
+    },
+    "map": {
+      "label": "分割",
+      "description": "作業をシャード（パッケージ、履歴の期間、PR のページ）に分け、エージェントが並行して処理します。"
+    },
+    "reduce": {
+      "label": "集約",
+      "description": "分割したシャードが再び合流し、1 つの結果になります。"
+    },
+    "board": {
+      "label": "ボード",
+      "description": "タスクボード。あるロールがタスクを投稿し、別のロールが引き受けて実行し、空になるまで続きます。"
+    },
+    "quality_gate": {
+      "label": "品質ゲート",
+      "description": "変更へのチェックとレビュー。GO なら PR へ、NO-GO なら担当者の判断へ進みます。"
+    },
+    "learning_loop": {
+      "label": "学習ループ",
+      "description": "実行から学んだことをメモリに書き込む振り返り。"
+    },
+    "self_improvement": {
+      "label": "自己改善",
+      "description": "コーチがより良いスキルのバージョンを提案し、ベンチマークします。"
+    },
+    "memory": {
+      "label": "メモリ",
+      "description": "リポジトリ、ロール、または個人のメモリを読み書きします。"
+    },
+    "stop_at_pr": {
+      "label": "PR で停止",
+      "description": "フローは人がレビューするプルリクエストで終わります。何もマージされません。"
     }
   },
   "loopUntilHint": {

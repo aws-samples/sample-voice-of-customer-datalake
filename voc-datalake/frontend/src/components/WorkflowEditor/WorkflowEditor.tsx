@@ -264,7 +264,7 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
             has nothing focusable inside them: E2E F8), and both are named — two
             unnamed asides next to the app sidebar fail axe landmark-unique (F9). */}
         <aside tabIndex={0} className="card p-3 max-h-[640px] overflow-y-auto focus-ring" aria-label={t('editor.palette')}>
-          <NodePalette onAdd={addFromPalette} disabled={readOnly} />
+          <NodePalette onAdd={addFromPalette} disabled={readOnly} schema={draft.schema} />
         </aside>
         <div className="card p-0 h-[640px] overflow-hidden">
           <WorkflowCanvas definition={draft} readOnly={readOnly} issuesByNode={grouped.byNode}

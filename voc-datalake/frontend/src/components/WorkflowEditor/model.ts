@@ -8,12 +8,14 @@
  * @module components/WorkflowEditor/model
  */
 import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
+import { WORKFLOW_SCHEMA_V2 } from '../../api/workflowsApi'
 import { gateLabelFor } from './loopGates'
 import type {
   WorkflowDefinition, WorkflowEdge, WorkflowEdgeLabel, WorkflowLoop, WorkflowNode, WorkflowNodeRole, WorkflowNodeType,
+  WorkflowSchema,
 } from '../../api/workflowsApi'
 
-export type PaletteGroup = 'flow' | 'research' | 'documents' | 'review' | 'prototype' | 'delivery'
+export type PaletteGroup = 'flow' | 'research' | 'documents' | 'review' | 'prototype' | 'delivery' | 'engineering'
 
 interface NodeTypeSpec {
   group: PaletteGroup
@@ -40,13 +42,30 @@ export const NODE_CATALOGUE: Readonly<Record<WorkflowNodeType, NodeTypeSpec>> = 
   collect_prototype_feedback: { group: 'prototype', role: 'worker' },
   revise_prototype: { group: 'prototype', role: 'worker' },
   handoff: { group: 'delivery', role: 'orchestrator' },
+  // An engineering flow's steps (voc-workflow/2): no data.role (an agent's role is its params.role).
+  agent: { group: 'engineering', params: { role: 'fixer', skill_version: 'latest' } },
+  map: { group: 'engineering', params: { shard_by: 'packages', shard_cap: 50 } },
+  reduce: { group: 'engineering' },
+  board: { group: 'engineering', params: { posters: ['coordinator'], claimers: ['fixer'], until: 'drained' } },
+  quality_gate: { group: 'engineering', params: { max_rounds: 3, packs: 'auto' } },
+  learning_loop: { group: 'engineering' },
+  self_improvement: { group: 'engineering' },
+  memory: { group: 'engineering', params: { mode: 'read', scope: 'repo', limit: 10 } },
+  stop_at_pr: { group: 'engineering' },
   end: { group: 'flow', params: { status: 'completed' } },
 }
 
 /** dataTransfer type the palette writes and the canvas accepts. */
 export const PALETTE_MIME = 'application/x-voc-workflow-node'
 
-export const PALETTE_GROUPS: readonly PaletteGroup[] = ['flow', 'research', 'documents', 'review', 'prototype', 'delivery']
+const PALETTE_GROUPS: readonly PaletteGroup[] = ['flow', 'research', 'documents', 'review', 'prototype', 'delivery']
+/** An engineering flow's palette: Start and End, and the engineering steps. */
+const ENGINEERING_PALETTE_GROUPS: readonly PaletteGroup[] = ['flow', 'engineering']
+
+/** The palette sections of a workflow of this schema. */
+export function paletteGroupsFor(schema: WorkflowSchema): readonly PaletteGroup[] {
+  return schema === WORKFLOW_SCHEMA_V2 ? ENGINEERING_PALETTE_GROUPS : PALETTE_GROUPS
+}
 
 const isNodeType = (value: string): value is WorkflowNodeType => Object.hasOwn(NODE_CATALOGUE, value)
 
@@ -61,7 +80,8 @@ export function parseNodeType(value: string): WorkflowNodeType | null {
  */
 export function edgeLabelsFor(sourceType: WorkflowNodeType | undefined): readonly WorkflowEdgeLabel[] {
   if (sourceType === 'persona_review') return ['agreed', 'not_agreed']
-  if (sourceType === 'final_review') return ['pass', 'fail']
+  // A quality gate: pass = GO (on to the stop at PR), fail = NO-GO (to a person).
+  if (sourceType === 'final_review' || sourceType === 'quality_gate') return ['pass', 'fail']
   return []
 }
 
@@ -228,10 +248,15 @@ export function clearDefinition(definition: WorkflowDefinition): WorkflowDefinit
   return { ...definition, nodes: [], edges: [], loops: [] }
 }
 
-/** The smallest valid workflow, Start → End: what "New workflow" in the library creates. */
-export function starterDefinition(titles: Readonly<{ name: string; start: string; end: string }>): WorkflowDefinition {
+/**
+ * The smallest valid workflow, Start → End: what "New workflow" in the library creates — an agents workflow, or an
+ * engineering flow (`voc-workflow/2`) when asked.
+ */
+export function starterDefinition(
+  titles: Readonly<{ name: string; start: string; end: string }>, schema: WorkflowSchema = WORKFLOW_SCHEMA_VERSION,
+): WorkflowDefinition {
   return {
-    schema: WORKFLOW_SCHEMA_VERSION,
+    schema,
     name: titles.name,
     nodes: [
       { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: { title: titles.start, params: {} } },

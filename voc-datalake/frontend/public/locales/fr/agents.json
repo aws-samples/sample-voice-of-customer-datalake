@@ -67,7 +67,11 @@
     "renameNamed": "Renommer {{name}}",
     "renameTitle": "Renommer ce workflow",
     "renameConflict": "Quelqu’un a modifié ce workflow entre-temps, ou c’est le workflow intégré. Rechargez et réessayez.",
-    "renameFailed": "Le workflow n’a pas pu être renommé."
+    "renameFailed": "Le workflow n’a pas pu être renommé.",
+    "newEngineeringFlow": "Nouveau flux d'ingénierie",
+    "createEngineeringTitle": "Nouveau flux d'ingénierie",
+    "createEngineeringHint": "Un flux d'ingénierie fait travailler des agents d'ingénierie autonomes sur un dépôt et se termine par une pull request que des personnes relisent. Il commence par Début → Fin : ajoutez les étapes Ingénierie depuis la palette.",
+    "engineeringKind": "Ingénierie"
   },
   "fields": {
     "name": "Nom",
@@ -403,7 +407,46 @@
     "switchMessage": "Vos modifications non enregistrées de {{name}} seront perdues.",
     "switchConfirm": "Changer de workflow",
     "switched": "Cet agent exécute désormais {{name}}.",
-    "switchFailed": "L'agent n'a pas pu passer à ce workflow."
+    "switchFailed": "L'agent n'a pas pu passer à ce workflow.",
+    "engineering": {
+      "role": "Rôle",
+      "skillVersion": "Version de la compétence",
+      "skillVersionHint": "'latest' (la dernière acceptée) ou une version comme v3.",
+      "model": "Modèle",
+      "modelHint": "Un identifiant de modèle ; laissez vide pour celui par défaut.",
+      "budgetShare": "Part du budget de l'exécution",
+      "budgetShareHint": "Une fraction de 0,01 à 1 ; les parts des agents font au plus 1. Vide : pas de part propre.",
+      "shardBy": "Découper par",
+      "shardByOptions": {
+        "packages": "Paquets",
+        "history": "Fenêtres d'historique",
+        "pr_pages": "Pages de PR"
+      },
+      "shardCap": "Lots au plus",
+      "posters": "Qui publie les tâches",
+      "claimers": "Qui prend les tâches",
+      "until": "Dure jusqu'à ce que",
+      "untilOptions": {
+        "drained": "Toutes les tâches soient faites",
+        "caps": "Une limite soit atteinte"
+      },
+      "maxRounds": "Tours de revue (au plus)",
+      "packsAuto": "Détecter les packs de contrôle dans le dépôt",
+      "packs": "Packs de contrôle",
+      "finalGoModel": "Modèle du feu vert final",
+      "mode": "Mode",
+      "modeOptions": {
+        "read": "Lire",
+        "write": "Écrire"
+      },
+      "scope": "Mémoire de qui",
+      "scopeOptions": {
+        "repo": "Le dépôt",
+        "role": "Le rôle",
+        "person": "La personne"
+      },
+      "limit": "Souvenirs lus au plus"
+    }
   },
   "paletteGroups": {
     "flow": "Flux",
@@ -411,7 +454,8 @@
     "documents": "Documents",
     "review": "Évaluation",
     "prototype": "Prototype",
-    "delivery": "Livraison"
+    "delivery": "Livraison",
+    "engineering": "Ingénierie"
   },
   "edgeLabels": {
     "pass": "Réussite",
@@ -504,6 +548,42 @@
     "end": {
       "label": "Fin",
       "description": "Point d'arrivée de l'exécution."
+    },
+    "agent": {
+      "label": "Agent",
+      "description": "Un agent avec un rôle (fixer, hunter, committer…), sa version de compétence et sa part du budget."
+    },
+    "map": {
+      "label": "Répartition",
+      "description": "Découpe le travail en lots (paquets, fenêtres d'historique, pages de PR) que les agents traitent en parallèle."
+    },
+    "reduce": {
+      "label": "Regroupement",
+      "description": "Là où les lots d'une répartition se rejoignent : un seul résultat pour tous."
+    },
+    "board": {
+      "label": "Tableau",
+      "description": "Un tableau de tâches : certains rôles publient des tâches, d'autres les prennent et les font, jusqu'à le vider."
+    },
+    "quality_gate": {
+      "label": "Contrôle qualité",
+      "description": "Vérifications et tours de revue du changement : GO mène à la PR, NO-GO à une personne."
+    },
+    "learning_loop": {
+      "label": "Boucle d'apprentissage",
+      "description": "Une rétrospective qui écrit en mémoire ce que l'exécution a appris."
+    },
+    "self_improvement": {
+      "label": "Auto-amélioration",
+      "description": "Le coach propose une meilleure version d'une compétence et la mesure."
+    },
+    "memory": {
+      "label": "Mémoire",
+      "description": "Lire ou écrire la mémoire du dépôt, d'un rôle ou d'une personne."
+    },
+    "stop_at_pr": {
+      "label": "Arrêt à la PR",
+      "description": "Le flux se termine par une pull request que des personnes relisent : rien n'est jamais fusionné."
     }
   },
   "loopUntilHint": {

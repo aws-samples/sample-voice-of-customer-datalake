@@ -26,9 +26,9 @@ def test_an_engineering_flow_is_validated_and_kept_in_the_library(lambda_context
         workflow_id = _save_engineering_flow(lambda_context)
         status, body = _call(lambda_context, 'GET', f'/workflows/{workflow_id}')
         assert (status, body['workflow']['definition']['schema']) == (200, workflow_schema.SCHEMA_V2)
-        # Not in the library (nor its agent picker) until the editor opens engineering flows.
-        listed = [w['workflow_id'] for w in _call(lambda_context, 'GET', '/workflows')[1]['items']]
-        assert workflow_id not in listed
+        # In the library, with its kind (the editor opens it; an agent's picker leaves it out).
+        kinds = {w['workflow_id']: w['kind'] for w in _call(lambda_context, 'GET', '/workflows')[1]['items']}
+        assert (kinds[workflow_id], kinds['wf_default']) == ('engineering', 'agents')
 
 
 def test_an_agent_cannot_run_an_engineering_flow(lambda_context: Any) -> None:
@@ -51,8 +51,8 @@ def test_an_agents_workflow_whose_step_settings_name_the_other_schema_is_still_a
         status, body = _call(lambda_context, 'POST', '/workflows', body={'definition': definition})
         assert status == 201, body
         workflow_id = body['workflow']['workflow_id']
-        listed = [w['workflow_id'] for w in _call(lambda_context, 'GET', '/workflows')[1]['items']]
-        assert workflow_id in listed
+        kinds = {w['workflow_id']: w['kind'] for w in _call(lambda_context, 'GET', '/workflows')[1]['items']}
+        assert kinds[workflow_id] == 'agents'
         assert _call(lambda_context, 'POST', '/agents', body=agent_body(workflow_id=workflow_id))[0] == 201
 
 

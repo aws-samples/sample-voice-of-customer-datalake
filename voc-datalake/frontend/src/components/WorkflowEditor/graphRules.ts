@@ -1,18 +1,23 @@
 /**
  * @fileoverview Client-side port of the graph rules in
  * `lambda/shared/workflow_schema.py` (`_check_graph`), so the editor can pin
- * errors to steps as the user edits. Same messages, same order of checks.
+ * errors to steps as the user edits. Same messages, same order of checks. An
+ * engineering flow (`voc-workflow/2`) adds its own (`engineeringRules.ts`).
  *
  * The server's `POST /workflows/validate` stays the judge (it also runs
  * these); this module only gives instant, inline feedback.
  *
  * @module components/WorkflowEditor/graphRules
  */
-import { REVIEW_TARGETS, END_STATUSES, workflowDefinitionSchema } from '../../api/workflowsApi'
+import { WORKFLOW_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
+import {
+  ENGINEERING_NODE_TYPES, END_STATUSES, REVIEW_TARGETS, isEngineeringFlow, workflowDefinitionSchema,
+} from '../../api/workflowsApi'
 import { isRecord } from '../../lib/typeGuards'
+import { engineeringGraphIssues, engineeringParamsIssues } from './engineeringRules'
 import { gateOf } from './loopGates'
 import type { GateLabels } from './loopGates'
-import type { WorkflowDefinition, WorkflowEdge, WorkflowIssue } from '../../api/workflowsApi'
+import type { WorkflowDefinition, WorkflowEdge, WorkflowIssue, WorkflowNode } from '../../api/workflowsApi'
 
 const PERSONA_LABELS = new Set(['agreed', 'not_agreed'])
 // A custom step (`custom_llm`) reports no verdict, so it cannot carry pass/fail arrows.
@@ -37,19 +42,48 @@ function issue(message: string, nodeId?: string): WorkflowIssue {
   return { message, node_id: nodeId }
 }
 
+const ENGINEERING_TYPES: ReadonlySet<string> = new Set(ENGINEERING_NODE_TYPES)
+const AGENTS_TYPES: ReadonlySet<string> = new Set(WORKFLOW_NODE_TYPES)
+
+/** The step belongs in this kind of workflow (the server's `_node`); false when it was reported. */
+function checkKind(definition: WorkflowDefinition, node: WorkflowNode, out: WorkflowIssue[]): boolean {
+  const shared = node.type === 'start' || node.type === 'end'
+  if (isEngineeringFlow(definition) && !shared && AGENTS_TYPES.has(node.type)) {
+    out.push(issue("an agents step belongs in an agents workflow (schema 'voc-workflow/1')", node.id))
+    return false
+  }
+  if (!isEngineeringFlow(definition) && ENGINEERING_TYPES.has(node.type)) {
+    out.push(issue("an engineering step belongs in an engineering flow (schema 'voc-workflow/2')", node.id))
+    return false
+  }
+  return true
+}
+
+/** One step's settings, in the server's order (`_node_data`, then `_params`). */
+function checkStep(node: WorkflowNode, out: WorkflowIssue[]): void {
+  const params = node.data.params ?? {}
+  if (ENGINEERING_TYPES.has(node.type) && node.data.role !== undefined) {
+    out.push(issue("an engineering step takes no data.role (an agent's role is its params.role)", node.id))
+  }
+  if (node.type === 'persona_review' && !REVIEW_TARGETS.some((t) => t === params.target)) {
+    out.push(issue(`persona_review needs params.target: one of ${REVIEW_TARGETS.join(', ')}`, node.id))
+  }
+  const status = params.status ?? 'completed'
+  if (node.type === 'end' && !END_STATUSES.some((s) => s === status)) {
+    out.push(issue(`end params.status must be one of ${END_STATUSES.join(', ')}`, node.id))
+  }
+  if (node.type === 'custom_llm' && (node.data.instructions ?? '').trim() === '') {
+    out.push(issue('instructions is required', node.id))
+  }
+  out.push(...engineeringParamsIssues(node.type, params).map((message) => issue(message, node.id)))
+}
+
 function checkParams(definition: WorkflowDefinition, out: WorkflowIssue[]): void {
+  if (isEngineeringFlow(definition) && definition.loops.length > 0) {
+    out.push(issue('an engineering flow repeats through its board, so it declares no loops'))
+  }
   for (const node of definition.nodes) {
-    const params = node.data.params ?? {}
-    if (node.type === 'persona_review' && !REVIEW_TARGETS.some((t) => t === params.target)) {
-      out.push(issue(`persona_review needs params.target: one of ${REVIEW_TARGETS.join(', ')}`, node.id))
-    }
-    const status = params.status ?? 'completed'
-    if (node.type === 'end' && !END_STATUSES.some((s) => s === status)) {
-      out.push(issue(`end params.status must be one of ${END_STATUSES.join(', ')}`, node.id))
-    }
-    if (node.type === 'custom_llm' && (node.data.instructions ?? '').trim() === '') {
-      out.push(issue('instructions is required', node.id))
-    }
+    if (checkKind(definition, node, out)) checkStep(node, out)
   }
 }
 
@@ -66,9 +100,11 @@ function checkUnique(definition: WorkflowDefinition, out: WorkflowIssue[]): void
   }
 }
 
-/** The label rules: which verdicts may leave which step. */
-function checkEdgeLabel(label: string, source: string, sourceType: string | undefined, out: WorkflowIssue[]): void {
-  if (PERSONA_LABELS.has(label) && sourceType !== 'persona_review') {
+/** The label rules: which verdicts may leave which step (an engineering flow's are its own rule). */
+function checkEdgeLabel(
+  label: string, source: string, sourceType: string | undefined, engineering: boolean, out: WorkflowIssue[],
+): void {
+  if (!engineering && PERSONA_LABELS.has(label) && sourceType !== 'persona_review') {
     out.push(issue(`'${label}' arrows can only leave a persona review`, source))
   }
   if (CUSTOM_STEP_VERDICT_LABELS.has(label) && sourceType === 'custom_llm') {
@@ -86,8 +122,9 @@ function checkEdges(definition: WorkflowDefinition, types: Map<string, string>, 
       continue
     }
     if (types.get(source) === 'end') out.push(issue('an end step cannot have outgoing arrows', source))
+    if (types.get(source) === 'stop_at_pr') out.push(issue('a stop at PR ends the flow: no arrow leaves it', source))
     if (types.get(target) === 'start') out.push(issue('the start step cannot have incoming arrows', target))
-    checkEdgeLabel(label, source, types.get(source), out)
+    checkEdgeLabel(label, source, types.get(source), isEngineeringFlow(definition), out)
     const key = `${source}\u0000${target}\u0000${label}`
     if (seen.has(key)) out.push(issue('two arrows connect the same steps with the same label', source))
     seen.add(key)
@@ -98,7 +135,7 @@ function checkReachability(
   definition: WorkflowDefinition, types: Map<string, string>, forward: Adjacency, backward: Adjacency, out: WorkflowIssue[],
 ): void {
   const starts = [...types].filter(([, t]) => t === 'start').map(([id]) => id)
-  const ends = [...types].filter(([, t]) => t === 'end').map(([id]) => id)
+  const ends = [...types].filter(([, t]) => t === 'end' || t === 'stop_at_pr').map(([id]) => id)
   if (starts.length !== 1) out.push(issue('a workflow needs exactly one start step'))
   if (ends.length === 0) out.push(issue('a workflow needs at least one end step'))
   const start = starts.at(0)
@@ -212,6 +249,9 @@ export function checkGraph(definition: WorkflowDefinition): WorkflowIssue[] {
   checkEdges(definition, types, out)
   checkReachability(definition, types, forward, backward, out)
   checkLoops(definition, types, forward, out)
+  if (isEngineeringFlow(definition) && out.length === 0) {
+    out.push(...engineeringGraphIssues(definition, forward, backward, (id) => reach(id, forward)))
+  }
   return out
 }
 

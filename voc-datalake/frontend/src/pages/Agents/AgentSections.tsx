@@ -99,7 +99,7 @@ export function SettingsSection({ draft, readOnly, onChange }: Readonly<SectionP
           <select id={id} className="select w-full" disabled={readOnly} value={draft.workflow_id ?? ''}
             onChange={(e) => onChange({ ...draft, workflow_id: e.target.value === '' ? null : e.target.value })}>
             {draft.workflow_id === null && <option value="">{t('fields.workflowDefault')}</option>}
-            {(workflows ?? []).map((w) => (
+            {(workflows ?? []).filter((w) => w.kind !== 'engineering').map((w) => (
               <option key={w.workflow_id} value={w.workflow_id}>{w.name} · r{w.revision}</option>
             ))}
           </select>

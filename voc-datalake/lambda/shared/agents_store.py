@@ -836,7 +836,10 @@ def archive_workflow(table: Any, workflow_id: str, *, archived_by: str, username
 
 def workflow_view(item: Mapping[str, Any], *, include_definition: bool = True) -> dict[str, Any]:
     data = plain(dict(item))
+    definition = workflow_schema.decode_definition(data.get('definition'))
     view = {
+        # An engineering flow (voc-workflow/2) is listed for the editor, never offered to an agent.
+        'kind': 'engineering' if (definition or {}).get('schema') == workflow_schema.SCHEMA_V2 else 'agents',
         'workflow_id': data.get('workflow_id'), 'slug': data.get('slug'), 'name': data.get('name'),
         'description': data.get('description', ''), 'revision': data.get('revision'),
         'derived_from': data.get('derived_from'), 'builtin': bool(data.get('builtin')),
@@ -845,7 +848,7 @@ def workflow_view(item: Mapping[str, Any], *, include_definition: bool = True) -
         'status': WORKFLOW_STATUS_ARCHIVED if is_archived_workflow(data) else AGENT_STATUS_ACTIVE,
     }
     if include_definition:
-        view['definition'] = workflow_schema.decode_definition(data.get('definition'))
+        view['definition'] = definition
     return view
 
 

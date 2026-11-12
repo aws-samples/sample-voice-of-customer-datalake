@@ -68,7 +68,11 @@
     "renameNamed": "Zmień nazwę: {{name}}",
     "renameTitle": "Zmień nazwę tego przepływu pracy",
     "renameConflict": "Ktoś w międzyczasie zmienił ten przepływ pracy albo jest to przepływ wbudowany. Odśwież stronę i spróbuj ponownie.",
-    "renameFailed": "Nie udało się zmienić nazwy przepływu pracy."
+    "renameFailed": "Nie udało się zmienić nazwy przepływu pracy.",
+    "newEngineeringFlow": "Nowy przepływ inżynieryjny",
+    "createEngineeringTitle": "Nowy przepływ inżynieryjny",
+    "createEngineeringHint": "Przepływ inżynieryjny uruchamia autonomicznych agentów inżynieryjnych na repozytorium i kończy się pull requestem do przejrzenia przez ludzi. Zaczyna się jako Start → Koniec: dodaj kroki Inżynieria z palety.",
+    "engineeringKind": "Inżynieria"
   },
   "fields": {
     "name": "Nazwa",
@@ -429,7 +433,46 @@
     "loopOption_few": "Pętla {{n}} ({{count, number}} kroki)",
     "loopOption_many": "Pętla {{n}} ({{count, number}} kroków)",
     "issueCount_few": "{{count, number}} problemy",
-    "issueCount_many": "{{count, number}} problemów"
+    "issueCount_many": "{{count, number}} problemów",
+    "engineering": {
+      "role": "Rola",
+      "skillVersion": "Wersja umiejętności",
+      "skillVersionHint": "'latest' (ostatnia zaakceptowana) lub wersja taka jak v3.",
+      "model": "Model",
+      "modelHint": "Identyfikator modelu; zostaw puste, aby użyć domyślnego.",
+      "budgetShare": "Udział w budżecie uruchomienia",
+      "budgetShareHint": "Ułamek od 0,01 do 1; udziały agentów sumują się najwyżej do 1. Puste: brak własnego udziału.",
+      "shardBy": "Dziel według",
+      "shardByOptions": {
+        "packages": "Pakietów",
+        "history": "Okien historii",
+        "pr_pages": "Stron PR"
+      },
+      "shardCap": "Najwięcej części",
+      "posters": "Kto publikuje zadania",
+      "claimers": "Kto przyjmuje zadania",
+      "until": "Trwa, dopóki",
+      "untilOptions": {
+        "drained": "wszystkie zadania nie zostaną wykonane",
+        "caps": "nie zostanie osiągnięty limit"
+      },
+      "maxRounds": "Rundy przeglądu (najwięcej)",
+      "packsAuto": "Wykryj pakiety kontroli w repozytorium",
+      "packs": "Pakiety kontroli",
+      "finalGoModel": "Model ostatecznej zgody",
+      "mode": "Tryb",
+      "modeOptions": {
+        "read": "Odczyt",
+        "write": "Zapis"
+      },
+      "scope": "Czyja pamięć",
+      "scopeOptions": {
+        "repo": "Repozytorium",
+        "role": "Roli",
+        "person": "Osoby"
+      },
+      "limit": "Najwięcej odczytanych wspomnień"
+    }
   },
   "workflowPage": {
     "title": "Przepływ pracy",
@@ -441,7 +484,8 @@
     "documents": "Dokumenty",
     "review": "Przegląd",
     "delivery": "Przekazanie",
-    "prototype": "Prototyp"
+    "prototype": "Prototyp",
+    "engineering": "Inżynieria"
   },
   "edgeLabels": {
     "pass": "Zaliczone",
@@ -538,6 +582,42 @@
     "end": {
       "label": "Koniec",
       "description": "Miejsce, w którym przebieg się kończy."
+    },
+    "agent": {
+      "label": "Agent",
+      "description": "Agent z rolą (fixer, hunter, committer…), wersją umiejętności i swoją częścią budżetu."
+    },
+    "map": {
+      "label": "Podział",
+      "description": "Dzieli pracę na części (pakiety, okna historii, strony PR), które agenci wykonują równolegle."
+    },
+    "reduce": {
+      "label": "Scalenie",
+      "description": "Miejsce, w którym części podziału znów się łączą: jeden wynik ze wszystkich."
+    },
+    "board": {
+      "label": "Tablica",
+      "description": "Tablica zadań: niektóre role publikują zadania, inne je przyjmują i wykonują, aż tablica się opróżni."
+    },
+    "quality_gate": {
+      "label": "Kontrola jakości",
+      "description": "Sprawdzenia i rundy przeglądu zmiany: GO prowadzi do PR, NO-GO do osoby."
+    },
+    "learning_loop": {
+      "label": "Pętla nauki",
+      "description": "Retrospektywa, która zapisuje w pamięci, czego nauczyło się uruchomienie."
+    },
+    "self_improvement": {
+      "label": "Samodoskonalenie",
+      "description": "Coach proponuje lepszą wersję umiejętności i ją mierzy."
+    },
+    "memory": {
+      "label": "Pamięć",
+      "description": "Odczyt z pamięci repozytorium, roli lub osoby albo zapis do niej."
+    },
+    "stop_at_pr": {
+      "label": "Stop na PR",
+      "description": "Przepływ kończy się pull requestem do przejrzenia przez ludzi: nic nie jest nigdy scalane."
     }
   },
   "plans": {

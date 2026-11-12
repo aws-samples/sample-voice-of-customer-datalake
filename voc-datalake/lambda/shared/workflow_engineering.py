@@ -3,8 +3,9 @@
 An engineering flow is a ``voc-workflow/2`` definition: ``start``, ``end`` (with ``status: needs_human`` it is the human
 decision point, the step the sample already has), and the steps below. The agents' interpreter runs only
 ``voc-workflow/1``, so it never takes one; the engineering runtime is to run them. Pure (no AWS), used by
-``shared.workflow_schema`` (the editor is to mirror these messages in ``graphRules.ts`` when it opens engineering
-flows; until then they are saved, validated and read through the API, and the library does not list them):
+``shared.workflow_schema``; the editor mirrors every message (frontend ``WorkflowEditor/engineeringRules.ts``), held
+to the same answers by the shared fixture ``frontend/src/test/engineeringFlows.json``
+(``shared/test/test_engineering_flow_fixture.py``):
 
 - ``agent``: ``role`` one of ``ENGINEERING_ROLES``; ``skill_version`` ``latest`` or ``v<n>``; ``model`` optional
   text; ``budget_share`` above 0 and at most 1, and a flow's shares add up to at most 1 (the run's budget);

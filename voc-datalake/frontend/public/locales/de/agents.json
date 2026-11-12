@@ -66,7 +66,11 @@
     "renameNamed": "{{name}} umbenennen",
     "renameTitle": "Workflow umbenennen",
     "renameConflict": "Jemand hat diesen Workflow inzwischen geändert, oder es ist der integrierte. Neu laden und erneut versuchen.",
-    "renameFailed": "Der Workflow konnte nicht umbenannt werden."
+    "renameFailed": "Der Workflow konnte nicht umbenannt werden.",
+    "newEngineeringFlow": "Neuer Engineering-Ablauf",
+    "createEngineeringTitle": "Neuer Engineering-Ablauf",
+    "createEngineeringHint": "Ein Engineering-Ablauf lässt autonome Engineering-Agenten an einem Repository arbeiten und endet mit einem Pull Request, den Menschen prüfen. Er beginnt als Start → Ende: Fügen Sie die Engineering-Schritte aus der Palette hinzu.",
+    "engineeringKind": "Engineering"
   },
   "fields": {
     "name": "Name",
@@ -398,7 +402,46 @@
     "switchMessage": "Ihre ungespeicherten Änderungen an {{name}} gehen verloren.",
     "switchConfirm": "Workflow wechseln",
     "switched": "Dieser Agent führt jetzt {{name}} aus.",
-    "switchFailed": "Der Agent konnte nicht auf diesen Workflow umgestellt werden."
+    "switchFailed": "Der Agent konnte nicht auf diesen Workflow umgestellt werden.",
+    "engineering": {
+      "role": "Rolle",
+      "skillVersion": "Skill-Version",
+      "skillVersionHint": "'latest' (die zuletzt angenommene) oder eine Version wie v3.",
+      "model": "Modell",
+      "modelHint": "Eine Modell-ID; leer lassen für die Voreinstellung.",
+      "budgetShare": "Anteil am Budget des Laufs",
+      "budgetShareHint": "Ein Bruchteil von 0,01 bis 1; die Anteile der Agenten ergeben höchstens 1. Leer: kein eigener Anteil.",
+      "shardBy": "Aufteilen nach",
+      "shardByOptions": {
+        "packages": "Paketen",
+        "history": "Verlaufsfenstern",
+        "pr_pages": "PR-Seiten"
+      },
+      "shardCap": "Höchstens Stücke",
+      "posters": "Wer Aufgaben einstellt",
+      "claimers": "Wer Aufgaben übernimmt",
+      "until": "Läuft, bis",
+      "untilOptions": {
+        "drained": "jede Aufgabe erledigt ist",
+        "caps": "eine Grenze erreicht ist"
+      },
+      "maxRounds": "Review-Runden (höchstens)",
+      "packsAuto": "Prüfpakete im Repository erkennen",
+      "packs": "Prüfpakete",
+      "finalGoModel": "Modell der Endfreigabe",
+      "mode": "Modus",
+      "modeOptions": {
+        "read": "Lesen",
+        "write": "Schreiben"
+      },
+      "scope": "Wessen Gedächtnis",
+      "scopeOptions": {
+        "repo": "Das Repository",
+        "role": "Die Rolle",
+        "person": "Die Person"
+      },
+      "limit": "Höchstens gelesene Erinnerungen"
+    }
   },
   "paletteGroups": {
     "flow": "Ablauf",
@@ -406,7 +449,8 @@
     "documents": "Dokumente",
     "review": "Prüfung",
     "prototype": "Prototyp",
-    "delivery": "Übergabe"
+    "delivery": "Übergabe",
+    "engineering": "Engineering"
   },
   "edgeLabels": {
     "pass": "Bestanden",
@@ -499,6 +543,42 @@
     "end": {
       "label": "Ende",
       "description": "Hier endet der Lauf."
+    },
+    "agent": {
+      "label": "Agent",
+      "description": "Ein Agent mit einer Rolle (fixer, hunter, committer…), seiner Skill-Version und seinem Budgetanteil."
+    },
+    "map": {
+      "label": "Aufteilen",
+      "description": "Teilt die Arbeit in Stücke (Pakete, Verlaufsfenster, PR-Seiten), die Agenten parallel bearbeiten."
+    },
+    "reduce": {
+      "label": "Zusammenführen",
+      "description": "Wo die Stücke einer Aufteilung wieder zusammenkommen: ein Ergebnis aus allen."
+    },
+    "board": {
+      "label": "Board",
+      "description": "Ein Aufgaben-Board: einige Rollen stellen Aufgaben ein, andere übernehmen und erledigen sie, bis es leer ist."
+    },
+    "quality_gate": {
+      "label": "Qualitätsprüfung",
+      "description": "Prüfungen und Review-Runden zur Änderung: GO geht weiter zum PR, NO-GO an eine Person."
+    },
+    "learning_loop": {
+      "label": "Lernschleife",
+      "description": "Eine Retrospektive, die festhält, was der Lauf gelernt hat."
+    },
+    "self_improvement": {
+      "label": "Selbstverbesserung",
+      "description": "Der Coach schlägt eine bessere Skill-Version vor und misst sie."
+    },
+    "memory": {
+      "label": "Gedächtnis",
+      "description": "Aus dem Gedächtnis des Repositorys, einer Rolle oder einer Person lesen oder hineinschreiben."
+    },
+    "stop_at_pr": {
+      "label": "Stopp beim PR",
+      "description": "Der Ablauf endet mit einem Pull Request, den Menschen prüfen: es wird nie etwas gemergt."
     }
   },
   "loopUntilHint": {

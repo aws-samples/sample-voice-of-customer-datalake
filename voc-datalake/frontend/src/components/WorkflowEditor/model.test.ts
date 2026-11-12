@@ -11,7 +11,7 @@ import {
 import { clampRounds, loopIssues } from './loopFields'
 import { emptyDefinition } from './model-fixtures'
 import { validateLocally } from './graphRules'
-import { WORKFLOW_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
+import { WORKFLOW_ALL_NODE_TYPES } from '../../api/workflowsApi'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import { at } from '@test/defined'
 
@@ -26,7 +26,7 @@ function withReview(): WorkflowDefinition {
 describe('catalogue helpers', () => {
   it('covers every node type', () => {
     const byText = (a: string, b: string) => a.localeCompare(b)
-    expect(Object.keys(NODE_CATALOGUE).sort(byText)).toStrictEqual([...WORKFLOW_NODE_TYPES].sort(byText))
+    expect(Object.keys(NODE_CATALOGUE).sort(byText)).toStrictEqual([...WORKFLOW_ALL_NODE_TYPES].sort(byText))
   })
 
   it('parses only known node types', () => {
