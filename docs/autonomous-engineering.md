@@ -240,7 +240,8 @@ Each agent is a pre-made, configurable template: its **skill** (instructions, ex
 What exists:
 
 - **The bus**: the `voc-engineering` EventBridge custom bus (no archive; its policy denies `events:PutEvents` to every
-  principal but the board API's role), and its schema, voc-msg/1, checked in code
+  principal but the board API's role and the agent roles with a voice, each pinned to its own source: "The agents'
+  access", below), and its schema, voc-msg/1, checked in code
   (`bus/schema.py`: the envelope, the type list, the claim-check rules on `refs`, no credential-shaped summary, 16 KB
   at most). `bus/publish.py` is the one publish helper: it checks a message against the schema before `PutEvents`,
   and a message about a recorded change takes its event id from the change, so a retry is a redelivery.
@@ -266,16 +267,15 @@ What exists:
   redriving to `voc-engineering-dlq`. That one dead-letter queue also takes the events the rule could not hand the
   router, the router's invocations that failed every retry and the runtime's undelivered supervisor ticks, and
   alerting watches it like the platform's other
-  failure queues. The role queues are fixed per role, not made per run as described below: a run's own
-  queues and agents' inboxes are not made yet (the [runtime](#runtime-one-microvm-per-agent)'s agent roles are granted
-  per-run queue names that nothing creates).
+  failure queues. The role queues are fixed per role, not made per run as described below, and serve every run, so
+  no agent role reads them: a run's posted tasks are to reach its own agents through the delivery function.
+- **The agents' access**: the [runtime](#runtime-one-microvm-per-agent)'s agent roles call the board's and the
+  broker's function URLs, and put events on the bus only with their own source; the bus's policy admits the board's
+  role and the agent roles with a voice (all but the coach: Runtime → Not aligned yet) and nothing else, and denies
+  each agent role every source but its own.
 
-Not built yet: the run's start, which writes the `META` row (so today the board answers 404 to every post and the
-router drops every message as for an unknown run); the agents' roles' access (the [runtime](#runtime-one-microvm-per-agent) makes
-the roles and sessions the board reads as agents, but none holds `lambda:InvokeFunctionUrl` on the board or `events:PutEvents` on the bus, which the board API alone holds);
-the bus policy's per-publisher pins of each agent role to its own `source` (today it admits the board's role alone,
-which publishes only as `voc.engineering/board`); the delivery function the router names (it holds no
-invoke on it yet); per-run queues and inboxes; the run coordinator; the workspace. The rest of this section is the
+Not built yet: the delivery function the router names (it holds no invoke on it yet), so a run's posted tasks reach
+its agents only through the board; the run coordinator; the workspace. The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
 holds, and the design's type table and per-run inboxes are what the next slices bring the code to or the table to.
 
@@ -498,18 +498,17 @@ next slice):
   `ws/<ws>/runs/<run>/<agent>/attempt-<epoch>/` (`board/store.py`) and the bus's `refs.s3` only under `ws/<ws>/`
   (`bus/schema.py`). Both cannot hold: whatever an agent can write, the board and the router refuse to reference,
   and the reverse. One workspace layout (and the bucket it lives in) has to be chosen and both sides moved to it.
-- **Two roles with no voice.** The coach's and the gate runner's sessions are pinned to
-  `voc.engineering/agent/coach/…` and `voc.engineering/agent/gate-runner/…`, which `bus/senders.py` always drops:
-  its agent sources accept only the roles of `bus/schema.py` ROLES, which has neither (the coach's own source there
-  is the service source `voc.engineering/coach`, and the gate runner has none), so every event either role puts
-  on the bus would be journalled as an unknown sender.
-- **Queues.** Its queue grants name per-run queues (below) that nothing creates, while the bus's role queues are
-  fixed per role (`voc-eng-tasks-<role>`).
-- **The flag.** It reads `-c engineeringAgents` with a strict parser of its own (a typo fails the synth), the
-  broker and the bus with a looser one (`true` or `"true"`, anything else off).
-- **Wiring.** Its agent roles hold no `lambda:InvokeFunctionUrl` on the broker or the board, the bus's policy admits
-  none of them (the board's role alone), and the harness's board, inbox and broker interfaces still refuse every
-  call.
+- **The gate runner's voice.** Its sessions are pinned to `voc.engineering/agent/gate-runner/…`, which
+  `bus/senders.py` drops: its agent sources accept only the roles of `bus/schema.py` ROLES, the roles with a task
+  queue, and the gate runner has none.
+- **The coach's voice.** It may not put events on the bus at all yet: senders.py knows the coach only as the
+  service source `voc.engineering/coach`, which names no workspace or run, so a coach session could speak, as the
+  system, in any run. It gets a voice with a run-scoped coach source.
+- **Posted tasks.** A role's task queue (`voc-eng-tasks-<role>`) serves every run, and IAM cannot narrow a queue
+  to a run, so no agent role reads one (one run's agent would see, and could delete, another run's task notices).
+  Until the delivery function pushes a run's posted tasks to its own agents (the runtime's next slice), an agent
+  learns of its run's tasks only from the board, which serves the caller's run only.
+- **The harness.** Its board, inbox and broker interfaces still refuse every call.
 
 Each agent of a run runs in its own Lambda MicroVM, from its language's image, with its own sparse checkout from the
 cache. The idle policy suspends a MicroVM after 5 minutes without a request and ends one suspended for an hour; the
@@ -573,11 +572,12 @@ continues it in a new one once the wait closes.
   its config and filters, is never the agent's.
 - **Scoped roles.** Each agent role reads only its connection's cache prefix and its run's workspace
   (`engineering/runs/<run>/`), writes only its own keys there (`engineering/runs/<run>/<agent>/`: the agent comes right
-  after the run, so no other agent's key matches), reads only its own inbox and its run's queue for its role (queues
-  `voc-eng_<run>_<agent>` and `voc-eng_<run>_role_<role>`; ids hold no `_`, so no two pairs of ids share a name), may
+  after the run, so no other agent's key matches), reads no queue (the role queues serve every run; its run's
+  messages are to be pushed to it by the delivery function, not built yet), calls the board's and the broker's function URLs (`lambda:InvokeFunctionUrl`, and the invoke behind it only through a function URL), may
   put events on the bus only with its own source
   (`voc.engineering/agent/<role>/<ws>/<run>/<agent>`, the run coordinator's `voc.engineering/conductor/<ws>/<run>`;
-  an explicit deny), calls the allowlisted models, and deletes nothing. No MicroVM
+  an explicit deny in its own policy and another in the bus's, which admits only the board's role and the agent
+  roles with a voice), calls the allowlisted models, and deletes nothing. No MicroVM
   auth token is ever put in an event, a log, a row or a checkpoint: it is minted when needed (at most 60 minutes),
   refreshed 5 minutes before it lapses, held in memory only, and refuses to be serialised.
 - **The run's start and end.** The runtime's `start_run` writes the run's `META` row in voc-engineering
@@ -832,7 +832,7 @@ and the phase that ships them names them in that row.
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503) |
-| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API and the role queues ([above](#how-the-agents-work-together)); no run start yet, so the board answers 404 to every post; the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images: built, not yet run against AWS nor wired to the broker and the board, [above](#runtime-one-microvm-per-agent)); inboxes and workspace planned |
+| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API and the role queues ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)); inboxes and workspace planned |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); skills, the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | planned |

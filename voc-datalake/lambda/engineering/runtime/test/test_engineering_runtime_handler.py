@@ -27,7 +27,7 @@ LAUNCH = {'action': 'launch', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id'
 
 @pytest.fixture
 def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
-    assert aws is not None  # moto's S3 and voc-agents are up for the handler's own clients
+    assert aws is not None  # moto's S3 and voc-engineering are up for the handler's own clients
     monkeypatch.setattr(handler, '_runtime', LocalMicroVmRuntime)
     for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_TABLE': TABLE,
                         'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),

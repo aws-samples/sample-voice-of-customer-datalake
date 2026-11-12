@@ -18,7 +18,8 @@ Per run it honours a stop (a person's, an agent's kill switch, or the 30-day sto
 decision point offering only "stop"): every MicroVM is ended at once without waiting for the agents, and the
 launcher renews none of their sessions. A spent budget opens a human decision point and holds every agent
 (checkpointed, without a MicroVM) for a person to resume; no new MicroVM starts while it is spent. It emits
-``run.health``. It never switches its own schedule: the runs' own start and end do (``handler.start_run``, ``end_run``).
+``run.health``. It never switches its own schedule: the handler does, around the runs (``handler.start_run``, and its settling
+after an ``end_run`` and after each tick).
 
 ``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
 held for a person), Resume (a held agent continued from its checkpoint; refused for a stopped run or a spent

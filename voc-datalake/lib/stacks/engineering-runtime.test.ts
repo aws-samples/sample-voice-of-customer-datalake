@@ -1,6 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as events from 'aws-cdk-lib/aws-events';
+import type * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -10,16 +12,32 @@ import { z } from 'zod';
 import { fixtureBucket } from '../test-support/fixture-resources';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
-import { addEngineeringRuntime } from './engineering-runtime';
+import { type EngineeringPeers, addEngineeringRuntime } from './engineering-runtime';
 
-/**
- * A stack with only the runtime's dependencies, under `context`; `withDeadLetters: false` leaves out the bus's
- * dead-letter queue (a queue on the stack's key, as voc-engineering-dlq is).
- */
-function runtimeStack(context: Record<string, unknown>, withDeadLetters = true): { template: Template; added: boolean } {
+const ACCOUNT = 'arn:aws:lambda:us-east-1:111111111111';
+
+/** The bus's and the broker's parts the runtime takes, as references, and the sources pinned on the bus. */
+function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>): EngineeringPeers {
+  return {
+    // A queue on the stack's key, as voc-engineering-dlq is.
+    deadLetterQueue: new sqs.Queue(stack, 'EngineeringDLQ', { encryption: sqs.QueueEncryption.KMS, encryptionMasterKey: kmsKey }),
+    bus: events.EventBus.fromEventBusArn(stack, 'Bus', 'arn:aws:events:us-east-1:111111111111:event-bus/voc-engineering'),
+    addAgentPublisher: (statementId: string, _role: iam.IRole, source: string) => {
+      pins.set(statementId, source);
+    },
+    board: lambda.Function.fromFunctionArn(stack, 'Board', `${ACCOUNT}:function:voc-engineering-board`),
+    broker: lambda.Function.fromFunctionArn(stack, 'Broker', `${ACCOUNT}:function:voc-engineering-broker`),
+  };
+}
+
+interface RuntimeStack { template: Template; added: boolean; pins: Map<string, string> }
+
+/** A stack with only the runtime's dependencies, under `context`; `withPeers: false` leaves out the bus and broker. */
+function runtimeStack(context: Record<string, unknown>, withPeers = true): RuntimeStack {
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], ...context } });
   const stack = new cdk.Stack(app, 'EngineeringTest', { env: { account: '111111111111', region: 'us-east-1' } });
   const kmsKey = new kms.Key(stack, 'Key');
+  const pins = new Map<string, string>();
   const added = addEngineeringRuntime(stack, {
     uniqueName: (baseName) => baseName,
     layer: lambda.LayerVersion.fromLayerVersionArn(stack, 'Layer', 'arn:aws:lambda:us-east-1:111111111111:layer:deps:1'),
@@ -29,11 +47,9 @@ function runtimeStack(context: Record<string, unknown>, withDeadLetters = true):
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
     }),
     rawDataBucket: fixtureBucket(stack, 'Raw'),
-    deadLetterQueue: withDeadLetters
-      ? new sqs.Queue(stack, 'EngineeringDLQ', { encryption: sqs.QueueEncryption.KMS, encryptionMasterKey: kmsKey })
-      : undefined,
+    peers: withPeers ? fakePeers(stack, kmsKey, pins) : undefined,
   });
-  return { template: Template.fromStack(stack), added };
+  return { template: Template.fromStack(stack), added, pins };
 }
 
 /** How many resources of `type` match `properties`. */
@@ -62,6 +78,14 @@ function policyText(template: Template, roleId: string): string {
   return JSON.stringify(template.findResources('AWS::IAM::Policy', {
     Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(roleId) }]) },
   }));
+}
+
+/** How many of the fixer agent role's policies hold every one of `statements`. */
+function fixerPoliciesWith(template: Template, statements: unknown[]): number {
+  return count(template, 'AWS::IAM::Policy', {
+    Roles: [{ Ref: Match.stringLikeRegexp('EngineeringAgentFixerRole') }],
+    PolicyDocument: Match.objectLike({ Statement: Match.arrayWith(statements) }),
+  });
 }
 
 describe('the engineering runtime is off by default', () => {
@@ -111,7 +135,7 @@ describe('with -c engineeringAgents=true', () => {
     expect(count(template, 'AWS::SQS::Queue')).toBe(1);
     expect(count(template, 'AWS::SQS::Queue', { KmsMasterKeyId: Match.objectLike({ 'Fn::GetAtt': Match.anyValue() }) }))
       .toBe(1);
-    expect(() => runtimeStack({ engineeringAgents: 'true' }, false)).toThrow(/dead-letter queue/);
+    expect(() => runtimeStack({ engineeringAgents: 'true' }, false)).toThrow(/engineering bus/);
   });
 
   it('configures no MicroVM image by default, so every launch is refused until one is set', () => {
@@ -183,12 +207,40 @@ describe('with -c engineeringAgents=true', () => {
     for (const keys of listed ?? []) expect(read).toContain(`/${keys}`);
   });
 
-  it('scopes an agent role to its session: its cache and run, its own keys and queues, its own bus source', () => {
+  it('scopes an agent role to its session: its cache and run, its own keys, and no queue', () => {
     const agent = policyText(template, 'EngineeringAgentFixerRole');
     expect(agent).toContain('engineering/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
     expect(agent).toContain('engineering/cache/${aws:PrincipalTag/connection}/*');
-    expect(agent).toContain('voc-eng_${aws:PrincipalTag/run}_role_fixer');
-    expect(agent).not.toMatch(/s3:DeleteObject|s3:\*|dynamodb:|iam:|lambda:/);
+    // The role queues serve every run: no agent reads one (its run's messages are pushed to it).
+    expect(agent).not.toMatch(/s3:DeleteObject|s3:\*|dynamodb:|iam:|lambda:\*|sqs:/);
+  });
+
+  it('lets an agent role call the board\'s and the broker\'s function URLs, and invoke them only through one', () => {
+    const urls = [`${ACCOUNT}:function:voc-engineering-board`, `${ACCOUNT}:function:voc-engineering-broker`];
+    expect(fixerPoliciesWith(template, [
+          Match.objectLike({
+            Sid: 'BoardAndBrokerUrls', Action: 'lambda:InvokeFunctionUrl', Resource: urls,
+            Condition: { StringEquals: { 'lambda:FunctionUrlAuthType': 'AWS_IAM' } },
+          }),
+          Match.objectLike({
+            Sid: 'BoardAndBrokerThroughUrls', Action: 'lambda:InvokeFunction', Resource: urls,
+            Condition: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } },
+          }),
+    ])).toBe(1);
+  });
+
+  it('pins every agent role with a voice to its own source on the bus as well', () => {
+    const { pins } = runtimeStack({ engineeringAgents: 'true' });
+    expect(pins.size).toBe(12);
+    expect(pins.get('Fixer')).toBe('voc.engineering/agent/fixer/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}');
+    expect(pins.get('Coordinator')).toBe('voc.engineering/conductor/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}');
+    expect(policyText(template, 'EngineeringAgentFixerRole')).toContain(':event-bus/voc-engineering');
+  });
+
+  it('gives the coach no voice on the bus until it has a run-scoped source (its service source names no run)', () => {
+    const { pins } = runtimeStack({ engineeringAgents: 'true' });
+    expect(pins.has('Coach')).toBe(false);
+    expect(policyText(template, 'EngineeringAgentCoachRole')).not.toContain('PutOnTheBus');
   });
 
   it('lets each engineering role use the key only through the services that store its data', () => {
@@ -211,18 +263,13 @@ describe('with -c engineeringAgents=true', () => {
   });
 
   it('denies an agent role any role chaining and any bus source but its own', () => {
-    expect(count(template, 'AWS::IAM::Policy', {
-      Roles: [{ Ref: Match.stringLikeRegexp('EngineeringAgentFixerRole') }],
-      PolicyDocument: Match.objectLike({
-        Statement: Match.arrayWith([
+    expect(fixerPoliciesWith(template, [
           Match.objectLike({ Sid: 'NoRoleChaining', Effect: 'Deny', Action: ['sts:AssumeRole', 'sts:TagSession'] }),
           Match.objectLike({
             Sid: 'OwnEventSourceOnly', Effect: 'Deny', Action: 'events:PutEvents',
             Condition: { StringNotEquals: { 'events:source': 'voc.engineering/agent/fixer/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}' } },
           }),
-        ]),
-      }),
-    })).toBe(1);
+    ])).toBe(1);
   });
 
   it('lets the supervisor touch only the runs\' rows and their registry, its own rule and the agent roles', () => {

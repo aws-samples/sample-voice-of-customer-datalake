@@ -7,16 +7,18 @@
  *                                                                           └──▶ the posted task's role queue
  *
  * - The bus: one EventBridge custom bus, no archive and no schema registry (nothing billed while idle). Its policy
- *   denies `events:PutEvents` to every principal but the board API's role, whatever an identity policy grants (the
- *   agents' roles, each pinned to its own `source`, come with the runtime).
+ *   denies `events:PutEvents` to every principal but the board API's role and the agent roles with a voice, whatever
+ *   an identity policy grants, and denies each of those every `source` but its own (`addAgentPublisher`,
+ *   engineering-runtime.ts).
  * - One fixed rule sends every event of this account on the bus to the inbox router (`engineering/bus/router.py`),
  *   never a rule per run. The router checks voc-msg/1 and the sender, writes the run's conversation and fans out:
  *   a posted task to its role's queue, a message for an agent or the conductor to the delivery function.
  * - The board API (`engineering/board/api.py`) behind a function URL with IAM authentication and no resource-based
  *   policy, like the broker: it takes the caller from its assumed-role identity and publishes each change as the
  *   board.
- * - One task queue per role of lambda/engineering/bus/schema.py ROLES (pinned by the test). Nothing consumes them
- *   until the runtime's agents land.
+ * - One task queue per role of lambda/engineering/bus/schema.py ROLES (pinned by the test). No agent reads them: a
+ *   queue serves every run, and an agent may see only its own run's tasks, so posted tasks are to reach the agents
+ *   per run through the delivery function instead (docs/autonomous-engineering.md → Runtime).
  * - One dead-letter queue, voc-engineering-dlq: the role queues' redrives, the events the rule could not hand the
  *   router, the router's invocations that failed every retry, and the runtime's supervisor ticks EventBridge could
  *   not deliver (engineering-runtime.ts). Alerting watches it like the platform's other
@@ -70,9 +72,15 @@ export interface EngineeringBusProps {
 }
 
 export class EngineeringBus extends Construct {
-  private readonly bus: events.EventBus;
+  /** The bus the agents put their messages on. */
+  public readonly bus: events.EventBus;
   /** voc-engineering-dlq: also the dead-letter queue of the runtime's supervisor rule (engineering-runtime.ts). */
   public readonly dlq: sqs.Queue;
+  /** The board API: the agent roles may call its function URL (engineering-runtime.ts). */
+  public readonly board: lambda.IFunction;
+  private readonly publishers: iam.IRole[] = [];
+  /** The last of the bus's policy resources: each waits for the one before (one read-modify-write at a time). */
+  private lastPolicy: Construct | undefined;
 
   constructor(scope: Construct, id: string, props: EngineeringBusProps) {
     super(scope, id);
@@ -82,13 +90,38 @@ export class EngineeringBus extends Construct {
       queueName: props.uniqueName(ENGINEERING_DLQ_BASE_NAME), ...queueEncryption(props.kmsKey),
       retentionPeriod: cdk.Duration.days(14), removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-    const queues = this.roleQueues(props);
+    const queues = this.createRoleQueues(props);
     this.createRouter(props, queues);
-    this.pinPublishers([this.createBoardApi(props)]);
+    this.board = this.createBoardApi(props);
+    this.pinPublishers();
+  }
+
+  /**
+   * Let `role` (an agent role) put events on the bus, only with `source` (its own, from its session tags:
+   * lambda/engineering/bus/senders.py): the bus policy denies it every other source, whatever its own policy says.
+   */
+  public addAgentPublisher(statementId: string, role: iam.IRole, source: string): void {
+    this.publishers.push(role);
+    this.addPolicy(new iam.PolicyStatement({
+      sid: `OwnSourceOnly${statementId}`,
+      effect: iam.Effect.DENY,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['events:PutEvents'],
+      resources: [this.bus.eventBusArn],
+      conditions: { ArnEquals: { 'aws:PrincipalArn': role.roleArn }, StringNotEquals: { 'events:source': source } },
+    }));
+  }
+
+  /** One statement of the bus policy, written after the one before it (CloudFormation would write them at once). */
+  private addPolicy(statement: iam.PolicyStatement): void {
+    const { policyDependable } = this.bus.addToResourcePolicy(statement);
+    if (!Construct.isConstruct(policyDependable)) throw new Error('the bus policy is not a construct');
+    if (this.lastPolicy) policyDependable.node.addDependency(this.lastPolicy);
+    this.lastPolicy = policyDependable;
   }
 
   /** One queue per role, encrypted with the stack's key, TLS only, redriving to the bus's dead-letter queue. */
-  private roleQueues(props: EngineeringBusProps): Map<string, sqs.Queue> {
+  private createRoleQueues(props: EngineeringBusProps): Map<string, sqs.Queue> {
     return new Map(ENGINEERING_QUEUE_ROLES.map((role) => [role, new sqs.Queue(this, `TasksQueue-${role}`, {
       queueName: props.uniqueName(`voc-eng-tasks-${role}`), ...queueEncryption(props.kmsKey),
       deadLetterQueue: { queue: this.dlq, maxReceiveCount: 3 }, removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -96,17 +129,19 @@ export class EngineeringBus extends Construct {
   }
 
   /**
-   * The bus policy: an explicit deny of `events:PutEvents` for every principal but `publishers`, whatever an identity
-   * policy grants. Today the board's role alone; the agents' roles, each pinned to its own `source`, come later.
+   * The bus policy: an explicit deny of `events:PutEvents` for every principal but the publishers (the board's role,
+   * and each agent role added with `addAgentPublisher`), whatever an identity policy grants.
    */
-  private pinPublishers(publishers: iam.IRole[]): void {
-    this.bus.addToResourcePolicy(new iam.PolicyStatement({
+  private pinPublishers(): void {
+    this.addPolicy(new iam.PolicyStatement({
       sid: 'OnlyTheEngineeringPublishers',
       effect: iam.Effect.DENY,
       principals: [new iam.AnyPrincipal()],
       actions: ['events:PutEvents'],
       resources: [this.bus.eventBusArn],
-      conditions: { ArnNotEquals: { 'aws:PrincipalArn': publishers.map((role) => role.roleArn) } },
+      conditions: {
+        ArnNotEquals: { 'aws:PrincipalArn': cdk.Lazy.list({ produce: () => this.publishers.map((role) => role.roleArn) }) },
+      },
     }));
   }
 
@@ -153,9 +188,10 @@ export class EngineeringBus extends Construct {
     });
   }
 
-  /** The board API; returns its role (the bus's one publisher). */
-  private createBoardApi(props: EngineeringBusProps): iam.Role {
+  /** The board API (its role is a publisher). */
+  private createBoardApi(props: EngineeringBusProps): lambda.Function {
     const role = workerRole(this, 'BoardRole');
+    this.publishers.push(role);
     props.engineeringTable.grant(role, ...TABLE_ACTIONS);
     grantKeyThrough(role, props.kmsKey, ['dynamodb']);
     this.bus.grantPutEventsTo(role);
@@ -176,7 +212,7 @@ export class EngineeringBus extends Construct {
     });
     // No resource-based policy: only identities an IAM policy grants lambda:InvokeFunctionUrl on it can call it.
     board.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
-    return role;
+    return board;
   }
 }
 
