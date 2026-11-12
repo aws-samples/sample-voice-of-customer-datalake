@@ -14,7 +14,7 @@ from engineering.runtime.interface import AgentSpec, MicroVm, RuntimeRefused
 from engineering.runtime.ports import PendingPorts, PortNotWired
 from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore
 from engineering.runtime.sessions import StaleSession
-from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE
+from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE, WORKSPACE_BUCKET
 from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
 from shared import aws as shared_aws
 
@@ -30,7 +30,7 @@ LAUNCH = {'action': 'launch', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id'
 def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     assert aws is not None  # moto's S3 and voc-engineering are up for the handler's own clients
     monkeypatch.setattr(handler, '_runtime', LocalMicroVmRuntime)
-    for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_TABLE': TABLE,
+    for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
                         'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
                         'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_REGION': 'us-east-1'}.items():
         monkeypatch.setenv(name, value)
@@ -77,6 +77,20 @@ def test_launch_starts_the_agents_microvm_and_records_its_session(wired: Any):
     assert _state(wired) == 'ENABLED'
 
 
+def test_the_launchs_attempt_reaches_the_session_and_the_microvms_environment(wired: Any):
+    assert wired is not None
+    handler.lambda_handler({**LAUNCH, 'attempt': 2}, None)
+    supervisor = handler._supervisor()
+    session = supervisor.sessions.get(RUN, 'fixer-1')
+    assert session is not None
+    env = session.spec(None, supervisor.workspace_bucket).environment()
+    assert (session.task_attempt, env['VOC_ATTEMPT'], env['VOC_COMMIT'], env['VOC_WORKSPACE_BUCKET']) == (
+        2, '2', COMMIT, WORKSPACE_BUCKET)
+    # Each bucket for its own: the cache's mount from the raw one, the agents' keys in the workspace one.
+    assert (supervisor.bucket, supervisor.workspace_bucket) == (BUCKET, WORKSPACE_BUCKET)
+    assert f'{WORKSPACE_BUCKET}.s3.us-east-1.amazonaws.com' in session.egress
+
+
 def test_no_agent_is_launched_for_a_run_that_was_never_started_or_has_ended(wired: Any):
     assert wired is not None
     with pytest.raises(RunNotActive, match='active run'):
@@ -113,9 +127,10 @@ def test_a_second_launch_of_the_same_agent_is_refused_and_ends_the_microvm_it_st
 
 @pytest.mark.parametrize('change', [{'harness': []}, {'harness': 'python3 -c pass'}, {'harness': ['python3', 1]},
                                     {'commit': 'main'}, {'paths': ['../etc']}, {'paths': 'src'}, {'paths': None},
-                                    {'role': 'admin'}, {'language': 'cobol'}],
+                                    {'role': 'admin'}, {'language': 'cobol'}, {'attempt': 0}, {'attempt': 10_000},
+                                    {'attempt': True}],
                          ids=['no-harness', 'shell-string', 'not-strings', 'branch', 'path', 'paths-string',
-                              'paths-null', 'role', 'language'])
+                              'paths-null', 'role', 'language', 'attempt-0', 'attempt-over', 'attempt-bool'])
 def test_launch_refuses_a_bad_request_before_anything_starts(wired: Any, change: dict[str, Any]):
     assert wired is not None
     with pytest.raises(RuntimeRefused):

@@ -67,6 +67,8 @@ mutants/
 *.py.bak
 .stryker-tmp/
 reports/
+# ...but not the engineering agents' report builders (source code that happens to be called reports).
+!voc-datalake/lambda/engineering/reports/
 
 # JUnit report written by the MCP CI gate (see scripts/mcp_gate.py). Produced on
 # any local run of that gate's pytest command too, so it is ignored rather than

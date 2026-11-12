@@ -6,12 +6,16 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from engineering.runtime.checkpoints import agent_prefix, artifact_prefix
 from engineering.runtime.harness.interface import AgentSession
 from engineering.runtime.harness.ports import InboxMessage, TaskBrief
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tools import AgentContext, ToolBox
 from engineering.runtime.harness.workspace import Workspace
 
+RUN_ID = '01JD3R4NZXQ7Y2W8K4M6P9T0AB'
+#: The task's commit: its checkpoints and patches go under it.
+HARNESS_COMMIT = 'c' * 40
 BRIEF = TaskBrief(task_id='task-1', title='Fix the failing parser test', instructions='Make tests/test_parse.py pass.',
                   knowledge=('Run the tests with: pytest -q',), memory=('The parser lives in src/parse.py.',))
 
@@ -131,6 +135,8 @@ def world(tmp_path: Any, *, role: str = 'fixer') -> World:
     context = AgentContext(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', task_id='task-1', role=role, brief=BRIEF,
                            workspace=Workspace(checkout), runner=runner, board=board, broker=broker,
                            store=store, status=StatusReport(home), patch_dir=os.path.join(home, '.voc', 'patches'),
-                           own_prefix='engineering/runs/01JD3R4NZXQ7Y2W8K4M6P9T0AB/fixer-1/')
+                           own_prefix=agent_prefix(RUN_ID, 'fixer-1'),
+                           checkpoints_prefix=artifact_prefix(RUN_ID, 'fixer-1', HARNESS_COMMIT, 1, 'checkpoints'),
+                           patches_prefix=artifact_prefix(RUN_ID, 'fixer-1', HARNESS_COMMIT, 1, 'patches'))
     session = AgentSession(context=context, tools=ToolBox(context), inbox=inbox, store=store)
     return World(session, runner, board, inbox, broker, store, checkout, home)

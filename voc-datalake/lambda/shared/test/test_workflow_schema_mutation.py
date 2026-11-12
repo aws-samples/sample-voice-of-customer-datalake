@@ -103,7 +103,8 @@ class TestPublishedConstants:
 
 class TestTopLevelRefusals:
     @pytest.mark.parametrize(('top', 'errors'), [
-        ({'schema': 'v2'}, ["schema must be 'voc-workflow/1'"]),
+        ({'schema': 'v2'}, [("schema must be 'voc-workflow/1' (an agents workflow) or 'voc-workflow/2' "
+                             '(an engineering flow)')]),
         ({'name': None}, ['name is required']),
         ({'name': '   '}, ['name is required']),
         ({'name': 3}, ['name must be a string']),

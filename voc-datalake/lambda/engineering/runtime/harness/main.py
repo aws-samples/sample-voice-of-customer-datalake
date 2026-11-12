@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from engineering.runtime.checkout import repo_git, share_working_tree
-from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, agent_prefix, checkpoint_prefix, is_valid
+from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, agent_prefix, artifact_prefix, is_valid
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
 from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
@@ -39,7 +39,8 @@ HEARTBEAT_SECONDS: Final = 60.0
 
 
 class S3Store:
-    """Puts under the agent's own keys only (its role allows nothing else; this refuses before trying)."""
+    """Create-only puts under the agent's own keys only (its role allows nothing else, and the workspace bucket
+    refuses a put without ``If-None-Match``; this refuses before trying)."""
 
     def __init__(self, s3: Any, bucket: str, own_prefix: str) -> None:
         self._s3 = s3
@@ -49,7 +50,7 @@ class S3Store:
     def put(self, key: str, body: bytes) -> None:
         if not key.startswith(self._own) or '..' in key.split('/'):
             raise ValueError(f'{key} is not under the agent\'s own keys')
-        self._s3.put_object(Bucket=self._bucket, Key=key, Body=body)
+        self._s3.put_object(Bucket=self._bucket, Key=key, Body=body, IfNoneMatch='*')
 
     def get(self, key: str, limit: int) -> bytes:
         return bytes(self._s3.get_object(Bucket=self._bucket, Key=key)['Body'].read(limit + 1))
@@ -68,13 +69,16 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
     itself, never its tool server) its restored checkpoint, working tree included."""
     run_id, agent_id, task_id = env['VOC_RUN_ID'], env['VOC_AGENT_ID'], env['VOC_TASK_ID']
     prefix = agent_prefix(run_id, agent_id)
-    store = S3Store(s3, env['VOC_BUCKET'], prefix)
+    commit, attempt = env['VOC_COMMIT'], int(env.get('VOC_ATTEMPT', '1'))
+    store = S3Store(s3, env['VOC_WORKSPACE_BUCKET'], prefix)
     home = env['HOME']
     context = AgentContext(
         run_id=run_id, agent_id=agent_id, task_id=check_id('task_id', task_id), role=env['VOC_ROLE'],
         brief=ports.board.brief(run_id=run_id, task_id=task_id), workspace=Workspace(checkout), runner=runner,
         board=ports.board, broker=ports.broker, store=store, status=StatusReport(home),
-        patch_dir=os.path.join(home, '.voc', 'patches'), own_prefix=prefix)
+        patch_dir=os.path.join(home, '.voc', 'patches'), own_prefix=prefix,
+        checkpoints_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'checkpoints'),
+        patches_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'patches'))
     session = AgentSession(context=context, tools=ToolBox(context), inbox=ports.inbox, store=store)
     key = env.get('VOC_RESTORE_KEY')
     if restore and key:
@@ -86,7 +90,7 @@ def _restore(session: AgentSession, store: S3Store, key: str) -> None:
     """Restore from ``key`` when it is one of the agent's own valid checkpoints (else start afresh), and put its
     working tree back on the fresh checkout; a working tree that does not apply is a crash, never a silent loss."""
     context = session.context
-    checkpoints = checkpoint_prefix(context.run_id, context.agent_id)
+    checkpoints = context.checkpoints_prefix
     name = key.removeprefix(checkpoints)
     if not key.startswith(checkpoints) or '/' in name:
         return
@@ -101,7 +105,7 @@ def _restore(session: AgentSession, store: S3Store, key: str) -> None:
     refused = position.get('patch_refused') if isinstance(position, dict) else None
     session.patch_refused = str(refused) if refused else None
     tree = state.get('patch')
-    if isinstance(tree, str) and tree.startswith(f'{context.own_prefix}patches/') and context.runs_code:
+    if isinstance(tree, str) and tree.startswith(context.patches_prefix) and context.runs_code:
         session.patch = tree
         os.makedirs(context.patch_dir, mode=0o700, exist_ok=True)
         local = os.path.join(context.patch_dir, 'restored.diff')
@@ -141,7 +145,8 @@ def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Calla
     if args.adapter == 'converse':
         return ConverseAdapter(bedrock(), args.model)
     choose_cli(args.cli)
-    tool_env = {name: env[name] for name in ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_BUCKET',
+    tool_env = {name: env[name] for name in ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE',
+                                              'VOC_WORKSPACE_BUCKET', 'VOC_COMMIT', 'VOC_ATTEMPT',
                                               'AWS_REGION', 'AWS_CONFIG_FILE', 'HOME') if name in env}
     return ClaudeCli(binary=args.cli_binary, version=args.cli_version, model_id=args.model,
                      home_root=os.path.join(env['HOME'], '.voc', 'cli'), region=env['AWS_REGION'],

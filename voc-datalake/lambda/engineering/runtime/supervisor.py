@@ -77,8 +77,10 @@ class Supervisor:
     control: RunControl
     launcher: Launcher
     checkpoints: CheckpointReader
-    #: The run bucket: the connections' caches are mounted from it.
+    #: The raw bucket: the connections' caches are mounted from it.
     bucket: str
+    #: The workspace bucket (voc-eng-workspace): the agents' checkpoints, patches and findings.
+    workspace_bucket: str
     timings: Timings = field(default_factory=Timings)
     #: The checkout an agent boots with (``checkout.checkout_commands``; the tests give a local one).
     checkout: Callable[[str, Sequence[str]], list[Command]] = field(default_factory=lambda: checkout_commands)
@@ -402,8 +404,8 @@ class Supervisor:
         if session.run_id in self._spent:
             return self._end(session, 'paused', now)
         self._terminate(session)
-        restore = self.checkpoints.latest(session.run_id, session.agent_id)
-        spec = session.spec(restore)
+        restore = self.checkpoints.latest(session.run_id, session.agent_id, session.commit, session.task_attempt)
+        spec = session.spec(restore, self.workspace_bucket)
         vm = self._vm_call(lambda: self.runtime.run(spec))
         continued = replace(session.on(vm, now, restore), crashes=session.crashes + 1 if crashed else 0,
                             microvm_seconds=session.microvm_seconds + self._elapsed(session, now))
@@ -525,8 +527,9 @@ class Supervisor:
             return self._continue(replace(session, wait_since=wait, woken_wait=wait,
                                           woken_continuation=session.continuation + 1), now, crashed=False)
         in_grace = session.woken_at is not None and now - session.woken_at < self.timings.wake_grace
-        # A continuation's one grace is never moved by a later message; nor is a running one.
-        keep = in_grace or self._continued_for_a_message(session)
+        # A continuation's one grace is never moved by a later message; nor is a running one. An agent the tick has
+        # not seen on a wait gets none (it reads its inbox as it works).
+        keep = in_grace or self._continued_for_a_message(session) or session.wait_since is None
         return self._save(replace(self._renew(self._wake(session), now), woken_at=session.woken_at if keep else now))
 
     def _signal_paused(self, session: AgentSession, kind: str, now: int) -> AgentSession:

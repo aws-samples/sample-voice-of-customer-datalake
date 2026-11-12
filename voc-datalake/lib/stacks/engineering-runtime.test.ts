@@ -47,6 +47,7 @@ function runtimeStack(context: Record<string, unknown>, withPeers = true): Runti
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
     }),
     rawDataBucket: fixtureBucket(stack, 'Raw'),
+    workspaceBucket: fixtureBucket(stack, 'Workspace'),
     peers: withPeers ? fakePeers(stack, kmsKey, pins) : undefined,
   });
   return { template: Template.fromStack(stack), added, pins };
@@ -212,20 +213,29 @@ describe('with -c engineeringAgents=true', () => {
     expect(count(template, 'AWS::IAM::Role', { AssumeRolePolicyDocument: Match.objectLike(trust) })).toBe(13);
   });
 
-  it('reads and lists the same keys: one template each for the cache and the run', () => {
+  it('reads and lists the same keys: its cache in the raw bucket, its run in the workspace bucket', () => {
     const agent = template.findResources('AWS::IAM::Policy', {
       Properties: { Roles: [{ Ref: Match.stringLikeRegexp('EngineeringAgentFixerRole') }] },
     });
     const statements = Object.values(agent).flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement));
-    const listed = statements.find((statement) => statement.Sid === 'ListCacheAndRun')?.Condition?.StringLike?.['s3:prefix'];
+    const prefixes = (sid: string) => statements.find((statement) => statement.Sid === sid)?.Condition?.StringLike?.['s3:prefix'];
     const read = JSON.stringify(statements.find((statement) => statement.Sid === 'ReadCacheAndRun')?.Resource);
-    expect(listed).toStrictEqual(['engineering/cache/${aws:PrincipalTag/connection}/*', 'engineering/runs/${aws:PrincipalTag/run}/*']);
-    for (const keys of listed ?? []) expect(read).toContain(`/${keys}`);
+    const listed = [...prefixes('ListCache') ?? [], ...prefixes('ListRun') ?? []];
+    expect(listed).toStrictEqual(['engineering/cache/${aws:PrincipalTag/connection}/*',
+      'ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/*']);
+    for (const keys of listed) expect(read).toContain(`/${keys}`);
+    // Each in its own bucket: the cache in the raw one, the run (read, list, its own writes) in the workspace one.
+    const on = (sid: string) => JSON.stringify(statements.find((statement) => statement.Sid === sid)?.Resource);
+    expect([on('ListCache'), on('ListRun'), on('WriteOwnKeys')].map((text) => /Workspace/.test(text)))
+      .toStrictEqual([false, true, true]);
+    expect(read).toMatch(/Raw.*engineering\/cache|engineering\/cache.*Raw/);
+    expect(read).toMatch(/Workspace.*ws\/|ws\/.*Workspace/);
   });
 
   it('scopes an agent role to its session: its cache and run, its own keys, and no queue', () => {
     const agent = policyText(template, 'EngineeringAgentFixerRole');
-    expect(agent).toContain('engineering/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
+    expect(agent).toContain('ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
+    expect(agent).not.toContain('engineering/runs/');
     expect(agent).toContain('engineering/cache/${aws:PrincipalTag/connection}/*');
     // The role queues serve every run: no agent reads one (its run's messages are pushed to it).
     expect(agent).not.toMatch(/s3:DeleteObject|s3:\*|dynamodb:|iam:|lambda:\*|sqs:/);
@@ -307,8 +317,10 @@ describe('with -c engineeringAgents=true', () => {
     });
     const supervisor = policyText(template, 'EngineeringSupervisorRole');
     expect(supervisor).toContain(':rule/voc-engineering-supervisor');
+    // The checkpoints it reads are the agents' in the workspace bucket's layout; the raw bucket only for the cache.
+    expect(supervisor).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
     expect(supervisor).toContain('lambda:RunMicrovm');
-    expect(supervisor).not.toMatch(/s3:DeleteObject|s3:PutObject|dynamodb:\*|s3:\*|iam:|gsi1/);
+    expect(supervisor).not.toMatch(/s3:DeleteObject|s3:PutObject|dynamodb:\*|s3:\*|iam:|gsi1|engineering\/runs\//);
     template.hasResourceProperties('AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-runtime',
       Environment: { Variables: Match.objectLike({ ENGINEERING_TABLE: Match.anyValue() }) },

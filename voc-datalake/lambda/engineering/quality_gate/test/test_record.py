@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from engineering.quality_gate.record import FinalGoRecord, GateRecord, RoundRecord
 from engineering.quality_gate.review import Finding
 
@@ -84,3 +86,35 @@ def test_to_dict_carries_every_finding_with_its_outcome():
     assert data['rounds'][0] == {'number': 1, 'checks': [{'name': 'pytest', 'status': 'fail'}],
                                  'reviewed': False, 'complete': True, 'finding_ids': ['R1-checks-1']}
     assert _record(final_go=None).to_dict()['final_go'] is None
+
+
+def test_a_stored_record_reads_back_the_same():
+    for record in (_record(), _record(final_go=None, own_gate=True, accepted_by='an owner', stop_reason='stopped')):
+        again = GateRecord.from_dict(record.to_dict())
+        assert again.to_dict() == record.to_dict()
+        assert again.render_markdown() == record.render_markdown()
+
+
+@pytest.mark.parametrize('change', [
+    {'schema': 'voc-gate-record/0'}, {'verdict': 3}, {'max_rounds': -1}, {'max_rounds': True}, {'packs': 'python'},
+    {'packs': [1]}, {'rounds': [1]}, {'tool_versions': []}, {'findings': [{'id': 1}]}, {'final_go': 'GO'},
+])
+def test_a_record_off_the_schema_is_refused(change: dict[str, Any]):
+    with pytest.raises(ValueError, match=r'voc-gate-record|is a|an object|is one of'):
+        GateRecord.from_dict({**_record().to_dict(), **change})
+    with pytest.raises(ValueError, match='not a voc-gate-record/1'):
+        GateRecord.from_dict(['not', 'a', 'record'])
+
+
+@pytest.mark.parametrize(('change', 'finding_change'), [
+    ({'verdict': '[GO](https://example.com)'}, {}), ({'tree_hash': 'see <img src=x>'}, {}),
+    ({'packs': ['[docs](https://example.com)']}, {}), ({'reviewers': ['@org/team']}, {}),
+    ({'stop_reason': 'stopped, see @owner'}, {}), ({}, {'id': 'R1-<b>x</b>-1'}), ({}, {'severity': 'critical'}),
+    ({}, {'outcome': '[fixed](https://example.com)'}),
+])
+def test_a_hostile_record_cannot_put_markdown_where_it_is_printed_as_is(change: dict[str, Any],
+                                                                         finding_change: dict[str, Any]):
+    data = {**_record().to_dict(), **change}
+    data['findings'] = [{**data['findings'][0], **finding_change}, *data['findings'][1:]]
+    with pytest.raises(ValueError, match=r'shape|plain names|GO, NO-GO|severity|outcome'):
+        GateRecord.from_dict(data)

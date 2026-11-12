@@ -19,6 +19,8 @@ from engineering.runtime.supervisor import Supervisor
 from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
 
 BUCKET = 'voc-raw-test'
+#: voc-eng-workspace's stand-in, where the handler's wiring writes and reads the agents' keys.
+WORKSPACE_BUCKET = 'voc-eng-workspace-test'
 TABLE = 'voc-engineering-test'
 RUN = '01JD3R4NZXQ7Y2W8K4M6P9T0AB'
 COMMIT = 'a' * 40
@@ -100,6 +102,7 @@ def aws() -> Iterator[tuple[Any, Any]]:
     with mock_aws():
         s3 = boto3.client('s3', region_name='us-east-1')
         s3.create_bucket(Bucket=BUCKET)
+        s3.create_bucket(Bucket=WORKSPACE_BUCKET)
         # voc-engineering's shape (lib/stacks/core-stack.ts): pk/sk strings, no index.
         table = boto3.resource('dynamodb', region_name='us-east-1').create_table(
             TableName=TABLE,
@@ -154,5 +157,5 @@ def world(aws: tuple[Any, Any]) -> World:
     board, bus, control = FakeBoard(), FakeBus(), FakeControl()
     supervisor = Supervisor(runtime=runtime, sessions=store, board=board, bus=bus, control=control,
                             launcher=Launcher(sts, ROLE_ARNS), checkpoints=CheckpointReader(s3, BUCKET),
-                            bucket=BUCKET, timings=Timings(), checkout=quick_checkout)
+                            bucket=BUCKET, workspace_bucket=BUCKET, timings=Timings(), checkout=quick_checkout)
     return World(supervisor, runtime, store, board, bus, control, sts, s3, runs)

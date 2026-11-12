@@ -11,8 +11,8 @@
  * role, the only principal the agent roles trust and the only one that may tag their sessions): ONE fixed role per
  * agent role, narrowed by the session's tags (ws, run, agent, connection). It calls the board's and the broker's
  * function URLs and puts events on the bus only with its own source (its policy and the bus's both deny any other);
- * it reads no queue (the role queues serve every run; the delivery function, not built yet, is to push its run's
- * messages to it). No MicroVM holds a host token (the connector's broker does). The supervisor's role: the session rows, the checkpoints it reads, its own rule, the
+ * it reads no queue (the role queues serve every run; voc-engineering-delivery records its run's messages in the
+ * run's inbox and wakes it, once the router invokes it). No MicroVM holds a host token (the connector's broker does). The supervisor's role: the session rows, the checkpoints it reads, its own rule, the
  * MicroVM operations and the launcher's AssumeRole; no IAM write: a stop cuts a run's sessions by not renewing them.
  *
  * Deployed only with `-c engineeringAgents=true`: the default synth has none of it, so no fixed cost and nothing for
@@ -35,14 +35,15 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
-import { ENGINEERING_CACHE_PREFIX, ENGINEERING_RUNS_PREFIX } from './core-buckets';
+import { ENGINEERING_CACHE_PREFIX } from './core-buckets';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { engineeringAgentsEnabled } from './engineering-broker';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 
-const SUPERVISOR_ALARM_FLAG = 'engineeringSupervisorAlarm';
+/** A fixed monthly cost, so an opt-in of its own (lib/test-support/fixed-cost-rules.ts OPT_IN_FIXED_COSTS). */
+export const SUPERVISOR_ALARM_FLAG = 'engineeringSupervisorAlarm';
 /** `-c engineeringImageArns='{"python":"arn:…",…}'`: the MicroVM image per language; `{}` (no launch) by default. */
 const IMAGE_ARNS_CONTEXT = 'engineeringImageArns';
 /**
@@ -51,11 +52,16 @@ const IMAGE_ARNS_CONTEXT = 'engineeringImageArns';
  */
 const IMAGE_LANGUAGES = ['java', 'node', 'python', 'rust'];
 const ARN_RE = /^arn:aws(?:-[a-z]+)*:[a-z0-9-]+:[a-z0-9-]*:\d{12}:\S+$/;
-/** The session's own S3 keys (checkout.py: the cache; checkpoints.py: the runs), one template each. */
+/**
+ * The session's own S3 keys, one template each: its connection's cache in the raw bucket (checkout.py), its run's
+ * keys in the workspace bucket (voc-eng-workspace, lambda/engineering/workspace/layout.py; checkpoints.py).
+ */
 const CACHE_KEYS = `${ENGINEERING_CACHE_PREFIX}\${aws:PrincipalTag/connection}/*`;
-const RUN_KEYS = `${ENGINEERING_RUNS_PREFIX}\${aws:PrincipalTag/run}/*`;
+const RUN_KEYS = 'ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/*';
 // The agent comes right after the run in every workspace key, so this cannot match another agent's keys.
-const OWN_KEYS = `${ENGINEERING_RUNS_PREFIX}\${aws:PrincipalTag/run}/\${aws:PrincipalTag/agent}/*`;
+const OWN_KEYS = 'ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*';
+/** Every agent's checkpoints of every run (the supervisor picks the one a continuation restores from). */
+const CHECKPOINT_KEYS = 'ws/*/runs/*/*/commits/*/_checkpoints/*';
 /** The session tags only the launcher sets (launcher.py); an AssumeRole without every one of them is refused. */
 const SESSION_TAGS = ['ws', 'run', 'agent', 'connection'];
 /**
@@ -130,13 +136,20 @@ interface EngineeringRuntimeProps {
    * Required with the flag on; it is deployed with the same flag.
    */
   engineeringTable: dynamodb.ITable | undefined;
-  /** The raw data lake: the cache (`engineering/cache/`) and the runs' workspaces (`engineering/runs/`). */
+  /** The raw data lake: the connections' caches (`engineering/cache/`). */
   rawDataBucket: s3.IBucket;
+  /**
+   * voc-eng-workspace (VocCoreStack): the runs' checkpoints, patches and findings. Create-only (it refuses a put
+   * without If-None-Match) and nothing in it expires. Required with the flag on; it is deployed with the same flag.
+   */
+  workspaceBucket: s3.IBucket | undefined;
   /** The bus and the broker. Required with the flag on; they are deployed with the same flag. */
   peers: EngineeringPeers | undefined;
 }
 
-type WiredProps = EngineeringRuntimeProps & { peers: EngineeringPeers, engineeringTable: dynamodb.ITable };
+type WiredProps = EngineeringRuntimeProps & {
+  peers: EngineeringPeers, engineeringTable: dynamodb.ITable, workspaceBucket: s3.IBucket,
+};
 
 /**
  * `-c engineeringImageArns`: a JSON object (or its text, from the CLI) from languages of IMAGE_LANGUAGES to ARNs,
@@ -191,6 +204,7 @@ class EngineeringRuntime extends Construct {
     return {
       ENGINEERING_TABLE: props.engineeringTable.tableName,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
+      ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
       SUPERVISOR_RULE_NAME: ruleName,
       ENGINEERING_AGENT_ROLE_ARNS: stack.toJsonString(Object.fromEntries(
         [...agentRoles.entries()].map(([agentRole, agentIam]) => [agentRole, agentIam.roleArn]))),
@@ -245,8 +259,7 @@ class EngineeringRuntime extends Construct {
    * its own source. It can assume no role and use no other source.
    */
   private createAgentRole(props: WiredProps, agentRole: string, launcher: iam.IRole): iam.Role {
-    const { rawDataBucket, kmsKey, uniqueName } = props;
-    const { peers } = props;
+    const { rawDataBucket, workspaceBucket, kmsKey, uniqueName, peers } = props;
     const id = capitalize(agentRole.replace(/-/g, '_'));
     const role = new iam.Role(this, `EngineeringAgent${id}Role`, {
       // The broker's AGENT_ROLE_NAME_PATTERN reads the role back from this name (`voc-eng-{role}` + the naming).
@@ -259,8 +272,8 @@ class EngineeringRuntime extends Construct {
       maxSessionDuration: cdk.Duration.hours(1),
     });
     const cacheObjects = rawDataBucket.arnForObjects(CACHE_KEYS);
-    const runObjects = rawDataBucket.arnForObjects(RUN_KEYS);
-    const ownObjects = rawDataBucket.arnForObjects(OWN_KEYS);
+    const runObjects = workspaceBucket.arnForObjects(RUN_KEYS);
+    const ownObjects = workspaceBucket.arnForObjects(OWN_KEYS);
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
       reason: 'Object keys under ONE session-tagged prefix (the connection\'s cache, the run\'s workspace, the agent\'s own keys); the trailing wildcard is the object key, never another connection, run or agent',
@@ -270,11 +283,14 @@ class EngineeringRuntime extends Construct {
       sid: 'ReadCacheAndRun', actions: ['s3:GetObject'], resources: [cacheObjects, runObjects],
     }));
     role.addToPolicy(new iam.PolicyStatement({
-      sid: 'ListCacheAndRun',
-      actions: ['s3:ListBucket'],
-      resources: [rawDataBucket.bucketArn],
-      conditions: { StringLike: { 's3:prefix': [CACHE_KEYS, RUN_KEYS] } },
+      sid: 'ListCache', actions: ['s3:ListBucket'], resources: [rawDataBucket.bucketArn],
+      conditions: { StringLike: { 's3:prefix': [CACHE_KEYS] } },
     }));
+    role.addToPolicy(new iam.PolicyStatement({
+      sid: 'ListRun', actions: ['s3:ListBucket'], resources: [workspaceBucket.bucketArn],
+      conditions: { StringLike: { 's3:prefix': [RUN_KEYS] } },
+    }));
+    // Create-only: the bucket refuses a put without If-None-Match, so no object is ever written over.
     role.addToPolicy(new iam.PolicyStatement({ sid: 'WriteOwnKeys', actions: ['s3:PutObject'], resources: [ownObjects] }));
     // No queue: the role queues (voc-eng-tasks-<role>) serve every run, so no agent reads them; its run's messages,
     // posted tasks included, are pushed to it by the delivery function, and the board (its run's only) is the record.
@@ -320,7 +336,7 @@ class EngineeringRuntime extends Construct {
     props: WiredProps, role: iam.Role, agentRoles: Map<string, iam.Role>, ruleName: string,
     environment: Record<string, string>,
   ): lambda.Function {
-    const { uniqueName, kmsKey, engineeringTable, rawDataBucket } = props;
+    const { uniqueName, kmsKey, engineeringTable, workspaceBucket } = props;
     const stack = cdk.Stack.of(this);
     // A run's start and end (its META, its registry row) and its agents' session rows, in those partitions only
     // (a session is created with a check that its run's META is still active).
@@ -337,11 +353,11 @@ class EngineeringRuntime extends Construct {
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_REGISTRY] } },
     }));
     // The agents' checkpoints, to pick the one a continuation restores from: read only.
-    const checkpoints = rawDataBucket.arnForObjects(`${ENGINEERING_RUNS_PREFIX}*/*/checkpoints/*`);
+    const checkpoints = workspaceBucket.arnForObjects(CHECKPOINT_KEYS);
     role.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [checkpoints] }));
     role.addToPrincipalPolicy(new iam.PolicyStatement({
-      actions: ['s3:ListBucket'], resources: [rawDataBucket.bucketArn],
-      conditions: { StringLike: { 's3:prefix': [`${ENGINEERING_RUNS_PREFIX}*`] } },
+      actions: ['s3:ListBucket'], resources: [workspaceBucket.bucketArn],
+      conditions: { StringLike: { 's3:prefix': [CHECKPOINT_KEYS] } },
     }));
     // The key, only through S3 (checkpoint reads), DynamoDB (the session and inbox rows) and SQS (the delivery's
     // failure records): never a direct KMS call.
@@ -417,9 +433,10 @@ class EngineeringRuntime extends Construct {
  */
 export function addEngineeringRuntime(scope: Construct, props: EngineeringRuntimeProps): boolean {
   if (!engineeringAgentsEnabled(scope)) return false;
-  const { peers, engineeringTable } = props;
+  const { peers, engineeringTable, workspaceBucket } = props;
   if (!peers) throw new Error('engineeringAgents needs the engineering bus (its dead-letter queue) and broker');
   if (!engineeringTable) throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table');
-  new EngineeringRuntime(scope, 'EngineeringRuntime', { ...props, peers, engineeringTable });
+  if (!workspaceBucket) throw new Error('engineeringAgents needs VocCoreStack\'s voc-eng-workspace bucket');
+  new EngineeringRuntime(scope, 'EngineeringRuntime', { ...props, peers, engineeringTable, workspaceBucket });
   return true;
 }

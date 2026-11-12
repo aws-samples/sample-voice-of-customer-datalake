@@ -29,9 +29,15 @@ from engineering.quality_gate.review import changed_paths
 from engineering.quality_gate.runner import LocalRunner
 
 
-def _plans(args: argparse.Namespace, changed: Sequence[str] | None) -> tuple[GatePlan, GatePlan]:
+def _plans(args: argparse.Namespace, changed: Sequence[str] | None,
+           pinned: Sequence[str] = ()) -> tuple[GatePlan, GatePlan]:
+    """The rounds' plan and the final tree's; ``pinned`` (a workflow step's packs) keeps only those packs."""
     repo = RepoView.from_dir(args.repo)
-    detections = detect(load_packs(args.packs or default_packs_dir()), repo)
+    packs = load_packs(args.packs or default_packs_dir())
+    unknown = sorted(set(pinned) - {pack.id for pack in packs})
+    if unknown:
+        raise GateConfigError(f'unknown gate packs: {", ".join(unknown)}')
+    detections = tuple(d for d in detect(packs, repo) if not pinned or d.pack.id in pinned)
     return (plan(detections, repo, changed_paths=changed, python=args.python),
             plan(detections, repo, python=args.python))
 
@@ -54,14 +60,15 @@ def _changed(path: str | None) -> list[str] | None:
 def _gate(args: argparse.Namespace, model: ModelClient | None) -> int:
     data = json.loads(Path(args.input).read_text(encoding='utf-8'))
     changed = sorted({*map(str, data.get('changed_paths', [])), *changed_paths(str(data.get('diff', '')))})
-    round_plan, final_plan = _plans(args, changed)
+    config = GateConfig.from_params(data.get('params', {}))
+    round_plan, final_plan = _plans(args, changed, config.packs)
     gate_input = GateInput(task=str(data.get('task', '')), diff=str(data.get('diff', '')),
                            review_guide=str(data.get('review_guide', '')),
                            authors=frozenset(map(str, data.get('authors', []))), changed_paths=tuple(changed))
-    gate = QualityGate(gate_input, config=GateConfig.from_params(data.get('params', {})), round_plan=round_plan,
+    gate = QualityGate(gate_input, config=config, round_plan=round_plan,
                        final_plan=final_plan, runner=LocalRunner(args.repo), model=model or BedrockModel(),
                        fresh_checkout=args.fresh_checkout,
-                       replan=lambda diff: _plans(args, sorted({*changed, *changed_paths(diff)})))
+                       replan=lambda diff: _plans(args, sorted({*changed, *changed_paths(diff)}), config.packs))
     outcome = gate.run()
     if args.markdown:
         Path(args.markdown).write_text(outcome.record.render_markdown(), encoding='utf-8')

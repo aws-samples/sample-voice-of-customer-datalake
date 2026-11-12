@@ -78,6 +78,8 @@ class AgentSession:
     session_expires_at: int | None = None
     #: When a message last woke it (``Supervisor.wake``): an open wait does not suspend it again for a while.
     woken_at: int | None = None
+    #: The task's attempt it works on (the board's; its workspace keys go under it).
+    task_attempt: int = 1
     #: When its current open wait began (None: no open wait): the 45-minute hold counts from here, awake or not.
     wait_since: int | None = None
     #: The wait (its ``wait_since``) a message already continued it in a new MicroVM for: once per wait, whatever
@@ -120,10 +122,11 @@ class AgentSession:
                 total[kind] = max(total.get(kind, 0), int(counts.get(kind, 0)))
         return totals
 
-    def spec(self, restore_key: str | None = None) -> AgentSpec:
+    def spec(self, restore_key: str | None = None, workspace_bucket: str = '') -> AgentSpec:
         return AgentSpec(run_id=self.run_id, agent_id=self.agent_id, role=self.role, task_id=self.task_id,
                          language=self.language, egress=self.egress, connection=self.connection,
-                         restore_key=restore_key)
+                         restore_key=restore_key, commit=self.commit, attempt=self.task_attempt,
+                         workspace_bucket=workspace_bucket)
 
     @property
     def vm(self) -> MicroVm:
@@ -165,7 +168,7 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
         started_at=int(item['started_at']), status=item['status'], continuation=int(item.get('continuation', 0)),
         crashes=int(item.get('crashes', 0)), boot_index=int(item.get('boot_index', 0)),
         after_pause=item.get('after_pause', 'continue'), suspended=bool(item.get('suspended', False)),
-        failures=int(item.get('failures', 0)),
+        failures=int(item.get('failures', 0)), task_attempt=int(item.get('task_attempt', 1)),
         microvm_seconds=int(item.get('microvm_seconds', 0)),
         tokens=plain(item.get('tokens') or {}), tokens_before=plain(item.get('tokens_before') or {}),
         inspect=plain(item.get('inspect') or {}),

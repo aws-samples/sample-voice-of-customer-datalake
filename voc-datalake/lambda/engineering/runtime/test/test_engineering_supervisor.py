@@ -135,7 +135,7 @@ def test_progress_after_the_question_clears_it(world: World):
 
 
 def test_a_paused_harness_is_continued_in_a_new_microvm_from_its_newest_valid_checkpoint(world: World):
-    prefix = checkpoint_prefix('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
+    prefix = checkpoint_prefix('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', COMMIT, 1)
     world.s3.put_object(Bucket=BUCKET, Key=f'{prefix}000001-a.json', Body=json.dumps({'position': {'step': 1}}))
     world.s3.put_object(Bucket=BUCKET, Key=f'{prefix}000002-b.json', Body=json.dumps({'position': 2, 'token': 'x'}))
     first = world.launch(code='import sys; sys.exit(75)')

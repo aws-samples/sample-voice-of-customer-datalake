@@ -12,6 +12,7 @@
  * `-c mcpReservedConcurrency`). Record sets in an EXISTING hosted zone (the inbound-email intake
  * imports its zone by id) are pay-per-query too.
  */
+import { SUPERVISOR_ALARM_FLAG } from '../stacks/engineering-runtime';
 import { PERFORMANCE_TIER_CONTEXT_KEY } from '../utils/performance-tier';
 import { SNAPSTART_CONTEXT_KEY, SNAPSTART_FUNCTION_IDS } from '../utils/snapstart';
 import { WAF_CONTEXT_KEY } from '../utils/waf';
@@ -51,6 +52,9 @@ const FIXED_COST_TYPES: readonly (readonly [string, string])[] = [
   ['AWS::GlobalAccelerator::', 'a Global Accelerator (hourly)'],
   ['AWS::DAX::', 'a DynamoDB Accelerator (DAX) cluster (hourly)'],
   ['AWS::Route53::HostedZone', 'a hosted zone created by the app (monthly; import an existing zone by id instead)'],
+  // Alerting's own alarms are made at run time, once an administrator turns it on (docs/deployment.md), never by the app.
+  ['AWS::CloudWatch::Alarm', 'a CloudWatch alarm (monthly per alarm)'],
+  ['AWS::CloudWatch::CompositeAlarm', 'a CloudWatch composite alarm (monthly per alarm)'],
 ];
 
 const matchesType = (type: string, pattern: string): boolean => (
@@ -178,7 +182,7 @@ export interface CountedFixedCost {
  *   (lib/stacks/core-cdn.ts). A later release moves them to SSM Parameter Store (SecureString, no monthly fee) and
  *   brings this number to zero.
  *
- * The single-flag opt-in shapes (`snapStart`, `enableWaf`, `performanceTier`) are not counted: their registries above list
+ * The opt-in shapes (`snapStart`, `enableWaf`, `performanceTier`, `engineeringSupervisorAlarm`) are not counted: their registries above list
  * hourly-priced resources only. Every free context-gated feature is in the all-features synth, so a key or secret
  * one of those adds still fails here.
  */
@@ -242,4 +246,10 @@ export const OPT_IN_FIXED_COSTS: Readonly<Record<string, OptInFixedCost>> = {
   // `-c performanceTier=true` (lib/utils/performance-tier.ts): every fixed-cost opt-in at once, SnapStart and WAF.
   // (It also turns on Cognito Plus, which is billed per active user, not a fixed cost, so the gate has nothing to find.)
   performanceTier: { context: { [PERFORMANCE_TIER_CONTEXT_KEY]: 'true' }, expected: [...SNAPSTART_FINDINGS, ...WAF_FINDINGS] },
+  // `-c engineeringSupervisorAlarm=true`, with `-c engineeringAgents=true` (lib/stacks/engineering-runtime.ts): one
+  // CloudWatch alarm on the engineering supervisor's errors.
+  [SUPERVISOR_ALARM_FLAG]: {
+    context: { engineeringAgents: 'true', [SUPERVISOR_ALARM_FLAG]: 'true' },
+    expected: [/^AWS::CloudWatch::Alarm EngineeringRuntimeSupervisorErrorsAlarm[0-9A-F]{8}$/],
+  },
 };

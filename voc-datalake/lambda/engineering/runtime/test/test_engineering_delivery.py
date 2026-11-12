@@ -113,13 +113,21 @@ def test_a_message_wakes_a_suspended_addressee_which_stays_awake_to_read_it(worl
     assert world.session().suspended is True
 
 
-def test_a_posted_task_wakes_the_runs_agents_of_its_role_and_a_conductors_message_the_coordinator(world: World):
+def test_a_posted_task_wakes_nobody_and_a_conductors_message_wakes_the_coordinator(world: World):
     _suspended_on_an_open_wait(world)
     world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code=SLEEP)
     _until(world, 1050, 'working', agent_id='coordinator-0')
+    # The role's agent waits for its own answer: a posted task must not spend its wake (the row is there to read).
     answer = _deliver(world, _for({'kind': 'role', 'id': 'fixer'}, type='task.posted', task_id='task-9'), 1100)
-    assert answer['woken'] == {'fixer-1': 'working'}
+    assert (answer['woken'], answer['recorded'], world.session().suspended) == ({}, True, True)
     assert set(_deliver(world, _for({'kind': 'conductor', 'id': 'conductor'}), 1101)['woken']) == {'coordinator-0'}
+
+
+def test_a_message_for_an_agent_not_on_a_wait_gives_it_no_grace(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, 'working')
+    _deliver(world, _for({'kind': 'agent', 'id': 'fixer-1'}), 1100)
+    assert world.session().woken_at is None
 
 
 def test_an_addressee_held_without_a_microvm_is_continued_in_a_new_one_to_read_it(world: World):

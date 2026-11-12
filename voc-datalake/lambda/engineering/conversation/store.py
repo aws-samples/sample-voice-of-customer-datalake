@@ -15,13 +15,16 @@ numbers out of order, so a reader that follows the tail re-reads a short window 
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
 from botocore.exceptions import ClientError
 
 from engineering.bus.schema import Message
+from engineering.rows import run_pk
 from shared.aws import is_conditional_check_failure
+from shared.dynamo_paging import query_all
 from shared.ids import is_key_collision
 
 SEQ_DIGITS = 8
@@ -34,18 +37,30 @@ class Appended:
     seq: int | None = None
 
 
-def run_key(ws: str, run_id: str) -> str:
-    return f'WS#{ws}#RUN#{run_id}'
-
-
 class ConversationStore:
     def __init__(self, client: Any, table: str) -> None:
         """``client`` is a low-level DynamoDB client (boto3's, or a test's)."""
         self.client = client
         self.table = table
 
+    def page(self, ws: str, run_id: str, *, after: int, limit: int) -> list[dict[str, Any]]:
+        """The conversation from ``after`` on, in order: ``{seq, message}`` (the message as voc-msg/1 data).
+
+        Up to ``limit`` messages, following ``LastEvaluatedKey``: DynamoDB cuts a query's page at 1 MB, and a page cut
+        short must not read as the tail (fewer than ``limit`` messages means the conversation has no more now).
+        """
+        items = query_all(self.client, {
+            'TableName': self.table, 'ConsistentRead': True, 'Limit': limit,
+            'KeyConditionExpression': 'pk = :pk AND sk BETWEEN :from AND :to',
+            'ExpressionAttributeValues': {':pk': {'S': run_pk(ws, run_id)},
+                                          ':from': {'S': f'MSG#{after + 1:0{SEQ_DIGITS}d}'},
+                                          ':to': {'S': f'MSG#{10 ** SEQ_DIGITS - 1}'}}}, max_items=limit)
+        return [{'seq': int(item['sk']['S'].removeprefix('MSG#')), 'event_id': item['event_id']['S'],
+                 'type': item['type']['S'], 'at': item['at']['S'], 'message': json.loads(item['message']['S'])}
+                for item in items]
+
     def append_to_conversation(self, message: Message) -> Appended:
-        pk = run_key(message.ws, message.run_id)
+        pk = run_pk(message.ws, message.run_id)
         try:
             counter = self.client.update_item(
                 TableName=self.table, Key={'pk': {'S': pk}, 'sk': {'S': 'META'}},

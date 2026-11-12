@@ -71,7 +71,7 @@ def _supervisor() -> Supervisor:
     global _supervisor_cache
     if _supervisor_cache is None:
         from shared.aws import get_dynamodb_resource, get_s3_client
-        bucket = os.environ['RAW_DATA_BUCKET']
+        bucket, workspace = os.environ['RAW_DATA_BUCKET'], os.environ['ENGINEERING_WORKSPACE_BUCKET']
         pending = PendingPorts()
         runs = _runs()
         _supervisor_cache = Supervisor(
@@ -79,8 +79,8 @@ def _supervisor() -> Supervisor:
             sessions=SessionStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']), runs),
             board=pending, bus=pending, control=TableRunControl(runs),
             launcher=Launcher(_sts_client(), json.loads(os.environ['ENGINEERING_AGENT_ROLE_ARNS'])),
-            checkpoints=CheckpointReader(get_s3_client(), bucket),
-            bucket=bucket,
+            checkpoints=CheckpointReader(get_s3_client(), workspace),
+            bucket=bucket, workspace_bucket=workspace,
             timings=caps.timings(json.loads(os.environ.get('ENGINEERING_TIMINGS', '{}'))),
         )
     return _supervisor_cache
@@ -201,16 +201,20 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
     role, language = str(event.get('role', '')), str(event.get('language', ''))
     allowlist = egress.egress_allowlist(
         role=role, language=language, region=os.environ.get('AWS_REGION', 'us-east-1'), bucket=supervisor.bucket,
+        workspace_bucket=supervisor.workspace_bucket,
         extra_hosts=json.loads(os.environ.get('ENGINEERING_EXTRA_EGRESS', '[]')))
+    given = _optional_number(event, 'attempt', int)
+    attempt = 1 if given is None else given
     spec = AgentSpec(run_id=str(event.get('run_id', '')), agent_id=str(event.get('agent_id', '')), role=role,
                      task_id=str(event.get('task_id', '')), language=language, egress=allowlist,
-                     connection=str(event.get('connection', '')))
+                     connection=str(event.get('connection', '')), commit=commit, attempt=attempt,
+                     workspace_bucket=supervisor.workspace_bucket)
     vm = supervisor.runtime.run(spec)
     try:
         session = supervisor.sessions.create(AgentSession(
             run_id=spec.run_id, agent_id=spec.agent_id, role=role, task_id=spec.task_id, language=language,
             egress=allowlist, connection=spec.connection, commit=commit, paths=tuple(paths),
-            harness=tuple(harness), vm_id=vm.vm_id, endpoint=vm.endpoint,
+            harness=tuple(harness), vm_id=vm.vm_id, endpoint=vm.endpoint, task_attempt=attempt,
             started_at=int(clock()), last_tick_at=int(clock())),
             {'model': str(event.get('model', ''))[:200], 'skill_version': str(event.get('skill_version', ''))[:200]})
     except Exception:

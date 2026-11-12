@@ -87,8 +87,11 @@ class AgentContext:
     status: StatusReport
     #: Where git writes the agent's patches: in the agent's home, which repository code cannot read or write.
     patch_dir: str
-    #: The agent's own keys (``engineering/runs/<run>/<agent>/``): patches go under ``patches/``.
+    #: The agent's own keys (``ws/<ws>/runs/<run>/<agent>/``), and where its checkpoints and patches of its task's
+    #: commit and attempt go under them (``checkpoints.artifact_prefix``).
     own_prefix: str
+    checkpoints_prefix: str
+    patches_prefix: str
 
     @property
     def runs_code(self) -> bool:
@@ -120,7 +123,7 @@ def _git(context: AgentContext, *argv: str) -> None:
 
 
 def snapshot(context: AgentContext, label: str) -> str | None:
-    """The working tree's changes as a patch under the agent's own keys (``patches/<label>-<nonce>.diff``), made
+    """The working tree's changes as a patch under the agent's own keys (``<patches_prefix><label>-<nonce>.diff``), made
     by the agent's own git on the agent's own git directory; None when nothing changed.
 
     One at a time (a lock in the agent's home: the harness and a CLI's tool server share the index). Refused when
@@ -147,7 +150,7 @@ def snapshot(context: AgentContext, label: str) -> str | None:
         return None
     if len(body) > MAX_PATCH_BYTES:
         raise OutsideCheckout(f'the working tree\'s changes are over {MAX_PATCH_BYTES // (1024 * 1024)} MB')
-    key = f'{context.own_prefix}patches/{os.path.basename(patch)}'
+    key = f'{context.patches_prefix}{os.path.basename(patch)}'
     context.store.put(key, body)
     return key
 

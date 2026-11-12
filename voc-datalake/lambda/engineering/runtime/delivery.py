@@ -1,8 +1,8 @@
 """voc-engineering-delivery: a message the inbox router addressed to an agent, the run's conductor or a role of the
 run lands in that run's inbox, and its addressees are woken to read it.
 
-The router (``bus/router.py``) invokes this function asynchronously with ``{"message": <voc-msg/1>, "seq": N}``
-once the message is in the run's conversation (N: its place there). Each message is recorded ONCE, as
+The router (``bus/router.py``) is to invoke this function asynchronously with ``{"message": <voc-msg/1>, "seq": N}``
+once the message is in the run's conversation (N: its place there; today it still sends the bare message). Each message is recorded ONCE, as
 ``WS#<ws>#RUN#<run>`` / ``INBOX#<addressee>#<seq:012d>#<event_id>`` in voc-engineering, with a conditional put, so
 a redelivery (the bus is at-least-once; the router keeps the message's seq) writes nothing. The addressee is
 ``agent:<agent>``, ``conductor``, or ``role:<role>`` for a posted task (every agent of that role in the run reads it).
@@ -86,12 +86,14 @@ def record(table: Any, message: Message, seq: int, now: int) -> bool:
 
 
 def is_addressee(message: Message) -> Callable[[AgentSession], bool]:
-    """Whether a session of the run is one the message is for: the agent, the coordinator (the conductor), or an
-    agent of the role (a posted task)."""
+    """Whether a session of the run is one the message wakes: the agent, or the coordinator (the conductor). A
+    posted task (to a role) wakes nobody: an agent is launched for its task, so none of the role is idle, and one
+    held on its wait must keep its one continuation for the message it waits for; the row is there to read."""
     if message.to.kind == 'agent':
         return lambda session: session.agent_id == message.to.id
-    role = 'coordinator' if message.to.kind == 'conductor' else message.to.id
-    return lambda session: session.role == role
+    if message.to.kind == 'conductor':
+        return lambda session: session.role == 'coordinator'
+    return lambda _session: False
 
 
 def deliver(event: Mapping[str, Any], *, table: Any, supervisor: Supervisor, now: int) -> dict[str, Any]:

@@ -88,6 +88,9 @@ export function apiStackDependencyProps(
     conversationsTable: table('Conversations'),
     memoryTable: table('Memory'),
     agentsTable: table('Agents'),
+    // Read only with -c engineeringAgents=true (VocCoreStack makes them only then).
+    engineeringTable: pkSkTable(deps, 'Engineering'),
+    engineeringWorkspaceBucket: fixtureBucket(deps, 'EngineeringWorkspace'),
     radarTable: table('Radar'),
     participantsTable: table('Participants'),
     featureRequestsTable: table('FeatureRequests'),

@@ -7,7 +7,7 @@
  * used: WAF, SnapStart, provisioned concurrency, NAT gateways, Elastic IPs, interface VPC endpoints, EC2
  * instances, ECS services, RDS, ElastiCache, DAX, OpenSearch, MSK, Redshift, DocumentDB, Neptune, Global
  * Accelerator, PROVISIONED DynamoDB or Kinesis capacity, an API Gateway cache cluster, a CloudFront
- * dedicated IP, a hosted zone the app creates (rules: test-support/fixed-cost-rules.ts).
+ * dedicated IP, a hosted zone the app creates, a CloudWatch alarm the app creates (rules: test-support/fixed-cost-rules.ts).
  * Each finding names the resource and says "fixed monthly cost: off by default (TENETS.md, tenet 7);
  * make it opt-in behind a context flag".
  *

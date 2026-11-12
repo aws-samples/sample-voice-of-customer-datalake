@@ -61,6 +61,7 @@ export function synthProcessingTemplate(
     processingQueue: fixtureQueue(deps, 'Queue'),
     kmsKey: new kms.Key(deps, 'Key'),
     rawDataBucket: fixtureBucket(deps, 'RawData'),
+    engineeringWorkspaceBucket: fixtureBucket(deps, 'EngineeringWorkspace'),
     config: {
       brandName: 'TestBrand',
       primaryLanguage: 'en',

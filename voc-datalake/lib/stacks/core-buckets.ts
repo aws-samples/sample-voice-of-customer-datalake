@@ -17,7 +17,7 @@
  * could overwrite (no `If-None-Match`). Only voc-retention deletes there (lawful erasure / a declared retention period). The raw
  * bucket's workspace prefixes have no noncurrent rule either: a workspace delete removes every
  * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires, and, with the engineering agents on,
- * `engineering/runs/` and `engineering/cache/`.
+ * `engineering/cache/` (a rebuildable cache of repository code). The runs' objects are kept.
  *
  * Resources are created directly on the stack passed in (not inside a child
  * construct), so their logical ids are exactly those VocCoreStack always had.
@@ -35,7 +35,7 @@ import { dataProtection, type DataProtection } from '../utils/data-protection';
  * rule since 6.00 (wave C owner decision: a workspace artifact is really deleted when its owner deletes it, and the
  * deleting code removes every version itself, lib/utils/workspace-object-deletes.ts), so nothing here expires a
  * version behind the owner's back either. `scratch/` expires (SCRATCH_EXPIRATION_DAYS), and with the engineering
- * agents on, the runs' workspaces and the caches under `engineering/` (ENGINEERING_RUNS_EXPIRATION_DAYS). A new prefix must be
+ * agents on, the caches under `engineering/cache/` (ENGINEERING_CACHE_EXPIRATION_DAYS). A new prefix must be
  * added here; `core-buckets.test.ts` checks every grant on the bucket in lib/stacks against this list.
  */
 export const RAW_BUCKET_WORKSPACE_PREFIXES = [
@@ -57,16 +57,25 @@ export const APPEND_ONLY_PREFIXES = [RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX] as
  */
 export const SCRATCH_EXPIRATION_DAYS = 2;
 /**
- * Only with `-c engineeringAgents=true` (docs/autonomous-engineering.md): the runs' workspaces,
- * `engineering/runs/`, expire this many days after they were written (the workspace retention the doc states),
- * and the connections' caches, `engineering/cache/`, after ENGINEERING_CACHE_EXPIRATION_DAYS (rebuilt when needed).
- * An expired object's noncurrent version goes ENGINEERING_NONCURRENT_DAYS later, so an expiry really removes it.
+ * Only with `-c engineeringAgents=true` (docs/autonomous-engineering.md): the connections' caches,
+ * `engineering/cache/`, a rebuildable copy of repository code, expire after ENGINEERING_CACHE_EXPIRATION_DAYS, their
+ * noncurrent versions ENGINEERING_NONCURRENT_DAYS later. The runs' objects are in voc-eng-workspace and kept: they are
+ * workspace artifacts, and an expiry of them waits for one that writes its `AUDIT#delete` row (TENETS.md D5; planned).
  */
-export const ENGINEERING_RUNS_PREFIX = 'engineering/runs/';
 export const ENGINEERING_CACHE_PREFIX = 'engineering/cache/';
-export const ENGINEERING_RUNS_EXPIRATION_DAYS = 90;
 export const ENGINEERING_CACHE_EXPIRATION_DAYS = 30;
 const ENGINEERING_NONCURRENT_DAYS = 1;
+/**
+ * The engineering workspace bucket (only with `-c engineeringAgents=true`; lambda/engineering/workspace/layout.py):
+ * `ws/<ws>/runs/<run>/<agent>/commits/…`, an agent's findings, gate records, logs and patches, and
+ * `ws/<ws>/reports/<run>/…`, the commit, PR and goal reports. Nothing in it expires until an expiry that writes its
+ * `AUDIT#delete` row exists (TENETS.md D5; planned). The one workspace (connectors/identity.py WORKSPACE, `default`,
+ * until multi-workspace lands) is spelled out in every grant: an IAM wildcard crosses `/`, so a wildcard in place of
+ * the workspace would let the reports' keys match a run object whose path holds `/reports/`.
+ */
+export const ENGINEERING_WORKSPACE = 'default';
+export const ENGINEERING_WORKSPACE_REPORTS_KEYS = `ws/${ENGINEERING_WORKSPACE}/reports/*`;
+export const ENGINEERING_WORKSPACE_RUNS_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*`;
 /**
  * SPA bucket: each deploy's `s3 sync --delete` turns the previous build's assets
  * noncurrent. 30 days keeps a month of deploys restorable for a rollback; the
@@ -136,12 +145,17 @@ function rawBucketVersionRules(): s3.LifecycleRule[] {
  * copies into `raw/`.
  */
 function denyOverwritingRawWrites(bucket: s3.Bucket): void {
+  denyWritesWithoutIfNoneMatch(bucket, 'DenyRawWritesWithoutIfNoneMatch', APPEND_ONLY_PREFIXES.map((prefix) => `${prefix}*`));
+}
+
+/** The deny of denyOverwritingRawWrites, on `keys` of `bucket`, under `sid`. */
+function denyWritesWithoutIfNoneMatch(bucket: s3.Bucket, sid: string, keys: readonly string[]): void {
   bucket.addToResourcePolicy(new iam.PolicyStatement({
-    sid: 'DenyRawWritesWithoutIfNoneMatch',
+    sid,
     effect: iam.Effect.DENY,
     principals: [new iam.AnyPrincipal()],
     actions: ['s3:PutObject'],
-    resources: APPEND_ONLY_PREFIXES.map((prefix) => bucket.arnForObjects(`${prefix}*`)),
+    resources: keys.map((key) => bucket.arnForObjects(key)),
     conditions: {
       Null: { 's3:if-none-match': 'true' },
       Bool: { 's3:ObjectCreationOperation': 'true' },
@@ -194,15 +208,37 @@ export function createPrivateVersionedBucket(
   }));
 }
 
-/** The engineering workspace's expiry rules (ENGINEERING_RUNS_EXPIRATION_DAYS); none without the engineering agents. */
+/** The engineering caches' expiry rule (ENGINEERING_CACHE_EXPIRATION_DAYS); none without the engineering agents. */
 function engineeringExpiryRules(engineeringAgents: boolean): s3.LifecycleRule[] {
   if (!engineeringAgents) return [];
-  return ([['engineering-runs-expiry', ENGINEERING_RUNS_PREFIX, ENGINEERING_RUNS_EXPIRATION_DAYS],
-    ['engineering-cache-expiry', ENGINEERING_CACHE_PREFIX, ENGINEERING_CACHE_EXPIRATION_DAYS]] as const)
-    .map(([id, prefix, days]) => ({
-      id, prefix, expiration: cdk.Duration.days(days),
-      noncurrentVersionExpiration: cdk.Duration.days(ENGINEERING_NONCURRENT_DAYS),
-    }));
+  return [{
+    id: 'engineering-cache-expiry', prefix: ENGINEERING_CACHE_PREFIX,
+    expiration: cdk.Duration.days(ENGINEERING_CACHE_EXPIRATION_DAYS),
+    noncurrentVersionExpiration: cdk.Duration.days(ENGINEERING_NONCURRENT_DAYS),
+  }];
+}
+
+/**
+ * The engineering agents' workspace (only with `-c engineeringAgents=true`): private, KMS-encrypted with the stack's
+ * key, versioned, TLS-only and access-logged like the raw bucket, kept under `-c protectData` like customer data. Its
+ * objects are written create-only (lambda/engineering/workspace/store.py, If-None-Match), and the bucket refuses
+ * any other write, from any principal, as the raw bucket does under `raw/` (denyOverwritingRawWrites). Nothing
+ * expires them (no current-version or noncurrent rule) until an expiry that writes its `AUDIT#delete` row exists;
+ * only abandoned multipart uploads and expired delete markers are cleaned up, which removes no data.
+ */
+export function createEngineeringWorkspaceBucket(
+  scope: Construct, bucketName: string, kmsKey: kms.IKey, accessLogsBucket: s3.IBucket, protection: DataProtection,
+): s3.Bucket {
+  const bucket = createPrivateVersionedBucket(scope, 'EngineeringWorkspaceBucket', {
+    bucketName,
+    kmsKey,
+    accessLogsBucket,
+    accessLogPrefix: 'engineering-workspace-bucket/',
+    protection,
+    lifecycleRules: rawBucketVersionRules(),
+  });
+  denyWritesWithoutIfNoneMatch(bucket, 'DenyWorkspaceWritesWithoutIfNoneMatch', ['*']);
+  return bucket;
 }
 
 export function createCoreBuckets(
@@ -252,7 +288,8 @@ export function createCoreBuckets(
         id: 'scratch-expiry', prefix: 'scratch/', expiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
         noncurrentVersionExpiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
       },
-      // The engineering agents' run workspaces and caches (only with -c engineeringAgents=true).
+      // The engineering agents' repository caches (only with -c engineeringAgents=true); their runs' objects are in
+      // voc-eng-workspace, where nothing expires.
       ...engineeringExpiryRules(engineeringAgents),
     ],
     cors: [{
