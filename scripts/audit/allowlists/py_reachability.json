@@ -1,5 +1,6 @@
 {
   "entries": [
+    {"key": "lambda/shared/ws_repo.py", "reason": "Multi-workspace phase 2's repository layer (docs/multi-workspace.md, Request flow step 4), landed before the data path moves onto it so its guard (test_ws_raw_access.py) can track the move; the ingestion slice is its first importer and removes this entry."},
     {"key": "lambda/agents/state_machine.py", "reason": "Build-time generator of state_machine.asl.json (the CDK loads the JSON); test_graph_and_state_machine.py keeps the two in lockstep. Never imported at run time by design."},
     {"key": "lambda/shared/api.py::clear_categories_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the module-level categories cache between API tests."},
     {"key": "lambda/shared/memory_store.py::clear_pool_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container embedding pool between memory tests."},
