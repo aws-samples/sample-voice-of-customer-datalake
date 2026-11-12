@@ -1,12 +1,12 @@
 /**
- * DocumentModal - Modal for creating/editing documents
+ * DocumentModal - Modal for creating a document (an existing one is edited in place on its canvas)
  *
  * `ModalShell` supplies dialog semantics and the focus trap. It is not
  * dismissable by Escape or backdrop click (the old hand-rolled overlay had
  * neither): a stray click would discard a whole unsaved document. Labels are
  * tied to their controls so each field has an accessible name.
  */
-import { AlertTriangle, Loader2, FileText, Pencil } from 'lucide-react'
+import { Loader2, FileText } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
@@ -25,45 +25,17 @@ export interface DocumentEditorProps {
   /** Resolves once saved, rejects on failure (the unsaved-changes guard waits for it). */
   readonly onSave: () => Promise<unknown>
   readonly onClose: () => void
-  /** Someone saved the document after this editor loaded it (409): reload, or save over it. */
-  readonly conflict?: DocumentConflict | null
-}
-
-export interface DocumentConflict {
-  readonly onLoadLatest: () => Promise<unknown>
-  readonly onSaveAnyway: () => Promise<unknown>
-}
-
-/** The stale-save banner: what happened, and the two ways out (same pattern as the workflow editor). */
-function ConflictBanner({ conflict }: Readonly<{ conflict: DocumentConflict }>) {
-  const { t } = useTranslation('projectDetail')
-  return (
-    <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-warn/30 bg-warn-subtle p-3 text-sm text-text">
-      <AlertTriangle size={14} className="text-warn" aria-hidden="true" />
-      <span className="mr-auto">{t('documentModal.conflict')}</span>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => void conflict.onLoadLatest()}>{t('documentModal.conflictReload')}</button>
-      <button type="button" className="btn btn-ghost btn-sm" onClick={() => saveIgnoringFailure(conflict.onSaveAnyway)}>{t('documentModal.conflictSaveAnyway')}</button>
-    </div>
-  )
-}
-
-interface DocumentModalProps extends DocumentEditorProps {
-  readonly isEditing: boolean
-  readonly titleReadOnly?: boolean
 }
 
 export default function DocumentModal({
-  isEditing,
   title,
-  titleReadOnly = false,
   content,
   isSaving,
   onTitleChange,
   onContentChange,
   onSave,
   onClose,
-  conflict = null,
-}: DocumentModalProps) {
+}: DocumentEditorProps) {
   const isValid = title.trim() !== '' && content.trim() !== ''
   const { t } = useTranslation('projectDetail')
   const headingId = useId()
@@ -84,21 +56,19 @@ export default function DocumentModal({
       dismissable={!isSaving}
     >
       <div className="dialog-header justify-between">
-        <h2 id={headingId} className="dialog-title">{isEditing ? t('documentModal.editDocument') : t('documentModal.createDocument')}</h2>
+        <h2 id={headingId} className="dialog-title">{t('documentModal.createDocument')}</h2>
         <DialogClose onClick={close} />
       </div>
       <div className="dialog-body space-y-4">
-        {conflict === null ? null : <ConflictBanner conflict={conflict} />}
         <div>
           <label htmlFor={titleId} className="block text-sm font-medium text-text mb-1">{t('documentModal.titleLabel')}</label>
           <input
             id={titleId}
             type="text"
             value={title}
-            disabled={titleReadOnly}
             onChange={(e) => onTitleChange(e.target.value)}
             placeholder={t('documentModal.titlePlaceholder')}
-            className="input disabled:bg-bg-hover disabled:text-text"
+            className="input"
           />
         </div>
         <div>
@@ -129,9 +99,9 @@ export default function DocumentModal({
           className="btn btn-primary w-full sm:w-auto"
         >
           {isSaving ? (
-            <><Loader2 size={16} className="animate-spin" aria-hidden />{isEditing ? t('documentModal.saving') : t('documentModal.creating')}</>
+            <><Loader2 size={16} className="animate-spin" aria-hidden />{t('documentModal.creating')}</>
           ) : (
-            <>{isEditing ? <Pencil size={16} aria-hidden /> : <FileText size={16} aria-hidden />}{isEditing ? t('documentModal.saveChanges') : t('documentModal.create')}</>
+            <><FileText size={16} aria-hidden />{t('documentModal.create')}</>
           )}
         </button>
       </div>

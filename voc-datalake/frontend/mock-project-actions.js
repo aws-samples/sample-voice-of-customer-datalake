@@ -686,41 +686,72 @@ function editedTitle(body, doc, managed) {
     : [null, bad('title must be a non-empty string')];
 }
 
-/** update_document: a new version; managed types keep their series title; prototype HTML is not CRUD content. */
 /**
- * The real handler's no-clobber check (shared/document_history.py): `expected_revision`
- * is the revision the editor loaded — a series' head `version` for a PRD / PR-FAQ, the
- * edit counter (unset = 1) otherwise. Absent: no check. Else a 400, or a 409 when stale.
+ * validated_expected_revision (shared/document_history.py): the revision the editor loaded
+ * — a series' head `version` for a PRD / PR-FAQ, the edit counter (unset = 1) otherwise.
+ * Absent / null: no check. Checked BEFORE the no-change return (a malformed one is a 400 even
+ * then); whether it is stale is checked after it (an edit that saves nothing clobbers nothing).
  */
-function staleSave(ctx, doc, managed) {
-  if (!own(ctx.body, 'expected_revision')) return null;
-  const expected = ctx.body.expected_revision;
-  if (!Number.isInteger(expected) || expected < 1) {
-    return bad('expected_revision must be the revision you loaded (a whole number ≥ 1)');
-  }
-  const current = managed ? (seriesOf(ctx.detail, doc)[0]?.version ?? 1) : currentRevision(doc);
-  return expected === current
-    ? null
-    : [409, { success: false, error: 'The document was changed by someone else; reload it and try again' }];
+function expectedRevisionOf(body) {
+  if (!own(body, 'expected_revision') || body.expected_revision === null) return [null, null];
+  const expected = body.expected_revision;
+  return Number.isInteger(expected) && expected >= 1
+    ? [expected, null]
+    : [null, bad('expected_revision must be the revision you loaded (a whole number ≥ 1)')];
 }
 
+const STALE_DOCUMENT = [409, { success: false, error: 'The document was changed by someone else; reload it and try again' }];
+const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** validated_edit_id: the caller's idempotency key for one save, or a digest of the content. */
+function editIdOf(body, content) {
+  if (!own(body, 'edit_id') || body.edit_id === null) {
+    return [createHash('sha256').update(content).digest('hex').slice(0, 32), null];
+  }
+  return typeof body.edit_id === 'string' && OPAQUE_ID.test(body.edit_id)
+    ? [body.edit_id, null]
+    : [null, bad('edit_id must be 1-64 letters, digits, "-" or "_"')];
+}
+
+// persist_versioned_document's allocation records: `${projectId}:${type}:${allocation id}` → the
+// document it made, so a retried save (same `edit:{source}:{edit_id}`) replays that version
+// instead of making another, and is never refused as stale by the version it made itself.
+const allocations = new Map();
+
+function allocatedManagedVersion(ctx, source, allocationId, expected, build) {
+  const key = `${ctx.projectId}:${source.document_type}:${allocationId}`;
+  const replayed = findDocument(ctx.detail, allocations.get(key) ?? '');
+  if (replayed) return [200, { success: true, document: replayed }];
+  if (expected !== null && expected !== (seriesOf(ctx.detail, source)[0]?.version ?? 1)) return STALE_DOCUMENT;
+  const saved = build();
+  allocations.set(key, saved.document_id);
+  return [200, { success: true, document: saved }];
+}
+
+/** update_document (projects.py + document_history.edit_document): every save is a new version, never an overwrite. */
 function updateDocument(ctx, documentId) {
   const doc = findDocument(ctx.detail, documentId);
   if (!doc) return [404, { success: false, error: 'Document not found' }];
+  if (doc.document_type === 'decision') return bad('Decision records are edited through PUT /projects/{id}/decisions/{document_id}.');
   const managed = VERSIONED_DOC_TYPES.has(doc.document_type);
   const [title, titleError] = editedTitle(ctx.body, doc, managed);
   if (titleError) return titleError;
   if (own(ctx.body, 'content') && doc.document_type === 'prototype') {
     return bad('Prototype content is stored in S3 and cannot be updated through generic document CRUD. Use the prototype revision workflow.');
   }
-  const content = typeof ctx.body.content === 'string' ? ctx.body.content : (doc.content ?? '');
+  const [expected, expectedError] = expectedRevisionOf(ctx.body);
+  if (expectedError) return expectedError;
+  if (own(ctx.body, 'content') && typeof ctx.body.content !== 'string') return bad('content must be a string');
+  const content = own(ctx.body, 'content') ? ctx.body.content : (doc.content ?? '');
   if (content === (doc.content ?? '') && title === doc.title) return [200, { success: true, unchanged: true, document: doc }];
-  const stale = staleSave(ctx, doc, managed);
-  if (stale) return stale;
-  const saved = managed
-    ? newManagedVersion(ctx, doc, content, { edit_kind: 'edit', edited_from_id: doc.document_id })
-    : replaceUnmanaged(ctx, doc, { content, title, provenance: { edit_kind: 'edit' } });
-  return [200, { success: true, document: saved }];
+  const [editId, editIdError] = editIdOf(ctx.body, content);
+  if (editIdError) return editIdError;
+  if (managed) {
+    return allocatedManagedVersion(ctx, doc, `edit:${doc.document_id}:${editId}`, expected,
+      () => newManagedVersion(ctx, doc, content, { edit_kind: 'edit', edited_from_id: doc.document_id }));
+  }
+  if (expected !== null && expected !== currentRevision(doc)) return STALE_DOCUMENT;
+  return [200, { success: true, document: replaceUnmanaged(ctx, doc, { content, title, provenance: { edit_kind: 'edit' } }) }];
 }
 
 /** GET …/documents/{id}/versions: newest first, with content. */
@@ -756,11 +787,13 @@ function restoreDocumentVersion(ctx, documentId, versionId) {
     const source = series.find((d) => d.document_id === versionId);
     if (!source) return [404, { success: false, error: 'Version not found' }];
     const [latest] = series;
-    if ((source.content ?? '') === (latest.content ?? '')) return [200, { success: true, unchanged: true, document: latest }];
-    const saved = newManagedVersion(ctx, latest, source.content ?? '', {
+    const content = source.content ?? '';
+    if (content === (latest.content ?? '')) return [200, { success: true, unchanged: true, document: latest }];
+    const [editId, editIdError] = editIdOf(ctx.body, content);
+    if (editIdError) return editIdError;
+    return allocatedManagedVersion(ctx, latest, `restore:${versionId}:${editId}`, null, () => newManagedVersion(ctx, latest, content, {
       edit_kind: 'restore', edited_from_id: latest.document_id, restored_from_id: versionId, restored_from_version: source.version ?? 1,
-    });
-    return [200, { success: true, document: saved }];
+    }));
   }
   const revision = Number(/^r([1-9]\d*)$/.exec(versionId)?.[1] ?? NaN);
   if (revision === currentRevision(doc)) return [200, { success: true, unchanged: true, document: doc }];

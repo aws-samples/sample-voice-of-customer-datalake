@@ -381,7 +381,7 @@ export function useProjectMutations({
 }
 
 /** A custom document to create (the create mutation's variables). */
-export interface DocumentDraft {
+interface DocumentDraft {
   title: string
   content: string
 }
@@ -397,13 +397,12 @@ export interface DocumentUpdate {
 
 interface UseDocumentMutationsProps {
   id: string | undefined
-  selectedDoc: ProjectDocument | null
   setSelectedDoc: (d: ProjectDocument | null) => void
 }
 
+/** Create (a custom document, from the create modal) and delete. Edits are the canvas's: {@link useUpdateDocument}. */
 export function useDocumentMutations({
   id,
-  selectedDoc,
   setSelectedDoc,
 }: UseDocumentMutationsProps) {
   const queryClient = useQueryClient()
@@ -428,7 +427,22 @@ export function useDocumentMutations({
     },
   })
 
-  const updateDocMut = useMutation({
+  return {
+    createDocMut,
+    deleteDocMut,
+  }
+}
+
+/**
+ * The save of an existing document: `PUT /projects/{id}/documents/{doc}`, ONE new
+ * version per call (D1: the server never overwrites; it records the time and the
+ * version, D4). Resolves with the version just saved (a PRD / PR/FAQ version has a
+ * new id), or null when the server answered without one.
+ */
+export function useUpdateDocument(id: string | undefined) {
+  const queryClient = useQueryClient()
+  const projectId = id ?? ''
+  return useMutation({
     mutationFn: (data: DocumentUpdate) =>
       projectsApi.updateDocument(projectId, data.docId, {
         ...(data.title === undefined ? {} : { title: data.title }),
@@ -437,26 +451,8 @@ export function useDocumentMutations({
         // A fresh id per save, so the server can tell a replayed request from a second save.
         edit_id: crypto.randomUUID(),
       }),
-    onSuccess: (result, variables) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      if (selectedDoc?.document_id !== variables.docId) return
-      // Every edit is a new version, and a PRD / PR/FAQ version has a new id:
-      // show the version just saved (the edited one stays in Versions).
-      if (result.document !== null) {
-        setSelectedDoc(result.document)
-      } else {
-        setSelectedDoc({
-          ...selectedDoc,
-          ...(variables.title === undefined ? {} : { title: variables.title }),
-          content: variables.content,
-        })
-      }
     },
   })
-
-  return {
-    createDocMut,
-    deleteDocMut,
-    updateDocMut,
-  }
 }

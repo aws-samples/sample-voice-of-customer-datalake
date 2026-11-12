@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { collapseUnchanged, diffLines, MAX_DIFF_CHARS } from './lineDiff'
+import { collapseUnchanged, diffBlocks, diffLines, MAX_DIFF_CHARS } from './lineDiff'
 import type { DiffLine } from './lineDiff'
 
 /** Applying a diff: the `same` + `add` lines must rebuild `after`, `same` + `del` must rebuild `before`. */
@@ -89,5 +89,33 @@ describe('collapseUnchanged', () => {
   it('collapses everything to one skip when nothing changed', () => {
     const r = okDiff('a\nb\nc', 'a\nb\nc')
     expect(collapseUnchanged(r.lines)).toStrictEqual([{ kind: 'skip', count: 3 }])
+  })
+})
+
+describe('diffBlocks (the document canvas)', () => {
+  it('diffs whole Markdown blocks: a changed paragraph is one removed and one added block', () => {
+    const result = diffBlocks('# Title\n\nFirst line\nsecond line\n\nLast', '# Title\n\nFirst line\nchanged line\n\nLast')
+    expect(result).toStrictEqual({
+      status: 'ok', added: 1, removed: 1,
+      lines: [
+        { kind: 'same', text: '# Title' },
+        { kind: 'del', text: 'First line\nsecond line' },
+        { kind: 'add', text: 'First line\nchanged line' },
+        { kind: 'same', text: 'Last' },
+      ],
+    })
+  })
+
+  it('keeps a fenced code block whole, blank lines and all', () => {
+    const result = diffBlocks('Intro\n\n```js\na()\n\nb()\n```\n\nEnd', 'Intro\n\nEnd')
+    expect(result.status === 'ok' ? result.lines : []).toStrictEqual([
+      { kind: 'same', text: 'Intro' },
+      { kind: 'del', text: '```js\na()\n\nb()\n```' },
+      { kind: 'same', text: 'End' },
+    ])
+  })
+
+  it('refuses inputs past the cap, as the line diff does', () => {
+    expect(diffBlocks('x'.repeat(MAX_DIFF_CHARS + 1), 'y')).toStrictEqual({ status: 'too-large' })
   })
 })

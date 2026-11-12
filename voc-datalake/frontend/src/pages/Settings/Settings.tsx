@@ -24,6 +24,7 @@ import { ChevronDown } from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
 import { useIsAdmin } from '../../store/authStore'
 import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
+import { useResetAfter } from '../../hooks/useResetAfter'
 import { api } from '../../api/client'
 import clsx from 'clsx'
 import { TabsTrack } from './TabsTrack'
@@ -53,6 +54,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
+  const resetAfter = useResetAfter()
   const { location, selectTab, selectSection, redirectTo } = useAdminLocation(isAdmin)
   const activeTab = location.tab
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -117,7 +119,7 @@ export default function Settings() {
     setSaved(ok)
     if (ok) {
       markBrandSaved()
-      setTimeout(() => setSaved(false), 3000)
+      resetAfter(3000, () => setSaved(false))
     }
     return ok
   }

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Pre-commit hook: refuses a commit whose staged tree has no GO record of the review gate.
+#
+# WHY: every commit passes the review gate (CONTRIBUTING.md -> "Review gate before commit"): validate.sh green, at
+# most three review rounds on the exact change, then a final GO. scripts/ai-review/gate.mjs keeps a record of each GO
+# under .cache/ai-review/gate/, keyed by the tree `git write-tree` gives for the index; this hook asks it whether the
+# tree about to be committed has one. Staging anything after the record was made changes the tree, so the commit is
+# refused until that exact change is reviewed and recorded.
+#
+# WHAT: runs gate.mjs's main(["check"]) from the repository's top level, with NODE_OPTIONS unset, through an
+# explicit entry: only main()'s 0 lets the commit through, never node exiting quietly. git sets GIT_INDEX_FILE for
+# `git commit -a` and `git commit <paths>`, and the check reads that index, so it judges what is really committed.
+# Nothing skips it except git's own `git commit --no-verify`: no environment variable does. Without node, or without
+# gate.mjs in the checked-out tree, the commit is refused (fail closed).
+# Install: CONTRIBUTING.md -> "Review gate before commit". Tested by scripts/git-hooks/pre-commit.test.mjs.
+#
+# LIMITS: the record is local and written by the developer or their agent; the hook checks that a GO record for the
+# staged tree exists and is well formed, not that the reviews it lists really ran. CI does not see it. It runs the
+# gate.mjs of the checked-out tree, so a local edit to that file changes the check.
+# =============================================================================
+
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+gate="${root}/scripts/ai-review/gate.mjs"
+
+if ! command -v node > /dev/null 2>&1; then
+  echo "pre-commit: node is not on PATH, so the review gate cannot check this commit; commit refused." >&2
+  exit 1
+fi
+if [ ! -f "$gate" ]; then
+  echo "pre-commit: ${gate} is missing in this checkout, so the review gate cannot check this commit; commit refused." >&2
+  exit 1
+fi
+
+cd "$root"
+# Silence is not a pass. NODE_OPTIONS could change how node starts (--preserve-symlinks-main makes a main-module guard
+# false, and node then exits 0 having checked nothing), so it is dropped; and the check is called through an explicit
+# entry that imports main() and exits 0 only when main() answers 0. A gate.mjs without main() is refused.
+unset NODE_OPTIONS
+REVIEW_GATE_SCRIPT="$gate" exec node --input-type=module -e '
+const { pathToFileURL } = await import("node:url")
+const gate = await import(pathToFileURL(process.env.REVIEW_GATE_SCRIPT).href)
+if (typeof gate.main !== "function") {
+  console.error("pre-commit: gate.mjs has no main(), so the review gate cannot check this commit; commit refused.")
+  process.exit(1)
+}
+const code = await gate.main(["check"])
+process.exit(code === 0 ? 0 : 1)
+'

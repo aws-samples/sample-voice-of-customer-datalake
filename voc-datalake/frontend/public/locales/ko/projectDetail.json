@@ -16,10 +16,7 @@
     "create": "생성",
     "createDocument": "문서 생성",
     "creating": "생성 중...",
-    "editDocument": "문서 편집",
     "preview": "미리보기",
-    "saveChanges": "변경 사항 저장",
-    "saving": "저장 중...",
     "titleLabel": "제목",
     "titlePlaceholder": "문서 제목..."
   },
@@ -49,7 +46,6 @@
       "visualsUsed_one": "비주얼 {{count, number}}개 사용",
       "visualsUsed_other": "비주얼 {{count, number}}개 사용"
     },
-    "editDocument": "문서 편집",
     "newDocument": "새 문서",
     "noDocuments": "문서 없음",
     "ordinal": "{{total, number}}개 중 {{ordinal}}번째",
@@ -656,5 +652,124 @@
     "featureRequestLink": "요청 {{id}}",
     "erasedSummary_one": "인용된 리뷰 또는 보드 요청 {{count, number}}개가 삭제됨(법적 근거 기록됨)",
     "erasedSummary_other": "인용된 리뷰 또는 보드 요청 {{count, number}}개가 삭제됨(법적 근거 기록됨)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "입력하거나 /를 눌러 블록을 선택하세요",
+      "task": "완료",
+      "slash": {
+        "label": "블록",
+        "empty": "“{{query}}”와 일치하는 블록이 없습니다"
+      },
+      "blocks": {
+        "paragraph": "텍스트",
+        "heading1": "제목 1",
+        "heading2": "제목 2",
+        "heading3": "제목 3",
+        "bulletList": "글머리 기호 목록",
+        "orderedList": "번호 매기기 목록",
+        "taskList": "할 일 목록",
+        "blockquote": "인용",
+        "callout": "콜아웃",
+        "codeBlock": "코드",
+        "table": "표",
+        "divider": "구분선",
+        "image": "이미지"
+      },
+      "callout": {
+        "note": "참고",
+        "tip": "팁",
+        "important": "중요",
+        "warning": "경고",
+        "caution": "주의"
+      },
+      "format": {
+        "toolbar": "텍스트 서식",
+        "bold": "굵게",
+        "italic": "기울임꼴",
+        "strike": "취소선",
+        "code": "인라인 코드",
+        "link": "링크",
+        "turnInto": "변환",
+        "comment": "댓글"
+      },
+      "link": {
+        "title": "링크",
+        "url": "링크 주소",
+        "placeholder": "https://… 또는 /경로",
+        "apply": "적용",
+        "remove": "링크 제거",
+        "cancel": "취소",
+        "invalid": "웹 주소(https://…), 이메일 주소 또는 이 앱의 경로(/…)를 사용하세요."
+      },
+      "image": {
+        "title": "이미지 삽입",
+        "url": "이미지 주소",
+        "alt": "대체 텍스트",
+        "altHint": "이미지를 볼 수 없는 사람을 위해 이미지를 설명하세요.",
+        "insert": "삽입",
+        "cancel": "취소",
+        "invalidUrl": "웹 주소(https://…) 또는 이 앱의 경로(/…)를 사용하세요.",
+        "altRequired": "대체 텍스트를 추가하세요. 이미지를 볼 수 없는 사람에게 전달되는 내용입니다."
+      },
+      "handle": {
+        "label": "드래그하여 블록을 이동하거나 클릭하여 메뉴 열기",
+        "menu": "블록 작업",
+        "moveUp": "위로 이동",
+        "moveDown": "아래로 이동",
+        "turnInto": "변환",
+        "duplicate": "복제",
+        "delete": "삭제",
+        "back": "뒤로"
+      }
+    },
+    "page": {
+      "loading": "문서를 불러오는 중…",
+      "titleLabel": "문서 제목",
+      "contents": "목차",
+      "evidence": "근거",
+      "evidenceEmpty": "이 문서에 기록된 리뷰나 기능 요청이 없습니다.",
+      "showAll": "모두 보기({{n, number}})",
+      "featureRequests": "기능 요청"
+    },
+    "comments": {
+      "hint": "구절에 댓글을 달려면 텍스트를 선택하고 [댓글]을 누르거나 Ctrl+Alt+M(Mac에서는 ⌘⌥M)을 누르세요.",
+      "draftOpen": "먼저 작성 중인 댓글을 마치거나 취소하세요.",
+      "selectFirst": "먼저 문서에서 구절(최대 500자)을 선택한 다음 댓글을 다세요.",
+      "tabs": {
+        "label": "댓글 및 근거",
+        "comments": "댓글",
+        "evidence": "근거"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "추가됨",
+        "banner": "어시스턴트가 이 문서의 변경을 제안합니다",
+        "diffLabel": "제안된 변경",
+        "draftNote": "저장하지 않은 변경 사항이 있습니다. 제안은 저장된 버전과 비교되며, 승인하면 그 위에 새 버전이 저장됩니다.",
+        "hide": "변경 숨기기",
+        "newTitle": "새 제목: {{title}}",
+        "noChanges": "제안이 저장된 텍스트와 같습니다.",
+        "removed": "삭제됨",
+        "review": "검토",
+        "stats": "추가된 블록: {{added, number}} · 삭제: {{removed, number}}",
+        "tooLarge": "너무 길어서 블록별로 비교할 수 없습니다. 전체 제안:",
+        "unchanged": "변경 없는 블록: {{count, number}}"
+      },
+      "discard": "취소",
+      "discardHint": "변경 사항을 버리고 저장된 버전으로 돌아가기",
+      "exportSavedHint": "내보내기는 저장된 버전을 사용합니다. 변경 사항을 포함하려면 먼저 저장하세요.",
+      "history": "기록",
+      "save": "저장",
+      "saveHint": "새 버전 저장(Ctrl+S 또는 ⌘S)",
+      "status": {
+        "saved": "저장됨 · {{version}} · {{when}}",
+        "savedNoVersion": "저장됨 · {{when}}",
+        "saving": "저장 중…",
+        "unsaved": "저장하지 않은 변경 사항"
+      },
+      "toolbarLabel": "문서 작업"
+    }
   }
 }

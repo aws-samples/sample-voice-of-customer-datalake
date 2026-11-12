@@ -289,15 +289,15 @@ export const projectsApi = {
   dismissJob: (projectId: string, jobId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/jobs/${jobId}`, del()),
 
-  createDocument: (projectId: string, data: {
+  /** The created document, normalised like an edit's (null when the answer carries none the page can show). */
+  createDocument: async (projectId: string, data: {
     title: string;
     content: string;
     document_type?: 'custom'
-  }) =>
-    fetchApi<{
-      success: boolean;
-      document: ProjectDocument
-    }>(`/projects/${projectId}/documents`, post(data)),
+  }): Promise<{ document: ProjectDocument | null }> => {
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents`, post(data))
+    return { document: normalizeProjectDocument(asRecord(raw)?.document) }
+  },
 
   /**
    * A PR/FAQ or PRD written by hand: the next version of its series, `origin: human`
@@ -326,10 +326,10 @@ export const projectsApi = {
     content?: string;
     edit_id?: string;
     expected_revision?: number
-  }): Promise<{ success: boolean; document: ProjectDocument | null }> => {
+  }): Promise<{ document: ProjectDocument | null }> => {
+    // A failed save throws (fetchApi); the answer's `success` adds nothing to that.
     const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, put(data))
-    const record = asRecord(raw)
-    return { success: record?.success === true, document: normalizeProjectDocument(record?.document) }
+    return { document: normalizeProjectDocument(asRecord(raw)?.document) }
   },
 
   /** Every version of a document, newest first, with content (open / compare). */

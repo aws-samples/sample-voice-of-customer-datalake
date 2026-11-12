@@ -47,6 +47,7 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 - **AI assistant**: one page-aware assistant on every page and at `/chat`. Its tools only read; every write is an approval card that runs with your own permissions. It can propose multi-step plans, consult `@personas` about `#documents`, and stays inside the filters on screen ([Plan mode](docs/assistant-plan-mode.md), [Mentions](docs/assistant-mentions.md), [Chat scope](docs/assistant-chat-scope.md))
 - **Projects**: personas, research, PR/FAQs, PRDs and clickable prototypes generated from the reviews, and each artifact lists the reviews it was written from ([Project Workspace](docs/project-workspace.md), [Persona Generation](docs/persona-generation.md))
 - **Company personas**: a shared persona library that projects copy from and promote into ([Project Workspace](docs/project-workspace.md#company-personas))
+- **Document canvas**: each project document as a page with an outline and its evidence, edited in place (blocks, "/" menu, Markdown shortcuts), every save a new version ([Document canvas](docs/document-canvas.md))
 - **Document review**: margin comments, "Ask personas to review" and share-for-review links on PR/FAQs and PRDs ([Document review](docs/document-review.md))
 - **Ways of working with AI**: per person, Human-driven, AI-assisted or AI-driven writing of PR/FAQs and PRDs, enforced by the API ([Ways of working](docs/ways-of-working.md))
 - **Decisions and prioritization**: decision records per project, and Prioritization rows scored on your team's metrics with individual or room votes ([Prioritization](docs/prioritization.md))
@@ -237,6 +238,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Decisions and Release Watch](docs/decisions-and-release-watch.md) | Decision records on projects and before/after feedback per release |
 | [Project Workspace](docs/project-workspace.md) | Projects, the Product tab, cited reviews, document versions, sharing, company personas |
 | [Persona Generation](docs/persona-generation.md) | Adding personas next to the existing ones or replacing them |
+| [Document canvas](docs/document-canvas.md) | The Documents tab's page view: outline, evidence, editing in place, saving, history, the assistant's diffs |
 | [Document review](docs/document-review.md) | Margin comments, "Ask personas to review", share-for-review links and their sign-in |
 | [Ways of working with AI](docs/ways-of-working.md) | Human-driven, AI-assisted and AI-driven PR/FAQ and PRD writing, and how the server enforces it |
 | [Prioritization Scoring](docs/prioritization.md) | The workspace scoring setup: metrics, weights, directions, the composite formula, templates, routes |

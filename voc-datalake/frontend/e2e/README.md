@@ -146,6 +146,14 @@ cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:341
 
 `csv-dataset-update.spec.ts` (issue #411, [docs/csv-import.md](../../../docs/csv-import.md)) runs ONLY there: a CSV upload under a dataset name is previewed and imported, then the corrected file is previewed (one row to update, its before / after text) and confirmed with `apply_updates`; the API refuses an unconfirmed change (409) and `GET /feedback` holds the corrected text once. On a deployment it would write feedback, which has no delete route.
 
+`document-canvas.spec.ts` (6.05, the document canvas; helpers in `lib/canvas.ts`) runs ONLY there for now, on documents
+it creates itself in `proj_1` (`e2e-<run id>-canvas …`): edit in place (the `## ` shortcut, "/" → To-do list, the
+format bar's Bold), Save as one PUT with the loaded `expected_revision` ("Saved · v2", kept after a reload), Discard
+(nothing sent), the two-page conflict (409, the banner, Load the latest), the leave guard, comments on a PR/FAQ
+(Comment from the format bar, reply, resolve, Show resolved, the Comments | Evidence tabs), Share for review (create,
+Copy, Turn off link), History (Restore v1 → v3 on the canvas), the outline, the read-only canvas of `proj_2`, a
+keyboard-only save (Tab, Ctrl+S) and widths 360 / 390 / 768 / 1024 / 1440 with no sideways scroll.
+
 ## QA track s1 (`E2E_TRACK=s1` only)
 
 `tests/s1-a-data.spec.ts` and `tests/s1-b-assistant.spec.ts` skip unless `E2E_TRACK=s1`, because they write feedback that cannot be deleted:

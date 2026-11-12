@@ -16,10 +16,7 @@
     "create": "创建",
     "createDocument": "创建文档",
     "creating": "创建中...",
-    "editDocument": "编辑文档",
     "preview": "预览",
-    "saveChanges": "保存更改",
-    "saving": "保存中...",
     "titleLabel": "标题",
     "titlePlaceholder": "文档标题..."
   },
@@ -49,7 +46,6 @@
       "visualsUsed_one": "已使用 {{count, number}} 份视觉稿",
       "visualsUsed_other": "已使用 {{count, number}} 份视觉稿"
     },
-    "editDocument": "编辑文档",
     "newDocument": "新建文档",
     "noDocuments": "无文档",
     "ordinal": "第 {{ordinal}} 个，共 {{total, number}} 个",
@@ -656,5 +652,124 @@
     "featureRequestLink": "需求 {{id}}",
     "erasedSummary_one": "{{count, number}} 条引用的评论或看板请求已被删除（已记录法律依据）",
     "erasedSummary_other": "{{count, number}} 条引用的评论或看板请求已被删除（已记录法律依据）"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "输入内容，或键入 / 选择块",
+      "task": "已完成",
+      "slash": {
+        "label": "块",
+        "empty": "没有与“{{query}}”匹配的块"
+      },
+      "blocks": {
+        "paragraph": "文本",
+        "heading1": "标题 1",
+        "heading2": "标题 2",
+        "heading3": "标题 3",
+        "bulletList": "项目符号列表",
+        "orderedList": "编号列表",
+        "taskList": "待办事项列表",
+        "blockquote": "引用",
+        "callout": "标注",
+        "codeBlock": "代码",
+        "table": "表格",
+        "divider": "分隔线",
+        "image": "图片"
+      },
+      "callout": {
+        "note": "注释",
+        "tip": "提示",
+        "important": "重要",
+        "warning": "警告",
+        "caution": "注意"
+      },
+      "format": {
+        "toolbar": "文本格式",
+        "bold": "粗体",
+        "italic": "斜体",
+        "strike": "删除线",
+        "code": "行内代码",
+        "link": "链接",
+        "turnInto": "转换为",
+        "comment": "评论"
+      },
+      "link": {
+        "title": "链接",
+        "url": "链接地址",
+        "placeholder": "https://… 或 /路径",
+        "apply": "应用",
+        "remove": "移除链接",
+        "cancel": "取消",
+        "invalid": "请使用网址（https://…）、电子邮件地址或本应用中的路径（/…）。"
+      },
+      "image": {
+        "title": "插入图片",
+        "url": "图片地址",
+        "alt": "替代文本",
+        "altHint": "为看不到图片的人描述这张图片。",
+        "insert": "插入",
+        "cancel": "取消",
+        "invalidUrl": "请使用网址（https://…）或本应用中的路径（/…）。",
+        "altRequired": "请添加替代文本：看不到图片的人将获得这段文字。"
+      },
+      "handle": {
+        "label": "拖动以移动该块，或点击打开其菜单",
+        "menu": "块操作",
+        "moveUp": "上移",
+        "moveDown": "下移",
+        "turnInto": "转换为",
+        "duplicate": "复制",
+        "delete": "删除",
+        "back": "返回"
+      }
+    },
+    "page": {
+      "loading": "正在加载文档…",
+      "titleLabel": "文档标题",
+      "contents": "目录",
+      "evidence": "依据",
+      "evidenceEmpty": "此文档没有记录任何评价或功能需求。",
+      "showAll": "全部显示（{{n, number}}）",
+      "featureRequests": "功能需求"
+    },
+    "comments": {
+      "hint": "要评论某段文字，请选中它并按“评论”，或按 Ctrl+Alt+M（Mac 上为 ⌘⌥M）。",
+      "draftOpen": "请先完成或取消正在撰写的评论。",
+      "selectFirst": "请先选中文档中的一段文字（最多 500 个字符），然后再评论。",
+      "tabs": {
+        "label": "评论和依据",
+        "comments": "评论",
+        "evidence": "依据"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "已添加",
+        "banner": "助手建议修改此文档",
+        "diffLabel": "建议的修改",
+        "draftNote": "你有未保存的更改。建议与已保存的版本进行比较，批准后将在该版本之上保存一个新版本。",
+        "hide": "隐藏修改",
+        "newTitle": "新标题：{{title}}",
+        "noChanges": "建议与已保存的文本相同。",
+        "removed": "已删除",
+        "review": "查看",
+        "stats": "添加的块：{{added, number}} · 删除：{{removed, number}}",
+        "tooLarge": "内容太长，无法逐块比较。完整建议：",
+        "unchanged": "未更改的块：{{count, number}}"
+      },
+      "discard": "放弃",
+      "discardHint": "放弃你的更改并返回已保存的版本",
+      "exportSavedHint": "导出使用已保存的版本。请先保存以包含你的更改。",
+      "history": "历史记录",
+      "save": "保存",
+      "saveHint": "保存新版本（Ctrl+S 或 ⌘S）",
+      "status": {
+        "saved": "已保存 · {{version}} · {{when}}",
+        "savedNoVersion": "已保存 · {{when}}",
+        "saving": "正在保存…",
+        "unsaved": "未保存的更改"
+      },
+      "toolbarLabel": "文档操作"
+    }
   }
 }

@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
+import { timerOnCleanup } from '../../test/timeoutWatch'
 import { TestRouter } from '../../test/TestRouter'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 
@@ -501,6 +502,14 @@ describe('Settings', () => {
       await waitFor(() => {
         expect(screen.getByText(/Saved!/i)).toBeInTheDocument()
       })
+    })
+
+    it('cancels the "Saved!" timer when the page goes away, so nothing fires after it', async () => {
+      const timer = await timerOnCleanup(3000, async () => {
+        await renderAndSave()
+        return screen.findByText(/Saved!/i)
+      })
+      expect(timer).toStrictEqual({ started: true, pendingBefore: true, cancelledByCleanup: true })
     })
 
     it('shows Saving... while save is in progress', async () => {

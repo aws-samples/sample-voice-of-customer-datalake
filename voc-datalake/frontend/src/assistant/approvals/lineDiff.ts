@@ -1,5 +1,7 @@
 /**
- * @fileoverview A small line diff for the `update_document` approval preview.
+ * @fileoverview A small line diff for the `update_document` approval preview,
+ * and the same diff over Markdown blocks for the document canvas
+ * (components/DocumentCanvas/actions/BlockDiff).
  *
  * Longest-common-subsequence over lines, after trimming the common prefix and
  * suffix (which is what makes the typical "edit one section" case cheap). The DP
@@ -97,9 +99,49 @@ function backtrack(a: readonly string[], b: readonly string[], table: Uint32Arra
 
 /** Diff two texts line by line. */
 export function diffLines(before: string, after: string): LineDiffResult {
+  return diffUnits(before, after, splitLines)
+}
+
+/** A fenced code block's opening (or closing) line: ``` or ~~~, up to three spaces in. */
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/
+
+/**
+ * Split Markdown into its top-level blocks: runs of lines separated by blank
+ * lines, a fenced code block (blank lines and all) kept whole. Each block's own
+ * text is unchanged, so a block diff reads as the document does.
+ */
+function splitBlocks(text: string): string[] {
+  const blocks: string[] = []
+  const state: { current: string[]; fence: string | null } = { current: [], fence: null }
+  const flush = () => {
+    if (state.current.length > 0) blocks.push(state.current.join('\n'))
+    state.current = []
+  }
+  for (const line of splitLines(text)) {
+    const fence = FENCE_RE.exec(line)?.[1]
+    if (state.fence !== null) {
+      state.current.push(line)
+      if (fence !== undefined && fence[0] === state.fence[0] && fence.length >= state.fence.length) state.fence = null
+    } else if (line.trim() === '') {
+      flush()
+    } else {
+      state.current.push(line)
+      if (fence !== undefined) state.fence = fence
+    }
+  }
+  flush()
+  return blocks
+}
+
+/** Diff two Markdown texts block by block (paragraphs, headings, lists, fences): each `text` is a whole block. */
+export function diffBlocks(before: string, after: string): LineDiffResult {
+  return diffUnits(before, after, splitBlocks)
+}
+
+function diffUnits(before: string, after: string, split: (text: string) => string[]): LineDiffResult {
   if (before.length > MAX_DIFF_CHARS || after.length > MAX_DIFF_CHARS) return { status: 'too-large' }
-  const a = splitLines(before)
-  const b = splitLines(after)
+  const a = split(before)
+  const b = split(after)
   const prefix = commonPrefixLength(a, b)
   const suffix = commonSuffixLength(a, b, prefix)
   const midA = a.slice(prefix, a.length - suffix)

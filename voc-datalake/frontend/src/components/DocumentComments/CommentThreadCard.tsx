@@ -25,9 +25,10 @@ function AuthorLine({ author, at }: Readonly<{ author: CommentAuthor; at: string
   const { t, i18n } = useTranslation('components')
   const Icon = AUTHOR_ICONS[author.kind]
   return (
-    <div className="flex items-center gap-1.5 text-xs text-muted min-w-0">
+    // The name is never cut short: in a narrow margin the kind and the time wrap under it instead.
+    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted min-w-0">
       <Icon size={12} aria-hidden className="shrink-0" />
-      <span className="font-medium text-text truncate">{author.name || t(`documentComments.authorKind.${author.kind}`)}</span>
+      <span className="font-medium text-text min-w-0 break-words [overflow-wrap:anywhere]">{author.name || t(`documentComments.authorKind.${author.kind}`)}</span>
       <span className="shrink-0">· {t(`documentComments.authorKind.${author.kind}`)}</span>
       {at === '' ? null : <span className="ml-auto shrink-0 font-mono">{formatDateTime(at, i18n.language, '', 'short')}</span>}
     </div>
@@ -95,11 +96,14 @@ interface CommentThreadCardProps {
 export default function CommentThreadCard({ thread, actions, viewed, active, onActivate }: CommentThreadCardProps) {
   const { t } = useTranslation('components')
   const [replying, setReplying] = useState(false)
+  const resolved = thread.status === 'resolved'
   return (
     <article
       aria-label={t('documentComments.threadBy', { name: thread.author.name })}
-      className={clsx('rounded-lg border bg-card p-3 space-y-2 text-sm transition-shadow',
-        active ? 'border-warn shadow-md' : 'border-border', thread.status === 'resolved' && 'opacity-75')}
+      // A resolved thread recedes through its surface (a quieter background, a dashed edge) and its badge,
+      // never through opacity: its text keeps the theme's own contrast (AA).
+      className={clsx('rounded-lg border p-3 space-y-2 text-sm transition-shadow',
+        resolved ? 'bg-bg-accent border-dashed' : 'bg-card', active ? 'border-warn shadow-md' : 'border-border')}
       onFocus={() => onActivate(thread.comment_id)}
       onMouseEnter={() => onActivate(thread.comment_id)}
       onMouseLeave={() => onActivate(null)}

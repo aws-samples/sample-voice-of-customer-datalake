@@ -17,6 +17,7 @@ import path from 'node:path'
 import { expect, type Locator, type Page, type Response } from '@playwright/test'
 import { test } from '../lib/test'
 import { saveSession } from '../lib/context'
+import { CANVAS_TEXT, barButton, canvasOf, caretAtEnd, clickSave, saveStatus } from '../lib/canvas'
 import { dialogNamed } from '../lib/dialogs'
 import { apiCall, listOf, stringField } from '../lib/api'
 import { askAssistant, type AssistantTurn } from '../lib/assistant'
@@ -131,7 +132,8 @@ const DIALOG = {
   documents: /^Generate (PRD \+ PR[-/]FAQ|PR[-/]FAQ|PRD)$/,
   // Wizards.tsx: the persona wizard's submit asks first (it spends AI credits).
   personaConfirm: 'Generate personas now?',
-  editDocument: 'Edit Document',
+  // DocumentActionsBar.tsx HistoryDialog (documents.versions.title).
+  versions: 'Versions',
   remix: 'Remix Documents',
   research: 'Run Research',
   prototype: 'Build Prototype',
@@ -152,36 +154,30 @@ const OPEN_VERSION = /^Open v(\d+)$/
 
 /** The version numbers of the open Versions list, in list order (newest first). */
 async function versionLabels(page: Page): Promise<number[]> {
-  const names = await page.getByRole('button', { name: OPEN_VERSION }).evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label') ?? ''))
+  const names = await historyDialog(page).getByRole('button', { name: OPEN_VERSION }).evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label') ?? ''))
   return names.map((name) => Number(OPEN_VERSION.exec(name)?.[1] ?? Number.NaN)).filter((n) => Number.isFinite(n))
 }
 
-/** Expands the selected document's Versions list if it is collapsed (it is by default, and after a remount). */
-async function expandVersions(page: Page): Promise<void> {
-  const toggle = page.getByRole('button', { name: 'Versions', exact: true }).first()
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
-}
+/** The page's History dialog (6.05: the versions moved from the pane into the action bar's History). */
+const historyDialog = (page: Page): Locator => dialogNamed(page, DIALOG.versions)
 
-/** Expands the selected document's Versions list (collapsed by default) and waits for its rows. */
+/** Opens the selected document's History (unless open) and waits for its rows. */
 async function openVersions(page: Page): Promise<void> {
-  await expandVersions(page)
-  await expect(page.getByRole('button', { name: OPEN_VERSION }).first()).toBeVisible({ timeout: 20_000 })
+  if (await historyDialog(page).count() === 0) await barButton(page, 'History').click()
+  await expect(historyDialog(page).getByRole('button', { name: OPEN_VERSION }).first()).toBeVisible({ timeout: 20_000 })
 }
 
 /**
- * Waits until the Versions list, expanded, shows `version` first (newest first).
+ * Waits until History shows `version` first (newest first).
  *
- * QA 3.00.00 S2: after a Restore the SPA selects the restored document
- * (DocumentVersions.tsx `onSelectDoc`), which remounts the Versions section
- * COLLAPSED, at an unknown moment after the POST answered. Opening once and then
- * polling read the old expanded list, then a collapsed one (`undefined`) until
- * the timeout. Here each retry re-expands the list if the remount collapsed it,
- * then waits for the row web-first; no fixed sleeps.
+ * A Restore closes History and selects the restored version (DocumentActionsBar `HistoryDialog`), at an unknown
+ * moment after the POST answered: each retry reopens History if it is closed, then waits for the row web-first;
+ * no fixed sleeps.
  */
 async function expectNewestVersion(page: Page, version: number): Promise<void> {
   await expect(async () => {
-    await expandVersions(page)
-    await expect(page.getByRole('button', { name: OPEN_VERSION }).first()).toHaveAccessibleName(`Open v${version}`, { timeout: 3_000 })
+    await openVersions(page)
+    await expect(historyDialog(page).getByRole('button', { name: OPEN_VERSION }).first()).toHaveAccessibleName(`Open v${version}`, { timeout: 3_000 })
   }).toPass({ timeout: 30_000 })
 }
 
@@ -676,7 +672,7 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
     })
   })
 
-  test('07 edit: in-page editor, the assistant update with approval, then versions', async ({ page }) => {
+  test('07 edit: on the canvas, the assistant update with approval, then versions', async ({ page }) => {
     test.setTimeout(ASSISTANT_TIMEOUT_MS + 240_000)
     test.skip(projectId() === undefined, 'no project')
     const marker = `E2E-S3-EDIT-${RUN_ID}`
@@ -686,14 +682,18 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
       const title = stringField(doc, 'title') ?? ''
       await openTab(page, 'documents')
       await docButton(page, title, 'prfaq').click()
-      await page.getByRole('button', { name: 'Edit document' }).click()
-      await expect(dialog(page, DIALOG.editDocument)).toBeVisible()
-      const box = dialog(page, DIALOG.editDocument).getByLabel('Content (Markdown)')
-      const original = await box.inputValue()
-      await box.fill(`${original}\n\n## QA note\n\n${marker} (in-page editor)\n`)
-      const saved = page.waitForResponse((res) => isApi(res, 'PUT', /\/documents\/[^/]+$/))
-      await dialog(page, DIALOG.editDocument).getByRole('button', { name: 'Save Changes' }).click()
-      const res = await saved
+      // 6.05: edited in place on the canvas (lib/canvas.ts), saved from the page's action bar.
+      const canvas = canvasOf(page, title)
+      await expect(canvas).toBeVisible({ timeout: 20_000 })
+      await caretAtEnd(canvas)
+      // Twice: a generated text often ends in a list, and Enter on its empty new item leaves the list.
+      await page.keyboard.press('Enter')
+      await page.keyboard.press('Enter')
+      await page.keyboard.type('## QA note')
+      await page.keyboard.press('Enter')
+      await page.keyboard.type(`${marker} (in-page editor)`)
+      await expect(saveStatus(page)).toHaveText(CANVAS_TEXT.unsaved)
+      const res = await clickSave(page)
       r.note(`PUT /projects/{id}/documents/{doc} -> ${res.status()}`)
       expect(res.status()).toBeLessThan(300)
       await expect(page.getByText(marker).first()).toBeVisible({ timeout: 20_000 })
@@ -740,7 +740,7 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
       const newest = labels[0] ?? 0
       const oldest = labels.at(-1) ?? 0
 
-      await page.getByRole('button', { name: `Compare v${oldest} with the current version`, exact: true }).click()
+      await historyDialog(page).getByRole('button', { name: `Compare v${oldest} with the current version`, exact: true }).click()
       const compare = dialog(page, versionDialogName(oldest))
       await expect(compare).toBeVisible()
       const diff = (await compare.innerText()).trim()
@@ -749,17 +749,19 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
       await compare.getByRole('button', { name: 'Close', exact: true }).click()
       await expect(compare).toHaveCount(0)
 
-      await page.getByRole('button', { name: `Restore v${oldest}`, exact: true }).click()
+      await historyDialog(page).getByRole('button', { name: `Restore v${oldest}`, exact: true }).click()
       const restored = page.waitForResponse((res) => isApi(res, 'POST', /\/versions\/[^/]+\/restore$/))
       await dialog(page, DIALOG.restoreVersion).getByRole('button', { name: 'Restore', exact: true }).click()
       const res = await restored
       r.note(`POST …/versions/{v${oldest}}/restore -> ${res.status()}`)
       expect(res.status()).toBeLessThan(300)
       await expectNewestVersion(page, newest + 1)
-      await expect(page.getByText(`Restored from v${oldest}`, { exact: true }).first()).toBeVisible()
+      await expect(historyDialog(page).getByText(`Restored from v${oldest}`, { exact: true }).first()).toBeVisible()
       const after = await versionLabels(page)
       r.note(`after restore: ${after.map((n) => `v${n}`).join(', ')} (current v${newest + 1}, restored from v${oldest})`)
       expect(after.length, 'restore adds a version, nothing is rewritten').toBe(labels.length + 1)
+      await page.keyboard.press('Escape')
+      await expect(historyDialog(page)).toHaveCount(0)
       const restoredDoc = await jsonOf(res)
       const restoredId = stringField(isRecord(restoredDoc['document']) ? restoredDoc['document'] : undefined, 'document_id')
       if (restoredId !== undefined) writeState({ documents: { prfaq: restoredId } })

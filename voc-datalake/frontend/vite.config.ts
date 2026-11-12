@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
+import { canvasAlias } from './canvasResolve.ts'
 import { changelogPlugin } from './changelogPlugin.ts'
 import { streamFsAllow, streamResolve } from './streamSource.ts'
 import { vendorChunkGroups } from './vendorChunkGroups.ts'
@@ -137,8 +138,12 @@ function findUp(name: string): string | null {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), changelogPlugin()],
-  // The modules shared with the assistant stream Lambda (streamSource.ts).
-  resolve: streamResolve,
+  // The modules shared with the assistant stream Lambda (streamSource.ts); the canvas's stand-in for Yjs
+  // (canvasResolve.ts), in the dev server and the build alike.
+  resolve: {
+    ...streamResolve,
+    alias: { ...streamResolve.alias, ...canvasAlias },
+  },
   define: {
     global: 'globalThis',
     // Namespaced under import.meta.env: a bare identifier define would be

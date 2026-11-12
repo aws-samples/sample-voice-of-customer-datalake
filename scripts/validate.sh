@@ -114,7 +114,8 @@ def py   python,python-tests                "pytest"                            
 # Release bookkeeping: CHANGELOG.md's newest release = the version in every platform package.json.
 def tsc  repo                               "version: CHANGELOG ↔ package.json"  'cd "$ROOT" && node --test scripts/check-version.test.mjs scripts/validate-affected.test.mjs && node scripts/check-version.mjs'
 # The repo scripts' own tests: the coverage gate, the PR description check, the dependency audit and
-# scheduled-failure watch, and the pre-push hook's verdict parsing.
+# scheduled-failure watch, the AI reviews and the review gate's record (scripts/ai-review/), and the git hooks
+# (the pre-push hook's verdict parsing, the pre-commit hook's review gate check).
 def tsc  repo                               "node: coverage gate tests"          'cd "$ROOT" && node --test scripts/coverage/check-per-file-coverage.test.mjs'
 def tsc  repo                               "node: PR description check"         'cd "$ROOT" && node --test scripts/pr-checks/*.test.mjs'
 def tsc  repo                               "node: AI review tests"              'cd "$ROOT" && node --test scripts/ai-review/*.test.mjs'
@@ -126,7 +127,7 @@ def tsc  repo                               "node: AI review tests"             
 def tsc  tenets                             "tenets: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind tenets'
 def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
 def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/scheduled-failure-watch.test.mjs'
-def tsc  repo                               "node: pre-push hook parsing"        'cd "$ROOT" && node --test scripts/git-hooks/pre-push.test.mjs'
+def tsc  repo                               "node: git hook tests"               'cd "$ROOT" && node --test scripts/git-hooks/*.test.mjs'
 def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
 # output and dependencies allowlisted by path; .gitleaksignore for reviewed fingerprints).

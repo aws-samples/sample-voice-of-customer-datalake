@@ -36,6 +36,13 @@
         "voc-datalake/frontend/src/pages/Home/onboarding/OnboardingBuddy.tsx"
       ],
       "reason": "two three-way enum -> icon switches (trend up/down/flat at 14 px, onboarding step done/pending/todo at 20 px with a spinner): different icons, sizes and classes; a shared helper would be a lookup table as long as each switch"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/components/DocumentCanvas/actions/DeleteDocumentButton.tsx",
+        "voc-datalake/frontend/src/components/PasskeyPrompt/AddPasskeyButton.tsx"
+      ],
+      "reason": "two one-button components of different areas: a labelled primary 'Add a passkey' (login namespace) and the icon-only Delete document with its title and screen-reader name (the one delete button of the document page and the prototype pane); only the 'busy -> spinner, else icon' shape matches, and a shared busy-button would take the class, the icon, the label and its placement as parameters"
     }
   ]
 }

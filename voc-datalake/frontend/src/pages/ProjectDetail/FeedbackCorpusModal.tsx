@@ -13,38 +13,22 @@
  * @module pages/ProjectDetail/FeedbackCorpusModal
  */
 import clsx from 'clsx'
-import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from '../../api/client'
-import { apiErrorStatus, retryOnceUnlessNotFound } from '../../api/apiErrorStatus'
-import { metricsKeys } from '../../api/queryKeys'
 import FeedbackCard from '../../components/FeedbackCard/FeedbackCard'
-import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import ModalShell from '../../components/ModalShell/ModalShell'
+import CorpusReview from './CorpusReview'
 
 const PAGE_SIZE = 10
 
-const isNotFound = (error: unknown): boolean => apiErrorStatus(error) === 404
-
 function CorpusRow({ feedbackId }: Readonly<{ feedbackId: string }>) {
   const { t } = useTranslation('projectDetail')
-  const query = useQuery({
-    queryKey: metricsKeys.feedback(feedbackId),
-    queryFn: () => api.getFeedbackById(feedbackId),
-    retry: retryOnceUnlessNotFound,
-  })
-  if (query.isLoading) {
-    return <p className="p-3 rounded-lg border border-border text-sm text-muted" role="status">{t('corpus.loading')}</p>
-  }
-  if (isNotFound(query.error)) {
-    return <p className="p-3 rounded-lg border border-dashed border-border text-sm text-muted">{t('corpus.unavailable')}</p>
-  }
-  if (query.isError || query.data === undefined) {
-    return <LoadFailed message={t('corpus.loadFailed')} onRetry={() => { void query.refetch() }} retrying={query.isFetching} />
-  }
-  return <FeedbackCard feedback={query.data} compact />
+  return (
+    <CorpusReview feedbackId={feedbackId} textSize="text-sm"
+      loading={<p className="p-3 rounded-lg border border-border text-sm text-muted" role="status">{t('corpus.loading')}</p>}
+      render={(feedback) => <FeedbackCard feedback={feedback} compact />} />
+  )
 }
 
 function Pager({ page, total, onPage }: Readonly<{ page: number; total: number; onPage: (next: number) => void }>) {

@@ -7,8 +7,8 @@
  *    meanwhile." + "Save mine as a copy" / "Load the latest") — no silent
  *    overwrite: the server holds A's text at exactly one revision more. "Load
  *    the latest" then shows A's text in B.
- * 2. Document (a custom document in an e2e project): both tabs open the editor;
- *    tab A saves, tab B's save carries the revision it loaded and gets a 409 and
+ * 2. Document (a custom document in an e2e project): both tabs open it on its
+ *    canvas (6.05, lib/canvas.ts); tab A saves, tab B's save carries the revision it loaded and gets a 409 and
  *    the conflict UI ("Someone saved a newer version of this document
  *    meanwhile." + "Load the latest" / "Save mine anyway") with its draft kept —
  *    no silent overwrite: the server holds A's text and B made no version. "Load
@@ -35,6 +35,7 @@ import { recordCreated } from '../lib/ledger'
 import { ensureE2eProject } from '../lib/projects'
 import { isApi, roleOf, settle, site } from '../lib/fixtures'
 import { expectRefusal } from '../lib/expectedRefusal'
+import { CANVAS_TEXT, DOCUMENT_PUT, canvasOf, clickSave, openDocument, replaceCanvasText } from '../lib/canvas'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const AGENTS: unknown = JSON.parse(fs.readFileSync(path.resolve(HERE, '../../public/locales/en/agents.json'), 'utf8'))
@@ -78,8 +79,6 @@ async function e2eAgentOnOwnWorkflow(): Promise<{ agentId: string; workflowId: s
 }
 
 const panelOf = (page: Page): Locator => page.getByRole('complementary', { name: agentsText('editor.panel') })
-/** projectDetail.json documentModal.conflict — the document editor's stale-save banner. */
-const DOC_CONFLICT = 'Someone saved a newer version of this document meanwhile.'
 
 async function openWorkflowTab(page: Page, agentId: string): Promise<void> {
   await page.goto(site(`/agents/${encodeURIComponent(agentId)}?tab=workflow`), { waitUntil: 'domcontentloaded' })
@@ -101,20 +100,10 @@ async function storedMessages(id: string): Promise<Array<Record<string, unknown>
   return isRecord(stored.body) && Array.isArray(stored.body['messages']) ? stored.body['messages'].filter(isRecord) : []
 }
 
-/** Opens the Documents tab, selects `title` and opens its editor. */
-async function openDocumentEditor(page: Page, projectId: string, title: string): Promise<void> {
-  await page.goto(site(`/projects/${encodeURIComponent(projectId)}?tab=documents`), { waitUntil: 'domcontentloaded' })
-  await settle(page, 600)
-  await page.getByRole('button', { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().click()
-  await page.getByTitle('Edit document').first().click()
-}
-
-async function saveDocument(page: Page, content: string): Promise<number> {
-  const field = page.getByPlaceholder(/Write your document/)
-  await field.fill(content)
-  const saved = page.waitForResponse((r) => isApi(r, 'PUT', /\/projects\/[^/]+\/documents\/[^/]+$/))
-  await page.getByRole('button', { name: 'Save Changes' }).click()
-  return (await saved).status()
+/** Replaces the canvas text of the open document `title` and saves it from the page's action bar. */
+async function saveDocument(page: Page, title: string, content: string): Promise<number> {
+  await replaceCanvasText(page, canvasOf(page, title), content)
+  return (await clickSave(page)).status()
 }
 
 /** The `threadId` of the `/chat/stream` body whose user message is `prompt` ('' when none is). */
@@ -202,28 +191,28 @@ test.describe('two tabs, one user', () => {
     expect(documentId, `POST documents -> ${created.status}`).not.toBe('')
 
     const tabB = await context.newPage()
-    await openDocumentEditor(page, projectId, title)
-    await openDocumentEditor(tabB, projectId, title)
+    await openDocument(page, projectId, title)
+    await openDocument(tabB, projectId, title)
     const textA = `${RUN_PREFIX} content saved in tab A`
     const textB = `${RUN_PREFIX} content saved in tab B`
-    expect(await saveDocument(page, textA)).toBe(200)
-    const staleSave = await expectRefusal(tabB, { method: 'PUT', path: /\/projects\/[^/]+\/documents\/[^/]+$/ }, [409], () => saveDocument(tabB, textB))
+    expect(await saveDocument(page, title, textA)).toBe(200)
+    const staleSave = await expectRefusal(tabB, { method: 'PUT', path: DOCUMENT_PUT }, [409], () => saveDocument(tabB, title, textB))
     expect(staleSave, 'the stale save is refused').toBe(409)
 
-    const conflict = tabB.getByRole('alert').filter({ hasText: DOC_CONFLICT })
+    const conflict = tabB.getByRole('alert').filter({ hasText: CANVAS_TEXT.conflict })
     await expect(conflict).toBeVisible()
-    await expect(conflict.getByRole('button', { name: 'Save mine anyway' })).toBeVisible()
-    await expect(tabB.getByPlaceholder(/Write your document/), 'tab B keeps its draft').toHaveValue(textB)
+    await expect(conflict.getByRole('button', { name: CANVAS_TEXT.saveAnyway })).toBeVisible()
+    await expect(canvasOf(tabB, title), 'tab B keeps its draft').toHaveText(textB)
 
     const versions = await apiCall('admin', 'GET', `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/versions`)
     expect(versions.status).toBe(200)
     const contents = listOf(versions.body, 'versions').map((v) => stringField(v, 'content') ?? '')
     expect(contents[0], 'tab A\'s edit is what the server holds').toBe(textA)
-    expect(contents, 'tab B\'s stale save made no version').not.toContain(textB)
+    expect(contents.join('\n'), 'tab B\'s stale save made no version').not.toContain(textB)
 
-    await conflict.getByRole('button', { name: 'Load the latest' }).click()
+    await conflict.getByRole('button', { name: CANVAS_TEXT.loadLatest }).click()
     await expect(conflict).toHaveCount(0)
-    await expect(tabB.getByPlaceholder(/Write your document/)).toHaveValue(textA)
+    await expect(canvasOf(tabB, title)).toHaveText(textA)
     await tabB.close()
   })
 

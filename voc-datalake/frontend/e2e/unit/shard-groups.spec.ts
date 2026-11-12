@@ -19,6 +19,7 @@ const NOT_GROUPED: Readonly<Record<string, string>> = {
   'tests/s2-agents.spec.ts': 'QA track s2: runs alone with --project=admin --no-deps',
   'tests/s2-workflow-rebuild.spec.ts': 'QA track s2: runs alone with --project=admin --no-deps',
   'tests/csv-dataset-update.spec.ts': 'dev mock only (writes feedback)',
+  'tests/document-canvas.spec.ts': 'dev mock only (its viewer step needs the mock read-only project)',
   'tests/cleanup.spec.ts': 'the shared teardown, run by every group',
 }
 

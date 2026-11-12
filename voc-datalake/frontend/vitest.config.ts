@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitest/config'
+import { canvasAlias } from './canvasResolve.ts'
 import { changelogPlugin } from './changelogPlugin.ts'
 import { streamResolve } from './streamSource.ts'
 import react from '@vitejs/plugin-react'
+import { availableParallelism } from 'node:os'
 import path from 'path'
 
 export default defineConfig({
@@ -22,6 +24,15 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules', 'dist'],
     testTimeout: 10000,
+    // At most 64 test files at once, on a host with more cores than that. Every worker gets its modules from the ONE
+    // Vite server in the main process, so past a few dozen workers they only queue for it: on a 192-core host
+    // Vitest's default (cores - 1 = 191) spent 78-89 % of the run waiting on transforms, and 64 runs the suite in
+    // the same wall time. Any smaller host (a laptop, CI's 4 vCPUs) gets undefined, so Vitest's own default holds
+    // there (half the cores in watch mode, cores - 1 otherwise).
+    maxWorkers: availableParallelism() > 65 ? 64 : undefined,
+    // Node loads node_modules itself, past resolve.alias: the drag handle goes through Vite so its Yjs imports
+    // bind to the canvas's stand-in (canvasResolve.ts), as in the build.
+    server: { deps: { inline: ['@tiptap/extension-drag-handle', '@tiptap/extension-drag-handle-react'] } },
     // The per-file coverage gate (docs/coverage-gate.md) reads this through scripts/validate.sh, which adds
     // `--coverage.enabled --coverage.reporter=json-summary` on the command line.
     coverage: {
@@ -51,7 +62,9 @@ export default defineConfig({
     dedupe: streamResolve.dedupe,
     alias: {
       ...streamResolve.alias,
-      '@': path.resolve(import.meta.dirname, './src'),
+      // The canvas's stand-in for Yjs, as in the dev server and the build (canvasResolve.ts).
+      ...canvasAlias,
+      '@':path.resolve(import.meta.dirname, './src'),
       '@test': path.resolve(import.meta.dirname, './src/test'),
     },
   },

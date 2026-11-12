@@ -5,9 +5,6 @@ import {
   useState, useCallback,
 } from 'react'
 import type {
-  ProjectDocument,
-} from '../../api/types'
-import type {
   ProjectPersona,
 } from '../../api/projectTypes'
 
@@ -23,9 +20,9 @@ export function useSelectionState() {
   }
 }
 
+/** The create modal ("New document"). An existing document is edited in place on its canvas. */
 export function useDocModalState() {
   const [showDocModal, setShowDocModal] = useState(false)
-  const [editingDoc, setEditingDoc] = useState<ProjectDocument | null>(null)
   const [newDocTitle, setNewDocTitle] = useState('')
   const [newDocContent, setNewDocContent] = useState('')
 
@@ -33,37 +30,20 @@ export function useDocModalState() {
     setShowDocModal(true)
   }, [])
 
-  const openEditModal = useCallback((doc: ProjectDocument) => {
-    setEditingDoc(doc)
-    setNewDocTitle(doc.title)
-    setNewDocContent(doc.content)
-  }, [])
-
   const closeModal = useCallback(() => {
     setShowDocModal(false)
-    setEditingDoc(null)
-    setNewDocTitle('')
-    setNewDocContent('')
-  }, [])
-
-  const resetAfterSave = useCallback(() => {
-    setEditingDoc(null)
     setNewDocTitle('')
     setNewDocContent('')
   }, [])
 
   return {
     showDocModal,
-    setShowDocModal,
-    editingDoc,
     newDocTitle,
     setNewDocTitle,
     newDocContent,
     setNewDocContent,
     openCreateModal,
-    openEditModal,
     closeModal,
-    resetAfterSave,
   }
 }
 

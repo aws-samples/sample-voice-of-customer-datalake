@@ -16,10 +16,7 @@
     "create": "Create",
     "createDocument": "Create Document",
     "creating": "Creating...",
-    "editDocument": "Edit Document",
     "preview": "Preview",
-    "saveChanges": "Save Changes",
-    "saving": "Saving...",
     "titleLabel": "Title",
     "titlePlaceholder": "Document title..."
   },
@@ -49,7 +46,6 @@
       "visualsUsed_one": "{{count, number}} visual used",
       "visualsUsed_other": "{{count, number}} visuals used"
     },
-    "editDocument": "Edit document",
     "newDocument": "New Document",
     "noDocuments": "No documents",
     "ordinal": "{{ordinal}} of {{total, number}}",
@@ -656,5 +652,124 @@
     "citedNote": "The reviews the persona's supporting evidence names. A citation that named no review it read is kept as text only.",
     "erasedSummary_one": "{{count, number}} cited review or board request was erased (legal basis recorded)",
     "erasedSummary_other": "{{count, number}} cited reviews or board requests were erased (legal basis recorded)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "Write, or type / for blocks",
+      "task": "Done",
+      "slash": {
+        "label": "Blocks",
+        "empty": "No block matches “{{query}}”"
+      },
+      "blocks": {
+        "paragraph": "Text",
+        "heading1": "Heading 1",
+        "heading2": "Heading 2",
+        "heading3": "Heading 3",
+        "bulletList": "Bulleted list",
+        "orderedList": "Numbered list",
+        "taskList": "To-do list",
+        "blockquote": "Quote",
+        "callout": "Callout",
+        "codeBlock": "Code",
+        "table": "Table",
+        "divider": "Divider",
+        "image": "Image"
+      },
+      "callout": {
+        "note": "Note",
+        "tip": "Tip",
+        "important": "Important",
+        "warning": "Warning",
+        "caution": "Caution"
+      },
+      "format": {
+        "toolbar": "Text formatting",
+        "bold": "Bold",
+        "italic": "Italic",
+        "strike": "Strikethrough",
+        "code": "Inline code",
+        "link": "Link",
+        "turnInto": "Turn into",
+        "comment": "Comment"
+      },
+      "link": {
+        "title": "Link",
+        "url": "Link address",
+        "placeholder": "https://… or /path",
+        "apply": "Apply",
+        "remove": "Remove link",
+        "cancel": "Cancel",
+        "invalid": "Use a web address (https://…), an email address or a path in this app (/…)."
+      },
+      "image": {
+        "title": "Insert an image",
+        "url": "Image address",
+        "alt": "Alt text",
+        "altHint": "Describe the image for people who cannot see it.",
+        "insert": "Insert",
+        "cancel": "Cancel",
+        "invalidUrl": "Use a web address (https://…) or a path in this app (/…).",
+        "altRequired": "Add alt text: it is what people who cannot see the image get."
+      },
+      "handle": {
+        "label": "Drag to move the block, or click for its menu",
+        "menu": "Block actions",
+        "moveUp": "Move up",
+        "moveDown": "Move down",
+        "turnInto": "Turn into",
+        "duplicate": "Duplicate",
+        "delete": "Delete",
+        "back": "Back"
+      }
+    },
+    "page": {
+      "loading": "Loading the document…",
+      "titleLabel": "Document title",
+      "contents": "Contents",
+      "evidence": "Evidence",
+      "evidenceEmpty": "No reviews or feature requests were recorded for this document.",
+      "showAll": "Show all ({{n, number}})",
+      "featureRequests": "Feature requests"
+    },
+    "comments": {
+      "hint": "To comment on a passage, select it and press Comment, or press Ctrl+Alt+M (⌘⌥M on a Mac).",
+      "draftOpen": "Finish or cancel the comment you are writing first.",
+      "selectFirst": "Select a passage of the document first (at most 500 characters), then comment on it.",
+      "tabs": {
+        "label": "Comments and evidence",
+        "comments": "Comments",
+        "evidence": "Evidence"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "Added",
+        "banner": "The assistant suggests changes to this document",
+        "diffLabel": "Suggested changes",
+        "draftNote": "You have unsaved changes. The suggestion is compared with the saved version, and approving it saves a new version on top of that one.",
+        "hide": "Hide changes",
+        "newTitle": "New title: {{title}}",
+        "noChanges": "The suggestion matches the saved text.",
+        "removed": "Removed",
+        "review": "Review",
+        "stats": "Blocks added: {{added, number}} · removed: {{removed, number}}",
+        "tooLarge": "Too long to compare block by block. The full suggestion:",
+        "unchanged": "Unchanged blocks: {{count, number}}"
+      },
+      "discard": "Discard",
+      "discardHint": "Throw away your changes and go back to the saved version",
+      "exportSavedHint": "Export uses the saved version. Save first to include your changes.",
+      "history": "History",
+      "save": "Save",
+      "saveHint": "Save a new version (Ctrl+S or ⌘S)",
+      "status": {
+        "saved": "Saved · {{version}} · {{when}}",
+        "savedNoVersion": "Saved · {{when}}",
+        "saving": "Saving…",
+        "unsaved": "Unsaved changes"
+      },
+      "toolbarLabel": "Document actions"
+    }
   }
 }

@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { createTestQueryClient } from '../../test/query-client'
+import { corpusReview } from '../../test/corpusReviewFixture'
 import { configStoreModule } from '../Categories/categories-fixtures'
 import { ApiError } from '../../lib/errors'
 import FeedbackCorpus from './FeedbackCorpus'
@@ -21,14 +22,6 @@ vi.mock('../../api/client', () => ({
   fetchApi: vi.fn(() => Promise.resolve({})),
 }))
 vi.mock('../../store/configStore', () => configStoreModule())
-
-function review(id: string) {
-  return {
-    feedback_id: id, source_platform: 'webscraper', original_text: `Review text ${id}`, sentiment_label: 'negative',
-    sentiment_score: -0.5, category: 'delivery', urgency: 'low', source_created_at: '2026-01-01T10:00:00Z',
-    processed_at: '2026-01-01T10:05:00Z',
-  }
-}
 
 function renderCorpus(ids: readonly string[] | undefined, citedIds?: readonly string[]) {
   return render(
@@ -48,7 +41,7 @@ async function openList() {
 beforeEach(() => {
   getFeedbackById.mockReset()
   getFeedbackById.mockImplementation((id) => (
-    id === 'gone' ? Promise.reject(new ApiError(404)) : Promise.resolve(review(id))
+    id === 'gone' ? Promise.reject(new ApiError(404)) : Promise.resolve(corpusReview(id))
   ))
 })
 

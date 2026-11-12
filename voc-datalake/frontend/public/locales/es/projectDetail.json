@@ -16,10 +16,7 @@
     "create": "Crear",
     "createDocument": "Crear Documento",
     "creating": "Creando...",
-    "editDocument": "Editar Documento",
     "preview": "Vista Previa",
-    "saveChanges": "Guardar Cambios",
-    "saving": "Guardando...",
     "titleLabel": "Título",
     "titlePlaceholder": "Título del documento..."
   },
@@ -54,7 +51,6 @@
       "visualsUsed_other": "{{count, number}} maquetas utilizadas",
       "visualsUsed_many": "{{count, number}} de elementos visuales utilizados"
     },
-    "editDocument": "Editar documento",
     "newDocument": "Nuevo Documento",
     "noDocuments": "Sin documentos",
     "ordinal": "{{ordinal}} de {{total, number}}",
@@ -682,5 +678,124 @@
     "erasedSummary_one": "se borró {{count, number}} reseña o solicitud de tablero citada (base legal registrada)",
     "erasedSummary_other": "se borraron {{count, number}} reseñas o solicitudes de tablero citadas (base legal registrada)",
     "erasedSummary_many": "Se borraron {{count, number}} de reseñas o solicitudes del consejo citadas (base legal registrada)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "Escribe o teclea / para ver los bloques",
+      "task": "Hecho",
+      "slash": {
+        "label": "Bloques",
+        "empty": "Ningún bloque coincide con «{{query}}»"
+      },
+      "blocks": {
+        "paragraph": "Texto",
+        "heading1": "Título 1",
+        "heading2": "Título 2",
+        "heading3": "Título 3",
+        "bulletList": "Lista con viñetas",
+        "orderedList": "Lista numerada",
+        "taskList": "Lista de tareas",
+        "blockquote": "Cita",
+        "callout": "Destacado",
+        "codeBlock": "Código",
+        "table": "Tabla",
+        "divider": "Separador",
+        "image": "Imagen"
+      },
+      "callout": {
+        "note": "Nota",
+        "tip": "Consejo",
+        "important": "Importante",
+        "warning": "Advertencia",
+        "caution": "Precaución"
+      },
+      "format": {
+        "toolbar": "Formato de texto",
+        "bold": "Negrita",
+        "italic": "Cursiva",
+        "strike": "Tachado",
+        "code": "Código en línea",
+        "link": "Enlace",
+        "turnInto": "Convertir en",
+        "comment": "Comentar"
+      },
+      "link": {
+        "title": "Enlace",
+        "url": "Dirección del enlace",
+        "placeholder": "https://… o /ruta",
+        "apply": "Aplicar",
+        "remove": "Quitar enlace",
+        "cancel": "Cancelar",
+        "invalid": "Usa una dirección web (https://…), un correo electrónico o una ruta de esta aplicación (/…)."
+      },
+      "image": {
+        "title": "Insertar una imagen",
+        "url": "Dirección de la imagen",
+        "alt": "Texto alternativo",
+        "altHint": "Describe la imagen para quienes no pueden verla.",
+        "insert": "Insertar",
+        "cancel": "Cancelar",
+        "invalidUrl": "Usa una dirección web (https://…) o una ruta de esta aplicación (/…).",
+        "altRequired": "Añade texto alternativo: es lo que reciben quienes no pueden ver la imagen."
+      },
+      "handle": {
+        "label": "Arrastra para mover el bloque o haz clic para ver su menú",
+        "menu": "Acciones del bloque",
+        "moveUp": "Subir",
+        "moveDown": "Bajar",
+        "turnInto": "Convertir en",
+        "duplicate": "Duplicar",
+        "delete": "Eliminar",
+        "back": "Atrás"
+      }
+    },
+    "page": {
+      "loading": "Cargando el documento…",
+      "titleLabel": "Título del documento",
+      "contents": "Contenido",
+      "evidence": "Evidencias",
+      "evidenceEmpty": "No se registraron opiniones ni solicitudes de funciones para este documento.",
+      "showAll": "Mostrar todo ({{n, number}})",
+      "featureRequests": "Solicitudes de funciones"
+    },
+    "comments": {
+      "hint": "Para comentar un fragmento, selecciónelo y pulse Comentar, o pulse Ctrl+Alt+M (⌘⌥M en un Mac).",
+      "draftOpen": "Termine o cancele primero el comentario que está escribiendo.",
+      "selectFirst": "Seleccione primero un fragmento del documento (como máximo 500 caracteres) y luego coméntelo.",
+      "tabs": {
+        "label": "Comentarios y evidencias",
+        "comments": "Comentarios",
+        "evidence": "Evidencias"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "Añadido",
+        "banner": "El asistente sugiere cambios en este documento",
+        "diffLabel": "Cambios sugeridos",
+        "draftNote": "Tienes cambios sin guardar. La sugerencia se compara con la versión guardada y, si la apruebas, se guarda una nueva versión sobre esa.",
+        "hide": "Ocultar cambios",
+        "newTitle": "Nuevo título: {{title}}",
+        "noChanges": "La sugerencia coincide con el texto guardado.",
+        "removed": "Eliminado",
+        "review": "Revisar",
+        "stats": "Bloques añadidos: {{added, number}} · eliminados: {{removed, number}}",
+        "tooLarge": "Demasiado largo para compararlo bloque a bloque. La sugerencia completa:",
+        "unchanged": "Bloques sin cambios: {{count, number}}"
+      },
+      "discard": "Descartar",
+      "discardHint": "Descartar tus cambios y volver a la versión guardada",
+      "exportSavedHint": "La exportación usa la versión guardada. Guarda primero para incluir tus cambios.",
+      "history": "Historial",
+      "save": "Guardar",
+      "saveHint": "Guardar una nueva versión (Ctrl+S o ⌘S)",
+      "status": {
+        "saved": "Guardado · {{version}} · {{when}}",
+        "savedNoVersion": "Guardado · {{when}}",
+        "saving": "Guardando…",
+        "unsaved": "Cambios sin guardar"
+      },
+      "toolbarLabel": "Acciones del documento"
+    }
   }
 }

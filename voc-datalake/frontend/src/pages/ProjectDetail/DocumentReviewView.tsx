@@ -1,27 +1,42 @@
 /**
- * @fileoverview A PR/FAQ or PRD in the project's document pane, with margin comments, "Ask
- * personas to review" and "Share for review" (docs/document-review.md). Every way of working
- * with AI may ask personas: they review and comment, they never write the document.
+ * @fileoverview A PR/FAQ or PRD on the document canvas, with margin comments and "Ask personas
+ * to review" in the rail (docs/document-review.md). The rail is "Comments | Evidence" when the page
+ * gives evidence. Every way of working with AI may ask personas: they review and comment, they
+ * never write the document. "Share for review" is the page's action bar's (DocumentActionsBar).
+ *
+ * The canvas is always the same element, whatever the comments do (loading, failed, refetched),
+ * so an unsaved edit is never lost to a remount. Threads are located again on every change of the
+ * text: one whose quote is edited away moves to "Not found in this version" at once.
  *
  * @module pages/ProjectDetail/DocumentReviewView
  */
-import { Loader2, Share2, UsersRound } from 'lucide-react'
-import { useState } from 'react'
+import { Loader2, UsersRound } from 'lucide-react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import DocumentComments from '../../components/DocumentComments/DocumentComments'
-import ShareForReviewDialog from './ShareForReviewDialog'
+import CanvasEditor from '../../components/DocumentCanvas/editor/CanvasEditor'
+import RailTabs from '../../components/DocumentCanvas/comments/RailTabs'
+import { READING_TEXT_CLASS } from '../../components/DocumentCanvas/comments/readingColumn'
+import CommentedDocument from '../../components/DocumentComments/CommentedDocument'
 import { useDocumentComments } from './useDocumentComments'
 import { serverReason } from '../../lib/errors'
+import type { ReactNode, Ref } from 'react'
+import type { CanvasEditorHandle, OutlineItem } from '../../components/DocumentCanvas/editor/CanvasEditor'
+import type { CommentedDocumentHandle } from '../../components/DocumentComments/CommentedDocument'
+import type { CommentActions } from '../../components/DocumentComments/commentTypes'
 import type { ProjectDocument } from '../../api/types'
 
 interface DocumentReviewViewProps {
   readonly projectId: string
   readonly document: ProjectDocument
-  /** The markdown as the pane shows it (stored ids already turned into names). */
+  /** The markdown the canvas shows (stored content when editable, display text when read-only). */
   readonly markdown: string
   readonly hasPersonas: boolean
+  readonly editable: boolean
+  readonly onChange?: (markdown: string) => void
+  readonly handleRef?: Ref<CanvasEditorHandle>
+  readonly onOutlineChange?: (items: readonly OutlineItem[]) => void
+  /** The evidence cards: given, the rail is two tabs, "Comments | Evidence". */
+  readonly evidence?: ReactNode
 }
 
 type ReviewState = { readonly kind: 'idle' } | { readonly kind: 'running' }
@@ -56,36 +71,57 @@ function PersonaReviewButton({ run, disabled }: Readonly<{
   )
 }
 
-export default function DocumentReviewView({ projectId, document, markdown, hasPersonas }: DocumentReviewViewProps) {
+/** Hands the editor's handle to this view and to the page's ref alike. */
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
+  if (typeof ref === 'function') ref(value)
+  else if (ref !== null && ref !== undefined) ref.current = value
+}
+
+export default function DocumentReviewView({
+  projectId, document, markdown, hasPersonas, editable, onChange, handleRef, onOutlineChange, evidence,
+}: DocumentReviewViewProps) {
   const { t } = useTranslation('components')
   const comments = useDocumentComments(projectId, document.document_id)
-  const [sharing, setSharing] = useState(false)
-  if (comments.query.isError) {
-    // Comments are extra: the document itself always shows.
-    return (
-      <div className="space-y-2">
-        <p role="alert" className="text-xs text-warn">{t('documentComments.loadFailed')}</p>
-        <div className="md-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown></div>
-      </div>
-    )
-  }
-  const toolbar = comments.canEdit ? (
-    <span className="inline-flex flex-wrap gap-2">
-      <PersonaReviewButton run={comments.personaReview} disabled={!hasPersonas} />
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSharing(true)}>
-        <Share2 size={14} aria-hidden />{comments.share === null ? t('reviewShare.open') : t('reviewShare.openActive')}
-      </button>
-    </span>
-  ) : null
+  const editor = useRef<CanvasEditorHandle | null>(null)
+  const commenting = useRef<CommentedDocumentHandle>(null)
+  // The text as edited so far: threads follow it (`revision`).
+  const [edited, setEdited] = useState<string | null>(null)
+  const setHandle = useCallback((handle: CanvasEditorHandle | null) => {
+    editor.current = handle
+    assignRef(handleRef, handle)
+  }, [handleRef])
+  const contentRoot = useCallback(() => editor.current?.root() ?? null, [])
+  const change = useCallback((next: string) => {
+    setEdited(next)
+    onChange?.(next)
+  }, [onChange])
+  const canComment = comments.query.isSuccess
+  // A posted comment has consumed the selection: collapse it on the canvas, so its floating bar closes.
+  const { actions: commentActions } = comments
+  const actions = useMemo<CommentActions>(() => ({
+    ...commentActions,
+    create: async (comment) => {
+      const created = await commentActions.create(comment)
+      editor.current?.clearSelection()
+      return created
+    },
+  }), [commentActions])
+  const onCommentSelection = useCallback(() => {
+    commenting.current?.commentOnSelection()
+  }, [])
+  const renderRail = useCallback((rail: ReactNode) => (
+    evidence === undefined ? rail : <RailTabs comments={rail} evidence={evidence} />
+  ), [evidence])
   return (
-    <>
-      <DocumentComments markdown={markdown} threads={comments.query.data?.threads ?? []}
-        viewed={{ documentId: document.document_id }}
-        actions={comments.actions} canComment={comments.query.isSuccess} toolbar={toolbar} />
-      {sharing ? (
-        <ShareForReviewDialog share={comments.share} onCreate={comments.createShare} onRevoke={comments.revokeShare}
-          onClose={() => setSharing(false)} />
-      ) : null}
-    </>
+    <CommentedDocument contentRoot={contentRoot} revision={edited ?? markdown}
+      threads={comments.query.data?.threads ?? []} viewed={{ documentId: document.document_id }}
+      actions={actions} canComment={canComment} commentRef={commenting} renderRail={renderRail}
+      // Comments are extra: the document itself always shows.
+      notice={comments.query.isError ? <p role="alert" className="text-xs text-warn">{t('documentComments.loadFailed')}</p> : null}
+      toolbar={comments.canEdit ? <PersonaReviewButton run={comments.personaReview} disabled={!hasPersonas} /> : null}>
+      <CanvasEditor markdown={markdown} editable={editable} ariaLabel={document.title} onChange={change}
+        onOutlineChange={onOutlineChange} onCommentSelection={canComment ? onCommentSelection : undefined}
+        handleRef={setHandle} className={READING_TEXT_CLASS} />
+    </CommentedDocument>
   )
 }

@@ -71,11 +71,19 @@ export function makeDocument(overrides: Partial<ProjectDocument> = {}): ProjectD
 /** The DocumentsTab callbacks a spec stubs but never asserts on, plus the idle delete state. */
 export function documentsTabStubs() {
   return {
-    onEditDoc: vi.fn(),
     onDeleteDoc: vi.fn(),
     onCreateDoc: vi.fn(),
     isDeleting: false,
   }
+}
+
+/**
+ * `await preloadDocumentPage()` at the top of a spec: DocumentsTab lazy-loads the page (and the editor), whose first
+ * transform can outlast a findBy under a loaded full run; loaded with the spec's other modules (no test or hook
+ * timeout), `React.lazy` resolves at once.
+ */
+export async function preloadDocumentPage(): Promise<void> {
+  await import('../../components/DocumentCanvas/page/DocumentPage')
 }
 
 /** A persona named after its id, for the Overview specs' step-state fixtures. */

@@ -109,3 +109,75 @@ Frontend design system:
 [@fontsource/jetbrains-mono@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
 [@fontsource-variable/inter@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1 (the Quick theme's face)
 Quick theme: the palette, component look (src/styles/theme-palettes.css) and four-point spark mark (src/components/ThemeMark/QuickMark.tsx, public/favicons/quick.svg) are inspired by Quick
+
+
+Frontend document canvas, its Markdown reader and writer (voc-datalake/frontend, in the shared lazy `vendor-markdown` chunk that react-markdown already uses):
+[mdast-util-from-markdown@2.1.0](https://github.com/syntax-tree/mdast-util-from-markdown) - MIT
+[mdast-util-to-markdown@2.2.1](https://github.com/syntax-tree/mdast-util-to-markdown) - MIT
+[mdast-util-gfm@3.1.0](https://github.com/syntax-tree/mdast-util-gfm) - MIT
+[micromark-extension-gfm@3.0.0](https://github.com/micromark/micromark-extension-gfm) - MIT
+
+Frontend document canvas, the editor (voc-datalake/frontend, the Documents tab's lazy `vendor-editor` chunk):
+[@floating-ui/core@1.8.0](https://github.com/floating-ui/floating-ui) - MIT
+[@floating-ui/dom@1.8.0](https://github.com/floating-ui/floating-ui) - MIT
+[@floating-ui/utils@0.2.12](https://github.com/floating-ui/floating-ui) - MIT
+[@tiptap/core@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-blockquote@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-bold@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-bubble-menu@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-bullet-list@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-code@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-code-block@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-document@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-drag-handle@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-drag-handle-react@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-dropcursor@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-floating-menu@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-gapcursor@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-hard-break@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-heading@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-horizontal-rule@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-image@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-italic@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-link@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-list@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-list-item@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-list-keymap@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-node-range@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-ordered-list@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-paragraph@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-strike@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-table@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-text@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extension-underline@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/extensions@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/pm@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/react@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/starter-kit@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[fast-equals@5.4.5](https://github.com/planttheidea/fast-equals) - MIT
+[linkifyjs@4.4.0](https://github.com/nfrasser/linkifyjs) - MIT
+[orderedmap@2.1.1](https://github.com/marijnh/orderedmap) - MIT
+[prosemirror-changeset@2.4.6](https://code.haverbeke.berlin/prosemirror/prosemirror-changeset) - MIT
+[prosemirror-commands@1.7.2](https://code.haverbeke.berlin/prosemirror/prosemirror-commands) - MIT
+[prosemirror-dropcursor@1.8.4](https://code.haverbeke.berlin/prosemirror/prosemirror-dropcursor) - MIT
+[prosemirror-gapcursor@1.4.1](https://github.com/prosemirror/prosemirror-gapcursor) - MIT
+[prosemirror-history@1.5.1](https://code.haverbeke.berlin/prosemirror/prosemirror-history) - MIT
+[prosemirror-inputrules@1.5.1](https://github.com/prosemirror/prosemirror-inputrules) - MIT
+[prosemirror-keymap@1.2.3](https://github.com/prosemirror/prosemirror-keymap) - MIT
+[prosemirror-model@1.25.13](https://code.haverbeke.berlin/prosemirror/prosemirror-model) - MIT
+[prosemirror-schema-list@1.6.0](https://code.haverbeke.berlin/prosemirror/prosemirror-schema-list) - MIT
+[prosemirror-state@1.4.4](https://github.com/prosemirror/prosemirror-state) - MIT
+[prosemirror-tables@1.8.5](https://github.com/ProseMirror/prosemirror-tables) - MIT
+[prosemirror-transform@1.12.5](https://code.haverbeke.berlin/prosemirror/prosemirror-transform) - MIT
+[prosemirror-view@1.42.9](https://code.haverbeke.berlin/prosemirror/prosemirror-view) - MIT
+[rope-sequence@1.3.4](https://github.com/marijnh/rope-sequence) - MIT
+[w3c-keyname@2.2.8](https://github.com/marijnh/w3c-keyname) - MIT
+
+
+Frontend document canvas, installed but not bundled (voc-datalake/frontend's lockfile: peer dependencies of @tiptap/extension-drag-handle; canvasResolve.ts aliases its collaboration imports to src/components/DocumentCanvas/editor/noCollaboration.ts, so none of these ship):
+[@tiptap/extension-collaboration@3.33.1](https://github.com/ueberdosis/tiptap) - MIT
+[@tiptap/y-tiptap@3.3.0](https://github.com/ueberdosis/tiptap) - MIT
+[isomorphic.js@0.2.5](https://github.com/dmonad/isomorphic.js) - MIT
+[lib0@0.2.120](https://github.com/dmonad/lib0) - MIT
+[y-protocols@1.0.7](https://github.com/yjs/y-protocols) - MIT
+[yjs@13.6.33](https://github.com/yjs/yjs) - MIT

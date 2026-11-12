@@ -1770,13 +1770,229 @@ function handleAppConfigRoutes(req, res, url, send) {
   return false;
 }
 
+// ── proj_1's PRD and PR/FAQ series (the document canvas's demo) ────────────
+// Each is three stored versions (v1, v2 and the head v3: every save is a new row,
+// shared/document_history.py), and the heads use every block the canvas has:
+// headings h1-h3, bullet / numbered / to-do lists, a quote, NOTE and WARNING callouts,
+// a fenced code block, a GFM table, a divider, an image, links and [FR:<id>] citations
+// to the feature-request fixtures (mock-feature-requests.js). Their comment threads
+// are seeded in mock-document-review.js on quotes found in the head's text.
+const PRD_DELIVERY_V1 = `# PRD: Proactive Delivery Updates
+
+## Problem
+
+Customers find out about late parcels from a tracking page that stopped moving.
+
+## Requirements
+
+- Notify the customer when the estimate changes
+- Show the new estimate
+`;
+
+const PRD_DELIVERY_V2 = `# PRD: Proactive Delivery Updates
+
+## 1. Executive summary
+
+A late parcel is annoying; not knowing is what makes customers leave. This PRD covers proactive delivery updates for every order [FR:fr_0000000000000004].
+
+## 2. Goals
+
+- [ ] Tell the customer about a delay within 5 minutes of the carrier event
+- [ ] Show a new, honest estimate with the reason
+
+## 3. Requirements
+
+| Priority | Requirement |
+|:---|:---|
+| P0 | Notify on every estimate change |
+| P1 | Show the reason for the delay |
+`;
+
+const PRD_DELIVERY_V3 = `# PRD: Proactive Delivery Updates
+
+## 1. Executive summary
+
+Our customers tell us the same thing in different words: a late parcel is annoying, but **not knowing** is what makes them leave. This PRD covers the first release of proactive delivery updates for every order shipped from our two distribution centres [FR:fr_0000000000000004].
+
+> [!NOTE]
+> This version folds in the design walkthrough: the message copy and the quiet-hours rule changed (section 4.2).
+
+## 2. Problem
+
+### 2.1 What customers say
+
+Delivery is the largest negative theme of the quarter: 236 negative delivery reviews against 31 positive ones. The words customers use are about silence, not speed:
+
+> "Really disappointed with the delivery time. Ordered 2 weeks ago and still waiting!"
+
+- Tracking pages that stop updating for days
+- Deliveries rescheduled with no message
+- Support contacts that start with *where is my order?*
+
+### 2.2 Who feels it most
+
+1. **Deadline-Driven Dana** orders gear a few days before a trip and needs to know early when it will not arrive.
+2. **Value-Hunter Victor** picks the cheapest shipping and accepts a slower parcel, but not a surprise.
+
+## 3. Goals and non-goals
+
+### 3.1 Goals
+
+- [x] Tell the customer about a delay within minutes of the carrier event
+- [x] Show a new, honest estimate with the reason
+- [ ] Offer a pickup point when the parcel is still at the hub
+- [ ] Cut delivery contacts to support by 30% in the first quarter
+
+### 3.2 Non-goals
+
+- Changing carriers or the shipping options at checkout
+- Same-day delivery
+
+## 4. Requirements
+
+### 4.1 Functional requirements
+
+| Priority | Requirement | Evidence |
+|:---|:---|:---|
+| P0 | Notify on every estimate change of more than 12 hours | [FR:fr_0000000000000004] |
+| P0 | Show the reason: weather, hub delay or address problem | Reviews 1 and 3 |
+| P1 | Offer a pickup point when the parcel is at the hub | [FR:fr_0000000000000003] |
+| P2 | At most one message a day, unless the estimate moves again | Persona review |
+
+### 4.2 Message rules
+
+Messages go out by email and, for app users, as a push notification. Quiet hours are 21:00 to 08:00 in the customer's time zone; a delay found during quiet hours is sent at 08:00.
+
+The estimate service publishes one event per change:
+
+\`\`\`json
+{
+  "order_id": "ord_1042",
+  "previous_estimate": "2027-03-04",
+  "new_estimate": "2027-03-06",
+  "reason_code": "hub_delay"
+}
+\`\`\`
+
+### 4.3 What the update looks like
+
+![Delivery update card placeholder: the new date, the reason and one action](/kiro-ghost.svg)
+
+The card leads with the new date, then the reason in one sentence, then a single action. The wording follows the [delivery message guidelines](https://example.com/guidelines/delivery-messages).
+
+> [!WARNING]
+> Carrier events arrive late for about 4% of parcels (p95 4 minutes, p99 40 minutes). For those parcels the message says "about" instead of an exact time.
+
+## 5. Rollout
+
+1. Internal pilot on staff orders for two weeks.
+2. Ten percent of the orders from the north distribution centre.
+3. Every order, once delivery contacts per 1,000 orders fall.
+
+---
+
+## 6. Open questions
+
+- Should a delay of less than 12 hours ever be sent?
+- Do we name the carrier in the message, or only ourselves?
+`;
+
+const PRFAQ_DELIVERY_V1 = '# PR/FAQ: Proactive Delivery Updates\n\n## Press Release\nToday we announced proactive delivery updates: customers are notified the moment a delay is detected, with an honest new estimate.\n\n## Customer FAQ\n**Q: Will I be spammed with notifications?**\nA: No — you are only notified when the estimate actually changes.\n\n## Internal FAQ\n**Q: What is the hardest technical dependency?**\nA: Carrier webhook latency and estimate recalculation.';
+
+const PRFAQ_DELIVERY_V2 = `# PR/FAQ: Proactive Delivery Updates
+
+## Press Release
+
+Today we launched proactive delivery updates: when a parcel is held up, customers get a message with a new estimate and the reason.
+
+## Frequently Asked Questions
+
+**Q: Will I be spammed with notifications?**
+
+No. You hear from us only when the estimate changes.
+
+**Q: What is the hardest technical dependency?**
+
+Carrier webhook latency and recalculating the estimate.
+`;
+
+const PRFAQ_DELIVERY_V3 = `# PR/FAQ: Proactive Delivery Updates
+
+## Press Release
+
+### We tell you about a delay before you have to ask
+
+*Every order now comes with honest delivery updates: a new date and the reason, the moment we know.*
+
+**PORTLAND, 2027-03-01.** Acme Outfitters today launched proactive delivery updates. When a parcel is held up, customers get a message within minutes with a new estimate and the reason, instead of finding out from a tracking page that stopped moving [FR:fr_0000000000000004].
+
+> "We read thousands of reviews, and the message was clear: people forgive a late tent, not a silent one," said the head of fulfilment.
+
+**How it works:**
+
+1. You place an order as usual.
+2. We watch every carrier event for your parcel.
+3. When the estimate moves, you get one message with the new date and why.
+
+> [!NOTE]
+> Available on every order shipped within the country from launch day, by email and in the app.
+
+---
+
+## Frequently Asked Questions
+
+### Customer FAQ
+
+**Q: Will I be spammed with notifications?**
+
+No. You hear from us only when the estimate changes, and at most once a day unless it moves again.
+
+**Q: Can I collect the parcel instead?**
+
+Yes. While it is still at the hub you can choose a pickup point from the message; see [pickup points](https://example.com/help/pickup-points).
+
+### Internal FAQ
+
+**Q: What is the hardest technical dependency?**
+
+Carrier webhook latency (p95 4 minutes) and recalculating the estimate. The event we consume:
+
+\`\`\`text
+order_id, previous_estimate, new_estimate, reason_code
+\`\`\`
+
+**Q: How will we know it works?**
+
+| Metric | Today | Target |
+|:---|---:|---:|
+| Delivery contacts per 1,000 orders | 42 | 29 |
+| Negative delivery reviews per week | 34 | 24 |
+
+> [!WARNING]
+> About 4% of parcels have late carrier events; their messages say "about" instead of an exact time.
+
+- [x] Estimate model v2 shipped
+- [ ] Message copy approved by the support team
+`;
+
+// The reviews and requests the series were written from: the delivery reviews of the corpus
+// (mock-feedback-corpus.js numbers them from 4, delivery first) and the hand-written 1 and 3.
+const DELIVERY_FEEDBACK_IDS = ['1', '3', '5', '36', '76', '77', '80'];
+const DELIVERY_REQUEST_IDS = ['fr_0000000000000004', 'fr_0000000000000003'];
+
+/** One stored version of a managed series (persist_versioned_document's row). */
+const seriesVersion = (fields) => ({
+  ...fields, title: `${fields.base_title} (v${fields.version})`,
+  updated_at: fields.created_at, ...(fields.version > 1 ? { edit_kind: 'edit' } : {}),
+});
+
 // Project detail fixtures for /projects/:id — shape mirrors ProjectDetail
 // ({ project, personas, documents }) so the Project Detail page works
 // against the mock in local dev. Timestamps are frozen at server start on
 // purpose: stable fixtures beat fake freshness for a mock.
 const mockProjectDetails = {
   proj_1: {
-    project: { project_id: 'proj_1', name: 'Q1 Product Improvements', description: 'Customer-driven improvements', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 2, document_count: 2 },
+    project: { project_id: 'proj_1', name: 'Q1 Product Improvements', description: 'Customer-driven improvements', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 2, document_count: 7 },
     personas: [
       {
         persona_id: 'persona_1',
@@ -1819,18 +2035,49 @@ const mockProjectDetails = {
         input_feedback_ids: ['3', '1'],
         created_at: new Date().toISOString(),
       },
-      {
-        document_id: 'prfaq_1',
-        document_type: 'prfaq',
-        title: 'Proactive Delivery Updates',
-        feature_idea: 'Proactive delivery delay notifications',
-        content: '# PR/FAQ: Proactive Delivery Updates\n\n## Press Release\nToday we announced proactive delivery updates: customers are notified the moment a delay is detected, with an honest new estimate.\n\n## Customer FAQ\n**Q: Will I be spammed with notifications?**\nA: No — you are only notified when the estimate actually changes.\n\n## Internal FAQ\n**Q: What is the hardest technical dependency?**\nA: Carrier webhook latency and estimate recalculation.',
+      seriesVersion({
+        document_id: 'prfaq_1_v1', document_type: 'prfaq', base_title: 'Proactive Delivery Updates', version: 1,
+        feature_idea: 'Proactive delivery delay notifications', content: PRFAQ_DELIVERY_V1,
+        input_feedback_ids: ['1', '3'], created_at: daysAgo(9),
+      }),
+      seriesVersion({
+        document_id: 'prfaq_1_v2', document_type: 'prfaq', base_title: 'Proactive Delivery Updates', version: 2,
+        feature_idea: 'Proactive delivery delay notifications', content: PRFAQ_DELIVERY_V2, edited_from_id: 'prfaq_1_v1',
+        input_feedback_ids: ['1', '3'], created_at: daysAgo(5),
+      }),
+      seriesVersion({
+        // The head keeps the id every probe and test names.
+        document_id: 'prfaq_1', document_type: 'prfaq', base_title: 'Proactive Delivery Updates', version: 3,
+        feature_idea: 'Proactive delivery delay notifications', content: PRFAQ_DELIVERY_V3, edited_from_id: 'prfaq_1_v2',
+        input_feedback_ids: DELIVERY_FEEDBACK_IDS, feedback_count: DELIVERY_FEEDBACK_IDS.length,
         // Written from a persona deleted since (lambda/shared/deleted_sources.py): the page shows the notice.
-        derivation: { sources: [], selected_document_count: 0, feedback_count: 0, persona_ids: ['persona_gone'],
-          visual_document_ids: [], product_context_included: false },
+        derivation: { sources: [], selected_document_count: 0, feedback_count: DELIVERY_FEEDBACK_IDS.length,
+          persona_ids: ['persona_gone'], visual_document_ids: [], product_context_included: false,
+          input_feature_request_ids: DELIVERY_REQUEST_IDS },
         deleted_sources: [{ kind: 'persona', id: 'persona_gone', name: 'Weekend Walt', deleted_at: new Date().toISOString() }],
-        created_at: new Date().toISOString(),
-      },
+        created_at: daysAgo(2),
+      }),
+      seriesVersion({
+        document_id: 'prd_1_v1', document_type: 'prd', base_title: 'Proactive Delivery Updates', version: 1,
+        feature_idea: 'Proactive delivery delay notifications', content: PRD_DELIVERY_V1,
+        input_feedback_ids: ['1', '3'], created_at: daysAgo(8),
+      }),
+      seriesVersion({
+        document_id: 'prd_1_v2', document_type: 'prd', base_title: 'Proactive Delivery Updates', version: 2,
+        feature_idea: 'Proactive delivery delay notifications', content: PRD_DELIVERY_V2, edited_from_id: 'prd_1_v1',
+        input_feedback_ids: ['1', '3', '76'], created_at: daysAgo(4),
+      }),
+      seriesVersion({
+        document_id: 'prd_1', document_type: 'prd', base_title: 'Proactive Delivery Updates', version: 3,
+        feature_idea: 'Proactive delivery delay notifications', content: PRD_DELIVERY_V3, edited_from_id: 'prd_1_v2',
+        input_feedback_ids: DELIVERY_FEEDBACK_IDS, feedback_count: DELIVERY_FEEDBACK_IDS.length,
+        derivation: {
+          sources: [{ document_id: 'research_1', role: 'reference' }, { document_id: 'prfaq_1', role: 'reference' }],
+          selected_document_count: 2, feedback_count: DELIVERY_FEEDBACK_IDS.length, persona_ids: ['persona_1', 'persona_2'],
+          visual_document_ids: [], product_context_included: true, input_feature_request_ids: DELIVERY_REQUEST_IDS,
+        },
+        created_at: daysAgo(1),
+      }),
     ],
   },
   proj_2: {

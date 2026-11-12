@@ -5,14 +5,14 @@
  * Every edit is a new version (a PRD / PR/FAQ edit is the next `(vN)` of its
  * series; a research / custom edit saves what it replaced), so nothing a user or
  * the assistant overwrote is lost. Restoring adds a NEW version with the old
- * content — history is only added to. Collapsed by default: the list (with each
- * version's content) is fetched only when opened.
+ * content — history is only added to. Shown in the document page's History dialog:
+ * the list (with each version's content) is fetched only when it opens.
  *
  * @module pages/ProjectDetail/DocumentVersions
  */
 import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, History, Loader2, RotateCcw } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
@@ -127,7 +127,12 @@ function useVersionRestore(projectId: string, documentId: string, onSelectDoc: (
   })
 }
 
-function VersionsBody({ projectId, document, canEdit, onSelectDoc }: DocumentVersionsProps) {
+/**
+ * The versions (open, compare, restore), fetched when mounted: the body of the document
+ * page's History dialog (DocumentCanvas/actions/DocumentActionsBar). A restore selects the
+ * restored version through `onSelectDoc`, which reloads the canvas on it.
+ */
+export default function DocumentVersions({ projectId, document, canEdit, onSelectDoc }: DocumentVersionsProps) {
   const { t } = useTranslation('projectDetail')
   const { data: versions, isLoading, isError } = useQuery({
     queryKey: versionsKey(projectId, document.document_id),
@@ -168,27 +173,5 @@ function VersionsBody({ projectId, document, canEdit, onSelectDoc }: DocumentVer
         onCancel={() => setConfirming(null)}
       />
     </>
-  )
-}
-
-export default function DocumentVersions(props: DocumentVersionsProps) {
-  const { t } = useTranslation('projectDetail')
-  const [open, setOpen] = useState(false)
-  const panelId = useId()
-  return (
-    <section className="mt-4 border-t border-border pt-3">
-      <button type="button" className="btn btn-ghost btn-sm" aria-expanded={open} aria-controls={panelId}
-        onClick={() => setOpen((value) => !value)}>
-        {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
-        <History size={14} aria-hidden />
-        {t('documents.versions.title')}
-      </button>
-      {open ? (
-        <div id={panelId} className="mt-2 space-y-2">
-          <p className="text-[12px] text-muted">{t('documents.versions.hint')}</p>
-          <VersionsBody {...props} />
-        </div>
-      ) : null}
-    </section>
   )
 }

@@ -16,6 +16,7 @@ import { useEffect, useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Search } from 'lucide-react'
+import { useNow } from '../../hooks/useNow'
 import type { ReactNode } from 'react'
 import { deleteSession, listSessions } from '../sessions/sessionsApi'
 import { SESSIONS_QUERY_KEY } from '../sessions/queryKeys'
@@ -102,18 +103,6 @@ function SearchBox({ value, onChange }: Readonly<{ value: string; onChange: (val
 /** The title an open conversation shows: the user's rename, else its first message. */
 function openRowTitle(slot: ThreadSlot, customTitle: string | null, fallback: string): string {
   return customTitle ?? (sessionTitle(slot.thread.messages) || fallback)
-}
-
-/** "Now" for the relative dates, refreshed every minute so "5 min. ago" does not freeze. */
-const NOW_TICK_MS = 60_000
-
-function useNow(): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), NOW_TICK_MS)
-    return () => clearInterval(timer)
-  }, [])
-  return now
 }
 
 interface OpenEntry {

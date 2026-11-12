@@ -3,7 +3,8 @@
 A PR/FAQ or PRD in a project shows its comment threads in the margin, like comments in a word
 processor. The team comments, asks the project's personas to review, and shares a review link with
 people outside the app. Nothing here edits the document, so every
-[way of working with AI](ways-of-working.md) has all of it.
+[way of working with AI](ways-of-working.md) has all of it. The document itself is shown and edited on the
+[document canvas](document-canvas.md); the threads sit in its side rail.
 
 ## Comments
 
@@ -11,8 +12,8 @@ people outside the app. Nothing here edits the document, so every
   [W3C text-quote selector](https://www.w3.org/TR/annotation-model/#text-quote-selector): the exact
   text plus 32 characters before and after, and the heading above it). **Comment on the whole
   document** starts a thread with no quote.
-- On a wide screen each thread is a bubble beside its passage and the passage is highlighted.
-  On a phone the threads form one list under the document, in reading order.
+- From 1280 px wide each thread is a bubble beside its passage and the passage is highlighted.
+  Narrower, the threads form one list under the document, in reading order.
 - Threads belong to the document **series** (its type and base title), not one version. A thread
   made on v2 shows on v3 when its quote is still in the text (the quote is located again, with
   the surrounding text breaking ties). A thread whose quote is gone is listed under **Not found in

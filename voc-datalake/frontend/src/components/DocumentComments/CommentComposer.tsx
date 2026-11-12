@@ -18,9 +18,11 @@ interface CommentComposerProps {
   readonly onSubmit: (text: string) => Promise<unknown>
   readonly onCancel?: () => void
   readonly autoFocus?: boolean
+  /** Every change of the text (a draft with text is never replaced: CommentedDocument). */
+  readonly onTextChange?: (text: string) => void
 }
 
-export default function CommentComposer({ label, submitLabel, onSubmit, onCancel, autoFocus = false }: CommentComposerProps) {
+export default function CommentComposer({ label, submitLabel, onSubmit, onCancel, autoFocus = false, onTextChange }: CommentComposerProps) {
   const { t } = useTranslation('components')
   const id = useId()
   const [text, setText] = useState('')
@@ -50,7 +52,7 @@ export default function CommentComposer({ label, submitLabel, onSubmit, onCancel
         placeholder={label}
         value={text}
         autoFocus={autoFocus}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => { setText(event.target.value); onTextChange?.(event.target.value) }}
       />
       {error === null ? null : <p role="alert" className="text-xs text-danger">{error}</p>}
       <div className="flex justify-end gap-2">

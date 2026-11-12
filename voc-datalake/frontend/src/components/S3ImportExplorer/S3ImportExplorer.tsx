@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { api } from '../../api/client'
 import type { S3ImportFile, S3ImportSource } from '../../api/types'
+import { useResetAfter } from '../../hooks/useResetAfter'
 import clsx from 'clsx'
 import { formatFileSize } from '../../utils/file'
 import { formatDateTime } from '../../utils/dateUtils'
@@ -158,6 +159,8 @@ export default function S3ImportExplorer() {
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [reprocessKey, setReprocessKey] = useState<string | null>(null)
+  const clearErrorAfter = useResetAfter()
+  const clearSuccessAfter = useResetAfter()
 
   const { data: sourcesData } = useQuery({
     queryKey: ['s3-import-sources'],
@@ -187,12 +190,12 @@ export default function S3ImportExplorer() {
 
   const showTemporaryError = (message: string) => {
     setUploadError(message)
-    setTimeout(() => setUploadError(null), 5000)
+    clearErrorAfter(5000, () => setUploadError(null))
   }
 
   const showTemporarySuccess = (filename: string) => {
     setUploadSuccess(filename)
-    setTimeout(() => setUploadSuccess(null), 3000)
+    clearSuccessAfter(3000, () => setUploadSuccess(null))
   }
 
   const addUploadingFile = (filename: string) => {

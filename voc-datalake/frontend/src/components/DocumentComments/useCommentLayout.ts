@@ -2,11 +2,13 @@
  * @fileoverview Where each thread's quote is in the rendered document, its highlight, and the
  * margin position of its bubble.
  *
- * After every render of the document (and on resize) the threads with an anchor are located in
- * the container's text (`anchors.ts`). A located thread gets a `Range` (painted through
- * `CSS.highlights`, when the browser has it) and a `top` in the margin: the quote's offset from
- * the container's top, pushed down so two bubbles never overlap. A thread whose quote is not in
- * this version is `outdated`; a thread with no anchor is about the whole document.
+ * Whenever the document's text changes (its `revision`, or any change to its DOM: the canvas
+ * editor replaces nodes as one types or loads another version) and on resize, the threads with
+ * an anchor are located in the content root's text (`anchors.ts`). A located thread gets a
+ * `Range` (painted through `CSS.highlights`, when the browser has it: the DOM is never touched)
+ * and a `top` in the margin: the quote's offset from the margin's top, pushed down so two
+ * bubbles never overlap. A thread whose quote is not in the text (another version, or edited
+ * away just now) is `outdated`; a thread with no anchor is about the whole document.
  *
  * @module components/DocumentComments/useCommentLayout
  */
@@ -65,9 +67,8 @@ function spread(placed: readonly ThreadPlacement[]): ThreadPlacement[] {
   }, [])
 }
 
-function layoutOf(root: HTMLElement, threads: readonly CommentThread[]): CommentLayout {
+function layoutOf(root: HTMLElement, origin: number, threads: readonly CommentThread[]): CommentLayout {
   const index = indexText(root)
-  const origin = root.getBoundingClientRect().top
   const placed: ThreadPlacement[] = []
   const outdated: CommentThread[] = []
   const general: CommentThread[] = []
@@ -86,27 +87,71 @@ function layoutOf(root: HTMLElement, threads: readonly CommentThread[]): Comment
   return { placed: spread(placed), outdated, general }
 }
 
-/** The layout of `threads` over the document in `rootRef`; re-measured when `content` or the size changes. */
+/** How many frames to wait for a content root that mounts after its host (the editor builds its DOM in an effect). */
+const ROOT_WAIT_FRAMES = 30
+
+/** One measuring call per frame at most, however many changes came in it. */
+function frameScheduler(run: () => void) {
+  const pending = { frame: 0 }
+  return {
+    schedule: () => {
+      cancelAnimationFrame(pending.frame)
+      pending.frame = requestAnimationFrame(run)
+    },
+    cancel: () => cancelAnimationFrame(pending.frame),
+  }
+}
+
+/** Re-measure whenever the content's DOM changes or the content or the margin is resized. */
+function observeChanges(root: HTMLElement, margin: HTMLElement | null, onChange: () => void): () => void {
+  const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onChange)
+  resize?.observe(root)
+  if (margin !== null) resize?.observe(margin)
+  const mutation = typeof MutationObserver === 'undefined' ? null : new MutationObserver(onChange)
+  mutation?.observe(root, { subtree: true, childList: true, characterData: true })
+  return () => {
+    resize?.disconnect()
+    mutation?.disconnect()
+  }
+}
+
+/**
+ * The layout of `threads` over the document `contentRoot()` names, bubbles measured from the
+ * top of `marginRef`'s element; re-measured when `revision` changes, the content's DOM changes
+ * or either is resized.
+ */
 export function useCommentLayout(
-  rootRef: RefObject<HTMLElement | null>, threads: readonly CommentThread[], content: string, activeId: string | null,
+  contentRoot: () => HTMLElement | null, marginRef: RefObject<HTMLElement | null>,
+  threads: readonly CommentThread[], revision: string, activeId: string | null,
 ): CommentLayout {
   const [layout, setLayout] = useState<CommentLayout>(EMPTY)
+  const [root, setRoot] = useState<HTMLElement | null>(null)
   const measure = useCallback(() => {
-    const root = rootRef.current
-    setLayout(root === null ? EMPTY : layoutOf(root, threads))
-  }, [rootRef, threads])
-  // Measured on the next frame, once the markdown (`content`) has rendered and laid out.
+    const current = contentRoot()
+    setRoot(current)
+    const origin = (marginRef.current ?? current)?.getBoundingClientRect().top ?? 0
+    setLayout(current === null ? EMPTY : layoutOf(current, origin, threads))
+  }, [contentRoot, marginRef, threads])
+  // Measured on the next frame, once the new text (`revision`) has rendered and laid out; a root
+  // that is not there yet is waited for a few frames.
   useEffect(() => {
-    const frame = requestAnimationFrame(measure)
-    return () => cancelAnimationFrame(frame)
-  }, [measure, content])
+    const tries = { left: ROOT_WAIT_FRAMES }
+    const scheduler = frameScheduler(() => {
+      measure()
+      if (contentRoot() === null && tries.left-- > 0) scheduler.schedule()
+    })
+    scheduler.schedule()
+    return scheduler.cancel
+  }, [measure, contentRoot, revision])
   useEffect(() => {
-    const root = rootRef.current
-    if (root === null || typeof ResizeObserver === 'undefined') return noCleanup
-    const observer = new ResizeObserver(() => measure())
-    observer.observe(root)
-    return () => observer.disconnect()
-  }, [rootRef, measure])
+    if (root === null) return noCleanup
+    const scheduler = frameScheduler(measure)
+    const stop = observeChanges(root, marginRef.current, scheduler.schedule)
+    return () => {
+      stop()
+      scheduler.cancel()
+    }
+  }, [root, marginRef, measure])
   useEffect(() => {
     paint(layout.placed, activeId)
   }, [layout, activeId])

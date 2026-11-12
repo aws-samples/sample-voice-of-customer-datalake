@@ -33,6 +33,8 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | Assistant plan mode (propose_plan, plan card, `/agents/plans`) | panel | Missing | spends Bedrock and starts a Step Functions run; needs an opt-in like `E2E_ASSISTANT_SEND` |
 | Projects list, create, edit, share, delete | `/projects` | Covered | writes, projects-edit, sharing M |
 | Project Overview / Documents / remix / export / research / prototype | `?tab=overview\|documents` | Covered | s3-personas-documents, prototype-enlarge M, concurrency M |
+| Document canvas (6.05): edit in place (shortcuts, "/" menu, format bar), Save / Discard, conflict, leave guard, comments, share, History restore, outline, viewer, keyboard, 360–1440 | `?tab=documents` | Covered | document-canvas M (mock only), concurrency M, s3-personas-documents |
+| Document canvas: the assistant's suggested-changes banner | `?tab=documents` | Missing | needs an assistant `update_document` proposal; the mock assistant does not stream one |
 | Project Personas: generate, import, edit, delete, avatar regenerate | `?tab=personas` | Covered | s3-personas-documents |
 | Every persona has a loaded avatar (project page and agent runs) | `?tab=personas` | Covered | persona-avatars M (agent part: production, when the run made a project), s3 step 02, s2 (soft) |
 | Project Product tab (5.32): "Fill with AI assistant" prefilled draft | `?tab=product` | Covered | product-interview M (send only with `E2E_ASSISTANT_SEND=1` in prod) |

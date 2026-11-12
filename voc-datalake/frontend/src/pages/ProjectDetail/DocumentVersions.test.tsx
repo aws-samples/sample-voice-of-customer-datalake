@@ -1,6 +1,6 @@
 /**
- * QA s3 F4: a document had no history in the UI. The Versions list under a
- * document lists every version newest first, opens one, compares one with the
+ * QA s3 F4: a document had no history in the UI. The Versions list (the document
+ * page's History dialog) lists every version newest first, opens one, compares one with the
  * current version, and restores one as a NEW version (selected afterwards).
  * Viewers can open and compare, never restore.
  */
@@ -31,7 +31,6 @@ async function openVersions(canEdit = true) {
   const onSelectDoc = vi.fn()
   const user = userEvent.setup()
   renderWithQueryClient(<DocumentVersions projectId="proj_1" document={doc} canEdit={canEdit} onSelectDoc={onSelectDoc} />)
-  await user.click(screen.getByRole('button', { name: 'Versions' }))
   await screen.findByText('v1')
   return { user, onSelectDoc }
 }
@@ -46,11 +45,8 @@ describe('DocumentVersions', () => {
     ])
   })
 
-  it('is collapsed until opened, then lists every version newest first', async () => {
+  it('lists every version newest first', async () => {
     renderWithQueryClient(<DocumentVersions projectId="proj_1" document={doc} canEdit onSelectDoc={vi.fn()} />)
-    expect(getDocumentVersions).not.toHaveBeenCalled()
-
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Versions' }))
 
     const rows = await screen.findAllByRole('listitem')
     expect(rows.map((row) => within(row).getByText(/^v\d$/).textContent)).toStrictEqual(['v2', 'v1'])

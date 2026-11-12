@@ -41,6 +41,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'decisions', 'persona-avatars', 'surfaces',
   // Issue #411: CSV dataset re-upload updates (writes feedback, so mock only).
   'csv-dataset-update',
+  // 6.05: the document canvas (needs the mock's read-only project; mock only until run on a deployment).
+  'document-canvas',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

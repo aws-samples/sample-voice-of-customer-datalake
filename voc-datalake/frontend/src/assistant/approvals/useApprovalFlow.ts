@@ -12,7 +12,10 @@
  * @module assistant/approvals/useApprovalFlow
  */
 import { useCallback, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useIsAdmin } from '../../store/authStore'
 import { safeErrorMessage } from './safeError'
+import type { ShownRecord } from './shown'
 import { beginExecution, isExecuting, settleExecution, useExecutionEntry } from './executionStore'
 import type { ToolOutcome } from '../toolOutcome'
 import type { ApprovalResolution, WriteToolDefinition, WriteToolExecutionContext } from '../types'
@@ -27,6 +30,19 @@ interface FlowOptions {
   interruptId: string
   toolCallId: string
   onResolve: (resolution: ApprovalResolution) => void
+}
+
+/**
+ * What an approved write runs with: the user's own query client and admin rights,
+ * what the card showed (`shown`), and the conversation. One builder for every
+ * place an approval is answered (the card, the document canvas).
+ */
+export function useExecutionContext(
+  shown: ShownRecord, conversationId: string | undefined,
+): WriteToolExecutionContext & { readonly isAdmin: boolean } {
+  const queryClient = useQueryClient()
+  const isAdmin = useIsAdmin()
+  return { queryClient, shown, isAdmin, ...(conversationId === undefined ? {} : { conversationId }) }
 }
 
 export function useApprovalFlow({ interruptId, toolCallId, onResolve }: FlowOptions) {

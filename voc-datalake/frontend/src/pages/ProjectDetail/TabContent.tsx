@@ -42,8 +42,8 @@ interface TabContentProps extends OverviewPassThrough {
   readonly onImportPersona: () => void
   /** Opens "Copy from…" (the library or another project); editors only. */
   readonly onCopyPersonas: () => void
-  readonly onSelectDoc: (d: ProjectDocument | null) => void
-  readonly onEditDoc: () => void
+  /** The page's GUARDED selection: it asks first while the open document has unsaved changes. */
+  readonly onSelectDoc: (d: ProjectDocument) => void
   readonly onDeleteDoc: () => void
   readonly onCreateDoc: () => void
 }
@@ -74,7 +74,6 @@ export default function TabContent({
   onImportPersona,
   onCopyPersonas,
   onSelectDoc,
-  onEditDoc,
   onDeleteDoc,
   onCreateDoc,
   onJobStarted,
@@ -146,7 +145,6 @@ export default function TabContent({
       productDocs={productDocs}
       selectedDoc={selectedDoc}
       onSelectDoc={onSelectDoc}
-      onEditDoc={onEditDoc}
       onDeleteDoc={onDeleteDoc}
       onCreateDoc={onCreateDoc}
       onJobStarted={onJobStarted}

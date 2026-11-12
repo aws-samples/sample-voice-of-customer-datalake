@@ -16,6 +16,11 @@ import type { CommentActions } from '../../components/DocumentComments/commentTy
 const documentCommentsKey = (projectId: string, documentId: string) =>
   ['document-comments', projectId, documentId] as const
 
+/**
+ * Read by the comment rail (DocumentReviewView: threads, actions, persona review) and by the
+ * page's action bar (`share`, `canEdit`, `createShare`, `revokeShare`: the Share button and its
+ * dialog); both share one query, so one GET.
+ */
 export function useDocumentComments(projectId: string, documentId: string) {
   const queryClient = useQueryClient()
   const mySub = useAuthStore((state) => state.user?.sub)

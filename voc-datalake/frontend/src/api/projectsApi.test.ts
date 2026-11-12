@@ -297,6 +297,18 @@ describe('projectsApi', () => {
       expect(result.project).toMatchObject({ project_id: 'p1', visibility: 'private', access: { can_manage: false } })
     })
 
+    // The page opens the created document at once: it gets the same boundary as an edit's answer.
+    it.each([
+      ['createDocument', () => projectsApi.createDocument('p1', { title: 'T', content: 'C', document_type: 'custom' })],
+      ['updateDocument', () => projectsApi.updateDocument('p1', 'd1', { content: 'C' })],
+    ])('%s normalises the returned document and refuses one with no id', async (_name, call) => {
+      respond({ success: true, document: { document_id: 'd1', document_type: 'custom', title: 7, revision: -2 } })
+      expect((await call()).document).toMatchObject({ document_id: 'd1', title: '', content: '', revision: undefined })
+
+      respond({ success: true, document: { document_type: 'custom', title: 'T', content: 'C' } })
+      expect((await call()).document).toBeNull()
+    })
+
     it('setVisibility PUTs the visibility', async () => {
       respond({ success: true, visibility: 'public' })
       await projectsApi.setVisibility('p1', 'public')

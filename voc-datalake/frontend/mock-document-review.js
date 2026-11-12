@@ -8,7 +8,8 @@
 // title, as the server keys them), so a comment made on one version shows on the next. The mock's
 // one caller is the project's team AND, on /review, the reviewer `reviewer@example.com`.
 // The persona review is an assist job of the project registry (shared.startProjectAssistJob),
-// filing one quote per persona that is found verbatim in the document.
+// filing one quote per persona that is found verbatim in the document. proj_1's PRD and PR/FAQ
+// start with a few threads (SEEDED_THREADS), seeded on the first request of this module.
 // Wired into mock-server.js by handleDomainModules.
 
 import { randomBytes } from 'node:crypto';
@@ -226,6 +227,59 @@ function reviewRoute(req, match, body, shared) {
   return [200, { thread: reviewerView(replaceThread(key, { ...thread, replies: [...thread.replies, reply] })) }];
 }
 
+// ── Seeded threads (the document canvas's demo, proj_1's PRD and PR/FAQ series) ─────────────
+// Each anchor's `exact` is text of the series head in mock-server.js, so the canvas finds it.
+const TEAMMATE = { kind: 'user', sub: 'sub-viewer-demo', name: 'viewer-demo' };
+const DANA = { kind: 'persona', persona_id: 'persona_1', name: 'Deadline-Driven Dana' };
+const VICTOR = { kind: 'persona', persona_id: 'persona_2', name: 'Value-Hunter Victor' };
+const anchored = (exact, heading) => ({ exact, prefix: '', suffix: '', heading });
+const SEEDED_THREADS = [
+  { projectId: 'proj_1', documentId: 'prd_1', threads: [
+    { author: DANA, version: 3, daysOld: 1, anchor: anchored("Quiet hours are 21:00 to 08:00 in the customer's time zone", '4.2 Message rules'),
+      text: 'My trips start at 07:00. A message at 08:00 is too late: let me turn quiet hours off for an order I marked as urgent.',
+      replies: [{ author: TEAM_AUTHOR, daysOld: 0.5, text: 'Good point. Adding an "urgent order" exception to 4.2 in the next version.' }] },
+    { author: TEAMMATE, version: 2, daysOld: 3, status: 'resolved', anchor: anchored('Tell the customer about a delay within minutes of the carrier event', '3.1 Goals'),
+      text: 'Five minutes is not something we can promise when the carrier event itself is late.',
+      replies: [{ author: TEAM_AUTHOR, daysOld: 2, text: 'Changed to "within minutes", and the warning in 4.3 says what happens for late events.' }] },
+    { author: TEAMMATE, version: 3, daysOld: 0.2, anchor: null,
+      text: 'Ready for the leadership review on Thursday once the quiet-hours question is settled.', replies: [] },
+  ] },
+  { projectId: 'proj_1', documentId: 'prfaq_1', threads: [
+    { author: VICTOR, version: 3, daysOld: 1, anchor: anchored('at most once a day unless it moves again', 'Customer FAQ'),
+      text: 'Once a day is fine. If you message me twice about the same parcel, I turn the messages off.', replies: [] },
+    // A persona review's verdict is that persona's comment on the whole document (shared/document_review.py).
+    { author: VICTOR, version: 3, daysOld: 1, anchor: null, verdict: 'positive',
+      text: 'Clear and honest. I would trust these messages, as long as there are not too many of them.', replies: [] },
+    { author: TEAMMATE, version: 3, daysOld: 0.5, anchor: anchored('Delivery contacts per 1,000 orders', 'Internal FAQ'),
+      text: 'Where does the 42 come from? Please link the support report.', replies: [] },
+  ] },
+];
+const ago = (days) => new Date(Date.now() - days * DAY_MS).toISOString();
+let seeded = false;
+
+function seedThreads(shared) {
+  if (seeded) return;
+  seeded = true;
+  for (const { projectId, documentId, threads } of SEEDED_THREADS) {
+    const doc = shared.mockProjectDetails[projectId]?.documents?.find((row) => row.document_id === documentId);
+    if (!doc) continue;
+    const key = seriesKey(projectId, doc);
+    for (const { author, version, daysOld, status = 'open', anchor, text, verdict, replies } of threads) {
+      const at = ago(daysOld);
+      const versionDoc = shared.mockProjectDetails[projectId].documents
+        .find((row) => seriesKey(projectId, row) === key && (row.version ?? 1) === version) ?? doc;
+      addThread(key, {
+        ...newThread(versionDoc, author, text, anchor, verdict ? { verdict } : {}),
+        status, created_at: at, updated_at: replies.length > 0 ? ago(replies.at(-1).daysOld) : at,
+        ...(status === 'resolved' ? { status_by: TEAM_AUTHOR.sub } : {}),
+        replies: replies.map((reply) => ({
+          reply_id: randomBytes(6).toString('hex'), author: reply.author, text: reply.text, flagged: false, at: ago(reply.daysOld),
+        })),
+      });
+    }
+  }
+}
+
 function guarded(route) {
   try {
     return route();
@@ -238,6 +292,7 @@ export function handleDocumentReviewRoutes(req, res, url, send, shared) {
   const documentMatch = url.pathname.match(DOC_PATH);
   const reviewMatch = documentMatch ? null : url.pathname.match(REVIEW_PATH);
   if (!documentMatch && !reviewMatch) return false;
+  seedThreads(shared);
   const respond = (body) => send(...guarded(() => (documentMatch
     ? documentRoute(req, documentMatch, body, shared)
     : reviewRoute(req, reviewMatch, body, shared))));

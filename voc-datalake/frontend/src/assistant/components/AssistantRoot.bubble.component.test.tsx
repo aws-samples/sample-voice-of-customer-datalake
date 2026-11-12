@@ -71,10 +71,12 @@ function drag(dx: number, dy: number) {
   fireEvent.click(el)
 }
 
-beforeAll(async () => {
+// The panel is a lazy chunk (AssistantRoot): loaded with the file's other modules, so no test's wait (nor a hook's
+// timeout) pays for its first transform, which a full run's shared module server can take seconds to serve.
+await import('./AssistantPanel')
+
+beforeAll(() => {
   vi.stubGlobal('PointerEvent', TestPointerEvent)
-  // The panel is a lazy chunk (AssistantRoot): transform it once here, not inside a test's wait.
-  await import('./AssistantPanel')
 })
 
 beforeEach(() => {

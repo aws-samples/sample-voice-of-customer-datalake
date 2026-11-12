@@ -20,6 +20,7 @@ import { CredentialsSection, SetupInstructionsSection, WebhooksSection } from '.
 import SourceCircuitNotice from './SourceCircuitNotice'
 import { useSourceSchedule } from './useSourceSchedule'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
+import { useResetAfter } from '../../hooks/useResetAfter'
 import S3ImportExplorer from '../../components/S3ImportExplorer/S3ImportExplorer'
 import clsx from 'clsx'
 import type { PluginManifest } from '../../plugins/types'
@@ -88,11 +89,13 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
   const sourceStatus = integrationStatus?.[manifest.id]
   const { serverStatus, toggleEnabled, resetCircuit } = useSourceSchedule(manifest.id, apiEndpoint)
 
+  const resetAfter = useResetAfter()
+
   const updateCredentialsMutation = useMutation({
     mutationFn: (creds: Record<string, string>) => api.updateIntegrationCredentials(manifest.id, creds),
     onSuccess: () => {
       setSaveSuccess(true)
-      setTimeout(() => setSaveSuccess(false), 3000)
+      resetAfter(3000, () => setSaveSuccess(false))
       void queryClient.invalidateQueries({ queryKey: ['integration-status'] })
     },
   })

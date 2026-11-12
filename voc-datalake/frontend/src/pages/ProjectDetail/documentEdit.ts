@@ -25,7 +25,8 @@ export function documentRevision(document: ProjectDocument): number | undefined 
   return document.revision ?? 1
 }
 
-function seriesKeyOf(document: ProjectDocument): string {
+/** The series a PRD / PR/FAQ version belongs to (its base title, by type); '' when there is no title to name it. */
+export function seriesKeyOf(document: ProjectDocument): string {
   return documentSeriesKey(document.base_title ?? document.title, document.document_type)
 }
 

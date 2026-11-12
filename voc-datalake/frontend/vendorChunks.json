@@ -1,8 +1,16 @@
 {
-  "vendor-react": ["react", "react-dom", "react-router-dom", "react-router", "clsx"],
+  "vendor-react": ["react", "react-dom", "react-router-dom", "react-router", "clsx", "use-sync-external-store"],
   "vendor-recharts": ["recharts"],
   "vendor-icons": ["lucide-react"],
   "vendor-query": ["@tanstack/react-query"],
   "vendor-i18n": ["i18next", "react-i18next", "i18next-browser-languagedetector", "i18next-http-backend"],
-  "vendor-markdown": ["react-markdown", "remark-gfm"]
+  "vendor-markdown": [
+    "react-markdown", "remark-gfm", "mdast-util-from-markdown", "mdast-util-to-markdown", "mdast-util-gfm",
+    "micromark-extension-gfm"
+  ],
+  "vendor-editor": [
+    "@tiptap/core", "@tiptap/pm", "@tiptap/react", "@tiptap/starter-kit", "@tiptap/extension-code",
+    "@tiptap/extension-drag-handle", "@tiptap/extension-drag-handle-react", "@tiptap/extension-image",
+    "@tiptap/extension-list", "@tiptap/extension-node-range", "@tiptap/extension-table", "@tiptap/extensions"
+  ]
 }

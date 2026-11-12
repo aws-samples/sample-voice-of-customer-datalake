@@ -16,10 +16,7 @@
     "create": "Erstellen",
     "createDocument": "Dokument erstellen",
     "creating": "Wird erstellt...",
-    "editDocument": "Dokument bearbeiten",
     "preview": "Vorschau",
-    "saveChanges": "Änderungen speichern",
-    "saving": "Wird gespeichert...",
     "titleLabel": "Titel",
     "titlePlaceholder": "Dokumenttitel..."
   },
@@ -49,7 +46,6 @@
       "visualsUsed_one": "{{count, number}} Mockup verwendet",
       "visualsUsed_other": "{{count, number}} Mockups verwendet"
     },
-    "editDocument": "Dokument bearbeiten",
     "newDocument": "Neues Dokument",
     "noDocuments": "Keine Dokumente",
     "ordinal": "{{ordinal}} von {{total, number}}",
@@ -656,5 +652,124 @@
     "featureRequestLink": "Wunsch {{id}}",
     "erasedSummary_one": "{{count, number}} zitierte Bewertung oder Board-Anfrage wurde gelöscht (Rechtsgrundlage erfasst)",
     "erasedSummary_other": "{{count, number}} zitierte Bewertungen oder Board-Anfragen wurden gelöscht (Rechtsgrundlage erfasst)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "Schreiben oder / für Blöcke eingeben",
+      "task": "Erledigt",
+      "slash": {
+        "label": "Blöcke",
+        "empty": "Kein Block passt zu „{{query}}“"
+      },
+      "blocks": {
+        "paragraph": "Text",
+        "heading1": "Überschrift 1",
+        "heading2": "Überschrift 2",
+        "heading3": "Überschrift 3",
+        "bulletList": "Aufzählung",
+        "orderedList": "Nummerierte Liste",
+        "taskList": "Aufgabenliste",
+        "blockquote": "Zitat",
+        "callout": "Hinweisbox",
+        "codeBlock": "Code",
+        "table": "Tabelle",
+        "divider": "Trennlinie",
+        "image": "Bild"
+      },
+      "callout": {
+        "note": "Hinweis",
+        "tip": "Tipp",
+        "important": "Wichtig",
+        "warning": "Warnung",
+        "caution": "Vorsicht"
+      },
+      "format": {
+        "toolbar": "Textformatierung",
+        "bold": "Fett",
+        "italic": "Kursiv",
+        "strike": "Durchgestrichen",
+        "code": "Inline-Code",
+        "link": "Link",
+        "turnInto": "Umwandeln in",
+        "comment": "Kommentieren"
+      },
+      "link": {
+        "title": "Link",
+        "url": "Linkadresse",
+        "placeholder": "https://… oder /pfad",
+        "apply": "Übernehmen",
+        "remove": "Link entfernen",
+        "cancel": "Abbrechen",
+        "invalid": "Verwenden Sie eine Webadresse (https://…), eine E-Mail-Adresse oder einen Pfad in dieser App (/…)."
+      },
+      "image": {
+        "title": "Bild einfügen",
+        "url": "Bildadresse",
+        "alt": "Alternativtext",
+        "altHint": "Beschreiben Sie das Bild für Menschen, die es nicht sehen können.",
+        "insert": "Einfügen",
+        "cancel": "Abbrechen",
+        "invalidUrl": "Verwenden Sie eine Webadresse (https://…) oder einen Pfad in dieser App (/…).",
+        "altRequired": "Fügen Sie einen Alternativtext hinzu: Ihn erhalten Menschen, die das Bild nicht sehen können."
+      },
+      "handle": {
+        "label": "Ziehen, um den Block zu verschieben, oder klicken für sein Menü",
+        "menu": "Blockaktionen",
+        "moveUp": "Nach oben",
+        "moveDown": "Nach unten",
+        "turnInto": "Umwandeln in",
+        "duplicate": "Duplizieren",
+        "delete": "Löschen",
+        "back": "Zurück"
+      }
+    },
+    "page": {
+      "loading": "Dokument wird geladen …",
+      "titleLabel": "Dokumenttitel",
+      "contents": "Inhalt",
+      "evidence": "Belege",
+      "evidenceEmpty": "Für dieses Dokument wurden keine Bewertungen oder Feature-Wünsche erfasst.",
+      "showAll": "Alle anzeigen ({{n, number}})",
+      "featureRequests": "Feature-Wünsche"
+    },
+    "comments": {
+      "hint": "Um eine Textstelle zu kommentieren, markieren Sie sie und klicken Sie auf „Kommentieren“, oder drücken Sie Strg+Alt+M (⌘⌥M auf dem Mac).",
+      "draftOpen": "Schließen Sie zuerst den Kommentar ab, den Sie gerade schreiben, oder brechen Sie ihn ab.",
+      "selectFirst": "Markieren Sie zuerst eine Textstelle im Dokument (höchstens 500 Zeichen) und kommentieren Sie sie dann.",
+      "tabs": {
+        "label": "Kommentare und Belege",
+        "comments": "Kommentare",
+        "evidence": "Belege"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "Hinzugefügt",
+        "banner": "Der Assistent schlägt Änderungen an diesem Dokument vor",
+        "diffLabel": "Vorgeschlagene Änderungen",
+        "draftNote": "Du hast ungespeicherte Änderungen. Der Vorschlag wird mit der gespeicherten Version verglichen; wenn du ihn genehmigst, wird darauf eine neue Version gespeichert.",
+        "hide": "Änderungen ausblenden",
+        "newTitle": "Neuer Titel: {{title}}",
+        "noChanges": "Der Vorschlag stimmt mit dem gespeicherten Text überein.",
+        "removed": "Entfernt",
+        "review": "Prüfen",
+        "stats": "Blöcke hinzugefügt: {{added, number}} · entfernt: {{removed, number}}",
+        "tooLarge": "Zu lang für einen Vergleich Block für Block. Der vollständige Vorschlag:",
+        "unchanged": "Unveränderte Blöcke: {{count, number}}"
+      },
+      "discard": "Verwerfen",
+      "discardHint": "Deine Änderungen verwerfen und zur gespeicherten Version zurückkehren",
+      "exportSavedHint": "Der Export verwendet die gespeicherte Version. Speichere zuerst, um deine Änderungen einzuschließen.",
+      "history": "Verlauf",
+      "save": "Speichern",
+      "saveHint": "Eine neue Version speichern (Strg+S oder ⌘S)",
+      "status": {
+        "saved": "Gespeichert · {{version}} · {{when}}",
+        "savedNoVersion": "Gespeichert · {{when}}",
+        "saving": "Wird gespeichert…",
+        "unsaved": "Ungespeicherte Änderungen"
+      },
+      "toolbarLabel": "Dokumentaktionen"
+    }
   }
 }

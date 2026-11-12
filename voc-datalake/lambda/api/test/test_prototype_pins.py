@@ -14,6 +14,12 @@ from moto import mock_aws
 from moto_helpers import pk_sk_table
 
 from shared import project_access, prototype_pins
+from shared.test.source_profile_fixtures import no_source_profiles
+
+# The submit route reads the source profiles through a per-container cache, and the suite's clock is frozen
+# (conftest.py), so a failed read cached by an earlier test on the same worker would never expire: seed no
+# profiles (the defaults), as the other feedback-form suites do.
+_no_profiles = pytest.fixture(autouse=True)(no_source_profiles)
 
 PROJECT = 'proj_1'
 DOC = 'prototype_abc123'

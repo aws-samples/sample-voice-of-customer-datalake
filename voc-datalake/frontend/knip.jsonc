@@ -3,8 +3,12 @@
   // The files the bundler starts from: index.html is read for its <script> tags (src/main.tsx).
   // The two scripts are run by hand, not imported: fix-i18n.mjs is the Bedrock translation tool
   // (src/i18n/options.test.ts parses it) and i18n-check.test.mjs, set-nested.test.mjs, fix-i18n-helpers.test.mjs, check-mock-coverage.test.mjs and the mock-*.test.mjs files are run by validate.sh with node.
+  // noCollaboration.ts is reached only through canvasResolve.ts's alias (vite.config.ts and vitest.config.ts: the drag
+  // handle's Yjs imports bind to it in dev, tests and the bundle). knip sees the file but not the package imports the
+  // alias maps to it, so it would report all four exports unused: it is an entry of its own (exports public).
   "entry": [
     "index.html!",
+    "src/components/DocumentCanvas/editor/noCollaboration.ts!",
     "scripts/fix-i18n.mjs",
     "scripts/i18n-check.test.mjs",
     "scripts/set-nested.test.mjs",

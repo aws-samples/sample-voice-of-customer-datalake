@@ -17,6 +17,39 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.05.00] - 2026-11-11
+
+Projects > Documents opens each document as a page you edit in place, and every commit can be held to a recorded review gate.
+
+### Added
+
+- **The document canvas** ([docs/document-canvas.md](docs/document-canvas.md)). A prose document opens as a page: a reading column, the title (editable in place for research and custom documents; a PR/FAQ or PRD title stays the series'), an outline of its headings (a **Contents** disclosure on narrow screens), and evidence cards for the reviews and board requests it was written from. Editing happens in place on a block editor built on TipTap 3.33.1 and ProseMirror (MIT): paragraphs, headings, lists, to-dos, quotes, callouts (Markdown alerts), code, tables, dividers and images; a "/" block menu, Markdown shortcuts, a floating format bar, links (http, https, mailto and app paths only), and a handle on each block to drag it, with a keyboard path (Alt+Shift+Up/Down, the handle's menu). The editor is lazy-loaded with the page (`vendor-editor`, about 161 kB gzip); the entry chunk does not grow.
+- **Save in place.** **Save** (or Ctrl/⌘+S) writes one new version through the existing document PUT with `expected_revision` and a fresh `edit_id` (D1, D4); there is no autosave. A stale save shows **Load the latest** / **Save mine anyway**; leaving with unsaved changes asks first. The header carries the status, Discard, Save, Share (PR/FAQ, PRD), Export (the saved version), **History** (the versions, with restore) and Delete; on a phone, Discard and Save are pinned to the bottom of the screen while there are unsaved changes.
+- **Comments on the canvas.** On a PR/FAQ or PRD, select text and choose **Comment** in the format bar (or Ctrl/⌘+Alt+M); threads, replies, resolve, filters, persona reviews and the share-for-review link work as before, in a side rail with **Comments** and **Evidence** tabs. A thread whose quote is edited away moves to "Not found in this version" as you type. Text-quote anchors skip the editor's own controls and treat block edges as one space, the same text the server matches against.
+- **The assistant's proposed document change on the canvas**: a banner, then a block-level diff over the saved text with the same Approve / Decline as the assistant's approval card (one approval, one write path).
+- **Review gate tooling**: `scripts/ai-review/gate.mjs` records a GO for the staged tree (the review rounds, each finding and its outcome, the final verdict) under `.cache/ai-review/gate/`, and `scripts/git-hooks/pre-commit` refuses a commit whose staged tree has no GO record (CONTRIBUTING.md, "Review gate before commit"). Tests: `scripts/ai-review/gate.test.mjs`, `scripts/git-hooks/pre-commit.test.mjs`.
+
+### Changed
+
+- The document pane's Edit button and edit dialog are gone for prose documents (the canvas is the editor); **New document** keeps its dialog, which is now create-only, and opens the new document on the canvas.
+- The Markdown stays the stored format: untouched blocks are written back byte for byte, and anything without a block (raw HTML, footnotes, reference definitions) is kept as written. A round-trip test runs every template, generated layout and dev-mock document (`src/components/DocumentCanvas/markdown/roundTrip.test.ts`).
+- The external review page reads with the canvas's typography; a comment draft with text is never replaced by a new selection.
+- A resolved comment card is marked by its background and a dashed border instead of lowered opacity (which failed AA contrast).
+- The dev mock: proj_1 has a PR/FAQ and a PRD series of three versions using every block, seeded comment threads and evidence; the document PUT checks `edit_id` like the API.
+- `projectsApi.updateDocument` and `createDocument` return `{ document }`, normalised by `normalizeProjectDocument` (a failed call already throws).
+
+### Fixed
+
+- The frontend unit suite under load: vitest now runs at most 64 workers (`vitest.config.ts`; the default on a many-core machine queued every worker's module fetches behind one server, so lazy chunks loaded in `beforeAll` timed out), and the lazy-page preloads are top-level imports instead of hooks with their own timeout.
+- Self-clearing notes in Sources, User administration, Settings and the S3 import explorer cancel their timer on unmount (`src/hooks/useResetAfter.ts`); a test run could otherwise end with "window is not defined". The assistant runtime test mocks the session poll that follows a Stop.
+- A raw-Markdown block pasted back into the canvas stays a raw block instead of becoming a code block.
+- `lambda/api/test/test_prototype_pins.py` seeds no source profiles, as the other feedback-form suites do: with the suite's frozen clock, a failed profile read cached by an earlier test on the same pytest worker never expired, and the form submit answered 503 at random.
+
+### Upgrade notes
+
+- Frontend only: `npm run deploy:frontend`. No stack, route or stored data changes.
+- To use the review gate locally, from the repo's top level: `hooks=$(git config core.hooksPath || git rev-parse --git-path hooks)`, then `cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"` (CONTRIBUTING.md, "Review gate before commit"). The hooks directory is per clone, so it also checks the clone's other worktrees, and refuses a branch without `scripts/ai-review/gate.mjs`.
+
 ## [6.04.07] - 2026-11-11
 
 A fresh deployment's VocApiStack completes again: the API Gateway account setting accepts its CloudWatch role.

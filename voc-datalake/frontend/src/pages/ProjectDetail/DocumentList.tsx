@@ -1,7 +1,8 @@
 /**
  * DocumentList - the selectable document rail of the Documents tab.
  *
- * A horizontal scroller on narrow screens, a column on `lg`. Rows are buttons
+ * A horizontal strip above the page below `xl`, a narrow column beside it from `xl` (the page needs the width for
+ * its outline, text and evidence rail). Rows are buttons
  * with `aria-current` on the selected one; titles are plain text rather than
  * headings, because a heading inside a button is flattened into the button's
  * name anyway and a list of them broke the page outline (h1 → h4).
@@ -31,7 +32,7 @@ export default function DocumentList({
   const ordinals = useMemo(() => ordinalByType(documents), [documents])
 
   return (
-    <div className="flex lg:flex-col gap-3 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
+    <div className="flex xl:flex-col gap-3 xl:gap-2 overflow-x-auto xl:overflow-x-visible pb-2 xl:pb-0 -mx-4 px-4 xl:mx-0 xl:px-0">
       {documents.length === 0 ? (
         <div className="card text-center py-8 flex-shrink-0 w-full">
           <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-accent-subtle flex items-center justify-center">
@@ -49,7 +50,7 @@ export default function DocumentList({
               onClick={() => onSelectDoc(d)}
               aria-current={selected ? 'true' : undefined}
               className={clsx(
-                'flex-shrink-0 w-56 lg:w-full text-left p-3 lg:p-4 rounded-lg border transition-colors focus-ring',
+                'flex-shrink-0 w-56 xl:w-full text-left p-3 rounded-lg border transition-colors focus-ring',
                 selected
                   ? 'bg-accent-subtle border-accent/40 [&_.text-muted]:text-text'
                   : 'bg-card border-border hover:border-border-strong hover:bg-bg-hover',
@@ -65,7 +66,7 @@ export default function DocumentList({
                 />
                 <span className="text-xs text-muted">{formatDate(d.created_at, i18n.language, '', 'short')}</span>
               </div>
-              <p className="font-medium line-clamp-2 text-sm lg:text-base text-text-strong">{d.title}</p>
+              <p className="font-medium line-clamp-2 text-sm text-text-strong">{d.title}</p>
             </button>
           )
         })

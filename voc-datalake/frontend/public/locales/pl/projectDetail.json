@@ -16,10 +16,7 @@
     "create": "Utwórz",
     "createDocument": "Nowy dokument",
     "creating": "Tworzenie...",
-    "editDocument": "Edytuj dokument",
     "preview": "Podgląd",
-    "saveChanges": "Zapisz zmiany",
-    "saving": "Zapisywanie...",
     "titleLabel": "Tytuł",
     "titlePlaceholder": "Tytuł dokumentu..."
   },
@@ -85,7 +82,6 @@
       "heading": "Wersja poprawiona z"
     },
     "deleteDocument": "Usuń dokument",
-    "editDocument": "Edytuj dokument",
     "newDocument": "Nowy dokument",
     "noDocuments": "Brak dokumentów",
     "ordinal": "{{ordinal}} z {{total, number}}",
@@ -710,5 +706,124 @@
     "erasedSummary_few": "{{count, number}} cytowane opinie lub prośby z tablic zostały usunięte (podstawa prawna zapisana)",
     "erasedSummary_many": "{{count, number}} cytowanych opinii lub próśb z tablic zostało usuniętych (podstawa prawna zapisana)",
     "erasedSummary_other": "{{count, number}} cytowanej opinii lub prośby z tablic zostało usunięte (podstawa prawna zapisana)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "Pisz albo wpisz /, aby wybrać blok",
+      "task": "Zrobione",
+      "slash": {
+        "label": "Bloki",
+        "empty": "Żaden blok nie pasuje do „{{query}}”"
+      },
+      "blocks": {
+        "paragraph": "Tekst",
+        "heading1": "Nagłówek 1",
+        "heading2": "Nagłówek 2",
+        "heading3": "Nagłówek 3",
+        "bulletList": "Lista punktowana",
+        "orderedList": "Lista numerowana",
+        "taskList": "Lista zadań",
+        "blockquote": "Cytat",
+        "callout": "Wyróżnienie",
+        "codeBlock": "Kod",
+        "table": "Tabela",
+        "divider": "Separator",
+        "image": "Obraz"
+      },
+      "callout": {
+        "note": "Uwaga",
+        "tip": "Wskazówka",
+        "important": "Ważne",
+        "warning": "Ostrzeżenie",
+        "caution": "Ostrożnie"
+      },
+      "format": {
+        "toolbar": "Formatowanie tekstu",
+        "bold": "Pogrubienie",
+        "italic": "Kursywa",
+        "strike": "Przekreślenie",
+        "code": "Kod w tekście",
+        "link": "Link",
+        "turnInto": "Zmień na",
+        "comment": "Skomentuj"
+      },
+      "link": {
+        "title": "Link",
+        "url": "Adres linku",
+        "placeholder": "https://… lub /ścieżka",
+        "apply": "Zastosuj",
+        "remove": "Usuń link",
+        "cancel": "Anuluj",
+        "invalid": "Użyj adresu internetowego (https://…), adresu e-mail lub ścieżki w tej aplikacji (/…)."
+      },
+      "image": {
+        "title": "Wstaw obraz",
+        "url": "Adres obrazu",
+        "alt": "Tekst alternatywny",
+        "altHint": "Opisz obraz dla osób, które go nie widzą.",
+        "insert": "Wstaw",
+        "cancel": "Anuluj",
+        "invalidUrl": "Użyj adresu internetowego (https://…) lub ścieżki w tej aplikacji (/…).",
+        "altRequired": "Dodaj tekst alternatywny: to go otrzymują osoby, które nie widzą obrazu."
+      },
+      "handle": {
+        "label": "Przeciągnij, aby przenieść blok, lub kliknij, aby otworzyć jego menu",
+        "menu": "Działania bloku",
+        "moveUp": "Przenieś w górę",
+        "moveDown": "Przenieś w dół",
+        "turnInto": "Zmień na",
+        "duplicate": "Duplikuj",
+        "delete": "Usuń",
+        "back": "Wstecz"
+      }
+    },
+    "page": {
+      "loading": "Wczytywanie dokumentu…",
+      "titleLabel": "Tytuł dokumentu",
+      "contents": "Spis treści",
+      "evidence": "Dowody",
+      "evidenceEmpty": "Dla tego dokumentu nie zapisano żadnych opinii ani próśb o funkcje.",
+      "showAll": "Pokaż wszystkie ({{n, number}})",
+      "featureRequests": "Prośby o funkcje"
+    },
+    "comments": {
+      "hint": "Aby skomentować fragment, zaznacz go i naciśnij Skomentuj albo naciśnij Ctrl+Alt+M (⌘⌥M na Macu).",
+      "draftOpen": "Najpierw dokończ lub anuluj komentarz, który piszesz.",
+      "selectFirst": "Najpierw zaznacz fragment dokumentu (najwyżej 500 znaków), a potem go skomentuj.",
+      "tabs": {
+        "label": "Komentarze i dowody",
+        "comments": "Komentarze",
+        "evidence": "Dowody"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "Dodano",
+        "banner": "Asystent proponuje zmiany w tym dokumencie",
+        "diffLabel": "Proponowane zmiany",
+        "draftNote": "Masz niezapisane zmiany. Propozycja jest porównywana z zapisaną wersją, a jej zatwierdzenie zapisze na niej nową wersję.",
+        "hide": "Ukryj zmiany",
+        "newTitle": "Nowy tytuł: {{title}}",
+        "noChanges": "Propozycja jest zgodna z zapisanym tekstem.",
+        "removed": "Usunięto",
+        "review": "Przejrzyj",
+        "stats": "Dodane bloki: {{added, number}} · usunięte: {{removed, number}}",
+        "tooLarge": "Za długie, by porównać blok po bloku. Cała propozycja:",
+        "unchanged": "Niezmienione bloki: {{count, number}}"
+      },
+      "discard": "Odrzuć zmiany",
+      "discardHint": "Odrzuć swoje zmiany i wróć do zapisanej wersji",
+      "exportSavedHint": "Eksport używa zapisanej wersji. Najpierw zapisz, aby uwzględnić swoje zmiany.",
+      "history": "Historia",
+      "save": "Zapisz",
+      "saveHint": "Zapisz nową wersję (Ctrl+S lub ⌘S)",
+      "status": {
+        "saved": "Zapisano · {{version}} · {{when}}",
+        "savedNoVersion": "Zapisano · {{when}}",
+        "saving": "Zapisywanie…",
+        "unsaved": "Niezapisane zmiany"
+      },
+      "toolbarLabel": "Działania na dokumencie"
+    }
   }
 }

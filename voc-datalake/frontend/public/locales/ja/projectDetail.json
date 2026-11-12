@@ -16,10 +16,7 @@
     "create": "作成",
     "createDocument": "ドキュメントを作成",
     "creating": "作成中...",
-    "editDocument": "ドキュメントを編集",
     "preview": "プレビュー",
-    "saveChanges": "変更を保存",
-    "saving": "保存中...",
     "titleLabel": "タイトル",
     "titlePlaceholder": "ドキュメントのタイトル..."
   },
@@ -49,7 +46,6 @@
       "visualsUsed_one": "ビジュアル{{count, number}}件を使用",
       "visualsUsed_other": "ビジュアル{{count, number}}件を使用"
     },
-    "editDocument": "ドキュメントを編集",
     "newDocument": "新規ドキュメント",
     "noDocuments": "ドキュメントなし",
     "ordinal": "{{total, number}} 件中 {{ordinal}} 件目",
@@ -656,5 +652,124 @@
     "featureRequestLink": "リクエスト {{id}}",
     "erasedSummary_one": "引用されたレビューまたはボードのリクエスト{{count, number}}件が消去されました（法的根拠を記録済み）",
     "erasedSummary_other": "引用されたレビューまたはボードのリクエスト{{count, number}}件が消去されました（法的根拠を記録済み）"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "入力するか、/ でブロックを選択",
+      "task": "完了",
+      "slash": {
+        "label": "ブロック",
+        "empty": "「{{query}}」に一致するブロックはありません"
+      },
+      "blocks": {
+        "paragraph": "テキスト",
+        "heading1": "見出し 1",
+        "heading2": "見出し 2",
+        "heading3": "見出し 3",
+        "bulletList": "箇条書きリスト",
+        "orderedList": "番号付きリスト",
+        "taskList": "ToDo リスト",
+        "blockquote": "引用",
+        "callout": "コールアウト",
+        "codeBlock": "コード",
+        "table": "表",
+        "divider": "区切り線",
+        "image": "画像"
+      },
+      "callout": {
+        "note": "メモ",
+        "tip": "ヒント",
+        "important": "重要",
+        "warning": "警告",
+        "caution": "注意"
+      },
+      "format": {
+        "toolbar": "テキストの書式",
+        "bold": "太字",
+        "italic": "斜体",
+        "strike": "取り消し線",
+        "code": "インラインコード",
+        "link": "リンク",
+        "turnInto": "変換",
+        "comment": "コメント"
+      },
+      "link": {
+        "title": "リンク",
+        "url": "リンク先のアドレス",
+        "placeholder": "https://… または /パス",
+        "apply": "適用",
+        "remove": "リンクを削除",
+        "cancel": "キャンセル",
+        "invalid": "Web アドレス (https://…)、メールアドレス、またはこのアプリ内のパス (/…) を入力してください。"
+      },
+      "image": {
+        "title": "画像を挿入",
+        "url": "画像のアドレス",
+        "alt": "代替テキスト",
+        "altHint": "画像を見ることができない人のために、画像の内容を説明してください。",
+        "insert": "挿入",
+        "cancel": "キャンセル",
+        "invalidUrl": "Web アドレス (https://…) またはこのアプリ内のパス (/…) を入力してください。",
+        "altRequired": "代替テキストを入力してください。画像を見ることができない人にはこれが伝わります。"
+      },
+      "handle": {
+        "label": "ドラッグしてブロックを移動、クリックでメニューを開く",
+        "menu": "ブロックの操作",
+        "moveUp": "上へ移動",
+        "moveDown": "下へ移動",
+        "turnInto": "変換",
+        "duplicate": "複製",
+        "delete": "削除",
+        "back": "戻る"
+      }
+    },
+    "page": {
+      "loading": "ドキュメントを読み込んでいます…",
+      "titleLabel": "ドキュメントのタイトル",
+      "contents": "目次",
+      "evidence": "根拠",
+      "evidenceEmpty": "このドキュメントには、レビューや機能リクエストが記録されていません。",
+      "showAll": "すべて表示（{{n, number}}）",
+      "featureRequests": "機能リクエスト"
+    },
+    "comments": {
+      "hint": "箇所にコメントするには、テキストを選択して［コメント］を押すか、Ctrl+Alt+M（Mac では ⌘⌥M）を押します。",
+      "draftOpen": "まず書きかけのコメントを完了するか、キャンセルしてください。",
+      "selectFirst": "まずドキュメントの箇所（500 文字まで）を選択してから、コメントしてください。",
+      "tabs": {
+        "label": "コメントと根拠",
+        "comments": "コメント",
+        "evidence": "根拠"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "追加",
+        "banner": "アシスタントがこのドキュメントの変更を提案しています",
+        "diffLabel": "提案された変更",
+        "draftNote": "保存されていない変更があります。提案は保存済みのバージョンと比較され、承認するとその上に新しいバージョンが保存されます。",
+        "hide": "変更を隠す",
+        "newTitle": "新しいタイトル: {{title}}",
+        "noChanges": "提案は保存済みのテキストと同じです。",
+        "removed": "削除",
+        "review": "確認",
+        "stats": "追加されたブロック: {{added, number}} · 削除: {{removed, number}}",
+        "tooLarge": "長すぎるため、ブロックごとに比較できません。提案の全文:",
+        "unchanged": "変更のないブロック: {{count, number}}"
+      },
+      "discard": "破棄",
+      "discardHint": "変更を破棄して保存済みのバージョンに戻る",
+      "exportSavedHint": "エクスポートには保存済みのバージョンが使われます。変更を含めるには先に保存してください。",
+      "history": "履歴",
+      "save": "保存",
+      "saveHint": "新しいバージョンを保存（Ctrl+S または ⌘S）",
+      "status": {
+        "saved": "保存済み · {{version}} · {{when}}",
+        "savedNoVersion": "保存済み · {{when}}",
+        "saving": "保存中…",
+        "unsaved": "未保存の変更"
+      },
+      "toolbarLabel": "ドキュメントの操作"
+    }
   }
 }

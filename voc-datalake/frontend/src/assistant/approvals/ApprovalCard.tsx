@@ -16,15 +16,13 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { useIsAdmin } from '../../store/authStore'
 import { ActionBar } from './ActionBar'
 import { CardHeader, ResolvedState } from './CardParts'
 import { ArgsPreview } from './previews/ValueView'
 import { DetailsDisclosure } from './previews/FieldDiff'
 import { getWriteTool } from './registry'
-import { useApprovalFlow } from './useApprovalFlow'
+import { useApprovalFlow, useExecutionContext } from './useApprovalFlow'
 import { useExpiry } from './useExpiry'
 import { ShownContext, createShownRecord } from './shown'
 import type { ShownRecord } from './shown'
@@ -33,7 +31,7 @@ import type { ArgsCheck } from './approvalGate'
 import { PLAN_PROPOSAL_TOOL } from './planSchemas'
 import type { Expiry } from './useExpiry'
 import type { PageContext } from '@stream/assistant/contract'
-import type { ApprovalCardProps, WriteToolDefinition, WriteToolExecutionContext } from '../types'
+import type { ApprovalCardProps, WriteToolDefinition } from '../types'
 
 /** Why the card cannot be approved, in a sentence; the validator's own words and the tool name under "Details". */
 function ArgsProblems({ known, problems, toolName }: Readonly<{ known: boolean; problems: string[]; toolName: string }>) {
@@ -109,24 +107,17 @@ interface PendingBodyProps {
 
 function PendingBody({ props, shown, titleId, title, definition, check, expiry, flow, phase, actionsRef }: Readonly<PendingBodyProps>) {
   const { t } = useTranslation('assistantTools')
-  const queryClient = useQueryClient()
-  const isAdmin = useIsAdmin()
+  // `shown` carries what this card displayed (job window/language, brand base) to the executor.
+  const ctx = useExecutionContext(shown, props.conversationId)
   const [confirmed, setConfirmed] = useState(false)
   const { interrupt, page, disabled = false } = props
   const destructive = isDestructive(interrupt, definition)
-  const adminBlocked = definition?.adminOnly === true && !isAdmin
+  const adminBlocked = definition?.adminOnly === true && !ctx.isAdmin
   const canApprove = isApprovable({ definition, check, expiry, adminBlocked, destructive, confirmed, disabled, phase })
   const showConfirm = destructive && check.ok && !expiry.expired && phase !== 'declining'
 
   const handleApprove = () => {
-    if (canApprove && definition !== undefined && check.ok) {
-      // `shown` carries what this card displayed (job window/language, brand base) to the executor.
-      const ctx: WriteToolExecutionContext = {
-        queryClient, shown, isAdmin,
-        ...(props.conversationId === undefined ? {} : { conversationId: props.conversationId }),
-      }
-      void flow.approve(definition, check.args, ctx)
-    }
+    if (canApprove && definition !== undefined && check.ok) void flow.approve(definition, check.args, ctx)
   }
 
   return (

@@ -126,8 +126,8 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
     Preview: FeedbackCategoryPreview,
   }),
   defineWriteTool({
-    name: 'update_document', argsSchema: s.updateDocumentArgs, execute: executors.updateDocument,
-    title: (_a, t) => t(toolTitleKey('update_document')), Preview: DocumentDiffPreview,
+    name: s.UPDATE_DOCUMENT_TOOL, argsSchema: s.updateDocumentArgs, execute: executors.updateDocument,
+    title: (_a, t) => t(toolTitleKey(s.UPDATE_DOCUMENT_TOOL)), Preview: DocumentDiffPreview,
   }),
   defineWriteTool({
     name: 'create_document', argsSchema: s.createDocumentArgs, execute: executors.createDocument,

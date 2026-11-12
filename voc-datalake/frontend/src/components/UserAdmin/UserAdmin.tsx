@@ -24,6 +24,7 @@ import {
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
+import { useResetAfter } from '../../hooks/useResetAfter'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import CreateUserModal from './CreateUserModal'
 import EditUserModal from './EditUserModal'
@@ -87,9 +88,10 @@ export default function UserAdmin() {
     queryFn: () => api.getUsers(),
   })
 
+  const resetAfter = useResetAfter()
   const showSuccess = (message: string) => {
     setActionSuccess(message)
-    setTimeout(() => setActionSuccess(null), 3000)
+    resetAfter(3000, () => setActionSuccess(null))
   }
 
   const updateGroupMutation = useMutation({

@@ -34,10 +34,16 @@ function located(range: Range | null): { text: string; in: string } | null {
   return { text: range.toString(), in: range.startContainer.parentElement?.id ?? '' }
 }
 
-/** Selects the `[start, end)` characters of the first text node under `element`. */
-function select(element: Element, start: number, end: number): Selection {
+/** The first text node under `element`. */
+function textIn(element: Element): ChildNode {
   const node = element.firstChild
   if (node === null) throw new Error('no text to select')
+  return node
+}
+
+/** Selects the `[start, end)` characters of the first text node under `element`. */
+function select(element: Element, start: number, end: number): Selection {
+  const node = textIn(element)
   const range = document.createRange()
   range.setStart(node, start)
   range.setEnd(node, end)
@@ -54,10 +60,30 @@ describe('indexText', () => {
     expect(indexText(root).text).toBe('Fast delivery matters ')
   })
 
-  it('keeps for every character the node it came from', () => {
+  it('keeps for every character the node it came from (a block break points at the text after it)', () => {
     const root = document.createElement('div')
     root.innerHTML = '<p>ab</p><p>cd</p>'
-    expect(indexText(root).sources.map((source) => source.node.data)).toStrictEqual(['ab', 'ab', 'cd', 'cd'])
+    expect(indexText(root).sources.map((source) => source.node.data)).toStrictEqual(['ab', 'ab', 'cd', 'cd', 'cd'])
+  })
+
+  it('separates blocks with one space even with no whitespace between them (the canvas DOM)', () => {
+    const canvas = document.createElement('div')
+    canvas.innerHTML = '<h2>Customer problem</h2><p>Customers <strong>wait</strong> two weeks.<br>Then more.</p>'
+      + '<ul><li><p>One</p></li><li><p>Two</p></li></ul><table><tbody><tr><td><p>A</p></td><td><p>B</p></td></tr></tbody></table>'
+    const markdown = rendered('<h2>Customer problem</h2><p>Customers <strong>wait</strong> two weeks.<br>Then more.</p>'
+      + '<ul><li>One</li><li>Two</li></ul><table><tbody><tr><td>A</td><td>B</td></tr></tbody></table>')
+    expect([indexText(canvas).text, indexText(markdown).text.trim()]).toStrictEqual([
+      'Customer problem Customers wait two weeks. Then more. One Two A B',
+      'Customer problem Customers wait two weeks. Then more. One Two A B',
+    ])
+  })
+
+  it('leaves out the editor chrome marked data-anchor-skip (handles, labels)', () => {
+    const canvas = document.createElement('div')
+    canvas.innerHTML = '<div data-anchor-skip contenteditable="false">Drag</div><p>Refunds</p>'
+      + '<pre><span data-anchor-skip>typescript</span><code>const a = 1</code></pre>'
+      + '<blockquote><p><span data-anchor-skip>Note</span>Keep <em data-anchor-skip>label</em>it short</p></blockquote>'
+    expect(indexText(canvas).text).toBe('Refunds const a = 1 Keep it short')
   })
 })
 
@@ -108,6 +134,27 @@ describe('anchorOfSelection', () => {
       suffix: ' for a refund.',
       heading: 'Customer problem',
     })
+  })
+
+  it('makes the same anchor on the canvas DOM as on the rendered Markdown, chrome aside', () => {
+    const canvas = document.createElement('div')
+    canvas.innerHTML = '<h2 id="h"><span data-anchor-skip>⋮⋮</span>Customer problem</h2><p id="p">Customers wait two weeks for a refund.</p>'
+    document.body.append(canvas)
+    expect(anchorOfSelection(canvas, select(byId(canvas, 'p'), 15, 24))).toStrictEqual({
+      exact: 'two weeks',
+      prefix: 'Customer problem Customers wait ',
+      suffix: ' for a refund.',
+      heading: 'Customer problem',
+    })
+  })
+
+  it('records a selection that crosses two blocks with the space between them', () => {
+    const canvas = document.createElement('div')
+    canvas.innerHTML = '<p id="a">Refunds are slow.</p><p id="b">Customers wait.</p>'
+    document.body.append(canvas)
+    const selection = select(byId(canvas, 'a'), 12, 17)
+    selection.getRangeAt(0).setEnd(textIn(byId(canvas, 'b')), 9)
+    expect(anchorOfSelection(canvas, selection)?.exact).toBe('slow. Customers')
   })
 
   it('makes an anchor that finds the same text again', () => {

@@ -262,6 +262,59 @@ is not installed, or with `SKIP_AI_REVIEW=1`. Git does not run it until you inst
 `cp scripts/git-hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push`. Its parsing of the agents'
 output is tested by `node --test scripts/git-hooks/pre-push.test.mjs`.
 
+### Review gate before commit
+The rule for every commit is the review gate, in this order (the pre-commit hook below enforces the record of it once
+installed):
+
+1. `npm run validate` is green.
+2. At most three review rounds, each on exactly the change about to be committed: `AI_REVIEW_CACHE=0 npm run
+   validate:tenets`, `AI_REVIEW_CACHE=0 npm run validate:commit`, and the `security-reviewer`, `quality-reviewer` and
+   `first-principles-reviewer` agents (`.kiro/agents/`). Every blocking finding is fixed (or rejected with a reason);
+   a round with no blocking finding ends the loop. The two `validate:` reviews read the working tree (unstaged and
+   untracked files included) against the merge base, so stage the whole change first and leave nothing else in the
+   working tree. A review that printed `skipped:` (a timeout, no CLI, no base to diff against) did not run, even
+   though it exited 0: rerun it before its round counts. If the third round still has a blocking finding, there is
+   no GO for this change: split or rework it and start the gate again at round 1.
+3. One fresh agent, which took no part in the rounds, answers GO or NO-GO. Only a GO is committed; after a NO-GO,
+   rework the change and start again at round 1.
+4. The GO is recorded: write the record as JSON outside the working tree (or in an ignored path) and run `node
+   scripts/ai-review/gate.mjs record --file <record.json>`. `record` refuses while the working tree differs from the
+   index: an unstaged change to a tracked file (`git diff --quiet` fails) or an untracked file that is not ignored
+   (`git ls-files --others --exclude-standard` lists it). So the tree the reviews read is the tree that is committed.
+
+The record is `{ tree, rounds: [{ round, reviews: [{ reviewer, findings: [{ id, severity, summary,
+outcome, note }] }] }], go: { verdict, reasons }, recordedAt? }`: `tree` is `git write-tree` of the index (what is
+staged), `reviewer` one of `tenets`, `commit`, `security`, `quality`, `first-principles` (each exactly once per
+round), `severity` one of `blocking`, `should-fix`, `nit`, `outcome` one of `fixed`, `rejected`, `deferred`.
+`record` refuses it unless the verdict is GO with its reasons, there are one to three rounds numbered in order, every
+round but the last had a blocking finding and the last has none, no blocking finding is deferred, a rejected one has a
+note, `tree` is the tree staged now and the working tree is the index. It always records the staged tree (it takes no
+`--tree`). It keeps the record in `.cache/ai-review/gate/<tree>.json` (ignored by git; `recordedAt` is filled in when
+absent). `gate.mjs check` exits 0 when the staged tree has a GO record and 1 with what to do when it has none;
+`gate.mjs show` prints the record and the line for the commit message (`review gate: 2 rounds, GO`); both
+take `--tree <hash>` to look at another tree's record. Stage anything after the record and the tree changes: review that change and record again.
+
+`scripts/git-hooks/pre-commit` calls `gate.mjs`'s `main(['check'])` (with `NODE_OPTIONS` unset) and lets the commit
+through only when it answers 0: a gate that exits without answering, a missing node or a missing `gate.mjs` is a
+refusal. It judges the index git commits, so `git commit -a` with changes that were not staged at review time is
+refused. No environment variable skips it; only git's own `git commit --no-verify` does. Git does not run it until
+you install it in your clone, into `core.hooksPath` when that is set, else the clone's hooks directory (run from the
+top level, where a relative `core.hooksPath` is resolved):
+
+```bash
+hooks=$(git config core.hooksPath || git rev-parse --git-path hooks)
+cp scripts/git-hooks/pre-commit "$hooks/pre-commit" && chmod +x "$hooks/pre-commit"
+```
+
+The hooks directory belongs to the clone and is shared by all its worktrees, so the hook then checks every commit in
+every worktree and on every branch, as intended: a branch whose checkout has no `scripts/ai-review/gate.mjs` is refused
+(fail closed). Tested by `node --test scripts/ai-review/gate.test.mjs scripts/git-hooks/pre-commit.test.mjs` (both
+are `validate.sh` steps).
+
+The record is written by you or your agent and lives only on your machine: the gate checks its shape and that it names
+the staged tree, not that the reviews it lists ran or found what it says. The hook runs the `gate.mjs` of the
+checked-out tree, so a local edit to that file changes the check. CI does not see any of it.
+
 
 ## Finding contributions to work on
 Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.

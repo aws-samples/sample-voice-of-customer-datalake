@@ -25,10 +25,12 @@ import { MemoryRouter } from 'react-router-dom'
 import {
   HOUR_MS, signedPrototypeUrl, urlPrototypeDoc as prototypeDoc,
 } from './prototype-fixtures'
-import { documentsTabStubs, makeProject } from './project-detail-fixtures'
+import { documentsTabStubs, makeProject, preloadDocumentPage } from './project-detail-fixtures'
 import DocumentsTab from './DocumentsTab'
 import { formatExpiry } from '../../components/prototypeLinkLifetime'
 import type { ProjectDocument } from '../../api/types'
+
+await preloadDocumentPage()
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -221,9 +223,10 @@ describe('document pane height', () => {
     expect(screen.getByTestId('document-detail-pane')).toHaveClass('lg:min-h-[70vh]')
   })
 
-  it('leaves prose documents on the shorter pane, where extra height is only whitespace', () => {
+  it('leaves prose documents on the shorter pane, where extra height is only whitespace', async () => {
     renderTab(proseDoc)
-    const pane = screen.getByTestId('document-detail-pane')
+    // The prose page is lazy-loaded.
+    const pane = await screen.findByTestId('document-detail-pane')
     expect(pane).toHaveClass('lg:min-h-[500px]')
     expect(pane).not.toHaveClass('lg:min-h-[70vh]')
   })

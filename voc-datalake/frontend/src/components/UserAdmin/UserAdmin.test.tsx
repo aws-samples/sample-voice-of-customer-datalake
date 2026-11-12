@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
+import { timerOnCleanup } from '../../test/timeoutWatch'
 import type { CognitoUser } from '../../api/types'
 import { required } from '../component-spec-fixtures'
 import { cognitoUser } from './userAdmin-fixtures'
@@ -263,6 +264,15 @@ describe('UserAdmin', () => {
       await user.selectOptions(firstRoleSelect(), 'admins')
 
       expect(await screen.findByText('User role updated')).toBeInTheDocument()
+    })
+
+    it('cancels the message timer when the panel goes away, so nothing fires after it', async () => {
+      const timer = await timerOnCleanup(3000, async () => {
+        const user = await renderOneUser()
+        await user.selectOptions(firstRoleSelect(), 'admins')
+        return screen.findByText('User role updated')
+      })
+      expect(timer).toStrictEqual({ started: true, pendingBefore: true, cancelledByCleanup: true })
     })
   })
 })

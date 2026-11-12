@@ -16,10 +16,7 @@
     "create": "Créer",
     "createDocument": "Créer un document",
     "creating": "Création en cours...",
-    "editDocument": "Modifier le document",
     "preview": "Aperçu",
-    "saveChanges": "Enregistrer les modifications",
-    "saving": "Enregistrement en cours...",
     "titleLabel": "Titre",
     "titlePlaceholder": "Titre du document..."
   },
@@ -54,7 +51,6 @@
       "visualsUsed_other": "{{count, number}} maquettes utilisées",
       "visualsUsed_many": "{{count, number}} de visuels utilisés"
     },
-    "editDocument": "Modifier le document",
     "newDocument": "Nouveau document",
     "noDocuments": "Aucun document",
     "ordinal": "{{ordinal}} sur {{total, number}}",
@@ -682,5 +678,124 @@
     "erasedSummary_one": "{{count, number}} avis ou demande de tableau cité a été effacé (base légale enregistrée)",
     "erasedSummary_other": "{{count, number}} avis ou demandes de tableau cités ont été effacés (base légale enregistrée)",
     "erasedSummary_many": "{{count, number}} d'avis ou de demandes du comité cités ont été effacés (base juridique consignée)"
+  },
+  "canvas": {
+    "editor": {
+      "placeholder": "Écrivez, ou tapez / pour les blocs",
+      "task": "Fait",
+      "slash": {
+        "label": "Blocs",
+        "empty": "Aucun bloc ne correspond à « {{query}} »"
+      },
+      "blocks": {
+        "paragraph": "Texte",
+        "heading1": "Titre 1",
+        "heading2": "Titre 2",
+        "heading3": "Titre 3",
+        "bulletList": "Liste à puces",
+        "orderedList": "Liste numérotée",
+        "taskList": "Liste de tâches",
+        "blockquote": "Citation",
+        "callout": "Encadré",
+        "codeBlock": "Code",
+        "table": "Tableau",
+        "divider": "Séparateur",
+        "image": "Image"
+      },
+      "callout": {
+        "note": "Remarque",
+        "tip": "Astuce",
+        "important": "Important",
+        "warning": "Avertissement",
+        "caution": "Attention"
+      },
+      "format": {
+        "toolbar": "Mise en forme du texte",
+        "bold": "Gras",
+        "italic": "Italique",
+        "strike": "Barré",
+        "code": "Code en ligne",
+        "link": "Lien",
+        "turnInto": "Transformer en",
+        "comment": "Commenter"
+      },
+      "link": {
+        "title": "Lien",
+        "url": "Adresse du lien",
+        "placeholder": "https://… ou /chemin",
+        "apply": "Appliquer",
+        "remove": "Supprimer le lien",
+        "cancel": "Annuler",
+        "invalid": "Utilisez une adresse web (https://…), une adresse e-mail ou un chemin de cette application (/…)."
+      },
+      "image": {
+        "title": "Insérer une image",
+        "url": "Adresse de l'image",
+        "alt": "Texte alternatif",
+        "altHint": "Décrivez l'image pour les personnes qui ne peuvent pas la voir.",
+        "insert": "Insérer",
+        "cancel": "Annuler",
+        "invalidUrl": "Utilisez une adresse web (https://…) ou un chemin de cette application (/…).",
+        "altRequired": "Ajoutez un texte alternatif : c'est ce que reçoivent les personnes qui ne peuvent pas voir l'image."
+      },
+      "handle": {
+        "label": "Faites glisser pour déplacer le bloc, ou cliquez pour son menu",
+        "menu": "Actions du bloc",
+        "moveUp": "Monter",
+        "moveDown": "Descendre",
+        "turnInto": "Transformer en",
+        "duplicate": "Dupliquer",
+        "delete": "Supprimer",
+        "back": "Retour"
+      }
+    },
+    "page": {
+      "loading": "Chargement du document…",
+      "titleLabel": "Titre du document",
+      "contents": "Sommaire",
+      "evidence": "Éléments probants",
+      "evidenceEmpty": "Aucun avis ni aucune demande de fonctionnalité n’a été enregistré pour ce document.",
+      "showAll": "Tout afficher ({{n, number}})",
+      "featureRequests": "Demandes de fonctionnalités"
+    },
+    "comments": {
+      "hint": "Pour commenter un passage, sélectionnez-le et appuyez sur Commenter, ou appuyez sur Ctrl+Alt+M (⌘⌥M sur un Mac).",
+      "draftOpen": "Terminez ou annulez d’abord le commentaire que vous êtes en train d’écrire.",
+      "selectFirst": "Sélectionnez d’abord un passage du document (500 caractères au plus), puis commentez-le.",
+      "tabs": {
+        "label": "Commentaires et preuves",
+        "comments": "Commentaires",
+        "evidence": "Preuves"
+      }
+    },
+    "actions": {
+      "assistant": {
+        "added": "Ajouté",
+        "banner": "L’assistant propose des modifications de ce document",
+        "diffLabel": "Modifications proposées",
+        "draftNote": "Vous avez des modifications non enregistrées. La proposition est comparée à la version enregistrée ; l’approuver enregistre une nouvelle version par-dessus celle-ci.",
+        "hide": "Masquer les modifications",
+        "newTitle": "Nouveau titre : {{title}}",
+        "noChanges": "La proposition correspond au texte enregistré.",
+        "removed": "Supprimé",
+        "review": "Examiner",
+        "stats": "Blocs ajoutés : {{added, number}} · supprimés : {{removed, number}}",
+        "tooLarge": "Trop long pour une comparaison bloc par bloc. La proposition complète :",
+        "unchanged": "Blocs inchangés : {{count, number}}"
+      },
+      "discard": "Annuler les modifications",
+      "discardHint": "Abandonner vos modifications et revenir à la version enregistrée",
+      "exportSavedHint": "L’export utilise la version enregistrée. Enregistrez d’abord pour inclure vos modifications.",
+      "history": "Historique",
+      "save": "Enregistrer",
+      "saveHint": "Enregistrer une nouvelle version (Ctrl+S ou ⌘S)",
+      "status": {
+        "saved": "Enregistré · {{version}} · {{when}}",
+        "savedNoVersion": "Enregistré · {{when}}",
+        "saving": "Enregistrement…",
+        "unsaved": "Modifications non enregistrées"
+      },
+      "toolbarLabel": "Actions du document"
+    }
   }
 }

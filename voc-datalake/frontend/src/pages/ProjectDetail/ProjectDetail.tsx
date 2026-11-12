@@ -5,14 +5,14 @@
  */
 import { Loader2 } from 'lucide-react'
 import {
-  useState, useCallback, useEffect,
+  useState, useCallback, useEffect, useRef,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   useParams, useNavigate, useSearchParams,
 } from 'react-router-dom'
-import { useDocumentSave } from './useDocumentSave'
 import ProjectSharingModal from '../../components/ProjectSharingModal/ProjectSharingModal'
+import { useGuardedAction } from '../../components/UnsavedChangesGuard/guardRegistry'
 import { useConfigStore } from '../../store/configStore'
 import JobsBadge from './JobsBadge'
 import ProjectHeader from './ProjectHeader'
@@ -38,6 +38,7 @@ import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
 import { parseTab } from './types'
 import type { Tab } from './types'
+import type { ProjectDocument } from '../../api/types'
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -87,6 +88,13 @@ export default function ProjectDetail() {
 
   // The Documents tab's selection, deep-linkable as `?doc=<id>`.
   const docSelection = useDocumentSelection(data?.documents)
+  // Selecting another document, or another tab, while the open one has unsaved changes asks
+  // first (its canvas registers the guard: DocumentCanvas/actions/useCanvasDocument). A route
+  // change and closing the window are caught by that guard itself.
+  const guarded = useGuardedAction()
+  const { setSelectedDoc } = docSelection
+  const selectDoc = useCallback((doc: ProjectDocument) => guarded(() => setSelectedDoc(doc)), [guarded, setSelectedDoc])
+  const changeTab = useCallback((tab: Tab) => guarded(() => setActiveTab(tab)), [guarded, setActiveTab])
 
   // Mutations
   const {
@@ -113,11 +121,10 @@ export default function ProjectDetail() {
   const { updatePersonaMut, deletePersonaMut, saveNotes } = personaMutations
 
   const {
-    createDocMut, deleteDocMut, updateDocMut,
+    createDocMut, deleteDocMut,
   } = useDocumentMutations({
     id,
-    selectedDoc: docSelection.selectedDoc,
-    setSelectedDoc: docSelection.setSelectedDoc,
+    setSelectedDoc,
   })
 
   // Handlers
@@ -151,14 +158,21 @@ export default function ProjectDetail() {
     confirm.closeConfirm()
   }, [confirm, deletePersonaMut, deleteDocMut])
 
-  // The document save returns its promise (resolve = saved, reject = failed), like the
-  // persona save (usePersonaMutations), so the editor's unsaved-changes guard can wait (E2E F6).
-  const documentSave = useDocumentSave({
-    projectId: id,
-    queryClient,
-    docModal,
-    updateDoc: updateDocMut.mutateAsync,
-    createDoc: createDocMut.mutateAsync,
+  // "New document": create, then open it on its canvas. Returns its promise (resolve = created,
+  // reject = failed), so the modal's unsaved-changes guard can wait (E2E F6).
+  const { closeModal: closeDocModal, newDocTitle, newDocContent, showDocModal } = docModal
+  // Opened once the modal is gone: its own guard (still holding the typed text) must not ask.
+  const created = useRef<ProjectDocument | null>(null)
+  const createDocument = useCallback(async () => {
+    const result = await createDocMut.mutateAsync({ title: newDocTitle, content: newDocContent })
+    created.current = result.document
+    closeDocModal()
+  }, [createDocMut, newDocTitle, newDocContent, closeDocModal])
+  useEffect(() => {
+    const document = created.current
+    if (document === null || showDocModal) return
+    created.current = null
+    selectDoc(document)
   })
 
   // Loading state
@@ -223,7 +237,7 @@ export default function ProjectDetail() {
         activeTab={activeTab}
         personasCount={personas.length}
         documentsCount={documents.length}
-        onTabChange={setActiveTab}
+        onTabChange={changeTab}
       />
 
       <WizardSection
@@ -286,8 +300,7 @@ export default function ProjectDetail() {
         onSaveNotes={saveNotes}
         onImportPersona={() => importModal.setShowImportModal(true)}
         onCopyPersonas={() => setShowCopyPersonas(true)}
-        onSelectDoc={docSelection.setSelectedDoc}
-        onEditDoc={() => docSelection.selectedDoc && docModal.openEditModal(docSelection.selectedDoc)}
+        onSelectDoc={selectDoc}
         onDeleteDoc={() => docSelection.selectedDoc && confirm.openDocumentConfirm(docSelection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
         onJobStarted={handleJobStarted}
@@ -305,15 +318,13 @@ export default function ProjectDetail() {
 
       <DocumentModalWrapper
         showModal={docModal.showDocModal}
-        editingDoc={docModal.editingDoc}
-        title={docModal.newDocTitle}
-        content={docModal.newDocContent}
-        isSaving={docModal.editingDoc ? updateDocMut.isPending : createDocMut.isPending}
+        title={newDocTitle}
+        content={newDocContent}
+        isSaving={createDocMut.isPending}
         onTitleChange={docModal.setNewDocTitle}
         onContentChange={docModal.setNewDocContent}
-        onSave={documentSave.save}
-        onClose={docModal.closeModal}
-        conflict={documentSave.conflict}
+        onSave={createDocument}
+        onClose={closeDocModal}
       />
 
       <ConfirmModalWrapper
