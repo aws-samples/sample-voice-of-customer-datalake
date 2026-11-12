@@ -1,7 +1,10 @@
-"""The workspace's start theme (included by ``api/settings_handler.py``).
+"""The deployment's start theme (included by ``api/settings_handler.py``).
 
     GET /settings/appearance                      (any signed-in user) -> {default_theme}
-    PUT /settings/appearance {default_theme}      (admin)              -> {success, settings: {default_theme}}
+    PUT /settings/appearance {default_theme}      (platform admin)     -> {success, settings: {default_theme}}
+
+One colour scheme for the whole deployment (docs/multi-workspace.md, decision 7), so its writer is a platform
+admin's, checked live (shared/platform_admin_gate.py), never a workspace admin's or a plain administrator's (403).
 
 An unknown theme id is a 400. The theme only changes how the app is painted, never what a read
 returns, so a save does not bump ``config_version`` (docs/caching.md); the GET still gets the
@@ -18,10 +21,15 @@ from shared.api import get_caller_subject, require_admin
 from shared.appearance import APPEARANCE_PK, APPEARANCE_SK, appearance_view, parse_default_theme
 from shared.exceptions import ConfigurationError, ValidationError
 from shared.logging import logger, tracer
+from shared.platform_admin import require_platform_admin
+from shared.platform_admin_gate import require_live_platform_admin
 from shared.request_body import json_object_body
 from shared.timestamps import now_iso
 
 __all__ = ['app', 'bind_aggregates_table']
+
+#: The fixed answer of a failed platform-admin look-up (#263: never the AWS text).
+FAILED_SAVE = 'Failed to save the appearance'
 
 app = Router()
 _aggregates_table: dict[str, Callable[[], Any]] = {}
@@ -51,8 +59,11 @@ def get_appearance():
 @app.put('/settings/appearance')
 @tracer.capture_method
 def put_appearance():
-    """Admin: set the start theme every person sees until they pick their own."""
-    require_admin(app.current_event.raw_event)
+    """Platform admin: set the start theme every person of the deployment sees until they pick their own."""
+    event = app.current_event.raw_event
+    require_admin(event)
+    require_platform_admin(event)
+    require_live_platform_admin(event, FAILED_SAVE)
     table = _table()
     try:
         theme = parse_default_theme(json_object_body(app))

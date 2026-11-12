@@ -153,10 +153,20 @@ function cognitoConfigured(): boolean {
  *
  * @returns true if user is in the 'admins' group (or in the dev bypass)
  */
-export const useIsAdmin = (): boolean => {
+export const useIsAdmin = (): boolean => useInGroup('admins')
+
+/**
+ * Whether the current user's token carries `platform-admins` (docs/multi-workspace.md): the people who change what
+ * every workspace shares (the default theme, the operational alerts). Only a hint for the UI: the server checks
+ * the membership live and answers 403 to anyone else. Same local-dev bypass as `useIsAdmin`.
+ */
+export const useIsPlatformAdmin = (): boolean => useInGroup('platform-admins')
+
+/** Whether the current user's token carries `group`, with the no-Cognito DEV bypass of `useIsAdmin`. */
+function useInGroup(group: string): boolean {
   const user = useAuthStore((state) => state.user)
   if (import.meta.env.DEV && !cognitoConfigured()) {
     return true
   }
-  return user?.groups.includes('admins') ?? false
+  return user?.groups.includes(group) ?? false
 }

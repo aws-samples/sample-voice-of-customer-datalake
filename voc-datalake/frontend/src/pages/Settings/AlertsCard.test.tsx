@@ -10,8 +10,8 @@ import { ApiError } from '../../lib/errors'
 import type { AlertsStatus } from '../../api/alertsApi'
 import AlertsCard from './AlertsCard'
 
-const auth = vi.hoisted(() => ({ isAdmin: true }))
-vi.mock('../../store/authStore', () => ({ useIsAdmin: () => auth.isAdmin }))
+const auth = vi.hoisted(() => ({ isAdmin: true, isPlatformAdmin: true }))
+vi.mock('../../store/authStore', () => ({ useIsAdmin: () => auth.isAdmin, useIsPlatformAdmin: () => auth.isPlatformAdmin }))
 
 const api = vi.hoisted(() => ({
   get: vi.fn<() => Promise<AlertsStatus>>(),
@@ -32,6 +32,7 @@ describe('AlertsCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     auth.isAdmin = true
+    auth.isPlatformAdmin = true
     api.get.mockResolvedValue(status())
     api.setEnabled.mockResolvedValue({ success: true })
     api.addRecipient.mockResolvedValue({ success: true })
@@ -43,6 +44,34 @@ describe('AlertsCard', () => {
     const { container } = renderWithQueryClient(<AlertsCard />)
     expect(container).toBeEmptyDOMElement()
     expect(api.get).not.toHaveBeenCalled()
+  })
+
+  describe('for an administrator outside platform-admins', () => {
+    beforeEach(() => {
+      auth.isPlatformAdmin = false
+      api.get.mockResolvedValue(status({ enabled: true, subscribers: [{ email: 'ops@example.com', status: 'confirmed' }] }))
+    })
+
+    it('shows the alerts read-only, saying who may change them', async () => {
+      renderWithQueryClient(<AlertsCard />)
+      expect(await screen.findByRole('switch', { name: /Email alerts/ })).toBeDisabled()
+      expect(screen.getByText(/Only platform admins can change alerting/)).toBeInTheDocument()
+    })
+
+    it('lists the recipients with no way to remove or add one', async () => {
+      renderWithQueryClient(<AlertsCard />)
+      expect(await screen.findByText('ops@example.com')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+  })
+
+  it('names the platform-admin rule when the server refuses a change with 403', async () => {
+    api.setEnabled.mockRejectedValue(new ApiError(403, 'Platform admin access required'))
+    const user = userEvent.setup()
+    renderWithQueryClient(<AlertsCard />)
+    await user.click(await screen.findByRole('switch', { name: /Email alerts/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Only platform admins can change alerting/)
   })
 
   it('shows alerting off with the alarm count and the monthly cost it would add', async () => {

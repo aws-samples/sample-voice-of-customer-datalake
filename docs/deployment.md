@@ -720,8 +720,10 @@ or failed agreement shows there as a warning.
 ### Operational alerts (Administration → System → Logs → Alerts)
 
 No CloudWatch alarm is deployed by CDK: an alarm is billed every hour it exists,
-and one nobody is subscribed to notifies nobody. An admin turns alerting on in
-**Administration → System → Logs → Alerts**; the logs API (`voc-logs-api`,
+and one nobody is subscribed to notifies nobody. A platform admin turns alerting on in
+**Administration → System → Logs → Alerts** (the alarms watch the deployment's own Lambdas and their recipients hear
+about every workspace, so the writes are platform admins' only, checked live; the deployment's
+administrators still read the status, [Multi-workspace](multi-workspace.md#per-workspace-configuration)); the logs API (`voc-logs-api`,
 `lambda/shared/ops_alerts.py`) then creates the alarms with `PutMetricAlarm`, and
 turning it off deletes them. Turning it on twice is harmless (an alarm is
 overwritten), and turning it off deletes exactly the alarms under this

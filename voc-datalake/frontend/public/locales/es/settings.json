@@ -232,6 +232,7 @@
     "runErrors_many": "{{count, number}} errores",
     "textLength_many": "Longitud del texto: {{count, number}} caracteres",
     "alerts": {
+      "platformAdminOnly": "Solo los administradores de la plataforma pueden cambiar las alertas: las alarmas vigilan todo el despliegue. Puedes ver el estado aquí.",
       "title": "Alertas",
       "on": "Activadas",
       "off": "Desactivadas",
@@ -992,7 +993,7 @@
   "appearance": {
     "title": "Tema predeterminado",
     "hint": "El tema de color que todos ven hasta que eligen el suyo en Cuenta → Preferencias.",
-    "adminOnlyNotice": "Solo los administradores pueden cambiar el tema predeterminado. Puedes verlo aquí.",
+    "adminOnlyNotice": "Solo los administradores de la plataforma pueden cambiar el tema predeterminado: lo comparten todos los espacios de trabajo. Puedes verlo aquí.",
     "loading": "Cargando el tema predeterminado…",
     "loadFailed": "No se pudo cargar el tema predeterminado del servidor.",
     "save": "Guardar tema",

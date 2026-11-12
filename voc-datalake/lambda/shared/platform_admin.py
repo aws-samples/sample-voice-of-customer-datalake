@@ -11,7 +11,8 @@ Two checks, for two jobs:
   user in more groups than that is outside this sample's model. A token keeps its groups until
   it expires, so a revoked or disabled platform admin's token alone would still pass; the live look-up makes a
   revoke or a disable take effect at once. The users API (its platform-admin rules), the workspaces API's
-  ``/platform`` routes and a platform admin's entry into a workspace (shared/workspace.py) all use this one check.
+  ``/platform`` routes, a platform admin's entry into a workspace (shared/workspace.py) and the writes of what every
+  workspace shares (shared/platform_admin_gate.py: the start theme, the alerts) all use this one check.
 
 A caller with no username claim, an unknown (deleted) user, a missing group or a disabled account is not a
 platform admin. A failed look-up (a Cognito fault) raises ``ClientError`` / ``BotoCoreError``: each caller answers

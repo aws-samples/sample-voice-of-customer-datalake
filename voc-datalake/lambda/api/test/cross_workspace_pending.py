@@ -143,12 +143,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /agents/<agent_id>',
         'PUT /workflows/<workflow_id>',
     }),
-    # Decision 7 keeps one colour scheme per deployment, so the start theme becomes a platform admin's setting, not
-    # a workspace admin's.
-    'appearance_routes.py': frozenset({
-        'GET /settings/appearance',
-        'PUT /settings/appearance',
-    }),
     'chat_handler.py': frozenset({
         'DELETE /chat/conversations/<conversation_id>',
         'GET /chat/conversations/<conversation_id>',
@@ -211,7 +205,6 @@ PHASE_3: dict[str, frozenset[str]] = {
     # Logs and alerts.
     'logs_handler.py': frozenset({
         'DELETE /logs/validation/<source>',
-        'GET /logs/alerts',
         'GET /logs/processing',
         'GET /logs/scraper/<scraper_id>',
         'GET /logs/summary',
@@ -220,9 +213,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /logs/system/queues',
         'GET /logs/system/request',
         'GET /logs/validation',
-        'POST /logs/alerts/recipients',
-        'POST /logs/alerts/recipients/remove',
-        'PUT /logs/alerts',
     }),
     # A consented grant pins one workspace.
     'mcp_oauth_consent_routes.py': frozenset({

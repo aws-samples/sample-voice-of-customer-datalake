@@ -102,6 +102,16 @@ BY_DESIGN: dict[tuple[str, str], str] = {
         'the platform console: platform admins create and list every workspace (decision 2, live-checked)'),
     ('users_handler.py', 'PUT /users/<username>/platform-admin'): (
         "platform-admin membership: the deployment's platform admins, not a workspace's (decision 2, live-checked)"),
+    ('appearance_routes.py', 'GET /settings/appearance'): (
+        "the deployment's one start theme (decision 7): every signed-in person reads it, whatever their workspace"),
+    ('appearance_routes.py', 'PUT /settings/appearance'): (
+        "the deployment's one start theme (decision 7): a platform admin's, live-checked, never a workspace admin's"),
+    ('logs_handler.py', 'GET /logs/alerts'): (
+        "the alarms on the deployment's own Lambdas: the deployment's administrators read their status"),
+    **dict.fromkeys(
+        [('logs_handler.py', route) for route in (
+            'PUT /logs/alerts', 'POST /logs/alerts/recipients', 'POST /logs/alerts/recipients/remove')],
+        "the alarms on the deployment's own Lambdas and their recipients: a platform admin's, live-checked"),
     **dict.fromkeys(
         [('mcp_oauth_routes.py', route) for route in (
             'GET /.well-known/oauth-protected-resource', 'GET /.well-known/oauth-protected-resource/mcp/global',

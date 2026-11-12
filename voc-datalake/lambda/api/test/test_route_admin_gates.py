@@ -160,6 +160,12 @@ PLATFORM_GATE = 'require_platform_admin'
 PLATFORM_ADMIN_ONLY: dict[str, frozenset[str]] = {
     'users_handler.py': frozenset({'PUT /users/<username>/platform-admin'}),
     'workspaces_handler.py': frozenset({'POST /platform/workspaces', 'GET /platform/workspaces'}),
+    # What every workspace of the deployment shares (docs/multi-workspace.md, "Per-workspace configuration"): the
+    # start theme (decision 7) and the alarms on the deployment's own Lambdas.
+    'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
+    'logs_handler.py': frozenset({
+        'PUT /logs/alerts', 'POST /logs/alerts/recipients', 'POST /logs/alerts/recipients/remove',
+    }),
 }
 #: The methods whose routes the platform-gate checks read: the writes and the reads.
 PLATFORM_GATED_METHODS = MUTATING_METHODS | {'get'}
@@ -489,16 +495,21 @@ def _platform_gated(source: str) -> dict[str, bool]:
             for fn in functions.values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
 
 
+def _route_file(name: str) -> Path:
+    """A handler (lambda/api/) or a router it includes (lambda/shared/*_routes.py)."""
+    return API_DIR / name if (API_DIR / name).exists() else SHARED_DIR / name
+
+
 @pytest.mark.parametrize(('handler', 'route'), sorted(
     (handler, route) for handler, routes in PLATFORM_ADMIN_ONLY.items() for route in routes))
 def test_every_platform_admin_route_is_admin_only_and_carries_the_platform_gate(handler, route):
     assert route in ADMIN_ONLY.get(handler, frozenset()) | ADMIN_ONLY_READS.get(handler, frozenset())
-    assert _platform_gated((API_DIR / handler).read_text(encoding='utf-8')).get(route) is True, (
+    assert _platform_gated(_route_file(handler).read_text(encoding='utf-8')).get(route) is True, (
         f'{handler} {route} is missing or lost its require_platform_admin gate')
 
 
 def test_only_the_listed_routes_carry_the_platform_gate():
-    gated = {(path.name, key) for path in _handler_files()
+    gated = {(path.name, key) for path in [*_handler_files(), *_router_files()]
              for key, has in _platform_gated(path.read_text(encoding='utf-8')).items() if has}
     assert gated == {(handler, route) for handler, routes in PLATFORM_ADMIN_ONLY.items() for route in routes}
 
@@ -531,6 +542,20 @@ def test_every_workspaces_platform_route_runs_the_live_check(route):
     functions = _module_functions(ast.parse((API_DIR / 'workspaces_handler.py').read_text(encoding='utf-8')))
     [fn] = [fn for fn in functions.values() if route in _route_keys(fn, PLATFORM_GATED_METHODS)]
     assert LIVE_PLATFORM_GATE in _top_level_calls(fn)
+
+
+# The deployment-wide writes run the shared live check (shared/platform_admin_gate.py) after the token gate.
+SHARED_LIVE_PLATFORM_GATE = 'require_live_platform_admin'
+DEPLOYMENT_WIDE_WRITES = ('appearance_routes.py', 'logs_handler.py')
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler in DEPLOYMENT_WIDE_WRITES for route in PLATFORM_ADMIN_ONLY[handler]))
+def test_every_deployment_wide_write_runs_the_live_check(handler, route):
+    functions = _module_functions(ast.parse(_route_file(handler).read_text(encoding='utf-8')))
+    [fn] = [fn for fn in functions.values() if route in _route_keys(fn, PLATFORM_GATED_METHODS)]
+    assert SHARED_LIVE_PLATFORM_GATE in _top_level_calls(fn)
+# (What the shared live check refuses is pinned by lambda/shared/test/test_platform_admin_gate.py.)
 
 
 def _workspace_gated(source: str) -> dict[str, bool]:

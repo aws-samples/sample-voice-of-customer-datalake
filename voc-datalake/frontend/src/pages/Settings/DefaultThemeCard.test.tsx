@@ -17,13 +17,13 @@ import DefaultThemeCard from './DefaultThemeCard'
 const API = 'https://api.example.com'
 const PutBody = z.object({ default_theme: z.string() })
 
-/** A stateful GET/PUT pair like the mock server's; `putOk: false` = every PUT is a 500. */
-function serve(initial: string, putOk = true) {
+/** A stateful GET/PUT pair like the mock server's; `putStatus` = every PUT fails with that status. */
+function serve(initial: string, putStatus?: number) {
   const stored = { theme: initial }
   routeFetchApi({
     'GET /settings/appearance': () => ({ default_theme: stored.theme }),
     'PUT /settings/appearance': (body) => {
-      if (!putOk) throw new Error('API Error: 500')
+      if (putStatus !== undefined) throw new Error(`API Error: ${String(putStatus)}`)
       stored.theme = PutBody.parse(body).default_theme
       return { success: true, settings: { default_theme: stored.theme } }
     },
@@ -46,7 +46,7 @@ beforeEach(() => {
 
 describe('DefaultThemeCard — no API endpoint', () => {
   it('renders nothing and asks nothing before an API endpoint is configured', () => {
-    const { container } = renderWithQueryClient(<DefaultThemeCard apiEndpoint="" isAdmin />)
+    const { container } = renderWithQueryClient(<DefaultThemeCard apiEndpoint="" canEdit />)
     expect(container).toBeEmptyDOMElement()
     expect(fetchApi).not.toHaveBeenCalled()
   })
@@ -55,7 +55,7 @@ describe('DefaultThemeCard — no API endpoint', () => {
 describe('DefaultThemeCard — admin', () => {
   it('enables Save only once the pick differs from the saved theme', async () => {
     serve('kiro')
-    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} isAdmin />)
+    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} canEdit />)
     expect(await screen.findByRole('button', { name: 'Save theme' })).toBeDisabled()
     await userEvent.click(radio('Nord'))
     expect(saveButton()).toBeEnabled()
@@ -63,7 +63,7 @@ describe('DefaultThemeCard — admin', () => {
 
   it('saves the pick; the cached workspace theme follows', async () => {
     const stored = serve('kiro')
-    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} isAdmin />)
+    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} canEdit />)
     await pickAndSave(userEvent.setup(), 'Nord')
     await waitFor(() => expect(useThemeStore.getState().workspaceTheme).toBe('nord'))
     expect(stored.theme).toBe('nord')
@@ -71,9 +71,17 @@ describe('DefaultThemeCard — admin', () => {
     expect(saveButton()).toBeDisabled()
   })
 
+  it('names the platform-admin rule when the server refuses the save (a membership revoked since sign-in)', async () => {
+    serve('kiro', 403)
+    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} canEdit />)
+    await pickAndSave(userEvent.setup(), 'Nord')
+    expect(await screen.findByText(/Only platform admins can change the default theme/)).toBeInTheDocument()
+    expect(screen.queryByText('Couldn’t save the default theme. Try again.')).not.toBeInTheDocument()
+  })
+
   it('shows a failed save and keeps the pick', async () => {
-    serve('kiro', false)
-    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} isAdmin />)
+    serve('kiro', 500)
+    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} canEdit />)
     await pickAndSave(userEvent.setup(), 'High contrast')
     expect(await screen.findByText('Couldn’t save the default theme. Try again.')).toBeInTheDocument()
     expect(radio('High contrast')).toHaveAttribute('aria-checked', 'true')
@@ -82,25 +90,25 @@ describe('DefaultThemeCard — admin', () => {
 
   it('shows a failed read', async () => {
     routeFetchApi({}, { missStatus: 500 })
-    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} isAdmin />)
+    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} canEdit />)
     expect(await screen.findByText('Couldn’t load the default theme from the server.')).toBeInTheDocument()
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
   })
 })
 
 describe('DefaultThemeCard — non-admin', () => {
-  it('shows the current theme read-only, with the admin-only notice and no Save', async () => {
+  it('shows the current theme read-only, with the platform-admin notice and no Save', async () => {
     serve('dracula')
-    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} isAdmin={false} />)
+    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} canEdit={false} />)
     expect(await screen.findByRole('radio', { name: 'Dracula' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByText('Only admins can change the default theme. You can view it here.')).toBeInTheDocument()
+    expect(screen.getByText('Only platform admins can change the default theme: every workspace shares it. You can view it here.')).toBeInTheDocument()
     expect(screen.getByRole('radiogroup')).toHaveAttribute('aria-readonly', 'true')
     expect(screen.queryByRole('button', { name: 'Save theme' })).not.toBeInTheDocument()
   })
 
   it('cannot change the pick, and nothing is sent', async () => {
     serve('dracula')
-    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} isAdmin={false} />)
+    renderWithQueryClient(<DefaultThemeCard apiEndpoint={API} canEdit={false} />)
     await userEvent.click(await screen.findByRole('radio', { name: 'Quick' }))
     expect(radio('Dracula')).toHaveAttribute('aria-checked', 'true')
     expect(fetchApi).toHaveBeenCalledExactlyOnceWith('/settings/appearance', undefined)

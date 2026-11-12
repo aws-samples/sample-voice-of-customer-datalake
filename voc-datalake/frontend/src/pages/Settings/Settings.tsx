@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { useConfigStore } from '../../store/configStore'
-import { useIsAdmin } from '../../store/authStore'
+import { useIsAdmin, useIsPlatformAdmin } from '../../store/authStore'
 import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
 import { api } from '../../api/client'
 import clsx from 'clsx'
@@ -51,6 +51,7 @@ export default function Settings() {
   const queryClient = useQueryClient()
   const { config, setConfig } = useConfigStore()
   const isAdmin = useIsAdmin()
+  const isPlatformAdmin = useIsPlatformAdmin()
   // "Saved" clears itself after 3 s; the timer goes with the page.
   const [savedShown, showSaved, clearSaved] = useExpiringValue<true>(3000)
   const saved = savedShown !== null
@@ -208,7 +209,7 @@ export default function Settings() {
             onUrlsToTrackChange={setUrlsToTrack}
             readOnly={!isAdmin}
           />
-          <DefaultThemeCard apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
+          <DefaultThemeCard apiEndpoint={apiEndpoint} canEdit={isPlatformAdmin} />
         </div>
       ) : (
         <SectionPanel labelledBy={sections.length > 1 && location.section !== null ? sectionTabId(location.section) : null}>

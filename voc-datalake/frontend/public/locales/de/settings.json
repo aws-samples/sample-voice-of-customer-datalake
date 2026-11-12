@@ -222,6 +222,7 @@
     "validationFailures": "Validierungsfehler",
     "periodLabel": "Zeitraum",
     "alerts": {
+      "platformAdminOnly": "Nur Plattform-Administratoren können Benachrichtigungen ändern: Die Alarme überwachen die gesamte Bereitstellung. Sie können den Status hier ansehen.",
       "title": "Benachrichtigungen",
       "on": "An",
       "off": "Aus",
@@ -964,7 +965,7 @@
   "appearance": {
     "title": "Standard-Farbschema",
     "hint": "Das Farbschema, das alle sehen, bis sie unter Konto → Einstellungen ein eigenes wählen.",
-    "adminOnlyNotice": "Nur Administratoren können das Standard-Farbschema ändern. Sie können es hier ansehen.",
+    "adminOnlyNotice": "Nur Plattform-Administratoren können das Standard-Farbschema ändern: Alle Arbeitsbereiche teilen es. Sie können es hier ansehen.",
     "loading": "Standard-Farbschema wird geladen…",
     "loadFailed": "Das Standard-Farbschema konnte nicht vom Server geladen werden.",
     "save": "Farbschema speichern",

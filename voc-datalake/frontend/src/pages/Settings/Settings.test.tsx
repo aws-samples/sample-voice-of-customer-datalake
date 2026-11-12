@@ -51,9 +51,14 @@ vi.mock('../../store/configStore', () => ({
 // Mock auth store
 vi.mock('../../store/authStore', () => ({
   useIsAdmin: vi.fn(() => true),
+  useIsPlatformAdmin: vi.fn(() => true),
 }))
 
 // Mock child components
+// The default-theme card has its own suite; here only who may edit it (a platform admin, not every admin).
+vi.mock('./DefaultThemeCard', () => ({
+  default: ({ canEdit }: { readonly canEdit: boolean }) => <p data-testid="default-theme-card">{canEdit ? 'editable' : 'read-only'}</p>,
+}))
 vi.mock('../../components/CategoriesManager/CategoriesManager', () => ({
   default: () => <div data-testid="categories-manager">Categories Manager</div>,
 }))
@@ -561,12 +566,29 @@ describe('Settings', () => {
   })
 })
 
-/** A fresh copy of the page whose `useIsAdmin` answers `isAdmin`. */
-async function importSettingsAs(isAdmin: boolean) {
+/** A fresh copy of the page whose `useIsAdmin` answers `isAdmin` (and `useIsPlatformAdmin`, `isPlatformAdmin`). */
+async function importSettingsAs(isAdmin: boolean, isPlatformAdmin = isAdmin) {
   vi.resetModules()
-  vi.doMock('../../store/authStore', () => ({ useIsAdmin: () => isAdmin }))
+  vi.doMock('../../store/authStore', () => ({ useIsAdmin: () => isAdmin, useIsPlatformAdmin: () => isPlatformAdmin }))
   return (await import('./Settings')).default
 }
+
+describe('the default theme on General', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetBrandSettings.mockResolvedValue({ brand_name: 'Test Brand', brand_handles: [], hashtags: [], urls_to_track: [] })
+  })
+
+  it.each([
+    [true, true, 'editable'],
+    [true, false, 'read-only'],
+    [false, false, 'read-only'],
+  ])('is %s for an admin, %s for a platform admin: %s', async (isAdmin, isPlatformAdmin, shown) => {
+    const Page = await importSettingsAs(isAdmin, isPlatformAdmin)
+    renderSettings(<Page />)
+    expect(await screen.findByTestId('default-theme-card')).toHaveTextContent(shown)
+  })
+})
 
 describe('Settings without admin access', () => {
   beforeEach(() => {
@@ -580,6 +602,7 @@ describe('Settings without admin access', () => {
     
     vi.doMock('../../store/authStore', () => ({
       useIsAdmin: vi.fn(() => false),
+      useIsPlatformAdmin: vi.fn(() => false),
     }))
   })
 

@@ -369,8 +369,8 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 |--------|------|-------------|
 | GET | `/settings/brand` | Get brand configuration (any signed-in user) |
 | PUT | `/settings/brand` | Save brand configuration — admin-only (#242: shared deployment config every AI surface reads); the Admin page's brand form is read-only for non-admins |
-| GET | `/settings/appearance` | The workspace's start theme `{default_theme}` (any signed-in user; no row or an unknown stored id = `kiro`; `shared/appearance_routes.py`, ids in `shared/appearance.py` mirror `frontend/src/theme/themeCatalog.ts`) |
-| PUT | `/settings/appearance` | Set it `{default_theme}` — admin-only; 400 unless one of `kiro\|nord\|dracula\|highcontrast\|quick`; answers `{success, settings: {default_theme}}` (aggregates `SETTINGS#appearance`/`config`; no `config_version` bump: no read depends on it). A person's own pick lives in the browser (`/account` → Preferences) |
+| GET | `/settings/appearance` | The deployment's start theme `{default_theme}` (any signed-in user; no row or an unknown stored id = `kiro`; `shared/appearance_routes.py`, ids in `shared/appearance.py` mirror `frontend/src/theme/themeCatalog.ts`) |
+| PUT | `/settings/appearance` | Set it `{default_theme}` — platform admins only, checked live (`shared/platform_admin_gate.py`; 403 for a plain admin); 400 unless one of `kiro\|nord\|dracula\|highcontrast\|quick`; answers `{success, settings: {default_theme}}` (aggregates `SETTINGS#appearance`/`config`; no `config_version` bump: no read depends on it). A person's own pick lives in the browser (`/account` → Preferences) |
 | GET | `/settings/model` | Per-surface model overrides + allowlist + `image_model: {id, label, region, avatars_enabled}` (the fixed persona-avatar model, `shared/image_model_status.py`) (any signed-in user — the agent detail Models tab reads it; NOT admin-gated, so that read keeps working for non-admins) |
 | POST | `/settings/model/test` | Test one model `{model_id}` (admin; 400 unless allowlisted or the image model): ONE minimal Converse to exactly that model, no fallback (the image model: ONE small image, nothing stored, a few cents) → `{model_id, invoked_id, status: available\|no_access\|not_in_region\|no_capacity\|throttled\|not_ready\|unavailable\|error, ok, latency_ms, message, quota, checked_at}` (`shared/model_capacity.py`) |
 | GET | `/settings/model/capacity` | Every allowlisted model's tokens-per-minute quota from Service Quotas `{models: [{model_id, label, quota, access}], image: {…image_model, access: {status: available\|no_access\|not_subscribed\|not_in_region\|unknown, …}, quota: {name, value, unit: 'requests_per_minute'}\|null, quota_state: fresh\|stale\|pending\|unknown}}` (admin; no model call; each model's `access` = its agreement, read live with GetFoundationModelAvailability in the app region like the image row's, `shared/model_agreements.py`; stored in aggregates `SETTINGS#model_quotas`, 10 min in memory; older than 1 h it answers at once with `quota.stale: true` while the `voc-settings-assist` twin re-reads it by quota code (async `model_quota_refresh`); also stale on a Service Quotas throttle; the image quota lives in `SETTINGS#image_model_quota`, refreshed by the twin via `image_model_quota_refresh` — docs/deployment.md) |
@@ -392,7 +392,9 @@ Every mutating route in `lambda/api/*_handler.py` is listed as ADMIN_ONLY (struc
 `lambda/api/test/test_route_admin_gates.py`; a new unclassified route fails that test (#242). Its
 PLATFORM_ADMIN_ONLY table pins the routes that also call `require_platform_admin` (`shared/platform_admin.py`,
 which also holds the live check, `is_live_platform_admin`): `PUT /users/{username}/platform-admin`,
-`POST /platform/workspaces` and `GET /platform/workspaces` (the last in ADMIN_ONLY_READS). Its WORKSPACE_ADMIN_ONLY
+`POST /platform/workspaces` and `GET /platform/workspaces` (the last in ADMIN_ONLY_READS), and the writes of what every
+workspace shares, `PUT /settings/appearance` and the three alert writes, whose live check is
+`require_live_platform_admin` (`shared/platform_admin_gate.py`). Its WORKSPACE_ADMIN_ONLY
 table pins the routes gated by the caller's role in the workspace (`require_workspace_admin`, `shared/workspace.py`):
 `POST /me/workspaces/current/members` and `PUT /me/workspaces/current/members/{sub}`; the member `DELETE` is
 OPEN_BY_DECISION (a member leaves; removing someone else calls the gate first).
@@ -636,9 +638,9 @@ the app pool). Assistant tools on `/participants` (pack `participants`, card-onl
 | GET | `/logs/system/request` | `?function=&request_id=&at=`: every line (any level) of one invocation, `at` ± 20 min, ≤ 500, oldest first; 404 for `api` / unknown; `running` + `query_id` (admin, no-store) |
 | GET | `/logs/system/queues` | Every failure queue (`OPS_ALERTS_QUEUES`): count, oldest age, ≤ 3 redacted bodies peeked with `VisibilityTimeout=0`, never deleted (admin, no-store) |
 | GET | `/logs/system/environment` | Region, account last 4, prefix, sources, web search, inference scope, image model, models per surface, alerting + alarm states, open circuits, log coverage — nothing secret (admin, no-store) |
-| GET / PUT | `/logs/alerts` | Alerting status / turn the runtime CloudWatch alarms on or off (admin) |
-| POST | `/logs/alerts/recipients` | Add an SNS email recipient (admin; pending until confirmed) |
-| POST | `/logs/alerts/recipients/remove` | Remove an email recipient (admin) |
+| GET / PUT | `/logs/alerts` | Alerting status (admin) / turn the runtime CloudWatch alarms on or off (platform admins only, checked live) |
+| POST | `/logs/alerts/recipients` | Add an SNS email recipient (platform admins only, checked live; pending until confirmed) |
+| POST | `/logs/alerts/recipients/remove` | Remove an email recipient (platform admins only, checked live) |
 
 ### Manual Import (manual_import_handler.py) — ADMIN ONLY, every route (module middleware, #242: importing writes customer data)
 | Method | Path | Description |

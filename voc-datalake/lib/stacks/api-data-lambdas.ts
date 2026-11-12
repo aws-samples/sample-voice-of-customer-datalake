@@ -397,6 +397,10 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // The morning brief (docs/briefing.md): Refresh queues, the caller's own email subscription.
   const briefing = briefingApiWiring(stack, ctx.uniqueName, kmsKey, ctx.props.userPool);
   briefing.grant(settingsRole);
+  // PUT /settings/appearance is a platform admin's (the deployment's one colour scheme, docs/multi-workspace.md):
+  // the live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py), in the pool
+  // `USER_POOL_ID` names (set with the briefing environment below).
+  ctx.props.userPool.grant(settingsRole, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
 
   const settingsProps: lambda.FunctionProps = {
     functionName: settingsFunctionName,

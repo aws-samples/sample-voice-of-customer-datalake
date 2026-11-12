@@ -222,6 +222,7 @@
     "validationFailures": "Validation Failures",
     "periodLabel": "Time period",
     "alerts": {
+      "platformAdminOnly": "Only platform admins can change alerting: the alarms watch the whole deployment. You can view the status here.",
       "title": "Alerts",
       "on": "On",
       "off": "Off",
@@ -964,7 +965,7 @@
   "appearance": {
     "title": "Default theme",
     "hint": "The colour theme everyone sees until they pick their own in Account → Preferences.",
-    "adminOnlyNotice": "Only admins can change the default theme. You can view it here.",
+    "adminOnlyNotice": "Only platform admins can change the default theme: every workspace shares it. You can view it here.",
     "loading": "Loading the default theme…",
     "loadFailed": "Couldn’t load the default theme from the server.",
     "save": "Save theme",

@@ -1,9 +1,19 @@
 /**
- * @fileoverview The warning notice and the loading line the admin Settings cards share
- * (Logs → Alerts, Sources → Email inbox).
+ * @fileoverview The warning notice, the read-only notice and the loading line the admin Settings cards share
+ * (Logs → Alerts, Sources → Email inbox, General → Default theme).
  * @module pages/Settings/SettingsNotice
  */
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2, Lock } from 'lucide-react'
+
+/** Who may change a card the reader can only view: a quiet, standing note (no live region: it is not news). */
+export function ReadOnlyNotice({ text }: { readonly text: string }) {
+  return (
+    <p className="flex items-start gap-2 text-sm text-text bg-info-subtle border border-info/30 p-3 rounded-lg">
+      <Lock size={16} className="flex-shrink-0 mt-0.5 text-info" aria-hidden="true" />
+      {text}
+    </p>
+  )
+}
 
 export function SettingsNotice({ text }: { readonly text: string }) {
   return (

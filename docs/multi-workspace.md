@@ -18,6 +18,7 @@ and files named here are the planned ones unless the table lists them.
 | Unreleased | The cross-workspace suite (`lambda/api/test/test_cross_workspace_routes.py`, Phases below). Workspace-scoped today: `GET /me/workspaces/current` and the four members routes; every other route is by design or pending (phase 2 or 3) |
 | Unreleased | The scope of every settings row, per workspace or for the deployment, held to the code (`lambda/shared/test/test_settings_scopes.py`, Per-workspace configuration below). No key has moved yet |
 | Unreleased | The assistant's reads carry the caller's `X-Workspace-Id` to the domain Lambdas (Request flow below); no domain route reads it yet but the workspaces API's |
+| Unreleased | The deployment-wide settings' writes are platform admins', checked live: `PUT /settings/appearance` and the alert writes (Per-workspace configuration below; in the route-gate inventory as admin-only and platform-admin-only) |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -230,9 +231,19 @@ Built in 6.10.00 (`POST`, `PUT` and `DELETE /me/workspaces/current/members[/{sub
 
 Every settings row and its scope (Unreleased; `voc-datalake/lambda/shared/test/test_settings_scopes.py` holds this
 table and the files that spell each key to the code, so the files still to move only shrink). A workspace kind moves
-to `WS#{ws}#SETTINGS#<kind>` in phase 3; a deployment kind keeps `SETTINGS#<kind>`. Nothing has moved yet, and the
-deployment kinds' writes (`PUT /settings/appearance`, the alert routes) are still the `admins` group's: phase 3 makes
-them platform-admin only, so no workspace admin changes what every workspace shares.
+to `WS#{ws}#SETTINGS#<kind>` in phase 3; a deployment kind keeps `SETTINGS#<kind>`. Nothing has moved yet. The
+deployment kinds' writes are platform admins' (since Unreleased): `PUT /settings/appearance` and the three alert writes
+(`PUT /logs/alerts`, `POST /logs/alerts/recipients`, `POST /logs/alerts/recipients/remove`) call `require_admin`,
+`require_platform_admin` and the live check (`lambda/shared/platform_admin_gate.py`: the live Cognito membership and an
+enabled account of the same person), so no workspace admin or plain administrator changes what every workspace
+shares (403); the reads stay as they were (the theme for everyone, the alerts' status for administrators). The settings
+and logs APIs read the caller's groups and account in Cognito for it (`AdminListGroupsForUser`, `AdminGetUser`). The
+web app shows the default theme read-only to everyone else (Administration → General) and the alerts read-only to
+the other administrators (System → Logs → Alerts, which only administrators see), each with a notice naming platform
+admins (`useIsPlatformAdmin` reads the token's group, only a hint: the server decides), and a 403 on either save (a
+membership revoked since sign-in) says the same. The bootstrapped first admin is a
+platform admin (Control plane); on an older deployment, add the people who manage the theme and the alerts to
+`platform-admins` first.
 
 | Kind (`SETTINGS#…`) | Scope | Why |
 |---|---|---|

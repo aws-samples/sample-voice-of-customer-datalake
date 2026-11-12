@@ -20,9 +20,9 @@ import { alertsApi, alertsKey } from '../../api/alertsApi'
 import type { AlertRecipient, AlertsStatus } from '../../api/alertsApi'
 import { messageKeyForStatus } from '../../api/apiErrorStatus'
 import SwitchField from '../../components/SwitchField/SwitchField'
-import { useIsAdmin } from '../../store/authStore'
+import { useIsAdmin, useIsPlatformAdmin } from '../../store/authStore'
 import { formatDateTime } from '../../utils/dateUtils'
-import { SettingsLoading, SettingsNotice } from './SettingsNotice'
+import { ReadOnlyNotice, SettingsLoading, SettingsNotice } from './SettingsNotice'
 
 /** CloudWatch's standard-resolution price per alarm metric per month (us-east-1). */
 const USD_PER_ALARM_METRIC_MONTH = 0.1
@@ -33,6 +33,8 @@ const ERROR_KEYS = [
   { status: 400, messageKey: 'logs.alerts.errors.invalid' },
   { status: 404, messageKey: 'logs.alerts.errors.notFound' },
   { status: 409, messageKey: 'logs.alerts.errors.pending' },
+  // A platform-admin membership revoked since the token was issued: the server checks it live.
+  { status: 403, messageKey: 'logs.alerts.platformAdminOnly' },
 ] as const
 const GENERIC_ERROR = { messageKey: 'logs.alerts.errors.failed' } as const
 
@@ -45,6 +47,8 @@ export default function AlertsCard() {
 function AlertsCardBody() {
   const { t } = useTranslation('settings')
   const { data, isLoading, isError } = useQuery({ queryKey: alertsKey(), queryFn: alertsApi.get })
+  // The alarms watch the deployment's own Lambdas: a platform admin's to change, an administrator's to view.
+  const canEdit = useIsPlatformAdmin()
 
   return (
     <section className="card" aria-labelledby="alerts-card-title">
@@ -59,7 +63,7 @@ function AlertsCardBody() {
           </span>
         )}
       </div>
-      <AlertsCardContent status={data} isLoading={isLoading} isError={isError} />
+      <AlertsCardContent status={data} isLoading={isLoading} isError={isError} canEdit={canEdit} />
     </section>
   )
 }
@@ -68,9 +72,10 @@ interface AlertsCardContentProps {
   readonly status: AlertsStatus | undefined
   readonly isLoading: boolean
   readonly isError: boolean
+  readonly canEdit: boolean
 }
 
-function AlertsCardContent({ status, isLoading, isError }: AlertsCardContentProps) {
+function AlertsCardContent({ status, isLoading, isError, canEdit }: AlertsCardContentProps) {
   const { t } = useTranslation('settings')
   if (isLoading) return <SettingsLoading text={t('logs.alerts.loading')} />
   if (isError || status === undefined) return <SettingsNotice text={t('logs.alerts.errors.load')} />
@@ -78,8 +83,9 @@ function AlertsCardContent({ status, isLoading, isError }: AlertsCardContentProp
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">{t('logs.alerts.description')}</p>
-      <AlertingSwitch status={status} />
-      <RecipientsPanel status={status} />
+      {canEdit ? null : <ReadOnlyNotice text={t('logs.alerts.platformAdminOnly')} />}
+      <AlertingSwitch status={status} canEdit={canEdit} />
+      <RecipientsPanel status={status} canEdit={canEdit} />
     </div>
   )
 }
@@ -89,7 +95,7 @@ function useRefreshAlerts() {
   return () => queryClient.invalidateQueries({ queryKey: alertsKey() })
 }
 
-function AlertingSwitch({ status }: { readonly status: AlertsStatus }) {
+function AlertingSwitch({ status, canEdit }: { readonly status: AlertsStatus; readonly canEdit: boolean }) {
   const { t, i18n } = useTranslation('settings')
   const refresh = useRefreshAlerts()
   const toggle = useMutation({ mutationFn: (enabled: boolean) => alertsApi.setEnabled(enabled), onSettled: refresh })
@@ -100,7 +106,7 @@ function AlertingSwitch({ status }: { readonly status: AlertsStatus }) {
     <div className="space-y-2">
       <SwitchField
         checked={status.enabled}
-        disabled={toggle.isPending}
+        disabled={!canEdit || toggle.isPending}
         onChange={(enabled) => toggle.mutate(enabled)}
         label={t('logs.alerts.switchLabel')}
         hint={t('logs.alerts.costHint', { alarms: status.expected_alarm_count, cost })}
@@ -122,7 +128,7 @@ function ErrorLine({ error }: { readonly error: unknown }) {
   return <p role="alert" className="text-sm text-danger">{t(messageKeyForStatus(error, ERROR_KEYS, GENERIC_ERROR))}</p>
 }
 
-function RecipientsPanel({ status }: { readonly status: AlertsStatus }) {
+function RecipientsPanel({ status, canEdit }: { readonly status: AlertsStatus; readonly canEdit: boolean }) {
   const { t } = useTranslation('settings')
   const refresh = useRefreshAlerts()
   const remove = useMutation({ mutationFn: (email: string) => alertsApi.removeRecipient(email), onSettled: refresh })
@@ -139,13 +145,13 @@ function RecipientsPanel({ status }: { readonly status: AlertsStatus }) {
               key={recipient.email}
               recipient={recipient}
               removing={remove.isPending && remove.variables === recipient.email}
-              onRemove={() => remove.mutate(recipient.email)}
+              onRemove={canEdit ? () => remove.mutate(recipient.email) : undefined}
             />
           ))}
         </ul>
       )}
       {remove.isError && <ErrorLine error={remove.error} />}
-      <AddRecipientForm atCap={status.subscribers.length >= status.max_subscribers} max={status.max_subscribers} />
+      {canEdit ? <AddRecipientForm atCap={status.subscribers.length >= status.max_subscribers} max={status.max_subscribers} /> : null}
     </div>
   )
 }
@@ -153,7 +159,8 @@ function RecipientsPanel({ status }: { readonly status: AlertsStatus }) {
 interface RecipientRowProps {
   readonly recipient: AlertRecipient
   readonly removing: boolean
-  readonly onRemove: () => void
+  /** Absent for someone who may only view the recipients: no remove button. */
+  readonly onRemove: (() => void) | undefined
 }
 
 function RecipientRow({ recipient, removing, onRemove }: RecipientRowProps) {
@@ -166,16 +173,18 @@ function RecipientRow({ recipient, removing, onRemove }: RecipientRowProps) {
       <span className={confirmed ? 'badge badge-ok' : 'badge badge-warn'}>
         {confirmed ? t('logs.alerts.confirmed') : t('logs.alerts.pending')}
       </span>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        disabled={removing}
-        onClick={onRemove}
-        aria-label={t('logs.alerts.remove', { email: recipient.email })}
-        title={t('logs.alerts.remove', { email: recipient.email })}
-      >
-        {removing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
-      </button>
+      {onRemove === undefined ? null : (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          disabled={removing}
+          onClick={onRemove}
+          aria-label={t('logs.alerts.remove', { email: recipient.email })}
+          title={t('logs.alerts.remove', { email: recipient.email })}
+        >
+          {removing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+        </button>
+      )}
     </li>
   )
 }
