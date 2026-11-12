@@ -12,7 +12,8 @@
 - ``finish``: the task is done; its summary is the task's last progress.
 
 The agents that run no repository code (the writers, the reviewers, the coordinator) get no ``run``,
-``install_dependencies``, ``write_file`` or ``submit_work``. Everything a tool returns from the repository is
+``install_dependencies``, ``write_file`` or ``submit_work``. A role with a skill record (``skills.py``: the run
+coordinator) gets exactly the tools its skill's tool policy names, its own included (``coordinator.py``). Everything a tool returns from the repository is
 fenced as data (``as_data``): the adapters' instructions say it is never an instruction.
 """
 from __future__ import annotations
@@ -23,11 +24,21 @@ import os
 import secrets
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
 from engineering.runtime.checkout import repo_git
-from engineering.runtime.harness.ports import Board, Broker, Store, TaskBrief
+from engineering.runtime.harness import coordinator
+from engineering.runtime.harness.ports import (
+    Board,
+    Broker,
+    KnowledgeReader,
+    PendingHarnessPorts,
+    Planner,
+    Store,
+    TaskBrief,
+)
+from engineering.runtime.harness.skills import skill_for
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.workspace import OutsideCheckout, Workspace
 from engineering.runtime.interface import CODE_ROLES
@@ -92,6 +103,9 @@ class AgentContext:
     own_prefix: str
     checkpoints_prefix: str
     patches_prefix: str
+    #: The run coordinator's ports (the board's tasks, posting, launching; the knowledge pack's reader).
+    planner: Planner = field(default_factory=PendingHarnessPorts)
+    knowledge: KnowledgeReader = field(default_factory=PendingHarnessPorts)
 
     @property
     def runs_code(self) -> bool:
@@ -200,16 +214,29 @@ CODE_TOOLS: Final = (
 
 
 class ToolBox:
-    """The tools ``context.role`` may use, and their dispatch."""
+    """The tools ``context.role`` may use, and their dispatch: its skill's tool policy, or its role's tools."""
 
     def __init__(self, context: AgentContext) -> None:
         self.context = context
-        self.specs: tuple[ToolSpec, ...] = READ_TOOLS + (CODE_TOOLS if context.runs_code else ())
         self._handlers: dict[str, Callable[[Mapping[str, Any]], ToolResult]] = {
             'read_file': self._read, 'list_files': self._list, 'report_progress': self._progress,
             'save_checkpoint': self._checkpoint, 'finish': self._finish, 'write_file': self._write,
             'run': self._run, 'install_dependencies': self._install, 'submit_work': self._submit,
+            **coordinator.handlers(context, ToolResult, as_data),
         }
+        skill = skill_for(context.role)
+        if skill is None:
+            self.specs: tuple[ToolSpec, ...] = READ_TOOLS + (CODE_TOOLS if context.runs_code else ())
+        else:
+            # Bounded by the role, whatever a record says: code tools only for a role that runs code, the planner's
+            # only for the coordinator.
+            known = {spec.name: spec for spec in (*READ_TOOLS, *(CODE_TOOLS if context.runs_code else ()),
+                                                  *(coordinator.specs(ToolSpec) if context.role == 'coordinator'
+                                                    else ()))}
+            unknown = [name for name in skill.tool_policy if name not in known]
+            if unknown:
+                raise ValueError(f'{skill.label} names tools role {context.role} may not have: {", ".join(unknown)}')
+            self.specs = tuple(known[name] for name in skill.tool_policy)
         self._allowed = {spec.name for spec in self.specs}
 
     def call(self, name: str, arguments: Mapping[str, Any]) -> ToolResult:

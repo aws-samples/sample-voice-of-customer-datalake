@@ -10,6 +10,8 @@
     {"key": "lambda/engineering/runtime/harness/status.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/tool_server.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/tools.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/coordinator.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/skills.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/workspace.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/shared/api.py::clear_categories_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the module-level categories cache between API tests."},
     {"key": "lambda/shared/memory_store.py::clear_pool_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container embedding pool between memory tests."},

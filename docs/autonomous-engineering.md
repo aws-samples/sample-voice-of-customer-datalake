@@ -542,7 +542,10 @@ next slice):
   The delivery function (below) records a run's posted tasks in that run's inbox, but the router still sends them
   to the role queues, and the board's `inbox` op is not built: until both are, an agent learns of its run's tasks
   only from the board, which serves the caller's run only.
-- **The harness.** Its board, inbox and broker interfaces still refuse every call.
+- **The harness.** Its board, inbox and broker interfaces still refuse every call, and so do the run
+  coordinator's (the board's task list, posting a task, launching its agent; the knowledge pack's agent reader). The
+  coordinator's launch is to go through the board's API, which checks the caller is its run's coordinator, rather
+  than an invoke grant on the runtime function, which would also reach its tick, its end of a run and its signals.
 
 Each agent of a run runs in its own Lambda MicroVM, from its language's image, with its own sparse checkout from the
 cache. The idle policy suspends a MicroVM after 5 minutes without a request and ends one suspended for an hour; the
@@ -616,6 +619,17 @@ continues it in a new one once the wait closes.
   roles with a voice), calls the allowlisted models, and deletes nothing. No MicroVM
   auth token is ever put in an event, a log, a row or a checkpoint: it is minted when needed (at most 60 minutes),
   refreshed 5 minutes before it lapses, held in memory only, and refuses to be serialised.
+- **The run coordinator.** It plans; it changes no code. It runs in the harness's Converse loop on its skill
+  record (`runtime/harness/skills.py`): a versioned record of its instructions, worked examples, tool policy, the
+  model it was written for and the harness that runs it, in the shape the skills store keeps (a change is a new
+  version, never an edit, and a session row's `skill_version` says which one ran, `coordinator@1`). Its tools are
+  exactly its skill's tool policy: read the board, post a task for one role with instructions a person could follow,
+  launch one agent for a task (on its run's connection and commit, which the board takes from the verified caller's
+  run: neither the model nor anything in the MicroVM names them), read the knowledge pack on a topic (only through
+  the pack's agent reader: its run's connection's latest approved version), read the checkout, and report
+  progress, save a checkpoint and finish. It has no tool that writes files or runs repository code (a skill's tool
+  policy is bounded by its role: code tools only for a role that runs code, the planner's only for the
+  coordinator), and everything the board or the pack returns is fenced as data.
 - **Delivery.** voc-engineering-delivery, the function the inbox router invokes for a message to an agent, the
   run's conductor or a role of the run (a posted task): the supervisor's code and role. It records the message
   once in that run's inbox, `WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<seq>#<event_id>` in voc-engineering (the
