@@ -37,20 +37,34 @@ budgets, the run journal) and on [memory](memory.md).
 
 ## Large repositories and monorepos
 
-*Planned.* Designed for them from day one.
+*Partly built*: package detection with code owners (`voc-datalake/lambda/engineering/knowledge/workspaces.py`) and
+the shard cutter with its size budget (`knowledge/shards.py`), as tested code nothing invokes yet (the Understand flow
+that calls them lands with the agents, phase 4). Planned: partial clones and sparse checkouts, change impact (the
+dependency graph between packages), shards' time budgets and the caches' writers (the cache's expiry rule is in the
+stack). Designed for them from day one.
 
 - **Partial clones.** A checkout is `git clone --filter=blob:none` plus a sparse checkout of only the paths a task
   needs. History and pull requests are read through the host's API, in pages, never by cloning everything.
 - **Shards follow the repository's own structure.** Workspaces are detected (Cargo, npm / pnpm / yarn, Gradle /
   Maven, Go modules, Bazel, Python packages), and so are code owners. A package is the unit of the knowledge pack, of
-  the review and of the gate.
+  the review and of the gate. Built: from the file listing and the manifests it names (`manifest_paths`), a package is
+  a directory whose manifest names one (a crate's `[package]`, a `package.json`, a `go.mod`, a `pyproject.toml` /
+  `setup.cfg` name or a `setup.py`, a `build.gradle[.kts]`, a `pom.xml`); a workspace's declarations (Cargo
+  `members`, npm / yarn `workspaces`, `pnpm-workspace.yaml`, uv's workspace, Gradle's `include`, Maven's `<modules>`,
+  `go.work`) add members and record the workspace, never remove one; top-most `BUILD` directories are packages only
+  when nothing else found any; the root package `.` holds every other file. Owners come from the first `CODEOWNERS`
+  GitHub reads, the last rule matching the package's directory, handles only (an e-mail address is never kept).
+  Detection is deterministic and bounded: a listing of more than 200,000 paths, or with an absolute path or an
+  empty, `.` or `..` part, is refused whole; manifests past the first 2,000 (the shallowest are kept), manifests over
+  256 KB or that do not parse, a workspace's member patterns past its first 200 and packages past 2,000 are left out,
+  and each is counted (`Layout.skipped`).
 - **Change impact.** The workspace's dependency graph says which packages a change touches; the gate and the reviews
   run on those packages, and the full gate runs on the pull request's final tree (again after any fix it sends back).
 - **Warm caches.** Checkouts are kept per (connection, commit) and dependency caches per (connection, lockfile hash)
   in S3, under the connection's own prefix, so a new agent starts warm; an agent reads only its own connection's
   prefix. Entries expire 30 days after they were written (the raw bucket's `engineering-cache-expiry` rule on
   `engineering/cache/<connection>/…`, with `-c engineeringAgents=true`) and are rebuilt when needed. Every shard has a size and
-  time budget, and a shard too big is split again. Only trusted code writes the cache: the connector's broker writes
+  time budget, and a shard too big is split again (built for the size: `knowledge/shards.py`). Only trusted code writes the cache: the connector's broker writes
   the checkouts, and the cache filler (a step that runs no repository code: fetch only, from the lockfile, install
   scripts off) writes the dependency caches. A toolchain whose dependency resolution runs build files (Gradle, Maven)
   gets no shared dependency cache: its resolution counts as repository code with network (the registry list only,
@@ -170,7 +184,12 @@ owner, checked when the workflow is saved and again when the run starts.
 
 ## The knowledge pack
 
-*Planned* (voc-datalake/lambda/engineering/knowledge).
+*Partly built* (`voc-datalake/lambda/engineering/knowledge/`): the packages and their owners, the shards, the map
+step's one model call and its note schema, the reduce into documents, and the versioned store with approval, as
+tested code that nothing invokes yet. Planned: the Understand flow and the mapper agent that run them (phase 4: until
+then nothing reads a repository for a pack, and no pack exists), the REST routes to list, read, edit and approve a
+version (admin only), several runs resuming one map, the dependency graph in the architecture document, and the
+repository's tenets ([below](#the-repositorys-tenets)).
 
 "How this repository works": **one overview plus one pack per package**, each refreshed only when its package
 changes. Built by the Understand flow, read by the other agents.
@@ -179,6 +198,28 @@ changes. Built by the Understand flow, read by the other agents.
 commits, its pull requests in pages with their review threads. Each shard yields notes, every note citing its source
 (`path:line`, a commit sha, a PR comment's URL), written to the run's workspace. A repository larger than one run's
 budget is mapped over several runs, each resuming at the first shard not yet mapped.
+
+Built (`shards.py`, `mapper.py`, `notes.py`): a package's files are cut in path order within a byte budget (48 KB by
+default, each item costing 64 bytes more for its header); over it, at its subdirectories (siblings that fit share a
+shard again), again deeper, and a single file over it is read in byte windows. History comes in windows of 50 commits
+oldest first, so new commits change only the last window, pull requests in pages of 20 by number; a window or page
+over the budget is halved, one big item windowed. A shard's id is a hash of its package, kind and items, so the same
+cut always has the same ids and `pending` names the shards a resumed run still has to map. The map step is one model
+call per shard behind the quality gate's model interface (the enrichment surface's default, the cheap model, until
+the `eng_mapper` surface lands): the shard's text, a file's lines numbered as the repository numbers them, goes in a
+DATA block with a random fence, credentials redacted first. Its answer is `voc-note/1` JSON lines (a kind: one of the
+seven documents; the package; an optional subject; the claim; its citations). A line off the schema is dropped and
+counted. Each citation must name what that shard itself read: a `path:line` of one of its files and a line it
+showed, a full sha of its history window, or the URL of a review comment on the connection's own repository (GitHub
+`…/pull/<n>#discussion_r<id>`, `#issuecomment-<id>`, `#pullrequestreview-<id>`; GitLab
+`…/-/merge_requests/<n>#note_<id>`) that appears in its pull request page. Anything else is removed, a real path,
+commit or comment of the repository the shard never read included, and a note left without one is dropped and
+counted. A claim is cut to 400 characters on one line after credential-shaped strings and personal data are replaced,
+as for a finding. The notes are written once under the mapper's own workspace key for the shard; the reduce reads a
+shard's notes only from a key of this refresh's own workspace, run, agent, commit and package, named for that shard,
+and checks them again against the package (its listed files and commits, a well-formed comment URL of the
+repository). A key from anywhere else, or an object that is not there, stops the publish and names the shard, to be
+mapped again.
 
 **Reduce.** The notes become documents, per package and for the whole repository:
 
@@ -198,6 +239,27 @@ claim that contradicts a human edit is flagged, not applied. **A new version is 
 approves it**: the pack is mined from text anyone with access can write, so agents read only approved versions, and
 they read them as DATA: they inform the work, they never override an agent's own instructions.
 
+Built (`reduce.py`, `store.py`): within a document, notes making the same claim (case, spacing and the final full
+stop aside) merge with the union of their citations (eight at most). A refresh starts from the latest approved
+version and keeps its people's claims: a refreshed claim saying the same adds its citations to the edit, one on the
+same subject saying something else is flagged ("Flagged for review: contradicts an edit, not applied", in the
+document and in `pack.json`), and a claim without a subject contradicts nothing. Claims are ordered by subject, then
+text, footnotes numbered by first use, and repository text is escaped so it renders no link, image, tag or table
+cell: the same notes always give the same bytes. The overview is the root package's pack (`.`: the files no package
+holds), whose architecture document starts with the table of packages, their kinds and owners. Every refresh and
+every edit is a new version, a draft, with its author (an agent's id or a person's), the reason, the full sha it
+was built from and the version it started from; an edit is an administrator's (a person's claim, added or in
+place of the claim it names), held to the bar of a mapped claim (one redacted line of 400 characters at most, and
+every citation one of the repository's listed paths, commits or review comments, or the edit is refused; a person
+may cite nothing), and needs an approval like a refresh. Only an administrator approves, never an agent: one
+transaction marks the draft approved with who and when, moves the package's approved version up and writes a
+create-only `KPACKLOG#…#approved` row. Approving a version older than the approved one is refused, and so is
+approving one built on an older version than the approved one (it would drop what that one added, a person's later
+edit above all). The overview's table of packages is kept in its `pack.json`, so an edit of the overview keeps it.
+Agents read a pack only through `for_agent`: the latest approved version's documents, each inside a DATA block with
+one random fence (the quality gate's `data_block`, redacted), never raw Markdown in a prompt; a package with no
+approved version has no pack to read.
+
 ### The repository's tenets
 
 The Understand flow also drafts the target repository's own tenets, a TENETS.md in the style of this sample's (what
@@ -208,8 +270,13 @@ them (versioned, like the pack); the review agents and the quality gate then use
 tenets as their bar, as this sample's own tenets review does. Changes to them are proposed by the learning loop and
 need a person. Nothing is written to the repository unless a person opens that pull request.
 
-Storage: Markdown in S3 under `engineering/{connection_id}/knowledge/{package}/v{n}/`, the index rows (version, the
-sha it was built from, author, approved by) in `voc-agents` (`REPO#{connection_id}` / `KPACK#{package}#{version:06d}`).
+Storage (built for the pack: `knowledge/store.py`, `workspace/layout.py`'s `knowledge_key`): each version's
+`pack.json` and one Markdown file per document in the workspace bucket under
+`ws/{ws}/knowledge/{connection_id}/{package}/v{version:06d}/`, each written once (`If-None-Match`) before its row, so
+none is ever replaced; the index rows in `voc-engineering` (`WS#{ws}#REPO#{connection_id}` /
+`KPACK#{package}#{version:06d}`: the status, author, reason, the sha it was built from, approved by and when), the
+package's counter and approved version on `KPACK#{package}`, and the approval's `KPACKLOG#{package}#{version:06d}#approved`,
+with `{package}` encoded as the workspace's keys encode it.
 
 ## The agent catalog
 
@@ -249,8 +316,8 @@ What exists:
 - **The inbox router** (`bus/router.py`, the `voc-engineering-router` Lambda): one fixed rule sends every event of
   the account on the bus to it. It checks the schema and the sender (`bus/senders.py`: the event's `source` names the
   sender, and only the allowed sources may send each type, for their own run only), writes the message to the run's
-  conversation, then fans it out (`bus/routing.py`): a posted task to its role's queue, a message for an agent or the
-  conductor to the delivery function. It drops, and journals with the reason and never the content, a malformed
+  conversation, then pushes it (`bus/routing.py`): a posted task, and a message for an agent or the conductor, to
+  the delivery function with its conversation seq. It drops, and journals with the reason and never the content, a malformed
   message, a sender that may not send it, a run that does not exist and an event id reused for other content.
 - **The conversation** (`conversation/store.py`): one row per message in the `voc-engineering` DynamoDB table
   (on demand, encrypted with the stack's key, point-in-time recovery, kept like `voc-agents`), never changed, the
@@ -278,23 +345,20 @@ What exists:
   404), and read by administrators only, acting for themselves, until a connection can be shared ([Repository connectors](#repository-connectors), "Who can read
   and use"; anyone else gets 403). An MCP token never acts as an administrator, so the global MCP server has no tool for them
   yet ([docs/mcp.md](mcp.md)).
-- **The role queues**: one SQS queue per task-pulling role (`bus/schema.py` ROLES), encrypted with the stack's key,
-  redriving to `voc-engineering-dlq`. That one dead-letter queue also takes the events the rule could not hand the
-  router, the router's invocations that failed every retry and the runtime's undelivered supervisor ticks, and
-  alerting watches it like the platform's other
-  failure queues. The role queues are fixed per role, not made per run as described below, and serve every run, so
-  no agent role reads them; there are no per-agent inboxes either: a run's messages, its posted tasks included, are
-  to reach its own agents through the delivery function.
+- **No task queues**: every message is pushed per run by the delivery function ([below](#how-the-agents-work-together),
+  "Inboxes and roles"). The one queue is `voc-engineering-dlq`, encrypted with the stack's key: the events the rule
+  could not hand the router, the router's and the delivery function's invocations that failed every retry, the report
+  builder's failed builds and
+  the runtime's undelivered supervisor ticks; alerting watches it like the platform's other failure queues.
 - **The agents' access**: the [runtime](#runtime-one-microvm-per-agent)'s agent roles call the board's and the
   broker's function URLs, and put events on the bus only with their own source; the bus's policy admits the board's
   role and the agent roles with a voice (all but the coach: Runtime → Not aligned yet) and nothing else, and denies
   each agent role every source but its own.
 
-Not built yet: the router's side of delivery (it holds no invoke on the [runtime](#runtime-one-microvm-per-agent)'s
-delivery function yet, sends a posted task to its role's queue rather than to it, and invokes it with the bare message
-rather than `{"message", "seq"}`), and the board's `inbox` op, so a run's posted tasks reach its agents only through
-the board; the run coordinator; a person's board actions (POST), which come with the run monitor; the agents'
-findings in the workspace (the runtime writes their checkpoints and patches there). The rest of this section is the
+Not built yet: the harness's side (its board, inbox and broker interfaces still refuse every call, and so do the run
+coordinator's: [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); a person's board actions (POST), planned
+as the run monitor's board controls; the agents' findings in the workspace (the runtime writes their checkpoints and patches
+there). The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
 holds, and the design's type table is what the next slices bring the code to or the table to.
 
@@ -342,27 +406,30 @@ published only by the API, which writes the signed-in user; a decision needs an 
 connection is shared with to manage, not only to view.
 
 **Inboxes and roles.** One fixed rule sends every event to the inbox router (a Lambda, `bus/router.py`), which
-writes it to the run's conversation and then routes it (`bus/routing.py`). A posted task goes to its role's queue:
-one fixed SQS queue per task-pulling role, `voc-eng-tasks-<role>` (mapper, understander, hunter, fixer, committer,
-commit reviewer, PR author, PR reviewer, builder, final go: `bus/schema.py` ROLES), shared by every run and made with
-the stack, never per run; the task carries its run, and an agent can claim only its own run's tasks, since the board's
-API takes the run from the caller's session. A message addressed to an agent or to the run coordinator goes to the
-delivery function, which records it in the run's inbox and wakes the addressee (a suspended MicroVM runs no code and
-cannot poll a queue, so delivery is a push: [Runtime](#runtime-one-microvm-per-agent), "Delivery"); the router does not
-invoke it yet, so such a message is written to the conversation and its delivery fails into `voc-engineering-dlq`. A message to the run (a signal, run health, an outcome) stays in the
-conversation, where the supervisor, the coordinator and the run view read it. **Known risk, to be closed before the
-flag can go on:** a shared role queue would let one run's agent receive another run's task notice (its summary) and
-remove it, which crosses runs. So no agent role reads one, and a posted task is to reach its run through the delivery
-function too (its row in the run's inbox), once the router sends it there rather than to the role queue. The gate runner, the coordinator and the coach have no
-role queue: their work comes assigned. The rule is fixed, never made per run, so the bus's rule quota does not limit
-how many runs work at once. EventBridge is the bus, SQS the role queues.
+writes it to the run's conversation and then routes it (`bus/routing.py`). There is no SQS queue per role or per
+agent: a suspended MicroVM runs no code and cannot poll, so every message is pushed, per run. A posted task, and a
+message addressed to an agent or to the run's conductor, go to the delivery function (`voc-engineering-delivery`, the
+runtime's), invoked asynchronously with the message and its conversation seq (`{message, seq}`; a redelivery carries
+the seq the message was first written under). It records each notice once in the run's own partition, as an
+`INBOX#<addressee>#<inbox_seq>#<event_id>` row (the addressee `agent:<agent>`, `role:<role>` for a posted task, or
+`conductor`; `inbox_seq` the run's write-order counter, so a notice delivered late still numbers above everything
+already read; the row keeps the conversation seq too), and wakes the addressee: the agent, or the run's
+coordinator for the conductor. A posted task wakes nobody: an agent is launched for its task, so none of its role is
+idle, and one held on a wait keeps its one continuation for what it waits for; the row is there to read. An agent reads its
+notices with the board API's `inbox` op (`board/inbox.py`): its own, its role's and, for the coordinator, the
+conductor's, after an `inbox_seq`, merged in write order (each with its `conversation_seq`); its session gives
+its run, so it never reads another run's. A page that reached the tail starts the next one 20 behind (two deliveries
+may commit their numbers out of order), and the reader keeps each notice once by its event id. A message to the run (a signal's record, run health, an outcome) stays in the
+conversation, where the supervisor, the coordinator and the run view read it. The rule is fixed, never made per run,
+so the bus's rule quota does not limit how many runs work at once. EventBridge is the bus; a push the router could
+not make ends in `voc-engineering-dlq` after its retries.
 
 **The board.** A run's work is a board of tasks: open → claimed → in progress → in review → done, failed or needs a
 human. An agent takes a task through the board's API, which claims it with a conditional write on its row (DynamoDB,
 one owner per task); the agent holds it by a lease that its heartbeat renews (a call once a minute, not an event); a lost lease frees the task for
 another agent, which resumes it from its checkpoint. An agent suspended on an open wait (its `question`, a
-`review.requested`, a human decision point) keeps its lease while the wait is open. Tasks are pulled: an agent of
-the right role takes the next one from its role's queue; the run coordinator posts and orders tasks and may hand one
+`review.requested`, a human decision point) keeps its lease while the wait is open. Tasks are claimed: an agent of
+the right role, told of a posted task in its inbox, claims it on the board; the run coordinator posts and orders tasks and may hand one
 to a named agent (`task.assigned`). Agents post tasks within the run's budget and the flow's rules.
 A person can post, re-prioritise, block or take a task, through the API.
 
@@ -419,10 +486,11 @@ an engineering flow is a workflow of schema `voc-workflow/2` (start, end and the
 `reduce`, `board`, `quality_gate`, `learning_loop`, `self_improvement`, `memory`, `stop_at_pr`), held to the rules
 above (every map meets one reduce on every way out, a quality gate's GO and NO-GO arrows with NO-GO to the human
 decision point, a committer or PR author ends only at a stop at PR or a human decision point); the Agents API saves
-and validates one, keeps each workflow's kind, and leaves engineering flows out of `GET /workflows` and out of every
-agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's settings are the gate's own
-(`max_rounds`, `packs`, `final_go_model`, `reviewers`). *Planned*: the editor's palette, settings and graph rules for
-these steps (the SPA's workflow editor knows `voc-workflow/1` only), and the six default flows as templates.
+and validates one, keeps each workflow's kind, lists both kinds in `GET /workflows` (each with its `kind`) and keeps
+engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's
+settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
+builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
+shared fixture). *Planned*: the six default flows as templates.
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it in the editor behind an approval card, like its other writes; "refresh
@@ -532,20 +600,17 @@ list, shipped in the images), its role names the broker's `voc-eng-{role}` patte
 next slice):
 
 - **The gate runner's voice.** Its sessions are pinned to `voc.engineering/agent/gate-runner/…`, which
-  `bus/senders.py` drops: its agent sources accept only the roles of `bus/schema.py` ROLES, the roles with a task
-  queue, and the gate runner has none.
+  `bus/senders.py` drops: its agent sources accept only the roles of `bus/schema.py` ROLES, which has no gate
+  runner.
 - **The coach's voice.** It may not put events on the bus at all yet: senders.py knows the coach only as the
   service source `voc.engineering/coach`, which names no workspace or run, so a coach session could speak, as the
   system, in any run. It gets a voice with a run-scoped coach source.
-- **Posted tasks.** A role's task queue (`voc-eng-tasks-<role>`) serves every run, and IAM cannot narrow a queue
-  to a run, so no agent role reads one (one run's agent would see, and could delete, another run's task notices).
-  The delivery function (below) records a run's posted tasks in that run's inbox, but the router still sends them
-  to the role queues, and the board's `inbox` op is not built: until both are, an agent learns of its run's tasks
-  only from the board, which serves the caller's run only.
 - **The harness.** Its board, inbox and broker interfaces still refuse every call, and so do the run
   coordinator's (the board's task list, posting a task, launching its agent; the knowledge pack's agent reader). The
   coordinator's launch is to go through the board's API, which checks the caller is its run's coordinator, rather
   than an invoke grant on the runtime function, which would also reach its tick, its end of a run and its signals.
+- **Egress.** The agents' allowlist still names SQS's endpoint (`egress.py`), which no agent calls: there are no
+  task queues.
 
 Each agent of a run runs in its own Lambda MicroVM, from its language's image, with its own sparse checkout from the
 cache. The idle policy suspends a MicroVM after 5 minutes without a request and ends one suspended for an hour; the
@@ -611,8 +676,8 @@ continues it in a new one once the wait closes.
 - **Scoped roles.** Each agent role reads only its connection's cache prefix (in the raw bucket) and its run's keys
   in the workspace bucket, `voc-eng-workspace` (`ws/<ws>/runs/<run>/`), writes only its own keys there
   (`ws/<ws>/runs/<run>/<agent>/`: the agent comes right after the run, so no other agent's key matches; create-only,
-  since the bucket refuses a put without `If-None-Match`), reads no queue (the role queues serve every run; the delivery
-  function records its run's messages in the run's inbox and wakes it, once the router invokes it), calls the board's and the broker's function URLs (`lambda:InvokeFunctionUrl`, and the invoke behind it only through a function URL), may
+  since the bucket refuses a put without `If-None-Match`), reads no queue (there are none: the router invokes the delivery
+  function, which records its run's messages in the run's inbox and wakes it), calls the board's and the broker's function URLs (`lambda:InvokeFunctionUrl`, and the invoke behind it only through a function URL), may
   put events on the bus only with its own source
   (`voc.engineering/agent/<role>/<ws>/<run>/<agent>`, the run coordinator's `voc.engineering/conductor/<ws>/<run>`;
   an explicit deny in its own policy and another in the bus's, which admits only the board's role and the agent
@@ -921,8 +986,8 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503) |
-| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, the role queues, the workspace's layout, findings and store in its own bucket, and the administrators' read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
+| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history and its agents' inbox op, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); skills, the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
-| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | planned |
+| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)); the templates, live cost, skill histories, the reports' view and the assistant drafting flows planned |

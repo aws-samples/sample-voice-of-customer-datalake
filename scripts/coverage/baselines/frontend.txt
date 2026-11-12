@@ -33,7 +33,6 @@ voc-datalake/frontend/src/components/PrototypeRenderer.tsx 47.16   # 25/53
 voc-datalake/frontend/src/components/SourcesManager/SourceProfileEditor.tsx 68.75   # 11/16
 voc-datalake/frontend/src/components/SourcesManager/piiPolicy.ts 66.66   # 2/3
 voc-datalake/frontend/src/components/UserAdmin/UserAdmin.tsx 59.52   # 50/84
-voc-datalake/frontend/src/components/WorkflowEditor/NodeConfigPanel.tsx 65.85   # 27/41
 voc-datalake/frontend/src/components/WorkflowEditor/NodePalette.tsx 70.00   # 7/10
 voc-datalake/frontend/src/components/WorkflowEditor/WorkflowEditor.tsx 79.78   # 75/94
 voc-datalake/frontend/src/config/menuConfig.ts 75.00   # 6/8

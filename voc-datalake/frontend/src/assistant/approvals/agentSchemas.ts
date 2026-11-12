@@ -11,7 +11,9 @@
  * @module assistant/approvals/agentSchemas
  */
 import { z } from 'zod'
-import { AGENT_BUDGET_RULES, AGENT_LIMITS, WORKFLOW_LIMITS } from '@stream/assistant/tools/agent-limits'
+import {
+  AGENT_BUDGET_RULES, AGENT_LIMITS, WORKFLOW_LIMITS, WORKFLOW_SCHEMA_VERSION,
+} from '@stream/assistant/tools/agent-limits'
 import { buildAgentFieldsShape } from '../../api/agentsApi'
 import { buildWorkflowDefinitionSchema } from '../../api/workflowsApi'
 import { hasAnyKey, idSchema } from './schemas'
@@ -31,7 +33,8 @@ const STREAM_AGENT_LIMITS: AgentLimits = { ...AGENT_LIMITS, ...AGENT_BUDGET_RULE
 const MAX_CHANGE_SUMMARY = 500
 const changeSummary = nonEmpty(MAX_CHANGE_SUMMARY)
 
-const approvalWorkflowDefinitionSchema = buildWorkflowDefinitionSchema(STREAM_WORKFLOW_LIMITS, idSchema)
+// The assistant drafts agents workflows only (its server tools take voc-workflow/1); engineering flows are the editor's.
+const approvalWorkflowDefinitionSchema = buildWorkflowDefinitionSchema(STREAM_WORKFLOW_LIMITS, idSchema, [WORKFLOW_SCHEMA_VERSION])
 
 const agentFields = buildAgentFieldsShape(STREAM_AGENT_LIMITS, idSchema)
 

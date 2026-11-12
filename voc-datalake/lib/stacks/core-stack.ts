@@ -352,6 +352,9 @@ export class VocCoreStack extends VocStack {
     //   WS#{ws}#RUN#{run} / MSG#{seq:08d}    a conversation message      EVT#{id}     its event's marker
     //   WS#{ws}#RUN#{run} / TASKLOG#{task}#{at}#{state}  a task's move (its history)
     //   WS#{ws}#RUN#{run} / AGENT#{agent}    an agent's metering         REPORT#{level}#{subject}  a report's versions
+    //   WS#{ws}#REPO#{connection} / KPACK#{package}[#{version:06d}]  a knowledge pack's counter and versions
+    //   WS#{ws}#REPO#{connection} / KPACKLOG#{package}#{version:06d}#approved  who approved a version, and when
+    //                                        (lambda/engineering/knowledge/store.py)
     if (engineeringAgentsEnabled(this)) {
       this.engineeringTable = this.createEncryptedTable('EngineeringTable', 'voc-engineering');
     }

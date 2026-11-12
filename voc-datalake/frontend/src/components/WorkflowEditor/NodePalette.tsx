@@ -8,17 +8,19 @@
  */
 import { useTranslation } from 'react-i18next'
 import { NodeTypeIcon } from './NodeTypeIcon'
-import { NODE_CATALOGUE, PALETTE_GROUPS, PALETTE_MIME } from './model'
-import { WORKFLOW_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
+import { NODE_CATALOGUE, PALETTE_MIME, paletteGroupsFor } from './model'
+import { WORKFLOW_ALL_NODE_TYPES } from '../../api/workflowsApi'
 import type { DragEvent } from 'react'
-import type { WorkflowNodeType } from '../../api/workflowsApi'
+import type { WorkflowNodeType, WorkflowSchema } from '../../api/workflowsApi'
 
 interface NodePaletteProps {
   onAdd: (type: WorkflowNodeType) => void
   disabled?: boolean
+  /** The workflow's kind: an agents workflow's sections, or an engineering flow's (Start, End, Engineering). */
+  schema: WorkflowSchema
 }
 
-export function NodePalette({ onAdd, disabled = false }: Readonly<NodePaletteProps>) {
+export function NodePalette({ onAdd, disabled = false, schema }: Readonly<NodePaletteProps>) {
   const { t } = useTranslation('agents')
   const onDragStart = (event: DragEvent, type: WorkflowNodeType) => {
     event.dataTransfer.setData(PALETTE_MIME, type)
@@ -28,8 +30,8 @@ export function NodePalette({ onAdd, disabled = false }: Readonly<NodePalettePro
     <nav aria-label={t('editor.palette')} className="space-y-3">
       <p className="text-[11px] font-semibold uppercase tracking-[.08em] text-muted-strong">{t('editor.palette')}</p>
       <p className="text-[12px] text-muted">{t('editor.paletteHint')}</p>
-      {PALETTE_GROUPS.map((group) => {
-        const types = WORKFLOW_NODE_TYPES.filter((type) => NODE_CATALOGUE[type].group === group)
+      {paletteGroupsFor(schema).map((group) => {
+        const types = WORKFLOW_ALL_NODE_TYPES.filter((type) => NODE_CATALOGUE[type].group === group)
         return (
           <div key={group}>
             <p className="mb-1 text-[12px] font-medium text-muted">{t(`paletteGroups.${group}`)}</p>

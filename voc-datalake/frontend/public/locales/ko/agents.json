@@ -66,7 +66,11 @@
     "renameNamed": "{{name}} 이름 바꾸기",
     "renameTitle": "워크플로 이름 바꾸기",
     "renameConflict": "그사이 누군가 이 워크플로를 변경했거나 기본 제공 워크플로입니다. 새로 고친 뒤 다시 시도하세요.",
-    "renameFailed": "워크플로 이름을 바꾸지 못했습니다."
+    "renameFailed": "워크플로 이름을 바꾸지 못했습니다.",
+    "newEngineeringFlow": "새 엔지니어링 흐름",
+    "createEngineeringTitle": "새 엔지니어링 흐름",
+    "createEngineeringHint": "엔지니어링 흐름은 자율 엔지니어링 에이전트가 저장소에서 일하게 하고, 사람이 검토할 풀 리퀘스트로 끝납니다. 시작 → 끝에서 시작하여 팔레트에서 엔지니어링 단계를 추가하세요.",
+    "engineeringKind": "엔지니어링"
   },
   "fields": {
     "name": "이름",
@@ -398,7 +402,46 @@
     "switchMessage": "{{name}}에 저장하지 않은 변경 사항이 사라집니다.",
     "switchConfirm": "워크플로 전환",
     "switched": "이 에이전트는 이제 {{name}}을(를) 실행합니다.",
-    "switchFailed": "에이전트를 해당 워크플로로 전환할 수 없습니다."
+    "switchFailed": "에이전트를 해당 워크플로로 전환할 수 없습니다.",
+    "engineering": {
+      "role": "역할",
+      "skillVersion": "스킬 버전",
+      "skillVersionHint": "'latest'(최근 승인된 버전) 또는 v3 같은 버전.",
+      "model": "모델",
+      "modelHint": "모델 ID. 비워 두면 기본값을 씁니다.",
+      "budgetShare": "실행 예산 몫",
+      "budgetShareHint": "0.01에서 1까지의 비율. 에이전트 몫의 합은 최대 1입니다. 비워 두면 별도 몫이 없습니다.",
+      "shardBy": "분할 기준",
+      "shardByOptions": {
+        "packages": "패키지",
+        "history": "기록 구간",
+        "pr_pages": "PR 페이지"
+      },
+      "shardCap": "최대 샤드 수",
+      "posters": "작업을 올리는 역할",
+      "claimers": "작업을 맡는 역할",
+      "until": "종료 조건",
+      "untilOptions": {
+        "drained": "모든 작업 완료",
+        "caps": "한도 도달"
+      },
+      "maxRounds": "리뷰 라운드(최대)",
+      "packsAuto": "저장소에서 게이트 팩 자동 감지",
+      "packs": "게이트 팩",
+      "finalGoModel": "최종 승인 모델",
+      "mode": "모드",
+      "modeOptions": {
+        "read": "읽기",
+        "write": "쓰기"
+      },
+      "scope": "누구의 메모리",
+      "scopeOptions": {
+        "repo": "저장소",
+        "role": "역할",
+        "person": "개인"
+      },
+      "limit": "읽을 메모리 최대 수"
+    }
   },
   "paletteGroups": {
     "flow": "흐름",
@@ -406,7 +449,8 @@
     "documents": "문서",
     "review": "검토",
     "prototype": "프로토타입",
-    "delivery": "전달"
+    "delivery": "전달",
+    "engineering": "엔지니어링"
   },
   "edgeLabels": {
     "pass": "통과",
@@ -499,6 +543,42 @@
     "end": {
       "label": "종료",
       "description": "실행이 끝나는 지점입니다."
+    },
+    "agent": {
+      "label": "에이전트",
+      "description": "역할(fixer, hunter, committer 등), 스킬 버전, 예산 몫을 가진 에이전트입니다."
+    },
+    "map": {
+      "label": "분할",
+      "description": "작업을 샤드(패키지, 기록 구간, PR 페이지)로 나누어 에이전트가 병렬로 처리합니다."
+    },
+    "reduce": {
+      "label": "집계",
+      "description": "분할한 샤드가 다시 모여 하나의 결과가 됩니다."
+    },
+    "board": {
+      "label": "보드",
+      "description": "작업 보드: 일부 역할이 작업을 올리고 다른 역할이 맡아 처리하며, 비워질 때까지 이어집니다."
+    },
+    "quality_gate": {
+      "label": "품질 게이트",
+      "description": "변경에 대한 검사와 리뷰 라운드: GO는 PR로, NO-GO는 사람에게 갑니다."
+    },
+    "learning_loop": {
+      "label": "학습 루프",
+      "description": "실행에서 배운 것을 메모리에 기록하는 회고입니다."
+    },
+    "self_improvement": {
+      "label": "자기 개선",
+      "description": "코치가 더 나은 스킬 버전을 제안하고 벤치마크합니다."
+    },
+    "memory": {
+      "label": "메모리",
+      "description": "저장소, 역할 또는 개인의 메모리를 읽거나 씁니다."
+    },
+    "stop_at_pr": {
+      "label": "PR에서 중지",
+      "description": "흐름은 사람이 검토할 풀 리퀘스트로 끝납니다. 어떤 것도 병합되지 않습니다."
     }
   },
   "loopUntilHint": {
@@ -585,6 +665,100 @@
         "label": "실행 종료",
         "help": "더 이상 실행되지 않습니다. 실행 결과는 프로젝트에 남습니다."
       }
+    }
+  },
+  "engineeringRun": {
+    "untitled": "엔지니어링 실행",
+    "statusUnknown": "상태 알 수 없음",
+    "started": "시작: {{when}}",
+    "ended": "종료: {{when}}",
+    "totals": "MicroVM 시간: {{seconds, number}}초 · 메시지: {{messages, number}}",
+    "byModel": "모델별 토큰",
+    "runSignals": "실행 전체",
+    "agentSignals": "에이전트 {{agent}}",
+    "signals": {
+      "save": "저장",
+      "pause": "일시 중지",
+      "resume": "다시 시작",
+      "shutdown": "종료",
+      "stop_now": "즉시 중지"
+    },
+    "signalSent": "보냈습니다.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "저장하지 않고 즉시 중지할까요?",
+    "stopNowMessage": "작업이 체크포인트 없이 바로 중지되며, 아직 저장되지 않은 내용은 사라집니다. 보존하려면 대신 종료를 사용하세요.",
+    "errors": {
+      "forbidden": "관리자만 할 수 있습니다.",
+      "notFound": "이 실행 또는 작업이 더 이상 없습니다. 실행을 다시 불러오세요.",
+      "movedOn": "확인한 뒤로 상황이 바뀌었습니다(다른 시도이거나 실행이 끝남). 실행을 다시 불러온 뒤 다시 시도하세요.",
+      "unavailable": "지금은 실행에 연결할 수 없습니다. 잠시 후 다시 시도하세요.",
+      "generic": "처리하지 못했습니다. 다시 시도하세요."
+    },
+    "agent": {
+      "step": "단계",
+      "vm": "MicroVM",
+      "heartbeat": "하트비트",
+      "progress": "최근 진행",
+      "metering": "사용량",
+      "stuck": "멈춘 것 같습니다: {{reason}}",
+      "inspect": "최근 도구 호출 ({{n, number}})",
+      "noTools": "아직 도구 호출이 없습니다.",
+      "for": "{{age}} 동안",
+      "ago": "{{age}} 전",
+      "started": "시작",
+      "continuation": "계속 {{n, number}}",
+      "microvmTime": "MicroVM 시간 {{seconds, number}}초"
+    },
+    "noAgents": "아직 시작한 에이전트가 없습니다.",
+    "noTasks": "보드에 아직 작업이 없습니다.",
+    "task": {
+      "meta": "{{role}} · 시도 {{attempt}}",
+      "heldBy": "담당: {{agent}}",
+      "history": "기록 ({{n, number}})",
+      "move": "{{state}} · {{by}} · {{when}} (시도 {{attempt}})"
+    },
+    "states": {
+      "open": "열림",
+      "claimed": "맡음",
+      "in_progress": "진행 중",
+      "in_review": "검토 중",
+      "needs_human": "사람이 필요함",
+      "failed": "실패",
+      "done": "완료"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "답장",
+    "replyTo": "{{who}}에게 답장",
+    "answerTo": "받는 사람",
+    "conductor": "실행의 지휘자",
+    "replyingIn": "스레드 {{thread}}에서 답장 중",
+    "newThread": "새 스레드 시작",
+    "answer": "메시지",
+    "bytes": "{{used, number}} / {{max, number}}바이트",
+    "send": "보내기",
+    "noMessages": "아직 메시지가 없습니다.",
+    "tabs": {
+      "agents": "에이전트",
+      "board": "보드",
+      "conversation": "대화"
+    },
+    "panels": "실행의 에이전트, 보드, 대화",
+    "flow": "실행의 흐름(에이전트가 있는 단계 표시)",
+    "noFlow": "실행의 흐름을 읽을 수 없었습니다. 나머지 정보는 표시됩니다.",
+    "notFound": "엔지니어링 실행을 찾을 수 없습니다",
+    "notFoundHint": "실행 ID를 확인하세요. 엔지니어링 실행은 엔지니어링 에이전트가 켜진 곳에서, 모든 카테고리를 볼 수 있는 사람에게만 표시됩니다.",
+    "modelTokens": "{{model}}: 입력 {{input, number}}, 출력 {{output, number}}",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "부팅 중",
+      "working": "작업 중",
+      "pause_requested": "일시 중지 요청됨",
+      "waiting": "대기 중",
+      "paused": "일시 중지됨",
+      "done": "완료",
+      "failed": "실패",
+      "stopped": "중지됨",
+      "reposted": "다시 게시됨"
     }
   }
 }

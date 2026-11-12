@@ -66,7 +66,11 @@
     "renameNamed": "{{name}} umbenennen",
     "renameTitle": "Workflow umbenennen",
     "renameConflict": "Jemand hat diesen Workflow inzwischen geändert, oder es ist der integrierte. Neu laden und erneut versuchen.",
-    "renameFailed": "Der Workflow konnte nicht umbenannt werden."
+    "renameFailed": "Der Workflow konnte nicht umbenannt werden.",
+    "newEngineeringFlow": "Neuer Engineering-Ablauf",
+    "createEngineeringTitle": "Neuer Engineering-Ablauf",
+    "createEngineeringHint": "Ein Engineering-Ablauf lässt autonome Engineering-Agenten an einem Repository arbeiten und endet mit einem Pull Request, den Menschen prüfen. Er beginnt als Start → Ende: Fügen Sie die Engineering-Schritte aus der Palette hinzu.",
+    "engineeringKind": "Engineering"
   },
   "fields": {
     "name": "Name",
@@ -398,7 +402,46 @@
     "switchMessage": "Ihre ungespeicherten Änderungen an {{name}} gehen verloren.",
     "switchConfirm": "Workflow wechseln",
     "switched": "Dieser Agent führt jetzt {{name}} aus.",
-    "switchFailed": "Der Agent konnte nicht auf diesen Workflow umgestellt werden."
+    "switchFailed": "Der Agent konnte nicht auf diesen Workflow umgestellt werden.",
+    "engineering": {
+      "role": "Rolle",
+      "skillVersion": "Skill-Version",
+      "skillVersionHint": "'latest' (die zuletzt angenommene) oder eine Version wie v3.",
+      "model": "Modell",
+      "modelHint": "Eine Modell-ID; leer lassen für die Voreinstellung.",
+      "budgetShare": "Anteil am Budget des Laufs",
+      "budgetShareHint": "Ein Bruchteil von 0,01 bis 1; die Anteile der Agenten ergeben höchstens 1. Leer: kein eigener Anteil.",
+      "shardBy": "Aufteilen nach",
+      "shardByOptions": {
+        "packages": "Paketen",
+        "history": "Verlaufsfenstern",
+        "pr_pages": "PR-Seiten"
+      },
+      "shardCap": "Höchstens Stücke",
+      "posters": "Wer Aufgaben einstellt",
+      "claimers": "Wer Aufgaben übernimmt",
+      "until": "Läuft, bis",
+      "untilOptions": {
+        "drained": "jede Aufgabe erledigt ist",
+        "caps": "eine Grenze erreicht ist"
+      },
+      "maxRounds": "Review-Runden (höchstens)",
+      "packsAuto": "Prüfpakete im Repository erkennen",
+      "packs": "Prüfpakete",
+      "finalGoModel": "Modell der Endfreigabe",
+      "mode": "Modus",
+      "modeOptions": {
+        "read": "Lesen",
+        "write": "Schreiben"
+      },
+      "scope": "Wessen Gedächtnis",
+      "scopeOptions": {
+        "repo": "Das Repository",
+        "role": "Die Rolle",
+        "person": "Die Person"
+      },
+      "limit": "Höchstens gelesene Erinnerungen"
+    }
   },
   "paletteGroups": {
     "flow": "Ablauf",
@@ -406,7 +449,8 @@
     "documents": "Dokumente",
     "review": "Prüfung",
     "prototype": "Prototyp",
-    "delivery": "Übergabe"
+    "delivery": "Übergabe",
+    "engineering": "Engineering"
   },
   "edgeLabels": {
     "pass": "Bestanden",
@@ -499,6 +543,42 @@
     "end": {
       "label": "Ende",
       "description": "Hier endet der Lauf."
+    },
+    "agent": {
+      "label": "Agent",
+      "description": "Ein Agent mit einer Rolle (fixer, hunter, committer…), seiner Skill-Version und seinem Budgetanteil."
+    },
+    "map": {
+      "label": "Aufteilen",
+      "description": "Teilt die Arbeit in Stücke (Pakete, Verlaufsfenster, PR-Seiten), die Agenten parallel bearbeiten."
+    },
+    "reduce": {
+      "label": "Zusammenführen",
+      "description": "Wo die Stücke einer Aufteilung wieder zusammenkommen: ein Ergebnis aus allen."
+    },
+    "board": {
+      "label": "Board",
+      "description": "Ein Aufgaben-Board: einige Rollen stellen Aufgaben ein, andere übernehmen und erledigen sie, bis es leer ist."
+    },
+    "quality_gate": {
+      "label": "Qualitätsprüfung",
+      "description": "Prüfungen und Review-Runden zur Änderung: GO geht weiter zum PR, NO-GO an eine Person."
+    },
+    "learning_loop": {
+      "label": "Lernschleife",
+      "description": "Eine Retrospektive, die festhält, was der Lauf gelernt hat."
+    },
+    "self_improvement": {
+      "label": "Selbstverbesserung",
+      "description": "Der Coach schlägt eine bessere Skill-Version vor und misst sie."
+    },
+    "memory": {
+      "label": "Gedächtnis",
+      "description": "Aus dem Gedächtnis des Repositorys, einer Rolle oder einer Person lesen oder hineinschreiben."
+    },
+    "stop_at_pr": {
+      "label": "Stopp beim PR",
+      "description": "Der Ablauf endet mit einem Pull Request, den Menschen prüfen: es wird nie etwas gemergt."
     }
   },
   "loopUntilHint": {
@@ -585,6 +665,100 @@
         "label": "Lauf schließen",
         "help": "Es läuft nichts mehr. Was der Lauf erstellt hat, bleibt im Projekt."
       }
+    }
+  },
+  "engineeringRun": {
+    "untitled": "Engineering-Lauf",
+    "statusUnknown": "Status unbekannt",
+    "started": "Gestartet {{when}}",
+    "ended": "Beendet {{when}}",
+    "totals": "MicroVM-Zeit: {{seconds, number}} s · Nachrichten: {{messages, number}}",
+    "byModel": "Tokens pro Modell",
+    "runSignals": "Der ganze Lauf",
+    "agentSignals": "Agent {{agent}}",
+    "signals": {
+      "save": "Sichern",
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "shutdown": "Herunterfahren",
+      "stop_now": "Sofort stoppen"
+    },
+    "signalSent": "Gesendet.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "Sofort stoppen, ohne zu sichern?",
+    "stopNowMessage": "Die Arbeit wird sofort beendet, ohne Sicherungspunkt: Was noch nicht gesichert ist, geht verloren. Um es zu behalten, wähle stattdessen Herunterfahren.",
+    "errors": {
+      "forbidden": "Das kann nur eine Admin-Person.",
+      "notFound": "Dieser Lauf oder diese Aufgabe ist nicht mehr da: Lade den Lauf neu.",
+      "movedOn": "Seit du nachgesehen hast, hat sich etwas geändert (ein anderer Versuch, oder der Lauf ist beendet): Lade den Lauf neu und versuche es noch einmal.",
+      "unavailable": "Der Lauf war gerade nicht erreichbar: Versuche es gleich noch einmal.",
+      "generic": "Das hat nicht geklappt: Versuche es noch einmal."
+    },
+    "agent": {
+      "step": "Schritt",
+      "vm": "MicroVM",
+      "heartbeat": "Lebenszeichen",
+      "progress": "Letzter Fortschritt",
+      "metering": "Verbrauch",
+      "stuck": "Scheint festzuhängen: {{reason}}",
+      "inspect": "Letzte Tool-Aufrufe ({{n, number}})",
+      "noTools": "Noch keine Tool-Aufrufe.",
+      "for": "seit {{age}}",
+      "ago": "vor {{age}}",
+      "started": "Gestartet",
+      "continuation": "Fortsetzung {{n, number}}",
+      "microvmTime": "{{seconds, number}} s MicroVM-Zeit"
+    },
+    "noAgents": "Noch kein Agent hat begonnen.",
+    "noTasks": "Das Board hat noch keine Aufgaben.",
+    "task": {
+      "meta": "{{role}} · Versuch {{attempt}}",
+      "heldBy": "bei {{agent}}",
+      "history": "Verlauf ({{n, number}})",
+      "move": "{{state}} von {{by}}, {{when}} (Versuch {{attempt}})"
+    },
+    "states": {
+      "open": "Offen",
+      "claimed": "Übernommen",
+      "in_progress": "In Arbeit",
+      "in_review": "Im Review",
+      "needs_human": "Braucht eine Person",
+      "failed": "Fehlgeschlagen",
+      "done": "Erledigt"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Antworten",
+    "replyTo": "{{who}} antworten",
+    "answerTo": "Antwort an",
+    "conductor": "Die Steuerung des Laufs",
+    "replyingIn": "Antwort im Thread {{thread}}",
+    "newThread": "Neuen Thread beginnen",
+    "answer": "Deine Nachricht",
+    "bytes": "{{used, number}} / {{max, number}} Bytes",
+    "send": "Senden",
+    "noMessages": "Noch keine Nachrichten.",
+    "tabs": {
+      "agents": "Agenten",
+      "board": "Board",
+      "conversation": "Unterhaltung"
+    },
+    "panels": "Agenten, Board und Unterhaltung des Laufs",
+    "flow": "Der Ablauf des Laufs, mit den Schritten, an denen seine Agenten gerade sind",
+    "noFlow": "Der Ablauf des Laufs konnte nicht gelesen werden: Der Rest wird angezeigt.",
+    "notFound": "Engineering-Lauf nicht gefunden",
+    "notFoundHint": "Prüfe die ID des Laufs. Engineering-Läufe werden nur dort angezeigt, wo die Engineering-Agenten eingeschaltet sind, und nur Personen, die alle Kategorien sehen.",
+    "modelTokens": "{{model}}: {{input, number}} rein, {{output, number}} raus",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "Startet",
+      "working": "Arbeitet",
+      "pause_requested": "Pause angefragt",
+      "waiting": "Wartet",
+      "paused": "Pausiert",
+      "done": "Fertig",
+      "failed": "Fehlgeschlagen",
+      "stopped": "Gestoppt",
+      "reposted": "Neu eingestellt"
     }
   }
 }

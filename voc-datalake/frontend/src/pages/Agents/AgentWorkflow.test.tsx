@@ -81,6 +81,20 @@ describe('AgentDetail — Workflow tab switcher', () => {
     return screen.getByRole('combobox', { name: 'Workflow' })
   }
 
+  it('never offers an engineering flow (no agent runs one)', async () => {
+    routes(AGENT, {
+      'GET /workflows': () => ({ items: [
+        { workflow_id: 'wf_1', name: 'Flow', revision: 7, kind: 'agents' },
+        { workflow_id: 'wf_2', name: 'Fast flow', revision: 2, kind: 'agents' },
+        { workflow_id: 'wf_eng', name: 'Bug hunt', revision: 1, kind: 'engineering' },
+      ] }),
+    })
+    renderDetail('/agents/ag_1?tab=workflow')
+    const switcher = await findSwitcher()
+    expect(within(switcher).getByRole('option', { name: 'Fast flow' })).toBeInTheDocument()
+    expect(within(switcher).queryByRole('option', { name: 'Bug hunt' })).toBeNull()
+  })
+
   it('switches the agent to another library workflow and says so', async () => {
     const put = vi.fn((_body: unknown) => ({ agent: { ...AGENT, workflow_id: 'wf_2' } }))
     routes(AGENT, { 'PUT /agents/ag_1': put })

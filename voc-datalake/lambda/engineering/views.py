@@ -16,11 +16,9 @@ from engineering.bus.publish import new_event_id
 from engineering.connectors.identity import WORKSPACE
 from engineering.conversation.store import ConversationStore
 from engineering.reports.store import ReportStore
+from engineering.rows import next_after
 from engineering.workspace.layout import REPORT_LEVELS, report_key
 from engineering.workspace.store import WorkspaceStore
-
-#: How far behind the tail a reader re-reads: more than the messages of a run in flight at once.
-TAIL_WINDOW = 20
 
 
 @dataclass(frozen=True)
@@ -57,10 +55,7 @@ class EngineeringViews:
         if not self.run_exists(run_id):
             return None
         items = self.conversation_store.page(WORKSPACE, run_id, after=after, limit=limit)
-        if not items:
-            return {'items': [], 'next_after': after}
-        last = items[-1]['seq']
-        return {'items': items, 'next_after': last if len(items) == limit else max(after, last - TAIL_WINDOW)}
+        return {'items': items, 'next_after': next_after(after, [item['seq'] for item in items], limit)}
 
     def reports(self, run_id: str) -> dict[str, Any] | None:
         if not self.run_exists(run_id):

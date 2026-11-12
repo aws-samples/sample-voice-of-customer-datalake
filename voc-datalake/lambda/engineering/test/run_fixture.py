@@ -4,6 +4,8 @@ Used by the views' tests and by the Agents API's engineering routes' tests, so b
 """
 from __future__ import annotations
 
+import io
+import json
 from dataclasses import dataclass
 from itertools import count
 from typing import Any
@@ -16,10 +18,11 @@ from engineering.bus.schema import parse
 from engineering.bus.test.messages import message
 from engineering.conversation.store import ConversationStore
 from engineering.reports.store import ReportStore
+from engineering.runtime.sessions import AgentSession
 from engineering.workspace.store import WorkspaceStore
 
 BUCKET = 'voc-engineering-workspace'
-__all__ = ['BUCKET', 'RUN', 'TABLE', 'EngineeringRun', 'engineering_run']
+__all__ = ['BUCKET', 'FIXER', 'RUN', 'TABLE', 'EngineeringRun', 'LambdaClient', 'engineering_run']
 
 
 @dataclass
@@ -49,3 +52,29 @@ def engineering_run(region: str = 'us-east-1') -> EngineeringRun:
         'default', RUN, 'goal', RUN, document=lambda version: ({'schema': 'voc-report/1', 'version': version},
                                                                 f'## Goal report (v{version})\n'))
     return EngineeringRun(client, s3, workspace, task.task_id)
+
+
+#: The fixer on the run's task, as the supervisor's session row holds it.
+FIXER = AgentSession(
+    run_id=RUN, agent_id='fixer-1', role='fixer', task_id='task-1', language='python', egress=('pypi.org',),
+    connection='repo-1', commit='a' * 40, paths=('src',), harness=('python3', '-m', 'harness'), vm_id='vm-1',
+    endpoint='https://vm-1.example.org', started_at=1000, status='working', microvm_seconds=300,
+    tokens={'model-a': {'in': 1000, 'out': 200}},
+    inspect={'step': 'fix', 'recent_tools': ['read_file', 'run_tests'], 'last_progress_at': 1500, 'heartbeat_age': 30,
+             'microvm_state': 'running', 'microvm_age': 600, 'stuck_why': ''})
+
+
+class LambdaClient:
+    """``invoke`` as boto3 answers it: a payload stream, and ``FunctionError`` when the function raised."""
+
+    def __init__(self, payload: Any, function_error: str = '') -> None:
+        self.payload = payload
+        self.function_error = function_error
+        self.requests: list[dict[str, Any]] = []
+
+    def invoke(self, **request: Any) -> dict[str, Any]:
+        self.requests.append(request)
+        answer: dict[str, Any] = {'StatusCode': 200, 'Payload': io.BytesIO(json.dumps(self.payload).encode())}
+        if self.function_error:
+            answer['FunctionError'] = self.function_error
+        return answer

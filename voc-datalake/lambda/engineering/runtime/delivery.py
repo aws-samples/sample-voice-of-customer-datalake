@@ -1,8 +1,8 @@
 """voc-engineering-delivery: a message the inbox router addressed to an agent, the run's conductor or a role of the
 run lands in that run's inbox, and its addressees are woken to read it.
 
-The router (``bus/router.py``) is to invoke this function asynchronously with ``{"message": <voc-msg/1>, "seq": N}``
-once the message is in the run's conversation (N: its place there; today it still sends the bare message). Each
+The router (``bus/router.py``) invokes this function asynchronously with ``{"message": <voc-msg/1>, "seq": N}``
+once the message is in the run's conversation (N: its place there). Each
 message is recorded ONCE, as ``WS#<ws>#RUN#<run>`` / ``INBOX#<addressee>#<inbox_seq:012d>#<event_id>`` in
 voc-engineering. ``inbox_seq`` is the run's write-order counter (``inbox_seq`` on its META, taken just before the
 write), not the conversation's seq, which the row keeps as ``seq``: a delivery retried a minute later gets a number

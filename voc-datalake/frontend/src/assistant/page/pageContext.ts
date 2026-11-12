@@ -52,6 +52,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'agents/:id', kind: 'agent', param: { name: 'id', field: 'agentId' } },
   // One library workflow: the agents pack (workflow tools), no agent in context.
   { route: 'agents/workflows/:workflowId', kind: 'agents', label: 'workflow' },
+  // An engineering run's monitor: the agents pack, no agent in context.
+  { route: 'agents/engineering/:runId', kind: 'agents' },
   // Knowledge → Company: the company tool pack (context, my objectives, design system).
   { route: 'company', kind: 'company' },
   // `other` (core pack): the stream contract has no `connect` or `account` page kind.

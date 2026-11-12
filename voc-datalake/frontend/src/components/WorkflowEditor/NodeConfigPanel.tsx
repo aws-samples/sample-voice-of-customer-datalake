@@ -12,7 +12,7 @@ import { ArrowLeft, Repeat, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { workflowIssueText } from './workflowIssueText'
 import { WORKFLOW_NODE_ROLES } from '@stream/assistant/tools/agent-limits'
-import { API_WORKFLOW_LIMITS } from '../../api/workflowsApi'
+import { API_WORKFLOW_LIMITS, isEngineeringFlow } from '../../api/workflowsApi'
 import { createLoop, removeNodes, updateNode } from './model'
 import { EdgeForm, StepArrows } from './ArrowSettings'
 import { LoopForm, StepLoop } from './LoopSettings'
@@ -80,14 +80,17 @@ function StepForm({ node, definition, issues, readOnly, onChange }: Readonly<{
             onChange={(e) => patch((n) => ({ ...n, data: { ...n.data, title: e.target.value } }))} />
         )}
       </LabeledField>
-      <LabeledField label={t('editor.fields.role')}>
-        {(id) => (
-          <select id={id} className="select w-full" disabled={readOnly} value={node.data.role ?? ''} onChange={(e) => setRole(e.target.value)}>
-            <option value="">{t('editor.fields.roleNone')}</option>
-            {WORKFLOW_NODE_ROLES.map((role) => <option key={role} value={role}>{t(`roles.${role}`)}</option>)}
-          </select>
-        )}
-      </LabeledField>
+      {/* An engineering step takes no `data.role` (an agent's role is its setting): shown only to clear one imported. */}
+      {(!isEngineeringFlow(definition) || node.data.role !== undefined) && (
+        <LabeledField label={t('editor.fields.role')}>
+          {(id) => (
+            <select id={id} className="select w-full" disabled={readOnly} value={node.data.role ?? ''} onChange={(e) => setRole(e.target.value)}>
+              <option value="">{t('editor.fields.roleNone')}</option>
+              {WORKFLOW_NODE_ROLES.map((role) => <option key={role} value={role}>{t(`roles.${role}`)}</option>)}
+            </select>
+          )}
+        </LabeledField>
+      )}
       <LabeledField label={t(node.type === 'custom_llm' ? 'editor.fields.instructionsRequired' : 'editor.fields.instructions')}>
         {(id) => (
           <textarea id={id} rows={5} className="input w-full resize-y" disabled={readOnly}
@@ -124,7 +127,7 @@ function MultiSelection({ definition, nodeIds, readOnly, onChange }: Readonly<{
   return (
     <div className="space-y-3">
       <p className="text-sm text-text">{t('editor.multiSelected', { n: nodeIds.length })}</p>
-      {!readOnly && (
+      {!readOnly && !isEngineeringFlow(definition) && (
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange(createLoop(definition, nodeIds))}>
           <Repeat size={14} aria-hidden="true" /> {t('editor.groupLoop')}
         </button>

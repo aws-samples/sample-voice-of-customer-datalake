@@ -4,24 +4,25 @@
  *
  *   agent (assumed agent role) ──SigV4──▶ board API (function URL, AWS_IAM) ──▶ voc-engineering table (the board)
  *   board API ──PutEvents──▶ voc-engineering bus ──one rule──▶ inbox router ──▶ voc-engineering table (the conversation)
- *                                                                           └──▶ the posted task's role queue
+ *                                                                           └──▶ the delivery function (invoke, async)
+ *   delivery function ──▶ voc-engineering table (INBOX# rows) ◀── the board API's inbox op ◀── agent
  *
  * - The bus: one EventBridge custom bus, no archive and no schema registry (nothing billed while idle). Its policy
  *   denies `events:PutEvents` to every principal but the board API's role and the agent roles with a voice, whatever
  *   an identity policy grants, and denies each of those every `source` but its own (`addAgentPublisher`,
  *   engineering-runtime.ts).
  * - One fixed rule sends every event of this account on the bus to the inbox router (`engineering/bus/router.py`),
- *   never a rule per run. The router checks voc-msg/1 and the sender, writes the run's conversation and fans out:
- *   a posted task to its role's queue, a message for an agent or the conductor to the delivery function.
+ *   never a rule per run. The router checks voc-msg/1 and the sender, writes the run's conversation and pushes a
+ *   posted task, and a message for an agent or the conductor, to the delivery function with its conversation seq
+ *   (`{message, seq}`). There are no queues per role or per agent: a suspended MicroVM cannot poll, so every message
+ *   is pushed per run; the delivery function records each notice as an `INBOX#` row and wakes the addressee, and an
+ *   agent reads its notices through the board API's `inbox` op.
  * - The board API (`engineering/board/api.py`) behind a function URL with IAM authentication and no resource-based
  *   policy, like the broker: it takes the caller from its assumed-role identity and publishes each change as the
  *   board.
- * - One task queue per role of lambda/engineering/bus/schema.py ROLES (pinned by the test). No agent reads them: a
- *   queue serves every run, and an agent may see only its own run's tasks, so posted tasks are to reach the agents
- *   per run through the delivery function instead (docs/autonomous-engineering.md → Runtime).
- * - One dead-letter queue, voc-engineering-dlq: the role queues' redrives, the events the rule could not hand the
- *   router, the router's invocations that failed every retry, and the runtime's supervisor ticks EventBridge could
- *   not deliver (engineering-runtime.ts). Alerting watches it like the platform's other
+ * - One dead-letter queue, voc-engineering-dlq: the events the rule could not hand the router, the router's and the
+ *   delivery function's invocations that failed every retry, the report builder's failed builds, and the runtime's
+ *   supervisor ticks EventBridge could not deliver (engineering-runtime.ts). Alerting watches it like the platform's other
  *   failure queues (dlq-alarms.ts): its alarm exists only once an administrator turns alerting on, so no fixed cost.
  *
  * - The report builder (`engineering/reports/handler.py`): `{run_id, level, subject[, head]}` in, a new version of
@@ -30,16 +31,15 @@
  *   invokes it and no role holds an invoke on it; an asynchronous invocation that fails is kept in the DLQ.
  *
  * Grants, exactly what the code calls: the router and the board GetItem, PutItem and UpdateItem on the voc-engineering
- * table (the transactions are Put and Update items, the board's history rows included; no delete, no query); the
+ * table (the transactions are Put and Update items, the board's history rows included; no delete), and the board Query
+ * (its inbox op reads the caller's INBOX# rows); the
  * report builder GetItem, Query (a run's rows of a kind) and UpdateItem (the version counter and pointer), GetObject
  * on the runs' objects and PutObject on the reports in the workspace bucket, and ListBucket on it so a missing object
- * reads as missing rather than denied; the board `events:PutEvents` on the bus; the
- * router `sqs:SendMessage` on the role queues (and on the DLQ, as its failure destination); `kms:Decrypt` and
- * `kms:GenerateDataKey` on the stack's key, only through DynamoDB (and SQS for the router, S3 and SQS for the report
- * builder). The router names the
- * delivery function (the runtime's voc-engineering-delivery) and holds no invoke on it yet: until it does, a message
- * for an agent or a conductor is written to the conversation and its delivery fails into the DLQ (no producer sends
- * one yet: only the board publishes, to a role or the run).
+ * reads as missing rather than denied; the board `events:PutEvents` on the bus; the router `lambda:InvokeFunction` on
+ * the delivery function, by its name (the runtime's voc-engineering-delivery, deployed with it on the same flag), and
+ * `sqs:SendMessage` on the DLQ as its failure destination; `kms:Decrypt` and `kms:GenerateDataKey` on the stack's
+ * key, only through DynamoDB (and SQS for the router's and the report builder's failure records, S3 for the report
+ * builder).
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -52,7 +52,7 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
-import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
+import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import { ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
@@ -60,14 +60,8 @@ import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
 /** The report builder's base name: its future callers (the broker, the supervisor) address it by this name. */
 export const ENGINEERING_REPORTS_FUNCTION_BASE_NAME = 'voc-engineering-reports';
 
-/**
- * The roles with a task queue: lambda/engineering/bus/schema.py ROLES, in its order (engineering-bus.test.ts keeps
- * the two in lockstep).
- */
-export const ENGINEERING_QUEUE_ROLES = [
-  'understander', 'hunter', 'fixer', 'committer', 'commit-reviewer', 'pr-author', 'pr-reviewer', 'builder',
-  'final-go', 'mapper',
-] as const;
+/** The delivery function's base name (the runtime's): the router pushes every message to it. */
+const ENGINEERING_DELIVERY_FUNCTION_BASE_NAME = 'voc-engineering-delivery';
 
 /** Sid of the Core key-policy statement that lets EventBridge write the inbox rule's undelivered events to the DLQ. */
 export const ENGINEERING_DLQ_KEY_SID = 'AllowEventBridgeToEngineeringDeadLetter';
@@ -107,8 +101,11 @@ export class EngineeringBus extends Construct {
       queueName: props.uniqueName(ENGINEERING_DLQ_BASE_NAME), ...queueEncryption(props.kmsKey),
       retentionPeriod: cdk.Duration.days(14), removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-    const queues = this.createRoleQueues(props);
-    this.createRouter(props, queues);
+    acknowledgeNagOnResource(this.dlq, [{
+      id: 'AwsSolutions-SQS3',
+      reason: 'This queue IS the terminal failure record (the inbox rule\'s and the supervisor rule\'s dead-letter queue, the router\'s, the delivery function\'s and the report builder\'s async on-failure destination); nothing consumes it, so it has no DLQ of its own',
+    }]);
+    this.createRouter(props);
     this.board = this.createBoardApi(props);
     this.pinPublishers();
     this.createReports(props);
@@ -198,14 +195,6 @@ export class EngineeringBus extends Construct {
     return { bind: () => ({ destination: this.dlq.queueArn }) };
   }
 
-  /** One queue per role, encrypted with the stack's key, TLS only, redriving to the bus's dead-letter queue. */
-  private createRoleQueues(props: EngineeringBusProps): Map<string, sqs.Queue> {
-    return new Map(ENGINEERING_QUEUE_ROLES.map((role) => [role, new sqs.Queue(this, `TasksQueue-${role}`, {
-      queueName: props.uniqueName(`voc-eng-tasks-${role}`), ...queueEncryption(props.kmsKey),
-      deadLetterQueue: { queue: this.dlq, maxReceiveCount: 3 }, removalPolicy: cdk.RemovalPolicy.DESTROY,
-    })]));
-  }
-
   /**
    * The bus policy: an explicit deny of `events:PutEvents` for every principal but the publishers (the board's role,
    * and each agent role added with `addAgentPublisher`), whatever an identity policy grants.
@@ -223,13 +212,19 @@ export class EngineeringBus extends Construct {
     }));
   }
 
-  private createRouter(props: EngineeringBusProps, queues: Map<string, sqs.Queue>): void {
+  private createRouter(props: EngineeringBusProps): void {
     const role = workerRole(this, 'RouterRole');
     props.engineeringTable.grant(role, ...TABLE_ACTIONS);
+    const delivery = props.uniqueName(ENGINEERING_DELIVERY_FUNCTION_BASE_NAME);
+    // By name: the delivery function is the runtime's (engineering-runtime.ts), so no construct here to grant on.
     role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'EngineeringRoleQueues', actions: ['sqs:SendMessage'], resources: [...queues.values()].map((q) => q.queueArn),
+      sid: 'EngineeringDelivery', actions: ['lambda:InvokeFunction'],
+      resources: [cdk.Stack.of(this).formatArn({
+        service: 'lambda', resource: 'function', resourceName: delivery, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+      })],
     }));
-    // The table's key and the queues' (a send to a queue on a customer-managed key needs GenerateDataKey).
+    // The table's key, and the DLQ's for its failure records (a send to a queue on a customer-managed key needs
+    // GenerateDataKey).
     grantKeyThrough(role, props.kmsKey, ['dynamodb', 'sqs']);
     const router = createWorkerFunction(this, 'Router', {
       tree: 'engineering',
@@ -241,13 +236,11 @@ export class EngineeringBus extends Construct {
       memorySize: 256,
       environment: {
         ENGINEERING_TABLE: props.engineeringTable.tableName,
-        ENGINEERING_ROLE_QUEUE_URLS: cdk.Stack.of(this).toJsonString(
-          Object.fromEntries([...queues].map(([name, queue]) => [name, queue.queueUrl]))),
-        ENGINEERING_DELIVERY_FUNCTION: props.uniqueName('voc-engineering-delivery'),
+        ENGINEERING_DELIVERY_FUNCTION: delivery,
       },
       serviceName: 'voc-engineering-router',
-      // A redelivery is safe (the EVT# marker; the receivers dedupe by event id) and the router calls no model, so a
-      // failed fan-out (a throttled queue) is retried rather than lost; one that fails every retry is kept in the DLQ.
+      // A redelivery is safe (the EVT# marker; the delivery function's put is conditional) and the router calls no
+      // model, so a failed push is retried rather than lost; one that fails every retry is kept in the DLQ.
       retryAttempts: 2,
       onFailure: this.failureRecords(role),
     });
@@ -265,7 +258,8 @@ export class EngineeringBus extends Construct {
   private createBoardApi(props: EngineeringBusProps): lambda.Function {
     const role = workerRole(this, 'BoardRole');
     this.publishers.push(role);
-    props.engineeringTable.grant(role, ...TABLE_ACTIONS);
+    // Query: the inbox op reads the caller's INBOX# rows (board/inbox.py).
+    props.engineeringTable.grant(role, ...TABLE_ACTIONS, 'dynamodb:Query');
     grantKeyThrough(role, props.kmsKey, ['dynamodb']);
     this.bus.grantPutEventsTo(role);
     const board = createWorkerFunction(this, 'Board', {

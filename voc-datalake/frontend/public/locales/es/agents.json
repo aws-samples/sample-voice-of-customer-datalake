@@ -67,7 +67,11 @@
     "renameNamed": "Renombrar {{name}}",
     "renameTitle": "Renombrar este flujo",
     "renameConflict": "Alguien cambió este flujo mientras tanto, o es el integrado. Recarga e inténtalo de nuevo.",
-    "renameFailed": "No se pudo renombrar el flujo."
+    "renameFailed": "No se pudo renombrar el flujo.",
+    "newEngineeringFlow": "Nuevo flujo de ingeniería",
+    "createEngineeringTitle": "Nuevo flujo de ingeniería",
+    "createEngineeringHint": "Un flujo de ingeniería ejecuta agentes de ingeniería autónomos sobre un repositorio y termina en un pull request para que lo revisen personas. Empieza como Inicio → Fin: añade los pasos de Ingeniería desde la paleta.",
+    "engineeringKind": "Ingeniería"
   },
   "fields": {
     "name": "Nombre",
@@ -403,7 +407,46 @@
     "switchMessage": "Se perderán tus cambios sin guardar en {{name}}.",
     "switchConfirm": "Cambiar de flujo de trabajo",
     "switched": "Este agente ahora ejecuta {{name}}.",
-    "switchFailed": "No se pudo cambiar el agente a ese flujo de trabajo."
+    "switchFailed": "No se pudo cambiar el agente a ese flujo de trabajo.",
+    "engineering": {
+      "role": "Rol",
+      "skillVersion": "Versión de la habilidad",
+      "skillVersionHint": "'latest' (la última aceptada) o una versión como v3.",
+      "model": "Modelo",
+      "modelHint": "Un id de modelo; déjalo vacío para el predeterminado.",
+      "budgetShare": "Parte del presupuesto de la ejecución",
+      "budgetShareHint": "Una fracción de 0,01 a 1; las partes de los agentes suman como mucho 1. Vacío: sin parte propia.",
+      "shardBy": "Dividir por",
+      "shardByOptions": {
+        "packages": "Paquetes",
+        "history": "Ventanas del historial",
+        "pr_pages": "Páginas de PR"
+      },
+      "shardCap": "Máximo de partes",
+      "posters": "Quién publica tareas",
+      "claimers": "Quién toma tareas",
+      "until": "Dura hasta que",
+      "untilOptions": {
+        "drained": "Todas las tareas están hechas",
+        "caps": "Se alcanza un límite"
+      },
+      "maxRounds": "Rondas de revisión (máximo)",
+      "packsAuto": "Detectar los paquetes de control en el repositorio",
+      "packs": "Paquetes de control",
+      "finalGoModel": "Modelo de la aprobación final",
+      "mode": "Modo",
+      "modeOptions": {
+        "read": "Leer",
+        "write": "Escribir"
+      },
+      "scope": "Memoria de quién",
+      "scopeOptions": {
+        "repo": "El repositorio",
+        "role": "El rol",
+        "person": "La persona"
+      },
+      "limit": "Máximo de recuerdos leídos"
+    }
   },
   "paletteGroups": {
     "flow": "Flujo",
@@ -411,7 +454,8 @@
     "documents": "Documentos",
     "review": "Revisión",
     "prototype": "Prototipo",
-    "delivery": "Entrega"
+    "delivery": "Entrega",
+    "engineering": "Ingeniería"
   },
   "edgeLabels": {
     "pass": "Aprobado",
@@ -504,6 +548,42 @@
     "end": {
       "label": "Fin",
       "description": "Donde termina la ejecución."
+    },
+    "agent": {
+      "label": "Agente",
+      "description": "Un agente con un rol (fixer, hunter, committer…), su versión de habilidad y su parte del presupuesto."
+    },
+    "map": {
+      "label": "Mapa",
+      "description": "Divide el trabajo en partes (paquetes, ventanas del historial, páginas de PR) que los agentes hacen en paralelo."
+    },
+    "reduce": {
+      "label": "Reducción",
+      "description": "Donde vuelven a unirse las partes de un mapa: un resultado de todas ellas."
+    },
+    "board": {
+      "label": "Tablero",
+      "description": "Un tablero de tareas: unos roles publican tareas y otros las toman y las hacen, hasta vaciarlo."
+    },
+    "quality_gate": {
+      "label": "Control de calidad",
+      "description": "Comprobaciones y rondas de revisión del cambio: GO sigue al PR, NO-GO va a una persona."
+    },
+    "learning_loop": {
+      "label": "Ciclo de aprendizaje",
+      "description": "Una retrospectiva que guarda en la memoria lo que aprendió la ejecución."
+    },
+    "self_improvement": {
+      "label": "Automejora",
+      "description": "El coach propone una versión mejor de una habilidad y la mide."
+    },
+    "memory": {
+      "label": "Memoria",
+      "description": "Lee o escribe en la memoria del repositorio, de un rol o de una persona."
+    },
+    "stop_at_pr": {
+      "label": "Parar en el PR",
+      "description": "El flujo termina en un pull request para que lo revisen personas: nunca se fusiona nada."
     }
   },
   "loopUntilHint": {
@@ -591,6 +671,100 @@
         "label": "Cerrar la ejecución",
         "help": "No se ejecuta nada más. Lo que produjo la ejecución queda en el proyecto."
       }
+    }
+  },
+  "engineeringRun": {
+    "untitled": "Ejecución de ingeniería",
+    "statusUnknown": "estado desconocido",
+    "started": "Empezó {{when}}",
+    "ended": "Terminó {{when}}",
+    "totals": "Tiempo de MicroVM: {{seconds, number}} s · Mensajes: {{messages, number}}",
+    "byModel": "Tokens por modelo",
+    "runSignals": "Toda la ejecución",
+    "agentSignals": "Agente {{agent}}",
+    "signals": {
+      "save": "Guardar",
+      "pause": "Pausar",
+      "resume": "Reanudar",
+      "shutdown": "Apagar",
+      "stop_now": "Parar ya"
+    },
+    "signalSent": "Enviado.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "¿Parar ya, sin guardar?",
+    "stopNowMessage": "El trabajo se para de inmediato, sin punto de control: se pierde lo que aún no esté guardado. Para conservarlo, usa Apagar.",
+    "errors": {
+      "forbidden": "Solo un administrador puede hacerlo.",
+      "notFound": "Esta ejecución o tarea ya no existe: vuelve a cargar la ejecución.",
+      "movedOn": "Ha cambiado desde que lo miraste (otro intento, o la ejecución terminó): vuelve a cargar la ejecución e inténtalo de nuevo.",
+      "unavailable": "No se pudo contactar con la ejecución ahora: inténtalo de nuevo en un momento.",
+      "generic": "No se pudo hacer: inténtalo de nuevo."
+    },
+    "agent": {
+      "step": "Paso",
+      "vm": "MicroVM",
+      "heartbeat": "Latido",
+      "progress": "Último avance",
+      "metering": "Uso",
+      "stuck": "Parece atascado: {{reason}}",
+      "inspect": "Llamadas a herramientas recientes ({{n, number}})",
+      "noTools": "Aún no hay llamadas a herramientas.",
+      "for": "desde hace {{age}}",
+      "ago": "hace {{age}}",
+      "started": "Empezó",
+      "continuation": "continuación {{n, number}}",
+      "microvmTime": "{{seconds, number}} s de MicroVM"
+    },
+    "noAgents": "Aún no ha empezado ningún agente.",
+    "noTasks": "El tablero aún no tiene tareas.",
+    "task": {
+      "meta": "{{role}} · intento {{attempt}}",
+      "heldBy": "la tiene {{agent}}",
+      "history": "Historial ({{n, number}})",
+      "move": "{{state}} por {{by}}, {{when}} (intento {{attempt}})"
+    },
+    "states": {
+      "open": "Abierta",
+      "claimed": "Tomada",
+      "in_progress": "En curso",
+      "in_review": "En revisión",
+      "needs_human": "Necesita a una persona",
+      "failed": "Fallida",
+      "done": "Hecha"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Responder",
+    "replyTo": "Responder a {{who}}",
+    "answerTo": "Responder a",
+    "conductor": "El conductor de la ejecución",
+    "replyingIn": "Respondiendo en el hilo {{thread}}",
+    "newThread": "Empezar un hilo nuevo",
+    "answer": "Tu mensaje",
+    "bytes": "{{used, number}} / {{max, number}} bytes",
+    "send": "Enviar",
+    "noMessages": "Aún no hay mensajes.",
+    "tabs": {
+      "agents": "Agentes",
+      "board": "Tablero",
+      "conversation": "Conversación"
+    },
+    "panels": "Los agentes, el tablero y la conversación de la ejecución",
+    "flow": "El flujo de la ejecución, con los pasos en los que están sus agentes",
+    "noFlow": "No se pudo leer el flujo de la ejecución: se muestra el resto.",
+    "notFound": "No se encontró la ejecución de ingeniería",
+    "notFoundHint": "Comprueba el id de la ejecución. Las ejecuciones de ingeniería solo se muestran donde los agentes de ingeniería están activados, a quien puede ver todas las categorías.",
+    "modelTokens": "{{model}}: {{input, number}} de entrada, {{output, number}} de salida",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "Arrancando",
+      "working": "Trabajando",
+      "pause_requested": "Pausa pedida",
+      "waiting": "Esperando",
+      "paused": "En pausa",
+      "done": "Hecho",
+      "failed": "Fallido",
+      "stopped": "Detenido",
+      "reposted": "Publicado de nuevo"
     }
   }
 }

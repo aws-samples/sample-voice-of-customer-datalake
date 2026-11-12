@@ -6,7 +6,7 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { agentsApi, agentsKeys, isActiveRun } from '../../api/agentsApi'
-import { mergeEvents } from '../../components/WorkflowEditor/runState'
+import { mergeBySeq } from '../../api/seqPages'
 import { useConfigStore } from '../../store/configStore'
 import type { Agent, AgentForm, AgentRun, RunEvent } from '../../api/agentsApi'
 import type { RunDecisionKind } from '../../api/agentRunDecision'
@@ -126,7 +126,7 @@ export function useRunEvents(agentId: string, run: AgentRun | undefined): RunEve
     queryFn: async (): Promise<{ events: RunEvent[]; after: number }> => {
       const known = queryClient.getQueryData<{ events: RunEvent[]; after: number }>(queryKey) ?? { events: [], after: 0 }
       const page = await agentsApi.listEvents(agentId, runId, known.after)
-      return { events: mergeEvents(known.events, page.items), after: Math.max(known.after, page.nextAfter) }
+      return { events: mergeBySeq(known.events, page.items), after: Math.max(known.after, page.nextAfter) }
     },
     enabled: runId !== '',
     refetchInterval: active ? RUN_POLL_MS : false,

@@ -28,6 +28,8 @@
     "account": "계정",
     "workflows": "워크플로 목록",
     "workflow": "워크플로",
+    "engineering": "엔지니어링",
+    "engineeringRun": "엔지니어링 실행",
     "radar": "레이더",
     "featureRequests": "피드백 보드",
     "participants": "참여자",

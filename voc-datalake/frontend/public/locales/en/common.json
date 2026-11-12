@@ -28,6 +28,8 @@
     "account": "Account",
     "workflows": "Workflows",
     "workflow": "Workflow",
+    "engineering": "Engineering",
+    "engineeringRun": "Engineering run",
     "radar": "Radar",
     "featureRequests": "Feedback boards",
     "participants": "Participants",

@@ -28,6 +28,8 @@
     "account": "Conta",
     "workflows": "Fluxos",
     "workflow": "Fluxo",
+    "engineering": "Engenharia",
+    "engineeringRun": "Execução de engenharia",
     "radar": "Radar",
     "featureRequests": "Quadros de feedback",
     "participants": "Participantes",

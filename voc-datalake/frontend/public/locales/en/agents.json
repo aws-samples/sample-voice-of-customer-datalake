@@ -66,7 +66,11 @@
     "renameNamed": "Rename {{name}}",
     "renameTitle": "Rename this workflow",
     "renameConflict": "Someone changed this workflow meanwhile, or it is the built-in one. Reload and try again.",
-    "renameFailed": "The workflow couldn’t be renamed."
+    "renameFailed": "The workflow couldn’t be renamed.",
+    "newEngineeringFlow": "New engineering flow",
+    "createEngineeringTitle": "New engineering flow",
+    "createEngineeringHint": "An engineering flow runs autonomous engineering agents on a repository and ends on a pull request for people to review. It starts as Start → End: add the Engineering steps from the palette.",
+    "engineeringKind": "Engineering"
   },
   "fields": {
     "name": "Name",
@@ -398,7 +402,46 @@
     "switchMessage": "Your unsaved changes to {{name}} will be lost.",
     "switchConfirm": "Switch workflow",
     "switched": "This agent now runs {{name}}.",
-    "switchFailed": "The agent couldn't be switched to that workflow."
+    "switchFailed": "The agent couldn't be switched to that workflow.",
+    "engineering": {
+      "role": "Role",
+      "skillVersion": "Skill version",
+      "skillVersionHint": "'latest' (the latest accepted) or a version such as v3.",
+      "model": "Model",
+      "modelHint": "A model id; leave it empty for the default.",
+      "budgetShare": "Share of the run budget",
+      "budgetShareHint": "A fraction from 0.01 to 1; the agents' shares add up to at most 1. Empty: no share of its own.",
+      "shardBy": "Shard by",
+      "shardByOptions": {
+        "packages": "Packages",
+        "history": "History windows",
+        "pr_pages": "PR pages"
+      },
+      "shardCap": "Most shards",
+      "posters": "Who posts tasks",
+      "claimers": "Who claims tasks",
+      "until": "Runs until",
+      "untilOptions": {
+        "drained": "Every task is done",
+        "caps": "A cap is reached"
+      },
+      "maxRounds": "Review rounds (most)",
+      "packsAuto": "Detect the gate packs in the repository",
+      "packs": "Gate packs",
+      "finalGoModel": "Final-go model",
+      "mode": "Mode",
+      "modeOptions": {
+        "read": "Read",
+        "write": "Write"
+      },
+      "scope": "Whose memory",
+      "scopeOptions": {
+        "repo": "The repository",
+        "role": "The role",
+        "person": "The person"
+      },
+      "limit": "Most memories read"
+    }
   },
   "workflowPage": {
     "title": "Workflow",
@@ -410,7 +453,8 @@
     "documents": "Documents",
     "review": "Review",
     "prototype": "Prototype",
-    "delivery": "Delivery"
+    "delivery": "Delivery",
+    "engineering": "Engineering"
   },
   "edgeLabels": {
     "pass": "Pass",
@@ -453,7 +497,43 @@
     "collect_prototype_feedback": { "label": "Collect tester pins", "description": "Reads the open pins testers dropped on the prototype, for the next revision." },
     "revise_prototype": { "label": "Revise prototype", "description": "Changes the prototype from the review's objections." },
     "handoff": { "label": "Hand off", "description": "Gives the project to the owner of its main category." },
-    "end": { "label": "End", "description": "Where the run finishes." }
+    "end": { "label": "End", "description": "Where the run finishes." },
+    "agent": {
+      "label": "Agent",
+      "description": "An agent with a role (fixer, hunter, committer…), its skill version and its share of the budget."
+    },
+    "map": {
+      "label": "Map",
+      "description": "Split the work into shards (packages, history windows, PR pages) that agents take in parallel."
+    },
+    "reduce": {
+      "label": "Reduce",
+      "description": "Where a map's shards meet again: one result from all of them."
+    },
+    "board": {
+      "label": "Board",
+      "description": "A task board: some roles post tasks, others claim and do them, until it is drained."
+    },
+    "quality_gate": {
+      "label": "Quality gate",
+      "description": "Checks and review rounds on the change: GO goes on to the PR, NO-GO to a person."
+    },
+    "learning_loop": {
+      "label": "Learning loop",
+      "description": "A retrospective that writes what the run learned to memory."
+    },
+    "self_improvement": {
+      "label": "Self-improvement",
+      "description": "The coach proposes a better skill version and benchmarks it."
+    },
+    "memory": {
+      "label": "Memory",
+      "description": "Read from or write to the repository's, a role's or a person's memory."
+    },
+    "stop_at_pr": {
+      "label": "Stop at PR",
+      "description": "The flow ends on a pull request for people to review: nothing is ever merged."
+    }
   },
   "plans": {
     "title": "Plans",
@@ -531,6 +611,100 @@
         "label": "Close the run",
         "help": "Nothing more runs. What the run produced stays in the project."
       }
+    }
+  },
+  "engineeringRun": {
+    "untitled": "Engineering run",
+    "statusUnknown": "status unknown",
+    "started": "Started {{when}}",
+    "ended": "Ended {{when}}",
+    "totals": "MicroVM time: {{seconds, number}} s · Messages: {{messages, number}}",
+    "byModel": "Tokens per model",
+    "runSignals": "The whole run",
+    "agentSignals": "Agent {{agent}}",
+    "signals": {
+      "save": "Save",
+      "pause": "Pause",
+      "resume": "Resume",
+      "shutdown": "Shut down",
+      "stop_now": "Stop now"
+    },
+    "signalSent": "Sent.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "Stop now, without saving?",
+    "stopNowMessage": "The work is stopped at once, with no checkpoint: anything not saved yet is lost. To keep it, use Shut down instead.",
+    "errors": {
+      "forbidden": "Only an admin can do this.",
+      "notFound": "This run or task is no longer there: reload the run.",
+      "movedOn": "This has moved on since you looked (another attempt, or the run ended): reload the run and try again.",
+      "unavailable": "The run could not be reached just now: try again in a moment.",
+      "generic": "That did not go through: try again."
+    },
+    "agent": {
+      "step": "Step",
+      "vm": "MicroVM",
+      "heartbeat": "Heartbeat",
+      "progress": "Last progress",
+      "metering": "Use",
+      "stuck": "Looks stuck: {{reason}}",
+      "inspect": "Recent tool calls ({{n, number}})",
+      "noTools": "No tool calls yet.",
+      "for": "for {{age}}",
+      "ago": "{{age}} ago",
+      "started": "Started",
+      "continuation": "continuation {{n, number}}",
+      "microvmTime": "{{seconds, number}} s of MicroVM time"
+    },
+    "noAgents": "No agent has started yet.",
+    "noTasks": "The board has no tasks yet.",
+    "task": {
+      "meta": "{{role}} · attempt {{attempt}}",
+      "heldBy": "held by {{agent}}",
+      "history": "History ({{n, number}})",
+      "move": "{{state}} by {{by}}, {{when}} (attempt {{attempt}})"
+    },
+    "states": {
+      "open": "Open",
+      "claimed": "Claimed",
+      "in_progress": "In progress",
+      "in_review": "In review",
+      "needs_human": "Needs a person",
+      "failed": "Failed",
+      "done": "Done"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Reply",
+    "replyTo": "Reply to {{who}}",
+    "answerTo": "Answer",
+    "conductor": "The run’s conductor",
+    "replyingIn": "Replying in thread {{thread}}",
+    "newThread": "Start a new thread",
+    "answer": "Your message",
+    "bytes": "{{used, number}} / {{max, number}} bytes",
+    "send": "Send",
+    "noMessages": "No messages yet.",
+    "tabs": {
+      "agents": "Agents",
+      "board": "Board",
+      "conversation": "Conversation"
+    },
+    "panels": "The run’s agents, board and conversation",
+    "flow": "The run’s flow, with the steps its agents are on",
+    "noFlow": "The run’s flow could not be read: the rest of the run is shown.",
+    "notFound": "Engineering run not found",
+    "notFoundHint": "Check the run id. Engineering runs are shown only where the engineering agents are turned on, to people who can see every category.",
+    "modelTokens": "{{model}}: {{input, number}} in, {{output, number}} out",
+    "agentStatus": "{{agent}}: {{status}}",
+    "status": {
+      "booting": "Booting",
+      "working": "Working",
+      "pause_requested": "Pause requested",
+      "waiting": "Waiting",
+      "paused": "Paused",
+      "done": "Done",
+      "failed": "Failed",
+      "stopped": "Stopped",
+      "reposted": "Posted again"
     }
   }
 }

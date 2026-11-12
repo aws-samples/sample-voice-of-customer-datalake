@@ -3,7 +3,8 @@
 The board (the task brief, the lease's heartbeat and progress; for the run coordinator, the run's tasks, posting
 one and launching its agent), the agent's inbox (the run monitor's and the supervisor's messages: ``save``,
 ``pause``, a question), the knowledge pack (its agent reader: the latest approved version, read as data) and the
-broker (every write to the repository host) are built apart from the runtime (engineering/board, engineering/connectors; the inbox is not built yet;
+broker (every write to the repository host) are built apart from the runtime (engineering/board, its inbox op
+included, engineering/knowledge, engineering/connectors;
 docs/autonomous-engineering.md → How the agents work together, Repository connectors). Until the harness is
 wired to them, it reaches them only through these interfaces, the
 tests use fakes of them, and ``main.py`` wires adapters that refuse (``PendingHarnessPorts``), like the

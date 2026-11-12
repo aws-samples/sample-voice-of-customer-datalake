@@ -247,7 +247,7 @@ describe('with -c engineeringAgents=true', () => {
     expect(agent).toContain('ws/${aws:PrincipalTag/ws}/runs/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}/*');
     expect(agent).not.toContain('engineering/runs/');
     expect(agent).toContain('engineering/cache/${aws:PrincipalTag/connection}/*');
-    // The role queues serve every run: no agent reads one (its run's messages are pushed to it).
+    // No queue: an agent's run's messages are pushed to it (the delivery function) and read through the board.
     expect(agent).not.toMatch(/s3:DeleteObject|s3:\*|dynamodb:|iam:|lambda:\*|sqs:/);
   });
 

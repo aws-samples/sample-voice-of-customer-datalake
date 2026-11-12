@@ -72,6 +72,25 @@ describe('Workflow library — New workflow and Open', () => {
     expect(parsed.data).toMatchObject({ name: 'Churn watch', description: 'Weekly churn signals' })
   })
 
+  it('New engineering flow creates a voc-workflow/2 Start → End flow, listed with its kind', async () => {
+    const created = workflowView(1, { ...emptyDefinition('Bug hunt'), schema: 'voc-workflow/2' }, { workflow_id: 'wf_eng' })
+    const create = vi.fn((_body: unknown) => created)
+    const router = renderAt('/agents', {
+      'GET /workflows': () => ({ items: [{ workflow_id: 'wf_eng', name: 'Old hunt', revision: 1, kind: 'engineering' }] }),
+      'POST /workflows': create, 'GET /workflows/wf_eng': () => created,
+    })
+    expect(await screen.findByText('Engineering')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'New engineering flow' }))
+    const dialog = await screen.findByRole('dialog', { name: 'New engineering flow' })
+    await userEvent.type(within(dialog).getByLabelText('Workflow name'), 'Bug hunt')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Create workflow' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/agents/workflows/wf_eng'))
+    const body: unknown = create.mock.calls[0]?.[0]
+    const parsed = workflowDefinitionSchema.safeParse(isDefinitionBody(body) ? body.definition : null)
+    expect(parsed.data?.schema).toBe('voc-workflow/2')
+    expect(parsed.data?.nodes.map((n) => n.type)).toStrictEqual(['start', 'end'])
+  })
+
   it('creates nothing until the dialog is submitted: Create is off without a name, and Cancel closes it', async () => {
     const create = vi.fn((_body: unknown) => STORED)
     renderAt('/agents', { 'POST /workflows': create })

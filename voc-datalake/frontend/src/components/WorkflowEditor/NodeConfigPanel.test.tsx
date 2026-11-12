@@ -308,3 +308,36 @@ describe('connecting steps from the panel (live test: only Title / Role / Instru
     expect(add.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
+
+/** start → fix (an agent step) → done, an engineering flow. */
+const ENGINEERING: WorkflowDefinition = {
+  schema: 'voc-workflow/2',
+  name: 'Bug hunt',
+  nodes: [
+    node('start', 'start', 'Start'),
+    node('fix', 'agent', 'Fix', { role: 'fixer' }),
+    node('done', 'end', 'Done', { status: 'completed' }),
+  ],
+  edges: [{ id: 'e1', source: 'start', target: 'fix' }, { id: 'e2', source: 'fix', target: 'done' }],
+  loops: [],
+}
+
+describe('a step of an engineering flow', () => {
+  it("offers one Role (the agent's setting) and no loop to join", () => {
+    renderPanel(selectStep('fix'), { initial: ENGINEERING })
+    expect(screen.getAllByLabelText('Role')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Add to loop' })).toBeNull()
+  })
+
+  it('shows a step role imported with it, so it can be cleared', async () => {
+    const nodes = ENGINEERING.nodes.map((n) => (n.id === 'fix' ? { ...n, data: { ...n.data, role: 'worker' as const } } : n))
+    const { last } = renderPanel(selectStep('fix'), { initial: { ...ENGINEERING, nodes } })
+    await userEvent.selectOptions(screen.getAllByLabelText('Role')[0] ?? document.body, '')
+    expect(last().nodes.find((n) => n.id === 'fix')?.data.role).toBeUndefined()
+  })
+
+  it('offers no loop to group several steps into', () => {
+    renderPanel({ nodeIds: ['start', 'fix'], edgeIds: [], loopIndexes: [] }, { initial: ENGINEERING })
+    expect(screen.queryByRole('button', { name: 'Group as a loop' })).toBeNull()
+  })
+})
