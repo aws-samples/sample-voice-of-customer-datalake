@@ -17,11 +17,11 @@ from typing import Any
 from engineering.bus.routing import DELIVERY, ROLE_QUEUE, route
 from engineering.bus.schema import Message, MessageError, parse
 from engineering.bus.senders import judge
-from engineering.conversation.store import NEW, REDELIVERED, REUSED, ConversationStore
+from engineering.conversation.store import NEW, REDELIVERED, REUSED, UNKNOWN_RUN, ConversationStore
 from shared.logging import logger
 
 DROP_REASONS = {REUSED: 'the event id is already in the conversation with other content',
-                'unknown_run': 'the run does not exist'}
+                UNKNOWN_RUN: 'the run does not exist'}
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ class Router:
 
 
 def _from_environment() -> Router:
-    from shared.aws import get_dynamodb_resource, get_sqs_client, invoke_lambda_async
+    from shared.aws import get_dynamodb_client, get_sqs_client, invoke_lambda_async
 
     prefix = os.environ['ENGINEERING_ROLE_QUEUE_URL_PREFIX']
     delivery = os.environ['ENGINEERING_DELIVERY_FUNCTION']
@@ -77,7 +77,7 @@ def _from_environment() -> Router:
     def deliver(message: Message) -> None:
         invoke_lambda_async(delivery, message.to_dict())
 
-    store = ConversationStore(get_dynamodb_resource().meta.client, os.environ['ENGINEERING_TABLE'])
+    store = ConversationStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'])
     return Router(store, to_role_queue=to_role_queue, deliver=deliver)
 
 

@@ -4,7 +4,7 @@ The inbox router is its only writer (agents never write it); each row keeps the 
 actor and its ``at`` the time (D4).
 
 ``WS#<ws>#RUN#<run>`` / ``MSG#<seq:08d>``, the sequence from an atomic counter on the run's ``META`` row, which must
-exist (the board creates it with the run): a message for an unknown run is refused, never a phantom run. The bus is
+exist (the run's start writes it, with the run's caps): a message for an unknown run is refused, never a phantom run. The bus is
 at-least-once, so a message's ``EVT#<event_id>`` marker (with the message's digest) and its row are written in one
 transaction, each only if absent. A redelivered message changes nothing; an event id reused for other content is
 reported, so it is never delivered without its record.

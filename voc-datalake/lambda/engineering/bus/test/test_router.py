@@ -6,18 +6,16 @@ from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import boto3
 import pytest
 from botocore.exceptions import ClientError
-from moto import mock_aws
 
+from engineering.board.test.table import TABLE, engineering_table
 from engineering.bus import router as router_module
 from engineering.bus.router import Router, handler
 from engineering.bus.schema import Message
 from engineering.bus.test.messages import AGENT_SOURCE, RUN, message
 from engineering.conversation.store import ConversationStore
 
-TABLE = 'voc-engineering'
 TASK = {'type': 'task.posted', 'task_id': 'task-1', 'to': {'kind': 'role', 'id': 'fixer'},
         'from': {'kind': 'system', 'id': 'board'}}
 BOARD = 'voc.engineering/board'
@@ -25,15 +23,7 @@ BOARD = 'voc.engineering/board'
 
 @pytest.fixture
 def client() -> Iterator[Any]:
-    with mock_aws():
-        dynamo = boto3.client('dynamodb', region_name='us-east-1')
-        dynamo.create_table(TableName=TABLE, BillingMode='PAY_PER_REQUEST',
-                            KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'},
-                                       {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-                            AttributeDefinitions=[{'AttributeName': 'pk', 'AttributeType': 'S'},
-                                                  {'AttributeName': 'sk', 'AttributeType': 'S'}])
-        # The run exists (the board creates its META row with the run).
-        dynamo.put_item(TableName=TABLE, Item={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'META'}})
+    with engineering_table(run_id=RUN) as dynamo:
         yield dynamo
 
 
@@ -158,10 +148,8 @@ def test_the_handler_builds_its_clients_from_the_environment(client, monkeypatch
     monkeypatch.setenv('ENGINEERING_DELIVERY_FUNCTION', 'voc-eng-delivery')
     monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
     sqs = MagicMock()
-    resource = MagicMock()
-    resource.meta.client = client
     with patch('shared.aws.get_sqs_client', return_value=sqs), \
-            patch('shared.aws.get_dynamodb_resource', return_value=resource), \
+            patch('shared.aws.get_dynamodb_client', return_value=client), \
             patch('shared.aws.invoke_lambda_async') as invoke:
         assert handler({'source': BOARD, 'detail': message(**TASK)}, None) == {
             'status': 'routed', 'reason': '', 'seq': 1}
