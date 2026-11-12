@@ -36,7 +36,7 @@ export default function CommentFiltersBar({ threads, filter, onFilterChange, onC
       {kinds.length > 1 ? (
         <>
           <label htmlFor={authorId} className="sr-only">{t('documentComments.filterAuthor')}</label>
-          <select id={authorId} className="input w-auto py-1 text-sm" value={filter.author}
+          <select id={authorId} className="select select-sm w-auto" value={filter.author}
             onChange={(event) => {
               const value = event.target.value
               if (isAuthorFilter(value)) onFilterChange({ ...filter, author: value, personaId: '' })
@@ -49,7 +49,7 @@ export default function CommentFiltersBar({ threads, filter, onFilterChange, onC
       {filter.author === 'persona' && personas.length > 1 ? (
         <>
           <label htmlFor={personaId} className="sr-only">{t('documentComments.filterPersona')}</label>
-          <select id={personaId} className="input w-auto py-1 text-sm" value={filter.personaId}
+          <select id={personaId} className="select select-sm w-auto" value={filter.personaId}
             onChange={(event) => onFilterChange({ ...filter, personaId: event.target.value })}>
             <option value="">{t('documentComments.everyPersona')}</option>
             {personas.map((persona) => <option key={persona.personaId} value={persona.personaId}>{persona.name}</option>)}

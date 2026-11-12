@@ -150,6 +150,16 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
     expect(screen.getByRole('button', { name: actions.save }).closest('[data-action-bar]')).not.toBeNull()
   })
 
+  it('keeps Save, Discard, Full screen and File in one group at the end of the row, File last (a phone wraps it whole)', () => {
+    renderBar()
+    const bar = screen.getByRole('group', { name: actions.toolbarLabel })
+    const controls = screen.getByTestId('document-actions-controls')
+    const inControls = [actions.save, actions.discard, enProjectDetail.canvas.focus.button, menuText.trigger]
+      .map((name) => controls.contains(screen.getByRole('button', { name })))
+    expect({ inControls, last: bar.lastElementChild === controls, fileLast: controls.lastElementChild?.contains(fileButton()) })
+      .toStrictEqual({ inControls: [true, true, true, true], last: true, fileLast: true })
+  })
+
   it('says "Saving…" while a save is in flight', () => {
     renderBar({ state: canvasState({ dirty: true, saving: true }) })
     expect(status()).toHaveTextContent(actions.status.saving)
@@ -159,6 +169,14 @@ describe('DocumentActionsBar: status, Save and Discard', () => {
   it('shows the conflict banner under the bar', () => {
     renderBar({ state: canvasState({ conflict: { onLoadLatest: vi.fn(), onSaveAnyway: vi.fn(), saving: false, loading: false } }) })
     expect(screen.getByRole('alert')).toHaveTextContent(enProjectDetail.documentModal.conflict)
+  })
+
+  it('draws both of the conflict\'s ways out as bordered buttons (a ghost button misses AA on the warning tint)', () => {
+    renderBar({ state: canvasState({ conflict: { onLoadLatest: vi.fn(), onSaveAnyway: vi.fn(), saving: false, loading: false } }) })
+    const alert = within(screen.getByRole('alert'))
+    const looks = [enProjectDetail.documentModal.conflictReload, enProjectDetail.documentModal.conflictSaveAnyway]
+      .map((name) => alert.getByRole('button', { name }).classList.contains('btn-secondary'))
+    expect(looks).toStrictEqual([true, true])
   })
 
   it('holds both of the conflict\'s ways out while a save is on its way, and says so', () => {

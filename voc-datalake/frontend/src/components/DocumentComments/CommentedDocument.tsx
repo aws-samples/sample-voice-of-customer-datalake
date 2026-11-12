@@ -95,7 +95,8 @@ function DraftCard({ draft, onCreate, onCancel, onTextChange }: Readonly<{
   const { t } = useTranslation('components')
   return (
     <div className="rounded-lg border border-accent bg-card p-3 space-y-2 shadow-md"
-      onKeyDown={(event) => { if (event.key === 'Escape') onCancel() }}>
+      // Escape from the card's buttons closes it; in its box, the box decides (an empty one closes, text stays).
+      onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented) onCancel() }}>
       {draft.anchor === null ? (
         <p className="text-xs text-muted">{t('documentComments.onWholeDocument')}</p>
       ) : (

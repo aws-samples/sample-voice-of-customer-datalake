@@ -129,6 +129,14 @@ describe('a draft', () => {
     expect(screen.queryByLabelText('Add a comment')).not.toBeInTheDocument()
   })
 
+  it('with text stays open on Escape in its box, with the text; Cancel closes it', async () => {
+    const { user } = await openDraft('How long?')
+    await user.keyboard('{Escape}')
+    expect(screen.getByLabelText('Add a comment')).toHaveValue('How long?')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText('Add a comment')).not.toBeInTheDocument()
+  })
+
   it('with text is never replaced by a second selection: it says so and takes the person back to it', async () => {
     const { handle } = await openDraft('How long?')
     selectRange(0, 9)

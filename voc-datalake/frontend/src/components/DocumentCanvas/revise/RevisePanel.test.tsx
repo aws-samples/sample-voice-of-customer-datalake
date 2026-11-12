@@ -162,6 +162,17 @@ describe('the proposal', () => {
     await user.click(screen.getByRole('button', { name: 'Close' }))
     expect(controls.close).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps Close in the header\'s corner, out of the line that wraps (a phone wraps the title and actions only)', () => {
+    renderPanel(proposal())
+    const header = screen.getByTestId('revise-panel-header')
+    const close = screen.getByRole('button', { name: 'Close' })
+    const heading = screen.getByRole('heading', { name: 'Suggested changes' })
+    expect({
+      closeLast: header.lastElementChild === close, headerWraps: header.classList.contains('flex-wrap'),
+      headingInWrappingLine: header.firstElementChild?.contains(heading) === true && header.firstElementChild.classList.contains('flex-wrap'),
+    }).toStrictEqual({ closeLast: true, headerWraps: false, headingInWrappingLine: true })
+  })
 })
 
 describe('the applied banner', () => {
