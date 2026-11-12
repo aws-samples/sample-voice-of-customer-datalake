@@ -1,7 +1,7 @@
 /**
  * @fileoverview A long document for the large-document specs: sections of every block the canvas edits (headings,
  * prose with bold, links and citations, lists, a to-do list, a quote, a callout, a table, code), repeated until the
- * text is at least `characters` long. A revise pass stores at most 60,000 characters; a document can be longer.
+ * text is at least `characters` long. Revise from comments refuses a document over 60,000 characters; a document itself can be longer.
  */
 const section = (n: number): string => [
   `## Finding ${String(n)}: delivery and tracking`,

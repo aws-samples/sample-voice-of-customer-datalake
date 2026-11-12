@@ -161,7 +161,7 @@ function typeInSection(editor: Editor, n: number, text: string) {
 describe('docToMarkdown of the live document, on a large document', () => {
   const markdown = largeMarkdown(200_000)
 
-  it('is a document of more than 200,000 characters (a revise pass stores at most 60,000)', () => {
+  it('is a document of more than 200,000 characters (Revise from comments refuses one over 60,000; the canvas edits it)', () => {
     expect(markdown.length).toBeGreaterThan(200_000)
   })
 
