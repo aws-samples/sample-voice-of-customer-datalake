@@ -695,6 +695,7 @@
     "notFoundHint": "Check the run id. Engineering runs are shown only where the engineering agents are turned on, to people who can see every category.",
     "modelTokens": "{{model}}: {{input, number}} in, {{output, number}} out",
     "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}} (not applied)",
     "status": {
       "booting": "Booting",
       "working": "Working",

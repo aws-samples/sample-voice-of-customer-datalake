@@ -749,6 +749,7 @@
     "notFoundHint": "실행 ID를 확인하세요. 엔지니어링 실행은 엔지니어링 에이전트가 켜진 곳에서, 모든 카테고리를 볼 수 있는 사람에게만 표시됩니다.",
     "modelTokens": "{{model}}: 입력 {{input, number}}, 출력 {{output, number}}",
     "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}} (적용 안 됨)",
     "status": {
       "booting": "부팅 중",
       "working": "작업 중",

@@ -105,13 +105,22 @@ describe('the run monitor', () => {
 
 describe('an admin acts on the run', () => {
   it('pauses the agent on a task at the attempt the board shows', async () => {
-    const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'pause', agents: { 'fixer-1': 'pause_requested' } } }))
+    const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'pause', agents: { 'fixer-1': 'pause_requested' }, applied: { 'fixer-1': true } } }))
     routes({ [`POST ${BASE}/signals`]: signal })
     renderRun()
     const fixer = await screen.findByRole('group', { name: 'Agent fixer-1' })
     await userEvent.click(within(fixer).getByRole('button', { name: 'Pause — Agent fixer-1' }))
     await waitFor(() => expect(signal).toHaveBeenCalledWith({ signal: 'pause', task_id: 'task-1', attempt: 2 }))
     expect(await screen.findByText('Sent. fixer-1: Pause requested')).toBeInTheDocument()
+  })
+
+  it('says which agents a signal did nothing to', async () => {
+    const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'resume', agents: { 'fixer-1': 'working' }, applied: { 'fixer-1': false } } }))
+    routes({ [`POST ${BASE}/signals`]: signal })
+    renderRun()
+    const fixer = await screen.findByRole('group', { name: 'Agent fixer-1' })
+    await userEvent.click(within(fixer).getByRole('button', { name: 'Resume — Agent fixer-1' }))
+    expect(await screen.findByText('Sent. fixer-1: Working (not applied)')).toBeInTheDocument()
   })
 
   it('offers no signal for an agent whose task is over, though it keeps the lease', async () => {

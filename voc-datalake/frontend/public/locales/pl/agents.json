@@ -782,6 +782,7 @@
     "notFoundHint": "Sprawdź identyfikator przebiegu. Przebiegi inżynieryjne są widoczne tylko tam, gdzie agenci inżynieryjni są włączeni, i tylko dla osób, które widzą wszystkie kategorie.",
     "modelTokens": "{{model}}: {{input, number}} na wejściu, {{output, number}} na wyjściu",
     "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}} (nie zastosowano)",
     "status": {
       "booting": "Uruchamia się",
       "working": "Pracuje",

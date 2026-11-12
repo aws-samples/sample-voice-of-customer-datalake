@@ -749,6 +749,7 @@
     "notFoundHint": "実行 ID を確認してください。エンジニアリング実行は、エンジニアリングエージェントが有効な環境でのみ、すべてのカテゴリを閲覧できる人に表示されます。",
     "modelTokens": "{{model}}: 入力 {{input, number}}、出力 {{output, number}}",
     "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}}（未適用）",
     "status": {
       "booting": "起動中",
       "working": "作業中",

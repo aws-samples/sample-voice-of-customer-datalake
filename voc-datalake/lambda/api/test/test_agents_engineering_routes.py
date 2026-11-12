@@ -147,7 +147,7 @@ def actions(monkeypatch: pytest.MonkeyPatch, run: tuple[Any, EngineeringRun]) ->
     SessionStore(env.agents).create(FIXER)
     monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
     monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
-    reached = Actions(Bus(), LambdaClient({'agents': {'fixer-1': 'pause_requested'}}))
+    reached = Actions(Bus(), LambdaClient({'agents': {'fixer-1': 'pause_requested'}, 'applied': {'fixer-1': True}}))
     with patch('shared.aws.get_eventbridge_client', return_value=reached.bus), \
             patch('shared.aws.get_lambda_client', return_value=reached.runtime):
         yield reached
@@ -169,9 +169,10 @@ def test_an_admin_signals_the_agent_on_a_task_at_the_attempt_seen(lambda_context
                          body={'signal': 'pause', 'task_id': engineering.task_id, 'attempt': 1})
     assert (status, body['signal']['target'], body['signal']['agents']) == (
         200, {'kind': 'agent', 'id': 'fixer-1'}, {'fixer-1': 'pause_requested'})
+    assert body['signal']['applied'] == {'fixer-1': True}
     (invoked,) = actions.runtime.requests
     assert json.loads(invoked['Payload']) == {'action': 'signal', 'run_id': RUN, 'signal': 'pause',
-                                              'agent_id': 'fixer-1'}
+                                              'agent_id': 'fixer-1', 'attempt': 1}
     entry, _outcome = actions.bus.entries
     assert (entry['Source'], entry['DetailType']) == ('voc.engineering/api', 'signal.pause')
     assert 'by alice' in json.loads(entry['Detail'])['summary']

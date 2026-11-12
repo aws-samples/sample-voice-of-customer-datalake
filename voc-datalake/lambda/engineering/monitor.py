@@ -49,6 +49,8 @@ API_SOURCE = 'voc.engineering/api'
 SIGNALS = ('save', 'pause', 'resume', 'shutdown', 'stop_now')
 #: The supervisor's answer for an agent another move held (supervisor.py: nothing was done).
 BUSY = 'busy'
+#: The supervisor's answer for an agent on another attempt than the one the signal named (nothing done).
+STALE = 'stale'
 #: The longest text the overview passes on from a row the runtime wrote (a step, a reason, a tool call).
 MAX_LINE = 280
 MAX_NOTE_BYTES = 500
@@ -70,10 +72,18 @@ class Sessions(Protocol):
     def of_run(self, run_id: str) -> list[AgentSession]: ...
 
 
-class Runtime(Protocol):
-    """The supervisor's signal: each agent's status after it (``LambdaRuntime`` calls voc-engineering-runtime)."""
+@dataclass(frozen=True)
+class Applied:
+    """The supervisor's answer: each agent's status after the signal, and whether the signal did anything to it
+    (false when it was busy, its move failed, there was nothing to do, or the attempt was stale)."""
+    agents: dict[str, str]
+    applied: dict[str, bool]
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str) -> dict[str, str]: ...
+
+class Runtime(Protocol):
+    """The supervisor's signal (``LambdaRuntime`` calls voc-engineering-runtime)."""
+
+    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None) -> Applied: ...
 
 
 def _line(value: Any) -> str | None:
@@ -187,17 +197,32 @@ def _record(signal: Signal, actor: Actor, target: Party) -> str:
     return fit_summary(f"{signal.name.replace('_', ' ')} requested from the run monitor by {actor.name} for {whom}.{note}")
 
 
+def _outcome_text(answer: Applied) -> str:
+    """``applied: a working, b paused; not applied: c busy`` (or ``no agent yet``)."""
+    def listed(applied: bool) -> str:
+        return ', '.join(f'{agent} {status}' for agent, status in sorted(answer.agents.items())
+                         if answer.applied.get(agent, False) is applied)
+
+    done, not_done = listed(True), listed(False)
+    parts = [f'applied: {done}'] * bool(done) + [f'not applied: {not_done}'] * bool(not_done)
+    return '; '.join(parts) or 'no agent yet'
+
+
 class LambdaRuntime:
-    """The supervisor's signal through ``voc-engineering-runtime`` (``{action: signal, run_id, agent_id?, signal}``)."""
+    """The supervisor's signal through ``voc-engineering-runtime``: ``{action: signal, run_id, agent_id?, signal,
+    attempt?}`` answers ``{agents: {agent: status}, applied: {agent: bool}}``. The attempt goes with one agent, so the
+    supervisor itself refuses an agent that has moved on to another attempt (``stale``); a Stop now is never stale."""
 
     def __init__(self, client: Any, function_name: str) -> None:
         self.client = client
         self.function_name = function_name
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str) -> dict[str, str]:
-        request = {'action': 'signal', 'run_id': run_id, 'signal': signal}
+    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None) -> Applied:
+        request: dict[str, Any] = {'action': 'signal', 'run_id': run_id, 'signal': signal}
         if agent_id is not None:
             request['agent_id'] = agent_id
+            if attempt is not None:
+                request['attempt'] = attempt
         answer = self.client.invoke(FunctionName=self.function_name, InvocationType='RequestResponse',
                                     Payload=json.dumps(request).encode())
         payload = json.loads(answer['Payload'].read() or b'{}')
@@ -205,8 +230,14 @@ class LambdaRuntime:
             if isinstance(payload, dict) and payload.get('errorType') == 'RuntimeRefused':
                 raise MonitorError('conflict', str(payload.get('errorMessage', 'the supervisor refused it'))[:MAX_LINE])
             raise MonitorError('unavailable', 'the supervisor could not apply it: retry')
-        agents = payload.get('agents', {}) if isinstance(payload, dict) else {}
-        return {str(agent): str(status) for agent, status in agents.items()} if isinstance(agents, dict) else {}
+        answer_of = payload if isinstance(payload, dict) else {}
+        agents, applied = answer_of.get('agents'), answer_of.get('applied')
+        statuses = {str(agent): str(status) for agent, status in agents.items()} if isinstance(agents, dict) else {}
+        if not isinstance(applied, dict):
+            # The runtime from before ``applied`` (it ignores ``attempt`` too): what it answered busy did nothing.
+            return Applied(statuses, {agent: status not in {BUSY, STALE} for agent, status in statuses.items()})
+        # An agent the answer leaves out is taken as not applied (never claimed done on a guess).
+        return Applied(statuses, {agent: applied.get(agent) is True for agent in statuses})
 
 
 class RunMonitor:
@@ -283,22 +314,28 @@ class RunMonitor:
             sender=Party('human', actor.subject), to=Party('run', run_id), type=f'signal.{signal.name}',
             summary=_record(signal, actor, target), at=at, task_id=signal.task_id)
         _publish(publisher, record)
+        one = target.kind == 'agent'
         try:
-            agents = self.runtime.signal(run_id, target.id if target.kind == 'agent' else None, signal.name)
+            answer = self.runtime.signal(run_id, target.id if one else None, signal.name,
+                                         signal.attempt if one else None)
         except (ClientError, BotoCoreError) as exc:
             self._outcome(publisher, record, 'not applied: the supervisor could not be reached')
             raise MonitorError('unavailable', 'The supervisor could not be reached: send the signal again') from exc
         except MonitorError as refused:
             self._outcome(publisher, record, f'not applied: {refused}')
             raise
-        if target.kind == 'agent' and agents.get(target.id) == BUSY:
+        agents = answer.agents
+        if one and agents.get(target.id) == STALE:
+            # The agent moved on to another attempt between the check and the signal: nothing was done.
+            self._outcome(publisher, record, 'not applied: the agent has moved on to another attempt')
+            raise MonitorError('conflict', 'This task has moved on since you looked: reload the run')
+        if one and agents.get(target.id) == BUSY:
             # Another move held the agent: nothing was done.
             self._outcome(publisher, record, 'not applied: the agent was busy with another move')
             raise MonitorError('unavailable', 'The agent is busy with another move: send the signal again')
-        statuses = ', '.join(f'{agent} {status}' for agent, status in sorted(agents.items())) or 'no agent yet'
-        self._outcome(publisher, record, f'applied: {statuses}')
+        self._outcome(publisher, record, _outcome_text(answer))
         return {'event_id': event_id, 'signal': signal.name, 'target': {'kind': target.kind, 'id': target.id},
-                'attempt': signal.attempt, 'agents': agents, 'at': at}
+                'attempt': signal.attempt, 'agents': agents, 'applied': answer.applied, 'at': at}
 
     def _outcome(self, publisher: Publisher, request: Message, outcome: str) -> None:
         """What came of a recorded request, in the conversation (best effort: the request itself is recorded)."""

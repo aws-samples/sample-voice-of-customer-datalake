@@ -45,10 +45,10 @@ describe('parseOverview', () => {
 
 describe('a signal', () => {
   it("answers each agent's status after it, or none when the answer names none", async () => {
-    fetchApi.mockResolvedValueOnce({ signal: { event_id: 'e', signal: 'pause', agents: { 'fixer-1': 'pause_requested' } } })
-    expect(await engineeringRunsApi.signal('RUN1', { signal: 'pause' })).toStrictEqual({ agents: { 'fixer-1': 'pause_requested' } })
+    fetchApi.mockResolvedValueOnce({ signal: { event_id: 'e', signal: 'pause', agents: { 'fixer-1': 'pause_requested' }, applied: { 'fixer-1': true } } })
+    expect(await engineeringRunsApi.signal('RUN1', { signal: 'pause' })).toStrictEqual({ agents: { 'fixer-1': 'pause_requested' }, applied: { 'fixer-1': true } })
     fetchApi.mockResolvedValueOnce({ something: 'else' })
-    expect(await engineeringRunsApi.signal('RUN1', { signal: 'save' })).toStrictEqual({ agents: {} })
+    expect(await engineeringRunsApi.signal('RUN1', { signal: 'save' })).toStrictEqual({ agents: {}, applied: {} })
     expect(fetchApi).toHaveBeenLastCalledWith('/agents/engineering/RUN1/signals', expect.objectContaining({ method: 'POST' }))
   })
 })

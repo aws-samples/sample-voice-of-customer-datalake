@@ -137,6 +137,7 @@ function say(from, to, type, summary, { threadId = 't-run', taskId, at = new Dat
     seq, event_id: `evt-${seq}`, type, at,
     message: { schema: 'voc-msg/1', from, to, type, summary, thread_id: threadId, at, ...(taskId ? { task_id: taskId } : {}) },
   });
+  return `evt-${seq}`;
 }
 
 say({ kind: 'conductor', id: SAMPLE_RUN_ID }, { kind: 'run', id: SAMPLE_RUN_ID }, 'run.started', 'Started: three bugs to fix', { at: minutesAgo(42) });
@@ -198,9 +199,8 @@ function signal(body) {
   // The request is recorded first (as the server does), then the supervisor applies it or refuses.
   const at = new Date().toISOString();
   const whom = target.kind === 'agent' ? `agent ${target.id}` : 'the whole run';
-  say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
+  const request = say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
     `${body.signal.replace('_', ' ')} requested from the run monitor by alex for ${whom}.`, { threadId: 'signals', taskId: body.task_id, at });
-  const request = `evt-${run.messages.length - 1}`;
   const notApplied = (why) => say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
     `signal.${body.signal} request ${request}: not applied: ${why}`, { threadId: 'signals', taskId: body.task_id });
   if (body.signal === 'resume' && run.outOfBudget) {
@@ -214,12 +214,16 @@ function signal(body) {
   }
   const reached = run.agents.filter((a) => target.kind === 'run' || a.agent === target.id);
   const next = { save: null, pause: 'pause_requested', resume: 'working', shutdown: 'pause_requested', stop_now: 'stopped' }[body.signal];
+  // As the supervisor answers: a Save checkpoints (applied); any other signal is applied when it changes the status
+  // (a Resume of an agent already working is nothing to do).
+  const applied = Object.fromEntries(reached.map((a) => [a.agent, next === null || a.status !== next]));
   for (const a of reached) if (next) a.status = next;
   const agents = Object.fromEntries(reached.map((a) => [a.agent, a.status]));
-  const statuses = Object.entries(agents).map(([id, status]) => `${id} ${status}`).join(', ') || 'no agent yet';
+  const listed = (done) => Object.entries(agents).filter(([id]) => applied[id] === done).map(([id, status]) => `${id} ${status}`).join(', ');
+  const outcome = [listed(true) && `applied: ${listed(true)}`, listed(false) && `not applied: ${listed(false)}`].filter(Boolean).join('; ') || 'no agent yet';
   say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
-    `signal.${body.signal} request evt-${run.messages.length - 1}: applied: ${statuses}`, { threadId: 'signals', taskId: body.task_id });
-  return [200, { signal: { event_id: `evt-${run.messages.length}`, signal: body.signal, target, attempt: body.attempt ?? 0, agents, at } }];
+    `signal.${body.signal} request ${request}: ${outcome}`, { threadId: 'signals', taskId: body.task_id });
+  return [200, { signal: { event_id: request, signal: body.signal, target, attempt: body.attempt ?? 0, agents, applied, at } }];
 }
 
 function answer(body) {
