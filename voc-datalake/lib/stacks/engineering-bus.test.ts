@@ -1,18 +1,16 @@
 /**
  * The engineering bus (engineering-bus.ts, docs/autonomous-engineering.md): absent by default; with
- * -c engineeringAgents=true, one custom bus with no archive, ONE rule sending every event to the inbox router, a task
- * queue per role of lambda/engineering/bus/schema.py, and the board API behind an IAM-authenticated function URL with
- * no resource-based permission, each role holding exactly the calls its code makes.
+ * -c engineeringAgents=true, one custom bus with no archive, ONE rule sending every event to the inbox router, which
+ * pushes to the delivery function (no queue per role or agent: only the DLQ), and the board API behind an
+ * IAM-authenticated function URL with no resource-based permission, each role holding exactly the calls its code
+ * makes.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 import { Match, type Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
-import { ENGINEERING_QUEUE_ROLES, ENGINEERING_REPORTS_FUNCTION_BASE_NAME } from './engineering-bus';
+import { ENGINEERING_REPORTS_FUNCTION_BASE_NAME } from './engineering-bus';
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
 import {
   AGENT_ROLE_NAME_PATTERN_JOIN, functionRoleId, functionStatements as statementsOf, functionUrlAuthTypes, processingSynths,
@@ -39,11 +37,6 @@ function queueIds(synthesized: Template, baseName: string): string[] {
   return Object.entries(synthesized.findResources('AWS::SQS::Queue'))
     .filter(([, queue]) => JSON.stringify(queue.Properties?.QueueName ?? '').includes(`"${baseName}`))
     .map(([id]) => id);
-}
-
-/** The logical ids of the role queues. */
-function roleQueueIds(synthesized: Template): string[] {
-  return queueIds(synthesized, 'voc-eng-tasks-');
 }
 
 /** The bus's one dead-letter queue. */
@@ -223,47 +216,37 @@ describe('the engineering bus', () => {
     expect(JSON.stringify(env.ENGINEERING_DELIVERY_FUNCTION)).toContain('voc-engineering-delivery-');
   });
 
-  it('gives the router every role\'s queue URL by role (ENGINEERING_ROLE_QUEUE_URLS, a JSON object)', () => {
+  it('has no queue but the dead-letter queue, KMS-encrypted: every message is pushed per run', () => {
     const on = template('on');
-    const urls = JSON.stringify(routerEnv(on).ENGINEERING_ROLE_QUEUE_URLS);
-    const missingRoles = ENGINEERING_QUEUE_ROLES.filter((role) => !urls.includes(`\\"${role}\\":\\"`));
-    const missingQueues = roleQueueIds(on).filter((id) => !urls.includes(`{"Ref":"${id}"}`));
-    expect({ missingRoles, missingQueues }).toStrictEqual({ missingRoles: [], missingQueues: [] });
-  });
-
-  it('has a queue per role of the bus schema, KMS-encrypted, redriving to the dead-letter queue', () => {
-    const on = template('on');
-    const ids = roleQueueIds(on);
-    expect(ids).toHaveLength(ENGINEERING_QUEUE_ROLES.length);
     const queues = on.findResources('AWS::SQS::Queue');
-    const redrives = new Set(ids.map((id) => JSON.stringify(queues[id]?.Properties?.RedrivePolicy?.deadLetterTargetArn)));
-    expect([...redrives]).toStrictEqual([JSON.stringify({ 'Fn::GetAtt': [dlqId(on), 'Arn'] })]);
-    expect([...ids, dlqId(on)].filter((id) => queues[id]?.Properties?.KmsMasterKeyId === undefined)).toStrictEqual([]);
+    // Every engineering queue's name starts with voc-eng (voc-engineering-dlq; the old role queues were voc-eng-tasks-).
+    expect(queueIds(on, 'voc-eng')).toStrictEqual([dlqId(on)]);
+    expect(queues[dlqId(on)]?.Properties?.KmsMasterKeyId).toBeDefined();
+    expect(routerEnv(on)).not.toHaveProperty('ENGINEERING_ROLE_QUEUE_URLS');
   });
 
-  it('keeps the queue roles in lockstep with lambda/engineering/bus/schema.py ROLES', () => {
-    const schema = readFileSync(join(__dirname, '../../lambda/engineering/bus/schema.py'), 'utf8');
-    const block = /^ROLES = frozenset\(\{([^}]*)\}\)/m.exec(schema)?.[1] ?? '';
-    const roles = [...block.matchAll(/'([^']+)'/g)].map((match) => match[1] ?? '');
-    expect(roles.length).toBeGreaterThan(0);
-    expect([...roles].sort(byCodeUnit)).toStrictEqual([...ENGINEERING_QUEUE_ROLES].sort(byCodeUnit));
-  });
-
-  it('grants the router the table\'s item calls, a send on exactly the role queues and the key, nothing else', () => {
+  it('grants the router the table\'s item calls, an invoke on exactly the delivery function, its failure records and the key', () => {
     const on = template('on');
     const router = functionId(on, 'voc-engineering-router');
-    expect(actionsOf(on, router)).toStrictEqual(
-      [...TABLE_ACTIONS, ...KEY_ACTIONS, 'logs:CreateLogStream', 'logs:PutLogEvents', 'sqs:SendMessage'].sort(byCodeUnit));
-    // The sends: the role queues, and the DLQ as the failure destination. No invoke: the delivery function is the
-    // runtime's and does not exist yet (the action list above has no lambda:InvokeFunction).
-    const sends = statementsOf(on, router).filter((statement) => statement.Action === 'sqs:SendMessage')
-      .map((statement) => statement.Resource);
-    expect(sends).toStrictEqual([
-      roleQueueIds(on).map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })), { 'Fn::GetAtt': [dlqId(on), 'Arn'] },
-    ]);
+    expect(actionsOf(on, router)).toStrictEqual([...TABLE_ACTIONS, ...KEY_ACTIONS, 'lambda:InvokeFunction',
+      'logs:CreateLogStream', 'logs:PutLogEvents', 'sqs:SendMessage'].sort(byCodeUnit));
     expect(keyServices(on, router)).toStrictEqual(['dynamodb.us-east-1.amazonaws.com', 'sqs.us-east-1.amazonaws.com']);
     const table = statementsOf(on, router).find((statement) => JSON.stringify(statement.Action).includes('dynamodb:'));
     expect(JSON.stringify(table?.Resource)).toMatch(TABLE_ARN_IMPORT);
+  });
+
+  it('lets the router invoke only the delivery function, by its name, and send only its failure records', () => {
+    const on = template('on');
+    const router = functionId(on, 'voc-engineering-router');
+    // By name: the delivery function is the runtime's and is not deployed by this stack.
+    const invokes = statementsOf(on, router).filter((statement) => statement.Action === 'lambda:InvokeFunction')
+      .map((statement) => JSON.stringify(statement.Resource));
+    expect(invokes).toHaveLength(1);
+    expect(invokes[0]).toContain(':function:voc-engineering-delivery-');
+    // The one send: the DLQ, as the failure destination.
+    const sends = statementsOf(on, router).filter((statement) => statement.Action === 'sqs:SendMessage')
+      .map((statement) => statement.Resource);
+    expect(sends).toStrictEqual([{ 'Fn::GetAtt': [dlqId(on), 'Arn'] }]);
   });
 
   it('runs the board API behind a function URL with IAM authentication and no resource-based permission', () => {
@@ -285,11 +268,12 @@ describe('the engineering bus', () => {
     expect(permissions).toStrictEqual([]);
   });
 
-  it('grants the board the table\'s item calls, a put on exactly the bus and the key, nothing else', () => {
+  it('grants the board the table\'s item calls and its inbox query, a put on exactly the bus and the key, nothing else', () => {
     const on = template('on');
     const board = functionId(on, 'voc-engineering-board');
     expect(actionsOf(on, board)).toStrictEqual(
-      [...TABLE_ACTIONS, ...KEY_ACTIONS, 'events:PutEvents', 'logs:CreateLogStream', 'logs:PutLogEvents'].sort(byCodeUnit));
+      [...TABLE_ACTIONS, 'dynamodb:Query', ...KEY_ACTIONS, 'events:PutEvents', 'logs:CreateLogStream',
+        'logs:PutLogEvents'].sort(byCodeUnit));
     const put = statementsOf(on, board).find((statement) => statement.Action === 'events:PutEvents');
     expect(put?.Resource).toStrictEqual({ 'Fn::GetAtt': [busId(on), 'Arn'] });
     expect(keyServices(on, board)).toStrictEqual(['dynamodb.us-east-1.amazonaws.com']);

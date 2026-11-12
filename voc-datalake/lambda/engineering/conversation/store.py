@@ -10,7 +10,7 @@ transaction, each only if absent. A redelivered message changes nothing; an even
 reported, so it is never delivered without its record.
 
 Readers: the sequence has gaps (a redelivery or a failed write uses a number) and two writers may commit their
-numbers out of order, so a reader that follows the tail re-reads a short window behind the last number it saw.
+numbers out of order, so a reader re-reads a short window behind the last number it saw on every page.
 """
 from __future__ import annotations
 
@@ -87,6 +87,8 @@ class ConversationStore:
             if not is_key_collision(exc, put_index=0):   # the event's marker, the first item, is already there
                 raise
             stored = self.client.get_item(TableName=self.table, Key=marker, ConsistentRead=True).get('Item', {})
-            same = stored.get('digest', {}).get('S') == digest
-            return Appended(REDELIVERED if same else REUSED)
+            if stored.get('digest', {}).get('S') != digest:
+                return Appended(REUSED)
+            # The seq the message was first written under: its fan-out is sent again under the same number.
+            return Appended(REDELIVERED, int(stored['seq']['N']))
         return Appended(NEW, seq)

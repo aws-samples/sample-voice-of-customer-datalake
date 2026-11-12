@@ -10,9 +10,15 @@ leaves.
 """
 from __future__ import annotations
 
+from engineering.board.api import repost_task
 from engineering.knowledge.store import PackStore, PackVersion
 from engineering.knowledge.understand import understand_package
 from engineering.skills.store import Change, SkillStore, SkillVersion, VersionPage
+
+# The supervisor's re-post of a task whose lease ran out (engineering/board/api.py): its Board.repost port
+# (engineering/runtime/ports.py) is to call it once the runtime is wired to the board; the board's tests drive it
+# until then.
+repost_task.__name__
 
 # The Understand flow's entry, run by the mapper agent in its MicroVM; the agent lands in phase 4
 # (docs/autonomous-engineering.md), its tests drive it until then.

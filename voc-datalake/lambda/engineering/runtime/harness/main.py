@@ -18,7 +18,7 @@ import os
 import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final
 
 from engineering.runtime.checkout import repo_git, share_working_tree
@@ -26,7 +26,14 @@ from engineering.runtime.checkpoints import MAX_CHECKPOINT_BYTES, agent_prefix, 
 from engineering.runtime.harness.cli import CLAUDE, ClaudeCli, choose_cli
 from engineering.runtime.harness.converse_loop import ConverseAdapter
 from engineering.runtime.harness.interface import DONE_EXIT_CODE, PAUSED_EXIT_CODE, Adapter, AgentSession
-from engineering.runtime.harness.ports import Board, Broker, Inbox, PendingHarnessPorts
+from engineering.runtime.harness.ports import (
+    Board,
+    Broker,
+    Inbox,
+    KnowledgeReader,
+    PendingHarnessPorts,
+    Planner,
+)
 from engineering.runtime.harness.runner_client import RunnerClient
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.tool_server import SessionFiles, serve
@@ -61,6 +68,9 @@ class Ports:
     board: Board
     inbox: Inbox
     broker: Broker
+    #: The run coordinator's: the board's tasks, posting, launching; the knowledge pack's agent reader.
+    planner: Planner = field(default_factory=PendingHarnessPorts)
+    knowledge: KnowledgeReader = field(default_factory=PendingHarnessPorts)
 
 
 def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs,
@@ -78,7 +88,8 @@ def build_session(env: Mapping[str, str], *, s3: Any, ports: Ports, runner: Runs
         board=ports.board, broker=ports.broker, store=store, status=StatusReport(home),
         patch_dir=os.path.join(home, '.voc', 'patches'), own_prefix=prefix,
         checkpoints_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'checkpoints'),
-        patches_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'patches'))
+        patches_prefix=artifact_prefix(run_id, agent_id, commit, attempt, 'patches'),
+        planner=ports.planner, knowledge=ports.knowledge)
     session = AgentSession(context=context, tools=ToolBox(context), inbox=ports.inbox, store=store)
     key = env.get('VOC_RESTORE_KEY')
     if restore and key:

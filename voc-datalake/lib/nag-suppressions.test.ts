@@ -228,8 +228,9 @@ describe('cdk-nag acknowledgements', () => {
       // The exact number of acknowledged findings, so a change that adds or removes an acknowledgement says so
       // in its diff (and a recorder that misses some fails). Update it with the acknowledgement.
       // 81 -> 84: the engineering report builder's workspace reads and report writes, and the agents API's report reads.
-      // 84 -> 87: the engineering delivery function's own role (the agents' checkpoints, the MicroVMs and their images).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 87, used: 87 });
+      // 84 -> 88: the engineering DLQ is no longer a role queue's redrive target (no role queues), so its SQS3; the
+      // engineering delivery function's own role (the agents' checkpoints, the MicroVMs and their images).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 88, used: 88 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

@@ -10,6 +10,8 @@
     {"key": "lambda/engineering/runtime/harness/status.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/tool_server.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/tools.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/coordinator.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
+    {"key": "lambda/engineering/runtime/harness/skills.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/engineering/runtime/harness/workspace.py", "reason": "The engineering harness runs inside each agent's MicroVM (engineering-images/), never in a Lambda; see harness/cli.py's entry."},
     {"key": "lambda/shared/api.py::clear_categories_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the module-level categories cache between API tests."},
     {"key": "lambda/shared/memory_store.py::clear_pool_cache", "reason": "Test seam (pyproject.toml vulture ignore_names): resets the per-container embedding pool between memory tests."},
@@ -70,6 +72,8 @@
     {"key": "lambda/engineering/quality_gate/runner.py", "reason": "The quality gate's CLI (python -m engineering.quality_gate), run by the gate runner inside its MicroVM, not by a Lambda: a module only the CLI imports. No template handler names it, so the graph has no entry for it; lambda/engineering/quality_gate/test runs it."},
     {"key": "lambda/engineering/quality_gate/text.py::clip", "reason": "Used by the quality gate's CLI (python -m engineering.quality_gate, run in the gate runner's MicroVM, not by a Lambda); the board API reaches text.py only for redact."},
     {"key": "lambda/engineering/quality_gate/text.py::data_block", "reason": "Used by the quality gate's CLI (python -m engineering.quality_gate, run in the gate runner's MicroVM, not by a Lambda); the board API reaches text.py only for redact."},
-    {"key": "lambda/engineering/quality_gate/text.py::nonce", "reason": "Used by the quality gate's CLI (python -m engineering.quality_gate, run in the gate runner's MicroVM, not by a Lambda); the board API reaches text.py only for redact."}
+    {"key": "lambda/engineering/quality_gate/text.py::nonce", "reason": "Used by the quality gate's CLI (python -m engineering.quality_gate, run in the gate runner's MicroVM, not by a Lambda); the board API reaches text.py only for redact."},
+    {"key": "lambda/engineering/board/api.py::repost_task", "reason": "The supervisor's re-post of a task whose lease ran out: its Board.repost port (engineering/runtime/ports.py, still PendingPorts) is to call it when the runtime is wired to the board; until then the board's tests drive it (scripts/vulture_whitelist.py)."},
+    {"key": "lambda/engineering/board/store.py::BoardStore.repost", "reason": "Called by repost_task (engineering/board/api.py), the supervisor's re-post, not wired yet: see its entry."}
   ]
 }

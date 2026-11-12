@@ -19,10 +19,12 @@ SCHEMA = 'voc-msg/1'
 #: One event, serialized: a quarter of a 64 KB billing unit (the payload lives in S3).
 MAX_EVENT_BYTES = 16 * 1024
 MAX_SUMMARY_BYTES = 1024
-#: The roles with a task queue (plan v3, 4.2), and so the agent roles that may speak on the bus. The IAM catalog
-#: (connectors.identity AGENT_ROLES) has three more, none of which pulls tasks: the coordinator, which plans the run
-#: on the board and speaks on the bus as the run's conductor (its own source); the coach; and the gate-runner, which
-#: the plan gives no queue. Adding one here gives it a queue and a voice.
+#: The roles that claim tasks (plan v3, 4.2: a posted task is addressed to one), and so the agent roles that may
+#: speak on the bus. There are no queues: a posted task's notice is recorded by the delivery function for the
+#: role's agents to read (it wakes nobody). The IAM catalog (connectors.identity AGENT_ROLES) has three more, none
+#: of which claims tasks: the coordinator, which plans the run on the board and speaks on the bus as the run's
+#: conductor (its own source); the coach; and the gate-runner. Adding one here lets tasks be posted for it and gives
+#: it a voice.
 ROLES = frozenset({'understander', 'hunter', 'fixer', 'committer', 'commit-reviewer', 'pr-author', 'pr-reviewer',
                    'builder', 'final-go', 'mapper'})
 FROM_KINDS = frozenset({'agent', 'conductor', 'supervisor', 'human', 'system'})
@@ -146,7 +148,13 @@ def _refs(raw: Any, ws: str) -> Refs:
     return Refs(s3=tuple(_s3_key(key, f'ws/{ws}/') for key in s3), commit=commit, pr=pr, files=tuple(files))
 
 
-def _summary(raw: Any) -> str:
+def fit_summary(text: str) -> str:
+    """``text`` cut to a summary's bytes, on a character boundary."""
+    return text.encode('utf-8')[:MAX_SUMMARY_BYTES].decode('utf-8', 'ignore')
+
+
+def summary_text(raw: Any) -> str:
+    """A message's summary (or a text bound for one): short, and nothing shaped like a credential."""
     if not isinstance(raw, str) or len(raw.encode('utf-8')) > MAX_SUMMARY_BYTES:
         raise MessageError(f'"summary" is a string of at most {MAX_SUMMARY_BYTES} bytes (the payload goes to S3)')
     if redact(raw) != raw:
@@ -174,7 +182,7 @@ def parse(data: Any) -> Message:
         event_id=_text(data, 'event_id', ULID), ws=ws, run_id=_text(data, 'run_id', ID),
         thread_id=_text(data, 'thread_id', ID), task_id=_text(data, 'task_id', ID, required=False),
         attempt=attempt, sender=_party(data.get('from'), 'from', FROM_KINDS), to=_party(data.get('to'), 'to', TO_KINDS),
-        type=data['type'], summary=_summary(data.get('summary')), refs=_refs(data.get('refs'), ws),
+        type=data['type'], summary=summary_text(data.get('summary')), refs=_refs(data.get('refs'), ws),
         at=_text(data, 'at', _AT))
     if message.to.kind == 'role' and message.to.id not in ROLES:
         raise MessageError('unknown role')

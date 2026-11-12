@@ -24,9 +24,14 @@ import { starterDefinition } from '../../components/WorkflowEditor/model'
 import { NameDialog } from '../../components/NameDialog/NameDialog'
 import { failedReads } from '../../utils/failedReads'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
-import { API_WORKFLOW_LIMITS, seedWorkflowDetail, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
+import {
+  API_WORKFLOW_LIMITS, WORKFLOW_SCHEMA_V2, seedWorkflowDetail, workflowsApi, workflowsKeys,
+} from '../../api/workflowsApi'
 import { workflowPath } from './workflowPaths'
 import type { WorkflowSummary } from '../../api/workflowsApi'
+
+type WorkflowKind = WorkflowSummary['kind']
 
 function renameErrorKey(error: unknown): string {
   return apiErrorStatus(error) === 409 ? 'library.renameConflict' : 'library.renameFailed'
@@ -48,6 +53,7 @@ function WorkflowRow({ workflow, archiving, onArchive, onRename }: Readonly<{
         <p className="text-[12px] text-muted font-mono">{t('editor.revision', { n: workflow.revision })}</p>
       </div>
       {workflow.builtin && <span className="badge badge-info">{t('editor.builtin')}</span>}
+      {workflow.kind === 'engineering' && <span className="badge badge-muted">{t('library.engineeringKind')}</span>}
       <Link to={workflowPath(workflow.workflow_id)} className="btn btn-secondary btn-sm"
         aria-label={t('library.openNamed', { name: workflow.name })}>
         <FolderOpen size={14} aria-hidden="true" /> {t('library.open')}
@@ -75,16 +81,36 @@ function useNewWorkflow() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ name, description }: Readonly<{ name: string; description: string }>) => workflowsApi.create({
-      ...starterDefinition({ name, start: t('nodeTypes.start.label'), end: t('nodeTypes.end.label') }),
-      ...(description.trim() === '' ? {} : { description: description.trim() }),
-    }),
+    mutationFn: ({ name, description, kind }: Readonly<{ name: string; description: string; kind: WorkflowKind }>) =>
+      workflowsApi.create({
+        ...starterDefinition({ name, start: t('nodeTypes.start.label'), end: t('nodeTypes.end.label') },
+          kind === 'engineering' ? WORKFLOW_SCHEMA_V2 : WORKFLOW_SCHEMA_VERSION),
+        ...(description.trim() === '' ? {} : { description: description.trim() }),
+      }),
     onSuccess: (view) => {
       seedWorkflowDetail(queryClient, view)
       void queryClient.invalidateQueries({ queryKey: workflowsKeys.list() })
       void navigate(workflowPath(view.workflow_id))
     },
   })
+}
+
+/** The name (and description) of a new agents workflow or engineering flow, created on submit. */
+function CreateDialog({ kind, create, onClose }: Readonly<{
+  kind: WorkflowKind; create: ReturnType<typeof useNewWorkflow>; onClose: () => void
+}>) {
+  const { t } = useTranslation('agents')
+  const engineering = kind === 'engineering'
+  return (
+    <NameDialog
+      title={t(engineering ? 'library.createEngineeringTitle' : 'library.createTitle')}
+      hint={t(engineering ? 'library.createEngineeringHint' : 'library.createHint')}
+      submitLabel={t('library.create')} initialName=""
+      label={t('editor.fields.workflowName')} maxLength={API_WORKFLOW_LIMITS.maxNameChars}
+      description={{ label: t('editor.fields.description'), maxLength: API_WORKFLOW_LIMITS.maxDescriptionChars }}
+      saving={create.isPending} error={create.isError ? t('library.newWorkflowFailed') : undefined}
+      onSave={(name, description) => create.mutate({ name, description, kind })} onClose={onClose} />
+  )
 }
 
 export function WorkflowLibrary() {
@@ -96,7 +122,7 @@ export function WorkflowLibrary() {
   const [pending, setPending] = useState<WorkflowSummary | null>(null)
   const titleId = useId()
   const create = useNewWorkflow()
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<WorkflowKind | null>(null)
   const archive = useMutation({
     mutationFn: (id: string) => workflowsApi.archive(id),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: workflowsKeys.all() }) },
@@ -121,8 +147,11 @@ export function WorkflowLibrary() {
           <h2 id={titleId} className="text-base font-semibold tracking-tight text-text-strong">{t('library.title')}</h2>
           <p className="text-sm text-muted">{t('library.subtitle')}</p>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { create.reset(); setCreating(true) }}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { create.reset(); setCreating('agents') }}>
           <Plus size={14} aria-hidden="true" /> {t('library.newWorkflow')}
+        </button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { create.reset(); setCreating('engineering') }}>
+          <Plus size={14} aria-hidden="true" /> {t('library.newEngineeringFlow')}
         </button>
       </div>
       {isLoading && <div className="skeleton h-16" />}
@@ -144,13 +173,7 @@ export function WorkflowLibrary() {
           saving={rename.isPending} error={rename.isError ? t(renameErrorKey(rename.error)) : undefined}
           onSave={(name) => rename.mutate({ id: renaming.workflow_id, name })} onClose={() => setRenaming(null)} />
       )}
-      {creating && (
-        <NameDialog title={t('library.createTitle')} hint={t('library.createHint')} submitLabel={t('library.create')} initialName=""
-          label={t('editor.fields.workflowName')} maxLength={API_WORKFLOW_LIMITS.maxNameChars}
-          description={{ label: t('editor.fields.description'), maxLength: API_WORKFLOW_LIMITS.maxDescriptionChars }}
-          saving={create.isPending} error={create.isError ? t('library.newWorkflowFailed') : undefined}
-          onSave={(name, description) => create.mutate({ name, description })} onClose={() => setCreating(false)} />
-      )}
+      {creating !== null && <CreateDialog kind={creating} create={create} onClose={() => setCreating(null)} />}
       <ConfirmModal
         isOpen={pending !== null}
         title={t('library.archiveTitle')}

@@ -1,8 +1,10 @@
 """What the harness needs from the parts of the system it does not own, as small interfaces.
 
-The board (the task brief, the lease's heartbeat and progress), the agent's inbox (the run monitor's and
-the supervisor's messages: ``save``, ``pause``, a question) and the broker (every write to the repository
-host) are built apart from the runtime (engineering/board, engineering/connectors; the inbox is not built yet;
+The board (the task brief, the lease's heartbeat and progress; for the run coordinator, the run's tasks, posting
+one and launching its agent), the agent's inbox (the run monitor's and the supervisor's messages: ``save``,
+``pause``, a question), the knowledge pack (its agent reader: the latest approved version, read as data) and the
+broker (every write to the repository host) are built apart from the runtime (engineering/board, its inbox op
+included, engineering/knowledge, engineering/connectors;
 docs/autonomous-engineering.md → How the agents work together, Repository connectors). Until the harness is
 wired to them, it reaches them only through these interfaces, the
 tests use fakes of them, and ``main.py`` wires adapters that refuse (``PendingHarnessPorts``), like the
@@ -49,6 +51,36 @@ class Board(Protocol):
     def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None: ...
 
 
+@dataclass(frozen=True)
+class TaskSummary:
+    """One task of the run, as the coordinator reads the board."""
+
+    task_id: str
+    role: str
+    title: str
+    state: str
+    attempt: int = 1
+
+
+class Planner(Protocol):
+    """The run coordinator's view of its run: ``tasks`` on the board, ``post`` a task (its id), ``launch`` one agent
+    for a task (its id). The run's connection and commit are the board's to take from the verified caller's run,
+    never anything the MicroVM sends."""
+
+    def tasks(self, *, run_id: str) -> list[TaskSummary]: ...
+
+    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...]) -> str: ...
+
+    def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str: ...
+
+
+class KnowledgeReader(Protocol):
+    """The knowledge pack's agent reader: the caller's run's connection's latest approved pack (the reader takes the
+    connection from the verified caller), the parts on ``topic`` (it picks them; the harness shows them as data)."""
+
+    def read(self, *, run_id: str, topic: str) -> list[str]: ...
+
+
 class Inbox(Protocol):
     """``take``: the messages waiting for the agent, each taken once."""
 
@@ -72,7 +104,8 @@ class HarnessPortNotWired(RuntimeError):
 
 
 class PendingHarnessPorts:
-    """The board, the inbox and the broker until the harness is wired to them: every call refuses."""
+    """The board, the planner, the knowledge reader, the inbox and the broker until the harness is wired to them:
+    every call refuses."""
 
     @staticmethod
     def _refuse(name: str) -> HarnessPortNotWired:
@@ -87,6 +120,19 @@ class PendingHarnessPorts:
 
     def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
         raise self._refuse(f'board.progress({run_id}, {task_id}, {agent_id}): {step[:40]}')
+
+    def tasks(self, *, run_id: str) -> list[TaskSummary]:
+        raise self._refuse(f'board.tasks({run_id})')
+
+    def post(self, *, run_id: str, role: str, title: str, instructions: str, paths: tuple[str, ...]) -> str:
+        raise self._refuse(f'board.post({run_id}, {role}, {len(paths)} paths, {len(instructions)} characters): '
+                           f'{title[:40]}')
+
+    def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str:
+        raise self._refuse(f'launch({run_id}, {task_id}, {role}, {language}, {len(paths)} paths)')
+
+    def read(self, *, run_id: str, topic: str) -> list[str]:
+        raise self._refuse(f'knowledge.read({run_id}): {topic[:40]}')
 
     def take(self, *, run_id: str, agent_id: str) -> list[InboxMessage]:
         raise self._refuse(f'inbox.take({run_id}, {agent_id})')

@@ -2,13 +2,15 @@
  * @fileoverview The type-specific settings of one step (`data.params`): review
  * / revise target, end status, web search, number of generated personas and
  * their portraits, a writing step's word budget (`max_words`). The
- * values offered are the ones `lambda/shared/workflow_schema.py` accepts.
+ * values offered are the ones `lambda/shared/workflow_schema.py` accepts. An
+ * engineering flow's steps have their own (`EngineeringParamsFields`).
  *
  * @module components/WorkflowEditor/ParamsFields
  */
 import { useTranslation } from 'react-i18next'
-import { END_STATUSES, REVIEW_TARGETS } from '../../api/workflowsApi'
+import { END_STATUSES, ENGINEERING_NODE_TYPES, REVIEW_TARGETS } from '../../api/workflowsApi'
 import { LabeledField } from '../LabeledField/LabeledField'
+import { EngineeringParamsFields } from './EngineeringParamsFields'
 import type { WorkflowNode } from '../../api/workflowsApi'
 
 /** Upper bound of `generate_personas` params.max_new (the agent form caps personas the same way). */
@@ -39,7 +41,14 @@ interface ParamsFieldsProps {
   onParams: (params: Record<string, unknown>) => void
 }
 
+const ENGINEERING_STEPS: ReadonlySet<string> = new Set(ENGINEERING_NODE_TYPES)
+
 export function ParamsFields({ node, readOnly, onParams }: Readonly<ParamsFieldsProps>) {
+  if (ENGINEERING_STEPS.has(node.type)) return <EngineeringParamsFields node={node} readOnly={readOnly} onParams={onParams} />
+  return <AgentsParamsFields node={node} readOnly={readOnly} onParams={onParams} />
+}
+
+function AgentsParamsFields({ node, readOnly, onParams }: Readonly<ParamsFieldsProps>) {
   const { t } = useTranslation('agents')
   const params = node.data.params ?? {}
   const set = (key: string, value: unknown) => {

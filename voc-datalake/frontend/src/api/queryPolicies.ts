@@ -90,6 +90,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'dimension-metrics': 'feedbackData',
   'dimensions-config': 'config',
   'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
+  'engineering-runs': 'live', // an engineering run's monitor: overview, board, conversation (polled while it runs)
   'entities': 'feedbackData',
   'entities-all-sources': 'feedbackData',
   'erasure-jobs': 'live', // GET /settings/erasure → {jobs, sources}: polled while a job runs

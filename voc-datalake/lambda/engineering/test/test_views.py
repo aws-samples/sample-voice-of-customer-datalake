@@ -39,25 +39,30 @@ def test_the_conversation_reads_in_pages(views: EngineeringViews) -> None:
     first = views.conversation(RUN, after=0, limit=2)
     assert first is not None
     assert [item['message']['summary'] for item in first['items']] == ['Message 0', 'Message 1']
-    assert first['next_after'] == 2   # a full page moves on to its last seq
+    assert first['next_after'] == 2   # a page moves on to its last seq
     rest = views.conversation(RUN, after=first['next_after'], limit=2)
     assert rest is not None
-    assert ([item['seq'] for item in rest['items']], rest['next_after']) == ([3], 2)   # the tail: read again
-    assert views.conversation(RUN, after=3, limit=2) == {'items': [], 'next_after': 3}
+    # Every page reads the window below its cursor again (1 and 2 here), then what is above it.
+    assert ([item['seq'] for item in rest['items']], rest['next_after']) == ([1, 2, 3], 3)
+    tail = views.conversation(RUN, after=3, limit=2)
+    assert tail is not None
+    assert ([item['seq'] for item in tail['items']], tail['next_after']) == ([1, 2, 3], 3)
 
 
-def test_a_message_that_commits_late_below_the_tail_is_still_read(views: EngineeringViews,
-                                                                   run: EngineeringRun) -> None:
-    # Seq 5 is taken before seq 6 but commits after it (two router invocations at once).
+@pytest.mark.parametrize('limit', [50, 2], ids=['a page that reached the tail', 'a full page ending at the tail'])
+def test_a_message_that_commits_late_below_the_tail_is_still_read(views: EngineeringViews, run: EngineeringRun,
+                                                                   limit: int) -> None:
+    # Seq 5 is taken before seq 6 but commits after it (two router invocations at once); with a limit of 2 the page
+    # above 3 is full (4 and 6) and ends at the tail, and still moves on only to 6, read again from 20 below it.
     for seq in (4, 6):
         run.client.put_item(TableName=TABLE, Item=_message_row(seq))
-    page = views.conversation(RUN, after=3, limit=50)
+    page = views.conversation(RUN, after=3, limit=limit)
     assert page is not None
-    assert [item['seq'] for item in page['items']] == [4, 6]
+    assert ([item['seq'] for item in page['items']], page['next_after']) == ([1, 2, 3, 4, 6], 6)
     run.client.put_item(TableName=TABLE, Item=_message_row(5))
-    again = views.conversation(RUN, after=page['next_after'], limit=50)
+    again = views.conversation(RUN, after=page['next_after'], limit=limit)
     assert again is not None
-    assert 5 in [item['seq'] for item in again['items']]
+    assert ([item['seq'] for item in again['items']], again['next_after']) == ([1, 2, 3, 4, 5, 6], 6)
 
 
 def _message_row(seq: int) -> dict[str, Any]:
@@ -101,11 +106,12 @@ def test_a_page_dynamodb_cut_at_1_mb_is_followed_not_read_as_the_tail(run: Engin
     client.get_item.return_value = {'Item': {'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'META'}}}
     cursor = {'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'MSG#00000002'}}
     client.query.side_effect = [{'Items': [_message_row(1), _message_row(2)], 'LastEvaluatedKey': cursor},
-                                {'Items': [_message_row(3), _message_row(4)], 'LastEvaluatedKey': {'sk': {'S': 'x'}}}]
+                                {'Items': [_message_row(3), _message_row(4)]}]
     page = EngineeringViews(client, TABLE, run.workspace).conversation(RUN, after=0, limit=3)
     assert page is not None
-    # A full page of 3 (read over two DynamoDB pages): it moves on to its last seq, not to 20 below the tail.
+    # A full page of 3 (read over two DynamoDB pages, the window's 20 more asked for): it moves on to its last seq.
     assert ([item['seq'] for item in page['items']], page['next_after']) == ([1, 2, 3], 3)
+    assert client.query.call_args_list[0].kwargs['Limit'] == 23
     assert client.query.call_args_list[1].kwargs['ExclusiveStartKey'] == cursor
 
 

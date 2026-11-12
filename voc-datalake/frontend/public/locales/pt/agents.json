@@ -67,7 +67,11 @@
     "renameNamed": "Renomear {{name}}",
     "renameTitle": "Renomear este fluxo",
     "renameConflict": "Alguém alterou este fluxo nesse meio-tempo, ou ele é o integrado. Recarregue e tente de novo.",
-    "renameFailed": "Não foi possível renomear o fluxo."
+    "renameFailed": "Não foi possível renomear o fluxo.",
+    "newEngineeringFlow": "Novo fluxo de engenharia",
+    "createEngineeringTitle": "Novo fluxo de engenharia",
+    "createEngineeringHint": "Um fluxo de engenharia põe agentes de engenharia autónomos a trabalhar num repositório e termina num pull request para pessoas reverem. Começa como Início → Fim: adicione os passos de Engenharia a partir da paleta.",
+    "engineeringKind": "Engenharia"
   },
   "fields": {
     "name": "Nome",
@@ -403,7 +407,46 @@
     "switchMessage": "Suas alterações não salvas em {{name}} serão perdidas.",
     "switchConfirm": "Trocar de fluxo de trabalho",
     "switched": "Este agente agora executa {{name}}.",
-    "switchFailed": "Não foi possível mudar o agente para esse fluxo de trabalho."
+    "switchFailed": "Não foi possível mudar o agente para esse fluxo de trabalho.",
+    "engineering": {
+      "role": "Papel",
+      "skillVersion": "Versão da habilidade",
+      "skillVersionHint": "'latest' (a última aceite) ou uma versão como v3.",
+      "model": "Modelo",
+      "modelHint": "Um id de modelo; deixe vazio para o predefinido.",
+      "budgetShare": "Parte do orçamento da execução",
+      "budgetShareHint": "Uma fração de 0,01 a 1; as partes dos agentes somam no máximo 1. Vazio: sem parte própria.",
+      "shardBy": "Dividir por",
+      "shardByOptions": {
+        "packages": "Pacotes",
+        "history": "Janelas do histórico",
+        "pr_pages": "Páginas de PR"
+      },
+      "shardCap": "Máximo de partes",
+      "posters": "Quem publica tarefas",
+      "claimers": "Quem pega em tarefas",
+      "until": "Dura até que",
+      "untilOptions": {
+        "drained": "Todas as tarefas estejam feitas",
+        "caps": "Seja atingido um limite"
+      },
+      "maxRounds": "Rondas de revisão (máximo)",
+      "packsAuto": "Detetar os pacotes de controlo no repositório",
+      "packs": "Pacotes de controlo",
+      "finalGoModel": "Modelo da aprovação final",
+      "mode": "Modo",
+      "modeOptions": {
+        "read": "Ler",
+        "write": "Escrever"
+      },
+      "scope": "Memória de quem",
+      "scopeOptions": {
+        "repo": "O repositório",
+        "role": "O papel",
+        "person": "A pessoa"
+      },
+      "limit": "Máximo de memórias lidas"
+    }
   },
   "paletteGroups": {
     "flow": "Fluxo",
@@ -411,7 +454,8 @@
     "documents": "Documentos",
     "review": "Revisão",
     "prototype": "Protótipo",
-    "delivery": "Entrega"
+    "delivery": "Entrega",
+    "engineering": "Engenharia"
   },
   "edgeLabels": {
     "pass": "Aprovado",
@@ -504,6 +548,42 @@
     "end": {
       "label": "Fim",
       "description": "Onde a execução termina."
+    },
+    "agent": {
+      "label": "Agente",
+      "description": "Um agente com um papel (fixer, hunter, committer…), a versão da sua habilidade e a sua parte do orçamento."
+    },
+    "map": {
+      "label": "Mapa",
+      "description": "Divide o trabalho em partes (pacotes, janelas do histórico, páginas de PR) que os agentes fazem em paralelo."
+    },
+    "reduce": {
+      "label": "Redução",
+      "description": "Onde as partes de um mapa voltam a juntar-se: um resultado de todas."
+    },
+    "board": {
+      "label": "Quadro",
+      "description": "Um quadro de tarefas: alguns papéis publicam tarefas, outros pegam nelas e fazem-nas, até o esvaziar."
+    },
+    "quality_gate": {
+      "label": "Controlo de qualidade",
+      "description": "Verificações e rondas de revisão da alteração: GO segue para o PR, NO-GO para uma pessoa."
+    },
+    "learning_loop": {
+      "label": "Ciclo de aprendizagem",
+      "description": "Uma retrospetiva que guarda na memória o que a execução aprendeu."
+    },
+    "self_improvement": {
+      "label": "Automelhoria",
+      "description": "O coach propõe uma versão melhor de uma habilidade e mede-a."
+    },
+    "memory": {
+      "label": "Memória",
+      "description": "Ler ou escrever na memória do repositório, de um papel ou de uma pessoa."
+    },
+    "stop_at_pr": {
+      "label": "Parar no PR",
+      "description": "O fluxo termina num pull request para pessoas reverem: nada é alguma vez integrado."
     }
   },
   "loopUntilHint": {
@@ -591,6 +671,102 @@
         "label": "Encerrar a execução",
         "help": "Nada mais é executado. O que a execução produziu fica no projeto."
       }
+    }
+  },
+  "engineeringRun": {
+    "untitled": "Execução de engenharia",
+    "statusUnknown": "estado desconhecido",
+    "started": "Começou {{when}}",
+    "ended": "Terminou {{when}}",
+    "totals": "Tempo de MicroVM: {{seconds, number}} s · Mensagens: {{messages, number}}",
+    "byModel": "Tokens por modelo",
+    "actionsUnavailable": "Esta implantação ainda não pode enviar sinais nem respostas: ela não conecta o monitor da execução ao runtime e ao barramento de engenharia.",
+    "runSignals": "Toda a execução",
+    "agentSignals": "Agente {{agent}}",
+    "signals": {
+      "save": "Guardar",
+      "pause": "Pausar",
+      "resume": "Retomar",
+      "shutdown": "Encerrar",
+      "stop_now": "Parar já"
+    },
+    "signalSent": "Enviado.",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "Parar já, sem guardar?",
+    "stopNowMessage": "O trabalho para de imediato, sem ponto de controlo: perde-se o que ainda não estiver guardado. Para o manter, use Encerrar.",
+    "errors": {
+      "forbidden": "Só um administrador pode fazer isto.",
+      "notFound": "Esta execução ou tarefa já não existe: recarregue a execução.",
+      "movedOn": "Mudou desde que olhou (outra tentativa, ou a execução terminou): recarregue a execução e tente de novo.",
+      "unavailable": "Não foi possível contactar a execução agora: tente de novo daqui a pouco.",
+      "generic": "Não foi possível: tente de novo."
+    },
+    "agent": {
+      "step": "Passo",
+      "vm": "MicroVM",
+      "heartbeat": "Sinal de vida",
+      "progress": "Último avanço",
+      "metering": "Uso",
+      "stuck": "Parece encravado: {{reason}}",
+      "inspect": "Chamadas recentes a ferramentas ({{n, number}})",
+      "noTools": "Ainda não há chamadas a ferramentas.",
+      "for": "há {{age}}",
+      "ago": "há {{age}}",
+      "started": "Começou",
+      "continuation": "continuação {{n, number}}",
+      "microvmTime": "{{seconds, number}} s de MicroVM"
+    },
+    "noAgents": "Ainda nenhum agente começou.",
+    "noTasks": "O quadro ainda não tem tarefas.",
+    "task": {
+      "meta": "{{role}} · tentativa {{attempt}}",
+      "heldBy": "com {{agent}}",
+      "history": "Histórico ({{n, number}})",
+      "move": "{{state}} por {{by}}, {{when}} (tentativa {{attempt}})"
+    },
+    "states": {
+      "open": "Aberta",
+      "claimed": "Atribuída",
+      "in_progress": "Em curso",
+      "in_review": "Em revisão",
+      "needs_human": "Precisa de uma pessoa",
+      "failed": "Falhou",
+      "done": "Feita"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "Responder",
+    "replyTo": "Responder a {{who}}",
+    "answerTo": "Responder a",
+    "conductor": "O condutor da execução",
+    "replyingIn": "A responder no fio {{thread}}",
+    "newThread": "Começar um fio novo",
+    "answer": "A sua mensagem",
+    "bytes": "{{used, number}} / {{max, number}} bytes",
+    "send": "Enviar",
+    "noMessages": "Ainda não há mensagens.",
+    "tabs": {
+      "agents": "Agentes",
+      "board": "Quadro",
+      "conversation": "Conversa"
+    },
+    "panels": "Os agentes, o quadro e a conversa da execução",
+    "flow": "O fluxo da execução, com os passos em que estão os seus agentes",
+    "noFlow": "Não foi possível ler o fluxo da execução: mostra-se o resto.",
+    "notFound": "Execução de engenharia não encontrada",
+    "notFoundHint": "Verifique o id da execução. As execuções de engenharia só aparecem onde os agentes de engenharia estão ligados, a quem pode ver todas as categorias.",
+    "modelTokens": "{{model}}: {{input, number}} de entrada, {{output, number}} de saída",
+    "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}} (não aplicado)",
+    "status": {
+      "booting": "A arrancar",
+      "working": "A trabalhar",
+      "pause_requested": "Pausa pedida",
+      "waiting": "À espera",
+      "paused": "Em pausa",
+      "done": "Feito",
+      "failed": "Falhou",
+      "stopped": "Parado",
+      "reposted": "Publicado de novo"
     }
   }
 }

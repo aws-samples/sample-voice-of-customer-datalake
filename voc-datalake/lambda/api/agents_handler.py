@@ -16,15 +16,20 @@ Permissions:
   covers (``shared.category_gate``); any other agent, and its runs, answers 404;
 - workflows hold no customer data, so every signed-in user may read and
   validate them;
-- an engineering run's board, conversation and reports (``/agents/engineering/<run_id>/*``,
-  read-only, lambda/engineering/views.py) are read by administrators only, acting for
-  themselves (403 for anyone else, an MCP credential included); while the engineering agents
-  are off every caller gets 404.
+- an engineering run's monitor, board, conversation and reports (``/agents/engineering/<run_id>``
+  and its ``/*``, lambda/engineering/views.py and monitor.py) are read by administrators only,
+  acting for themselves (403 for anyone else, an MCP credential included), and so are its signals
+  and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision); while the
+  engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
-their table and workspace bucket (nothing while the module is off).
+their table and workspace bucket; it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
+monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
+their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
+answer 503). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
+are in the engineering table, read with the Query its stack already grants.
 """
 
 from __future__ import annotations
@@ -57,6 +62,7 @@ from shared.exceptions import (
     ConfigurationError,
     ConflictError,
     NotFoundError,
+    ServiceUnavailableError,
     ValidationError,
 )
 from shared.logging import logger, tracer
@@ -466,10 +472,9 @@ def list_workflows():
     include_archived = _query('include_archived') == 'true'
     if include_archived:
         require_admin_caller(caller)
-    # Engineering flows (voc-workflow/2) stay out of the library until the editor opens them (it would read them as
-    # agents workflows); they are saved, validated and read by id.
+    # Both kinds are listed, each with its `kind`: the editor opens either; an agent's picker offers only `agents`.
     rows = [row for row in store.list_workflows(_agents_table())
-            if (include_archived or not store.is_archived_workflow(row)) and not _engineering_flow(row)]
+            if include_archived or not store.is_archived_workflow(row)]
     builtin, stored = rows[:1], sorted(rows[1:], key=lambda row: str(row.get('gsi1sk') or ''))
     items = [store.workflow_view(row, include_definition=False) for row in builtin + stored]
     return {'items': items, 'count': len(items)}
@@ -841,22 +846,73 @@ ENGINEERING_RUN_NOT_FOUND = 'Engineering run not found'
 _VERSION = re.compile(r'[0-9]{1,4}\Z')
 
 
-def _engineering(run_id: str) -> Any:
-    """The views, for an administrator (403 for anyone else; 404 for a bad run id and while the module is off)."""
+def _engineering_tables(run_id: str) -> tuple[str, str]:
+    """The engineering table and bucket, for an administrator (403 for anyone else; 404 for a bad run id and while
+    the module is off)."""
     table, bucket = os.environ.get('ENGINEERING_TABLE', ''), os.environ.get('ENGINEERING_WORKSPACE_BUCKET', '')
     if not (engineering_agents_on() and table and bucket):
         raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
     require_admin_caller(_caller())
     # Imported here: the package ships only in a deployment with the engineering agents on.
-    from engineering.views import EngineeringViews
     from engineering.workspace.layout import ID
-    from engineering.workspace.store import WorkspaceStore
-    from shared.aws import get_dynamodb_client, get_s3_client
 
     if not ID.fullmatch(run_id):
         raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    return table, bucket
+
+
+def _engineering(run_id: str) -> Any:
+    """The views, for an administrator."""
+    table, bucket = _engineering_tables(run_id)
+    from engineering.views import EngineeringViews
+    from engineering.workspace.store import WorkspaceStore
+    from shared.aws import get_dynamodb_client, get_s3_client
+
     # No ListBucket on its role (lib/stacks/api-assistant-lambdas.ts): a report never written reads as denied.
     return EngineeringViews(get_dynamodb_client(), table, WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True))
+
+
+def _monitor(run_id: str) -> Any:
+    """The run monitor, for an administrator (as the views): the agents from the supervisor's session rows (the
+    run's partition of the engineering table, read only); its actions need the runtime (ENGINEERING_RUNTIME_FUNCTION)
+    and the bus (ENGINEERING_BUS_NAME)."""
+    table, _ = _engineering_tables(run_id)
+    from engineering.bus.publish import EventBridgePublisher
+    from engineering.monitor import API_SOURCE, LambdaRuntime, RunMonitor
+    from engineering.runtime.runs import RunStore
+    from engineering.runtime.sessions import SessionStore
+    from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_eventbridge_client, get_lambda_client
+
+    bus, runtime = os.environ.get('ENGINEERING_BUS_NAME', ''), os.environ.get('ENGINEERING_RUNTIME_FUNCTION', '')
+    engineering = get_dynamodb_resource().Table(table)
+    return RunMonitor(get_dynamodb_client(), table, SessionStore(engineering, RunStore(engineering)),
+                      runtime=LambdaRuntime(get_lambda_client(), runtime) if runtime else None,
+                      publisher=EventBridgePublisher(get_eventbridge_client(), bus, API_SOURCE) if bus else None)
+
+
+_MONITOR_ERRORS = {'invalid': ValidationError, 'not_found': NotFoundError, 'conflict': ConflictError,
+                   'unavailable': ServiceUnavailableError}
+
+
+def _acting_monitor(run_id: str) -> tuple[Any, Caller]:
+    """The monitor and its caller for an action, checked before the body is read: while the module is off every
+    caller gets 404, then anyone but an administrator 403, then a bad or unknown run id 404."""
+    monitor = _monitor(run_id)
+    if not monitor.run_exists(run_id):
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    caller = _caller()
+    require_admin_caller(caller)
+    return monitor, caller
+
+
+def _monitor_action(monitor: Any, caller: Caller, act: Any) -> dict:
+    """``act(monitor, body, actor)``, its refusal answered with its status (the route gated the caller)."""
+    from engineering.monitor import Actor, MonitorError
+
+    try:
+        return act(monitor, json_object_body(app), Actor(caller.subject, caller.username or caller.subject))
+    except MonitorError as refused:
+        raise _MONITOR_ERRORS[refused.kind](str(refused)) from refused
 
 
 def _found(value: Any) -> Any:
@@ -896,6 +952,38 @@ def get_engineering_report(run_id: str, level: str, subject: str):
     wanted = None if version is None else int(version)
     report = _found(views.report(run_id, level, subject, wanted))
     return {'report': report.document, 'markdown': report.markdown}
+
+
+@app.get('/agents/engineering/<run_id>')
+@tracer.capture_method
+def get_engineering_run(run_id: str):
+    """The run monitor's view of a run: the run, its agents and their metering, the totals (cost and budget come with the run control)."""
+    return _found(_monitor(run_id).overview(run_id))
+
+
+@app.post('/agents/engineering/<run_id>/signals')
+@tracer.capture_method
+def signal_engineering_run(run_id: str):
+    """``{signal, task_id?, attempt?, note?, confirm?}`` → ``{signal}``: an admin acting for themselves (never a
+    delegated credential), like a run's decision; the supervisor applies it (engineering/monitor.py)."""
+    monitor, caller = _acting_monitor(run_id)
+    from engineering.monitor import parse_signal  # (the package ships only with the module)
+
+    sent = _monitor_action(monitor, caller, lambda m, body, actor: m.signal(run_id, parse_signal(body), actor))
+    logger.info('Engineering run signalled', extra={'run_id': run_id, 'signal': sent['signal']})
+    return {'signal': sent}
+
+
+@app.post('/agents/engineering/<run_id>/messages')
+@tracer.capture_method
+def message_engineering_run(run_id: str):
+    """``{to: conductor | agent, agent?, text, thread_id?}`` → ``{message}``: an admin's answer in the run."""
+    monitor, caller = _acting_monitor(run_id)
+    from engineering.monitor import parse_message  # (the package ships only with the module)
+
+    sent = _monitor_action(monitor, caller,
+                           lambda m, body, actor: m.message(run_id, parse_message(body, run_id), actor))
+    return {'message': sent}
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

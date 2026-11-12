@@ -1,8 +1,9 @@
 """A board task: its states, the moves its owner may make, and its row in the ``voc-engineering`` table.
 
 ``WS#<ws>#RUN#<run>`` / ``TASK#<task>`` (plan v3, 4.3). A task is ``open`` until an agent of its role claims it;
-the claim sets a lease whose epoch is the task's attempt. Only the lease holder, with that epoch, renews or moves
-it, so an agent whose lease was lost (and whose task was re-posted as the next attempt) can no longer act on it.
+the claim sets a lease whose epoch is the task's attempt. Only the lease holder, with that epoch, renews it,
+reports its progress or moves it, so an agent whose lease was lost (and whose task the supervisor re-posted as the
+next attempt) can no longer act on it.
 """
 from __future__ import annotations
 
@@ -22,7 +23,8 @@ MOVES = {
     IN_PROGRESS: frozenset({IN_REVIEW, DONE, FAILED, NEEDS_HUMAN}),
     IN_REVIEW: frozenset({IN_PROGRESS, DONE, FAILED, NEEDS_HUMAN}),
 }
-#: The board event each state publishes (voc-msg/1 types).
+#: The board event each state publishes (voc-msg/1 types). ``task.progress`` also carries a holder's progress report
+#: (the ``progress`` op): a receiver tells the two apart by its summary, which starts ``progress:`` for a report.
 EVENT_OF = {CLAIMED: 'task.claimed', IN_PROGRESS: 'task.progress', IN_REVIEW: 'task.review', DONE: 'task.done',
             FAILED: 'task.failed', NEEDS_HUMAN: 'task.needs_human'}
 
@@ -34,7 +36,8 @@ def task_key(ws: str, run_id: str, task_id: str) -> dict[str, dict[str, str]]:
 @dataclass(frozen=True)
 class Move:
     """One change of a task, kept as its own row (``TASKLOG#<task>#<at>#<state>``, D1), with who made it and how
-    (D4: ``op`` is the board operation, the reason the board knows)."""
+    (D4: ``op`` is the board operation, the reason the board knows; ``reason`` why, when its maker gave one: the
+    supervisor's for a re-post)."""
 
     task_id: str
     state: str
@@ -43,17 +46,21 @@ class Move:
     attempt: int
     op: str
     result_keys: tuple[str, ...] = ()
+    reason: str = ''
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> Move:
         return cls(task_id=_s(item, 'task_id'), state=_s(item, 'state'), actor=_s(item, 'actor'), at=_s(item, 'at'),
                    attempt=_n(item, 'attempt'), op=_s(item, 'op'),
-                   result_keys=tuple(sorted(item.get('result_keys', {}).get('SS', ()))))
+                   result_keys=tuple(sorted(item.get('result_keys', {}).get('SS', ()))), reason=_s(item, 'reason'))
 
     def view(self) -> dict[str, Any]:
         """The move as the board and the reports show it."""
-        return {'state': self.state, 'at': self.at, 'by': self.actor, 'op': self.op, 'attempt': self.attempt,
-                'result_keys': len(self.result_keys)}
+        view: dict[str, Any] = {'state': self.state, 'at': self.at, 'by': self.actor, 'op': self.op,
+                                'attempt': self.attempt, 'result_keys': len(self.result_keys)}
+        if self.reason:
+            view['reason'] = self.reason
+        return view
 
     def item(self, ws: str, run_id: str) -> dict[str, Any]:
         row: dict[str, Any] = {
@@ -62,6 +69,8 @@ class Move:
             'at': {'S': self.at}, 'attempt': {'N': str(self.attempt)}, 'op': {'S': self.op}}
         if self.result_keys:
             row['result_keys'] = {'SS': list(self.result_keys)}
+        if self.reason:
+            row['reason'] = {'S': self.reason}
         return row
 
 
@@ -88,6 +97,11 @@ class Task:
     posted_by: str = ''
     updated_by: str = ''
     updated_at: str = ''
+    #: The holder's last progress report (``progress``): when (epoch seconds), its step, and whether it is waiting
+    #: on an open question, review or decision (the supervisor leaves a waiting task alone).
+    progress_at: int = 0
+    step: str = ''
+    waiting: bool = False
 
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> Task:
@@ -97,7 +111,9 @@ class Task:
             attempt=_n(item, 'attempt'), parent_task=_s(item, 'parent_task'), lease_agent=_s(item, 'lease_agent'),
             lease_epoch=_n(item, 'lease_epoch'), lease_expires=_n(item, 'lease_expires'),
             result_keys=tuple(item.get('result_keys', {}).get('SS', ())), posted_by=_s(item, 'posted_by'),
-            updated_by=_s(item, 'updated_by'), updated_at=_s(item, 'updated_at'))
+            updated_by=_s(item, 'updated_by'), updated_at=_s(item, 'updated_at'),
+            progress_at=_n(item, 'progress_at'), step=_s(item, 'step'),
+            waiting=item.get('waiting', {}).get('BOOL') is True)
 
     def view(self) -> dict[str, Any]:
         """What the board API answers about a task."""
@@ -108,4 +124,6 @@ class Task:
                                                                   'epoch': self.lease_epoch,
                                                                   'expires': self.lease_expires}
                 if self.lease_agent else None, 'result_keys': sorted(self.result_keys), 'posted_by': self.posted_by,
-                'updated_by': self.updated_by, 'updated_at': self.updated_at, 'spec_hash': self.spec_hash}
+                'updated_by': self.updated_by, 'updated_at': self.updated_at, 'spec_hash': self.spec_hash,
+                'progress': {'at': self.progress_at, 'step': self.step, 'waiting': self.waiting}
+                if self.progress_at else None}

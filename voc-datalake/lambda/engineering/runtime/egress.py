@@ -41,7 +41,7 @@ def check_host(host: str) -> str:
 def aws_hosts(region: str, *buckets: str) -> tuple[str, ...]:
     """What the agent process itself reaches in ``region``: Bedrock, its buckets (the cache's and the workspace's;
     their virtual-hosted endpoints only: the regional path-style endpoint would reach every bucket in the region)
-    and its queues (SQS).
+    (no SQS: there are no task queues, and an agent's messages reach it through the board).
 
     The broker's and the board's function URLs are added by name when the runtime is wired to them (their hosts
     are known only then); no generic Lambda endpoint is ever on the list.
@@ -51,8 +51,7 @@ def aws_hosts(region: str, *buckets: str) -> tuple[str, ...]:
     for bucket in buckets:
         if not _BUCKET_RE.match(bucket):
             raise RuntimeRefused(f'{bucket!r} is not an S3 bucket name')
-    return (f'bedrock-runtime.{region}.amazonaws.com', *(f'{bucket}.s3.{region}.amazonaws.com' for bucket in buckets),
-            f'sqs.{region}.amazonaws.com')
+    return (f'bedrock-runtime.{region}.amazonaws.com', *(f'{bucket}.s3.{region}.amazonaws.com' for bucket in buckets))
 
 
 def egress_allowlist(

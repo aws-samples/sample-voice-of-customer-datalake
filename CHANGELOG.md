@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.13.00] - 2026-11-12
+
+Autonomous engineering agents: engineering flows in the workflow editor, the run monitor, push delivery per run with the board's inbox, the board's progress and repost, and the run coordinator on a versioned skill. Merged from the voc-autonomous-c and voc-autonomous-b branches. Off by default.
+
+### Added
+
+- The workflow editor builds engineering flows (voc-workflow/2): New engineering flow, an Engineering palette (agent, map, reduce, board, quality gate, learning loop, self-improvement, memory, stop at PR) and settings panels that offer only what the server accepts; `engineeringRules.ts` mirrors `shared/workflow_engineering.py`, checked against a shared 37-flow fixture. `GET /workflows` now lists both kinds (6.09.00 left engineering flows out until the editor could open them).
+- The run monitor at `/agents/engineering/:runId`: the run, its flow with each agent's step lit, the agents as the supervisor last saw them, Board and Conversation tabs, per-agent and run signals at the attempt the person saw (Stop now asks first), and answers to the run coordinator or an agent. Administrators only. Its actions answer 503 until the runtime and the bus are configured, and no stack configures them yet: the overview says so (`actions_available`), and the page then shows one line saying why instead of the signal and answer controls.
+- The board's `inbox` op (`INBOX#<addressee>#<inbox_seq>#<event_id>`, read in write order; every read, a full page's as well as the tail's, re-reads the 20 numbers below its cursor, as the conversation's pages now do, so a notice committed late is never skipped), the `progress` op (a waiting holder keeps its lease) and the supervisor's `repost` (a new attempt; nothing calls it yet).
+- The run coordinator on a versioned voc-skill/1 record (`coordinator@1`, Converse loop): it is to plan through the board and the knowledge pack, and its tools are exactly its skill's tool policy. Its planner and knowledge ports still refuse every call, as the harness's other ports do, until the board and pack adapters land, so it cannot plan a run yet.
+
+### Changed
+
+- Delivery is a push per run: the router invokes `voc-engineering-delivery` with `{message, seq}` (a redelivery carries its first seq); a posted task wakes nobody, and its row is there for the role's agents to read. The inbox is numbered in write order with a once-per-event marker, so a notice delivered late is still read.
+- A signal's request is recorded before it is applied and its outcome after (each agent applied, not applied, or stale: 409).
+- An ended task's spec marker is freed, so the same spec can be posted again.
+- The skills store and the harness share one voc-skill/1 home (`runtime/harness/skills.py`, the module the images ship); the store keeps its stricter checks.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: the ten role queues and `ENGINEERING_ROLE_QUEUE_URLS` are gone (agents never reach SQS); the router gains `lambda:InvokeFunction` on `voc-engineering-delivery` and the board role `dynamodb:Query`. Still no fixed cost. Without the flag nothing changes.
+
 ## [6.12.00] - 2026-11-12
 
 Autonomous engineering agents, phase 3: the skills' record and their versioned store, every version used only once an administrator accepts it, with its diff, its reason and a rollback that keeps the history. Nothing invokes it yet.

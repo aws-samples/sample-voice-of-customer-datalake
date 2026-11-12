@@ -79,6 +79,18 @@
     {
       "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py",
       "reason": "each feature's own model-surface choice (both the utility surface today); one may move without the other"
+    },
+    {
+      "key": "MEMORY_MODES|SCOPE_NAMES::*",
+      "reason": "an engineering memory step's modes and the MCP OAuth scopes: unrelated words that happen to be the same pair"
+    },
+    {
+      "key": "REVIEWER_KEYS|REVIEWER_SETTINGS::*",
+      "reason": "the quality gate's reviewer settings and the workflow validator's copy: shared/ cannot import the opt-in engineering package (it ships only where the module is on); engineering/test/test_workflow_lockstep.py holds the two equal"
+    },
+    {
+      "key": "_NAME|_REVIEWER_NAME::*",
+      "reason": "the gate's reviewer-name shape and the workflow validator's copy, for the same reason; the lockstep test pairs the validator with GateConfig.from_params"
     }
   ]
 }

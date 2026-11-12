@@ -28,12 +28,13 @@ from typing import Any, Final
 
 from engineering.bus.schema import ULID
 from engineering.connectors.identity import AGENT_ROLES
+from engineering.runtime.harness.skills import HARNESSES, RECORD_SCHEMA, skill_label, skill_record
 from shared.model_config import ALLOWED_MODEL_IDS
 
-#: The record's shape version (a change of the fields is a new one).
-RECORD_SCHEMA: Final = 'voc-skill/1'
-#: The harness adapters (runtime/harness/main.py's ``--adapter``).
-HARNESSES: Final = frozenset({'converse', 'cli'})
+# The record's shape version (``RECORD_SCHEMA``), the harness adapters (``HARNESSES``, runtime/harness/main.py's
+# ``--adapter``) and the record's stored shape (``skill_record``) are the harness's own (runtime/harness/skills.py),
+# which ships alone in the agents' images; this module adds the store's stricter rules.
+
 MAX_INSTRUCTIONS: Final = 20_000
 #: Lines, so a diff's per-line framing stays small beside the text (the version row's size cap, store.py).
 MAX_INSTRUCTION_LINES: Final = 500
@@ -135,14 +136,10 @@ class Skill:
     def label(self) -> str:
         """``<name>@<version>``: what a session row's ``skill_version`` says (the store's ``SkillVersion.label``
         adds the connection for a connection's own version)."""
-        return f'{self.name}@{self.version}'
+        return skill_label(name=self.name, version=self.version)
 
     def to_record(self) -> dict[str, Any]:
-        content = self.content
-        return {'schema': RECORD_SCHEMA, 'name': self.name, 'version': self.version,
-                'instructions': content.instructions,
-                'examples': [{'situation': e.situation, 'action': e.action} for e in content.examples],
-                'tool_policy': list(content.tool_policy), 'model': content.model, 'harness': content.harness}
+        return skill_record(self.name, self.version, self.content)
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> Skill:

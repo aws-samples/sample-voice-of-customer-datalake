@@ -31,7 +31,22 @@ import type { QueryClient } from '@tanstack/react-query'
 
 export const DEFAULT_WORKFLOW_ID = 'wf_default'
 
-export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number]
+/**
+ * An engineering flow (`voc-workflow/2`, `lambda/shared/workflow_engineering.py`): `start`, `end` and these steps,
+ * never an agents step. The agents' workflows stay `voc-workflow/1` (the assistant drafts only those).
+ */
+export const WORKFLOW_SCHEMA_V2 = 'voc-workflow/2'
+const WORKFLOW_SCHEMAS = [WORKFLOW_SCHEMA_VERSION, WORKFLOW_SCHEMA_V2] as const
+export const ENGINEERING_NODE_TYPES = [
+  'agent', 'map', 'reduce', 'board', 'quality_gate', 'learning_loop', 'self_improvement', 'memory', 'stop_at_pr',
+] as const
+/** Every step either kind of workflow may hold (which kind holds which is a graph rule). */
+export const WORKFLOW_ALL_NODE_TYPES = [...WORKFLOW_NODE_TYPES, ...ENGINEERING_NODE_TYPES] as const
+
+/** A step of either kind of workflow (an agents workflow's, or an engineering flow's). */
+export type WorkflowNodeType = (typeof WORKFLOW_ALL_NODE_TYPES)[number]
+/** `voc-workflow/1` (an agents workflow) or `voc-workflow/2` (an engineering flow). */
+export type WorkflowSchema = (typeof WORKFLOW_SCHEMAS)[number]
 export type WorkflowNodeRole = (typeof WORKFLOW_NODE_ROLES)[number]
 export type WorkflowEdgeLabel = (typeof WORKFLOW_EDGE_LABELS)[number]
 
@@ -74,11 +89,17 @@ const WORKFLOW_ELEMENT_ID = /^[A-Za-z0-9_-]{1,64}$/
 
 const jsonLength = (value: unknown) => JSON.stringify(value).length
 
-/** A strict definition schema for the given limits and element-id rule. */
-export function buildWorkflowDefinitionSchema(limits: WorkflowLimits, elementId: z.ZodType<string>) {
+/**
+ * A strict definition schema for the given limits and element-id rule, of the given kinds (both by default: the
+ * editor's; the assistant's approval boundary takes agents workflows only).
+ */
+export function buildWorkflowDefinitionSchema(
+  limits: WorkflowLimits, elementId: z.ZodType<string>,
+  schemas: readonly [WorkflowSchema, ...WorkflowSchema[]] = WORKFLOW_SCHEMAS,
+) {
   const node = z.strictObject({
     id: elementId,
-    type: z.enum(WORKFLOW_NODE_TYPES),
+    type: z.enum(WORKFLOW_ALL_NODE_TYPES),
     position: z.strictObject({ x: z.number(), y: z.number() }),
     data: z.strictObject({
       title: z.string().trim().min(1).max(limits.maxTitleChars),
@@ -101,7 +122,7 @@ export function buildWorkflowDefinitionSchema(limits: WorkflowLimits, elementId:
     max_rounds: z.number().int().min(limits.minRounds).max(limits.maxRounds),
   })
   return z.strictObject({
-    schema: z.literal(WORKFLOW_SCHEMA_VERSION),
+    schema: z.enum(schemas),
     name: z.string().trim().min(1).max(limits.maxNameChars),
     description: z.string().max(limits.maxDescriptionChars).optional(),
     nodes: z.array(node).min(1).max(limits.maxNodes),
@@ -119,6 +140,9 @@ export const workflowDefinitionSchema = buildWorkflowDefinitionSchema(
 export type WorkflowDefinition = z.output<typeof workflowDefinitionSchema>
 export type WorkflowNode = WorkflowDefinition['nodes'][number]
 export type WorkflowEdge = WorkflowDefinition['edges'][number]
+/** An engineering flow: it repeats through its board, so it has no loops, and its steps take no `data.role`. */
+export const isEngineeringFlow = (definition: Pick<WorkflowDefinition, 'schema'>): boolean =>
+  definition.schema === WORKFLOW_SCHEMA_V2
 export type WorkflowLoop = WorkflowDefinition['loops'][number]
 
 // ── Lenient reads ────────────────────────────────────────────────────────────
@@ -128,7 +152,7 @@ const nullableString = z.string().nullable().catch(null)
 
 const LenientNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(WORKFLOW_NODE_TYPES),
+  type: z.enum(WORKFLOW_ALL_NODE_TYPES),
   position: z.object({ x: z.number().catch(0), y: z.number().catch(0) }).catch({ x: 0, y: 0 }),
   data: z.object({
     title: z.string().catch(''),
@@ -155,7 +179,7 @@ const guard = schemaGuard
 
 /** One bad node / edge / loop costs itself, never the whole definition. */
 const LenientDefinitionSchema = z.object({
-  schema: z.literal(WORKFLOW_SCHEMA_VERSION).catch(WORKFLOW_SCHEMA_VERSION),
+  schema: z.enum(WORKFLOW_SCHEMAS).catch(WORKFLOW_SCHEMA_VERSION),
   name: z.string().catch(''),
   description: optionalString,
   nodes: lenientList(guard(LenientNodeSchema)),
@@ -169,7 +193,7 @@ export function normalizeDefinition(raw: unknown): WorkflowDefinition | null {
   if (!parsed.success) return null
   const d = parsed.data
   return {
-    schema: WORKFLOW_SCHEMA_VERSION,
+    schema: d.schema,
     name: d.name,
     ...(d.description === undefined ? {} : { description: d.description }),
     nodes: d.nodes.map((n) => ({
@@ -201,6 +225,8 @@ const WorkflowSummarySchema = z.object({
   updated_at: nullableString,
   updated_by_username: nullableString,
   status: z.enum(['active', 'archived']).catch('active'),
+  /** An agents workflow (the agents run it) or an engineering flow (`voc-workflow/2`, never an agent's). */
+  kind: z.enum(['agents', 'engineering']).catch('agents'),
 })
 export type WorkflowSummary = z.output<typeof WorkflowSummarySchema>
 

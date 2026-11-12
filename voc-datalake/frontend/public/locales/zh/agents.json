@@ -66,7 +66,11 @@
     "renameNamed": "重命名 {{name}}",
     "renameTitle": "重命名此工作流",
     "renameConflict": "在此期间有人修改了此工作流，或它是内置工作流。请刷新后重试。",
-    "renameFailed": "无法重命名该工作流。"
+    "renameFailed": "无法重命名该工作流。",
+    "newEngineeringFlow": "新建工程流程",
+    "createEngineeringTitle": "新建工程流程",
+    "createEngineeringHint": "工程流程让自主工程智能体在一个仓库上工作，并以供人审阅的拉取请求结束。它从“开始 → 结束”起步：从面板添加“工程”步骤。",
+    "engineeringKind": "工程"
   },
   "fields": {
     "name": "名称",
@@ -398,7 +402,46 @@
     "switchMessage": "您对 {{name}} 未保存的更改将丢失。",
     "switchConfirm": "切换工作流",
     "switched": "此代理现在运行 {{name}}。",
-    "switchFailed": "无法将代理切换到该工作流。"
+    "switchFailed": "无法将代理切换到该工作流。",
+    "engineering": {
+      "role": "角色",
+      "skillVersion": "技能版本",
+      "skillVersionHint": "'latest'（最新已接受的版本）或像 v3 这样的版本。",
+      "model": "模型",
+      "modelHint": "模型 ID；留空则使用默认模型。",
+      "budgetShare": "运行预算份额",
+      "budgetShareHint": "0.01 到 1 之间的比例；各智能体的份额合计不超过 1。留空：没有自己的份额。",
+      "shardBy": "拆分依据",
+      "shardByOptions": {
+        "packages": "包",
+        "history": "历史时间窗",
+        "pr_pages": "PR 页面"
+      },
+      "shardCap": "分片上限",
+      "posters": "谁发布任务",
+      "claimers": "谁领取任务",
+      "until": "运行到",
+      "untilOptions": {
+        "drained": "所有任务完成",
+        "caps": "达到上限"
+      },
+      "maxRounds": "评审轮次（上限）",
+      "packsAuto": "在仓库中自动检测检查包",
+      "packs": "检查包",
+      "finalGoModel": "最终放行模型",
+      "mode": "模式",
+      "modeOptions": {
+        "read": "读取",
+        "write": "写入"
+      },
+      "scope": "谁的记忆",
+      "scopeOptions": {
+        "repo": "仓库",
+        "role": "角色",
+        "person": "个人"
+      },
+      "limit": "读取记忆上限"
+    }
   },
   "paletteGroups": {
     "flow": "流程",
@@ -406,7 +449,8 @@
     "documents": "文档",
     "review": "评审",
     "prototype": "原型",
-    "delivery": "交付"
+    "delivery": "交付",
+    "engineering": "工程"
   },
   "edgeLabels": {
     "pass": "通过",
@@ -499,6 +543,42 @@
     "end": {
       "label": "结束",
       "description": "运行结束的位置。"
+    },
+    "agent": {
+      "label": "智能体",
+      "description": "带有角色（fixer、hunter、committer 等）、技能版本和预算份额的智能体。"
+    },
+    "map": {
+      "label": "拆分",
+      "description": "将工作拆成分片（包、历史时间窗、PR 页面），由智能体并行处理。"
+    },
+    "reduce": {
+      "label": "汇总",
+      "description": "拆分出的分片在此汇合，得出一个结果。"
+    },
+    "board": {
+      "label": "看板",
+      "description": "任务看板：一些角色发布任务，另一些角色领取并完成，直到清空。"
+    },
+    "quality_gate": {
+      "label": "质量关卡",
+      "description": "对变更的检查和评审轮次：GO 继续到 PR，NO-GO 交给人来决定。"
+    },
+    "learning_loop": {
+      "label": "学习循环",
+      "description": "一次回顾，把这次运行学到的内容写入记忆。"
+    },
+    "self_improvement": {
+      "label": "自我改进",
+      "description": "教练提出更好的技能版本并进行基准测试。"
+    },
+    "memory": {
+      "label": "记忆",
+      "description": "读取或写入仓库、某个角色或某个人的记忆。"
+    },
+    "stop_at_pr": {
+      "label": "止于 PR",
+      "description": "流程以一个供人审阅的拉取请求结束：从不合并任何内容。"
     }
   },
   "loopUntilHint": {
@@ -585,6 +665,102 @@
         "label": "关闭运行",
         "help": "不再运行任何步骤。运行产生的内容保留在项目中。"
       }
+    }
+  },
+  "engineeringRun": {
+    "untitled": "工程运行",
+    "statusUnknown": "状态未知",
+    "started": "开始于 {{when}}",
+    "ended": "结束于 {{when}}",
+    "totals": "MicroVM 时间：{{seconds, number}} 秒 · 消息：{{messages, number}}",
+    "byModel": "按模型的令牌",
+    "actionsUnavailable": "此部署尚无法发送信号和回复：它没有将运行监视器连接到工程运行时和总线。",
+    "runSignals": "整个运行",
+    "agentSignals": "智能体 {{agent}}",
+    "signals": {
+      "save": "保存",
+      "pause": "暂停",
+      "resume": "继续",
+      "shutdown": "关闭",
+      "stop_now": "立即停止"
+    },
+    "signalSent": "已发送。",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "不保存就立即停止？",
+    "stopNowMessage": "工作会立即停止，不留检查点：尚未保存的内容都会丢失。若要保留，请改用“关闭”。",
+    "errors": {
+      "forbidden": "只有管理员可以这样做。",
+      "notFound": "此运行或任务已不存在：请重新加载运行。",
+      "movedOn": "自你查看以来情况已变（另一次尝试，或运行已结束）：请重新加载运行后再试。",
+      "unavailable": "暂时无法连接到运行：请稍后再试。",
+      "generic": "操作未成功：请重试。"
+    },
+    "agent": {
+      "step": "步骤",
+      "vm": "MicroVM",
+      "heartbeat": "心跳",
+      "progress": "最近进展",
+      "metering": "用量",
+      "stuck": "似乎卡住了：{{reason}}",
+      "inspect": "最近的工具调用（{{n, number}}）",
+      "noTools": "还没有工具调用。",
+      "for": "已 {{age}}",
+      "ago": "{{age}}前",
+      "started": "开始",
+      "continuation": "第 {{n, number}} 次续接",
+      "microvmTime": "MicroVM 时间 {{seconds, number}} 秒"
+    },
+    "noAgents": "还没有智能体开始工作。",
+    "noTasks": "看板上还没有任务。",
+    "task": {
+      "meta": "{{role}} · 第 {{attempt}} 次尝试",
+      "heldBy": "由 {{agent}} 处理",
+      "history": "历史（{{n, number}}）",
+      "move": "{{state}} · {{by}} · {{when}}（第 {{attempt}} 次尝试）"
+    },
+    "states": {
+      "open": "待领取",
+      "claimed": "已领取",
+      "in_progress": "进行中",
+      "in_review": "审核中",
+      "needs_human": "需要人处理",
+      "failed": "失败",
+      "done": "完成"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "回复",
+    "replyTo": "回复 {{who}}",
+    "answerTo": "发送给",
+    "conductor": "运行的指挥者",
+    "replyingIn": "在线程 {{thread}} 中回复",
+    "newThread": "开始新线程",
+    "answer": "你的消息",
+    "bytes": "{{used, number}} / {{max, number}} 字节",
+    "send": "发送",
+    "noMessages": "还没有消息。",
+    "tabs": {
+      "agents": "智能体",
+      "board": "看板",
+      "conversation": "对话"
+    },
+    "panels": "运行的智能体、看板和对话",
+    "flow": "运行的流程，标出智能体所在的步骤",
+    "noFlow": "无法读取运行的流程：其余内容照常显示。",
+    "notFound": "找不到工程运行",
+    "notFoundHint": "请检查运行 ID。只有在开启了工程智能体的部署中，且只对能看到所有类别的人，才会显示工程运行。",
+    "modelTokens": "{{model}}：输入 {{input, number}}，输出 {{output, number}}",
+    "agentStatus": "{{agent}}：{{status}}",
+    "agentNotApplied": "{{agent}}：{{status}}（未应用）",
+    "status": {
+      "booting": "启动中",
+      "working": "工作中",
+      "pause_requested": "已请求暂停",
+      "waiting": "等待中",
+      "paused": "已暂停",
+      "done": "完成",
+      "failed": "失败",
+      "stopped": "已停止",
+      "reposted": "已重新发布"
     }
   }
 }

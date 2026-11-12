@@ -66,7 +66,11 @@
     "renameNamed": "{{name}} の名前を変更",
     "renameTitle": "ワークフローの名前を変更",
     "renameConflict": "その間に誰かがこのワークフローを変更したか、組み込みのワークフローです。再読み込みしてやり直してください。",
-    "renameFailed": "ワークフローの名前を変更できませんでした。"
+    "renameFailed": "ワークフローの名前を変更できませんでした。",
+    "newEngineeringFlow": "新しいエンジニアリングフロー",
+    "createEngineeringTitle": "新しいエンジニアリングフロー",
+    "createEngineeringHint": "エンジニアリングフローは、自律エンジニアリングエージェントをリポジトリで動かし、人がレビューするプルリクエストで終わります。開始 → 終了 から始め、パレットからエンジニアリングのステップを追加してください。",
+    "engineeringKind": "エンジニアリング"
   },
   "fields": {
     "name": "名前",
@@ -398,7 +402,46 @@
     "switchMessage": "{{name}} への未保存の変更は失われます。",
     "switchConfirm": "ワークフローを切り替え",
     "switched": "このエージェントは {{name}} を実行するようになりました。",
-    "switchFailed": "エージェントをそのワークフローに切り替えられませんでした。"
+    "switchFailed": "エージェントをそのワークフローに切り替えられませんでした。",
+    "engineering": {
+      "role": "ロール",
+      "skillVersion": "スキルのバージョン",
+      "skillVersionHint": "'latest'（最新の承認済み）または v3 のようなバージョン。",
+      "model": "モデル",
+      "modelHint": "モデル ID。空欄なら既定のモデル。",
+      "budgetShare": "実行予算の配分",
+      "budgetShareHint": "0.01 から 1 までの割合。エージェントの配分の合計は 1 以下。空欄なら独自の配分なし。",
+      "shardBy": "分割の単位",
+      "shardByOptions": {
+        "packages": "パッケージ",
+        "history": "履歴の期間",
+        "pr_pages": "PR のページ"
+      },
+      "shardCap": "シャードの上限",
+      "posters": "タスクを投稿するロール",
+      "claimers": "タスクを引き受けるロール",
+      "until": "終了条件",
+      "untilOptions": {
+        "drained": "すべてのタスクが完了",
+        "caps": "上限に到達"
+      },
+      "maxRounds": "レビューの回数（上限）",
+      "packsAuto": "リポジトリのゲートパックを自動検出",
+      "packs": "ゲートパック",
+      "finalGoModel": "最終承認のモデル",
+      "mode": "モード",
+      "modeOptions": {
+        "read": "読み取り",
+        "write": "書き込み"
+      },
+      "scope": "誰のメモリ",
+      "scopeOptions": {
+        "repo": "リポジトリ",
+        "role": "ロール",
+        "person": "個人"
+      },
+      "limit": "読み取るメモリの上限"
+    }
   },
   "paletteGroups": {
     "flow": "フロー",
@@ -406,7 +449,8 @@
     "documents": "ドキュメント",
     "review": "レビュー",
     "prototype": "プロトタイプ",
-    "delivery": "引き渡し"
+    "delivery": "引き渡し",
+    "engineering": "エンジニアリング"
   },
   "edgeLabels": {
     "pass": "合格",
@@ -499,6 +543,42 @@
     "end": {
       "label": "終了",
       "description": "実行の終了点。"
+    },
+    "agent": {
+      "label": "エージェント",
+      "description": "ロール（fixer、hunter、committer など）、スキルのバージョン、予算の配分を持つエージェント。"
+    },
+    "map": {
+      "label": "分割",
+      "description": "作業をシャード（パッケージ、履歴の期間、PR のページ）に分け、エージェントが並行して処理します。"
+    },
+    "reduce": {
+      "label": "集約",
+      "description": "分割したシャードが再び合流し、1 つの結果になります。"
+    },
+    "board": {
+      "label": "ボード",
+      "description": "タスクボード。あるロールがタスクを投稿し、別のロールが引き受けて実行し、空になるまで続きます。"
+    },
+    "quality_gate": {
+      "label": "品質ゲート",
+      "description": "変更へのチェックとレビュー。GO なら PR へ、NO-GO なら担当者の判断へ進みます。"
+    },
+    "learning_loop": {
+      "label": "学習ループ",
+      "description": "実行から学んだことをメモリに書き込む振り返り。"
+    },
+    "self_improvement": {
+      "label": "自己改善",
+      "description": "コーチがより良いスキルのバージョンを提案し、ベンチマークします。"
+    },
+    "memory": {
+      "label": "メモリ",
+      "description": "リポジトリ、ロール、または個人のメモリを読み書きします。"
+    },
+    "stop_at_pr": {
+      "label": "PR で停止",
+      "description": "フローは人がレビューするプルリクエストで終わります。何もマージされません。"
     }
   },
   "loopUntilHint": {
@@ -585,6 +665,102 @@
         "label": "実行を終了する",
         "help": "これ以上何も実行されません。作成された成果物はプロジェクトに残ります。"
       }
+    }
+  },
+  "engineeringRun": {
+    "untitled": "エンジニアリング実行",
+    "statusUnknown": "状態不明",
+    "started": "開始: {{when}}",
+    "ended": "終了: {{when}}",
+    "totals": "MicroVM 時間: {{seconds, number}} 秒 · メッセージ: {{messages, number}}",
+    "byModel": "モデル別のトークン",
+    "actionsUnavailable": "このデプロイからはまだシグナルや回答を送信できません。実行モニターがエンジニアリングのランタイムとバスに接続されていません。",
+    "runSignals": "実行全体",
+    "agentSignals": "エージェント {{agent}}",
+    "signals": {
+      "save": "保存",
+      "pause": "一時停止",
+      "resume": "再開",
+      "shutdown": "シャットダウン",
+      "stop_now": "今すぐ停止"
+    },
+    "signalSent": "送信しました。",
+    "signalFor": "{{signal}} — {{target}}",
+    "stopNowTitle": "保存せずに今すぐ停止しますか？",
+    "stopNowMessage": "作業はチェックポイントなしで直ちに停止し、まだ保存されていない内容は失われます。残したい場合はシャットダウンを使ってください。",
+    "errors": {
+      "forbidden": "この操作は管理者のみ行えます。",
+      "notFound": "この実行またはタスクはもうありません。実行を再読み込みしてください。",
+      "movedOn": "確認した後に状況が変わりました（別の試行、または実行の終了）。実行を再読み込みして、もう一度お試しください。",
+      "unavailable": "今は実行に接続できませんでした。少し待ってからもう一度お試しください。",
+      "generic": "処理できませんでした。もう一度お試しください。"
+    },
+    "agent": {
+      "step": "ステップ",
+      "vm": "MicroVM",
+      "heartbeat": "ハートビート",
+      "progress": "最新の進捗",
+      "metering": "使用量",
+      "stuck": "停滞しているようです: {{reason}}",
+      "inspect": "最近のツール呼び出し（{{n, number}}）",
+      "noTools": "まだツール呼び出しはありません。",
+      "for": "{{age}} 経過",
+      "ago": "{{age}} 前",
+      "started": "開始",
+      "continuation": "継続 {{n, number}}",
+      "microvmTime": "MicroVM 時間 {{seconds, number}} 秒"
+    },
+    "noAgents": "まだ開始したエージェントはいません。",
+    "noTasks": "ボードにはまだタスクがありません。",
+    "task": {
+      "meta": "{{role}} · 試行 {{attempt}}",
+      "heldBy": "担当: {{agent}}",
+      "history": "履歴（{{n, number}}）",
+      "move": "{{state}} · {{by}} · {{when}}（試行 {{attempt}}）"
+    },
+    "states": {
+      "open": "未着手",
+      "claimed": "担当済み",
+      "in_progress": "進行中",
+      "in_review": "レビュー中",
+      "needs_human": "人の対応が必要",
+      "failed": "失敗",
+      "done": "完了"
+    },
+    "fromTo": "{{from}} → {{to}}",
+    "reply": "返信",
+    "replyTo": "{{who}} に返信",
+    "answerTo": "宛先",
+    "conductor": "実行のコンダクター",
+    "replyingIn": "スレッド {{thread}} で返信中",
+    "newThread": "新しいスレッドを始める",
+    "answer": "メッセージ",
+    "bytes": "{{used, number}} / {{max, number}} バイト",
+    "send": "送信",
+    "noMessages": "まだメッセージはありません。",
+    "tabs": {
+      "agents": "エージェント",
+      "board": "ボード",
+      "conversation": "会話"
+    },
+    "panels": "実行のエージェント、ボード、会話",
+    "flow": "実行のフロー（エージェントがいるステップを表示）",
+    "noFlow": "実行のフローを読み込めませんでした。その他の情報は表示されています。",
+    "notFound": "エンジニアリング実行が見つかりません",
+    "notFoundHint": "実行 ID を確認してください。エンジニアリング実行は、エンジニアリングエージェントが有効な環境でのみ、すべてのカテゴリを閲覧できる人に表示されます。",
+    "modelTokens": "{{model}}: 入力 {{input, number}}、出力 {{output, number}}",
+    "agentStatus": "{{agent}}: {{status}}",
+    "agentNotApplied": "{{agent}}: {{status}}（未適用）",
+    "status": {
+      "booting": "起動中",
+      "working": "作業中",
+      "pause_requested": "一時停止を要求済み",
+      "waiting": "待機中",
+      "paused": "一時停止中",
+      "done": "完了",
+      "failed": "失敗",
+      "stopped": "停止",
+      "reposted": "再投稿"
     }
   }
 }

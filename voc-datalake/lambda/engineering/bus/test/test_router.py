@@ -1,4 +1,5 @@
-"""The inbox router end to end on a moto table: check, write the conversation, fan out; drop what is refused."""
+"""The inbox router end to end on a moto table: check, write the conversation, push it to the delivery function with
+its seq; drop what is refused."""
 from __future__ import annotations
 
 import json
@@ -14,7 +15,7 @@ from engineering.bus import router as router_module
 from engineering.bus.router import Router, handler
 from engineering.bus.schema import Message
 from engineering.bus.test.messages import AGENT_SOURCE, RUN, message
-from engineering.conversation.store import ConversationStore
+from engineering.conversation.store import NEW, Appended, ConversationStore
 
 TASK = {'type': 'task.posted', 'task_id': 'task-1', 'to': {'kind': 'role', 'id': 'fixer'},
         'from': {'kind': 'system', 'id': 'board'}}
@@ -29,12 +30,14 @@ def client() -> Iterator[Any]:
 
 class Sinks:
     def __init__(self) -> None:
-        self.queued: list[tuple[str, Message]] = []
-        self.delivered: list[Message] = []
+        self.pushed: list[tuple[Message, int]] = []
+
+    @property
+    def delivered(self) -> list[Message]:
+        return [message for message, _ in self.pushed]
 
     def router(self, client: Any) -> Router:
-        return Router(ConversationStore(client, TABLE),
-                      to_role_queue=lambda role, m: self.queued.append((role, m)), deliver=self.delivered.append)
+        return Router(ConversationStore(client, TABLE), deliver=lambda m, seq: self.pushed.append((m, seq)))
 
 
 def _rows(client: Any) -> list[dict[str, Any]]:
@@ -55,29 +58,38 @@ def test_a_message_for_an_agent_is_written_then_delivered(client):
     assert (stored['summary'], stored['from']) == ('Is the page size inclusive?', {'kind': 'agent', 'id': 'fixer-1'})
 
 
-def test_a_posted_task_goes_to_its_role_queue_again_when_redelivered(client):
+def test_a_posted_task_is_pushed_again_under_the_same_seq_when_redelivered(client):
     sinks = Sinks()
     router = sinks.router(client)
     task = message(**TASK)
-    assert router.route_event(BOARD, task).status == 'routed'
+    assert router.route_event(AGENT_SOURCE, message()).seq == 1
+    assert router.route_event(BOARD, task).seq == 2
     again = router.route_event(BOARD, task)
-    assert (again.status, again.seq) == ('redelivered', None)
-    assert [(role, m.task_id) for role, m in sinks.queued] == [('fixer', 'task-1'), ('fixer', 'task-1')]
-    assert len(_rows(client)) == 1
-    assert sinks.delivered == []
+    assert (again.status, again.seq) == ('redelivered', 2)
+    assert [(m.task_id, m.to.id, seq) for m, seq in sinks.pushed[1:]] == [('task-1', 'fixer', 2), ('task-1', 'fixer', 2)]
+    assert len(_rows(client)) == 2
+
+
+def test_a_message_without_a_seq_is_never_pushed():
+    store = MagicMock()
+    store.append_to_conversation.return_value = Appended(NEW)
+    deliver = MagicMock()
+    with pytest.raises(RuntimeError, match='without a seq'):
+        Router(store, deliver=deliver).route_event(AGENT_SOURCE, message())
+    deliver.assert_not_called()
 
 
 def test_a_message_for_the_run_conductor_is_delivered(client):
     sinks = Sinks()
     sinks.router(client).route_event(AGENT_SOURCE, message(to={'kind': 'conductor', 'id': 'c'}))
-    assert ([m.to.kind for m in sinks.delivered], sinks.queued) == (['conductor'], [])
+    assert [(m.to.kind, seq) for m, seq in sinks.pushed] == [('conductor', 1)]
 
 
 def test_a_message_to_the_run_is_only_written(client):
     sinks = Sinks()
     health = message(type='run.health', **{'from': {'kind': 'supervisor', 'id': 's'}, 'to': {'kind': 'run', 'id': RUN}})
     assert sinks.router(client).route_event('voc.engineering/supervisor', health).status == 'routed'
-    assert (sinks.queued, sinks.delivered, len(_rows(client))) == ([], [], 1)
+    assert (sinks.pushed, len(_rows(client))) == ([], 1)
 
 
 def test_the_conversation_keeps_order(client):
@@ -105,7 +117,7 @@ def test_a_message_for_a_run_that_does_not_exist_is_dropped_and_creates_nothing(
     assert (routed.status, routed.reason) == ('dropped', 'the run does not exist')
     assert 'Item' not in client.get_item(TableName=TABLE, Key={'pk': {'S': 'WS#default#RUN#run-404'},
                                                                'sk': {'S': 'META'}})
-    assert sinks.queued == []
+    assert sinks.pushed == []
 
 
 @pytest.mark.parametrize(('source', 'detail', 'reason'), [
@@ -118,7 +130,7 @@ def test_refused_messages_are_dropped_and_never_written(client, source, detail, 
     routed = sinks.router(client).route_event(source, detail)
     assert (routed.status, routed.reason) == ('dropped', reason)
     assert _rows(client) == []
-    assert (sinks.queued, sinks.delivered) == ([], [])
+    assert sinks.pushed == []
 
 
 def _failing(method: str, code: str, **response: Any) -> ConversationStore:
@@ -139,23 +151,20 @@ def _failing(method: str, code: str, **response: Any) -> ConversationStore:
 ])
 def test_a_storage_error_that_is_not_a_duplicate_is_raised(store):
     with pytest.raises(ClientError):
-        Router(store, to_role_queue=MagicMock(), deliver=MagicMock()).route_event(AGENT_SOURCE, message())
+        Router(store, deliver=MagicMock()).route_event(AGENT_SOURCE, message())
 
 
 def test_the_handler_builds_its_clients_from_the_environment(client, monkeypatch):
     monkeypatch.setattr(router_module, '_router', None)
-    monkeypatch.setenv('ENGINEERING_ROLE_QUEUE_URLS', json.dumps({'fixer': 'https://sqs.example/123/voc-eng-tasks-fixer-1'}))
     monkeypatch.setenv('ENGINEERING_DELIVERY_FUNCTION', 'voc-eng-delivery')
     monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
-    sqs = MagicMock()
-    with patch('shared.aws.get_sqs_client', return_value=sqs), \
-            patch('shared.aws.get_dynamodb_client', return_value=client), \
+    with patch('shared.aws.get_dynamodb_client', return_value=client), \
             patch('shared.aws.invoke_lambda_async') as invoke:
         assert handler({'source': BOARD, 'detail': message(**TASK)}, None) == {
             'status': 'routed', 'reason': '', 'seq': 1}
         handler({'source': AGENT_SOURCE, 'detail': message(event_id='01HZZZZZZZZZZZZZZZZZZZZZZZ')}, None)
-    assert sqs.send_message.call_args.kwargs['QueueUrl'] == 'https://sqs.example/123/voc-eng-tasks-fixer-1'
-    assert json.loads(sqs.send_message.call_args.kwargs['MessageBody'])['task_id'] == 'task-1'
-    assert invoke.call_args.args[0] == 'voc-eng-delivery'
-    assert invoke.call_args.args[1]['to'] == {'kind': 'agent', 'id': 'reviewer-1'}
+    (task_call, answer_call) = invoke.call_args_list
+    assert task_call.args[0] == 'voc-eng-delivery'
+    assert (task_call.args[1]['seq'], task_call.args[1]['message']['task_id']) == (1, 'task-1')
+    assert (answer_call.args[1]['seq'], answer_call.args[1]['message']['to']) == (2, {'kind': 'agent', 'id': 'reviewer-1'})
     monkeypatch.setattr(router_module, '_router', None)
