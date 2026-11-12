@@ -248,8 +248,8 @@ What exists:
 - **The inbox router** (`bus/router.py`, the `voc-engineering-router` Lambda): one fixed rule sends every event of
   the account on the bus to it. It checks the schema and the sender (`bus/senders.py`: the event's `source` names the
   sender, and only the allowed sources may send each type, for their own run only), writes the message to the run's
-  conversation, then fans it out (`bus/routing.py`): a posted task to its role's queue, a message for an agent or the
-  conductor to the delivery function. It drops, and journals with the reason and never the content, a malformed
+  conversation, then pushes it (`bus/routing.py`): a posted task, and a message for an agent or the conductor, to
+  the delivery function with its conversation seq. It drops, and journals with the reason and never the content, a malformed
   message, a sender that may not send it, a run that does not exist and an event id reused for other content.
 - **The conversation** (`conversation/store.py`): one row per message in the `voc-engineering` DynamoDB table
   (on demand, encrypted with the stack's key, point-in-time recovery, kept like `voc-agents`), never changed, the
@@ -277,12 +277,10 @@ What exists:
   404), and read by administrators only, acting for themselves, until a connection can be shared ([Repository connectors](#repository-connectors), "Who can read
   and use"; anyone else gets 403). An MCP token never acts as an administrator, so the global MCP server has no tool for them
   yet ([docs/mcp.md](mcp.md)).
-- **The role queues**: one SQS queue per task-pulling role (`bus/schema.py` ROLES), encrypted with the stack's key,
-  redriving to `voc-engineering-dlq`. That one dead-letter queue also takes the events the rule could not hand the
-  router, the router's invocations that failed every retry and the runtime's undelivered supervisor ticks, and
-  alerting watches it like the platform's other
-  failure queues. The role queues are fixed per role and shared by every run, and there are no per-agent inboxes
-  (an addressed message is pushed by the delivery function, [below](#how-the-agents-work-together)); the
+- **No task queues**: every message is pushed per run by the delivery function ([below](#how-the-agents-work-together),
+  "Inboxes and roles"). The one queue is `voc-engineering-dlq`, encrypted with the stack's key: the events the rule
+  could not hand the router, the router's invocations that failed every retry, the report builder's failed builds and
+  the runtime's undelivered supervisor ticks; alerting watches it like the platform's other failure queues. The
   [runtime](#runtime-one-microvm-per-agent)'s agent roles are still granted per-run queue names that nothing creates.
 
 Not built yet: the run's start, which writes the `META` row (so today the board answers 404 to every post and the
@@ -339,30 +337,28 @@ published only by the API, which writes the signed-in user; a decision needs an 
 connection is shared with to manage, not only to view.
 
 **Inboxes and roles.** One fixed rule sends every event to the inbox router (a Lambda, `bus/router.py`), which
-writes it to the run's conversation and then routes it (`bus/routing.py`). A posted task goes to its role's queue:
-one fixed SQS queue per task-pulling role, `voc-eng-tasks-<role>` (mapper, understander, hunter, fixer, committer,
-commit reviewer, PR author, PR reviewer, builder, final go: `bus/schema.py` ROLES), shared by every run and made with
-the stack, never per run; the task carries its run, and an agent can claim only its own run's tasks, since the board's
-API takes the run from the caller's session. A message addressed to an agent or to the run coordinator goes to the
-delivery function, which is to wake the addressee (a suspended MicroVM runs no code and cannot poll a queue, so
-delivery is a push); that function is not built yet, so such a message is written to the conversation and its
-delivery fails into `voc-engineering-dlq`. A message to the run (a signal, run health, an outcome) stays in the
-conversation, where the supervisor, the coordinator and the run view read it. **Known risk, to be closed before the
-flag can go on:** a shared role queue lets one run's agent receive another run's task notice (its summary) and
-remove it, which crosses runs; the board stays the record, but the design wants no run to see another's tasks. So
-task notices are to be delivered per run (*planned*: the run's own role queues made when it starts and removed when it
-ends, or the delivery function placing each notice for the run's agents, with the agent roles' queue grants scoped by
-the run tag); the runtime's agent roles are still granted per-run queue names nothing creates
-([Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"). The gate runner, the coordinator and the coach have no
-role queue: their work comes assigned. The rule is fixed, never made per run, so the bus's rule quota does not limit
-how many runs work at once. EventBridge is the bus, SQS the role queues.
+writes it to the run's conversation and then routes it (`bus/routing.py`). There is no SQS queue per role or per
+agent: a suspended MicroVM runs no code and cannot poll, so every message is pushed, per run. A posted task, and a
+message addressed to an agent or to the run's conductor, go to the delivery function (`voc-engineering-delivery`, the
+runtime's), invoked asynchronously with the message and its conversation seq (`{message, seq}`; a redelivery carries
+the seq the message was first written under). It records each notice once in the run's own partition, as an
+`INBOX#<addressee>#<inbox_seq>#<event_id>` row (the addressee `agent:<agent>`, `role:<role>` for a posted task, or
+`conductor`; `inbox_seq` the run's write-order counter, so a notice delivered late still numbers above everything
+already read; the row keeps the conversation seq too), and wakes the addressee: the agent, or the run's live agents of the task's role. An agent reads its
+notices with the board API's `inbox` op (`board/inbox.py`): its own, its role's and, for the coordinator, the
+conductor's, after an `inbox_seq`, merged in write order (each with its `conversation_seq`); its session gives
+its run, so it never reads another run's. A page that reached the tail starts the next one 20 behind (two deliveries
+may commit their numbers out of order), and the reader keeps each notice once by its event id. A message to the run (a signal's record, run health, an outcome) stays in the
+conversation, where the supervisor, the coordinator and the run view read it. The rule is fixed, never made per run,
+so the bus's rule quota does not limit how many runs work at once. EventBridge is the bus; until the delivery
+function is deployed, a push fails into `voc-engineering-dlq` after the router's retries.
 
 **The board.** A run's work is a board of tasks: open → claimed → in progress → in review → done, failed or needs a
 human. An agent takes a task through the board's API, which claims it with a conditional write on its row (DynamoDB,
 one owner per task); the agent holds it by a lease that its heartbeat renews (a call once a minute, not an event); a lost lease frees the task for
 another agent, which resumes it from its checkpoint. An agent suspended on an open wait (its `question`, a
-`review.requested`, a human decision point) keeps its lease while the wait is open. Tasks are pulled: an agent of
-the right role takes the next one from its role's queue; the run coordinator posts and orders tasks and may hand one
+`review.requested`, a human decision point) keeps its lease while the wait is open. Tasks are claimed: an agent of
+the right role, told of a posted task in its inbox, claims it on the board; the run coordinator posts and orders tasks and may hand one
 to a named agent (`task.assigned`). Agents post tasks within the run's budget and the flow's rules.
 A person can post, re-prioritise, block or take a task, through the API.
 
@@ -420,10 +416,11 @@ an engineering flow is a workflow of schema `voc-workflow/2` (start, end and the
 `reduce`, `board`, `quality_gate`, `learning_loop`, `self_improvement`, `memory`, `stop_at_pr`), held to the rules
 above (every map meets one reduce on every way out, a quality gate's GO and NO-GO arrows with NO-GO to the human
 decision point, a committer or PR author ends only at a stop at PR or a human decision point); the Agents API saves
-and validates one, keeps each workflow's kind, and leaves engineering flows out of `GET /workflows` and out of every
-agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's settings are the gate's own
-(`max_rounds`, `packs`, `final_go_model`, `reviewers`). *Planned*: the editor's palette, settings and graph rules for
-these steps (the SPA's workflow editor knows `voc-workflow/1` only), and the six default flows as templates.
+and validates one, keeps each workflow's kind, lists both kinds in `GET /workflows` (each with its `kind`) and keeps
+engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's
+settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
+builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
+shared fixture). *Planned*: the six default flows as templates.
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it in the editor behind an approval card, like its other writes; "refresh
@@ -546,8 +543,8 @@ next slice):
   its agent sources accept only the roles of `bus/schema.py` ROLES, which has neither (the coach's own source there
   is the service source `voc.engineering/coach`, and the gate runner has none), so every event either role puts
   on the bus would be journalled as an unknown sender.
-- **Queues.** Its queue grants name per-run queues (below) that nothing creates, while the bus's role queues are
-  fixed per role (`voc-eng-tasks-<role>`).
+- **Queues.** Its queue grants name per-run queues (below) that nothing creates; the bus has no task queues (every
+  message is pushed per run, and an agent reads its notices through the board API's `inbox` op).
 - **The flag.** It reads `-c engineeringAgents` with a strict parser of its own (a typo fails the synth), the
   broker and the bus with a looser one (`true` or `"true"`, anything else off).
 - **Wiring.** Its agent roles hold no `lambda:InvokeFunctionUrl` on the broker or the board, the bus's policy admits
@@ -869,7 +866,7 @@ and the phase that ships them names them in that row.
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503) |
-| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, the role queues, the workspace's layout, findings and store in its own bucket, and the administrators' read routes for a run's board and conversation ([above](#how-the-agents-work-together)); no run start yet, so the board answers 404 to every post; the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images: built, not yet run against AWS nor wired to the broker and the board, and its agents' writes not yet in the workspace's layout, [above](#runtime-one-microvm-per-agent)); the delivery function for addressed messages planned |
+| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history and its agents' inbox op, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' read routes for a run's board and conversation ([above](#how-the-agents-work-together)); no run start yet, so the board answers 404 to every post; the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images: built, not yet run against AWS nor wired to the broker and the board, and its agents' writes not yet in the workspace's layout, [above](#runtime-one-microvm-per-agent)); the delivery function (posted tasks and addressed messages) planned |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); skills, the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
-| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | planned |
+| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)); the templates, live cost, skill histories, the reports' view and the assistant drafting flows planned |

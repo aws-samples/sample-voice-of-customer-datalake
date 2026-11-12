@@ -62,7 +62,8 @@ def test_plan_prints_the_detected_checks_with_the_sandboxs_python(capsys):
     assert main(['plan', '--repo', str(FIXTURES / 'python-ts' / 'passing'), '--python', '/sandbox/py']) == 0
     assert _out(capsys)['checks'][0]['argv'][0] == '/sandbox/py'
     assert printed['image'] == {'python': '3.12', 'node': '24'}
-    assert 'pypi.org' in printed['network']
+    # A list of host names (not a URL): counted, so a URL-substring check does not read it as a sanitizer.
+    assert printed['network'].count('pypi.org') == 1
 
 
 def test_plan_limits_the_checks_to_the_changed_roots(tmp_path, capsys):

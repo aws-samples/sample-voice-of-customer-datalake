@@ -115,7 +115,7 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
  * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
  * - Only with -c engineeringAgents=true: the engineering agents' connector broker (engineering-broker.ts), and their
- *   bus, inbox router, role queues, board API and report builder (engineering-bus.ts), and their MicroVM runtime: the supervisor,
+ *   bus, inbox router, board API and report builder (engineering-bus.ts), and their MicroVM runtime: the supervisor,
  *   its rule and the agent roles (engineering-runtime.ts)
  */
 export class VocProcessingStack extends VocStack {

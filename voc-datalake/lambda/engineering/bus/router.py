@@ -1,21 +1,21 @@
 """The inbox router: the one Lambda every event on the engineering bus goes to (one fixed rule, never one per run).
 
 For each event it checks the schema and the sender (``senders.judge``), writes the message to the run's
-conversation, then fans it out (``routing.route``): a posted task to its role's queue, a message for an agent or the
-run conductor to the delivery function. Anything refused is dropped and journalled with its reason (never its
+conversation, then fans it out (``routing.route``): a posted task, and a message for an agent or the run conductor, to
+the delivery function, with the message's conversation seq (``{"message": …, "seq": N}``: the delivery function keys
+its ``INBOX#`` row on it and refuses a payload without one). Anything refused is dropped and journalled with its reason (never its
 content): a malformed message, a sender that may not send it, a run that does not exist, an event id reused for
-other content. A redelivered message (the bus is at-least-once) is fanned out again, since the first attempt may have
-stopped before its fan-out; the receivers are idempotent (the event id, the lease epoch).
+other content. A redelivered message (the bus is at-least-once) is fanned out again under the seq it was first written with, since
+the first attempt may have stopped before its fan-out; the delivery function's conditional put makes that a no-op.
 """
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from engineering.bus.routing import DELIVERY, ROLE_QUEUE, route
+from engineering.bus.routing import DELIVERY, route
 from engineering.bus.schema import Message, MessageError, parse
 from engineering.bus.senders import judge
 from engineering.conversation.store import NEW, REDELIVERED, REUSED, UNKNOWN_RUN, ConversationStore
@@ -41,10 +41,9 @@ def _dropped(source: str, reason: str, message: Message | None = None) -> Routed
 
 
 class Router:
-    def __init__(self, conversation: ConversationStore, *, to_role_queue: Callable[[str, Message], None],
-                 deliver: Callable[[Message], None]) -> None:
+    def __init__(self, conversation: ConversationStore, *, deliver: Callable[[Message, int], None]) -> None:
+        """``deliver(message, seq)`` hands a message to the delivery function under its conversation seq."""
         self.conversation = conversation
-        self.to_role_queue = to_role_queue
         self.deliver = deliver
 
     def route_event(self, source: str, detail: Any) -> Routed:
@@ -58,30 +57,24 @@ class Router:
         appended = self.conversation.append_to_conversation(message)
         if appended.status not in {NEW, REDELIVERED}:
             return _dropped(source, DROP_REASONS[appended.status], message)
-        for destination in route(message):
-            if destination.kind == ROLE_QUEUE:
-                self.to_role_queue(destination.role, message)
-            elif destination.kind == DELIVERY:
-                self.deliver(message)
+        seq = appended.seq
+        if seq is None:   # (NEW and REDELIVERED always carry one)
+            raise RuntimeError('the conversation answered without a seq')
+        if any(destination.kind == DELIVERY for destination in route(message)):
+            self.deliver(message, seq)
         return Routed('routed' if appended.status == NEW else REDELIVERED, seq=appended.seq)
 
 
 def _from_environment() -> Router:
-    from shared.aws import get_dynamodb_client, get_sqs_client, invoke_lambda_async
+    from shared.aws import get_dynamodb_client, invoke_lambda_async
 
-    # {role: queue URL}, one queue per role of ``schema.ROLES`` (lib/stacks/engineering-bus.ts): a posted task is
-    # always for one of them (``schema.parse``), so a missing role is a deployment error and raises.
-    queues: dict[str, str] = json.loads(os.environ['ENGINEERING_ROLE_QUEUE_URLS'])
     delivery = os.environ['ENGINEERING_DELIVERY_FUNCTION']
 
-    def to_role_queue(role: str, message: Message) -> None:
-        get_sqs_client().send_message(QueueUrl=queues[role], MessageBody=message.to_json())
-
-    def deliver(message: Message) -> None:
-        invoke_lambda_async(delivery, message.to_dict())
+    def deliver(message: Message, seq: int) -> None:
+        invoke_lambda_async(delivery, {'message': message.to_dict(), 'seq': seq})
 
     store = ConversationStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'])
-    return Router(store, to_role_queue=to_role_queue, deliver=deliver)
+    return Router(store, deliver=deliver)
 
 
 _router: Router | None = None

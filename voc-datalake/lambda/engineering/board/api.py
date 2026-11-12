@@ -3,8 +3,9 @@
 Reached through a Lambda function URL with IAM authentication: the caller's role, run and agent come from its
 assumed-role identity (``engineering.connectors.identity``), never from the body. Operations
 (a JSON body with ``op``): ``post`` (a task for a role the caller may post for, within the run's caps), ``claim``
-(an open task of the caller's own role), ``renew`` (the heartbeat: the lease's expiry moves on) and ``move`` (the
-lease holder moves its task on). Each change is published on the bus as the board (``task.*``), after the row is
+(an open task of the caller's own role), ``renew`` (the heartbeat: the lease's expiry moves on), ``move`` (the
+lease holder moves its task on) and ``inbox`` (the caller's notices after a seq, ``board/inbox.py``: its own, its
+role's, and the conductor's for the coordinator; it reads, it changes nothing). Each change is published on the bus as the board (``task.*``), after the row is
 written: the row is the record, the event a notification. A failed publish answers 503 and the agent retries; every
 operation is idempotent, and the event's id comes from the change itself, so the retry publishes the same event again
 (a redelivery its receivers dedupe), including a retried post the board answered from its ``spec_hash`` dedupe.
@@ -21,6 +22,7 @@ from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from engineering.board.inbox import MAX_LIMIT, Inbox
 from engineering.board.model import EVENT_OF, OPEN, Task
 from engineering.board.store import BoardError, BoardStore
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
@@ -97,9 +99,17 @@ class Outcome:
 
 
 class BoardApi:
-    def __init__(self, store: BoardStore, publisher: EventBridgePublisher) -> None:
+    def __init__(self, store: BoardStore, publisher: EventBridgePublisher, inbox: Inbox) -> None:
         self.store = store
         self.publisher = publisher
+        self.inbox = inbox
+
+    def _inbox(self, caller: Caller, body: Mapping[str, Any]) -> dict[str, Any]:
+        after, limit = _int(body, 'after', 0), _int(body, 'limit', MAX_LIMIT)
+        if after < 0 or not 1 <= limit <= MAX_LIMIT:
+            raise BoardError('invalid', f'"after" is a seq (0 or more) and "limit" 1 to {MAX_LIMIT}')
+        return self.inbox.read(WORKSPACE, caller.run_id, role=caller.role, agent=agent_id(caller), after=after,
+                               limit=limit)
 
     def _post(self, caller: Caller, body: Mapping[str, Any]) -> Outcome:
         role = _text(body, 'role')
@@ -137,11 +147,14 @@ class BoardApi:
                 raise BoardError('invalid', '"result_keys" is a list')
             return Outcome(self.store.move(WORKSPACE, caller.run_id, task_id, agent=agent, epoch=epoch,
                                            to_state=_text(body, 'to'), result_keys=keys))
-        raise BoardError('invalid', 'op is post, claim, renew or move')
+        raise BoardError('invalid', 'op is post, claim, renew, move or inbox')
 
     def handle_request(self, caller: Caller, raw_body: Any) -> dict[str, Any]:
         try:
-            outcome = self.operate(caller, _object(raw_body))
+            body = _object(raw_body)
+            if body.get('op') == 'inbox':
+                return _answer(200, self._inbox(caller, body))
+            outcome = self.operate(caller, body)
         except BoardError as exc:
             return _answer(STATUS[exc.kind], {'error': str(exc)})
         except (ClientError, BotoCoreError):
@@ -163,9 +176,10 @@ _api: BoardApi | None = None
 def _from_environment() -> BoardApi:
     from shared.aws import get_dynamodb_client, get_eventbridge_client
 
-    store = BoardStore(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'], new_id=new_event_id)
-    return BoardApi(store, EventBridgePublisher(get_eventbridge_client(), os.environ['ENGINEERING_BUS_NAME'],
-                                                BOARD_SOURCE))
+    client, table = get_dynamodb_client(), os.environ['ENGINEERING_TABLE']
+    return BoardApi(BoardStore(client, table, new_id=new_event_id),
+                    EventBridgePublisher(get_eventbridge_client(), os.environ['ENGINEERING_BUS_NAME'], BOARD_SOURCE),
+                    Inbox(client, table))
 
 
 def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:

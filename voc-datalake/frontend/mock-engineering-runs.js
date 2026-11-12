@@ -6,11 +6,12 @@
 //   GET  …/conversation?after=   a page after `after`; `next_after` 20 below the tail, as the server reads it
 //   POST …/signals    {signal, task_id?, attempt?, note?, confirm?}: admin; 409 when the attempt moved on or the
 //                     task is over, and the supervisor's reason for resuming a run out of budget; stop_now needs
-//                     confirm: true; answers each agent's status after it, recorded as a signal.* message to the run; 503
-//                     and nothing recorded when the agent is busy (MOCK_ENGINEERING_AGENT_BUSY=1)
+//                     confirm: true; the request is recorded first as a signal.* message to the run, then its
+//                     outcome (each agent's status, or why not); 503 when the agent is busy
+//                     (MOCK_ENGINEERING_AGENT_BUSY=1), the request recorded
 //   POST …/messages   {to: 'conductor' | 'agent', agent?, text, thread_id?}: admin; 404 for an agent not in the run
 // Every GET of the overview moves the run a little (the agents' ages), so polling shows it live.
-// MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin (403 on the actions), like the agents routes.
+// MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin: 403 on every route, as the server answers (admins only).
 // Wired into mock-server.js by handleDomainModules (before the agents routes, which would read `engineering` as an
 // agent id).
 
@@ -124,7 +125,8 @@ const run = {
   ],
   /** MOCK_ENGINEERING_OUT_OF_BUDGET=1: the run has spent its budget, so a resume is refused with the supervisor's reason. */
   outOfBudget: process.env.MOCK_ENGINEERING_OUT_OF_BUDGET === '1',
-  /** MOCK_ENGINEERING_AGENT_BUSY=1: the supervisor answers busy for an agent signalled (503, nothing recorded). */
+  /** MOCK_ENGINEERING_AGENT_BUSY=1: the supervisor answers busy for an agent signalled (503; the request and its
+   *  "not applied" outcome are recorded). */
   agentBusy: process.env.MOCK_ENGINEERING_AGENT_BUSY === '1',
   messages: [],
 };
@@ -193,17 +195,30 @@ function signal(body) {
   if (body.signal === 'stop_now' && body.confirm !== true) return [400, { message: 'stop_now stops without a checkpoint: send confirm: true' }];
   const target = signalTarget(body);
   if (Array.isArray(target)) return [target[0], { message: target[1] }];
-  if (body.signal === 'resume' && run.outOfBudget) return [409, { message: `run ${SAMPLE_RUN_ID} has spent its budget: raise it before resuming` }];
-  if (target.kind === 'agent' && run.agentBusy) return [503, { message: 'The agent is busy with another move: send the signal again' }];
+  // The request is recorded first (as the server does), then the supervisor applies it or refuses.
+  const at = new Date().toISOString();
+  const whom = target.kind === 'agent' ? `agent ${target.id}` : 'the whole run';
+  say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
+    `${body.signal.replace('_', ' ')} requested from the run monitor by alex for ${whom}.`, { threadId: 'signals', taskId: body.task_id, at });
+  const request = `evt-${run.messages.length - 1}`;
+  const notApplied = (why) => say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
+    `signal.${body.signal} request ${request}: not applied: ${why}`, { threadId: 'signals', taskId: body.task_id });
+  if (body.signal === 'resume' && run.outOfBudget) {
+    const reason = `run ${SAMPLE_RUN_ID} has spent its budget: raise it before resuming`;
+    notApplied(reason);
+    return [409, { message: reason }];
+  }
+  if (target.kind === 'agent' && run.agentBusy) {
+    notApplied('the agent was busy with another move');
+    return [503, { message: 'The agent is busy with another move: send the signal again' }];
+  }
   const reached = run.agents.filter((a) => target.kind === 'run' || a.agent === target.id);
   const next = { save: null, pause: 'pause_requested', resume: 'working', shutdown: 'pause_requested', stop_now: 'stopped' }[body.signal];
   for (const a of reached) if (next) a.status = next;
   const agents = Object.fromEntries(reached.map((a) => [a.agent, a.status]));
-  const at = new Date().toISOString();
-  const outcome = Object.entries(agents).map(([id, status]) => `${id} ${status}`).join(', ') || 'no agent yet';
-  const whom = target.kind === 'agent' ? ` ${target.id}` : ' the run';
+  const statuses = Object.entries(agents).map(([id, status]) => `${id} ${status}`).join(', ') || 'no agent yet';
   say({ kind: 'human', id: 'mock-admin' }, { kind: 'run', id: SAMPLE_RUN_ID }, `signal.${body.signal}`,
-    `alex asked${whom} to ${body.signal.replace('_', ' ')}: ${outcome}`, { threadId: 'signals', taskId: body.task_id, at });
+    `signal.${body.signal} request evt-${run.messages.length - 1}: applied: ${statuses}`, { threadId: 'signals', taskId: body.task_id });
   return [200, { signal: { event_id: `evt-${run.messages.length}`, signal: body.signal, target, attempt: body.attempt ?? 0, agents, at } }];
 }
 
@@ -241,6 +256,10 @@ export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   const [runId, sub, ...rest] = url.pathname.slice(PREFIX.length).split('/').map(decodeURIComponent);
   if (runId !== SAMPLE_RUN_ID || rest.length > 0) {
     send(404, { message: 'Engineering run not found' });
+    return true;
+  }
+  if (!isAdmin()) {
+    send(403, { message: 'Admin access required' });
     return true;
   }
   if (req.method === 'GET') {

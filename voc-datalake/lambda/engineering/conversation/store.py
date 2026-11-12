@@ -87,6 +87,8 @@ class ConversationStore:
             if not is_key_collision(exc, put_index=0):   # the event's marker, the first item, is already there
                 raise
             stored = self.client.get_item(TableName=self.table, Key=marker, ConsistentRead=True).get('Item', {})
-            same = stored.get('digest', {}).get('S') == digest
-            return Appended(REDELIVERED if same else REUSED)
+            if stored.get('digest', {}).get('S') != digest:
+                return Appended(REUSED)
+            # The seq the message was first written under: its fan-out is sent again under the same number.
+            return Appended(REDELIVERED, int(stored['seq']['N']))
         return Appended(NEW, seq)

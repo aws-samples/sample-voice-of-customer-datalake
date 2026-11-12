@@ -14,9 +14,10 @@ The actions (the route lets only an admin acting for themselves take them, like 
   (another attempt, no holder, or it has ended), it is refused, so nobody signals an agent they did not see.
   ``stop_now`` (no checkpoint) asks for ``confirm``. The supervisor applies it (``voc-engineering-runtime``'s
   ``signal`` action, idempotent per agent: a paused agent paused again is unchanged; an agent another move holds
-  answers ``busy``, which is refused here as unavailable, so the person sends it again), and its outcome is recorded
-  in the conversation (4.5: "recorded in the conversation with who/when") as ``signal.<name>`` from the API's source,
-  addressed to the run (the supervisor itself tells the agent): who, what, each agent's status, the note.
+  answers ``busy``, which is refused here as unavailable, so the person sends it again). The request is recorded in
+  the conversation first (4.5: "recorded in the conversation with who/when"; D4) as ``signal.<name>`` from the API's
+  source, addressed to the run (the supervisor itself tells the agent): who asked what of whom, and the note; the
+  answer carries each agent's status.
 - ``message``: a person's answer (``msg.answer``, the one thing a person says on the bus) to an agent of the run or to
   its conductor, on the thread they reply to or a new one. The router writes it to the conversation, its record.
 
@@ -29,7 +30,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -42,6 +43,7 @@ from engineering.connectors.identity import WORKSPACE
 from engineering.rows import Refused, amount_attr, run_pk, string_attr
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
+from shared.logging import logger
 
 API_SOURCE = 'voc.engineering/api'
 SIGNALS = ('save', 'pause', 'resume', 'shutdown', 'stop_now')
@@ -183,10 +185,11 @@ def _fit(text: str) -> str:
     return text.encode('utf-8')[:MAX_SUMMARY_BYTES].decode('utf-8', 'ignore')
 
 
-def _record(signal: Signal, actor: Actor, agents: Mapping[str, str]) -> str:
-    outcome = ', '.join(f'{agent} {status}' for agent, status in sorted(agents.items())) or 'no agent yet'
+def _record(signal: Signal, actor: Actor, target: Party) -> str:
+    """The request as the conversation keeps it: who asked what of whom, and their note."""
+    whom = f'agent {target.id}' if target.kind == 'agent' else 'the whole run'
     note = f' Note: {signal.note}' if signal.note else ''
-    return _fit(f"{signal.name.replace('_', ' ')} from the run monitor by {actor.name}: {outcome}.{note}")
+    return _fit(f"{signal.name.replace('_', ' ')} requested from the run monitor by {actor.name} for {whom}.{note}")
 
 
 class LambdaRuntime:
@@ -265,26 +268,51 @@ class RunMonitor:
         return Party('agent', holder)
 
     def signal(self, run_id: str, signal: Signal, actor: Actor) -> dict[str, Any]:
-        """The supervisor applies the signal, then the conversation records it; answers each agent's status."""
+        """The conversation records the request, then the supervisor applies it; answers each agent's status.
+
+        Its record is published first (D4: who asked what, when and why, before anything moves): a request the bus
+        refuses is never applied. The router then writes it to the conversation (a record it drops, a malformed one,
+        is journalled by the router). After the supervisor answers, a second record says what came of it, naming the
+        request's event id: each agent's status, or why it was not applied (unreachable, busy, refused). A request
+        the supervisor could not apply is answered unavailable: sending it again publishes a new request and applies
+        it once.
+        """
         publisher = self._bus()
         if self.runtime is None:
             raise MonitorError('unavailable', 'the run cannot be reached from here: the runtime is not configured')
         self._open_run(run_id)
         target = self._target(run_id, signal)
+        event_id, at = new_event_id(), _at(self.now())
+        record = Message(
+            event_id=event_id, ws=WORKSPACE, run_id=run_id, thread_id='signals', attempt=signal.attempt,
+            sender=Party('human', actor.subject), to=Party('run', run_id), type=f'signal.{signal.name}',
+            summary=_record(signal, actor, target), at=at, task_id=signal.task_id)
+        _publish(publisher, record)
         try:
             agents = self.runtime.signal(run_id, target.id if target.kind == 'agent' else None, signal.name)
         except (ClientError, BotoCoreError) as exc:
-            raise MonitorError('unavailable', 'the supervisor could not be reached: retry') from exc
+            self._outcome(publisher, record, 'not applied: the supervisor could not be reached')
+            raise MonitorError('unavailable', 'The supervisor could not be reached: send the signal again') from exc
+        except MonitorError as refused:
+            self._outcome(publisher, record, f'not applied: {refused}')
+            raise
         if target.kind == 'agent' and agents.get(target.id) == BUSY:
-            # Another move held the agent: nothing was done, and nothing is recorded.
+            # Another move held the agent: nothing was done.
+            self._outcome(publisher, record, 'not applied: the agent was busy with another move')
             raise MonitorError('unavailable', 'The agent is busy with another move: send the signal again')
-        event_id, at = new_event_id(), _at(self.now())
-        _publish(publisher, Message(
-            event_id=event_id, ws=WORKSPACE, run_id=run_id, thread_id='signals', attempt=signal.attempt,
-            sender=Party('human', actor.subject), to=Party('run', run_id), type=f'signal.{signal.name}',
-            summary=_record(signal, actor, agents), at=at, task_id=signal.task_id))
+        statuses = ', '.join(f'{agent} {status}' for agent, status in sorted(agents.items())) or 'no agent yet'
+        self._outcome(publisher, record, f'applied: {statuses}')
         return {'event_id': event_id, 'signal': signal.name, 'target': {'kind': target.kind, 'id': target.id},
                 'attempt': signal.attempt, 'agents': agents, 'at': at}
+
+    def _outcome(self, publisher: Publisher, request: Message, outcome: str) -> None:
+        """What came of a recorded request, in the conversation (best effort: the request itself is recorded)."""
+        try:
+            _publish(publisher, replace(request, event_id=new_event_id(), at=_at(self.now()),
+                                        summary=_fit(f'{request.type} request {request.event_id}: {outcome}')))
+        except MonitorError:
+            logger.warning('run monitor: a signal\'s outcome was not recorded',
+                           extra={'run_id': request.run_id, 'request': request.event_id})
 
     def message(self, run_id: str, answer: Answer, actor: Actor) -> dict[str, Any]:
         """Publish a person's answer; answers its event and thread (the router writes it to the conversation)."""

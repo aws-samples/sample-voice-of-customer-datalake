@@ -8,6 +8,19 @@ from typing import Any
 
 from shared.dynamo_paging import count_query, query_all
 
+#: How far behind the tail a reader of numbered rows re-reads (the conversation, an inbox): more than the messages of a
+#: run in flight at once, since two writers may commit their numbers out of order.
+TAIL_WINDOW = 20
+
+
+def next_after(after: int, seqs: list[int], limit: int) -> int:
+    """Where a reader of numbered rows starts its next page: a full page moves on to its last seq (older rows are long
+    committed); one that reached the tail to ``TAIL_WINDOW`` below its last, so the newest are read again (the reader
+    keeps each once); an empty page stays at ``after``."""
+    if not seqs:
+        return after
+    return seqs[-1] if len(seqs) == limit else max(after, seqs[-1] - TAIL_WINDOW)
+
 
 def run_pk(ws: str, run_id: str) -> str:
     return f'WS#{ws}#RUN#{run_id}'

@@ -15,7 +15,7 @@ from botocore.exceptions import ClientError
 from engineering.board.store import BoardStore
 from engineering.board.test.table import RUN, TABLE, board, engineering_table
 from engineering.bus.publish import PublishError
-from engineering.bus.schema import Message, parse
+from engineering.bus.schema import Message, MessageError, parse
 from engineering.monitor import (
     MAX_LINE,
     Actor,
@@ -120,17 +120,20 @@ def test_an_unknown_run_has_no_overview() -> None:
         assert (view['agents'], view['totals']['messages']) == ([], 0)
 
 
-def test_a_signal_to_an_agent_is_applied_by_the_supervisor_then_recorded(run) -> None:
+def test_a_signal_to_an_agent_is_recorded_then_applied_by_the_supervisor(run) -> None:
     _, monitor, runtime, publisher, task_id = run
     sent = monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1,
                                              'note': ' Holding for the review '}), ADMIN)
     assert runtime.calls == [(RUN, 'fixer-1', 'pause')]
     assert (sent['target'], sent['agents'], sent['attempt']) == ({'kind': 'agent', 'id': 'fixer-1'},
                                                                   {'fixer-1': 'paused'}, 1)
-    (record,) = publisher.sent
+    record, outcome = publisher.sent
+    assert (outcome.type, outcome.to.kind, outcome.summary) == (
+        'signal.pause', 'run', f'signal.pause request {record.event_id}: applied: fixer-1 paused')
     assert (record.type, record.sender.kind, record.sender.id, record.to.kind, record.task_id) == (
         'signal.pause', 'human', 'admin-sub', 'run', task_id)   # (the supervisor tells the agent; the record stays)
-    assert record.summary == 'pause from the run monitor by ada: fixer-1 paused. Note: Holding for the review'
+    assert record.summary == ('pause requested from the run monitor by ada for agent fixer-1. '
+                              'Note: Holding for the review')
 
 
 def test_a_signal_to_the_whole_run_names_no_agent(run) -> None:
@@ -199,29 +202,48 @@ def test_stop_now_with_confirm_is_sent() -> None:
 
 
 def test_a_long_record_is_cut_to_a_summary_on_a_character_boundary(run) -> None:
-    client, _, runtime, publisher, _ = run
-    runtime.answer = {f'agent-é{n:03d}': 'pause_requested' for n in range(60)}
-    monitor = RunMonitor(client, TABLE, Sessions(FIXER), runtime=runtime, publisher=publisher, now=lambda: START)
-    monitor.signal(RUN, parse_signal({'signal': 'pause', 'note': 'é' * 250}), ADMIN)
+    _, monitor, _, publisher, _ = run
+    monitor.signal(RUN, parse_signal({'signal': 'pause', 'note': 'é' * 250}), Actor('admin-sub', 'é' * 300))
     summary = publisher.sent[0].summary
     assert 1000 < len(summary.encode('utf-8')) <= 1024
-    assert summary.startswith('pause from the run monitor by ada: agent-é000 pause_requested')
+    assert summary.startswith('pause requested from the run monitor by éé')
 
 
-def test_the_supervisor_refusing_is_a_conflict_and_unreachable_is_unavailable(run) -> None:
+def test_a_request_is_recorded_even_when_the_supervisor_cannot_be_reached(run) -> None:
     _, monitor, runtime, publisher, _ = run
     runtime.fail = ClientError({'Error': {'Code': 'TooManyRequestsException'}}, 'Invoke')
-    with pytest.raises(MonitorError) as down:
+    with pytest.raises(MonitorError, match='send the signal again') as down:
         monitor.signal(RUN, parse_signal({'signal': 'resume'}), ADMIN)
-    assert (down.value.kind, publisher.sent) == ('unavailable', [])
+    request, outcome = publisher.sent
+    assert (down.value.kind, request.type) == ('unavailable', 'signal.resume')
+    assert outcome.summary.endswith(f'{request.event_id}: not applied: the supervisor could not be reached')
 
 
-def test_a_bus_that_refuses_the_record_is_unavailable(run) -> None:
+def test_an_outcome_the_bus_refuses_still_answers_the_applied_signal(run) -> None:
+    client, _, runtime, publisher, _ = run
+
+    class FirstOnly(Publisher):
+        def publish(self, message: Message) -> None:
+            if self.sent:
+                raise PublishError('refused')
+            super().publish(message)
+
+    once = FirstOnly()
+    sent = RunMonitor(client, TABLE, Sessions(FIXER), runtime=runtime, publisher=once, now=lambda: START).signal(
+        RUN, parse_signal({'signal': 'save'}), ADMIN)
+    assert (sent['agents'], [record.type for record in once.sent], publisher.sent) == (
+        {'fixer-1': 'paused'}, ['signal.save'], [])   # (the request is recorded; its outcome is best effort)
+
+
+def test_nothing_is_applied_when_the_request_cannot_be_recorded(run) -> None:
     _, monitor, runtime, publisher, _ = run
     publisher.fail = PublishError('refused')
     with pytest.raises(MonitorError) as down:
-        monitor.signal(RUN, parse_signal({'signal': 'save'}), ADMIN)
-    assert (down.value.kind, len(runtime.calls)) == ('unavailable', 1)   # (a retry applies it again: idempotent)
+        monitor.signal(RUN, parse_signal({'signal': 'shutdown'}), ADMIN)
+    publisher.fail = MessageError('a credential-shaped part')
+    with pytest.raises(MonitorError, match='credential') as refused:
+        monitor.signal(RUN, parse_signal({'signal': 'shutdown'}), ADMIN)
+    assert (down.value.kind, refused.value.kind, runtime.calls) == ('unavailable', 'invalid', [])   # (D4: never unrecorded)
 
 
 def test_without_the_runtime_or_the_bus_the_actions_are_unavailable(run) -> None:
@@ -300,12 +322,14 @@ def test_the_supervisor_refusing_or_failing_says_so() -> None:
     assert (conflict.value.kind, failed.value.kind) == ('conflict', 'unavailable')
 
 
-def test_a_signal_the_supervisor_did_not_apply_is_unavailable_and_not_recorded(run) -> None:
+def test_a_signal_the_supervisor_did_not_apply_is_unavailable(run) -> None:
     _, monitor, runtime, publisher, task_id = run
     runtime.answer = {'fixer-1': 'busy'}
     with pytest.raises(MonitorError, match='send the signal again') as busy:
         monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1}), ADMIN)
-    assert (busy.value.kind, publisher.sent) == ('unavailable', [])
+    request, outcome = publisher.sent   # (the request stays recorded, as asked, and so does what came of it)
+    assert (busy.value.kind, outcome.summary) == (
+        'unavailable', f'signal.pause request {request.event_id}: not applied: the agent was busy with another move')
 
 
 def test_a_reposted_task_has_no_agent_to_signal(run) -> None:

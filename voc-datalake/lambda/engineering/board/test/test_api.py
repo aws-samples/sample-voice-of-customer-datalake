@@ -12,7 +12,9 @@ from botocore.exceptions import ClientError
 
 from engineering.board import api as api_module
 from engineering.board.api import BoardApi, handler
+from engineering.board.inbox import Inbox
 from engineering.board.test.table import RUN, TABLE, board, engineering_table
+from engineering.board.test.test_inbox import notice
 from engineering.bus.publish import EventBridgePublisher, PublishError
 from engineering.bus.schema import MessageError, parse
 from engineering.connectors.identity import Caller
@@ -47,10 +49,15 @@ def bus() -> Bus:
     return Bus()
 
 
+def _api(client: Any, bus: Bus) -> BoardApi:
+    return BoardApi(board(client), EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/board'),
+                    Inbox(client, TABLE))
+
+
 @pytest.fixture
 def api(bus: Bus) -> Iterator[BoardApi]:
     with engineering_table() as client:
-        yield BoardApi(board(client), EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/board'))
+        yield _api(client, bus)
 
 
 def call(api: BoardApi, caller: Caller, **body: Any) -> tuple[int, dict[str, Any]]:
@@ -173,7 +180,7 @@ def test_an_aws_error_on_the_table_answers_503(api: BoardApi, monkeypatch: pytes
 
 def test_the_cap_answers_429(bus: Bus) -> None:
     with engineering_table(max_tasks=1) as client:
-        api = BoardApi(board(client), EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/board'))
+        api = _api(client, bus)
         assert call(api, COORDINATOR, op='post', role='fixer', title='One', spec={'n': 1})[0] == 200
         assert call(api, COORDINATOR, op='post', role='fixer', title='Two', spec={'n': 2})[0] == 429
 
@@ -223,3 +230,23 @@ def test_the_handler_takes_the_caller_from_iam_only(bus: Bus, monkeypatch: pytes
 def test_a_plain_body_is_taken_as_it_is() -> None:
     assert api_module._raw_body({'body': '{}'}) == '{}'
     assert api_module._raw_body({'body': '//4=', 'isBase64Encoded': True}) is None   # not UTF-8
+
+
+def test_an_agent_reads_its_inbox_and_the_coordinator_the_conductors_too(bus: Bus) -> None:
+    with engineering_table() as client:
+        api = _api(client, bus)
+        notice(client, 'agent:fixer-1', 3)
+        notice(client, 'role:fixer', 1, task_id='task-1', type_='task.posted')
+        notice(client, 'conductor', 2)
+        notice(client, 'agent:fixer-2', 4)   # another agent's: never read
+        status, body = call(api, FIXER, op='inbox')
+        assert (status, [m['seq'] for m in body['messages']], body['next']) == (200, [1, 3], 0)
+        assert body['messages'][0]['task_id'] == 'task-1'
+        assert [m['seq'] for m in call(api, COORDINATOR, op='inbox')[1]['messages']] == [2]
+        assert bus.entries == []   # (reading publishes nothing)
+
+
+@pytest.mark.parametrize('body', [{'after': -1}, {'after': 'x'}, {'limit': 0}, {'limit': 51}, {'limit': True}])
+def test_a_bad_cursor_or_limit_is_400(api: BoardApi, body: dict[str, Any]) -> None:
+    status, answer = call(api, FIXER, op='inbox', **body)
+    assert (status, '"after"' in answer['error'] or 'whole number' in answer['error']) == (400, True)

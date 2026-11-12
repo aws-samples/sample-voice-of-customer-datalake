@@ -27,7 +27,8 @@ Own role (20 KB policy limit): the agents table (read/write), the aggregates tab
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
 their table and workspace bucket; it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
-their names (until then the monitor's actions answer 503). Nothing while the module is off. The supervisor's session rows (``ENGRUN#``) are in the agents table it already reads.
+their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
+answer 503). Nothing while the module is off. The supervisor's session rows (``ENGRUN#``) are in the agents table it already reads.
 """
 
 from __future__ import annotations

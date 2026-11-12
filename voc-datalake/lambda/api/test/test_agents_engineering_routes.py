@@ -172,7 +172,7 @@ def test_an_admin_signals_the_agent_on_a_task_at_the_attempt_seen(lambda_context
     (invoked,) = actions.runtime.requests
     assert json.loads(invoked['Payload']) == {'action': 'signal', 'run_id': RUN, 'signal': 'pause',
                                               'agent_id': 'fixer-1'}
-    (entry,) = actions.bus.entries
+    entry, _outcome = actions.bus.entries
     assert (entry['Source'], entry['DetailType']) == ('voc.engineering/api', 'signal.pause')
     assert 'by alice' in json.loads(entry['Detail'])['summary']
     stale = _call(lambda_context, 'POST', f'{BASE}/signals',
@@ -185,7 +185,10 @@ def test_the_supervisor_refusing_answers_409_with_its_reason(lambda_context: Any
     actions.runtime.payload = {'errorType': 'RuntimeRefused', 'errorMessage': 'run R has spent its budget'}
     actions.runtime.function_error = 'Unhandled'
     status, body = _call(lambda_context, 'POST', f'{BASE}/signals', body={'signal': 'resume'})
-    assert (status, 'spent its budget' in json.dumps(body), actions.bus.entries) == (409, True, [])
+    assert (status, 'spent its budget' in json.dumps(body)) == (409, True)
+    request, outcome = (json.loads(entry['Detail']) for entry in actions.bus.entries)   # (asked, and its answer)
+    assert (request['type'], 'not applied: run R has spent its budget' in outcome['summary']) == (
+        'signal.resume', True)
 
 
 @pytest.mark.parametrize('claims', [USER, DELEGATED_ADMIN])
