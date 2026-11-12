@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.04.09] - 2026-11-12
+
+The design of autonomous engineering agents: agents that learn how a connected GitHub or GitLab repository works and then hunt bugs, build features and review pull requests through a configurable quality gate, stopping at a pull request a person merges.
+
+### Added
+
+- [docs/autonomous-engineering.md](docs/autonomous-engineering.md): the design (nothing implemented yet; every design section is marked planned). Large repositories and monorepos (partial sparse clones, shards by workspace package, change impact, warm caches); repository connectors whose only writes are their own `voc-agent/` branches, pull requests and comments, with credentials in SSM SecureString parameters under the stack's KMS key; the knowledge pack (one overview and one pack per package, every claim cited, versioned, a draft until an administrator approves it); the agent catalog; the agents working together through one EventBridge bus (claim-check events), per-agent inboxes, a task board with leases, a live conversation and an S3 workspace per commit; the quality gate (language packs, up to N review rounds, a final go, the gate record); one Lambda MicroVM per agent, with no host token where repository code runs, activity-based stops, a supervisor on a schedule and continuation before the 8-hour limit; commit, PR and goal reports; versioned skills with a visible history and rollback, a coach gated by the benchmark, a learning loop and agent memory; six default flows, the new workflow-editor steps, flows drafted from the assistant, the run monitor with its signals and live cost, the harness interface inside each MicroVM, and tenets drafted for the target repository; models, trust and safety, evaluation, cost and phases.
+- The review gate: `scripts/ai-review/gate.mjs` records a change's review rounds (at most three) and its final GO for the staged tree (`git write-tree`), and `scripts/git-hooks/pre-commit` refuses a commit whose tree has no valid GO record; CONTRIBUTING.md ("The review gate") describes the loop and the install, and `scripts/ai-review/gate.test.mjs` runs both in scratch repositories.
+
+### Fixed
+
+- The frontend vitest suite caps its workers at 32 (`voc-datalake/frontend/vitest.config.ts`): on a 192-CPU machine the default started about 190 workers queued on one Vite transform server, and `beforeAll` hooks that import lazy chunks timed out.
+- Four self-clearing messages (the S3 import explorer's upload result, the users page's success message, the brand settings' and a source card's "Saved") kept a bare `setTimeout` that outlived the component and set state after unmount (an uncaught "window is not defined" in the frontend suite); `voc-datalake/frontend/src/hooks/useExpiringValue.ts` keeps the timer with the component, with its tests and a users-page test of the message clearing.
+- Three test-suite flakes under parallel workers: `voc-datalake/lambda/conftest.py` resets `shared.source_profiles`' warm-container cache around every test (two feedback-form submits answered 503 after an earlier test cached a failed read); `test_mcp_tokens_handler_mutation.py` patches `app.current_event` with `create=True` (it failed when first in a worker); the assistant runtime tests' sessions API double answers `null` from an unprogrammed `getSession`, as the real API does (an unhandled rejection from Stop's background settle).
+
+### Upgrade notes
+
+- No infrastructure, API or data change. In the web app, the four self-clearing messages keep their timer with their page: a second save within 3 seconds now shows its "Saved" for the full 3 seconds.
+
 ## [6.04.08] - 2026-11-11
 
 Workshop templates no longer reserve Lambda concurrency, so a Workshop Studio event's VocApiStack completes.

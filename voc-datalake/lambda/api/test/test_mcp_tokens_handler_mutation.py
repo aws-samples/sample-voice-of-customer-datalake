@@ -138,15 +138,17 @@ class TestOnlyAPersonManagesTokens:
 
     def test_a_delegated_caller_with_a_blank_subject_is_refused(self):
         caller = Caller(subject='', delegated=True)
+        # create=True: Powertools sets `current_event` only once the app resolved a request, and under pytest-xdist
+        # this test can be the first of its worker (as test_chat_handler.py's patches already allow for).
         with patch.object(h.project_gate, 'caller_from_event', return_value=caller), \
-                patch.object(h.app, 'current_event'), \
+                patch.object(h.app, 'current_event', create=True), \
                 pytest.raises(h.AuthorizationError, match=r'^Only a signed-in user can manage MCP tokens$'):
             h._caller()
 
     def test_a_person_is_returned_as_is(self):
         caller = Caller(subject='person', username='p')
         with patch.object(h.project_gate, 'caller_from_event', return_value=caller), \
-                patch.object(h.app, 'current_event'):
+                patch.object(h.app, 'current_event', create=True):
             assert h._caller() is caller
 
 

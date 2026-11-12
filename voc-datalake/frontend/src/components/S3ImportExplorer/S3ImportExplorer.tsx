@@ -26,6 +26,7 @@ import clsx from 'clsx'
 import { formatFileSize } from '../../utils/file'
 import { formatDateTime } from '../../utils/dateUtils'
 import S3ImportReprocess, { ReprocessFileButton } from './S3ImportReprocess'
+import { useExpiringValue } from '../../hooks/useExpiringValue'
 
 const SUPPORTED_FILE_REGEX = /\.(csv|json|jsonl)$/i
 const FALLBACK_CONTENT_TYPE = 'application/octet-stream'
@@ -155,8 +156,9 @@ export default function S3ImportExplorer() {
   const [newSourceName, setNewSourceName] = useState('')
   const [showNewSource, setShowNewSource] = useState(false)
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set())
-  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
-  const [uploadError, setUploadError] = useState<string | null>(null)
+  // Each message clears itself (error after 5 s, success after 3 s); the timers go with the component.
+  const [uploadSuccess, showTemporarySuccess] = useExpiringValue<string>(3000)
+  const [uploadError, showTemporaryError] = useExpiringValue<string>(5000)
   const [reprocessKey, setReprocessKey] = useState<string | null>(null)
 
   const { data: sourcesData } = useQuery({
@@ -184,16 +186,6 @@ export default function S3ImportExplorer() {
       void queryClient.invalidateQueries({ queryKey: ['s3-import-files'] })
     },
   })
-
-  const showTemporaryError = (message: string) => {
-    setUploadError(message)
-    setTimeout(() => setUploadError(null), 5000)
-  }
-
-  const showTemporarySuccess = (filename: string) => {
-    setUploadSuccess(filename)
-    setTimeout(() => setUploadSuccess(null), 3000)
-  }
 
   const addUploadingFile = (filename: string) => {
     setUploadingFiles(prev => new Set(prev).add(filename))
