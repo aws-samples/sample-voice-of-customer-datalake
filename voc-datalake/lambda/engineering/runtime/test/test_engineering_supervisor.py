@@ -4,6 +4,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -375,6 +376,21 @@ def test_an_agents_tokens_add_up_over_every_microvm_it_ran_in(world: World):
     both = _until(world, 1240, lambda s: s.tokens != first.tokens)
     assert both.tokens == {'model-a': {'in': 20, 'out': 40}}
     assert (both.input_tokens, both.output_tokens) == (20, 40)
+
+
+def test_an_agents_microvm_time_is_priced_once_across_its_continuations(world: World):
+    world.store._usd_per_second = Decimal('0.0001')  # the deployment's price
+    first = world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.supervisor.tick(1600)
+    # Its MicroVM goes away: continued in a new one, then ended; every second counted once.
+    world.runtime.terminate(first.vm)
+    _until(world, 1660, lambda s: s.continuation == 1)
+    world.supervisor.signal(RUN, 'fixer-1', 'stop_now', 3000)
+    ended = world.session()
+    row = world.store._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'AGENT#fixer-1'})['Item']
+    assert (ended.status, ended.priced_seconds) == ('stopped', ended.microvm_seconds)
+    assert row['cost_usd'] == Decimal('0.0001') * ended.microvm_seconds
 
 
 def test_a_spent_budget_asks_every_agent_to_pause_and_waits_for_a_person(world: World):

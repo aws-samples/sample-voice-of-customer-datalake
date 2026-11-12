@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field, replace
+from decimal import Decimal
 from typing import Any, Final, Literal
 
 from botocore.exceptions import ClientError
@@ -89,6 +90,8 @@ class AgentSession:
     woken_continuation: int | None = None
     #: Live cost and inspection data for the run monitor.
     microvm_seconds: int = 0
+    #: How many of its MicroVM seconds are already priced into the row's ``cost_usd`` (``SessionStore``).
+    priced_seconds: int = 0
     last_tick_at: int | None = None
     #: Tokens per model (``{"in", "out"}``) of every MicroVM of this session so far: ``tokens_before`` (the
     #: earlier ones', fixed when it continues) plus what the current one's harness reported, which starts at zero.
@@ -169,7 +172,7 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
         crashes=int(item.get('crashes', 0)), boot_index=int(item.get('boot_index', 0)),
         after_pause=item.get('after_pause', 'continue'), suspended=bool(item.get('suspended', False)),
         failures=int(item.get('failures', 0)), task_attempt=int(item.get('task_attempt', 1)),
-        microvm_seconds=int(item.get('microvm_seconds', 0)),
+        microvm_seconds=int(item.get('microvm_seconds', 0)), priced_seconds=int(item.get('priced_seconds', 0)),
         tokens=plain(item.get('tokens') or {}), tokens_before=plain(item.get('tokens_before') or {}),
         inspect=plain(item.get('inspect') or {}),
         seq=int(item['seq']),
@@ -178,9 +181,15 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
 
 
 class SessionStore:
-    def __init__(self, table: Any, runs: RunStore) -> None:
+    """``usd_per_second``: the deployment's price of a MicroVM second (0: not priced). Each write that moves the
+    session adds the seconds it has not priced yet to the row's ``cost_usd`` (an ADD, as the brokers add theirs, so
+    neither writes over the other), in the same conditional write, so a move counted once is priced once. Pricing
+    goes forward only: time used while the price is 0 is never priced later."""
+
+    def __init__(self, table: Any, runs: RunStore, usd_per_second: Decimal = Decimal(0)) -> None:
         self._table = table
         self._runs = runs
+        self._usd_per_second = usd_per_second
 
     def create(self, session: AgentSession, labels: dict[str, str] | None = None) -> AgentSession:
         """Write a new session's row, only while its run is active (``RunNotActive``: checked in the same write, so
@@ -210,8 +219,8 @@ class SessionStore:
 
     def save(self, session: AgentSession) -> AgentSession:
         """Write ``session`` over the row it was read from; ``StaleSession`` when the row moved meanwhile."""
-        moved = replace(session, seq=session.seq + 1)
-        self._write(moved, 'seq = :seen', {':seen': session.seq})
+        moved, cost = self._priced(replace(session, seq=session.seq + 1))
+        self._write(moved, 'seq = :seen', {':seen': session.seq}, cost)
         return moved
 
     def claim(self, session: AgentSession, now: int, ttl: int) -> AgentSession:
@@ -220,14 +229,23 @@ class SessionStore:
         Only the holder's next writes match the row's ``seq``, so nobody else moves the session meanwhile; a
         holder that died lets go when its claim lapses.
         """
-        claimed = replace(session, seq=session.seq + 1, claimed_until=now + ttl)
+        claimed, cost = self._priced(replace(session, seq=session.seq + 1, claimed_until=now + ttl))
         self._write(claimed, 'seq = :seen AND (attribute_not_exists(claimed_until) OR claimed_until < :now)',
-                    {':seen': session.seq, ':now': now})
+                    {':seen': session.seq, ':now': now}, cost)
         return claimed
+
+    def _priced(self, session: AgentSession) -> tuple[AgentSession, Decimal | None]:
+        """The session with its MicroVM seconds counted as priced, and the cost of the ones not priced before (None:
+        none, or no price: those seconds stay unpriced, so a price set later applies from then on only)."""
+        unpriced = session.microvm_seconds - session.priced_seconds
+        if unpriced <= 0:
+            return session, None
+        priced = replace(session, priced_seconds=session.microvm_seconds)
+        return priced, (self._usd_per_second * unpriced if self._usd_per_second > 0 else None)
 
     @staticmethod
     def _update(session: AgentSession, condition: str, values: dict[str, Any],
-                extra: dict[str, str] | None = None) -> dict[str, Any]:
+                extra: dict[str, str] | None = None, cost: Decimal | None = None) -> dict[str, Any]:
         """The update that SETs the session's own attributes (REMOVEs the ones it no longer has), under ``condition``."""
         names: dict[str, str] = {}
         sets, removes, own = [], [], {**_own(session), **(extra or {})}
@@ -239,13 +257,18 @@ class SessionStore:
                 sets.append(f'#a{number} = :a{number}')
                 values = {**values, f':a{number}': value}
         expression = 'SET ' + ', '.join(sets) + (' REMOVE ' + ', '.join(removes) if removes else '')
+        if cost is not None:
+            names['#cost'] = 'cost_usd'
+            values = {**values, ':cost': cost}
+            expression += ' ADD #cost :cost'
         return {'Key': _key(session.run_id, session.agent_id), 'UpdateExpression': expression,
                 'ConditionExpression': condition, 'ExpressionAttributeNames': names,
                 'ExpressionAttributeValues': values}
 
-    def _write(self, session: AgentSession, condition: str, values: dict[str, Any]) -> None:
+    def _write(self, session: AgentSession, condition: str, values: dict[str, Any],
+               cost: Decimal | None = None) -> None:
         try:
-            self._table.update_item(**self._update(session, condition, values))
+            self._table.update_item(**self._update(session, condition, values, cost=cost))
         except ClientError as error:
             if is_conditional_check_failure(error):
                 raise StaleSession(f'session {session.run_id}/{session.agent_id} moved') from error

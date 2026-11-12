@@ -73,7 +73,8 @@ def test_launch_starts_the_agents_microvm_and_records_its_session(wired: Any):
     session = handler._supervisor().sessions.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
     assert answer == {'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id': 'fixer-1', 'status': 'booting'}
     assert session is not None
-    assert ('pypi.org' in session.egress, session.paths, session.connection) == (True, ('src',), 'conn-1')
+    # A host on the allowlist (a tuple of host names, never a URL).
+    assert (session.egress.count('pypi.org'), session.paths, session.connection) == (1, ('src',), 'conn-1')
     assert _state(wired) == 'ENABLED'
 
 

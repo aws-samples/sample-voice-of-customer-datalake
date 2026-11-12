@@ -76,7 +76,8 @@ def _supervisor() -> Supervisor:
         runs = _runs()
         _supervisor_cache = Supervisor(
             runtime=_runtime(),
-            sessions=SessionStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']), runs),
+            sessions=SessionStore(get_dynamodb_resource().Table(os.environ['ENGINEERING_TABLE']), runs,
+                                  caps.microvm_price(os.environ.get('ENGINEERING_MICROVM_USD_PER_SECOND'))),
             board=pending, bus=pending, control=TableRunControl(runs),
             launcher=Launcher(_sts_client(), json.loads(os.environ['ENGINEERING_AGENT_ROLE_ARNS'])),
             checkpoints=CheckpointReader(get_s3_client(), workspace),

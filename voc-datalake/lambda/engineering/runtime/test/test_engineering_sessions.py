@@ -1,10 +1,12 @@
 """Session rows: the board's AGENT# rows, listed through the active runs, conditional moves, never another's attributes."""
 from dataclasses import replace
+from decimal import Decimal
 from typing import Any
 
 import pytest
 
-from engineering.runtime.interface import MicroVm
+from engineering.runtime.caps import microvm_price
+from engineering.runtime.interface import MicroVm, RuntimeRefused
 from engineering.runtime.runs import RunCaps, RunNotActive, RunStore
 from engineering.runtime.sessions import AgentSession, SessionStore, StaleSession
 from engineering.runtime.test.conftest import RUN
@@ -70,6 +72,47 @@ def test_the_store_never_writes_over_what_others_add_to_the_row(aws):
     aws[1].update_item(Key=KEY, UpdateExpression='ADD cost_usd :cost', ExpressionAttributeValues={':cost': 2})
     store.save(replace(created, status='working', exec_id=None, asked_at=None))
     assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == 2
+
+
+def test_microvm_seconds_are_priced_once_into_cost_usd_beside_the_brokers(aws):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)
+    store = SessionStore(aws[1], runs, usd_per_second=Decimal('0.0001'))
+    created = store.create(SESSION)
+    aws[1].update_item(Key=KEY, UpdateExpression='ADD cost_usd :cost', ExpressionAttributeValues={':cost': 2})
+    moved = store.save(replace(created, microvm_seconds=600))
+    # The same seconds again (a save that moved nothing else) are not priced twice.
+    moved = store.save(moved)
+    claimed = store.claim(replace(moved, microvm_seconds=900), 1000, 60)
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('2.09')
+    assert (claimed.priced_seconds, runs.spend(RUN)) == (900, (0, 2.09))
+    # A write that loses its race prices nothing: the move it would have priced did not happen.
+    with pytest.raises(StaleSession):
+        store.save(replace(created, microvm_seconds=5000))
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('2.09')
+
+
+def test_without_a_price_microvm_time_adds_nothing_and_a_later_price_applies_from_then_on(aws):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)
+    moved = SessionStore(aws[1], runs).save(replace(SessionStore(aws[1], runs).create(SESSION), microvm_seconds=600))
+    row = aws[1].get_item(Key=KEY)['Item']
+    assert ('cost_usd' in row, row['priced_seconds']) == (False, 600)
+    # A price set later prices the time after it only, never the 600 seconds used before.
+    SessionStore(aws[1], runs, usd_per_second=Decimal('0.0001')).save(replace(moved, microvm_seconds=700))
+    assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('0.01')
+
+
+@pytest.mark.parametrize(('raw', 'price'), [(None, Decimal(0)), ('', Decimal(0)), ('0', Decimal(0)),
+                                            (' 0.0000166 ', Decimal('0.0000166'))])
+def test_the_deployments_price_of_a_microvm_second(raw: str | None, price: Decimal):
+    assert microvm_price(raw) == price
+
+
+@pytest.mark.parametrize('raw', ['free', '-0.1', 'NaN', 'Infinity', '1', '0.0100000000000000001'])
+def test_a_price_that_is_not_one_is_refused(raw: str):
+    with pytest.raises(RuntimeRefused, match='ENGINEERING_MICROVM_USD_PER_SECOND'):
+        microvm_price(raw)
 
 
 def test_an_attribute_the_session_no_longer_has_is_removed(aws):

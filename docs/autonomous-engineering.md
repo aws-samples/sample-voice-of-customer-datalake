@@ -654,7 +654,9 @@ continues it in a new one once the wait closes.
   the MicroVM's id and endpoint, the boot step, the continuation count, the checkpoint it restored from, the run
   monitor's inspection data, the live cost counters and what the reports read (role, model, skill version, MicroVM
   seconds, tokens in and out). The row is created once and then only its own attributes are updated, so what the
-  brokers add to it (the cost they priced) is never written over. The supervisor finds the live sessions through the
+  brokers add to it (the cost they priced) is never written over; the runtime adds its own beside it, the MicroVM
+  seconds it has not priced yet at the deployment's price (`-c engineeringMicrovmUsdPerSecond`; unpriced by default),
+  in the same conditional write that moves the session, so a second is priced once and a run's cost cap counts it. The supervisor finds the live sessions through the
   listed runs (the table has no index). Every write is conditional on the row's sequence number, and every move first claims the row for at most
   5 minutes (a claim nobody else can take while it holds), so a tick and a run monitor's signal never move one agent
   at once; a continuation that loses its write ends the MicroVM it just started.

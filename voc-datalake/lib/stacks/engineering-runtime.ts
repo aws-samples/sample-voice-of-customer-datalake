@@ -47,6 +47,13 @@ export const SUPERVISOR_ALARM_FLAG = 'engineeringSupervisorAlarm';
 /** `-c engineeringImageArns='{"python":"arn:…",…}'`: the MicroVM image per language; `{}` (no launch) by default. */
 const IMAGE_ARNS_CONTEXT = 'engineeringImageArns';
 /**
+ * `-c engineeringMicrovmUsdPerSecond=<decimal>`: the price of a MicroVM second, priced into each agent's `cost_usd` and
+ * so into a run's cost cap (lambda/engineering/runtime/caps.py microvm_price); unset: `0`, MicroVM time not priced.
+ */
+const MICROVM_PRICE_CONTEXT = 'engineeringMicrovmUsdPerSecond';
+/** caps.py MAX_USD_PER_SECOND: a price a few orders of magnitude off fails the synth. */
+const MAX_USD_PER_SECOND = 0.01;
+/**
  * The languages with an image (engineering-images/, lambda/engineering/runtime/egress.py REGISTRY_HOSTS; a Python
  * test keeps the two equal).
  */
@@ -179,6 +186,20 @@ function imageArns(scope: Construct): Record<string, string> {
   return Object.fromEntries(entries.map(([language, arn]) => [language, String(arn)]));
 }
 
+/** `-c engineeringMicrovmUsdPerSecond`, as the decimal text the runtime reads; `0` when absent. */
+function microvmPrice(scope: Construct): string {
+  const raw: unknown = scope.node.tryGetContext(MICROVM_PRICE_CONTEXT);
+  if (raw === undefined || raw === null || raw === '') return '0';
+  const text = String(raw).trim();
+  const price = Number(text);
+  // At most 12 digits after the point, as caps.py PRICE_DIGITS: the two parsers agree, and the runtime's sums stay exact.
+  if (!/^\d+(\.\d{1,12})?$/.test(text) || !Number.isFinite(price) || price > MAX_USD_PER_SECOND) {
+    throw new Error(`${MICROVM_PRICE_CONTEXT} is a decimal amount of 0 to ${MAX_USD_PER_SECOND} USD per MicroVM second, `
+      + 'with at most 12 digits after the point.');
+  }
+  return text;
+}
+
 /** A boolean context flag of the runtime's own, strictly parsed (a typo fails the synth, not the opposite). */
 function flag(scope: Construct, name: string): boolean {
   return booleanContextFlag(scope.node.tryGetContext(name), name, false, `Use -c ${name}=true or false.`);
@@ -214,6 +235,8 @@ class EngineeringRuntime extends Construct {
       ENGINEERING_EXTRA_EGRESS: '[]',
       // The supervisor's settable clocks (lambda/engineering/runtime/caps.py SETTABLE); {} keeps the defaults.
       ENGINEERING_TIMINGS: '{}',
+      // The price of a MicroVM second (`-c engineeringMicrovmUsdPerSecond`; 0: not priced).
+      ENGINEERING_MICROVM_USD_PER_SECOND: microvmPrice(this),
     };
   }
 

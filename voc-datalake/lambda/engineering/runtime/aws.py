@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, Final, Protocol
+from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
 from engineering.runtime.interface import (
@@ -25,14 +25,12 @@ from engineering.runtime.interface import (
     CacheMount,
     Command,
     ExecResult,
+    HandedSession,
     MicroVm,
     RuntimeRefused,
 )
 from engineering.runtime.tokens import MAX_TOKEN_SECONDS, AuthToken, TokenSource, bounded_expiry
 from engineering.runtime.unit_runner import TAIL_CHARACTERS, bounded_status, scrub_text
-
-if TYPE_CHECKING:
-    from engineering.runtime.launcher import RoleSession
 
 #: Idle policy: a MicroVM with no request for this long is suspended (an agent waiting for a message),
 #: and one suspended this long is ended. The supervisor ends a finished agent's MicroVM at once anyway.
@@ -167,7 +165,7 @@ class AwsMicroVmRuntime:
             timed_out=bool(answer.get('timed_out', False)),
         )
 
-    def hand_session(self, vm: MicroVm, session: RoleSession, mount: CacheMount | None) -> None:
+    def hand_session(self, vm: MicroVm, session: HandedSession, mount: CacheMount | None) -> None:
         body: dict[str, Any] = session.process_credentials()
         if mount is not None:
             body['mount'] = {'bucket': mount.bucket, 'prefix': mount.prefix}

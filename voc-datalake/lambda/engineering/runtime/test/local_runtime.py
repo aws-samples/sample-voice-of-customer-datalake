@@ -15,7 +15,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from engineering.runtime.interface import (
     AgentSpec,
@@ -23,14 +23,12 @@ from engineering.runtime.interface import (
     CacheMount,
     Command,
     ExecResult,
+    HandedSession,
     MicroVm,
     RuntimeRefused,
 )
 from engineering.runtime.tokens import MAX_TOKEN_SECONDS, AuthToken
 from engineering.runtime.unit_runner import Runner
-
-if TYPE_CHECKING:
-    from engineering.runtime.launcher import RoleSession
 
 
 @dataclass
@@ -103,7 +101,7 @@ class LocalMicroVmRuntime:
         self._running(vm)
         return AuthToken(value=secrets.token_urlsafe(32), expires_at=self._clock() + MAX_TOKEN_SECONDS)
 
-    def hand_session(self, vm: MicroVm, session: RoleSession, mount: CacheMount | None) -> None:
+    def hand_session(self, vm: MicroVm, session: HandedSession, mount: CacheMount | None) -> None:
         body = session.process_credentials()
         if mount is not None:
             body['mount'] = {'bucket': mount.bucket, 'prefix': mount.prefix}

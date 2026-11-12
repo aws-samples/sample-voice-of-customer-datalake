@@ -155,6 +155,16 @@ describe('with -c engineeringAgents=true', () => {
     })).toBe(1);
   });
 
+  it('prices MicroVM time only once a price is set (-c engineeringMicrovmUsdPerSecond), and refuses a bad one', () => {
+    expect(supervisorEnv(template).ENGINEERING_MICROVM_USD_PER_SECOND).toBe('0');
+    const priced = runtimeStack({ engineeringAgents: 'true', engineeringMicrovmUsdPerSecond: '0.0000166' }).template;
+    expect(supervisorEnv(priced).ENGINEERING_MICROVM_USD_PER_SECOND).toBe('0.0000166');
+    for (const bad of ['free', '-1', '1', '1e-5', '0.0100000000000000001']) {
+      expect(() => runtimeStack({ engineeringAgents: 'true', engineeringMicrovmUsdPerSecond: bad }))
+        .toThrow(/engineeringMicrovmUsdPerSecond/);
+    }
+  });
+
   it('configures no MicroVM image by default, so every launch is refused until one is set', () => {
     expect(supervisorEnv(template).ENGINEERING_IMAGE_ARNS).toBe('{}');
   });
