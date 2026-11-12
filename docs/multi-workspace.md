@@ -17,6 +17,7 @@ and files named here are the planned ones unless the table lists them.
 | 6.11.00 | A user's delete and an erasure by email reach the memberships. `DELETE /users/{username}` (the users API) removes every membership of the user BEFORE `AdminDeleteUser` (`plan_user_removal` and `remove_user_memberships` in `lambda/shared/workspace_members.py`): it reads their `USER#{sub}` rows, and per workspace the `MEMBER#` role and, for an admin, another admin; the last member admin of a workspace is refused (409, naming the workspace: make another member an admin there first) unless the caller is a platform admin (live-checked), in which case the workspace keeps no member admin until a platform admin enters it and names one (Invites). Every refusal comes before any write; then, per workspace, an `AUDIT#WS#{ws}` row (kind `member_removed`, `via: user_deleted`, actor, target, role before, `platform_admin`, `left_without_admin`) and ONE transaction deleting the `MEMBER#` and `USER#` rows (the `MEMBER#` delete conditional on the role read; for an admin a check that the other admin still is one: 409 when either changed meanwhile); only then the Cognito account. The users API's role gains, on `voc-workspaces`: Query on `USER#*` and `WS#*`, GetItem on `WS#*` and `AUDIT#WS#*` (an audit row read back after a retried put), ConditionCheckItem on `WS#*`, PutItem on `AUDIT#WS#*` and DeleteItem on `USER#*` and `WS#*` (`dynamodb:LeadingKeys`; the code deletes `MEMBER#` and `USER#` keys only); the audit-row guard names it a writer of `AUDIT#WS#*` there and of no other audit partition. An erasure by email without a source (`voc-retention`, docs/source-policies.md) removes the `email` and `name` of every `MEMBER#` row that holds the email, in any case, and keeps the row; each row first gets a tombstone `AUDIT#tombstone#workspace_members` / `{ws}#{sub}#{job}` (the workspace, the run, the legal basis; never the email), counted as `member_rows_deidentified`. It finds the rows with a paged Scan of `voc-workspaces` (no email index; Invites says why and how it is bounded); `voc-retention` gains Scan and UpdateItem pinned to `WS#*` and the attributes `email` and `name` there |
 | Unreleased | The cross-workspace suite (`lambda/api/test/test_cross_workspace_routes.py`, Phases below). Workspace-scoped today: `GET /me/workspaces/current` and the four members routes; every other route is by design or pending (phase 2 or 3) |
 | Unreleased | The scope of every settings row, per workspace or for the deployment, held to the code (`lambda/shared/test/test_settings_scopes.py`, Per-workspace configuration below). No key has moved yet |
+| Unreleased | The assistant's reads carry the caller's `X-Workspace-Id` to the domain Lambdas (Request flow below); no domain route reads it yet but the workspaces API's |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -123,6 +124,14 @@ a new key, so a taken slug (409) writes nothing and no workspace is ever half-wr
 Asynchronous paths carry the workspace explicitly and never infer it from the caller: SQS messages, Step Functions
 inputs, Lambda async payloads, DynamoDB Stream records (the workspace comes from the key prefix), memory extraction,
 agent runs, plan steps and assist jobs.
+
+The assistant's reads (the stream Lambda calling the domain Lambdas as the signed-in person,
+`lambda/stream/src/assistant/tools/internal-api.ts`) carry the caller's own `X-Workspace-Id` since Unreleased: the
+stream request's header (`assistant/runtime/event.ts`, as it came, not judged there; the web app sends it once it is
+inside a workspace, Request flow step 2) goes on every domain call as its `X-Workspace-Id` header, never as a claim,
+and each domain Lambda answers it exactly as it answers the caller's own request (membership, the 400 and the one
+404). So a route that moves into its workspace keeps working for the assistant. Not yet carried: plan steps (`voc-plan-step` acts for the
+approver from the plan's row, which has no workspace yet) and the global MCP tools (a token will pin its workspace).
 
 ## Roles
 

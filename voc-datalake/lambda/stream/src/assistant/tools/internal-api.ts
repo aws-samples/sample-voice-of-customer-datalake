@@ -132,9 +132,10 @@ const MAX_ERROR_TEXT = 200;
 
 /**
  * Only these claim keys are forwarded, and only when they are strings. The two
- * `voc:` keys are set only by the plan runtime (a plan acting for its approver);
+ * `voc:` keys here are set only by the plan runtime (a plan acting for its approver);
  * the stream Lambda's own claims never carry them (runtime/event.ts reads the
- * Cognito keys alone). `iss` and `email_verified` are the app-pool authorizer's
+ * Cognito keys alone, plus `voc:workspace`, which is sent as a header, never as a
+ * claim: `buildProxyEvent`). `iss` and `email_verified` are the app-pool authorizer's
  * own claims, which the board routes (`/feature-requests/*`) read.
  */
 const FORWARDED_CLAIM_KEYS = [
@@ -161,6 +162,20 @@ function queryParameters(query: ApiCall['query']): Record<string, string> | null
   return Object.keys(out).length > 0 ? out : null;
 }
 
+/**
+ * The headers of a domain call: JSON, and the caller's workspace as `X-Workspace-Id` when their request named one
+ * (docs/multi-workspace.md "Request flow": the domain Lambda resolves the caller's membership of it, exactly as for
+ * the caller's own request). No Authorization header (the domain function must not see a token) and no
+ * Accept-Encoding (this module decodes plain JSON).
+ */
+function proxyHeaders(claims: CallerClaims): Record<string, string> {
+  const workspace = claims['voc:workspace'];
+  return {
+    'Content-Type': 'application/json',
+    ...(typeof workspace === 'string' ? { 'X-Workspace-Id': workspace } : {}),
+  };
+}
+
 /** The synthetic REST proxy event, exported for the shape tests. */
 export function buildProxyEvent(call: ApiCall, claims: CallerClaims): Record<string, unknown> {
   return {
@@ -172,9 +187,7 @@ export function buildProxyEvent(call: ApiCall, claims: CallerClaims): Record<str
       ? { ...call.pathParameters }
       : null,
     body: call.body === undefined ? null : JSON.stringify(call.body),
-    // No Authorization header (the domain function must not see a token) and
-    // no Accept-Encoding (this module decodes plain JSON).
-    headers: { 'Content-Type': 'application/json' },
+    headers: proxyHeaders(claims),
     requestContext: {
       authorizer: { claims: forwardedClaims(claims) },
       stage: 'v1',

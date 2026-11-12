@@ -11,7 +11,8 @@ import type { ProjectAccessLedger } from './tools/project-access.js';
 import type { AiWritingPolicy } from './runtime/ai-writing.js';
 
 /**
- * Authorizer claims forwarded verbatim (only these keys) to internal API invokes.
+ * Authorizer claims forwarded verbatim (only these keys) to internal API invokes, plus `voc:workspace`, the one key
+ * that is not a claim: it is sent as the invoke's `X-Workspace-Id` header instead.
  * Matches the set the project-permissions work forwards (per-project roles are
  * computed by the Projects API from these), so writes and reads made on the
  * user's behalf are authorized exactly as the user's own requests.
@@ -32,6 +33,13 @@ export interface CallerClaims {
   'voc:acting_subject'?: string;
   /** Plan runtime only: `plan:{plan_id}`, the principal recorded by the domain APIs. */
   'voc:principal'?: string;
+  /**
+   * The workspace the caller's own request named (its `X-Workspace-Id` header, docs/multi-workspace.md "Request
+   * flow"), as it came: runtime/event.ts reads it from the stream request. Not a claim: the internal invoker
+   * sends it as the `X-Workspace-Id` header of each domain call, and each domain Lambda checks the caller's
+   * membership itself (shared/workspace.py), so it grants nothing by being here.
+   */
+  'voc:workspace'?: string;
 }
 
 /** Feedback card shown under an answer (subset of FeedbackItem). */
