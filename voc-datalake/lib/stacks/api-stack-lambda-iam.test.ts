@@ -183,11 +183,8 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
 // (lambda/shared/workspace_request.py): they read voc-workspaces' WS#* and AUDIT#WS#* rows, put only an entry audit
 // row (AUDIT#WS#*), and run the live platform-admin check in Cognito; nothing else of the control plane.
 describe.each([
-  ['MetricsLambdaRole', 'metrics_handler.lambda_handler'],
-  ['FeedbackEditLambdaRole', 'feedback_edit_handler.lambda_handler'],
-  ['IntegrationsLambdaRole', 'integrations_handler.lambda_handler'],
-  ['ScrapersLambdaRole', 'scrapers_handler.lambda_handler'],
-])('%s resolves X-Workspace-Id', (role, handler) => {
+  'MetricsLambdaRole', 'FeedbackEditLambdaRole', 'IntegrationsLambdaRole', 'ScrapersLambdaRole',
+])('%s resolves X-Workspace-Id', (role) => {
   // The DynamoDB statements on voc-workspaces (the table's key grants name no `dynamodb:` action).
   const onWorkspaces = () => policyStatementsOf(apiTemplate(), role)
     .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:')));
@@ -201,7 +198,16 @@ describe.each([
           condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } } },
       ]);
   });
+});
 
+// Every API that resolves X-Workspace-Id, the feedback forms included: the live check and the resolver's environment.
+describe.each([
+  ['MetricsLambdaRole', 'metrics_handler.lambda_handler'],
+  ['FeedbackEditLambdaRole', 'feedback_edit_handler.lambda_handler'],
+  ['IntegrationsLambdaRole', 'integrations_handler.lambda_handler'],
+  ['ScrapersLambdaRole', 'scrapers_handler.lambda_handler'],
+  ['FeedbackFormLambdaRole', 'feedback_form_handler.lambda_handler'],
+])('%s runs the live platform-admin check', (role, handler) => {
   it('may run the live platform-admin check and nothing else in Cognito', () => {
     expect(actionsWithPrefix(roleStatements(apiTemplate(), role), 'cognito-idp:').sort(byCodeUnit))
       .toStrictEqual(['cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser']);
@@ -245,6 +251,33 @@ describe.each([
 
   it('is handed the workspaces\' secret prefix', () => {
     expect(lambdaEnv(apiTemplate(), handler)).toHaveProperty('WORKSPACE_SECRET_PREFIX', 'voc/ws');
+  });
+});
+
+// The feedback forms (docs/multi-workspace.md, "Public and non-user entry points"): the signed-in routes resolve
+// X-Workspace-Id, and a workspace form's FORM#{id} lookup row is read, put and deleted (lambda/shared/workspace_routing.py).
+describe('FeedbackFormLambdaRole routes a workspace\'s forms', () => {
+  const role = 'FeedbackFormLambdaRole';
+  const onWorkspaces = () => policyStatementsOf(apiTemplate(), role)
+    .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:')));
+
+  it('reads WS#*, AUDIT#WS#* and FORM#*, puts AUDIT#WS#* and FORM#*, deletes FORM#* only in voc-workspaces', () => {
+    const shapes = onWorkspaces().map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }));
+    const keys = (keys: string[]) => ({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': keys } });
+    expect(shapes).toStrictEqual(expect.arrayContaining([
+      { actions: ['dynamodb:GetItem'], condition: keys(['AUDIT#WS#*', 'WS#*']) },
+      { actions: ['dynamodb:PutItem'], condition: keys(['AUDIT#WS#*']) },
+      { actions: ['dynamodb:GetItem'], condition: keys(['FORM#*']) },
+      { actions: ['dynamodb:DeleteItem', 'dynamodb:PutItem'], condition: keys(['FORM#*']) },
+    ]));
+    expect(shapes).toHaveLength(4);
+  });
+
+  it('deletes only the deployment\'s and one workspace\'s form config rows in aggregates', () => {
+    const deletes = policyStatementsOf(apiTemplate(), role)
+      .filter((s) => s.actions.includes('dynamodb:DeleteItem') && s.resource.includes('Aggregates'));
+    expect(deletes.map((s) => s.condition)).toStrictEqual([{ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
+      'FEEDBACK_FORM', `WS#ws_${'?'.repeat(26)}#FEEDBACK_FORM`] } }]);
   });
 });
 

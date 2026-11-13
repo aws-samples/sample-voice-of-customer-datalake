@@ -75,12 +75,13 @@ from shared.scoped_query import query_partition
 from shared.silver_provenance import REASON_CATEGORY_EDIT, REASON_DIMENSIONS_EDIT
 from shared.tables import get_aggregates_table, get_feedback_table
 from shared.timestamps import now_iso
+
+# The workspace roles that may edit a review (docs/multi-workspace.md, "Roles": an edit is a write).
+from shared.workspace import EDITING_ROLES
 from shared.workspace_request import RequestWorkspace
 from shared.ws_repo import WorkspaceScope, scope_of
 
 FEEDBACK_NOT_FOUND = 'Feedback not found'
-#: The workspace roles that may edit a review (docs/multi-workspace.md, "Roles": an edit is a write).
-EDITING_ROLES = frozenset({'editor', 'admin'})
 
 app = create_api_resolver()
 # The workspace an edit acts in (shared/workspace_request.py): its warm container's memberships (30 s).

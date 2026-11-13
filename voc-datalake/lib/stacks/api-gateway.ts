@@ -348,14 +348,20 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
     };
 
   /** 10 rps / burst 20 for each enabled plugin's webhook receiver
-   *  (`/webhooks/<plugin_id>/<METHOD>`).
+   *  (`/webhooks/<plugin_id>/<METHOD>`), and the same again, its own bucket, for
+   *  the workspaces' endpoints of that plugin (`/webhooks/<plugin_id>/{ws}/<METHOD>`:
+   *  one method key shared by every workspace, so one workspace's provider can
+   *  slow another's deliveries but never the deployment's).
    *
    *  Unauthenticated at the gateway by necessity — a provider such as GitHub
    *  cannot present a Cognito token — and authenticated in the handler instead,
    *  by the provider's signature (`X-Hub-Signature-256` for github_issues),
    *  which is checked before anything is parsed or enqueued. Every request, even
-   *  a forged one, still costs a Lambda invocation and a Secrets Manager read, so
-   *  the ceiling is held well below the stage default. LEGITIMATE demand is one
+   *  a forged one, still costs a Lambda invocation (on the deployment's route a
+   *  Secrets Manager read too; a workspace's secret is kept by a warm container and
+   *  read again within 60 s, so a forged delivery to `{ws}` costs no extra read and
+   *  a rotated secret takes effect within 60 s), so the ceiling is held well below
+   *  the stage default. LEGITIMATE demand is one
    *  provider's event rate for the configured repos, which is low; a repo busy
    *  enough to exceed it loses nothing, because the scheduled ingestor polls the
    *  same issues and the processor de-duplicates by id.
@@ -369,7 +375,10 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   };
   const publicWebhookMethodOptions: Record<string, apigateway.MethodDeploymentOptions> = Object.fromEntries(
     webhookPlugins.flatMap((plugin) => (plugin.infrastructure.webhook?.methods ?? [])
-      .map((method) => [`/webhooks/${plugin.id}/${method}`, publicWebhookThrottle] as const)),
+      .flatMap((method) => [
+        [`/webhooks/${plugin.id}/${method}`, publicWebhookThrottle] as const,
+        [`/webhooks/${plugin.id}/{ws}/${method}`, publicWebhookThrottle] as const,
+      ])),
   );
 
   // API Gateway CloudWatch Logs

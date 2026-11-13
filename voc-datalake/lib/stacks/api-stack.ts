@@ -14,7 +14,13 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as path from 'path';
 import { Construct } from 'constructs';
-import { acknowledgeNag } from '../utils/nag-ack';
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
+import { WORKSPACE_SECRET_BASE_PREFIX, WORKSPACE_SECRET_PREFIX_ENV, workspaceSecretsArn } from '../utils/workspace-secrets';
+import { WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
+
+/** The attributes a webhook reads of a workspace's META (lambda/shared/workspace_routing.py META_ROUTING_ATTRIBUTES;
+ * api-stack-webhook-env.test.ts holds the two equal). */
+const WEBHOOK_META_ATTRIBUTES = ['pk', 'sk', 'status', 'secret_status'] as const;
 import { DEFAULT_WEBHOOK_MEMORY_MB, getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
 import { pluginVersion } from '../utils/connector-version';
 import { applyAppClientEnv } from '../utils/app-client-env';
@@ -301,15 +307,23 @@ export class VocApiStack extends VocStack {
     // A delivery gets its source's PII policy (profile row in aggregates) before archive + queue.
     aggregatesTable.grant(webhookRole, 'dynamodb:GetItem');
     webhookRole.addToPolicy(piiDetectionStatement());
+    // A workspace's endpoint, /webhooks/{plugin}/{ws} (plugins/_shared/base_webhook.py): the workspace's META read
+    // (GetItem on WS#* only, of its routing attributes only: is it active, is its secret ready), and its own credentials secret read, the name built
+    // from the routed workspace only (voc/ws/*: every workspace's, so only the code keeps a delivery to its own,
+    // decision 1's soft isolation). The secrets use the deployment key the role already decrypts with.
+    const webhookWorkspaceSecrets = this.grantWebhookWorkspaces(webhookRole, props.workspacesTable);
 
     const webhookLambdas = new Map<string, lambda.Function>();
     for (const plugin of webhookPlugins) {
       // Each webhook may write only its OWN source's raw-archive prefix, like
-      // every other raw/ writer in this stack (the ingestors own the rest).
+      // every other raw/ writer in this stack (the ingestors own the rest),
+      // deployment-wide and in each workspace (one workspace id per pattern).
       rawDataBucket.grantPut(webhookRole, `raw/${plugin.id}/*`);
+      rawDataBucket.grantPut(webhookRole, `${WORKSPACE_RAW_LAYER_PREFIX}${plugin.id}/*`);
       const webhookFn = this.createWebhookLambda(plugin, webhookRole, apiLayer, {
         processingQueueUrl, secretsArn, brandName,
         rawDataBucketName: rawDataBucket.bucketName, aggregatesTableName: aggregatesTable.tableName,
+        workspaceEnv: { WORKSPACES_TABLE: props.workspacesTable.tableName, ...webhookWorkspaceSecrets },
       });
       webhookLambdas.set(plugin.id, webhookFn);
     }
@@ -457,6 +471,36 @@ export class VocApiStack extends VocStack {
   }
 
 
+  /**
+   * The webhook role's reach into the workspaces (docs/multi-workspace.md, "Public and non-user entry points"):
+   * GetItem on voc-workspaces' `WS#*` partitions only, of the routing attributes only (`pk`, `sk`, `status`,
+   * `secret_status`: `dynamodb:Attributes`, with a projection the code always sends, lambda/shared/workspace_routing.py
+   * META_ROUTING_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach; no write. And
+   * GetSecretValue on the workspaces' credentials secrets (`{prefix}/*`), acknowledged. Returns the secret prefix's
+   * environment.
+   */
+  private grantWebhookWorkspaces(role: iam.Role, workspacesTable: dynamodb.ITable): Record<string, string> {
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
+      conditions: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...WEBHOOK_META_ATTRIBUTES] },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      },
+    }));
+    const prefix = this.prefixed(WORKSPACE_SECRET_BASE_PREFIX);
+    const secrets = workspaceSecretsArn(this, prefix);
+    role.addToPolicy(new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue'], resources: [secrets] }));
+    acknowledgeNag(role, [{
+      id: 'AwsSolutions-IAM5',
+      reason: 'One credentials secret per workspace, created at run time (voc/ws/{ws}/credentials, decision 8): a '
+        + 'delivery to /webhooks/{plugin}/{ws} reads the one its routed workspace names (its stored META, never the path '
+        + 'alone), and the grant reaches only that name prefix of this deployment, read only',
+      findings: [resourceFinding(secrets)],
+    }]);
+    return { [WORKSPACE_SECRET_PREFIX_ENV]: prefix };
+  }
+
   private createWebhookLambda(
     plugin: PluginManifest,
     webhookRole: iam.Role,
@@ -467,9 +511,11 @@ export class VocApiStack extends VocStack {
       brandName: string;
       rawDataBucketName: string;
       aggregatesTableName: string;
+      /** voc-workspaces and the workspaces' secret prefix, for `/webhooks/{plugin}/{ws}`. */
+      workspaceEnv: Record<string, string>;
     },
   ): lambda.Function {
-    const { processingQueueUrl, secretsArn, brandName, rawDataBucketName, aggregatesTableName } = env;
+    const { processingQueueUrl, secretsArn, brandName, rawDataBucketName, aggregatesTableName, workspaceEnv } = env;
     // Staged from the PROJECT ROOT, exactly like an ingestor bundle
     // (ingestion-stack.ts bundlePluginCode): `_shared/base_webhook.py` imports
     // `shared.aws` / `shared.logging`, which live in lambda/shared. The bundle
@@ -516,6 +562,7 @@ export class VocApiStack extends VocStack {
         RAW_DATA_BUCKET: rawDataBucketName,
         // Source profile (PII policy, retention) — shared/source_profiles.py.
         AGGREGATES_TABLE: aggregatesTableName,
+        ...workspaceEnv,
         ...PII_REDACTION_ENV,
         POWERTOOLS_SERVICE_NAME: `voc-webhook-${plugin.id}`,
         LOG_LEVEL: 'INFO',

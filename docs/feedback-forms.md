@@ -295,6 +295,46 @@ page is open to every user, and they have no per-form ownership check. Give app
 accounts only to people you trust with every form. The public routes are protected
 by the input validation above.
 
+## Form ids
+
+A new form's id is 32 hexadecimal characters (128 random bits, `new_form_id` in
+`lambda/api/feedback_form_handler.py`) after a prefix, `fd_` for a deployment form (`ff_`
+for a workspace's, below), so nobody can guess the id of a form they were not given.
+Forms created before this change keep their 8-character ids, and every route still
+serves them; prototype pin forms keep their `pf_` ids. `PUT /feedback-forms/{id}`
+updates only a form that exists: an unknown id answers 404 and creates nothing.
+
+## Workspaces (not released yet)
+
+Multi-workspace ([multi-workspace.md](multi-workspace.md)) is being built; the web app
+does not send `X-Workspace-Id` yet, so today every form is a deployment form.
+
+- The signed-in routes (`GET`/`POST /feedback-forms`, `PUT`/`DELETE /feedback-forms/{id}`,
+  `GET /feedback-forms/{id}/stats` and `/submissions`) act in the workspace that
+  `X-Workspace-Id` names. Any member reads; only the workspace's editors and admins
+  create, update and delete (a viewer gets 403). A caller who is not a member, an
+  unknown workspace and one being deleted all get the same 404. Without the header the
+  routes behave exactly as described above.
+- A workspace's form is stored in that workspace's own partition, and gets a lookup row
+  `FORM#{id}` in `voc-workspaces` that names its workspace. In a workspace, a form id
+  of another workspace or of the deployment is not found, and an update never creates
+  a form. Its id starts `ff_`; without the header, an update or delete of such an id
+  that a workspace's form holds answers 404.
+- Deleting a workspace's form first writes an audit row in that workspace's audit
+  partition (`AUDIT#WS#{ws}`: kind `form_deleted`, the caller's sub, the form id and the
+  time). It records the attempt, and when it cannot be written nothing is deleted. No
+  role can change or remove it.
+- The public `config`, `iframe` and `submit` routes look the id up and never read a
+  header or a body field to choose the workspace. A form with a lookup row serves its
+  workspace's config, and a submission to it is queued with that workspace and its raw
+  copy kept under `ws/{ws}/raw/feedback_form/`. A form without a lookup row is a
+  deployment form, exactly as before. A lookup row whose workspace is unknown or being
+  deleted, a lookup row without its form, and an unknown id all answer the same 404.
+- A workspace's form uses the deployment's categories and `feedback_form` source
+  profile, like every workspace message until per-workspace settings arrive. Participant
+  asks and prototype pins stay deployment features: a workspace's form attributes no
+  answer to an ask.
+
 ## CORS Configuration
 
 The three public endpoints intentionally allow cross-origin requests from any origin so the widget can be embedded on customer-owned sites. `FeedbackFormApi` therefore uses `ALLOWED_ORIGIN=*`; changing the Lambda environment variable alone is not a supported per-form origin policy.

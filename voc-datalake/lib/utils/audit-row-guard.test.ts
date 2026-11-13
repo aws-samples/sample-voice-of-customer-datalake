@@ -32,8 +32,11 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   // A platform admin's entry, a workspace's creation and its membership changes (AUDIT#WS#<ws>); the users API a
   // deleted user's membership removals (AUDIT#WS#* only); every other role writing voc-workspaces (voc-retention's
   // de-identification) gets the forge Deny. The data-path APIs that resolve X-Workspace-Id (the metrics API, the
-  // feedback edits, the integrations and scrapers APIs) write a platform admin's entry (AUDIT#WS#* only).
-  WorkspacesTable: ['VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/IntegrationsLambdaRole',
+  // feedback edits, the integrations and scrapers APIs, the feedback forms' signed-in routes) write a platform admin's
+  // entry (AUDIT#WS#* only); the feedback forms also write a workspace form's `form_deleted` row there, before the
+  // delete.
+  WorkspacesTable: ['VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/FeedbackFormLambdaRole',
+    'VocApiStack/IntegrationsLambdaRole',
     'VocApiStack/MetricsLambdaRole', 'VocApiStack/ScrapersLambdaRole', 'VocApiStack/UsersLambdaRole',
     'VocApiStack/WorkspacesLambdaRole'],
 };
@@ -123,15 +126,16 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings, users, metrics, feedback-edit, integrations and scrapers APIs carry a one-partition deny', () => {
+  it('only the settings, users, metrics, feedback-edit, feedback-form, integrations and scrapers APIs carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
     expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual([
-      'VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/IntegrationsLambdaRole', 'VocApiStack/MetricsLambdaRole',
+      'VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/IntegrationsLambdaRole',
+      'VocApiStack/MetricsLambdaRole',
       'VocApiStack/ScrapersLambdaRole', 'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole']);
   });
 
   it.each(['VocApiStack/MetricsLambdaRole', 'VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/IntegrationsLambdaRole',
-    'VocApiStack/ScrapersLambdaRole'])(
+    'VocApiStack/ScrapersLambdaRole', 'VocApiStack/FeedbackFormLambdaRole'])(
     '%s may put only AUDIT#WS#* rows in voc-workspaces and change or remove none',
     (role) => {
       const statements = byRole.get(role) ?? [];

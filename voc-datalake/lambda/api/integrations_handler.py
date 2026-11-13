@@ -16,7 +16,7 @@ live-checked and audited; a write resolves the role from the table, never the 30
   ``configs`` key on the credentials route (``CONFIGS_HAVE_THEIR_OWN_ROUTES``: the lists are saved through the
   routes that check each entry);
 * Run now invokes the plugin's ingestor with the RESOLVED workspace's id in ``workspace_id``
-  (shared/workspace_request.py ``workspace_payload``: never a body field), so the run reads that workspace's
+  (shared/workspace_routing.py ``workspace_payload``: never a body field), so the run reads that workspace's
   credentials and writes its own rows; its ``running`` row and ``GET /sources/status?run_status=`` are the
   workspace's ``WS#{ws}#SOURCE_RUN#{source}`` (shared/run_rows.py); ``s3_import`` is refused there (400);
 * ``GET /sources/status`` reports the shared schedule rule and the workspace's own breaker, and
@@ -64,7 +64,8 @@ from shared.url_policy import scraper_url_error, validate_url
 from shared.warm_init import warm_at_init
 from shared.web_review_targets import PLUGIN_ID as WEB_REVIEWS_PLUGIN
 from shared.web_review_targets import TargetError, target_source_id, validated_target
-from shared.workspace_request import DEPLOYMENT_ONLY, ResolvedRoutes, workspace_payload
+from shared.workspace_request import DEPLOYMENT_ONLY, ResolvedRoutes
+from shared.workspace_routing import workspace_payload
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")

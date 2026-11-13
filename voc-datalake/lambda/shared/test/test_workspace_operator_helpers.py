@@ -30,8 +30,8 @@ from shared.workspace_request import (
     ResolvedRoutes,
     WorkspaceNotResolved,
     deployment_only,
-    workspace_payload,
 )
+from shared.workspace_routing import workspace_payload
 from shared.ws_repo import OutOfScopeError, scope_from_key
 
 WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'

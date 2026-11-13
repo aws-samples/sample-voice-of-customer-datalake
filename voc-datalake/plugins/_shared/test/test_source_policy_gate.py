@@ -76,7 +76,7 @@ def test_an_unreadable_policy_fails_closed_before_archive_or_queue():
 
 
 def test_a_webhook_answers_503_and_queues_nothing_when_the_policy_is_unreadable():
-    hook = MagicMock(source_platform='tickets')
+    hook = MagicMock(source_platform='tickets', routed=None, refused=False)
     hook.parse_webhook_payload.return_value = [{'id': 'x'}]
     hook.normalize_item.return_value = _message()
     hook.send_to_queue.side_effect = lambda items: base_webhook.BaseWebhook.send_to_queue(hook, items)
@@ -102,11 +102,28 @@ def test_ingestor_and_webhook_queue_the_policy_applied_messages():
             patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send, \
             patch.object(base_webhook, 'send_messages_to_queue', return_value=1) as webhook_send:
         base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=SCOPE), [_message()])
-        base_webhook.BaseWebhook.send_to_queue(MagicMock(), [_message()])
+        base_webhook.BaseWebhook.send_to_queue(MagicMock(routed=None), [_message()])
     expected = [{'id': 'x', 'source_platform': 'tickets', 'text': 'mail [EMAIL]', 'pii_policy_applied': 'redact'}]
-    # The ingestor's messages also name the run's workspace; a webhook's name none yet (its own slice).
+    # The ingestor's messages also name the run's workspace; a deployment-wide webhook's name none.
     assert ingest_send.call_args.args[2] == [{**expected[0], 'workspace_id': WS}]
     assert webhook_send.call_args.args[2] == expected
+
+
+def test_a_routed_webhook_names_the_stored_rows_workspace_last_never_the_payloads():
+    """A delivery on `/webhooks/{plugin}/{ws}` names the workspace its stored META row routed it to (workspace_payload),
+    after every field; a `workspace_id` the provider's payload carried is dropped by the policy first."""
+    from shared.workspace_routing import route_workspace_id
+
+    table = MagicMock()
+    table.get_item.return_value = {'Item': {'pk': f'WS#{WS}', 'sk': 'META', 'status': 'active',
+                                            'secret_status': 'ready'}}
+    routed = route_workspace_id(table, WS)
+    spoofed = [{**_message('other'), 'workspace_id': OTHER_WS}]
+    with patch.object(base_webhook, 'send_messages_to_queue', return_value=1) as webhook_send:
+        base_webhook.BaseWebhook.send_to_queue(MagicMock(routed=routed), spoofed)
+    [message] = webhook_send.call_args.args[2]
+    assert message['workspace_id'] == WS
+    assert list(message)[-1] == 'workspace_id'
 
 
 def test_a_source_payload_cannot_choose_the_workspace_an_ingestors_message_lands_in():
@@ -121,7 +138,7 @@ def test_a_deployment_wide_run_or_a_webhook_never_queues_a_workspace_from_its_pa
     with patch.object(base_ingestor, 'send_messages_to_queue', return_value=1) as ingest_send, \
             patch.object(base_webhook, 'send_messages_to_queue', return_value=1) as webhook_send:
         base_ingestor.BaseIngestor.send_to_queue(MagicMock(scope=None), spoofed)
-        base_webhook.BaseWebhook.send_to_queue(MagicMock(), spoofed)
+        base_webhook.BaseWebhook.send_to_queue(MagicMock(routed=None), spoofed)
     assert ['workspace_id' in m for m in ingest_send.call_args.args[2]] == [False]
     assert ['workspace_id' in m for m in webhook_send.call_args.args[2]] == [False]
 

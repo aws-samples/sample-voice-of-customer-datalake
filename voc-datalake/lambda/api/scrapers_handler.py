@@ -102,7 +102,8 @@ from shared.url_policy import (
     scraper_url_error,
     validate_url,
 )
-from shared.workspace_request import ResolvedRoutes, workspace_payload
+from shared.workspace_request import ResolvedRoutes
+from shared.workspace_routing import workspace_payload
 
 secretsmanager = get_secrets_client()
 lambda_client = boto3.client("lambda")

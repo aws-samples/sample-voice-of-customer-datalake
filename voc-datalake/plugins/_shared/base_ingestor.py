@@ -43,7 +43,6 @@ from shared.exceptions import ConfigurationError, SecretUnreadableError, Workspa
 from shared.idempotency import dedupe_claim_item
 from shared.ingest_tables import ingest_table
 from shared.logging import logger, metrics, tracer
-from shared.plugin_identity import is_valid_plugin_identifier
 from shared.run_rows import source_run_partition
 from shared.timestamps import now_iso
 from shared.workspace_ids import credentials_secret_name
@@ -59,7 +58,7 @@ from shared.ws_repo import (
 from .audit import emit_audit_event
 from .circuit_breaker import CircuitBreaker
 from .normalized_item import normalized_item_fields
-from .plugin_secrets import filter_plugin_secrets, plugin_secret_prefix
+from .plugin_secrets import filter_plugin_secrets, holds_plugin_namespace, plugin_secret_prefix
 from .raw_archive import archive_raw_item
 from .raw_source import pop_raw_source
 from .self_invoke import invoke_self
@@ -194,16 +193,6 @@ def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]
     if is_scheduled_tick(event):
         fan_out_once(SOURCE_PLATFORM, event)
     return run(scope)
-
-
-def _holds_namespace(plugin_id: str, all_secrets: object) -> bool:
-    """Whether a secret holds at least one of the plugin's ``<plugin>_<key>`` keys. True for a malformed plugin id
-    and for a secret that is not a JSON object, so ``filter_plugin_secrets`` refuses either as the counted
-    misconfiguration it is (the stored JSON may be any value, whatever ``get_secret`` is annotated with)."""
-    if not is_valid_plugin_identifier(plugin_id) or not isinstance(all_secrets, Mapping):
-        return True
-    prefix = plugin_secret_prefix(plugin_id)
-    return any(isinstance(key, str) and key.startswith(prefix) and len(key) > len(prefix) for key in all_secrets)
 
 
 class BaseIngestor(ABC):
@@ -424,7 +413,7 @@ class BaseIngestor(ABC):
             # the next invocation and makes the failure retry-safe.
             clear_secret_cache()
 
-        if self.scope is not None and not _holds_namespace(self.source_platform, all_secrets):
+        if self.scope is not None and not holds_plugin_namespace(self.source_platform, all_secrets):
             raise WorkspaceCredentialsNotSet(
                 f"No credentials of '{self.source_platform}' are saved in this workspace's secret (no "
                 f"'{plugin_secret_prefix(self.source_platform)}*' keys): save them with "

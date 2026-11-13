@@ -6,8 +6,10 @@ only ever reads and writes its own rows and objects. This module is the one plac
 * ``WorkspaceScope``: a verified workspace. Made only from what the server trusts: the request's resolved
   membership (``scope_of``, after shared/workspace.py ``resolve_workspace``), an asynchronous message's
   ``workspace_id`` field (``scope_from_message``: SQS bodies, Lambda async payloads, written by our own code from
-  a scope), or a stored partition key (``scope_from_key``: DynamoDB Stream records; ``partition_scope`` for a
-  worker that reads both kinds of row, None for a deployment-wide one). Never from a request field.
+  a scope), a stored partition key (``scope_from_key``: DynamoDB Stream records; ``partition_scope`` for a
+  worker that reads both kinds of row, None for a deployment-wide one), or a stored control-plane routing row
+  (``scope_from_lookup``: a public route's ``FORM#{id}``, a webhook's workspace ``META``, read by
+  shared/workspace_routing.py). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
   ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (the credentials secret's name is
@@ -43,6 +45,7 @@ from shared.dynamo_paging import iter_query
 from shared.workspace_ids import is_workspace_id, ws_key
 
 __all__ = [
+    'FORM_LOOKUP_PREFIX',
     'PARTITION_ATTRIBUTES',
     'WORKSPACE_FIELD',
     'WORKSPACE_KEY_PREFIX',
@@ -62,6 +65,7 @@ __all__ = [
     'partition_scope',
     's3_key',
     'scope_from_key',
+    'scope_from_lookup',
     'scope_from_message',
     'scope_of',
     'scraper_run_pk',
@@ -173,6 +177,31 @@ def scope_from_key(partition_key: object) -> WorkspaceScope:
     if not separator or not rest:
         raise ValueError('not a workspace key')
     return WorkspaceScope(ws)
+
+
+#: The control-plane routing row of voc-workspaces (sort key ``LOOKUP_SORT_KEY``) whose ``workspace_id`` names the
+#: workspace a public entry point belongs to: a feedback form's ``FORM#{id}`` (docs/multi-workspace.md, "Public and
+#: non-user entry points"). The workspace's own ``WS#{ws}`` / ``META`` row (a webhook's) names it by its key.
+FORM_LOOKUP_PREFIX: Final = 'FORM#'
+LOOKUP_SORT_KEY: Final = 'META'
+
+
+def scope_from_lookup(row: object) -> WorkspaceScope:
+    """The scope a STORED control-plane row routes to: a ``FORM#…`` / ``META`` row's ``workspace_id``, or the
+    ``WS#{ws}`` of a workspace's own ``META`` row.
+
+    Only shared/workspace_routing.py calls it, on an item its own GetItem returned (shared/test/test_ws_raw_access.py
+    pins both): a public route's workspace comes from a server-side record, never from what the caller sent.
+    ValueError for any other shape.
+    """
+    if not isinstance(row, Mapping) or row.get('sk') != LOOKUP_SORT_KEY:
+        raise ValueError('not a lookup row')
+    pk = row.get('pk')
+    if isinstance(pk, str) and pk.startswith(FORM_LOOKUP_PREFIX) and pk.partition('#')[2]:
+        return scope_from_message(row)
+    if isinstance(pk, str) and pk.startswith(WORKSPACE_KEY_PREFIX) and '#' not in pk[len(WORKSPACE_KEY_PREFIX):]:
+        return WorkspaceScope(pk[len(WORKSPACE_KEY_PREFIX):])
+    raise ValueError('not a lookup row')
 
 
 def partition_scope(partition_key: object) -> WorkspaceScope | None:

@@ -120,7 +120,7 @@ class TestTheImportTimeContract:
         assert_loading_puts_root_first(_load_fresh_module, restored_sys_path, PLUGINS_ROOT)
 
     def test_exports_the_class_and_the_instrumentation_a_plugin_handler_imports(self):
-        assert base_webhook.__all__ == ['BaseWebhook', 'logger', 'metrics', 'tracer']
+        assert base_webhook.__all__ == ['BaseWebhook', 'delivery_workspace', 'logger', 'metrics', 'tracer']
 
 
 class TestTheClassShape:

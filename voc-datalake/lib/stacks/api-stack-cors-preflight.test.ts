@@ -73,7 +73,7 @@ describe('CORS preflight on exactly the method-bearing resources', () => {
 
   it('keeps the webhook receiver (plugin on) without a preflight', () => {
     const webhook = apiMethods(apiTemplateAllPlugins()).filter((m) => isWebhook(m.path)).map((m) => m.route);
-    expect(webhook).toStrictEqual(['POST /webhooks/github_issues']);
+    expect([...webhook].sort((a, b) => a.localeCompare(b))).toStrictEqual(['POST /webhooks/github_issues', 'POST /webhooks/github_issues/{ws}']);
   });
 
   it('answers every preflight with the gateway MOCK (no compute)', () => {

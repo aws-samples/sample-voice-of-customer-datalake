@@ -118,7 +118,7 @@ describe('VocApiStack authorization invariant', () => {
     });
 
     expect(
-      withWebhook.map((id) => `POST /webhooks/${id}`),
+      withWebhook.flatMap((id) => [`POST /webhooks/${id}`, `POST /webhooks/${id}/{ws}`]),
       'The set of plugins declaring a webhook changed. Webhook methods are unauthenticated by design, '
       + 'so update INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES deliberately rather than widening the assertion.',
     ).toStrictEqual(INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES);

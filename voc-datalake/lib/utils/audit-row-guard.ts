@@ -109,6 +109,8 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // The operator APIs that resolve it too (Run now, scraper runs, the breaker, a workspace's credentials).
   { table: 'workspacesTable', rolePathSuffix: '/IntegrationsLambdaRole', partitionKey: 'AUDIT#WS#*' },
   { table: 'workspacesTable', rolePathSuffix: '/ScrapersLambdaRole', partitionKey: 'AUDIT#WS#*' },
+  // The feedback forms' signed-in routes resolve it too (a workspace's forms; lib/stacks/api-engagement-lambdas.ts).
+  { table: 'workspacesTable', rolePathSuffix: '/FeedbackFormLambdaRole', partitionKey: 'AUDIT#WS#*' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',

@@ -620,6 +620,7 @@ the app pool). Assistant tools on `/participants` (pack `participants`, card-onl
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/webhooks/{plugin}` | Plugin webhook receiver (public) |
+| POST | `/webhooks/{plugin}/{ws}` | A workspace's own receiver of that plugin (public; the workspace's webhook secret; not released yet) |
 
 > `POST /webhooks/github_issues` exists only when `pluginStatus.github_issues` is true. It checks
 > `X-Hub-Signature-256` (HMAC, constant-time), caps bodies at 1 MB, and is throttled 10 rps / 20.

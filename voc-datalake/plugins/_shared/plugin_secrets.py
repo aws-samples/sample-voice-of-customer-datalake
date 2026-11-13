@@ -82,12 +82,22 @@ from shared.exceptions import ConfigurationError, SecretUnreadableError
 from shared.logging import logger
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 
-__all__ = ["filter_plugin_secrets"]
+__all__ = ["filter_plugin_secrets", "holds_plugin_namespace"]
 
 
 def plugin_secret_prefix(plugin_id: str) -> str:
     """The namespace every one of *plugin_id*'s keys carries in the secret."""
     return f"{plugin_id}_"
+
+
+def holds_plugin_namespace(plugin_id: str, all_secrets: object) -> bool:
+    """Whether a secret holds at least one of the plugin's ``<plugin>_<key>`` keys. True for a malformed plugin id
+    and for a secret that is not a JSON object, so ``filter_plugin_secrets`` refuses either as the counted
+    misconfiguration it is (the stored JSON may be any value, whatever ``get_secret`` is annotated with)."""
+    if not is_valid_plugin_identifier(plugin_id) or not isinstance(all_secrets, Mapping):
+        return True
+    prefix = plugin_secret_prefix(plugin_id)
+    return any(isinstance(key, str) and key.startswith(prefix) and len(key) > len(prefix) for key in all_secrets)
 
 
 def filter_plugin_secrets(plugin_id: object, all_secrets: object) -> dict:

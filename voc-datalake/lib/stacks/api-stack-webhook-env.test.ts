@@ -114,6 +114,11 @@ function webhookEnv(): Record<string, unknown> {
   return EnvSchema.parse(webhookFunction()).Properties.Environment.Variables;
 }
 
+/** A REST method's authorization and its integration's URI (an intrinsic; compared as rendered). */
+const MethodSchema = z.object({
+  Properties: z.object({ AuthorizationType: z.string(), Integration: z.object({ Uri: z.unknown() }) }),
+});
+
 /** A function's `Role` is a `Fn::GetAtt` on the role's logical id — element 0. */
 const RoleRefSchema = z.object({
   Properties: z.object({
@@ -140,7 +145,7 @@ const PolicySchema = z.object({
 /** One `Roles` entry of an inline policy, when it is a plain `Ref`. */
 const RoleNameRefSchema = z.object({ Ref: z.string() });
 
-function statementsFor(roleLogicalId: string): { Action?: string | string[]; Resource?: unknown }[] {
+function statementsFor(roleLogicalId: string): { Action?: string | string[]; Resource?: unknown; Condition?: unknown }[] {
   return Object.values(template().findResources('AWS::IAM::Policy'))
     .filter((p) => {
       const parsed = PolicySchema.safeParse(p);
@@ -299,5 +304,77 @@ describe('webhook stage throttle', () => {
       `{"DataTraceEnabled":false,"HttpMethod":"POST","ResourcePath":"/~1webhooks~1${WEBHOOK_PLUGIN_ID}",`
       + '"ThrottlingBurstLimit":20,"ThrottlingRateLimit":10}',
     );
+  });
+
+  it("gives the workspaces' endpoint of that plugin its own rate/burst pair", () => {
+    const settings = JSON.stringify(Object.values(template().findResources('AWS::ApiGateway::Stage'))[0]);
+    expect(settings).toContain(
+      `{"DataTraceEnabled":false,"HttpMethod":"POST","ResourcePath":"/~1webhooks~1${WEBHOOK_PLUGIN_ID}~1{ws}",`
+      + '"ThrottlingBurstLimit":20,"ThrottlingRateLimit":10}',
+    );
+  });
+});
+
+// A workspace's own endpoint, /webhooks/{plugin}/{ws} (docs/multi-workspace.md, "Public and non-user entry points";
+// plugins/_shared/base_webhook.py): public like the deployment's, the workspace read from voc-workspaces' META, the
+// webhook secret from that workspace's own secret, the archive under its own prefix.
+describe("a workspace's webhook endpoint", () => {
+  const roleStatements = () => statementsFor(RoleRefSchema.parse(webhookFunction()).Properties.Role['Fn::GetAtt'][0]);
+
+  it('wires POST /webhooks/{plugin}/{ws} to the same function, with no authorizer', () => {
+    const postOn = (pathPart: string) => {
+      const ids = Object.keys(template().findResources('AWS::ApiGateway::Resource', { Properties: { PathPart: pathPart } }));
+      expect(ids).toHaveLength(1);
+      const methods = Object.values(template().findResources('AWS::ApiGateway::Method', {
+        Properties: { HttpMethod: 'POST', ResourceId: { Ref: ids[0] } },
+      }));
+      expect(methods).toHaveLength(1);
+      return MethodSchema.parse(methods[0]).Properties;
+    };
+    const workspace = postOn('{ws}');
+    const deployment = postOn(WEBHOOK_PLUGIN_ID);
+    expect(workspace.AuthorizationType).toBe('NONE');
+    // The same function behind both routes: one integration URI.
+    expect(JSON.stringify(workspace.Integration.Uri)).toBe(JSON.stringify(deployment.Integration.Uri));
+  });
+
+  it('reads only the routing attributes of WS#* rows of voc-workspaces, and writes none', () => {
+    // IAM, not only the code, keeps a MEMBER# row's email and name out of the webhook's reach.
+    const onWorkspaces = roleStatements().filter((s) => JSON.stringify(s.Resource).includes('Workspaces'));
+    expect(onWorkspaces.map((s) => ({ actions: actionsOf(s), condition: s.Condition })))
+      .toStrictEqual([{ actions: ['dynamodb:GetItem'], condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status', 'secret_status'] },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      } }]);
+  });
+
+  it('grants exactly the attributes the routing read projects', () => {
+    const source = readFileSync(join(__dirname, '..', '..', 'lambda', 'shared', 'workspace_routing.py'), 'utf-8');
+    const declared = /^META_ROUTING_ATTRIBUTES: Final = \(([^)]*)\)/m.exec(source)?.[1] ?? '';
+    expect([...declared.matchAll(/'(\w+)'/g)].map((match) => match[1]))
+      .toStrictEqual(['pk', 'sk', 'status', 'secret_status']);
+  });
+
+  it("reads the workspaces' credentials secrets, and writes none", () => {
+    const onWorkspaceSecrets = roleStatements().filter((s) => JSON.stringify(s.Resource).includes('voc/ws/*'));
+    expect(onWorkspaceSecrets.map(actionsOf)).toStrictEqual([['secretsmanager:GetSecretValue']]);
+    expect(roleStatements().flatMap(actionsOf).filter((a) => a.startsWith('secretsmanager:') && a !== 'secretsmanager:GetSecretValue'))
+      .toStrictEqual([]);
+  });
+
+  it("puts raw objects under one workspace's prefix of its own source only", () => {
+    const workspaceGrants = roleStatements().filter((s) => actionsOf(s).some((a) => a.startsWith('s3:PutObject')))
+      .flatMap(resourcesOf).map((resource) => JSON.stringify(resource)).filter((rendered) => rendered.includes('/ws/'));
+    expect(workspaceGrants.length).toBeGreaterThan(0);
+    // Every one: exactly one workspace id segment (IAM's `*` would also match `/`), then this plugin's raw prefix.
+    for (const rendered of workspaceGrants) {
+      expect(rendered).toContain(`/ws/ws_${'?'.repeat(26)}/raw/${WEBHOOK_PLUGIN_ID}/*`);
+    }
+  });
+
+  it('is handed the workspaces table and the secret prefix', () => {
+    expect(webhookEnv()).toHaveProperty('WORKSPACE_SECRET_PREFIX', 'voc/ws');
+    expect(Object.keys(webhookEnv())).toContain('WORKSPACES_TABLE');
   });
 });

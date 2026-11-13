@@ -106,6 +106,11 @@ reading it:
 | Body at most 1 MB | 413 |
 | `X-Hub-Signature-256` present and equal to `sha256=` + HMAC-SHA256(raw body, secret), constant-time compare | 401 |
 
+In a workspace (multi-workspace, not released yet) the payload URL is
+`<API endpoint>/webhooks/github_issues/{workspace id}`, and the secret, repositories and labels
+are the workspace's own; an unknown workspace or one without a webhook secret answers 401 like
+a bad signature ([plugin-architecture.md](plugin-architecture.md#a-workspaces-webhook-endpoint-not-released-yet)).
+
 Verified deliveries for an unconfigured repository, pull requests, bot comments, deletions,
 `ping` and other events are acknowledged with 200 and dropped. A webhook item and a later poll
 of the same issue share one id, so the processor keeps one item and refreshes it with whichever copy is newer.
