@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
 
 from shared import category_access, methodology
 from shared.api import validate_date_basis
@@ -98,10 +97,9 @@ from shared.prototype_pins import (
     ensure_pin_form,
     inject_pin_widget,
     pin_submit_url,
-    prototype_object_metadata,
     strip_pin_widget,
 )
-from shared.prototypes import prototype_s3_key
+from shared.prototype_versions import put_prototype_html, read_prototype_html
 from shared.timestamps import now_iso
 
 # Environment
@@ -904,37 +902,12 @@ def _put_prototype_html(
 
     A replay may find the object created by an earlier attempt whose DynamoDB
     transaction did not complete. Conditional conflicts therefore read the
-    existing winner instead of assuming the attempted content won.
+    existing winner instead of assuming the attempted content won. The pin submit
+    URL rides as object metadata: the prototype CSP function
+    (lib/utils/prototype-csp.ts) reads it to allow exactly that one connect-src.
     """
-    s3 = _s3()
-    key = prototype_s3_key(project_id, doc_id)
-    # The pin submit URL rides as object metadata: the prototype CSP function
-    # (lib/utils/prototype-csp.ts) reads it to allow exactly that one connect-src.
-    metadata = prototype_object_metadata(doc_id, html, os.environ.get(PIN_SUBMIT_API_BASE_ENV))
-    try:
-        response = s3.put_object(
-            Bucket=SCRATCH_BUCKET,
-            Key=key,
-            Body=html.encode('utf-8'),
-            ContentType='text/html; charset=utf-8',
-            IfNoneMatch='*',
-            Metadata=metadata,
-        )
-    except ClientError as error:
-        code = error.response.get('Error', {}).get('Code')
-        if code not in {'PreconditionFailed', 'ConditionalRequestConflict'}:
-            raise
-        response = s3.head_object(Bucket=SCRATCH_BUCKET, Key=key)
-
-    etag = response.get('ETag')
-    if not etag:
-        raise RuntimeError('S3 did not identify the winning prototype object.')
-
-    identity = {'prototype_etag': etag}
-    version_id = response.get('VersionId')
-    if version_id:
-        identity['prototype_version_id'] = version_id
-    return identity
+    return put_prototype_html(_s3(), SCRATCH_BUCKET, project_id, doc_id, html,
+                              os.environ.get(PIN_SUBMIT_API_BASE_ENV))
 
 
 def _get_prototype_html(project_id: str, doc_id: str) -> str:
@@ -942,8 +915,7 @@ def _get_prototype_html(project_id: str, doc_id: str) -> str:
     feedback-driven regeneration, which needs the prior prototype's content to
     revise rather than start from scratch.
     """
-    obj = _s3().get_object(Bucket=SCRATCH_BUCKET, Key=prototype_s3_key(project_id, doc_id))
-    return obj['Body'].read().decode('utf-8')
+    return read_prototype_html(_s3(), SCRATCH_BUCKET, project_id, doc_id)
 
 
 def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id: str) -> dict | None:

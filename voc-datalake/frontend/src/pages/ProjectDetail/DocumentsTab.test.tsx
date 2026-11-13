@@ -170,6 +170,17 @@ describe('DocumentsTab', () => {
     })
   })
 
+  it('offers an editor Back to the version before a revised prototype', () => {
+    const version = (n: number): ProjectDocument => ({
+      document_id: `prototype-${String(n)}`, document_type: 'prototype', title: `Checkout prototype (v${String(n)})`,
+      base_title: 'Checkout prototype', version: n, content: '<html></html>', prototype_format: 'html',
+      created_at: `2026-09-0${String(n)}T00:00:00Z`,
+    })
+    const v2 = version(2)
+    renderWithRouter(<DocumentsTab {...defaultProps} documents={[version(1), v2]} selectedDoc={v2} />)
+    expect(screen.getByRole('button', { name: 'Back to v1' })).toBeInTheDocument()
+  })
+
   it('keeps a dedicated download affordance for inline JSON prototypes', () => {
     const prototype: ProjectDocument = {
       document_id: 'prototype-json',
@@ -226,6 +237,16 @@ describe('DocumentsTab', () => {
       renderWithRouter(<DocumentsTab {...defaultProps} project={viewerProject} documents={[prototype]} selectedDoc={prototype} />)
       expect(screen.queryByRole('button', { name: /feedback/i })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /Delete document/i })).not.toBeInTheDocument()
+    })
+
+    it('offers no Back to vN on a revised prototype (an editor\'s restore writes a version)', () => {
+      const version = (n: number): ProjectDocument => ({
+        ...mockDoc, document_id: `proto-${String(n)}`, document_type: 'prototype', prototype_format: 'html',
+        title: `Checkout (v${String(n)})`, base_title: 'Checkout', version: n, content: '<!doctype html><html></html>',
+      })
+      const v2 = version(2)
+      renderWithRouter(<DocumentsTab {...defaultProps} project={viewerProject} documents={[version(1), v2]} selectedDoc={v2} />)
+      expect(screen.queryByRole('button', { name: 'Back to v1' })).not.toBeInTheDocument()
     })
   })
 

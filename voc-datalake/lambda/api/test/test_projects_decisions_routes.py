@@ -64,4 +64,4 @@ def test_restoring_a_decision_version_is_refused():
 
     with patch('projects._source_document_item', return_value=DECISION), \
             patch('projects.projects_table'), pytest.raises(ValidationError, match='decisions'):
-        projects.restore_document('proj-123', 'doc_1', 'r1', {})
+        projects.restore_document('proj-123', 'doc_1', 'r1', {}, actor={'sub': 'u1', 'kind': 'user'})

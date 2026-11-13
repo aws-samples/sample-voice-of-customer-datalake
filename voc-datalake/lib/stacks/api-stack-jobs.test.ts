@@ -661,15 +661,20 @@ describe('the private fixture provider', () => {
   });
 });
 
-describe('the document generator knows where a standalone prototype posts its pins', () => {
-  it('holds this RestApi stage base URL, built from the RestApi id alone (no Stage dependency)', () => {
-    const template = apiTemplate();
-    const [restApiId] = Object.keys(template.findResources('AWS::ApiGateway::RestApi'));
-    const env = serviceEnvironment(template, 'voc-job-document-generator');
-    expect(env.PIN_SUBMIT_API_BASE).toStrictEqual({
-      'Fn::Join': ['', [
-        'https://', { Ref: restApiId }, '.execute-api.us-east-1.', { Ref: 'AWS::URLSuffix' }, '/v1',
-      ]],
-    });
-  });
+describe('every writer of prototype objects knows where a standalone prototype posts its pins', () => {
+  // The document generator builds prototypes; the projects API writes versions from
+  // HTML (Back to vN, shared/prototype_versions.py). Both write the object metadata
+  // the prototype CSP function trusts, so both must hold the same base URL.
+  it.each(['voc-job-document-generator', 'voc-projects-api'])(
+    '%s holds this RestApi stage base URL, built from the RestApi id alone (no Stage dependency)',
+    (service) => {
+      const template = apiTemplate();
+      const [restApiId] = Object.keys(template.findResources('AWS::ApiGateway::RestApi'));
+      expect(serviceEnvironment(template, service).PIN_SUBMIT_API_BASE).toStrictEqual({
+        'Fn::Join': ['', [
+          'https://', { Ref: restApiId }, '.execute-api.us-east-1.', { Ref: 'AWS::URLSuffix' }, '/v1',
+        ]],
+      });
+    },
+  );
 });

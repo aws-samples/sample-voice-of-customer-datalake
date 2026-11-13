@@ -317,8 +317,14 @@ export class VocApiStack extends VocStack {
     this.api = gateway.api;
     // A prototype opened standalone posts its pins straight to its own form's
     // public submit route (docs/feedback-forms.md); the generator writes that URL
-    // into the widget and the S3 object metadata the prototype CSP reads.
-    jobs.documentGeneratorLambda.addEnvironment('PIN_SUBMIT_API_BASE', restApiBaseUrl(this, gateway.api));
+    // into the widget and the S3 object metadata the prototype CSP reads. The
+    // projects API writes prototype versions from HTML too (Back to vN,
+    // shared/prototype_versions.py), so it gets the same value, as does its assist
+    // twin (the same function, environment included).
+    const pinSubmitApiBase = restApiBaseUrl(this, gateway.api);
+    for (const fn of [jobs.documentGeneratorLambda, projects.projectsLambda, projects.projectsAssistWorker]) {
+      fn.addEnvironment('PIN_SUBMIT_API_BASE', pinSubmitApiBase);
+    }
     addApiRoutes(this, gateway, {
       ...data, ...engagement, ...assistant, projectsLambda: projects.projectsLambda, radarLambda, engagementLambda,
       webhookPlugins, webhookLambdas,

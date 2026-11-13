@@ -327,19 +327,27 @@ def restore_document_version(table: Any, project_id: str, document: dict, versio
     """A NEW version carrying ``version_id``'s content (history is added to, never rewritten)."""
     document_type = managed_document_type(document)
     if document_type == 'prototype':
-        raise ValidationError('Prototypes are restored through the prototype revision workflow')
+        # The restore route sends a prototype to shared/prototype_versions.restore_prototype_version first
+        # (its HTML is in S3, not in content); this guards any other caller.
+        raise ValidationError('Prototypes are restored through the prototype restore (Back to vN)')
     if document_type is not None:
         return _restore_managed(table, project_id, document_type, document, version_id, body, now=now)
     return _restore_unmanaged(table, project_id, document, version_id, now=now)
 
 
-def _restore_managed(table: Any, project_id: str, document_type: str, document: dict, version_id: str,
-                     body: dict, *, now: str) -> dict:
-    series = _series_documents(table, project_id, document, document_type)
+def restore_rows(table: Any, project_id: str, document: dict, version_id: str) -> tuple[dict, dict]:
+    """``(the version to restore, the series head)`` of a managed ``document``'s series; 404 when
+    ``version_id`` is not a version of it (a prose restore here, a prototype's in shared/prototype_versions.py)."""
+    series = series_versions(table, project_id, document)
     source = next((row for row in series if row.get('document_id') == version_id), None)
     if source is None:
         raise NotFoundError('Version not found')
-    latest = series[0]
+    return source, series[0]
+
+
+def _restore_managed(table: Any, project_id: str, document_type: str, document: dict, version_id: str,
+                     body: dict, *, now: str) -> dict:
+    source, latest = restore_rows(table, project_id, document, version_id)
     content = str(source.get('content') or '')
     if content == (latest.get('content') or ''):
         return {'success': True, 'unchanged': True, 'document': latest}

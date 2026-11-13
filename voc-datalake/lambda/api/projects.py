@@ -133,11 +133,13 @@ from shared.prompts import (
     get_persona_generation_steps,
     get_research_analysis_steps,
 )
+from shared.prototype_pins import PIN_SUBMIT_API_BASE_ENV
+from shared.prototype_versions import PrototypeStore, restore_prototype_version
 from shared.prototypes import prototype_s3_key, prototype_signed_url
 from shared.research_title import research_document_title
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.s3_versions import delete_every_version, delete_every_version_of_keys
-from shared.tables import get_feedback_table, get_jobs_table, get_projects_table
+from shared.tables import get_aggregates_table, get_feedback_table, get_jobs_table, get_projects_table
 from shared.timestamps import now_iso
 
 # The instructions "Copy to Kiro" on a document pastes ahead of that document.
@@ -3129,12 +3131,28 @@ def stored_document_type(project_id: str, document_id: str) -> str | None:
 
 
 @tracer.capture_method
-def restore_document(project_id: str, document_id: str, version_id: str, body: dict) -> dict:
-    """Restore = a new version with an earlier version's content."""
+def restore_document(project_id: str, document_id: str, version_id: str, body: dict, *,
+                     actor: Mapping[str, str]) -> dict:
+    """Restore = a new version with an earlier version's content.
+
+    A prototype's is Back to vN (docs/prototype-builder.md): vN's HTML as a new version
+    with its own pin form (shared/prototype_versions.py; the pin forms live in the
+    aggregates table), recorded ``edited_by`` ``actor``.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     document = _source_document_item(project_id, document_id)
     _refuse_decision_edit(document)
+    if managed_document_type(document) == 'prototype':
+        pins_table = get_aggregates_table()
+        if not pins_table:
+            raise ConfigurationError('Aggregates table not configured')
+        store = PrototypeStore(table=projects_table, pins_table=pins_table, s3=get_s3_client(),
+                               bucket=os.environ.get('RAW_DATA_BUCKET', ''),
+                               api_base=os.environ.get(PIN_SUBMIT_API_BASE_ENV))
+        answer = restore_prototype_version(store, project_id, document, version_id, body, now=now_iso(), actor=actor)
+        # The SPA shows the answered row at once: it needs the fresh signed URL the project read would mint.
+        return {**answer, 'document': _with_signed_prototype_url(dict(answer['document']), project_id)}
     return restore_document_version(projects_table, project_id, document, version_id, body,
                                     now=now_iso())
 

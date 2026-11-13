@@ -378,7 +378,7 @@ class TestManagedRestore:
     def test_a_prototype_is_refused(self):
         with pytest.raises(ValidationError) as caught:
             dh.restore_document_version(_table(), 'p1', {'sk': 'PROTOTYPE#x'}, 'x', {}, now=NOW)
-        assert str(caught.value) == 'Prototypes are restored through the prototype revision workflow'
+        assert str(caught.value) == 'Prototypes are restored through the prototype restore (Back to vN)'
 
     def test_an_unknown_version_is_a_404(self):
         with pytest.raises(NotFoundError) as caught:

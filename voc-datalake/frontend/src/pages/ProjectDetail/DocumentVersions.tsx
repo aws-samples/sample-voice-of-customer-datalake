@@ -11,7 +11,7 @@
  * @module pages/ProjectDetail/DocumentVersions
  */
 import { useId, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Loader2, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -21,7 +21,7 @@ import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import { ContentDiff } from '../../assistant/approvals/previews/DocumentDiffPreview'
 import { projectsApi } from '../../api/projectsApi'
-import { projectKey } from '../../api/projectQueryKeys'
+import { useVersionRestore } from './useVersionRestore'
 import { formatDateTime } from '../../utils/dateUtils'
 import { documentVersionsKey } from './documentEdit'
 import type { DocumentVersion } from '../../api/projectDetailSchema'
@@ -120,19 +120,6 @@ function VersionDialog({ version, current, mode, onClose }: Readonly<{
       </div>
     </ModalShell>
   )
-}
-
-function useVersionRestore(projectId: string, documentId: string, onSelectDoc: (doc: ProjectDocument) => void) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (versionId: string) =>
-      projectsApi.restoreDocumentVersion(projectId, documentId, versionId, crypto.randomUUID()),
-    onSuccess: (restored) => {
-      // The project prefix also covers every versions list of this project.
-      void queryClient.invalidateQueries({ queryKey: projectKey(projectId) })
-      if (restored !== null) onSelectDoc(restored)
-    },
-  })
 }
 
 /**

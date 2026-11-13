@@ -510,7 +510,7 @@ def _tools_call(req_id: Any, params: Mapping[str, Any], row: Mapping[str, Any]) 
         return _response(200, _error(req_id, JSONRPC_INVALID_PARAMS, f'Unknown tool: {str(name)[:64]}'))
     tool, arguments = resolved
     if name != tool.name:
-        # Who still calls an old name before 6.11.00 removes them: the names and the token, never the arguments.
+        # Who still calls an old name before a later release removes them: the names and the token, never the arguments.
         metrics.add_metric(name='ToolCall_legacy_name', unit='Count', value=1)
         logger.info('MCP tool called by its old name', extra={'legacy_name': name, 'tool': tool.name,
                                                                'token_id': row.get('token_id')})

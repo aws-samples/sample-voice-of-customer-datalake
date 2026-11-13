@@ -24,6 +24,7 @@ import { PrototypeView } from './DocumentPrototypeView'
 import { DocumentCoachingNotice } from '../../components/AiCoach/HumanDrivenNotice'
 import DocumentProvenance from '../../components/DocumentCanvas/page/DocumentProvenance'
 import DeleteDocumentButton from '../../components/DocumentCanvas/actions/DeleteDocumentButton'
+import PrototypeBackButton from './PrototypeBack'
 import { useFocusViewActive } from '../../components/DocumentCanvas/page/focusView'
 
 const DocumentPage = lazy(() => import('../../components/DocumentCanvas/page/DocumentPage'))
@@ -169,7 +170,13 @@ function PrototypePane({
       <div className="h-full flex flex-col">
         <div className="flex items-start justify-between mb-4 gap-2">
           <h2 className="text-lg sm:text-xl font-bold tracking-tight text-text-strong min-w-0 break-words">{document.title}</h2>
-          {canEdit ? <DeleteDocumentButton isDeleting={isDeleting} onDeleteDoc={onDeleteDoc} /> : null}
+          {canEdit ? (
+            <div className="flex flex-wrap items-start justify-end gap-2">
+              <PrototypeBackButton projectId={project.project_id} document={document} documents={documents}
+                onSelectDoc={onSelectDoc} />
+              <DeleteDocumentButton isDeleting={isDeleting} onDeleteDoc={onDeleteDoc} />
+            </div>
+          ) : null}
         </div>
         {canEdit ? (
           <DocumentCoachingNotice documentType={document.document_type} title={document.title}

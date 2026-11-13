@@ -922,11 +922,38 @@ function listDocumentVersions(ctx, documentId) {
   return [200, { success: true, managed: false, versions: [current, ...earlier] }];
 }
 
+// shared/prototype_versions._PROTOTYPE_ROW_FIELDS beyond ROW_IDENTITY: what described the version a restore copies.
+const PROTOTYPE_ROW_ONLY = ['job_id', 'revised_from_id', 'revision_feedback'];
+
+/**
+ * Back to vN (shared/prototype_versions.restore_prototype_version): a NEW version from vN's HTML
+ * (inline here: the mock has no S3), recorded `edited_by` the caller. Never "unchanged": a stored
+ * prototype row's `content` is empty on both sides, so the server skips that check.
+ */
+function restorePrototypeVersion(ctx, doc, versionId) {
+  const series = seriesOf(ctx.detail, doc);
+  const source = series.find((d) => d.document_id === versionId);
+  if (!source) return [404, { success: false, error: 'Version not found' }];
+  // prototype_versions._version_html: inline content must be HTML (marked so, or starting like a document).
+  const inline = source.content ?? '';
+  if (inline !== '' && source.prototype_format !== 'html' && !/^\s*<(?:!doctype html|html)/i.test(inline)) {
+    return bad('This prototype is an early screen spec, not HTML, so it cannot be restored. Build a new prototype instead.');
+  }
+  const [latest] = series;
+  const [editId, editIdError] = editIdOf(ctx.body, versionId);
+  if (editIdError) return editIdError;
+  const carried = Object.fromEntries(Object.entries(source).filter(([key]) => !PROTOTYPE_ROW_ONLY.includes(key)));
+  return allocatedManagedVersion(ctx, latest, `restore:${versionId}:${editId}`, null, () => newManagedVersion(ctx, carried, source.content ?? '', {
+    edit_kind: 'restore', edited_from_id: latest.document_id, edited_by: { sub: ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB, kind: 'user' },
+    restored_from_id: versionId, restored_from_version: source.version ?? 1,
+  }));
+}
+
 /** POST …/versions/{version_id}/restore: a NEW version with that version's content. */
 function restoreDocumentVersion(ctx, documentId, versionId) {
   const doc = findDocument(ctx.detail, documentId);
   if (!doc) return [404, { success: false, error: 'Document not found' }];
-  if (doc.document_type === 'prototype') return bad('Prototypes are restored through the prototype revision workflow');
+  if (doc.document_type === 'prototype') return restorePrototypeVersion(ctx, doc, versionId);
   if (VERSIONED_DOC_TYPES.has(doc.document_type)) {
     const series = seriesOf(ctx.detail, doc);
     const source = series.find((d) => d.document_id === versionId);

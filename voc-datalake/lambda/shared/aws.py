@@ -53,6 +53,9 @@ def get_dynamodb_resource():
 # response body to model `NoSuchKey` from, so it raises a bare ClientError with code '404'; only
 # `get_object` raises `NoSuchKey`.
 S3_MISSING_KEY_CODES: Final = frozenset({'404', 'NoSuchKey', 'NotFound'})
+# S3 answers a failed `IfNoneMatch='*'` with one of these: 412 when the object
+# exists, 409 when a concurrent conditional write to the same key is in flight.
+S3_CONDITIONAL_WRITE_CONFLICTS: Final = frozenset({'PreconditionFailed', 'ConditionalRequestConflict'})
 
 
 def is_missing_s3_object(error: Exception) -> bool:

@@ -139,8 +139,9 @@ THIN_ROUTES = [
     ('PUT', '/projects/p1/documents/d1', {'content': 'x', 'edit_kind': 'revise'}, None, 'update_document',
      ('p1', 'd1', {'content': 'x', 'edit_kind': 'revise'}), {'proposal': None}),
     ('GET', '/projects/p1/documents/d1/versions', None, None, 'get_document_versions', ('p1', 'd1'), {}),
+    # A prototype's restore (Back to vN) records who asked.
     ('POST', '/projects/p1/documents/d1/versions/v1/restore', BODY, None, 'restore_document',
-     ('p1', 'd1', 'v1', BODY), {}),
+     ('p1', 'd1', 'v1', BODY), {'actor': ACTOR}),
     ('DELETE', '/projects/p1/documents/d1', None, None, 'delete_document', ('p1', 'd1'), {'actor': ACTOR}),
 ]
 

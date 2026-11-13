@@ -72,7 +72,7 @@ def _versions(document_id: str) -> list[dict]:
 def _restore(document_id: str, version_id: str) -> dict:
     from projects import restore_document
 
-    return restore_document(PROJECT, document_id, version_id, {})
+    return restore_document(PROJECT, document_id, version_id, {}, actor={'sub': 'u1', 'kind': 'user'})
 
 
 class TestAManagedEditIsTheNextVersion:

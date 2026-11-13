@@ -33,7 +33,13 @@ if TYPE_CHECKING:
     from mypy_boto3_s3.type_defs import PutObjectRequestTypeDef
 
 from shared.api import admins_only, api_handler, create_api_resolver
-from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, is_missing_s3_object
+from shared.aws import (
+    S3_CONDITIONAL_WRITE_CONFLICTS,
+    get_dynamodb_resource,
+    get_s3_client,
+    get_sqs_client,
+    is_missing_s3_object,
+)
 from shared.data_version import bump_data_version
 from shared.delete_audit import actor_from_event
 from shared.exceptions import (
@@ -88,10 +94,6 @@ AVAILABLE_BUCKETS = {
 }
 
 # Ingested raw data lives under this prefix and is immutable once written.
-
-# S3 answers a failed `IfNoneMatch='*'` with one of these: 412 when the object
-# exists, 409 when a concurrent conditional write to the same key is in flight.
-_OBJECT_EXISTS_ERROR_CODES = frozenset({'PreconditionFailed', 'ConditionalRequestConflict'})
 
 # Client-facing text for an unexpected failure (#263, after PR #403). Never
 # `str(e)`: `shared/api.py` returns a ServiceError's message verbatim, and boto
@@ -333,7 +335,7 @@ def _put_object(bucket_name: str, key: str, content: str) -> None:
         s3_client.put_object(**request)
     except ClientError as e:
         code = e.response.get('Error', {}).get('Code')
-        if write_once and code in _OBJECT_EXISTS_ERROR_CODES:
+        if write_once and code in S3_CONDITIONAL_WRITE_CONFLICTS:
             raise ConflictError(
                 'Raw data is immutable: an object already exists at this key under raw/'
             ) from e

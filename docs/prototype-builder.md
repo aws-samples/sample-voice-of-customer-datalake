@@ -56,11 +56,10 @@ What exists, read from the code (paths relative to `voc-datalake/`).
   feedback); the SPA reads them with `resolveRevision` (`frontend/src/api/documentLineage.ts`) for the revision
   footer. `GET /projects/{id}/documents/{doc}/versions` lists a prototype's series like any managed series
   (`list_document_versions` in `lambda/shared/document_history.py`; an S3-backed prototype's `content` is empty
-  there, its HTML being in the object). Only the restore,
-  `POST /projects/{id}/documents/{document_id}/versions/{version_id}/restore`, refuses a prototype
-  (`restore_document_version`, same file), and `PUT /projects/{id}/documents/{doc}` refuses a prototype's `content`
-  ("Use the prototype revision workflow", `lambda/api/projects.py`). So there is no "restore an earlier prototype"
-  today: the earlier version stays in the list and can be opened, and a revision can be started from it.
+  there, its HTML being in the object). `PUT /projects/{id}/documents/{doc}` refuses a prototype's `content`
+  ("Use the prototype revision workflow", `lambda/api/projects.py`). Until 6.11.00 the restore,
+  `POST /projects/{id}/documents/{document_id}/versions/{version_id}/restore`, refused a prototype too; since
+  6.11.00 it is Back to vN (part 2, built).
 - **Provenance fields of a series.** Prose versions already record how they were made
   (`lambda/shared/document_history.py`): `edit_kind` (`edit`, `restore`, `revise`), `edited_by` (`{sub, kind}`),
   `edited_from_id`, `restored_from_id`, `restored_from_version`, and for a model-written version `llm_metadata:
@@ -80,10 +79,9 @@ What exists, read from the code (paths relative to `voc-datalake/`).
   `default-src 'none'`, inline script and style only, `img-src data:`, no `connect-src`, `frame-ancestors 'self'`,
   `form-action 'none'` and `sandbox allow-scripts allow-popups` (never `allow-same-origin`). A viewer-response
   CloudFront Function adds one `connect-src`, the full URL of the prototype's own pin-form submit route, and only
-  when the S3 object's metadata names exactly that form. Today that metadata is written by the document generator
-  alone (`prototype_object_metadata`, with `PIN_SUBMIT_API_BASE`, an environment variable only that Lambda has,
-  `lib/stacks/api-stack.ts`); part 2's version from HTML makes the projects Lambda a second writer of it
-  (planned change, [below](#data-model-1)). The in-app frame carries
+  when the S3 object's metadata names exactly that form. That metadata is written by the document generator and,
+  since 6.11.00 (part 2's version from HTML, [below](#data-model-1)), by the projects Lambda, both through
+  `prototype_object_metadata` with their own `PIN_SUBMIT_API_BASE` (`lib/stacks/api-stack.ts`). The in-app frame carries
   the same `sandbox` attribute (`HtmlPrototypeFrame` in `frontend/src/components/PrototypeRenderer.tsx`; pinned by
   `frontend/src/components/PrototypeRenderer.sandbox.test.tsx`).
 - **The page.** In the project's **Documents** tab (`frontend/src/pages/ProjectDetail/DocumentsTab.tsx`) a
@@ -345,23 +343,28 @@ prototype; the assistant offers them no edit (the server refuses one with 403 re
   footer): for a chat draft the editor's instruction; for a feedback draft "Incorporated N pins (k done)". It
   holds no pin text and no model note (the project read returns it to viewers). The per-pin outcomes live in the
   pins themselves (their marks and replies, part 3), not in that string.
-- **Version from HTML** (planned, one server step; the walkthrough save, Back to vN and Apply all use it): from the
-  given HTML, strip the pin widget (`strip_pin_widget`) and every walkthrough marker and block; re-inject the
-  walkthrough (when the version has steps) and the pin widget with the **new** document's pin form id
+- **Version from HTML** (one server step; the walkthrough save, Back to vN and Apply all use it; built in 6.11.00
+  except the walkthrough's part, which comes with part 1): from the given HTML, strip the pin widget
+  (`strip_pin_widget`) and every walkthrough marker and block; re-inject the walkthrough (when the version has
+  steps) and the pin widget with the **new** document's pin form id
   (`inject_pin_widget`); create that form (`ensure_pin_form`); write the object at the new version's key with the
   `pin-submit-url` metadata (`prototype_object_metadata`) using `put_object(IfNoneMatch='*')`, never the duplicate
   route's server-side copy (`_copy_prototype_html` in `lambda/api/projects.py` keeps the source's widget and form
   id). So a restored, applied or walkthrough version's pins land on its own form, never on the version it came
   from. The walkthrough PUT, Apply and the restore are synchronous routes of the projects Lambda, so the step runs
-  there: that Lambda gets `PIN_SUBMIT_API_BASE` (planned; today only the document generator has it,
-  `lib/stacks/api-stack.ts`, pinned by `lib/stacks/api-stack-jobs.test.ts`), with a CDK test that the projects
-  Lambda has it too and with the same value. The projects Lambda then writes object metadata the CloudFront
-  function trusts, so it becomes a second writer of `pin-submit-url` (see [Security boundary](#security-boundary)).
-- **Back to vN** is the existing restore route,
-  `POST /projects/{id}/documents/{document_id}/versions/{version_id}/restore`. Today it refuses a prototype
-  (`restore_document_version` in `lambda/shared/document_history.py`); the plan replaces that refusal with version
-  from HTML: it reads vN's HTML, runs the step, and persists the next version with the fields the prose restore
-  already writes, `edit_kind: restore`, `edited_from_id` (the newest version), `restored_from_id` and
+  there: that Lambda has `PIN_SUBMIT_API_BASE` since 6.11.00, the same value as the document generator's
+  (`lib/stacks/api-stack.ts`, pinned for both by `lib/stacks/api-stack-jobs.test.ts`), as has its assist twin, a
+  separate function whose environment `lib/stacks/api-stack-assist-workers.test.ts` holds equal to the API
+  function's. Built as `version_from_html` in `lambda/shared/prototype_versions.py`, whose write-once put the
+  generator now uses too. The projects Lambda writes object metadata the CloudFront function trusts, so it is a
+  second writer of `pin-submit-url` (see [Security boundary](#security-boundary)). A version made from one of the
+  oldest prototypes, whose HTML is inline in the row's `content`, takes that HTML; an early JSON screen spec has no
+  HTML and is refused (400), and a version whose object is gone is a 404.
+- **Back to vN** (built in 6.11.00) is the existing restore route,
+  `POST /projects/{id}/documents/{document_id}/versions/{version_id}/restore`. It used to refuse a prototype;
+  `restore_document` (`lambda/api/projects.py`) now sends a prototype to version from HTML
+  (`restore_prototype_version`): it reads vN's HTML, runs the step, and persists the next version with the fields
+  the prose restore already writes, `edit_kind: restore`, `edited_from_id` (the newest version), `restored_from_id` and
   `restored_from_version`, plus `edited_by`. The prose restore's no-op check compares `content`, which is empty on
   both rows of an S3-backed prototype, so for prototypes it would always say "unchanged": a prototype skips that
   check, and restoring a version whose HTML matches the newest writes one redundant version (D1 keeps it; nothing
@@ -587,9 +590,9 @@ and assistant listings, so every client and the bundle agree:
   viewer never renders model HTML any other way (no `srcdoc` of a draft, no `blob:` URL). A draft can still
   navigate its own frame; it reaches no one but editors until one applies it.
 - **A second writer of the pin-submit metadata.** The CloudFront function trusts an object's `pin-submit-url`
-  metadata to widen `connect-src` to one submit URL. Today only the document generator writes it; with version from
-  HTML the projects Lambda writes it too (planned), always through `prototype_object_metadata` for the new
-  version's own form and `PIN_SUBMIT_API_BASE`, never from a value in the request. Draft objects carry none.
+  metadata to widen `connect-src` to one submit URL. The document generator writes it, and since 6.11.00 the
+  projects Lambda too (version from HTML), always through `prototype_object_metadata` for the new version's own
+  form and `PIN_SUBMIT_API_BASE`, never from a value in the request. Draft objects (planned) carry none.
 - **The draft summary and per-item notes are model text**: rendered as plain text, capped, never as Markdown links
   or HTML, and read only at EDIT (the draft GET).
 - **Model-written walkthrough blocks.** A model could write walkthrough markers in its HTML to fake steps. Every
@@ -759,6 +762,11 @@ feedback view need nothing from the others).
 4. **Part 1, walkthrough.** Hand-written steps and the runtime first, the assistant's draft second.
 
 The order 4 → 1 → 2 → 3 would ship the demo sooner but write the version-from-HTML piece twice.
+
+**Built so far.** 6.11.00: part 2's first slice, version from HTML and Back to vN (the button on the
+prototype's pane: "Back to v3" on the newest version, "Restore v2" on an older one, editors only), with
+`PIN_SUBMIT_API_BASE` on the projects Lambda. Next in part 2: the drafts job, the draft GET, Apply and Discard, the
+draft CloudFront behaviour and the export's skip of `drafts/`; then the outline, the tools and the chat bubble.
 
 ## Decisions (2026-11-13)
 

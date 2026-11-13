@@ -190,8 +190,9 @@ the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
 6.10.00 renamed every tool to start with its area and split "Revise from comments" out of `generate`.
 `tools/list` shows only the new names. For this release `tools/call` still accepts each old name and runs its
 new tool with the same arguments, the same scope, pin and admin checks, and the same route (`RENAMED` and
-`resolve_tool` in `lambda/shared/mcp_global_tools.py`); the audit log records the new name. **6.11.00 removes
-them**: move clients, skills and saved prompts to the new names now.
+`resolve_tool` in `lambda/shared/mcp_global_tools.py`); the audit log records the new name. **A later release
+removes them** (planned for 6.11.00, still accepted there; the release that removes them says so in its upgrade
+notes): move clients, skills and saved prompts to the new names now.
 
 | Before 6.10.00 | From 6.10.00 |
 |---|---|

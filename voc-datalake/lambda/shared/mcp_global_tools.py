@@ -520,8 +520,8 @@ TOOLS: Final[tuple[GlobalTool, ...]] = tuple(sorted(_CATALOGUE, key=_area_rank))
 TOOLS_BY_NAME: Final[dict[str, GlobalTool]] = {tool.name: tool for tool in TOOLS}
 
 # ── Renamed in 6.10.00 ──────────────────────────────────────────────────────
-#: Each name before 6.10.00 → its tool now. ``tools/call`` still accepts them for this release, never
-#: listed; 6.11.00 removes them (docs/mcp.md → Renamed in 6.10.00).
+#: Each name before 6.10.00 → its tool now. ``tools/call`` still accepts them, never listed; a later
+#: release removes them (docs/mcp.md → Renamed in 6.10.00).
 RENAMED: Final[dict[str, str]] = {
     'search_feedback': 'feedback_search',
     'get_feedback': 'feedback_get',

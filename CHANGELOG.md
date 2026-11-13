@@ -17,6 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.11.00] - 2026-11-13
+
+A prototype can go back to an earlier version in one click (the Prototype builder, part 2's first slice).
+
+### Added
+
+- **Back to vN** on a prototype's pane, for editors: on the newest version it reads "Back to v3", on an older one "Restore v2". One click saves that version's HTML as the next version of the series; nothing is deleted. It uses the existing restore route (`POST /projects/{id}/documents/{document_id}/versions/{version_id}/restore`), which used to refuse a prototype, so API callers and scripts get it too.
+- The restored version gets its own pin form, so a pin left on it lands on it, not on the version it came from. A retried request with the same `edit_id` is the same version. The version records who restored it (`edited_by`) and which version it came from (`restored_from_id`, `restored_from_version`), and is never reported "unchanged". The oldest prototypes, whose HTML is stored in the document itself, are restored too. An early JSON screen spec cannot be (400), and a version whose stored HTML is gone answers 404.
+
+### Changed
+
+- The projects API Lambda (and its assist twin, which shares its environment) gets `PIN_SUBMIT_API_BASE`, the same value as the document generator's, so a restored prototype opened on its own link can post pins.
+
+### Upgrade notes
+
+- Deploy the Api stack and the frontend together: the restore route and the projects Lambda's environment change with the button.
+- The MCP tool names before 6.10.00, and `generate` with `step: revise`, are still accepted in 6.11.00. Their removal, announced for 6.11.00, moves to a later release, whose upgrade notes will say so.
+
 ## [6.10.01] - 2026-11-13
 
 The Prototype builder's spec.

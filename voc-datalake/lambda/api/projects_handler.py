@@ -1136,9 +1136,10 @@ def api_document_versions(project_id: str, document_id: str):
 @app.post("/projects/<project_id>/documents/<document_id>/versions/<version_id>/restore")
 @tracer.capture_method
 def api_restore_document_version(project_id: str, document_id: str, version_id: str):
-    """Restore = a NEW version carrying that version's content; nothing is rewritten."""
+    """Restore = a NEW version carrying that version's content; nothing is rewritten (a prototype: Back to vN)."""
     _require_autonomous_edit_allowed(project_id, document_id)
-    return restore_document(project_id, document_id, version_id, json_object_body(app))
+    return restore_document(project_id, document_id, version_id, json_object_body(app),
+                            actor=actor_from_event(app.current_event.raw_event))
 
 
 @app.delete("/projects/<project_id>/documents/<document_id>")
