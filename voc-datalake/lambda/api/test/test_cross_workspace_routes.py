@@ -91,9 +91,11 @@ from shared.workspace import NOT_FOUND
 
 RESOLVER = 'resolve_workspace'
 RESOLVER_MODULE = 'shared.workspace'
-#: The resolvers a route may call, by the module it imports each from: shared/workspace.py's, and the domain APIs'
-#: wiring of it (shared/request_workspace.py, which resolves first itself: a test below proves it).
-RESOLVERS: dict[str, str] = {RESOLVER: RESOLVER_MODULE, 'request_workspace': 'shared.request_workspace'}
+#: The resolvers a route may call, by the module it imports each from: shared/workspace.py's, the domain APIs'
+#: wiring of it (shared/request_workspace.py), and the MCP credentials' (shared/mcp_workspace_pin.py), each of which
+#: resolves first itself: the tests below prove it.
+RESOLVERS: dict[str, str] = {RESOLVER: RESOLVER_MODULE, 'request_workspace': 'shared.request_workspace',
+                             'pinned_workspace': 'shared.mcp_workspace_pin'}
 MISSING_HEADER = 'The X-Workspace-Id header is required'
 #: Calls that write: one of them before the resolution means the route may act before it knows the workspace.
 WRITE_CALLS = frozenset({'put_item', 'update_item', 'delete_item', 'transact_write_items', 'batch_writer',
@@ -112,6 +114,12 @@ BY_DESIGN: dict[tuple[str, str], str] = {
         [('mcp_tokens_handler.py', route) for route in (
             'GET /connect/tokens', 'GET /connect/tokens/<token_id>', 'DELETE /connect/tokens/<token_id>')],
         "the caller's own MCP tokens, whichever workspace each was minted in (each names it): a person's credentials"),
+    **dict.fromkeys(
+        [('mcp_oauth_consent_routes.py', route) for route in (
+            'GET /connect/oauth/grants', 'DELETE /connect/oauth/grants/<grant_id>')],
+        "the caller's own OAuth sign-ins, whichever workspace each was approved in (each names it)"),
+    ('mcp_oauth_consent_routes.py', 'GET /connect/oauth/consent'): (
+        'what a sign-in request asks for (its client, redirect and scopes), read before the person approves it'),
     ('workspaces_handler.py', 'GET /me/workspaces'): (
         "the caller's own workspaces: one Query of their USER#{sub} partition, before any workspace is chosen"),
     **dict.fromkeys(
@@ -887,6 +895,17 @@ def test_the_shared_request_resolver_resolves_first():
     assert ast.unparse(guard) == 'if not _names_a_workspace(event):\n    return None'
     function.body = [docstring, *rest]
     assert 'request_workspace' in resolving_functions(tree)[0]
+
+
+def test_the_mcp_credentials_resolver_resolves_first():
+    """shared/mcp_workspace_pin.py ``pinned_workspace`` counts as a resolver: its first statement calls
+    ``request_workspace`` (imported from its own module), so the detector finds it resolving first, and would not if
+    that call went."""
+    tree = ast.parse((API_DIR.parent / 'shared' / 'mcp_workspace_pin.py').read_text(encoding='utf-8'))
+    assert 'pinned_workspace' in resolving_functions(tree)[0]
+    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'pinned_workspace')
+    function.body = [function.body[0], ast.Return(value=ast.Constant(value=None))]
+    assert 'pinned_workspace' not in resolving_functions(tree)[0]
 
 
 def test_a_route_calling_the_shared_resolver_resolves_the_workspace():

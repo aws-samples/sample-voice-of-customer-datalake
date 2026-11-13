@@ -37,6 +37,7 @@ from moto_helpers import rest_event
 
 import mcp_tokens_handler as h
 from shared import mcp_global_tokens as gt
+from shared import mcp_workspace_pin
 from shared.project_access import Caller
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 
@@ -747,7 +748,7 @@ def test_a_token_minted_inside_a_workspace_records_it(world, monkeypatch):
         asked.append(options)
         return context
 
-    monkeypatch.setattr(h, 'request_workspace', resolved)
+    monkeypatch.setattr(mcp_workspace_pin, 'request_workspace', resolved)
     minted = world.mint('alice', scope='read')
     assert _row(world, minted['token_id'])[gt.WORKSPACE_ATTRIBUTE] == ws
     assert minted['workspace_id'] == ws
@@ -756,7 +757,7 @@ def test_a_token_minted_inside_a_workspace_records_it(world, monkeypatch):
 
 
 @pytest.mark.parametrize(('groups', 'status', 'error'), [
-    ('platform-admins', 403, h.NOT_A_MEMBER),
+    ('platform-admins', 403, mcp_workspace_pin.NOT_A_MEMBER),
     ('admins', 404, 'Workspace not found'),
     ('users', 404, 'Workspace not found'),
 ], ids=['platform-admin', 'deployment-admin', 'anyone-else'])
@@ -767,7 +768,7 @@ def test_a_non_member_cannot_mint_a_token_for_the_workspace(world, monkeypatch, 
     def not_a_member(_event, _public_error, **_options):
         raise NotFoundError('Workspace not found')
 
-    monkeypatch.setattr(h, 'request_workspace', not_a_member)
+    monkeypatch.setattr(mcp_workspace_pin, 'request_workspace', not_a_member)
     claims = {**world.claims('alice'), 'cognito:groups': groups}
     event = rest_event('POST', '/connect/tokens', claims=claims, body={'name': 'x', 'scope': 'read'})
     response = h.lambda_handler(event, world.context)

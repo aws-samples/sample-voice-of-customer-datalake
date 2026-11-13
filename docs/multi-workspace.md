@@ -167,16 +167,17 @@ and each domain Lambda answers it exactly as it answers the caller's own request
 404). So a route that moves into its workspace keeps working for the assistant. Plan steps carry it too (since
 6.18.00): the approval's `X-Workspace-Id` is kept on the plan (one that is not a workspace id is the one 404) and each step names it to the
 domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). And the global
-MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`, resolved
-fresh by `lambda/shared/request_workspace.py`, with the minter's own membership: a platform admin who is not a member
-gets 403, "add yourself as a member first", since the token's calls carry no group) pins it on its row (`workspace`, `lambda/shared/mcp_global_tokens.py`
+MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`), and an
+OAuth sign-in approved inside one (`POST /connect/oauth/consent`, the grant row), each resolved fresh by
+`lambda/shared/mcp_workspace_pin.py` with the person's own membership (a platform admin who is not a member gets 403,
+"add yourself as a member first", since the credential's calls carry no group), pins it on its row (`workspace`, `lambda/shared/mcp_global_tokens.py`
 `token_workspace`), and every call the endpoint delegates sends it as `X-Workspace-Id` (`lambda/shared/mcp_delegate.py`
 `build_proxy_event`), from the row, never from the MCP request; a token minted with no workspace sends none, as
 before. A delegated credential has no membership of its own: `lambda/shared/workspace.py` resolves the person it
 acts for (`member_subject`: the minter; an agent's owner too, once agent runs carry a workspace), so removing the minter from the workspace stops
 the token there (the one 404), and it acts at most as an `editor` (an admin's credential administers nothing, as for
-projects). The token list, detail and revoke stay the person's own, across the workspaces their tokens name. A token
-from an OAuth sign-in is still the deployment's (its consent route moves with phase 3's OAuth slice).
+projects). The token and sign-in lists, detail and revoke stay the person's own, across the workspaces their
+credentials name (each names its `workspace_id`).
 
 ## Roles
 

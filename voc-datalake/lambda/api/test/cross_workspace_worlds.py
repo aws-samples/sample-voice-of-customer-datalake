@@ -23,12 +23,14 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlencode
 
 import boto3
 from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
 from shared.test.cognito_doubles import live_cognito
+from shared.test.mcp_oauth_fixtures import CLIENTS, WEB_CALLBACK, oauth_env
 
 WS_A = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 WS_B = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
@@ -236,6 +238,7 @@ def settings_world(lambda_context: Any) -> Generator[World]:
 @contextmanager
 def tokens_world(lambda_context: Any) -> Generator[World]:
     import mcp_tokens_handler
+    from shared import mcp_oauth_consent_routes, mcp_oauth_routes
     from shared.indexes import PROJECTS_BY_TYPE_INDEX
 
     with ExitStack() as stack:
@@ -245,7 +248,18 @@ def tokens_world(lambda_context: Any) -> Generator[World]:
         stack.enter_context(patch.object(mcp_tokens_handler, 'get_projects_table', return_value=projects))
         stack.enter_context(patch.object(mcp_tokens_handler, 'get_jobs_table', return_value=jobs))
         stack.enter_context(patch.dict(mcp_tokens_handler._index_state, {'complete': False}))
+        # The OAuth consent routes (the same Lambda): the deployment's OAuth configuration and the same tables.
+        stack.enter_context(oauth_env())
+        for module in (mcp_oauth_consent_routes, mcp_oauth_routes):
+            stack.enter_context(patch.object(module, 'get_projects_table', return_value=projects))
+            stack.enter_context(patch.object(module, 'get_jobs_table', return_value=jobs))
         yield World(call=_caller(mcp_tokens_handler, lambda_context), doubles={'cognito': cognito})
+
+
+#: A sign-in request of the deployment's web client (shared/test/mcp_oauth_fixtures.py): the same in every workspace.
+_AUTHORIZE_QUERY = urlencode({'response_type': 'code', 'client_id': CLIENTS['web'], 'redirect_uri': WEB_CALLBACK,
+                              'state': 'client-state', 'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+                              'code_challenge_method': 'S256'})
 
 
 _MEMBER_IDS = {'A': {'sub': 'sub-vic'}, 'B': {'sub': f'sub-{B_MARK}-bo'}, UNKNOWN: {'sub': 'sub-nobody'}}
@@ -270,6 +284,7 @@ WORLDS: dict[str, Callable[[Any], Any]] = {
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
+    'mcp_oauth_consent_routes.py': tokens_world,
 }
 
 #: (handler file, "METHOD /path") -> how to call it: exactly the workspace-scoped routes.
@@ -307,6 +322,13 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the token is new, the workspace is the header: check 1 (minted inside it, the token acts there)',
         body={'name': 'laptop', 'scope': 'read'}, ok_status=200,
         literals={'laptop': 'a name the person typed for their token', 'read': 'a token scope, the same everywhere'},
+        without_a_workspace=_AS_BEFORE),
+    ('mcp_oauth_consent_routes.py', 'POST /connect/oauth/consent'): RouteCase(
+        no_ids='the sign-in request is a client of the deployment, the workspace is the header: check 1 (approved '
+               'inside it, the sign-in acts there)',
+        body={'authorize_query': _AUTHORIZE_QUERY, 'scope': 'read'},
+        literals={_AUTHORIZE_QUERY: "a sign-in request of the deployment's web client, the same in every workspace",
+                  'read': 'a token scope, the same everywhere'},
         without_a_workspace=_AS_BEFORE),
     ('settings_handler.py', 'GET /settings/brand'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own brand)',

@@ -214,13 +214,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /logs/system/request',
         'GET /logs/validation',
     }),
-    # A consented grant pins one workspace.
-    'mcp_oauth_consent_routes.py': frozenset({
-        'DELETE /connect/oauth/grants/<grant_id>',
-        'GET /connect/oauth/consent',
-        'GET /connect/oauth/grants',
-        'POST /connect/oauth/consent',
-    }),
     # A token is minted inside a workspace and pins it.
     'memory_handler.py': frozenset({
         'GET /memory',

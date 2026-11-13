@@ -52,10 +52,9 @@ from shared.exceptions import (
 from shared.logging import logger, tracer
 from shared.mcp_oauth_config import token_minting_enabled
 from shared.mcp_oauth_consent_routes import oauth_summary
-from shared.platform_admin import is_platform_admin
+from shared.mcp_workspace_pin import pinned_workspace
 from shared.project_access import Caller
 from shared.request_body import json_object_body
-from shared.request_workspace import request_workspace
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
 from shared.tables import configured_table, get_jobs_table, get_projects_table
 from shared.warm_init import warm_at_init
@@ -75,9 +74,7 @@ app.include_router(mcp_oauth_consent_routes.app)
 
 #: A mint whose workspace could not be resolved (a DynamoDB fault).
 FAILED_MINT = 'Failed to create the token'
-#: A platform admin who is not a member: they may enter the workspace, but a token acts as a member only.
-NOT_A_MEMBER = ('Only a member of an existing workspace can create a token for it: open the workspace from your '
-                'list and add yourself as a member first')
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -255,16 +252,9 @@ def mint_token():
     caller = _caller()
     if not token_minting_enabled():
         raise AuthorizationError(MINTING_DISABLED)
-    # A token minted inside a workspace acts there, as its minter (their membership is checked on every call); one
-    # minted with no workspace stays the deployment's, as before. Resolved fresh (a removed member cannot mint
-    # there) and without a platform admin's elevation: the token's calls carry no group, so only a member's works.
-    event = app.current_event.raw_event
-    try:
-        context = request_workspace(event, FAILED_MINT, fresh=True, elevate=False)
-    except NotFoundError as exc:
-        if is_platform_admin(event):
-            raise AuthorizationError(NOT_A_MEMBER) from exc
-        raise
+    # A token minted inside a workspace acts there, as its minter (shared/mcp_workspace_pin.py); one minted with no
+    # workspace stays the deployment's, as before.
+    workspace = pinned_workspace(app.current_event.raw_event, FAILED_MINT)
     body = json_object_body(app)
     now = _now()
     name = _token_name(body)
@@ -292,11 +282,11 @@ def mint_token():
     }
     if project_id:
         item['project_id'] = project_id
-    if context is not None:
-        item[gt.WORKSPACE_ATTRIBUTE] = context.ws
+    if workspace is not None:
+        item[gt.WORKSPACE_ATTRIBUTE] = workspace
     _put_with_creator_index(item)
     logger.info('Minted global MCP token', extra={'token_id': minted.token_id, 'scope': scope,
-                                                  'pinned': bool(project_id), 'in_workspace': context is not None})
+                                                  'pinned': bool(project_id), 'in_workspace': workspace is not None})
     # The one and only time the raw credential leaves this service.
     return {'token': minted.raw, **gt.token_view(item, now)}
 
