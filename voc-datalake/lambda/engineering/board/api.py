@@ -50,7 +50,7 @@ from engineering.knowledge.store import PackError
 from engineering.knowledge.workspaces import ROOT
 from engineering.quality_gate.text import redact
 from engineering.workspace.layout import LayoutError
-from shared.logging import logger
+from shared.logging import logger, metrics
 
 BOARD_SOURCE = 'voc.engineering/board'
 MAX_TITLE = 200
@@ -412,6 +412,7 @@ def _from_environment() -> BoardApi:
                     knowledge=knowledge)
 
 
+@metrics.log_metrics   # (the workspace store's count of denied reads taken as missing, from `knowledge`)
 def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
     global _api   # the warm container's clients, built once
     try:

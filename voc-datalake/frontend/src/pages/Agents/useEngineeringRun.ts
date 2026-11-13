@@ -2,8 +2,9 @@
  * @fileoverview The run monitor's reads and actions (api/engineeringRunsApi.ts).
  *
  * The overview, the board and the conversation are polled every {@link ENGINEERING_POLL_MS} while the run has not
- * ended, the report index (while its panel is open) every {@link REPORTS_POLL_MS}. Polling is the fallback the plan names (v3 4.10): the push over the sample's AppSync Events channels is a
- * later item. The conversation is read from where the last page left off (`after = next_after`), and each page is
+ * ended; the report index every {@link REPORTS_POLL_MS} (read only while the Reports panel that uses it is
+ * mounted). Polling is the fallback the plan names (v3 4.10): the push over the sample's AppSync Events channels is
+ * a later item. The conversation is read from where the last page left off (`after = next_after`), and each page is
  * merged into what is known by seq, so the window the server re-reads at the tail keeps each message once.
  *
  * @module pages/Agents/useEngineeringRun
@@ -85,14 +86,23 @@ export function useEngineeringReports(runId: string, live: boolean) {
     queryKey: engineeringRunsKeys.reports(runId),
     queryFn: () => engineeringRunsApi.reports(runId),
     enabled: useEnabled(runId),
+    retry: retryOnceUnlessNotFound,
     refetchInterval: pollWhile(live, REPORTS_POLL_MS),
   })
 }
 
-/** What an admin's action changes in the run's reads (the overview's signals, the conversation): read again. */
+/**
+ * What an admin's action changes in the run's reads (the agents' statuses, the board, the conversation that records
+ * it): read again. Never the reports: a signal or an answer writes none, and a version once read never changes.
+ */
 function useRefreshRun(runId: string): () => void {
   const queryClient = useQueryClient()
-  return () => { void queryClient.invalidateQueries({ queryKey: engineeringRunsKeys.run(runId) }) }
+  const keys = [engineeringRunsKeys.overview(runId), engineeringRunsKeys.board(runId), engineeringRunsKeys.conversation(runId)]
+  return () => {
+    for (const queryKey of keys) {
+      void queryClient.invalidateQueries({ queryKey })
+    }
+  }
 }
 
 /** An admin's signal to the run or to an agent on a task. */

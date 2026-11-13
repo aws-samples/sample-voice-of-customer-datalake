@@ -213,6 +213,23 @@ describe('an admin acts on the run', () => {
     expect(await screen.findByText('Sent. fixer-1: Pause requested')).toBeInTheDocument()
   })
 
+  it('reads the run again after a signal, but not its reports (a signal writes none)', async () => {
+    const reads = vi.fn(() => ({ items: [] }))
+    routes({
+      [`POST ${BASE}/signals`]: () => ({ signal: { event_id: 'e', signal: 'save', agents: {}, applied: {} } }),
+      [`GET ${BASE}/reports`]: reads,
+    })
+    renderRun()
+    await userEvent.click(await screen.findByRole('tab', { name: /Reports/ }))
+    await screen.findByText('No report has been written yet.')
+    const overviewReads = () => fetchApi.mock.calls.filter(([endpoint]) => endpoint === BASE).length
+    const before = overviewReads()
+    const run = screen.getByRole('group', { name: 'The whole run' })
+    await userEvent.click(within(run).getByRole('button', { name: 'Save — The whole run' }))
+    await waitFor(() => expect(overviewReads()).toBeGreaterThan(before))
+    expect(reads.mock.calls).toHaveLength(1)
+  })
+
   it('says which agents a signal did nothing to', async () => {
     const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'resume', agents: { 'fixer-1': 'working' }, applied: { 'fixer-1': false } } }))
     routes({ [`POST ${BASE}/signals`]: signal })

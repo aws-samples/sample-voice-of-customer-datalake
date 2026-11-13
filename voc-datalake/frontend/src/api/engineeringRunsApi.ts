@@ -97,7 +97,7 @@ const MessageSchema = z.object({
 })
 export type ConversationMessage = z.output<typeof MessageSchema>
 
-/** The report levels, in the order the monitor lists them (`engineering/workspace/layout.py` REPORT_LEVELS). */
+/** The report levels (`engineering/workspace/layout.py` REPORT_LEVELS), in the order the monitor lists them: its own. */
 export const REPORT_LEVELS = ['goal', 'pr', 'commit'] as const
 
 const ReportEntrySchema = z.object({ level: z.string().min(1), subject: z.string().min(1), latest_version: z.number().int().min(1) })
@@ -148,7 +148,6 @@ export function parseConversationPage(raw: unknown, after: number): Conversation
 }
 
 export const engineeringRunsKeys = {
-  run: (runId: string) => ['engineering-runs', runId] as const,
   overview: (runId: string) => ['engineering-runs', runId, 'overview'] as const,
   board: (runId: string) => ['engineering-runs', runId, 'board'] as const,
   conversation: (runId: string) => ['engineering-runs', runId, 'conversation'] as const,

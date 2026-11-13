@@ -5,7 +5,7 @@ The bucket is private and encrypted by default (the CDK stack); a write never ov
 writer cannot replace what the first one wrote. S3's 409 ``ConditionalRequestConflict`` (another conditional write
 to the same key still in flight) is not "already exists": the write is tried again after a short wait, and the
 conflict raised as it came after the last try. A read longer than ``MAX_READ_BYTES`` is cut, and the cut is logged with the object's
-size.
+size. A reader without ListBucket may take a denied read as missing; each one is logged and counted.
 """
 from __future__ import annotations
 
@@ -15,9 +15,11 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from shared.logging import logger
+from shared.logging import logger, metrics
 
 MAX_READ_BYTES = 4 * 1024 * 1024
+#: The count of reads a ``denied_is_missing`` reader took as missing after S3 denied them (the shared namespace).
+DENIED_AS_MISSING_METRIC = 'EngineeringWorkspaceDeniedReads'
 _EXISTS = frozenset({'PreconditionFailed', '412'})
 _IN_FLIGHT = frozenset({'ConditionalRequestConflict', '409'})
 #: How many times a write meeting another conditional write in flight is tried.
@@ -39,7 +41,7 @@ class WorkspaceStore:
                  sleep: Callable[[float], None] = time.sleep) -> None:
         """``denied_is_missing``: a reader whose role may read every key it asks for but holds no unconditioned
         ``s3:ListBucket`` (S3 then answers a missing key 403, not 404) reads a denied object as missing, and logs
-        each such read (a KMS or policy denial looks the same). ``sleep``:
+        and counts each such read (``DENIED_AS_MISSING_METRIC``: a KMS or policy denial looks the same). ``sleep``:
         the wait between a write's tries (a test's records them)."""
         self.s3 = s3
         self.sleep = sleep
@@ -54,8 +56,10 @@ class WorkspaceStore:
             code = _code(exc)
             if code in self.missing:
                 if code in _DENIED:
-                    # Most likely a missing key, but a KMS or policy denial reads the same: logged, so it shows.
+                    # Most likely a missing key, but a KMS or policy denial reads the same: logged and counted, so
+                    # a broken policy shows as a rising count rather than as reports quietly missing their parts.
                     logger.warning('workspace: a denied read taken as missing', extra={'key': key, 'code': code})
+                    metrics.add_metric(name=DENIED_AS_MISSING_METRIC, unit='Count', value=1)
                 return None
             if code == 'InvalidRange':   # an empty object: S3 has no byte 0 to range over
                 return ''

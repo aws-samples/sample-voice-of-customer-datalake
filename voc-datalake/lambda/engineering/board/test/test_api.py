@@ -227,6 +227,15 @@ def test_the_handler_takes_the_caller_from_iam_only(bus: Bus, monkeypatch: pytes
     assert bus.types() == ['task.posted', 'task.posted']
 
 
+def test_the_handler_flushes_its_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    """(the workspace store's count of denied reads taken as missing, from the knowledge op)"""
+    monkeypatch.setenv('AGENT_ROLE_NAME_PATTERN', PATTERN)
+    flushed: list[bool] = []
+    monkeypatch.setattr(api_module.metrics.provider, 'flush_metrics', lambda *_a, **_k: flushed.append(True))
+    assert handler({'body': '{}'}, MagicMock(invoked_function_arn=''))['statusCode'] == 403
+    assert flushed == [True]
+
+
 def test_a_plain_body_is_taken_as_it_is() -> None:
     assert api_module._raw_body({'body': '{}'}) == '{}'
     assert api_module._raw_body({'body': '//4=', 'isBase64Encoded': True}) is None   # not UTF-8

@@ -363,7 +363,9 @@ What exists:
   task's history; a result key a move records must be one of the caller's own workspace objects of the lease's attempt.
 - **The workspace** (`workspace/`): the key layout below, voc-finding/1 shard lines (`workspace/findings.py`: a line
   off the schema is skipped and counted; credential-shaped strings and personal data are redacted) and the store
-  (bounded reads, create-only writes). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
+  (bounded reads, a cut read logged; create-only writes; its readers without ListBucket, the report builder, the
+  Agents API and the board's `knowledge`, take a denied read as missing, and each such read is logged and counted
+  as the `EngineeringWorkspaceDeniedReads` metric, so a broken policy shows as a rising count). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
   encrypted with the stack's key, versioned, access-logged, kept under `-c protectData`), where nothing expires
   until a retention that writes its `AUDIT#delete` row exists (*planned*; "The workspace" further down this
   section). Nothing writes agents' objects there yet: the runtime's agent roles write
