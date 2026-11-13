@@ -4,7 +4,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { buildPrompt, capDiff, chooseRunner, KINDS, KIRO_READ_SETTINGS, onPath, parseVerdict, runnerCommand, SECRET_PATHS } from './lib.mjs'
+import { buildPrompt, capDiff, chooseRunner, KINDS, KIRO_READ_SETTINGS, KIRO_WRITE_RULES, KIRO_WRITE_SETTINGS, onPath, parseVerdict, runnerCommand, SECRET_PATHS } from './lib.mjs'
 import { isCi, kindFromArgs } from './review.mjs'
 
 const ROOT = join(import.meta.dirname, '..', '..')
@@ -294,19 +294,20 @@ test('both Kiro review agents can read only inside the repository, and trust not
     const config = JSON.parse(readFileSync(join(ROOT, `.kiro/agents/${agent}.json`), 'utf8'))
     assert.deepEqual(config.tools, ['read', 'thinking'], agent)
     assert.deepEqual(config.allowedTools, ['thinking'], agent)
-    assert.deepEqual(config.toolsSettings, {
-      fs_read: { allowedPaths: ['./**'], deniedPaths: SECRET_PATHS.map((glob) => `**/${glob}`) },
-    }, agent)
+    assert.deepEqual(config.toolsSettings, KIRO_READ_SETTINGS.toolsSettings, agent)
     // kiro-cli V3 reads ONLY `permissions` (it ignores toolsSettings): the same allow + deny, one rule each.
     assert.deepEqual(config.permissions, KIRO_READ_SETTINGS.permissions, agent)
     assert.equal(config.prompt, `file://./prompts/${agent}.md`)
   }
 })
 
-test('every Kiro agent in the repository that may read files is denied the secret-shaped paths', () => {
-  // Under kiro-cli V3 a deny always wins over an allow, so this one rule keeps .env, keys and credentials out of
-  // every agent (the hook reviewers allowed fs_read with no path limit and denied nothing before 7.00.01).
-  const deny = KIRO_READ_SETTINGS.permissions.rules.find((rule) => rule.effect === 'deny')
+// Agents that may skip the read rules, each with its reason. Empty: every agent in .kiro/agents reads files.
+const AGENTS_WITHOUT_FILE_ACCESS = new Map()
+
+test('every Kiro agent in the repository reads (and writes) only the repository, never a secret-shaped path', () => {
+  // Fail closed: EVERY agent carries the exact V3 read rules (deny always wins over allow), unless it is named in
+  // AGENTS_WITHOUT_FILE_ACCESS. Under kiro-cli V3 the hook agents allowed fs_read on the whole disk and denied
+  // nothing before 7.00.01. The rules cover the read and write tools; kiro-cli 3.3.0's grep ignores them (CHANGELOG).
   const dir = join(ROOT, '.kiro/agents')
   const agents = readdirSync(dir).filter((name) => name.endsWith('.json'))
   assert.ok(agents.length >= 6, 'the agents folder was read')
@@ -314,15 +315,20 @@ test('every Kiro agent in the repository that may read files is denied the secre
     const config = JSON.parse(readFileSync(join(dir, name), 'utf8'))
     // A machine-specific upgrade marker invites kiro-cli to regenerate the file (and drop the deny): never committed.
     assert.equal(config.kiroUpgrade, undefined, `${name}: no kiroUpgrade marker is committed`)
-    // Decided from what the agent CAN do (its tools), not from its rules: an agent that lists `read` with no V3 rule
-    // at all is exactly the gap this guards (V3 ignores toolsSettings).
-    const tools = [...(config.tools ?? []), ...(config.allowedTools ?? [])]
+    if (AGENTS_WITHOUT_FILE_ACCESS.has(name)) continue
     const rules = config.permissions?.rules ?? []
-    const reads = tools.some((tool) => ['read', 'fs_read', '*', '@builtin'].includes(tool))
-      || rules.some((rule) => rule.capability === 'fs_read' && rule.effect === 'allow')
-    if (!reads) continue
-    assert.ok(rules.some((rule) => rule.capability === 'fs_read' && rule.effect === 'deny'
-      && deny.match.every((glob) => rule.match?.includes(glob))), `${name} reads files but does not deny every secret path`)
+    const of = (capability) => rules.filter((rule) => rule.capability === capability)
+    // kiro-cli 3.3.0 refuses a secret read through toolsSettings, and V3 documents permissions: both, always.
+    assert.deepEqual(of('fs_read'), KIRO_READ_SETTINGS.permissions.rules, `${name}: the V3 read rules`)
+    assert.deepEqual(config.toolsSettings?.fs_read, KIRO_READ_SETTINGS.toolsSettings.fs_read, `${name}: the read deniedPaths`)
+    // A pre-approved read tool bypassed the deny in kiro-cli 3.3.0 (verified live): reads are approved by the rules.
+    const preapproved = (config.allowedTools ?? []).filter((tool) => ['fs_read', 'read', 'grep', 'glob', '*', '@builtin'].includes(tool))
+    assert.deepEqual(preapproved, [], `${name}: no read tool in allowedTools`)
+    const writes = of('fs_write')
+    if (writes.length > 0) {
+      assert.deepEqual(writes, KIRO_WRITE_RULES, `${name}: the V3 write rules`)
+      assert.deepEqual(config.toolsSettings?.fs_write, KIRO_WRITE_SETTINGS, `${name}: the write deniedPaths`)
+    }
   }
 })
 
