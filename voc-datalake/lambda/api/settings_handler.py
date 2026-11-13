@@ -29,6 +29,7 @@ from shared import (
     briefing_subscription,
     category_access,
     company_context,
+    company_logo,
     design_assets,
     design_icons,
     design_logo,
@@ -1218,10 +1219,10 @@ def _design_names_hidden(reference: dict, hidden: HiddenNames) -> bool:
 # current logo only once the object exists, so an abandoned or failed upload
 # never blanks the logo everyone sees.
 LOGO_URL_TTL_SECONDS = 3600
-LOGO_KEY_ATTR = 'logo_s3_key'
-LOGO_PENDING_KEY_ATTR = 'logo_pending_s3_key'
-# Every logo object key starts with this (company_context.new_id('logo') → logo_…).
-LOGO_KEY_PREFIX = design_references.UPLOAD_PREFIX + 'logo_'
+# The row attributes and key prefix live in shared/company_logo.py (the prototype build reads them too).
+LOGO_KEY_ATTR = company_logo.LOGO_KEY_ATTR
+LOGO_PENDING_KEY_ATTR = company_logo.LOGO_PENDING_KEY_ATTR
+LOGO_KEY_PREFIX = company_logo.LOGO_KEY_PREFIX
 # The logo "Use this logo" stores for the draft: what a PUT may name as ``logo_id``.
 DRAFT_LOGO_ID_RE = re.compile(r'logo_[0-9a-f]{12}\.(png|jpg|webp)')
 

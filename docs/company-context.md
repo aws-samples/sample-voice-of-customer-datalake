@@ -31,6 +31,15 @@ prompt:
   system when none is), sent as `use_design_system` on `POST /projects/{id}/build-prototype` — absent means on,
   so the agents runtime, the assistant and MCP keep reading it. The prototype's "Built from" footer says when it
   was read (`derivation.design_system_included`), and a revision keeps the base build's choice.
+- **The company logo reaches prototypes too** (with the same **Design system** box). When a logo is uploaded, the
+  prompt asks the model to write `<img src="__COMPANY_LOGO__">` wherever the company logo appears, instead of
+  drawing its own; the document generator then replaces that placeholder with the logo itself as a `data:` URL
+  (the prototype CSP allows `img-src data:` only), so the model never sees the image bytes
+  (`lambda/shared/company_logo.py`). The type comes from the file's bytes (PNG, JPEG or WebP). A logo over 1 MB is
+  left out (logged) and the model draws a wordmark as before; so does a build with no logo or with the box
+  unticked. A revision sends the base prototype back with the inlined logo turned into the placeholder again, so
+  the base HTML budget is spent on markup. The document generator role reads `company-context/design/logo_*` only
+  (`s3:GetObject`, VocCoreStack's `CompanyLogoReadPolicy` managed policy, attached in VocApiStack).
 - **Category scope applies to the design system too.** Like the vision and objectives, guideline paragraphs,
   token entries and references whose text names a category the reader may not see are left out
   (`shared.scope_names.scoped_design_system`) — in `GET /settings/design-system` for a restricted caller and in
@@ -68,7 +77,9 @@ sanitised `.svg` beside it), and a website reference's copied icons (everything 
 (`preview_key`, `svg_preview_key`, `icons`) dropped from the row (one idempotent `DeleteObjects`; an S3 failure answers
 503 with the reference already archived, and repeating the DELETE removes it). The logo picker also takes an
 SVG (≤ 1 MB): the browser draws it to a PNG (longest side 1024 px, transparent background) and uploads only that PNG, so
-the API still never receives an SVG; an SVG the browser cannot convert (some browsers refuse one with a
+the API still never receives an SVG. The SVG is loaded into an `<img>` from a `data:image/svg+xml` URL, never a
+`blob:` one: the site's CSP allows `img-src 'self' data:` only, so a blob URL is blocked (before 6.06.00 every SVG
+upload failed that way, reported as unreadable); an SVG the browser cannot convert (some browsers refuse one with a
 `<foreignObject>`, or one without a size) is explained with "export it as PNG and upload that". Figma and GitHub tokens live
 in the Secrets Manager secret `voc/design-integrations-<account>-<region>` (Core stack, KMS, kept on stack deletion unless `-c protectData=false`), JSON
 `{figma_token?, github_token?}`.

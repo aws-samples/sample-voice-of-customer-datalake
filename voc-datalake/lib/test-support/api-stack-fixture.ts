@@ -10,6 +10,7 @@
  * `enabledSources`, `deploymentPrefix` and `brandName`.
  */
 import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
@@ -109,6 +110,9 @@ export function apiStackDependencyProps(
     boardUserPoolClient: boardUserPool.addClient('BoardClient'),
     userPoolDomainPrefix: 'voc-test',
     realtime: { ...fixtureRealtime(deps), realtimeDns: 'fixture0000.appsync-realtime-api.us-east-1.amazonaws.com' },
+    companyLogoReadPolicy: new iam.ManagedPolicy(deps, 'CompanyLogoReadPolicy', {
+      statements: [new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: ['arn:aws:s3:::fixture-raw/company-context/design/logo_*'] })],
+    }),
     identityPool: new cognito.CfnIdentityPool(deps, 'IdentityPool', { allowUnauthenticatedIdentities: false }),
     processingQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/processing`,
     processingQueueArn: `arn:aws:sqs:${env.region}:${env.account}:processing`,
