@@ -1,6 +1,7 @@
 """The voc-skill/1 record: what a skill may hold, bounded, and the fields only a person changes."""
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from typing import Any
 
@@ -8,12 +9,14 @@ import pytest
 
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.skills.model import (
+    MAX_BENCHMARK_BYTES,
     MAX_EXAMPLES,
     MAX_INSTRUCTIONS,
     MAX_RECORD_BYTES,
     PERSON_ONLY_FIELDS,
     RECORD_SCHEMA,
     Benchmark,
+    BenchmarkRun,
     Example,
     Reason,
     Skill,
@@ -136,3 +139,51 @@ def test_a_benchmark_is_two_optional_pass_rates() -> None:
     for bad in (1.5, -0.1, float('nan'), True):
         with pytest.raises(SkillError, match='pass rate'):
             Benchmark(after=bad)
+
+
+RUN_FIELDS: dict[str, Any] = {'before': 0.5, 'after': 1, 'cases': ('slug-cut-bug', 'pagination-review'),
+                              'passed': True, 'reasons': ('no regression',), 'failure_case': 'slug-cut-bug'}
+
+
+def test_a_recorded_benchmark_round_trips() -> None:
+    run = BenchmarkRun(**RUN_FIELDS)
+    assert run.after == 1.0
+    assert BenchmarkRun.from_json(run.to_json()) == run
+    assert run.gained
+    assert not BenchmarkRun(**{**RUN_FIELDS, 'failure_case': ''}).gained   # passed, but no gain was checked
+    assert not BenchmarkRun(**{**RUN_FIELDS, 'passed': False}).gained
+
+
+@pytest.mark.parametrize(('fields', 'message'), [
+    ({'before': None}, 'has both pass rates'),
+    ({'after': 2}, 'a pass rate from 0 to 1'),
+    ({'cases': ()}, 'names 1-100 cases, each once'),
+    ({'cases': ('a', 'a')}, 'each once'),
+    ({'cases': tuple(f'c{n}' for n in range(101))}, 'names 1-100 cases'),
+    ({'cases': ('Not An Id',)}, 'a case id is lower case'),
+    ({'failure_case': 'monorepo-units-bug'}, "the failure's case is one of the benchmark's cases"),
+    ({'reasons': ()}, 'says why in 1-102 reasons'),
+    ({'reasons': ('',)}, "a benchmark's reason is text of 1-400"),
+    ({'reasons': ('r' * 401,)}, "a benchmark's reason is text of 1-400"),
+    ({'cases': tuple(f'{n:02d}' + 'c' * 61 for n in range(100)), 'reasons': ('r' * 400,) * 102, 'failure_case': ''},
+     f'at most {MAX_BENCHMARK_BYTES} bytes'),
+])
+def test_a_recorded_benchmark_is_bounded(fields: dict[str, Any], message: str) -> None:
+    with pytest.raises(SkillError, match=message):
+        BenchmarkRun(**{**RUN_FIELDS, **fields})
+
+
+def test_a_recorded_benchmark_is_measured_as_it_is_stored() -> None:
+    """Non-ASCII text counts its UTF-8 bytes, as the row holds it (never six bytes an escape would take)."""
+    run = BenchmarkRun(**{**RUN_FIELDS, 'reasons': ('é' * 400,) * 45})
+    stored = run.stored_json()
+    assert 'é' in stored
+    assert 36_000 < len(stored.encode('utf-8')) <= MAX_BENCHMARK_BYTES < len(json.dumps(run.to_json()))
+    assert BenchmarkRun.from_json(json.loads(stored)) == run
+
+
+@pytest.mark.parametrize('change', [{'extra': 1}, {'cases': 'slug-cut-bug'}, {'reasons': [1]}, {'passed': 'yes'},
+                                    {'failure_case': None}])
+def test_a_stored_benchmark_is_read_strictly(change: dict[str, Any]) -> None:
+    with pytest.raises(SkillError, match='a recorded benchmark'):
+        BenchmarkRun.from_json({**BenchmarkRun(**RUN_FIELDS).to_json(), **change})

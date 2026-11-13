@@ -23,10 +23,23 @@ skill every connection's agents fall back to) and the agent role::
   aside) that the connection's version adds to the shared skill too; anything else the administrator carries. The
   source is kept only in the version's ``promoted_from`` log row, which only an administrator reads
   (``promotion_source``): the shared version every connection reads does not name another connection.
+- **Benchmark**: an administrator only (what acceptance trusts; the coach would vouch for its own version) records a
+  proposed version's benchmark gate (``BenchmarkRun``: the pass rates before and after, the cases, the verdict and
+  its reasons, the failure's case) on its ``VER#`` row, with who and when, once: the row's ``benchmark_run`` (and
+  ``benchmark_gate``: passed with a gain on a named failure's case) is written only where there is none, in one
+  transaction with its create-only ``LOG#<version>#benchmarked`` row, so a second record is refused (D1). A failed
+  or mis-recorded benchmark makes that version final: it is never accepted, and the coach cannot propose again for
+  the same run and failure kind (its ``RUN#`` row); a new proposal comes from a new failure (another run), or an
+  administrator writes the fix as their own version, which needs no benchmark. The failure's case is the one the
+  administrator who records the benchmark names; nothing ties it to the version's own failure yet (that comes with
+  the coach: its proposal stores the expected case id, and this check compares them). The row with it stays under
+  ``MAX_ITEM_BYTES`` too, checked before it is written.
 - **Accept / reject**: an administrator only. Accepting moves the scope's ``current_version`` to the version in one
   transaction with its status, who and when, and its log row; it is refused when the base is no longer current
   (the scope, or for a connection with no version of its own the shared skill, moved meanwhile), checked before and
-  again inside the transaction. A rejected version stays, as every version does.
+  again inside the transaction. A version an agent (the coach) proposed is accepted only once its recorded
+  benchmark passed with a gain on the failure's case (checked before, and as the transaction's condition); a
+  person's version is accepted as before, measured or not. A rejected version stays, as every version does.
 - **Roll back**: an administrator only, within the version's own scope: a new version restoring an earlier
   accepted one's record, current at once and logged as ``rolled_back``, so the history stays whole.
 - **Read**: ``current`` is the connection's own current version, else the shared skill's, else None (the role runs
@@ -55,13 +68,13 @@ from engineering.rows import get_row, transact_or_refuse
 from engineering.rows import number_value as _number
 from engineering.rows import text_value as _text
 from engineering.skills.diff import Event, SkillDiff, diff, from_json, summary, to_json
-from engineering.skills.model import Benchmark, Reason, Skill, SkillContent, SkillError
+from engineering.skills.model import Benchmark, BenchmarkRun, Reason, Skill, SkillContent, SkillError
 from engineering.workspace.layout import CONNECTION
 from shared.ids import is_key_collision
 
 PROPOSED, ACCEPTED, REJECTED = 'proposed', 'accepted', 'rejected'
-#: The log events beside the statuses: a rollback's new version, and a promoted version's source.
-ROLLED_BACK, PROMOTED_FROM = 'rolled_back', 'promoted_from'
+#: The log events beside the statuses: a rollback's new version, a promoted version's source, a recorded benchmark.
+ROLLED_BACK, PROMOTED_FROM, BENCHMARKED = 'rolled_back', 'promoted_from', 'benchmarked'
 SHARED: Final = ''
 HEAD: Final = 'HEAD'
 #: The bus types a change is announced as, by what happened.
@@ -120,6 +133,38 @@ def item_bytes(item: Mapping[str, Any]) -> int:
 
 
 @dataclass(frozen=True)
+class RecordedBenchmark:
+    """A version's benchmark gate as recorded on it: the run, when, and the person who ran it."""
+
+    run: BenchmarkRun
+    at: str
+    by: str
+    by_kind: str
+
+    def stored_json(self) -> str:
+        """The ``benchmark_run`` attribute's text: UTF-8 JSON, measured as ``BenchmarkRun`` bounds it."""
+        return self.run.stored_json(at=self.at, by=self.by, by_kind=self.by_kind)
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> RecordedBenchmark:
+        own = ('at', 'by', 'by_kind')
+        if not all(isinstance(data.get(name), str) for name in own):
+            raise SkillError('a recorded benchmark says when and who ran it')
+        run = BenchmarkRun.from_json({name: value for name, value in data.items() if name not in own})
+        return cls(run, at=data['at'], by=data['by'], by_kind=data['by_kind'])
+
+
+def _recorded(value: Any) -> RecordedBenchmark | None:
+    text = _text(value)
+    if not text:
+        return None
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise SkillError('a recorded benchmark is an object')
+    return RecordedBenchmark.from_json(data)
+
+
+@dataclass(frozen=True)
 class SkillVersion:
     role: str
     connection: str
@@ -128,6 +173,8 @@ class SkillVersion:
     skill: Skill
     base: SkillRef | None
     reason: Reason
+    #: The pass rates the proposer gave with the proposal: their claim, never measured here. Once ``benchmark_run``
+    #: is recorded, its rates are the ones to trust (``trusted_rates``).
     benchmark: Benchmark
     diff: SkillDiff
     summary: str
@@ -140,6 +187,21 @@ class SkillVersion:
     rejected_at: str = ''
     #: The earlier version a rollback restored (0 for any other version).
     restores: int = 0
+    #: Its benchmark gate, once recorded (``SkillStore.record_benchmark``): authoritative from then on.
+    benchmark_run: RecordedBenchmark | None = None
+
+    @property
+    def trusted_rates(self) -> Benchmark:
+        """The pass rates a reader trusts: the recorded benchmark's once there is one, else the proposer's claim."""
+        recorded = self.benchmark_run
+        return Benchmark(recorded.run.before, recorded.run.after) if recorded else self.benchmark
+
+    @property
+    def benchmark_passed(self) -> bool:
+        """Its recorded benchmark passed with a gain on a named failure's case (``BenchmarkRun.gained``, stored as
+        ``benchmark_gate``, which acceptance's condition tests): what a coach's version needs."""
+        recorded = self.benchmark_run
+        return recorded is not None and recorded.run.gained
 
     @property
     def ref(self) -> SkillRef:
@@ -155,6 +217,7 @@ class SkillVersion:
         try:
             skill = Skill.from_record(json.loads(_text(item.get('record'))))
             change = from_json(json.loads(_text(item.get('diff'))))
+            recorded = _recorded(item.get('benchmark_run'))
         except ValueError as exc:   # json.JSONDecodeError and SkillError are ValueErrors
             raise SkillError(f'a stored version is not a readable skill: {exc}') from exc
         return cls(role=skill.name, connection=_text(item.get('connection')), version=_number(item.get('version')),
@@ -167,7 +230,7 @@ class SkillVersion:
                    proposed_by_kind=_text(item.get('proposed_by_kind')), created_at=_text(item.get('created_at')),
                    accepted_by=_text(item.get('accepted_by')), accepted_at=_text(item.get('accepted_at')),
                    rejected_by=_text(item.get('rejected_by')), rejected_at=_text(item.get('rejected_at')),
-                   restores=_number(item.get('restores')))
+                   restores=_number(item.get('restores')), benchmark_run=recorded)
 
 
 @dataclass(frozen=True)
@@ -224,6 +287,13 @@ def _own_text(change: SkillDiff) -> set[str]:
     texts = [line for op, line in change.instructions if op == '+']
     texts += [part for op, example in change.examples if op == '+' for part in (example.situation, example.action)]
     return {norm for norm in map(_normalised, texts) if len(norm) >= MIN_COPIED_TEXT}
+
+
+def _unmeasured(found: SkillVersion) -> str:
+    """Why a coach's version is not acceptable yet, from its recorded benchmark."""
+    if found.benchmark_run is None:
+        return 'has no recorded benchmark'
+    return 'names no failure case' if found.benchmark_run.run.passed else 'failed its benchmark'
 
 
 def _found(item: dict[str, Any] | None) -> dict[str, Any]:
@@ -437,14 +507,50 @@ class SkillStore:
             item['comment'] = {'S': comment}
         return _put(item, self.table)
 
+    def record_benchmark(self, ws: str, connection: str, role: str, version: int, run: BenchmarkRun,
+                         by: Actor) -> SkillVersion:
+        """Record ``run``, a proposed version's benchmark gate, on its row: once (create-only), with the
+        administrator who ran it and when. ``benchmark_gate`` beside it is what acceptance's condition reads: the
+        gate passed with a gain on a named failure's case (``BenchmarkRun.gained``)."""
+        _admin(by, 'records the benchmark of')
+        key = self._key(ws, connection, role, f'VER#{version:06d}')
+        item = _found(get_row(self.client, self.table, key))
+        found = SkillVersion.from_item(item)
+        if found.benchmark_run is not None:
+            raise SkillConflict(f"version {version}'s benchmark is recorded already: a version is measured once")
+        if found.status != PROPOSED:
+            raise SkillConflict(f'version {version} is {found.status}: only a proposed version is benchmarked')
+        at = self.now().isoformat()
+        value = {'S': RecordedBenchmark(run, at=at, by=by.id, by_kind=by.kind).stored_json()}
+        gate = {'BOOL': run.gained}
+        size = item_bytes({**item, 'benchmark_run': value, 'benchmark_gate': gate})
+        if size > MAX_ITEM_BYTES:
+            raise SkillError(f'the version row with its benchmark would be {size} bytes, over its '
+                             f'{MAX_ITEM_BYTES}-byte cap: record fewer cases or shorter reasons')
+        self._transact([
+            {'Update': {'TableName': self.table, 'Key': key,
+                        'UpdateExpression': 'SET benchmark_run = :run, benchmark_gate = :gate',
+                        'ConditionExpression': '#s = :proposed AND attribute_not_exists(benchmark_run)',
+                        'ExpressionAttributeNames': {'#s': 'status'},
+                        'ExpressionAttributeValues': {':run': value, ':gate': gate,
+                                                      ':proposed': {'S': PROPOSED}}}},
+            self._log(ws, connection, role, version, BENCHMARKED, by, at),
+        ], f"version {version}'s benchmark was recorded, or the version changed, meanwhile: read it again")
+        return self.version(ws, connection, role, version)
+
     def accept_version(self, ws: str, connection: str, role: str, version: int, by: Actor) -> Change:
-        """An administrator accepts a proposed version: it becomes the scope's current one."""
+        """An administrator accepts a proposed version: it becomes the scope's current one. A coach's version is
+        accepted only once its recorded benchmark passed with a gain on the failure's case."""
         _admin(by, 'accepts')
         found = self.version(ws, connection, role, version)
         if found.status == ACCEPTED:
             return Change(found, None)
         if found.status != PROPOSED:
             raise SkillConflict(f'version {version} is {found.status}')
+        coach = found.proposed_by_kind == 'agent'
+        if coach and not found.benchmark_passed:
+            raise SkillConflict(f"version {version} is the coach's and {_unmeasured(found)}: it is accepted only "
+                                "once its benchmark passed, with no regression and a gain on the failure's case")
         resolved = self.resolved(ws, connection, role)
         if resolved != found.base:
             now = _label(resolved, connection) if resolved else 'none'
@@ -462,12 +568,17 @@ class SkillStore:
             head['ExpressionAttributeValues'][':base'] = {'N': str(base.version)}
         else:
             head['ConditionExpression'] = 'attribute_not_exists(current_version)'
+        accept: dict[str, Any] = {
+            'TableName': self.table, 'Key': self._key(ws, connection, role, f'VER#{version:06d}'),
+            'UpdateExpression': 'SET #s = :accepted, accepted_by = :by, accepted_at = :at',
+            'ConditionExpression': '#s = :proposed', 'ExpressionAttributeNames': {'#s': 'status'},
+            'ExpressionAttributeValues': {':accepted': {'S': ACCEPTED}, ':proposed': {'S': PROPOSED},
+                                          ':by': {'S': by.id}, ':at': {'S': at}}}
+        if coach:
+            accept['ConditionExpression'] += ' AND benchmark_gate = :gained'
+            accept['ExpressionAttributeValues'][':gained'] = {'BOOL': True}
         items: list[dict[str, Any]] = [
-            {'Update': {'TableName': self.table, 'Key': self._key(ws, connection, role, f'VER#{version:06d}'),
-                        'UpdateExpression': 'SET #s = :accepted, accepted_by = :by, accepted_at = :at',
-                        'ConditionExpression': '#s = :proposed', 'ExpressionAttributeNames': {'#s': 'status'},
-                        'ExpressionAttributeValues': {':accepted': {'S': ACCEPTED}, ':proposed': {'S': PROPOSED},
-                                                      ':by': {'S': by.id}, ':at': {'S': at}}}},
+            {'Update': accept},
             {'Update': head},
             self._log(ws, connection, role, version, ACCEPTED, by, at),
         ]

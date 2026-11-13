@@ -1,6 +1,7 @@
 """Versioned skills on moto: proposals, an administrator's acceptance, scopes and their fallback, rollbacks."""
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -14,13 +15,22 @@ from engineering.board.test.table import TABLE, engineering_table
 from engineering.bus.schema import TYPES, parse
 from engineering.knowledge.store import Actor
 from engineering.skills import store as skills_store
-from engineering.skills.model import Benchmark, Example, Reason, SkillContent, SkillError
+from engineering.skills.model import (
+    MAX_BENCHMARK_BYTES,
+    Benchmark,
+    BenchmarkRun,
+    Example,
+    Reason,
+    SkillContent,
+    SkillError,
+)
 from engineering.skills.store import (
     ACCEPTED,
     MAX_ITEM_BYTES,
     PROPOSED,
     REJECTED,
     SHARED,
+    RecordedBenchmark,
     SkillConflict,
     SkillForbidden,
     SkillNotFound,
@@ -38,6 +48,13 @@ COACH, MEMBER = Actor('coach-0', 'agent', connection=CONN), Actor('member-sub-2'
 ADMIN = Actor('admin-sub-1', 'person', admin=True)
 WHY = Reason(comment='The first Fixer skill.')
 NO_GO = Reason(RUN, 'no_go', 'The gate caught an untested change.')
+CASES = ('slug-cut-bug', 'duration-hours-feature', 'pagination-review', 'monorepo-units-bug')
+GAINED = BenchmarkRun(before=0.75, after=1.0, cases=CASES, passed=True, failure_case='slug-cut-bug', reasons=(
+    'no regression: the 3 case(s) that passed in the baseline pass in the candidate',
+    "slug-cut-bug, the failure's case, gained: it failed in the baseline and passes in the candidate"))
+REGRESSED = replace(GAINED, after=0.75, passed=False, reasons=(
+    'pagination-review regressed: it passed in the baseline and fails in the candidate',))
+UNNAMED = replace(GAINED, failure_case='')
 
 
 @pytest.fixture
@@ -50,6 +67,11 @@ def shared_v1(store: SkillStore) -> SkillVersion:
     """The shared Fixer skill's first version, accepted."""
     proposed = store.propose_version(WS, SHARED, 'fixer', content(), proposer=ADMIN, reason=WHY, base=None)
     return store.accept_version(WS, SHARED, 'fixer', proposed.version.version, ADMIN).version
+
+
+def measured(store: SkillStore, connection: str, version: int, run: BenchmarkRun = GAINED) -> SkillVersion:
+    """``run`` recorded on the version by an administrator (a passing gate with a gain unless given)."""
+    return store.record_benchmark(WS, connection, 'fixer', version, run, ADMIN)
 
 
 def current_number(store: SkillStore, connection: str = SHARED) -> int:
@@ -216,6 +238,7 @@ def test_a_connection_falls_back_to_the_shared_skill_until_it_has_its_own(store:
     assert store.current(WS, CONN, 'fixer') == v1
     store.propose_version(WS, CONN, 'fixer', stricter(), proposer=COACH, reason=NO_GO, base=v1.ref)
     assert store.current(WS, CONN, 'fixer') == v1   # proposed only
+    measured(store, CONN, 1)
     own = store.accept_version(WS, CONN, 'fixer', 1, ADMIN)
     assert own.announcement is not None
     assert own.announcement.summary.startswith('Fixer rewrote its skill for conn-harbor: shared v1 → v1')
@@ -236,6 +259,7 @@ def test_a_connection_version_written_on_the_shared_skill_is_stale_when_either_m
     store.propose_version(WS, SHARED, 'fixer', content(instructions='Fix it well.'), proposer=MEMBER, reason=WHY,
                   base=v1.ref)
     store.accept_version(WS, SHARED, 'fixer', 2, ADMIN)   # the shared skill moved
+    measured(store, CONN, 1)
     with pytest.raises(SkillConflict, match='was written on shared v1, and shared v2 is current now'):
         store.accept_version(WS, CONN, 'fixer', 1, ADMIN)
     monkeypatch.setattr(SkillStore, 'resolved', lambda *_: v1.ref)   # a pre-check that read before it moved
@@ -263,6 +287,7 @@ def test_a_connection_with_its_own_version_no_longer_takes_one_written_on_the_sh
     v1 = shared_v1(store)
     store.propose_version(WS, CONN, 'fixer', stricter(), proposer=COACH, reason=NO_GO, base=v1.ref)
     store.propose_version(WS, CONN, 'fixer', content(instructions='Fix it.'), proposer=MEMBER, reason=NO_GO, base=v1.ref)
+    measured(store, CONN, 1)
     store.accept_version(WS, CONN, 'fixer', 1, ADMIN)
     with pytest.raises(SkillConflict, match='was written on shared v1, and v1 is current now'):
         store.accept_version(WS, CONN, 'fixer', 2, ADMIN)
@@ -325,6 +350,7 @@ def test_a_rollback_stays_in_its_scope_and_restores_only_an_accepted_version(sto
     store.propose_version(WS, CONN, 'fixer', stricter(), proposer=COACH, reason=NO_GO, base=v1.ref)
     with pytest.raises(SkillConflict, match='never accepted'):
         store.roll_back_to(WS, CONN, 'fixer', 1, ADMIN)
+    measured(store, CONN, 1)
     store.accept_version(WS, CONN, 'fixer', 1, ADMIN)
     with pytest.raises(SkillConflict, match='current already'):
         store.roll_back_to(WS, CONN, 'fixer', 1, ADMIN)
@@ -361,6 +387,7 @@ def test_a_rollback_that_lost_a_race_is_refused(store: SkillStore, monkeypatch: 
 def test_promotion_writes_the_shared_skill_without_the_connection_text(store: SkillStore) -> None:
     v1 = shared_v1(store)
     store.propose_version(WS, CONN, 'fixer', stricter(), proposer=COACH, reason=NO_GO, base=v1.ref)
+    measured(store, CONN, 1)
     source = store.accept_version(WS, CONN, 'fixer', 1, ADMIN).version
     copied = replace(stricter(), examples=content().examples)   # the connection's instruction line, word for word
     with pytest.raises(SkillError, match="written without conn-harbor's text: 1 line"):
@@ -520,12 +547,16 @@ def largest(letter: str, word: str) -> SkillContent:
     return content(instructions='\n'.join([letter * 13] * 500), examples=(Example(word * 600, word * 600),) * 20)
 
 
-def test_the_worst_case_version_row_stays_under_its_cap(store: SkillStore) -> None:
+def worst_version(store: SkillStore) -> SkillVersion:
+    """The largest row a version can need: everything removed and everything added, with the longest comment."""
     proposed = store.propose_version(WS, SHARED, 'fixer', largest('é', 'x'), proposer=MEMBER, reason=WHY, base=None)
     v1 = store.accept_version(WS, SHARED, 'fixer', proposed.version.version, ADMIN).version
-    # Everything removed and everything added, with the longest comment: the largest row a version can need.
-    worst = store.propose_version(WS, SHARED, 'fixer', largest('è', 'y'), proposer=MEMBER,
-                                  reason=Reason(comment='ü' * 2000), base=v1.ref).version
+    return store.propose_version(WS, SHARED, 'fixer', largest('è', 'y'), proposer=MEMBER,
+                                 reason=Reason(comment='ü' * 2000), base=v1.ref).version
+
+
+def test_the_worst_case_version_row_stays_under_its_cap(store: SkillStore) -> None:
+    worst = worst_version(store)
     stored = row(store, '', f'VER#{worst.version:06d}')
     assert len(stored['record']['S'].encode()) > 60_000
     assert worst.diff.count('instructions', '-') == 500
@@ -539,3 +570,160 @@ def test_a_version_row_over_its_cap_is_refused_before_a_number_is_spent(
     with pytest.raises(SkillError, match='over its 500-byte cap'):
         store.propose_version(WS, SHARED, 'fixer', content(), proposer=MEMBER, reason=WHY, base=None)
     assert absent(store, '', 'HEAD')   # no version number spent
+
+
+def coach_version(store: SkillStore) -> SkillVersion:
+    """The coach's version 1 of conn-harbor, written on the shared v1 after a NO-GO."""
+    v1 = shared_v1(store)
+    return store.propose_version(WS, CONN, 'fixer', stricter(), proposer=COACH, reason=NO_GO, base=v1.ref).version
+
+
+def test_a_benchmark_is_recorded_once_on_its_version_with_who_and_when(store: SkillStore) -> None:
+    v1 = shared_v1(store)
+    claimed = store.propose_version(WS, CONN, 'fixer', stricter(), proposer=COACH, reason=NO_GO, base=v1.ref,
+                                    benchmark=Benchmark(0.5, 0.99)).version
+    assert claimed.trusted_rates == Benchmark(0.5, 0.99)   # the proposer's claim, until a benchmark is recorded
+    recorded = measured(store, CONN, 1)
+    assert (recorded.benchmark, recorded.trusted_rates) == (Benchmark(0.5, 0.99), Benchmark(0.75, 1.0))
+    assert recorded.benchmark_run == RecordedBenchmark(GAINED, at=AT.isoformat(), by='admin-sub-1', by_kind='person')
+    assert recorded.benchmark_passed
+    assert recorded.status == PROPOSED   # recording it accepts nothing
+    stored = row(store, CONN, 'VER#000001')
+    assert stored['benchmark_gate'] == {'BOOL': True}
+    assert '"failure_case": "slug-cut-bug"' in stored['benchmark_run']['S']
+    log = row(store, CONN, 'LOG#000001#benchmarked')
+    assert (log['by']['S'], log['at']['S'], log['event']['S']) == ('admin-sub-1', AT.isoformat(), 'benchmarked')
+    assert store.version(WS, CONN, 'fixer', 1) == recorded
+    # Create-only: a second record, even a better one, is refused and changes nothing.
+    with pytest.raises(SkillConflict, match="version 1's benchmark is recorded already") as refused:
+        store.record_benchmark(WS, CONN, 'fixer', 1, REGRESSED, ADMIN)
+    assert refused.value.kind == 'conflict'
+    assert store.version(WS, CONN, 'fixer', 1).benchmark_run == recorded.benchmark_run
+
+
+def test_a_second_record_is_refused_inside_the_transaction_too(store: SkillStore,
+                                                               monkeypatch: pytest.MonkeyPatch) -> None:
+    coach_version(store)
+    measured(store, CONN, 1)
+    monkeypatch.setattr(skills_store, '_recorded', lambda _: None)   # a pre-check that read before the first record
+    with pytest.raises(SkillConflict, match='recorded, or the version changed, meanwhile'):
+        store.record_benchmark(WS, CONN, 'fixer', 1, REGRESSED, ADMIN)
+    monkeypatch.undo()
+    assert store.version(WS, CONN, 'fixer', 1).benchmark_run is not None
+    assert row(store, CONN, 'VER#000001')['benchmark_gate'] == {'BOOL': True}
+
+
+@pytest.mark.parametrize('actor', [COACH, MEMBER])
+def test_only_an_administrator_records_a_benchmark(store: SkillStore, actor: Actor) -> None:
+    coach_version(store)
+    with pytest.raises(SkillForbidden, match='only an administrator records the benchmark of') as refused:
+        store.record_benchmark(WS, CONN, 'fixer', 1, GAINED, actor)
+    assert refused.value.kind == 'forbidden'
+    assert store.version(WS, CONN, 'fixer', 1).benchmark_run is None
+    assert absent(store, CONN, 'LOG#000001#benchmarked')
+
+
+def test_only_a_proposed_version_is_benchmarked(store: SkillStore) -> None:
+    shared_v1(store)
+    with pytest.raises(SkillConflict, match='version 1 is accepted: only a proposed version is benchmarked'):
+        measured(store, SHARED, 1)
+    with pytest.raises(SkillNotFound):
+        measured(store, SHARED, 7)
+
+
+def test_the_coach_version_is_accepted_only_once_its_benchmark_passed_with_a_gain(store: SkillStore) -> None:
+    coach_version(store)
+    with pytest.raises(SkillConflict, match="version 1 is the coach's and has no recorded benchmark") as refused:
+        store.accept_version(WS, CONN, 'fixer', 1, ADMIN)
+    assert refused.value.kind == 'conflict'
+    measured(store, CONN, 1, REGRESSED)
+    with pytest.raises(SkillConflict, match="the coach's and failed its benchmark: it is accepted only once"):
+        store.accept_version(WS, CONN, 'fixer', 1, ADMIN)
+    assert store.version(WS, CONN, 'fixer', 1).status == PROPOSED
+    assert store.current(WS, CONN, 'fixer') == store.version(WS, SHARED, 'fixer', 1)   # still the shared skill
+    # A version measured once stays as measured: the coach writes a new one, which passes this time.
+    again = store.propose_version(WS, CONN, 'fixer', content(instructions='Fix it, then run the suite.'),
+                                  proposer=COACH, reason=Reason(RUN, 'timeout'), base=SkillRef(SHARED, 1)).version
+    measured(store, CONN, again.version, UNNAMED)
+    with pytest.raises(SkillConflict, match='names no failure case'):
+        store.accept_version(WS, CONN, 'fixer', again.version, ADMIN)
+    third = store.propose_version(WS, CONN, 'fixer', content(instructions='Fix it, then run every test.'),
+                                  proposer=COACH, reason=Reason(RUN, 'error'), base=SkillRef(SHARED, 1)).version
+    measured(store, CONN, third.version)
+    accepted = store.accept_version(WS, CONN, 'fixer', third.version, ADMIN)
+    assert accepted.version.status == ACCEPTED
+    assert accepted.announcement is not None
+    assert (accepted.announcement.type, accepted.announcement.to_version) == ('skill.accepted', SkillRef(CONN, 3))
+    assert store.current(WS, CONN, 'fixer') == accepted.version
+    assert accepted.version.benchmark_run == RecordedBenchmark(GAINED, AT.isoformat(), 'admin-sub-1', 'person')
+
+
+@pytest.mark.parametrize('run', [None, REGRESSED, UNNAMED])
+def test_the_benchmark_condition_holds_inside_the_transaction(store: SkillStore, monkeypatch: pytest.MonkeyPatch,
+                                                              run: BenchmarkRun | None) -> None:
+    coach_version(store)
+    if run is not None:
+        measured(store, CONN, 1, run)
+    expected = {'BOOL': False} if run is not None else None
+    assert row(store, CONN, 'VER#000001').get('benchmark_gate') == expected
+    # A pre-check that saw a gain the row does not hold (none recorded, a failed gate, a pass naming no failure
+    # case): the transaction's condition, the stored gate, still refuses.
+    monkeypatch.setattr(SkillVersion, 'benchmark_passed', property(lambda _: True))
+    with pytest.raises(SkillConflict, match='changed meanwhile'):
+        store.accept_version(WS, CONN, 'fixer', 1, ADMIN)
+    monkeypatch.undo()
+    assert store.version(WS, CONN, 'fixer', 1).status == PROPOSED
+
+
+def test_a_version_a_person_wrote_is_accepted_as_before_measured_or_not(store: SkillStore) -> None:
+    v1 = shared_v1(store)
+    store.propose_version(WS, CONN, 'fixer', stricter(), proposer=MEMBER, reason=NO_GO, base=v1.ref)
+    measured(store, CONN, 1, REGRESSED)   # an administrator may still take a person's version that regressed
+    assert store.accept_version(WS, CONN, 'fixer', 1, ADMIN).version.status == ACCEPTED
+    store.propose_version(WS, SHARED, 'fixer', stricter(), proposer=MEMBER, reason=WHY, base=v1.ref)
+    assert store.accept_version(WS, SHARED, 'fixer', 2, ADMIN).version.benchmark_run is None
+
+
+def test_a_benchmark_that_would_take_the_row_over_its_cap_is_refused(store: SkillStore,
+                                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+    coach_version(store)
+    size = item_bytes(row(store, CONN, 'VER#000001'))
+    monkeypatch.setattr(skills_store, 'MAX_ITEM_BYTES', size + 100)
+    with pytest.raises(SkillError, match=f'with its benchmark would be [0-9]+ bytes, over its {size + 100}-byte cap'):
+        measured(store, CONN, 1)
+    monkeypatch.undo()
+    assert store.version(WS, CONN, 'fixer', 1).benchmark_run is None
+    assert absent(store, CONN, 'LOG#000001#benchmarked')
+
+
+def largest_benchmark() -> BenchmarkRun:
+    """A recorded benchmark as large as one may be: 100 cases of the longest ids, and reasons up to the byte bound."""
+    cases = tuple(f'{n:02d}' + 'c' * 61 for n in range(100))
+    reasons = ['r' * 400] * 102
+    while True:
+        try:
+            return BenchmarkRun(before=0.5, after=0.5, cases=cases, passed=True, reasons=tuple(reasons))
+        except SkillError:
+            reasons.pop()
+
+
+def test_the_worst_case_version_row_with_its_benchmark_stays_under_its_cap(store: SkillStore) -> None:
+    worst = worst_version(store)
+    run = largest_benchmark()
+    assert len(run.stored_json().encode('utf-8')) > MAX_BENCHMARK_BYTES - 500
+    longest = Actor('p' * 200, 'person', admin=True)
+    store.record_benchmark(WS, SHARED, 'fixer', worst.version, run, longest)
+    stored = row(store, '', f'VER#{worst.version:06d}')
+    assert 240_000 < item_bytes(stored) <= MAX_ITEM_BYTES
+
+
+def test_an_unreadable_recorded_benchmark_is_refused(store: SkillStore) -> None:
+    coach_version(store)
+    for bad in ('[]', '{"at": "now"}', json.dumps({**GAINED.to_json(), 'at': 'now', 'by': 'x', 'by_kind': 'person',
+                                                    'extra': 1})):
+        store.client.update_item(TableName=TABLE, Key={'pk': {'S': f'WS#{WS}#SKILL#{CONN}#fixer'},
+                                                       'sk': {'S': 'VER#000001'}},
+                                 UpdateExpression='SET benchmark_run = :bad',
+                                 ExpressionAttributeValues={':bad': {'S': bad}})
+        with pytest.raises(SkillError, match='not a readable skill: a recorded benchmark'):
+            store.version(WS, CONN, 'fixer', 1)
