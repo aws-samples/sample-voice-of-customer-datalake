@@ -72,7 +72,7 @@ function isImageContentType(value: string): value is ImageContentType {
 }
 
 /** One rung of the degrade ladder. `quality` is ignored for PNG. */
-export interface EncodeStep {
+interface EncodeStep {
   readonly type: 'image/png' | 'image/jpeg' | 'image/webp'
   readonly quality?: number
   readonly maxEdge: number
