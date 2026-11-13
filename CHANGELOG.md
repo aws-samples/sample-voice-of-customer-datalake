@@ -17,6 +17,17 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.07.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-c track's configuration-readers slice merged. The categories, the dimensions and the source profiles can be read per workspace; nothing changes yet, since no caller passes a workspace and Administration still edits the deployment's rows ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).
+### Added
+
+- Internal: the readers of the categories config (and its cached copy), the processor's categories, the dimensions, the source profiles, the restricted sources and the category access check of every feedback route take an optional workspace and then read that workspace's own row (`lambda/shared/workspace_config.py`; the deployment's categories key now lives in `lambda/shared/categories_key.py`). The categories and source-profile caches keep one entry per workspace. Every caller still passes none, so every read is the deployment's, as before; the settings pages and the data path move together at the phase-2 cut-over.
+
+### Upgrade notes
+
+- Nothing to do: no stack, table, IAM or API change.
+
 ## [7.06.00] - 2026-11-13
 
 Multi-workspace, phase 2: the voc-multiplayer-b track's public-routes slice merged: feedback forms and webhooks can belong to a workspace, routed by a server-side record, never by what the caller sends. No workspace ingests yet: a workspace form's submission and a delivery on a workspace's webhook answer the same 409 as enabling a plugin and every run in a workspace, until the hold lifts ([docs/multi-workspace.md](docs/multi-workspace.md)).

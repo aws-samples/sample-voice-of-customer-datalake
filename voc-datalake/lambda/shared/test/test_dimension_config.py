@@ -296,3 +296,25 @@ class TestPatterns:
     def test_tag_pattern_admits_inner_spaces_but_not_a_leading_one(self):
         assert TAG_RE.match('beta tester') is not None
         assert TAG_RE.match(' beta') is None
+
+
+
+def test_a_workspace_reads_its_own_dimensions_and_never_the_deployment_s():
+    from unittest.mock import MagicMock
+
+    from shared.dimension_config import load_dimensions_config, with_builtin_dimensions
+    from shared.ws_repo import WorkspaceScope
+
+    ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+    rows = {'SETTINGS#dimensions': [{'key': 'deployment_line', 'values': [{'name': 'main'}]}],
+            f'WS#{ws}#SETTINGS#dimensions': [{'key': 'team_line', 'values': [{'name': 'main'}]}]}
+    table = MagicMock()
+    table.get_item.side_effect = lambda Key, **_: {'Item': {'dimensions': rows[Key['pk']]}} if Key['pk'] in rows else {}
+
+    def keys(scope=None):
+        return [d['key'] for d in load_dimensions_config(table, scope)]
+
+    builtins = [d['key'] for d in with_builtin_dimensions([])]
+    assert keys() == [*builtins, 'deployment_line']
+    assert keys(WorkspaceScope(ws)) == [*builtins, 'team_line']
+    assert keys(WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9')) == builtins

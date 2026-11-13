@@ -396,14 +396,24 @@ class TestCategoriesCache:
         assert get_configured_categories(table) == ['fresh']
         assert table.get_item.call_count == 2
 
-    def test_clearing_resets_both_cache_slots_to_none(self):
+    def test_clearing_empties_every_workspace_s_entry(self):
         get_raw_categories_config(_table_with([{'name': 'a'}]))
+        assert api_module._categories_cache != {}
         clear_categories_cache()
-        assert api_module._categories_cache is None
-        assert api_module._categories_cache_time is None
+        assert api_module._categories_cache == {}
 
     def test_a_fresh_import_starts_with_an_empty_cache(self):
         get_raw_categories_config(_table_with([{'name': 'a'}]))
         importlib.reload(api_module)
-        assert api_module._categories_cache is None
-        assert api_module._categories_cache_time is None
+        assert api_module._categories_cache == {}
+
+    def test_each_workspace_reads_and_caches_its_own_row(self):
+        from shared.ws_repo import WorkspaceScope
+
+        ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+        table = _table_with([{'name': 'a'}])
+        get_raw_categories_config(table)
+        get_raw_categories_config(table, WorkspaceScope(ws))
+        get_raw_categories_config(table, WorkspaceScope(ws))
+        assert [call.kwargs['Key'] for call in table.get_item.call_args_list] == [
+            {'pk': 'SETTINGS#categories', 'sk': 'config'}, {'pk': f'WS#{ws}#SETTINGS#categories', 'sk': 'config'}]

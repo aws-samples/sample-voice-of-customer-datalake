@@ -69,3 +69,44 @@ def test_read_categories_config_is_fresh_and_drops_malformed(table):
     table.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config',
                          'categories': [{'name': 'a'}, {'description': 'no name'}, 'junk']})
     assert category_gate.read_categories_config(table) == [{'name': 'a'}]
+
+
+
+WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+
+def test_a_workspace_s_restricted_sources_are_its_own(table):
+    """The deployment restricts one source, the workspace another: each scope reads only its own row."""
+    from shared.ws_repo import WorkspaceScope
+
+    table.put_item(Item={'pk': 'SETTINGS#sources', 'sk': 'config', 'sources': [{'id': 'deployment_app', 'restricted': True}]})
+    table.put_item(Item={'pk': f'WS#{WS}#SETTINGS#sources', 'sk': 'config',
+                         'sources': [{'id': 'team_app', 'restricted': True}]})
+    assert category_gate.read_restricted_sources(table) == frozenset({'deployment_app'})
+    assert category_gate.read_restricted_sources(table, WorkspaceScope(WS)) == frozenset({'team_app'})
+
+
+def test_a_workspace_s_categories_config_is_its_own(table):
+    """The strong read the write paths validate against: each scope reads only its own categories row."""
+    from shared.ws_repo import WorkspaceScope
+
+    table.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': [{'name': 'billing'}]})
+    table.put_item(Item={'pk': f'WS#{WS}#SETTINGS#categories', 'sk': 'config', 'categories': [{'name': 'returns'}]})
+    assert [c['name'] for c in category_gate.read_categories_config(table)] == ['billing']
+    assert [c['name'] for c in category_gate.read_categories_config(table, WorkspaceScope(WS))] == ['returns']
+
+
+def test_a_member_s_category_scope_is_resolved_against_the_workspace_s_categories(table):
+    """An owner of a category in the workspace sees it there; the deployment's categories do not count inside it."""
+    from shared.ws_repo import WorkspaceScope
+
+    owner = {'sub': 'owner-sub', 'username': 'olga', 'email': 'olga@example.com'}
+    table.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': [{'name': 'billing', 'owners': [owner]}]})
+    table.put_item(Item={'pk': f'WS#{WS}#SETTINGS#categories', 'sk': 'config',
+                         'categories': [{'name': 'returns', 'owners': [owner]}]})
+    _grant(table, 'owner-sub', [])   # restricted: only what owning a category grants
+    caller = Caller(subject='owner-sub', username='olga', email='olga@example.com')
+    in_workspace = category_gate.scope_for_caller(caller, table, WorkspaceScope(WS))
+    deployment = category_gate.scope_for_caller(caller, table)
+    assert (ca.admits(in_workspace, 'returns'), ca.admits(in_workspace, 'billing')) == (True, False)
+    assert (ca.admits(deployment, 'billing'), ca.admits(deployment, 'returns')) == (True, False)

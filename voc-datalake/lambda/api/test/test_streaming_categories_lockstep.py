@@ -72,11 +72,14 @@ AGGREGATOR_SOURCE = 'lambda/aggregator/handler.py'
 # pin whose subject is the key's VALUE.
 _Q = r"""['"]"""
 
-# The key as the Python reader spends it, inline in the get_item call.
+# The deployment's categories key the reader passes to shared/workspace_config.py (a workspace's row is under its
+# workspace): ``CATEGORIES_SETTINGS_KEY``, spelled once in shared/categories_key.py, which
+# ``get_raw_categories_config`` must name.
 PYTHON_READER_KEY_PATTERN = (
-    rf'get_item\(\s*Key=\{{\s*{_Q}pk{_Q}:\s*{_Q}([^\'"]+){_Q},'
-    rf'\s*{_Q}sk{_Q}:\s*{_Q}([^\'"]+){_Q},?\s*\}}\s*\)'
+    rf'^CATEGORIES_SETTINGS_KEY(?:: Final)? = \{{\s*{_Q}pk{_Q}:\s*{_Q}([^\'"]+){_Q},'
+    rf'\s*{_Q}sk{_Q}:\s*{_Q}([^\'"]+){_Q},?\s*\}}'
 )
+PYTHON_READER_KEY_SOURCE = 'lambda/shared/categories_key.py'
 # The key as the writer declares it, as two module constants.
 PYTHON_WRITER_PK_PATTERN = rf'^CATEGORIES_PK = {_Q}([^\'"]+){_Q}'
 PYTHON_WRITER_SK_PATTERN = rf'^CATEGORIES_SK = {_Q}([^\'"]+){_Q}'
@@ -164,17 +167,14 @@ def _python_function_body(source: str, marker: str, where: str) -> str:
 
 
 def _python_reader_key() -> tuple[str, str]:
-    """The pk/sk of the categories get_item in shared/api.py.
-
-    Scoped to `get_raw_categories_config` so another reader in the module cannot
-    satisfy this test.
-    """
-    body = _python_function_body(
-        _read(PYTHON_READER_SOURCE), 'def get_raw_categories_config(', PYTHON_READER_SOURCE,
-    )
+    """The pk/sk the categories reader in shared/api.py reads: `get_raw_categories_config` must name
+    `CATEGORIES_SETTINGS_KEY`, whose value is read from its one home, shared/categories_key.py."""
+    body = _python_function_body(_read(PYTHON_READER_SOURCE), 'def get_raw_categories_config(', PYTHON_READER_SOURCE)
+    assert 'CATEGORIES_SETTINGS_KEY' in body, (
+        f'{PYTHON_READER_SOURCE}::get_raw_categories_config no longer reads CATEGORIES_SETTINGS_KEY')
     pk, sk = _single(
-        body, PYTHON_READER_KEY_PATTERN,
-        f'{PYTHON_READER_SOURCE}::get_raw_categories_config', 'categories get_item Key',
+        _read(PYTHON_READER_KEY_SOURCE), PYTHON_READER_KEY_PATTERN,
+        f'{PYTHON_READER_KEY_SOURCE}::CATEGORIES_SETTINGS_KEY', 'categories get_item Key',
     )
     return pk, sk
 

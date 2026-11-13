@@ -288,3 +288,49 @@ class TestCachedSourceProfileStrict:
         with _stored_profiles(monkeypatch, [{'id': 'support', 'tags': ['x']}]):
             cached_source_profile_strict('support')['tags'].append('y')
             assert cached_source_profile_strict('support')['tags'] == ['x']
+
+
+
+def test_each_workspace_has_its_own_cached_profiles(monkeypatch):
+    """The workspace's profile, not the deployment's; read once per TTL; a failed read is that workspace's alone."""
+    from unittest.mock import MagicMock
+
+    from shared import source_profiles
+    from shared.source_profiles import (
+        SourceProfilesUnavailable,
+        cached_source_profile_strict,
+        clear_source_profiles_cache,
+        source_profile_configured,
+    )
+    from shared.ws_repo import WorkspaceScope
+
+    ws, broken = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
+    monkeypatch.setenv('AGGREGATES_TABLE', 'aggregates')
+    rows = {'SETTINGS#sources': [{'id': 'app', 'label': 'App', 'pii': 'allow'}],
+            f'WS#{ws}#SETTINGS#sources': [{'id': 'app', 'label': 'App', 'pii': 'redact'}]}
+
+    def get_item(Key, **_):
+        if Key['pk'].startswith(f'WS#{broken}'):
+            raise RuntimeError('Throttled')
+        return {'Item': {'sources': rows[Key['pk']]}} if Key['pk'] in rows else {}
+
+    table = MagicMock()
+    table.get_item.side_effect = get_item
+    resource = MagicMock()
+    resource.Table.return_value = table
+    monkeypatch.setattr(source_profiles, 'get_dynamodb_resource', lambda: resource)
+    clear_source_profiles_cache()
+    try:
+        assert cached_source_profile_strict('app')['pii'] == 'allow'
+        assert cached_source_profile_strict('app', WorkspaceScope(ws))['pii'] == 'redact'
+        assert source_profile_configured('app', WorkspaceScope(ws)) is True
+        assert table.get_item.call_count == 2   # one read per scope inside the TTL
+        try:
+            cached_source_profile_strict('app', WorkspaceScope(broken))
+        except SourceProfilesUnavailable:
+            pass
+        else:
+            raise AssertionError('a failed read of the workspace must raise')
+        assert cached_source_profile_strict('app')['pii'] == 'allow'
+    finally:
+        clear_source_profiles_cache()
