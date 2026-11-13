@@ -355,6 +355,14 @@ def test_a_stop_now_carries_the_attempt_and_is_applied(run) -> None:
     assert runtime.actors == [ADMIN.subject] == [publisher.sent[0].sender.id]
 
 
+def test_a_signal_to_a_task_a_person_took_is_refused_and_nothing_is_sent(run) -> None:
+    client, monitor, runtime, publisher, task_id = run
+    board(client).take('default', RUN, task_id, actor='human:admin-1')
+    with pytest.raises(MonitorError, match='A person holds this task') as held:
+        monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task_id, 'attempt': 1}), ADMIN)
+    assert (held.value.kind, runtime.calls, publisher.sent) == ('conflict', [], [])
+
+
 def test_a_stale_attempt_is_a_conflict_and_nothing_was_done(run) -> None:
     _, monitor, runtime, publisher, task_id = run
     runtime.answer = {'fixer-1': 'stale'}

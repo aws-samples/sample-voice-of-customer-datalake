@@ -64,6 +64,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   Agents: 'New agent is a page-header action',
   WorkflowEditor: 'Save sits in the editor toolbar above the canvas, top of the page, next to Save as',
   EngineeringConversation: 'Send is a chat composer\'s, under the conversation it adds to (a message, not a form\'s save row)',
+  EngineeringBoardControls: 'Post is a small fold-out form\'s at the top of the board it adds a task to (an action, not a page\'s save row)',
   RunDecisionForm: 'Make the decision sits in the decision card at the top of the selected run, above the graph, left-aligned',
   AddPasskeyButton: 'a one-action card button (the passkey offer above the page, Account → Passkey), no form to save',
   EndpointCard: 'Download skill is a card action at the top of Connect',

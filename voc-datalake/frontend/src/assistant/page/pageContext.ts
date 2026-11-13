@@ -11,15 +11,15 @@
  */
 import { matchPath } from 'react-router-dom'
 import { reviewFromSearch } from '../../hooks/useReviewModal'
-import { MAX_ID_LENGTH, boundedFilterValue } from '@stream/assistant/contract'
+import { ENGINEERING_RUN_ID, MAX_ID_LENGTH, boundedFilterValue } from '@stream/assistant/contract'
 import type { PAGE_FILTER_KEYS, PageContext, PageKind } from '@stream/assistant/contract'
 
 interface PagePattern {
   /** Route path as written in routes.tsx (relative to `/`; '' is the index). */
   route: string
   kind: PageKind
-  /** Which `:param` carries the entity id, and where it goes. */
-  param?: { name: string; field: 'projectId' | 'feedbackId' | 'agentId' }
+  /** Which `:param` carries the entity id, and where it goes (only when it matches `shape`, if given). */
+  param?: { name: string; field: 'projectId' | 'feedbackId' | 'agentId' | 'engineeringRunId'; shape?: RegExp }
   /**
    * The context chip's `assistant:pages.<label>` key when it differs from
    * `kind` (the stream contract has fewer kinds than the SPA has pages).
@@ -52,8 +52,9 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'agents/:id', kind: 'agent', param: { name: 'id', field: 'agentId' } },
   // One library workflow: the agents pack (workflow tools), no agent in context.
   { route: 'agents/workflows/:workflowId', kind: 'agents', label: 'workflow' },
-  // An engineering run's monitor: the agents pack, no agent in context.
-  { route: 'agents/engineering/:runId', kind: 'agents' },
+  // An engineering run's monitor: the agents pack, the run on screen (get_engineering_run's default), no agent.
+  { route: 'agents/engineering/:runId', kind: 'agents',
+    param: { name: 'runId', field: 'engineeringRunId', shape: ENGINEERING_RUN_ID } },
   // Knowledge → Company: the company tool pack (context, my objectives, design system).
   { route: 'company', kind: 'company' },
   // `other` (core pack): the stream contract has no `connect` or `account` page kind.
@@ -103,6 +104,12 @@ function paramValue(params: Record<string, string | undefined>, name: string): s
   return value !== undefined && value !== '' && value.length <= MAX_ID_LENGTH ? value : undefined
 }
 
+/** The route's entity id, when present and of its shape (an engineering run's is a ULID). */
+function entityId(params: Record<string, string | undefined>, param: NonNullable<PagePattern['param']>): string | undefined {
+  const value = paramValue(params, param.name)
+  return value !== undefined && (param.shape?.test(value) ?? true) ? value : undefined
+}
+
 function tabFrom(search: string): string | undefined {
   const tab = new URLSearchParams(search).get('tab')
   return tab !== null && tab.length <= MAX_TAB && TAB_PATTERN.test(tab) ? tab : undefined
@@ -144,7 +151,7 @@ function routeContext(location: LocationLike): PageContext {
   for (const pattern of PAGE_PATTERNS) {
     const match = matchPattern(pattern, location.pathname)
     if (match === null) continue
-    const id = pattern.param ? paramValue(match.params, pattern.param.name) : undefined
+    const id = pattern.param ? entityId(match.params, pattern.param) : undefined
     const filters = filtersFrom(pattern.kind, location.search)
     return {
       kind: pattern.kind,

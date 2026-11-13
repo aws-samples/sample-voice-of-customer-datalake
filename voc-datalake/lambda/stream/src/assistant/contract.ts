@@ -116,7 +116,7 @@ export const SERVER_TOOLS = {
   scrapers: ['list_scrapers', 'get_scraper_status', 'analyze_scraper_url', 'get_source_run', 'find_app_store_app'],
   settings: ['get_categories_config', 'get_brand_settings', 'list_users', 'get_user_access'],
   memory: ['get_memory_review'],
-  agents: ['list_agents', 'get_agent', 'get_workflow', 'list_agent_runs', 'get_agent_run', 'validate_workflow'],
+  agents: ['list_agents', 'get_agent', 'get_workflow', 'list_agent_runs', 'get_agent_run', 'validate_workflow', 'get_engineering_run'],
   company: ['get_company_context', 'get_my_context', 'get_design_system'],
   participants: ['list_participant_lists'],
 } as const satisfies Record<ToolPack, readonly string[]>;
@@ -202,7 +202,9 @@ export const ADMIN_ONLY_CLIENT_TOOLS: readonly ClientToolName[] = [
  * the user listings expose the directory). Dropped from a non-admin's toolset
  * and refused when called.
  */
-export const ADMIN_ONLY_SERVER_TOOLS: readonly ServerToolName[] = ['analyze_scraper_url', 'list_users', 'get_user_access', 'get_source_run'];
+export const ADMIN_ONLY_SERVER_TOOLS: readonly ServerToolName[] = [
+  'analyze_scraper_url', 'list_users', 'get_user_access', 'get_source_run', 'get_engineering_run',
+];
 
 /**
  * Tools introduced for plan mode (docs/assistant-plan-mode.md → "New tools"),
@@ -300,6 +302,8 @@ export const STALE_RUN_SECONDS = 960;
 // ── forwardedProps ─────────────────────────────────────────────────────────
 
 export const MAX_ID_LENGTH = 128;
+/** An engineering run's id: a ULID (lambda/engineering/bus/schema.py ULID, runtime/interface.py check_run_id). */
+export const ENGINEERING_RUN_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** `forwardedProps.days = 0` is the all-time window (lambda/shared/api.py `ALL_TIME_DAYS`). */
 export const ALL_TIME_DAYS = 0;
@@ -381,6 +385,8 @@ export const pageContextSchema = z.object({
   feedbackId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
   /** The autonomous agent on screen (`agent` page: agent detail / workflow editor / runs). */
   agentId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
+  /** The engineering run on screen (its monitor, `/agents/engineering/<run_id>`): a ULID, get_engineering_run's default. */
+  engineeringRunId: z.string().regex(ENGINEERING_RUN_ID).optional(),
   /** Active tab on pages that have tabs (`?tab=` or local state). */
   tab: z.string().max(64).optional(),
   /** Human title of the entity on screen (project name, …), ≤120 chars. */

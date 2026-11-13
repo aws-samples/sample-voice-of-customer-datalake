@@ -140,6 +140,12 @@ describe('agent executors', () => {
       .rejects.toThrow('copied only where the engineering module is deployed; nothing was created')
   })
 
+  it('a create the server refuses for the module (409) says why, and that nothing was created', async () => {
+    fetchApi.mockRejectedValue(new Error('API Error: 409'))
+    await expect(setup().run('create_workflow', { definition: WF }))
+      .rejects.toThrow('created only where the engineering module is deployed; nothing was created')
+  })
+
   it('run_agent while a run is active (409) says nothing was started', async () => {
     fetchApi.mockRejectedValue(new Error('API Error: 409'))
     await expect(setup().run('run_agent', { agent_id: 'ag_1' })).rejects.toThrow('already has a run in progress')

@@ -68,6 +68,19 @@ def test_a_claimed_tasks_lease_reads_its_holder_heartbeat_progress_and_wait(boar
                                                last_progress_at=reported.progress_at, waiting=True)
 
 
+@pytest.mark.parametrize('claimed', [True, False])   # (False: blocked while its launched agent still boots)
+def test_a_task_a_person_blocked_reads_as_ended_never_as_a_lost_lease(board: Any, claimed: bool):
+    # A lease of None is a crash to the supervisor (judge: lost lease), which would continue the agent in a new
+    # MicroVM; an ended task, its holder cleared by the block, ends the session.
+    store, leases, _ = board
+    task_id = _posted(store)
+    if claimed:
+        store.claim(WORKSPACE, RUN, task_id, role='fixer', agent='fixer-2')
+    store.block(WORKSPACE, RUN, task_id, reason='wrong repository', actor='human:admin-sub')
+    assert leases.lease(RUN, task_id) == Lease(task_id=task_id, agent_id='', renewed_at=0, last_progress_at=0,
+                                               attempt=1, final_state='needs_human')
+
+
 @pytest.mark.parametrize('task_id', ['', 'task-missing'])
 def test_no_task_or_one_not_on_the_board_has_no_lease(board: Any, task_id: str):
     _, leases, _ = board
@@ -88,6 +101,33 @@ def test_a_repost_frees_the_task_at_its_next_attempt_and_posts_it_as_the_supervi
         SOURCE, 'task.posted', 'role', 'fixer', 2)
     # The router admits it: the supervisor may post a re-posted task, as itself.
     assert judge(detail, entry['Source']).allowed
+
+
+def test_its_own_repost_retried_publishes_the_same_event_again(board: Any):
+    """The re-post landed, its event perhaps not (a failed publish): the retry finds the task's last change is the
+    supervisor's own re-post at that attempt and publishes the same event again (a redelivery)."""
+    store, leases, events = board
+    task_id = _posted(store)
+    store.claim(WORKSPACE, RUN, task_id, role='fixer', agent='fixer-1')
+    leases.repost(RUN, task_id, 'stalled', attempt=1)
+    leases.repost(RUN, task_id, 'stalled', attempt=1)   # (the supervisor's _end_superseded, next tick)
+    first, again = events.details()
+    assert (first['type'], first['event_id']) == ('task.posted', again['event_id'])
+
+
+def test_a_repost_after_a_persons_release_publishes_nothing(board: Any):
+    """A person's release (published as that person by the Agents API): the task is open at the next attempt
+    already, its last change theirs, so the supervisor sends nothing as its own."""
+    store, leases, events = board
+    task_id = _posted(store)
+    store.claim(WORKSPACE, RUN, task_id, role='fixer', agent='fixer-1')
+    store.take(WORKSPACE, RUN, task_id, actor='human:admin-sub')
+    store.release(WORKSPACE, RUN, task_id, actor='human:admin-sub')
+    leases.repost(RUN, task_id, 'stalled', attempt=1)
+    task = store.task(WORKSPACE, RUN, task_id)
+    assert (task.state, task.attempt, task.updated_by, events.entries) == ('open', 2, 'human:admin-sub', [])
+    leases.repost(RUN, task_id, 'stalled', attempt=2)   # (never claimed at 2, nobody launched: left open)
+    assert events.entries == []
 
 
 def test_a_repost_of_an_attempt_that_has_moved_on_is_refused_and_one_that_has_ended_is_left(board: Any):

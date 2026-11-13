@@ -30,6 +30,29 @@ const eachOf = <T>(schema: z.ZodType<T>) => z.unknown().optional().transform((va
 
 /** The board states in which a task is over: its agent is no longer signalled through it. */
 export const FINAL_TASK_STATES: readonly string[] = ['done', 'failed', 'needs_human']
+/** The moves a task's holder may make, from a state to the next (`engineering/board/model.py` MOVES). */
+export const TASK_MOVES: Readonly<Record<string, readonly string[]>> = {
+  claimed: ['in_progress', 'failed', 'needs_human'],
+  in_progress: ['in_review', 'done', 'failed', 'needs_human'],
+  in_review: ['in_progress', 'done', 'failed', 'needs_human'],
+}
+/** The run coordinator's own task, which no person acts on (`engineering/board/store.py` COORDINATE_TASK). */
+export const COORDINATE_TASK = 'coordinate'
+/** A person's id on the board: a task they hold has lease agent `human:<their subject>`. */
+export const PERSON_PREFIX = 'human:'
+/** A person's actions on one task (`…/board/tasks/<task_id>/<action>`). */
+export type BoardAction =
+  | { action: 'take'; over?: boolean }
+  | { action: 'block'; reason: string; over?: boolean }
+  | { action: 'priority'; priority: number }
+  | { action: 'move'; to: string }
+  | { action: 'release' }
+/** A person's new task: `spec` says what to do (`{instructions}`). */
+export interface NewTask {
+  role: string
+  title: string
+  spec: Record<string, unknown>
+}
 
 const maybeCount = z.number().nullable().catch(null)
 const TokensSchema = z.object({ model: text, input_tokens: count, output_tokens: count })
@@ -173,6 +196,15 @@ export const engineeringRunsApi = {
   },
   answer: async (runId: string, request: AnswerRequest): Promise<unknown> =>
     fetchApi<unknown>(engineeringRunPath(runId, '/messages'), post(request)),
+  /** A person posts a task (admin); the board answers it, which the page reads again. */
+  postTask: async (runId: string, task: NewTask): Promise<{ duplicate: boolean }> => {
+    const raw = await fetchApi<unknown>(engineeringRunPath(runId, '/board/tasks'), post(task))
+    // `duplicate`: an equal task still under way is answered, and nothing new is posted.
+    return { duplicate: isRecord(raw) && raw.duplicate === true }
+  },
+  /** A person's action on one task (admin). */
+  actOnTask: async (runId: string, taskId: string, { action, ...body }: BoardAction): Promise<unknown> =>
+    fetchApi<unknown>(engineeringRunPath(runId, `/board/tasks/${encodeURIComponent(taskId)}/${action}`), post(body)),
   /** The run's reports, each with its latest version (a bad entry costs itself). */
   reports: async (runId: string): Promise<EngineeringReportEntry[]> => {
     const raw = await fetchApi<unknown>(engineeringRunPath(runId, '/reports'))

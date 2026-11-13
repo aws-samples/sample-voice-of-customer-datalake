@@ -36,10 +36,12 @@ export async function clientWithMockedFetchApi(importOriginal: <T>() => Promise<
 
 /** What the mocked `useIsAdmin()` answers; a spec sets it per test. */
 export const adminFlag = { isAdmin: true }
+/** The signed-in user's Cognito `sub` the mocked `useMySub()` answers. */
+export const SIGNED_IN_SUB = 'admin-sub'
 
-/** A `store/authStore` module whose `useIsAdmin` reads {@link adminFlag}. */
+/** A `store/authStore` module whose `useIsAdmin` reads {@link adminFlag}, and whose `useMySub` is {@link SIGNED_IN_SUB}. */
 export function authStoreModule() {
-  return { useIsAdmin: () => adminFlag.isAdmin }
+  return { useIsAdmin: () => adminFlag.isAdmin, useMySub: () => SIGNED_IN_SUB }
 }
 
 interface RouteOptions {

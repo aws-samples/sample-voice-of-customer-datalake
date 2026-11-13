@@ -69,7 +69,7 @@ def test_a_reader_without_listbucket_reads_a_denied_object_as_missing(monkeypatc
     s3.put_object.side_effect = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'PutObject')
     workspace = WorkspaceStore(s3, BUCKET, denied_is_missing=True)
     assert workspace.read_text('k') is None
-    assert (warnings, counted) == ([{'key': 'k', 'code': 'AccessDenied'}], [store_module.DENIED_AS_MISSING_METRIC])
+    assert (warnings, counted) == ([{'key': 'k', 'code': 'AccessDenied'}], [store_module.ENGINEERING_DENIED_READS_METRIC])
     s3.get_object.side_effect = ClientError({'Error': {'Code': 'NoSuchKey', 'Message': 'gone'}}, 'GetObject')
     assert workspace.read_text('gone') is None
     assert (len(warnings), len(counted)) == (1, 1)   # a plain missing key is neither logged nor counted

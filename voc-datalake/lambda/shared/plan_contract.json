@@ -167,7 +167,8 @@
   ],
   "admin_read_packs": [
     "scrapers",
-    "settings"
+    "settings",
+    "agents"
   ],
   "never_preapprovable_tools": [
     "delete_document",

@@ -339,11 +339,18 @@ What exists:
   answered while it is under way; once it has ended (done, failed, needs a human), the same work can be posted
   again, and the dedupe marker moves to the new task. A claim leases an open task of the caller's role for 5
   minutes; the holder claiming again, on a task that has not ended, reads it as it is (a continuation reads its
-  brief so, with its lease's epoch, which is always the task's attempt). Renew, progress and move need the lease and
+  brief so, with its lease's epoch, which is always the task's attempt). A task with a launch recorded at its attempt
+  is claimed only by that launch's agent, and an agent launched for an older attempt (the task re-posted or given
+  back since) never claims it again, in the write's own condition too (409); a task with no launch at its attempt is
+  any agent's of its role. Renew, progress and move need the lease and
   its epoch, on a task that has not ended. Before it continues an agent (a pause resumed, a slow boot), the supervisor
   refreshes its lease (`BoardStore.refresh`), even one that ran out, for that agent at that epoch. The supervisor
   re-posts a task at the attempt it judged (`repost_task`): open again at the next attempt,
-  its lease cleared, published again as `task.posted` to its role, its reason in the history row. The run's
+  its lease cleared, published again as `task.posted` to its role, its reason in the history row. A re-post
+  stamps `updated_op` `repost`; a retry that finds it landed publishes the same event again only while the task's
+  last change is still the supervisor's own re-post at that attempt, and a task open at the next attempt by a
+  person's release (which the API published as that person) publishes nothing, so the supervisor never sends
+  another sender's change as its own. The run's
   `coordinate` task (role `coordinator`) is written only by the run's start (`coordinate_items`, in the start's
   transaction with META, which records the run's `commit` and `connection` that `launch` and `knowledge` read; a run
   started without its commit or connection answers 409 to `launch` and `knowledge`, with that reason: only a new
@@ -398,7 +405,8 @@ What exists:
   Agents API and the board's `knowledge`, take a denied read as missing, and each such read is logged and counted
   as the `EngineeringWorkspaceDeniedReads` metric; a plain missing object counts too, as it is denied as well (a
   failed attempt's result, or a report version that was counted and never written when someone opens it), so a
-  broken policy shows as the count rising well above its usual level). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
+  broken policy shows as the count rising well above its usual level; alerting's `engineering-denied-reads` alarm
+  watches it, [docs/deployment.md](deployment.md)). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
   encrypted with the stack's key, versioned, access-logged, kept under `-c protectData`), where nothing expires
   until a retention that writes its `AUDIT#delete` row exists (*planned*; "The workspace" further down this
   section). The runtime's agents write their checkpoints and patches there, each under its own keys
@@ -419,12 +427,9 @@ What exists:
   denies each of them every source but its own (the board `voc.engineering/board`, the runtime's two
   `voc.engineering/supervisor`, an agent its own, a run's coach `voc.engineering/coach/<ws>/<run>`).
 
-
 Not built yet: the rest of the harness's side (its broker interface still refuses every call:
 [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); the skills of the roles other than the coordinator
-(the board's launch of such a role is refused, 409); a person's board actions
-(POST),
-planned as the run monitor's board controls; the agents' findings in the workspace (the runtime writes their
+(the board's launch of such a role is refused, 409); the agents' findings in the workspace (the runtime writes their
 checkpoints and patches there). The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
 holds, and the design's type table is what the next slices bring the code to or the table to.
@@ -463,7 +468,8 @@ the event's `source`, which the bus's policy pins to the session's own agent tag
 run, so no agent can forge another's message or write into another run. The router also holds which sender may send
 which type, and drops (and journals) anything else: `decision` and `stop` only from the API's own source, `gate.go`
 and `gate.no_go` only from the run's final-go agent, the `task.*` events only from the board's API (agents report
-progress and moves through it), the `skill.*` announcements only from the API (all three: an administrator's proposal, acceptance, promotion or
+progress and moves through it) and from the API's own source as the signed-in person (a person's board actions,
+`from.kind` human only; the supervisor's re-post as itself), the `skill.*` announcements only from the API (all three: an administrator's proposal, acceptance, promotion or
 rollback, as the signed-in person) and the run's coach (`skill.proposed`, from its run-scoped source), and the talk (`finding`, `question`, `answer`,
 `review.*`, `handoff`) from the run's own agents, with a person's `answer` from the API; the runtime's `pause`,
 `continued`, `timed_out` and `run.health` only from the supervisor (on the bus: `signal.check_in` to an agent,
@@ -503,7 +509,27 @@ another agent, which resumes it from its checkpoint. An agent suspended on an op
 `review.requested`, a human decision point) keeps its lease while the wait is open. Tasks are claimed: an agent of
 the right role, told of a posted task in its inbox, claims it on the board; the run coordinator posts and orders tasks and may hand one
 to a named agent (`task.assigned`). Agents post tasks within the run's budget and the flow's rules.
-A person can post, re-prioritise, block or take a task, through the API.
+A person can post, re-prioritise, block or take a task, from the run monitor's Board tab or through the API (an
+administrator acting for themselves: `/agents/engineering/<run_id>/board/tasks…`,
+[docs/autonomous-agents.md](autonomous-agents.md)). Each is the board
+store's own conditional write, with a history row naming `human:<subject>`, published as the board's `task.*` event
+from the API's own source with `from.kind` human (the only `task.*` the bus takes from the API). Taking a task makes
+the person its holder with no expiry (`lease_agent` `human:<subject>`, the lease's epoch its attempt): its agent can
+move it no more, and the supervisor, which judges agents' sessions, leaves it alone; the person moves it on like any
+holder, or releases it: open again at its next attempt, as a re-post, until the run coordinator launches an agent of its role
+for it (from the task's spec: a new attempt starts with no checkpoint). A task another person holds is taken or blocked from them only when asked (`over`: the monitor asks first;
+the write holds the holder it read), and an
+agent's signal to a task a person holds is refused (no agent works on it). Blocking it ends it as needing a person,
+with their reason (the only way a person sends a task there: a move to it is refused, so the why is always kept).
+A person re-prioritises a task another person holds without `over`: a priority ends no hold, so nothing is taken
+from them. Never the coordinate task. *The Agents API's grant (a known gap, tenet 6):* its role writes a person's
+actions itself, with PutItem and UpdateItem bounded by IAM only to the run's partition (`dynamodb:LeadingKeys`), so
+it could write any item of a run (META's every attribute, the tasks, their SPEC# markers and TASKLOG# rows, the
+RUNLOG# rows, the agents' AGENT# session rows, the conversation's MSG# and the INBOX# rows), and only its code keeps
+it to the board store's conditional writes (the task row, its SPEC# marker, its TASKLOG# row, META's `task_count`).
+`dynamodb:Attributes` cannot narrow it per row (its names are the request's, not a row's, and a PutItem of allowed
+names still replaces a whole row). *Planned*: the Agents API asks the board function to make a person's change,
+whose role already writes those rows, and its own write grant goes.
 
 **The conversation.** Every event is also written to the run's conversation (DynamoDB, append-only, D1), which the run
 view shows live as a chat between the agents beside the board. The person is a participant: their decisions, answers
@@ -571,10 +597,12 @@ you can fix") makes the AI assistant draft it behind an approval card, like its 
 (`validate_workflow`, `create_workflow`, `update_workflow`) take a `voc-workflow/2` definition with the engineering
 steps, the agents API's `POST /workflows/validate` judges its rules, and a new one is created only where the
 deployment has the engineering module (the API's 409; the web app's card checks `features.engineering` first, as the
-library's New engineering flow and the editor's Save as do). *Planned*:
-"refresh the knowledge pack", "pull the latest from the repository" and "what is agent X doing" from the assistant
-too, through the same REST routes as everything else (an engineering run's reads are administrators-only, so no MCP
-tool while an MCP token never acts as an administrator: TENETS.md's tenet 4 gap).
+library's New engineering flow and the editor's Save as do). "What is agent X doing" is the assistant's
+`get_engineering_run` (administrators; read only; the run on screen by default): the run monitor's own routes, read
+with the administrator's sign-in, the agents' words passed to the model as data. *Planned*: "refresh the knowledge
+pack" and "pull the latest from the repository" from the assistant (an administrator's action through a model, so an
+approval card and an owner decision first). An engineering run's reads are administrators-only, so no MCP tool while
+an MCP token never acts as an administrator (TENETS.md's tenet 4 gap).
 
 **The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
 live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,
@@ -931,7 +959,11 @@ continues it in a new one once the wait closes.
   open again at its next attempt, guarded by the attempt the supervisor judged so a newer claim is never undone,
   `task.posted` published as the supervisor, which the router admits). A session whose task another agent holds
   now, or that is at another attempt (re-posted, claimed or not), is ended, never continued, on every path (a
-  tick, a wake, a person's Resume); its own re-post that landed is posted again only to republish its event. It speaks on the bus as `voc.engineering/supervisor`: `signal.pause`,
+  tick, a wake, a person's Resume); a task open at the next attempt is asked to re-post again, which publishes
+  its event again only while its own re-post is the task's last change (one whose publish failed is so delivered
+  on the next tick), and nothing after a person gave it back, so the supervisor never sends another sender's
+  change as its own. A task ended with no holder (a person's block) reads as
+  ended, never as a lost lease. It speaks on the bus as `voc.engineering/supervisor`: `signal.pause`,
   `signal.save` and `signal.check_in` (no progress: "what is your state?") to an agent; `run.health` (counts by
   status, tokens, cost; no inbox backlog, since the inbox has no read state) and an agent's fate,
   `run.agent_continued`, `run.agent_timed_out` and `run.agent_failed`, to the run; its figures in the summary. One agent's failing call is logged and never

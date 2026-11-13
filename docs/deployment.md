@@ -748,6 +748,8 @@ missing, the alarms themselves say whether alerting is on.
 | `aggregator-iterator-age` | `voc-aggregation-processor` `IteratorAge` | Max > 15 minutes for 3 consecutive 5-minute periods (dashboard metrics going stale) |
 | `ingestor-errors` | every enabled plugin ingestor's `Errors`, one metric-math `SUM` | Sum > 0 over 5 minutes (more than 10 ingestors split into `ingestor-errors-2`, …) |
 | `mcp-auth-denied`, `mcp-tool-denied`, `mcp-tool-failed`, `mcp-rate-limited` | `VoC-MCP-Global` metrics of `/mcp/global` | Sum over 5 minutes > 50 / 20 / 5 / 30 ([docs/mcp.md](mcp.md#alarms-and-concurrency)) |
+| `engineering-dlq` (only with `-c engineeringAgents=true`) | `voc-engineering-dlq` (Processing): the engineering bus rule's undelivered events, the router's, the delivery function's and the report builder's failed invocations, the supervisor's undelivered ticks | Max of `ApproximateNumberOfMessagesVisible` > 0 over one 5-minute period |
+| `engineering-denied-reads` (only with `-c engineeringAgents=true`) | `VoC` `EngineeringWorkspaceDeniedReads` of the engineering workspace's readers (`voc-agents-api`, `voc-engineering-board`, `voc-engineering-reports`), one metric-math `SUM`: reads S3 denied that they took as missing | Sum over 5 minutes > 20 (a plain missing object counts too; a broken bucket or KMS key policy shows well above that). The service names are the same in every deployment, so two deployments with the module in one account and region share the count (see "CloudWatch metrics co-mingle") |
 
 Missing data is never breaching, so an idle queue or function stays OK.
 
@@ -772,7 +774,8 @@ the time of writing), and the first 10 alarm metrics in an account each month ar
 free. A metric-math alarm is billed per metric it reads, so the one ingestor `SUM`
 costs the same as one alarm per ingestor, but notifies once. With every alarm above
 and N enabled ingestors that is 12 + N alarm metrics (8 + N, plus the 4 MCP alarms): about
-$1.80 a month with 6 ingestors, before the free tier. The topic adds no KMS key (it uses the Core key, the
+$1.80 a month with 6 ingestors, before the free tier. With `-c engineeringAgents=true`, 4 more (the
+`engineering-dlq` queue alarm, and the 3 metrics `engineering-denied-reads` sums): about $0.40. The topic adds no KMS key (it uses the Core key, the
 deployment's one customer-managed key); SNS email delivery is free at alarm volumes. Check current
 CloudWatch and KMS pricing for your region.
 

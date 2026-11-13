@@ -160,3 +160,18 @@ export const useIsAdmin = (): boolean => {
   }
   return user?.groups.includes('admins') ?? false
 }
+
+/** The dev mock's signed-in caller (`frontend/mock-*.js` MOCK_CALLER_SUB), for the same local-dev bypass. */
+const DEV_MOCK_SUB = 'sub-admin-demo'
+
+/**
+ * The signed-in user's subject (Cognito `sub`), `''` while signed out. In the local-dev bypass above it is the dev
+ * mock's caller, so the pages that compare it with what the API answers (a task the user holds) work there too.
+ */
+export const useMySub = (): string => {
+  const sub = useAuthStore((state) => state.user?.sub ?? '')
+  if (import.meta.env.DEV && !cognitoConfigured()) {
+    return DEV_MOCK_SUB
+  }
+  return sub
+}

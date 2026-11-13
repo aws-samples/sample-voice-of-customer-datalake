@@ -33,8 +33,9 @@ retried progress report is a new report (its time is part of it).
 The supervisor re-posts a task whose lease ran out with ``repost_task`` (through its ``Board.repost`` port,
 engineering/runtime/board_bus.py): the store's ``repost``, then the task published again as
 ``task.posted`` to its role, so the delivery function records it for the role's agents to read (it wakes
-nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away. The coordinate task is
-written only: no role reads a ``task.posted`` for it.
+nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away, and published only while
+its own re-post is the task's last change (a retry after a lost event publishes the same event again; a task open
+at the next attempt by a person's release was published by that person). The coordinate task is written only: no role reads a ``task.posted`` for it.
 """
 from __future__ import annotations
 
@@ -49,8 +50,8 @@ from typing import Any, Protocol
 from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.inbox import MAX_LIMIT, Inbox
-from engineering.board.model import EVENT_OF, FINAL, OPEN, Task
-from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore
+from engineering.board.model import EVENT_OF, FINAL, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Task
+from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore, Posted
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
 from engineering.bus.schema import ROLES, Message, MessageError, Party, Refs, fit_summary
 from engineering.connectors.identity import WORKSPACE, Caller, UnknownCaller, caller_from_event, own_account
@@ -99,6 +100,14 @@ def _int(body: Mapping[str, Any], key: str, default: int) -> int:
     raise BoardError('invalid', f'"{key}" is a whole number of at most {MAX_INT} either way')
 
 
+def _over(body: Mapping[str, Any]) -> bool:
+    """``over``: a take or block may end another person's hold (false by default)."""
+    over = body.get('over', False)
+    if not isinstance(over, bool):
+        raise BoardError('invalid', '"over" is true or false: end another person\'s hold only if you mean to')
+    return over
+
+
 def _object(raw_body: Any) -> dict[str, Any]:
     try:
         body = json.loads(raw_body) if isinstance(raw_body, str) else None
@@ -120,6 +129,50 @@ def _event(task: Task, run_id: str) -> Message:
                    summary=_summary(f'{task.title} ({task.state}, by {task.updated_by})'),
                    refs=Refs(s3=tuple(sorted(task.result_keys))),
                    at=at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
+
+
+def _person_event(task: Task, run_id: str, subject: str, action: str) -> Message:
+    """A person's change of a task (not a post) as a board event: to the run, never the role again (a re-prioritised
+    open task is not a new post, and voc-msg/1 addresses a ``task.posted`` only to a role). Its type is the task's
+    state, ``task.progress`` for an open one, and its summary names the action (``…: priority by a person``): a
+    receiver tells it from an agent's report, whose summary starts ``progress:``, and from an agent's claim by its
+    sender. Its id is the change itself (the action and the time written): a retry of it is the same event."""
+    at = datetime.fromisoformat(task.updated_at)
+    kind = 'task.progress' if task.state == OPEN else EVENT_OF[task.state]
+    return Message(event_id=change_event_id(at, run_id, task.task_id, 'person', action, task.updated_at),
+                   ws=WORKSPACE, run_id=run_id, thread_id=task.task_id, task_id=task.task_id, attempt=task.attempt,
+                   sender=Party('human', subject), to=Party('run', run_id), type=kind,
+                   summary=_summary(f'{task.title} ({task.state}): {action} by a person'),
+                   at=at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
+
+
+def _post_is_last(task: Task) -> bool:
+    """The task is open and its post is still its last change (no later op, its poster the last to write it): an
+    equal post now is a retry of that post, so its event again (the same id, from the post's own time)."""
+    return task.state == OPEN and not task.updated_op and task.updated_by == task.posted_by
+
+
+def _post_role(body: Mapping[str, Any]) -> str:
+    """A post's role: one that claims tasks, never the coordinator's (its task is the run start's)."""
+    role = _text(body, 'role')
+    if role == COORDINATOR:
+        raise BoardError('forbidden', 'the coordinate task is the run start\'s, never posted')
+    if role not in ROLES:
+        raise BoardError('invalid', 'unknown role')
+    return role
+
+
+def _post(store: BoardStore, run_id: str, body: Mapping[str, Any], *, role: str, actor: str) -> Posted:
+    """A post's body read and written: ``{title, spec, priority?, parent_task?}`` (an agent's or a person's)."""
+    title = _text(body, 'title')
+    if len(title) > MAX_TITLE or redact(title) != title:
+        raise BoardError('invalid', f'"title" is at most {MAX_TITLE} characters, with nothing secret in it')
+    spec = body.get('spec', {})
+    if not isinstance(spec, dict):
+        raise BoardError('invalid', '"spec" is an object')
+    return store.post(WORKSPACE, run_id, role=role, title=title, spec=spec,
+                      parent_task=_text(body, 'parent_task', required=False), priority=_int(body, 'priority', 0),
+                      actor=actor)
 
 
 def _summary(text: str) -> str:
@@ -151,13 +204,18 @@ def repost_task(store: BoardStore, publisher: EventBridgePublisher, ws: str, run
     by the supervisor (``publisher`` carries its own source, ``voc.engineering/supervisor``, which may send
     ``task.posted``: bus/senders.py), so each service role publishes as one source.
 
-    A retry after a lost event finds the task already open at the next attempt, and publishes it again (the same
-    change, so the same event: a redelivery). A task that moved on (a newer claim) is refused: ``BoardError``.
+    Published when this call wrote the re-post, or when the store finds it landed already and the task's last change
+    is still the supervisor's own re-post at that attempt (``updated_by`` supervisor, ``updated_op`` repost): a retry
+    after a lost event, which publishes the same event again (its id comes from the change: a redelivery). A task
+    open at the next attempt by another's change (a person's release, which published its own ``task.posted`` as
+    that person) publishes nothing, so the supervisor never sends another sender's change as its own. A task that
+    moved on (a newer claim) is refused: ``BoardError``.
 
     The coordinate task is re-posted with no ``task.posted``: no role's agents read one for it (only the coordinator
     recorded on it claims it, ``BoardStore.launch_coordinator``), and the bus has no queue role ``coordinator``."""
-    task = store.repost(ws, run_id, task_id, reason=reason, attempt=attempt)
-    if task.task_id != COORDINATE_TASK:
+    reposted = store.repost_change(ws, run_id, task_id, reason=reason, attempt=attempt)
+    task = reposted.task
+    if reposted.own and task.task_id != COORDINATE_TASK:
         publisher.publish(replace(_event(task, run_id), sender=Party('supervisor', 'supervisor')))
     return task
 
@@ -180,6 +238,12 @@ NO_START_RECORD = ('this run was started without a repository connection or comm
 #: function's own limit (engineering-bus.ts: 120 s), and never retried by the client: a retry is the coordinator's,
 #: which the runtime answers with the session it has or refuses while the first launch is still under way.
 LAUNCH_READ_TIMEOUT_SECONDS = 100
+
+
+class Publisher(Protocol):
+    """The bus (``EventBridgePublisher``, with its caller's own source)."""
+
+    def publish(self, message: Message) -> object: ...
 
 
 class Launcher(Protocol):
@@ -400,24 +464,17 @@ class BoardApi:
                                limit=limit)
 
     def _post(self, caller: Caller, body: Mapping[str, Any]) -> Outcome:
-        role = _text(body, 'role')
-        if role == COORDINATOR:
-            raise BoardError('forbidden', 'the coordinate task is the run start\'s, never posted')
-        if role not in ROLES:
-            raise BoardError('invalid', 'unknown role')
+        role = _post_role(body)
         if role not in POSTERS.get(caller.role, frozenset()):
             raise BoardError('forbidden', f'a {caller.role} does not post {role} tasks')
-        title = _text(body, 'title')
-        if len(title) > MAX_TITLE or redact(title) != title:
-            raise BoardError('invalid', f'"title" is at most {MAX_TITLE} characters, with nothing secret in it')
-        spec = body.get('spec', {})
-        if not isinstance(spec, dict):
-            raise BoardError('invalid', '"spec" is an object')
-        posted = self.store.post(WORKSPACE, caller.run_id, role=role, title=title, spec=spec,
-                                 parent_task=_text(body, 'parent_task', required=False),
-                                 priority=_int(body, 'priority', 0), actor=agent_id(caller))
-        # An equivalent task still open may be a retry whose first event was lost: publish it again (same id).
-        return Outcome(posted.task, publish=posted.created or posted.task.state == OPEN, duplicate=not posted.created)
+        actor = agent_id(caller)
+        posted = _post(self.store, caller.run_id, body, role=role, actor=actor)
+        # An equivalent task still open may be a retry whose first event was lost: publish it again (same id), while
+        # the post is still its last change (after a person's priority, say, it would be a new event, not a retry)
+        # and it was this caller's (another's post, a person's above all, is never published as this agent's).
+        return Outcome(posted.task,
+                       publish=posted.created or (posted.task.posted_by == actor and _post_is_last(posted.task)),
+                       duplicate=not posted.created)
 
     def operate(self, caller: Caller, body: Mapping[str, Any]) -> Outcome:
         op = body.get('op')
@@ -486,10 +543,78 @@ class BoardApi:
             except MessageError:
                 logger.exception('board: an event did not pass the schema', extra={'task_id': task.task_id})
                 return _answer(400, {'error': 'the board changed but its event could not be built: shorten the text'})
-            except (PublishError, ClientError, BotoCoreError):
+            except PublishError:   # (refused, or the bus's call failed: EventBridgePublisher.publish)
                 logger.exception('board: the bus refused an event', extra={'task_id': task.task_id})
                 return _answer(503, {'error': 'the board changed but its event was not published: retry'})
         return _answer(200, {'task': task.view(), 'agent': agent_id(caller), 'duplicate': outcome.duplicate})
+
+
+@dataclass(frozen=True)
+class PersonBoard:
+    """A person's board actions (plan v3 4.3): post, re-prioritise, block or take a task, and move a task they took or
+    give it back (release).
+
+    The Agents API's routes (``/agents/engineering/<run_id>/board/tasks…``) call it for an administrator acting for
+    themselves, never a delegated credential, like the run monitor's signals. Each change is the board store's own
+    conditional write, with a history row naming ``human:<subject>`` (D1, D4), then the board's ``task.*`` event,
+    published from the API's own source (``voc.engineering/api``) with ``from.kind`` human: the only way the bus
+    takes a ``task.*`` from the API (bus/senders.py). A failed publish raises after the row is written; a retry is
+    the same change, so the same event (a redelivery). Never the coordinate task (signal the run instead)."""
+
+    store: BoardStore
+    publisher: Publisher
+
+    def post(self, run_id: str, body: Mapping[str, Any], subject: str) -> dict[str, Any]:
+        """``{role, title, spec, priority?, parent_task?}``: any role that claims tasks, within the run's caps (the
+        same dedupe as an agent's post: an equal task still under way is answered, ``duplicate``). Published to its
+        role like any post: when it is new, or their own post retried while it is still its last change (the same event again);
+        never someone else's equal task, whose event is theirs."""
+        actor = PERSON_PREFIX + subject
+        posted = _post(self.store, run_id, body, role=_post_role(body), actor=actor)
+        task = posted.task
+        if posted.created or (task.posted_by == actor and _post_is_last(task)):
+            self.publisher.publish(replace(_event(task, run_id), sender=Party('human', subject)))
+        return {'task': task.view(), 'duplicate': not posted.created}
+
+    def act(self, run_id: str, task_id: str, action: str, body: Mapping[str, Any], subject: str) -> dict[str, Any]:
+        """``priority {priority}``, ``block {reason, over?}``, ``take {over?}`` (``over``: end another person's hold) or
+        ``move {to}`` (only a task they took, at its attempt) or ``release`` (a task they took, open again at its
+        next attempt: published to its role, as a re-post) on a task that has not ended. Published to the run
+        (``_person_event``) when the task's last change is theirs and this action (``updated_op``): this one, or
+        their own earlier try of it (the same event again); a change already there by someone else, or a no-op
+        after another change of theirs (a priority it already has after their take), is answered and publishes
+        nothing."""
+        actor = PERSON_PREFIX + subject
+        if action == 'priority':
+            if 'priority' not in body:
+                raise BoardError('invalid', '"priority" is a whole number')
+            task = self.store.reprioritise(WORKSPACE, run_id, task_id, priority=_int(body, 'priority', 0), actor=actor)
+        elif action == 'block':
+            task = self.store.block(WORKSPACE, run_id, task_id, reason=_text(body, 'reason'), actor=actor,
+                                    over=_over(body))
+        elif action == 'take':
+            task = self.store.take(WORKSPACE, run_id, task_id, actor=actor, over=_over(body))
+        elif action == 'move':
+            to_state = _text(body, 'to')
+            if to_state == NEEDS_HUMAN:   # (a person's "needs a person" always says why: D4)
+                raise BoardError('invalid', 'a task needs a person by block, with a reason: not by a move')
+            held = self.store.task(WORKSPACE, run_id, task_id)
+            if held.lease_agent != actor:
+                raise BoardError('forbidden', 'only a task you took is moved by you: take it first')
+            task = self.store.move(WORKSPACE, run_id, task_id, agent=actor, epoch=held.attempt,
+                                   to_state=to_state, result_keys=())
+        elif action == 'release':
+            task = self.store.release(WORKSPACE, run_id, task_id, actor=actor)
+        else:
+            raise BoardError('invalid', 'the action is one of block, move, priority, release, take')
+        # Only a change of theirs is published: this one, or their earlier try of it (the same op and time, so the
+        # same event id). A no-op answered as it is (a priority it already has, say) writes nothing and says nothing.
+        if (task.updated_by, task.updated_op) == (actor, action):
+            # A release is open for its role again, as a re-post: the role is told (task.posted), as the person.
+            event = (replace(_event(task, run_id), sender=Party('human', subject)) if action == 'release'
+                     else _person_event(task, run_id, subject, action))
+            self.publisher.publish(event)
+        return {'task': task.view()}
 
 
 _api: BoardApi | None = None

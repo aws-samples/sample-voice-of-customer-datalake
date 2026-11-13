@@ -7,7 +7,9 @@
   once the first ended (nothing is deleted, D5).
 - ``claim``: only an ``open`` task of the caller's role; the lease's epoch is the task's attempt. A claim by the
   agent that already holds the lease, on a task that has not ended, answers the task as it is (a continuation in a
-  new MicroVM reads its brief by claiming again).
+  new MicroVM reads its brief by claiming again). A task with a launch recorded at its attempt is claimed only by
+  that launch's agent; an agent launched for an older attempt (the task re-posted or given back since) claims it
+  never again, in the write's condition too.
 - ``coordinate_items``: the run's ``coordinate`` task (role ``coordinator``), which only the run's start writes,
   in its own transaction (trusted code, never an agent's post): the coordinator claims it, renews and reports
   progress on it like any agent, so the supervisor judges it by its lease too. It records the coordinator the start
@@ -23,7 +25,15 @@
   move and writes no history row.
 - ``repost`` (the supervisor's, for an expired lease): the task is ``open`` again at ``attempt + 1``, its lease
   cleared, with a history row naming the supervisor and its reason; on its own row, not through ``post``, so the
-  ``SPEC#`` dedupe does not stand in its way, and the next claim's lease takes the new attempt as its epoch.
+  ``SPEC#`` dedupe does not stand in its way, and the next claim's lease takes the new attempt as its epoch. Never a
+  task a person holds.
+- A person's ``reprioritise``, ``block``, ``take`` and ``release`` (the Agents API's, as ``human:<subject>``; never
+  the coordinate task): each conditional on the state and attempt read (a take, block or release also on the holder
+  read: another person's hold is ended only with ``over``, and only the holder releases), with a history row. A take
+  holds the task with no expiry; a block ends it as needing a person and clears the holder; a release gives it back,
+  open at the next attempt like a re-post. Each, every ``move`` and a re-post (``repost``) stamps ``updated_op`` (a
+  post or claim clears it): what tells their change, or its retry, from a no-op answered as it is (only a change is
+  published, and a re-post's retry again only while the re-post is still the task's last change).
 - A task keeps at most ``MAX_RESULT_KEYS`` result keys, which every board event about it carries. A repeated claim
   or move that already took effect answers the task as it is (callers retry after a lost answer).
 - History (D1, D4): the ``TASK#`` row is the task now; each post, claim and move also writes, in the same
@@ -42,7 +52,7 @@ from typing import Any
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
-from engineering.board.model import CLAIMED, FINAL, MOVES, OPEN, Move, Task, task_key
+from engineering.board.model import CLAIMED, FINAL, MOVES, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Move, Task, task_key
 from engineering.quality_gate.text import redact
 from engineering.rows import Refused, get_row, run_pk, run_rows
 from engineering.workspace.layout import parse_agent_key
@@ -57,6 +67,10 @@ MAX_RESULT_KEYS = 16
 MAX_KEY_LENGTH = 512
 #: A progress step or a re-post's reason: a line, not a log.
 MAX_LINE = 200
+#: A task's priority, either way (an agent's post takes the same bound: board/api.py MAX_INT).
+MAX_PRIORITY = 1_000_000
+#: A person's lease never runs out: the largest epoch-seconds a lease takes (the year 9999).
+PERSON_LEASE_EXPIRES = 253_402_300_799
 #: The run's coordinate task (one per run, the coordinator's): its id and its role.
 COORDINATE_TASK = 'coordinate'
 COORDINATOR = 'coordinator'
@@ -75,6 +89,24 @@ class Posted:
     created: bool
 
 
+@dataclass(frozen=True)
+class Reposted:
+    """A re-post's answer: ``written`` by this call; ``own``, the task's last change is the caller's own re-post."""
+
+    task: Task
+    written: bool
+    own: bool
+
+
+#: The ``updated_op`` (and history op) of a re-post.
+REPOST_OP = 'repost'
+
+
+def _reposted(task: Task, actor: str, *, written: bool) -> Reposted:
+    return Reposted(task, written=written,
+                    own=written or (task.updated_by == actor and task.updated_op == REPOST_OP))
+
+
 def spec_hash(role: str, parent_task: str, spec: Mapping[str, Any]) -> str:
     """Equal tasks (role, parent, spec) hash alike, whatever the spec's key order."""
     canonical = json.dumps([role, parent_task, spec], sort_keys=True, separators=(',', ':'))
@@ -87,6 +119,16 @@ def _result_key(key: str, ws: str, run_id: str, agent: str, epoch: int) -> bool:
     return parsed is not None and (parsed.ws, parsed.run_id, parsed.agent, parsed.attempt) == (ws, run_id, agent,
                                                                                                 epoch)
 
+
+def _may_claim(task: Task, agent: str) -> bool:
+    """An agent's claim of a task (not the coordinate task): any agent of its role while no launch is recorded at the
+    task's attempt, except the agent launched for an older attempt (re-posted since: a new attempt is a new agent's),
+    else only the agent launched for it at that attempt."""
+    if not task.launched_agent:
+        return True
+    if task.launched_attempt == task.attempt:
+        return task.launched_agent == agent
+    return task.launched_agent != agent
 
 
 @dataclass(frozen=True)
@@ -208,6 +250,11 @@ class BoardStore:
 
     def _write(self, ws: str, run_id: str, task_id: str, write: _Write, log: Mapping[str, Any]) -> Task:
         """The task's conditional update and its history row, in one transaction; the task as it is after."""
+        return self._write_change(ws, run_id, task_id, write, log)[0]
+
+    def _write_change(self, ws: str, run_id: str, task_id: str, write: _Write,
+                      log: Mapping[str, Any]) -> tuple[Task, bool]:
+        """``_write``, and whether this call made the change (False: ``write.already``, a retry answered as it is)."""
         try:
             self.client.transact_write_items(TransactItems=[
                 {'Update': {'TableName': self.table, 'Key': task_key(ws, run_id, task_id),
@@ -223,9 +270,9 @@ class BoardStore:
                 raise
             current = self.task(ws, run_id, task_id)
             if write.already(current):
-                return current
+                return current, False
             raise BoardError('conflict', write.refusal) from exc
-        return self.task(ws, run_id, task_id)
+        return self.task(ws, run_id, task_id), True
 
     def _update(self, ws: str, run_id: str, task_id: str, write: _Write) -> Task:
         """A renewal or a progress report: no history row (neither is a move), so a plain conditional
@@ -246,14 +293,24 @@ class BoardStore:
         current = self.task(ws, run_id, task_id)
         if current.role != role:
             raise BoardError('forbidden', f'a {current.role} task is not for a {role}')
+        holding = current.lease_agent == agent and current.lease_epoch == current.attempt
+        if role != COORDINATOR and not holding and not _may_claim(current, agent):
+            raise BoardError('conflict', 'the task was launched for another agent: only that agent claims it'
+                             if current.launched_attempt == current.attempt else
+                             'the task moved on past the attempt this agent was launched for')
         now = self.now()
         at = now.isoformat()
         # The coordinate task is claimed only by the coordinator recorded on it at its attempt, in the write's own
         # condition: a replaced coordinator never claims it, even when the re-post lands between its read and this.
-        own = ' AND launched_agent = :agent AND launched_attempt = attempt' if role == COORDINATOR else ''
+        # Any other task: by any agent of its role while no launch is recorded at its attempt (and the caller was not
+        # launched for an older one: a stale agent, its attempt re-posted), else only by the agent launched for it at
+        # its attempt; in the write's condition too, for a launch or re-post landing after the read.
+        own = (' AND launched_agent = :agent AND launched_attempt = attempt' if role == COORDINATOR else
+               ' AND (attribute_not_exists(launched_agent) OR (launched_attempt = attempt AND launched_agent = :agent)'
+               ' OR (launched_attempt <> attempt AND launched_agent <> :agent))')
         return self._write(ws, run_id, task_id, _Write(
             set_expr='SET #state = :claimed, lease_agent = :agent, lease_epoch = attempt, lease_expires = :expires, '
-                     'updated_by = :agent, updated_at = :at',
+                     'updated_by = :agent, updated_at = :at REMOVE updated_op',   # (only a person's write or a move says)
             condition=f'#state = :open AND #role = :role AND attempt = :attempt{own}',
             names={'#state': 'state', '#role': 'role'},
             values={':claimed': {'S': CLAIMED}, ':open': {'S': OPEN}, ':role': {'S': role}, ':agent': {'S': agent},
@@ -426,34 +483,164 @@ class BoardStore:
         it at this attempt and never claimed it (it died or stalled first): the next attempt gets a new agent.
         ``actor``: who the task's row and history row name (D4): the supervisor, or the person whose Resume replaces
         a failed run coordinator (``runtime/board_bus.BoardLeases.coordinator_to_start``)."""
+        return self.repost_change(ws, run_id, task_id, reason=reason, attempt=attempt, actor=actor).task
+
+    def repost_change(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None,
+                      actor: str = 'supervisor') -> Reposted:
+        """``repost``, and whether this call re-posted the task (``written``: False when the task was already open at
+        the next attempt) and whether the task's last change is ``actor``'s own re-post (``own``: this call's, or an
+        earlier one of the same attempt whose event may have been lost; never a person's release or another
+        actor's re-post), so the caller publishes only its own change, again on a retry."""
         current = self.task(ws, run_id, task_id)
         unclaimed = current.state == OPEN and bool(current.launched_agent) and current.launched_attempt == current.attempt
         if attempt is None:
             if current.state == OPEN and current.attempt > 1 and not unclaimed:
-                return current   # (a re-post landed already: its retry publishes the same event again)
+                return _reposted(current, actor, written=False)   # (a re-post landed already)
             attempt = current.attempt
         if current.state == OPEN and current.attempt == attempt + 1:
-            return current   # (this re-post landed already: a retry after a lost answer)
+            return _reposted(current, actor, written=False)   # (a re-post or a release landed already)
         if (current.state == OPEN and not unclaimed) or current.state in FINAL:
             raise BoardError('conflict', f'a {current.state} task is not re-posted')
         if current.attempt != attempt:
             raise BoardError('conflict', f'the task is at attempt {current.attempt}, not the {attempt} judged')
+        if current.lease_agent.startswith(PERSON_PREFIX):
+            raise BoardError('conflict', 'a person holds the task: it is theirs until they move it')
         at = self.now().isoformat()
         why = redact(reason.strip())[:MAX_LINE]
         ended = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
-        return self._write(ws, run_id, task_id, _Write(
+        task, written = self._write_change(ws, run_id, task_id, _Write(
             # The last attempt's progress goes with its lease: the next holder starts with none, never stalled.
+            # ``updated_op`` says the last change is this re-post, so its retry can tell it from a release.
             set_expr='SET #state = :open, attempt = attempt + :one, waiting = :no, updated_by = :actor, '
-                     'updated_at = :at REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
+                     'updated_at = :at, updated_op = :op '
+                     'REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
+            # Never a task a person took (their lease, held in the write too: a take between the read and this).
             condition=(f'attempt = :attempt AND (NOT #state IN (:open, {", ".join(ended)}) '
-                       'OR (#state = :open AND launched_attempt = :attempt))'),
+                       'OR (#state = :open AND launched_attempt = :attempt)) '
+                       'AND (attribute_not_exists(lease_agent) OR NOT begins_with(lease_agent, :person))'),
             names={'#state': 'state'},
             values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False},
+                    ':person': {'S': PERSON_PREFIX}, ':op': {'S': REPOST_OP},
                     ':actor': {'S': actor}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
-            # Another re-post of the same attempt landed between the read and the write.
+            # Another re-post of the same attempt (or a release) landed between the read and the write.
             already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
             refusal='the task moved on since it was read'),
-            Move(task_id, OPEN, actor, at, attempt + 1, 'repost', reason=why).item(ws, run_id))
+            Move(task_id, OPEN, actor, at, attempt + 1, REPOST_OP, reason=why).item(ws, run_id))
+        return _reposted(task, actor, written=written)
+
+    # ---- a person's board actions (the Agents API's, admins acting for themselves; plan v3 4.3) --------------------
+
+    def _person_read(self, ws: str, run_id: str, task_id: str, actor: str) -> Task:
+        """The task a person acts on: never the coordinate task (the run's own), never as an agent's id."""
+        if not actor.startswith(PERSON_PREFIX):
+            raise BoardError('invalid', f'a person acts as {PERSON_PREFIX}<their id>')
+        current = self.task(ws, run_id, task_id)
+        if current.task_id == COORDINATE_TASK:
+            raise BoardError('forbidden', "the coordinate task is the run coordinator's: signal the run instead")
+        return current
+
+    def _person_write(self, ws: str, run_id: str, current: Task, *, op: str, actor: str, set_expr: str,
+                      values: Mapping[str, Any], to_state: str | None, reason: str,
+                      done: Callable[[Task], bool], remove: str = '', pin_holder: bool = False,
+                      row_attempt: int | None = None) -> Task:
+        """A person's change of ``current`` (as read), with its history row naming them (at ``row_attempt``, else
+        the task's attempt); ``to_state`` None keeps the state. ``done``: the change is already there (a retry), so it is answered as it is and writes nothing. Else
+        the task must not have ended, and the write holds the state and attempt it read (a move in between, an agent's
+        or a re-post, refuses it: never undone)."""
+        if done(current):
+            return current
+        if current.state in FINAL:
+            raise BoardError('conflict', 'the task has ended')
+        at = self.now().isoformat()
+        # ``pin_holder``: the lease holder read holds too (a take or block: one made since, by anyone, refuses it).
+        holder = {':held_was': {'S': current.lease_agent}} if pin_holder and current.lease_agent else {}
+        held = ('' if not pin_holder else
+                ' AND lease_agent = :held_was' if current.lease_agent else ' AND attribute_not_exists(lease_agent)')
+        return self._write(ws, run_id, current.task_id, _Write(
+            set_expr=(f'SET {set_expr}, updated_by = :actor, updated_at = :at, updated_op = :op'
+                      + (f' REMOVE {remove}' if remove else '')),
+            condition=f'#state = :was AND attempt = :attempt{held}', names={'#state': 'state'},
+            values={**values, **holder, ':was': {'S': current.state}, ':actor': {'S': actor}, ':at': {'S': at},
+                    ':attempt': {'N': str(current.attempt)}, ':op': {'S': op}},
+            already=done, refusal='the task has ended or moved on since it was read: read the board again'),
+            Move(current.task_id, to_state or current.state, actor, at,
+                 current.attempt if row_attempt is None else row_attempt, op, reason=reason).item(ws, run_id))
+
+    def reprioritise(self, ws: str, run_id: str, task_id: str, *, priority: int, actor: str) -> Task:
+        """A person changes the priority of a task that has not ended (its state as it is)."""
+        if isinstance(priority, bool) or abs(priority) > MAX_PRIORITY:
+            raise BoardError('invalid', f'a priority is a whole number of at most {MAX_PRIORITY} either way')
+        current = self._person_read(ws, run_id, task_id, actor)
+        return self._person_write(ws, run_id, current, op='priority', actor=actor, set_expr='priority = :priority',
+                                  values={':priority': {'N': str(priority)}}, to_state=None,
+                                  reason=f'priority {priority}',
+                                  done=lambda t: t.priority == priority and t.state not in FINAL)
+
+    @staticmethod
+    def _hold_check(current: Task, actor: str, over: bool) -> None:
+        """Another person's hold is ended (taken or blocked) only when ``over`` asks for it."""
+        held_by_another = current.lease_agent.startswith(PERSON_PREFIX) and current.lease_agent != actor
+        if held_by_another and not over and current.state not in FINAL:
+            raise BoardError('conflict', 'another person holds the task: take it over only if you mean to')
+
+    def block(self, ws: str, run_id: str, task_id: str, *, reason: str, actor: str, over: bool = False) -> Task:
+        """A person stops a task that has not ended: it needs a person (``needs_human``), with their reason; its
+        holder's lease is cleared, so the agent on it can move it no more (the supervisor reads an ended task as
+        ended, holder or none, and ends that agent's session). Another person's hold is ended only when ``over``
+        asks for it (the write holds the holder read, as a take's does)."""
+        why = redact(reason.strip())[:MAX_LINE]
+        if not why:
+            raise BoardError('invalid', 'a block says why (a line)')
+        current = self._person_read(ws, run_id, task_id, actor)
+        self._hold_check(current, actor, over)
+        return self._person_write(
+            ws, run_id, current, op='block', actor=actor, to_state=NEEDS_HUMAN, reason=why,
+            # (the reason is the history row's: a block is a move, D1)
+            set_expr='#state = :blocked', remove='lease_agent, lease_epoch, lease_expires, waiting',
+            values={':blocked': {'S': NEEDS_HUMAN}},
+            # Their own block, retried: one an agent's move or another person made is the task having ended (409).
+            done=lambda t: t.state == NEEDS_HUMAN and t.updated_by == actor, pin_holder=True)
+
+    def take(self, ws: str, run_id: str, task_id: str, *, actor: str, over: bool = False) -> Task:
+        """A person takes a task that has not ended: they hold it from now, with no expiry (``lease_expires`` the
+        largest a lease takes), at its attempt, so its agent can move it no more and the supervisor, which judges
+        agents' sessions, leaves it alone; they move it on like any holder (``move`` with their id and the attempt).
+        An open task is claimed by them; one under way keeps its state. Another person's hold is taken over only
+        when ``over`` asks for it (the write holds the state read, so a hold made since is refused too)."""
+        current = self._person_read(ws, run_id, task_id, actor)
+        self._hold_check(current, actor, over)
+        state = CLAIMED if current.state == OPEN else current.state
+        return self._person_write(
+            ws, run_id, current, op='take', actor=actor, to_state=state, reason='taken by a person',
+            set_expr=('#state = :held, lease_agent = :actor, lease_epoch = attempt, lease_expires = :forever, '
+                      'waiting = :no'),
+            values={':held': {'S': state}, ':forever': {'N': str(PERSON_LEASE_EXPIRES)}, ':no': {'BOOL': False}},
+            done=lambda t: t.lease_agent == actor and t.lease_epoch == t.attempt and t.state not in FINAL,
+            pin_holder=True)
+
+    def release(self, ws: str, run_id: str, task_id: str, *, actor: str) -> Task:
+        """A person gives back a task they took: open again at the next attempt, as a re-post (for the run
+        coordinator to launch an agent of its role on, from the task's spec: a new attempt starts with no
+        checkpoint), their hold and the last attempt's progress cleared, with a history row at the
+        attempt it opens. Only the holder releases, in the write's own condition too. The attempt moves on, so the
+        coordinator's next launch for it numbers a new agent (a launch at the old attempt is not reused)."""
+        current = self._person_read(ws, run_id, task_id, actor)
+
+        def done(task: Task) -> bool:
+            # Their own release (retried, or landed between the read and the write): open, its last change theirs.
+            # A claim since clears updated_op and a re-post sets its own, so it is never a later attempt's.
+            return task.state == OPEN and task.updated_by == actor and task.updated_op == 'release'
+
+        if done(current):   # (before the holder check: nobody holds it now)
+            return current
+        if current.lease_agent != actor:
+            raise BoardError('forbidden', 'only a task you hold is given back by you: read the board again')
+        return self._person_write(
+            ws, run_id, current, op='release', actor=actor, to_state=OPEN, reason='released by a person',
+            set_expr='#state = :open, attempt = attempt + :one',
+            remove='lease_agent, lease_epoch, lease_expires, progress_at, step',
+            values={':open': {'S': OPEN}, ':one': {'N': '1'}}, done=done, pin_holder=True,
+            row_attempt=current.attempt + 1)   # (its history row at the attempt it opens, as a re-post's)
 
     def move(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, to_state: str,
              result_keys: Sequence[object]) -> Task:
@@ -483,9 +670,9 @@ class BoardStore:
         from_names = {f':from{index}': {'S': state} for index, state in enumerate(sources)}
         add = ' ADD result_keys :keys' if own else ''
         return self._write(ws, run_id, task_id, _Write(
-            set_expr='SET #state = :to, updated_by = :agent, updated_at = :at' + add,
+            set_expr='SET #state = :to, updated_by = :agent, updated_at = :at, updated_op = :op' + add,
             condition=f'{holder} AND #state IN ({", ".join(from_names)}){room}', names={'#state': 'state'},
-            values={**values, **from_names, **keys, ':to': {'S': to_state}, ':at': {'S': at}},
+            values={**values, **from_names, **keys, ':to': {'S': to_state}, ':at': {'S': at}, ':op': {'S': 'move'}},
             # A retry that took effect: the same move, its keys already kept (a move adding keys is not a retry).
             already=lambda t: (t.state == to_state and t.lease_agent == agent and t.lease_epoch == epoch
                                and set(own) <= set(t.result_keys)),

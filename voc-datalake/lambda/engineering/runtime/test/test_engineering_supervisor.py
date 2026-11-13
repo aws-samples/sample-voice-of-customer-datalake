@@ -349,11 +349,15 @@ def test_a_run_coordinator_that_keeps_stalling_goes_to_a_person_after_its_contin
 
 
 
-def test_a_session_whose_task_another_agent_now_holds_ends_never_continued_nor_reposted(world: World):
+@pytest.mark.parametrize('holder', [
+    'fixer-2',           # re-posted and taken by another agent, whose heartbeat is fresh
+    'human:admin-sub',   # taken by a person (board/store.py take: same attempt, no expiry; a person never renews)
+])
+def test_a_session_whose_task_another_now_holds_ends_never_continued_nor_reposted(world: World, holder: str):
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
-    # Its task was re-posted and taken by fixer-2, whose heartbeat is fresh: none of it is fixer-1's.
-    world.renew(1060, agent_id='fixer-2')
+    key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
+    world.board.leases[key] = replace(world.board.leases[key], agent_id=holder, renewed_at=1060)
     world.supervisor.tick(1060)
     ended = world.session('fixer-1')
     assert (ended.status, ended.continuation, world.board.reposted) == ('reposted', 0, [])
@@ -378,9 +382,14 @@ def _working_on_a_task_that(world: World, **lease: Any) -> AgentSession:
     return working
 
 
-def test_a_task_that_has_ended_waits_for_its_harness_to_exit_never_judged_crashed(world: World):
-    # Done on the board, its lease no longer renewed: well past the lease's time, it is not a crash.
-    working = _working_on_a_task_that(world, final_state='done')
+@pytest.mark.parametrize(('final', 'holder'), [
+    ('done', 'fixer-1'),
+    ('needs_human', ''),   # (a person's block: the holder cleared, board_bus reads it as ended all the same)
+])
+def test_a_task_that_has_ended_waits_for_its_harness_to_exit_never_judged_crashed(world: World, final: str,
+                                                                                  holder: str):
+    # Ended on the board, its lease no longer renewed: well past the lease's time, it is not a crash.
+    working = _working_on_a_task_that(world, final_state=final, agent_id=holder)
     world.supervisor.tick(1000 + T.lease_ttl * 3)
     after = world.session('fixer-1')
     assert (after.status, after.crashes, after.continuation) == ('working', 0, working.continuation)
@@ -626,6 +635,19 @@ def test_shut_down_or_pause_on_an_agent_still_booting_takes_effect_at_once(world
         world.runtime.mint_token(booting.vm)
 
 
+def test_a_booting_agent_whose_open_task_a_person_blocked_is_ended_on_the_next_tick(world: World):
+    # Blocked before its claim: the board reads it ended with no holder (board_bus.BoardLeases.lease). The session
+    # ends at once, its MicroVM with it, never left to boot and then be refused its claim.
+    booting = world.launch(code=SLEEP)
+    assert booting.harness_at is None
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = Lease(
+        task_id='task-1', agent_id='', renewed_at=0, last_progress_at=0, attempt=1, final_state='needs_human')
+    world.supervisor.tick(1000)
+    ended = world.session('fixer-1')
+    assert (ended.status, ended.continuation, world.board.reposted) == ('failed', 0, [])
+    _assert_terminated(world, ended)
+
+
 def test_one_run_failing_does_not_keep_the_supervisor_from_the_others(world: World, monkeypatch: pytest.MonkeyPatch):
     world.launch(code='pass')
     world.runs.start('01JD3R4NZXQ7Y2W8K4M6P9T0CD', caps=RunCaps(max_tasks=5), now=0)
@@ -836,7 +858,8 @@ def test_a_session_whose_own_repost_landed_posts_it_again_and_ends_never_continu
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
     key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
-    # Its re-post was written (open at the next attempt) but its publish failed: the session stayed live.
+    # Its re-post was written (open at the next attempt) but its publish failed: the session stayed live. The board
+    # decides whether that re-post is still the supervisor's own to publish again (test_engineering_board_bus.py).
     world.board.leases[key] = Lease(task_id='task-1', agent_id='', renewed_at=0, last_progress_at=0, attempt=2)
     world.supervisor.tick(1060)
     ended = world.session('fixer-1')

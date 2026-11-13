@@ -17,6 +17,9 @@ from engineering.rows import string_attr as _s
 OPEN, CLAIMED, IN_PROGRESS, IN_REVIEW, DONE, FAILED, NEEDS_HUMAN = (
     'open', 'claimed', 'in_progress', 'in_review', 'done', 'failed', 'needs_human')
 FINAL = frozenset({DONE, FAILED, NEEDS_HUMAN})
+#: A person's id on the board (a history row's actor, a held lease's agent): ``human:<their subject>``. An agent's id is
+#: ``<role>-<n>``, so the two never meet.
+PERSON_PREFIX = 'human:'
 #: The moves a task's owner may make, from a state to the next.
 MOVES = {
     CLAIMED: frozenset({IN_PROGRESS, FAILED, NEEDS_HUMAN}),
@@ -97,6 +100,11 @@ class Task:
     posted_by: str = ''
     updated_by: str = ''
     updated_at: str = ''
+    #: The op of the last change ``updated_by`` records, when it was a person's take, block, priority or release, or a
+    #: move ('' after a post, a claim or a re-post, which clear it; a launch records neither): what tells a person's
+    #: change from a no-op answered as it is (only the change, or a retry of it while it is still the last, is
+    #: published).
+    updated_op: str = ''
     #: The holder's last progress report (``progress``): when (epoch seconds), its step, and whether it is waiting
     #: on an open question, review or decision (the supervisor leaves a waiting task alone).
     progress_at: int = 0
@@ -117,7 +125,7 @@ class Task:
             attempt=_n(item, 'attempt'), parent_task=_s(item, 'parent_task'), lease_agent=_s(item, 'lease_agent'),
             lease_epoch=_n(item, 'lease_epoch'), lease_expires=_n(item, 'lease_expires'),
             result_keys=tuple(item.get('result_keys', {}).get('SS', ())), posted_by=_s(item, 'posted_by'),
-            updated_by=_s(item, 'updated_by'), updated_at=_s(item, 'updated_at'),
+            updated_by=_s(item, 'updated_by'), updated_at=_s(item, 'updated_at'), updated_op=_s(item, 'updated_op'),
             progress_at=_n(item, 'progress_at'), step=_s(item, 'step'),
             waiting=item.get('waiting', {}).get('BOOL') is True, launched_agent=_s(item, 'launched_agent'),
             launched_attempt=_n(item, 'launched_attempt'),

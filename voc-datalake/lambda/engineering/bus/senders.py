@@ -10,8 +10,8 @@ workspace and run. Everything else is dropped and journalled, so no agent can
 speak for another, for a person, for the board or for the supervisor.
 
 Sources: ``voc.engineering/api`` (a signed-in person, through the API), ``voc.engineering/board`` (the board API,
-which also relays a person's moves on the board), ``voc.engineering/supervisor`` (the supervisor, and the delivery
-function's continuations), ``voc.engineering/webhook`` (repository outcomes), ``voc.engineering/conductor/<ws>/<run>``,
+as the board: a person's board actions go out from the API's source), ``voc.engineering/supervisor`` (the
+supervisor, and the delivery function's continuations), ``voc.engineering/webhook`` (repository outcomes), ``voc.engineering/conductor/<ws>/<run>``,
 ``voc.engineering/coach/<ws>/<run>`` (a run's coach: run-scoped, so the run and refs checks apply to it, and it speaks
 as ``coach``, never as ``system``) and ``voc.engineering/agent/<role>/<ws>/<run>/<agent>``, the role one of
 ``VOICES``: the roles that claim tasks, and the gate runner, which sends only its gate results (``msg.finding``,
@@ -31,16 +31,18 @@ VOICES = ROLES | {'gate-runner'}
 #: What the gate runner may send: its gate results.
 GATE_RUNNER_TYPES = frozenset({'msg.finding', 'review.result'})
 #: The ``from.kind`` values each kind of source may claim.
-FROM_KINDS = {'api': frozenset({'human'}), 'board': frozenset({'system', 'human'}),
+FROM_KINDS = {'api': frozenset({'human'}), 'board': frozenset({'system'}),
               'supervisor': frozenset({'supervisor'}), 'coach': frozenset({'coach'}),
               'webhook': frozenset({'system'}), 'conductor': frozenset({'conductor'}), 'agent': frozenset({'agent'})}
 _TALK = frozenset({'agent', 'conductor'})
 #: Per type family (or exact type), the kinds of source that may send it. A person (the API) talks only by
 #: answering; the supervisor signals agents too (the pause before a MicroVM's time is up).
 ALLOWED = {
-    'task.': frozenset({'board'}),
+    # The board's changes, and a person's board actions (board.api.PersonBoard), which the API publishes as the
+    # signed-in person: its source proves from.kind human, never another kind (FROM_KINDS).
+    'task.': frozenset({'board', 'api'}),
     # A task the supervisor re-posts (board.api.repost_task), published with the supervisor's own source.
-    'task.posted': frozenset({'board', 'supervisor'}),
+    'task.posted': frozenset({'board', 'supervisor', 'api'}),
     'signal.': frozenset({'api', 'supervisor'}),
     # The supervisor asks a silent agent for its state; a person's check-in is a message.
     'signal.check_in': frozenset({'supervisor'}),

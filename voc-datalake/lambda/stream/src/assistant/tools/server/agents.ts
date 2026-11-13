@@ -15,6 +15,7 @@ import { WORKFLOW_VALIDATE_RESOURCE } from '../internal-api.js';
 import { idProperty, idSchema, parseToolInput, resolveId, toolSpec } from '../spec.js';
 import { recordsAt } from './feedback-shape.js';
 import { seg, serverTool } from './common.js';
+import { getEngineeringRunTool } from './engineering-run.js';
 
 const AGENT_LIST_FIELDS = [
   'agent_id', 'name', 'description', 'enabled', 'scope', 'triggers', 'workflow_id', 'output', 'stats', 'updated_at',
@@ -218,5 +219,6 @@ export function createAgentsServerTools(deps: ToolDeps): ServerToolDefinition[] 
     listAgentRunsTool(deps),
     getAgentRunTool(deps),
     validateWorkflowTool(deps),
+    getEngineeringRunTool(deps),
   ];
 }

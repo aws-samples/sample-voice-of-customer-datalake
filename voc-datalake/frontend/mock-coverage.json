@@ -604,6 +604,36 @@
   },
   {
     "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "engineeringRunPath(runId, '/board/tasks')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/board/tasks",
+        "body": {
+          "role": "hunter",
+          "title": "Look at the export",
+          "spec": {
+            "instructions": "Check the CSV export"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "engineeringRunPath(runId, `/board/tasks/${encodeURIComponent(taskId)}/${action}`)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/board/tasks/task-fix-sort/priority",
+        "body": {
+          "priority": 5
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
     "method": "GET",
     "call": "engineeringRunPath(runId, '/reports')",
     "probes": [

@@ -59,6 +59,11 @@ class BoardLeases:
         if task.state == OPEN:
             # Nobody holds it, at this attempt (a re-post's next one, say): the supervisor sees the task moved on.
             return Lease(task_id=task.task_id, agent_id='', renewed_at=0, last_progress_at=0, attempt=task.attempt)
+        if not task.lease_agent and task.state in FINAL:
+            # Ended with no holder (a person's block clears it, of a task under way or one still open for a booting
+            # agent): ended all the same, never a lost lease (a crash, which would be continued in a new MicroVM).
+            return Lease(task_id=task.task_id, agent_id='', renewed_at=0, last_progress_at=0, attempt=task.attempt,
+                         final_state=task.state)
         if not task.lease_agent:
             return None
         # A task that has ended keeps its holder: the session waits for its harness to exit, never judged crashed.
@@ -79,8 +84,10 @@ class BoardLeases:
 
     def repost(self, run_id: str, task_id: str, reason: str, *, attempt: int) -> None:
         """Free the task at ``attempt`` and post it again at the next one (``task.posted``, published as the
-        supervisor); a task that has ended meanwhile is left as it is, one still open at ``attempt`` (never claimed) is
-        re-posted only if an agent was launched for it, and a newer attempt is refused by the board."""
+        supervisor, only when this call wrote the re-post: one already open at the next attempt, a retry's or a
+        person's release, publishes nothing); a task that has ended meanwhile is left as it is, one still open at
+        ``attempt`` (never claimed) is re-posted only if an agent was launched for it, and a newer attempt is refused
+        by the board."""
         task = self.store.task(WORKSPACE, run_id, task_id)
         if task.state in FINAL:
             return

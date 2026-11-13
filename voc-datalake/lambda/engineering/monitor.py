@@ -36,7 +36,7 @@ from typing import Any, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from engineering.board.model import FINAL, OPEN
+from engineering.board.model import FINAL, OPEN, PERSON_PREFIX
 from engineering.bus.publish import PublishError, new_event_id
 from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, fit_summary, summary_text
 from engineering.connectors.identity import WORKSPACE
@@ -287,7 +287,7 @@ class RunMonitor:
     def run_exists(self, run_id: str) -> bool:
         return self._get(run_id, 'META') is not None
 
-    def _open_run(self, run_id: str) -> None:
+    def open_run(self, run_id: str) -> None:
         meta = self._get(run_id, 'META')
         if meta is None:
             raise MonitorError('not_found', 'Engineering run not found')
@@ -304,6 +304,9 @@ class RunMonitor:
         state = string_attr(task, 'state')
         if not holder or epoch != signal.attempt or state == OPEN or state in FINAL:
             raise MonitorError('conflict', 'This task has moved on since you looked: reload the run')
+        if holder.startswith(PERSON_PREFIX):
+            # A person took it (board/store.py take): no agent holds it, so none is signalled through it.
+            raise MonitorError('conflict', 'A person holds this task: no agent works on it to signal')
         return Party('agent', holder)
 
     def signal(self, run_id: str, signal: Signal, actor: Actor) -> dict[str, Any]:
@@ -316,10 +319,10 @@ class RunMonitor:
         the supervisor could not apply is answered unavailable: sending it again publishes a new request and applies
         it once.
         """
-        publisher = self._bus()
+        publisher = self.bus()
         if self.runtime is None:
             raise MonitorError('unavailable', 'the run cannot be reached from here: the runtime is not configured')
-        self._open_run(run_id)
+        self.open_run(run_id)
         target = self._target(run_id, signal)
         event_id, at = new_event_id(), _at(self.now())
         record = Message(
@@ -361,8 +364,8 @@ class RunMonitor:
 
     def message(self, run_id: str, answer: Answer, actor: Actor) -> dict[str, Any]:
         """Publish a person's answer; answers its event and thread (the router writes it to the conversation)."""
-        publisher = self._bus()
-        self._open_run(run_id)
+        publisher = self.bus()
+        self.open_run(run_id)
         if answer.to.kind == 'agent' and all(s.agent_id != answer.to.id for s in self.sessions.of_run(run_id)):
             raise MonitorError('not_found', 'no such agent in this run')
         event_id, at = new_event_id(), _at(self.now())
@@ -371,7 +374,7 @@ class RunMonitor:
             sender=Party('human', actor.subject), to=answer.to, type='msg.answer', summary=answer.text, at=at))
         return {'event_id': event_id, 'thread_id': answer.thread_id, 'at': at}
 
-    def _bus(self) -> Publisher:
+    def bus(self) -> Publisher:
         if self.publisher is None:
             raise MonitorError('unavailable', 'the run cannot be reached from here: the bus is not configured')
         return self.publisher

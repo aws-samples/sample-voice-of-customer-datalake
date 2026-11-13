@@ -264,8 +264,10 @@ class Supervisor:
     def _end_superseded(self, session: AgentSession, lease: Lease, now: int) -> AgentSession:
         """End a session whose task moved on: never continued nor re-posted."""
         if not lease.agent_id and lease.attempt == session.task_attempt + 1:
-            # Its own re-post landed but its event may not have (a failed publish): posted again (the board answers
-            # a re-post that landed as it is, and publishes it again), then the session ends.
+            # Open at the next attempt: its own re-post landed but its event may not have (a failed publish), or a
+            # person gave the task back. The board's repost_task answers it as it is and publishes the same event
+            # again only while the task's last change is the supervisor's own re-post; after a person's release
+            # (published as that person) nothing. Then the session ends.
             self.board.repost(session.run_id, session.task_id, 'reposted', attempt=session.task_attempt)
         return self._end(session, 'reposted', now)
 
@@ -273,6 +275,11 @@ class Supervisor:
         lease = self._lease(session)
         if lease is not None and self._superseded(session, lease):
             return self._end_superseded(session, lease, now)
+        if session.status == 'booting' and lease is not None and not lease.agent_id and lease.ended:
+            # Ended with no holder while its agent still boots (a person blocked the open task before its claim):
+            # ended at once, never left to boot and then be refused its claim. (A working harness exits on its own
+            # once it reads its task ended, so it is left to.)
+            return self._end(session, ENDED_AS.get(lease.final_state, 'failed'), now)
         if lease is not None and not lease.agent_id:
             # Open at its own attempt: not claimed yet. Its harness claims it first thing, so the claim is due within
             # the crash clock from the harness's start (a slow first call is no crash); before that, no lease.

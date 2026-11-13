@@ -159,10 +159,10 @@ def test_a_second_repost_of_the_same_attempt_changes_nothing(board: Board, monke
     # A second supervisor tick read the task before the first re-post landed: it answers the task as it is.
     real, reads = board.store.task, count()
     monkeypatch.setattr(board.store, 'task', lambda *args: stale if next(reads) == 0 else real(*args))
-    second = board.store.repost(WS, RUN, task_id, reason='expired', attempt=1)
+    second = board.store.repost_change(WS, RUN, task_id, reason='expired', attempt=1)
     monkeypatch.undo()
-    assert (second, first.attempt, len(board.store.history(WS, RUN)[task_id])) == (
-        board.store.task(WS, RUN, task_id), 2, 3)
+    assert (second.task, second.written, first.attempt, len(board.store.history(WS, RUN)[task_id])) == (
+        board.store.task(WS, RUN, task_id), False, 2, 3)   # (the race lost: not this call's write, so unpublished)
 
 
 def test_a_stalled_task_is_reposted_at_its_attempt_and_a_retry_never_takes_a_newer_claim(board: Board) -> None:
@@ -354,12 +354,47 @@ def test_repost_task_publishes_the_task_again_to_its_role(board: Board) -> None:
     task_id = claimed(board)
     board.tick(LEASE_S + 1)
     task = repost_task(board.store, publisher, WS, RUN, task_id, 'lease ran out', 1)
-    # A retry after a lost event: already open at the next attempt, so the same event again.
+    # A retry after a lost event: already open at the next attempt, its last change still the supervisor's own
+    # re-post (updated_op repost), so the same event again: a redelivery.
     assert repost_task(board.store, publisher, WS, RUN, task_id, 'lease ran out', 1) == task
+    assert (task.updated_by, task.updated_op) == ('supervisor', 'repost')
     first, again = bus.messages()
     assert (first.type, first.to.kind, first.to.id, first.attempt, first.event_id, first.sender.kind) == (
         'task.posted', 'role', 'fixer', 2, again.event_id, 'supervisor')
     assert judge(first, bus.entries[0]['Source']).allowed   # (the router lets the supervisor send it)
+
+
+def test_repost_task_after_another_actors_repost_publishes_nothing(board: Board) -> None:
+    """A person's Resume re-posted it (actor the person): not the supervisor's own change to publish again."""
+    bus = Bus()
+    publisher = EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/supervisor')
+    task_id = claimed(board)
+    board.store.repost(WS, RUN, task_id, reason='resumed', attempt=1, actor='admin-1')
+    assert repost_task(board.store, publisher, WS, RUN, task_id, 'lease ran out', 1).attempt == 2
+    assert bus.entries == []
+
+
+def test_repost_task_after_a_persons_release_publishes_nothing(board: Board) -> None:
+    """The release is open at the next attempt and published its own task.posted as the person: the supervisor's
+    re-post of the attempt it judged finds it done, and never sends that change again as its own."""
+    bus = Bus()
+    publisher = EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/supervisor')
+    task_id = claimed(board)
+    board.store.take(WS, RUN, task_id, actor='human:admin-1')
+    board.store.release(WS, RUN, task_id, actor='human:admin-1')
+    task = repost_task(board.store, publisher, WS, RUN, task_id, 'lease ran out', 1)
+    assert (task.state, task.attempt, task.updated_by, bus.entries) == ('open', 2, 'human:admin-1', [])
+    assert [move.op for move in board.store.history(WS, RUN)[task_id]][-1] == 'release'   # (no re-post row)
+
+
+def test_the_store_says_whether_a_repost_wrote(board: Board) -> None:
+    task_id = claimed(board)
+    first = board.store.repost_change(WS, RUN, task_id, reason='expired', attempt=1)
+    again = board.store.repost_change(WS, RUN, task_id, reason='expired', attempt=1)
+    assert (first.written, first.own, again.written, again.own, again.task) == (True, True, False, True, first.task)
+    # A claim at the new attempt clears the op: a late retry is refused, never published.
+    board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-1')
+    assert board.store.task(WS, RUN, task_id).updated_op == ''
 
 
 def test_repost_task_raises_for_a_task_never_reposted(board: Board) -> None:

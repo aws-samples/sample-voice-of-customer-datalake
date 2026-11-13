@@ -13,13 +13,15 @@ import time
 from datetime import datetime
 from typing import Any
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from engineering.bus.schema import Message, parse
 
 _CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
 
 class PublishError(RuntimeError):
-    """The bus refused an entry."""
+    """The bus refused an entry, or its call failed."""
 
 
 def _ulid(ms: int, entropy: bytes) -> str:
@@ -46,10 +48,15 @@ class EventBridgePublisher:
         self.source = source
 
     def publish(self, message: Message) -> None:
+        """Put the checked message on the bus; PublishError when the bus refuses it or cannot be reached (either
+        way the caller's record is written and the message is not: its caller retries)."""
         checked = parse(message.to_dict())
-        result = self.client.put_events(Entries=[{
-            'EventBusName': self.bus_name, 'Source': self.source, 'DetailType': checked.type,
-            'Detail': checked.to_json()}])
+        try:
+            result = self.client.put_events(Entries=[{
+                'EventBusName': self.bus_name, 'Source': self.source, 'DetailType': checked.type,
+                'Detail': checked.to_json()}])
+        except (ClientError, BotoCoreError) as exc:
+            raise PublishError(f'the bus could not be reached for {checked.type} {checked.event_id}') from exc
         if result.get('FailedEntryCount', 0):
             code = (result.get('Entries') or [{}])[0].get('ErrorCode', 'unknown')
             raise PublishError(f'the bus refused {checked.type} {checked.event_id}: {code}')

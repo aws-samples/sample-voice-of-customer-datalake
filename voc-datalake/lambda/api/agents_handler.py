@@ -19,13 +19,19 @@ Permissions:
 - an engineering run's monitor, board, conversation and reports (``/agents/engineering/<run_id>``
   and its ``/*``, lambda/engineering/views.py and monitor.py) are read by administrators only,
   acting for themselves (403 for anyone else, an MCP credential included), and so are its signals
-  and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision); while the
-  engineering agents are off every caller gets 404.
+  and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision) and a
+  person's board actions (``POST …/board/tasks``, ``…/board/tasks/<task_id>/<action>``:
+  engineering/board/api.py PersonBoard); while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
-their table and workspace bucket; it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
+their table and workspace bucket, and PutItem and UpdateItem in a run's partition of the table (for a person's
+board actions, never a delete). IAM bounds that by partition only: the role may write every item of a run (META,
+TASK#, SPEC#, TASKLOG#, RUNLOG#, the AGENT# session rows, MSG#, INBOX#), and only this code keeps it to the board
+store's conditional writes of the task, its SPEC# marker, its TASKLOG# row and META's ``task_count``
+(lib/stacks/api-assistant-lambdas.ts says why ``dynamodb:Attributes`` cannot; routing those actions through the
+board function is the follow-up); it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
 answer 503). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
@@ -41,6 +47,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from aws_lambda_powertools.event_handler import Response, content_types
+from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import (
     agent_run_decisions,
@@ -63,6 +70,7 @@ from shared.exceptions import (
     ConflictError,
     NotFoundError,
     ServiceUnavailableError,
+    TooManyRequestsError,
     ValidationError,
 )
 from shared.logging import logger, tracer
@@ -990,6 +998,51 @@ def message_engineering_run(run_id: str):
     sent = _monitor_action(monitor, caller,
                            lambda m, body, actor: m.message(run_id, parse_message(body, run_id), actor))
     return {'message': sent}
+
+
+# A person's board actions (engineering/board/api.py PersonBoard, plan v3 4.3): the same gate as the monitor's
+# actions (admins acting for themselves; 404 while the module is off or for an unknown run), the bus needed (503
+# without it, like a signal), each change written by the board store with the person as its actor.
+_BOARD_ERRORS = {**_MONITOR_ERRORS, 'forbidden': AuthorizationError, 'cap': TooManyRequestsError}
+
+
+def _person_board_action(run_id: str, act: Any) -> dict:
+    monitor, caller = _acting_monitor(run_id)
+    from engineering.board.api import PersonBoard
+    from engineering.board.store import BoardStore
+    from engineering.bus.publish import PublishError, new_event_id
+    from engineering.bus.schema import MessageError
+    from engineering.rows import Refused
+
+    try:
+        monitor.open_run(run_id)   # (an ended run takes no more work, as with a signal)
+        people = PersonBoard(BoardStore(monitor.client, monitor.table, new_id=new_event_id), monitor.bus())
+        return act(people, json_object_body(app), caller.subject)
+    except Refused as refused:   # (the board's and the monitor's refusals: the same kinds)
+        raise _BOARD_ERRORS[refused.kind](str(refused)) from refused
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: the board could not be reached')
+        raise ServiceUnavailableError('the board could not be reached: retry') from exc
+    except MessageError as exc:
+        raise ValidationError('the board changed but its event could not be built: shorten the text') from exc
+    except PublishError as exc:
+        raise ServiceUnavailableError('the board changed but its event was not published: retry') from exc
+
+
+@app.post('/agents/engineering/<run_id>/board/tasks')
+@tracer.capture_method
+def post_engineering_task(run_id: str):
+    """``{role, title, spec, priority?, parent_task?}`` → ``{task, duplicate}``: a person posts a task (admin)."""
+    return _person_board_action(run_id, lambda people, body, subject: people.post(run_id, body, subject))
+
+
+@app.post('/agents/engineering/<run_id>/board/tasks/<task_id>/<action>')
+@tracer.capture_method
+def act_on_engineering_task(run_id: str, task_id: str, action: str):
+    """``priority {priority}`` | ``block {reason, over?}`` | ``take {over?}`` | ``move {to}`` | ``release {}`` →
+    ``{task}`` (admin)."""
+    return _person_board_action(run_id, lambda people, body, subject: people.act(run_id, task_id, action, body,
+                                                                                 subject))
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

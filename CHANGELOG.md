@@ -17,6 +17,41 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.18.00] - 2026-11-13
+
+Autonomous engineering agents: a person's actions on an engineering run's board, from the run monitor's Board tab or the Agents API; the AI assistant answers what an engineering run's agents are doing; an alarm on the workspace's denied reads; and two fixes to the board's claim and the supervisor's re-post. Merged from the voc-autonomous-c branch. Off by default.
+
+### Added
+
+- A person's board actions on an engineering run (`POST /agents/engineering/<run_id>/board/tasks`, `…/board/tasks/<task_id>/<action>` with `priority`, `block`, `take`, `move` and `release`): administrators acting for themselves, through the Agents API only (no MCP tool). Each is the board store's own conditional write with a history row naming `human:<subject>`, published as the board's `task.*` event from the API's source with `from.kind` human. Taking a task holds it with no expiry, so its agent can move it no more and the supervisor leaves it alone; the person moves it on like any holder, or gives it back (`release`): open again at its next attempt, as a re-post, for the run coordinator to launch a new agent on. Blocking ends it as needing a person, with their reason. Never the coordinate task.
+- The run monitor's Board tab gets an administrator's controls: post a task; take, take over, block, set priority, move and give back ("Give back to the agents") a task, in the nine locales and the dev mock.
+- The AI assistant's `get_engineering_run {run_id?, agent?}` answers "what is agent X doing" on an engineering run, for administrators and read only: the run and each agent's status, task, step, why it looks stuck and its recent tool calls, live agents first, the run on screen by default (page context `engineeringRunId`). It reads the run monitor's existing routes with the administrator's own sign-in, and the agents' words reach the model as data. No API change and no MCP tool.
+- The `engineering-denied-reads` alarm (alerting, only with `-c engineeringAgents=true`): the `EngineeringWorkspaceDeniedReads` of the workspace's three readers summed over 5 minutes, above 20 (docs/deployment.md).
+
+### Changed
+
+- The bus takes `task.*` from the API's own source only with `from.kind` human (a person's board actions), and the board's source proves `system` only (`FROM_KINDS`).
+- The Agents API's role gets `dynamodb:PutItem` and `dynamodb:UpdateItem` on the engineering table only for keys whose leading key is a run's partition (`WS#default#RUN#` and a 26-character run id), never `DeleteItem`. IAM bounds it by partition only: the role can write every item of a run (META's every attribute, the TASK#, SPEC#, TASKLOG# and RUNLOG# rows, the agents' AGENT# session rows, the MSG# and INBOX# rows), and only the code keeps it to the board store's conditional writes (the task row, its SPEC# marker, its TASKLOG# row and META's `task_count`); `dynamodb:Attributes` cannot narrow it per row. Routing a person's actions through the board function, and dropping this grant, is the follow-up (docs/autonomous-engineering.md, "The board").
+- Ending another person's hold, by a take or a block, needs `over: true` (the run monitor asks first), and the write holds the holder it read; an agent's signal to a task a person holds answers 409; a person's move to `needs_human` answers 400 (block it, with a reason).
+- A person's board action publishes its event only when it changed the task (`updated_op` on the task row); a no-op publishes nothing, and an equal post re-sends its event only while that post is still the task's last change. A bus that cannot be reached after a board write is a `PublishError` from `EventBridgePublisher`, answered 503 "the board changed but its event was not published: retry".
+- The supervisor reads a task ended with no holder (a person's block) as ended (`Lease(agent_id='', final_state=…)`), never as a lost lease it would continue in a new MicroVM.
+- A plan's think step in the agents pack (`plan_contract.json` `admin_read_packs` gains `agents`) runs with the approver's admin rights only after the conductor's Cognito re-check, as in scrapers and settings.
+- The assistant's create card for an engineering flow names the 409 a deployment without the engineering module answers.
+
+### Fixed
+
+- An agent's post equal to a task still under way publishes its event again only when the post is that task's last change and was this caller's own, so a person's post (or another agent's) is never re-published as the board's on another's behalf.
+- An agent still booting whose open task a person blocked is ended on the supervisor's next tick, its MicroVM with it, instead of being left to boot and then refused its claim.
+- The board's claim respects the launch recorded on a task: while a launch is recorded at the task's attempt, only that launch's agent claims it, and an agent launched for an older attempt (the task re-posted or given back since) is refused, in the write's own condition too (409). A task with no launch recorded at its attempt is still claimed by any agent of its role, the holder's repeated claim is still answered as it is, and the coordinate task keeps its own rule.
+- The supervisor never re-publishes another sender's change as its own: a re-post stamps `updated_op` `repost`, and the board's `repost_task` publishes `task.posted` when it wrote the re-post, or when the store answers it as already done and the task's last change is still the supervisor's own re-post at that attempt (a retry after a lost event: the same event id, a redelivery; `BoardStore.repost_change`). A task open at the next attempt by a person's release (published as that person) or by another actor's re-post publishes nothing, on the supervisor's end of a session whose task moved on too.
+
+### Upgrade notes
+
+- A task row written before this release has no `updated_op`, so a person's retry of a change made before the upgrade publishes nothing (the change and its history row stay).
+- A re-post written before this release has no `updated_op` `repost`, so the supervisor's retry of it after the upgrade publishes nothing (the task stays open at its next attempt).
+- An agents think step in a plan now fails when Cognito cannot be reached (the re-check before it reads the agents pack), as a scrapers or settings one does.
+- An agent launched for a task before this release and re-posted since can no longer claim that task at its new attempt; the coordinator's next launch numbers a new agent for it.
+
 ## [6.17.00] - 2026-11-13
 
 Autonomous engineering agents: the benchmark harness, its first fixtures and the benchmark gate for skill versions. Nothing invokes them yet (the coach that proposes versions and runs the benchmark is planned); off by default.

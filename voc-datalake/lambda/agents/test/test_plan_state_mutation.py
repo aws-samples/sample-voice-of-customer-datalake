@@ -200,6 +200,7 @@ class TestPredicates:
     @pytest.mark.parametrize(('definition', 'reads'), [
         ({'kind': 'think', 'pack': 'scrapers'}, True),
         ({'kind': 'think', 'pack': 'settings'}, True),
+        ({'kind': 'think', 'pack': 'agents'}, True),   # (get_engineering_run, re-checked as an admin before the step)
         ({'kind': 'think', 'pack': 'core'}, False),
         (_write(pack='scrapers'), False),
     ])

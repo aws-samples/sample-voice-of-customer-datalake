@@ -396,4 +396,4 @@ class TestConductorTables:
         }) == CARD_ONLY_WRITE_TOOLS
 
     def test_admin_read_packs(self):
-        assert frozenset({'scrapers', 'settings'}) == ADMIN_READ_PACKS
+        assert frozenset({'scrapers', 'settings', 'agents'}) == ADMIN_READ_PACKS   # (agents: get_engineering_run)

@@ -10,6 +10,9 @@
 //                     outcome (each agent's status, or why not); 503 when the agent is busy
 //                     (MOCK_ENGINEERING_AGENT_BUSY=1), the request recorded
 //   POST …/messages   {to: 'conductor' | 'agent', agent?, text, thread_id?}: admin; 404 for an agent not in the run
+//   POST …/board/tasks {role, title, spec, priority?}: admin; a person posts a task (403 for the coordinator's role)
+//   POST …/board/tasks/<task_id>/<action>: take {over?} | block {reason} | priority {priority} | move {to} (only a task
+//                     the mock's admin took); 409 for an ended task or another person's hold without over
 //   GET  …/reports    the run's reports, each with its latest version
 //   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
 // Every GET of the overview moves the run a little (the agents' ages), so polling shows it live.
@@ -68,17 +71,17 @@ const run = {
     flow: SAMPLE_FLOW_ID, status: 'running', started_at: minutesAgo(42), ended_at: null,
   },
   agents: [
-    agent('coordinator-0', 'coordinator', {
+    agent('coordinator-1', 'coordinator', {
       status: 'waiting', step: 'board', microvm_state: 'suspended', microvm_age: 2520, heartbeat_age: 360,
       last_progress_at: epochMinutesAgo(30), recent_tools: ['read_issue', 'post_task', 'post_task', 'post_task'],
       microvm_seconds: 310, tokens: [{ model: 'model-large', input_tokens: 42_000, output_tokens: 6_100 }],
     }),
-    agent('fixer-1', 'fixer', {
+    agent('fixer-3', 'fixer', {
       task_id: 'task-fix-page-size', continuation: 1, step: 'board', microvm_state: 'running', microvm_age: 1500,
       heartbeat_age: 5, last_progress_at: epochMinutesAgo(1), recent_tools: ['read_file', 'run_tests', 'edit_file'],
       microvm_seconds: 1_420, tokens: [{ model: 'model-medium', input_tokens: 61_500, output_tokens: 9_800 }],
     }),
-    agent('final-go-1', 'final-go', {
+    agent('final-go-5', 'final-go', {
       task_id: 'task-gate-empty', step: 'Reading the review rounds', microvm_state: 'running', microvm_age: 720,
       heartbeat_age: 540, last_progress_at: epochMinutesAgo(11), recent_tools: ['read_record'],
       stuck_why: 'No progress for 10 minutes: the supervisor asked for its state', microvm_seconds: 640,
@@ -89,39 +92,40 @@ const run = {
     {
       task_id: 'task-fix-page-size', role: 'fixer', state: 'in_progress', title: 'The last page shows one item too many',
       spec: { issue: 7 }, depth: 1, priority: 1, attempt: 2, parent_task: null,
-      lease: { agent: 'fixer-1', epoch: 2, expires: 0 }, result_keys: [], posted_by: 'coordinator-0',
-      updated_by: 'fixer-1', updated_at: minutesAgo(1), spec_hash: 'a1',
+      lease: { agent: 'fixer-3', epoch: 2, expires: 0 }, result_keys: [], posted_by: 'coordinator-1',
+      updated_by: 'fixer-3', updated_at: minutesAgo(1), spec_hash: 'a1',
       history: [
-        { state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 },
+        { state: 'open', at: minutesAgo(30), by: 'coordinator-1', op: 'post', attempt: 1, result_keys: 0 },
         { state: 'claimed', at: minutesAgo(28), by: 'fixer-2', op: 'claim', attempt: 1, result_keys: 0 },
-        { state: 'failed', at: minutesAgo(26), by: 'fixer-2', op: 'move', attempt: 1, result_keys: 0 },
-        { state: 'claimed', at: minutesAgo(25), by: 'fixer-1', op: 'claim', attempt: 2, result_keys: 0 },
-        { state: 'in_progress', at: minutesAgo(24), by: 'fixer-1', op: 'move', attempt: 2, result_keys: 0 },
+        // (fixer-2 stalled: the supervisor re-posted the task at its next attempt; an ended task is never re-posted)
+        { state: 'open', at: minutesAgo(26), by: 'supervisor', op: 'repost', attempt: 2, result_keys: 0 },
+        { state: 'claimed', at: minutesAgo(25), by: 'fixer-3', op: 'claim', attempt: 2, result_keys: 0 },
+        { state: 'in_progress', at: minutesAgo(24), by: 'fixer-3', op: 'move', attempt: 2, result_keys: 0 },
       ],
     },
     {
       task_id: 'task-fix-sort', role: 'fixer', state: 'open', title: 'Sorting by date ignores the time zone',
       spec: { issue: 9 }, depth: 1, priority: 2, attempt: 1, parent_task: null, lease: null, result_keys: [],
-      posted_by: 'coordinator-0', updated_by: 'coordinator-0', updated_at: minutesAgo(30), spec_hash: 'b2',
-      history: [{ state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 }],
+      posted_by: 'coordinator-1', updated_by: 'coordinator-1', updated_at: minutesAgo(30), spec_hash: 'b2',
+      history: [{ state: 'open', at: minutesAgo(30), by: 'coordinator-1', op: 'post', attempt: 1, result_keys: 0 }],
     },
     {
       task_id: 'task-fix-empty', role: 'fixer', state: 'done', title: 'An empty search shows an error',
       spec: { issue: 4 }, depth: 1, priority: 1, attempt: 1, parent_task: null, lease: null, result_keys: ['k1'],
-      posted_by: 'coordinator-0', updated_by: 'fixer-3', updated_at: minutesAgo(14), spec_hash: 'c3',
+      posted_by: 'coordinator-1', updated_by: 'fixer-4', updated_at: minutesAgo(14), spec_hash: 'c3',
       history: [
-        { state: 'open', at: minutesAgo(30), by: 'coordinator-0', op: 'post', attempt: 1, result_keys: 0 },
-        { state: 'done', at: minutesAgo(14), by: 'fixer-3', op: 'move', attempt: 1, result_keys: 1 },
+        { state: 'open', at: minutesAgo(30), by: 'coordinator-1', op: 'post', attempt: 1, result_keys: 0 },
+        { state: 'done', at: minutesAgo(14), by: 'fixer-4', op: 'move', attempt: 1, result_keys: 1 },
       ],
     },
     {
       task_id: 'task-gate-empty', role: 'final-go', state: 'done', title: 'The gate record for the empty search fix',
       spec: { commit: 'abc1234' }, depth: 2, priority: 1, attempt: 1, parent_task: 'task-fix-empty',
-      lease: { agent: 'final-go-1', epoch: 1, expires: 0 }, result_keys: ['k2'], posted_by: 'coordinator-0',
-      updated_by: 'final-go-1', updated_at: minutesAgo(12), spec_hash: 'd4',
+      lease: { agent: 'final-go-5', epoch: 1, expires: 0 }, result_keys: ['k2'], posted_by: 'coordinator-1',
+      updated_by: 'final-go-5', updated_at: minutesAgo(12), spec_hash: 'd4',
       history: [
-        { state: 'claimed', at: minutesAgo(13), by: 'final-go-1', op: 'claim', attempt: 1, result_keys: 0 },
-        { state: 'done', at: minutesAgo(12), by: 'final-go-1', op: 'move', attempt: 1, result_keys: 1 },
+        { state: 'claimed', at: minutesAgo(13), by: 'final-go-5', op: 'claim', attempt: 1, result_keys: 0 },
+        { state: 'done', at: minutesAgo(12), by: 'final-go-5', op: 'move', attempt: 1, result_keys: 1 },
       ],
     },
   ],
@@ -144,13 +148,13 @@ function say(from, to, type, summary, { threadId = 't-run', taskId, at = new Dat
 
 say({ kind: 'conductor', id: SAMPLE_RUN_ID }, { kind: 'run', id: SAMPLE_RUN_ID }, 'run.started', 'Started: three bugs to fix', { at: minutesAgo(42) });
 say({ kind: 'system', id: 'board' }, { kind: 'role', id: 'fixer' }, 'task.posted', 'The last page shows one item too many', { taskId: 'task-fix-page-size', at: minutesAgo(30) });
-say({ kind: 'agent', id: 'fixer-1' }, { kind: 'conductor', id: SAMPLE_RUN_ID }, 'msg.question', 'Is the page size inclusive of the last item?', { threadId: 't-page-size', at: minutesAgo(20) });
+say({ kind: 'agent', id: 'fixer-3' }, { kind: 'conductor', id: SAMPLE_RUN_ID }, 'msg.question', 'Is the page size inclusive of the last item?', { threadId: 't-page-size', at: minutesAgo(20) });
 say({ kind: 'system', id: 'board' }, { kind: 'run', id: SAMPLE_RUN_ID }, 'task.done', 'An empty search shows an error: done', { taskId: 'task-fix-empty', at: minutesAgo(14) });
 
 function overview() {
   for (const a of run.agents) {
     if (a.microvm_age !== null) a.microvm_age += 5;
-    if (a.heartbeat_age !== null) a.heartbeat_age = a.agent === 'fixer-1' ? 5 : a.heartbeat_age + 5;
+    if (a.heartbeat_age !== null) a.heartbeat_age = a.agent === 'fixer-3' ? 5 : a.heartbeat_age + 5;
   }
   const byModel = new Map();
   for (const a of run.agents) {
@@ -193,6 +197,7 @@ function signalTarget(body) {
   if (!task.lease || task.lease.epoch !== body.attempt || task.state === 'open' || FINAL.has(task.state)) {
     return [409, 'This task has moved on since you looked: reload the run'];
   }
+  if (task.lease.agent.startsWith('human:')) return [409, 'A person holds this task: no agent works on it to signal'];
   return { kind: 'agent', id: task.lease.agent };
 }
 
@@ -286,8 +291,116 @@ function routeGet(sub, rest, url) {
   return [404, { message: 'Engineering run not found' }];
 }
 
-function routePost(sub, body) {
+/** The dev mock's signed-in admin, as a person on the board (the mock's admin user's sub). */
+const PERSON = 'human:sub-admin-demo';
+const CLAIMERS = ['builder', 'commit-reviewer', 'committer', 'final-go', 'fixer', 'hunter', 'mapper', 'pr-author',
+  'pr-reviewer', 'understander'];
+const MOVES = {
+  claimed: ['in_progress', 'failed', 'needs_human'],
+  in_progress: ['in_review', 'done', 'failed', 'needs_human'],
+  in_review: ['in_progress', 'done', 'failed', 'needs_human'],
+};
+
+function changed(task, state, op, reason) {
+  const at = new Date().toISOString();
+  Object.assign(task, { state, updated_by: PERSON, updated_at: at });
+  task.history.push({ state, at, by: PERSON, op, attempt: task.attempt, result_keys: 0, ...(reason ? { reason } : {}) });
+  say({ kind: 'human', id: 'sub-admin-demo' }, { kind: 'run', id: SAMPLE_RUN_ID }, `task.${state === 'open' ? 'progress' : state}`,
+    `${task.title} (${state}): ${op} by a person`, { threadId: task.task_id, taskId: task.task_id, at });
+  return [200, { task }];
+}
+
+/** A person posts a task (`POST …/board/tasks`), as the board does. */
+function postTask(body) {
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
+  if (!CLAIMERS.includes(body.role)) return [body.role === 'coordinator' ? 403 : 400, { message: 'unknown role' }];
+  if (!title || typeof body.spec !== 'object' || body.spec === null) return [400, { message: '"title" and "spec" are required' }];
+  // As the board (spec_hash: role, parent task, spec): an equal task still under way is answered, nothing posted.
+  const equal = run.tasks.find((t) => t.role === body.role && !FINAL.has(t.state)
+    && (t.parent_task || '') === (body.parent_task || '')
+    && JSON.stringify(t.spec) === JSON.stringify(body.spec));
+  if (equal) return [200, { task: equal, duplicate: true }];
+  const at = new Date().toISOString();
+  const task = {
+    task_id: `task-person-${run.tasks.length + 1}`, role: body.role, state: 'open', title, spec: body.spec, depth: 0,
+    priority: Number.isInteger(body.priority) ? body.priority : 0, attempt: 1, parent_task: null, lease: null,
+    result_keys: [], posted_by: PERSON, updated_by: PERSON, updated_at: at, spec_hash: `p${run.tasks.length + 1}`,
+    history: [{ state: 'open', at, by: PERSON, op: 'post', attempt: 1, result_keys: 0 }],
+  };
+  run.tasks.push(task);
+  say({ kind: 'human', id: 'sub-admin-demo' }, { kind: 'role', id: task.role }, 'task.posted', title, { threadId: task.task_id, taskId: task.task_id, at });
+  return [200, { task, duplicate: false }];
+}
+
+/** Another person's hold is ended (taken or blocked) only when `over` asks for it. */
+function heldByAnother(task, body) {
+  if (body.over !== undefined && typeof body.over !== 'boolean') return [400, { message: '"over" is true or false' }];
+  if (task.lease?.agent?.startsWith('human:') && task.lease.agent !== PERSON && body.over !== true) {
+    return [409, { message: 'another person holds the task: take it over only if you mean to' }];
+  }
+  return null;
+}
+
+const ACTIONS = {
+  take(task, body) {
+    const refused = heldByAnother(task, body);
+    if (refused) return refused;
+    task.lease = { agent: PERSON, epoch: task.attempt, expires: 253402300799 };
+    return changed(task, task.state === 'open' ? 'claimed' : task.state, 'take');
+  },
+  block(task, body) {
+    if (typeof body.reason !== 'string' || !body.reason.trim()) return [400, { message: 'a block says why (a line)' }];
+    const refused = heldByAnother(task, body);
+    if (refused) return refused;
+    task.lease = null;
+    return changed(task, 'needs_human', 'block', body.reason.trim());
+  },
+  priority(task, body) {
+    if (!Number.isInteger(body.priority)) return [400, { message: '"priority" is a whole number' }];
+    task.priority = body.priority;
+    return changed(task, task.state, 'priority', `priority ${body.priority}`);
+  },
+  release(task) {
+    // As the store: their own release again is answered as it is; only the holder gives a task back.
+    const last = task.history.at(-1);
+    if (task.state === 'open' && last?.op === 'release' && last.by === PERSON) return [200, { task }];
+    if (task.lease?.agent !== PERSON) return [403, { message: 'only a task you hold is given back by you: read the board again' }];
+    const at = new Date().toISOString();
+    Object.assign(task, { state: 'open', attempt: task.attempt + 1, lease: null, updated_by: PERSON, updated_at: at });
+    task.history.push({ state: 'open', at, by: PERSON, op: 'release', attempt: task.attempt, result_keys: 0, reason: 'released by a person' });
+    // Open for its role again, as a re-post: the role is told (task.posted), as the person.
+    say({ kind: 'human', id: 'sub-admin-demo' }, { kind: 'role', id: task.role }, 'task.posted',
+      `${task.title} (open, by ${PERSON})`, { threadId: task.task_id, taskId: task.task_id, at });
+    return [200, { task }];
+  },
+  move(task, body) {
+    if (body.to === 'needs_human') return [400, { message: 'a task needs a person by block, with a reason: not by a move' }];
+    if (task.lease?.agent !== PERSON) return [403, { message: 'only a task you took is moved by you: take it first' }];
+    // As the store: a state no move reaches is a bad request; one that is not a move from this state, a conflict.
+    if (!Object.values(MOVES).some((targets) => targets.includes(body.to))) {
+      return [400, { message: `a task cannot be moved to ${String(body.to)}` }];
+    }
+    if (!(MOVES[task.state] ?? []).includes(body.to)) return [409, { message: 'the task cannot move from its state' }];
+    return changed(task, body.to, 'move');
+  },
+};
+
+/** A person's action on one task (`POST …/board/tasks/<task_id>/<action>`), as the board does. */
+function actOnTask(taskId, action, body) {
+  const task = run.tasks.find((t) => t.task_id === taskId);
+  if (!task) return [404, { message: 'no such task' }];
+  if (taskId === 'coordinate') return [403, { message: "the coordinate task is the run coordinator's" }];
+  if (FINAL.has(task.state)) return [409, { message: 'the task has ended' }];
+  if (!Object.hasOwn(ACTIONS, action)) return [400, { message: 'the action is one of block, move, priority, release, take' }];
+  return ACTIONS[action](task, body);
+}
+
+function routePost(sub, rest, body) {
   if (!isAdmin()) return [403, { message: 'Admin access required' }];
+  if (run.meta.ended_at !== null && sub === 'board') return [409, { message: 'This run has ended' }];
+  if (sub === 'board' && rest[0] === 'tasks' && rest.length === 1) return postTask(body ?? {});
+  if (sub === 'board' && rest[0] === 'tasks' && rest.length === 3) return actOnTask(rest[1], rest[2], body ?? {});
+  if (rest.length > 0) return [404, { message: 'Engineering run not found' }];
   if (sub === 'signals') return signal(body ?? {});
   if (sub === 'messages') return answer(body ?? {});
   return [404, { message: 'Engineering run not found' }];
@@ -296,7 +409,8 @@ function routePost(sub, body) {
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
   const [runId, sub, ...rest] = url.pathname.slice(PREFIX.length).split('/').map(decodeURIComponent);
-  if (runId !== SAMPLE_RUN_ID || (rest.length > 0 && !(req.method === 'GET' && sub === 'reports'))) {
+  const nested = (req.method === 'GET' && sub === 'reports') || (req.method === 'POST' && sub === 'board');
+  if (runId !== SAMPLE_RUN_ID || (rest.length > 0 && !nested)) {
     send(404, { message: 'Engineering run not found' });
     return true;
   }
@@ -314,7 +428,7 @@ export function handleEngineeringRunRoutes(req, res, url, send, shared) {
     return true;
   }
   shared.collectJson(req, res, (body) => {
-    const [status, payload] = routePost(sub, body);
+    const [status, payload] = routePost(sub, rest, body);
     send(status, payload);
   });
   return true;

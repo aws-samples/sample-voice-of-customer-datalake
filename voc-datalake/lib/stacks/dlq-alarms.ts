@@ -48,9 +48,18 @@ export const AGGREGATOR_STREAM_FAILURES_BASE_NAME = 'voc-aggregator-stream-failu
 export const EMAIL_INTAKE_DLQ_BASE_NAME = 'voc-email-intake-dlq';
 /**
  * The engineering bus's dead-letter queue (VocProcessingStack, only with `-c engineeringAgents=true`;
- * engineering-bus.ts): role-queue redrives, the inbox rule's undelivered events, the router's failed invocations.
+ * engineering-bus.ts): the inbox rule's undelivered events, the router's, the delivery function's and the report
+ * builder's failed invocations, the supervisor's undelivered ticks.
  */
 export const ENGINEERING_DLQ_BASE_NAME = 'voc-engineering-dlq';
+
+/**
+ * The Powertools service names of the engineering workspace's readers that take a denied read as missing (each counts
+ * it as `EngineeringWorkspaceDeniedReads`): the agents API, the board API and the report builder (engineering-bus.ts).
+ * A test pins each to a function's POWERTOOLS_SERVICE_NAME with `-c engineeringAgents=true`. Like the MCP alarms'
+ * service, they are the same in every deployment (docs/deployment.md, "CloudWatch metrics co-mingle").
+ */
+export const ENGINEERING_WORKSPACE_READER_SERVICES = ['voc-agents-api', 'voc-engineering-board', 'voc-engineering-reports'] as const;
 
 /** Base physical names of the processing Lambdas whose errors alerting watches. */
 export const FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME = 'voc-feedback-processor';
@@ -262,6 +271,9 @@ export function opsAlertsWiring(inputs: OpsAlertsInputs): OpsAlertsWiring {
       OPS_ALERTS_INGESTOR_FUNCTIONS: ingestors.join(','),
       // Powertools `service` of /mcp/global (not deployment-unique: see docs/mcp.md → Alarms).
       OPS_ALERTS_MCP_SERVICE: GLOBAL_MCP_SERVICE_NAME,
+      // Only with the engineering agents: one alarm on their workspace readers' denied reads (shared/ops_alerts.py).
+      ...(engineeringAgentsEnabled(stack)
+        ? { OPS_ALERTS_ENGINEERING_SERVICES: ENGINEERING_WORKSPACE_READER_SERVICES.join(',') } : {}),
     },
     statements: [
       new iam.PolicyStatement({

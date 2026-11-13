@@ -16,10 +16,9 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from shared.logging import logger, metrics
+from shared.ops_alerts import ENGINEERING_DENIED_READS_METRIC
 
 MAX_READ_BYTES = 4 * 1024 * 1024
-#: The count of reads a ``denied_is_missing`` reader took as missing after S3 denied them (the shared namespace).
-DENIED_AS_MISSING_METRIC = 'EngineeringWorkspaceDeniedReads'
 _EXISTS = frozenset({'PreconditionFailed', '412'})
 _IN_FLIGHT = frozenset({'ConditionalRequestConflict', '409'})
 #: How many times a write meeting another conditional write in flight is tried.
@@ -41,8 +40,8 @@ class WorkspaceStore:
                  sleep: Callable[[float], None] = time.sleep) -> None:
         """``denied_is_missing``: a reader whose role may read every key it asks for but holds no unconditioned
         ``s3:ListBucket`` (S3 then answers a missing key 403, not 404) reads a denied object as missing, and logs
-        and counts each such read (``DENIED_AS_MISSING_METRIC``: a KMS or policy denial looks the same). ``sleep``:
-        the wait between a write's tries (a test's records them)."""
+        and counts each such read (``ENGINEERING_DENIED_READS_METRIC``, which alerting's alarm watches: a KMS or
+        policy denial looks the same). ``sleep``: the wait between a write's tries (a test's records them)."""
         self.s3 = s3
         self.sleep = sleep
         self.bucket = bucket
@@ -59,7 +58,7 @@ class WorkspaceStore:
                     # Most likely a missing key, but a KMS or policy denial reads the same: logged and counted, so
                     # a broken policy shows as a rising count rather than as reports quietly missing their parts.
                     logger.warning('workspace: a denied read taken as missing', extra={'key': key, 'code': code})
-                    metrics.add_metric(name=DENIED_AS_MISSING_METRIC, unit='Count', value=1)
+                    metrics.add_metric(name=ENGINEERING_DENIED_READS_METRIC, unit='Count', value=1)
                 return None
             if code == 'InvalidRange':   # an empty object: S3 has no byte 0 to range over
                 return ''
