@@ -346,6 +346,21 @@ class BoardStore:
             refusal='the task is no longer open at this attempt'),
             Move(task_id, OPEN, actor, at, attempt, 'launch', reason=f'launched {agent}').item(ws, run_id))
 
+    def clear_launch(self, ws: str, run_id: str, task: Task, *, actor: str, reason: str) -> Task:
+        """Forget ``task``'s recorded launch (its agent, at its attempt) after the runtime refused it, so the
+        coordinator's next launch numbers a new agent with the language and paths it gives then. Only that launch:
+        a task that moved on, or another launch, is left as it is. A history row says who and why (D4)."""
+        agent, attempt = task.launched_agent, task.attempt
+        return self._write(ws, run_id, task.task_id, _Write(
+            set_expr='REMOVE launched_agent, launched_attempt, launched_paths, launched_language',
+            condition='#state = :open AND attempt = :attempt AND launched_agent = :agent',
+            names={'#state': 'state'},
+            values={':open': {'S': OPEN}, ':attempt': {'N': str(attempt)}, ':agent': {'S': agent}},
+            already=lambda t: t.launched_agent != agent or t.attempt != attempt,
+            refusal='the task is no longer open at this attempt'),
+            Move(task.task_id, OPEN, actor, self.now().isoformat(), attempt, 'launch_refused',
+                 reason=redact(f'{agent}: {reason.strip()}')[:MAX_LINE]).item(ws, run_id))
+
     def _holder(self, agent: str, epoch: int, now: datetime) -> tuple[str, dict[str, Any]]:
         """The lease holder, with the lease's epoch, before the lease runs out (the supervisor re-posts it then), or
         while it waits: an agent suspended on an open wait cannot renew, and keeps its lease while the wait is open

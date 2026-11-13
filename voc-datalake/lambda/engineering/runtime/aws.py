@@ -31,6 +31,7 @@ from engineering.runtime.interface import (
 )
 from engineering.runtime.tokens import MAX_TOKEN_SECONDS, AuthToken, TokenSource, bounded_expiry
 from engineering.runtime.unit_runner import TAIL_CHARACTERS, bounded_status, scrub_text
+from shared.logging import logger
 
 #: Idle policy: a MicroVM with no request for this long is suspended (an agent waiting for a message),
 #: and one suspended this long is ended. The supervisor ends a finished agent's MicroVM at once anyway.
@@ -117,7 +118,17 @@ class AwsMicroVmRuntime:
         vm_id = answer.get('MicrovmId')
         if not isinstance(vm_id, str) or not vm_id:
             raise RuntimeRefused('the MicroVM service answered no MicrovmId')
-        return MicroVm(vm_id=vm_id, agent_id=spec.agent_id, endpoint=_https_endpoint(answer.get('Endpoint')))
+        try:
+            endpoint = _https_endpoint(answer.get('Endpoint'))
+        except RuntimeRefused:
+            # Started but unusable: ended now, never left to run until its idle policy with nothing supervising it.
+            # A failed terminate is logged and the refusal still raised (the board answers it as a refusal).
+            try:
+                self._client.terminate_microvm(MicrovmId=vm_id)
+            except Exception:   # any failure of the end call: the refusal is what the caller needs
+                logger.exception('runtime: an unusable MicroVM could not be terminated', extra={'vm_id': vm_id})
+            raise
+        return MicroVm(vm_id=vm_id, agent_id=spec.agent_id, endpoint=endpoint)
 
     def suspend(self, vm: MicroVm) -> None:
         self._client.suspend_microvm(MicrovmId=vm.vm_id)

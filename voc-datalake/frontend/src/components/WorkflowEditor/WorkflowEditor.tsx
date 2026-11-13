@@ -25,7 +25,8 @@ import { WorkflowHistory } from './WorkflowHistory'
 import { addNode, clearDefinition, STEP_HEIGHT } from './model'
 import { EMPTY_SELECTION, sameSelection, selectStep } from './selection'
 import { groupIssues, useWorkflowEditor } from './useWorkflowEditor'
-import { API_WORKFLOW_LIMITS } from '../../api/workflowsApi'
+import { API_WORKFLOW_LIMITS, isEngineeringFlow } from '../../api/workflowsApi'
+import { isEngineeringAvailable } from '../../runtimeConfig'
 import type { CanvasSelection } from './selection'
 import type { SaveOutcome } from './useWorkflowEditor'
 import type { RestoredRevision } from './WorkflowHistory'
@@ -139,6 +140,44 @@ function EditorTitle({ title, name, builtin, dirty }: Readonly<{ title?: ReactNo
   )
 }
 
+/**
+ * Whether Save as (a NEW workflow) is offered: an engineering flow only where the deployment has the engineering
+ * module (the API answers 409 elsewhere); one already saved is still saved in place. The toolbar's and the stale-save
+ * banner's Save as both ask.
+ */
+const savesAsNew = (draft: WorkflowDefinition): boolean => !isEngineeringFlow(draft) || isEngineeringAvailable()
+
+/** The editing half of the toolbar: Save, Save as, Import, Reset, Clear. */
+function EditActions({ draft, canSave, saving, onSave, onSaveAs, onImport, onReset, onClear }: Readonly<{
+  draft: WorkflowDefinition; canSave: boolean; saving: boolean
+  onSave: () => void; onSaveAs: () => void; onImport: () => void; onReset: () => void; onClear: () => void
+}>) {
+  const { t } = useTranslation('agents')
+  const canSaveAs = savesAsNew(draft)
+  return (
+    <>
+      <button type="button" className="btn btn-primary btn-sm" disabled={!canSave} onClick={onSave}>
+        {saving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
+        {t('editor.save')}
+      </button>
+      {canSaveAs && (
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onSaveAs}>
+          <Copy size={14} aria-hidden="true" /> {t('editor.saveAs')}
+        </button>
+      )}
+      <button type="button" className="btn btn-ghost btn-sm" onClick={onImport}>
+        <Upload size={14} aria-hidden="true" /> {t('editor.import')}
+      </button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={onReset}>
+        <RotateCcw size={14} aria-hidden="true" /> {t('editor.reset')}
+      </button>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={draft.nodes.length === 0} onClick={onClear}>
+        <Eraser size={14} aria-hidden="true" /> {t('editor.clear')}
+      </button>
+    </>
+  )
+}
+
 function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title }: Readonly<{
   editor: Editor; draft: WorkflowDefinition; workflow: WorkflowView; canEdit: boolean; onSavedAs: (workflow: WorkflowView) => void
   notice?: string; title?: ReactNode
@@ -214,24 +253,9 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
         <EditorTitle title={title} name={draft.name} builtin={editor.builtin} dirty={editor.dirty} />
         <StatusLine outcome={outcome} dirty={editor.dirty} issueCount={editor.issues.length} notice={notice} />
         {canEdit && (
-          <>
-            <button type="button" className="btn btn-primary btn-sm" disabled={!canSave} onClick={() => void onSave()}>
-              {editor.saving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
-              {t('editor.save')}
-            </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSaveAsOpen(true)}>
-              <Copy size={14} aria-hidden="true" /> {t('editor.saveAs')}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileInput.current?.click()}>
-              <Upload size={14} aria-hidden="true" /> {t('editor.import')}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirmReset(true)}>
-              <RotateCcw size={14} aria-hidden="true" /> {t('editor.reset')}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" disabled={draft.nodes.length === 0} onClick={() => setConfirmClear(true)}>
-              <Eraser size={14} aria-hidden="true" /> {t('editor.clear')}
-            </button>
-          </>
+          <EditActions draft={draft} canSave={canSave} saving={editor.saving} onSave={() => void onSave()}
+            onSaveAs={() => setSaveAsOpen(true)} onImport={() => fileInput.current?.click()}
+            onReset={() => setConfirmReset(true)} onClear={() => setConfirmClear(true)} />
         )}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void onExport()}>
           <Download size={14} aria-hidden="true" /> {t('editor.export')}
@@ -246,7 +270,9 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
         <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/30 bg-warn-subtle px-3 py-2 text-sm text-text">
           <AlertTriangle size={14} className="text-warn" aria-hidden="true" />
           <span className="mr-auto">{t('editor.conflict')}</span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSaveAsOpen(true)}>{t('editor.conflictSaveAs')}</button>
+          {savesAsNew(draft) && (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSaveAsOpen(true)}>{t('editor.conflictSaveAs')}</button>
+          )}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void editor.reloadLatest()}>{t('editor.conflictReload')}</button>
         </div>
       )}

@@ -209,6 +209,7 @@ def test_the_handler_takes_the_caller_from_iam_only(bus: Bus, monkeypatch: pytes
     monkeypatch.setenv('AGENT_ROLE_NAME_PATTERN', PATTERN)
     monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
     monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
+    monkeypatch.setenv('ENGINEERING_IMAGE_LANGUAGES', 'node,python')
     context = MagicMock(invoked_function_arn=f'arn:aws:lambda:us-east-1:{ACCOUNT}:function:voc-board')
     arn = f'arn:aws:sts::{ACCOUNT}:assumed-role/voc-eng-coordinator-123456789012-us-east-1/{RUN}.0'
     with engineering_table() as client, \
@@ -224,6 +225,9 @@ def test_the_handler_takes_the_caller_from_iam_only(bus: Bus, monkeypatch: pytes
         encoded.update(body=base64.b64encode(encoded['body'].encode()).decode(), isBase64Encoded=True)
         assert handler(encoded, context)['statusCode'] == 200
         assert handler({**encoded, 'body': 'not base64!'}, context)['statusCode'] == 400
+        built = api_module._api
+        assert built is not None
+        assert built.images == frozenset({'node', 'python'})   # (the deployment's image languages)
     assert bus.types() == ['task.posted', 'task.posted']
 
 

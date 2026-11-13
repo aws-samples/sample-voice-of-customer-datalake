@@ -34,7 +34,6 @@ voc-datalake/frontend/src/components/SourcesManager/SourceProfileEditor.tsx 68.7
 voc-datalake/frontend/src/components/SourcesManager/piiPolicy.ts 66.66   # 2/3
 voc-datalake/frontend/src/components/UserAdmin/UserAdmin.tsx 59.52   # 50/84
 voc-datalake/frontend/src/components/WorkflowEditor/NodePalette.tsx 70.00   # 7/10
-voc-datalake/frontend/src/components/WorkflowEditor/WorkflowEditor.tsx 79.78   # 75/94
 voc-datalake/frontend/src/config/menuConfig.ts 75.00   # 6/8
 voc-datalake/frontend/src/pages/Agents/AgentPersonas.tsx 0.00   # 0/23
 voc-datalake/frontend/src/pages/Agents/AgentSections.tsx 42.59   # 23/54

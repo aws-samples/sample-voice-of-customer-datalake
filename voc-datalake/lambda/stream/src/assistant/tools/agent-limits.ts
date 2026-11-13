@@ -17,6 +17,17 @@ export const WORKFLOW_NODE_TYPES = [
   'deep_research', 'write_prfaq', 'write_prd', 'persona_review', 'revise_document', 'build_prototype',
   'collect_prototype_feedback', 'revise_prototype', 'final_review', 'duplicate_document', 'handoff', 'custom_llm', 'end',
 ] as const;
+/**
+ * An engineering flow (`voc-workflow/2`, `lambda/shared/workflow_engineering.py`): `start`, `end` and these steps,
+ * never an agents step. The SPA offers to create one (the library's button, an assistant draft's card) only where the
+ * deployment has the engineering module (config.json `features.engineering`).
+ */
+export const WORKFLOW_SCHEMA_V2 = 'voc-workflow/2';
+export const ENGINEERING_NODE_TYPES = [
+  'agent', 'map', 'reduce', 'board', 'quality_gate', 'learning_loop', 'self_improvement', 'memory', 'stop_at_pr',
+] as const;
+/** Every step either kind of workflow may hold (which kind holds which is the agents Lambda's graph rule). */
+export const WORKFLOW_ALL_NODE_TYPES = [...WORKFLOW_NODE_TYPES, ...ENGINEERING_NODE_TYPES] as const;
 export const WORKFLOW_NODE_ROLES = ['orchestrator', 'worker', 'reviewer', 'persona'] as const;
 export const WORKFLOW_EDGE_LABELS = ['pass', 'fail', 'agreed', 'not_agreed'] as const;
 export const WORKFLOW_LOOP_UNTIL = ['persona_agreement', 'review_pass'] as const;

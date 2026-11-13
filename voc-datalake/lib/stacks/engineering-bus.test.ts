@@ -316,6 +316,8 @@ describe('the engineering bus', () => {
     expect(JSON.stringify(read?.Resource)).toContain('/ws/default/knowledge/*');
     expect(on.findResources('AWS::Lambda::Function')[board]?.Properties?.Environment?.Variables).toMatchObject({
       ENGINEERING_RUNTIME_FUNCTION: expect.anything(), ENGINEERING_WORKSPACE_BUCKET: expect.anything(),
+      // No images configured by default: the board refuses every launch before it numbers an agent.
+      ENGINEERING_IMAGE_LANGUAGES: '',
     });
   });
 

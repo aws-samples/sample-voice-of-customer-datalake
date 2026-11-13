@@ -53,8 +53,8 @@ PACK_OBJECT = 'pack.json'
 
 
 class PackError(Exception):
-    """A pack operation refused: ``kind`` is invalid here, and not_found, forbidden or conflict in the subclasses
-    (what a REST route answers 400, 404, 403 or 409)."""
+    """A pack operation refused: ``kind`` is invalid here, and not_found, forbidden, conflict or unavailable in the
+    subclasses (what a REST route answers 400, 404, 403, 409 or 503)."""
 
     kind = 'invalid'
 
@@ -69,6 +69,12 @@ class PackForbidden(PackError):
 
 class PackConflict(PackError):
     kind = 'conflict'
+
+
+class PackUnavailable(PackError):
+    """The store's own fault, not the caller's: a stored version it cannot read (a 5xx; try again, or fix the store)."""
+
+    kind = 'unavailable'
 
 
 @dataclass(frozen=True)
@@ -254,7 +260,7 @@ class PackStore:
         try:
             pack = from_json(json.loads(read(PACK_OBJECT)))
         except ValueError as exc:   # json.JSONDecodeError is a ValueError
-            raise PackError(f'version {version.version} is not a readable pack') from exc
+            raise PackUnavailable(f'version {version.version} is not a readable pack') from exc
         return ApprovedPack(version, pack, {kind: read(f'{kind}.md') for kind in KINDS})
 
     def latest_approved(self, ws: str, connection: str, package: str) -> ApprovedPack | None:

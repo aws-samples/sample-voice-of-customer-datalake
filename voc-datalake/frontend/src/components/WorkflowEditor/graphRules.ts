@@ -9,9 +9,9 @@
  *
  * @module components/WorkflowEditor/graphRules
  */
-import { WORKFLOW_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
+import { ENGINEERING_NODE_TYPES, WORKFLOW_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
 import {
-  ENGINEERING_NODE_TYPES, END_STATUSES, REVIEW_TARGETS, isEngineeringFlow, workflowDefinitionSchema,
+  END_STATUSES, REVIEW_TARGETS, isEngineeringFlow, workflowDefinitionSchema,
 } from '../../api/workflowsApi'
 import { isRecord } from '../../lib/typeGuards'
 import { engineeringGraphIssues, engineeringParamsIssues } from './engineeringRules'

@@ -176,6 +176,10 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'repeating until valid=true; (4) only then propose update_workflow (expected_revision = the revision you read) '
       + 'or create_workflow. Never propose a definition validate_workflow has not passed. To change a shared template '
       + 'without touching other agents, duplicate_workflow first.',
+    '- Engineering flows (agents working on a code repository: hunting bugs, fixing them, opening pull requests) are '
+      + 'voc-workflow/2 definitions, drafted with the same steps; no agent runs one. The app creates a new one only '
+      + 'where the engineering module is deployed: if the card is refused for that, say so, never retry it as an '
+      + 'agents workflow. A workflow keeps its kind: never turn one kind into the other.',
   ].join('\n'),
   participants: [
     '- Participant lists (people the team emails for feedback): list_participant_lists first — use its list_id, never '

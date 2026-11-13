@@ -354,18 +354,26 @@ What exists:
   re-posts the task at the attempt it was at and then calls it ([Runtime](#runtime-one-microvm-per-agent)). A
   coordinator acts only while it is the run's: every board op of the coordinator role checks the caller is the
   coordinate task's recorded coordinator at the task's attempt, so a replaced coordinator's session is refused (403)
-  from the re-post on, its claim included; a run whose start wrote no coordinate task has only its start's
-  coordinator, so there the role is the check. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
+  by the board from the re-post on, its claim included; a run whose start wrote no coordinate task has only its
+  start's coordinator, so there the role is the check. The board alone checks it: the connectors broker and the
+  bus source (`voc.engineering/conductor/<ws>/<run>`) still take the role, which holds because the runtime
+  replaces only a coordinator whose session failed, and its MicroVM ended with that session
+  ([Runtime](#runtime-one-microvm-per-agent)). The coordinate task's re-post
+  publishes no `task.posted` (no role reads one for it). A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
-  its role, language and paths, the language one of the images' and the paths by the checkout's own rule, both
-  checked before an agent is numbered; the board invokes the runtime's `launch` action only (its code holds it to
+  its role, language and paths, the role one with a skill, the language one this deployment has a MicroVM image
+  for (`-c engineeringImageArns`) and the paths by the checkout's own rule, all checked before an agent is
+  numbered; the board invokes the runtime's `launch` action only (its code holds it to
   that: its role's grant is the whole function's), with the run's commit and
   connection from its META, numbers the agent `<role>-<n>` from the run's counter, at most 999, and records it on the
   task with the attempt and paths it was launched at and a history row, so a retried launch at that attempt launches
   the same agent, and a re-posted task, at its new attempt, a new one; a task no longer open is refused before the
   runtime is asked). The runtime's refusals (a bad request, a run not active or stopped, a session busy, the agent's
-  session there for another task or attempt) answer 409 with their message; a repeat of a launch whose session got
-  through gets that session (200); anything else 503. A launch is started once: the board waits for the runtime's answer up to 100 s, within its own 120 s limit,
+  session there for another task or attempt) answer 409 with their message; a bad request or another task's session clears the
+  task's recorded launch (the runtime answers a repeat with its session, and one while the first still starts as
+  busy, before any other check, so such a refusal means no session and no launch of the agent exist) with a `launch_refused` history row, so the next launch numbers a new
+  agent with the settings it gives then (a busy session, or a run not active, keeps it); a repeat of a launch whose
+  session got through gets that session (200); anything else 503. A launch is started once: the board waits for the runtime's answer up to 100 s, within its own 120 s limit,
   and its client never retries the call itself; the runtime holds the agent's row (`launching_until`, one
   conditional write) before it starts the MicroVM, so a repeat for the same task and attempt answers the session the
   first one wrote, and one while the first still starts its MicroVM is refused as busy (409), never a second MicroVM.
@@ -374,7 +382,7 @@ What exists:
   the approved knowledge pack (`knowledge` `{task_id, package}`, as data) of one of its task's paths (the spec's
   `paths` and the ones its agent was launched on) or of the root (`''`, the knowledge store's `.`), never another's:
   the board reads that one task's row and checks the caller holds its live lease; a package the store
-  cannot key is a 400, and an approved version whose object is missing or whose row changed a 503. Each change is published
+  cannot key is a 400, and an approved version whose object is missing or unreadable, or whose row changed, a 503. Each change is published
   on the bus as the board's `task.*` event after the row is written. A failed publish answers 503, and the retry
   publishes the same event again. Each post, claim and move also writes a `TASKLOG#<task>#<at>#<state>` row in the
   same transaction (the actor and the operation; no past state is overwritten; a renewal or a progress report is
@@ -546,7 +554,8 @@ an engineering flow is a workflow of schema `voc-workflow/2` (start, end and the
 `reduce`, `board`, `quality_gate`, `learning_loop`, `self_improvement`, `memory`, `stop_at_pr`), held to the rules
 above (every map meets one reduce on every way out, a quality gate's GO and NO-GO arrows with NO-GO to the human
 decision point, a committer or PR author ends only at a stop at PR or a human decision point); the Agents API saves
-and validates one, keeps each workflow's kind, lists both kinds in `GET /workflows` (each with its `kind`) and keeps
+and validates one (a new one only where the engineering module is deployed, 409 elsewhere; one already saved
+anywhere), keeps each workflow's kind, lists both kinds in `GET /workflows` (each with its `kind`) and keeps
 engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's
 settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
 builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
@@ -554,9 +563,14 @@ shared fixture); its library offers New engineering flow only where the module i
 `features.engineering`). *Planned*: the six default flows as templates.
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
-you can fix") makes the AI assistant draft it in the editor behind an approval card, like its other writes; "refresh
-the knowledge pack", "pull the latest from the repository" and "what is agent X doing" work from the assistant too,
-through the same REST routes and MCP tools as everything else (tenet 4).
+you can fix") makes the AI assistant draft it behind an approval card, like its other writes: its workflow tools
+(`validate_workflow`, `create_workflow`, `update_workflow`) take a `voc-workflow/2` definition with the engineering
+steps, the agents API's `POST /workflows/validate` judges its rules, and a new one is created only where the
+deployment has the engineering module (the API's 409; the web app's card checks `features.engineering` first, as the
+library's New engineering flow and the editor's Save as do). *Planned*:
+"refresh the knowledge pack", "pull the latest from the repository" and "what is agent X doing" from the assistant
+too, through the same REST routes as everything else (an engineering run's reads are administrators-only, so no MCP
+tool while an MCP token never acts as an administrator: TENETS.md's tenet 4 gap).
 
 **The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
 live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,
@@ -991,7 +1005,9 @@ the write broker before it opens a PR: nothing invokes it, and no role holds an 
 - **Commit report**: what the commit changes and why (its task), the gate packs' results, each review round's
   findings and what was done about each, the final verdict, cost and time.
 - **PR report**: the commits' reports rolled up, the PR review, the test evidence, the risks and what a person should
-  look at, the gate record (it goes in the PR description).
+  look at, the gate record (it goes in the PR description). Built: a PR report whose winning gate record (the last
+  final-go task to end, then its latest attempt) cannot be read or is off the schema is refused, never published
+  without it or with an older one in its place.
 - **Goal report**: the run's objective ("find and fix the top bugs in the payments package", "build feature X from
   its PRD"), the board's outcome (done, failed, needing a person), the pull requests opened and their state, what is
   left, total cost and time, what the agents learned (proposed knowledge-pack edits, for a person to accept) and what
