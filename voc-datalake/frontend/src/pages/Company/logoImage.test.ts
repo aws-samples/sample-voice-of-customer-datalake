@@ -44,6 +44,26 @@ describe('uploadableLogo', () => {
     stubUnreadableImage()
     expect(await failureOf(uploadableLogo(imageFile('broken.png', 'image/png', 2_000_000)))).toBe('unreadable')
   })
+
+  // Regression (commit review): a browser that cannot encode WebP answers PNG bytes, once uploaded as image/webp.
+  it('skips a rung the browser answers with another type, and never labels PNG bytes as WebP', async () => {
+    stubImaging(1024, 1024)
+    class PngOnlyCanvas {
+      readonly width: number
+      readonly height: number
+      constructor(width: number, height: number) { this.width = width; this.height = height }
+      getContext() { return { fillStyle: '', fillRect: () => {}, drawImage: () => {} } }
+      convertToBlob(options: { type: string }): Promise<Blob> {
+        // PNG rung: 1.2 MB, over the target; every WebP rung comes back as PNG.
+        const size = options.type === 'image/png' ? 1_200_000 : (this.width * this.height) / 4
+        const blob = new Blob([new Uint8Array(8)], { type: 'image/png' })
+        Object.defineProperty(blob, 'size', { value: size })
+        return Promise.resolve(blob)
+      }
+    }
+    vi.stubGlobal('OffscreenCanvas', PngOnlyCanvas)
+    expect(await failureOf(uploadableLogo(imageFile('logo.png', 'image/png', 2_000_000)))).toBe('too-large')
+  })
 })
 
 describe('LOGO_IMAGE_POLICY', () => {

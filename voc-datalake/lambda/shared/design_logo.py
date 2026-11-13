@@ -42,6 +42,9 @@ from shared.logging import logger
 from shared.s3_versions import delete_every_version_of_keys
 
 MAX_LOGO_BYTES = 2_000_000
+#: The largest COMPANY logo (the saved one), for every client alike: the upload route, "Use this logo" and the
+#: prototype build that inlines it (shared.company_logo). The web app makes a larger image smaller before it uploads.
+COMPANY_LOGO_MAX_BYTES = 1_000_000
 LOGO_TIMEOUT_SECONDS = 10
 LOGO_MAX_REDIRECTS = 3
 HTTP_OK = 200

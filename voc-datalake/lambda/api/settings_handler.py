@@ -1584,6 +1584,10 @@ def use_reference_logo_route(ref_id: str):
     if candidate is None:
         raise ConflictError('This reference has no logo to use')
     data, content_type = _reference_logo_bytes(candidate)
+    if len(data) > design_logo.COMPANY_LOGO_MAX_BYTES:
+        # The company-logo cap (the upload route's too): every saved logo can be inlined into a prototype.
+        raise ValidationError('The logo is larger than 1 MB, the most the company logo can be: download it and '
+                              'upload it as the company logo instead (the web app makes it smaller)')
     key = design_references.upload_key(company_context.new_id('logo'), design_logo.LOGO_EXTENSIONS[content_type])
     get_s3_client().put_object(Bucket=RAW_DATA_BUCKET, Key=key, Body=data, ContentType=content_type)
     logger.info('Design reference logo drafted', extra={'content_type': content_type, 'bytes': len(data)})

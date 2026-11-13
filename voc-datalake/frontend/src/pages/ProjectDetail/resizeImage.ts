@@ -309,6 +309,9 @@ async function runLadder(decoded: DecodedImage, file: File, policy: ImagePolicy)
     // an image already under it walks the ladder at its own size.
     const size = fitWithin(decoded.width, decoded.height, step.maxEdge)
     const blob = await encode(decoded.source, size.width, size.height, step)
+    // A browser that cannot encode the rung's type answers PNG instead (Safari and WebP): never upload bytes
+    // under a type they are not, so such a rung is skipped.
+    if (blob.type !== step.type) continue
     if (blob.size <= policy.maxBytes) {
       return {
         blob,

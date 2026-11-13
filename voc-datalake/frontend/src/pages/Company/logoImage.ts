@@ -15,11 +15,12 @@
 import { prepareImage } from '../ProjectDetail/resizeImage'
 import type { ImagePolicy } from '../ProjectDetail/resizeImage'
 import { isSvgFile, svgToPng } from '../../utils/svgToPng'
+import { UPLOAD_LIMITS } from '../../api/designSystemApi'
 
 /** The longest side of an uploaded logo, in px (the size `svgToPng` draws an SVG at). */
 export const LOGO_MAX_EDGE_PX = 1024
-/** The byte target: the most a prototype inlines (`MAX_INLINE_LOGO_BYTES`, lambda/shared/company_logo.py). */
-export const LOGO_MAX_BYTES = 1_000_000
+/** The byte target: the company-logo cap the API enforces (`COMPANY_LOGO_MAX_BYTES`, lambda/shared/design_logo.py). */
+export const LOGO_MAX_BYTES = UPLOAD_LIMITS.logo.maxBytes
 
 export const LOGO_IMAGE_POLICY: ImagePolicy = {
   maxBytes: LOGO_MAX_BYTES,
