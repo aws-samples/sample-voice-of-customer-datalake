@@ -122,8 +122,8 @@ export const KIRO_READ_SETTINGS = Object.freeze({
   },
 })
 /**
- * An agent that writes files (the test generator): never a secret-shaped path (kiro-cli 3.3.0 refuses it through
- * `toolsSettings.fs_write.deniedPaths`, KIRO_WRITE_SETTINGS); `./**` is not enforced while `fs_write` is pre-approved.
+ * An agent that writes files (the test generator): never a secret-shaped path. kiro-cli 3.3.0 refuses it through
+ * `toolsSettings.fs_write.deniedPaths` (verified live); `./**` is not enforced while `fs_write` is pre-approved.
  */
 export const KIRO_WRITE_SETTINGS = Object.freeze({ allowedPaths: ['./**'], deniedPaths: SECRET_PATHS.map((glob) => `**/${glob}`) })
 export const KIRO_WRITE_RULES = Object.freeze([
