@@ -495,6 +495,11 @@
     },
     "runsAgents": "Pode executar agentes",
     "projectColumn": "Projeto",
+    "workspaceColumn": "Espaço de trabalho",
+    "workspaceNone": "Nenhum (toda a implantação)",
+    "mintInWorkspace": "O novo token atuará somente no espaço de trabalho {{workspace}}.",
+    "mintDeploymentWide": "O novo token atuará em toda a implantação, fora de qualquer espaço de trabalho.",
+    "mintNotAMember": "Você não é membro deste espaço de trabalho, então um token não pode atuar aqui. Abra o espaço de trabalho na sua lista, adicione-se primeiro como membro e crie o token novamente.",
     "expires": "Expira",
     "lastUsed": "Último uso",
     "never": "Nunca",
@@ -599,6 +604,8 @@
   "oauthConsent": {
     "title": "Aprovar um assistente",
     "asks": "{{client}} pede para usar o VoC como você.",
+    "inWorkspace": "Este login atuará somente no espaço de trabalho {{workspace}}.",
+    "deploymentWide": "Este login atuará fora de qualquer espaço de trabalho, em toda esta implantação.",
     "scope": {
       "read": "Somente leitura: pesquisar feedback, métricas, memória e projetos",
       "write": "Leitura e escrita: também criar e atualizar documentos"
@@ -606,6 +613,7 @@
     "actsAs": "Ele recebe o seu acesso a projetos e categorias, no máximo como editor, nunca como administrador. Você pode desconectá-lo a qualquer momento na página Conectar.",
     "runsAgents": "Como administrador, você também permite que ele inicie execuções de agentes (verificado novamente a cada execução).",
     "approveFailed": "A aprovação falhou. Tente novamente.",
+    "notAMember": "Você não é membro deste espaço de trabalho, então o login não pode atuar aqui. Abra o espaço de trabalho na sua lista, adicione-se primeiro como membro e aprove novamente.",
     "approve": "Aprovar e entrar",
     "deny": "Negar",
     "invalid": "Esta solicitação de login não é válida. Inicie o login novamente pelo assistente.",

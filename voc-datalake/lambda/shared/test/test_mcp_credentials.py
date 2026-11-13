@@ -18,7 +18,7 @@ NOW = datetime.now(UTC)
 
 def _grant(**overrides):
     row = grants.grant_item(subject='sub-alice', username='alice', is_admin=False, client_id=CLIENTS['kiro'],
-                            client_kind='kiro', scope='write', project_id=None, code_challenge='c' * 43, now=NOW)
+                            client_kind='kiro', scope='write', project_id=None, code_challenge='c' * 43, now=NOW, workspace=None)
     row['origin_jtis'] = ['chain-1']
     row.update(overrides)
     return row
@@ -158,7 +158,7 @@ def test_s256_is_rfc_7636():
 
 def test_the_consent_window_is_bound_to_the_consented_challenge():
     row = grants.grant_item(subject='s', username='u', is_admin=False, client_id=CLIENTS['kiro'], client_kind='kiro',
-                            scope='read', project_id=None, code_challenge=RFC_CHALLENGE, now=NOW)
+                            scope='read', project_id=None, code_challenge=RFC_CHALLENGE, now=NOW, workspace=None)
     assert RFC_CHALLENGE not in str(row)  # only its hash is stored
     assert grants.verifier_matches_consent(row, RFC_VERIFIER)
     assert not grants.verifier_matches_consent(row, 'x' * 43)
@@ -166,3 +166,20 @@ def test_the_consent_window_is_bound_to_the_consented_challenge():
     assert not grants.verifier_matches_consent(row, '')
     legacy = {key: value for key, value in row.items() if key != 'consent_challenge_sha256'}
     assert not grants.verifier_matches_consent(legacy, RFC_VERIFIER)
+
+
+
+def test_a_grant_approved_inside_a_workspace_records_it_and_its_view_names_it():
+    from datetime import UTC, datetime
+
+    from shared import mcp_global_tokens as gt
+
+    ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+    item = grants.grant_item(subject='sub-ana', username='ana', is_admin=False, client_id='kiro-client',
+                             client_kind='kiro', scope='read', project_id=None, code_challenge='c' * 43,
+                             now=datetime(2026, 11, 13, tzinfo=UTC), workspace=ws)
+    assert item[gt.WORKSPACE_ATTRIBUTE] == ws
+    assert grants.grant_view(item, NOW)['workspace_id'] == ws
+    assert gt.WORKSPACE_ATTRIBUTE not in grants.grant_item(
+        subject='sub-ana', username='ana', is_admin=False, client_id='kiro-client', client_kind='kiro', scope='read',
+        project_id=None, code_challenge='c' * 43, now=datetime(2026, 11, 13, tzinfo=UTC), workspace=None)

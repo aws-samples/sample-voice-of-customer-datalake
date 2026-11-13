@@ -41,14 +41,19 @@ the members' writes: shared/workspace_members.py):
     AUDIT#WS#{ws} / {iso}#{random}   kind, actor, at: a platform admin's entry (and the workspace's creation and
                                      membership changes)
 
-The caller's sub identifies a person: it is stored in the audit row and never logged.
+The caller's sub identifies a person: it is stored in the audit row and never logged. A delegated credential (an
+MCP token, ``mcp:…``) or an agent (``agent:…``) has no membership of its own: the person it acts for does
+(shared/project_access.py ``caller_from_claims``: the minter, the agent's owner), so their ``MEMBER#`` row decides
+and a credential whose person was removed from the workspace gets the one 404 there. One acting for nobody gets the
+404 too. Such a caller is never elevated (it carries no group) and acts at most as an ``editor`` (an admin's
+credential administers nothing, as for projects).
 """
 from __future__ import annotations
 
 import secrets
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final
 
 from shared.api import get_caller_subject
@@ -58,6 +63,7 @@ from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
 from shared.http_cache import request_header
 from shared.logging import logger
 from shared.platform_admin import is_platform_admin
+from shared.project_access import caller_from_claims, claims_from_event, is_synthetic_subject
 from shared.timestamps import now_iso
 
 # The id's form and the keys built from it live in shared/workspace_ids.py (no request-path imports), kept importable
@@ -182,9 +188,13 @@ def _audit_platform_admin_entry(table: Any, ws: str, sub: str) -> None:
 LivePlatformAdminCheck = Callable[[dict], bool]
 
 
+#: The highest role a delegated credential or an agent acts with in a workspace.
+DELEGATED_ROLE_CAP: Final = 'editor'
+
+
 def _load(table: Any, event: dict, ws: str, platform_admin: bool,
           confirm_platform_admin: LivePlatformAdminCheck) -> WorkspaceContext:
-    sub = get_caller_subject(event)
+    sub = member_subject(event)
     stored = _item(table, ws_key(ws), f'MEMBER#{sub}', MEMBER_READ_ATTRIBUTES).get('role')
     role = stored if isinstance(stored, str) and stored in ROLES else None
     # Decision 2: a platform admin enters with full admin rights, a member with a lower role too (audited). The
@@ -206,6 +216,21 @@ def _load(table: Any, event: dict, ws: str, platform_admin: bool,
                             secret_status=secret_status)
 
 
+def member_subject(event: dict) -> str:
+    """Whose ``MEMBER#`` row decides the request: the caller's own sub, or the person a delegated credential or an
+    agent acts for (see the module docstring); the one 404 when there is none."""
+    sub = get_caller_subject(event)
+    if not is_synthetic_subject(sub):
+        return sub
+    try:
+        acting = caller_from_claims(claims_from_event(event), []).subject
+    except ValueError:
+        acting = ''
+    if not acting or is_synthetic_subject(acting):
+        raise NotFoundError(NOT_FOUND)
+    return acting
+
+
 def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
                       confirm_platform_admin: LivePlatformAdminCheck) -> WorkspaceContext:
     """The workspace ``event``'s ``X-Workspace-Id`` names and the caller's role in it (see the module docstring).
@@ -213,13 +238,21 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
     ``confirm_platform_admin`` runs only on a cache fill where the token's group would elevate the caller.
     """
     ws = _workspace_id(event)
-    sub = get_caller_subject(event)
-    # Part of the cache key: a token that gained or lost the group is resolved again, not served the old answer.
-    platform_admin = is_platform_admin(event)
+    sub = member_subject(event)
+    delegated = is_synthetic_subject(get_caller_subject(event))
+    # Part of the cache key: a token that gained or lost the group is resolved again, not served the old answer. A
+    # delegated caller is never a platform admin's candidate, whatever its claims carry: it acts as its person's
+    # membership only (no entry audited in the person's name, no ``platform_admin`` context).
+    platform_admin = is_platform_admin(event) and not delegated
     context = cache.get(ws, sub, platform_admin)
     if context is None:
         context = _load(table, event, ws, platform_admin, confirm_platform_admin)
         cache.put(ws, sub, context, platform_admin)
+    if context.role == 'admin' and delegated:
+        # A credential or an agent acts for its person at most as an editor, never as an admin (as for projects,
+        # shared/project_access.py): it may write what its person may, but administers nothing. Capped after the
+        # cache, which holds the person's own role (the person and their credential share the entry).
+        return replace(context, role=DELEGATED_ROLE_CAP)
     return context
 
 

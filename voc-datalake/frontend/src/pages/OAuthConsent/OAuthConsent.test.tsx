@@ -26,6 +26,8 @@ const assign = vi.fn<(url: string) => void>()
 vi.mock('./leaveApp', () => ({ leaveTo: (url: string) => assign(url) }))
 
 const { default: OAuthConsent } = await import('./OAuthConsent')
+const { setCurrentWorkspace } = await import('../../workspace/currentWorkspace')
+const { ApiError } = await import('../../lib/errors')
 
 const QUERY = 'response_type=code&client_id=kiro-client&state=abc'
 const DESCRIBED = {
@@ -38,6 +40,7 @@ beforeEach(() => {
   approveConsent.mockReset()
   assign.mockReset()
   describeConsent.mockResolvedValue(DESCRIBED)
+  setCurrentWorkspace(null)
 })
 
 function renderConsent(query = QUERY) {
@@ -65,6 +68,41 @@ describe('OAuthConsent', () => {
 
     expect(approveConsent).toHaveBeenCalledWith({ authorize_query: QUERY, scope: 'write', project_id: 'proj_1' })
     expect(assign).toHaveBeenCalledWith('https://voc.auth.us-east-1.amazoncognito.com/oauth2/authorize?x=1')
+  })
+
+  it('says the sign-in acts outside any workspace when none is open', async () => {
+    renderConsent()
+
+    expect(await screen.findByText(/outside any workspace/)).toBeInTheDocument()
+  })
+
+  it('names the workspace the sign-in will act in', async () => {
+    setCurrentWorkspace({ id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters', role: 'editor' })
+    renderConsent()
+
+    expect(await screen.findByText('This sign-in will act in the Acme Outfitters workspace only.')).toBeInTheDocument()
+  })
+
+  it('tells a non-member to add themselves first on the 403, not to try again', async () => {
+    const user = userEvent.setup()
+    approveConsent.mockRejectedValue(new ApiError(403, 'Only a member of an existing workspace can approve a sign-in'))
+    setCurrentWorkspace({ id: 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8', slug: 'acme', name: 'Acme Outfitters', role: 'admin' })
+    renderConsent()
+
+    await user.click(await screen.findByRole('button', { name: 'Approve and sign in' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/add yourself as a member first/)
+    expect(assign).not.toHaveBeenCalled()
+  })
+
+  it('offers to try again when the approval fails otherwise', async () => {
+    const user = userEvent.setup()
+    approveConsent.mockRejectedValue(new ApiError(500))
+    renderConsent()
+
+    await user.click(await screen.findByRole('button', { name: 'Approve and sign in' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The approval failed. Try again.')
   })
 
   it('offers read only when the client asked for no more', async () => {

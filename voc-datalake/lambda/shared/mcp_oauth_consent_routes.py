@@ -41,6 +41,7 @@ from shared.mcp_oauth_authorize import (
     parse_authorize_query,
 )
 from shared.mcp_oauth_config import CLIENT_DISPLAY_NAMES, OAuthConfig, oauth_config
+from shared.mcp_workspace_pin import pinned_workspace
 from shared.project_access import Caller
 from shared.request_body import json_object_body
 from shared.tables import configured_table, get_jobs_table, get_projects_table
@@ -49,6 +50,10 @@ app = Router()
 
 GRANT_NOT_FOUND: Final = 'Sign-in not found'
 OAUTH_OFF: Final = 'OAuth sign-in is not configured on this deployment'
+
+
+#: A consent whose workspace could not be resolved (a DynamoDB fault).
+FAILED_CONSENT = 'Failed to record the approval'
 
 
 def _now() -> datetime:
@@ -122,6 +127,8 @@ def _consented_scope(body: dict, request: AuthorizeRequest) -> str:
 def approve_consent():
     caller = _person()
     config = _config()
+    # A sign-in approved inside a workspace acts there, as the person who approved it (shared/mcp_workspace_pin.py).
+    workspace = pinned_workspace(app.current_event.raw_event, FAILED_CONSENT)
     body = json_object_body(app)
     try:
         request = _request(config, body.get('authorize_query'))
@@ -133,14 +140,14 @@ def approve_consent():
     store.put_grant(_projects(), grants.grant_item(
         subject=caller.subject, username=caller.username, is_admin=caller.is_admin, client_id=request.client_id,
         client_kind=request.kind, scope=scope, project_id=project_id, code_challenge=request.code_challenge,
-        now=now))
+        now=now, workspace=workspace))
     relay_id = None
     if request.uses_relay:
         relay_id = relay.new_relay_id()
         relay.store_relay(configured_table(get_jobs_table(), 'Jobs'), relay_id,
                           relay.Delivery(request.client_id, request.redirect_uri, request.state), now)
     logger.info('MCP OAuth consent recorded', extra={'client_kind': request.kind, 'scope': scope,
-                                                      'pinned': bool(project_id)})
+                                                      'pinned': bool(project_id), 'in_workspace': workspace is not None})
     return {'redirect_to': cognito_authorize_url(request, config, consented_scope=scope, relay_id=relay_id)}
 
 

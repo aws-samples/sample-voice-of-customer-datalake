@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { connectApi, CONNECT_TOKENS_KEY } from '../../api/connectApi'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
+import { useWorkspaceNames } from './useWorkspaceNames'
 import { formatDateTime } from '../../utils/dateUtils'
 import type { AuditOutcome, ConnectToken, TokenStatus } from '../../api/connectSchema'
 
@@ -67,8 +68,9 @@ function Fact({ label, value }: Readonly<{ label: string; value: string }>) {
   return <div><dt className="inline">{label}: </dt><dd className="inline text-text">{value}</dd></div>
 }
 
-function TokenRow({ token, projectName, onRevoke }: Readonly<{
-  token: ConnectToken; projectName: string | undefined; onRevoke: (token: ConnectToken) => void
+function TokenRow({ token, projectName, workspaceNames, onRevoke }: Readonly<{
+  token: ConnectToken; projectName: string | undefined; workspaceNames: ReadonlyMap<string, string>
+  onRevoke: (token: ConnectToken) => void
 }>) {
   const { t, i18n } = useTranslation('common')
   const [open, setOpen] = useState(false)
@@ -97,6 +99,8 @@ function TokenRow({ token, projectName, onRevoke }: Readonly<{
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px] text-muted sm:grid-cols-4">
         <Fact label={t('connect.projectColumn')}
           value={token.project_id ? (projectName ?? token.project_id) : t('connect.projectAll')} />
+        <Fact label={t('connect.workspaceColumn')}
+          value={token.workspace_id ? (workspaceNames.get(token.workspace_id) ?? token.workspace_id) : t('connect.workspaceNone')} />
         <Fact label={t('connect.expires')} value={when(token.expires_at, i18n.language)} />
         <Fact label={t('connect.lastUsed')} value={token.last_used_at ? when(token.last_used_at, i18n.language) : t('connect.never')} />
         <Fact label={t('connect.created')} value={when(token.created_at, i18n.language)} />
@@ -107,15 +111,16 @@ function TokenRow({ token, projectName, onRevoke }: Readonly<{
 }
 
 type GroupProps = Readonly<{
-  tokens: readonly ConnectToken[]; projectNames: ReadonlyMap<string, string>; onRevoke: (token: ConnectToken) => void
+  tokens: readonly ConnectToken[]; projectNames: ReadonlyMap<string, string>
+  workspaceNames: ReadonlyMap<string, string>; onRevoke: (token: ConnectToken) => void
 }>
 
 /** Rows for `tokens`, in one list. */
-function Rows({ tokens, projectNames, onRevoke }: GroupProps) {
+function Rows({ tokens, projectNames, workspaceNames, onRevoke }: GroupProps) {
   return (
     <ul className="divide-y divide-border">
       {tokens.map((token) => (
-        <TokenRow key={token.token_id} token={token}
+        <TokenRow key={token.token_id} token={token} workspaceNames={workspaceNames}
           projectName={token.project_id ? projectNames.get(token.project_id) : undefined} onRevoke={onRevoke} />
       ))}
     </ul>
@@ -126,17 +131,17 @@ function Rows({ tokens, projectNames, onRevoke }: GroupProps) {
  * The live tokens first; revoked ones (kept for their audit log) collapsed under
  * "Revoked (N)" so they never crowd out the ones still in use.
  */
-function TokenGroups({ tokens, projectNames, onRevoke }: GroupProps) {
+function TokenGroups({ tokens, projectNames, workspaceNames, onRevoke }: GroupProps) {
   const { t } = useTranslation('common')
   const live = tokens.filter((token) => token.status !== 'revoked')
   const revoked = tokens.filter((token) => token.status === 'revoked')
   return (
     <>
-      {live.length > 0 && <Rows tokens={live} projectNames={projectNames} onRevoke={onRevoke} />}
+      {live.length > 0 && <Rows tokens={live} projectNames={projectNames} workspaceNames={workspaceNames} onRevoke={onRevoke} />}
       {revoked.length > 0 && (
         <details className="pt-1">
           <summary className="cursor-pointer text-sm text-muted focus-ring rounded-sm">{t('connect.revokedGroup', { count: revoked.length })}</summary>
-          <Rows tokens={revoked} projectNames={projectNames} onRevoke={onRevoke} />
+          <Rows tokens={revoked} projectNames={projectNames} workspaceNames={workspaceNames} onRevoke={onRevoke} />
         </details>
       )}
     </>
@@ -149,6 +154,7 @@ export function TokenList({ tokens, projectNames }: Readonly<{
   const { t } = useTranslation('common')
   const queryClient = useQueryClient()
   const [pending, setPending] = useState<ConnectToken | null>(null)
+  const workspaceNames = useWorkspaceNames(tokens)
   const revoke = useMutation({
     mutationFn: (tokenId: string) => connectApi.revokeToken(tokenId),
     onSettled: () => {
@@ -162,7 +168,7 @@ export function TokenList({ tokens, projectNames }: Readonly<{
       <h2 id="connect-tokens-title" className="text-base font-semibold text-text-strong">{t('connect.tokensTitle')}</h2>
       {tokens.length === 0
         ? <p className="text-sm text-muted">{t('connect.tokensEmpty')}</p>
-        : <TokenGroups tokens={tokens} projectNames={projectNames} onRevoke={setPending} />}
+        : <TokenGroups tokens={tokens} projectNames={projectNames} workspaceNames={workspaceNames} onRevoke={setPending} />}
       {revoke.isError && <p role="alert" className="text-sm text-danger">{t('connect.revokeFailed')}</p>}
       <ConfirmModal
         isOpen={pending !== null}

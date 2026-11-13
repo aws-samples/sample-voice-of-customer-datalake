@@ -20,7 +20,10 @@ inside a workspace (the first workspace made at bootstrap, agreed with the multi
 
 The Lambda's role attaches the stack's workspace-resolution policy (lib/utils/workspace-resolution-grants.ts, the one
 list: GetItem on ``voc-workspaces``' ``WS#*`` rows and on ``AUDIT#WS#*``, an audit row read back after a retried put;
-PutItem on ``AUDIT#WS#*`` only) and has Cognito ``AdminListGroupsForUser`` and ``AdminGetUser`` on the user pool.
+PutItem on ``AUDIT#WS#*`` only) and has Cognito ``AdminListGroupsForUser`` and ``AdminGetUser`` on the user pool. A
+Lambda that resolves only with ``elevate=False`` (no platform admin's entry: no live check, no audit row) needs only
+the membership reads (``grantWorkspaceMembershipReads``: GetItem on ``WS#*``, held to the resolver's projections,
+shared/workspace.py ``MEMBER_READ_ATTRIBUTES`` and ``META_READ_ATTRIBUTES``), and no Cognito.
 
 ``require_workspace_writer``: 403 for a viewer (docs/multi-workspace.md, Roles: a viewer reads, an editor writes).
 ``require_settings_admin``: who changes an admin's settings kind that moved into its workspace (the brand): an admin of
@@ -64,9 +67,12 @@ def _names_a_workspace(event: dict) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def request_workspace(event: dict, public_error: str, *, fresh: bool = False) -> WorkspaceContext | None:
+def request_workspace(event: dict, public_error: str, *, fresh: bool = False,
+                      elevate: bool = True) -> WorkspaceContext | None:
     """The workspace ``event``'s ``X-Workspace-Id`` names and the caller's role there; ``None`` when it names none
-    (the deployment as before). ``fresh``: from the table, not the warm cache. See the module docstring."""
+    (the deployment as before). ``fresh``: from the table, not the warm cache. ``elevate=False``: a platform admin
+    enters only with their own membership (a non-member gets the one 404), for a route whose result must act as a
+    member later (an MCP token's calls carry no group). See the module docstring."""
     if not _names_a_workspace(event):
         return None
     table_name = os.environ.get('WORKSPACES_TABLE', '')
@@ -75,11 +81,16 @@ def request_workspace(event: dict, public_error: str, *, fresh: bool = False) ->
     try:
         return resolve_workspace(cached_table(get_dynamodb_resource(), table_name), event,
                                  MembershipCache() if fresh else _MEMBERSHIPS,
-                                 confirm_platform_admin=confirm_live_platform_admin)
+                                 confirm_platform_admin=confirm_live_platform_admin if elevate else _never)
     except (ClientError, BotoCoreError) as exc:
         # A failed read, live check or entry audit row: the entry is refused, the AWS error stays in the log.
         logger.exception('Error resolving the workspace')
         raise ServiceError(public_error) from exc
+
+
+def _never(_event: dict) -> bool:
+    """The live check of a resolution that does not elevate: no one enters as a platform admin."""
+    return False
 
 
 def require_workspace_writer(context: WorkspaceContext) -> None:

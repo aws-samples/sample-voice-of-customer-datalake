@@ -490,6 +490,11 @@
     },
     "runsAgents": "可运行代理",
     "projectColumn": "项目",
+    "workspaceColumn": "工作区",
+    "workspaceNone": "无（整个部署）",
+    "mintInWorkspace": "新令牌只会在工作区 {{workspace}} 中执行操作。",
+    "mintDeploymentWide": "新令牌不属于任何工作区，将在整个部署中执行操作。",
+    "mintNotAMember": "您不是此工作区的成员，因此令牌无法在此执行操作。请从列表中打开该工作区，先将自己添加为成员，然后重新创建令牌。",
     "expires": "过期时间",
     "lastUsed": "上次使用",
     "never": "从未",
@@ -594,6 +599,8 @@
   "oauthConsent": {
     "title": "批准助手",
     "asks": "{{client}} 请求以您的身份使用 VoC。",
+    "inWorkspace": "此登录只会在工作区 {{workspace}} 中执行操作。",
+    "deploymentWide": "此登录不属于任何工作区，将在整个部署中执行操作。",
     "scope": {
       "read": "只读：搜索反馈、指标、记忆和项目",
       "write": "读写：还可以创建和更新文档"
@@ -601,6 +608,7 @@
     "actsAs": "它获得您对项目和类别的访问权限，最多为编辑者，绝不会成为管理员。您可以随时在“连接”页面将其退出登录。",
     "runsAgents": "作为管理员，您还允许它启动智能体运行（每次运行都会重新检查）。",
     "approveFailed": "批准失败，请重试。",
+    "notAMember": "您不是此工作区的成员，因此登录无法在此执行操作。请从列表中打开该工作区，先将自己添加为成员，然后再次批准。",
     "approve": "批准并登录",
     "deny": "拒绝",
     "invalid": "此登录请求无效。请从您的助手重新开始登录。",

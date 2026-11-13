@@ -490,6 +490,11 @@
     "toggleAudit": "Pokaż aktywność: {{name}}",
     "runsAgents": "Może uruchamiać agenty",
     "projectColumn": "Projekt",
+    "workspaceColumn": "Obszar roboczy",
+    "workspaceNone": "Brak (całe wdrożenie)",
+    "mintInWorkspace": "Nowy token będzie działać tylko w obszarze roboczym {{workspace}}.",
+    "mintDeploymentWide": "Nowy token będzie działać w całym wdrożeniu, poza obszarami roboczymi.",
+    "mintNotAMember": "Nie jesteś członkiem tego obszaru roboczego, więc token nie może tu działać. Otwórz obszar roboczy z listy, najpierw dodaj siebie jako członka, a potem utwórz token ponownie.",
     "expires": "Wygasa",
     "lastUsed": "Ostatnio użyty",
     "never": "Nigdy",
@@ -604,6 +609,8 @@
   "oauthConsent": {
     "title": "Zatwierdź asystenta",
     "asks": "{{client}} prosi o korzystanie z VoC w Twoim imieniu.",
+    "inWorkspace": "To logowanie będzie działać tylko w obszarze roboczym {{workspace}}.",
+    "deploymentWide": "To logowanie będzie działać poza obszarami roboczymi, w całym tym wdrożeniu.",
     "scope": {
       "read": "Tylko odczyt: wyszukiwanie opinii, wskaźników, pamięci i projektów",
       "write": "Odczyt i zapis: także tworzenie i aktualizowanie dokumentów"
@@ -611,6 +618,7 @@
     "actsAs": "Otrzymuje Twój dostęp do projektów i kategorii, najwyżej jako edytor, nigdy jako administrator. W każdej chwili możesz go wylogować na stronie Połącz.",
     "runsAgents": "Jako administrator pozwalasz mu też uruchamiać agentów (sprawdzane przy każdym uruchomieniu).",
     "approveFailed": "Zatwierdzenie nie powiodło się. Spróbuj ponownie.",
+    "notAMember": "Nie jesteś członkiem tego obszaru roboczego, więc logowanie nie może tu działać. Otwórz obszar roboczy z listy, najpierw dodaj siebie jako członka, a potem zatwierdź ponownie.",
     "approve": "Zatwierdź i zaloguj",
     "deny": "Odmów",
     "invalid": "To żądanie logowania jest nieprawidłowe. Rozpocznij logowanie ponownie w asystencie.",

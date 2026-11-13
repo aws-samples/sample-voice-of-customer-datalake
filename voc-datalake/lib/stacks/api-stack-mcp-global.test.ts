@@ -24,6 +24,17 @@ const pythonString = (file: string, name: string) => {
   return value ?? '';
 };
 
+/** MEMBER_READ_ATTRIBUTES, then META_READ_ATTRIBUTES's others, of shared/workspace.py: what the resolver projects. */
+function resolverAttributes(): string[] {
+  const source = readRepoFile('lambda', 'shared', 'workspace.py');
+  const tuple = (name: string) => {
+    const body = new RegExp(`^${name}: Final = \\(([^)]*)\\)`, 'm').exec(source)?.[1];
+    expect(body, `could not read ${name} from workspace.py`).toBeDefined();
+    return [...(body ?? '').matchAll(/'([^']+)'/g)].map((m) => itemAt(m, 1));
+  };
+  return [...new Set([...tuple('MEMBER_READ_ATTRIBUTES'), ...tuple('META_READ_ATTRIBUTES')])];
+}
+
 /** DOMAIN_FUNCTION_ENV in mcp_global_tools.py: env key → domain. */
 function domainEnvKeys(): string[] {
   const table = /DOMAIN_FUNCTION_ENV[^=]*=\s*\{([\s\S]*?)\}/.exec(readRepoFile('lambda', 'shared', 'mcp_global_tools.py'))?.[1];
@@ -198,6 +209,18 @@ describe('MCP token API IAM', () => {
         ['dynamodb:BatchGetItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem'],
       [JSON.stringify({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PROJECT#*'] } })]: ['dynamodb:GetItem'],
     });
+  });
+
+  it('reads only membership rows of voc-workspaces, held to the resolver\'s projections, and writes nothing there', () => {
+    const workspaces = onTable(statements(), 'Workspaces');
+    expect(workspaces.map((s) => ({ actions: s.actions, condition: s.condition }))).toStrictEqual([
+      { actions: ['dynamodb:GetItem'], condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': resolverAttributes() },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      } },
+    ]);
+    expect(resolverAttributes()).not.toContain('email');
   });
 
   it('queries the audit partitions and puts/consumes only OAuth relay rows; no other delete, Cognito or invoke', () => {

@@ -1,7 +1,8 @@
 """Radar brands: which brands Radar tracks, and where their reviews come from (docs/radar.md).
 
 THE BRAND LIST (Administration -> Sources -> Radar) is the source of truth. It is
-stored in the ``voc-radar`` table at ``SETTINGS#radar`` / ``brands``::
+stored in the ``voc-radar`` table at ``SETTINGS#radar`` / ``brands`` (a workspace's at
+``WS#{ws}#SETTINGS#radar`` / ``brands``, shared/radar_keys.py)::
 
     {brands: [{label: "Acme", domains: ["acme.com"], language?: "pl", feed_urls?: [...], search_terms?: [...],
                exclude_terms?: [...]}], updated_at, updated_by}
@@ -34,6 +35,9 @@ from typing import Any, Final, TypeGuard
 from shared.radar_brand_citations import BrandMatch
 from shared.radar_brand_fields import brand_language, effective_language, feed_urls
 from shared.radar_brand_terms import EXCLUDE_TERMS, SEARCH_TERMS, brand_terms
+from shared.radar_keys import radar_settings_key
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'BRAND_LIST_KEY',
@@ -51,7 +55,7 @@ __all__ = [
 MAX_BRAND_CHARS: Final = 64
 MAX_BRAND_DOMAINS: Final = 10
 MAX_LIST_BRANDS: Final = 25
-BRAND_LIST_KEY: Final = {'pk': 'SETTINGS#radar', 'sk': 'brands'}
+BRAND_LIST_KEY: Final = radar_settings_key('brands')
 #: Keys no listed brand may take: ``all`` names the Radar page's "All brands" view (GET /radar/all).
 RESERVED_BRAND_KEYS: Final = frozenset({'all'})
 #: A brand key as a scraper / connector config and a queue message carry it (``IngestMessage.radar_brand_key``).
@@ -233,9 +237,10 @@ def validate_brand_list(body: object) -> list[dict[str, Any]]:
     return out
 
 
-def load_brand_list(table: Any) -> list[dict[str, Any]]:
-    """The stored brand list (``[]`` when none is saved); ValueError when the stored row is malformed."""
-    item = table.get_item(Key=BRAND_LIST_KEY).get('Item')
+def load_brand_list(table: Any, scope: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """The stored brand list of ``scope``'s workspace (the deployment's without one, shared/radar_keys.py; ``[]``
+    when none is saved); ValueError when the stored row is malformed."""
+    item = get_scoped_item(table, radar_settings_key('brands', scope), scope)
     if not item:
         return []
     return validate_brand_list({'brands': item.get('brands', [])})

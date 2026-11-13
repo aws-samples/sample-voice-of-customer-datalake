@@ -23,6 +23,7 @@ from typing import Any, Final
 from shared.category_access import CategoryScope
 from shared.radar_reviews import ReviewFilter, distinct_reviews, scope_admits, written_day
 from shared.radar_store import SENTIMENT_LABELS
+from shared.ws_repo import WorkspaceScope
 
 __all__ = ['ReviewCounts', 'review_counts', 'side_view']
 
@@ -70,10 +71,12 @@ class ReviewCounts:
         ]
 
 
-def review_counts(table: Any, brand: str, start: date, end: date, scope: CategoryScope) -> ReviewCounts:
-    """The distinct reviews of ``brand`` in the window that ``scope`` admits (the list's own reading)."""
+def review_counts(table: Any, brand: str, start: date, end: date, scope: CategoryScope,
+                  workspace: WorkspaceScope | None = None) -> ReviewCounts:
+    """The distinct reviews of ``brand`` in the window that ``scope`` admits (the list's own reading;
+    ``workspace``'s with one)."""
     items, complete = distinct_reviews(table, brand, admits=scope_admits(scope, ReviewFilter()),
-                                       start=start, end=end, cap=MAX_COUNT_READ)
+                                       start=start, end=end, cap=MAX_COUNT_READ, workspace=workspace)
     return ReviewCounts(items, complete)
 
 

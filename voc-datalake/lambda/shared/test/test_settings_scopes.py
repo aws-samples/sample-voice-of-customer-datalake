@@ -67,8 +67,8 @@ WORKSPACE_KINDS: dict[str, frozenset[str]] = {
     'resolved_problems': frozenset({'lambda/api/settings_handler.py'}),
     'email_intake': frozenset({'lambda/shared/email_intake_settings.py'}),
     'fallback_owner': frozenset({'lambda/agents/nodes/select_or_create_project.py', 'lambda/shared/user_flags.py'}),
-    'radar': frozenset({'lambda/shared/data_version.py', 'lambda/shared/radar_brands.py',
-                        'lambda/shared/radar_settings.py', 'lib/utils/cache-version-grants.ts'}),
+    # Its rows' keys, the deployment's and a workspace's, are built in one place (shared/radar_keys.py).
+    'radar': frozenset({'lambda/shared/radar_keys.py', 'lib/utils/cache-version-grants.ts'}),
     # The workspace's pick; the default pinned at deploy (model_pin.py, `model_default` below) and the allowlist stay
     # deployment-wide.
     'model': frozenset({'lambda/product_doc_extractor/handler.py',

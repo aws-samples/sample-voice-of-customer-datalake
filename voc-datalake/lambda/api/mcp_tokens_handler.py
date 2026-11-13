@@ -52,6 +52,7 @@ from shared.exceptions import (
 from shared.logging import logger, tracer
 from shared.mcp_oauth_config import token_minting_enabled
 from shared.mcp_oauth_consent_routes import oauth_summary
+from shared.mcp_workspace_pin import pinned_workspace
 from shared.project_access import Caller
 from shared.request_body import json_object_body
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
@@ -69,6 +70,10 @@ app = create_api_resolver()
 # Cognito-authenticated consent API and "my sign-ins" under /connect/oauth.
 app.include_router(mcp_oauth_routes.app)
 app.include_router(mcp_oauth_consent_routes.app)
+
+
+#: A mint whose workspace could not be resolved (a DynamoDB fault).
+FAILED_MINT = 'Failed to create the token'
 
 
 def _now() -> datetime:
@@ -247,6 +252,9 @@ def mint_token():
     caller = _caller()
     if not token_minting_enabled():
         raise AuthorizationError(MINTING_DISABLED)
+    # A token minted inside a workspace acts there, as its minter (shared/mcp_workspace_pin.py); one minted with no
+    # workspace stays the deployment's, as before.
+    workspace = pinned_workspace(app.current_event.raw_event, FAILED_MINT)
     body = json_object_body(app)
     now = _now()
     name = _token_name(body)
@@ -274,9 +282,11 @@ def mint_token():
     }
     if project_id:
         item['project_id'] = project_id
+    if workspace is not None:
+        item[gt.WORKSPACE_ATTRIBUTE] = workspace
     _put_with_creator_index(item)
     logger.info('Minted global MCP token', extra={'token_id': minted.token_id, 'scope': scope,
-                                                  'pinned': bool(project_id)})
+                                                  'pinned': bool(project_id), 'in_workspace': workspace is not None})
     # The one and only time the raw credential leaves this service.
     return {'token': minted.raw, **gt.token_view(item, now)}
 

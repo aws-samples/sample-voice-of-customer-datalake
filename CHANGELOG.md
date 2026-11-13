@@ -17,6 +17,27 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.10.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-c track's MCP and Radar slices merged. An MCP token created, or an OAuth sign-in approved, inside a workspace acts in that workspace, as its person and at most as an editor; Radar's settings and views can be read per workspace, with no caller passing one yet ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- An MCP token created inside a workspace (Connect, `POST /connect/tokens` with the workspace open) and an OAuth sign-in approved inside one (the consent page with a workspace open) act in that workspace: every call carries it, with the membership of the person who created or approved it there, at most as an editor, never as an admin and never as a platform admin. Removing that person from the workspace stops the credential on every route that acts in a workspace (within 30 seconds, the membership cache of a warm function). Approving a sign-in again replaces it, workspace included. A platform admin who is not a member cannot create a token or approve a sign-in there (403, "add yourself as a member first"). Tokens and sign-ins made outside a workspace behave as before ([docs/mcp.md](docs/mcp.md)).
+- The web app's consent page and Connect's token form say which workspace a new sign-in or token will act in (or that it acts across the whole deployment) and, on that 403, tell a non-member to add themselves as a member first instead of showing the generic failure, in all nine languages. Connect's token list and sign-in list show each one's workspace (`workspace_id` in both lists).
+- Internal: Radar's scan settings and brand list (`lambda/shared/radar_keys.py`: the scan settings, the brand list, the processor's brand routing, cached per workspace, and the daily brief's brand list) and Radar's views (`lambda/shared/radar_reads.py`: the brand headers, trend, themes, review list and detail, the comparison with our own feedback, the releases and All brands) take an optional workspace and then read only its rows. Nothing changes yet: no caller passes a workspace and Administration still edits the deployment's Radar settings; they move with Radar's reviews at the phase-2 cut-over.
+
+### Changed
+
+- IAM: the MCP tokens role (`voc-mcp-tokens-api`, `lib/stacks/global-mcp.ts`) may get `WS#*` rows of `voc-workspaces`, held to the attributes the workspace resolver projects (`pk`, `sk`, `role`, `status`, `name`, `slug`, `secret_status`: never a member's email), and gets `WORKSPACES_TABLE` and `USER_POOL_ID`. It writes nothing there and has no Cognito grant: a token or sign-in is pinned with the person's own membership only, never a platform admin's entry.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack changes (the MCP tokens role's new read on `voc-workspaces` and its environment); no table, index or cross-stack reference changes, and nothing is migrated.
+- IAM: review the MCP tokens role's new `GetItem` on `voc-workspaces` if you restrict IAM changes.
+- Existing tokens and sign-ins keep acting deployment-wide. To have an assistant act in a workspace, create a new token, or approve the sign-in again, with that workspace open.
+- The web app always opens a workspace for anyone who has one, so a new token or sign-in from such a person is pinned to that workspace, whose feedback stays empty while per-workspace ingestion is held. Until the web app offers a deployment-wide choice, keep the tokens and sign-ins you already have for the deployment's data, or create new ones from an account with no workspace.
+
 ## [7.09.00] - 2026-11-13
 
 Multi-workspace, phase 2: the voc-multiplayer-b track's erasure-in-a-workspace slice and its follow-ups merged: a workspace's member admin can erase that workspace's reviews by author, source id, CSV row or email, which closes the D5 condition of the ingestion hold ([docs/source-policies.md](docs/source-policies.md#retention-and-erasure), "Workspace items"). Per-workspace ingestion stays held until the category reprocess replays a workspace's reviews (D3).

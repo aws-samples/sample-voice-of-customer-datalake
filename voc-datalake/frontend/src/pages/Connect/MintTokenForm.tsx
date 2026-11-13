@@ -21,6 +21,14 @@ import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { CopyButton } from './CopyButton'
 import type { ConnectScope, MintResponse } from '../../api/connectSchema'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
+import { ApiError } from '../../lib/errors'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+
+/** Why the mint failed: a 403 is the server's "not a member of this workspace" (shared/mcp_workspace_pin.py
+ *  `NOT_A_MEMBER`: a platform admin outside it), which says what to do; anything else, the generic failure. */
+function mintFailure(error: unknown): 'connect.mintNotAMember' | 'connect.mintFailed' {
+  return error instanceof ApiError && error.status === 403 ? 'connect.mintNotAMember' : 'connect.mintFailed'
+}
 
 export interface ProjectChoice {
   readonly project_id: string
@@ -82,6 +90,8 @@ export function MintTokenForm({ projects, initialProjectId, canMintAgentRunner }
   const [days, setDays] = useState<number>(DEFAULT_EXPIRY_DAYS)
   const [projectId, setProjectId] = useState(initialProjectId)
   const [minted, setMinted] = useState<MintResponse | null>(null)
+  // The mint names the current workspace (X-Workspace-Id), and the token then acts there only.
+  const workspace = useCurrentWorkspace()
 
   const mint = useMutation({
     mutationFn: () => connectApi.mintToken({
@@ -124,7 +134,12 @@ export function MintTokenForm({ projects, initialProjectId, canMintAgentRunner }
             onChange={setProjectId} noneLabel={t('connect.projectAll')}
             options={projects.map((project) => ({ value: project.project_id, label: project.name || project.project_id }))} />
         </div>
-        {mint.isError && <p role="alert" className="text-sm text-danger">{t('connect.mintFailed')}</p>}
+        <p className="text-[12px] text-muted">
+          {workspace
+            ? t('connect.mintInWorkspace', { workspace: workspace.name || workspace.slug })
+            : t('connect.mintDeploymentWide')}
+        </p>
+        {mint.isError && <p role="alert" className="text-sm text-danger">{t(mintFailure(mint.error))}</p>}
         <StickyActionBar variant="inline" className="py-2">
           <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
             {mint.isPending ? t('connect.minting') : t('connect.mint')}

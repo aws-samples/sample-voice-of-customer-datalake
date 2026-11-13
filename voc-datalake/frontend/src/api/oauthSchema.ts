@@ -28,6 +28,7 @@ const GrantSchema = z.object({
   grant_id: z.string().min(1),
   client_kind: z.string().catch(''),
   client_name: z.string().catch(''),
+  // The lifecycle fields, `workspace_id` among them: the workspace the sign-in was approved in (none: deployment-wide).
   ...CREDENTIAL_LIFECYCLE_FIELDS,
   signed_in: z.boolean().catch(false),
 })

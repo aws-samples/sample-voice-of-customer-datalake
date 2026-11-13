@@ -490,6 +490,11 @@
     },
     "runsAgents": "Kann Agenten starten",
     "projectColumn": "Projekt",
+    "workspaceColumn": "Arbeitsbereich",
+    "workspaceNone": "Keiner (gesamte Bereitstellung)",
+    "mintInWorkspace": "Das neue Token handelt nur im Arbeitsbereich {{workspace}}.",
+    "mintDeploymentWide": "Das neue Token handelt in der gesamten Bereitstellung, außerhalb jedes Arbeitsbereichs.",
+    "mintNotAMember": "Sie sind kein Mitglied dieses Arbeitsbereichs, daher kann hier kein Token handeln. Öffnen Sie den Arbeitsbereich aus Ihrer Liste, fügen Sie sich zuerst als Mitglied hinzu und erstellen Sie das Token dann erneut.",
     "expires": "Läuft ab",
     "lastUsed": "Zuletzt verwendet",
     "never": "Nie",
@@ -594,6 +599,8 @@
   "oauthConsent": {
     "title": "Assistent freigeben",
     "asks": "{{client}} möchte VoC als Sie verwenden.",
+    "inWorkspace": "Diese Anmeldung handelt nur im Arbeitsbereich {{workspace}}.",
+    "deploymentWide": "Diese Anmeldung handelt außerhalb jedes Arbeitsbereichs, in der gesamten Bereitstellung.",
     "scope": {
       "read": "Nur Lesen: Feedback, Kennzahlen, Gedächtnis und Projekte durchsuchen",
       "write": "Lesen und Schreiben: außerdem Dokumente erstellen und aktualisieren"
@@ -601,6 +608,7 @@
     "actsAs": "Er erhält Ihren Zugriff auf Projekte und Kategorien, höchstens als Bearbeiter, nie als Administrator. Sie können ihn jederzeit auf der Seite Verbinden abmelden.",
     "runsAgents": "Als Administrator erlauben Sie ihm auch, Agentenläufe zu starten (bei jedem Lauf erneut geprüft).",
     "approveFailed": "Die Freigabe ist fehlgeschlagen. Versuchen Sie es erneut.",
+    "notAMember": "Sie sind kein Mitglied dieses Arbeitsbereichs, daher kann die Anmeldung hier nicht handeln. Öffnen Sie den Arbeitsbereich aus Ihrer Liste, fügen Sie sich zuerst als Mitglied hinzu und geben Sie die Anmeldung dann erneut frei.",
     "approve": "Freigeben und anmelden",
     "deny": "Ablehnen",
     "invalid": "Diese Anmeldeanfrage ist ungültig. Starten Sie die Anmeldung erneut in Ihrem Assistenten.",

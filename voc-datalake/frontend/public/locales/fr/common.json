@@ -495,6 +495,11 @@
     },
     "runsAgents": "Peut lancer des agents",
     "projectColumn": "Projet",
+    "workspaceColumn": "Espace de travail",
+    "workspaceNone": "Aucun (tout le déploiement)",
+    "mintInWorkspace": "Le nouveau jeton agira uniquement dans l’espace de travail {{workspace}}.",
+    "mintDeploymentWide": "Le nouveau jeton agira sur tout le déploiement, hors de tout espace de travail.",
+    "mintNotAMember": "Vous n’êtes pas membre de cet espace de travail : un jeton ne peut pas y agir. Ouvrez l’espace de travail depuis votre liste, ajoutez-vous d’abord comme membre, puis créez à nouveau le jeton.",
     "expires": "Expire",
     "lastUsed": "Dernière utilisation",
     "never": "Jamais",
@@ -599,6 +604,8 @@
   "oauthConsent": {
     "title": "Approuver un assistant",
     "asks": "{{client}} demande à utiliser VoC en votre nom.",
+    "inWorkspace": "Cette connexion agira uniquement dans l’espace de travail {{workspace}}.",
+    "deploymentWide": "Cette connexion agira hors de tout espace de travail, sur tout ce déploiement.",
     "scope": {
       "read": "Lecture seule : rechercher les retours, les indicateurs, la mémoire et les projets",
       "write": "Lecture et écriture : également créer et modifier des documents"
@@ -606,6 +613,7 @@
     "actsAs": "Il reçoit votre accès aux projets et aux catégories, au plus en tant qu’éditeur, jamais en administrateur. Vous pouvez le déconnecter à tout moment sur la page Connecter.",
     "runsAgents": "En tant qu’administrateur, vous l’autorisez aussi à lancer des exécutions d’agents (vérifié à chaque exécution).",
     "approveFailed": "L’approbation a échoué. Réessayez.",
+    "notAMember": "Vous n’êtes pas membre de cet espace de travail : la connexion ne peut pas y agir. Ouvrez l’espace de travail depuis votre liste, ajoutez-vous d’abord comme membre, puis approuvez à nouveau.",
     "approve": "Approuver et se connecter",
     "deny": "Refuser",
     "invalid": "Cette demande de connexion n’est pas valide. Relancez la connexion depuis votre assistant.",

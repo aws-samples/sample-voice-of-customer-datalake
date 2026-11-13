@@ -88,8 +88,11 @@ def verifier_matches_consent(row: Mapping[str, Any], code_verifier: object) -> b
 
 
 def grant_item(*, subject: str, username: str, is_admin: bool, client_id: str, client_kind: str,
-               scope: str, project_id: str | None, code_challenge: str, now: datetime) -> dict[str, Any]:
-    """A fresh grant (a re-consent REPLACES the row: earlier chains and any revocation are gone)."""
+               scope: str, project_id: str | None, code_challenge: str, now: datetime,
+               workspace: str | None) -> dict[str, Any]:
+    """A fresh grant (a re-consent REPLACES the row: earlier chains and any revocation are gone, and so is the
+    workspace an earlier consent approved it in). ``workspace``: the one the consent was approved in
+    (shared/mcp_workspace_pin.py), which the grant's calls then act in."""
     gid = grant_id(subject, client_id)
     item: dict[str, Any] = {
         'pk': gt.GLOBAL_TOKEN_PK,
@@ -111,6 +114,8 @@ def grant_item(*, subject: str, username: str, is_admin: bool, client_id: str, c
     }
     if project_id:
         item['project_id'] = project_id
+    if workspace is not None:
+        item[gt.WORKSPACE_ATTRIBUTE] = workspace
     return item
 
 
@@ -142,7 +147,8 @@ def effective_scope(row: Mapping[str, Any], token_scopes: frozenset[str], config
     return gt.SCOPE_WRITE if has_write and gt.scope_allows_write(row.get('scope')) else gt.SCOPE_READ
 
 
-_SHARED_VIEW_FIELDS: Final = ('scope', 'project_id', 'created_at', 'expires_at', 'last_used_at', 'revoked_at', 'status')
+_SHARED_VIEW_FIELDS: Final = ('scope', 'project_id', 'created_at', 'expires_at', 'last_used_at', 'revoked_at', 'status',
+                               'workspace_id')
 
 
 def grant_view(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:

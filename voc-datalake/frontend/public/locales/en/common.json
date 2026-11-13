@@ -490,6 +490,11 @@
     },
     "runsAgents": "Can run agents",
     "projectColumn": "Project",
+    "workspaceColumn": "Workspace",
+    "workspaceNone": "None (deployment-wide)",
+    "mintInWorkspace": "The new token will act in the {{workspace}} workspace only.",
+    "mintDeploymentWide": "The new token will act across the whole deployment, outside any workspace.",
+    "mintNotAMember": "You are not a member of this workspace, so a token cannot act here. Open the workspace from your list and add yourself as a member first, then create the token again.",
     "expires": "Expires",
     "lastUsed": "Last used",
     "never": "Never",
@@ -594,6 +599,8 @@
   "oauthConsent": {
     "title": "Approve an assistant",
     "asks": "{{client}} asks to use VoC as you.",
+    "inWorkspace": "This sign-in will act in the {{workspace}} workspace only.",
+    "deploymentWide": "This sign-in will act outside any workspace, across this deployment.",
     "scope": {
       "read": "Read only: search feedback, metrics, memory and projects",
       "write": "Read and write: also create and update documents"
@@ -601,6 +608,7 @@
     "actsAs": "It gets your access to projects and categories, at most as an editor, never as an administrator. You can sign it out on the Connect page at any time.",
     "runsAgents": "As an administrator, you also let it start agent runs (checked again on every run).",
     "approveFailed": "The approval failed. Try again.",
+    "notAMember": "You are not a member of this workspace, so the sign-in cannot act here. Open the workspace from your list and add yourself as a member first, then approve again.",
     "approve": "Approve and sign in",
     "deny": "Deny",
     "invalid": "This sign-in request is not valid. Start the sign-in again from your assistant.",

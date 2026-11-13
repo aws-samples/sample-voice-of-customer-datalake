@@ -108,7 +108,7 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
     uniqueName: (baseName) => ctx.uniqueName(baseName),
     createApiLambdaCode, apiLayer, allowedOrigin, mcpResource, authMethodOptions, browserPreflight: BROWSER_PREFLIGHT,
     mcpMethodOptionsFor: (handler) => mcpAuthorizerOptions(stack, handler),
-    apiRoot: api.root, projectsTable, jobsTable, kmsKey, userPool,
+    apiRoot: api.root, projectsTable, jobsTable, kmsKey, userPool, workspacesTable: ctx.props.workspacesTable,
     domainFunctions: {
       METRICS_FUNCTION: metricsLambda, SETTINGS_FUNCTION: settingsLambda, MEMORY_FUNCTION: memoryLambda,
       PROJECTS_FUNCTION: projectsLambda, AGENTS_FUNCTION: agentsLambda, ENGAGEMENT_FUNCTION: engagementLambda,

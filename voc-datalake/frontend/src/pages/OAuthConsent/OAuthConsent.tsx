@@ -22,12 +22,22 @@ import type { ConsentDescription } from '../../api/oauthSchema'
 import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
+import { ApiError } from '../../lib/errors'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 import { leaveTo } from './leaveApp'
 
 type Approvable = Extract<ConsentDescription, { refused: false }>
 
+/** Why the approval failed: a 403 is the server's "not a member of this workspace" (shared/mcp_workspace_pin.py
+ *  `NOT_A_MEMBER`: a platform admin outside it), which says what to do; anything else, try again. */
+function approveFailure(error: unknown): 'oauthConsent.notAMember' | 'oauthConsent.approveFailed' {
+  return error instanceof ApiError && error.status === 403 ? 'oauthConsent.notAMember' : 'oauthConsent.approveFailed'
+}
+
 function ConsentForm({ consent, authorizeQuery }: Readonly<{ consent: Approvable; authorizeQuery: string }>) {
   const { t } = useTranslation('common')
+  // The approval names the current workspace (X-Workspace-Id), and the sign-in then acts there only.
+  const workspace = useCurrentWorkspace()
   const [scope, setScope] = useState<ConnectScope>('read')
   const [projectId, setProjectId] = useState('')
   const { data } = useQuery({ queryKey: projectsKey(), queryFn: () => projectsApi.getProjects() })
@@ -42,6 +52,11 @@ function ConsentForm({ consent, authorizeQuery }: Readonly<{ consent: Approvable
   return (
     <form className="card space-y-4" onSubmit={(event) => { event.preventDefault(); approve.mutate() }}>
       <p className="text-sm text-text">{t('oauthConsent.asks', { client: consent.client_name })}</p>
+      <p className="text-sm text-text">
+        {workspace
+          ? t('oauthConsent.inWorkspace', { workspace: workspace.name || workspace.slug })
+          : t('oauthConsent.deploymentWide')}
+      </p>
       <fieldset className="space-y-2">
         <legend className="text-[12px] font-medium text-muted">{t('connect.scopeLabel')}</legend>
         {CONNECT_SCOPES.filter((choice) => choice === 'read' || consent.can_write).map((choice) => (
@@ -62,7 +77,7 @@ function ConsentForm({ consent, authorizeQuery }: Readonly<{ consent: Approvable
       <p className="text-[12px] text-muted">{t('oauthConsent.actsAs')}</p>
       {consent.can_run_agents && scope === 'write' && !projectId
         && <p className="text-[12px] text-muted">{t('oauthConsent.runsAgents')}</p>}
-      {approve.isError && <p role="alert" className="text-sm text-danger">{t('oauthConsent.approveFailed')}</p>}
+      {approve.isError && <p role="alert" className="text-sm text-danger">{t(approveFailure(approve.error))}</p>}
       <StickyActionBar variant="inline" className="flex flex-wrap gap-2 py-2">
         <button type="submit" className="btn btn-primary" disabled={approve.isPending}>{t('oauthConsent.approve')}</button>
         <button type="button" className="btn btn-secondary" onClick={() => leaveTo(consent.deny_redirect)}>

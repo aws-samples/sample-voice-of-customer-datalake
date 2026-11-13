@@ -1,6 +1,7 @@
 """Settings -> Radar (admin): the release-scan cadence and its cost guards (docs/radar.md).
 
-Stored in the ``voc-radar`` table at ``SETTINGS#radar`` / ``config``::
+Stored in the ``voc-radar`` table at ``SETTINGS#radar`` / ``config`` (a workspace's at
+``WS#{ws}#SETTINGS#radar`` / ``config``, shared/radar_keys.py)::
 
     {cadence: daily|weekly|monthly, max_brands: int, query_cap: int, updated_at, updated_by}
 
@@ -16,6 +17,10 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Final
 
+from shared.radar_keys import radar_settings_key
+from shared.workspace_config import get_scoped_item
+from shared.ws_repo import WorkspaceScope
+
 __all__ = [
     'SETTINGS_KEY',
     'cadence_interval',
@@ -24,7 +29,7 @@ __all__ = [
     'validate_settings',
 ]
 
-SETTINGS_KEY: Final = {'pk': 'SETTINGS#radar', 'sk': 'config'}
+SETTINGS_KEY: Final = radar_settings_key('config')
 CADENCES: Final = ('daily', 'weekly', 'monthly')
 _INTERVALS: Final = {'daily': timedelta(days=1), 'weekly': timedelta(days=7), 'monthly': timedelta(days=30)}
 MAX_BRANDS_LIMIT: Final = 25
@@ -57,9 +62,10 @@ def validate_settings(body: object) -> dict[str, Any]:
     }
 
 
-def load_settings(table: Any) -> dict[str, Any]:
-    """The stored settings, or the defaults; a corrupt row falls back to the defaults too."""
-    item = table.get_item(Key=SETTINGS_KEY).get('Item') or {}
+def load_settings(table: Any, scope: WorkspaceScope | None = None) -> dict[str, Any]:
+    """The stored settings of ``scope``'s workspace (the deployment's without one, shared/radar_keys.py), or the
+    defaults; a corrupt row falls back to the defaults too."""
+    item = get_scoped_item(table, radar_settings_key('config', scope), scope)
     try:
         return validate_settings({key: item[key] for key in DEFAULT_SETTINGS if key in item})
     except ValueError:

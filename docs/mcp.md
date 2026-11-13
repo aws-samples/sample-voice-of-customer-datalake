@@ -88,7 +88,14 @@ subject `mcp:{token_id}` acting for the minter, so the route's own rules apply:
 - **projects** — the minter's project access (`shared/project_access.py`), capped at
   **editor**; a credential never owns, manages or administers a project;
 - **feedback, metrics, categories, memory, agents** — the minter's category access;
-- **never admin** — the synthesized `cognito:groups` is always empty.
+- **never admin** — the synthesized `cognito:groups` is always empty;
+- **its workspace** — a token minted inside a workspace, and an OAuth sign-in approved inside one, acts in it (the
+  call carries its `X-Workspace-Id`, from the token or grant row, never from the MCP request), with the person's
+  membership there, at most as an editor: on every route that acts in its workspace, removing them from the
+  workspace stops it there (the routes not moved yet still answer for the deployment, as for every caller). Only a
+  member can create one there (`shared/mcp_workspace_pin.py`: a platform admin who is not a member gets 403). A
+  re-consent replaces the grant, workspace included. One made with no workspace acts as before
+  ([multi-workspace](multi-workspace.md), Request flow).
 
 On every authenticated request the handler also re-checks the minter in Cognito
 (`AdminGetUser`): a disabled or deleted user's tokens stop working immediately.

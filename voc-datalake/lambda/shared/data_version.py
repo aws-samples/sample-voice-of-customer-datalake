@@ -52,13 +52,14 @@ from shared.earliest_date import (
 )
 from shared.ingest_tables import table_view
 from shared.logging import logger
+from shared.radar_keys import radar_settings_key
 from shared.timestamps import now_iso
 from shared.ws_repo import WorkspaceScope, ws_table
 
 DATA_VERSION_SK: Final = 'data_version'
 DATA_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': DATA_VERSION_SK}
 CONFIG_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': 'config_version'}
-RADAR_VERSION_KEY: Final = {'pk': 'SETTINGS#radar', 'sk': 'version'}
+RADAR_VERSION_KEY: Final = radar_settings_key('version')
 VERSION_ATTRIBUTE: Final = 'v'
 
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)

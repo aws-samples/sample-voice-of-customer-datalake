@@ -13,9 +13,15 @@ import { OAUTH_GRANTS_KEY, oauthApi } from '../../api/oauthApi'
 import type { OAuthGrant } from '../../api/oauthSchema'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { formatDateTime } from '../../utils/dateUtils'
+import { useWorkspaceNames } from './useWorkspaceNames'
 
-function GrantRow({ grant, onRevoke }: Readonly<{ grant: OAuthGrant; onRevoke: (grant: OAuthGrant) => void }>) {
+function GrantRow({ grant, workspaceNames, onRevoke }: Readonly<{
+  grant: OAuthGrant; workspaceNames: ReadonlyMap<string, string>; onRevoke: (grant: OAuthGrant) => void
+}>) {
   const { t, i18n } = useTranslation('common')
+  const workspace = grant.workspace_id
+    ? (workspaceNames.get(grant.workspace_id) ?? grant.workspace_id)
+    : t('connect.workspaceNone')
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border py-2 first:border-t-0 text-sm"
       data-testid={`connect-grant-${grant.grant_id}`}>
@@ -25,6 +31,7 @@ function GrantRow({ grant, onRevoke }: Readonly<{ grant: OAuthGrant; onRevoke: (
         {t(`connect.oauth.status.${grant.status}`)}
       </span>
       {grant.project_id && <span className="text-[12px] text-muted">{grant.project_id}</span>}
+      <span className="text-[12px] text-muted">{t('connect.workspaceColumn')}: {workspace}</span>
       <span className="text-[12px] text-muted">
         {t('connect.lastUsed')}: {formatDateTime(grant.last_used_at, i18n.language, t('connect.never'))}
       </span>
@@ -43,6 +50,7 @@ export function GrantList() {
   const queryClient = useQueryClient()
   const [pending, setPending] = useState<OAuthGrant | null>(null)
   const grants = useQuery({ queryKey: OAUTH_GRANTS_KEY, queryFn: () => oauthApi.listGrants() })
+  const workspaceNames = useWorkspaceNames(grants.data)
   const revoke = useMutation({
     mutationFn: (grantId: string) => oauthApi.revokeGrant(grantId),
     onSettled: () => {
@@ -58,7 +66,7 @@ export function GrantList() {
       {revoke.isError && <p role="alert" className="text-sm text-danger">{t('connect.revokeFailed')}</p>}
       {grants.data?.length === 0 && <p className="text-sm text-muted">{t('connect.oauth.grantsEmpty')}</p>}
       {grants.data && grants.data.length > 0 && (
-        <ul>{grants.data.map((grant) => <GrantRow key={grant.grant_id} grant={grant} onRevoke={setPending} />)}</ul>
+        <ul>{grants.data.map((grant) => <GrantRow key={grant.grant_id} grant={grant} workspaceNames={workspaceNames} onRevoke={setPending} />)}</ul>
       )}
       <ConfirmModal
         isOpen={pending !== null}
