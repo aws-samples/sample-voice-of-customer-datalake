@@ -493,12 +493,14 @@ class BaseIngestor(ABC):
         A run in a workspace puts its ``workspace_id`` on every message, set from the
         scope LAST, after every field the item and the source policy put there, so
         no source payload can choose the workspace its feedback lands in. A
-        deployment-wide run's messages are exactly what they always were.
+        deployment-wide run's messages are exactly what they always were. Each
+        message passes the source policy of the run's scope: the workspace's
+        profile for a run in one, the deployment's otherwise.
 
         Returns:
             The number of items that SQS confirmed as enqueued.
         """
-        messages = policy_messages(items)
+        messages = policy_messages(items, self.scope)
         if self.scope is not None:
             messages = [{**message, WORKSPACE_FIELD: self.scope.ws} for message in messages]
         return send_messages_to_queue(

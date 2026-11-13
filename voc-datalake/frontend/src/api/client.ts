@@ -392,7 +392,18 @@ export const api = {
   saveCategoriesConfig: (config: { 
     categories: CategoryConfigEntry[]
   }) => fetchApi<{ success: boolean; message: string }>('/settings/categories', put(config)),
-  
+
+  // The deployment's own categories from any address (no X-Workspace-Id: Administration's editor, for the
+  // deployment's admins; workspace/configScope.ts). The two above are the current workspace's.
+  getDeploymentCategoriesConfig: () => fetchApi<{
+    categories: CategoryConfigEntry[]
+    updated_at?: string
+  }>('/settings/categories', { method: 'GET' }, 'deployment'),
+
+  saveDeploymentCategoriesConfig: (config: {
+    categories: CategoryConfigEntry[]
+  }) => fetchApi<{ success: boolean; message: string }>('/settings/categories', put(config), 'deployment'),
+
   // An assist job (api/assistJobs): 202 + poll GET /settings/jobs/{id}, whose
   // `result` is the `{success, categories}` body this route used to answer.
   generateCategories: (companyDescription: string) => runAssistJob(

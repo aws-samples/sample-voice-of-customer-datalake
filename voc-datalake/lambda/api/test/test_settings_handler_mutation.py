@@ -31,7 +31,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import ClassVar
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -147,7 +147,9 @@ class TestTheColdStartModuleState:
 
     def test_the_module_constants_are_the_documented_values(self):
         assert settings_handler.BRAND_KIND == 'brand'
-        assert (settings_handler.CATEGORIES_PK, settings_handler.CATEGORIES_SK) == ('SETTINGS#categories', 'config')
+        assert settings_handler.CATEGORIES_SETTINGS_KEY == {'pk': 'SETTINGS#categories', 'sk': 'config'}
+        assert (settings_handler.CATEGORIES_KIND, settings_handler.DIMENSIONS_KIND, settings_handler.SOURCES_KIND) == (
+            'categories', 'dimensions', 'sources')
         assert settings_handler.RESOLVED_PROBLEMS_KIND == 'resolved_problems'
         assert (settings_handler.MAX_PROBLEM_KEY_LEN, settings_handler.MAX_PROBLEM_KEY_BYTES,
                 settings_handler.MAX_RESOLVED_ENTRIES, settings_handler._PRUNE_CHUNK_SIZE) == (255, 255, 500, 20)
@@ -902,7 +904,10 @@ class TestBrand:
 
 # ── Categories ───────────────────────────────────────────────────────────────
 
+@pytest.mark.usefixtures('no_workspace')
 class TestCategories:
+    """The deployment's categories (a request that names no workspace); a workspace's: test_settings_workspace_config.py."""
+
     OWNER: ClassVar[dict[str, object]] = {'sub': 'owner-sub', 'username': 'olga', 'email': 'olga@example.com'}
 
     def test_no_row_reads_as_an_empty_config_with_a_null_timestamp(self, route, table):
@@ -967,6 +972,7 @@ class TestCategories:
         assert payload == {'success': True, 'message': 'Saved 2 categories'}
         table.put_item.assert_called_once_with(Item={
             'pk': 'SETTINGS#categories', 'sk': 'config', 'updated_at': FIXED_NOW_ISO,
+            'updated_by': ANY,  # who saved it, as the dimensions and the source profiles record (7.08.00)
             'categories': [
                 {'name': 'a', 'description': '', 'subcategories': []},
                 {'name': 'b', 'description': '', 'subcategories': []},

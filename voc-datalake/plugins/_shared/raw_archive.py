@@ -91,7 +91,8 @@ def archive_raw_item(
     transport: str = INGESTOR, *, scope: WorkspaceScope | None = None,
 ) -> str | None:
     """Write *item* (and the source's own payload, *raw_content*) to the raw archive: under the workspace's
-    ``ws/{ws}/raw/`` for a run in a workspace (its verified *scope*), else the deployment-wide ``raw/``.
+    ``ws/{ws}/raw/`` for a run in a workspace (its verified *scope*, whose source policy decides), else the
+    deployment-wide ``raw/`` (the deployment's policy).
 
     The key's digest covers ``{"raw_content", "raw_item"}`` only (never the envelope's
     timestamps), so identical content is archived once: S3's 412 on the conditional put
@@ -106,7 +107,7 @@ def archive_raw_item(
     if not bucket:
         logger.warning("RAW_DATA_BUCKET not configured, skipping S3 storage")
         return None
-    if not raw_archive_permitted(source_platform):
+    if not raw_archive_permitted(source_platform, scope):
         # A redact / summary-only source keeps no raw copy (shared/source_policy.py);
         # the policy-applied message is the only copy that travels.
         return None

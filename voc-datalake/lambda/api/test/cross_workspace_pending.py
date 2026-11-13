@@ -361,14 +361,13 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /radar/brands',
         'PUT /radar/settings',
     }),
-    # Settings, categories, dimensions, sources, brand, models.
+    # Settings and models (the brand, the resolved problems, and since 7.08.00 the categories, dimensions and
+    # sources are workspace-scoped). The categories' generate and reprocess stay the deployment's for now.
     'settings_handler.py': frozenset({
         'DELETE /settings/design-system/references/<ref_id>',
-        'GET /settings/categories',
         'GET /settings/categories/reprocess',
         'GET /settings/company-context',
         'GET /settings/design-system',
-        'GET /settings/dimensions',
         'GET /settings/email-inbox',
         'GET /settings/erasure',
         'GET /settings/jobs/<job_id>',
@@ -378,7 +377,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /settings/my-briefing/brief',
         'GET /settings/my-context',
         'GET /settings/my-onboarding',
-        'GET /settings/sources',
         'POST /settings/categories/generate',
         'POST /settings/categories/reprocess',
         'POST /settings/categories/reprocess/<job_id>/cancel',
@@ -391,18 +389,15 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /settings/erasure',
         'POST /settings/model/test',
         'POST /settings/my-briefing/refresh',
-        'PUT /settings/categories',
         'PUT /settings/company-context',
         'PUT /settings/design-system',
         'PUT /settings/design-system/integrations',
-        'PUT /settings/dimensions',
         'PUT /settings/email-inbox',
         'PUT /settings/model',
         'PUT /settings/my-briefing',
         'PUT /settings/my-briefing/cards',
         'PUT /settings/my-context',
         'PUT /settings/my-onboarding',
-        'PUT /settings/sources',
     }),
     # The deployment's accounts stay the users API's, a person's category access and flags become per workspace.
     'users_handler.py': frozenset({

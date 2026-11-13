@@ -7,6 +7,8 @@
  *   deployment's `admins` group, which grants nothing inside a workspace.
  * - The workspace's plugins (`GET /me/workspaces/current/plugins`): every plugin the deployment offers, and whether
  *   this workspace turned it on; its admins turn one on or off (WorkspacePluginsCard.tsx: enabling is held).
+ * - The workspace's categories, dimensions and source policies (since 7.08.00): Administration's editors, with the
+ *   workspace's `X-Workspace-Id`, for its admins (`WorkspaceConfigCards`); its other members see who changes them.
  *
  * The deployment's own sections of Administration stay there, for the deployment's `admins`: this page holds only
  * what the server keys by workspace. The server decides every save; the page only hides what the caller's role
@@ -17,6 +19,14 @@
  */
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
+import { Info, Layers, ShieldCheck, Tags } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
+import CategoriesManager from '../../components/CategoriesManager/CategoriesManager'
+import DimensionsManager from '../../components/DimensionsManager/DimensionsManager'
+import Notice from '../../components/Notice/Notice'
+import SourcesManager from '../../components/SourcesManager/SourcesManager'
+import { SectionHeader } from '../Company/ContextParts'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
 import PageLoader from '../../components/PageLoader/PageLoader'
 import NotFound from '../../components/RouteErrorBoundary/NotFound'
@@ -47,7 +57,49 @@ function WorkspaceSettingsFor({ workspace }: Readonly<{ workspace: CurrentWorksp
       <PageTitle title={t('workspaces.settings.title')} subtitle={t('workspaces.settings.subtitle', { name: workspace.name })} />
       <WorkspaceBrandCard isAdmin={isAdmin} />
       <WorkspacePluginsCard workspaceId={workspace.id} isAdmin={isAdmin} />
+      <WorkspaceConfigCards isAdmin={isAdmin} />
     </div>
+  )
+}
+
+function ConfigCard({ icon: Icon, title, description, children }: Readonly<{
+  icon: LucideIcon; title: string; description: string; children: ReactNode
+}>) {
+  return (
+    <section className="card" aria-label={title}>
+      <SectionHeader icon={Icon} title={title} description={description} />
+      {children}
+    </section>
+  )
+}
+
+/**
+ * The workspace's own categories, dimensions and source policies (`/settings/categories`, `/dimensions` and
+ * `/sources` with its `X-Workspace-Id`, since 7.08.00): the editors Administration uses, for its admins, without the
+ * deployment's erasure panels. A new workspace has none of the three (nothing is copied from the deployment's), so
+ * its feedback is classified with the built-in default categories and kept under the default source policy until
+ * its admins save their own; each card says so. Its other members are told who changes them.
+ */
+function WorkspaceConfigCards({ isAdmin }: Readonly<{ isAdmin: boolean }>) {
+  const { t } = useTranslation()
+  if (!isAdmin) {
+    return <Notice variant="banner" tone="warn" role="note" icon={Info} text={t('workspaces.config.readOnly')} />
+  }
+  return (
+    <>
+      <ConfigCard icon={Tags} title={t('workspaces.config.categoriesTitle')}
+        description={t('workspaces.config.categoriesDescription')}>
+        <CategoriesManager />
+      </ConfigCard>
+      <ConfigCard icon={Layers} title={t('workspaces.config.dimensionsTitle')}
+        description={t('workspaces.config.dimensionsDescription')}>
+        <DimensionsManager />
+      </ConfigCard>
+      <ConfigCard icon={ShieldCheck} title={t('workspaces.config.sourcesTitle')}
+        description={t('workspaces.config.sourcesDescription')}>
+        <SourcesManager withErasure={false} />
+      </ConfigCard>
+    </>
   )
 }
 

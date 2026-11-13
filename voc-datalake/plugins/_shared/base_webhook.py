@@ -284,13 +284,14 @@ class BaseWebhook(ABC):
 
         A delivery routed to a workspace names it on every message
         (``workspace_payload``: the stored row's workspace, set after every field
-        the item and the source policy put there); a deployment-wide one names
-        none, as before.
+        the item and the source policy put there), under that workspace's source
+        policy; a deployment-wide one names none, under the deployment's, as before.
         """
+        scope = self.routed.scope if self.routed is not None else None
         return send_messages_to_queue(
             self._sqs,
             PROCESSING_QUEUE_URL,
-            [workspace_payload(message, self.routed) for message in policy_messages(items)],
+            [workspace_payload(message, self.routed) for message in policy_messages(items, scope)],
             metric_name="WebhookItemsIngested",
             log_label="webhook",
         )

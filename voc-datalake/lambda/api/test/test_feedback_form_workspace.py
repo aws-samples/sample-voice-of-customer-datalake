@@ -271,7 +271,8 @@ class TestThePublicRoutes:
 
     def test_the_raw_copy_of_a_workspaces_submission_is_kept_under_its_prefix(self, world, lambda_context):
         allow = [{'id': 'feedback_form', 'label': 'Forms', 'pii': 'allow'}]
-        with raw_lake_client() as s3, seeded_source_profiles(allow):
+        # The copy is opt-in per workspace (7.08.00): the workspace's own feedback_form profile permits it.
+        with raw_lake_client() as s3, seeded_source_profiles([], workspaces={WS_A: allow}):
             status, _ = _call(lambda_context, 'POST', f'/feedback-forms/{FORM_A}/submit', body={'text': 'Hello'},
                               form_id=FORM_A)
             [key] = raw_keys(s3)
@@ -279,6 +280,28 @@ class TestThePublicRoutes:
         assert status == 200
         assert key.startswith(f'ws/{WS_A}/raw/feedback_form/')
         assert _queued(world)['s3_raw_uri'] == f's3://{RAW_BUCKET}/{key}'
+
+    def test_the_deployments_profile_opts_no_workspace_into_a_raw_copy(self, world, lambda_context):
+        allow = [{'id': 'feedback_form', 'label': 'Forms', 'pii': 'allow'}]
+        with raw_lake_client() as s3, seeded_source_profiles(allow):
+            status, _ = _call(lambda_context, 'POST', f'/feedback-forms/{FORM_A}/submit', body={'text': 'Hello'},
+                              form_id=FORM_A)
+            keys = raw_keys(s3)
+
+        assert status == 200
+        assert keys == []
+        assert 's3_raw_uri' not in _queued(world)
+
+    def test_a_submission_passes_its_workspaces_pii_policy(self, world, lambda_context):
+        redact = [{'id': 'feedback_form', 'label': 'Forms', 'pii': 'redact'}]
+        with seeded_source_profiles([], workspaces={WS_A: redact}):
+            status, _ = _call(lambda_context, 'POST', f'/feedback-forms/{FORM_A}/submit',
+                              body={'text': 'Mail me at robin@example.com'}, form_id=FORM_A)
+
+        assert status == 200
+        message = _queued(world)
+        assert message['pii_policy_applied'] == 'redact'
+        assert 'robin@example.com' not in message['text']
 
     @pytest.mark.parametrize('form_id', [LEGACY, 'fd_' + 'd' * 32, 'ff_' + 'd' * 32])
     def test_a_form_without_a_lookup_row_is_the_deployments_as_before(self, world, lambda_context, form_id):

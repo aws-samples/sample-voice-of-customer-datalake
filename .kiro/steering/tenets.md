@@ -14,6 +14,9 @@ Stop and raise it with the user, instead of building it, when a change would:
   obligation carried out by `voc-retention`, or delete a workspace artifact without recording it (D1, D5);
 - read or write one workspace's data from another, outside the workspace layer (`lambda/shared/ws_repo.py`), or let
   anything done in a source workspace reach a copy another workspace imported (D8);
+- process, ingest or read a workspace's feedback with another scope's categories, dimensions or source profiles, or
+  make the deployment's rows a workspace's fallback (since 7.08.00 every reader takes the scope of what it handles,
+  `lambda/shared/workspace_config.py`; D8);
 - enforce a rule, permission or AI mode only in the SPA, and not in the API / MCP (tenets 3 and 4);
 - let an AI write bypass the server-side way-of-working check in `shared/ai_writing.py`, including by filing PR/FAQ or
   PRD text under another document type (tenet 3);

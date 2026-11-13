@@ -130,8 +130,7 @@ MAX_SUBCATEGORY_CHARS = 100
 
 def load_categories_config(table: Any, scope: WorkspaceScope | None = None) -> list[dict]:
     """Read the configured categories of ``scope``'s workspace (the deployment's without one; uncached): the
-    processor will pass the scope of the feedback it categorises, at the phase-2 cut-over. Raises on a DynamoDB
-    error.
+    processor passes the scope of the feedback it categorises (since 7.08.00). Raises on a DynamoDB error.
 
     Entries without a usable ``name`` are dropped: they cannot be offered to the
     model nor matched against its answer.

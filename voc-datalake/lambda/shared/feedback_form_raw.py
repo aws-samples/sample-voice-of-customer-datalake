@@ -63,10 +63,11 @@ def archive_submission(form_id: str, form: Mapping[str, Any], feedback_id: str, 
     deployment never starts persisting it silently on upgrade). ``validated`` = ``(text, dimensions)``
     as the route validated them (``_validated_submission``, ``_widget_dimensions``): the copy keeps
     those, never the body's own ``text`` / ``dimensions``. A workspace's form (``scope``, from its lookup
-    row) keeps it under ``ws/{ws}/raw/feedback_form/…``; the profile is the deployment's, as the
-    processor's is for every workspace message until per-workspace settings (phase 3).
+    row) keeps it under ``ws/{ws}/raw/feedback_form/…``, and only once that workspace saved its own
+    ``feedback_form`` profile (the route passes the workspace's ``profile``; the deployment's opts no workspace in).
     """
-    if not raw_archive_allowed(profile) or not source_permits_raw_copy(FEEDBACK_FORM_SOURCE, require_profile=True):
+    if not raw_archive_allowed(profile) or not source_permits_raw_copy(
+            FEEDBACK_FORM_SOURCE, require_profile=True, scope=scope):
         return None
     text, dimensions = validated
     return app_json_copy(FEEDBACK_FORM_SOURCE, now.date(), archive_key_stem(feedback_id),

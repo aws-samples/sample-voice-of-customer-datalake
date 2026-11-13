@@ -13,6 +13,13 @@ config`` in the aggregates table)::
                 radar_brand?, radar_domains?}],     # Radar sources only (shared.radar_brands)
      updated_at, updated_by}
 
+A workspace's profiles are ``WS#{ws}#SETTINGS#sources`` (shared/workspace_config.py), read for its items and
+requests only; a workspace that saved none has none, never the deployment's: its sources take the defaults below
+except that their PII is REDACTED (``WORKSPACE_DEFAULT_PII``, privacy by default). Its profiles set
+no retention window and no Radar brand (``workspace_profiles_problem``): voc-retention applies the deployment's
+windows to every item, a workspace's included (so a workspace's own window would delete nothing), and Radar is not
+keyed by workspace; ``cached_source_profile_strict`` gives a workspace's source the deployment's window.
+
 A source without a profile gets ``profile_for``'s defaults: PII allowed, kept
 forever, not restricted, no defaults (``email_intake``, the public inbox, defaults to redact). Validation normalises (every field is
 present in the output) and raises ValueError with a client-safe message.
@@ -61,11 +68,16 @@ __all__ = [
     'load_source_profiles',
     'profile_for',
     'validate_source_profiles',
+    'workspace_profiles_problem',
 ]
 
 SOURCES_SETTINGS_KEY: Final = {'pk': 'SETTINGS#sources', 'sk': 'config'}
 #: A workspace's profiles are ``WS#{ws}#SETTINGS#sources`` (shared/workspace_config.py).
 SOURCES_KIND: Final = 'sources'
+#: The fields a workspace's profile takes from the deployment's profile of the same source.
+_DEPLOYMENT_WINDOW: Final = ('retention_days', 'retention_legal_basis')
+#: Radar's fields, never part of a workspace's profile.
+_RADAR_FIELDS: Final = ('radar_brand', 'radar_domains')
 
 PII_ALLOW: Final = 'allow'
 PII_REDACT: Final = 'redact'
@@ -210,6 +222,36 @@ def validate_source_profiles(value: object, dimensions_config: list[dict[str, An
     return _profiles(value, dimensions_config, strict=True)
 
 
+#: The profile fields a workspace's profile leaves empty: the retention window and its basis, Radar's brand and
+#: domains (the module docstring says why).
+_WORKSPACE_EMPTY_FIELDS: Final = (('retention_days', 'retention'), ('retention_legal_basis', 'retention'),
+                                  ('radar_brand', 'radar'), ('radar_domains', 'radar'))
+
+
+def _set(value: object) -> bool:
+    """Whether a profile field as sent names something (None, a blank string and an empty list name nothing)."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return False
+    return not (isinstance(value, list | tuple) and not value)
+
+
+def workspace_profiles_problem(value: object) -> str | None:
+    """Why the profiles sent for a workspace (``value``, the request's list as sent, checked before normalising
+    drops a field) cannot be a workspace's (a client-safe message), or None: one that sets a retention window or its
+    legal basis, a Radar brand or Radar domains."""
+    for entry in value if isinstance(value, list) else []:
+        if not isinstance(entry, Mapping):
+            continue
+        for field, kind in _WORKSPACE_EMPTY_FIELDS:
+            if _set(entry.get(field)):
+                what = f'Source "{entry.get("id")}"'
+                if kind == 'retention':
+                    return (f"{what}: retention windows are the deployment's and apply to every workspace's items, "
+                            f'so a workspace profile cannot set {field} (leave it empty)')
+                return (f'{what}: Radar is not kept per workspace yet, so a workspace profile cannot set {field}')
+    return None
+
+
 def load_source_profiles(table: Any, scope: WorkspaceScope | None = None) -> list[dict[str, Any]]:
     """The stored profiles of ``scope``'s workspace (the deployment's without one), normalised; [] when none are
     configured.
@@ -228,6 +270,8 @@ def load_source_profiles(table: Any, scope: WorkspaceScope | None = None) -> lis
 # Sources whose UNCONFIGURED default is stricter than allow. The public email inbox
 # (docs/email-intake.md) redacts until an admin saves a profile for it.
 _BUILT_IN_DEFAULTS: Final = {'email_intake': {'label': 'Email inbox', 'pii': PII_REDACT}}
+#: The PII policy of a workspace's source that has no profile in that workspace (``profile_for(…, workspace=True)``).
+WORKSPACE_DEFAULT_PII: Final = PII_REDACT
 
 
 def _default_profile(source_id: str) -> dict[str, Any]:
@@ -238,8 +282,13 @@ def _default_profile(source_id: str) -> dict[str, Any]:
     }
 
 
-def profile_for(profiles: list[dict[str, Any]], source_id: str) -> dict[str, Any]:
-    """The profile for ``source_id`` (a copy the caller may mutate), or the defaults."""
+def profile_for(profiles: list[dict[str, Any]], source_id: str, *, workspace: bool = False) -> dict[str, Any]:
+    """The profile for ``source_id`` (a copy the caller may mutate), or the defaults.
+
+    ``workspace``: ``profiles`` are a workspace's own. A source it saved no profile for gets the workspace default,
+    which REDACTS personal data (privacy by default, TENETS.md tenet 6 and D5: a new workspace never stores PII in
+    full just because nobody has saved a profile yet); the deployment's default stays allow, as before.
+    """
     for profile in profiles:
         if profile.get('id') == source_id:
             return {
@@ -248,7 +297,8 @@ def profile_for(profiles: list[dict[str, Any]], source_id: str) -> dict[str, Any
                 'tags': list(profile.get('tags') or []),
                 **({'radar_domains': list(profile['radar_domains'])} if 'radar_domains' in profile else {}),
             }
-    return _default_profile(source_id)
+    default = _default_profile(source_id)
+    return {**default, 'pii': WORKSPACE_DEFAULT_PII} if workspace else default
 
 
 def clear_source_profiles_cache() -> None:
@@ -285,11 +335,25 @@ def cached_source_profile_strict(source_id: str, scope: WorkspaceScope | None = 
     read is not ingested (nor archived) under the allow default; the caller retries.
     The failed read is cached for ``_ERROR_CACHE_TTL_SECONDS``, so a retry storm does
     not hammer the table.
+
+    The profile of a workspace's source (``scope``) is the workspace's own (its PII policy, restriction, defaults
+    and tags; when it saved none, the workspace default, which redacts PII) with the deployment's retention window for that source
+    (``_DEPLOYMENT_WINDOW``, which voc-retention applies to every item) and no Radar brand: so a raw copy is kept
+    per item, never as a whole file, wherever the deployment's window deletes item by item. Raises when either list
+    cannot be read.
     """
     profiles, failed = _cached_profiles(scope)
     if failed:
         raise SourceProfilesUnavailable
-    return profile_for(profiles, source_id)
+    profile = profile_for(profiles, source_id, workspace=scope is not None)
+    if scope is None:
+        return profile
+    deployment, deployment_failed = _cached_profiles(None)
+    if deployment_failed:
+        raise SourceProfilesUnavailable
+    window = profile_for(deployment, source_id)
+    return {**{key: value for key, value in profile.items() if key not in _RADAR_FIELDS},
+            **{field: window[field] for field in _DEPLOYMENT_WINDOW}}
 
 
 def source_profile_configured(source_id: str, scope: WorkspaceScope | None = None) -> bool:

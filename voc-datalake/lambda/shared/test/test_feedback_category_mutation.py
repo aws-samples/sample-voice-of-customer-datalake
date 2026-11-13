@@ -82,7 +82,8 @@ class TestCategoriesConfigFallsBackToDefaults:
         table = object()
         with patch.object(fc, 'read_categories_config', return_value=[{'name': 'a'}]) as read:
             assert fc.categories_config(table) == [{'name': 'a'}]
-        read.assert_called_once_with(table)
+        # The deployment's categories: no workspace scope.
+        read.assert_called_once_with(table, None)
 
     def test_empty_config_yields_one_entry_per_default_category(self):
         with patch.object(fc, 'read_categories_config', return_value=[]):

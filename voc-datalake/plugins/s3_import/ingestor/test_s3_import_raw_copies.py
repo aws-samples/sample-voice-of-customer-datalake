@@ -23,10 +23,12 @@ CSV = b"id,text,rating\nr1,Great app,5\nr2,Slow checkout,2\n"
 
 @pytest.fixture
 def lake(monkeypatch):
-    """A stand-in S3 client (plugin tests refuse every real or moto AWS call) under no profiles."""
+    """A stand-in S3 client (plugin tests refuse every real or moto AWS call) under no deployment profiles; each
+    workspace keeps the s3_import source's PII (its own allow profile: without one, its default redacts, 7.08.00)."""
     monkeypatch.setenv("SOURCE_PLATFORM", "s3_import")
     monkeypatch.setenv("PLUGIN_VERSION", "1.4.0")
-    with seeded_source_profiles():
+    allow = [{"id": "s3_import", "label": "S3", "pii": "allow"}]
+    with seeded_source_profiles(workspaces={WS: allow, OTHER_WS: allow}):
         yield MagicMock()
 
 
@@ -80,9 +82,23 @@ class TestArchiveOriginal:
         {"id": "s3_import", "label": "S3", "pii": "allow", "retention_days": 30},
     ])
     def test_a_source_that_does_not_keep_whole_files_keeps_no_original(self, lake, profile):
-        with seeded_source_profiles([profile]):
+        # 7.08.00: the run's workspace's own profile decides the PII policy, the deployment's its retention window.
+        workspace_profile = {k: v for k, v in profile.items() if k != "retention_days"}
+        with seeded_source_profiles([profile], workspaces={WS: [workspace_profile]}):
             assert raw_original.archive_original(lake, RAW, "surveys/data.csv", CSV, scope=SCOPE) is None
         lake.put_object.assert_not_called()
+
+    def test_the_deployments_redact_policy_does_not_bind_a_workspaces_run(self, lake):
+        """A workspace's run keeps its whole-file original under its own allow profile, whatever the deployment's
+        profile of s3_import says about PII; only the deployment's retention window carries over."""
+        with seeded_source_profiles([{"id": "s3_import", "label": "S3", "pii": "redact"}],
+                                    workspaces={WS: [{"id": "s3_import", "label": "S3", "pii": "allow"}]}):
+            assert raw_original.archive_original(lake, RAW, "surveys/data.csv", CSV, scope=SCOPE) is not None
+
+    def test_a_workspace_without_a_profile_keeps_no_original(self, lake):
+        """Privacy by default: with no s3_import profile of its own, a workspace's source redacts, so no copy."""
+        with seeded_source_profiles([{"id": "s3_import", "label": "S3", "pii": "allow"}], workspaces={WS: []}):
+            assert raw_original.archive_original(lake, RAW, "surveys/data.csv", CSV, scope=SCOPE) is None
 
     def test_an_unreadable_policy_keeps_no_original(self, lake):
         with unreadable_source_profiles():

@@ -561,13 +561,14 @@ def get_raw_categories_config(aggregates_table, scope: WorkspaceScope | None = N
     return []
 
 
-def get_configured_categories(aggregates_table) -> list:
+def get_configured_categories(aggregates_table, scope: WorkspaceScope | None = None) -> list:
     """
-    Fetch configured category names from DynamoDB settings with caching.
+    Fetch configured category names of ``scope``'s workspace (the deployment's without one) from DynamoDB settings
+    with caching.
 
     Returns list of category name strings, falling back to DEFAULT_CATEGORIES.
     """
-    raw = get_raw_categories_config(aggregates_table)
+    raw = get_raw_categories_config(aggregates_table, scope)
     if raw:
         return [cat.get('name') for cat in raw if cat.get('name')]
     return DEFAULT_CATEGORIES

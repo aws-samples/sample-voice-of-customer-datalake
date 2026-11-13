@@ -154,7 +154,7 @@
       "editor": "Edycja",
       "viewer": "Podgląd"
     },
-    "sharedData": "Każdy obszar roboczy ma własne opinie, pulpity, markę i rozwiązane problemy; żadne opinie nie mogą jeszcze trafić do obszaru roboczego. Projekty, asystent, Radar i pozostałe ustawienia (kategorie, wymiary, źródła) są nadal wspólne dla wszystkich obszarów roboczych.",
+    "sharedData": "Każdy obszar roboczy ma własne opinie, pulpity, markę, rozwiązane problemy, kategorie, wymiary i zasady źródeł; żadne opinie nie mogą jeszcze trafić do obszaru roboczego. Projekty, asystent, Radar i pozostałe ustawienia są nadal wspólne dla wszystkich obszarów roboczych.",
     "moreFailed": "Nie udało się wczytać następnej strony. Wybierz Pokaż więcej, aby spróbować ponownie.",
     "refreshFailed": "Nie udało się odświeżyć listy, więc może być nieaktualna.",
     "members": {
@@ -225,7 +225,7 @@
     },
     "settings": {
       "title": "Ustawienia obszaru roboczego",
-      "subtitle": "Marka i wtyczki obszaru {{name}}.",
+      "subtitle": "Marka, wtyczki, kategorie, wymiary i zasady źródeł obszaru {{name}}.",
       "brandTitle": "Marka",
       "brandDescription": "Własna marka tego obszaru roboczego. Nowy obszar roboczy zaczyna z pustą marką: nic nie jest kopiowane z marki wdrożenia.",
       "brandReadOnly": "Tylko administratorzy tego obszaru roboczego mogą zmieniać jego markę. Możesz ją tutaj przeglądać.",
@@ -243,6 +243,18 @@
       "enableWho": "Włącz {{name}} dla tego obszaru roboczego",
       "disableWho": "Wyłącz {{name}} dla tego obszaru roboczego",
       "retry": "Spróbuj ponownie"
+    },
+    "config": {
+      "categoriesTitle": "Kategorie",
+      "categoriesDescription": "Własne kategorie tego obszaru roboczego klasyfikują jego opinie. Nowy obszar roboczy nie ma żadnych: jego opinie są klasyfikowane według wbudowanych kategorii domyślnych, dopóki jego administratorzy nie dodadzą własnych. Nic nie jest kopiowane z kategorii wdrożenia.",
+      "dimensionsTitle": "Wymiary",
+      "dimensionsDescription": "Własne wymiary tego obszaru roboczego. Nowy obszar roboczy ma tylko wbudowane; nic nie jest kopiowane z wymiarów wdrożenia.",
+      "sourcesTitle": "Zasady źródeł",
+      "sourcesDescription": "Jak ten obszar roboczy przechowuje opinie z każdego źródła: obsługa danych osobowych, źródła z ograniczonym dostępem, domyślne wartości wymiarów i tagi. Źródło bez profilu tutaj ma zredagowane dane osobowe i jest widoczne dla każdego członka, niezależnie od profili wdrożenia.",
+      "retentionDeployment": "Okresy przechowywania należą do wdrożenia: jego okres dla tego źródła usuwa też elementy tego obszaru roboczego, a profil obszaru roboczego nie może ustawić własnego.",
+      "readOnly": "Tylko administratorzy tego obszaru roboczego mogą zmieniać jego kategorie, wymiary i zasady źródeł.",
+      "adminNotice": "To są własne ustawienia wdrożenia, nie obszaru {{name}}: klasyfikują i redagują wszystkie opinie spoza obszarów roboczych, a zapisać je mogą tylko administratorzy wdrożenia. Ustawienia obszaru {{name}} są na jego stronie ustawień obszaru roboczego.",
+      "openSettings": "Ustawienia obszaru roboczego"
     },
     "deploymentBrand": {
       "title": "Domyślna marka wdrożenia",

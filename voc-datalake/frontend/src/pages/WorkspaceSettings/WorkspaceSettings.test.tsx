@@ -4,7 +4,7 @@
  * Enable and Disable for an admin only, an enable the server holds back said as such and offered no more.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createTestQueryClient } from '../../test/query-client'
@@ -17,6 +17,8 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => ({
   api: {
     getBrandSettings: () => m.fetchApi('/settings/brand'),
     saveBrandSettings: (settings: unknown) => m.fetchApi('/settings/brand', { method: 'PUT', body: JSON.stringify(settings) }),
+    getCategoriesConfig: () => m.fetchApi('/settings/categories'),
+    saveCategoriesConfig: (config: unknown) => m.fetchApi('/settings/categories', { method: 'PUT', body: JSON.stringify(config) }),
   },
 })))
 
@@ -39,6 +41,12 @@ function renderPage(workspace: CurrentWorkspace | null, routes: Record<string, R
     'GET /me/workspaces/current': () => ({ workspace }),
     'GET /settings/brand': () => BRAND,
     [`GET ${PLUGINS}`]: () => ({ plugins: OFFERED }),
+    // The workspace's own categories, dimensions and source profiles (the header names it: the routed double
+    // answers what the server answers inside the workspace).
+    'GET /settings/categories': () => ({ categories: [{ id: 'trail_gear', name: 'trail_gear', description: 'Trail gear', subcategories: [] }] }),
+    'GET /settings/dimensions': () => ({ dimensions: [], updated_at: null }),
+    'GET /settings/sources': () => ({ sources: [{ id: 'webscraper', label: 'Trail reviews', pii: 'redact', retention_days: null, restricted: false, dimension_defaults: {}, tags: [] }] }),
+    'GET /scrapers': () => ({ scrapers: [] }),
     ...routes,
   })
   act(() => setCurrentWorkspace(workspace))
@@ -100,6 +108,30 @@ describe('WorkspaceSettings: the brand', () => {
     renderPage(ACME, { 'PUT /settings/brand': () => { throw new ApiError(403, 'Workspace admin access required') } })
     await userEvent.click(await screen.findByRole('button', { name: 'Save Changes' }))
     expect(await screen.findByRole('alert')).toHaveTextContent("Only this workspace's admins can change its brand.")
+  })
+})
+
+describe("WorkspaceSettings: the workspace's categories, dimensions and source policies", () => {
+  it("gives a workspace admin outside the deployment admins the workspace's own editors", async () => {
+    renderPage(ACME)
+    expect(await screen.findByRole('region', { name: 'Categories' })).toHaveTextContent(/A new workspace has none/)
+    expect((await screen.findAllByText('Trail gear')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('region', { name: 'Dimensions' })).toBeInTheDocument()
+  })
+
+  it("edits the workspace's profiles with no retention field: the deployment's window applies", async () => {
+    renderPage(ACME)
+    const sources = await screen.findByRole('region', { name: 'Source policies' })
+    expect(await within(sources).findByRole('region', { name: 'Trail reviews' })).toBeInTheDocument()
+    expect(within(sources).getByText(/Retention windows are the deployment's/)).toBeInTheDocument()
+    expect(within(sources).queryByLabelText('Keep reviews forever')).not.toBeInTheDocument()
+  })
+
+  it('tells any other member who changes them, and shows no editor', async () => {
+    renderPage(JUNIPER)
+    expect(await screen.findByText("Only this workspace's admins can change its categories, dimensions and source policies."))
+      .toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Categories' })).not.toBeInTheDocument()
   })
 })
 

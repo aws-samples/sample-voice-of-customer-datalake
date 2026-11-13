@@ -13,6 +13,7 @@
  */
 import { messageKeyForStatus, type StatusMessage } from './apiErrorStatus'
 import { fetchApi } from './client'
+import type { RequestScope } from './baseUrl'
 import { buildSearchParams, put } from './requestKit'
 import {
   normalizeDimensionMetrics, normalizeDimensionsConfig, normalizeDimensionsEdit,
@@ -41,11 +42,16 @@ export interface FeedbackDimensionsChange {
 }
 
 export const dimensionsApi = {
-  getConfig: async (): Promise<DimensionsConfig> =>
-    normalizeDimensionsConfig(await fetchApi<unknown>('/settings/dimensions')),
+  /** `scope` (workspace/configScope.ts): the workspace's dimensions (default) or the deployment's. */
+  getConfig: async (scope: RequestScope = 'workspace'): Promise<DimensionsConfig> =>
+    normalizeDimensionsConfig(await (scope === 'deployment'
+      ? fetchApi<unknown>('/settings/dimensions', { method: 'GET' }, 'deployment')
+      : fetchApi<unknown>('/settings/dimensions'))),
 
-  saveConfig: async (dimensions: Dimension[]): Promise<DimensionsConfig> =>
-    normalizeDimensionsConfig(await fetchApi<unknown>('/settings/dimensions', put({ dimensions }))),
+  saveConfig: async (dimensions: Dimension[], scope: RequestScope = 'workspace'): Promise<DimensionsConfig> =>
+    normalizeDimensionsConfig(await (scope === 'deployment'
+      ? fetchApi<unknown>('/settings/dimensions', put({ dimensions }), 'deployment')
+      : fetchApi<unknown>('/settings/dimensions', put({ dimensions })))),
 
   getMetrics: async (params: DimensionMetricsParams): Promise<DimensionMetrics> =>
     normalizeDimensionMetrics(await fetchApi<unknown>(`/metrics/dimensions?${buildSearchParams(params)}`)),

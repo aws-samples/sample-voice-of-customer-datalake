@@ -220,8 +220,25 @@ def settings_world(lambda_context: Any) -> Generator[World]:
             f'technical_support:response_time:{A_MARK} parcels late': {'resolved_at': '2099-01-01T00:00:00+00:00'}}})
         aggregates.put_item(Item={**settings_key(WS_B, settings_handler.RESOLVED_PROBLEMS_KIND), 'resolved': {
             f'technical_support:response_time:{B_MARK} chain slips': {'resolved_at': '2099-01-01T00:00:00+00:00'}}})
+        # The categories, dimensions and source profiles of the deployment and of each workspace (7.08.00).
+        for key, mark in ((None, 'before_workspaces'), (WS_A, A_MARK), (WS_B, B_MARK)):
+            for kind, deployment_key, row in _config_rows(settings_handler, mark):
+                aggregates.put_item(Item={**(deployment_key if key is None else settings_key(key, kind)), **row})
 
         yield World(call=_caller(settings_handler, lambda_context), doubles={'cognito': cognito})
+
+
+def _config_rows(settings_handler: Any, mark: str) -> list[tuple[str, dict[str, str], dict[str, Any]]]:
+    """``(kind, the deployment's key, the row's fields)`` of the categories, dimensions and source profiles, each
+    value carrying ``mark`` (the scope's own words, so an answer that holds another scope's shows it)."""
+    return [
+        (settings_handler.CATEGORIES_KIND, settings_handler.CATEGORIES_SETTINGS_KEY,
+         {'categories': [{'id': f'cat_{mark}', 'name': f'{mark}_parcels', 'subcategories': []}]}),
+        (settings_handler.DIMENSIONS_KIND, settings_handler.DIMENSIONS_SETTINGS_KEY,
+         {'dimensions': [{'key': 'region', 'label': 'Region', 'infer': True, 'values': [{'name': f'{mark}_north'}]}]}),
+        (settings_handler.SOURCES_KIND, settings_handler.SOURCES_SETTINGS_KEY,
+         {'sources': [{'id': 'webscraper', 'label': f'{mark} reviews', 'pii': 'allow', 'restricted': False}]}),
+    ]
 
 
 _MEMBER_IDS = {'A': {'sub': 'sub-vic'}, 'B': {'sub': f'sub-{B_MARK}-bo'}, UNKNOWN: {'sub': 'sub-nobody'}}
@@ -284,5 +301,33 @@ CASES: dict[tuple[str, str], RouteCase] = {
     ('settings_handler.py', 'PUT /settings/brand'): RouteCase(
         no_ids='the brand is text the admin wrote, the workspace is the header: check 1',
         body={'brand_name': 'Trailhead'}, literals={'Trailhead': 'a brand name the admin typed, not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    # The categories, dimensions and source profiles (7.08.00): each workspace's own rows, the deployment's without
+    # the header; any member reads, the workspace's admins write.
+    ('settings_handler.py', 'GET /settings/categories'): RouteCase(
+        no_ids='the header is its only id: check 1 (each workspace has its own categories)',
+        without_a_workspace=_AS_BEFORE),
+    ('settings_handler.py', 'PUT /settings/categories'): RouteCase(
+        no_ids='the categories are names the admin typed, the workspace is the header: check 1',
+        body={'categories': [{'name': 'trail_gear'}]},
+        literals={'trail_gear': 'a category name the admin typed, not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('settings_handler.py', 'GET /settings/dimensions'): RouteCase(
+        no_ids='the header is its only id: check 1 (each workspace has its own dimensions)',
+        without_a_workspace=_AS_BEFORE),
+    ('settings_handler.py', 'PUT /settings/dimensions'): RouteCase(
+        no_ids='the dimensions are keys and values the admin typed, the workspace is the header: check 1',
+        body={'dimensions': [{'key': 'terrain', 'values': [{'name': 'gravel'}]}]},
+        literals={'terrain': 'a dimension key the admin typed, not a row of a workspace',
+                  'gravel': 'a dimension value the admin typed, not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('settings_handler.py', 'GET /settings/sources'): RouteCase(
+        no_ids='the header is its only id: check 1 (each workspace has its own source profiles)',
+        without_a_workspace=_AS_BEFORE),
+    ('settings_handler.py', 'PUT /settings/sources'): RouteCase(
+        no_ids="the profile names a source of the deployment's catalogue, the workspace is the header: check 1",
+        body={'sources': [{'id': PLUGIN, 'pii': 'redact'}]},
+        literals={PLUGIN: 'a plugin of the deployment, the same source id in every workspace',
+                  'redact': 'a PII policy, the same words in every workspace'},
         without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
 }

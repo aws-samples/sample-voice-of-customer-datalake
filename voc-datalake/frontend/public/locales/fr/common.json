@@ -164,7 +164,7 @@
       "editor": "Édition",
       "viewer": "Lecture"
     },
-    "sharedData": "Chaque espace de travail a ses propres retours, tableaux de bord, marque et problèmes résolus ; aucun retour ne peut encore arriver dans un espace de travail. Les projets, l’assistant, Radar et les autres paramètres (catégories, dimensions, sources) restent partagés par tous les espaces de travail.",
+    "sharedData": "Chaque espace de travail a ses propres retours, tableaux de bord, marque, problèmes résolus, catégories, dimensions et politiques des sources ; aucun retour ne peut encore arriver dans un espace de travail. Les projets, l’assistant, Radar et les autres paramètres restent partagés par tous les espaces de travail.",
     "moreFailed": "La page suivante n’a pas pu être chargée. Choisissez Afficher plus pour réessayer.",
     "refreshFailed": "La liste n’a pas pu être actualisée : elle n’est peut-être plus à jour.",
     "members": {
@@ -235,7 +235,7 @@
     },
     "settings": {
       "title": "Réglages de l’espace de travail",
-      "subtitle": "La marque et les plugins de {{name}}.",
+      "subtitle": "La marque, les plugins, les catégories, les dimensions et les politiques des sources de {{name}}.",
       "brandTitle": "Marque",
       "brandDescription": "La marque propre à cet espace de travail. Un nouvel espace de travail commence avec une marque vide : rien n’est copié depuis la marque du déploiement.",
       "brandReadOnly": "Seuls les administrateurs de cet espace de travail peuvent modifier sa marque. Vous pouvez la consulter ici.",
@@ -253,6 +253,18 @@
       "enableWho": "Activer {{name}} pour cet espace de travail",
       "disableWho": "Désactiver {{name}} pour cet espace de travail",
       "retry": "Réessayer"
+    },
+    "config": {
+      "categoriesTitle": "Catégories",
+      "categoriesDescription": "Les catégories propres à cet espace de travail classent ses retours. Un nouvel espace de travail n’en a aucune : ses retours sont classés avec les catégories par défaut intégrées jusqu’à ce que ses administrateurs en ajoutent. Rien n’est copié des catégories du déploiement.",
+      "dimensionsTitle": "Dimensions",
+      "dimensionsDescription": "Les dimensions propres à cet espace de travail. Un nouvel espace de travail n’a que les dimensions intégrées ; rien n’est copié de celles du déploiement.",
+      "sourcesTitle": "Politiques des sources",
+      "sourcesDescription": "Comment cet espace de travail conserve les retours de chaque source : traitement des données personnelles, sources restreintes, valeurs de dimension par défaut et étiquettes. Une source sans profil ici voit ses données personnelles masquées et reste visible par chaque membre, quels que soient les profils du déploiement.",
+      "retentionDeployment": "Les durées de conservation sont celles du déploiement : sa durée pour cette source supprime aussi les éléments de cet espace de travail, et un profil d’espace de travail ne peut pas en fixer une.",
+      "readOnly": "Seuls les administrateurs de cet espace de travail peuvent modifier ses catégories, dimensions et politiques des sources.",
+      "adminNotice": "Ce sont les paramètres propres au déploiement, pas ceux de {{name}} : ils classent et masquent tous les retours hors des espaces de travail, et seuls les administrateurs du déploiement peuvent les enregistrer. Les paramètres de {{name}} sont sur sa page Paramètres de l’espace de travail.",
+      "openSettings": "Paramètres de l’espace de travail"
     },
     "deploymentBrand": {
       "title": "Marque par défaut du déploiement",

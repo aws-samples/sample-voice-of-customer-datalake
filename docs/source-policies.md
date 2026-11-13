@@ -236,11 +236,13 @@ How it works:
   even within one source (the deployment's Jane Doe is not every workspace's Jane Doe), and an id is unique
   only within one source account or upload while each workspace has its own (the deployment's ticket 12345
   is not a workspace's); those stay the deployment's until a job can name its workspace. To reach a
-  person's reviews in the workspaces, erase by their email. A **retention window** reaches workspace items too: a
-  workspace's messages are processed under the deployment's source profiles (their PII and raw-copy policy;
-  a source with a window keeps no whole-file original, because the window deletes item by item), so the
-  profile's window binds the workspace's items too, until per-workspace profiles replace the deployment's
-  for workspaces (phase 3). Each one is tombstoned first,
+  person's reviews in the workspaces, erase by their email. A **retention window** reaches workspace items too:
+  the windows are the deployment's. Since 7.08.00 a workspace's messages are processed under the workspace's
+  own source profiles (their PII policy, restriction, defaults and tags; a source the workspace saved no profile
+  for redacts personal data by default, never takes the deployment's profile), but a workspace's profile sets no window (the settings API
+  refuses one), and at ingestion it carries the deployment's window for its source, so a source with a window
+  keeps no whole-file original there either (the window deletes item by item) and the deployment's window
+  binds the workspace's items. Each one is tombstoned first,
   in the same partition as the deployment's (`AUDIT#tombstone#<source>`, which the audit-row guard
   protects; a `WS#{ws}#…` partition would be outside it) with the workspace in its sort key and row
   (`sk <ws>#<feedback_id>`, `workspace_id`), so two workspaces' copies of one source item and the

@@ -30,7 +30,7 @@ from shared.ingest_schemas import MAX_METADATA_VALUE_LENGTH, MAX_TEXT_LENGTH, MA
 from shared.logging import logger, metrics
 from shared.pii_redaction import redact_text
 from shared.source_profiles import PII_ALLOW, PII_POLICIES, cached_source_profile_strict
-from shared.ws_repo import WORKSPACE_FIELD
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope
 
 __all__ = [
     'ARCHIVE_FILE',
@@ -148,8 +148,11 @@ def apply_source_policy(message: Mapping[str, Any], profile: Mapping[str, Any]) 
     return out
 
 
-def policy_message(message: Mapping[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    """``apply_source_policy`` under the cached profile of the message's ``source_platform``.
+def policy_message(message: Mapping[str, Any],
+                   scope: WorkspaceScope | None = None) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """``apply_source_policy`` under the cached profile of the message's ``source_platform``: ``scope``'s
+    workspace's for a producer in a workspace (a plugin run in one, a workspace's webhook), the deployment's
+    without one.
 
     Returns ``(message or None, profile)`` so the caller can also ask
     ``archive_mode(profile)``. FAILS CLOSED: raises ``SourceProfilesUnavailable``
@@ -157,7 +160,7 @@ def policy_message(message: Mapping[str, Any]) -> tuple[dict[str, Any] | None, d
     queued under the allow default.
     """
     source_id = str(message.get('source_platform') or '')
-    profile = cached_source_profile_strict(source_id)
+    profile = cached_source_profile_strict(source_id, scope)
     out = apply_source_policy(message, profile)
     if out is None:
         logger.warning('Message without text skipped by the source policy', extra={'source_platform': source_id})

@@ -105,6 +105,7 @@ from shared.url_policy import (
 from shared.workspace_plugin_settings import hold_workspace_ingestion
 from shared.workspace_request import ResolvedRoutes
 from shared.workspace_routing import workspace_payload
+from shared.ws_repo import WorkspaceScope
 
 secretsmanager = get_secrets_client()
 lambda_client = boto3.client("lambda")
@@ -367,8 +368,9 @@ def _scraper_shape_error(scraper: dict) -> str | None:
     return None
 
 
-def _validated_scraper(body: object) -> dict:
-    """The `scraper` of a save request, or a 400 explaining why it cannot be stored."""
+def _validated_scraper(body: object, scope: WorkspaceScope | None = None) -> dict:
+    """The `scraper` of a save request, or a 400 explaining why it cannot be stored (its labels checked against the
+    dimensions of ``scope``, the request's workspace; the deployment's without one)."""
     scraper = body.get('scraper') if isinstance(body, dict) else None
     if not scraper:
         raise ValidationError('No scraper config provided')
@@ -379,8 +381,9 @@ def _validated_scraper(body: object) -> dict:
     error = _scraper_shape_error(scraper) or scraper_url_error(scraper, validate_url)
     if error is not None:
         raise ValidationError(error)
-    # Dimension defaults and tags the ingestor stamps on every message it sends.
-    normalise_label_fields(get_aggregates_table(), scraper)
+    # Dimension defaults and tags the ingestor stamps on every message it sends, checked against the dimensions of
+    # the request's workspace (the deployment's without one), the ones its messages are processed with.
+    normalise_label_fields(get_aggregates_table(), scraper, scope)
     _normalise_radar_brand(scraper)
     return scraper
 
@@ -446,7 +449,7 @@ def save_scraper():
     # overwrites, `base_etag` refuses a stale update. Absent = the upsert.
     mode = config_write_guard.write_mode(body)
     base = config_write_guard.base_etag(body)
-    scraper = _validated_scraper(body)
+    scraper = _validated_scraper(body, _request.scope())
     # In a workspace no Radar brand (Radar is not keyed by workspace: its messages would be refused).
     _request.refuse_radar_brand(scraper.get('radar_brand'))
 

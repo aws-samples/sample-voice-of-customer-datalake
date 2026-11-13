@@ -161,7 +161,7 @@
       "editor": "Bearbeitung",
       "viewer": "Lesezugriff"
     },
-    "sharedData": "Jeder Arbeitsbereich hat sein eigenes Feedback, eigene Dashboards, eine eigene Marke und eigene gelöste Probleme; noch kann kein Feedback in einen Arbeitsbereich gelangen. Projekte, der Assistent, Radar und die übrigen Einstellungen (Kategorien, Dimensionen, Quellen) teilen sich weiterhin alle Arbeitsbereiche.",
+    "sharedData": "Jeder Arbeitsbereich hat sein eigenes Feedback, eigene Dashboards, eine eigene Marke, eigene gelöste Probleme, Kategorien, Dimensionen und Quellrichtlinien; noch kann kein Feedback in einen Arbeitsbereich gelangen. Projekte, der Assistent, Radar und die übrigen Einstellungen teilen sich weiterhin alle Arbeitsbereiche.",
     "moreFailed": "Die nächste Seite konnte nicht geladen werden. Wählen Sie „Mehr anzeigen“, um es erneut zu versuchen.",
     "refreshFailed": "Die Liste konnte nicht aktualisiert werden und ist möglicherweise nicht mehr aktuell.",
     "members": {
@@ -232,7 +232,7 @@
     },
     "settings": {
       "title": "Einstellungen des Arbeitsbereichs",
-      "subtitle": "Die Marke und die Plugins von {{name}}.",
+      "subtitle": "Die Marke, die Plugins, die Kategorien, die Dimensionen und die Quellrichtlinien von {{name}}.",
       "brandTitle": "Marke",
       "brandDescription": "Die eigene Marke dieses Arbeitsbereichs. Ein neuer Arbeitsbereich beginnt mit einer leeren Marke: Von der Marke der Bereitstellung wird nichts übernommen.",
       "brandReadOnly": "Nur die Admins dieses Arbeitsbereichs können seine Marke ändern. Hier können Sie sie ansehen.",
@@ -250,6 +250,18 @@
       "enableWho": "{{name}} für diesen Arbeitsbereich einschalten",
       "disableWho": "{{name}} für diesen Arbeitsbereich ausschalten",
       "retry": "Erneut versuchen"
+    },
+    "config": {
+      "categoriesTitle": "Kategorien",
+      "categoriesDescription": "Die eigenen Kategorien dieses Arbeitsbereichs ordnen sein Feedback ein. Ein neuer Arbeitsbereich hat keine: Sein Feedback wird mit den integrierten Standardkategorien eingeordnet, bis seine Admins eigene anlegen. Von den Kategorien der Bereitstellung wird nichts übernommen.",
+      "dimensionsTitle": "Dimensionen",
+      "dimensionsDescription": "Die eigenen Dimensionen dieses Arbeitsbereichs. Ein neuer Arbeitsbereich hat nur die integrierten; von denen der Bereitstellung wird nichts übernommen.",
+      "sourcesTitle": "Quellrichtlinien",
+      "sourcesDescription": "Wie dieser Arbeitsbereich das Feedback jeder Quelle aufbewahrt: Umgang mit personenbezogenen Daten, eingeschränkte Quellen, Standardwerte für Dimensionen und Tags. Bei einer Quelle ohne Profil hier werden personenbezogene Daten geschwärzt, und sie ist für jedes Mitglied sichtbar, unabhängig von den Profilen der Bereitstellung.",
+      "retentionDeployment": "Aufbewahrungsfristen gehören zur Bereitstellung: Ihre Frist für diese Quelle löscht auch die Einträge dieses Arbeitsbereichs, und ein Profil des Arbeitsbereichs kann keine festlegen.",
+      "readOnly": "Nur die Admins dieses Arbeitsbereichs können seine Kategorien, Dimensionen und Quellrichtlinien ändern.",
+      "adminNotice": "Dies sind die eigenen Einstellungen der Bereitstellung, nicht die von {{name}}: Sie ordnen alles Feedback außerhalb von Arbeitsbereichen ein und schwärzen es, und nur die Administratoren der Bereitstellung können sie speichern. Die Einstellungen von {{name}} stehen auf seiner Seite „Arbeitsbereichseinstellungen“.",
+      "openSettings": "Arbeitsbereichseinstellungen"
     },
     "deploymentBrand": {
       "title": "Standardmarke der Bereitstellung",

@@ -2,6 +2,8 @@
  * @fileoverview One source profile: label, PII policy, retention (with its legal
  * basis, flagged when a period saved before 6.00.00 has none), whether it is
  * restricted, and the dimension values and tags every review from it gets.
+ * A workspace's own profile (its settings page, since 7.08.00) offers no
+ * retention or Radar field: the deployment's window applies to its items.
  *
  * @module components/SourcesManager/SourceProfileEditor
  */
@@ -20,6 +22,8 @@ import type { Dimension } from '../../api/dimensionsSchema'
 import type { SourceProfile } from '../../api/sourceProfilesApi'
 import { PII_COPY, isPiiPolicy } from './piiPolicy'
 import { sourceLabel } from '../../utils/displayLabels'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { useConfigScope } from '../../workspace/configScope'
 
 interface SourceProfileEditorProps {
   profile: SourceProfile
@@ -92,6 +96,9 @@ export default function SourceProfileEditor({
 }: Readonly<SourceProfileEditorProps>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })
   const { t: tAll } = useTranslation()
+  // A workspace's own profile (its settings page), not Administration's deployment profile (workspace/configScope.ts).
+  const workspace = useCurrentWorkspace()
+  const inWorkspace = useConfigScope() === 'workspace' && workspace !== null
   const labelId = useId()
   const piiId = useId()
   return (
@@ -122,11 +129,17 @@ export default function SourceProfileEditor({
           <p className="text-xs text-muted mt-1">{tAll(PII_COPY[profile.pii].hintKey)}</p>
         </div>
       </div>
-      <RetentionField keepForever={keepForever} retentionText={retentionText} onChange={onRetentionChange}>
-        <RetentionBasis profile={profile} onChange={onChange} />
-      </RetentionField>
+      {/* A workspace's profile sets no retention window and no Radar brand (the server refuses both): the
+          deployment's window applies to its items, and Radar is not kept per workspace yet. */}
+      {inWorkspace ? (
+        <p className="text-xs text-muted">{tAll('workspaces.config.retentionDeployment')}</p>
+      ) : (
+        <RetentionField keepForever={keepForever} retentionText={retentionText} onChange={onRetentionChange}>
+          <RetentionBasis profile={profile} onChange={onChange} />
+        </RetentionField>
+      )}
       <SwitchField checked={profile.restricted} onChange={(restricted) => onChange({ ...profile, restricted })} label={t('restrictedLabel')} hint={t('restrictedHint')} />
-      <RadarSourceField profile={profile} />
+      {!inWorkspace && <RadarSourceField profile={profile} />}
       {dimensions.length > 0 && (
         <div>
           <p className="text-xs font-medium text-text mb-2">{t('defaultsTitle')}</p>

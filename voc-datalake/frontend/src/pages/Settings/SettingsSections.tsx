@@ -17,6 +17,8 @@ import { getEnabledPlugins } from '../../plugins'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { SECTION_TITLE } from './sectionTitle'
 import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import WorkspaceConfigNotice from '../../workspace/WorkspaceConfigNotice'
+import { ConfigScopeContext } from '../../workspace/configScope'
 
 // ============================================
 // Header Component
@@ -284,7 +286,11 @@ export function CategoriesSection({ apiEndpoint }: CategoriesSectionProps) {
       {!apiEndpoint ? (
         <ConfigureFirstNotice message={t('categories.configureFirst')} />
       ) : (
-        <CategoriesManager />
+        <>
+          {/* The deployment's categories from any address (inside a workspace the notice says so). */}
+          <WorkspaceConfigNotice />
+          <ConfigScopeContext.Provider value="deployment"><CategoriesManager /></ConfigScopeContext.Provider>
+        </>
       )}
     </div>
   )

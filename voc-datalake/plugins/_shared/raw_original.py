@@ -53,7 +53,7 @@ def archive_original(s3: Any, bucket: str, key: str, body: bytes, *, scope: Work
     the deployment-wide ``raw/`` (scope None); None when not kept (policy, no bucket, failed)."""
     extension = os.path.splitext(key)[1].lower()
     content_type = _CONTENT_TYPES.get(extension)
-    if not bucket or content_type is None or source_archive_mode(S3_IMPORT_SOURCE) != ARCHIVE_FILE:
+    if not bucket or content_type is None or source_archive_mode(S3_IMPORT_SOURCE, scope) != ARCHIVE_FILE:
         return None
     target = RawTarget(bucket, S3_IMPORT_SOURCE, datetime.now(UTC).date(), file_stem(key), scope)
     return bytes_copy(s3, target, body, plugin_connector(), extension=extension, content_type=content_type,

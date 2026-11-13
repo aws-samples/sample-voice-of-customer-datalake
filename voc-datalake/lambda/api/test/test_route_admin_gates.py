@@ -1056,7 +1056,8 @@ def test_every_shared_gate_primitive_is_an_admin_check():
         assert isinstance(first, ast.Expr)
         assert _called_name(first.value) == GATE_PRIMITIVE
     # require_settings_admin (shared/request_workspace.py): its whole body is one `if` that calls require_admin on one
-    # branch and require_workspace_admin, itself an `if ...: raise AuthorizationError`, on the other.
+    # branch and, on the other, the workspace branch: require_workspace_admin (itself an `if ...: raise
+    # AuthorizationError`) as its first statement, then an `if` that raises for a delegated caller (7.08.00).
     settings = _module_functions(ast.parse((SHARED_DIR / 'request_workspace.py').read_text(encoding='utf-8')))
     body = settings['require_settings_admin'].body[1:]   # after its docstring
     assert len(body) == 1
@@ -1065,7 +1066,11 @@ def test_every_shared_gate_primitive_is_an_admin_check():
     parts = (body[0].body, body[0].orelse)
     assert [[type(stmt) for stmt in part] for part in parts] == [[ast.Expr], [ast.Expr]]
     calls = [part[0].value for part in parts if isinstance(part[0], ast.Expr)]
-    assert [_called_name(call) for call in calls] == [GATE_PRIMITIVE, 'require_workspace_admin']
+    assert [_called_name(call) for call in calls] == [GATE_PRIMITIVE, '_require_workspace_settings_admin']
+    branch = settings['_require_workspace_settings_admin'].body[1:]   # after its docstring
+    assert isinstance(branch[0], ast.Expr)
+    assert _called_name(branch[0].value) == 'require_workspace_admin'
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body) for stmt in branch[1:])
     workspace = _module_functions(ast.parse((SHARED_DIR / 'workspace.py').read_text(encoding='utf-8')))
     assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
                for stmt in workspace['require_workspace_admin'].body)

@@ -164,7 +164,7 @@
       "editor": "Edición",
       "viewer": "Lectura"
     },
-    "sharedData": "Cada espacio de trabajo tiene sus propios comentarios, paneles, marca y problemas resueltos; todavía no pueden llegar comentarios a un espacio de trabajo. Los proyectos, el asistente, Radar y los demás ajustes (categorías, dimensiones, fuentes) siguen siendo compartidos por todos los espacios de trabajo.",
+    "sharedData": "Cada espacio de trabajo tiene sus propios comentarios, paneles, marca, problemas resueltos, categorías, dimensiones y políticas de fuentes; todavía no pueden llegar comentarios a un espacio de trabajo. Los proyectos, el asistente, Radar y los demás ajustes siguen siendo compartidos por todos los espacios de trabajo.",
     "moreFailed": "No se pudo cargar la página siguiente. Elige Mostrar más para volver a intentarlo.",
     "refreshFailed": "No se pudo actualizar la lista, así que puede no estar al día.",
     "members": {
@@ -235,7 +235,7 @@
     },
     "settings": {
       "title": "Configuración del espacio de trabajo",
-      "subtitle": "La marca y los plugins de {{name}}.",
+      "subtitle": "La marca, los plugins, las categorías, las dimensiones y las políticas de fuentes de {{name}}.",
       "brandTitle": "Marca",
       "brandDescription": "La marca propia de este espacio de trabajo. Un espacio de trabajo nuevo empieza con una vacía: no se copia nada de la marca de la implementación.",
       "brandReadOnly": "Solo los administradores de este espacio de trabajo pueden cambiar su marca. Puedes consultarla aquí.",
@@ -253,6 +253,18 @@
       "enableWho": "Activar {{name}} para este espacio de trabajo",
       "disableWho": "Desactivar {{name}} para este espacio de trabajo",
       "retry": "Reintentar"
+    },
+    "config": {
+      "categoriesTitle": "Categorías",
+      "categoriesDescription": "Las categorías propias de este espacio de trabajo clasifican sus comentarios. Un espacio de trabajo nuevo no tiene ninguna: sus comentarios se clasifican con las categorías predeterminadas integradas hasta que sus administradores añadan algunas. No se copia nada de las categorías de la implementación.",
+      "dimensionsTitle": "Dimensiones",
+      "dimensionsDescription": "Las dimensiones propias de este espacio de trabajo. Un espacio de trabajo nuevo solo tiene las integradas; no se copia nada de las de la implementación.",
+      "sourcesTitle": "Políticas de fuentes",
+      "sourcesDescription": "Cómo guarda este espacio de trabajo los comentarios de cada fuente: tratamiento de datos personales, fuentes restringidas, valores de dimensión predeterminados y etiquetas. Una fuente sin perfil aquí tiene sus datos personales ocultos y es visible para todos los miembros, digan lo que digan los perfiles de la implementación.",
+      "retentionDeployment": "Los periodos de conservación son de la implementación: su periodo para esta fuente también elimina los elementos de este espacio de trabajo, y un perfil del espacio de trabajo no puede fijar uno.",
+      "readOnly": "Solo los administradores de este espacio de trabajo pueden cambiar sus categorías, dimensiones y políticas de fuentes.",
+      "adminNotice": "Estos son los ajustes propios de la implementación, no los de {{name}}: clasifican y ocultan todos los comentarios fuera de los espacios de trabajo, y solo los administradores de la implementación pueden guardarlos. Los ajustes de {{name}} están en su página de ajustes del espacio de trabajo.",
+      "openSettings": "Ajustes del espacio de trabajo"
     },
     "deploymentBrand": {
       "title": "Marca predeterminada de la implementación",

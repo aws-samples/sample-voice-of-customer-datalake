@@ -61,9 +61,10 @@ def category_label(value: object, key: str, *, required: bool) -> str | None:
     return text
 
 
-def categories_config(aggregates_table: Any) -> list[dict]:
-    """The configured categories, read fresh; the defaults when none are configured."""
-    configured = read_categories_config(aggregates_table)
+def categories_config(aggregates_table: Any, scope: WorkspaceScope | None = None) -> list[dict]:
+    """The configured categories of ``scope``'s workspace (the deployment's without one), read fresh; the defaults
+    when none are configured."""
+    configured = read_categories_config(aggregates_table, scope)
     return configured or [{'name': name} for name in DEFAULT_CATEGORIES]
 
 

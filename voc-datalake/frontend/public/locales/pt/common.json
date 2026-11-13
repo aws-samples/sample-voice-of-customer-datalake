@@ -164,7 +164,7 @@
       "editor": "Edição",
       "viewer": "Leitura"
     },
-    "sharedData": "Cada espaço de trabalho tem seus próprios feedbacks, painéis, marca e problemas resolvidos; nenhum feedback pode chegar a um espaço de trabalho ainda. Projetos, o assistente, o Radar e as demais configurações (categorias, dimensões, fontes) continuam compartilhados por todos os espaços de trabalho.",
+    "sharedData": "Cada espaço de trabalho tem seus próprios feedbacks, painéis, marca, problemas resolvidos, categorias, dimensões e políticas de fontes; nenhum feedback pode chegar a um espaço de trabalho ainda. Projetos, o assistente, o Radar e as demais configurações continuam compartilhados por todos os espaços de trabalho.",
     "moreFailed": "Não foi possível carregar a próxima página. Escolha Mostrar mais para tentar novamente.",
     "refreshFailed": "Não foi possível atualizar a lista, então ela pode estar desatualizada.",
     "members": {
@@ -235,7 +235,7 @@
     },
     "settings": {
       "title": "Configurações do espaço de trabalho",
-      "subtitle": "A marca e os plug-ins de {{name}}.",
+      "subtitle": "A marca, os plug-ins, as categorias, as dimensões e as políticas de fontes de {{name}}.",
       "brandTitle": "Marca",
       "brandDescription": "A marca própria deste espaço de trabalho. Um espaço de trabalho novo começa com uma marca vazia: nada é copiado da marca da implantação.",
       "brandReadOnly": "Somente os administradores deste espaço de trabalho podem alterar a marca dele. Você pode visualizá-la aqui.",
@@ -253,6 +253,18 @@
       "enableWho": "Ativar {{name}} para este espaço de trabalho",
       "disableWho": "Desativar {{name}} para este espaço de trabalho",
       "retry": "Tentar novamente"
+    },
+    "config": {
+      "categoriesTitle": "Categorias",
+      "categoriesDescription": "As categorias próprias deste espaço de trabalho classificam seus feedbacks. Um espaço de trabalho novo não tem nenhuma: seus feedbacks são classificados com as categorias padrão integradas até que seus administradores adicionem algumas. Nada é copiado das categorias da implantação.",
+      "dimensionsTitle": "Dimensões",
+      "dimensionsDescription": "As dimensões próprias deste espaço de trabalho. Um espaço de trabalho novo tem apenas as integradas; nada é copiado das da implantação.",
+      "sourcesTitle": "Políticas de fontes",
+      "sourcesDescription": "Como este espaço de trabalho guarda os feedbacks de cada fonte: tratamento de dados pessoais, fontes restritas, valores padrão de dimensão e tags. Uma fonte sem perfil aqui tem seus dados pessoais ocultados e fica visível para todos os membros, seja o que for que digam os perfis da implantação.",
+      "retentionDeployment": "Os prazos de retenção são da implantação: o prazo dela para esta fonte também exclui os itens deste espaço de trabalho, e um perfil do espaço de trabalho não pode definir um.",
+      "readOnly": "Só os administradores deste espaço de trabalho podem alterar suas categorias, dimensões e políticas de fontes.",
+      "adminNotice": "Estas são as configurações próprias da implantação, não as de {{name}}: classificam e ocultam todos os feedbacks fora dos espaços de trabalho, e só os administradores da implantação podem salvá-las. As configurações de {{name}} estão na página de configurações do espaço de trabalho.",
+      "openSettings": "Configurações do espaço de trabalho"
     },
     "deploymentBrand": {
       "title": "Marca padrão da implantação",

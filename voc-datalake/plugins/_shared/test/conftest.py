@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from _shared.test.scoped_secret import scoped_secret
+from _shared.test.workspace_fixtures import OTHER_WS, WS
+from shared.test.source_profile_fixtures import seeded_source_profiles
 
 
 @pytest.fixture
@@ -20,7 +22,11 @@ def ingestor_aws():
     patched reader, returning ``scoped_secret()`` unless a test overrides it).
     """
     table = MagicMock()
+    # The test ingestor runs in a workspace by default: each workspace keeps its source's PII here (its own allow
+    # profile; a workspace's source without one redacts by default since 7.08.00, test_source_policy_gate.py).
+    allow = [{'id': 'test_source', 'pii': 'allow'}]
     with (
+        seeded_source_profiles(workspaces={WS: allow, OTHER_WS: allow}),
         patch('_shared.base_ingestor.get_dynamodb_resource') as get_dynamo,
         patch('_shared.base_ingestor.get_s3_client') as get_s3,
         patch('_shared.base_ingestor.get_sqs_client') as get_sqs,

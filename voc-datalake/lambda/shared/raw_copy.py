@@ -80,31 +80,36 @@ def _unreadable[T](source: str, fallback: T) -> T:
     return fallback
 
 
-def source_archive_mode(source: str) -> str:
-    """``source``'s archive mode (``shared.source_policy.archive_mode``: ``none`` / ``item`` / ``file``).
+def source_archive_mode(source: str, scope: WorkspaceScope | None = None) -> str:
+    """``source``'s archive mode (``shared.source_policy.archive_mode``: ``none`` / ``item`` / ``file``), under
+    ``scope``'s workspace's profile for a writer in a workspace (with the deployment's retention window,
+    ``cached_source_profile_strict``), the deployment's without one.
 
     Read strictly: an unreadable profile is ``none`` (logged), so nothing is archived under the
     allow default. Never raises.
     """
     try:
-        return archive_mode(cached_source_profile_strict(source))
+        return archive_mode(cached_source_profile_strict(source, scope))
     except SourceProfilesUnavailable:
         return _unreadable(source, ARCHIVE_NONE)
 
 
-def source_permits_raw_copy(source: str, *, require_profile: bool = False) -> bool:
-    """True when ``source``'s profile permits a raw copy (see ``source_archive_mode``). Never raises.
+def source_permits_raw_copy(source: str, *, require_profile: bool = False,
+                            scope: WorkspaceScope | None = None) -> bool:
+    """True when ``source``'s profile permits a raw copy (see ``source_archive_mode``; ``scope``: a writer in a
+    workspace, under that workspace's profile). Never raises.
 
     ``require_profile``: also require an admin-saved profile for ``source`` (an opt-in copy, e.g.
-    the feedback boards, whose copies hold personal data that erasure by email does not reach).
+    the feedback boards, whose copies hold personal data that erasure by email does not reach), in ``scope``'s
+    workspace for a writer in one: the deployment's profile opts no workspace in.
     """
     if require_profile:
         try:
-            if not source_profile_configured(source):
+            if not source_profile_configured(source, scope):
                 return False
         except SourceProfilesUnavailable:
             return _unreadable(source, False)
-    return source_archive_mode(source) != ARCHIVE_NONE
+    return source_archive_mode(source, scope) != ARCHIVE_NONE
 
 
 def bytes_digest(body: bytes) -> str:

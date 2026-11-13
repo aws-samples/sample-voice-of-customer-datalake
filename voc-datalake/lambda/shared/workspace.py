@@ -213,10 +213,15 @@ def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,
     return context
 
 
-def require_workspace_admin(context: WorkspaceContext) -> None:
-    """403 unless the caller acts as ``admin`` in the workspace: a member admin, or a platform admin who entered
+def is_workspace_admin(context: WorkspaceContext) -> bool:
+    """Whether the caller acts as ``admin`` in the workspace: a member admin, or a platform admin who entered
     (decision 2, live-checked by ``resolve_workspace``). The deployment's ``admins`` group grants nothing here."""
-    if context.role != 'admin':
+    return context.role == 'admin'
+
+
+def require_workspace_admin(context: WorkspaceContext) -> None:
+    """403 unless ``is_workspace_admin``."""
+    if not is_workspace_admin(context):
         raise AuthorizationError('Workspace admin access required')
 
 

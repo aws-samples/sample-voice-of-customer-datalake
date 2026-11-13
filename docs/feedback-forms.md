@@ -347,8 +347,9 @@ workspace form's config and iframe answer as before.
   deleted, a lookup row without its form, and an unknown id all answer the same 404.
   While per-workspace ingestion is held, a submission to a workspace's form answers 409
   (above) and nothing is archived or queued.
-- A workspace's form uses the deployment's categories and `feedback_form` source
-  profile, like every workspace message until per-workspace settings arrive. Participant
+- A workspace's form uses its workspace's own categories (its preset routing) and
+  `feedback_form` source profile (its PII policy; its raw copy is opt-in through that
+  workspace's own profile), since 7.08.00; the deployment's profile opts no workspace in. Participant
   asks and prototype pins stay deployment features: a workspace's form attributes no
   answer to an ask.
 

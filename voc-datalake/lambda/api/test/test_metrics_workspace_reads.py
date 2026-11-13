@@ -376,3 +376,43 @@ class TestAPlatformAdminEntry:
 
         assert (response['statusCode'], body) == (404, {'success': False, 'error': 'Workspace not found'})
         assert self._entries(world) == []
+
+
+# A member of A only, outside the deployment's `admins` group: the category access check applies to them.
+VIEWER_A = {'sub': 'sub-val', 'cognito:groups': 'users', 'cognito:username': 'val'}
+
+
+class TestTheAccessCheckReadsTheWorkspacesConfig:
+    """7.08.00: the feedback routes' category access check (shared/category_gate.py ``scope_for_event``) reads the
+    request's workspace's restricted sources and categories, the deployment's without the header."""
+
+    @staticmethod
+    def _restrict(world, ws: str | None) -> None:
+        pk = 'SETTINGS#sources' if ws is None else f'WS#{ws}#SETTINGS#sources'
+        world.aggregates.put_item(Item={'pk': pk, 'sk': 'config', 'sources': [
+            {'id': 'web', 'label': 'Web', 'pii': 'allow', 'restricted': True}]})
+
+    @staticmethod
+    def _texts(world, api_gateway_event, lambda_context, ws: str | None) -> list[str]:
+        response, body = world.get(api_gateway_event, lambda_context, '/feedback', claims=VIEWER_A, ws=ws)
+        assert response['statusCode'] == 200, body
+        return sorted(item['original_text'] for item in body['items'])
+
+    @pytest.fixture(autouse=True)
+    def _a_viewer(self, world):
+        world.workspaces.put_item(Item={'pk': f'WS#{WS_A}', 'sk': 'MEMBER#sub-val', 'role': 'viewer'})
+
+    def test_a_source_the_workspace_restricts_is_hidden_there_and_only_there(self, world, api_gateway_event,
+                                                                             lambda_context):
+        self._restrict(world, WS_A)
+
+        assert self._texts(world, api_gateway_event, lambda_context, WS_A) == []
+        assert self._texts(world, api_gateway_event, lambda_context, None) == [
+            'deployment one', 'deployment three', 'deployment two']
+
+    def test_a_source_the_deployment_restricts_hides_nothing_in_a_workspace(self, world, api_gateway_event,
+                                                                            lambda_context):
+        self._restrict(world, None)
+
+        assert self._texts(world, api_gateway_event, lambda_context, WS_A) == ['workspace A four', 'workspace A one']
+        assert self._texts(world, api_gateway_event, lambda_context, None) == []

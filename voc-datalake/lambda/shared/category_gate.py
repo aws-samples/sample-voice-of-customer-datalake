@@ -16,7 +16,6 @@ from typing import Any
 
 from shared import category_access
 from shared.api import get_raw_categories_config
-from shared.categories_key import CATEGORIES_SETTINGS_KEY
 from shared.category_access import CategoryScope
 from shared.exceptions import ServiceError
 from shared.gate_reads import read_gate_item
@@ -54,7 +53,8 @@ def read_categories_config(aggregates_table: Any, scope: WorkspaceScope | None =
     usable at once, which the 5-minute cache in ``shared.api`` cannot promise.
     """
     item = read_gate_item(
-        _ScopedReader(aggregates_table, CATEGORIES_KIND, CATEGORIES_SETTINGS_KEY, scope), log_message='Categories config read failed',
+        _ScopedReader(aggregates_table, CATEGORIES_KIND, {'pk': CATEGORIES_PK, 'sk': CATEGORIES_SK}, scope),
+        log_message='Categories config read failed',
         error_message='Could not read categories. Please retry.',
     )
     raw = item.get('categories') if item else None

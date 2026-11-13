@@ -161,7 +161,7 @@
       "editor": "Editor",
       "viewer": "Viewer"
     },
-    "sharedData": "Each workspace keeps its own feedback, dashboards, brand and resolved problems; no feedback can reach a workspace yet. Projects, the assistant, Radar and the other settings (categories, dimensions, sources) are still shared by every workspace.",
+    "sharedData": "Each workspace keeps its own feedback, dashboards, brand, resolved problems, categories, dimensions and source policies; no feedback can reach a workspace yet. Projects, the assistant, Radar and the other settings are still shared by every workspace.",
     "moreFailed": "The next page could not be loaded. Choose Show more to try again.",
     "refreshFailed": "The list could not be refreshed, so it may be out of date.",
     "members": {
@@ -232,7 +232,7 @@
     },
     "settings": {
       "title": "Workspace settings",
-      "subtitle": "The brand and plugins of {{name}}.",
+      "subtitle": "The brand, plugins, categories, dimensions and source policies of {{name}}.",
       "brandTitle": "Brand",
       "brandDescription": "This workspace's own brand. A new workspace starts with an empty one: nothing is copied from the deployment's brand.",
       "brandReadOnly": "Only this workspace's admins can change its brand. You can view it here.",
@@ -250,6 +250,18 @@
       "enableWho": "Enable {{name}} for this workspace",
       "disableWho": "Disable {{name}} for this workspace",
       "retry": "Try again"
+    },
+    "config": {
+      "categoriesTitle": "Categories",
+      "categoriesDescription": "This workspace's own categories classify its feedback. A new workspace has none: its feedback is classified with the built-in default categories until its admins add some. Nothing is copied from the deployment's categories.",
+      "dimensionsTitle": "Dimensions",
+      "dimensionsDescription": "This workspace's own dimensions. A new workspace has only the built-in ones; nothing is copied from the deployment's.",
+      "sourcesTitle": "Source policies",
+      "sourcesDescription": "How this workspace keeps the feedback of each source: PII handling, restricted sources, default dimension values and tags. A source without a profile here has its personal data redacted and is visible to every member, whatever the deployment's profiles say.",
+      "retentionDeployment": "Retention windows are the deployment's: its window for this source also deletes this workspace's items, and a workspace profile cannot set one.",
+      "readOnly": "Only this workspace's admins can change its categories, dimensions and source policies.",
+      "adminNotice": "These are the deployment's own settings, not those of {{name}}: they classify and redact all feedback outside workspaces, and only the deployment's administrators can save them. The settings of {{name}} are on its Workspace settings page.",
+      "openSettings": "Workspace settings"
     },
     "deploymentBrand": {
       "title": "Deployment default brand",

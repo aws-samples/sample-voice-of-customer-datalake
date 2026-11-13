@@ -24,8 +24,9 @@ PutItem on ``AUDIT#WS#*`` only) and has Cognito ``AdminListGroupsForUser`` and `
 
 ``require_workspace_writer``: 403 for a viewer (docs/multi-workspace.md, Roles: a viewer reads, an editor writes).
 ``require_settings_admin``: who changes an admin's settings kind that moved into its workspace (the brand): an admin of
-the workspace the request names (the deployment's ``admins`` group grants nothing there), or, for a request that names
-none, the deployment's ``admins`` as before. Both branches refuse (403), so the route-gate inventory counts it as a gate
+the workspace the request names (the deployment's ``admins`` group grants nothing there), never through a delegated
+caller (an MCP token, an agent or a plan step), or, for a request that names none, the deployment's ``admins`` as
+before. Both branches refuse (403), so the route-gate inventory counts it as a gate
 (lambda/api/test/test_route_admin_gates.py ``GATE_PRIMITIVES``).
 """
 from __future__ import annotations
@@ -41,6 +42,7 @@ from shared.exceptions import AuthorizationError, ConfigurationError, ServiceErr
 from shared.http_cache import request_header
 from shared.logging import logger
 from shared.platform_admin_gate import confirm_live_platform_admin
+from shared.project_gate import caller_from_event
 from shared.tables import cached_table
 from shared.workspace import (
     EDITING_ROLES,
@@ -92,4 +94,13 @@ def require_settings_admin(event: dict, context: WorkspaceContext | None) -> Non
     if context is None:
         require_admin(event)
     else:
-        require_workspace_admin(context)
+        _require_workspace_settings_admin(event, context)
+
+
+def _require_workspace_settings_admin(event: dict, context: WorkspaceContext) -> None:
+    """403 unless the caller is an admin of ``context``'s workspace (``require_workspace_admin``) acting as
+    themselves: a delegated caller (an MCP token, an agent or a plan step acting for the person) never changes a
+    workspace's admin settings, as it gets no full configuration view either (settings_handler ``_sees_full_config``)."""
+    require_workspace_admin(context)
+    if caller_from_event(event).delegated:
+        raise AuthorizationError('Workspace admin settings cannot be changed by a delegated caller')

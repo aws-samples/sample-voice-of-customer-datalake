@@ -220,6 +220,8 @@ class TestDimensionMetrics:
 
 def test_an_unreadable_dimensions_row_reads_as_none():
     metrics_handler.app.clear_context()
+    # A request that names no workspace, as the resolver middleware leaves it (the deployment's row).
+    metrics_handler.app.append_context(**{metrics_handler.WORKSPACE_CONTEXT_KEY: None})
     with patch('metrics_handler.aggregates_table') as agg:
         agg.get_item.return_value = {'Item': {'dimensions': 'corrupt'}}
         assert metrics_handler._dimensions_config() == []

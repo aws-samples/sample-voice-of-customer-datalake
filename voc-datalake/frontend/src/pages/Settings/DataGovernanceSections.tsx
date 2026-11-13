@@ -7,6 +7,8 @@ import { Layers, ShieldCheck } from 'lucide-react'
 import DimensionsManager from '../../components/DimensionsManager/DimensionsManager'
 import SourcesManager from '../../components/SourcesManager/SourcesManager'
 import { SectionHeader } from '../Company/ContextParts'
+import WorkspaceConfigNotice from '../../workspace/WorkspaceConfigNotice'
+import { ConfigScopeContext } from '../../workspace/configScope'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
@@ -25,7 +27,9 @@ export function DimensionsSection() {
   const { t } = useTranslation('settings')
   return (
     <Section icon={Layers} title={t('dimensions.title')} description={t('dimensions.description')}>
-      <DimensionsManager />
+      {/* The deployment's dimensions from any address (inside a workspace the notice says so). */}
+      <WorkspaceConfigNotice />
+      <ConfigScopeContext.Provider value="deployment"><DimensionsManager /></ConfigScopeContext.Provider>
     </Section>
   )
 }
@@ -35,7 +39,9 @@ export function SourcePoliciesSection() {
   const { t } = useTranslation('settings')
   return (
     <Section icon={ShieldCheck} title={t('sources.title')} description={t('sources.description')}>
-      <SourcesManager />
+      {/* The deployment's profiles, beside the deployment's erasure panels, from any address. */}
+      <WorkspaceConfigNotice />
+      <ConfigScopeContext.Provider value="deployment"><SourcesManager /></ConfigScopeContext.Provider>
     </Section>
   )
 }

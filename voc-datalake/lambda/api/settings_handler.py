@@ -63,14 +63,16 @@ from shared.aws import (
     put_secret_json,
 )
 from shared.caller_claims import first_claim
+from shared.categories_key import CATEGORIES_SETTINGS_KEY
 from shared.category_access import CategoryScope
 from shared.category_config import validate_categories
-from shared.category_gate import CATEGORIES_PK, CATEGORIES_SK, scope_for_caller
+from shared.category_gate import CATEGORIES_KIND, scope_for_caller
 from shared.data_version import bump_config_version
 from shared.delete_audit import actor_from_event, record_delete
 from shared.design_references import DESIGN_CAPTURE_ACTION
 from shared.digests import sha256_hex
 from shared.dimension_config import (
+    DIMENSIONS_KIND,
     DIMENSIONS_SETTINGS_KEY,
     load_dimensions_config,
     validate_dimensions,
@@ -125,16 +127,20 @@ from shared.source_erasure import (
 )
 from shared.source_profiles import (
     SOURCE_ID_RE,
+    SOURCES_KIND,
     SOURCES_SETTINGS_KEY,
     clear_source_profiles_cache,
     load_source_profiles,
     profile_for,
     validate_source_profiles,
+    workspace_profiles_problem,
 )
 from shared.timestamps import now_iso, parse_iso
 from shared.url_policy import validate_url
-from shared.workspace import WorkspaceContext
+from shared.workspace import WorkspaceContext, is_workspace_admin
+from shared.workspace_config import get_config_item, put_config_item
 from shared.workspace_settings import settings_key
+from shared.ws_repo import WorkspaceScope, scope_of
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -155,6 +161,16 @@ RESOLVED_PROBLEMS_KIND = "resolved_problems"
 DEPLOYMENT_RESOLVED_PROBLEMS_KEY: Final = {'pk': "SETTINGS#resolved_problems", 'sk': "config"}
 FAILED_RESOLVED_READ = "Failed to retrieve resolved problems"
 FAILED_RESOLVED_WRITE = "Failed to update problem resolution"
+# The categories, the dimensions and the source profiles are a workspace's (docs/multi-workspace.md, since 7.08.00):
+# with `X-Workspace-Id` the six routes read and write `WS#{ws}#SETTINGS#{kind}` (shared/workspace_config.py), any
+# member reads and the workspace's admins write (`require_settings_admin`); without it, the deployment's rows and its
+# `admins`, as before. A workspace that saved none of a kind has none (the deployment's row is never its default).
+FAILED_CATEGORIES_READ = 'Failed to retrieve categories'
+FAILED_CATEGORIES_SAVE = 'Failed to save categories'
+FAILED_DIMENSIONS_READ = 'Failed to retrieve dimensions'
+FAILED_DIMENSIONS_SAVE = 'Failed to save dimensions'
+FAILED_SOURCES_READ = 'Failed to retrieve source profiles'
+FAILED_SOURCES_SAVE = 'Failed to save source profiles'
 
 # Problem keys are client-built as "category|subcategory|normalized problem
 # text". Bound their size in characters AND UTF-8 bytes (CJK text triples
@@ -433,7 +449,7 @@ def get_resolved_problems():
     except Exception as e:
         logger.exception("Failed to get resolved problems")
         raise ServiceError(FAILED_RESOLVED_READ) from e
-    return {'resolved': _resolved_in_scope(resolved)}
+    return {'resolved': _resolved_in_scope(resolved, _config_scope(context))}
 
 
 def _resolved_key(context: WorkspaceContext | None) -> dict[str, str]:
@@ -443,13 +459,14 @@ def _resolved_key(context: WorkspaceContext | None) -> dict[str, str]:
     return settings_key(context.ws, RESOLVED_PROBLEMS_KIND)
 
 
-def _resolved_in_scope(resolved: dict) -> dict:
+def _resolved_in_scope(resolved: dict, workspace: WorkspaceScope | None = None) -> dict:
     """Only the problems whose category the caller may see: a key is ``category:subcategory:problem``,
-    so a hidden category's key would name it (owner rule 2026-10-21)."""
+    so a hidden category's key would name it (owner rule 2026-10-21). Judged against the categories of the
+    request's workspace (``workspace``; the deployment's without one), whose problems these are."""
     caller = caller_from_event(app.current_event.raw_event)
     if caller.is_admin and not caller.delegated:
         return resolved
-    scope = scope_for_caller(caller, aggregates_table)
+    scope = scope_for_caller(caller, aggregates_table, workspace)
     if scope.categories_all:
         return resolved
     return {key: entry for key, entry in resolved.items()
@@ -704,30 +721,50 @@ def _brand_key(context: WorkspaceContext | None) -> dict[str, str]:
     return settings_key(context.ws, BRAND_KIND)
 
 
+def _config_scope(context: WorkspaceContext | None) -> WorkspaceScope | None:
+    """The workspace whose categories, dimensions and source profiles the request reads or writes (shared/
+    workspace_config.py); None for a request that names none (the deployment's rows, as before)."""
+    return None if context is None else scope_of(context)
+
+
+def _sees_full_config(event: dict, context: WorkspaceContext | None) -> bool:
+    """Whether the caller gets a configuration in full (category owners' subs and emails, every profile field): its
+    editors. Without a workspace the deployment's ``admins`` (not delegated), as before; inside one the workspace's
+    admins (``require_settings_admin``'s rule; the deployment's group grants nothing there), not delegated."""
+    caller = caller_from_event(event)
+    if context is None:
+        return caller.is_admin and not caller.delegated
+    return is_workspace_admin(context) and not caller.delegated
+
+
 @app.get("/settings/categories")
 @tracer.capture_method
 def get_categories_config():
-    """Get the categories configuration.
+    """Get the categories configuration: the workspace's own with ``X-Workspace-Id`` (any member; a workspace that
+    saved none has none), the deployment's without it.
 
-    Admins get the stored config verbatim (they edit it). Everyone else gets
-    only the categories in their category-access scope, with each owner reduced
-    to ``{username}`` — owner subs and emails are admin-only data.
+    Its editors get the stored config verbatim (they edit it: the deployment's
+    admins, or the workspace's). Everyone else gets only the categories in their
+    category-access scope, with each owner reduced to ``{username}`` — owner subs
+    and emails are admin-only data.
     """
+    event = app.current_event.raw_event
+    context = request_workspace(event, FAILED_CATEGORIES_READ)
     if not aggregates_table:
         return {'categories': [], 'error': 'Aggregates table not configured'}
-    caller = caller_from_event(app.current_event.raw_event)
+    scope = _config_scope(context)
+    caller = caller_from_event(event)
     try:
-        response = aggregates_table.get_item(Key={'pk': CATEGORIES_PK, 'sk': CATEGORIES_SK})
+        item = get_config_item(aggregates_table, CATEGORIES_KIND, CATEGORIES_SETTINGS_KEY, scope, consistent=False)
     except Exception as e:
         logger.exception(f"Failed to get categories config: {e}")
-        return {'categories': [], 'error': 'Failed to retrieve categories'}
-    item = response.get('Item')
+        return {'categories': [], 'error': FAILED_CATEGORIES_READ}
     if not item:
         return {'categories': [], 'updated_at': None}
     categories = item.get('categories', [])
-    if not (caller.is_admin and not caller.delegated):
-        scope = scope_for_caller(caller, aggregates_table)
-        categories = _redacted_categories(categories, scope)
+    if not _sees_full_config(event, context):
+        access = scope_for_caller(caller, aggregates_table, scope)
+        categories = _redacted_categories(categories, access)
     return {'categories': categories, 'updated_at': item.get('updated_at')}
 
 
@@ -757,14 +794,18 @@ def _redacted_categories(categories: object, scope: CategoryScope) -> list[dict]
 @app.put("/settings/categories")
 @tracer.capture_method
 def save_categories_config():
-    """Save the categories configuration (admin only).
+    """Save the categories configuration (an admin's): the workspace's own with ``X-Workspace-Id`` (its admins,
+    ``require_settings_admin``), the deployment's without it (the deployment's ``admins``, as before).
 
     Categories decide how every review is classified, map to the product they
     belong to and its product owners, and drive per-user category access
     (owners see their categories), so only admins may change them. The body is
     validated and normalised by `shared.category_config.validate_categories`.
     """
-    require_admin(app.current_event.raw_event)
+    event = app.current_event.raw_event
+    # A write: the caller's role from the table, not the warm cache.
+    context = request_workspace(event, FAILED_CATEGORIES_SAVE, fresh=True)
+    require_settings_admin(event, context)
     if not aggregates_table:
         raise ConfigurationError('Aggregates table not configured')
     body = json_body_value(app)
@@ -775,12 +816,11 @@ def save_categories_config():
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     try:
-        item = {'pk': CATEGORIES_PK, 'sk': CATEGORIES_SK, 'categories': categories, 'updated_at': now_iso()}
-        aggregates_table.put_item(Item=item)
-        bump_config_version(aggregates_table)
+        _put_config_row(CATEGORIES_KIND, CATEGORIES_SETTINGS_KEY, _config_scope(context), 'categories', categories,
+                        event)
     except Exception as e:
         logger.exception(f"Failed to save categories config: {e}")
-        raise ServiceError('Failed to save categories') from e
+        raise ServiceError(FAILED_CATEGORIES_SAVE) from e
     else:
         return {'success': True, 'message': f'Saved {len(categories)} categories'}
 
@@ -1699,21 +1739,18 @@ def _start_logo_render(event: dict) -> bool:
 # Dimensions, source profiles and erasure jobs (docs/dimensions.md, docs/source-policies.md)
 # ============================================
 
-def _is_full_admin(event: dict) -> bool:
-    caller = caller_from_event(event)
-    return caller.is_admin and not caller.delegated
-
-
 def _settings_row(key: dict) -> dict:
     return _configured_table().get_item(Key=key, ConsistentRead=True).get('Item') or {}
 
 
-def _put_settings_row(key: dict, field: str, value: list, event: dict) -> None:
-    """Save a dimensions / source-profiles row, then bump config_version (cached reads depend on both)."""
+def _put_config_row(kind: str, deployment_key: dict, scope: WorkspaceScope | None, field: str, value: list,
+                    event: dict) -> None:
+    """Save a dimensions / source-profiles row (``scope``'s workspace's, the deployment's without one), then bump
+    config_version (cached reads depend on both; the one counter, so a workspace's save refreshes every cached
+    read, which over-invalidates and never serves a stale one)."""
     table = _configured_table()
-    table.put_item(Item={
-        **key, field: value, 'updated_at': now_iso(), 'updated_by': _caller_label(event),
-    })
+    put_config_item(table, kind, deployment_key, scope,
+                    {field: value, 'updated_at': now_iso(), 'updated_by': _caller_label(event)})
     bump_config_version(table)
 
 
@@ -1726,10 +1763,11 @@ def _validated_list(body_field: str, validate) -> list:
         raise ValidationError(str(exc)) from exc
 
 
-def _stored_dimensions_or_500() -> list[dict]:
-    """The dimensions config on a write path: a corrupt stored row is a 500, never "no dimensions"."""
+def _stored_dimensions_or_500(scope: WorkspaceScope | None = None) -> list[dict]:
+    """The dimensions config (``scope``'s workspace's, the deployment's without one) on a write path: a corrupt stored
+    row is a 500, never "no dimensions"."""
     try:
-        return load_dimensions_config(_configured_table())
+        return load_dimensions_config(_configured_table(), scope)
     except ValueError as exc:
         logger.warning('Stored dimensions config is invalid')
         raise ServiceError('The stored dimensions configuration is invalid; save it again first') from exc
@@ -1738,8 +1776,11 @@ def _stored_dimensions_or_500() -> list[dict]:
 @app.get("/settings/dimensions")
 @tracer.capture_method
 def get_dimensions_route():
-    """The built-in plus the configured dimensions — any signed-in user (filters and chips need them)."""
-    item = _settings_row(DIMENSIONS_SETTINGS_KEY)
+    """The built-in plus the configured dimensions — any signed-in user (filters and chips need them): the
+    workspace's own with ``X-Workspace-Id`` (any member; only the built-ins until it saves some), the deployment's
+    without it."""
+    context = request_workspace(app.current_event.raw_event, FAILED_DIMENSIONS_READ)
+    item = get_config_item(_configured_table(), DIMENSIONS_KIND, DIMENSIONS_SETTINGS_KEY, _config_scope(context))
     try:
         dimensions = validate_dimensions(item.get('dimensions'))
     except ValueError:
@@ -1751,14 +1792,17 @@ def get_dimensions_route():
 @app.put("/settings/dimensions")
 @tracer.capture_method
 def put_dimensions_route():
-    """Replace the dimensions (admin). Body ``{dimensions}``, validated by ``shared.dimension_config``.
+    """Replace the dimensions (an admin's: the workspace's with ``X-Workspace-Id``, the deployment's without it).
+    Body ``{dimensions}``, validated by ``shared.dimension_config``.
 
     Built-in dimensions in the body are ignored (never stored); the answer lists them first.
     """
     event = app.current_event.raw_event
-    require_admin(event)
+    # A write: the caller's role from the table, not the warm cache.
+    context = request_workspace(event, FAILED_DIMENSIONS_SAVE, fresh=True)
+    require_settings_admin(event, context)
     dimensions = _validated_list('dimensions', validate_dimensions)
-    _put_settings_row(DIMENSIONS_SETTINGS_KEY, 'dimensions', dimensions, event)
+    _put_config_row(DIMENSIONS_KIND, DIMENSIONS_SETTINGS_KEY, _config_scope(context), 'dimensions', dimensions, event)
     logger.info('Dimensions saved', extra={'dimensions': len(dimensions)})
     return {'success': True, 'dimensions': with_builtin_dimensions(dimensions)}
 
@@ -1766,13 +1810,16 @@ def put_dimensions_route():
 @app.get("/settings/sources")
 @tracer.capture_method
 def get_sources_route():
-    """Source profiles: in full for an admin, ``{id, label, restricted}`` for everyone else."""
+    """Source profiles: the workspace's own with ``X-Workspace-Id`` (none until it saves some), the deployment's
+    without it; in full for their editors (``_sees_full_config``), ``{id, label, restricted}`` for everyone else."""
+    event = app.current_event.raw_event
+    context = request_workspace(event, FAILED_SOURCES_READ)
     try:
-        profiles = load_source_profiles(_configured_table())
+        profiles = load_source_profiles(_configured_table(), _config_scope(context))
     except ValueError:
         logger.warning('Stored source profiles are invalid; answering with none')
         profiles = []
-    if _is_full_admin(app.current_event.raw_event):
+    if _sees_full_config(event, context):
         return {'sources': profiles}
     return {'sources': [{key: p[key] for key in ('id', 'label', 'restricted')} for p in profiles]}
 
@@ -1780,12 +1827,23 @@ def get_sources_route():
 @app.put("/settings/sources")
 @tracer.capture_method
 def put_sources_route():
-    """Replace the source profiles (admin). ``dimension_defaults`` must name configured dimensions/values."""
+    """Replace the source profiles (an admin's: the workspace's with ``X-Workspace-Id``, the deployment's without
+    it). ``dimension_defaults`` must name configured dimensions/values (the same scope's). A workspace's profile sets
+    no retention window and no Radar brand (400, shared/source_profiles.py ``workspace_profiles_problem``): the
+    deployment's window binds every item, and Radar is not kept per workspace."""
     event = app.current_event.raw_event
-    require_admin(event)
-    dimensions = _stored_dimensions_or_500()
+    # A write: the caller's role from the table, not the warm cache.
+    context = request_workspace(event, FAILED_SOURCES_SAVE, fresh=True)
+    require_settings_admin(event, context)
+    scope = _config_scope(context)
+    if scope is not None:
+        # Checked on the list as sent: normalising drops a legal basis or Radar domains sent without their field.
+        problem = workspace_profiles_problem(json_object_body(app).get('sources'))
+        if problem is not None:
+            raise ValidationError(problem)
+    dimensions = _stored_dimensions_or_500(scope)
     sources = _validated_list('sources', lambda value: validate_source_profiles(value, dimensions))
-    _put_settings_row(SOURCES_SETTINGS_KEY, 'sources', sources, event)
+    _put_config_row(SOURCES_KIND, SOURCES_SETTINGS_KEY, scope, 'sources', sources, event)
     clear_source_profiles_cache()
     logger.info('Source profiles saved', extra={'sources': len(sources)})
     return {'success': True, 'sources': sources}

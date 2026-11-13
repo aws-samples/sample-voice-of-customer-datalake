@@ -542,7 +542,8 @@ class TestInvokeBedrockLlm:
 
         assert handler.invoke_bedrock_llm(record, **kwargs) == {'insights': {}, 'metadata': {}}
 
-        instruction.assert_called_once_with()
+        # The deployment's categories: no workspace scope.
+        instruction.assert_called_once_with(None)
         enrich.assert_called_once_with(
             record, 'CATEGORIES', converse_fn=handler.converse_detailed, raise_on_throttle=raise_on_throttle,
             dimensions_config=[feedback_type_dimension()],

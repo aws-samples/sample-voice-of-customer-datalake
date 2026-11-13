@@ -78,4 +78,4 @@ def test_a_message_without_a_source_looks_up_the_empty_id() -> None:
     cached = MagicMock(return_value=_profile())
     with patch.object(source_policy, 'cached_source_profile_strict', cached):
         policy_message({'text': 'hi'})
-    cached.assert_called_once_with('')
+    cached.assert_called_once_with('', None)

@@ -17,6 +17,27 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.08.00] - 2026-11-13
+
+Multi-workspace, phase 2: the configuration cut-over. The categories, the dimensions and the source profiles are each workspace's, in both directions at once: a workspace's admins edit its own, and its feedback is processed, ingested and read with them. Without a workspace everything reads and writes the deployment's rows, as before. No workspace ingests yet: the hold stays ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).
+
+### Added
+
+- Inside a workspace, `GET` and `PUT /settings/categories`, `/settings/dimensions` and `/settings/sources` act in it (`X-Workspace-Id`): any member reads the workspace's own rows, and only its admins save them; the deployment's `admins` group grants nothing there, and a member of another workspace gets the one 404. A workspace that has saved none of the three has none: its feedback gets the built-in default categories and the built-in dimensions, never the deployment's rows.
+- Privacy by default in a workspace: a source without a profile in that workspace has its personal data redacted (and keeps no raw copy) until the workspace's admins save a profile that allows it. The deployment's own default is unchanged.
+- The workspace's settings page (`/w/{slug}/workspace-settings`) has the categories, dimensions and source-policies editors for the workspace's admins, whether or not they are deployment administrators; its other members see who can change them.
+
+### Changed
+
+- The processor classifies a workspace's message with that workspace's categories and dimensions and stores it under that workspace's source profile (PII policy, default dimension values and tags, inline raw-copy policy). The plugin ingestors' source policy and raw archive, a workspace webhook's delivery and a workspace form's submission apply the workspace's profile too, and the feedback and metrics routes' category access checks read the request's workspace's restricted sources and categories.
+- A workspace's source profile cannot set a retention window or a Radar brand (400): the retention windows stay the deployment's and apply to every workspace's items, and at ingestion a workspace's source carries the deployment's window, so a source with a window keeps no whole-file original there either.
+- Administration's Categories, Dimensions and Source policies always edit the deployment's own settings, from any address, for the deployment's administrators as before; inside a workspace they say so plainly and link to the workspace's settings page, which edits the workspace's own (without the retention and Radar fields, the category reprocess or the erasure panels). Inside a workspace a delegated caller (an MCP token, an agent) cannot save its admin settings. The members page's and platform console's notice lists the categories, dimensions and source policies among what each workspace keeps (9 languages).
+
+### Upgrade notes
+
+- No stack, table or IAM change. The processor, the ingestors, the webhooks and the API Lambdas that read these settings already read every row of `voc-aggregates` (so the `WS#{ws}#SETTINGS#categories`, `#dimensions` and `#sources` rows too), and the settings API already writes workspace settings rows (the brand's, since 6.18.00).
+- Nothing to migrate: the deployment's categories, dimensions and source profiles stay where they are and keep applying to everything without a workspace. A workspace starts with none of its own; its admins set them on its settings page, while Administration keeps editing the deployment's.
+
 ## [7.07.00] - 2026-11-13
 
 Multi-workspace, phase 2: the voc-multiplayer-c track's configuration-readers slice merged. The categories, the dimensions and the source profiles can be read per workspace; nothing changes yet, since no caller passes a workspace and Administration still edits the deployment's rows ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).

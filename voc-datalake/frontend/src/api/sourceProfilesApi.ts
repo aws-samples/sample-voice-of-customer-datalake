@@ -21,6 +21,7 @@
 import { post, put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
+import type { RequestScope } from './baseUrl'
 import { StringMapSchema, TagsSchema } from './dimensionsSchema'
 import { toOptionalFiniteNumber } from './lenientFields'
 import { parsedList } from './schemaList'
@@ -213,11 +214,16 @@ export const sourceProfilesKey = () => ['source-profiles'] as const
 export const erasureJobsKey = () => ['erasure-jobs'] as const
 
 export const sourceProfilesApi = {
-  getProfiles: async (): Promise<SourceProfile[]> =>
-    normalizeSourceProfiles(await fetchApi<unknown>('/settings/sources')),
+  /** `scope` (workspace/configScope.ts): the workspace's profiles (default) or the deployment's. */
+  getProfiles: async (scope: RequestScope = 'workspace'): Promise<SourceProfile[]> =>
+    normalizeSourceProfiles(await (scope === 'deployment'
+      ? fetchApi<unknown>('/settings/sources', { method: 'GET' }, 'deployment')
+      : fetchApi<unknown>('/settings/sources'))),
 
-  saveProfiles: async (sources: SourceProfile[]): Promise<SourceProfile[]> =>
-    normalizeSourceProfiles(await fetchApi<unknown>('/settings/sources', put({ sources }))),
+  saveProfiles: async (sources: SourceProfile[], scope: RequestScope = 'workspace'): Promise<SourceProfile[]> =>
+    normalizeSourceProfiles(await (scope === 'deployment'
+      ? fetchApi<unknown>('/settings/sources', put({ sources }), 'deployment')
+      : fetchApi<unknown>('/settings/sources', put({ sources })))),
 
   startErasure: async ({ source, ...request }: ErasureRequest): Promise<ErasureJob | null> =>
     normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post(source === undefined || source === ''
