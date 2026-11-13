@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.06.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's public-routes slice merged: feedback forms and webhooks can belong to a workspace, routed by a server-side record, never by what the caller sends. No workspace ingests yet: a workspace form's submission and a delivery on a workspace's webhook answer the same 409 as enabling a plugin and every run in a workspace, until the hold lifts ([docs/multi-workspace.md](docs/multi-workspace.md)).
+
+### Added
+
+- Feedback forms can be created in a workspace (`X-Workspace-Id`: editors and admins write, any member reads); each workspace form gets a `FORM#{id}` lookup row in `voc-workspaces`, and the public config, iframe and submit routes route by that row, never by the request. Once per-workspace ingestion is on, a workspace form's submissions are queued in its workspace and their raw copies kept under `ws/{ws}/raw/feedback_form/`. A form whose workspace is unknown or being deleted answers like an unknown id ([docs/feedback-forms.md](docs/feedback-forms.md#workspaces-since-70600)).
+- `POST /webhooks/{plugin}/{ws}`: a workspace's own webhook endpoint, verified with that workspace's own webhook secret (never the shared one; a secret is kept 60 seconds per name, so a rotation takes effect within a minute); anything that routes nowhere gets the bad-signature 401. `/webhooks/{plugin}` is unchanged.
+
+### Changed
+
+- New feedback forms get 128-bit ids: `ff_` and 32 hex characters in a workspace, `fd_` and 32 hex characters deployment-wide; existing 8-character ids keep working. A deployment update never creates a form (404 for a missing one), and a deployment update or delete of an id a workspace's lookup row holds answers 404. Deleting a workspace's form writes its `form_deleted` audit row (`AUDIT#WS#{ws}`) first; deleting an id the workspace does not hold answers 404 and records nothing.
+- The ingestion hold covers the public routes: while per-workspace ingestion is off, creating a form in a workspace answers 409 (so no form is embedded that would refuse its visitors), a submission to a workspace's form answers 409 before anything is archived or queued, and a verified delivery on a workspace's webhook answers 409 before its body is parsed; the one writer of `workspace_id` on a payload or message refuses one too. Deployment forms and `/webhooks/{plugin}` are unchanged.
+- The dev mock mints deployment form ids as the API does (`fd_` and 32 hex characters) and, like the API, answers 404 to an update of a missing form.
+- IAM: the feedback-form role attaches the API stack's one workspace-resolution managed policy (as the other APIs that act in a workspace), may call Cognito `AdminListGroupsForUser` and `AdminGetUser` (the live platform-admin check), and may get, put and delete `FORM#*` rows in `voc-workspaces`; the audit-row guard names it a writer of `AUDIT#WS#*` rows only (the `form_deleted` row). The webhook role may read `WS#*` rows of `voc-workspaces` and the `voc/ws/*` secrets. Both may write raw copies under one workspace id's `raw/` prefix for their own source.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack changes (the feedback-form and webhook roles' policies and environment, and one new API Gateway resource and method per webhook plugin, `/webhooks/{plugin}/{ws}`); no table, index or cross-stack reference changes, and nothing is migrated.
+- IAM: review the feedback-form and webhook roles' new grants above if you restrict IAM changes. Like the operator APIs' roles, the webhook role can read every workspace's credentials secret; only the code keeps a delivery to its own workspace's (TENETS.md, tenet 6).
+- Existing forms keep their ids and work as before; embeds of a new form use its new, longer id.
+- Inside a workspace the web app's Feedback Forms page lists that workspace's forms (none yet, since creating one there answers 409 while per-workspace ingestion is held), so the deployment's forms cannot be reached from the web app by anyone who has a workspace until the next web-app release; their embeds and submissions keep working.
+
 ## [7.05.00] - 2026-11-13
 
 Multi-workspace: the tenet questions the design left open are settled by the owner, and TENETS.md gains a data lake tenet, D8, "Each workspace is its own boundary" ([docs/multi-workspace.md](docs/multi-workspace.md#tenet-questions-settled-owner-2026-11-12)). Docs and tenets only: the platform, its stacks and its stored data do not change.

@@ -138,6 +138,13 @@ def no_real_aws_calls():
     )
 
 
+@pytest.fixture
+def ingestion_on(monkeypatch):
+    """The plugins' webhook and ingestor tests that run in a workspace once the hold is lifted take this; the
+    others keep the shipped flag (off), which refuses every workspace delivery."""
+    monkeypatch.setattr('shared.workspace_plugin_settings.PER_WORKSPACE_INGESTION', True)
+
+
 @pytest.fixture(autouse=True)
 def no_source_profiles():
     """Every plugin message passes the source policy (`_shared/source_policy_gate.py`);

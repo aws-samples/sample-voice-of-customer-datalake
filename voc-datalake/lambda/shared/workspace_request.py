@@ -26,7 +26,7 @@ middleware, admin gate, credentials secret and Radar refusal); its rules:
 * ``ResolvedRoutes.require_request_admin``: an admin-only route's gate on either path: the deployment's ``admins`` group without
   the header, the caller's admin role in the workspace with it (a member admin or an entered platform admin; the
   deployment's ``admins`` group grants nothing inside a workspace);
-* ``workspace_payload``: the one way a request-facing module names a workspace on an asynchronous invoke payload,
+* ``workspace_payload`` (shared/workspace_routing.py): the one way a request-facing module names a workspace on an asynchronous invoke payload,
   from the request's RESOLVED membership (a ``WorkspaceContext``, which only shared/workspace.py and
   shared/workspace_members.py build), set after every other field, so a body's ``workspace_id`` never chooses it;
 * ``ResolvedRoutes.refuse_radar_brand``: a workspace cannot save a Radar brand (Radar is not keyed by workspace; the processor would
@@ -37,7 +37,7 @@ middleware, admin gate, credentials secret and Radar refusal); its rules:
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -58,13 +58,12 @@ from shared.workspace import (
 )
 from shared.workspace_plugin_settings import hold_workspace_ingestion
 from shared.workspace_plugin_store import credentials_secret_id, read_secret_json
-from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_of
+from shared.ws_repo import WorkspaceScope, scope_of
 
 __all__ = [
     'RequestWorkspace',
     'ResolvedRoutes',
     'deployment_only',
-    'workspace_payload',
 ]
 
 #: The one answer of a module that does not act in a workspace yet to a request that sends ``X-Workspace-Id``.
@@ -202,23 +201,6 @@ class ResolvedRoutes:
         refuse every message it stamps (``WorkspaceRadarRefusedError``, then the DLQ), so the save is refused."""
         if self.context() is not None and radar_brand:
             raise ValidationError(RADAR_NOT_IN_WORKSPACES)
-
-
-def workspace_payload(payload: Mapping[str, Any], context: object) -> dict[str, Any]:
-    """An asynchronous invoke payload on either path (an ingestor's Run now, a web scraper's run).
-
-    A ``workspace_id`` among ``payload``'s fields (one a body sent) is dropped first, so deployment-wide (``context``
-    None) the payload names no workspace, and in a workspace ``workspace_id`` is the resolved membership's workspace,
-    set after every other field. ``context`` (``WorkspaceContext | None``, typed ``object`` so the check below is
-    also a type guard) must be a ``WorkspaceContext`` (shared/workspace.py ``resolve_workspace`` builds it;
-    shared/test/test_ws_raw_access.py pins who may), never a stand-in (``TypeError``).
-    """
-    fields = {name: value for name, value in payload.items() if name != WORKSPACE_FIELD}
-    if context is None:
-        return fields
-    if not isinstance(context, WorkspaceContext):
-        raise TypeError('a workspace payload needs a resolved workspace')
-    return {**fields, WORKSPACE_FIELD: context.ws}
 
 
 #: The deployment-only routes that would start ingestion in the workspace a request names (method, path): while

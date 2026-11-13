@@ -94,6 +94,9 @@ export const CUSTOM_AUTHORIZER_ROUTE_PREFIXES = ['/mcp'];
  *  authorization invariant until it is added here. */
 export const INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES = [
   'POST /webhooks/github_issues',
+  // A workspace's own endpoint (docs/multi-workspace.md, "Public and non-user entry points"): the {ws} value is only
+  // the key of its stored META, the signature checked with that workspace's own webhook secret.
+  'POST /webhooks/github_issues/{ws}',
 ];
 
 export const PLUGINS_DIR = join(__dirname, '..', '..', 'plugins');

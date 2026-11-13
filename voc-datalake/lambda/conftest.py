@@ -211,6 +211,13 @@ def _reset_source_profiles():
     _clear_source_profiles()
 
 
+@pytest.fixture
+def ingestion_on(monkeypatch):
+    """Per-workspace ingestion on, as once the hold lifts (shared/workspace_plugin_settings.py): for the tests of the
+    runs, forms and payloads in a workspace; a test that does not take it sees the hold as it ships."""
+    monkeypatch.setattr('shared.workspace_plugin_settings.PER_WORKSPACE_INGESTION', True)
+
+
 #: The random tail every `shared.ids.timestamped_id` gets under `fixed_id_suffix`.
 FIXED_ID_SUFFIX = 'a1b2c3d4'
 

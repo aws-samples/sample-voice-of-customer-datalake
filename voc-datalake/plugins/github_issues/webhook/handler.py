@@ -10,6 +10,11 @@ authenticated here, BEFORE anything is parsed or enqueued:
 * no configured ``webhook_secret`` means every delivery is refused (503) —
   fail closed, never "accept unsigned".
 
+``POST /webhooks/github_issues/{ws}`` is a workspace's own endpoint
+(``_shared/base_webhook.py``): the secret, the repos and the labels come from
+that workspace's secret, and a workspace that routes nowhere or has no
+``webhook_secret`` gets the bad signature's 401, after the body checks.
+
 A verified delivery is mapped by the same ``_shared/github_mapping.py`` the
 ingestor uses, so a pushed issue and a later poll of it produce one item id and
 the processor keeps one item, refreshed in place by whichever copy is newer
@@ -29,8 +34,10 @@ from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from _shared.audit import emit_audit_event
-from _shared.base_webhook import BaseWebhook, logger, metrics, tracer
+from _shared.base_webhook import BaseWebhook, delivery_workspace, logger, metrics, tracer
 from _shared.github_config import GitHubSourceConfig
 from _shared.github_mapping import (
     comment_item,
@@ -40,6 +47,7 @@ from _shared.github_mapping import (
     issue_labels,
 )
 from shared.invocation_cost import measure_invocation_cost
+from shared.workspace_routing import RoutedWorkspace
 
 #: GitHub caps deliveries at 25 MB, but an issue or comment event is a few KB;
 #: anything near this is not a delivery this plugin needs to read.
@@ -76,16 +84,22 @@ def signature_matches(secret: str, body: bytes, signature: str | None) -> bool:
 class GitHubIssuesWebhook(BaseWebhook):
     """Verifies, maps and enqueues one GitHub delivery."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, routed: RoutedWorkspace | None = None, *, refused: bool = False):
+        super().__init__(routed, refused=refused)
         # Never logged, never echoed in a response.
         self._webhook_secret = str(self.secrets.get("webhook_secret", "")).strip()
         self.config = GitHubSourceConfig.from_secrets(self.secrets)
 
     def rejection(self, event: dict) -> dict | None:
-        """The refusal for an unauthenticated or oversized request, else None."""
+        """The refusal for an unauthenticated or oversized request, else None.
+
+        Deployment-wide (``/webhooks/github_issues``) as before: no secret 503 first. On a workspace's route
+        (``/webhooks/github_issues/{ws}``) the body is checked first, so its 400 and 413 depend on the body alone,
+        then a workspace that routes nowhere, one with no webhook secret and a bad signature all get the same 401:
+        no answer says whether the workspace exists or has the plugin.
+        """
         client_ip = self._extract_client_ip(event)
-        if not self._webhook_secret:
+        if not self._webhook_secret and not self.on_workspace_route:
             reason, response = "not_configured", _response(503, {"error": "Webhook not configured"})
         else:
             try:
@@ -97,6 +111,7 @@ class GitHubIssuesWebhook(BaseWebhook):
             elif len(body) > MAX_BODY_BYTES:
                 reason, response = "too_large", _response(413, {"error": "Payload too large"})
             elif not signature_matches(self._webhook_secret, body, _header(event.get("headers"), "x-hub-signature-256")):
+                # A refused delivery holds no secret, so it fails here too.
                 reason, response = "bad_signature", _response(401, {"error": "Invalid signature"})
             else:
                 return None
@@ -128,8 +143,16 @@ class GitHubIssuesWebhook(BaseWebhook):
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event: dict, context: Any) -> dict:
-    """API Gateway proxy entry point for ``POST /webhooks/github_issues``."""
-    webhook = GitHubIssuesWebhook()
+    """API Gateway proxy entry point for ``POST /webhooks/github_issues`` and ``/webhooks/github_issues/{ws}``."""
+    try:
+        refused, routed = delivery_workspace(event)
+    except (ClientError, BotoCoreError):
+        # The workspace's row could not be read: nothing was read or queued. GitHub does not redeliver a failed
+        # delivery by itself; the scheduled poll picks the item up, and the 500 (and WebhookErrors) tells the operator.
+        logger.exception("github_issues webhook: the workspace could not be read")
+        metrics.add_metric(name="WebhookErrors", unit="Count", value=1)
+        return _response(500, {"error": "Internal server error"})
+    webhook = GitHubIssuesWebhook(routed, refused=refused)
     refusal = webhook.rejection(event)
     if refusal:
         return refusal

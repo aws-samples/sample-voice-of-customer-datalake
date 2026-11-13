@@ -31,9 +31,10 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   ConversationsTable: ['VocApiStack/ChatLambdaRole'],
   // A platform admin's entry, a workspace's creation and its membership changes (AUDIT#WS#<ws>); the users API a
   // deleted user's membership removals (AUDIT#WS#* only); the stack's workspace-resolution policy a platform admin's
-  // entry from a domain API (AUDIT#WS#* only, lib/utils/workspace-resolution-grants.ts); every other role writing
+  // entry from a domain API (AUDIT#WS#* only, lib/utils/workspace-resolution-grants.ts); the feedback forms a
+  // workspace form's form_deleted row (AUDIT#WS#* only, beside their own FORM# writes); every other role writing
   // voc-workspaces (voc-retention's de-identification) gets the forge Deny.
-  WorkspacesTable: ['VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
+  WorkspacesTable: ['VocApiStack/FeedbackFormLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy',
     'VocApiStack/WorkspacesLambdaRole'],
 };
 
@@ -123,10 +124,10 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': [partition] } });
   });
 
-  it('only the settings and users APIs and the workspace-resolution policy carry a one-partition deny', () => {
+  it('only the settings, users and feedback-form APIs and the workspace-resolution policy carry a one-partition deny', () => {
     const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
-    expect(holders.map(([role]) => role).sort(byCodeUnit))
-      .toStrictEqual(['VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy']);
+    expect(holders.map(([role]) => role).sort(byCodeUnit)).toStrictEqual(['VocApiStack/FeedbackFormLambdaRole',
+      'VocApiStack/SettingsLambdaRole', 'VocApiStack/UsersLambdaRole', 'VocApiStack/WorkspaceResolutionPolicy']);
   });
 
   // The data-path and operator APIs that resolve X-Workspace-Id (7.04.00) put a platform admin's entry row through

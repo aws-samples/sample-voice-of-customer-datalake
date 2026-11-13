@@ -71,11 +71,13 @@ from shared.ingest_tables import table_view, update_with_key
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
-from shared.request_workspace import WRITER_ROLES
 from shared.scoped_query import query_partition
 from shared.silver_provenance import REASON_CATEGORY_EDIT, REASON_DIMENSIONS_EDIT
 from shared.tables import get_aggregates_table, get_feedback_table
 from shared.timestamps import now_iso
+
+# The workspace roles that may edit a review (docs/multi-workspace.md, "Roles": an edit is a write).
+from shared.workspace import EDITING_ROLES
 from shared.workspace_request import RequestWorkspace
 from shared.ws_repo import WorkspaceScope, scope_of
 
@@ -94,7 +96,7 @@ def _edit_scope(event: dict) -> WorkspaceScope | None:
     if context is None:
         return None
     # The workspace roles that write (docs/multi-workspace.md, "Roles": an edit is a write).
-    if context.role not in WRITER_ROLES:
+    if context.role not in EDITING_ROLES:
         raise AuthorizationError('Editing feedback needs the editor or admin role in this workspace')
     return scope_of(context)
 

@@ -179,8 +179,10 @@ class TestANewFormIsStoredWithTheDocumentedDefaults:
             after = datetime.now(UTC)
         assert item['pk'] == 'FEEDBACK_FORM'
         assert item['sk'] == f"FORM#{item['form_id']}"
-        assert len(item['form_id']) == 8
-        assert int(item['form_id'], 16) >= 0
+        # A deployment form: `fd_` + 32 hex (128 random bits, unguessable; never looked up in voc-workspaces).
+        assert item['form_id'].startswith('fd_')
+        assert len(item['form_id']) == 35
+        assert int(item['form_id'].removeprefix('fd_'), 16) >= 0
         assert item['brand_name'] == 'Acme'
         assert item['created_at'] == item['updated_at']
         assert before <= datetime.fromisoformat(item['created_at']) <= after
@@ -450,8 +452,8 @@ class TestListingForms:
         assert payload == {'success': True,
                            'forms': [h.item_to_form(self.FORMS[i]) for i in (2, 0, 1)]}
         # Strongly consistent: a form deleted a moment ago must not come back in the list.
-        table.query.assert_called_once_with(KeyConditionExpression='pk = :pk',
-                                            ExpressionAttributeValues={':pk': 'FEEDBACK_FORM'},
+        # One partition query through shared/scoped_query.py: boto3's `Key('pk').eq('FEEDBACK_FORM')`.
+        table.query.assert_called_once_with(KeyConditionExpression=Key('pk').eq('FEEDBACK_FORM'),
                                             ConsistentRead=True)
 
     def test_no_items_key_is_no_forms(self, table, api_gateway_event, lambda_context):
@@ -626,7 +628,15 @@ class TestAnUpdateSetsOnlyWhatWasSent:
             'ExpressionAttributeNames': {'#updated_at': 'updated_at', '#name': 'name', '#enabled': 'enabled'},
             'ExpressionAttributeValues': {':updated_at': stamp, ':name': 'N', ':enabled': True},
             'ReturnValues': 'ALL_NEW',
+            # Never an upsert: a form that is not there is a 404, not a new stub row.
+            'ConditionExpression': 'attribute_exists(sk)',
         }
+
+    def test_an_update_of_a_form_that_is_not_there_is_a_404(self, table, api_gateway_event, lambda_context):
+        table.update_item.side_effect = ClientError({'Error': {'Code': 'ConditionalCheckFailedException'}},
+                                                   'UpdateItem')
+        response, payload = self._put(api_gateway_event, lambda_context, {'title': 'T'})
+        assert (response['statusCode'], payload['error']) == (404, 'Form not found')
 
     def test_an_update_answer_without_attributes_is_a_blank_form(self, table, api_gateway_event, lambda_context):
         table.update_item.return_value = {}

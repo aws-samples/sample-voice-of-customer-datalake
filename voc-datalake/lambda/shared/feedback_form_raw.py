@@ -1,7 +1,8 @@
 """The raw copy of one feedback-form submission (``POST /feedback-forms/{id}/submit``).
 
 Written before the source policy and the normalisation touch the body, so the lake keeps what
-the customer typed: ``raw/feedback_form/{YYYY}/{MM}/{DD}/{feedback id}/{sha16}.json`` with
+the customer typed: ``raw/feedback_form/{YYYY}/{MM}/{DD}/{feedback id}/{sha16}.json`` (a workspace's form:
+``ws/{ws}/raw/feedback_form/…``) with
 connector ``feedback_form`` at the app release (``shared/raw_copy.py``). Opt-in: only once an
 admin has saved a ``feedback_form`` source profile that permits a raw copy; a redact /
 summary-only profile keeps none (privacy wins). The queued message references it (``s3_raw_uri``),
@@ -24,6 +25,7 @@ from typing import Any, Final
 from shared.archive_keys import archive_key_stem
 from shared.raw_copy import app_json_copy, source_permits_raw_copy
 from shared.source_policy import raw_archive_allowed
+from shared.ws_repo import WorkspaceScope
 
 __all__ = ['FEEDBACK_FORM_SOURCE', 'archive_submission']
 
@@ -53,18 +55,20 @@ def submitted_content(form: Mapping[str, Any], body: Mapping[str, Any], text: st
 
 def archive_submission(form_id: str, form: Mapping[str, Any], feedback_id: str, body: Mapping[str, Any],
                        validated: tuple[str, Mapping[str, str]], profile: Mapping[str, Any],
-                       now: datetime) -> str | None:
+                       now: datetime, *, scope: WorkspaceScope | None = None) -> str | None:
     """The ``s3://`` URI of the submission's raw copy; None when the policy forbids one or the write failed.
 
     OPT-IN like the board copies: written only once an admin has saved a ``feedback_form`` source
     profile that permits a copy (the route is public and anonymous traffic supplies the content, so a
     deployment never starts persisting it silently on upgrade). ``validated`` = ``(text, dimensions)``
     as the route validated them (``_validated_submission``, ``_widget_dimensions``): the copy keeps
-    those, never the body's own ``text`` / ``dimensions``.
+    those, never the body's own ``text`` / ``dimensions``. A workspace's form (``scope``, from its lookup
+    row) keeps it under ``ws/{ws}/raw/feedback_form/…``; the profile is the deployment's, as the
+    processor's is for every workspace message until per-workspace settings (phase 3).
     """
     if not raw_archive_allowed(profile) or not source_permits_raw_copy(FEEDBACK_FORM_SOURCE, require_profile=True):
         return None
     text, dimensions = validated
     return app_json_copy(FEEDBACK_FORM_SOURCE, now.date(), archive_key_stem(feedback_id),
                          {'form_id': form_id, 'submission': submitted_content(form, body, text, dimensions)},
-                         FEEDBACK_FORM_SOURCE)
+                         FEEDBACK_FORM_SOURCE, scope)

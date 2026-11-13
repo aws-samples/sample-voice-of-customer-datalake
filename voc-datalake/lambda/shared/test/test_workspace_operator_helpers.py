@@ -31,8 +31,8 @@ from shared.workspace_request import (
     ResolvedRoutes,
     WorkspaceNotResolved,
     deployment_only,
-    workspace_payload,
 )
+from shared.workspace_routing import workspace_payload
 from shared.ws_repo import OutOfScopeError, scope_from_key
 
 WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
@@ -85,6 +85,7 @@ class TestTheTwoPathAdminGate:
 
 
 class TestTheInvokePayload:
+    @pytest.mark.usefixtures('ingestion_on')
     def test_in_a_workspace_the_resolved_one_is_set_after_every_field(self):
         payload = workspace_payload({'execution_id': 'e', 'workspace_id': OTHER}, _context())
 
@@ -118,6 +119,8 @@ class TestDeploymentOnly:
 
     def test_once_the_hold_lifts_a_reprocess_gets_the_one_400(self, monkeypatch):
         monkeypatch.setattr(workspace_plugin_settings, 'PER_WORKSPACE_INGESTION', True)
+
+
         app, route = _app(_event(header=WS), 'POST', '/s3-import/reprocess'), MagicMock()
 
         with pytest.raises(ValidationError, match=DEPLOYMENT_ONLY):

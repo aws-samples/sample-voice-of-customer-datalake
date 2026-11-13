@@ -294,14 +294,43 @@ beyond the capabilities above needs a change to the stack code.
 |----------|-------|
 | Lambda | `voc-webhook-<id>`, Python 3.14, arm64, 30-second timeout, the manifest's `infrastructure.webhook.memory` (default 256 MB; `github_issues` 512 MB), the API layer |
 | Bundle | `plugins/<id>/webhook/*` plus `_shared` and `shared`, like an ingestor |
-| Route | `/webhooks/<id>` for each manifest method, no authorizer, no CORS preflight |
-| Throttle | 10 requests per second, burst 20, per route |
-| Environment | `PROCESSING_QUEUE_URL`, `SECRETS_ARN`, `BRAND_NAME`, `SOURCE_PLATFORM`, `RAW_DATA_BUCKET`, `AGGREGATES_TABLE`, PII-redaction settings |
+| Route | `/webhooks/<id>` and `/webhooks/<id>/{ws}` (a workspace's endpoint, below) for each manifest method, no authorizer, no CORS preflight |
+| Throttle | 10 requests per second, burst 20, per route (the `{ws}` route is one more bucket, shared by every workspace) |
+| Environment | `PROCESSING_QUEUE_URL`, `SECRETS_ARN`, `BRAND_NAME`, `SOURCE_PLATFORM`, `RAW_DATA_BUCKET`, `AGGREGATES_TABLE`, `WORKSPACES_TABLE`, `WORKSPACE_SECRET_PREFIX`, PII-redaction settings |
 
 All webhook Lambdas share one role: KMS, `sqs:SendMessage` on the processing queue,
-`secretsmanager:GetSecretValue` on the shared secret, `dynamodb:GetItem` on the aggregates table
-(the source profile), Comprehend PII detection and `s3:PutObject` on `raw/<id>/*` for each enabled
-webhook plugin. Webhooks have no feedback-table access.
+`secretsmanager:GetSecretValue` on the shared secret and on the workspaces' secrets (`voc/ws/*`),
+`dynamodb:GetItem` on the aggregates table (the source profile) and on the `WS#*` rows of
+`voc-workspaces`, Comprehend PII detection and `s3:PutObject` on `raw/<id>/*` and
+`ws/{one workspace id}/raw/<id>/*` for each enabled webhook plugin. Webhooks have no
+feedback-table access.
+
+### A workspace's webhook endpoint (since 7.06.00)
+
+While per-workspace ingestion is held (`PER_WORKSPACE_INGESTION` off, [multi-workspace.md](multi-workspace.md#per-workspace-configuration)), a verified delivery on it answers 409 with the hold's reason, before its body is parsed, archived or queued.
+
+`POST /webhooks/<id>/{ws}` is a workspace's own endpoint ([multi-workspace.md](multi-workspace.md)).
+The `{ws}` value is only the key of that workspace's stored row: it must be the well-formed id
+of an active workspace whose credentials secret is ready. The webhook secret and the plugin's
+settings (for `github_issues`: the repositories and labels) then come from that workspace's own
+secret, `voc/ws/{ws}/credentials`, in the plugin's namespace, never from the shared secret. A
+verified delivery is archived under `ws/{ws}/raw/<id>/` and queued with that workspace. A
+malformed or unknown id, a workspace being deleted, a secret that is not ready or holds no
+webhook secret, a signature made with another workspace's secret and an unsigned delivery all
+get the same answer as a bad signature (`github_issues`: 401), after the body checks, so the
+answer does not say whether a workspace exists or uses the plugin. The time the answer takes
+can still differ (a workspace that routes nowhere costs no secret read). A warm Lambda container keeps
+a workspace's secret for 60 seconds and then reads it again, so a webhook secret a workspace
+rotates (or replaces after a leak) takes effect in every container within 60 s, and a flood of
+forged deliveries costs no extra secret read. Load: the `{ws}` route has one stage throttle for
+every workspace together (API Gateway keys a method setting by resource path, not by the path's
+value), so a busy or hostile sender to one workspace's endpoint can push other workspaces'
+deliveries into 429s, never the deployment's route; the plugin's scheduled ingestor then fills the
+gap, as it does for the deployment. A throttle per workspace would need a usage plan or a WAF
+rule per workspace. `/webhooks/<id>` stays
+deployment-wide, exactly as before. Nothing in the web app shows the workspace endpoint yet, and
+a workspace's webhook secret is saved with the integrations API's credentials route in that
+workspace.
 
 ### S3 trigger and the shared secret
 
@@ -449,7 +478,10 @@ ingestor yields. `handle(event, context)` decodes the body, calls the parser, no
 (`source_channel` defaults to `webhook`, `is_webhook: true`) and queues the items.
 
 `handle()` performs **no authentication**. The route is public, so the plugin's `lambda_handler`
-must verify the request before calling it. `github_issues` is the reference implementation
+must verify the request before calling it. On a workspace's route (`/webhooks/<id>/{ws}`) the
+handler must first route the delivery with `delivery_workspace(event)` and build the webhook with
+its result: `handle()` answers 401, and handles nothing, for a delivery on that route that was not
+routed to a workspace. `github_issues` is the reference implementation
 (`plugins/github_issues/webhook/handler.py`):
 
 - no `webhook_secret` configured: 503, every delivery refused;
@@ -502,7 +534,9 @@ whole secret, so the namespace is the boundary between plugins:
 - It **fails closed**. A missing or malformed plugin identity, a secret that is not a JSON object,
   or no key under the prefix raises `ConfigurationError`. The error names the plugin and the
   expected prefix, never a value or another plugin's keys. The log line starts with
-  `Refusing to load plugin secrets`.
+  `Refusing to load plugin secrets`. A delivery to a workspace's webhook endpoint reads that
+  workspace's secret instead, with the same filter; there a secret that is unreadable or holds
+  none of the plugin's keys is refused like a bad signature, not raised.
 
 Consequences for plugin authors:
 

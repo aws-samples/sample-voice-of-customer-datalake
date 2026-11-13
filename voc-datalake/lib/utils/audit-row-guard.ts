@@ -109,6 +109,10 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // A domain API acting in a workspace (the settings API first): a platform admin's entry (AUDIT#WS#<ws> only,
   // lambda/shared/request_workspace.py), by the stack's one workspace-resolution policy, not by each role.
   { table: 'workspacesTable', rolePathSuffix: `/${WORKSPACE_RESOLUTION_POLICY_ID}`, partitionKey: 'AUDIT#WS#*' },
+  // The feedback forms (7.06.00): they attach that policy too, and also write voc-workspaces from their own policy
+  // (a workspace form's FORM# lookup row, and its form_deleted audit row before the delete), so the role is named a
+  // writer of AUDIT#WS#* itself (lib/stacks/api-engagement-lambdas.ts).
+  { table: 'workspacesTable', rolePathSuffix: '/FeedbackFormLambdaRole', partitionKey: 'AUDIT#WS#*' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',

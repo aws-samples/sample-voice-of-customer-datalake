@@ -103,7 +103,8 @@ from shared.url_policy import (
     validate_url,
 )
 from shared.workspace_plugin_settings import hold_workspace_ingestion
-from shared.workspace_request import ResolvedRoutes, workspace_payload
+from shared.workspace_request import ResolvedRoutes
+from shared.workspace_routing import workspace_payload
 
 secretsmanager = get_secrets_client()
 lambda_client = boto3.client("lambda")

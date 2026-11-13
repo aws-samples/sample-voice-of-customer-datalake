@@ -34,6 +34,7 @@ __all__ = [
     'date_partition',
     'feedback_id_partition',
     'item_key',
+    'source_partition',
     'urgency_partition',
 ]
 
@@ -47,7 +48,13 @@ def item_key(scope: WorkspaceScope | None, source: str, feedback_id: str) -> dic
     """``{pk, sk}``: ``SOURCE#{source}`` / ``FEEDBACK#{id}``, or the workspace's ``WS#{ws}#SOURCE#{source}``."""
     if scope is not None:
         return feedback_key(scope, source, feedback_id)
-    return {'pk': f'SOURCE#{source}', 'sk': f'FEEDBACK#{feedback_id}'}
+    return {'pk': source_partition(None, source), 'sk': f'FEEDBACK#{feedback_id}'}
+
+
+def source_partition(scope: WorkspaceScope | None, source: str) -> str:
+    """The base table's partition of a source's items (``item_key``'s ``pk``): ``SOURCE#{source}``, or
+    ``WS#{ws}#SOURCE#{source}`` (a feedback form's stats read its brand's partition)."""
+    return scope.key('SOURCE', source) if scope is not None else f'SOURCE#{source}'
 
 
 def date_partition(scope: WorkspaceScope | None, day: str) -> str:

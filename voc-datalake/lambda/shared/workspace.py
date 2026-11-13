@@ -67,6 +67,8 @@ from shared.workspace_ids import is_workspace_id, ws_key
 #: The request header that names the workspace (HTTP header names are case-insensitive).
 WORKSPACE_HEADER: Final = 'x-workspace-id'
 ROLES: Final = frozenset({'viewer', 'editor', 'admin'})
+#: The roles that write a workspace's data (docs/multi-workspace.md, "Roles": an editor, or an admin).
+EDITING_ROLES: Final = frozenset({'editor', 'admin'})
 PLATFORM_ADMIN_ENTRY: Final = 'platform_admin_entry'
 ACTIVE: Final = 'active'
 MEMBERSHIP_TTL_SECONDS: Final = 30.0

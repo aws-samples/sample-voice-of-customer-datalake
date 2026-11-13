@@ -242,10 +242,12 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'POST /feature-requests/<request_id>/supports',
           'PUT /feature-requests/<request_id>/supports/<support_id>',
           'DELETE /feature-requests/<request_id>/supports/<support_id>'),
-    _open('feedback forms: any signed-in user manages forms (by design: forms carry no per-form owner)',
+    _open('feedback forms: any signed-in user manages forms (by design: forms carry no per-form owner); with '
+          "X-Workspace-Id the workspace's editors and admins (WORKSPACE_SCOPED below)",
           'feedback_form_handler.py', 'POST /feedback-forms', 'PUT /feedback-forms/<form_id>',
           'DELETE /feedback-forms/<form_id>'),
-    _open('public widget route: the embeddable form posts from the customer site (throttled)',
+    _open("public widget route: the embeddable form posts from the customer site (throttled); a workspace's form by "
+          'its lookup row (PUBLIC_BY_LOOKUP below)',
           'feedback_form_handler.py', 'POST /feedback-forms/<form_id>/submit'),
     _open("caller's own data: a user mints and revokes only their own global MCP tokens",
           'mcp_tokens_handler.py', 'POST /connect/tokens', 'DELETE /connect/tokens/<token_id>'),
@@ -639,11 +641,30 @@ WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
         'GET /scrapers/templates', 'POST /scrapers/<scraper_id>/run', 'GET /scrapers/<scraper_id>/status',
         'POST /scrapers/analyze-url', 'GET /scrapers/jobs/<job_id>',
     }),
+    # The signed-in form routes: any member reads; create, update and delete are for the workspace's editors and
+    # admins (`_request_scope(write=True)`, a viewer 403). The module's public routes are in PUBLIC_BY_LOOKUP.
+    'feedback_form_handler.py': frozenset({
+        'GET /feedback-forms', 'POST /feedback-forms', 'PUT /feedback-forms/<form_id>',
+        'DELETE /feedback-forms/<form_id>', 'GET /feedback-forms/<form_id>/submissions',
+        'GET /feedback-forms/<form_id>/stats',
+    }),
 }
 #: How each module resolves the workspace before a route reads: a middleware (module-wide: its name and the call
 #: its first statement makes, afresh for each request) or a per-route call.
 WORKSPACE_FIRST_MIDDLEWARE = {'metrics_handler.py': ('_workspace_first', '_request_scope')}
-WORKSPACE_FIRST_CALL = {'feedback_edit_handler.py': '_edit_scope'}
+WORKSPACE_FIRST_CALL = {'feedback_edit_handler.py': '_edit_scope', 'feedback_form_handler.py': '_request_scope'}
+#: The public routes (no signed-in caller) of a two-path module (docs/multi-workspace.md, "Public and non-user entry
+#: points"): each takes its workspace from a stored lookup row through the module's lookup call (an unconditional
+#: top-level statement), never from the request: it never resolves X-Workspace-Id (the module's per-route resolver
+#: is not called), and the lookup itself never reads a header.
+PUBLIC_BY_LOOKUP: dict[str, tuple[str, frozenset[str]]] = {
+    'feedback_form_handler.py': ('_public_form', frozenset({
+        'GET /feedback-forms/<form_id>/config', 'GET /feedback-forms/<form_id>/iframe',
+        'POST /feedback-forms/<form_id>/submit',
+    })),
+}
+#: The writes of a per-route module, which resolve the role from the table and need an editor or admin there.
+WORKSPACE_WRITE_CALL = {'feedback_form_handler.py': "_request_scope(write=True)"}
 #: The operator modules: one shared implementation (shared/workspace_request.py `ResolvedRoutes`), installed as
 #: `_request = ResolvedRoutes(app)` and `app.use(middlewares=[_request.middleware])`; its admin gate is
 #: `_request.require_request_admin()`.
@@ -682,7 +703,61 @@ def test_only_the_listed_modules_resolve_a_requests_workspace_for_the_data_path(
 def test_every_route_of_a_two_path_module_is_workspace_scoped(handler):
     routes = {key for fn in _module_functions(ast.parse(_source(handler))).values()
               for key in _route_keys(fn, ALL_METHODS)}
-    assert routes == WORKSPACE_SCOPED[handler], 'classify the new route in WORKSPACE_SCOPED'
+    public = PUBLIC_BY_LOOKUP.get(handler, ('', frozenset()))[1]
+    assert not WORKSPACE_SCOPED[handler] & public
+    assert routes == WORKSPACE_SCOPED[handler] | public, 'classify the new route in WORKSPACE_SCOPED or PUBLIC_BY_LOOKUP'
+
+
+def _route_function(handler: str, route: str) -> ast.FunctionDef:
+    [fn] = [fn for fn in _module_functions(ast.parse(_source(handler))).values() if route in _route_keys(fn, ALL_METHODS)]
+    return fn
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler, (_lookup, routes) in PUBLIC_BY_LOOKUP.items() for route in routes))
+def test_every_public_route_takes_its_workspace_from_a_lookup_row(handler, route):
+    """A public route looks its id up (an unconditional top-level call) and never resolves the request's header."""
+    lookup = PUBLIC_BY_LOOKUP[handler][0]
+    fn = _route_function(handler, route)
+    assert lookup in _top_level_calls(fn)
+    called = {_called_name(node) for node in ast.walk(fn)}
+    assert WORKSPACE_FIRST_CALL[handler] not in called
+    assert WORKSPACE_RESOLVER not in called
+
+
+@pytest.mark.parametrize('handler', sorted(PUBLIC_BY_LOOKUP))
+def test_the_public_lookup_never_reads_the_request(handler):
+    """The lookup reads the id it is given and the stored rows only: no header, body or resolver (to any depth of
+    the module's own functions)."""
+    functions = _module_functions(ast.parse(_source(handler)))
+    reached, frontier = set(), [PUBLIC_BY_LOOKUP[handler][0]]
+    while frontier:
+        name = frontier.pop()
+        if name in reached or name not in functions:
+            continue
+        reached.add(name)
+        frontier.extend(n for node in ast.walk(functions[name]) if (n := _called_name(node)))
+    called = {n for name in reached for node in ast.walk(functions[name]) if (n := _called_name(node))}
+    attributes = {node.attr for name in reached for node in ast.walk(functions[name]) if isinstance(node, ast.Attribute)}
+    assert not called & {WORKSPACE_FIRST_CALL[handler], 'context', 'request_header', 'json_body_value',
+                         'json_object_body'}
+    assert not attributes & {'current_event', 'raw_event', 'headers'}
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler in WORKSPACE_WRITE_CALL for route in WORKSPACE_SCOPED[handler]
+    if route.split(' ')[0] in {'POST', 'PUT', 'PATCH', 'DELETE'}))
+def test_every_workspace_write_resolves_the_role_from_the_table(handler, route):
+    first = next(stmt for stmt in _route_function(handler, route).body
+                 if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)))
+    assert isinstance(first, ast.Assign)
+    assert ast.unparse(first.value) == WORKSPACE_WRITE_CALL[handler]
+
+
+def test_a_workspace_form_write_needs_the_editor_role():
+    functions = _module_functions(ast.parse(_source('feedback_form_handler.py')))
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
+               for stmt in functions[WORKSPACE_FIRST_CALL['feedback_form_handler.py']].body)
 
 
 @pytest.mark.parametrize(('handler', 'middleware', 'resolver'), sorted(
@@ -796,7 +871,7 @@ def test_every_edit_resolves_its_workspace_unconditionally(handler, route):
     # Before the body is read, so a non-member's malformed body still gets the one 404.
     order = [name for stmt in fn.body if isinstance(stmt, _VALUE_STATEMENTS)
              for name in [_called_name(stmt.value)] if name in (WORKSPACE_FIRST_CALL[handler], 'json_body_value',
-                                                                 '_dimensions_body')]
+                                                                 'json_object_body', '_dimensions_body')]
     assert order[0] == WORKSPACE_FIRST_CALL[handler], order
 
 

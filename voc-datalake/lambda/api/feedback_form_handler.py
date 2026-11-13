@@ -1,11 +1,29 @@
 """
 VoC Feedback Form API Lambda
 Handles: /feedback-forms/* - multiple forms management
+
+Two paths (docs/multi-workspace.md, "Public and non-user entry points"; docs/feedback-forms.md, "Workspaces"):
+
+* the signed-in routes (list, create, update, delete, stats, submissions) act in the workspace ``X-Workspace-Id``
+  names when the request sends it (shared/workspace_request.py ``RequestWorkspace``, resolved first in each route:
+  400 for an empty header, the one 404 for a non-member, an unknown or ``deleting`` workspace; a platform admin
+  enters as admin, live-checked and audited). There any member reads, and only its editors and admins create,
+  update and delete (a viewer 403; the role read from the table, never the 30 s cache). The workspace's forms live
+  in ``WS#{ws}#FEEDBACK_FORM`` / ``FORM#{id}`` (through ``ws_table``), each with a lookup row ``FORM#{id}`` / ``META``
+  in voc-workspaces naming the workspace (shared/workspace_routing.py), and their stats read the workspace's
+  feedback partition. Without the header, everything is deployment-wide, as before;
+* the public widget routes (config, iframe, submit) never read the header: they look the form id up
+  (``_public_form``). A form with a lookup row is its workspace's (the row's workspace, which must be ``active``):
+  its config is served from the workspace's form, and a submission is queued with that ``workspace_id``
+  (``workspace_payload``, after every other field) and its raw copy kept under ``ws/{ws}/raw/feedback_form/``. A form
+  without one is a deployment form, exactly as before; a row naming a malformed, unknown or ``deleting`` workspace
+  answers the same 404 as an unknown id.
 """
 import json
 import math
 import os
 import re
+import secrets
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -14,15 +32,17 @@ from typing import TYPE_CHECKING, Any, TypeGuard
 
 from aws_lambda_powertools.event_handler import Response
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import category_access, feedback_category, null_origin_cors, prototype_pins
-from shared.api import api_handler, create_api_resolver, get_raw_categories_config, validate_limit
+from shared.api import api_handler, create_api_resolver, get_caller_subject, get_raw_categories_config, validate_limit
+from shared.audit_rows import put_new_audit_row
 from shared.aws import get_dynamodb_resource, get_sqs_client
 from shared.category_gate import scope_for_event
 from shared.dynamo_paging import iter_query
 from shared.exceptions import (
     ApiError,
+    AuthorizationError,
     ConfigurationError,
     NotFoundError,
     ServiceError,
@@ -30,7 +50,24 @@ from shared.exceptions import (
 )
 from shared.feedback_form_participants import record_response, resolve_participant
 from shared.feedback_form_raw import FEEDBACK_FORM_SOURCE, archive_submission
+from shared.feedback_partitions import source_partition
 from shared.form_theme import validate_theme
+from shared.ingest_tables import table_view
+from shared.onboarding import FEEDBACK_FORM_PK
+from shared.scoped_query import query_partition
+from shared.tables import configured_table, get_workspaces_table
+from shared.workspace import EDITING_ROLES, audit_key, audit_sort_key
+from shared.workspace_plugin_settings import hold_workspace_ingestion
+from shared.workspace_request import RequestWorkspace
+from shared.workspace_routing import (
+    RoutedWorkspace,
+    Unroutable,
+    claim_lookup,
+    release_lookup,
+    route_public_id,
+    workspace_payload,
+)
+from shared.ws_repo import WorkspaceScope, scope_of, ws_table
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
@@ -78,6 +115,40 @@ def _forms_table() -> 'Table':
     if aggregates_table is None:
         raise ConfigurationError('AGGREGATES_TABLE not configured')
     return aggregates_table
+
+
+def _forms_partition(scope: WorkspaceScope | None) -> str:
+    """The partition of the form configs: ``FEEDBACK_FORM`` (shared/onboarding.py ``FEEDBACK_FORM_PK``, its one
+    home), or a workspace's ``WS#{ws}#FEEDBACK_FORM``."""
+    return scope.key(FEEDBACK_FORM_PK) if scope is not None else FEEDBACK_FORM_PK
+
+
+def _form_key(form_id: str, scope: WorkspaceScope | None = None) -> dict[str, str]:
+    """A form config's key: ``FEEDBACK_FORM`` / ``FORM#{id}``, or the workspace's ``WS#{ws}#FEEDBACK_FORM``."""
+    return {'pk': _forms_partition(scope), 'sk': f'FORM#{form_id}'}
+
+
+def _forms(scope: WorkspaceScope | None) -> Any:
+    """The forms table on either path: deployment-wide the table's own calls, in a workspace through ``ws_table``
+    (a key outside the workspace refused before DynamoDB)."""
+    return table_view(scope, _forms_table())
+
+
+# The workspace a signed-in request acts in (shared/workspace_request.py): its warm container's memberships (30 s).
+# Create, update and delete are writes: EDITING_ROLES (shared/workspace.py, docs/multi-workspace.md "Roles").
+_workspace = RequestWorkspace()
+
+
+def _request_scope(*, write: bool = False) -> WorkspaceScope | None:
+    """The workspace a signed-in route acts in (None: deployment-wide), resolved first in each route, before the
+    body is read. A write (``write``) needs the editor or admin role there (403), read from the table (``fresh``),
+    never the 30 s cache, so a member demoted a moment ago cannot write."""
+    context = _workspace.context(app.current_event.raw_event, fresh=write)
+    if context is None:
+        return None
+    if write and context.role not in EDITING_ROLES:
+        raise AuthorizationError('Managing feedback forms needs the editor or admin role in this workspace')
+    return scope_of(context)
 
 
 # ============================================
@@ -178,9 +249,13 @@ LINK_FIELDS = ('project_id', 'document_id')
 # Form identifier (issue #379; design from upstream PR #396)
 # ============================================
 #
-# Ids this service mints: `str(uuid4())[:8]` (8 hex chars, build_form_item) and
-# `pf_` + 16 hex (shared/prototype_pins.pin_form_id). The pattern is WIDER than
-# both on purpose so hand-seeded or imported ids such as `website-form` or
+# Ids this service mints: `ff_` (a workspace's form) or `fd_` (a deployment
+# form) + 32 hex (128 random bits, new_form_id, since the public routes'
+# workspace slice: an id nobody can guess, so a public route never learns of a
+# form it was not handed) and `pf_` + 16 hex
+# (shared/prototype_pins.pin_form_id). Forms created before keep their
+# `str(uuid4())[:8]` ids (8 hex chars), which every route still serves. The
+# pattern is WIDER than all of them on purpose so hand-seeded or imported ids such as `website-form` or
 # `acme.website` keep working; what it bounds is the character set and length.
 # Every character that can end a JavaScript string or open an HTML tag — quote,
 # parentheses, semicolon, `<`, `>`, `&`, backslash, whitespace — is outside it,
@@ -193,6 +268,23 @@ FORM_ID_MAX_LENGTH = 64
 _FORM_ID_PATTERN = re.compile(
     rf'^(?!\.{{1,2}}\Z)[0-9A-Za-z_.-]{{1,{FORM_ID_MAX_LENGTH}}}\Z'
 )
+
+
+#: A workspace form's id prefix, and a new deployment form's: two shapes, so the public routes look up only the first.
+FORM_ID_PREFIX = 'ff_'
+DEPLOYMENT_FORM_ID_PREFIX = 'fd_'
+FORM_ID_BYTES = 16
+#: The shape a workspace's form has (new_form_id in a workspace), the only one the public routes look up (FORM#{id});
+#: every other id (a deployment form's `fd_` one, an 8-character one, a pin form's, a hand-seeded one) is the
+#: deployment's, with no voc-workspaces read.
+_ROUTABLE_FORM_ID = re.compile(rf'{FORM_ID_PREFIX}[0-9a-f]{{{FORM_ID_BYTES * 2}}}')
+
+
+def new_form_id(scope: WorkspaceScope | None = None) -> str:
+    """A new form's id, 32 hex characters (128 bits from `secrets`) after its prefix: `ff_` in a workspace (routable:
+    unique across workspaces through its lookup row), `fd_` deployment-wide (never looked up). Unguessable either way."""
+    prefix = FORM_ID_PREFIX if scope is not None else DEPLOYMENT_FORM_ID_PREFIX
+    return prefix + secrets.token_hex(FORM_ID_BYTES)
 
 
 def _validated_form_id(raw: Any) -> str | None:
@@ -214,6 +306,40 @@ def _public_form_id(raw: Any) -> str:
     if validated is None:
         raise NotFoundError('Form not found')
     return validated
+
+
+def _route_form(form_id: str, failure_message: str) -> RoutedWorkspace | None:
+    """The workspace a public route's form belongs to, from its lookup row (never from the request): None for a
+    deployment form (no row, or an id of a shape no workspace form has). A row naming a malformed, unknown or
+    `deleting` workspace is the unknown id's 404; a failed read a logged 500. Without voc-workspaces configured
+    (a local run) no form can be a workspace's (creating one resolves the workspace there), so none is looked up."""
+    table = get_workspaces_table()
+    if table is None or not _ROUTABLE_FORM_ID.fullmatch(form_id):
+        return None
+    try:
+        return route_public_id(table, form_id)
+    except Unroutable:
+        raise NotFoundError('Form not found') from None
+    except (ClientError, BotoCoreError) as e:
+        logger.exception(f"Error routing form {form_id}: {type(e).__name__}")
+        raise ServiceError(failure_message) from e
+
+
+def _refuse_a_workspaces_id(form_id: str, failure_message: str) -> None:
+    """Deployment-wide, an update or delete of an id a workspace's lookup row holds is the unknown id's 404 (a row of
+    a live workspace or not): a deployment row under it would be served by the public routes once the workspace
+    deletes its form, so its embed would feed the deployment. (A row naming a dead workspace raises the 404 in
+    ``_route_form`` itself.)"""
+    if _route_form(form_id, failure_message) is not None:
+        raise NotFoundError('Form not found')
+
+
+def _public_form(raw_id: Any, failure_message: str) -> tuple[str, dict, RoutedWorkspace | None]:
+    """A public route's form: its id (404 when it cannot be one), the workspace its lookup row routes it to (None:
+    a deployment form) and the stored form there (404 when absent)."""
+    form_id = _public_form_id(raw_id)
+    routed = _route_form(form_id, failure_message)
+    return form_id, _read_form(form_id, failure_message, routed.scope if routed else None), routed
 
 
 # ============================================
@@ -381,7 +507,7 @@ def validate_link_fields(body: dict) -> None:
             )
 
 
-def _anchor_form_brand(form_id: str, effective_brand: str) -> None:
+def _anchor_form_brand(form_id: str, effective_brand: str, scope: WorkspaceScope | None = None) -> None:
     """Pin a form with no stored brand to the brand its submissions are going to.
 
     build_form_item writes 'brand_name': BRAND_NAME, so a form created while
@@ -409,10 +535,12 @@ def _anchor_form_brand(form_id: str, effective_brand: str) -> None:
     every other write path here maintains updated_at (build_form_item sets it,
     update_form always appends it). A published field that changes with no trace
     of when is harder to explain later than the split this prevents.
+
+    A workspace's form (``scope``) is anchored in place, through ``ws_table``.
     """
     try:
-        _forms_table().update_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'},
+        _forms(scope).update_item(
+            _form_key(form_id, scope),
             UpdateExpression='SET brand_name = :brand, updated_at = :now',
             # attribute_exists(sk) leads, because UpdateItem is an UPSERT and
             # attribute_not_exists(brand_name) is SATISFIED by a missing item: a
@@ -466,8 +594,8 @@ def _is_conditional_check_failure(error: Exception) -> bool:
     )
 
 
-def build_form_item(body: dict, form_id: str | None = None) -> dict:
-    """Build DynamoDB item from request body with defaults.
+def build_form_item(body: dict, form_id: str | None = None, scope: WorkspaceScope | None = None) -> dict:
+    """Build DynamoDB item from request body with defaults (a workspace's form under its own partition).
 
     Validates the link fields here rather than leaving it to the caller: this is
     the only way a new record is constructed, so a future second caller cannot
@@ -476,11 +604,10 @@ def build_form_item(body: dict, form_id: str | None = None) -> dict:
     validate_link_fields(body)
     validate_theme(body)
     now = now_iso()
-    fid = form_id or str(uuid.uuid4())[:8]
+    fid = form_id or new_form_id(scope)
 
     item = {
-        'pk': 'FEEDBACK_FORM',
-        'sk': f'FORM#{fid}',
+        **_form_key(fid, scope),
         'form_id': fid,
         'brand_name': BRAND_NAME,
         'created_at': now,
@@ -494,21 +621,20 @@ def build_form_item(body: dict, form_id: str | None = None) -> dict:
     return item
 
 
-def _stored_form(form_id: str) -> dict:
-    """The form record as stored, or a 404. Read errors propagate to the caller."""
-    response = _forms_table().get_item(
-        Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
-    )
+def _stored_form(form_id: str, scope: WorkspaceScope | None = None) -> dict:
+    """The form record as stored (in ``scope``'s partition for a workspace's form), or a 404. Read errors propagate
+    to the caller."""
+    response = _forms(scope).get_item(_form_key(form_id, scope))
     item = response.get('Item')
     if not item:
         raise NotFoundError('Form not found')
     return item
 
 
-def _read_form(form_id: str, failure_message: str) -> dict:
+def _read_form(form_id: str, failure_message: str, scope: WorkspaceScope | None = None) -> dict:
     """`_stored_form` for a route: 404 stays a 404, any other read failure is a logged 500."""
     try:
-        return _stored_form(form_id)
+        return _stored_form(form_id, scope)
     except NotFoundError:
         raise
     except Exception as e:
@@ -668,7 +794,16 @@ def _chunks(values: list[str], size: int) -> list[list[str]]:
     return [values[i:i + size] for i in range(0, len(values), size)]
 
 
-def _stats_for_forms(items: list[dict]) -> dict[str, dict]:
+def _partition_rows(table: Any, scope: WorkspaceScope | None, source_pk: str, query_kwargs: dict[str, Any]) -> Any:
+    """Every row of one feedback partition of ``table`` (the query's filter and projection applied): deployment-wide
+    the request this module always sent, in a workspace through ``ws_table`` (the partition and every cursor its
+    own)."""
+    if scope is None:
+        return iter_query(table, {'KeyConditionExpression': Key('pk').eq(source_pk), **query_kwargs})
+    return ws_table(scope, table).iter_query('pk', source_pk, **query_kwargs)
+
+
+def _stats_for_forms(items: list[dict], scope: WorkspaceScope | None = None) -> dict[str, dict]:
     """`get_form_stats` for every form in `items`, reading each partition ONCE.
 
     The Feedback Forms page used to ask `/feedback-forms/{id}/stats` once per
@@ -681,12 +816,12 @@ def _stats_for_forms(items: list[dict]) -> dict[str, dict]:
     """
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
-    scope = scope_for_event(app.current_event.raw_event, aggregates_table)
+    access = scope_for_event(app.current_event.raw_event, aggregates_table)
     form_ids_by_pk: dict[str, list[str]] = {}
     for item in items:
         form_id = item.get('form_id')
         if isinstance(form_id, str) and form_id:
-            form_ids_by_pk.setdefault(_form_source_pk(item), []).append(form_id)
+            form_ids_by_pk.setdefault(_form_source_pk(item, scope), []).append(form_id)
 
     tallies = {fid: _RatingTally() for ids in form_ids_by_pk.values() for fid in ids}
     counts = dict.fromkeys(tallies, 0)
@@ -694,13 +829,12 @@ def _stats_for_forms(items: list[dict]) -> dict[str, dict]:
         for chunk in _chunks(form_ids, _MAX_IN_OPERANDS):
             values = {f':sc{i}': f'form_{fid}' for i, fid in enumerate(chunk)}
             query_kwargs: dict[str, Any] = {
-                'KeyConditionExpression': Key('pk').eq(source_pk),
                 'FilterExpression': f"source_channel IN ({', '.join(values)})",
                 'ExpressionAttributeValues': values,
                 # `category` + `source_platform`: both access rules read them (admits_item).
                 'ProjectionExpression': 'feedback_id, rating, category, source_platform, source_channel',
             }
-            for row in category_access.filter_items(scope, iter_query(feedback_table, query_kwargs)):
+            for row in category_access.filter_items(access, _partition_rows(feedback_table, scope, source_pk, query_kwargs)):
                 form_id = str(row.get('source_channel', '')).removeprefix('form_')
                 if form_id in tallies:
                     counts[form_id] += 1
@@ -718,15 +852,13 @@ def list_forms():
     keep their shape. A stats read that fails does NOT fail the list: the forms
     are still returned, `stats` is absent and `stats_error` says why, and the
     page falls back to asking per form — loud, never a zero (see get_form_stats).
+    In a workspace, its own forms (``WS#{ws}#FEEDBACK_FORM``) and their stats from its own feedback.
     """
+    scope = _request_scope()
     try:
         # Consistent: the page refetches right after a create/update/delete, and an
         # eventually consistent read could still list a form just deleted.
-        response = _forms_table().query(
-            KeyConditionExpression='pk = :pk',
-            ExpressionAttributeValues={':pk': 'FEEDBACK_FORM'},
-            ConsistentRead=True,
-        )
+        response = query_partition(scope, _forms_table(), 'pk', _forms_partition(scope), ConsistentRead=True)
         items = response.get('Items', [])
         forms = [item_to_form(item) for item in items]
         forms.sort(key=lambda x: x['created_at'], reverse=True)
@@ -738,7 +870,7 @@ def list_forms():
     if params.get('include') != 'stats':
         return {'success': True, 'forms': forms}
     try:
-        stats = _stats_for_forms(items)
+        stats = _stats_for_forms(items, scope)
     except Exception as e:
         metrics.add_metric(name='FeedbackFormStatsReadFailed', unit='Count', value=1)
         logger.exception(f"Error fetching stats for the form list: {e}")
@@ -749,14 +881,23 @@ def list_forms():
 @app.post("/feedback-forms")
 @tracer.capture_method
 def create_form():
-    """Create a new feedback form."""
+    """Create a new feedback form (in a workspace: its form, and the lookup row that routes its public id there)."""
+    scope = _request_scope(write=True)
+    if scope is not None:
+        # A workspace form exists to take submissions into its workspace, which the ingestion hold refuses: while it
+        # is on, creating one answers the same 409 (shared/workspace_plugin_settings.py), so no form is embedded that
+        # would refuse every visitor's feedback.
+        hold_workspace_ingestion()
     body = json_object_body(app)
     _validate_form_labels(body)
     # Link fields are validated inside build_form_item, structurally.
-    item = build_form_item(body)
+    item = build_form_item(body, scope=scope)
 
     try:
-        _forms_table().put_item(Item=item)
+        if scope is None:
+            _forms_table().put_item(Item=item)
+        else:
+            _create_workspace_form(item, scope)
     except Exception as e:
         logger.exception(f"Error creating form: {e}")
         raise ServiceError('Failed to create form') from e
@@ -764,10 +905,29 @@ def create_form():
     return {'success': True, 'form': item_to_form(item)}
 
 
+def _create_workspace_form(item: dict, scope: WorkspaceScope) -> None:
+    """A workspace's new form: its lookup row ``FORM#{id}`` first (a conditional put: an id already routed is never
+    taken over), then the form itself (a conditional put through ``ws_table``). When the form cannot be written the
+    lookup row is removed again; if that fails too it routes to a form that is not there, which every public route
+    answers with the unknown id's 404."""
+    form_id = item['form_id']
+    routing = configured_table(get_workspaces_table(), 'Workspaces')
+    claim_lookup(routing, form_id, scope, item['created_at'])
+    try:
+        _forms(scope).put_item(item, ConditionExpression='attribute_not_exists(pk)')
+    except Exception:
+        try:
+            release_lookup(routing, form_id, scope)
+        except (ClientError, BotoCoreError):
+            logger.exception(f"Could not remove the lookup row of form {form_id}")
+        raise
+
+
 @app.put("/feedback-forms/<form_id>")
 @tracer.capture_method
 def update_form(form_id: str):
-    """Update a feedback form."""
+    """Update a feedback form (in a workspace: only one of its own, 404 otherwise)."""
+    scope = _request_scope(write=True)
     body = json_object_body(app)
     validate_link_fields(body)
     validate_theme(body)
@@ -790,28 +950,60 @@ def update_form(form_id: str):
 
     update_parts.append('#updated_at = :updated_at')
 
+    if scope is None:
+        _refuse_a_workspaces_id(form_id, 'Failed to update form')
+    # Only an existing form is updated, on either path (never an upsert: a stub row would be a form nobody created,
+    # and in a workspace one without a lookup row, which no public route could reach).
     try:
-        response = _forms_table().update_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'},
+        response = _forms(scope).update_item(
+            _form_key(form_id, scope),
             UpdateExpression='SET ' + ', '.join(update_parts),
             ExpressionAttributeNames=expr_names,
             ExpressionAttributeValues=expr_values,
-            ReturnValues='ALL_NEW'
+            ReturnValues='ALL_NEW',
+            ConditionExpression='attribute_exists(sk)',
         )
     except Exception as e:
+        if _is_conditional_check_failure(e):
+            raise NotFoundError('Form not found') from e
         logger.exception(f"Error updating form: {e}")
         raise ServiceError('Failed to update form') from e
     return {'success': True, 'form': item_to_form(response.get('Attributes', {}))}
 
 
+FORM_DELETED = 'form_deleted'
+
+
+def _record_form_delete(scope: WorkspaceScope, form_id: str) -> None:
+    """The ``AUDIT#WS#{ws}`` row of a workspace form's delete, written before it (a new row, never an overwrite)."""
+    at = now_iso()
+    put_new_audit_row(configured_table(get_workspaces_table(), 'Workspaces'), {
+        'pk': audit_key(scope.ws), 'sk': audit_sort_key(at), 'kind': FORM_DELETED,
+        'actor': get_caller_subject(app.current_event.raw_event), 'form_id': form_id, 'at': at})
+
+
 @app.delete("/feedback-forms/<form_id>")
 @tracer.capture_method
 def delete_form(form_id: str):
-    """Delete a feedback form."""
+    """Delete a feedback form (in a workspace: its form, then its lookup row, only when the row names it).
+
+    A workspace's delete is recorded first (TENETS.md D5: a workspace delete is recorded), in its audit partition
+    ``AUDIT#WS#{ws}`` (kind ``form_deleted``, the actor's sub, the form id, the time; under the audit-row guard, so no
+    role can change or remove it): a row that cannot be written deletes nothing, and the row records the attempt. Only
+    a form the workspace holds is recorded and deleted: an unknown id, or another workspace's, is the 404, with no
+    audit row (the deployment's delete stays idempotent).
+    """
+    scope = _request_scope(write=True)
+    if scope is None:
+        _refuse_a_workspaces_id(form_id, 'Failed to delete form')
+    else:
+        _read_form(form_id, 'Failed to delete form', scope)  # 404 for a form this workspace does not hold
     try:
-        _forms_table().delete_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
-        )
+        if scope is not None:
+            _record_form_delete(scope, form_id)
+        _forms(scope).delete_item(_form_key(form_id, scope))
+        if scope is not None:
+            release_lookup(configured_table(get_workspaces_table(), 'Workspaces'), form_id, scope)
     except Exception as e:
         logger.exception(f"Error deleting form: {e}")
         raise ServiceError('Failed to delete form') from e
@@ -848,9 +1040,8 @@ def _submit_prototype_pin(form: dict, body: dict) -> dict:
 @app.get("/feedback-forms/<form_id>/config")
 @tracer.capture_method
 def get_form_config_by_id(form_id: str):
-    """Get form config for widget (public endpoint)."""
-    form_id = _public_form_id(form_id)
-    item = _read_form(form_id, 'Failed to get form configuration')
+    """Get form config for widget (public endpoint; a workspace's form by its lookup row, never the request)."""
+    _form_id, item, _routed = _public_form(form_id, 'Failed to get form configuration')
     # Narrower projection than item_to_form on purpose: this route is public.
     return {'success': True, 'config': item_to_widget_config(item)}
 
@@ -858,7 +1049,13 @@ def get_form_config_by_id(form_id: str):
 @app.post("/feedback-forms/<form_id>/submit")
 @tracer.capture_method
 def submit_form_feedback(form_id: str):
-    """Submit feedback to a specific form."""
+    """Submit feedback to a specific form.
+
+    A workspace's form (its lookup row's workspace, never the request's) queues the submission with that
+    ``workspace_id`` (``workspace_payload``, after every other field) and keeps its raw copy under
+    ``ws/{ws}/raw/feedback_form/``. Participant asks and prototype pins are the deployment's (phase 3): only a
+    deployment form attributes an answer to an ask or takes the pin path.
+    """
     form_id = _public_form_id(form_id)
     # Public route: only unparseable JSON (once a 500) changes, to a 400. The
     # `or {}` and the message below are this route's long-standing contract with
@@ -871,10 +1068,17 @@ def submit_form_feedback(form_id: str):
     # oversized reaches the queue (and the Bedrock call behind it). #222.
     text = _validated_submission(body)
     widget_dimensions = _widget_dimensions(body)
-    form = _read_form(form_id, 'Failed to load form configuration')
+    form_id, form, routed = _public_form(form_id, 'Failed to load form configuration')
+    scope = routed.scope if routed is not None else None
+    if scope is not None:
+        # A workspace form's submission is ingestion into that workspace: held, like enabling a plugin and every run in
+        # a workspace, while per-workspace ingestion is off (409, before anything is archived, anchored or queued).
+        hold_workspace_ingestion()
     if not form.get('enabled', False):
         raise ValidationError('This form is not enabled')
-    if form.get('form_type') == prototype_pins.FORM_TYPE_PROTOTYPE_PIN:
+    # Defence in depth: no workspace form carries this form_type (only the document generator sets it, on
+    # deployment forms), so `scope is None` changes nothing today; it keeps a pin out of a workspace if one ever does.
+    if scope is None and form.get('form_type') == prototype_pins.FORM_TYPE_PROTOTYPE_PIN:
         # A standalone prototype is sandboxed to an opaque origin, so its widget
         # posts with `Origin: null`; only a pin form's answer echoes that
         # (shared/null_origin_cors.py). Every other form keeps the resolver's CORS.
@@ -898,7 +1102,7 @@ def submit_form_feedback(form_id: str):
     if not form.get('brand_name') and effective_brand:
         # Store it, so this form stops depending on the environment variable —
         # see _anchor_form_brand.
-        _anchor_form_brand(form_id, effective_brand)
+        _anchor_form_brand(form_id, effective_brand, scope)
 
     now = datetime.now(UTC)
     feedback_id = str(uuid.uuid4())
@@ -916,8 +1120,9 @@ def submit_form_feedback(form_id: str):
         metadata['submitter_name'] = body['name']
     if body.get('custom_fields'):
         metadata['custom_fields'] = body['custom_fields']
-    # A participant ask's link (shared/feedback_form_participants.py): ids only, or nothing.
-    participant = resolve_participant(body)
+    # A participant ask's link (shared/feedback_form_participants.py): ids only, or nothing. Asks are the
+    # deployment's (phase 3), so a workspace's form attributes none.
+    participant = resolve_participant(body) if scope is None else None
     if participant:
         metadata['participant'] = participant
 
@@ -951,13 +1156,15 @@ def submit_form_feedback(form_id: str):
         raise ValidationError('Feedback text is required')
     # The body as the widget sent it, kept only when the profile permits a raw copy
     # (shared/feedback_form_raw.py); a failed write is logged and the submission queued.
-    raw_uri = archive_submission(form_id, form, feedback_id, body, (text, widget_dimensions), profile, now)
+    raw_uri = archive_submission(form_id, form, feedback_id, body, (text, widget_dimensions), profile, now,
+                                 scope=scope)
     normalized_record = {**policed, 's3_raw_uri': raw_uri} if raw_uri else policed
 
     try:
         sqs.send_message(
             QueueUrl=PROCESSING_QUEUE_URL,
-            MessageBody=json.dumps(normalized_record, default=str)
+            # The workspace of the form's lookup row, set last (none for a deployment form).
+            MessageBody=json.dumps(workspace_payload(normalized_record, routed), default=str)
         )
     except Exception as e:
         logger.exception(f"Error submitting feedback: {e}")
@@ -1033,9 +1240,8 @@ def get_form_iframe(form_id: str):
     its own "unavailable" state. Every reflected value then goes through
     `_js_value`, so the render is safe independent of the pattern.
     """
-    form_id = _public_form_id(form_id)
-    # Existence gate only; the page is a function of the id and host.
-    _read_form(form_id, 'Failed to load form')
+    # Existence gate only (a workspace's form by its lookup row); the page is a function of the id and host.
+    form_id, _form, _routed = _public_form(form_id, 'Failed to load form')
 
     host = app.current_event.request_context.get('domainName', '')
     stage = app.current_event.request_context.get('stage', 'v1')
@@ -1084,7 +1290,7 @@ def get_form_iframe(form_id: str):
 # Form Stats & Submissions
 # ============================================
 
-def _form_source_pk(form: dict) -> str:
+def _form_source_pk(form: dict, scope: WorkspaceScope | None = None) -> str:
     """The feedback partition this form's submissions live in.
 
     Pure: derived from the form record the caller already holds, never from a
@@ -1098,12 +1304,15 @@ def _form_source_pk(form: dict) -> str:
     Mirrors submit_form_feedback's write side: the form's own brand, the
     deployment's only for a form recorded without one, and `or` rather than a
     get() default so a stored '' takes the fallback on both sides alike.
+
+    A workspace's form (``scope``): the same partition in the workspace, ``WS#{ws}#SOURCE#…``, where the processor
+    stores its submissions (shared/feedback_partitions.py ``source_partition``, the processor's own key).
     """
     effective_brand = form.get('brand_name') or BRAND_NAME
-    return f"SOURCE#{effective_brand}" if effective_brand else 'SOURCE#feedback_form'
+    return source_partition(scope, effective_brand or FEEDBACK_FORM_SOURCE)
 
 
-def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
+def _load_form_for_query(form_id: str, read_failure_message: str, scope: WorkspaceScope | None = None) -> dict:
     """Load a form record for a stats/submissions query, failing loudly.
 
     One get_item answers both questions those routes need, so neither has to be
@@ -1118,11 +1327,11 @@ def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
 
     Both failure modes previously produced HTTP 200 with total_submissions: 0 on
     the stats route, which is the exact defect issue #312 is about.
+
+    In a workspace (``scope``) the form is its own (another workspace's id, or the deployment's, is a 404).
     """
     try:
-        response = _forms_table().get_item(
-            Key={'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}'}
-        )
+        response = _forms(scope).get_item(_form_key(form_id, scope))
     except Exception as e:
         # Surfaced as a metric because this failure used to be invisible: it was
         # reported to the caller as a zero count and to operations as nothing.
@@ -1139,7 +1348,8 @@ def _load_form_for_query(form_id: str, read_failure_message: str) -> dict:
 @app.get("/feedback-forms/<form_id>/submissions")
 @tracer.capture_method
 def get_form_submissions(form_id: str):
-    """Get submissions for a specific form with stats."""
+    """Get submissions for a specific form with stats (in a workspace: one of its forms, from its feedback)."""
+    workspace = _request_scope()
     params = app.current_event.query_string_parameters or {}
     limit = validate_limit(params.get('limit'), default=50, max_val=100)
 
@@ -1149,10 +1359,10 @@ def get_form_submissions(form_id: str):
     # One read answers both the 404 and the partition, where this route used to
     # do its own existence check and then have _get_form_source_pk re-read the
     # same record (and swallow a failure of it).
-    form = _load_form_for_query(form_id, 'Failed to fetch form')
+    form = _load_form_for_query(form_id, 'Failed to fetch form', workspace)
 
     source_channel = f'form_{form_id}'
-    source_pk = _form_source_pk(form)
+    source_pk = _form_source_pk(form, workspace)
     # Read before the try: a failed access read is its own 500, not "no submissions".
     scope = scope_for_event(app.current_event.raw_event, aggregates_table)
 
@@ -1160,15 +1370,14 @@ def get_form_submissions(form_id: str):
         items = []
         ratings = _RatingTally()
 
-        query_kwargs = {
-            'KeyConditionExpression': Key('pk').eq(source_pk),
+        query_kwargs: dict[str, Any] = {
             'FilterExpression': 'source_channel = :sc',
             'ExpressionAttributeValues': {':sc': source_channel},
             'ScanIndexForward': False,
         }
 
         while len(items) < limit:
-            response = feedback_table.query(**query_kwargs)
+            response = query_partition(workspace, feedback_table, 'pk', source_pk, **query_kwargs)
 
             for item in category_access.filter_items(scope, response.get('Items', [])):
                 items.append({
@@ -1232,23 +1441,23 @@ def get_form_stats(form_id: str):
     Reading it honestly is still right; bounding it needs an index on the
     submission-to-form link, which is deliberately not done here.
     """
+    workspace = _request_scope()
     if not feedback_table:
         raise ConfigurationError('Feedback table not configured')
 
     # 404 for a deleted form, and the partition its submissions are in, from the
     # one read — never a partition guessed from a read that failed.
-    form = _load_form_for_query(form_id, 'Failed to fetch form stats')
+    form = _load_form_for_query(form_id, 'Failed to fetch form stats', workspace)
 
     source_channel = f'form_{form_id}'
-    source_pk = _form_source_pk(form)
+    source_pk = _form_source_pk(form, workspace)
     scope = scope_for_event(app.current_event.raw_event, aggregates_table)
 
     try:
         ratings = _RatingTally()
         submission_count = 0
 
-        query_kwargs = {
-            'KeyConditionExpression': Key('pk').eq(source_pk),
+        query_kwargs: dict[str, Any] = {
             'FilterExpression': 'source_channel = :sc',
             'ExpressionAttributeValues': {':sc': source_channel},
             # `category` + `source_platform` so a restricted caller's count covers only
@@ -1256,7 +1465,7 @@ def get_form_stats(form_id: str):
             'ProjectionExpression': 'feedback_id, rating, category, source_platform',
         }
 
-        for item in category_access.filter_items(scope, iter_query(feedback_table, query_kwargs)):
+        for item in category_access.filter_items(scope, _partition_rows(feedback_table, workspace, source_pk, query_kwargs)):
             submission_count += 1
             ratings.add(item)
 

@@ -232,7 +232,10 @@ describe('cdk-nag acknowledgements', () => {
       // the ingestors' finding).
       // 79: the integrations and scrapers APIs' Get and Put of the voc/ws/* credentials secrets (one finding, both
       // roles: lib/utils/workspace-secrets.ts grantWorkspaceSecretsReadWrite).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 79, used: 79 });
+      // 80: the feedback-form API's write-once copy of a workspace form's submission, ws/{one id}/raw/feedback_form/*.
+      // 81: the GitHub webhook's archive of a workspace's delivery, ws/{one id}/raw/github_issues/* (its read of the
+      // voc/ws/* secrets shares the ingestors' finding).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 81, used: 81 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

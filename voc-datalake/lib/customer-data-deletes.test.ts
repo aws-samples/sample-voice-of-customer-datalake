@@ -52,7 +52,10 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     'VocApiStack/IntegrationsLambdaRole': WORKSPACE_CIRCUIT_ROW,
     ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, WORKSPACE_CIRCUIT_ROW])),
     'VocApiStack/LogsLambdaRole': { scope: ['LOGS#validation#*'], why: 'DELETE /logs/validation/{source}' },
-    'VocApiStack/FeedbackFormLambdaRole': { scope: ['FEEDBACK_FORM'], why: 'DELETE /feedback-forms/{id} (the config row)' },
+    'VocApiStack/FeedbackFormLambdaRole': {
+      scope: ['FEEDBACK_FORM', 'WS#ws_??????????????????????????#FEEDBACK_FORM'],
+      why: 'DELETE /feedback-forms/{id} (the config row, the deployment\'s or one workspace\'s)',
+    },
     [PROJECTS_API]: {
       scope: ['PRIORITIZATION', 'VOTING_SESSION_ROW'],
       why: 'a deleted Prioritization row with its ballots, and a closed vote\'s pointer',
@@ -97,6 +100,9 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     'VocApiStack/UsersLambdaRole': {
       scope: ['USER#*', 'WS#*'], why: 'a deleted user\'s memberships: their MEMBER# and USER# rows only, before the account goes',
     },
+    // A workspace form's lookup row (routing configuration, not customer data; lambda/shared/workspace_routing.py
+    // release_lookup, conditional on the row naming the workspace): removed with the form it routes to.
+    'VocApiStack/FeedbackFormLambdaRole': { scope: ['FORM#*'], why: 'a deleted workspace form\'s FORM#{id} lookup row' },
   },
 };
 
@@ -118,6 +124,9 @@ const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   // 7.04.00 the metrics API, the feedback edits and the integrations and scrapers APIs.
   'VocApiStack/WorkspaceResolutionPolicy': ['AUDIT#WS#*'],
   [RETENTION_ROLE]: ['WS#*'],
+  // The feedback forms (7.06.00): a workspace form's lookup row (put on create, deleted with the form); its entry and
+  // form_deleted audit rows go through the workspace-resolution policy above.
+  'VocApiStack/FeedbackFormLambdaRole': ['FORM#*'],
 };
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */

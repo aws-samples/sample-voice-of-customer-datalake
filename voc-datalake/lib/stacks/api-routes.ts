@@ -351,16 +351,29 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   }
 
 
-  // /webhooks/{pluginId} — no CORS preflight: a provider's server-to-server POST never sends one.
+  addWebhookRoutes(api, webhookPlugins, webhookLambdas);
+}
+
+/**
+ * `/webhooks/{pluginId}` — no CORS preflight: a provider's server-to-server POST never sends one — and
+ * `/webhooks/{pluginId}/{ws}`, a workspace's own endpoint (docs/multi-workspace.md, "Public and non-user entry
+ * points"): the {ws} value is only the key of the workspace's stored META, and the handler checks the signature with
+ * that workspace's own webhook secret (plugins/_shared/base_webhook.py).
+ */
+function addWebhookRoutes(
+  api: apigateway.RestApi, webhookPlugins: PluginManifest[], webhookLambdas: Map<string, lambda.Function>,
+): void {
   const webhooksResource = api.root.addResource('webhooks');
   for (const plugin of webhookPlugins) {
     const webhookFn = webhookLambdas.get(plugin.id);
-    if (!webhookFn || !plugin.infrastructure.webhook) continue;
+    const methods = plugin.infrastructure.webhook?.methods;
+    if (!webhookFn || !methods) continue;
     const webhookIntegration = frugalIntegration(webhookFn);
     const pluginResource = webhooksResource.addResource(plugin.id);
-    for (const method of plugin.infrastructure.webhook.methods) {
-      const webhookMethod = pluginResource.addMethod(method, webhookIntegration);
-      acknowledgeNagOnResource(webhookMethod, publicWebhookEndpointSuppressions);
+    const workspaceResource = pluginResource.addResource('{ws}');
+    for (const method of methods) {
+      acknowledgeNagOnResource(pluginResource.addMethod(method, webhookIntegration), publicWebhookEndpointSuppressions);
+      acknowledgeNagOnResource(workspaceResource.addMethod(method, webhookIntegration), publicWebhookEndpointSuppressions);
     }
   }
 }

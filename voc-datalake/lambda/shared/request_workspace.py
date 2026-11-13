@@ -43,6 +43,7 @@ from shared.logging import logger
 from shared.platform_admin_gate import confirm_live_platform_admin
 from shared.tables import cached_table
 from shared.workspace import (
+    EDITING_ROLES,
     WORKSPACE_HEADER,
     MembershipCache,
     WorkspaceContext,
@@ -50,10 +51,8 @@ from shared.workspace import (
     resolve_workspace,
 )
 
-__all__ = ['WRITER_ROLES', 'request_workspace', 'require_settings_admin', 'require_workspace_writer']
+__all__ = ['request_workspace', 'require_settings_admin', 'require_workspace_writer']
 
-#: The roles that write in a workspace (an editor's and an admin's; a viewer reads).
-WRITER_ROLES: Final = frozenset({'editor', 'admin'})
 #: This warm container's resolved memberships (30 s, shared/workspace.py).
 _MEMBERSHIPS: Final = MembershipCache()
 
@@ -83,7 +82,7 @@ def request_workspace(event: dict, public_error: str, *, fresh: bool = False) ->
 
 def require_workspace_writer(context: WorkspaceContext) -> None:
     """403 unless the caller writes in the workspace: an editor or an admin (a viewer reads only)."""
-    if context.role not in WRITER_ROLES:
+    if context.role not in EDITING_ROLES:
         raise AuthorizationError('Workspace editor access required')
 
 

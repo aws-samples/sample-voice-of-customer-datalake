@@ -54,6 +54,12 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       // a workspace's review (docs/multi-workspace.md).
       raw.arnForObjects('*'), raw.arnForObjects('raw/*'), raw.arnForObjects('silver/*'),
       raw.arnForObjects(`${WORKSPACE_SILVER_HISTORY_PREFIX}*`),
+      // ws/{one id}/raw/feedback_form/*: the feedback-form API's write-once copy of a workspace form's submission
+      // (lambda/shared/feedback_form_raw.py), as raw/feedback_form/* below for a deployment form; and
+      // ws/{one id}/raw/github_issues/*: the GitHub webhook's archive of a delivery to a workspace's endpoint
+      // (plugins/_shared/base_webhook.py), as raw/github_issues/* below for the deployment's.
+      raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}feedback_form/*`),
+      raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}github_issues/*`),
       ingestion.s3ImportBucket.arnForObjects('*'),
       core.websiteBucket.arnForObjects('*'),
     ]),

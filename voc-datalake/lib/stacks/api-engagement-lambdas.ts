@@ -15,6 +15,8 @@ import { FEEDBACK_FORM_API_FUNCTION_BASE_NAME, USERS_API_FUNCTION_BASE_NAME } fr
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { appVersion } from '../utils/connector-version';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
+import { grantRequestWorkspace } from '../utils/workspace-resolution-grants';
+import { WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 import type { ApiStackContext } from './api-context';
 import { OPS_ALERTS_NAG_REASON, opsAlertsWiring } from './dlq-alarms';
 import { grantLogsDiagnostics } from './api-logs-diagnostics';
@@ -36,6 +38,29 @@ export interface EngagementInputs {
 const MEMBERSHIP_PARTITIONS = ['USER#*', 'WS#*'];
 /** A workspace's audit partition, the only one the users API writes in voc-workspaces (lib/utils/audit-row-guard.ts). */
 const WORKSPACE_AUDIT_PARTITION = 'AUDIT#WS#*';
+
+/** A workspace form's lookup row in voc-workspaces (lambda/shared/workspace_routing.py): `FORM#{form id}` / `META`. */
+const FORM_LOOKUP_PARTITION = 'FORM#*';
+
+/**
+ * The feedback forms API in a workspace (docs/multi-workspace.md, "Public and non-user entry points"): the signed-in
+ * routes resolve X-Workspace-Id through the stack's one workspace-resolution policy (lib/utils/workspace-resolution-
+ * grants.ts: GetItem on `WS#*` and `AUDIT#WS#*`, PutItem on `AUDIT#WS#*` only, which also covers a workspace form's
+ * `form_deleted` audit row; and the live platform-admin check), and a workspace's form has a lookup row `FORM#{id}` the
+ * public routes read (GetItem), its create writes (a conditional PutItem) and its delete removes (a conditional
+ * DeleteItem): `dynamodb:LeadingKeys` `FORM#*` for those three, nothing else of the table (no Query, Scan or
+ * UpdateItem). The row is routing configuration, not customer data (lib/customer-data-deletes.test.ts names it).
+ */
+function grantFormRouting(ctx: ApiStackContext, role: iam.Role): Record<string, string> {
+  const { workspacesTable, userPool } = ctx.props;
+  const resolutionEnv = grantRequestWorkspace(workspacesTable, role, userPool);
+  role.addToPolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [FORM_LOOKUP_PARTITION] } },
+  }));
+  grantKeyScopedWrites(workspacesTable, role, ['PutItem', 'DeleteItem'], [FORM_LOOKUP_PARTITION]);
+  return resolutionEnv;
+}
 
 /**
  * DELETE /users/{username} also removes the user's workspace memberships (lambda/shared/workspace_members.py
@@ -152,9 +177,11 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   // Feedback Form API
   const feedbackFormRole = ctx.role('FeedbackFormLambdaRole');
   // Form configs and submissions (Put + Update); DELETE /feedback-forms/{id} deletes the FEEDBACK_FORM / FORM#<id>
-  // config row, the only delete.
+  // config row (a workspace's: WS#{one id}#FEEDBACK_FORM / FORM#<id>), the only delete.
   grantReadAndWrites(aggregatesTable, feedbackFormRole, ['PutItem', 'UpdateItem']);
-  grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], ['FEEDBACK_FORM']);
+  grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], [
+    'FEEDBACK_FORM', `WS#${WORKSPACE_ID_PATTERN}#FEEDBACK_FORM`]);
+  const formRoutingEnv = grantFormRouting(ctx, feedbackFormRole);
   feedbackTable.grantReadData(feedbackFormRole);
   kmsKey.grantEncryptDecrypt(feedbackFormRole);
   feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
@@ -163,6 +190,8 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   // The submission as the widget sent it (lambda/shared/feedback_form_raw.py): write-once, under the
   // feedback_form source's own prefix only (the source id is fixed, not per form). No read, no delete.
   rawDataBucket.grantPut(feedbackFormRole, 'raw/feedback_form/*');
+  // A workspace's form keeps its copy under that workspace's bronze layer (one workspace id per pattern).
+  rawDataBucket.grantPut(feedbackFormRole, `${WORKSPACE_RAW_LAYER_PREFIX}feedback_form/*`);
   // Participant attribution (lambda/api/feedback_form_participants.py): a submit carrying an ask's
   // response token reads that token row and marks the recipient (and the ask's count) responded.
   // Two single-item actions on the table itself — no index, no query, no delete.
@@ -187,6 +216,8 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
       PROCESSING_QUEUE_URL: processingQueueUrl,
       PARTICIPANTS_TABLE: participantsTable.tableName,
       BRAND_NAME: brandName,
+      // X-Workspace-Id on the signed-in routes, and a workspace form's FORM#{id} lookup row (voc-workspaces).
+      ...formRoutingEnv,
       // The raw copy of each submission and its connector-version (lambda/shared/feedback_form_raw.py).
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       APP_VERSION: appVersion(),

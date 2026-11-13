@@ -101,9 +101,15 @@ def update_unless_condition_fails(table: Any, **update_item: Any) -> bool:
     return True
 
 
-def consistent_item(table: Any, key: Mapping[str, Any]) -> dict | None:
-    """The item at ``key`` read strongly, or None when absent (boto errors propagate)."""
-    item = table.get_item(Key=dict(key), ConsistentRead=True).get('Item')
+def consistent_item(table: Any, key: Mapping[str, Any], projection: tuple[str, ...] = ()) -> dict | None:
+    """The item at ``key`` read strongly, or None when absent (boto errors propagate). ``projection``: only those
+    attributes (each through an ``ExpressionAttributeNames`` alias, so a reserved word such as ``status`` reads), as a
+    role whose GetItem IAM limits to them (``dynamodb:Attributes``) must ask."""
+    projected: dict[str, Any] = {}
+    if projection:
+        names = {f'#a{index}': attribute for index, attribute in enumerate(projection)}
+        projected = {'ProjectionExpression': ', '.join(names), 'ExpressionAttributeNames': names}
+    item = table.get_item(Key=dict(key), ConsistentRead=True, **projected).get('Item')
     return item if isinstance(item, dict) else None
 
 

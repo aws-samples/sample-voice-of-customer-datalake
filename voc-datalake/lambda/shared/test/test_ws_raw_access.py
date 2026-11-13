@@ -33,8 +33,12 @@ public webhooks, but for the asynchronous workers in ``ASYNC_API_WORKERS``) call
 ``scope_from_key``: a request's workspace comes from its resolved membership (``scope_of``), never from a field, a
 path or a cursor it sent. (``dataclasses.replace`` of a scope is not detected: it still validates the id.) No
 request-facing module writes ``workspace_id`` into a mapping either: an operator route's invoke payload names its
-workspace only through shared/workspace_request.py ``workspace_payload``, which takes it from a resolved membership
-(a ``WorkspaceContext``, built only by shared/workspace.py and shared/workspace_members.py), never a body field.
+workspace only through ``workspace_payload`` (shared/workspace_routing.py), from a resolved membership
+(a ``WorkspaceContext``, built only by shared/workspace.py and shared/workspace_members.py), never a body field; a
+public route's message (a feedback form's submission, a webhook's delivery) only through
+shared/workspace_routing.py ``workspace_payload`` (the one writer), from a ``RoutedWorkspace``: built only there, from the
+item its own GetItem of a lookup row (``FORM#{id}``) or of the workspace's ``META`` returned, through the layer's
+``scope_from_lookup``, which nothing else calls.
 
 Known limits, each closed by the slice that moves the code: keys joined without a literal prefix
 (``'#'.join(('SOURCE', s))``), low-level clients built directly (``boto3.client('dynamodb')``,
@@ -104,7 +108,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/data_explorer_handler.py': (
         2, {'SOURCE#': 1, 'Table': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
     'lambda/api/feedback_edit_handler.py': (2, {'get_aggregates_table': 1, 'get_feedback_table': 1}),
-    'lambda/api/feedback_form_handler.py': (2, {'SOURCE#': 2, 'Table': 2}),
+    # Both paths since the public routes' slice: a workspace's forms through `ws_table`, its stats' partition from
+    # shared/feedback_partitions.py `source_partition` (its two SOURCE# literals moved there). Table: the
+    # module-level voc-aggregates and voc-feedback the views are taken of.
+    'lambda/api/feedback_form_handler.py': (2, {'Table': 2}),
     # Both paths since the operator routes' slice: run rows through shared/run_rows.py (its SOURCE_RUN# moved there),
     # the breaker through shared/plugin_circuit.py. Left: the voc-aggregates handle of Run now and the run status.
     'lambda/api/integrations_handler.py': (2, {'get_aggregates_table': 2}),
@@ -393,8 +400,8 @@ def test_a_scope_is_built_only_in_the_layer():
 
 def test_no_request_facing_module_takes_its_scope_from_what_was_sent():
     """A request's workspace is its resolved membership (``scope_of``), never a field, a path or a cursor."""
-    assert [module for name in ('scope_from_message', 'scope_from_key') for module in _calls_of(name)
-            if _request_facing(module)] == []
+    assert [module for name in ('scope_from_message', 'scope_from_key', 'scope_from_lookup')
+            for module in _calls_of(name) if _request_facing(module)] == []
 
 
 def test_the_rules_see_aliases(tmp_path):
@@ -450,10 +457,17 @@ def test_no_request_facing_module_writes_the_workspace_field_into_a_message():
     assert found == {}
 
 
-#: The one helper a request-facing module names a workspace on an invoke payload with, and its module.
-PAYLOAD_WRITER: Final = ('lambda/shared/workspace_request.py', 'workspace_payload')
+#: The one helper a request-facing module names a workspace on a payload or message with (an operator route's invoke
+#: payload, a form's submission, a webhook's delivery), its module and its workspace parameter, and the only two types
+#: that parameter may be: a request's resolved membership, or the workspace a stored lookup row routes to.
+PAYLOAD_WRITER: Final = ('lambda/shared/workspace_routing.py', 'workspace_payload', 'source')
+WORKSPACE_SOURCES: Final = frozenset({'WorkspaceContext', 'RoutedWorkspace'})
 #: Where a ``WorkspaceContext`` (a resolved membership) is built: the request middleware and the members' changes.
 CONTEXT_BUILDERS: Final = ('lambda/shared/workspace.py', 'lambda/shared/workspace_members.py')
+#: The one module that reads a public entry point's lookup row and builds its ``RoutedWorkspace``.
+LOOKUP_READER: Final = 'lambda/shared/workspace_routing.py'
+#: The strongly consistent GetItem (shared/aws.py) the lookup reader reads its stored rows with.
+STORED_ROW_READ: Final = 'consistent_item'
 
 
 def _function(module: str, name: str) -> ast.FunctionDef:
@@ -461,16 +475,28 @@ def _function(module: str, name: str) -> ast.FunctionDef:
     return next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name)
 
 
-def test_the_payload_writer_takes_the_field_from_a_resolved_membership_only():
-    """``workspace_payload(payload, context)``: it drops a ``workspace_id`` the payload carries, refuses anything but a
-    ``WorkspaceContext``, and its one write of the field is ``context.ws``, after every other field. So the workspace
-    an operator route's run lands in is the one the request resolved, never a body field (a request-facing module
-    holds no other way: the rule above, and a ``WorkspaceContext`` is built only by ``CONTEXT_BUILDERS``)."""
-    module, name = PAYLOAD_WRITER
+def test_the_payload_writer_has_one_home():
+    """No other module defines a writer of its own: every caller imports the one."""
+    defining = [_rel(path) for path in _modules()
+                if any(isinstance(node, ast.FunctionDef) and node.name == PAYLOAD_WRITER[1]
+                       for node in ast.walk(_parse(path)))]
+    assert defining == [PAYLOAD_WRITER[0]]
+
+
+def test_the_payload_writer_takes_the_field_from_a_server_side_workspace_only():
+    """``workspace_payload(payload, source)``: it drops a ``workspace_id`` the payload carries, refuses anything but a
+    ``WorkspaceContext`` or a ``RoutedWorkspace`` (exactly those two, in its one ``isinstance``), and its one write of
+    the field is ``source.ws``, after every other field. So the workspace an operator route's run, a form's submission
+    or a webhook's delivery lands in is the one the server resolved (a membership, a stored lookup row), never a body
+    field (a request-facing module holds no other way: the rule above; a ``WorkspaceContext`` is built only by
+    ``CONTEXT_BUILDERS``, a ``RoutedWorkspace`` only by ``LOOKUP_READER``)."""
+    module, name, parameter = PAYLOAD_WRITER
     function = _function(module, name)
-    [context] = [arg.arg for arg in function.args.args if arg.arg == 'context']
-    checks = [node for node in ast.walk(function) if isinstance(node, ast.Call) and _called(node) == 'isinstance']
-    assert any(isinstance(arg, ast.Name) and arg.id == 'WorkspaceContext' for call in checks for arg in call.args)
+    [context] = [arg.arg for arg in function.args.args if arg.arg == parameter]
+    [check] = [node for node in ast.walk(function) if isinstance(node, ast.Call) and _called(node) == 'isinstance']
+    assert isinstance(check.args[0], ast.Name)
+    assert check.args[0].id == context
+    assert {node.id for node in ast.walk(check.args[1]) if isinstance(node, ast.Name)} == WORKSPACE_SOURCES
     writes = [node for node in ast.walk(function) if isinstance(node, ast.Dict) and any(map(_names_the_workspace_field,
                                                                                           node.keys))]
     assert len(writes) == 1
@@ -484,9 +510,42 @@ def test_the_payload_writer_takes_the_field_from_a_resolved_membership_only():
 
 
 def test_a_resolved_membership_is_built_only_by_the_control_plane():
-    """``WorkspaceContext(…)`` (what ``PAYLOAD_WRITER`` and shared/workspace_plugin_store.py accept as a resolved
+    """``WorkspaceContext(…)`` (what ``workspace_payload`` and shared/workspace_plugin_store.py accept as a resolved
     request) is built only where a membership is resolved or changed, never by a request-facing module."""
     assert _calls_of('WorkspaceContext') == sorted(CONTEXT_BUILDERS)
+
+
+def test_a_routed_workspace_is_built_only_from_a_stored_row():
+    """A public entry point's workspace (``RoutedWorkspace``, which ``workspace_payload`` accepts) is built only by
+    ``LOOKUP_READER``, and the layer's ``scope_from_lookup`` is called only there, each time on an item that module
+    read itself (``STORED_ROW_READ``, shared/aws.py's strongly consistent GetItem, imported under its own name), never
+    on a value the caller sent: no request-facing module calls either."""
+    assert _calls_of('RoutedWorkspace') == [LOOKUP_READER]
+    assert _calls_of('scope_from_lookup') == [LOOKUP_READER]
+    tree = _parse(ROOT / LOOKUP_READER)
+    functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    assert any(isinstance(node, ast.ImportFrom) and node.module == 'shared.aws'
+               and any(alias.name == STORED_ROW_READ and alias.asname is None for alias in node.names)
+               for node in ast.walk(tree))
+    assert STORED_ROW_READ not in functions
+    callers = [function for function in functions.values()
+               if any(isinstance(node, ast.Call) and _called(node) == 'scope_from_lookup' for node in ast.walk(function))]
+    assert callers
+    for function in callers:
+        stored = {target.id for node in ast.walk(function) if isinstance(node, ast.Assign)
+                  and isinstance(node.value, ast.Call) and _called(node.value) == STORED_ROW_READ
+                  for target in node.targets if isinstance(target, ast.Name)}
+        arguments = [node.args for node in ast.walk(function) if isinstance(node, ast.Call)
+                     and _called(node) == 'scope_from_lookup']
+        assert all(len(args) == 1 and isinstance(args[0], ast.Name) and args[0].id in stored for args in arguments), (
+            function.name)
+        # The row is never rebound between the read and the call (no other assignment to the name).
+        rebound = [node for node in ast.walk(function) if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign)
+                   and not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+                            and _called(node.value) == STORED_ROW_READ)
+                   and any(isinstance(target, ast.Name) and target.id in stored
+                           for target in (node.targets if isinstance(node, ast.Assign) else [node.target]))]
+        assert rebound == [], function.name
 
 
 def test_the_workspace_field_rule_sees_each_write(tmp_path):
