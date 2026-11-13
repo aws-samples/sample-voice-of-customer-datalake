@@ -52,6 +52,3 @@ repost_task.__name__
 # The run's coordinate task (board/store.py): the runtime's RunStore.start is to put its items in the start
 # transaction; the board's tests drive it until it is wired.
 BoardStore.coordinate_items
-# The supervisor's renewal of a holder's lease before it continues the agent (BoardStore.refresh): the runtime's
-# Board port is to call it.
-BoardStore.refresh

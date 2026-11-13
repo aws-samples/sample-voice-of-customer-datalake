@@ -741,9 +741,27 @@
     "tabs": {
       "agents": "Agenten",
       "board": "Board",
-      "conversation": "Unterhaltung"
+      "conversation": "Unterhaltung",
+      "reports": "Berichte"
     },
-    "panels": "Agenten, Board und Unterhaltung des Laufs",
+    "panels": "Agenten, Board, Unterhaltung und Berichte des Laufs",
+    "reports": {
+      "title": "Bericht: {{subject}}",
+      "version": "Version",
+      "latest": "Neueste (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "Erstellt {{when}}",
+      "readFailed": "Dieser Bericht konnte nicht gelesen werden.",
+      "missing": "Diese Version wurde nie geschrieben (ihre Erstellung wurde nicht abgeschlossen). Wählen Sie eine andere Version.",
+      "loadFailed": "Die Berichte konnten nicht geladen werden.",
+      "none": "Es wurde noch kein Bericht geschrieben.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "Ziel",
+        "pr": "Pull Requests",
+        "commit": "Commits"
+      }
+    },
     "flow": "Der Ablauf des Laufs, mit den Schritten, an denen seine Agenten gerade sind",
     "noFlow": "Der Ablauf des Laufs konnte nicht gelesen werden: Der Rest wird angezeigt.",
     "notFound": "Engineering-Lauf nicht gefunden",

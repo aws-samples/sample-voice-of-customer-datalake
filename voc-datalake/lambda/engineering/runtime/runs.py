@@ -7,7 +7,8 @@ goal, repository, flow, status and times, and the supervisor its caps and its st
 once; its end sets its status and end time. Nothing else here ever writes over the board's, the router's or the
 inbox's counters: after the first write every change is an update of this module's own attributes. The start
 takes the run's first agent number (``agent_count`` 1, the board's counter of ``<role>-<n>`` ids) for its
-coordinator, ``coordinator-1`` (``COORDINATOR_AGENT``), so the board numbers the agents it launches from 2.
+coordinator, ``coordinator-1`` (the one ``BoardStore.coordinate_items`` records), so the board numbers the agents it
+launches from 2.
 
 Every change of a run's status (its start, its end, a decision point, a person's resume) records who made it and
 when (D4): a row of its own, ``RUNLOG#<at>#<status>#<hex>`` (the status, the actor, the reason, the time), written in
@@ -55,8 +56,6 @@ MAX_ACTOR: Final = 200
 #: How often a status change is tried when another write of META races it (a transaction conflict).
 STATUS_TRIES: Final = 3
 STATUS_PAUSE_S: Final = 0.05
-#: The run coordinator's agent id: the run's first agent (``agent_count`` 1 at its start).
-COORDINATOR_AGENT: Final = 'coordinator-1'
 
 
 def run_pk(run_id: str) -> str:

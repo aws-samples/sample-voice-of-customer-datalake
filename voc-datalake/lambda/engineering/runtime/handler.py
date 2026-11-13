@@ -18,7 +18,9 @@
   role session).
 - ``{"action": "signal", "run_id", "agent_id"?, "signal", "attempt"?, "actor"?}``: the run monitor's Save, Pause, Resume,
   Shut down and Stop now (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
-  (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given).
+  (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given). A
+  Resume of the whole run also makes sure the run has a coordinator, as its start does (``_ensure_coordinator``: a
+  new one in place of one whose session failed).
 
 ``delivery_handler`` is voc-engineering-delivery's entry point, the same code with a role of its own
 (engineering-runtime.ts createDelivery): the router's message for an agent, the conductor or a role of a run,
@@ -40,11 +42,11 @@ import os
 import time
 from collections.abc import Callable, Mapping
 from functools import cache
-from typing import Any, Final, TypeGuard
+from typing import TYPE_CHECKING, Any, Final, TypeGuard
 
 from aws_lambda_powertools.metrics import MetricUnit
 
-from engineering.board.store import COORDINATE_TASK, COORDINATOR
+from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError
 from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import CheckpointReader
@@ -53,7 +55,6 @@ from engineering.runtime.harness.skills import harness_argv, skill_for, skill_la
 from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused
 from engineering.runtime.launcher import Launcher
 from engineering.runtime.runs import (
-    COORDINATOR_AGENT,
     ENDED,
     RunCaps,
     RunExists,
@@ -65,6 +66,9 @@ from engineering.runtime.sessions import LIVE_STATUSES, AgentSession, SessionSto
 from engineering.runtime.supervisor import Supervisor
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
+
+if TYPE_CHECKING:
+    from engineering.runtime.board_bus import SessionState
 
 MAX_HARNESS_ARGS: Final = 32
 
@@ -124,9 +128,11 @@ def tick(_event: Mapping[str, Any]) -> dict[str, Any]:
     return {'sessions': statuses}
 
 
-def signal(event: Mapping[str, Any]) -> dict[str, Any]:
-    """``{"agents": {agent: status}, "applied": {agent: bool}}``: ``applied`` false where nothing took effect (busy,
-    a failed move, or ``stale`` when the ``attempt`` given is not the one the agent works on)."""
+def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``signal`` action: ``{"agents": {agent: status}, "applied": {agent: bool}}``, ``applied`` false where
+    nothing took effect (busy, a failed move, or ``stale`` when the ``attempt`` given is not the one the agent works
+    on). Named apart from every ``.signal`` attribute, which a reachability sweep matches by name (the delivery
+    function never runs it)."""
     agent_id, run_id, kind = event.get('agent_id'), str(event.get('run_id', '')), str(event.get('signal', ''))
     attempt = _optional_number(event, 'attempt', int)
     answers = _supervisor().signal_detailed(run_id, None if agent_id is None else str(agent_id), kind, int(clock()),
@@ -135,6 +141,8 @@ def signal(event: Mapping[str, Any]) -> dict[str, Any]:
         # The supervisor accepted it (the run is not ended, its budget not spent): the run may launch agents again.
         with contextlib.suppress(RunNotActive):  # it was not at a decision point
             _runs().resume(run_id, now=int(clock()), actor=str(event.get('actor') or ''))
+        # A run whose coordinator kept crashing waited for this Resume: it gets a new one.
+        _ensure_coordinator(run_id, str(event.get('actor') or ''))
     return {'agents': {agent: status for agent, (status, _) in answers.items()},
             'applied': {agent: applied for agent, (_, applied) in answers.items()}}
 
@@ -201,17 +209,41 @@ def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]
                           'skill_version': str(event.get('skill_version', ''))[:200]}
 
 
-def _launch_coordinator(run_id: str) -> None:
-    """Launch the run's coordinator on its ``coordinate`` task, at the task's attempt, once: never for a run
-    without its connection, commit and language, nor when a session of it exists (a retried start's)."""
+def _ensure_coordinator(run_id: str, actor: str) -> None:
+    """Make sure an active run with its connection, commit and language has a coordinator: the one its coordinate
+    task records, started when it has no session yet (the run's start, ``coordinator-1``; a start whose MicroVM
+    failed), or a new one in its place when its session failed: it kept crashing, which sent the run to a person
+    (``BoardLeases.coordinator_to_start``). Nothing for a run whose coordinator is live or held (a Resume continues
+    a held one itself), nor one a person shut down or stopped. A refusal of the board's (the run's agent cap, a
+    racing start or Resume that moved the task on) is logged, never raised: the Resume it follows was applied."""
+    from engineering.runtime.board_bus import BoardLeases
     run = _runs().get(run_id)
     if run is None or run.status != 'active' or not (run.connection and run.commit and run.language):
         return
-    if _supervisor().sessions.get(run_id, COORDINATOR_AGENT) is None:
-        with contextlib.suppress(StaleSession):   # a retried start racing this one: its launch is the run's
-            launch({'run_id': run_id, 'agent_id': COORDINATOR_AGENT, 'role': COORDINATOR,
-                    'task_id': COORDINATE_TASK, 'language': run.language, 'paths': [], 'commit': run.commit,
-                    'connection': run.connection})
+    supervisor = _supervisor()
+    if not isinstance(supervisor.board, BoardLeases):
+        raise RuntimeRefused('the supervisor has no board to start a coordinator on')
+
+    def state(agent_id: str) -> SessionState:
+        session = supervisor.sessions.get(run_id, agent_id)
+        if session is None:
+            return 'none'
+        return 'failed' if session.status == 'failed' else 'kept'
+
+    try:
+        found = supervisor.board.coordinator_to_start(run_id, state, actor=actor or 'runtime')
+    except BoardError as error:
+        if error.kind not in ('cap', 'conflict'):
+            raise
+        logger.warning('engineering runtime: no new coordinator', extra={'run_id': run_id, 'reason': str(error)})
+        return
+    if found is None:
+        return
+    agent_id, attempt = found
+    with contextlib.suppress(StaleSession):   # a retried start or Resume racing this one: its launch is the run's
+        launch({'run_id': run_id, 'agent_id': agent_id, 'role': COORDINATOR, 'task_id': COORDINATE_TASK,
+                'attempt': attempt, 'language': run.language, 'paths': [], 'commit': run.commit,
+                'connection': run.connection})
 
 
 def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
@@ -231,7 +263,7 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
             raise
         status = run.status  # a retry of a live run: its rule may never have been switched on
     _switch(True)
-    _launch_coordinator(run_id)
+    _ensure_coordinator(run_id, str(event.get('actor') or ''))
     return {'run_id': run_id, 'status': status}
 
 
@@ -305,7 +337,7 @@ def delivery_handler(event: Mapping[str, Any], context: object) -> dict[str, Any
 
 
 ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {
-    'start_run': start_run, 'end_run': end_run, 'tick': tick, 'launch': launch, 'signal': signal,
+    'start_run': start_run, 'end_run': end_run, 'tick': tick, 'launch': launch, 'signal': signal_action,
 }
 
 

@@ -160,6 +160,14 @@ def test_a_report_of_no_run_or_a_bad_request_is_refused(run: Run, monkeypatch: p
     assert handler({'run_id': RUN, 'level': 'pr', 'subject': '42', 'head': SHA}, None)['version'] == 1
 
 
+def test_the_handler_flushes_its_metrics_the_workspace_count_of_denied_reads_included(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    flushed: list[bool] = []
+    monkeypatch.setattr(handler_module.metrics.provider, 'flush_metrics', lambda *_a, **_k: flushed.append(True))
+    assert handler({}, None)['status'] == 'refused'
+    assert flushed == [True]
+
+
 def test_a_gate_record_off_the_schema_or_not_from_final_go_is_left_out(run: Run) -> None:
     run.s3.put_object(Bucket=BUCKET, Key=f'ws/default/runs/{RUN}/final-go-2/commits/{SHA}/_gate/attempt-1/record.json',
                       Body=b'{"schema": "voc-gate-record/1", "verdict": 3}')

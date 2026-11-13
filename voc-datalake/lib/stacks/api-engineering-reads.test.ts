@@ -5,19 +5,25 @@
  * (whose tokens never act as an admin) gets no engineering tool and nothing of the module.
  */
 import { describe, expect, it } from 'vitest';
-import type { Template } from 'aws-cdk-lib/assertions';
+import { Template } from 'aws-cdk-lib/assertions';
 
 import { byCodeUnit } from '../utils/compare';
 import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
 import {
-  actionsWithPrefix, apiTemplate, policyStatementsOf, serviceEnvironment, synthApiTemplate,
+  actionsWithPrefix, apiTemplate, buildApiStack, policyStatementsOf, serviceEnvironment,
 } from '../test-support/api-stack-template';
+import type { VocApiStack } from './api-stack';
 
 const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
-let cachedOn: Template | undefined;
-const on = (): Template => {
-  cachedOn ??= synthApiTemplate({ engineeringAgents: true });
+let cachedOn: VocApiStack | undefined;
+const onStack = (): VocApiStack => {
+  cachedOn ??= buildApiStack({ engineeringAgents: true });
   return cachedOn;
+};
+let cachedTemplate: Template | undefined;
+const on = (): Template => {
+  cachedTemplate ??= Template.fromStack(onStack());
+  return cachedTemplate;
 };
 const engineeringStatements = (template: Template) => policyStatementsOf(template, 'AgentsLambdaRole')
   .filter((statement) => /Engineering/.test(statement.resource));
@@ -51,5 +57,23 @@ describe('the engineering run reads', () => {
   it('give the MCP endpoint nothing: the reads are admin-only and an MCP token is never an admin, so no tool', () => {
     const env = serviceEnvironment(on(), GLOBAL_MCP_SERVICE_NAME);
     expect(Object.keys(env).filter((name) => name.startsWith('ENGINEERING_'))).toStrictEqual([]);
+  });
+});
+
+describe('the web app\'s engineering flag (owner decision 28: New engineering flow only with the module)', () => {
+  const engineeringFeature = (stack: VocApiStack): unknown => {
+    const features: unknown = stack.runtimeConfig['features'];
+    return typeof features === 'object' && features !== null ? Object.entries(features)
+      .find(([key]) => key === 'engineering')?.[1] : undefined;
+  };
+
+  it('is off, with no output, by default', () => {
+    expect(engineeringFeature(buildApiStack())).toBe(false);
+    expect(Object.keys(apiTemplate().findOutputs('EngineeringAvailable'))).toStrictEqual([]);
+  });
+
+  it('is on, with the EngineeringAvailable output deploy:frontend reads, with -c engineeringAgents=true', () => {
+    expect(engineeringFeature(onStack())).toBe(true);
+    expect(Object.values(on().findOutputs('EngineeringAvailable')).map((output) => output.Value)).toStrictEqual(['true']);
   });
 });

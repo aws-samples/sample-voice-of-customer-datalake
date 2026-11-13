@@ -4,7 +4,8 @@
  *
  * The run's goal, status, MicroVM time and tokens (its cost once the run control reports it); the run's flow with
  * the steps its agents are on lit (the read-only canvas the agents' runs use, from the run's flow definition); and
- * beside it the Agents, Board and Conversation panels (the conversation records the signals sent too). An admin
+ * beside it the Agents, Board, Conversation and Reports panels (the conversation records the signals sent too; the
+ * reports are the run's commit, PR and goal reports, each version's Markdown). An admin
  * signals the run or an agent on its task, and answers the conductor or an agent, where the deployment lets the
  * monitor reach the run (`actions_available`; else one line says why there are no controls). The
  * reads poll every few seconds while the run is under way (useEngineeringRun.ts: polling until the push lands).
@@ -14,7 +15,7 @@
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Bot, KanbanSquare, MessagesSquare } from 'lucide-react'
+import { Bot, FileText, KanbanSquare, MessagesSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
@@ -26,14 +27,15 @@ import { BackToAgents } from './BackToAgents'
 import { EngineeringRunHeader } from './EngineeringRunHeader'
 import { AgentsPanel, BoardPanel } from './EngineeringRunPanels'
 import { ConversationPanel } from './EngineeringConversation'
+import { ReportsPanel } from './EngineeringReports'
 import { EngineeringSignals } from './EngineeringSignals'
 import { liveSteps } from './engineeringRunText'
 import { useEngineeringBoard, useEngineeringConversation, useEngineeringOverview } from './useEngineeringRun'
 import type { EngineeringAgent, EngineeringOverview } from '../../api/engineeringRunsApi'
 
-const TABS = ['agents', 'board', 'conversation'] as const
+const TABS = ['agents', 'board', 'conversation', 'reports'] as const
 type Tab = (typeof TABS)[number]
-const TAB_ICONS = { agents: Bot, board: KanbanSquare, conversation: MessagesSquare }
+const TAB_ICONS = { agents: Bot, board: KanbanSquare, conversation: MessagesSquare, reports: FileText }
 
 function FlowGraph({ flow, agents }: Readonly<{ flow: string; agents: readonly EngineeringAgent[] }>) {
   const { t } = useTranslation('agents')
@@ -67,6 +69,7 @@ function Panels({ runId, overview, live, canAct, readAt }: Readonly<{
           <ConversationPanel runId={runId} messages={conversation.data?.messages ?? []} agents={overview.agents}
             isAdmin={canAct} live={live} />
         )}
+        {tab === 'reports' && <ReportsPanel runId={runId} live={live} />}
       </div>
     </section>
   )

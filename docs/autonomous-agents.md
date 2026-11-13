@@ -130,10 +130,10 @@ board does the repeating) and holds no agents step; an agents workflow holds no 
 The two kinds never mix: no agent runs an engineering flow (`POST`/`PUT /agents` refuse one), a saved workflow keeps
 its kind (a save of the other kind over it is refused: save it as a new workflow), and the agents' runtime refuses a
 `voc-workflow/2` definition. `GET /workflows` lists both kinds, each with its `kind` (`agents` | `engineering`): the
-editor opens either, and an agent's workflow picker offers only `agents` ones. An engineering flow can be designed
-and saved in every deployment (it is a definition, like any workflow); it runs only where the opt-in engineering
-module is on. The library has **New workflow** (an
-agents workflow) and **New engineering flow**; an engineering flow's palette shows **Engineering** (with Start and
+editor opens either, and an agent's workflow picker offers only `agents` ones. An engineering flow is a
+definition, like any workflow: one already saved opens and saves in every deployment, and it runs only where the
+opt-in engineering module is on. The library has **New workflow** (an agents workflow) and, only where the module is
+on (`config.json` `features.engineering`), **New engineering flow**; an engineering flow's palette shows **Engineering** (with Start and
 End), its settings panels set each step's settings (no step role and no loops: its board does the repeating), and its
 graph rules are mirrored as you edit (`WorkflowEditor/engineeringRules.ts`, held to the
 server by the shared fixture `frontend/src/test/engineeringFlows.json`).
@@ -143,7 +143,10 @@ server by the shared fixture `frontend/src/test/engineeringFlows.json`).
 Where the engineering agents are on (`ENGINEERING_AGENTS=on`, with their table and workspace bucket), the Agents API
 lets an administrator acting for themselves read a run and act on it (403 for anyone else, a delegated MCP or agent
 credential included, like a run's decision; 404 for an unknown run, and for everyone while the module is off). There is
-no MCP tool for engineering runs yet (docs/mcp.md). The web app's page for a run is `/agents/engineering/<run_id>`.
+no MCP tool for engineering runs yet (docs/mcp.md). The web app's page for a run is `/agents/engineering/<run_id>`:
+its flow with the steps its agents are on, and the Agents, Board, Conversation and Reports panels (the reports by
+level, goal first; the one chosen shows its latest version's Markdown, rendered as Markdown only, with a picker for
+the earlier versions).
 The reads work wherever the module is on. The actions (signals, answers) need the runtime and the bus named on the
 Agents API, with their grants and the bus's resource policy, which the opt-in stack does not set yet: until it does,
 they answer 503.

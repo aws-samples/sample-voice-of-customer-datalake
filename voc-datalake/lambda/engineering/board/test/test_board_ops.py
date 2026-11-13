@@ -28,7 +28,7 @@ from engineering.rows import run_pk
 from engineering.test.run_fixture import LambdaClient
 
 WS = 'default'
-COORDINATOR = Caller('coordinator', RUN, 0)
+COORDINATOR = Caller('coordinator', RUN, 1)   # (coordinator-1: the run's start launches it)
 FIXER = Caller('fixer', RUN, 1)
 AT = '2026-11-12T09:00:00+00:00'
 
@@ -78,12 +78,14 @@ class Board:
 
 
 def _start(client: Any, store: BoardStore) -> None:
-    """The run's start: META (as the run start writes it, with its commit and connection) and the coordinate task,
+    """The run's start: META (as the run start writes it, with its commit and connection, and agent_count 1: its
+    coordinator, coordinator-1, is the run's first agent) and the coordinate task,
     put as ``RunStore.start`` puts its rows: one transaction through a resource table's client."""
     client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': 'META'}},
-                       UpdateExpression='SET #c = :commit, #n = :connection',
+                       UpdateExpression='SET #c = :commit, #n = :connection, agent_count = :one',
                        ExpressionAttributeNames={'#c': 'commit', '#n': 'connection'},
-                       ExpressionAttributeValues={':commit': {'S': 'a' * 40}, ':connection': {'S': 'repo-1'}})
+                       ExpressionAttributeValues={':commit': {'S': 'a' * 40}, ':connection': {'S': 'repo-1'},
+                                                  ':one': {'N': '1'}})
     table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
     table.meta.client.transact_write_items(TransactItems=[
         {'Put': {'TableName': TABLE, 'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}}
@@ -129,9 +131,81 @@ def test_the_run_start_writes_the_coordinate_task_for_the_coordinator_alone(run:
     status, _ = call(run, FIXER, op='claim', task_id=COORDINATE_TASK)
     assert status == 403
     status, body = call(run, COORDINATOR, op='claim', task_id=COORDINATE_TASK)
-    assert (status, body['task']['lease']['agent']) == (200, 'coordinator-0')
+    assert (status, body['task']['lease']['agent']) == (200, 'coordinator-1')
     assert call(run, COORDINATOR, op='renew', task_id=COORDINATE_TASK, epoch=1)[0] == 200
     assert call(run, COORDINATOR, op='progress', task_id=COORDINATE_TASK, epoch=1, step='Planning')[0] == 200
+
+
+def test_the_coordinate_task_records_the_coordinator_its_start_launched(run: Board) -> None:
+    task = run.store.task(WS, RUN, COORDINATE_TASK)
+    assert (task.launched_agent, task.launched_attempt, task.launched_paths, task.launched_language) == (
+        'coordinator-1', 1, (), '')
+
+
+def test_a_coordinator_dead_before_its_claim_is_reposted_and_the_runtime_launches_the_next(run: Board) -> None:
+    """A person's Resume of a run whose coordinator is gone: the runtime re-posts the coordinate task at the attempt
+    it judged, then records a new coordinator on it (``launch_coordinator``), never through a board op."""
+    reposted = run.store.repost(WS, RUN, COORDINATE_TASK, reason='the coordinator is gone', attempt=1)
+    assert (reposted.state, reposted.attempt) == ('open', 2)
+    with pytest.raises(BoardError, match='attempt 2, not 1'):
+        run.store.launch_coordinator(WS, RUN, attempt=1)   # (a Resume judging the attempt before: fenced)
+    launched = run.store.launch_coordinator(WS, RUN, attempt=2)
+    again = run.store.launch_coordinator(WS, RUN, attempt=2)   # (a retried Resume: the same coordinator)
+    assert (launched.task.launched_agent, launched.task.launched_attempt, launched.reused, again.reused,
+            again.task.launched_agent) == ('coordinator-2', 2, False, True, 'coordinator-2')
+    last = run.store.history(WS, RUN)[COORDINATE_TASK][-1]
+    assert (last.op, last.actor, last.reason) == ('launch', 'runtime', 'launched coordinator-2')
+    # The board's own launch op still refuses the coordinator's role, even to the run's current coordinator.
+    assert call(run, Caller('coordinator', RUN, 2), op='launch', task_id=COORDINATE_TASK, role='coordinator',
+                language='py', paths=[])[0] == 400
+
+
+def test_a_replaced_coordinator_is_refused_every_op_and_the_new_one_works(run: Board) -> None:
+    """After the runtime re-posts the coordinate task and records a new coordinator, the old one's session (still
+    alive, say) can no longer post, list, launch, read knowledge, read its inbox or claim the coordinate task."""
+    task_id = fixer_task(run)
+
+    def old_ones() -> list[tuple[int, bool]]:
+        answers = [call(run, COORDINATOR, op='post', role='fixer', title='More', spec={'issue': 2}),
+                   call(run, COORDINATOR, op='tasks'),
+                   call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='py', paths=[]),
+                   call(run, COORDINATOR, op='knowledge', package=''),
+                   call(run, COORDINATOR, op='inbox', after=0),
+                   call(run, COORDINATOR, op='claim', task_id=COORDINATE_TASK)]
+        return [(status, 'another coordinator' in body['error']) for status, body in answers]
+
+    run.store.repost(WS, RUN, COORDINATE_TASK, reason='the coordinator is gone', attempt=1)
+    # Between the re-post and the new coordinator's record, the old one is no longer the run's either.
+    assert old_ones() == [(403, True)] * 6
+    run.store.launch_coordinator(WS, RUN, attempt=2)
+    assert old_ones() == [(403, True)] * 6
+    new = Caller('coordinator', RUN, 2)
+    assert call(run, new, op='claim', task_id=COORDINATE_TASK)[0] == 200
+    assert call(run, new, op='tasks')[0] == 200
+
+
+def test_the_coordinate_tasks_claim_checks_its_coordinator_in_the_write_itself(run: Board) -> None:
+    """A re-post landing between the API's check and the claim: the store's own condition refuses the old one."""
+    run.store.repost(WS, RUN, COORDINATE_TASK, reason='the coordinator is gone', attempt=1)
+    run.store.launch_coordinator(WS, RUN, attempt=2)
+    with pytest.raises(BoardError, match='not open'):
+        run.store.claim(WS, RUN, COORDINATE_TASK, role='coordinator', agent='coordinator-1')
+    assert run.store.claim(WS, RUN, COORDINATE_TASK, role='coordinator', agent='coordinator-2').lease_agent == \
+        'coordinator-2'
+
+
+def test_a_new_coordinator_is_only_for_an_open_coordinate_task(run: Board) -> None:
+    assert call(run, COORDINATOR, op='claim', task_id=COORDINATE_TASK)[0] == 200
+    with pytest.raises(BoardError, match='only an open task'):
+        run.store.launch_coordinator(WS, RUN, attempt=1)
+
+
+def test_the_stores_own_launch_never_numbers_a_coordinator(run: Board) -> None:
+    """The store's guard, below the API's role check: only ``launch_coordinator`` records one."""
+    with pytest.raises(BoardError, match='comes from the run, never from a launch'):
+        run.store.launch(WS, RUN, COORDINATE_TASK, role='coordinator', actor='coordinator-1')
+    meta = run.client.get_item(TableName=TABLE, Key={'pk': {'S': run_pk(WS, RUN)}, 'sk': {'S': 'META'}})['Item']
+    assert meta['agent_count'] == {'N': '1'}   # (no number taken)
 
 
 def test_nobody_posts_a_coordinate_task_and_the_coordinator_claims_nothing_else(run: Board) -> None:
@@ -173,32 +247,32 @@ def test_the_coordinator_launches_an_agent_for_an_open_task_once(run: Board) -> 
     task_id = fixer_task(run)
     status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python',
                         paths=['services/billing'])
-    assert (status, body) == (200, {'agent_id': 'fixer-1', 'status': 'booting'})
+    assert (status, body) == (200, {'agent_id': 'fixer-2', 'status': 'booting'})
     (request,) = run.launcher.requests
-    assert request == {'run_id': RUN, 'agent_id': 'fixer-1', 'role': 'fixer', 'task_id': task_id, 'attempt': 1,
+    assert request == {'run_id': RUN, 'agent_id': 'fixer-2', 'role': 'fixer', 'task_id': task_id, 'attempt': 1,
                        'language': 'python', 'paths': ['services/billing'], 'commit': 'a' * 40,
                        'connection': 'repo-1'}
     last = run.store.history(WS, RUN)[task_id][-1]
-    assert (last.op, last.actor, last.reason) == ('launch', 'coordinator-0', 'launched fixer-1')
+    assert (last.op, last.actor, last.reason) == ('launch', 'coordinator-1', 'launched fixer-2')
     again = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
-    assert again[1]['agent_id'] == 'fixer-1'   # (a retry: the same agent, no second number)
+    assert again[1]['agent_id'] == 'fixer-2'   # (a retry: the same agent, no second number)
     assert run.launcher.requests[-1]['paths'] == ['services/billing']   # (with the paths it was launched on)
     other = fixer_task(run, ['x'])
     assert call(run, COORDINATOR, op='launch', task_id=other, role='fixer', language='go', paths=[])[1][
-        'agent_id'] == 'fixer-2'
+        'agent_id'] == 'fixer-3'
 
 
 def test_a_reposted_task_gets_a_new_agent_at_its_new_attempt(run: Board) -> None:
     task_id = fixer_task(run)
     launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'py', 'paths': []}
-    assert call(run, COORDINATOR, **launch)[1]['agent_id'] == 'fixer-1'
+    assert call(run, COORDINATOR, **launch)[1]['agent_id'] == 'fixer-2'
     call(run, FIXER, op='claim', task_id=task_id)
     run.store.repost(WS, RUN, task_id, reason='the lease ran out', attempt=1)
     status, body = call(run, COORDINATOR, **launch)
-    assert (status, body['agent_id']) == (200, 'fixer-2')
+    assert (status, body['agent_id']) == (200, 'fixer-3')
     assert run.launcher.requests[-1]['attempt'] == 2
     task = run.store.task(WS, RUN, task_id)
-    assert (task.launched_agent, task.launched_attempt) == ('fixer-2', 2)
+    assert (task.launched_agent, task.launched_attempt) == ('fixer-3', 2)
 
 
 def test_a_launched_agent_that_never_claimed_is_reposted_and_the_next_launch_is_a_new_agent(run: Board) -> None:
@@ -208,7 +282,7 @@ def test_a_launched_agent_that_never_claimed_is_reposted_and_the_next_launch_is_
     call(run, COORDINATOR, **launch)
     task = run.store.repost(WS, RUN, task_id, reason='crashed before its claim', attempt=1)
     assert (task.state, task.attempt) == ('open', 2)
-    assert call(run, COORDINATOR, **launch)[1]['agent_id'] == 'fixer-2'
+    assert call(run, COORDINATOR, **launch)[1]['agent_id'] == 'fixer-3'
     never = fixer_task(run, ['other'])   # (open, no agent launched: nothing to re-post)
     with pytest.raises(BoardError):
         run.store.repost(WS, RUN, never, reason='x', attempt=1)
@@ -304,7 +378,7 @@ def test_a_retried_launch_whose_session_exists_already_is_launched(run: Board) -
     run.api.launcher = LambdaLauncher(LambdaClient({}, 'Unhandled'), 'f')   # (the answer lost: 503)
     assert call(run, COORDINATOR, **launch)[0] == 503
     run.api.launcher = _runtime_error('StaleSession')   # (the first try's session got through)
-    assert call(run, COORDINATOR, **launch) == (200, {'agent_id': 'fixer-1', 'status': 'launched'})
+    assert call(run, COORDINATOR, **launch) == (200, {'agent_id': 'fixer-2', 'status': 'launched'})
 
 
 # --- knowledge --------------------------------------------------------------------------------------------------

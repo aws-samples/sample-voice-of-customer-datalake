@@ -346,7 +346,15 @@ What exists:
   transaction with META, which records the run's `commit` and `connection` that `launch` and `knowledge` read; a run
   started without its commit or connection answers 503 to `launch`, one without its connection to `knowledge`),
   never posted, and claimed only by the run's coordinator, which renews and reports progress on it like
-  any agent. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
+  any agent. It records the coordinator the start launches on it (`coordinator-1`, with META's `agent_count` 1
+  written in the same transaction, so the board's launches number from 2). A new coordinator for it is recorded only
+  by the run's trusted code (`BoardStore.launch_coordinator`: the task open at the attempt given, the next
+  `coordinator-<n>`, a retry reusing it), never by a board op: a person's Resume of a run whose coordinator is gone
+  re-posts the task at the attempt it was at and then calls it ([Runtime](#runtime-one-microvm-per-agent)). A
+  coordinator acts only while it is the run's: every board op of the coordinator role checks the caller is the
+  coordinate task's recorded coordinator at the task's attempt, so a replaced coordinator's session is refused (403)
+  from the re-post on, its claim included; a run whose start wrote no coordinate task has only its start's
+  coordinator, so there the role is the check. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
   its role, language and paths; the board invokes the runtime's `launch` action only, with the run's commit and
   connection from its META, numbers the agent `<role>-<n>` from the run's counter, at most 999, and records it on the
@@ -366,7 +374,11 @@ What exists:
   task's history; a result key a move records must be one of the caller's own workspace objects of the lease's attempt.
 - **The workspace** (`workspace/`): the key layout below, voc-finding/1 shard lines (`workspace/findings.py`: a line
   off the schema is skipped and counted; credential-shaped strings and personal data are redacted) and the store
-  (bounded reads, create-only writes). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
+  (bounded reads, a cut read logged; create-only writes; its readers without ListBucket, the report builder, the
+  Agents API and the board's `knowledge`, take a denied read as missing, and each such read is logged and counted
+  as the `EngineeringWorkspaceDeniedReads` metric; a plain missing object counts too, as it is denied as well (a
+  failed attempt's result, or a report version that was counted and never written when someone opens it), so a
+  broken policy shows as the count rising well above its usual level). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
   encrypted with the stack's key, versioned, access-logged, kept under `-c protectData`), where nothing expires
   until a retention that writes its `AUDIT#delete` row exists (*planned*; "The workspace" further down this
   section). The runtime's agents write their checkpoints and patches there, each under its own keys
@@ -390,8 +402,7 @@ What exists:
 
 Not built yet: the rest of the harness's side (its broker interface still refuses every call:
 [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); the skills of the roles other than the coordinator
-(the board's launch of such a role is refused, 409); the run coordinator's launch again after a re-post of its
-`coordinate` task (the run's start launches it once: [Runtime](#runtime-one-microvm-per-agent)); a person's board actions
+(the board's launch of such a role is refused, 409); a person's board actions
 (POST),
 planned as the run monitor's board controls; the agents' findings in the workspace (the runtime writes their
 checkpoints and patches there). The rest of this section is the
@@ -531,7 +542,8 @@ and validates one, keeps each workflow's kind, lists both kinds in `GET /workflo
 engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's
 settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
 builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
-shared fixture). *Planned*: the six default flows as templates.
+shared fixture); its library offers New engineering flow only where the module is deployed (`config.json`
+`features.engineering`). *Planned*: the six default flows as templates.
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it in the editor behind an approval card, like its other writes; "refresh
@@ -539,7 +551,7 @@ the knowledge pack", "pull the latest from the repository" and "what is agent X 
 through the same REST routes and MCP tools as everything else (tenet 4).
 
 **The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
-live step highlighted), the board and the conversation. Inspecting an agent shows its current step, its last progress,
+live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,
 its heartbeat's age, its MicroVM's state and age, its recent tool calls and, when it looks stuck, why (no progress for
 N minutes, the same step repeated). A person can message the run coordinator or an agent as a participant, and send
 signals: Save (checkpoint now), Pause, Resume, Shut down (checkpoint, then stop) and Stop now. Stop now is the
@@ -577,7 +589,7 @@ for it. A pull request from a fork is only ever reviewed (comments), never fixed
 *Partly built*: the packs and the step, run as a CLI (`python -m engineering.quality_gate plan|check|gate`) that the
 gate runner's MicroVM is to run; nothing deploys it yet (the [runtime](#runtime-one-microvm-per-agent)'s images do
 not ship it; the workflow's Quality gate step is validated server side, with a `packs` pin the CLI keeps, and the
-editor's step is phase 5). What exists:
+editor has the step with its settings panel, [above](#how-the-agents-work-together)). What exists:
 
 - **The packs** (`voc-datalake/engineering-gates/`, [README](../voc-datalake/engineering-gates/README.md)):
   `rust-ts`, `python-ts` and `java`, each a `manifest.toml` (schema voc-gate-pack/1: the languages' markers and
@@ -807,7 +819,15 @@ continues it in a new one once the wait closes.
   in the same write as the agent's row, so a run that ends meanwhile gets no agent nothing supervises. The
   supervisor reads its caps, its spend (its agents' tokens and what was priced on their rows), its start and its
   end from there; a human decision point is the run's status, and a Resume of the whole run makes it active again
-  (never the 30-day one, which offers only "stop", nor replaced by another decision point). Every change of the
+  (never the 30-day one, which offers only "stop", nor replaced by another decision point). A Resume of the whole
+  run also makes sure it has a coordinator, as its start does: the one its `coordinate` task records is left alone
+  while its session is live or held (the Resume continues a held one) or a person ended it (a Shut down or Stop
+  now stays final), started if it has none yet, and replaced if its session failed (it kept crashing, which is what
+  sent the run to a person): the task re-posted at its attempt
+  (the store's re-post alone: no `task.posted`, since only the coordinator recorded next claims it), a new
+  `coordinator-<n>` recorded at the next attempt by `BoardStore.launch_coordinator` with the person as its actor,
+  and its MicroVM started. The board refuses the old one every coordinator op from the re-post on, and its MicroVM
+  ended with its session, so it reaches neither the board nor the broker. Every change of the
   run's status (its start, its end, a decision point, a Resume) records who made it and when (D4): a row of its
   own, in the same transaction as META's change (`RUNLOG#<at>#<status>#<hex>`, a random suffix: the status, the actor, the reason,
   the time), so the run's history is more than its last state; a change that loses a race with another write of
@@ -947,14 +967,15 @@ continues it in a new one once the wait closes.
 ## Reports
 
 *Partly built*: the builder (`voc-datalake/lambda/engineering/reports/`, the `voc-engineering-reports` Lambda,
-deployed only with `-c engineeringAgents=true`) and the administrators' reads through REST
-([above](#how-the-agents-work-together); no MCP tool while the reads are admin-only). A report (voc-report/1) is built from what the run recorded: its `META`,
+deployed only with `-c engineeringAgents=true`), the administrators' reads through REST
+([above](#how-the-agents-work-together); no MCP tool while the reads are admin-only) and the run monitor's Reports
+panel in the web app (each report's versions as Markdown, [docs/autonomous-agents.md](autonomous-agents.md)). A report (voc-report/1) is built from what the run recorded: its `META`,
 each agent's metering (`AGENT#`: skill version, model, MicroVM-seconds, tokens, metered cost), the conversation's
 count, the board's tasks and their history, and only the workspace objects their result keys name (never a listing).
 The PR report takes the quality gate's record only from an ended final-go task under the PR's head commit, checked
 against the gate's own shapes before its Markdown goes into the description. Every version is new (an atomic
 counter, create-only objects, D1). Not built yet: its callers (the run coordinator's closing task, the supervisor,
-the write broker before it opens a PR: nothing invokes it, and no role holds an invoke on it), the run view, and
+the write broker before it opens a PR: nothing invokes it, and no role holds an invoke on it), and
 "what the agents learned" and "what improved since the last run". The design:
 
 - **Commit report**: what the commit changes and why (its task), the gate packs' results, each review round's
@@ -1115,4 +1136,4 @@ and the phase that ships them names them in that row.
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the coach, memory and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
-| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)); the templates, live cost, skill histories, the reports' view and the assistant drafting flows planned |
+| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)); the templates, live cost, skill histories and the assistant drafting flows planned |

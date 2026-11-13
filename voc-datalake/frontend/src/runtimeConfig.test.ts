@@ -170,6 +170,25 @@ describe('isWebSearchAvailable', () => {
     expect(config.apiEndpoint).toBe('http://localhost:3001')
     expect(isWebSearchAvailable()).toBe(true)
   })
+
+  it('reads features.engineering only as true, and VITE_ENABLE_ENGINEERING on the mock-only path', async () => {
+    const answers = []
+    for (const features of [{ engineering: true }, { engineering: false }, undefined]) {
+      vi.resetModules()
+      stubConfigJson(features === undefined ? baseConfig : { ...baseConfig, features })
+      const { loadRuntimeConfig, isEngineeringAvailable } = await import('./runtimeConfig')
+      answers.push(isEngineeringAvailable())   // (before the config loads)
+      await loadRuntimeConfig()
+      answers.push(isEngineeringAvailable())
+    }
+    expect(answers).toStrictEqual([false, true, false, false, false, false])
+    vi.resetModules()
+    vi.stubEnv('VITE_ENABLE_ENGINEERING', 'true')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+    const { loadRuntimeConfig, isEngineeringAvailable } = await import('./runtimeConfig')
+    await loadRuntimeConfig()
+    expect(isEngineeringAvailable()).toBe(true)
+  })
 })
 
 describe('board pool and email capability', () => {

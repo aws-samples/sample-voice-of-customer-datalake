@@ -774,9 +774,27 @@
     "tabs": {
       "agents": "Agenci",
       "board": "Tablica",
-      "conversation": "Rozmowa"
+      "conversation": "Rozmowa",
+      "reports": "Raporty"
     },
-    "panels": "Agenci, tablica i rozmowa przebiegu",
+    "panels": "Agenci, tablica, rozmowa i raporty przebiegu",
+    "reports": {
+      "title": "Raport: {{subject}}",
+      "version": "Wersja",
+      "latest": "Najnowsza (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "Utworzono {{when}}",
+      "readFailed": "Nie udało się odczytać tego raportu.",
+      "missing": "Ta wersja nigdy nie została zapisana (jej tworzenie się nie zakończyło). Wybierz inną wersję.",
+      "loadFailed": "Nie udało się wczytać raportów.",
+      "none": "Nie napisano jeszcze żadnego raportu.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "Cel",
+        "pr": "Pull requesty",
+        "commit": "Commity"
+      }
+    },
     "flow": "Przepływ przebiegu, z krokami, na których są jego agenci",
     "noFlow": "Nie udało się odczytać przepływu przebiegu: pokazano resztę.",
     "notFound": "Nie znaleziono przebiegu inżynieryjnego",

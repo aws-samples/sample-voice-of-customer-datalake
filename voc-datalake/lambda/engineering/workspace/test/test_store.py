@@ -61,16 +61,18 @@ def test_a_reader_without_listbucket_reads_a_denied_object_as_missing(monkeypatc
     """Without s3:ListBucket, S3 answers a missing key 403: only an opted-in reader takes that as missing, and it logs
     each one (a KMS or policy denial looks the same)."""
     warnings: list[Any] = []
+    counted: list[str] = []
     monkeypatch.setattr(store_module.logger, 'warning', lambda _message, **kwargs: warnings.append(kwargs['extra']))
+    monkeypatch.setattr(store_module.metrics, 'add_metric', lambda **kwargs: counted.append(kwargs['name']))
     s3: Any = MagicMock()
     s3.get_object.side_effect = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'GetObject')
     s3.put_object.side_effect = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'PutObject')
     workspace = WorkspaceStore(s3, BUCKET, denied_is_missing=True)
     assert workspace.read_text('k') is None
-    assert warnings == [{'key': 'k', 'code': 'AccessDenied'}]
+    assert (warnings, counted) == ([{'key': 'k', 'code': 'AccessDenied'}], [store_module.DENIED_AS_MISSING_METRIC])
     s3.get_object.side_effect = ClientError({'Error': {'Code': 'NoSuchKey', 'Message': 'gone'}}, 'GetObject')
     assert workspace.read_text('gone') is None
-    assert len(warnings) == 1   # a plain missing key is not logged
+    assert (len(warnings), len(counted)) == (1, 1)   # a plain missing key is neither logged nor counted
     with pytest.raises(ClientError):   # a write is never excused
         workspace.put_once('k', 'x', 'text/plain')
     s3.get_object.side_effect = ClientError({'Error': {'Code': 'SlowDown', 'Message': 'slow'}}, 'GetObject')

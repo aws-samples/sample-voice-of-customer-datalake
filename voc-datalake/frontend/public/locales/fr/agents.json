@@ -747,9 +747,27 @@
     "tabs": {
       "agents": "Agents",
       "board": "Tableau",
-      "conversation": "Conversation"
+      "conversation": "Conversation",
+      "reports": "Rapports"
     },
-    "panels": "Les agents, le tableau et la conversation de l’exécution",
+    "panels": "Les agents, le tableau, la conversation et les rapports de l’exécution",
+    "reports": {
+      "title": "Rapport : {{subject}}",
+      "version": "Version",
+      "latest": "La plus récente (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "Généré {{when}}",
+      "readFailed": "Ce rapport n’a pas pu être lu.",
+      "missing": "Cette version n’a jamais été écrite (sa génération n’a pas abouti). Choisissez une autre version.",
+      "loadFailed": "Les rapports n’ont pas pu être chargés.",
+      "none": "Aucun rapport n’a encore été écrit.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "Objectif",
+        "pr": "Pull requests",
+        "commit": "Commits"
+      }
+    },
     "flow": "Le flux de l’exécution, avec les étapes où se trouvent ses agents",
     "noFlow": "Le flux de l’exécution n’a pas pu être lu : le reste est affiché.",
     "notFound": "Exécution d’ingénierie introuvable",
