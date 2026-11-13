@@ -40,7 +40,8 @@ prompt:
   unticked. The inlined logo is marked (`data:image/png;voc=company-logo;base64,…`): a revision sends the base
   prototype back with exactly that image turned into the placeholder again (no other inline image), so the base
   HTML budget is spent on markup. When a revision has no logo to use, the prompt asks for a drawn wordmark, and a
-  placeholder `<img>` the model still writes becomes the brand (or project) name as text. The document generator
+  placeholder `<img>` the model still writes becomes the brand (or project) name as text. The prompt asks for the logo in at
+  most two places (the header and a splash or sign-in screen): each use carries the image in the file again. The document generator
   role reads the uploaded logos only, `company-context/design/logo_????????????.*` (not the references' previews)
   (`s3:GetObject`, VocCoreStack's `CompanyLogoReadPolicy` managed policy, attached in VocApiStack).
 - **Category scope applies to the design system too.** Like the vision and objectives, guideline paragraphs,
@@ -72,18 +73,21 @@ on the server). A refused field is marked and explained in place and nothing is 
 (`objectives[0].kpis[0].target is required`) is shown on that field.
 
 Storage: aggregates rows `SETTINGS#company_context`, `SETTINGS#design_system`, `USERCTX#{sub}`, `USERFLAGS#{sub}`
-(`sk = config`). Uploads (screenshots png/jpg/webp ≤ 5 MB, HTML ≤ 2 MB, the logo png/jpg/webp ≤ 5 MB) go to the raw bucket under
+(`sk = config`). Uploads (screenshots png/jpg/webp ≤ 5 MB, HTML ≤ 2 MB, the logo png/jpg/webp ≤ 1 MB) go to the raw bucket under
 `company-context/design/` by presigned PUT and are kept when a reference is archived; the reference's logo
 **preview** (`company-context/design/logo_preview_<ref id>.png|jpg|webp`, a copy made when it was read, and the
 sanitised `.svg` beside it), and a website reference's copied icons (everything under
 `company-context/design/icons_<ref id>/`, listed once), are deleted with the archive and their keys
 (`preview_key`, `svg_preview_key`, `icons`) dropped from the row (one idempotent `DeleteObjects`; an S3 failure answers
-503 with the reference already archived, and repeating the DELETE removes it). The logo picker also takes an
-PNG, JPEG or WebP over 1 MB is **made smaller, never refused for its size** (up to 25 MB): the browser decodes it and
-re-encodes it at most 1024 px on its longest side under 1 MB, PNG first, then WebP (`pages/Company/logoImage.ts`, the
-ladder of `pages/ProjectDetail/resizeImage.ts`; never JPEG, which would put a white box behind a transparent logo); one
-within 1 MB is uploaded as it is. A file that cannot get under 1 MB, or cannot be decoded, is explained and nothing is
-uploaded. The
+503 with the reference already archived, and repeating the DELETE removes it). A PNG, JPEG or WebP logo
+over 1 MB is **made smaller, never refused for its size** (up to 25 MB): the browser decodes it and re-encodes it at
+most 1024 px on its longest side under 1 MB, PNG first, then WebP (`pages/Company/logoImage.ts`, the ladder of
+`pages/ProjectDetail/resizeImage.ts`; never JPEG, which would put a white box behind a transparent logo; a rung the
+browser cannot encode, such as WebP where only PNG comes back, is skipped); one within 1 MB is uploaded as it is. A
+file that cannot get under 1 MB, or cannot be decoded, is explained and nothing is uploaded. The company logo is at
+most 1 MB for every client: the upload route (`POST /settings/design-system/logo`) and "Use this logo" refuse a larger
+one with a 400 (`COMPANY_LOGO_MAX_BYTES`, `lambda/shared/design_logo.py`), so the API and MCP get the same result as
+the web app and every saved logo fits a prototype. The logo picker also takes an
 SVG (≤ 1 MB): the browser draws it to a PNG (longest side 1024 px, transparent background) and uploads only that PNG, so
 the API still never receives an SVG. The SVG is loaded into an `<img>` from a `data:image/svg+xml` URL, never a
 `blob:` one: the site's CSP allows `img-src 'self' data:` only, so a blob URL is blocked (before 6.06.00 every SVG

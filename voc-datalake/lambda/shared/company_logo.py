@@ -24,7 +24,7 @@ from typing import Any
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.design_assets import DESIGN_PREFIX
-from shared.design_logo import sniff_image_type
+from shared.design_logo import COMPANY_LOGO_MAX_BYTES, sniff_image_type
 from shared.logging import logger
 
 #: The row attribute holding the current logo's object key.
@@ -36,9 +36,9 @@ LOGO_KEY_PREFIX = DESIGN_PREFIX + 'logo_'
 #: An uploaded logo's exact key (``logo_<12 hex>.<ext>``): never a reference's ``logo_preview_*``. The IAM grant
 #: has the same shape (``logo_????????????.*``, lib/stacks/core-stack.ts).
 _UPLOADED_LOGO_KEY_RE = re.compile(re.escape(LOGO_KEY_PREFIX) + r'[0-9a-f]{12}\.(?:png|jpg|webp)')
-#: The largest logo inlined into a prototype. Uploads may be 5 MB; a prototype carrying that
-#: much base64 would be slow to open, so a larger logo is left out (and logged).
-MAX_INLINE_LOGO_BYTES = 1_000_000
+#: The largest logo inlined into a prototype: the company-logo cap every write path enforces (an object written
+#: before that cap, up to 5 MB, is left out and logged; a prototype carrying that much base64 would be slow to open).
+MAX_INLINE_LOGO_BYTES = COMPANY_LOGO_MAX_BYTES
 #: What the prompt tells the model to write as the logo's ``src``.
 LOGO_PLACEHOLDER = '__COMPANY_LOGO__'
 #: The 1x1 transparent GIF a leftover placeholder outside an ``<img>`` (a CSS ``url()``) becomes without a logo.
@@ -52,10 +52,11 @@ _PLACEHOLDER_IMG_RE = re.compile(r'<img\b[^>]*' + re.escape(LOGO_PLACEHOLDER) + 
 
 LOGO_INSTRUCTION = (
     f'COMPANY LOGO: the company has its own logo. Wherever the prototype shows the company logo or '
-    f'wordmark (header, splash, sign-in, footer), use exactly <img src="{LOGO_PLACEHOLDER}" '
-    'alt="Company logo"> sized by height only (24-40px in a header, larger on a splash), never '
-    'stretched. Do not draw, recreate or replace the logo, and do not use the placeholder for '
-    'anything else. This replaces the inline-SVG wordmark rule for the company logo only.'
+    f'wordmark, use exactly <img src="{LOGO_PLACEHOLDER}" alt="Company logo"> in at most TWO places (the '
+    'header, and a splash or sign-in screen if there is one; each use adds the image to the file again), sized '
+    'by height only (24-40px in a header, larger on a splash), never stretched. Elsewhere use the wordmark as '
+    'text. Do not draw, recreate or replace the logo, and do not use the placeholder for anything else. This '
+    'replaces the inline-SVG wordmark rule for the company logo only.'
 )
 #: For a revision whose base prototype shows the uploaded logo when there is none to use any more.
 LOGO_REMOVED_INSTRUCTION = (
