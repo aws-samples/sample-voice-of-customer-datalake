@@ -697,6 +697,7 @@
     "members": "Anonymisierte Workspace-Mitgliedschaften: {{rows, number}}",
     "workspaceItems": "Gelöschte Bewertungen in Workspaces: {{items, number}}",
     "emailReachesWorkspaces": "Eine Löschung per E-Mail entfernt die Bewertungen dieser Person auch in jedem Workspace. Die anderen Felder erreichen nur die eigenen Bewertungen dieser Bereitstellung.",
+    "reachesThisWorkspace": "In diesem Arbeitsbereich löscht die Löschung nur die Bewertungen dieses Arbeitsbereichs, auch eine Löschung per E-Mail.",
     "reviewFolders": "Behaltene Ordner mit S3-Import-Originalen, die gelöschte Zeilen enthalten können: {{folders, number}}. Prüfen Sie sie:",
     "reviewFiles": "Hochgeladene Dateien, die behalten wurden, weil sie auch nicht gelöschte Zeilen enthalten: {{files, number}}. Prüfen Sie sie:",
     "status": {

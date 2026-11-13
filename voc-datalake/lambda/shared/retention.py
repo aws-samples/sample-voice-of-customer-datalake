@@ -54,6 +54,14 @@ versions under ``ws/{ws}/silver/``. A whole-source erasure, a request about the 
 and so does an erasure by ``author``, ``source_id`` or ``csv_row_id`` (a display name, or an id unique only within
 one source account or upload).
 
+An erasure job that NAMES a workspace (its row's ``workspace_id``, written only by the server from the request's
+resolved membership, shared/erasure_scope.py) reaches that workspace's items only (``WS#{ws}#…``, with their copies
+under ``ws/{ws}/``), by any field of ``WORKSPACE_ERASE_FIELDS``: inside one workspace an author, a source id and a CSV
+row are that team's own values. Never the deployment's items nor another workspace's, an email included: the
+workspace's admin answers for their workspace's data only (the deployment's erasure by email still reaches every
+workspace). A whole-source erasure never names a workspace (its source list, lock and prefix sweep are the
+deployment's).
+
 An S3 import's original file (``{raw root}s3_import/…``, ``plugins/_shared/raw_original.py``, in either scope) is
 linked from no row, so no run can tell which file an item came from: a run that deletes an S3 import's item
 (``source_platform`` ``S3 - …``) lists that scope's originals folder for review when it holds any object
@@ -109,6 +117,9 @@ ERASE_FIELDS: Final = ('author', 'source_id', 'csv_row_id', 'email', SOURCE_FIEL
 # The erasure fields that name one person the same wherever their data is: the ones that reach every workspace.
 # An email only: an author is a display name, not unique even within one source.
 PERSON_FIELDS: Final = ('email',)
+# The fields an erasure job that names one workspace may erase by (shared/erasure_scope.py): every field but the
+# whole source. Inside one workspace an author, a source id and a CSV row are that workspace's own values.
+WORKSPACE_ERASE_FIELDS: Final = ('author', 'source_id', 'csv_row_id', 'email')
 # The partition of erasure job rows in voc-aggregates (Settings starts them, voc-retention runs them).
 ERASURE_JOB_PK: Final = 'JOB#erasure'
 # Every job row's ``sk`` (and ``job_id``) starts with this; the partition's lock rows do not.
@@ -193,14 +204,29 @@ def reaches_workspaces(field: str) -> bool:
     is (one address is one person). An erasure by ``author`` does not: a display name is not unique even within one
     source, so the deployment's Jane Doe is not every workspace's Jane Doe. Nor by ``source_id`` or ``csv_row_id``:
     such an id is unique only within one source account or upload, and each workspace has its own. Those stay the
-    deployment's until a job can name its workspace. Nor does a whole-source erasure (``SOURCE_FIELD``), a request
-    about the deployment's own source."""
+    deployment's on a job that names no workspace (a job that names one reaches that workspace only, by any
+    ``WORKSPACE_ERASE_FIELDS`` field: ``erase_filter``'s ``scope``). Nor does a whole-source erasure
+    (``SOURCE_FIELD``), a request about the deployment's own source."""
     return field in PERSON_FIELDS
 
 
-def erase_filter(field: str, value: str, source: str | None, store: str = STORE_FEEDBACK) -> ConditionBase:
-    """Scan filter: items of ``store`` whose ``field`` equals ``value`` (optionally in one source); in every
-    workspace too only for an erasure by email (``reaches_workspaces``), else the deployment's items only."""
+def _workspace_items(scope: WorkspaceScope, field: str, store: str) -> ConditionBase:
+    """The rows a job that names ``scope`` may erase: that workspace's ``FEEDBACK#`` items only (``WS#{ws}#…``)."""
+    if store != STORE_FEEDBACK:
+        raise ValueError('An erasure in a workspace reaches its feedback items only')
+    if field not in WORKSPACE_ERASE_FIELDS:
+        raise ValueError(f'An erasure in a workspace cannot erase by "{field}"')
+    return Attr('sk').begins_with(FEEDBACK_SK_PREFIX) & Attr('pk').begins_with(scope.prefix)
+
+
+def erase_filter(field: str, value: str, source: str | None, store: str = STORE_FEEDBACK,
+                 scope: WorkspaceScope | None = None) -> ConditionBase:
+    """Scan filter: items of ``store`` whose ``field`` equals ``value`` (optionally in one source).
+
+    ``scope`` None (a job that names no workspace): in every workspace too only for an erasure by email
+    (``reaches_workspaces``), else the deployment's items only. A ``scope`` (a job that names one workspace): that
+    workspace's feedback items only, by any ``WORKSPACE_ERASE_FIELDS`` field (ValueError for another field or store).
+    """
     if field not in ERASE_FIELDS:
         raise ValueError(f'Unknown erasure field "{field}"')
     if field == 'email':
@@ -212,7 +238,9 @@ def erase_filter(field: str, value: str, source: str | None, store: str = STORE_
         match = Attr('source_platform').eq(value)
     else:
         match = Attr(field).eq(value)
-    condition = _store_items(store, workspaces=reaches_workspaces(field)) & match
+    items = (_store_items(store, workspaces=reaches_workspaces(field)) if scope is None
+             else _workspace_items(scope, field, store))
+    condition = items & match
     return condition & Attr('source_platform').eq(source) if source and field != SOURCE_FIELD else condition
 
 

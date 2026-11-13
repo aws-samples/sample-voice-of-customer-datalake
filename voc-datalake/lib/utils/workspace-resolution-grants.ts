@@ -60,6 +60,27 @@ export function grantWorkspaceResolution(workspacesTable: dynamodb.ITable, role:
 }
 
 /**
+ * GetItem on voc-workspaces' `WS#*` rows, held to `attributes` (`dynamodb:Attributes`, and a projection required:
+ * `dynamodb:Select` `SPECIFIC_ATTRIBUTES` when it is sent), for a role that reads a workspace's row without resolving
+ * a member through the policy above: the webhooks' routing read of a `META` (lib/stacks/api-stack.ts). A role that
+ * attaches the policy needs none (the settings API's erasure routes read a membership through it, lambda/shared/
+ * erasure_scope.py, with the resolver's projections, lambda/shared/workspace.py MEMBER_READ_ATTRIBUTES and
+ * META_READ_ATTRIBUTES).
+ */
+export function grantWorkspaceAttributeRead(
+  role: iam.Role, workspacesTable: dynamodb.ITable, attributes: readonly string[],
+): void {
+  role.addToPolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
+    conditions: {
+      ...leadingKeys(['WS#*']),
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...attributes] },
+      StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    },
+  }));
+}
+
+/**
  * The same resolution for a data-path or operator API whose role uses the user pool for nothing else (the metrics
  * API, the feedback edits, the integrations and scrapers APIs; lambda/shared/workspace_request.py): the stack's one
  * policy above, plus the live platform-admin check's Cognito `AdminListGroupsForUser` and `AdminGetUser` on the pool.

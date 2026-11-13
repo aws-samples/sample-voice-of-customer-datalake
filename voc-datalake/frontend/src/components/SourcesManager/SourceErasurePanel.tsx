@@ -75,7 +75,7 @@ export default function SourceErasurePanel({ profiles }: Readonly<{ profiles: re
   const [confirming, setConfirming] = useState(false)
   const [startedId, setStartedId] = useState<string | null>(null)
   const { data: sources = [] } = useErasableSources()
-  const { data: jobs = [] } = useErasureJobs()
+  const { data: jobs = [] } = useErasureJobs('deployment')
   const { data: status } = useQuery({ queryKey: sourcesStatusKey(), queryFn: () => api.getSourcesStatus() })
   const scheduleOn = isScheduleOn(status, source)
   const started = jobs.find((job) => job.job_id === startedId)

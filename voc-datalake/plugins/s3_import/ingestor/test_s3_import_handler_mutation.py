@@ -44,7 +44,7 @@ from aws_lambda_powertools.metrics.provider.cold_start import reset_cold_start_f
 
 from _shared.raw_source import pop_raw_source
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
-from _shared.test.workspace_fixtures import SCOPE, WS, ws_event
+from _shared.test.workspace_fixtures import SCOPE, WS, WS_PREFIX, ws_event
 from s3_import.ingestor import handler
 from s3_import.ingestor.handler import (
     FIELD_ALIASES,
@@ -63,6 +63,10 @@ from s3_import.ingestor.handler import (
 )
 
 SOURCE = "S3 - surveys"
+#: The workspace's files the ``ingestor`` fixture (a run in ``WS``) reads: only keys under ``ws/{ws}/``.
+DATA_CSV = f"{WS_PREFIX}surveys/data.csv"
+HUGE_JSON = f"{WS_PREFIX}surveys/huge.json"
+DATA_TXT = f"{WS_PREFIX}surveys/data.txt"
 
 
 def _csv(header: str, *rows: str) -> io.BytesIO:
@@ -322,46 +326,55 @@ class TestTheSizeLimit:
     @patch("s3_import.ingestor.handler.s3_client")
     def test_a_file_of_exactly_the_limit_is_imported(self, mock_s3, ingestor):
         _serve(mock_s3, b"id,text\n1,Hi\n", size=52_428_800)
-        assert ingestor.process_file("bucket", "surveys/data.csv") == 1
+        assert ingestor.process_file("bucket", DATA_CSV) == 1
 
     @patch("s3_import.ingestor.handler.s3_client")
     def test_one_byte_over_is_refused_and_the_message_states_both_sizes(self, mock_s3, ingestor):
         _serve(mock_s3, b"", size=52_428_801)
         with patch.object(handler, "logger") as log:
-            assert ingestor.process_file("bucket", "surveys/data.csv") == 0
-        log.error.assert_called_once_with("surveys/data.csv: 50.0 MB exceeds 50 MB limit")
+            assert ingestor.process_file("bucket", DATA_CSV) == 0
+        log.error.assert_called_once_with(f"{DATA_CSV}: 50.0 MB exceeds 50 MB limit")
         mock_s3.get_object.assert_not_called()
 
     @patch("s3_import.ingestor.handler.s3_client")
     def test_a_hundred_mebibyte_file_reports_its_size_in_mb(self, mock_s3, ingestor):
         _serve(mock_s3, b"", size=100 * 1024 * 1024)
         with patch.object(handler, "logger") as log:
-            assert ingestor.process_file("bucket", "surveys/huge.json") == 0
-        log.error.assert_called_once_with("surveys/huge.json: 100.0 MB exceeds 50 MB limit")
+            assert ingestor.process_file("bucket", HUGE_JSON) == 0
+        log.error.assert_called_once_with(f"{HUGE_JSON}: 100.0 MB exceeds 50 MB limit")
 
 
 class TestEveryProcessFileLogLine:
     @patch("s3_import.ingestor.handler.s3_client")
     def test_an_unsupported_extension(self, mock_s3, ingestor):
         with patch.object(handler, "logger") as log:
-            assert ingestor.process_file("bucket", "surveys/data.txt") == 0
-        log.warning.assert_called_once_with("Unsupported file type: surveys/data.txt")
+            assert ingestor.process_file("bucket", DATA_TXT) == 0
+        log.warning.assert_called_once_with(f"Unsupported file type: {DATA_TXT}")
         mock_s3.head_object.assert_not_called()
+
+    @patch("s3_import.ingestor.handler.s3_client")
+    def test_a_key_outside_the_workspace(self, mock_s3, ingestor):
+        with patch.object(handler, "logger") as log, patch.object(handler, "metrics") as met:
+            assert ingestor.process_file("bucket", "surveys/data.csv") == 0
+        log.warning.assert_called_once_with("Refusing an import file outside the run's workspace",
+                                            extra={"key": "surveys/data.csv"})
+        met.add_metric.assert_called_once_with(name="ImportFileOutsideWorkspace", unit="Count", value=1)
+        assert mock_s3.mock_calls == []
 
     @patch("s3_import.ingestor.handler.s3_client")
     def test_an_empty_file(self, mock_s3, ingestor):
         _serve(mock_s3, b"", size=0)
         with patch.object(handler, "logger") as log:
-            assert ingestor.process_file("bucket", "surveys/data.csv") == 0
-        log.warning.assert_called_once_with("surveys/data.csv: empty file, skipping")
+            assert ingestor.process_file("bucket", DATA_CSV) == 0
+        log.warning.assert_called_once_with(f"{DATA_CSV}: empty file, skipping")
         mock_s3.get_object.assert_not_called()
 
     @patch("s3_import.ingestor.handler.s3_client")
     def test_a_processed_file_reports_its_count(self, mock_s3, ingestor):
         _serve(mock_s3, b"id,text\n1,A\n2,B\n")
         with patch.object(handler, "logger") as log, patch.object(handler, "metrics") as met:
-            assert ingestor.process_file("bucket", "surveys/data.csv") == 2
-        log.info.assert_called_once_with("Processed surveys/data.csv: 2 items")
+            assert ingestor.process_file("bucket", DATA_CSV) == 2
+        log.info.assert_called_once_with(f"Processed {DATA_CSV}: 2 items")
         met.add_metric.assert_called_once_with(name="ItemsImported", unit="Count", value=2)
 
 
@@ -371,10 +384,10 @@ class TestWhatReachesTheQueue:
         _serve(mock_s3, b"id,text\n1,A\n2,B\n")
         mock_s3.head_object.return_value = {"ContentLength": 17}
 
-        assert ingestor.process_file("bucket", "surveys/data.csv") == 2
+        assert ingestor.process_file("bucket", DATA_CSV) == 2
 
-        mock_s3.head_object.assert_called_once_with(Bucket="bucket", Key="surveys/data.csv")
-        mock_s3.get_object.assert_called_once_with(Bucket="bucket", Key="surveys/data.csv")
+        mock_s3.head_object.assert_called_once_with(Bucket="bucket", Key=DATA_CSV)
+        mock_s3.get_object.assert_called_once_with(Bucket="bucket", Key=DATA_CSV)
         ingestor.send_to_queue.assert_called_once_with([
             {"id": "1", "channel": "csv_import", "url": "", "text": "A", "rating": None,
              "created_at": "", "author": "", "source_platform_override": "S3 - surveys", "_normalized": True},
@@ -388,7 +401,7 @@ class TestWhatReachesTheQueue:
         body = "\n".join(["id,text", *(f"{i},Review {i}" for i in range(rows))]).encode()
         _serve(mock_s3, body)
 
-        assert ingestor.process_file("bucket", "surveys/data.csv") == rows
+        assert ingestor.process_file("bucket", DATA_CSV) == rows
         assert [len(c.args[0]) for c in ingestor.send_to_queue.call_args_list] == batches
 
 
@@ -460,7 +473,7 @@ class TestLambdaHandlerIsWrapped:
             with offline_ingestor_construction(), patch.object(
                 handler.S3ImportIngestor, "send_to_queue", side_effect=len
             ), patch.object(handler.S3ImportIngestor, "normalize_item", side_effect=lambda item, _raw=None: item):
-                lambda_handler(_s3_event(("aws:s3", "b", "surveys/data.csv")), _context())
+                lambda_handler(_s3_event(("aws:s3", "b", DATA_CSV)), _context())
         finally:
             out = capsys.readouterr().out
             metrics.clear_metrics()

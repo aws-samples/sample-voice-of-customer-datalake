@@ -34,7 +34,7 @@ per warm container (keys only, deduped while paging): GET and POST of
 from __future__ import annotations
 
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
@@ -47,14 +47,17 @@ from shared.indexes import AGGREGATES_BY_METRIC_TYPE_INDEX
 from shared.logging import logger
 from shared.metric_keys import SOURCE_PREFIX
 from shared.retention import ERASURE_JOB_PK, ERASURE_JOB_PREFIX
+from shared.ws_repo import WORKSPACE_FIELD
 
 __all__ = [
     'SourceLocked',
     'acquire_source_lock',
     'blocking_job',
     'known_sources',
+    'put_free_lock',
     'refresh_source_lock',
     'release_source_lock',
+    'stamp_own_lock',
 ]
 
 SOURCE_METRIC_TYPE: Final = 'source'
@@ -115,16 +118,38 @@ def acquire_source_lock(table: Any, source: str, job_id: str, now: datetime) -> 
     Free when there is no row, its holder released it, or it was taken more
     than ``STALE_AFTER`` ago (the holder died without a release).
     """
+    put_free_lock(lambda row, **condition: table.put_item(Item=row, **condition),
+                  {**source_lock_key(source), 'source': source, 'job_id': job_id, 'locked_at': now.isoformat()},
+                  now, SourceLocked(source))
+
+
+#: A lock row's conditional write, given its condition keywords (``ConditionExpression`` and its values).
+LockWrite = Callable[..., Any]
+
+
+def put_free_lock(put: LockWrite, row: Mapping[str, Any], now: datetime, held: Exception) -> None:
+    """Put the lock ``row`` with ``put(row, **condition)`` while the lock is free (no row, a released one, or one
+    taken more than ``STALE_AFTER`` ago); raises ``held`` when another job holds it. The one rule of every erasure
+    lock (a source's, a workspace's: shared/erasure_jobs.py)."""
     try:
-        table.put_item(
-            Item={**source_lock_key(source), 'source': source, 'job_id': job_id, 'locked_at': now.isoformat()},
-            ConditionExpression='attribute_not_exists(pk) OR attribute_exists(released_at) OR locked_at < :stale',
-            ExpressionAttributeValues={':stale': (now - STALE_AFTER).isoformat()},
-        )
+        put(row, ConditionExpression='attribute_not_exists(pk) OR attribute_exists(released_at) OR locked_at < :stale',
+            ExpressionAttributeValues={':stale': (now - STALE_AFTER).isoformat()})
     except ClientError as e:
         if is_conditional_check_failure(e):
-            raise SourceLocked(source) from e
+            raise held from e
         raise
+
+
+def stamp_own_lock(update: LockWrite, job_id: str, now: datetime, stamp: str, extra_condition: str = '') -> None:
+    """Set ``stamp`` to ``now`` on a lock row with ``update`` while ``job_id`` holds it; a no-op otherwise."""
+    try:
+        update(UpdateExpression=f'SET {stamp} = :now',
+               ConditionExpression=f'attribute_exists(pk) AND job_id = :job{extra_condition}',
+               ExpressionAttributeValues={':now': now.isoformat(), ':job': job_id})
+    except ClientError as e:
+        # Gone, or taken over by a later job: that lock is not ours to touch.
+        if not is_conditional_check_failure(e):
+            raise
 
 
 def refresh_source_lock(table: Any, source: str, job_id: str, now: datetime) -> None:
@@ -146,17 +171,8 @@ def release_source_lock(table: Any, source: str, job_id: str, now: datetime) -> 
 def _set_on_own_lock(table: Any, source: str, job_id: str, now: datetime, stamp: str, *,
                      extra_condition: str = '') -> None:
     """Set ``stamp`` to ``now`` on ``source``'s lock row while ``job_id`` holds it; a no-op otherwise."""
-    try:
-        table.update_item(
-            Key=source_lock_key(source),
-            UpdateExpression=f'SET {stamp} = :now',
-            ConditionExpression=f'attribute_exists(pk) AND job_id = :job{extra_condition}',
-            ExpressionAttributeValues={':now': now.isoformat(), ':job': job_id},
-        )
-    except ClientError as e:
-        # Gone, or taken over by a later job: that lock is not ours to touch.
-        if not is_conditional_check_failure(e):
-            raise
+    stamp_own_lock(lambda **request: table.update_item(Key=source_lock_key(source), **request), job_id, now, stamp,
+                   extra_condition)
 
 
 def _last_moved(job: Mapping[str, Any]) -> datetime | None:
@@ -182,7 +198,11 @@ def blocking_job(table: Any, source: str, now: datetime) -> str | None:
     """
     jobs = iter_query(table, {
         'KeyConditionExpression': Key('pk').eq(ERASURE_JOB_PK) & Key('sk').begins_with(ERASURE_JOB_PREFIX),
-        'FilterExpression': Attr('status').is_in(list(LIVE_STATUSES)) & Attr('source').eq(source),
+        # A workspace's job never sweeps raw/<source>/ nor takes the source lock, so it never blocks the
+        # deployment's whole-source erasure (its rows live in their own partition, shared/erasure_jobs.py; this
+        # also leaves out any row here that names a workspace).
+        'FilterExpression': (Attr('status').is_in(list(LIVE_STATUSES)) & Attr('source').eq(source)
+                             & Attr(WORKSPACE_FIELD).not_exists()),
     })
     for job in jobs:
         moved = _last_moved(job)

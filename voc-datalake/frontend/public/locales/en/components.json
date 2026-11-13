@@ -682,6 +682,7 @@
     "members": "Workspace memberships de-identified: {{rows, number}}",
     "workspaceItems": "Deleted reviews in workspaces: {{items, number}}",
     "emailReachesWorkspaces": "An erasure by email also deletes this person's reviews in every workspace. The other fields reach this deployment's own reviews only.",
+    "reachesThisWorkspace": "Inside this workspace, the erasure deletes this workspace's reviews only, an erasure by email included.",
     "reviewFolders": "S3 import originals folders kept that may hold erased rows: {{folders, number}}. Review them:",
     "reviewFiles": "Uploaded files kept because they also hold rows that were not erased: {{files, number}}. Review them:",
     "status": {

@@ -274,7 +274,8 @@ def log_validation_failure(source_platform: str, message_id: object, errors: lis
     Log a validation failure to DynamoDB for user visibility.
 
     `errors` must already be `summarize_validation_errors` output and `record_summary`
-    `summarize_record` output: the row is readable by every signed-in user.
+    `summarize_record` output (or empty, for a row that names no shape of the record): the row is readable by
+    every signed-in user.
     Stores in aggregates table with TTL for automatic cleanup; a message of a workspace
     (``scope``) under the workspace.
     """
@@ -1060,11 +1061,14 @@ def _after_lost_put(raw_record: dict, processed_item: dict, scope: WorkspaceScop
 
 def _refuse_invalid_workspace(raw_record: dict) -> MessageRejectedError:
     """A message whose ``workspace_id`` is there but is not a workspace id: logged deployment-wide (it names no
-    workspace one could trust), metered, and returned as the rejection to raise (the DLQ path)."""
+    workspace one could trust), metered, and returned as the rejection to raise (the DLQ path).
+
+    The deployment-wide row says nothing of the record (no ``summarize_record``, not even its field names or text
+    length): only its source, message id and the error, since the message was meant for a workspace."""
     source_platform = str(raw_record.get('source_platform', 'unknown')).replace('#', '_')[:MAX_SOURCE_PLATFORM_LENGTH]
     message_id = raw_record.get('id', 'unknown')
     errors = ['workspace_id: invalid_workspace']
-    log_validation_failure(source_platform, message_id, errors, summarize_record(raw_record))
+    log_validation_failure(source_platform, message_id, errors, {})
     count_metric("ValidationFailures")
     count_metric("WorkspaceMessagesRefused")
     return MessageRejectedError(source_platform, str(message_id), errors)

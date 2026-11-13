@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError
 from _shared import raw_original
 from _shared.raw_source import RAW_SOURCE_KEY
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
-from _shared.test.workspace_fixtures import OTHER_SCOPE, OTHER_WS, SCOPE, WS
+from _shared.test.workspace_fixtures import OTHER_SCOPE, OTHER_WS, SCOPE, WS, WS_PREFIX
 from s3_import.ingestor import handler
 from shared.test.source_profile_fixtures import seeded_source_profiles, unreadable_source_profiles
 
@@ -135,8 +135,9 @@ class TestProcessFile:
         with patch.object(handler, "s3_client", staged), \
                 patch.object(handler, "archive_original") as archive, \
                 patch.object(ingestor, "_record_file_run"):
-            assert ingestor.process_file("import-bucket", "surveys/data.csv") == 2
+            assert ingestor.process_file("import-bucket", f"{WS_PREFIX}surveys/data.csv") == 2
 
+        # Under its staged key (the workspace's prefix off): the copy already lands under ws/{ws}/raw/.
         archive.assert_called_once_with(staged, RAW, "surveys/data.csv", CSV, scope=SCOPE)
         # Each item carries its CSV row to BaseIngestor.normalize_item, which archives it as raw_content.
         assert [item[RAW_SOURCE_KEY] for item, _raw in seen] == [
@@ -152,7 +153,7 @@ class TestProcessFile:
             ingestor.send_to_queue = MagicMock(side_effect=len)
             with patch.object(handler, "s3_client", staged), patch.object(ingestor, "_record_file_run"), \
                     patch.object(ingestor, "normalize_item", side_effect=lambda item: item):
-                assert ingestor.process_file("import-bucket", "surveys/data.csv") == 2
+                assert ingestor.process_file("import-bucket", f"ws/{scope.ws}/surveys/data.csv") == 2
 
         lake.put_object.assert_not_called()
         assert [(c.kwargs["Bucket"], c.kwargs["Key"]) for c in staged.put_object.call_args_list] == [

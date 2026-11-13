@@ -176,6 +176,26 @@ class TestAMalformedWorkspaceId:
         assert row['pk'] == 'LOGS#validation#webscraper'
         assert 'Late parcel' not in json.dumps(row, default=str)
 
+    def test_its_deployment_wide_row_holds_no_field_of_the_record(self):
+        """Only the source, the message id and the error: no text, no field name, no text length."""
+        message = review(workspace_id='ws_nope', author='Sam Rivera', url='https://reviews.example/1',
+                         rating=2, title='Parcel late twice')
+        with world_with_logs() as (_feedback, _llm, aggregates):
+            with pytest.raises(handler.MessageRejectedError):
+                issues.deliver(message)
+            (row,) = aggregates.scan()['Items']
+
+        assert set(row) == {'pk', 'sk', 'source_platform', 'message_id', 'timestamp', 'ttl', 'log_type', 'errors'}
+        assert (row['source_platform'], row['message_id']) == ('webscraper', 'rev-1')
+        assert row['errors'] == ['workspace_id: invalid_workspace']
+        logged = json.dumps({k: v for k, v in row.items() if k not in ('source_platform', 'message_id')}, default=str)
+        for name, value in message.items():
+            if name in ('id', 'source_platform'):
+                continue
+            assert f'"{name}"' not in logged
+            if isinstance(value, str) and value:
+                assert value not in logged
+
     def test_is_counted(self):
         with world_with_logs(), patch.object(handler, 'metrics') as metrics, \
                 pytest.raises(handler.MessageRejectedError):

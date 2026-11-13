@@ -144,9 +144,19 @@ def text_fields(item: Mapping[str, Any], *fields: str) -> list[str]:
     return [value if isinstance(value := item.get(field), str) else '' for field in fields]
 
 
-def _item(table: Any, pk: str, sk: str) -> dict:
-    """One row, read strongly consistent: a cache fill sees a removed member or a `deleting` status at once."""
-    found = table.get_item(Key={'pk': pk, 'sk': sk}, ConsistentRead=True).get('Item')
+#: Exactly what the resolver reads of a membership row (its role) and of a workspace's META (status, name, slug,
+#: secret_status), with the keys: never a member's email or name. A role may be held to attributes like these
+#: (lib/utils/workspace-resolution-grants.ts ``grantWorkspaceAttributeRead``: ``dynamodb:Attributes``).
+MEMBER_READ_ATTRIBUTES: Final = ('pk', 'sk', 'role')
+META_READ_ATTRIBUTES: Final = ('pk', 'sk', 'status', 'name', 'slug', 'secret_status')
+
+
+def _item(table: Any, pk: str, sk: str, attributes: tuple[str, ...]) -> dict:
+    """One row's ``attributes``, read strongly consistent: a cache fill sees a removed member or a `deleting` status
+    at once. Every attribute goes through a name placeholder (``status`` and ``name`` are reserved words)."""
+    names = {f'#a{n}': attribute for n, attribute in enumerate(attributes)}
+    found = table.get_item(Key={'pk': pk, 'sk': sk}, ConsistentRead=True, ProjectionExpression=', '.join(names),
+                           ExpressionAttributeNames=names).get('Item')
     return found if isinstance(found, dict) else {}
 
 
@@ -175,7 +185,7 @@ LivePlatformAdminCheck = Callable[[dict], bool]
 def _load(table: Any, event: dict, ws: str, platform_admin: bool,
           confirm_platform_admin: LivePlatformAdminCheck) -> WorkspaceContext:
     sub = get_caller_subject(event)
-    stored = _item(table, ws_key(ws), f'MEMBER#{sub}').get('role')
+    stored = _item(table, ws_key(ws), f'MEMBER#{sub}', MEMBER_READ_ATTRIBUTES).get('role')
     role = stored if isinstance(stored, str) and stored in ROLES else None
     # Decision 2: a platform admin enters with full admin rights, a member with a lower role too (audited). The
     # token's group makes the caller a candidate; the live check decides (a revoked or disabled one is not).
@@ -184,7 +194,7 @@ def _load(table: Any, event: dict, ws: str, platform_admin: bool,
         # Answered before the workspace row is read: a non-member costs the same one read whether or not the
         # workspace exists, so neither the answer nor its timing confirms another team's workspace.
         raise NotFoundError(NOT_FOUND)
-    meta = _item(table, ws_key(ws), 'META')
+    meta = _item(table, ws_key(ws), 'META', META_READ_ATTRIBUTES)
     if meta.get('status') != ACTIVE:
         raise NotFoundError(NOT_FOUND)
     name, slug, secret_status = text_fields(meta, 'name', 'slug', 'secret_status')

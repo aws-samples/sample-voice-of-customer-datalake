@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.09.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's erasure-in-a-workspace slice and its follow-ups merged: a workspace's member admin can erase that workspace's reviews by author, source id, CSV row or email, which closes the D5 condition of the ingestion hold ([docs/source-policies.md](docs/source-policies.md#retention-and-erasure), "Workspace items"). Per-workspace ingestion stays held until the category reprocess replays a workspace's reviews (D3).
+
+### Added
+
+- Erasure in one workspace: `POST /settings/erasure` with `X-Workspace-Id`, by that workspace's member admin, erases that workspace's reviews only, by author, `source_id`, `csv_row_id` or email; each review is tombstoned first and goes with its Silver and raw versions under `ws/{ws}/`. The job row lives in the workspace's own partition (`WS#{ws}#JOB#erasure`) and names the workspace from the resolved membership, never from the body; the worker checks that the row names the workspace whose partition it read. One erasure per workspace runs at a time (a second start answers 409). `GET /settings/erasure` with the header lists that workspace's newest 20 jobs; without it the deployment's list is unchanged.
+- Inside a workspace, Administration's erasure panel sends the workspace for an erasure by author, source id, CSV row or email and lists that workspace's jobs, and its form and confirm dialog say the erasure reaches that workspace's reviews only (an erasure by email included); the whole-source panel keeps working on the deployment's sources and jobs.
+
+### Changed
+
+- A whole-source erasure in a workspace is refused (400), and platform admins are not elevated on the erasure routes: they erase in a workspace as its member admin. A delegated caller (an MCP token, an agent or a plan step) cannot start an erasure in a workspace (403), as for the workspace's admin settings. A workspace's erasure bumps the workspace's own data_version and never blocks the deployment's whole-source erasure of the same source.
+- Resolving `X-Workspace-Id` reads only a member's role and the workspace's status, name, slug and credentials state, never a member's email.
+- An S3 import run in a workspace reads only files under that workspace's own `ws/{ws}/` folder, and refuses a key with an empty, `.` or `..` segment, before any read. A deployment-wide run refuses a key under `ws/` of three or more segments (the import API's `<source>/<file>` keys are unchanged). A refused file is recorded under the source "S3 - Import" with no raw file, its name in the error only for a supported extension.
+- A queued message refused for a malformed `workspace_id` is logged in the deployment-wide validation row without any of its content.
+- A duplicate invoke of a finished workspace erasure job never rewrites its outcome, writes no audit row and counts no metric (it answers `already_finished`).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API stack (Lambda code only, no role's policy: the settings and webhook handlers, and every API that resolves a workspace, whose shared resolver `lambda/shared/workspace.py` now reads only the attributes it uses), the processing stack (`voc-retention` and the processor) and the ingestion stack (the S3 import, and every ingestor's bundled `lambda/shared` code) change, and the web app; no table, index or cross-stack reference changes, and nothing is migrated.
+- IAM: no new grant on the settings role: it reads a workspace's membership through the API stack's one workspace-resolution managed policy, which it holds since 6.18.00. No other role's IAM changes: the webhook role's read of a workspace's row stays held to the attributes it routes by, as since 7.06.00.
+- An erasure inside a workspace now acts in that workspace: a deployment administrator who erases a person by author or id from Administration while inside a workspace erases that workspace's reviews only, and must be its member admin. The deployment's erasure by author, source id or CSV row stays available through the API without the header; from the web app, anyone who has a workspace reaches it again with the next web-app release. An erasure by email from the deployment still reaches every workspace.
+
 ## [7.08.00] - 2026-11-13
 
 Multi-workspace, phase 2: the configuration cut-over. The categories, the dimensions and the source profiles are each workspace's, in both directions at once: a workspace's admins edit its own, and its feedback is processed, ingested and read with them. Without a workspace everything reads and writes the deployment's rows, as before. No workspace ingests yet: the hold stays ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).

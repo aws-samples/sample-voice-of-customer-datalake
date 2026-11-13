@@ -435,7 +435,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // the live check reads the caller's groups and account (lambda/shared/platform_admin_gate.py), in the pool
   // `USER_POOL_ID` names (set with the briefing environment below).
   // The same live check lets a platform admin enter a workspace (the resolved-problems routes act in the caller's
-  // workspace, lambda/shared/request_workspace.py): the membership reads and the entry's audit row.
+  // workspace, lambda/shared/request_workspace.py): the membership reads and the entry's audit row. The erasure
+  // routes (POST and GET /settings/erasure, lambda/shared/erasure_scope.py) resolve X-Workspace-Id through the same
+  // policy for a member admin only (no platform-admin entry); the job's deletes stay voc-retention's.
   ctx.props.userPool.grant(settingsRole, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
   const workspaceResolutionEnv = grantWorkspaceResolution(ctx.props.workspacesTable, settingsRole);
 

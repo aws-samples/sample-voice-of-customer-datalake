@@ -12,14 +12,21 @@ what and how), and only for a legal obligation (TENETS.md D5). Two modes:
   ``POST /settings/erasure`` (async invoke). The job row (``pk JOB#erasure``)
   holds the field, the optional source, the legal basis and the value's
   SHA-256; the value itself travels only in the invoke payload, is checked
-  against that hash, and is never stored or logged.
+  against that hash, and is never stored or logged. A workspace's job row is
+  ``WS#{ws}#JOB#erasure`` (shared/erasure_jobs.py), the event naming that
+  workspace (``workspace_id``, written only by the server from the request's
+  resolved membership, shared/erasure_scope.py) and the row naming the same
+  one: the run then reaches that workspace's feedback items and their copies
+  only (``_named_workspace``), by author, source id, CSV row or email, walks no
+  other phase, and frees the workspace's one-erasure lock when it ends.
 
 A run walks its PHASES in order, each paged and time-budgeted:
 
 1. ``items`` — voc-feedback. An erasure by email and a retention window reach every workspace's items too
    (``WS#{ws}#SOURCE#…``, with their objects under ``ws/{ws}/``; counted in ``deleted_workspace_items`` as
    well); an erasure by author (a display name), source id or CSV row (ids unique only within one account or
-   upload) and a whole-source erasure leave them (``shared/retention.reaches_workspaces``);
+   upload) and a whole-source erasure leave them (``shared/retention.reaches_workspaces``); a job that names a
+   workspace reaches that workspace's items only, and this is its one phase;
 2. ``radar`` — voc-radar (other brands' reviews), when ``RADAR_TABLE`` is set;
    then ``boards`` — an erasure by email only, when ``FEATURE_REQUESTS_TABLE`` is set:
    the person's board requests and +1s are de-identified and their raw copies deleted
@@ -62,6 +69,7 @@ from jobs.retention.runs import (
     carried_state,
     claim_erasure_job,
     finish_erasure_job,
+    job_scope,
     new_run,
     optional_counts,
     record_progress,
@@ -71,6 +79,7 @@ from shared import retention
 from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async
 from shared.data_version import bump_data_version, bump_radar_version
 from shared.digests import sha256_hex
+from shared.erasure_jobs import refresh_workspace_lock, release_workspace_lock
 from shared.invocation_cost import instrumented_handler
 from shared.jobs import has_time_left
 from shared.legal_basis import legal_basis_or_legacy
@@ -81,11 +90,13 @@ from shared.retention import (
     STORE_FEEDBACK,
     STORE_RADAR,
     UNSCOPED_ROW_COUNTER,
+    WORKSPACE_ERASE_FIELDS,
     WORKSPACE_ITEM_COUNTER,
 )
 from shared.source_erasure import refresh_source_lock, release_source_lock
 from shared.source_profiles import SOURCE_ID_RE, load_source_profiles
 from shared.warm_init import warm_at_init
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, message_scope, scope_from_message
 
 # Bundled beside `shared/` (no sys.path shim); tests import `jobs.retention.handler`.
 (FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET, RADAR_TABLE, PROJECTS_TABLE, FEATURE_REQUESTS_TABLE,
@@ -168,7 +179,13 @@ def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, An
     if not isinstance(job_id, str) or not JOB_ID_RE.match(job_id) or not isinstance(value, str) or not value:
         logger.error('Erasure event without a valid job_id and value')
         return None
-    job = claim_erasure_job(aggregates_table, job_id)
+    refused, partition = message_scope(event)
+    if refused:
+        logger.error('Erasure event whose workspace_id names no workspace', extra={'job_id': job_id})
+        return None
+    # A workspace job's id and partition are already on the run (``_workspace_job``, before any read); the
+    # deployment's job_id only after a successful claim, as before (a claim fault then fails no row).
+    job = claim_erasure_job(aggregates_table, job_id, partition)
     if job is None:
         logger.info('Erasure job is missing or already finished', extra={'job_id': job_id})
         return None
@@ -177,10 +194,44 @@ def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, An
                started_by_sub=job.get('started_by_sub'))
     if job.get('value_hash') != sha256_hex(value):
         raise ValueError('The erasure value does not match the job')
+    scope = _named_workspace(job)
+    if (scope.ws if scope else None) != (partition.ws if partition else None):
+        raise ValueError('The job row names another workspace than its partition')
     if run['field'] == SOURCE_FIELD:
         _check_whole_source(run['source'], value)
     field, source = str(job.get('field')), run['source']
-    return lambda store: retention.erase_filter(field, value, source, store)
+    return lambda store: retention.erase_filter(field, value, source, store, scope)
+
+
+def _workspace_job(event: dict[str, Any], run: dict[str, Any]) -> None:
+    """A workspace erasure's job id and partition on the run from the start of the invocation (before the
+    generation guard and the claim), so every failure path, ``MAX_GENERATIONS`` included, marks the workspace's own
+    row failed and frees its lock. Only for a well-formed job id and a valid workspace (``message_scope``); the
+    deployment's job keeps its order (``_erase_setup``)."""
+    job_id = event.get('job_id')
+    refused, partition = message_scope(event)
+    if refused or partition is None or not isinstance(job_id, str) or not JOB_ID_RE.match(job_id):
+        return
+    run['job_id'] = job_id
+    run[WORKSPACE_FIELD] = partition.ws
+
+
+def _named_workspace(job: dict[str, Any]) -> WorkspaceScope | None:
+    """The one workspace the job ROW names (``workspace_id``), or None for a job of the deployment.
+
+    The settings API writes it from the request's resolved membership (shared/erasure_scope.py ``scoped_job_row``),
+    never from a body, in that workspace's own job partition, and names the same workspace on the invoke event
+    (``workspace_payload``) so the worker finds the row; the event alone never makes a job (the row must exist in
+    that partition) and the row must name the same workspace (``_erase_setup``). A field that is there but not a
+    workspace id, or a whole-source job that names one, fails the job (ValueError) before anything is read: never
+    run deployment-wide instead.
+    """
+    if WORKSPACE_FIELD not in job:
+        return None
+    scope = scope_from_message(job)
+    if job.get('field') not in WORKSPACE_ERASE_FIELDS:
+        raise ValueError('This erasure cannot name a workspace')
+    return scope
 
 
 def _check_whole_source(source: object, value: str) -> None:
@@ -200,9 +251,24 @@ def _check_whole_source(source: object, value: str) -> None:
 def _hand_over(walk: Walk, phase: str, cursor: dict | None) -> dict:
     run = walk.run
     _whole_source_lock_call(walk.aggregates, run, refresh_source_lock, 'renew')
+    _workspace_lock_call(walk.aggregates, run, refresh_workspace_lock, 'renew')
     payload = {**walk.event, 'mode': run['mode'], 'phase': phase, 'cursor': cursor, 'run': carried_state(run)}
     invoke_lambda_async(walk.context.function_name, payload)
     return {'status': 'continued', 'run_id': run['run_id']}
+
+
+def _workspace_lock_call(aggregates_table: Any, run: dict[str, Any],
+                         operation: Callable[[Any, WorkspaceScope, str, datetime], None], action: str) -> None:
+    """Renew or release a workspace job's lock (one live erasure per workspace, shared/erasure_jobs.py); best
+    effort, as the source lock (``_whole_source_lock_call``): a stale lock frees itself after ``STALE_AFTER``."""
+    scope = job_scope(run)
+    if not run.get('job_id') or scope is None:
+        return
+    try:
+        operation(aggregates_table, scope, str(run['job_id']), datetime.now(UTC))
+    except _AWS_ERRORS as e:
+        logger.warning('Could not update the workspace erasure lock',
+                       extra={'action': action, 'error_type': type(e).__name__})
 
 
 def _whole_source_lock_call(aggregates_table: Any, run: dict[str, Any],
@@ -301,6 +367,15 @@ def _without_unscoped_rows(run: dict[str, Any], page: dict) -> dict:
     return {**page, 'Items': kept}
 
 
+def _only_in_workspace(ws: str, page: dict) -> None:
+    """Defence in depth for a job that names workspace ``ws``: every matched row of the page is that workspace's (its
+    ``pk``), checked before any tombstone is written; any other row fails the job (ValueError), nothing deleted."""
+    for item in page.get('Items', []):
+        scope = retention.item_scope(item)
+        if scope is None or scope.ws != ws:
+            raise ValueError('A matched row is outside the named workspace')
+
+
 def _unscoped(item: dict) -> bool:
     try:
         retention.item_scope(item)
@@ -315,9 +390,12 @@ def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
     table, condition, run = walk.tables[store], walk.filters(store), walk.run
     deleter = ItemDeleter(run, walk.s3, RAW_DATA_BUCKET, walk.tables)
     retention_run = run['mode'] == MODE_RETENTION
+    named = run.get('workspace_id')
 
     def scan(at: dict | None) -> dict:
         page = _scan_page(table, condition, at)
+        if named:
+            _only_in_workspace(str(named), page)
         return _without_unscoped_rows(run, page) if retention_run else page
 
     return _erase_pages(walk, phase, cursor, scan,
@@ -376,8 +454,14 @@ def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
 
 
 def _phases(walk: Walk) -> list[str]:
-    """The phases this run walks, in order (the lineage one is decided when it is reached)."""
+    """The phases this run walks, in order (the lineage one is decided when it is reached).
+
+    A job that names a workspace walks the item scan only: Radar, the feedback boards and the workspace memberships
+    are the deployment's (not keyed by workspace), there is no whole-source sweep, and no artifact cites a workspace
+    item until projects move (phase 3)."""
     phases = [PHASE_ITEMS]
+    if walk.run.get('workspace_id'):
+        return phases
     if STORE_RADAR in walk.tables:
         phases.append(PHASE_RADAR)
     if boards.STORE_BOARDS in walk.tables and boards.applies(walk.run):
@@ -435,9 +519,14 @@ _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
 def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> dict:
     run.pop('_progress', None)
     if run.get('job_id'):
-        finish_erasure_job(aggregates_table, run, status, error)
-        # Completed or failed: the next erasure of this source may start.
+        finished = finish_erasure_job(aggregates_table, run, status, error)
+        # Completed or failed: the next erasure of this source may start (each release frees only its own job's lock).
         _whole_source_lock_call(aggregates_table, run, release_source_lock, 'release')
+        _workspace_lock_call(aggregates_table, run, release_workspace_lock, 'release')
+        if not finished:
+            # A workspace job whose row already reads finished (a duplicate invoke): its outcome, audit row and
+            # counts are the first run's; this one adds none (runs.finish_erasure_job logged it).
+            return {'status': 'already_finished', 'job_id': run['job_id']}
     write_audit(aggregates_table, run, status, error)
     metrics.add_metric(name='RetentionItemsDeleted', unit='Count',
                        value=run['deleted_items'] + run['deleted_radar_items'])
@@ -454,17 +543,28 @@ def handle_event(event: dict[str, Any], context: Any) -> dict:
         return {'status': 'ignored'}
     tables = _tables()
     state = new_run(event, mode)
+    if mode == MODE_ERASE:
+        _workspace_job(event, state)
     if state['generation'] >= MAX_GENERATIONS:
         return _finish(tables['aggregates'], state, STATUS_FAILED, 'Stopped after too many hand-overs')
-    before = (state['deleted_items'], state['deleted_radar_items'])
+    before = (state['deleted_items'], state['deleted_radar_items'], _workspace_items(state))
     try:
         return _run(tables, context, event, state)
     finally:
-        # After deletes (a hand-over, completion or failure): cached reads move on.
-        if state['deleted_items'] > before[0]:
+        # After deletes (a hand-over, completion or failure): cached reads move on. A job that names a workspace
+        # deleted that workspace's items only: its own data_version moves (WS#{ws}#METRIC#meta), not the deployment's.
+        named = job_scope(state) if state.get('job_id') else None
+        if named is not None:
+            if _workspace_items(state) > before[2]:
+                bump_data_version(tables['aggregates'], named)
+        elif state['deleted_items'] > before[0]:
             bump_data_version(tables['aggregates'])
         if state['deleted_radar_items'] > before[1] and STORE_RADAR in tables:
             bump_radar_version(tables[STORE_RADAR])
+
+
+def _workspace_items(run: dict[str, Any]) -> int:
+    return int(run.get(WORKSPACE_ITEM_COUNTER) or 0)
 
 
 def _run(tables: dict[str, Any], context: Any, event: dict[str, Any], state: dict[str, Any]) -> dict:

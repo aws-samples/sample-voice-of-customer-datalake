@@ -140,6 +140,8 @@ const ErasureJobSchema = z.object({
   /** Of `deleted_items`, the workspaces' items (an erasure of a person and a retention window reach them); absent (0)
    * when it deleted none. */
   deleted_workspace_items: count,
+  /** The workspace an erasure in one workspace ran in (its job row, since 7.09.00); absent on the deployment's. */
+  workspace_id: optionalText,
   files_needing_review: FilesNeedingReviewSchema,
   started_by: z.string().catch(''),
   created_at: z.string().catch(''),
@@ -230,12 +232,18 @@ export const sourceProfilesApi = {
       ? request
       : { ...request, source }))),
 
+  /** Always the deployment's (no `X-Workspace-Id`): a workspace refuses a whole-source erasure (400), since the
+   *  sources it may name, its lock and its sweep of `raw/<source>/` are the deployment's. */
   startSourceErasure: async ({ source, confirm, legalBasis }: SourceErasureRequest): Promise<ErasureJob | null> =>
     normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post({
       field: SOURCE_ERASURE_FIELD, value: source, confirm, legal_basis: legalBasis,
-    }))),
+    }), 'deployment')),
 
-  /** One read serves both panels: the polled job list and the whole-source picker. */
-  listErasure: async (): Promise<ErasureList> =>
-    normalizeErasureList(await fetchApi<unknown>('/settings/erasure')),
+  /** The jobs and the whole-source picker's sources: the current workspace's jobs (no sources) by default, the
+   *  deployment's with `'deployment'`. An erasure by author, source id, CSV row or email (`startErasure`) acts in the
+   *  current workspace inside one (its member admins), the deployment's outside. */
+  listErasure: async (scope: RequestScope = 'workspace'): Promise<ErasureList> =>
+    normalizeErasureList(await (scope === 'deployment'
+      ? fetchApi<unknown>('/settings/erasure', { method: 'GET' }, 'deployment')
+      : fetchApi<unknown>('/settings/erasure'))),
 }

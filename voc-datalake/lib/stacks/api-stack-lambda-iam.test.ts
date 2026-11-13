@@ -219,6 +219,25 @@ describe.each([
   });
 });
 
+// The settings API's erasure routes (lambda/shared/erasure_scope.py) resolve X-Workspace-Id for a member admin only,
+// never elevating a platform admin. They read the membership through the stack's one workspace-resolution policy,
+// which the role holds since 6.18.00 for its other workspace routes (platform-admin-writes.test.ts pins both): the
+// role's own policy names voc-workspaces for nothing.
+describe('SettingsLambdaRole reads a workspace membership for the erasure routes', () => {
+  const role = 'SettingsLambdaRole';
+
+  it('writes and reads nothing in voc-workspaces from its own policy', () => {
+    expect(policyStatementsOf(apiTemplate(), role)
+      .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:'))))
+      .toStrictEqual([]);
+  });
+
+  it('is handed the workspaces table', () => {
+    expect(Object.keys(lambdaEnv(apiTemplate(), 'settings_handler.lambda_handler')))
+      .toStrictEqual(expect.arrayContaining(['WORKSPACES_TABLE']));
+  });
+});
+
 // The operator APIs keep a workspace's plugin credentials, app connectors and scraper configs in its own secret
 // (lambda/shared/workspace_plugin_store.py): Get and Put on `voc/ws/*` beside the shared secret, never Create, Delete,
 // Describe or Tag (the workspaces API makes them), and the prefix in WORKSPACE_SECRET_PREFIX.

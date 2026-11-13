@@ -185,7 +185,7 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | Scrapers | `scrapers_handler.py` | Secrets Manager, Lambda invoke, Bedrock |
 | Manual Import | `manual_import_handler.py` | DynamoDB, SQS, S3 |
 | S3 Import | `s3_import_handler.py` | S3 import bucket RW, KMS; reprocess: invoke the `s3_import` ingestor, aggregates `SOURCE_RUN#s3_import` rows only |
-| Settings | `settings_handler.py` | DynamoDB (aggregates), Bedrock |
+| Settings | `settings_handler.py` | DynamoDB (aggregates, a workspace's erasure jobs and lock included), Bedrock; DynamoDB workspaces through the stack's one workspace-resolution policy (GetItem `WS#*` and `AUDIT#WS#*`, PutItem `AUDIT#WS#*` only, `lib/utils/workspace-resolution-grants.ts`): the erasure routes' `X-Workspace-Id` reads a membership with the resolver's projections, never a member's email, and no platform-admin entry; the settings kinds' workspace routes may enter a platform admin, audited |
 | Projects | `projects_handler.py` | DynamoDB (projects, jobs), Step Functions, Bedrock, S3 |
 | Users | `users_handler.py` | Cognito admin; platform admin (live check) for `PUT /users/{username}/platform-admin` and for acting on a platform admin; DynamoDB workspaces (a deleted user's memberships, since 6.11.00: Query `USER#*`/`WS#*`, GetItem `WS#*`/`AUDIT#WS#*`, ConditionCheckItem `WS#*`, PutItem `AUDIT#WS#*`, DeleteItem `USER#*`/`WS#*`) |
 | Feedback Forms | `feedback_form_handler.py` | DynamoDB (aggregates), SQS |

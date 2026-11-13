@@ -134,9 +134,9 @@ def release_lookup(table: Any, form_id: str, scope: WorkspaceScope) -> None:
             raise
 
 
-def workspace_payload(payload: Mapping[str, Any], source: object) -> dict[str, Any]:
+def workspace_payload(payload: Mapping[str, Any], source: object, *, ingestion: bool = True) -> dict[str, Any]:
     """An asynchronous payload or message on either path: an operator route's invoke payload (Run now, a web
-    scraper's run), a form's submission, a webhook's delivery.
+    scraper's run), a form's submission, a webhook's delivery, an erasure job's row and invoke event.
 
     A ``workspace_id`` among ``payload``'s fields (one a body or a source payload carried) is dropped first, so
     deployment-wide (``source`` None) it names no workspace, and otherwise ``workspace_id`` is the server's workspace,
@@ -144,14 +144,17 @@ def workspace_payload(payload: Mapping[str, Any], source: object) -> dict[str, A
     by shared/workspace.py and shared/workspace_members.py) or a ``RoutedWorkspace`` (a stored row's, built only
     here): anything else is a ``TypeError``, never a workspace (typed ``object`` so the check is also a type guard).
 
-    Every such payload starts ingestion in that workspace, so while per-workspace ingestion is held it is refused
-    here too (shared/workspace_plugin_settings.py ``hold_workspace_ingestion``, 409): the backstop behind each route's
-    own earlier call, so no payload ever carries a ``workspace_id`` past the hold.
+    A payload that starts ingestion in that workspace (``ingestion``, the default: every one but an erasure's) is
+    refused here while per-workspace ingestion is held (shared/workspace_plugin_settings.py
+    ``hold_workspace_ingestion``, 409): the backstop behind each route's own earlier call, so no ingestion payload
+    carries a ``workspace_id`` past the hold. An erasure (``ingestion=False``, shared/erasure_scope.py) is never
+    held: it deletes a workspace's data, it never brings any in.
     """
     fields = {name: value for name, value in payload.items() if name != WORKSPACE_FIELD}
     if source is None:
         return fields
     if not isinstance(source, WorkspaceContext | RoutedWorkspace):
         raise TypeError('a workspace payload needs a resolved or a stored-row workspace')
-    hold_workspace_ingestion()
+    if ingestion:
+        hold_workspace_ingestion()
     return {**fields, WORKSPACE_FIELD: source.ws}

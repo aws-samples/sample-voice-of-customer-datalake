@@ -7,6 +7,7 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
+import { grantWorkspaceAttributeRead } from '../utils/workspace-resolution-grants';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
@@ -480,14 +481,7 @@ export class VocApiStack extends VocStack {
    * environment.
    */
   private grantWebhookWorkspaces(role: iam.Role, workspacesTable: dynamodb.ITable): Record<string, string> {
-    role.addToPolicy(new iam.PolicyStatement({
-      actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
-      conditions: {
-        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
-        'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...WEBHOOK_META_ATTRIBUTES] },
-        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-      },
-    }));
+    grantWorkspaceAttributeRead(role, workspacesTable, WEBHOOK_META_ATTRIBUTES);
     const prefix = this.prefixed(WORKSPACE_SECRET_BASE_PREFIX);
     const secrets = workspaceSecretsArn(this, prefix);
     role.addToPolicy(new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue'], resources: [secrets] }));

@@ -8,8 +8,9 @@
  * Save (one PUT of the whole list, validated server-side).
  *
  * Whose profiles (workspace/configScope.ts): Administration edits the deployment's (`'deployment'`, no
- * `X-Workspace-Id` from any address), beside the erasure panels, which start the deployment's erasure jobs; a
- * workspace's settings page edits the workspace's own (`'workspace'`), without them.
+ * `X-Workspace-Id` from any address), beside the erasure panels (an erasure of a person in the current workspace
+ * inside one, the deployment's outside; a whole-source erasure always the deployment's); a workspace's settings
+ * page edits the workspace's own (`'workspace'`), without them.
  *
  * @module components/SourcesManager
  */
@@ -86,9 +87,10 @@ function ProfilesEditor({ stored, withErasure }: Readonly<{ stored: readonly Sou
 }
 
 /**
- * `withErasure` (default on): the erasure panels, which start the deployment's erasure jobs (`POST
- * /settings/erasure`, deployment-wide whatever the address; for its administrators). A workspace's settings page
- * leaves them out: it edits only that workspace's profiles.
+ * `withErasure` (default on): the erasure panels (`POST /settings/erasure`). An erasure by author, source id, CSV
+ * row or email names the current workspace inside one (that workspace's member admins; its reviews only) and is
+ * the deployment's outside; a whole-source erasure is always the deployment's (no `X-Workspace-Id`, its
+ * administrators). A workspace's settings page leaves them out: it edits only that workspace's profiles.
  */
 export default function SourcesManager({ withErasure = true }: Readonly<{ withErasure?: boolean }>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })

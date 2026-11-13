@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
-from _shared.test.workspace_fixtures import EVENTS_WITH_A_MALFORMED_WORKSPACE, REFUSED, SCOPE, WS
+from _shared.test.workspace_fixtures import EVENTS_WITH_A_MALFORMED_WORKSPACE, REFUSED, SCOPE, WS, WS_PREFIX
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -204,7 +204,7 @@ class TestProcessFile:
         mock_s3.head_object.return_value = {"ContentLength": len(csv_data)}
         mock_s3.get_object.return_value = {"Body": _stream(csv_data)}
 
-        assert ingestor.process_file("bucket", "surveys/data.csv") == 3
+        assert ingestor.process_file("bucket", f"{WS_PREFIX}surveys/data.csv") == 3
         ingestor.send_to_queue.assert_called_once()
 
     @patch("s3_import.ingestor.handler.s3_client")
@@ -213,7 +213,7 @@ class TestProcessFile:
         mock_s3.head_object.return_value = {"ContentLength": len(json_data)}
         mock_s3.get_object.return_value = {"Body": _stream(json_data)}
 
-        assert ingestor.process_file("bucket", "src/data.json") == 2
+        assert ingestor.process_file("bucket", f"{WS_PREFIX}src/data.json") == 2
 
     @patch("s3_import.ingestor.handler.s3_client")
     def test_processes_jsonl(self, mock_s3, ingestor):
@@ -221,7 +221,7 @@ class TestProcessFile:
         mock_s3.head_object.return_value = {"ContentLength": len(jsonl_data)}
         mock_s3.get_object.return_value = {"Body": _stream(jsonl_data)}
 
-        assert ingestor.process_file("bucket", "src/data.jsonl") == 3
+        assert ingestor.process_file("bucket", f"{WS_PREFIX}src/data.jsonl") == 3
 
     @patch("s3_import.ingestor.handler.metrics")
     @patch("s3_import.ingestor.handler.s3_client")
@@ -246,7 +246,7 @@ class TestProcessFile:
         )
 
         with pytest.raises(RuntimeError):
-            ingestor.process_file("bucket", "src/big.csv")
+            ingestor.process_file("bucket", f"{WS_PREFIX}src/big.csv")
 
         mock_metrics.add_metric.assert_called_once_with(
             name="ItemsImported", unit="Count", value=200
@@ -299,3 +299,71 @@ class TestLambdaHandler:
                           "results": [{"file": "surveys/data.csv", "items_processed": 3}]}
         MockIngestor.assert_called_once_with(None, execution_id=None, started_by=None)
         MockIngestor.return_value.process_file.assert_called_once_with("bucket", "surveys/data.csv", reprocess=False)
+
+
+class TestADeploymentWideRunLeavesWorkspaceFolders:
+    """A deployment-wide run (no scope) never reads a workspace's folder: a key of 3+ segments under `ws/` is
+    refused unread; a 2-segment key (`<source>/<file>`, what the import API writes) imports as before."""
+
+    @pytest.fixture
+    def deployment_run(self, lambda_context):
+        recorded: list = []
+        with offline_ingestor_construction(), \
+                patch("s3_import.ingestor.handler.s3_client") as mock_s3, \
+                patch("s3_import.ingestor.handler.IMPORT_BUCKET", "bucket"), \
+                patch("s3_import.ingestor.handler.record_import_run", side_effect=lambda _t, run: recorded.append(run)), \
+                patch("s3_import.ingestor.handler.S3ImportIngestor.send_to_queue", side_effect=len), \
+                patch("s3_import.ingestor.handler.S3ImportIngestor.normalize_item", side_effect=lambda item, *_: item):
+            from s3_import.ingestor.handler import lambda_handler
+
+            def invoke(key: str) -> dict:
+                event = _make_s3_event("bucket", key)
+                del event["workspace_id"]
+                return lambda_handler(event, lambda_context)
+
+            yield invoke, mock_s3, recorded
+
+    def test_a_workspace_folder_key_is_refused_unread(self, deployment_run):
+        invoke, mock_s3, recorded = deployment_run
+        key = f"ws/{WS}/reviews/a.csv"
+
+        with patch("s3_import.ingestor.handler.metrics") as m:
+            result = invoke(key)
+
+        assert result["results"] == [{"file": key, "items_processed": 0}]
+        assert mock_s3.mock_calls == []
+        m.add_metric.assert_any_call(name="ImportFileInWorkspaceFolder", unit="Count", value=1)
+        [run] = recorded
+        assert run.errors == ["a.csv: file is in a workspace's import folder"]
+        assert (run.source, run.raw_s3_key) == ("S3 - Import", None)
+
+    @pytest.mark.parametrize(("key", "error"), [
+        ("ws/a/b.txt", "file is in a workspace's import folder"),
+        ("ws//x.csv", "x.csv: file is in a workspace's import folder"),
+        ("ws/./x.csv", "x.csv: file is in a workspace's import folder"),
+        ("ws/../x.csv", "x.csv: file is in a workspace's import folder"),
+    ])
+    def test_other_workspace_folder_keys_are_refused_with_no_folder_and_no_raw_file(self, deployment_run, key, error):
+        invoke, mock_s3, recorded = deployment_run
+
+        result = invoke(key)
+
+        assert result["results"] == [{"file": key, "items_processed": 0}]
+        assert mock_s3.mock_calls == []
+        [run] = recorded
+        assert (run.source, run.raw_s3_key, run.errors) == ("S3 - Import", None, [error])
+        folder = key.rsplit("/", 1)[0]
+        assert all(folder not in text for text in (run.source, *run.errors))
+
+    def test_a_two_segment_ws_key_still_imports(self, deployment_run):
+        invoke, mock_s3, recorded = deployment_run
+        data = _csv_bytes("id,text", "1,Great")
+        mock_s3.head_object.return_value = {"ContentLength": len(data)}
+        mock_s3.get_object.return_value = {"Body": _stream(data)}
+
+        result = invoke("ws/x.csv")
+
+        assert result["results"] == [{"file": "ws/x.csv", "items_processed": 1}]
+        mock_s3.get_object.assert_called_once_with(Bucket="bucket", Key="ws/x.csv")
+        [run] = recorded
+        assert (run.source, run.raw_s3_key, run.errors) == ("S3 - ws", "s3://bucket/ws/x.csv", [])

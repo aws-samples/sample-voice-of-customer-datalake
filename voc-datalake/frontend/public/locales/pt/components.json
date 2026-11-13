@@ -720,6 +720,7 @@
     "members": "Associações a espaços de trabalho anonimizadas: {{rows, number}}",
     "workspaceItems": "Avaliações apagadas em espaços de trabalho: {{items, number}}",
     "emailReachesWorkspaces": "Um apagamento por e-mail também exclui as avaliações desta pessoa em todos os espaços de trabalho. Os outros campos alcançam apenas as avaliações desta implantação.",
+    "reachesThisWorkspace": "Dentro deste espaço de trabalho, a eliminação apaga apenas as avaliações deste espaço de trabalho, inclusive uma eliminação por e-mail.",
     "reviewFolders": "Pastas de originais de importação S3 mantidas que podem conter linhas apagadas: {{folders, number}}. Revise-as:",
     "reviewFiles": "Arquivos enviados mantidos porque também contêm linhas não apagadas: {{files, number}}. Revise-os:",
     "status": {

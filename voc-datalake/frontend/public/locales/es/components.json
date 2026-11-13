@@ -720,6 +720,7 @@
     "members": "Membresías de espacios de trabajo anonimizadas: {{rows, number}}",
     "workspaceItems": "Reseñas eliminadas en espacios de trabajo: {{items, number}}",
     "emailReachesWorkspaces": "Un borrado por correo también elimina las reseñas de esta persona en todos los espacios de trabajo. Los demás campos solo alcanzan las reseñas propias de esta implementación.",
+    "reachesThisWorkspace": "Dentro de este espacio de trabajo, el borrado elimina solo las opiniones de este espacio de trabajo, también un borrado por correo electrónico.",
     "reviewFolders": "Carpetas de originales de importación S3 conservadas que pueden contener filas borradas: {{folders, number}}. Revíselas:",
     "reviewFiles": "Archivos subidos que se conservaron porque también contienen filas no borradas: {{files, number}}. Revíselos:",
     "status": {
