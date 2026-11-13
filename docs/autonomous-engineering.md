@@ -1243,12 +1243,50 @@ connection's own fixtures stay with it.
 
 ## Cost
 
-*Planned.* Nothing runs, and nothing is billed, until an administrator connects a repository and enables an agent.
+Nothing runs, and nothing is billed, until an administrator connects a repository and enables an agent.
 Then, per use: model tokens (Bedrock), MicroVM time while an agent works (suspended while it waits), EventBridge per
 event, SQS for the one dead-letter queue (no task queues), DynamoDB on demand, S3 for the workspace, caches and packs, the supervisor's invocations while a run is
 active. The connection's credential is a standard SecureString parameter, with no monthly charge. No NAT gateway and
-no other fixed cost by default. The cost of each run (events, MicroVM seconds, model tokens) is measured and shown on
-the run.
+no other fixed cost by default. Each run's MicroVM seconds and model tokens are measured on its agents' session rows
+(MicroVM time priced, tokens counted) and kept by month in the spend ledger below; *planned*: the run monitor's cost
+line and the Spend tab that show it, and the model broker's pricing of tokens.
+
+**The spend ledger** (`lambda/engineering/spend.py`, built). What the runs use is kept by day, workflow, run, agent and
+model: one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per
+`DAY#<dd>#WF#<flow>#RUN#<run>#AGENT#<agent>#MODEL#<model>`, whose numbers only grow by ADD (`usd`, `tokens_in`,
+`tokens_out`, `microvm_seconds`), with the run's repository on the row for grouping. Each row is written in the same
+transaction as the session write whose metering it mirrors (the session store's priced writes: MicroVM seconds, priced
+at `ENGINEERING_MICROVM_USD_PER_SECOND`, under the model `microvm`; each model's new tokens), so the ledger and the
+sessions never drift and a retried write adds once. A row is booked to the day (UTC) of the write that measured it
+(when the supervisor counted the MicroVM time, or the harness's report reached it), and the ledger starts when it is
+deployed: a session's earlier tokens are not booked. Model tokens are counted, not yet priced: their dollars join the
+same rows when the model broker meters them. The model names come from the harness's report, inside the MicroVM: names
+that clean to the same key part (ASCII, at most 128 bytes, so a sort key always fits) are summed into one row, a
+session ledgers only 8 models by name, the first in name order (any others on its `-` row, so no session opens rows
+without end; a model that sorts earlier and is first reported later moves a later one onto `-` from then on, the
+totals unchanged),
+one write adds at most 32 rows (a transaction holds 100 items), and a reported model named `microvm` is ledgered as
+`microvm-reported`, so no report can fail the session's write, flood the month or pass for MicroVM time. The writers' roles
+may update the month partitions only (`WS#default#SPEND#20??-??`: UpdateItem, never a read or a delete; IAM cannot
+limit an update to ADDs, the code only ADDs to the counters); the Agents API reads them.
+`GET /agents/engineering/spend?month=&by=&workflow=` (administrators) answers a month grouped by workflow,
+repository, run, agent, model or day. The ledger is a dated view of what the sessions measured: each agent's own
+totals (its `cost_usd`, MicroVM seconds and tokens per model) stay on its session row, the record each run's caps and
+the run monitor read, and every ledger row only ever grows with the session write that measured it, naming its
+writer (`updated_by`), when (`updated_at`) and that session write's version (`session_seq`, D4). The rows are cost
+records, kept under D5 like customer data: they are never deleted and carry no TTL (no writer has a delete grant on
+them), and anything that ever removes one is to go through the AUDIT# guard. Because the two
+are one transaction, a ledger row the table refuses also stops that session's move: the supervisor logs "could not
+move" and tries again on the next tick, so a refused ledger (a grant that does not match the workspace) shows as
+agents that stop moving.
+
+Load: the month partition is a hot key per workspace, written with each priced session write, which the supervisor
+makes about once a minute per live agent (its tick) plus its other moves: with 50 live agents, about 2 ledger rows a
+second (MicroVM and model); at 2× (100 agents) 4, at 10× (500 agents) about 20 a second. Those writes are now one
+transaction with the session row, which DynamoDB bills at 2 write units per KB per item (about twice the plain update
+it replaces), and a partition takes about 500 transactional writes a second: 20 is far under it, so no sharding. The read is one Query of one month partition (eventually consistent), grouped
+server-side by the route, never a whole-table read, and stops at 20,000 rows (`MAX_ROWS`; a month past it is answered
+as far as it read and marked `truncated`): a month of 50 agents on 10 workflows stays in the low thousands of rows.
 
 ## Phases and status
 

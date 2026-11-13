@@ -39,7 +39,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
-import { ENGINEERING_CACHE_PREFIX } from './core-buckets';
+import { ENGINEERING_CACHE_PREFIX, ENGINEERING_SPEND_PARTITIONS } from './core-buckets';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { engineeringAgentsEnabled } from './engineering-broker';
@@ -94,6 +94,20 @@ const AGENT_ROLES = [
   'builder', 'coach', 'commit-reviewer', 'committer', 'coordinator', 'final-go', 'fixer', 'gate-runner', 'hunter',
   'mapper', 'pr-author', 'pr-reviewer', 'understander',
 ];
+/**
+ * The spend ledger's rows (engineering/spend.py): the session store ADDs to them in the same transaction as each
+ * priced write of a session (a transaction is authorised by its items' own actions), so every role that saves a
+ * session needs this. UpdateItem only, on the month partitions only; never a read, never a delete.
+ */
+function grantSpendLedger(role: iam.IRole, table: dynamodb.ITable): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'SpendLedger',
+    actions: ['dynamodb:UpdateItem'],
+    resources: [table.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_SPEND_PARTITIONS] } },
+  }));
+}
+
 /** `actions` on `key`, only when one of `services` (in this region) calls KMS for the role. */
 function viaServices(key: kms.IKey, actions: string[], services: string[]): iam.PolicyStatement {
   const region = cdk.Stack.of(key).region;
@@ -311,6 +325,7 @@ class EngineeringRuntime extends Construct {
       resources: [engineeringTable.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS] } },
     }));
+    grantSpendLedger(role, engineeringTable);
     const checkpoints = this.grantCheckpointReads(role, workspaceBucket);
     role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb', 'sqs']));
     // Waking (resume, a fresh session over the MicroVM's auth token) and continuing (a new MicroVM, the old one ended).
@@ -451,6 +466,7 @@ class EngineeringRuntime extends Construct {
       resources: [engineeringTable.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS, RUN_REGISTRY] } },
     }));
+    grantSpendLedger(role, engineeringTable);
     // Its one delete: an ended run's row in the registry of active runs; never a run's own rows.
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['dynamodb:DeleteItem'],

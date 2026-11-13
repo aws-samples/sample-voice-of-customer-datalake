@@ -13,8 +13,9 @@ counters (MicroVM seconds, tokens per model and their totals), never a token, a 
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field, replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final, Literal
 
@@ -22,7 +23,17 @@ from botocore.exceptions import ClientError
 
 from engineering.rows import LAUNCH_HOLD
 from engineering.runtime.interface import AgentSpec, MicroVm
-from engineering.runtime.runs import RunNotActive, RunStore, meta_key, run_pk
+from engineering.runtime.runs import RunNotActive, RunStore, meta_key, run_pk, transaction_conflict
+from engineering.spend import (
+    MAX_SESSION_MODELS,
+    MICROVM,
+    OTHER_MODELS,
+    REPORTED_MICROVM,
+    Usage,
+    Where,
+    ledger_updates,
+    token_deltas,
+)
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
@@ -110,6 +121,9 @@ class AgentSession:
     #: earlier ones', fixed when it continues) plus what the current one's harness reported, which starts at zero.
     tokens: dict[str, dict[str, int]] = field(default_factory=dict)
     tokens_before: dict[str, dict[str, int]] = field(default_factory=dict)
+    #: The tokens per model already in the spend ledger (``engineering/spend.py``): the row's ``tokens`` as it was
+    #: read (never stored: every metered write ledgers the difference in the same write), so each write adds the rest.
+    ledgered_tokens: dict[str, dict[str, int]] = field(default_factory=dict)
     inspect: dict[str, Any] = field(default_factory=dict)
     seq: int = 0
 
@@ -169,9 +183,11 @@ def _key(run_id: str, agent_id: str) -> dict[str, str]:
 
 def _own(session: AgentSession) -> dict[str, Any]:
     """The attributes this store writes: the session's own (and the totals the reports read), never anyone else's."""
-    return dict(asdict(session), egress=list(session.egress), paths=list(session.paths),
-                harness=list(session.harness), input_tokens=session.input_tokens,
-                output_tokens=session.output_tokens)
+    own = dict(asdict(session), egress=list(session.egress), paths=list(session.paths),
+               harness=list(session.harness), input_tokens=session.input_tokens,
+               output_tokens=session.output_tokens)
+    own.pop('ledgered_tokens')   # (the row's own tokens as read: never a stored copy)
+    return own
 
 
 def _from_item(item: dict[str, Any]) -> AgentSession:
@@ -188,6 +204,7 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
         failures=int(item.get('failures', 0)), task_attempt=int(item.get('task_attempt', 1)),
         microvm_seconds=int(item.get('microvm_seconds', 0)), priced_seconds=int(item.get('priced_seconds', 0)),
         tokens=plain(item.get('tokens') or {}), tokens_before=plain(item.get('tokens_before') or {}),
+        ledgered_tokens=plain(item.get('tokens') or {}),
         inspect=plain(item.get('inspect') or {}),
         seq=int(item['seq']),
         **optional,
@@ -200,10 +217,13 @@ class SessionStore:
     neither writes over the other), in the same conditional write, so a move counted once is priced once. Pricing
     goes forward only: time used while the price is 0 is never priced later."""
 
-    def __init__(self, table: Any, runs: RunStore, usd_per_second: Decimal = Decimal(0)) -> None:
+    def __init__(self, table: Any, runs: RunStore, usd_per_second: Decimal = Decimal(0),
+                 clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._table = table
         self._runs = runs
         self._usd_per_second = usd_per_second
+        self._clock = clock
+        self._runs_seen: dict[str, tuple[str, str]] = {}
 
     def create(self, session: AgentSession, labels: dict[str, str] | None = None) -> AgentSession:
         """Write a new session's row, only while its run is active (``RunNotActive``: checked in the same write, so
@@ -267,8 +287,8 @@ class SessionStore:
 
     def save(self, session: AgentSession) -> AgentSession:
         """Write ``session`` over the row it was read from; ``StaleSession`` when the row moved meanwhile."""
-        moved, cost = self._priced(replace(session, seq=session.seq + 1))
-        self._write(moved, 'seq = :seen', {':seen': session.seq}, cost)
+        moved, cost, usage = self._metered(replace(session, seq=session.seq + 1))
+        self._write(moved, 'seq = :seen', {':seen': session.seq}, cost, usage)
         return moved
 
     def claim(self, session: AgentSession, now: int, ttl: int) -> AgentSession:
@@ -277,10 +297,41 @@ class SessionStore:
         Only the holder's next writes match the row's ``seq``, so nobody else moves the session meanwhile; a
         holder that died lets go when its claim lapses.
         """
-        claimed, cost = self._priced(replace(session, seq=session.seq + 1, claimed_until=now + ttl))
+        claimed, cost, usage = self._metered(replace(session, seq=session.seq + 1, claimed_until=now + ttl))
         self._write(claimed, 'seq = :seen AND (attribute_not_exists(claimed_until) OR claimed_until < :now)',
-                    {':seen': session.seq, ':now': now}, cost)
+                    {':seen': session.seq, ':now': now}, cost, usage)
         return claimed
+
+    def _metered(self, session: AgentSession) -> tuple[AgentSession, Decimal | None, dict[str, Usage]]:
+        """``_priced``, and what the write adds to the spend ledger: the MicroVM seconds not counted before (with
+        their price, if any) and, per model, the tokens not ledgered before. The session then records both as
+        counted, in the same write. Past the session's first ``MAX_SESSION_MODELS`` models by name, its others' tokens are
+        ledgered under ``-``: the names come from inside the MicroVM, and no session may open rows without end."""
+        priced, cost = self._priced(session)
+        unpriced = priced.priced_seconds - session.priced_seconds   # (the seconds _priced just counted, once)
+        # (token_deltas names a reported 'microvm' as REPORTED_MICROVM: its own names say the same)
+        # The first models by name (a map read back from DynamoDB keeps no order): deterministic on every write.
+        own = {REPORTED_MICROVM if model == MICROVM else model for model in sorted(priced.tokens)[:MAX_SESSION_MODELS]}
+        usage: dict[str, Usage] = {}
+        for model, used in token_deltas(priced.tokens, priced.ledgered_tokens).items():
+            name = model if model in own else OTHER_MODELS
+            usage[name] = usage.get(name, Usage()) + used
+        if unpriced > 0:
+            # (a harness's model of that name is ledgered as spend.REPORTED_MICROVM: this row is the runtime's own)
+            usage[MICROVM] = Usage(usd=cost or Decimal(0), microvm_seconds=unpriced)
+        if usage:
+            priced = replace(priced, ledgered_tokens={model: dict(counts) for model, counts in priced.tokens.items()})
+        return priced, cost, usage
+
+    def _where(self, run_id: str) -> Where:
+        """The run's workflow and repository for its ledger rows (read once per run and store)."""
+        known = self._runs_seen.get(run_id)
+        if known is None:
+            run = self._runs.get(run_id)
+            if run is None:   # (not cached: a META written later is read next time)
+                return Where(run_id=run_id, agent_id='')
+            known = self._runs_seen[run_id] = (run.flow, run.repo)
+        return Where(run_id=run_id, agent_id='', flow=known[0], repo=known[1])
 
     def _priced(self, session: AgentSession) -> tuple[AgentSession, Decimal | None]:
         """The session with its MicroVM seconds counted as priced, and the cost of the ones not priced before (None:
@@ -314,11 +365,29 @@ class SessionStore:
                 'ExpressionAttributeValues': values}
 
     def _write(self, session: AgentSession, condition: str, values: dict[str, Any],
-               cost: Decimal | None = None) -> None:
+               cost: Decimal | None = None, usage: dict[str, Usage] | None = None) -> None:
+        """The session's write; with ``usage``, in one transaction with its spend ledger rows (``spend.py``), so a
+        write the session's condition refuses adds nothing to the ledger, and the two never drift."""
+        update = self._update(session, condition, values, cost=cost)
         try:
-            self._table.update_item(**self._update(session, condition, values, cost=cost))
+            if usage:
+                where = replace(self._where(session.run_id), agent_id=session.agent_id, seq=session.seq)
+                items = [{'Update': {'TableName': self._table.name, **update}},
+                         *ledger_updates(self._table.name, self._clock(), where, usage)]
+                try:
+                    self._table.meta.client.transact_write_items(TransactItems=items)
+                except ClientError as first:
+                    # Another write held one of its rows at that moment (a broker's ADD to the same session row):
+                    # tried once more, as a plain update would not have been refused by it.
+                    if not transaction_conflict(first):
+                        raise
+                    self._table.meta.client.transact_write_items(TransactItems=items)
+            else:
+                self._table.update_item(**update)
         except ClientError as error:
-            if is_conditional_check_failure(error):
+            # The session's condition failed, or another write held one of the transaction's rows (a conflict, which
+            # botocore does not retry): either way the move did not happen, and the next tick reads the row again.
+            if is_conditional_check_failure(error) or is_key_collision(error, put_index=0) or transaction_conflict(error):
                 raise StaleSession(f'session {session.run_id}/{session.agent_id} moved') from error
             raise
 

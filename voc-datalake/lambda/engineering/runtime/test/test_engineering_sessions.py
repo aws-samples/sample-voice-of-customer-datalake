@@ -1,5 +1,6 @@
 """Session rows: the board's AGENT# rows, listed through the active runs, conditional moves, never another's attributes."""
 from dataclasses import replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -90,6 +91,138 @@ def test_microvm_seconds_are_priced_once_into_cost_usd_beside_the_brokers(aws):
     with pytest.raises(StaleSession):
         store.save(replace(created, microvm_seconds=5000))
     assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('2.09')
+
+
+def _ledger(table: Any) -> dict[str, dict[str, Any]]:
+    rows = table.query(KeyConditionExpression='pk = :pk',
+                       ExpressionAttributeValues={':pk': 'WS#default#SPEND#2026-11'})['Items']
+    return {str(row['sk']): row for row in rows}
+
+
+def test_each_metered_write_adds_its_seconds_cost_and_new_tokens_to_the_spend_ledger_in_the_same_write(aws):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_hunt', repo='example/app')
+    at = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
+    store = SessionStore(aws[1], runs, usd_per_second=Decimal('0.0001'), clock=lambda: at)
+    created = store.create(SESSION)
+    moved = store.save(replace(created, microvm_seconds=600, tokens={'model-a': {'in': 10, 'out': 4}}))
+    # The same again adds nothing; more of both adds only the difference.
+    moved = store.save(moved)
+    store.claim(replace(moved, microvm_seconds=900, tokens={'model-a': {'in': 15, 'out': 4}}), 1000, 60)
+    prefix = f'DAY#13#WF#wf_hunt#RUN#{RUN}#AGENT#fixer-1#MODEL#'
+    ledger = _ledger(aws[1])
+    assert sorted(ledger) == [f'{prefix}microvm', f'{prefix}model-a']
+    microvm, model = ledger[f'{prefix}microvm'], ledger[f'{prefix}model-a']
+    assert (microvm['usd'], microvm['microvm_seconds'], microvm['repo']) == (Decimal('0.09'), 900, 'example/app')
+    # Who, when and which version (D4): the session write whose ADD it was last (the claim: seq 4).
+    assert (microvm['updated_by'], microvm['updated_at'], microvm['session_seq']) == (
+        'runtime/sessions', at.isoformat(), 4)
+    assert (model['tokens_in'], model['tokens_out'], model['usd']) == (15, 4, 0)
+    # A write that loses its race adds nothing: the ledger and the session never drift.
+    with pytest.raises(StaleSession):
+        store.save(replace(created, microvm_seconds=5000, tokens={'model-a': {'in': 99, 'out': 9}}))
+    assert _ledger(aws[1]) == ledger
+
+
+def _ledgering(aws: Any, price: Decimal = Decimal(0)) -> tuple[SessionStore, AgentSession]:
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_hunt', repo='example/app')
+    store = SessionStore(aws[1], runs, usd_per_second=price, clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
+    return store, store.create(SESSION)
+
+
+def test_unpriced_microvm_time_is_still_ledgered_with_no_dollars(aws):
+    store, created = _ledgering(aws)
+    store.save(replace(created, microvm_seconds=600))
+    (row,) = _ledger(aws[1]).values()
+    assert (row['microvm_seconds'], row['usd'], 'cost_usd' in aws[1].get_item(Key=KEY)['Item']) == (600, 0, False)
+
+
+def test_a_harness_model_named_microvm_is_its_own_row_never_the_microvm_time(aws):
+    store, created = _ledgering(aws, Decimal('0.0001'))
+    store.save(replace(created, microvm_seconds=100, tokens={'microvm': {'in': 1000, 'out': 0}}))
+    rows = {str(row['model']): row for row in _ledger(aws[1]).values()}
+    assert (rows['microvm']['microvm_seconds'], rows['microvm']['usd'], rows['microvm']['tokens_in']) == (
+        100, Decimal('0.01'), 0)
+    assert rows['microvm-reported']['tokens_in'] == 1000
+
+
+def test_a_session_ledgers_its_first_models_by_name_and_the_rest_on_one_row(aws):
+    # (each continuation's report may add names, from inside the MicroVM: no session opens rows without end)
+    store, created = _ledgering(aws)
+    tokens = {f'model-{number:03}': {'in': 1, 'out': 0} for number in range(150)}
+    moved = store.save(replace(created, microvm_seconds=10, tokens=tokens))
+    store.save(replace(moved, tokens={**tokens, 'model-new': {'in': 4, 'out': 0}}))
+    rows = {str(row['model']): int(row['tokens_in']) for row in _ledger(aws[1]).values()}
+    assert sorted(rows) == ['-', 'microvm', *[f'model-{number:03}' for number in range(8)]]
+    assert (rows['-'], sum(rows.values())) == (142 + 4, 154)
+
+
+def test_a_continuation_never_counts_tokens_twice_and_a_row_from_before_books_none_of_its_past(aws):
+    store, _ = _ledgering(aws)
+    # A row written before the ledger: its tokens as read are counted already, never booked again.
+    aws[1].update_item(Key=KEY, UpdateExpression='SET tokens = :t',
+                       ExpressionAttributeValues={':t': {'model-a': {'in': 50, 'out': 5}}})
+    read = store.get(RUN, 'fixer-1')
+    assert read is not None
+    moved = store.save(replace(read, tokens={'model-a': {'in': 60, 'out': 5}}))
+    # A continuation: its MicroVM reports from zero, the session's totals carry on.
+    continued = replace(moved, tokens_before=moved.tokens, tokens=moved.tokens)
+    store.save(replace(continued, tokens=continued.reported({'model-a': {'in': 5, 'out': 0}})))
+    (row,) = _ledger(aws[1]).values()
+    assert (row['tokens_in'], row['tokens_out']) == (15, 0)
+
+
+def test_a_run_started_without_a_workflow_books_under_none_and_a_missing_meta_is_read_again(
+        aws, monkeypatch: pytest.MonkeyPatch):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)   # (no flow, no repo)
+    store = SessionStore(aws[1], runs, clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
+    moved = store.save(replace(store.create(SESSION), microvm_seconds=60))
+    (sk,) = _ledger(aws[1])
+    assert sk.startswith(f'DAY#13#WF#-#RUN#{RUN}#')
+    # A run whose META cannot be read is not remembered as without one: each write reads it again.
+    reads: list[str] = []
+
+    def unread(run_id: str) -> None:
+        reads.append(run_id)
+
+    monkeypatch.setattr(runs, 'get', unread)
+    other = SessionStore(aws[1], runs, clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
+    for seconds in (120, 180):
+        moved = other.save(replace(moved, microvm_seconds=seconds))
+    assert reads == [RUN, RUN]
+
+
+def test_a_conflicted_transaction_is_tried_once_more_then_is_a_stale_session(aws, monkeypatch: pytest.MonkeyPatch):
+    from botocore.exceptions import ClientError
+
+    store, created = _ledgering(aws)
+    conflict = ClientError({'Error': {'Code': 'TransactionCanceledException', 'Message': 'x'},
+                            'CancellationReasons': [{'Code': 'None'}, {'Code': 'TransactionConflict'}]},
+                           'TransactWriteItems')
+    real = aws[1].meta.client.transact_write_items
+    tries: list[int] = []
+
+    def conflicted(times: int):
+        def write(**request: Any) -> Any:
+            tries.append(1)
+            if len(tries) <= times:
+                raise conflict
+            return real(**request)
+        return write
+
+    # Once: the second try lands (a broker's ADD held the row at that moment).
+    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', conflicted(1))
+    moved = store.save(replace(created, microvm_seconds=60))
+    assert (len(tries), _ledger(aws[1])[f'DAY#13#WF#wf_hunt#RUN#{RUN}#AGENT#fixer-1#MODEL#microvm']['microvm_seconds']) == (
+        2, 60)
+    # Twice: the move did not happen; the next tick reads the row again.
+    tries.clear()
+    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', conflicted(2))
+    with pytest.raises(StaleSession):
+        store.save(replace(moved, microvm_seconds=120))
+    assert len(tries) == 2
 
 
 def test_without_a_price_microvm_time_adds_nothing_and_a_later_price_applies_from_then_on(aws):

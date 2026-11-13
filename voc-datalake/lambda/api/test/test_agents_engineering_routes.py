@@ -442,3 +442,65 @@ def test_a_bus_that_refuses_or_a_missing_runtime_answers_503(lambda_context: Any
     assert _call(lambda_context, 'POST', f'{BASE}/messages', body={'to': 'conductor', 'text': 'Hi'})[0] == 503
     monkeypatch.delenv('ENGINEERING_RUNTIME_FUNCTION')
     assert _call(lambda_context, 'POST', f'{BASE}/signals', body={'signal': 'save'})[0] == 503
+
+
+# --- the spend ledger's read (engineering/spend.py) ----------------------------------------------------------------
+
+def test_the_months_spend_is_read_grouped_for_an_admin(lambda_context: Any, run: tuple[Any, EngineeringRun]) -> None:
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from engineering.spend import MICROVM, Usage, Where, ledger_updates
+
+    _, engineering = run
+    at = datetime(2026, 11, 13, tzinfo=UTC)
+    engineering.client.transact_write_items(TransactItems=[
+        _typed(update) for update in ledger_updates(
+            TABLE, at, Where(RUN, 'fixer-2', 'wf_fix', 'example/app'),
+            {MICROVM: Usage(usd=Decimal('1.25'), microvm_seconds=60), 'model-a': Usage(tokens_in=9, tokens_out=3)})])
+    # (the static route, never read as a run id)
+    status, body = _call(lambda_context, 'GET', '/agents/engineering/spend', query={'month': '2026-11', 'by': 'model'})
+    assert (status, body['total']['usd'], [group['key'] for group in body['groups']]) == (
+        200, 1.25, ['microvm', 'model-a'])
+    status, body = _call(lambda_context, 'GET', '/agents/engineering/spend',
+                         query={'month': '2026-11', 'workflow': 'wf_other'})
+    assert (status, body['by'], body['groups']) == (200, 'workflow', [])
+    for query in ({'month': '2026-13'}, {'by': 'cost'}, {'workflow': 'a#b'}):
+        assert _call(lambda_context, 'GET', '/agents/engineering/spend', query=query)[0] == 400
+    # No month: this one (UTC), by workflow.
+    status, body = _call(lambda_context, 'GET', '/agents/engineering/spend')
+    assert (status, body['month'], body['by']) == (200, datetime.now(UTC).strftime('%Y-%m'), 'workflow')
+
+
+@pytest.mark.usefixtures('run')
+def test_a_spend_read_the_table_refuses_is_a_503(lambda_context: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from engineering import spend
+
+    def refused(*_: Any, **__: Any) -> None:
+        raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'x'}}, 'Query')
+
+    monkeypatch.setattr(spend, 'iter_query', refused)
+    assert _call(lambda_context, 'GET', '/agents/engineering/spend')[0] == 503
+
+
+@pytest.mark.usefixtures('run')
+@pytest.mark.parametrize('claims', [USER, DELEGATED_ADMIN])
+def test_only_an_admin_acting_for_themselves_reads_the_spend(lambda_context: Any, claims: dict[str, str]) -> None:
+    assert _call(lambda_context, 'GET', '/agents/engineering/spend', claims=claims)[0] == 403
+
+
+@pytest.mark.usefixtures('run')
+def test_the_spend_is_404_while_the_module_is_off(lambda_context: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv('ENGINEERING_AGENTS')
+    assert _call(lambda_context, 'GET', '/agents/engineering/spend')[0] == 404
+
+
+def _typed(update: dict[str, Any]) -> dict[str, Any]:
+    """A plain-valued transaction entry (the resource's form) for the low-level client."""
+    from boto3.dynamodb.types import TypeSerializer
+
+    serialize = TypeSerializer().serialize
+    entry = dict(update['Update'])
+    entry['Key'] = {key: serialize(value) for key, value in entry['Key'].items()}
+    entry['ExpressionAttributeValues'] = {key: serialize(value) for key, value in entry['ExpressionAttributeValues'].items()}
+    return {'Update': entry}

@@ -55,7 +55,8 @@ export interface AssistantLambdas {
 
 /**
  * With `-c engineeringAgents=true`, the agents API's reads of an engineering run (`/agents/engineering/<run_id>/…`,
- * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows), PutItem and UpdateItem for a
+ * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows, and the spend ledger's month
+ * partitions for `GET /agents/engineering/spend`), PutItem and UpdateItem for a
  * person's board actions (never DeleteItem), and GetObject on the workspace
  * bucket's reports only; its key comes with the role's grant on the stack's key. No ListBucket (it would list every
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as

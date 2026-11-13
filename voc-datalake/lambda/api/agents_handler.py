@@ -21,7 +21,8 @@ Permissions:
   acting for themselves (403 for anyone else, an MCP credential included), and so are its signals
   and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision) and a
   person's board actions (``POST …/board/tasks``, ``…/board/tasks/<task_id>/<action>``:
-  engineering/board/api.py PersonBoard); while the engineering agents are off every caller gets 404.
+  engineering/board/api.py PersonBoard), and the runs' spend by month (``GET /agents/engineering/spend``,
+  engineering/spend.py); while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
@@ -31,7 +32,8 @@ actions, never a delete); it is to add ``lambda:InvokeFunction`` on ``voc-engine
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
 answer 503). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
-are in the engineering table, read with the Query its stack already grants.
+are in the engineering table, read with the Query its stack already grants, and so are the spend ledger's month
+partitions (``WS#<ws>#SPEND#<yyyy-mm>``).
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ import json
 import os
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -962,6 +965,34 @@ def get_engineering_report(run_id: str, level: str, subject: str):
     wanted = None if version is None else int(version)
     report = _found(views.report(run_id, level, subject, wanted))
     return {'report': report.document, 'markdown': report.markdown}
+
+
+@app.get('/agents/engineering/spend')
+@tracer.capture_method
+def get_engineering_spend():
+    """``?month=YYYY-MM&by=workflow|repo|run|agent|model|day&workflow=`` → the month's spend, grouped
+    (engineering/spend.py, the spend ledger): one Query of the month's ledger partition, never a whole-table read;
+    administrators only, 404 while the module is off. ``month`` defaults to this one (UTC)."""
+    table = os.environ.get('ENGINEERING_TABLE', '')
+    if not (engineering_agents_on() and table):
+        raise NotFoundError(ENGINEERING_RUN_NOT_FOUND)
+    require_admin_caller(_caller())
+    from engineering.spend import check_query, month_of, month_spend
+
+    flow = _query('workflow') or ''
+    if len(flow) > 500 or '#' in flow:   # (a run's flow is recorded up to 500 characters)
+        raise ValidationError('workflow is a workflow id')
+    month, by = _query('month') or month_of(datetime.now(UTC)), _query('by') or 'workflow'
+    try:   # (the caller's month and grouping, checked before the read: only these are a 400)
+        check_query(month, by)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    try:
+        spend = month_spend(get_dynamodb_resource().Table(table), month, by, flow=flow)
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: the spend ledger could not be read')
+        raise ServiceUnavailableError('the spend could not be read: retry') from exc
+    return spend.view()
 
 
 @app.get('/agents/engineering/<run_id>')
