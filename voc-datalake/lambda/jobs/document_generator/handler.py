@@ -56,6 +56,7 @@ from shared.company_logo import (
     LOGO_INSTRUCTION,
     LOGO_REMOVED_INSTRUCTION,
     company_logo_data_url,
+    has_company_logo,
     has_logo_placeholder,
     inline_logo,
     with_logo_placeholder,
@@ -497,21 +498,32 @@ def _prototype_org_sections(grounding: Grounding | None = None, *,
     return design_section, company_section
 
 
-def _company_logo(with_design_system: bool) -> str | None:
-    """The company logo as a ``data:`` URL for this build, or None (opted out, none, unreadable).
+class BuildLogo(NamedTuple):
+    """The company logo for one prototype build."""
+    #: The logo as a ``data:`` URL, or None (opted out, none uploaded, too large, unreadable).
+    data_url: str | None = None
+    #: The derivation's ``company_logo_included``: True inlined, False uploaded but left out, None not recorded.
+    included: bool | None = None
+
+
+def _company_logo(with_design_system: bool) -> BuildLogo:
+    """The company logo for this build (``BuildLogo``).
 
     The logo belongs to the design system, so the build dialog's "Design system" box decides
-    for it too. Never raises: a failed read builds the prototype without the logo.
+    for it too. Never raises: a failed read builds the prototype without the logo (not recorded).
     """
     table = _aggregates_table() if with_design_system else None
     if table is None:
-        return None
+        return BuildLogo()
     try:
         row = table.get_item(Key={'pk': DESIGN_SYSTEM_PK, 'sk': CONFIG_SK}).get('Item')
     except Exception as exc:  # noqa: BLE001 - optional prompt context must never fail a build
         logger.warning('Company logo unavailable for the prototype', extra={'error_type': type(exc).__name__})
-        return None
-    return company_logo_data_url(row, _s3(), SCRATCH_BUCKET)
+        return BuildLogo()
+    if not has_company_logo(row):
+        return BuildLogo()
+    data_url = company_logo_data_url(row, _s3(), SCRATCH_BUCKET)
+    return BuildLogo(data_url, data_url is not None)
 
 
 def _design_system_record(requested: bool, section: str) -> bool | None:
@@ -1471,7 +1483,8 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
     # The model writes a placeholder for the uploaded logo; the image is inlined after generation.
-    logo_url = _company_logo(with_design_system)
+    logo = _company_logo(with_design_system)
+    logo_url = logo.data_url
     if logo_url:
         design_system_section += f'\n\n{LOGO_INSTRUCTION}'
     elif has_logo_placeholder(feedback_section):
@@ -1581,6 +1594,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
             # was told not to read it (a revision inherits that choice), omitted
             # when it was asked for but none is configured.
             design_system_included=_design_system_record(with_design_system, design_system_section),
+            company_logo_included=logo.included,
             **derivation_knowledge(grounding),
         ),
         'created_at': now,

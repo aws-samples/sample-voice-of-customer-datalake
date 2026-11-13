@@ -170,24 +170,34 @@ def render_svg_logo(cdp: Cdp, url: str, *, what: str = 'SVG logo') -> bytes | No
     it, or None (logged as ``what`` with a short reason).
 
     At most ``COMPANY_LOGO_MAX_BYTES`` (1 MB), so "Use this logo" can always make it the company logo: a PNG
-    over it at 1024 px is drawn again at 768, then 512 px (a fresh tab each time) before it is given up.
+    over it at 1024 px (or one the PNG check refused as too large, over 2 MB) is drawn again at 768, then
+    512 px (a fresh tab each time, at most three draws) before it is given up.
     Never raises: the logo must never fail the capture.
     """
     for max_side in RENDER_SIDES_PX:
         png = _render_once(cdp, url, what, max_side)
-        if png is None or len(png) <= COMPANY_LOGO_MAX_BYTES:
+        if png is None or (isinstance(png, bytes) and len(png) <= COMPANY_LOGO_MAX_BYTES):
             return png
-        logger.info(f'{what} over the company-logo cap; drawn smaller', extra={'max_side': max_side, 'bytes': len(png)})
+        logger.info(f'{what} over the company-logo cap; drawn smaller', extra={'max_side': max_side})
     logger.info(f'{what} not rendered', extra={'reason': 'over_company_logo_cap'})
     return None
 
 
-def _render_once(cdp: Cdp, url: str, what: str, max_side: int) -> bytes | None:
+class _TooLarge:
+    """``_render_once``'s answer for a PNG the check refused as too large: worth drawing again smaller."""
+
+
+TOO_LARGE: Final = _TooLarge()
+
+
+def _render_once(cdp: Cdp, url: str, what: str, max_side: int) -> bytes | _TooLarge | None:
     tab: _RenderTab | None = None
     try:
         tab = _RenderTab(cdp)
         png = tab.render(url, max_side)
     except RenderRefused as exc:
+        if str(exc) == 'too_large':
+            return TOO_LARGE
         logger.info(f'{what} not rendered', extra={'reason': str(exc)})
         return None
     except Exception as exc:  # noqa: BLE001 - a CDP error, a timeout or a closed socket: no logo, never no capture

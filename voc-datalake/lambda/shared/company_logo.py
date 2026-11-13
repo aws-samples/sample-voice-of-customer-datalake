@@ -39,6 +39,9 @@ _UPLOADED_LOGO_KEY_RE = re.compile(re.escape(LOGO_KEY_PREFIX) + r'[0-9a-f]{12}\.
 #: The largest logo inlined into a prototype: the company-logo cap every write path enforces (an object written
 #: before that cap, up to 5 MB, is left out and logged; a prototype carrying that much base64 would be slow to open).
 MAX_INLINE_LOGO_BYTES = COMPANY_LOGO_MAX_BYTES
+#: How many placeholders get the image: each use carries the whole base64 again, so a model that writes it more
+#: often than asked cannot make the prototype many MB (the rest become the wordmark as text).
+MAX_LOGO_USES = 2
 #: What the prompt tells the model to write as the logo's ``src``.
 LOGO_PLACEHOLDER = '__COMPANY_LOGO__'
 #: The 1x1 transparent GIF a leftover placeholder outside an ``<img>`` (a CSS ``url()``) becomes without a logo.
@@ -118,14 +121,14 @@ def company_logo_data_url(row: dict | None, s3: Any, bucket: str) -> str | None:
 
 
 def inline_logo(document: str, data_url: str | None, wordmark: str) -> str:
-    """``document`` with every placeholder replaced by the logo.
+    """``document`` with the first ``MAX_LOGO_USES`` placeholders replaced by the logo.
 
-    Without a logo (none uploaded, unreadable, or the build left the design system out) a placeholder
-    ``<img>`` becomes ``wordmark`` as bold text, so the prototype never shows an empty logo, and any other
-    placeholder (a CSS ``url()``) a transparent image.
+    Any further placeholder, and every one without a logo (none uploaded, unreadable, or the build left the
+    design system out): a placeholder ``<img>`` becomes ``wordmark`` as bold text, so the prototype never shows
+    an empty logo, and any other placeholder (a CSS ``url()``) a transparent image.
     """
     if data_url:
-        return document.replace(LOGO_PLACEHOLDER, data_url)
+        document = document.replace(LOGO_PLACEHOLDER, data_url, MAX_LOGO_USES)
     text = f'<span class="company-wordmark" style="font-weight:700">{html.escape(wordmark)}</span>'
     return _PLACEHOLDER_IMG_RE.sub(text, document).replace(LOGO_PLACEHOLDER, BLANK_IMAGE)
 
@@ -133,6 +136,11 @@ def inline_logo(document: str, data_url: str | None, wordmark: str) -> str:
 def with_logo_placeholder(document: str) -> str:
     """``document`` with the logo WE inlined (``LOGO_MARKER``) turned back into the placeholder."""
     return _MARKED_LOGO_RE.sub(LOGO_PLACEHOLDER, document)
+
+
+def has_company_logo(row: dict | None) -> bool:
+    """Whether the design-system ``config`` row names an uploaded logo (whether or not it can be inlined)."""
+    return bool(logo_keys(row))
 
 
 def has_logo_placeholder(document: str) -> bool:

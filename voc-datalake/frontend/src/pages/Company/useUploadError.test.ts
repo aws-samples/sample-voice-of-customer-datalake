@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { imageFile as file } from '../ProjectDetail/imaging-fixtures'
-import { useUploadError } from './useUploadError'
+import { megabytes, useUploadError } from './useUploadError'
 
 describe('useUploadError', () => {
   const rejectionFor = () => renderHook(() => useUploadError()).result.current
@@ -19,5 +19,12 @@ describe('useUploadError', () => {
 
   it('answers null for a file within the limits', () => {
     expect(rejectionFor()('screenshot', file('shot.png', 'image/png', 1024))).toBeNull()
+  })
+})
+
+describe('megabytes', () => {
+  // Review (PR #556): the decimal 1,000,000-byte logo cap read as "0.95367431640625 MB".
+  it.each([[5 * 1024 * 1024, 5], [2 * 1024 * 1024, 2], [1_000_000, 1], [2_500_000, 2.5]])('%i bytes → %s MB', (bytes, mb) => {
+    expect(megabytes(bytes)).toBe(mb)
   })
 })

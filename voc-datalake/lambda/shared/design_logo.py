@@ -58,8 +58,13 @@ MAX_DELETE_KEYS = 1_000
 #: A raster candidate over ``MAX_LOGO_BYTES``: a website's is drawn smaller in the browser at read time
 #: (``lambda/design_capture/raster_logo.py``), so a refresh is the way to a usable copy.
 LOGO_TOO_LARGE = (
-    'The logo is larger than 2 MB: upload it as the company logo instead (large images are made smaller in '
-    'your browser), or refresh a website reference to read a smaller copy'
+    f'The logo is larger than {MAX_LOGO_BYTES // 1_000_000} MB: upload it as the company logo instead (large images '
+    'are made smaller in your browser), or refresh a website reference to read a smaller copy'
+)
+#: "Use this logo" on a candidate over the company-logo cap (the value spelled from the constant, so they agree).
+COMPANY_LOGO_TOO_LARGE = (
+    f'The logo is larger than {COMPANY_LOGO_MAX_BYTES // 1_000_000} MB, the most the company logo can be: '
+    'download it and upload it as the company logo instead (the web app makes it smaller)'
 )
 
 
