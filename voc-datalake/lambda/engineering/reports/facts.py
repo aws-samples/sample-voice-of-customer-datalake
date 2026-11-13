@@ -1,6 +1,7 @@
 """What a report says about its run, read from the ``voc-engineering`` table (the record, I6), never from events.
 
-- ``META``: the run's goal, repository, flow, status and times (the run's start and end write them).
+- ``META``: the run's goal, repository, flow, status and times (the run's start and end write them), and its flow's
+  monthly budget with the highest level its flow's month passed (the supervisor's flag).
 - ``AGENT#<agent>``: each agent's role, skill version and model (CHANGE 3: every report names the versions that made
   it) and its metering, which the runtime and the brokers add to (MicroVM-seconds, tokens, the cost they priced).
 - ``MSG#``: the conversation, counted (the events of the run).
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from engineering.rows import LAUNCH_HOLD, count_run_rows, run_pk, run_rows
+from engineering.rows import LAUNCH_HOLD, budget_view, count_run_rows, run_pk, run_rows
 from engineering.rows import amount_attr as _n
 from engineering.rows import string_attr as _s
 
@@ -42,6 +43,8 @@ class RunFacts:
     ended_at: str
     agents: tuple[AgentFacts, ...]
     events: int
+    #: The run's flow budget and its flag (rows.budget_view), None for a run with no budget.
+    budget: dict[str, Any] | None = None
 
 
 
@@ -71,4 +74,4 @@ class FactsReader:
             cost_usd=_n(row, 'cost_usd')) for row in agent_rows if not self._launch_only(row)), key=lambda agent: agent.agent))
         return RunFacts(ws=ws, run_id=run_id, goal=_s(meta, 'goal'), repo=_s(meta, 'repo'), flow=_s(meta, 'flow'),
                         status=_s(meta, 'status'), started_at=_s(meta, 'started_at'), ended_at=_s(meta, 'ended_at'),
-                        agents=agents, events=events)
+                        agents=agents, events=events, budget=budget_view(meta))

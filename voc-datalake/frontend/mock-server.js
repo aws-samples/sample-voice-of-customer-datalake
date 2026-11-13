@@ -3139,6 +3139,7 @@ function workflowView(entry, { withDefinition = true } = {}) {
     updated_at: current.saved_at, updated_by_username: current.saved_by_username,
     status: entry.archived ? 'archived' : 'active',
     kind: current.definition.schema === 'voc-workflow/2' ? 'engineering' : 'agents',
+    monthly_budget_usd: current.definition.budget?.monthly_usd ?? null,
     ...(withDefinition ? { definition: structuredClone(current.definition) } : {}),
   };
 }

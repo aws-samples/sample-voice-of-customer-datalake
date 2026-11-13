@@ -227,6 +227,8 @@ const WorkflowSummarySchema = z.object({
   status: z.enum(['active', 'archived']).catch('active'),
   /** An agents workflow (the agents run it) or an engineering flow (`voc-workflow/2`, never an agent's). */
   kind: z.enum(['agents', 'engineering']).catch('agents'),
+  /** An engineering flow's monthly budget in dollars (its definition's `budget.monthly_usd`); null for none. */
+  monthly_budget_usd: z.number().positive().nullable().catch(null),
 })
 export type WorkflowSummary = z.output<typeof WorkflowSummarySchema>
 

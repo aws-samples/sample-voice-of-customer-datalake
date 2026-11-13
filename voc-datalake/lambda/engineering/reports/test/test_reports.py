@@ -99,7 +99,7 @@ def test_the_pr_report_carries_the_findings_the_cost_the_agents_and_the_gate(run
     assert report['head'] == SHA
     assert report['findings']['top'][0]['severity'] == 'blocking'
     assert report['cost'] == {'events': 3, 'microvm_seconds': 120, 'input_tokens': 2000, 'output_tokens': 400,
-                              'usd': '0.75'}
+                              'usd': '0.75', 'budget': None}
     assert report['time']['seconds'] == 1800
     assert [a['skill_version'] for a in report['agents']] == ['v3', 'v3']
     assert report['gate'] == {'verdict': 'GO', 'tree_hash': 'b' * 40, 'rounds': 3, 'max_rounds': 3,
@@ -113,6 +113,20 @@ def test_the_pr_report_carries_the_findings_the_cost_the_agents_and_the_gate(run
     assert markdown.startswith('## Pull request report: `42` (v1)')
     assert '## Quality gate' in markdown
     assert 'The last page is dropped' in markdown
+
+
+def test_a_report_says_the_runs_flow_budget_and_its_flag(run: Run) -> None:
+    run.client.update_item(TableName=TABLE, Key={'pk': {'S': PK}, 'sk': {'S': 'META'}},
+                           UpdateExpression='SET budget_usd = :b, budget_alert = :a, budget_alert_month = :m',
+                           ExpressionAttributeValues={':b': {'S': '50.0'}, ':a': {'N': '100'}, ':m': {'S': '2026-11'}})
+    answer = run.reports.build(RUN, 'goal', RUN)
+    report = json.loads(stored(run, answer['key']))
+    assert report['cost']['budget'] == {'monthly_usd': 50.0, 'alert_percent': 100, 'alert_month': '2026-11'}
+    assert ('- Flow budget: $50.00 a month; its month passed 100% of it (`2026-11`) (MicroVM time only until tokens '
+            'are priced)') in stored(run, answer['markdown_key'])
+    # A pull request's report is its description in the target repository: the budget stays out of it.
+    pr = run.reports.build(RUN, 'pr', '42', 'a' * 40)
+    assert 'Flow budget' not in stored(run, pr['markdown_key'])
 
 
 def test_a_key_recorded_on_two_tasks_is_counted_once(run: Run) -> None:

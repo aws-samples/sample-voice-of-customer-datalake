@@ -17,6 +17,40 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.24.00] - 2026-11-13
+
+Autonomous engineering agents: a flow's monthly budget is measured and alerted on, shown where a run is read, and, if an administrator turns on the hard cap, caps a run's first start. Off by default, and no fixed cost.
+
+### Added
+
+- An engineering flow's budget alerts. As the flow's month passes 80%, 100% and every further 50% of its budget, the supervisor posts each alert once per flow, budget, level and month, to the conversation of the live run that claims it (`run.budget_alert` from `voc.engineering/supervisor`), and flags the flow's other live runs (the highest level said that month, on each run's `META`). Each alert is a claim row (`WS#<ws>#BUDGET#<yyyy-mm>` / `ALERT#<flow>#<budget>#<percent>`) that is never deleted: it is claimed, then posted, then closed by `sent_at`, after which nothing changes it. Until then a failed post gives the claim back and an unsaid claim is taken over after 5 minutes, so a failed post is not lost; a post whose close failed may be posted twice. A changed budget has alerts of its own, so it is not silenced. A run's start copies the flow's budget onto its `META` (`budget_usd`). Each tick of a budgeted run reads the flow's month total, a `FLOW#<flow>` row ADDed in the same ledger transaction as each priced session write, with one consistent GetItem. Levels are also checked after the moves and on stopping runs. The alerts count MicroVM time only until tokens are priced, so a deployment with MicroVM time unpriced never alerts. Nothing starts a run with a budget yet.
+- The run monitor's header and the run's goal and commit reports show the run's flow budget and the highest alert level its month has passed. A PR's Markdown never does: it is the target repository's pull request description. Agents → Spend, by workflow, shows this month's share of each flow's budget.
+- The administrators' opt-in hard cap on engineering runs (Agents → Spend; `GET`/`PUT /agents/engineering/settings`, for a signed-in administrator acting for themselves, 404 while the module is off, no MCP tool). It is one row in voc-agents (`SETTINGS#engineering` / `HARD_CAP`), and each change also writes a create-only `LOG#<at>#<n>` history row (who, when, what) in the same transaction. With it on, a budgeted run's first start gets `max_cost_usd` = the smaller of the cap it was given and what is left of its flow's month, and is refused before anything is written when nothing is left. MicroVM time only until tokens are priced. The cap is set per run at its start, so concurrent runs of one flow may together pass its budget. A setting that cannot be read refuses a budgeted first start, even with the cap off.
+
+### Changed
+
+- A priced session write's transaction conflict is tried 4 times with jittered pauses. Each try names its own `ClientRequestToken`: the same token after a TransactionInProgress, so a try whose answer was lost while it was still running is answered as it ended, and a new token after a conflict.
+- A move whose write was refused gives its claim back for the next tick. A refused ledger row stops the move.
+- With the hard cap on, a failed read of the flow's month total refuses the start, and says so.
+- `GET /workflows` lists each flow's `monthly_budget_usd`.
+- Agents → Spend's hard cap switch says "Saving…" (a polite status line) while a change is saved. The switch stays enabled, and a click during the save is ignored.
+- docs/autonomous-engineering.md (the budget, its alerts and the hard cap), docs/autonomous-agents.md (the settings route) and docs/deployment.md cover these. TENETS.md's tenet 6 row now gives cost per engineering flow, run, agent and model, the new grants and Denies, and the hard cap.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true` only, the supervisor role gains:
+  - GetItem on `voc-engineering`'s `WS#default#SPEND#20??-??` (SpendTotals);
+  - GetItem and UpdateItem on `WS#default#BUDGET#20??-??` (BudgetAlerts);
+  - GetItem on voc-agents for `SETTINGS#engineering` only (HardCapSetting).
+  
+  Its function also gets the `ENGINEERING_SETTINGS_TABLE` variable. The delivery role gets neither the new grants nor the variable.
+- The board, router and reports roles get an explicit Deny of writes on the spend and budget partitions, so no other writer can make, and so mute, an alert.
+- In every deployment, the agents' conductor, nodes, persona panel and heartbeat roles get an explicit Deny of writes on voc-agents' `SETTINGS#engineering` partition, so the Agents API is the hard cap's one writer. Its own grant still covers all of voc-agents, so only its code keeps the `LOG#` history rows create-only.
+- The hard cap is off by default. Until it is turned on, nothing about a run's start changes.
+- No stored row is changed. A `FLOW#` month total only starts counting from this release, so a month already under way counts only what was spent after the upgrade.
+
+Merged from the voc-autonomous-c branch. Off by default.
+
 ## [6.23.00] - 2026-11-13
 
 Autonomous engineering agents: the connector's broker reads what a run recorded (its record, the board's final-go GO, the committer's submitted patch) and the dial before anything is pushed. Human-driven pushes nothing, AI-assisted waits for a person's go on the run, AI-driven goes on to a draft pull request. Reads only, no fixed cost, off by default (`-c engineeringAgents=true`).

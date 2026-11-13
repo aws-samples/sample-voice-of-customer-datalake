@@ -9,6 +9,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { policiesWithStatement } from '../test-support/engineering-template';
 import { fixtureBucket } from '../test-support/fixture-resources';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
@@ -45,6 +46,10 @@ function runtimeStack(context: Record<string, unknown>, withPeers = true): Runti
     layer: lambda.LayerVersion.fromLayerVersionArn(stack, 'Layer', 'arn:aws:lambda:us-east-1:111111111111:layer:deps:1'),
     kmsKey,
     engineeringTable: new dynamodb.Table(stack, 'Engineering', {
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    }),
+    agentsTable: new dynamodb.Table(stack, 'Agents', {
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
     }),
@@ -402,21 +407,34 @@ describe('with -c engineeringAgents=true', () => {
     expect(delivery).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
   });
 
+  /** The policies of `role` holding statement `sid`: `action` on the table, only on `keys`' partitions. */
+  const keyedGrants = (role: string, sid: string, action: string | string[], keys: string) => policiesWithStatement(
+    template, role, { Sid: sid, Action: action, Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [keys] } } });
+
   it.each(['EngineeringSupervisorRole', 'EngineeringDeliveryRole'])(
     'lets %s update the spend ledger\'s month partitions only (the same transaction as a priced session write)', (role) => {
-      const policies = template.findResources('AWS::IAM::Policy', {
-        Properties: {
-          Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(role) }]),
-          PolicyDocument: Match.objectLike({
-            Statement: Match.arrayWith([Match.objectLike({
-              Sid: 'SpendLedger', Action: 'dynamodb:UpdateItem',
-              Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#SPEND#20??-??'] } },
-            })]),
-          }),
-        },
-      });
-      expect(Object.keys(policies)).toHaveLength(1);
+      expect(keyedGrants(role, 'SpendLedger', 'dynamodb:UpdateItem', 'WS#default#SPEND#20??-??')).toHaveLength(1);
     });
+
+  it.each([
+    ['SpendTotals', 'dynamodb:GetItem', 'WS#default#SPEND#20??-??'],
+    ['BudgetAlerts', ['dynamodb:GetItem', 'dynamodb:UpdateItem'], 'WS#default#BUDGET#20??-??'],
+    ['HardCapSetting', 'dynamodb:GetItem', 'SETTINGS#engineering'],
+  ])('gives the supervisor alone %s (%s on %s): a flow\'s month total, the alerts\' own partition', (sid, action, keys) => {
+    expect(keyedGrants('EngineeringSupervisorRole', sid, action, keys)).toHaveLength(1);
+    expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/#BUDGET#|SETTINGS#/);
+  });
+
+  it('gives the delivery role only UpdateItem on the spend ledger, whatever the statement', () => {
+    const Statement = z.array(z.looseObject({ Action: z.union([z.string(), z.array(z.string())]), Condition: z.unknown().optional() }));
+    const policies = template.findResources('AWS::IAM::Policy', {
+      Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }]) },
+    });
+    const onLedger = Object.values(policies)
+      .flatMap((policy) => Statement.parse(policy.Properties?.PolicyDocument?.Statement))
+      .filter((statement) => JSON.stringify(statement.Condition ?? {}).includes('#SPEND#'));
+    expect(onLedger.flatMap((statement) => [statement.Action].flat())).toStrictEqual(['dynamodb:UpdateItem']);
+  });
 
   it('runs the delivery without what only the supervisor uses (its rule\'s name, the extra egress of a launch)', () => {
     const [fn] = Object.values(template.findResources('AWS::Lambda::Function', {
@@ -428,9 +446,9 @@ describe('with -c engineeringAgents=true', () => {
       'ENGINEERING_IMAGE_ARNS',
       'ENGINEERING_MICROVM_USD_PER_SECOND', 'ENGINEERING_TABLE', 'ENGINEERING_TIMINGS', 'ENGINEERING_WORKSPACE_BUCKET',
       'RAW_DATA_BUCKET']));
-    expect(env).not.toContain('SUPERVISOR_RULE_NAME');
-    expect(env).not.toContain('ENGINEERING_EXTRA_EGRESS');
-    expect(env).not.toContain('ENGINEERING_BENCHMARK_CASES');
+    // Nor the benchmark's cases, nor the hard cap's table (only a start reads it).
+    expect(env.filter((name) => ['SUPERVISOR_RULE_NAME', 'ENGINEERING_EXTRA_EGRESS', 'ENGINEERING_BENCHMARK_CASES',
+      'ENGINEERING_SETTINGS_TABLE'].includes(name))).toStrictEqual([]);
   });
 
   describe('the learning loop (a run\'s retrospective, lambda/engineering/learning/)', () => {

@@ -69,9 +69,30 @@ class Board(Protocol):
 class Bus(Protocol):
     def emit(self, run_id: str, to: str, kind: str, summary: str, refs: Mapping[str, str] | None = None, *,
              task_id: str = '', attempt: int = 1) -> None:
-        """Put one event on the bus (``kind``: pause, save, question, continued, timed_out, failed, run.health), about
+        """Put one event on the bus (``kind``: pause, save, question, continued, timed_out, failed, run.health,
+        run.budget_alert), about
         ``task_id`` at ``attempt`` when it is about an agent's task; ``to`` is ``run`` or an agent id."""
         ...
+
+
+@dataclass(frozen=True)
+class BudgetAlert:
+    """A run's flow passed alert levels of its monthly budget (spend.py ``alert_levels``) this month: the ``levels``
+    this run claimed to say (the highest is said), and ``flag``, the highest the flow passed."""
+
+    flow: str
+    month: str
+    levels: tuple[int, ...]
+    flag: int
+    spent_usd: float
+    budget_usd: float
+
+    def summary(self) -> str:
+        # (the share is the spend's own, not the level's: a tick that jumps levels says how far it is)
+        share = int(self.spent_usd * 100 / self.budget_usd) if self.budget_usd else 0
+        return (f'Workflow {self.flow} has spent ${self.spent_usd:,.2f} of its ${self.budget_usd:,.2f} monthly budget '
+                f'for {self.month} ({share}%, past {self.levels[-1]}%). MicroVM time only: model tokens are not '
+                f'priced yet.')
 
 
 class RunControl(Protocol):
@@ -92,5 +113,18 @@ class RunControl(Protocol):
 
     def is_active(self, run_id: str) -> bool:
         """The run is active: not ended, and not waiting at a decision point."""
+        ...
+
+    def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
+        """The alert this tick is to say, when the run's flow has a budget and its month passed a level no run of it
+        said yet (claimed for this run); with none to say, the run is flagged with the highest level passed."""
+        ...
+
+    def alert_sent(self, run_id: str, alert: BudgetAlert, now: int) -> None:
+        """The alert was said: its claims are closed and the run is flagged."""
+        ...
+
+    def alert_not_sent(self, run_id: str, alert: BudgetAlert) -> None:
+        """Saying the alert failed: its claims are given back, for any live run of the flow's next tick."""
         ...
 

@@ -93,6 +93,21 @@ def count_run_rows(client: Any, table: str, ws: str, run_id: str, prefix: str) -
     return count_query(client, _query(table, run_pk(ws, run_id), prefix))
 
 
+def budget_view(meta: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A run's flow budget from its low-level META (runtime/runs.py: ``budget_usd`` at its start, the flag
+    ``budget_alert`` / ``budget_alert_month`` as its flow's month passed levels): ``{monthly_usd, alert_percent,
+    alert_month}``, the flag's two None until a level was said; None for a run with no budget."""
+    try:   # (kept as a string: runs.py writes str(budget_usd))
+        monthly = Decimal(string_attr(meta, 'budget_usd') or '0')
+    except InvalidOperation:
+        return None
+    if not monthly.is_finite() or monthly <= 0:
+        return None
+    alert = int(amount_attr(meta, 'budget_alert'))
+    return {'monthly_usd': float(monthly), 'alert_percent': alert or None,
+            'alert_month': (string_attr(meta, 'budget_alert_month') or None) if alert else None}
+
+
 def amount_attr(item: Mapping[str, Any], key: str) -> Decimal:
     """A number attribute of a low-level item: 0 when missing, malformed, negative or not finite."""
     try:

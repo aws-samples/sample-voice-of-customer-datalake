@@ -99,12 +99,30 @@ def run() -> Iterator[tuple[Any, RunMonitor, Runtime, Publisher, str]]:
         yield client, monitor, runtime, publisher, task.task_id
 
 
+@pytest.mark.parametrize(('fields', 'budget'), [
+    ({':b': {'S': '50.0'}, ':a': {'N': '0'}, ':m': {'S': ''}}, {'monthly_usd': 50.0, 'alert_percent': None,
+                                                               'alert_month': None}),
+    ({':b': {'S': '50.0'}, ':a': {'N': '150'}, ':m': {'S': '2026-11'}}, {'monthly_usd': 50.0, 'alert_percent': 150,
+                                                                       'alert_month': '2026-11'}),
+    ({':b': {'S': 'lots'}, ':a': {'N': '80'}, ':m': {'S': '2026-11'}}, None),   # (unreadable: no budget shown)
+])
+def test_the_overview_shows_the_runs_flow_budget_and_its_flag(run, fields: dict[str, Any], budget: Any) -> None:
+    client, monitor, _, _, _ = run
+    client.update_item(TableName=TABLE, Key={'pk': {'S': run_pk('default', RUN)}, 'sk': {'S': 'META'}},
+                       UpdateExpression='SET budget_usd = :b, budget_alert = :a, budget_alert_month = :m',
+                       ExpressionAttributeValues=fields)
+    view = monitor.overview(RUN)
+    assert view is not None
+    assert view['run']['budget'] == budget
+
+
 def test_the_overview_shows_the_run_and_its_agents_as_the_supervisor_saw_them(run) -> None:
     _, monitor, _, _, _ = run
     view = monitor.overview(RUN)
     assert view is not None
     assert view['run'] == {'run_id': RUN, 'goal': 'Fix the paging bug', 'repo': 'example/shop', 'flow': 'wf_bugfix',
-                           'status': 'running', 'started_at': '2026-11-12T08:00:00Z', 'ended_at': None}
+                           'status': 'running', 'started_at': '2026-11-12T08:00:00Z', 'ended_at': None,
+                           'budget': None}
     coordinator, fixer = view['agents']
     assert fixer == {
         'agent': 'fixer-1', 'role': 'fixer', 'task_id': 'task-1', 'status': 'working', 'continuation': 0,

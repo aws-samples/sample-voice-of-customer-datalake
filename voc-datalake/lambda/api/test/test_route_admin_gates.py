@@ -70,6 +70,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/<run_id>/board/tasks', 'POST /agents/engineering/<run_id>/board/tasks/<task_id>/<action>',
         # A person's go on an engineering run (what an AI-assisted run's push waits for): the same gate.
         'POST /agents/engineering/<run_id>/go',
+        # The administrators' hard cap on engineering runs (engineering/settings.py): an admin acting for themselves.
+        'PUT /agents/engineering/settings',
         'POST /workflows', 'PUT /workflows/<workflow_id>',
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',

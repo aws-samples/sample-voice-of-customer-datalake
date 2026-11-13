@@ -94,6 +94,8 @@ function unsavedStart(definition: WorkflowDefinition | undefined): { view?: Work
     workflow_id: '', slug: '', name: definition.name, description: definition.description ?? '', revision: 0,
     derived_from: null, builtin: false, updated_at: null, updated_by_username: null, status: 'active',
     kind: isEngineeringFlow(definition) ? 'engineering' : 'agents', definition: null,
+    // (nothing stored: the draft's budget, if any, is the definition's until it is saved)
+    monthly_budget_usd: null,
   }
   return { view, draft: definition }
 }

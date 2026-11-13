@@ -667,3 +667,39 @@ def _typed(update: dict[str, Any]) -> dict[str, Any]:
     entry['Key'] = {key: serialize(value) for key, value in entry['Key'].items()}
     entry['ExpressionAttributeValues'] = {key: serialize(value) for key, value in entry['ExpressionAttributeValues'].items()}
     return {'Update': entry}
+
+
+SETTINGS = '/agents/engineering/settings'
+
+
+@pytest.mark.usefixtures('run')
+def test_an_administrator_turns_the_hard_cap_on_and_reads_it_as_saved(lambda_context: Any) -> None:
+    assert _call(lambda_context, 'GET', SETTINGS) == (200, {'hard_cap': False, 'updated_at': None, 'updated_by': None})
+    status, saved = _call(lambda_context, 'PUT', SETTINGS, body={'hard_cap': True})
+    assert (status, saved['hard_cap'], saved['updated_by']) == (200, True, 'alice')   # (the caller's own name)
+    assert _call(lambda_context, 'GET', SETTINGS)[1] == saved
+
+
+@pytest.mark.usefixtures('run')
+@pytest.mark.parametrize('body', [{}, {'hard_cap': 'yes'}, {'hard_cap': 1}, {'hard_cap': True, 'more': 1}])
+def test_a_hard_cap_change_is_true_or_false_only(lambda_context: Any, body: dict[str, Any]) -> None:
+    assert _call(lambda_context, 'PUT', SETTINGS, body=body)[0] == 400
+
+
+@pytest.mark.usefixtures('run')
+@pytest.mark.parametrize('claims', [USER, DELEGATED_ADMIN], ids=['plain user', 'MCP credential of an admin'])
+def test_the_hard_cap_is_an_administrators_alone(lambda_context: Any, claims: dict[str, Any]) -> None:
+    assert _call(lambda_context, 'GET', SETTINGS, claims=claims)[0] == 403
+    assert _call(lambda_context, 'PUT', SETTINGS, claims=claims, body={'hard_cap': True})[0] == 403
+
+
+@pytest.mark.usefixtures('run')
+def test_the_hard_cap_is_404_while_the_module_is_off_and_503_when_its_read_fails(
+        lambda_context: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from botocore.exceptions import BotoCoreError
+
+    monkeypatch.setattr('engineering.settings.read_hard_cap', MagicMock(side_effect=BotoCoreError()))
+    assert _call(lambda_context, 'GET', SETTINGS)[0] == 503
+    monkeypatch.delenv('ENGINEERING_AGENTS')
+    assert (_call(lambda_context, 'GET', SETTINGS)[0], _call(lambda_context, 'PUT', SETTINGS, body={'hard_cap': True})[0]) \
+        == (404, 404)

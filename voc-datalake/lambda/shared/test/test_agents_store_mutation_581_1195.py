@@ -461,6 +461,7 @@ class TestArchiveAndViewWorkflows:
             'workflow_id': WF_ID, 'slug': 's', 'name': 'n', 'description': '', 'revision': 2,
             'derived_from': 'wf_default', 'builtin': False, 'created_at': 'ca', 'updated_at': 'ua',
             'updated_by_username': 'al', 'status': 'archived', 'definition': definition, 'kind': 'agents',
+            'monthly_budget_usd': None,
         }
 
     def test_the_summary_view_of_the_builtin(self) -> None:

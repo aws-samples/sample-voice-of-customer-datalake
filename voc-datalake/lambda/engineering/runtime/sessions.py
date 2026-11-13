@@ -13,6 +13,9 @@ counters (MicroVM seconds, tokens per model and their totals), never a token, a 
 """
 from __future__ import annotations
 
+import secrets
+import time
+import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
@@ -211,6 +214,23 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
     )
 
 
+#: A priced write's transaction is tried this many times when another write holds one of its rows (``_transact``),
+#: pausing 20-40, 40-80 and 60-120 ms (jittered) between tries.
+CONFLICT_TRIES: Final = 4
+CONFLICT_PAUSE_SECONDS: Final = 0.02
+
+
+def _condition_failed(error: ClientError) -> bool:
+    """A cancelled transaction one of whose items' conditions failed (the session moved meanwhile)."""
+    reasons = error.response.get('CancellationReasons') or []
+    return any(reason.get('Code') == 'ConditionalCheckFailed' for reason in reasons)
+
+
+def _in_progress(error: ClientError) -> bool:
+    """An earlier try of the same ClientRequestToken is still under way."""
+    return error.response.get('Error', {}).get('Code') == 'TransactionInProgressException'
+
+
 class SessionStore:
     """``usd_per_second``: the deployment's price of a MicroVM second (0: not priced). Each write that moves the
     session adds the seconds it has not priced yet to the row's ``cost_usd`` (an ADD, as the brokers add theirs, so
@@ -220,6 +240,7 @@ class SessionStore:
     def __init__(self, table: Any, runs: RunStore, usd_per_second: Decimal = Decimal(0),
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._table = table
+        self._pause: Callable[[float], None] = time.sleep   # (a test sets its own)
         self._runs = runs
         self._usd_per_second = usd_per_second
         self._clock = clock
@@ -374,22 +395,48 @@ class SessionStore:
                 where = replace(self._where(session.run_id), agent_id=session.agent_id, seq=session.seq)
                 items = [{'Update': {'TableName': self._table.name, **update}},
                          *ledger_updates(self._table.name, self._clock(), where, usage)]
-                try:
-                    self._table.meta.client.transact_write_items(TransactItems=items)
-                except ClientError as first:
-                    # Another write held one of its rows at that moment (a broker's ADD to the same session row):
-                    # tried once more, as a plain update would not have been refused by it.
-                    if not transaction_conflict(first):
-                        raise
-                    self._table.meta.client.transact_write_items(TransactItems=items)
+                self._transact(items)
             else:
                 self._table.update_item(**update)
         except ClientError as error:
             # The session's condition failed, or another write held one of the transaction's rows (a conflict, which
-            # botocore does not retry): either way the move did not happen, and the next tick reads the row again.
-            if is_conditional_check_failure(error) or is_key_collision(error, put_index=0) or transaction_conflict(error):
+            # botocore does not retry): either way the move did not happen, and the next tick reads the row again. (An
+            # earlier try still under way after the last: it may land; the next tick's read says which.)
+            if (is_conditional_check_failure(error) or is_key_collision(error, put_index=0)
+                    or transaction_conflict(error) or _in_progress(error)):
                 raise StaleSession(f'session {session.run_id}/{session.agent_id} moved') from error
             raise
+
+    def _transact(self, items: list[dict[str, Any]]) -> None:
+        """The priced write's transaction. Another write may hold one of its rows at that moment: a broker's ADD to the
+        same session row, or another agent's priced write of the flow's month total (FLOW#, every agent of the flow
+        adds to it), which a plain update would not have been refused by. Each such conflict is tried again after a
+        short, jittered pause, ``CONFLICT_TRIES`` in all: the moment passes in milliseconds, and a move that loses it
+        for good (a StaleSession) may cost a new MicroVM its start.
+
+        The request token: botocore gives each call one of its own and resends it on its own retries; a retry here is
+        a new call, so the write names its token itself. After ``TransactionInProgressException`` (an earlier try of
+        the token still under way, whose answer botocore lost) the next try keeps it, and is answered as that try
+        ended: as landed when it landed, never refused by the session's condition it moved itself (a StaleSession for
+        a move that happened; still under way after the last try, the next tick's read says which). After a conflict
+        (the try did not land) the next try takes a new one, never relying on how a cancelled token is replayed. Each
+        token is this call's own, never derived from the write: two writers of the same move are never told they
+        both made it."""
+        token = str(uuid.uuid4())
+        for tries in range(1, CONFLICT_TRIES + 1):
+            try:
+                self._table.meta.client.transact_write_items(TransactItems=items, ClientRequestToken=token)
+            except ClientError as error:
+                # (a conflict only: a cancellation that also names a failed condition can never land; or the same
+                # token's earlier try still under way, which the next try answers as it ended)
+                conflict = transaction_conflict(error) and not _condition_failed(error)
+                if not (conflict or _in_progress(error)) or tries == CONFLICT_TRIES:
+                    raise
+                if conflict:
+                    token = str(uuid.uuid4())
+                self._pause(CONFLICT_PAUSE_SECONDS * tries * (1 + secrets.randbelow(100) / 100))
+            else:
+                return
 
     def get(self, run_id: str, agent_id: str) -> AgentSession | None:
         item = consistent_item(self._table, _key(run_id, agent_id))

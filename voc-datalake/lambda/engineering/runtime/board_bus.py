@@ -5,7 +5,8 @@ The board is read and re-posted through its own store (``engineering/board``: th
 partitions); every event goes out as voc-msg/1 with the supervisor's source, ``voc.engineering/supervisor``, which
 the bus's policy pins to these two roles (lib/stacks/engineering-bus.ts ``addPublisher``) and the router lets send
 only the supervisor's types (``bus/senders.py``): the signals to an agent, ``run.health``, an agent's fate
-(``run.agent_*``) and a re-posted task's ``task.posted`` (the board's ``repost_task`` sends it as the supervisor).
+(``run.agent_*``), a flow's budget alert (``run.budget_alert``) and a re-posted task's ``task.posted`` (the board's
+``repost_task`` sends it as the supervisor).
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ SOURCE: Final = 'voc.engineering/supervisor'
 TYPES: Final = {
     'pause': 'signal.pause', 'save': 'signal.save', 'question': 'signal.check_in',
     'run.health': 'run.health', 'continued': 'run.agent_continued', 'timed_out': 'run.agent_timed_out',
-    'failed': 'run.agent_failed',
+    'failed': 'run.agent_failed', 'run.budget_alert': 'run.budget_alert',
 }
 _SUPERVISOR: Final = Party('supervisor', 'supervisor')
 #: An agent's session as ``BoardLeases.coordinator_to_start`` asks after it: ``failed`` (it kept crashing), ``none``

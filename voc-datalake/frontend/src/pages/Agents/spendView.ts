@@ -14,6 +14,18 @@ const MONTH = /^20\d{2}-(0[1-9]|1[0-2])$/
 /** The longest workflow id the read takes (a run's flow is recorded up to 500 characters). */
 const MAX_WORKFLOW_CHARS = 500
 
+/** The whole percent of ``budget`` that ``usd`` is (as the server's alert levels count it, so a budget spent exactly
+ * is 100%, never 99% by a float's rounding). */
+export function budgetShare(usd: number, budget: number): number {
+  return Math.floor((usd * 100) / budget + 1e-9)
+}
+
+/** A share's mark: none under 80% (the first alert's level), a warning from it, danger from 100%. */
+export function shareTone(percent: number): '' | 'badge badge-warn' | 'badge badge-danger' {
+  if (percent >= 100) return 'badge badge-danger'
+  return percent >= 80 ? 'badge badge-warn' : ''
+}
+
 /** The last {@link MONTHS_OFFERED} months, newest first, and `month` too when it is older. */
 export function monthsOffered(month: string, now: Date = new Date()): string[] {
   const months = Array.from({ length: MONTHS_OFFERED }, (_, back) =>

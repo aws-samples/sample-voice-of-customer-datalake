@@ -15,6 +15,7 @@
 //                     last two only on a task the mock's admin took); 409 for an ended task or another person's hold without over
 //   GET  …/reports    the run's reports, each with its latest version
 //   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
+//   GET|PUT /agents/engineering/settings   the administrators' hard cap {hard_cap, updated_at, updated_by}
 //   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
 //                     month, grouping or workflow id), from a few sample rows over this month and last
 // Every GET of the overview moves the run a little (the agents' ages), so polling shows it live.
@@ -72,6 +73,8 @@ const run = {
   meta: {
     run_id: SAMPLE_RUN_ID, goal: 'Fix the paging bugs reported this week', repo: 'example-org/storefront',
     flow: SAMPLE_FLOW_ID, status: 'running', started_at: minutesAgo(42), ended_at: null,
+    // Its flow's $50 budget, copied at the start; the flow's month passed 80% of it (the supervisor's flag).
+    budget: { monthly_usd: 50, alert_percent: 80, alert_month: new Date().toISOString().slice(0, 7) },
   },
   agents: [
     agent('coordinator-1', 'coordinator', {
@@ -431,7 +434,8 @@ function spendRows(now = new Date()) {
     row(monthOf(0), today, SAMPLE_FLOW_ID, SAMPLE_RUN_ID, 'fixer-3', 'microvm', 0.0142, 0, 0, 1_420),
     row(monthOf(0), today, SAMPLE_FLOW_ID, SAMPLE_RUN_ID, 'final-go-5', 'model-large', 0, 12_000, 900),
     row(monthOf(0), '01', SAMPLE_FLOW_ID, earlier, 'fixer-1', 'model-medium', 0, 240_000, 31_000),
-    row(monthOf(0), '01', SAMPLE_FLOW_ID, earlier, 'fixer-1', 'microvm', 0.072, 0, 0, 7_200),
+    // (a long run early in the month: with the rest, the flow's month is past 80% of its $50 budget, as the run's flag)
+    row(monthOf(0), '01', SAMPLE_FLOW_ID, earlier, 'fixer-1', 'microvm', 40.5, 0, 0, 7_200),
     row(monthOf(1), '17', OTHER_FLOW_ID, '01JC2M8N4B6V0C3X5Z7L9K1J4H', 'hunter-1', 'model-small', 0, 30_000, 2_000),
     row(monthOf(1), '17', OTHER_FLOW_ID, '01JC2M8N4B6V0C3X5Z7L9K1J4H', 'hunter-1', 'microvm', 0.009, 0, 0, 900),
   ];
@@ -463,8 +467,29 @@ function monthSpend(url) {
   return [200, { month, by, total, truncated: false, groups: ordered.map(([key, sum]) => ({ key, ...sum })) }];
 }
 
+// ── The administrators' hard cap (GET/PUT /agents/engineering/settings; engineering/settings.py) ──
+const settings = { hard_cap: false, updated_at: null, updated_by: null };
+const settingsView = () => ({ ...settings });
+
+function settingsRoute(req, res, send, shared) {
+  if (!isAdmin()) return send(403, { message: 'Admin access required' });
+  if (req.method === 'GET') return send(200, settingsView());
+  if (req.method !== 'PUT') return send(405, { message: 'Method not allowed' });
+  return shared.collectJson(req, res, (body) => {
+    if (!body || Object.keys(body).length !== 1 || typeof body.hard_cap !== 'boolean') {
+      return send(400, { message: 'the body is {hard_cap: true | false}' });
+    }
+    Object.assign(settings, { hard_cap: body.hard_cap, updated_at: new Date().toISOString(), updated_by: 'admin-demo' });
+    return send(200, settingsView());
+  });
+}
+
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
+  if (url.pathname === `${PREFIX}settings`) {
+    settingsRoute(req, res, send, shared);
+    return true;
+  }
   if (url.pathname === `${PREFIX}spend`) {
     if (req.method !== 'GET') send(405, { message: 'Method not allowed' });
     else if (isAdmin()) send(...monthSpend(url));

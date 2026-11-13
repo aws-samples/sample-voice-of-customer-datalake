@@ -18,11 +18,12 @@ import { failedReads } from '../../utils/failedReads'
 import { formatCalendarDay, formatCalendarMonth } from '../../utils/dateUtils'
 import { formatCount } from '../../utils/numberFormat'
 import {
-  SPEND_GROUPINGS, SPEND_MICROVM, SPEND_NONE, engineeringSpendApi, engineeringSpendKeys, isSpendGrouping,
+  SPEND_GROUPINGS, SPEND_MICROVM, SPEND_NONE, currentMonth, engineeringSpendApi, engineeringSpendKeys, isSpendGrouping,
 } from '../../api/engineeringSpendApi'
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { useConfigStore } from '../../store/configStore'
-import { monthsOffered, spendQueryOf } from './spendView'
+import { budgetShare, monthsOffered, shareTone, spendQueryOf } from './spendView'
+import { EngineeringHardCap } from './EngineeringHardCap'
 import type { LucideIcon } from 'lucide-react'
 import type { MonthSpend, SpendGroup, SpendGrouping, SpendQuery, SpendUsage } from '../../api/engineeringSpendApi'
 
@@ -39,11 +40,26 @@ function useMonthSpend(query: SpendQuery) {
   })
 }
 
-/** The workflows' names by id (the library's list, which the Workflows tab reads too). */
-function useWorkflowNames(): ReadonlyMap<string, string> {
+interface Library {
+  names: ReadonlyMap<string, string>
+  /** Each engineering flow's monthly budget as it is now (this month's column). */
+  budgets: ReadonlyMap<string, number>
+}
+
+/** The workflows' names and budgets by id (the library's list, which the Workflows tab reads too). */
+function useLibrary(): Library {
   const configured = useConfigStore((s) => s.config.apiEndpoint) !== ''
   const { data } = useQuery({ queryKey: workflowsKeys.list(), queryFn: workflowsApi.list, enabled: configured, staleTime: 30_000 })
-  return new Map((data ?? []).filter((flow) => flow.name !== '').map((flow) => [flow.workflow_id, flow.name]))
+  const flows = data ?? []
+  return {
+    names: new Map(flows.filter((flow) => flow.name !== '').map((flow) => [flow.workflow_id, flow.name])),
+    // (the list's entries are the server's as sent, only checked against the schema, not parsed by it: so the value
+    // is checked here, a budget being a positive number, else none)
+    budgets: new Map(flows.flatMap((flow) => {
+      const budget: unknown = flow.monthly_budget_usd
+      return typeof budget === 'number' && budget > 0 ? [[flow.workflow_id, budget] as const] : []
+    })),
+  }
 }
 
 function useFormats() {
@@ -125,11 +141,30 @@ const TH = 'px-3 py-2 text-left text-[12px] font-semibold text-muted'
 const TH_NUM = 'px-3 py-2 text-right text-[12px] font-semibold text-muted'
 const TD_NUM = 'px-3 py-2 text-right text-sm font-mono whitespace-nowrap'
 
-function GroupTable({ spend, names, onWorkflow }: Readonly<{
-  spend: MonthSpend; names: ReadonlyMap<string, string>; onWorkflow: (id: string) => void
+/** A workflow's spend against its monthly budget: the share, marked from 80% (the first alert's level). */
+function BudgetCell({ usd, budget }: Readonly<{ usd: number; budget: number | undefined }>) {
+  const { t } = useTranslation('agents')
+  const format = useFormats()
+  if (budget === undefined) return <span className="text-muted">{t('spend.noBudget')}</span>
+  const percent = budgetShare(usd, budget)
+  const tone = shareTone(percent)
+  return (
+    <span>
+      {format.usd(budget)} · <span className={tone}>{t('spend.budgetShare', { percent })}</span>
+      {percent >= 100 && <span className="sr-only"> {t('spend.overBudget')}</span>}
+    </span>
+  )
+}
+
+function GroupTable({ spend, library, onWorkflow }: Readonly<{
+  spend: MonthSpend; library: Library; onWorkflow: (id: string) => void
 }>) {
   const { t } = useTranslation('agents')
   const format = useFormats()
+  const { names, budgets } = library
+  // (by workflow, this month only: each one's spend against its budget as it is now; a past month ran under the
+  // budgets its runs kept, which the alerts measured, not today's)
+  const withBudget = spend.by === 'workflow' && spend.month === currentMonth() && budgets.size > 0
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full min-w-[36rem]">
@@ -141,6 +176,7 @@ function GroupTable({ spend, names, onWorkflow }: Readonly<{
             <th scope="col" className={TH_NUM}>{t('spend.tokensIn')}</th>
             <th scope="col" className={TH_NUM}>{t('spend.tokensOut')}</th>
             <th scope="col" className={TH_NUM}>{t('spend.microvm')}</th>
+            {withBudget && <th scope="col" className={TH_NUM}>{t('spend.budget')}</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -153,10 +189,12 @@ function GroupTable({ spend, names, onWorkflow }: Readonly<{
               <td className={TD_NUM}>{format.count(group.tokens_in)}</td>
               <td className={TD_NUM}>{format.count(group.tokens_out)}</td>
               <td className={TD_NUM}>{format.time(group.microvm_seconds)}</td>
+              {withBudget && <td className={TD_NUM}><BudgetCell usd={group.usd} budget={budgets.get(group.key)} /></td>}
             </tr>
           ))}
         </tbody>
       </table>
+      {withBudget && <p className="px-3 py-2 text-[12px] text-muted">{t('spend.budgetHint')}</p>}
     </div>
   )
 }
@@ -201,7 +239,8 @@ export function EngineeringSpend() {
   const [searchParams, setSearchParams] = useSearchParams()
   const query = spendQueryOf(searchParams)
   const read = useMonthSpend(query)
-  const names = useWorkflowNames()
+  const library = useLibrary()
+  const { names } = library
   const failure = failedReads([read])
   const change = (next: Partial<SpendQuery>) => setSearchParams((params) => {
     for (const [name, value] of Object.entries(next)) {
@@ -214,6 +253,7 @@ export function EngineeringSpend() {
   return (
     <section className="space-y-4" aria-busy={read.isFetching}>
       <p className="text-sm text-muted max-w-prose">{t('spend.hint')}</p>
+      <EngineeringHardCap />
       <Controls query={query} names={names} onChange={change} />
       {read.isLoading && <div className="skeleton h-24" />}
       {failure.loadFailed && <LoadFailed message={t('spend.loadFailed')} onRetry={failure.retry} retrying={failure.retrying} />}
@@ -223,7 +263,7 @@ export function EngineeringSpend() {
           {spend.truncated && <p className="text-sm text-warn">{t('spend.truncated')}</p>}
           {spend.groups.length === 0
             ? <p className="card p-6 text-center text-sm text-muted">{t('spend.empty', { month: format.month(spend.month) })}</p>
-            : <GroupTable spend={spend} names={names} onWorkflow={(workflow) => change({ workflow, by: 'run' })} />}
+            : <GroupTable spend={spend} library={library} onWorkflow={(workflow) => change({ workflow, by: 'run' })} />}
         </>
       )}
     </section>

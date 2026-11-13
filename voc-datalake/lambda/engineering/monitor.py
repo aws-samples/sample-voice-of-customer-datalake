@@ -4,8 +4,9 @@
 has numbered), and every agent as the supervisor last saw it: its session row in the run's partition
 (``WS#<ws>#RUN#<run>`` / ``AGENT#<agent>``, ``engineering.runtime.sessions``): role, task, status, continuation, the inspection data
 (step, recent tool calls, last progress, heartbeat age, MicroVM state and age, why it looks stuck) and the live cost
-counters (MicroVM-seconds, tokens per model), with the totals per model and for the run. The run's cost and budget
-are to come from the run control (``engineering.runtime.ports.RunControl.budget``) once it is wired.
+counters (MicroVM-seconds, tokens per model), with the totals per model and for the run, and the run's flow budget
+with its alert flag from META (``rows.budget_view``). The run's cost is to come from the run control
+(``engineering.runtime.ports.RunControl.budget``) once it is wired.
 
 The actions (the route lets only an admin acting for themselves take them, like a run's ``decision``):
 
@@ -40,7 +41,7 @@ from engineering.board.model import FINAL, OPEN, PERSON_PREFIX
 from engineering.bus.publish import PublishError, new_event_id
 from engineering.bus.schema import MAX_SUMMARY_BYTES, Message, MessageError, Party, fit_summary, summary_text
 from engineering.connectors.identity import WORKSPACE
-from engineering.rows import Refused, amount_attr, run_pk, string_attr
+from engineering.rows import Refused, amount_attr, budget_view, run_pk, string_attr
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
 from shared.logging import logger
@@ -268,7 +269,9 @@ class RunMonitor:
             'run': {'run_id': run_id, 'goal': string_attr(meta, 'goal'), 'repo': string_attr(meta, 'repo'),
                     'flow': string_attr(meta, 'flow'), 'status': string_attr(meta, 'status'),
                     'started_at': string_attr(meta, 'started_at') or None,
-                    'ended_at': string_attr(meta, 'ended_at') or None},
+                    'ended_at': string_attr(meta, 'ended_at') or None,
+                    # Its flow's monthly budget and the highest level its flow's month passed (None: no budget).
+                    'budget': budget_view(meta)},
             'agents': agents,
             # Whether the signals and answers can reach the run from here: the runtime and the bus both named (until
             # the stack wires them, every action answers 503, so the page offers none).

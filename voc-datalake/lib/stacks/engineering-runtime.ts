@@ -14,9 +14,10 @@
  * own source (its policy and the bus's both deny any other); it reads no queue (there are none: the router invokes
  * voc-engineering-delivery, which records its run's messages in the run's inbox and wakes it).
  * No MicroVM holds a host token (the connector's broker does). The supervisor's role: the run and session rows and
- * the registry, the checkpoints it reads, its own rule, the MicroVM operations and the launcher's AssumeRole. The
- * delivery's role: the runs' rows only (no registry, no delete), the checkpoints, resuming, continuing and ending a
- * MicroVM, the launcher's AssumeRole and its failure records; no rule. No IAM write: a stop cuts a run's sessions by
+ * the registry, the spend ledger's ADDs and a flow's month total (GetItem), the budget alerts' own partition, the
+ * checkpoints it reads, its own rule, the MicroVM operations and the launcher's AssumeRole. The delivery's role: the
+ * runs' rows only (no registry, no delete), the spend ledger's ADDs, the checkpoints, resuming, continuing and
+ * ending a MicroVM, the launcher's AssumeRole and its failure records; no rule. No IAM write: a stop cuts a run's sessions by
  * not renewing them.
  *
  * Deployed only with `-c engineeringAgents=true`: the default synth has none of it, so no fixed cost and nothing for
@@ -43,7 +44,7 @@ import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
 import { ENGINEERING_CACHE_PREFIX } from './core-buckets';
-import { grantSpendLedger, viaServices } from './engineering-runtime-grants';
+import { grantBudgetWork, grantSpendLedger, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { engineeringAgentsEnabled } from './engineering-broker';
@@ -162,6 +163,8 @@ interface EngineeringRuntimeProps {
    * Required with the flag on; it is deployed with the same flag.
    */
   engineeringTable: dynamodb.ITable | undefined;
+  /** voc-agents (VocCoreStack): the administrators' hard cap row, beside the workflows whose budgets it caps. */
+  agentsTable: dynamodb.ITable;
   /** The raw data lake: the connections' caches (`engineering/cache/`). */
   rawDataBucket: s3.IBucket;
   /**
@@ -290,6 +293,8 @@ class EngineeringRuntime extends Construct {
     const stack = cdk.Stack.of(this);
     return {
       ENGINEERING_TABLE: props.engineeringTable.tableName,
+      // voc-agents: the administrators' hard cap row (engineering/settings.py), read by a start.
+      ENGINEERING_SETTINGS_TABLE: props.agentsTable.tableName,
       ENGINEERING_BUS_NAME: props.peers.bus.eventBusName,
       ENGINEERING_BOARD_URL: props.peers.boardUrl,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
@@ -362,10 +367,12 @@ class EngineeringRuntime extends Construct {
       memorySize: 512,
       serviceName: 'voc-engineering-delivery',
       // It never takes the launch action (a continuation reuses the session's stored egress), switches no rule and
-      // runs no retrospective: neither the extra egress, the rule's name nor the benchmark's cases.
+      // runs no retrospective: neither the extra egress, the rule's name nor the benchmark's cases; nor the hard cap's
+      // table: only a start reads it, and the delivery has no grant on it.
       environment: Object.fromEntries(Object.entries(environment)
-        .filter(([name]) => !['ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_BENCHMARK_CASES']
-          .includes(name))),
+        .filter(([name]) => ![
+          'ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_BENCHMARK_CASES', 'ENGINEERING_SETTINGS_TABLE',
+        ].includes(name))),
       // The inbox row is written once (a conditional put), so a retry only wakes again.
       retryAttempts: 2,
       // Not destinations.SqsDestination, whose grant adds every key action: the send above and the key's use
@@ -475,6 +482,9 @@ class EngineeringRuntime extends Construct {
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS, RUN_REGISTRY] } },
     }));
     grantSpendLedger(role, engineeringTable);
+    // A flow's month total, its budget alerts' own partition and the hard cap's row (SpendTotals, BudgetAlerts,
+    // HardCapSetting).
+    grantBudgetWork(role, engineeringTable, props.agentsTable);
     // Its one delete: an ended run's row in the registry of active runs; never a run's own rows.
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['dynamodb:DeleteItem'],

@@ -55,6 +55,23 @@ export const IamAnyPolicySchema = z.object({
 /** An `AWS::IAM::Policy` resource: its attached roles and its statements. */
 export const IamPolicySchema = z.object({ Properties: PolicyPropertiesSchema });
 
+/**
+ * Over a whole synthesized app (synth-app.ts synthApp): `<Stack>/<RoleId>` → the statements of its default policies.
+ */
+export function statementsByRole(synthed: { readonly stackNames: readonly string[];
+  template(stackName: string): Record<string, unknown> }): Map<string, IamStatement[]> {
+  const out = new Map<string, IamStatement[]>();
+  for (const stack of synthed.stackNames) {
+    for (const [id, resource] of Object.entries(TemplateResourcesSchema.parse(synthed.template(stack)).Resources)) {
+      const policy = IamPolicySchema.safeParse(resource);
+      if (!policy.success) continue;
+      const role = `${stack}/${id.replace(/DefaultPolicy[0-9A-F]{8}$/, '')}`;
+      out.set(role, [...(out.get(role) ?? []), ...policy.data.Properties.PolicyDocument.Statement]);
+    }
+  }
+  return out;
+}
+
 const RoleRefSchema = z.object({ Ref: z.string() });
 
 /** A statement's actions as a list (`Action` may be a single string). */

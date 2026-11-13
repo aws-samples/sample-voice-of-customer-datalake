@@ -81,6 +81,8 @@ export const ENGINEERING_WORKSPACE_RUNS_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs
  * pattern: the metering writers ADD to them in the same transaction as each priced session write.
  */
 export const ENGINEERING_SPEND_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#SPEND#20??-??`;
+/** The budget alerts' month partitions (lambda/engineering/spend.py alerts_pk): the supervisor's alone to write. */
+export const ENGINEERING_BUDGET_ALERT_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#BUDGET#20??-??`;
 /**
  * SPA bucket: each deploy's `s3 sync --delete` turns the previous build's assets
  * noncurrent. 30 days keeps a month of deploys restorable for a rollback; the

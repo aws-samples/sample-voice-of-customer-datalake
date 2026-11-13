@@ -42,7 +42,9 @@ IMAGE_ARNS = {'python': 'arn:aws:lambda:us-east-1:123456789012:microvm-image/pyt
 def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     assert aws is not None  # moto's S3 and voc-engineering are up for the handler's own clients
     monkeypatch.setattr(handler, '_runtime', LocalMicroVmRuntime)
+    # (the hard cap's row lives in voc-agents; here the same moto table holds it)
     for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
+                        'ENGINEERING_SETTINGS_TABLE': TABLE,
                         'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
                         'ENGINEERING_BUS_NAME': BUS, 'ENGINEERING_BOARD_URL': BOARD_URL,
                         'ENGINEERING_IMAGE_ARNS': json.dumps(IMAGE_ARNS),
@@ -220,6 +222,107 @@ def test_launch_refuses_a_bad_request_before_anything_starts(wired: Any, change:
     with pytest.raises(RuntimeRefused):
         handler.lambda_handler({**LAUNCH, **change}, None)
     assert list(handler._supervisor().sessions.active()) == []
+
+
+def test_a_start_copies_the_flows_monthly_budget_onto_the_run(wired: Any):
+    assert _state(wired) == 'ENABLED'
+    handler.lambda_handler({'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'flow': 'bug-hunt',
+                            'budget_usd': 25.5}, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.budget_usd == 25.5
+
+
+def _flow_spent(usd: str) -> None:
+    """wf_cap's runs spent ``usd`` this month (a priced write, as the session store makes it)."""
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from engineering.spend import MICROVM, Usage, Where, ledger_updates
+    table = _runs().table
+    table.meta.client.transact_write_items(TransactItems=ledger_updates(
+        table.name, datetime.fromtimestamp(handler.clock(), UTC), Where(RUN, 'fixer-1', 'wf_cap'),
+        {MICROVM: Usage(usd=Decimal(usd))}))
+
+
+def _hard_cap(on: bool) -> None:
+    """An administrator's change (the Agents API's PUT writes it so)."""
+    from datetime import UTC, datetime
+
+    from engineering.settings import save_hard_cap
+    save_hard_cap(_runs().table, on=on, by='admin-1', at=datetime.now(UTC))
+
+
+def _start_budgeted() -> None:
+    """A first start of OTHER_RUN, a run of wf_cap with its $10 monthly budget."""
+    handler.lambda_handler({'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'flow': 'wf_cap',
+                            'budget_usd': 10.0}, None)
+
+
+@pytest.mark.usefixtures('wired')
+def test_with_the_hard_cap_on_a_start_is_capped_at_what_is_left_of_its_flows_month() -> None:
+    _flow_spent('7')
+    _hard_cap(True)
+    _start_budgeted()
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.caps.max_cost_usd == 3.0
+
+
+@pytest.mark.usefixtures('wired')
+def test_with_the_hard_cap_on_a_start_with_nothing_left_is_refused_before_anything_is_written() -> None:
+    _flow_spent('10')
+    _hard_cap(True)
+    with pytest.raises(RuntimeRefused, match='turn the hard cap off'):
+        _start_budgeted()
+    assert _runs().get(OTHER_RUN) is None
+
+
+@pytest.mark.usefixtures('wired')
+def test_with_the_hard_cap_off_a_start_is_as_it_was() -> None:
+    _flow_spent('10')
+    _hard_cap(False)
+    _start_budgeted()
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.caps.max_cost_usd is None
+
+
+@pytest.mark.usefixtures('wired')
+def test_a_retry_of_a_live_run_is_not_capped_again() -> None:
+    _flow_spent('7')
+    _hard_cap(True)
+    _start_budgeted()
+    _flow_spent('5')   # (the flow's month is past its budget now)
+    _start_budgeted()   # (the same start again: answered, never refused)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert (run.status, run.caps.max_cost_usd) == ('active', 3.0)
+
+
+@pytest.mark.usefixtures('wired')
+def test_a_start_with_no_budget_reads_no_hard_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unread(_table: Any) -> None:
+        raise AssertionError('the hard cap was read')
+
+    monkeypatch.setattr(handler, 'read_hard_cap', unread)
+    handler.lambda_handler({'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'flow': 'wf_cap'}, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.caps.max_cost_usd is None
+
+
+@pytest.mark.usefixtures('wired')
+def test_a_hard_cap_that_cannot_be_read_refuses_the_start_saying_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    from botocore.exceptions import ClientError
+
+    def throttled(_table: Any) -> None:
+        raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'GetItem')
+
+    monkeypatch.setattr(handler, 'read_hard_cap', throttled)
+    with pytest.raises(RuntimeRefused, match='could not be read: start the run again'):
+        _start_budgeted()
+    assert _runs().get(OTHER_RUN) is None
 
 
 def test_a_runs_start_and_end_switch_the_supervisor_on_and_off_with_the_last_active_run(wired: Any):

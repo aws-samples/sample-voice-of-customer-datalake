@@ -8,7 +8,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { IamPolicySchema, TemplateResourcesSchema, type IamStatement } from '../test-support/iam-statements';
+import { IamPolicySchema, statementsByRole, type IamStatement } from '../test-support/iam-statements';
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import {
   AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID, AUDIT_DENY_WRITE_SID, applyAuditRowGuard, type NamedAuditWriter,
@@ -34,20 +34,7 @@ type Statement = IamStatement;
 const synthed = synthApp();
 afterAll(cleanupAssemblyDirs);
 
-/** `<Stack>/<RoleId>` → its default policy's statements. */
-function statementsByRole(): Map<string, Statement[]> {
-  const out = new Map<string, Statement[]>();
-  for (const stack of synthed.stackNames) {
-    for (const [id, resource] of Object.entries(TemplateResourcesSchema.parse(synthed.template(stack)).Resources)) {
-      const policy = IamPolicySchema.safeParse(resource);
-      if (!policy.success) continue;
-      const role = `${stack}/${id.replace(/DefaultPolicy[0-9A-F]{8}$/, '')}`;
-      out.set(role, [...(out.get(role) ?? []), ...policy.data.Properties.PolicyDocument.Statement]);
-    }
-  }
-  return out;
-}
-const byRole = statementsByRole();
+const byRole = statementsByRole(synthed);
 
 /** The guarded tables a statement names (by logical id, in a GetAtt or an import). */
 const tablesOf = (statement: Statement): string[] =>

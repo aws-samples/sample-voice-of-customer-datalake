@@ -50,6 +50,26 @@ beforeEach(() => {
 })
 
 describe('the run monitor', () => {
+  it('shows the run\'s flow budget and the level its flow\'s month passed', async () => {
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({ budget: { monthly_usd: 50, alert_percent: 100, alert_month: '2026-11' } }) })
+    renderRun()
+    expect(await screen.findByText('Flow budget: $50.00 a month')).toBeInTheDocument()
+    expect(screen.getByText('November 2026: 100% of the budget spent')).toHaveClass('badge-danger')
+  })
+
+  it('marks a flag under 100% as a warning', async () => {
+    routes({ [`GET ${BASE}`]: () => engineeringOverview({ budget: { monthly_usd: 50, alert_percent: 80, alert_month: '2026-11' } }) })
+    renderRun()
+    expect(await screen.findByText('November 2026: 80% of the budget spent')).toHaveClass('badge-warn')
+  })
+
+  it('shows no budget line for a run with none', async () => {
+    routes()
+    renderRun()
+    await screen.findByText('Fix the paging bugs')
+    expect(screen.queryByText(/Flow budget/)).not.toBeInTheDocument()
+  })
+
   it('shows the run, its MicroVM time and messages, and its tokens per model, with no cost yet', async () => {
     routes()
     renderRun()

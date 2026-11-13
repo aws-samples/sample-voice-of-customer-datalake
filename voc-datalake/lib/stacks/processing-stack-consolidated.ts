@@ -382,7 +382,8 @@ export class VocProcessingStack extends VocStack {
     // agent roles call the board and the broker and publish on the bus; its supervisor rule's undelivered ticks go to
     // the bus's dead-letter queue.
     addEngineeringRuntime(this, {
-      uniqueName, layer: processingLayer, kmsKey, engineeringTable: props.engineeringTable, rawDataBucket, peers,
+      uniqueName, layer: processingLayer, kmsKey, engineeringTable: props.engineeringTable, agentsTable: props.agentsTable,
+      rawDataBucket, peers,
       workspaceBucket: props.engineeringWorkspaceBucket,
     });
 
