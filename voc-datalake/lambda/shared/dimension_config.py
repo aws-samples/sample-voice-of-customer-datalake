@@ -27,10 +27,10 @@ front of the stored ones on every read, and ``validate_dimensions`` drops any
 entry using a built-in key, so an admin can neither redefine nor remove them
 and they never count against ``MAX_DIMENSIONS``.
 
-This module imports nothing from the rest of ``shared`` except the leaf module
-``shared.feedback_types``, so the processing-queue schema
-(``shared.ingest_schemas``) can reuse ``validate_tags`` without widening its
-import graph.
+This module imports nothing from the rest of ``shared`` except ``shared.feedback_types`` and the workspace key
+helpers (``shared.workspace_config`` and what it imports: ``shared.ws_repo``, ``shared.workspace_settings``,
+``shared.workspace_ids``, ``shared.dynamo_paging``, none of which imports anything else of ``shared``), so the processing-queue schema (``shared.ingest_schemas``) can reuse ``validate_tags``
+without widening its import graph.
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from shared.feedback_types import BUILTIN_DIMENSION_KEYS, feedback_type_dimension
+from shared.workspace_config import get_config_item
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'DIMENSIONS_SETTINGS_KEY',
@@ -58,6 +60,8 @@ __all__ = [
 ]
 
 DIMENSIONS_SETTINGS_KEY: Final = {'pk': 'SETTINGS#dimensions', 'sk': 'config'}
+#: A workspace's dimensions are ``WS#{ws}#SETTINGS#dimensions`` (shared/workspace_config.py).
+DIMENSIONS_KIND: Final = 'dimensions'
 
 MAX_DIMENSIONS: Final = 10
 MAX_DIMENSION_VALUES: Final = 200
@@ -249,15 +253,16 @@ def with_builtin_dimensions(dimensions: list[dict[str, Any]]) -> list[dict[str, 
     return [feedback_type_dimension(), *dimensions]
 
 
-def load_dimensions_config(table: Any) -> list[dict[str, Any]]:
-    """The built-in dimensions plus the stored ones, normalised (only the built-ins when none are stored).
+def load_dimensions_config(table: Any, scope: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """The built-in dimensions plus the stored ones of ``scope``'s workspace (the deployment's without one),
+    normalised (only the built-ins when none are stored).
 
     Uncached and strongly consistent, for callers that just saved or that run
     rarely. A DynamoDB error propagates; a stored row that no longer validates
     (written around ``PUT /settings/dimensions``) raises ValueError rather than
     being half-applied.
     """
-    item = table.get_item(Key=DIMENSIONS_SETTINGS_KEY, ConsistentRead=True).get('Item') or {}
+    item = get_config_item(table, DIMENSIONS_KIND, DIMENSIONS_SETTINGS_KEY, scope)
     return with_builtin_dimensions(validate_dimensions(item.get('dimensions')))
 
 

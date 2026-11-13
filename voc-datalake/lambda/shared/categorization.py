@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from shared.categories_key import CATEGORIES_SETTINGS_KEY
 from shared.category_access import FALLBACK_CATEGORY
 from shared.converse import (
     BedrockThrottlingError,
@@ -35,9 +36,8 @@ from shared.llm_json import first_json_object
 from shared.logging import logger, tracer
 from shared.model_config import get_active_model_id
 from shared.prompt_safety import neutralise_tags
-
-# Where the settings API stores the admin's category configuration.
-CATEGORIES_SETTINGS_KEY = {'pk': 'SETTINGS#categories', 'sk': 'config'}
+from shared.workspace_config import get_config_item
+from shared.ws_repo import WorkspaceScope
 
 # Used when no categories are configured (moved verbatim from the processor;
 # api/test/test_streaming_categories_lockstep.py pins it against shared/api.py).
@@ -128,13 +128,15 @@ MAX_SUBCATEGORY_CHARS = 100
 # Category configuration
 # ============================================
 
-def load_categories_config(table: Any) -> list[dict]:
-    """Read the configured categories (uncached). Raises on a DynamoDB error.
+def load_categories_config(table: Any, scope: WorkspaceScope | None = None) -> list[dict]:
+    """Read the configured categories of ``scope``'s workspace (the deployment's without one; uncached): the
+    processor will pass the scope of the feedback it categorises, at the phase-2 cut-over. Raises on a DynamoDB
+    error.
 
     Entries without a usable ``name`` are dropped: they cannot be offered to the
     model nor matched against its answer.
     """
-    item = table.get_item(Key=CATEGORIES_SETTINGS_KEY).get('Item') or {}
+    item = get_config_item(table, 'categories', CATEGORIES_SETTINGS_KEY, scope, consistent=False)
     categories = item.get('categories')
     if not isinstance(categories, list):
         return []

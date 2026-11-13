@@ -20,14 +20,13 @@ def seeded_source_profiles(profiles: list[dict] | None = None) -> Generator[None
     """
     previous = dict(source_profiles._cache)
     previous_table = os.environ.get('AGGREGATES_TABLE')
-    # The cache is consulted only when a table is configured.
+    # The cache is consulted only when a table is configured. The deployment's entry (no workspace).
     os.environ['AGGREGATES_TABLE'] = previous_table or 'test-aggregates'
-    source_profiles._cache['profiles'] = list(profiles or [])
-    source_profiles._cache['expires'] = float('inf')
-    source_profiles._cache['failed'] = False
+    source_profiles._cache[None] = {'profiles': list(profiles or []), 'expires': float('inf'), 'failed': False}
     try:
         yield
     finally:
+        source_profiles._cache.clear()
         source_profiles._cache.update(previous)
         if previous_table is None:
             os.environ.pop('AGGREGATES_TABLE', None)
@@ -39,7 +38,7 @@ def seeded_source_profiles(profiles: list[dict] | None = None) -> Generator[None
 def unreadable_source_profiles() -> Generator[None, None, None]:
     """The cache holds a FAILED read for the block: lenient readers get defaults, strict ones raise."""
     with seeded_source_profiles():
-        source_profiles._cache['failed'] = True
+        source_profiles._cache[None]['failed'] = True
         yield
 
 

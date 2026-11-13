@@ -46,6 +46,8 @@ from shared.exceptions import ServiceUnavailableError
 from shared.legal_basis import required_legal_basis
 from shared.logging import logger
 from shared.radar_brands import radar_profile_fields
+from shared.workspace_config import get_config_item
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'PII_ALLOW',
@@ -62,6 +64,8 @@ __all__ = [
 ]
 
 SOURCES_SETTINGS_KEY: Final = {'pk': 'SETTINGS#sources', 'sk': 'config'}
+#: A workspace's profiles are ``WS#{ws}#SETTINGS#sources`` (shared/workspace_config.py).
+SOURCES_KIND: Final = 'sources'
 
 PII_ALLOW: Final = 'allow'
 PII_REDACT: Final = 'redact'
@@ -80,8 +84,8 @@ SOURCE_ID_RE: Final = re.compile(r'^[a-z0-9][a-z0-9_-]{0,47}\Z')
 
 _CACHE_TTL_SECONDS: Final = 300
 _ERROR_CACHE_TTL_SECONDS: Final = 30
-# `profiles` None = nothing cached; `expires` and `failed` are written with every read.
-_cache: dict[str, Any] = {'profiles': None}
+#: workspace id (None: the deployment) -> ``{profiles, expires, failed}``.
+_cache: dict[str | None, dict[str, Any]] = {}
 
 
 class SourceProfilesUnavailable(ServiceUnavailableError):
@@ -206,8 +210,9 @@ def validate_source_profiles(value: object, dimensions_config: list[dict[str, An
     return _profiles(value, dimensions_config, strict=True)
 
 
-def load_source_profiles(table: Any) -> list[dict[str, Any]]:
-    """The stored profiles, normalised; [] when none are configured.
+def load_source_profiles(table: Any, scope: WorkspaceScope | None = None) -> list[dict[str, Any]]:
+    """The stored profiles of ``scope``'s workspace (the deployment's without one), normalised; [] when none are
+    configured.
 
     Uncached and strongly consistent. A DynamoDB error propagates, and so does a
     corrupt row (ValueError): silently dropping a profile would un-restrict its
@@ -216,7 +221,7 @@ def load_source_profiles(table: Any) -> list[dict[str, Any]]:
     through ``resolve_dimensions``. Nor is ``retention_legal_basis`` required: a profile
     saved before 6.00.00 keeps its retention period without one (``shared.legal_basis``).
     """
-    item = table.get_item(Key=SOURCES_SETTINGS_KEY, ConsistentRead=True).get('Item') or {}
+    item = get_config_item(table, SOURCES_KIND, SOURCES_SETTINGS_KEY, scope)
     return _profiles(item.get('sources'), None, strict=False)
 
 
@@ -247,32 +252,32 @@ def profile_for(profiles: list[dict[str, Any]], source_id: str) -> dict[str, Any
 
 
 def clear_source_profiles_cache() -> None:
-    """Reset the container cache (tests, and the settings Lambda after a save)."""
-    _cache['profiles'] = None
+    """Reset the container cache, every workspace's (tests, and the settings Lambda after a save)."""
+    _cache.clear()
 
 
-def _cached_profiles() -> tuple[list[dict[str, Any]], bool]:
-    """``(profiles, failed)``: the cached list, and whether it stands in for a failed read."""
+def _cached_profiles(scope: WorkspaceScope | None) -> tuple[list[dict[str, Any]], bool]:
+    """``(profiles, failed)`` of ``scope``'s workspace (the deployment's without one): the cached list, and whether it
+    stands in for a failed read. One cache entry per workspace."""
     table_name = os.environ.get('AGGREGATES_TABLE', '')
     if not table_name:
         return [], False
     now = time.time()
-    if _cache['profiles'] is not None and now < _cache['expires']:
-        return _cache['profiles'], bool(_cache.get('failed'))
+    entry = _cache.get(None if scope is None else scope.ws)
+    if entry is not None and now < entry['expires']:
+        return entry['profiles'], entry['failed']
     profiles: list[dict[str, Any]] = []
     ttl, failed = _CACHE_TTL_SECONDS, False
     try:
-        profiles = load_source_profiles(get_dynamodb_resource().Table(table_name))
+        profiles = load_source_profiles(get_dynamodb_resource().Table(table_name), scope)
     except Exception:
         logger.exception('Source profiles lookup failed; using defaults')
         ttl, failed = _ERROR_CACHE_TTL_SECONDS, True
-    _cache['profiles'] = profiles
-    _cache['expires'] = now + ttl
-    _cache['failed'] = failed
+    _cache[None if scope is None else scope.ws] = {'profiles': profiles, 'expires': now + ttl, 'failed': failed}
     return profiles, failed
 
 
-def cached_source_profile_strict(source_id: str) -> dict[str, Any]:
+def cached_source_profile_strict(source_id: str, scope: WorkspaceScope | None = None) -> dict[str, Any]:
     """``source_id``'s profile from a per-container cache; raises when the read failed.
 
     The whole list is read once per ``_CACHE_TTL_SECONDS``; with no ``AGGREGATES_TABLE``
@@ -281,16 +286,16 @@ def cached_source_profile_strict(source_id: str) -> dict[str, Any]:
     The failed read is cached for ``_ERROR_CACHE_TTL_SECONDS``, so a retry storm does
     not hammer the table.
     """
-    profiles, failed = _cached_profiles()
+    profiles, failed = _cached_profiles(scope)
     if failed:
         raise SourceProfilesUnavailable
     return profile_for(profiles, source_id)
 
 
-def source_profile_configured(source_id: str) -> bool:
+def source_profile_configured(source_id: str, scope: WorkspaceScope | None = None) -> bool:
     """True when an admin has saved a profile for ``source_id`` (not just the defaults); raises when
     the read failed, like ``cached_source_profile_strict``. For writers whose copy is opt-in."""
-    profiles, failed = _cached_profiles()
+    profiles, failed = _cached_profiles(scope)
     if failed:
         raise SourceProfilesUnavailable
     return any(profile.get('id') == source_id for profile in profiles)

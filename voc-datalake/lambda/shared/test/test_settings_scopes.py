@@ -58,8 +58,7 @@ WORKSPACE_KINDS: dict[str, frozenset[str]] = {
     'brand': frozenset({'lambda/shared/engagement_config.py'}),
     'company_context': frozenset({'lambda/shared/company_context.py', 'lambda/shared/memory_store.py'}),
     'design_system': frozenset({'lambda/shared/company_context.py', 'lib/stacks/design-capture.ts'}),
-    'categories': frozenset({'lambda/shared/api.py', 'lambda/shared/categorization.py',
-                             'lambda/shared/category_gate.py'}),
+    'categories': frozenset({'lambda/shared/categories_key.py', 'lambda/shared/category_gate.py'}),
     'dimensions': frozenset({'lambda/shared/dimension_config.py'}),
     'sources': frozenset({'lambda/shared/source_profiles.py'}),
     # Moved under its workspace (shared/workspace_settings.py); the settings API keeps the deployment's row for a

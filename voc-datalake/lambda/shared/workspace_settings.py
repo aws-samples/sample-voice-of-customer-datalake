@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Final
 
-from shared.workspace import ws_key
+from shared.workspace_ids import ws_key
 
 __all__ = ['settings_key']
 

@@ -14,6 +14,7 @@ from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConf
 
 from shared import http_cache
 from shared.app_clients import require_app_client
+from shared.categories_key import CATEGORIES_SETTINGS_KEY
 from shared.category_override import redact_category_overrides
 from shared.e2e_tag import with_test_run_tag
 from shared.earliest_date import parse_iso_date
@@ -43,6 +44,8 @@ from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics, tracer
 from shared.model_profile import profile_for_groups, profile_from_job_event, with_model_profile
 from shared.project_access import ADMIN_GROUP
+from shared.workspace_config import get_config_item
+from shared.ws_repo import WorkspaceScope
 
 
 def decimal_default(obj):
@@ -520,43 +523,40 @@ DEFAULT_CATEGORIES = [
 ]
 
 # Cache for configured categories
-_categories_cache: list | None = None
-_categories_cache_time: float | None = None
+#: workspace id (None: the deployment) -> (categories, read at): the categories each scope read last.
+_categories_cache: dict[str | None, tuple[list, float]] = {}
 CATEGORIES_CACHE_TTL = 300  # 5 minutes
 
 
-def get_raw_categories_config(aggregates_table) -> list[dict]:
+def get_raw_categories_config(aggregates_table, scope: WorkspaceScope | None = None) -> list[dict]:
     """
-    Fetch raw categories config objects from DynamoDB settings with caching.
+    Fetch raw categories config objects of ``scope``'s workspace (the deployment's without one) from DynamoDB
+    settings, cached per workspace for ``CATEGORIES_CACHE_TTL`` seconds.
 
     Returns list of category dicts (with name, description, subcategories).
     Returns empty list if not configured.
     """
-    global _categories_cache, _categories_cache_time
-
     if not aggregates_table:
         return []
 
     now = datetime.now(UTC).timestamp()
-
-    if _categories_cache is not None and _categories_cache_time and (now - _categories_cache_time) < CATEGORIES_CACHE_TTL:
-        return _categories_cache
+    cache_key = None if scope is None else scope.ws
+    cached = _categories_cache.get(cache_key)
+    if cached is not None and (now - cached[1]) < CATEGORIES_CACHE_TTL:
+        return cached[0]
 
     try:
-        response = aggregates_table.get_item(Key={'pk': 'SETTINGS#categories', 'sk': 'config'})
-        item = response.get('Item')
-        categories = item.get('categories') if item else None
+        item = get_config_item(aggregates_table, 'categories', CATEGORIES_SETTINGS_KEY, scope, consistent=False)
+        categories = item.get('categories')
         if categories:
-            _categories_cache = categories
-            _categories_cache_time = now
+            _categories_cache[cache_key] = (categories, now)
             logger.info(f"Loaded {len(categories)} categories from settings")
             return categories
     except Exception as e:
         logger.exception(f"Could not fetch categories from settings: {e}")
 
-    _categories_cache = []
-    _categories_cache_time = now
-    return _categories_cache
+    _categories_cache[cache_key] = ([], now)
+    return []
 
 
 def get_configured_categories(aggregates_table) -> list:
@@ -572,7 +572,5 @@ def get_configured_categories(aggregates_table) -> list:
 
 
 def clear_categories_cache():
-    """Clear the categories cache. Useful for testing or forced refresh."""
-    global _categories_cache, _categories_cache_time
-    _categories_cache = None
-    _categories_cache_time = None
+    """Clear the categories cache, every workspace's. Useful for testing or forced refresh."""
+    _categories_cache.clear()

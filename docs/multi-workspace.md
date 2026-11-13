@@ -330,7 +330,25 @@ access → Workspaces → Deployment default brand), whose calls send no `X-Work
 (`frontend/src/api/brandApi.ts`, the client's `'deployment'` request scope), for the deployment's `admins`, the gate
 the server applies to a request without the header. Still on
 the deployment's brand until they move: the engagement API's participant emails and feedback boards
-(`lambda/shared/engagement_config.py` `brand_name`, phase 3 with the participants' settings). The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
+(`lambda/shared/engagement_config.py` `brand_name`, phase 3 with the participants' settings). The categories, the dimensions and the source profiles
+can be read per workspace (Unreleased): their readers accept a workspace scope, but no caller passes one yet, and the
+settings routes still edit only the deployment's rows. Every read of the three goes through one module,
+`lambda/shared/workspace_config.py` (`get_config_item`: a workspace's row
+`WS#{ws}#SETTINGS#{categories,dimensions,sources}` through `lambda/shared/ws_repo.py` `ws_table`, else the deployment's
+`SETTINGS#{kind}`), from each kind's owner, each with an optional workspace scope (`lambda/shared/ws_repo.py`
+`WorkspaceScope`; the caches keep one entry per workspace): `read_categories_config` (`shared/category_gate.py`) and
+the cached `get_raw_categories_config` (`shared/api.py`), the processor's `load_categories_config`
+(`shared/categorization.py`), `load_dimensions_config` (`shared/dimension_config.py`), `load_source_profiles`,
+`cached_source_profile_strict` and `source_profile_configured` (`shared/source_profiles.py`), and the access checks every feedback route runs,
+`scope_for_caller` / `scope_for_event` and `read_restricted_sources` (`shared/category_gate.py`, their `workspace`).
+`GET` and `PUT /settings/categories`, `/settings/dimensions` and `/settings/sources` stay the deployment's (any
+`X-Workspace-Id` is not read; the deployment's administrators write) until the data path reads a workspace's: today
+every review still flows through the deployment-wide path (a workspace's ingestion is held), so the categories that
+classify it, the PII rule and retention of its source and the restricted sources that hide it must be the ones an
+administrator edits. They move together, in the phase-2 cut-over: the processor and the ingestion paths pass the
+scope of the feedback they handle, the feedback routes pass theirs to `scope_for_event`, and then the six routes
+resolve the workspace (its admins write, `require_settings_admin`). A new workspace starts with none of the three
+(nothing is copied, owner decision 18). The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
 whose case says why, the deployment's answer with no row of either workspace touched instead of the 400; for the
 brand's `PUT`, 403 to a caller outside the deployment's `admins`). The
 deployment kinds' writes need the deployment's `admins` and a live platform admin (since 6.18.00): `PUT /settings/appearance` and the three alert writes
@@ -349,7 +367,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 | Kind (`SETTINGS#…`) | Scope | Why |
 |---|---|---|
 | `brand`, `company_context`, `design_system` | workspace | the brand the AI writes for, the team's vision and objectives, its design tokens and references (decision 6; `brand` moved, a request with no workspace keeps the deployment's row, as before) |
-| `categories`, `dimensions`, `sources` | workspace | the team's taxonomy and source profiles (decision 6) |
+| `categories`, `dimensions`, `sources` | workspace | the team's taxonomy and source profiles (decision 6; read per workspace through `lambda/shared/workspace_config.py`; edited as the deployment's until the phase-2 cut-over) |
 | `resolved_problems` | workspace | the problems a team marked resolved (moved; a request with no workspace keeps the deployment's row, as before) |
 | `email_intake` | workspace | the team's inbox caps (its address is `{slug}@`, [Public and non-user entry points](#public-and-non-user-entry-points)) |
 | `fallback_owner` | workspace | the member an agent's new project falls back to |
