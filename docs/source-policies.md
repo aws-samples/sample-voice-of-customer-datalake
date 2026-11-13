@@ -254,7 +254,8 @@ How it works:
   deleted) when the row names another workspace, none, or one on a whole-source job; it checks every matched
   row's partition before any tombstone; the job and audit rows carry `workspace_id` and count the items in
   `deleted_workspace_items`, and the workspace's own data_version moves. **A workspace's exports** are a derived
-  copy (its feedback and members in a zip under `ws/{ws}/exports/`, docs/multi-workspace.md "Export and
+  copy (its feedback, members and, since 4b, its current raw and Silver objects in a zip under `ws/{ws}/exports/`,
+  docs/multi-workspace.md "Export and
   delete"): the moment any erasure (the deployment's by email, or one in the workspace, which does it at its start)
   first meets a workspace, before it deletes the item or changes the membership row (the export's `members/` holds
   the email), it takes the workspace's export lock (a start answers 409) and marks every queued, running or

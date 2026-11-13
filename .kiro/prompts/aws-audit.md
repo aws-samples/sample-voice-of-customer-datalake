@@ -31,8 +31,8 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 |--------|---------|--------|-------------|
 | `voc-metrics-api` | `metrics_handler.py` | `/feedback/*`, `/metrics/*` | DynamoDB read |
 | `voc-chat-api` | `chat_handler.py` | `/chat/*` | DynamoDB RW, Bedrock |
-| `voc-integrations-api` | `integrations_handler.py` | `/integrations/*`, `/sources/*` | Secrets Manager, EventBridge |
-| `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager, Lambda invoke, Bedrock |
+| `voc-integrations-api` | `integrations_handler.py` | `/integrations/*`, `/sources/*` | Secrets Manager (the deployment's shared secret), SSM on one workspace's `/voc/ws/{ws}/credentials/*` (decision 19), DynamoDB aggregates (a workspace's `WS#{ws}#PLUGIN_CONFIG` rows and their history), EventBridge |
+| `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager (the deployment's shared secret), SSM on one workspace's `/voc/ws/{ws}/credentials/*` (decision 19), DynamoDB aggregates (a workspace's `WS#{ws}#PLUGIN_CONFIG` rows and their history, the scraper run rows), Lambda invoke, Bedrock |
 | `voc-settings-api` | `settings_handler.py` | `/settings/*` | DynamoDB, Bedrock |
 | `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB, Step Functions, Bedrock |
 | `voc-chat-stream` | `lambda/stream` (TypeScript) | `POST /chat/stream` (SSE via API Gateway) | DynamoDB read, Bedrock streaming, invoke domain APIs |

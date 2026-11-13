@@ -493,8 +493,12 @@ def delete_scraper(scraper_id: str):
     store = _request.credentials(WEBSCRAPER_PLUGIN)
     try:
         secrets, configs = _webscraper_configs_in_store(store)
-        configs = [c for c in configs if c.get('id') != scraper_id]
-        secrets['webscraper_configs'] = json.dumps(configs)
+        remaining = [c for c in configs if c.get('id') != scraper_id]
+        if len(remaining) == len(configs):
+            # Nothing to remove (no such scraper, or no list saved at all): nothing is written, so a workspace
+            # without a list never gets an empty one, nor a history row of nothing.
+            return {'success': True}
+        secrets['webscraper_configs'] = json.dumps(remaining)
         store.write(secrets)
     except ApiError:
         # A delete only ever SHRINKS this key, so the size guard cannot fire on

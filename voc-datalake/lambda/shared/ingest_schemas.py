@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_valid
 from shared.csv_datasets import CSV_INGESTION_METHOD, DATASET_NAME_MAX_LENGTH
 from shared.dimension_config import validate_tags
 from shared.timestamps import now_iso
+from shared.unicode_categories import DISGUISING_CATEGORIES as _URL_FORBIDDEN_CATEGORIES
 from shared.workspace_ids import is_workspace_id
 
 # ============================================
@@ -69,8 +70,8 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 # What no link may carry inside it: every control (C0 incl. tab/CR/LF, DEL, C1 such as NEL),
 # every format character (bidi overrides, zero-width joiners — a link that displays
-# differently from where it goes) and the Unicode line/paragraph separators.
-_URL_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+# differently from where it goes) and the Unicode line/paragraph separators
+# (shared/unicode_categories.py DISGUISING_CATEGORIES, imported above as _URL_FORBIDDEN_CATEGORIES).
 
 
 def _has_forbidden_url_char(value: str) -> bool:

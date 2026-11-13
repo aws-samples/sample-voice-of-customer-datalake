@@ -82,8 +82,6 @@ EXCLUDED: Final = {
     'erasure_value_hash': "An erasure job's value hash is left out of erasure_jobs.",
     'email_hashes': "An audit row's email hash (a new account's) is left out of audit.",
 }
-RAW_OBJECTS: Final = {'status': 'not_included_yet',
-                      'note': 'The raw and Silver objects under ws/{ws}/ join the export in a later release.'}
 
 
 class ExportRefused(RuntimeError):
@@ -269,9 +267,10 @@ def encode_row(item: Mapping[str, Any]) -> bytes:
 
 def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, Any], created_at: str,
              completed_at: str, files: Mapping[str, list[str]], counts: Mapping[str, int],
-             daily_total: int) -> bytes:
+             daily_total: int, objects: Mapping[str, Any]) -> bytes:
     """``manifest.json``: every entity with its files and count, the counts check against the workspace's
-    ``daily_total`` counters, what is not per workspace yet, not exported or excluded, and the raw objects' status."""
+    ``daily_total`` counters, what is not per workspace yet, not exported or excluded, and the workspace's objects
+    (``objects``: jobs/workspace_export/objects.py ``manifest_section``)."""
     feedback = int(counts.get('feedback', 0))
     document = {
         'format': 'voc-workspace-export',
@@ -291,6 +290,6 @@ def manifest(*, export_id: str, scope: WorkspaceScope, workspace: Mapping[str, A
                               for name in NOT_PER_WORKSPACE},
         'not_exported': dict(NOT_EXPORTED),
         'excluded': dict(EXCLUDED),
-        'raw_objects': dict(RAW_OBJECTS),
+        'objects': dict(objects),
     }
     return (json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + '\n').encode('utf-8')

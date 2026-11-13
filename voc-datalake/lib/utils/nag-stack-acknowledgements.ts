@@ -14,7 +14,7 @@ import type { VocCoreStack } from '../stacks/core-stack';
 import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
 import {
-  WORKSPACE_EXPORTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
+  WORKSPACE_EXPORTS_PREFIX, WORKSPACE_OBJECTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
 } from '../stacks/core-buckets';
 import { acknowledgeNag } from './nag-ack';
 import {
@@ -52,6 +52,9 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       raw.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`),
       // ws/{one id}/exports/*/work/*: the work objects an export that may not go on deletes (its own only).
       raw.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*/work/*`),
+      // ws/{one id}/*: every object of one workspace, read (GetObject only) into its export by voc-workspace-export
+      // (slice 4b; lambda/shared/ws_repo.py WorkspaceObjects reads the event's workspace only, never its exports).
+      raw.arnForObjects(WORKSPACE_OBJECTS_PREFIX),
     ]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),
   ]);

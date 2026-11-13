@@ -142,7 +142,11 @@ timeout it stays inside the lock's hour). A dropped invoke is never silent: a st
 "The export did not start", past the hour; a hand-over throttled past the event age ends the export failed, "The
 export stopped before it finished", once its row is stale (an hour after its last progress, its lock stale too, so
 a new start works). Writes one workspace's data as JSONL
-per entity plus `manifest.json` into one streaming ZIP64 (`zip_stream.py`) in one S3 multipart upload under
+per entity, then (4b) every current object under `ws/{ws}/` but its exports as `objects/<key without ws/{ws}/>`
+(`objects.py`: whole, DEFLATE, or STORE for images, the zip family and gzip; one over 3 GiB, too slow for one
+invocation at its kind's measured rate, gone (a 403 checked by a one-key listing) or whose key a zip cannot name is
+listed in the manifest instead; checkpointed by the last key; the central directory streamed per generation), plus `manifest.json` into one streaming ZIP64
+(`zip_stream.py`) in one S3 multipart upload under
 `ws/{ws}/exports/{export_id}/`, claiming each generation on its job row (`WS#{ws}#JOB#export`, one live export per
 workspace by its `LOCK`), handing over to itself before its 15-minute timeout, cancelling when the workspace begins
 deleting, and ending with a job notice (`workspace_export`) when it writes its outcome. 1,769 MB, reserved
@@ -151,7 +155,9 @@ the MCP endpoint's 20, docs/deployment.md), no async retry. Permissions: feedbac
 `WS#{one id}#*` and UpdateItem on `WS#{one id}#JOB#export`; workspaces Query on `WS#{one id}` and
 `AUDIT#WS#{one id}` only; raw bucket `s3:PutObject`, `PutObjectTagging`, `GetObject`, `AbortMultipartUpload`,
 `ListMultipartUploadParts` under `ws/{one id}/exports/*` only, and `s3:DeleteObject` on its own work objects
-(`ws/{one id}/exports/*/work/*`) only; KMS; invoke itself; the `jobs` publish policy. No Scan, no other delete, no
+(`ws/{one id}/exports/*/work/*`) only; read-only on the workspace's own objects: `s3:ListBucket` with `s3:prefix`
+`ws/{one id}/*` and `s3:GetObject` on `ws/{one id}/*` (`lambda/shared/ws_repo.py` `WorkspaceObjects` lists and
+reads the event's workspace only, never its exports); KMS; invoke itself; the `jobs` publish policy. No Scan, no other delete, no
 DynamoDB delete, no SSM or Secrets Manager (credentials are never exported). The raw bucket expires objects tagged
 `voc-export=true` after 10 days and denies that tag, and a copy of an export object, outside `ws/{one id}/exports/*`
 (`lib/stacks/core-buckets.ts`).

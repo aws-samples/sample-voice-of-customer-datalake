@@ -69,11 +69,22 @@ def _jsonl(files: dict[str, bytes], entity: str) -> list[dict[str, Any]]:
     return [json.loads(line) for name in names for line in files[name].decode().splitlines()]
 
 
+#: The calls that only read the workspace's own objects (objects.py): its listing and its object reads.
+_OBJECT_READS = ('list_objects_v2', 'get_object')
+
+
 def _assert_only_this_workspaces_exports(world: World) -> None:
-    keys = {key for _method, key in world.s3.calls}
-    assert keys
-    assert all(key.startswith(f'ws/{WS}/exports/{EXPORT_ID}/') for key in keys)
-    assert all(tagging == 'voc-export=true' for _body, tagging in world.s3.objects.values())
+    """Every write under this export's folder, tagged; every read of the workspace's own objects under ``ws/{WS}/``
+    (the listing's prefix exactly), never another workspace's."""
+    calls = world.s3.calls
+    assert calls
+    for method, key in calls:
+        if method == 'list_objects_v2' or (method == 'get_object' and not key.startswith(f'ws/{WS}/exports/')):
+            assert key.startswith(f'ws/{WS}/')
+        else:
+            assert key.startswith(f'ws/{WS}/exports/{EXPORT_ID}/'), (method, key)
+    assert all(tagging == 'voc-export=true' for key, (_body, tagging) in world.s3.objects.items()
+               if key.startswith(f'ws/{WS}/exports/'))
 
 
 def test_a_one_invocation_export_holds_every_entity_and_its_manifest(world):
@@ -108,7 +119,10 @@ def test_a_one_invocation_export_holds_every_entity_and_its_manifest(world):
     assert manifest['entities']['members']['count'] == 2
     assert manifest['counts_check'] | {'note': None} == {
         'feedback': FEEDBACK_COUNT, 'daily_total': FEEDBACK_COUNT, 'matches': True, 'note': None}
-    assert manifest['raw_objects']['status'] == 'not_included_yet'
+    assert 'raw_objects' not in manifest
+    assert (manifest['objects']['count'], manifest['objects']['bytes'], manifest['objects']['not_included']) == (
+        0, 0, [])
+    assert 'older versions' in manifest['objects']['versions']
     assert 'credentials' in manifest['excluded']
     assert manifest['not_per_workspace']['projects_documents'] == {
         'status': 'not_per_workspace', 'phase': 3, 'count': 0}

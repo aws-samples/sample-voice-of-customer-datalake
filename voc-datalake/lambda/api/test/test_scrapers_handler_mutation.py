@@ -549,10 +549,12 @@ class TestDeleteScraper:
             'other': 'x', 'webscraper_configs': '[{"id": "a"}, {"id": "c"}]',
         })
 
-    def test_an_unknown_id_writes_the_list_back_unchanged(self, store, api_gateway_event, lambda_context):
+    def test_an_unknown_id_writes_nothing(self, store, api_gateway_event, lambda_context):
+        """Nothing to remove: the list is left as stored, unwritten (so a workspace without a list never gets an empty
+        one: test_operator_routes_workspace.py)."""
         store.client.get_secret_value.return_value = _secret_answer([{'id': 'a'}])
         assert self._delete(api_gateway_event, lambda_context, 'zzz') == (200, {'success': True})
-        assert _written_configs(store.put) == [{'id': 'a'}]
+        store.put.assert_not_called()
 
     def test_no_secrets_arn_is_a_500_before_any_read(self, store, api_gateway_event, lambda_context):
         with patch.object(h, 'SECRETS_ARN', ''):
@@ -563,6 +565,7 @@ class TestDeleteScraper:
 
     def test_a_failed_write_is_a_500_logged_once_with_the_cause(self, store, logger, api_gateway_event, lambda_context):
         error = aws_error('throttled', 'PutSecretValue', 'ThrottlingException')
+        store.client.get_secret_value.return_value = _secret_answer([{'id': 'b'}])
         store.put.side_effect = error
         assert self._delete(api_gateway_event, lambda_context) == (
             500, {'success': False, 'error': 'Failed to delete scraper configuration'},

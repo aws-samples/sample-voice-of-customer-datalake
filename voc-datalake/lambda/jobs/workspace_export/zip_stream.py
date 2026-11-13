@@ -1,11 +1,12 @@
 """A streaming ZIP64 writer that can stop between entries and carry on in another invocation, and the part sink it
 writes into (docs/multi-workspace.md, "Export and delete").
 
-Pure: no AWS, no clock. The export job (handler.py) wires it to one S3 multipart upload.
+Pure: no AWS, no clock (its one import, shared/unicode_categories.py, is a constant). The export job (handler.py) wires it to one S3 multipart upload.
 
 The zip (PKWARE APPNOTE 6.3.x):
 
-* every entry is DEFLATE with a data descriptor (flag bit 3) and UTF-8 names (bit 11), so it is written in one pass
+* every entry is DEFLATE (or STORE, for bytes already compressed: an image, a zip, a gzip) with a data descriptor
+  (flag bit 3) and UTF-8 names (bit 11), so it is written in one pass
   without seeking back: the local header carries zero CRC and sizes, the data descriptor after the data carries
   them (ZIP64 form: 8-byte sizes);
 * ZIP64 always: the local header's sizes are 0xFFFFFFFF with a ZIP64 extra field, the central directory's sizes and
@@ -26,13 +27,16 @@ invocation starts its sink with it; ``close`` uploads the last part, the only on
 from __future__ import annotations
 
 import struct
+import unicodedata
 import zlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final, Protocol
 
-__all__ = ['PartSink', 'ZipEntry', 'ZipState', 'ZipWriter']
+from shared.unicode_categories import DISGUISING_CATEGORIES
+
+__all__ = ['BadEntryName', 'PartSink', 'ZipEntry', 'ZipState', 'ZipWriter', 'entry_name']
 
 PART_SIZE: Final = 64 * 1024 * 1024
 #: S3's minimum size of every part but the last.
@@ -62,6 +66,7 @@ _VERSION_MADE_BY: Final = (3 << 8) | _VERSION_ZIP64
 #: Bit 3 (sizes and CRC in the data descriptor) and bit 11 (UTF-8 names).
 _FLAGS: Final = 0x0808
 _DEFLATE: Final = 8
+_STORE: Final = 0
 _MAX16: Final = 0xFFFF
 _MAX32: Final = 0xFFFFFFFF
 _FILE_MODE: Final = 0o100644
@@ -91,14 +96,53 @@ def _dos_time(moment: datetime) -> tuple[int, int]:
     return time, date
 
 
-def _entry_name(name: str) -> bytes:
-    """``name`` as stored: a relative path of non-empty segments, never ``.`` or ``..``, at most 65,535 bytes."""
-    segments = name.split('/')
-    if not name or any(segment in ('', '.', '..') for segment in segments) or '\\' in name or '\x00' in name:
-        raise ValueError('an entry name is a relative path of plain segments')
-    encoded = name.encode('utf-8')
+class BadEntryName(ValueError):
+    """A name a zip entry may not carry; its message says which rule (``entry_name``)."""
+
+
+#: Characters Windows refuses in a file name (beside ``/``, the zip's separator).
+_WINDOWS_REFUSED: Final = frozenset('\\:<>"|?*')
+#: Windows' reserved device names: a segment that is one of them (any case, with any extension) opens the device.
+_WINDOWS_DEVICES: Final = frozenset({'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$',
+                                     *(f'COM{n}' for n in range(1, 10)), *(f'LPT{n}' for n in range(1, 10))})
+
+
+def _plain_segments(name: str) -> bool:
+    """Every ``/`` segment of ``name`` is plain: not empty, ``.`` or ``..`` once trailing dots and spaces are dropped
+    (as Windows drops them), and not a reserved device name with or without an extension."""
+    for segment in name.split('/'):
+        trimmed = segment.rstrip('. ')
+        if trimmed in ('', '.', '..') or trimmed.split('.', 1)[0].rstrip(' ').upper() in _WINDOWS_DEVICES:
+            return False
+    return True
+
+
+def entry_name(name: str) -> bytes:
+    """``name`` as stored: no backslash or other character Windows refuses (``\\:<>"|?*``); no control, format (bidi,
+    zero-width) or separator character (shared/unicode_categories.py ``DISGUISING_CATEGORIES``: each can disguise a
+    name); a relative path of plain segments (``_plain_segments``), also in its NFKC form, which may hold no ``/`` or
+    ``\\`` the name does not (a full-width solidus, reverse solidus or dot folds into one when a tool normalises
+    it); valid UTF-8; at most 65,535 bytes. ``BadEntryName`` otherwise (an object's key is user data: the export
+    skips one that fails and lists it)."""
+    if any(char in _WINDOWS_REFUSED for char in name):
+        raise BadEntryName('an entry name holds no backslash, nor any of :<>"|?*')
+    if any(unicodedata.category(char) in DISGUISING_CATEGORIES for char in name):
+        raise BadEntryName('an entry name holds no control, format (bidi, zero-width) or separator character')
+    folded = unicodedata.normalize('NFKC', name)
+    if any(char in _WINDOWS_REFUSED for char in folded):
+        # A full-width colon, angle bracket, quote, bar, question mark or star folds into the character itself.
+        raise BadEntryName('an entry name holds no backslash, nor any of :<>"|?*, also once normalised (NFKC)')
+    if (not _plain_segments(name) or not _plain_segments(folded)
+            or folded.count('/') != name.count('/')):
+        raise BadEntryName('an entry name is a relative path of plain segments (no empty, "." or ".." segment, '
+                           'nor one that is only dots and spaces, nor a reserved device name), also once '
+                           'normalised (NFKC)')
+    try:
+        encoded = name.encode('utf-8')
+    except UnicodeEncodeError:
+        raise BadEntryName('an entry name is valid UTF-8') from None
     if len(encoded) > _MAX16:
-        raise ValueError('an entry name is at most 65,535 bytes')
+        raise BadEntryName('an entry name is at most 65,535 bytes')
     return encoded
 
 
@@ -125,11 +169,12 @@ class ZipState:
 class ZipEntry:
     """One open entry: ``write`` its bytes, then ``close`` it (its central-directory record)."""
 
-    def __init__(self, writer: ZipWriter, name: bytes, header_offset: int) -> None:
+    def __init__(self, writer: ZipWriter, name: bytes, header_offset: int, method: int) -> None:
         self._writer = writer
         self._name = name
         self._header_offset = header_offset
-        self._compressor: Any = zlib.compressobj(_LEVEL, zlib.DEFLATED, _RAW_DEFLATE)
+        self._method = method
+        self._compressor: Any = zlib.compressobj(_LEVEL, zlib.DEFLATED, _RAW_DEFLATE) if method == _DEFLATE else None
         self._crc = 0
         self._size = 0
         self._compressed = 0
@@ -147,7 +192,7 @@ class ZipEntry:
             return
         self._crc = zlib.crc32(data, self._crc)
         self._size += len(data)
-        self._emit(self._compressor.compress(data))
+        self._emit(data if self._compressor is None else self._compressor.compress(data))
 
     def _emit(self, chunk: bytes) -> None:
         if chunk:
@@ -158,7 +203,8 @@ class ZipEntry:
         """End the entry: the compressor's last bytes, the data descriptor; its central-directory record."""
         if self._closed:
             raise ValueError('the entry is closed')
-        self._emit(self._compressor.flush())
+        if self._compressor is not None:
+            self._emit(self._compressor.flush())
         self._closed = True
         self._writer.emit(_DATA_DESCRIPTOR.pack(_DATA_DESCRIPTOR_SIGNATURE, self._crc, self._compressed, self._size))
         self._writer.entry_closed(self)
@@ -166,7 +212,7 @@ class ZipEntry:
                                           self._compressed, self._header_offset)
         time, date = self._writer.dos_time
         header = _CENTRAL_HEADER.pack(
-            _CENTRAL_HEADER_SIGNATURE, _VERSION_MADE_BY, _VERSION_ZIP64, _FLAGS, _DEFLATE, time, date, self._crc,
+            _CENTRAL_HEADER_SIGNATURE, _VERSION_MADE_BY, _VERSION_ZIP64, _FLAGS, self._method, time, date, self._crc,
             _MAX32, _MAX32, len(self._name), len(extra), 0, 0, 0, _FILE_MODE << 16, _MAX32)
         return header + self._name + extra
 
@@ -199,33 +245,39 @@ class ZipWriter:
         self._open = None
         self._state = ZipState(offset=self._state.offset, entries=self._state.entries + 1)
 
-    def open_entry(self, name: str) -> ZipEntry:
-        """Write ``name``'s local header and return the entry (one at a time)."""
+    def open_entry(self, name: str, *, store: bool = False) -> ZipEntry:
+        """Write ``name``'s local header and return the entry (one at a time): DEFLATE, or STORE (``store``: bytes
+        already compressed, which DEFLATE would only make slower, not smaller)."""
         if self._open is not None or self._finished:
             raise ValueError('an entry is already open, or the zip is finished')
-        encoded = _entry_name(name)
+        encoded = entry_name(name)
         extra = _ZIP64_LOCAL_EXTRA.pack(_ZIP64_EXTRA_ID, _ZIP64_LOCAL_EXTRA.size - 4, 0, 0)
         time, date = self.dos_time
-        entry = ZipEntry(self, encoded, self._state.offset)
-        self.emit(_LOCAL_HEADER.pack(_LOCAL_HEADER_SIGNATURE, _VERSION_ZIP64, _FLAGS, _DEFLATE, time, date, 0,
+        method = _STORE if store else _DEFLATE
+        entry = ZipEntry(self, encoded, self._state.offset, method)
+        self.emit(_LOCAL_HEADER.pack(_LOCAL_HEADER_SIGNATURE, _VERSION_ZIP64, _FLAGS, method, time, date, 0,
                                      _MAX32, _MAX32, len(encoded), len(extra)) + encoded + extra)
         self._open = entry
         return entry
 
-    def finish(self, central_directory: bytes) -> None:
+    def finish(self, central_directory: Iterable[bytes]) -> None:
         """End the zip: the central directory (every entry's record, in the order they were closed, from every
-        invocation), the ZIP64 end record and locator, and the end record. ValueError when the records are not
-        exactly the entries written."""
+        invocation), the ZIP64 end record and locator, and the end record. ``central_directory`` is streamed chunk by
+        chunk (each a whole number of records: one invocation's), so only one chunk is held at a time. ValueError
+        when the records are not exactly the entries written (the zip is then unusable: the job fails)."""
         if self._open is not None or self._finished:
             raise ValueError('an entry is open, or the zip is finished')
         entries = self._state.entries
-        if count_central_records(central_directory) != entries:
-            raise ValueError('the central directory does not hold every entry')
         start = self._state.offset
-        self.emit(central_directory)
+        records = 0
+        for chunk in central_directory:
+            records += count_central_records(chunk)
+            self.emit(chunk)
+        if records != entries:
+            raise ValueError('the central directory does not hold every entry')
         end_of_directory = self._state.offset
         self.emit(_ZIP64_END.pack(_ZIP64_END_SIGNATURE, _ZIP64_END_SIZE, _VERSION_MADE_BY, _VERSION_ZIP64, 0, 0,
-                                  entries, entries, len(central_directory), start))
+                                  entries, entries, end_of_directory - start, start))
         self.emit(_ZIP64_LOCATOR.pack(_ZIP64_LOCATOR_SIGNATURE, 0, end_of_directory, 1))
         self.emit(_END.pack(_END_SIGNATURE, 0, 0, _MAX16, _MAX16, _MAX32, _MAX32, 0))
         self._finished = True
