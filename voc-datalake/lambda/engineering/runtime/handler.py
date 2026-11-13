@@ -1,12 +1,12 @@
 """voc-engineering-runtime: a run's start and end, the supervisor's tick, the launcher, the run monitor's signals.
 
 - ``{"action": "start_run", "run_id", "max_tasks", "max_tokens"?, "max_cost_usd"?, "goal"?, "repo"?, "flow"?,
-  "connection"?, "commit"?, "language"?}``: the run's ``META`` row and its ``coordinate`` task
+  "connection"?, "commit"?, "language"?, "actor"?}``: the run's ``META`` row and its ``coordinate`` task
   (``runs.RunStore.start``), the supervisor's rule switched on, and, for a run with its connection, commit and
   language, its coordinator launched on that task (``coordinator-1``, on the coordinator's skill's harness). A
   retry of a run that is live switches the rule on again, keeps the first start's caps and launches the
   coordinator only if the run is active and no session of it exists yet.
-- ``{"action": "end_run", "run_id", "status"}``: the run ended (``done``, ``failed`` or ``stopped``), every
+- ``{"action": "end_run", "run_id", "status", "actor"?}``: the run ended (``done``, ``failed`` or ``stopped``), every
   MicroVM of it ended (one busy with another move at the next tick, which sees the run ended), then settled. A
   retry of an ended run does the rest again and keeps the first end's status.
 - ``{"action": "tick"}``: the supervisor's EventBridge rule, every minute while any run is listed
@@ -16,13 +16,17 @@
 - ``{"action": "launch", ...}``: the run coordinator starting one agent of an active run on one task: the
   MicroVM from the agent's image, with its egress allowlist, and the session row (the first tick hands it its
   role session).
-- ``{"action": "signal", "run_id", "agent_id"?, "signal", "attempt"?}``: the run monitor's Save, Pause, Resume,
+- ``{"action": "signal", "run_id", "agent_id"?, "signal", "attempt"?, "actor"?}``: the run monitor's Save, Pause, Resume,
   Shut down and Stop now (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
   (``applied``: not when busy, a failed move, or ``stale``, an agent on another attempt than the one given).
 
 ``delivery_handler`` is voc-engineering-delivery's entry point, the same code with a role of its own
 (engineering-runtime.ts createDelivery): the router's message for an agent, the conductor or a role of a run,
 recorded in the run's inbox and its addressees woken (``delivery.py``).
+
+``actor`` is who asked (a person's id; the run monitor is to send it with its signals, and no caller sends it yet): a
+run's start, its end and a person's Resume of the whole run record it with the change (D4: ``runs.py``), as
+``unattributed`` when it is missing; the supervisor's decision points record ``supervisor``.
 
 Both functions' supervisor reads the board through its store and speaks on the bus as the supervisor
 (``board_bus.py``: ``ENGINEERING_BUS_NAME``); the run's controls are its own rows (``runs.TableRunControl``); a
@@ -94,7 +98,7 @@ def _supervisor() -> Supervisor:
             runtime=_runtime(),
             sessions=SessionStore(get_dynamodb_resource().Table(table), runs,
                                   caps.microvm_price(os.environ.get('ENGINEERING_MICROVM_USD_PER_SECOND'))),
-            board=board, bus=bus, control=TableRunControl(runs),
+            board=board, bus=bus, control=TableRunControl(runs, clock),
             launcher=Launcher(_sts_client(), json.loads(os.environ['ENGINEERING_AGENT_ROLE_ARNS'])),
             checkpoints=CheckpointReader(get_s3_client(), workspace),
             bucket=bucket, workspace_bucket=workspace,
@@ -130,7 +134,7 @@ def signal(event: Mapping[str, Any]) -> dict[str, Any]:
     if kind == 'resume' and agent_id is None:
         # The supervisor accepted it (the run is not ended, its budget not spent): the run may launch agents again.
         with contextlib.suppress(RunNotActive):  # it was not at a decision point
-            _runs().resume(run_id)
+            _runs().resume(run_id, now=int(clock()), actor=str(event.get('actor') or ''))
     return {'agents': {agent: status for agent, (status, _) in answers.items()},
             'applied': {agent: applied for agent, (_, applied) in answers.items()}}
 
@@ -220,7 +224,7 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
         runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),
                    repo=str(event.get('repo', '')), flow=str(event.get('flow', '')),
                    connection=str(event.get('connection', '')), commit=str(event.get('commit', '')),
-                   language=str(event.get('language', '')))
+                   language=str(event.get('language', '')), actor=str(event.get('actor') or ''))
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:
@@ -235,7 +239,7 @@ def end_run(event: Mapping[str, Any]) -> dict[str, Any]:
     """End a run and every MicroVM of it, then settle."""
     run_id, status, runs = str(event.get('run_id', '')), str(event.get('status', '')), _runs()
     try:
-        runs.end(run_id, status, now=int(clock()))
+        runs.end(run_id, status, now=int(clock()), actor=str(event.get('actor') or ''))
     except RunNotActive:
         run = runs.get(run_id)
         if run is None or run.status not in ENDED:

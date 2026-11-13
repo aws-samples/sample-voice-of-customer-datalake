@@ -304,7 +304,7 @@ def test_a_start_whose_coordinator_failed_to_launch_launches_it_on_its_retry(
 
 def test_a_retried_start_of_a_run_at_its_decision_point_launches_nothing(wired: Any, monkeypatch: pytest.MonkeyPatch):
     _start_whose_launch_fails(monkeypatch)
-    _runs().needs_human(OTHER_RUN, 'budget')
+    _runs().needs_human(OTHER_RUN, 'budget', now=1)
     _runtime, started = _recording(monkeypatch)
     assert handler.lambda_handler(COORDINATED, None) == {'run_id': OTHER_RUN, 'status': 'needs_human'}
     assert (started, _state(wired)) == ([], 'ENABLED')
@@ -324,9 +324,21 @@ def test_a_start_with_a_language_that_has_no_image_is_refused_before_anything_is
     assert _runs().get(OTHER_RUN) is None
 
 
+def test_who_resumed_or_ended_a_run_is_recorded_with_the_change(wired: Any):
+    assert wired is not None
+    _runs().needs_human(RUN, 'budget', now=1)
+    handler.lambda_handler({'action': 'signal', 'run_id': RUN, 'signal': 'resume', 'actor': 'admin-2'}, None)
+    handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'stopped', 'actor': 'admin-1'}, None)
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    rows = table.query(KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
+                       ExpressionAttributeValues={':pk': meta_key(RUN)['pk'], ':log': 'RUNLOG#'})['Items']
+    assert sorted((str(row['status']), str(row['actor'])) for row in rows) == [
+        ('active', 'admin-2'), ('active', 'unattributed'), ('needs_human', 'supervisor'), ('stopped', 'admin-1')]
+
+
 def test_resuming_a_run_at_its_decision_point_lets_it_launch_again(wired: Any):
     assert wired is not None
-    _runs().needs_human(RUN, 'budget')
+    _runs().needs_human(RUN, 'budget', now=1)
     with pytest.raises(RunNotActive, match='active run'):
         handler.lambda_handler(LAUNCH, None)
     handler.lambda_handler({'action': 'signal', 'run_id': RUN, 'signal': 'resume'}, None)

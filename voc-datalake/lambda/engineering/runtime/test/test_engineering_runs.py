@@ -4,6 +4,7 @@ from typing import Any
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 
 from engineering.board.store import BoardStore
 from engineering.runtime.interface import RuntimeRefused
@@ -49,8 +50,8 @@ def test_an_ended_run_keeps_the_counters_and_stays_listed_until_released(aws):
 @pytest.mark.parametrize(('step', 'refused'), [
     (lambda runs: runs.start(RUN, caps=RunCaps(max_tasks=1), now=0), RunExists),
     (lambda runs: runs.end(OTHER, 'done', now=0), RunNotActive),
-    (lambda runs: runs.needs_human(OTHER, 'budget'), RunNotActive),
-    (lambda runs: runs.resume(RUN), RunNotActive),
+    (lambda runs: runs.needs_human(OTHER, 'budget', now=1), RunNotActive),
+    (lambda runs: runs.resume(RUN, now=2), RunNotActive),
     (lambda runs: runs.end(RUN, 'active', now=0), RuntimeRefused),
 ], ids=['started-twice', 'end-never-started', 'decision-never-started', 'resume-not-waiting', 'not-an-end'])
 def test_a_run_starts_once_and_only_a_live_run_ends(aws, step: Any, refused: type[Exception]):
@@ -76,14 +77,14 @@ def test_an_ended_run_does_not_end_twice(aws):
 def test_a_run_at_a_decision_point_is_resumed_or_ended(aws):
     runs = RunStore(aws[1])
     runs.start(RUN, caps=RunCaps(max_tasks=1), now=0)
-    runs.needs_human(RUN, 'budget')
-    runs.resume(RUN)
+    runs.needs_human(RUN, 'budget', now=1)
+    runs.resume(RUN, now=2)
     meta = aws[1].get_item(Key=META)['Item']
     assert (meta['status'], 'needs_human' in meta) == ('active', False)
-    runs.needs_human(RUN, 'thirty_days')
+    runs.needs_human(RUN, 'thirty_days', now=1)
     # That decision point offers only "stop".
     with pytest.raises(RunNotActive):
-        runs.resume(RUN)
+        runs.resume(RUN, now=2)
     runs.end(RUN, 'stopped', now=5)
     assert aws[1].get_item(Key=META)['Item']['status'] == 'stopped'
 
@@ -152,3 +153,73 @@ def test_the_coordinator_is_the_runs_first_agent_so_the_board_numbers_its_launch
                         parent_task='', priority=1, actor='coordinator-1')
     launched = board.launch('default', RUN, posted.task.task_id, role='fixer', actor='coordinator-1')
     assert launched.task.launched_agent == 'fixer-2'
+
+
+def _history(table: Any) -> list[tuple[str, str, str, str]]:
+    """The run's status history (D4), oldest first: (status, actor, reason, at)."""
+    rows = table.query(KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
+                       ExpressionAttributeValues={':pk': META['pk'], ':log': 'RUNLOG#'})['Items']
+    return [(str(row['status']), str(row['actor']), str(row.get('reason', '')), str(row['at'])) for row in rows]
+
+
+def test_every_change_of_a_runs_status_records_who_made_it_and_when(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, actor='admin-1')
+    runs.needs_human(RUN, 'budget', now=60)
+    runs.resume(RUN, now=120, actor='admin-2')
+    runs.end(RUN, 'stopped', now=180, actor='admin-1')
+    assert _history(aws[1]) == [
+        ('active', 'admin-1', '', '1970-01-01T00:00:00Z'),
+        ('needs_human', 'supervisor', 'budget', '1970-01-01T00:01:00Z'),
+        ('active', 'admin-2', 'resumed', '1970-01-01T00:02:00Z'),
+        ('stopped', 'admin-1', '', '1970-01-01T00:03:00Z')]
+    assert 'needs_human' not in aws[1].get_item(Key=META)['Item']
+
+
+def test_the_supervisors_decision_point_is_recorded_at_its_clocks_time(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    TableRunControl(runs, clock=lambda: 90.0).needs_human(RUN, 'budget')
+    assert _history(aws[1])[-1] == ('needs_human', 'supervisor', 'budget', '1970-01-01T00:01:30Z')
+
+
+def test_a_status_change_that_lost_a_race_with_another_write_of_meta_is_tried_again(
+        aws: Any, monkeypatch: pytest.MonkeyPatch):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    client = aws[1].meta.client
+    original, calls = client.transact_write_items, []
+
+    def racing(**kwargs: Any) -> Any:
+        calls.append(kwargs)
+        if len(calls) == 1:   # the supervisor's tick wrote META in between
+            raise ClientError({'Error': {'Code': 'TransactionCanceledException', 'Message': 'conflict'},
+                               'CancellationReasons': [{'Code': 'TransactionConflict'}, {'Code': 'None'}]},
+                              'TransactWriteItems')
+        return original(**kwargs)
+
+    monkeypatch.setattr(client, 'transact_write_items', racing)
+    runs.end(RUN, 'stopped', now=60, actor='admin-1')
+    assert (len(calls), _history(aws[1])[-1][:2]) == (2, ('stopped', 'admin-1'))
+
+
+def test_a_decision_point_asked_for_again_writes_nothing_and_the_thirty_day_one_is_kept(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    for tick in range(3):   # the supervisor asks on every tick while the budget stays spent
+        runs.needs_human(RUN, 'budget', now=60 * (tick + 1))
+    runs.needs_human(RUN, 'thirty_days', now=240)
+    runs.needs_human(RUN, 'budget', now=300)   # never replaces the 30-day point, which only a stop ends
+    assert [(status, reason) for status, _actor, reason, _at in _history(aws[1])] == [
+        ('active', ''), ('needs_human', 'budget'), ('needs_human', 'thirty_days')]
+    assert aws[1].get_item(Key=META)['Item']['needs_human'] == 'thirty_days'
+    runs.end(RUN, 'done', now=360)
+    with pytest.raises(RunNotActive):   # an ended run is past every decision point
+        runs.needs_human(RUN, 'budget', now=420)
+
+
+def test_a_change_with_no_actor_is_unattributed_and_an_actor_is_kept_to_its_printable_text(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
+    runs.end(RUN, 'done', now=1, actor='admin\n1' + 'a' * 300)   # a stop never fails over its label
+    assert [actor for _status, actor, _reason, _at in _history(aws[1])] == ['unattributed', 'admin1' + 'a' * 194]

@@ -9,6 +9,12 @@ inbox's counters: after the first write every change is an update of this module
 takes the run's first agent number (``agent_count`` 1, the board's counter of ``<role>-<n>`` ids) for its
 coordinator, ``coordinator-1`` (``COORDINATOR_AGENT``), so the board numbers the agents it launches from 2.
 
+Every change of a run's status (its start, its end, a decision point, a person's resume) records who made it and
+when (D4): a row of its own, ``RUNLOG#<at>#<status>#<hex>`` (the status, the actor, the reason, the time), written in
+the same transaction as META's change, so the run's history is never only its last state. A decision point the run
+already waits at, for the same reason, changes nothing and writes no row (the supervisor asks for it on every tick
+while a budget stays spent). A change that loses a race with another write of META is tried again.
+
 ``WS#<ws>#RUNS`` holds one row per run the supervisor still watches (``RUN#<run>``), written in the same
 transaction as the run's ``META`` (the table has no index, so this is how the supervisor lists them). A run's end
 does not remove it: the run stays listed until none of its agents is live (``release``), so the supervisor ends
@@ -18,6 +24,9 @@ switches the supervisor's schedule.
 from __future__ import annotations
 
 import math
+import secrets
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
@@ -30,7 +39,7 @@ from engineering.runtime.checkout import COMMIT_RE
 from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
 from engineering.runtime.ports import Budget
-from shared.aws import consistent_item, is_conditional_check_failure
+from shared.aws import consistent_item
 from shared.dynamo_paging import iter_query
 from shared.ids import is_key_collision
 
@@ -38,6 +47,14 @@ from shared.ids import is_key_collision
 ENDED: Final = frozenset({'done', 'failed', 'stopped'})
 MAX_TEXT: Final = 500
 MAX_TASKS_LIMIT: Final = 10_000
+#: Who changed a run's status when its caller named nobody (D4 keeps the gap visible rather than guessing).
+UNATTRIBUTED: Final = 'unattributed'
+#: The supervisor, as the actor of the decision points it sets.
+SUPERVISOR: Final = 'supervisor'
+MAX_ACTOR: Final = 200
+#: How often a status change is tried when another write of META races it (a transaction conflict).
+STATUS_TRIES: Final = 3
+STATUS_PAUSE_S: Final = 0.05
 #: The run coordinator's agent id: the run's first agent (``agent_count`` 1 at its start).
 COORDINATOR_AGENT: Final = 'coordinator-1'
 
@@ -102,12 +119,35 @@ def _text(value: str) -> str:
     return value[:MAX_TEXT]
 
 
+def _actor(actor: str) -> str:
+    """Who made a change, as recorded: its printable characters, at most ``MAX_ACTOR``; ``UNATTRIBUTED`` for none. Never
+    refused: a stop never fails over its audit label."""
+    return ''.join(char for char in actor if char.isprintable())[:MAX_ACTOR] or UNATTRIBUTED
+
+
+def _conflict(error: ClientError) -> bool:
+    """The transaction lost a race with another write of one of its items (worth one more try)."""
+    reasons = error.response.get('CancellationReasons') or []
+    return any(reason.get('Code') == 'TransactionConflict' for reason in reasons)
+
+
+def _history(run_id: str, *, status: str, actor: str, now: int, reason: str = '') -> dict[str, Any]:
+    """The change's own row (D4): a random suffix keeps two changes in one second apart, so a history write never
+    fails the change it records."""
+    at = _iso(now)
+    item = {'pk': run_pk(run_id), 'sk': f'RUNLOG#{at}#{status}#{secrets.token_hex(4)}', 'kind': 'run_status',
+            'status': status, 'actor': _actor(actor), 'at': at}
+    if reason:
+        item['reason'] = reason
+    return item
+
+
 class RunStore:
     def __init__(self, table: Any) -> None:
         self._table = table
 
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
-              connection: str = '', commit: str = '', language: str = '') -> None:
+              connection: str = '', commit: str = '', language: str = '', actor: str = '') -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
@@ -138,39 +178,66 @@ class RunStore:
                 {'Put': {'TableName': name, 'Item': {**_registry_key(run_id), 'run_id': run_id}}},
                 *({'Put': {'TableName': name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(sk)'}}
                   for item in coordinate),
+                {'Put': {'TableName': name, 'Item': _history(run_id, status='active', actor=actor, now=now)}},
             ])
         except ClientError as error:
             if is_key_collision(error, put_index=0):
                 raise RunExists(f'run {run_id} was started already') from error
             raise
 
-    def _update_status(self, run_id: str, expression: str, condition: str, values: dict[str, Any]) -> None:
-        try:
-            self._table.update_item(Key=meta_key(run_id), UpdateExpression=expression, ConditionExpression=condition,
-                                    ExpressionAttributeNames={'#status': 'status'},
-                                    ExpressionAttributeValues={**values, ':human': 'needs_human'})
-        except ClientError as error:
-            if is_conditional_check_failure(error):
-                raise RunNotActive(f'run {run_id} is not active') from error
-            raise
+    def _update_status(self, run_id: str, history: dict[str, Any], expression: str, condition: str,
+                       values: dict[str, Any]) -> None:
+        """META's status change and its ``history`` row, together: ``RunNotActive`` when META's condition fails, tried
+        again (``STATUS_TRIES`` in all) when another write of META raced it."""
+        name = self._table.name
+        update = {'TableName': name, 'Key': meta_key(run_id), 'ConditionExpression': condition,
+                  'UpdateExpression': expression, 'ExpressionAttributeNames': {'#status': 'status'},
+                  'ExpressionAttributeValues': {**values, ':human': 'needs_human'}}
+        for tries in range(1, STATUS_TRIES + 1):
+            try:
+                self._table.meta.client.transact_write_items(TransactItems=[
+                    {'Update': update}, {'Put': {'TableName': name, 'Item': history}}])
+            except ClientError as error:
+                if is_key_collision(error, put_index=0):
+                    raise RunNotActive(f'run {run_id} is not active') from error
+                if not _conflict(error) or tries == STATUS_TRIES:
+                    raise
+            else:
+                return
+            time.sleep(STATUS_PAUSE_S * tries)   # the racing write is in flight: give it time to land
 
-    def end(self, run_id: str, status: str, *, now: int) -> None:
+    def end(self, run_id: str, status: str, *, now: int, actor: str = '') -> None:
         """End a live run with ``status`` (it stays listed until ``release``); ``RunNotActive`` when it is not live."""
         if status not in ENDED:
             raise RuntimeRefused(f'a run ends as one of {sorted(ENDED)}')
-        self._update_status(run_id, 'SET #status = :status, ended_at = :ended', '#status IN (:active, :human)',
+        self._update_status(run_id, _history(run_id, status=status, actor=actor, now=now),
+                            'SET #status = :status, ended_at = :ended', '#status IN (:active, :human)',
                             {':status': status, ':ended': _iso(now), ':active': 'active'})
 
-    def needs_human(self, run_id: str, reason: str) -> None:
-        """The run waits at a human decision point (its agents are held, and none is launched, meanwhile)."""
-        self._update_status(run_id, 'SET #status = :human, needs_human = :reason', '#status IN (:active, :human)',
-                            {':reason': _text(reason), ':active': 'active'})
+    def needs_human(self, run_id: str, reason: str, *, now: int) -> None:
+        """The run waits at a human decision point (its agents are held, and none is launched, meanwhile). One it
+        already waits at for the same reason changes nothing; the 30-day one is never replaced by another. Only the
+        supervisor sets one (the history's actor)."""
+        reason = _text(reason)
+        try:
+            self._update_status(run_id, _history(run_id, status='needs_human', actor=SUPERVISOR, now=now,
+                                                 reason=reason),
+                                'SET #status = :human, needs_human = :reason',
+                                '#status = :active OR (#status = :human AND needs_human <> :reason '
+                                'AND needs_human <> :thirty)',
+                                {':reason': reason, ':active': 'active', ':thirty': 'thirty_days'})
+        except RunNotActive:
+            run = consistent_item(self._table, meta_key(run_id))
+            if run is not None and run.get('status') == 'needs_human':
+                return   # at a decision point already: this one's reason, or the 30-day one, which only a stop ends
+            raise
 
-    def resume(self, run_id: str) -> None:
+    def resume(self, run_id: str, *, now: int, actor: str = '') -> None:
         """A person resumed the run from its decision point: active again; ``RunNotActive`` when it was not waiting."""
         # Never off the 30-day decision point, which offers only "stop".
-        self._update_status(run_id, 'SET #status = :active REMOVE needs_human',
-                            '#status = :human AND needs_human <> :thirty', {':active': 'active', ':thirty': 'thirty_days'})
+        self._update_status(run_id, _history(run_id, status='active', actor=actor, now=now, reason='resumed'),
+                            'SET #status = :active REMOVE needs_human', '#status = :human AND needs_human <> :thirty',
+                            {':active': 'active', ':thirty': 'thirty_days'})
 
     def release(self, run_id: str) -> None:
         """No agent of the ended run is live: the supervisor stops watching it (idempotent)."""
@@ -208,8 +275,9 @@ class RunStore:
 class TableRunControl:
     """The supervisor's ``RunControl`` on the run's own rows: its caps, its start, its stop, its decision point."""
 
-    def __init__(self, runs: RunStore) -> None:
+    def __init__(self, runs: RunStore, clock: Callable[[], float] = time.time) -> None:
         self._runs = runs
+        self._clock = clock
 
     def _run(self, run_id: str) -> Run:
         run = self._runs.get(run_id)
@@ -230,4 +298,4 @@ class TableRunControl:
         return self._run(run_id).status in ENDED
 
     def needs_human(self, run_id: str, reason: str) -> None:
-        self._runs.needs_human(run_id, reason)
+        self._runs.needs_human(run_id, reason, now=int(self._clock()))

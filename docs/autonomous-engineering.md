@@ -801,8 +801,16 @@ continues it in a new one once the wait closes.
   in the same write as the agent's row, so a run that ends meanwhile gets no agent nothing supervises. The
   supervisor reads its caps, its spend (its agents' tokens and what was priced on their rows), its start and its
   end from there; a human decision point is the run's status, and a Resume of the whole run makes it active again
-  (never the 30-day one, which offers only "stop"). An agent's tokens are those of every MicroVM it ran in, not
-  only the current one's.
+  (never the 30-day one, which offers only "stop", nor replaced by another decision point). Every change of the
+  run's status (its start, its end, a decision point, a Resume) records who made it and when (D4): a row of its
+  own, in the same transaction as META's change (`RUNLOG#<at>#<status>#<hex>`, a random suffix: the status, the actor, the reason,
+  the time), so the run's history is more than its last state; a change that loses a race with another write of
+  META is tried again. The actor is the request's `actor` (its printable text), `unattributed` when it names
+  nobody, or `supervisor` for the decision points it sets. The run monitor is to send the person's id with its
+  signals (its side, not yet), and no caller of `start_run` or `end_run` sends one yet, so a person's change is
+  `unattributed` until they do. A decision point asked for again, for the same reason (the supervisor asks on every
+  tick while a budget stays spent), changes nothing and writes no row. An agent's tokens are those of every MicroVM
+  it ran in, not only the current one's.
 - **Sessions.** One row per agent of a run, the board's own `AGENT#<agent>` row in the run's partition: ids, times,
   the MicroVM's id and endpoint, the boot step, the continuation count, the checkpoint it restored from, the run
   monitor's inspection data, the live cost counters and what the reports read (role, model, skill version, MicroVM
