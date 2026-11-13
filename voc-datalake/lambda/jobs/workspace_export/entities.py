@@ -7,7 +7,8 @@ workspace layer (shared/ws_repo.py):
 * ``feedback``: voc-feedback's ``gsi1-by-date`` (every attribute projected), one partition per day,
   ``WS#{ws}#DATE#{yyyy-mm-dd}``, from the workspace's earliest date (``WS#{ws}#METRIC#meta`` / ``earliest_date``) to
   the day after the export started;
-* from voc-aggregates (``ws_table``): ``plugin_configs`` (``WS#{ws}#PLUGIN_CONFIG``), ``feedback_forms``
+* from voc-aggregates (``ws_table``): ``plugin_configs`` (``WS#{ws}#PLUGIN_CONFIG``), ``plugin_config_history``
+  (``#PLUGIN_CONFIG#HISTORY``: every list a save replaced, who saved it and who replaced it), ``feedback_forms``
   (``#FEEDBACK_FORM``), ``import_runs`` (each run's detail row ``#IMPORT_RUN#{run}``, found from its summary in
   ``#IMPORT_RUN``; the summary itself when the detail is gone) and ``erasure_jobs`` (``#JOB#erasure``, ``er_…`` rows,
   without ``value_hash``);
@@ -39,14 +40,16 @@ from shared.ws_repo import (
     control_query,
     date_pk,
     erasure_job_pk,
+    plugin_config_history_pk,
     plugin_config_pk,
 )
 
 __all__ = ['ENTITIES', 'FILE_CAP', 'ExportRefused', 'Source', 'encode_row', 'manifest']
 
-#: The entities in the order the export writes them.
+#: The entities in the order the export writes them. A job's checkpoint names its entity by index here, so a new
+#: entity goes last: an export running across a deploy resumes on the same entity.
 ENTITIES: Final = ('feedback', 'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'workspace',
-                   'members', 'audit')
+                   'members', 'audit', 'plugin_config_history')
 #: The most one JSONL file holds (before compression): a longer entity continues in its next file.
 FILE_CAP: Final = 256 * 1024 * 1024
 #: The index key of a feedback row: its table key and gsi1's, the cursor that resumes after it.
@@ -238,6 +241,7 @@ def _erasure_jobs(scope: WorkspaceScope) -> tuple[str, str | None, dict[str, str
 #: An aggregates entity: its partition, and the sort condition and values that keep its own rows (a lock row out).
 _AGGREGATE_PARTITIONS: Final = {
     'plugin_configs': lambda scope: (plugin_config_pk(scope), None, {}),
+    'plugin_config_history': lambda scope: (plugin_config_history_pk(scope), None, {}),
     'feedback_forms': lambda scope: (scope.key(FEEDBACK_FORM_PK), None, {}),
     'erasure_jobs': _erasure_jobs,
 }

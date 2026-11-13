@@ -27,6 +27,10 @@ from shared.ws_repo import (
     metric_pk,
     metric_type,
     partition_scope,
+    plugin_config_history_key,
+    plugin_config_history_pk,
+    plugin_config_key,
+    plugin_config_pk,
     s3_key,
     s3_prefix,
     scope_from_key,
@@ -119,6 +123,18 @@ class TestKeys:
         assert source_run_pk(A, 'webscraper') == f'WS#{WS}#SOURCE_RUN#webscraper'
         assert scraper_run_pk(A, 'shop') == f'WS#{WS}#SCRAPER_RUN#shop'
         assert watermark_key(A, 'webscraper', 'last_id') == f'WS#{WS}#webscraper#last_id'
+
+    def test_plugin_config_rows_and_their_history(self):
+        assert plugin_config_key(A, 'webscraper') == {'pk': f'WS#{WS}#PLUGIN_CONFIG', 'sk': 'webscraper'}
+        assert plugin_config_history_pk(A) == f'WS#{WS}#PLUGIN_CONFIG#HISTORY'
+        assert plugin_config_history_key(A, 'webscraper', '2026-11-13T10:00:00+00:00', 'ab12') == {
+            'pk': f'WS#{WS}#PLUGIN_CONFIG#HISTORY', 'sk': 'webscraper#2026-11-13T10:00:00+00:00#ab12'}
+        # Its own partition: a read of the lists (one Query of WS#{ws}#PLUGIN_CONFIG) never sees the history.
+        assert plugin_config_history_pk(A) != plugin_config_pk(A)
+        assert plugin_config_history_pk(A) != plugin_config_history_pk(B)
+        for parts in (('', 't', 'x'), ('webscraper', '', 'x'), ('webscraper', 't', '')):
+            with pytest.raises(ValueError, match='history key needs'):
+                plugin_config_history_key(A, *parts)
 
     def test_the_same_names_in_two_workspaces_never_meet(self):
         assert feedback_key(A, 's', 'x') != feedback_key(B, 's', 'x')

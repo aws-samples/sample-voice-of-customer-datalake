@@ -86,6 +86,11 @@ def test_a_one_invocation_export_holds_every_entity_and_its_manifest(world):
     assert {row['workspace_marker'] for row in feedback} == {WS}
     assert (feedback[0]['sentiment_score'], feedback[0]['tags']) == (0.25, ['checkout', 'mobile'])
     assert [row['sk'] for row in _jsonl(files, 'plugin_configs')] == ['webscraper']
+    # Every list a save replaced, with who saved and who replaced it; never another workspace's.
+    [history] = _jsonl(files, 'plugin_config_history')
+    assert (history['pk'], history['configs'], history['updated_by'], history['superseded_by_sub']) == (
+        f'WS#{WS}#PLUGIN_CONFIG#HISTORY', '[]', 'sub-ada', 'sub-ada')
+    assert json.loads(files['manifest.json'])['entities']['plugin_config_history']['count'] == 1
     assert [row['form_id'] for row in _jsonl(files, 'feedback_forms')] == ['ff_1']
     # Each run's detail row (its errors too), the summary where the detail is gone.
     runs = _jsonl(files, 'import_runs')
@@ -446,6 +451,30 @@ def test_too_little_time_to_complete_hands_over_once_more(world):
         assert following['run']['phase'] == 0
         assert handler.handle_event(following, Budget())['status'] == 'completed'
     assert set(_unzip(world)) == {'manifest.json'}
+
+
+def test_an_export_checkpointed_at_the_old_end_writes_the_config_history(world):
+    """An export that wrote the eight entities of the release before (phase 8, then handed over to complete) and
+    resumes after the deploy: phase 8 is now plugin_config_history, written before the zip completes."""
+    seed(world)
+    before = tuple(entity for entity in entities.ENTITIES if entity != 'plugin_config_history')
+    assert (*before, 'plugin_config_history') == entities.ENTITIES
+    write_entities = handler.ExportRun._write_entities
+
+    def then_out_of_time(run: handler.ExportRun, writer: Any) -> None:
+        write_entities(run, writer)
+        run.context = Budget(0)
+
+    with patch.object(handler, 'ENTITIES', before), \
+            patch.object(handler.ExportRun, '_write_entities', then_out_of_time):
+        assert handler.handle_event(queue(world), Budget())['status'] == 'continued'
+    [(_, following)] = [call.args for call in world.invoke.call_args_list]
+    assert following['run']['phase'] == len(before)
+
+    assert handler.handle_event(following, Budget())['status'] == 'completed'
+    files = _unzip(world)
+    assert [row['configs'] for row in _jsonl(files, 'plugin_config_history')] == ['[]']
+    assert json.loads(files['manifest.json'])['entities']['plugin_config_history']['count'] == 1
 
 
 def test_an_audit_rows_email_hash_is_never_exported(world):

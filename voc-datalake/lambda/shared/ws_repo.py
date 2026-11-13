@@ -12,7 +12,7 @@ only ever reads and writes its own rows and objects. This module is the one plac
   shared/workspace_routing.py). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
-  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; the
+  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; ``plugin_config_history_key`` a list it replaced; the
   credentials parameters' names are shared/workspace_ids.py ``credentials_parameter_name``).
 * ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions (every index
   partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
@@ -42,6 +42,7 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#JOB#erasure (a workspace's erasure jobs and their lock)
                     pk WS#{ws}#JOB#export (a workspace's export jobs and their lock, shared/export_jobs.py)
                     pk WS#{ws}#PLUGIN_CONFIG  sk {plugin} (a plugin's config list, shared/plugin_configs.py)
+                    pk WS#{ws}#PLUGIN_CONFIG#HISTORY  sk {plugin}#{iso}#{random} (a replaced list, kept, no ttl)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
     voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query`` only
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
@@ -86,6 +87,8 @@ __all__ = [
     'metric_type',
     'partition_query',
     'partition_scope',
+    'plugin_config_history_key',
+    'plugin_config_history_pk',
     'plugin_config_key',
     'plugin_config_pk',
     's3_key',
@@ -324,6 +327,21 @@ def plugin_config_key(scope: WorkspaceScope, plugin: str) -> dict[str, str]:
     if not plugin:
         raise ValueError('a plugin config key needs a plugin id')
     return {'pk': plugin_config_pk(scope), 'sk': plugin}
+
+
+def plugin_config_history_pk(scope: WorkspaceScope) -> str:
+    """The partition of every replaced config list of the workspace in voc-aggregates (kept forever, no ttl):
+    ``WS#{ws}#PLUGIN_CONFIG#HISTORY``."""
+    return scope.key('PLUGIN_CONFIG', 'HISTORY')
+
+
+def plugin_config_history_key(scope: WorkspaceScope, plugin: str, superseded_at: str, token: str) -> dict[str, str]:
+    """One superseded list of ``plugin`` (shared/plugin_configs.py ``save_configs``): ``WS#{ws}#PLUGIN_CONFIG#HISTORY``
+    / ``{plugin}#{superseded_at}#{token}`` (an ISO time and a random token, so a plugin's history sorts by time and
+    two saves never share a key). Refuses (ValueError) an empty part."""
+    if not (plugin and superseded_at and token):
+        raise ValueError('a plugin config history key needs a plugin id, a time and a token')
+    return {'pk': plugin_config_history_pk(scope), 'sk': f'{plugin}#{superseded_at}#{token}'}
 
 
 def watermark_key(scope: WorkspaceScope, plugin: str, key: str) -> str:

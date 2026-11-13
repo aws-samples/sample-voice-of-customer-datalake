@@ -91,6 +91,11 @@ def seed(world: World, daily_total: int = FEEDBACK_DAYS * FEEDBACK_PER_DAY) -> N
          'status': 'completed'},
         {'pk': f'{prefix}JOB#erasure', 'sk': 'LOCK', 'job_id': 'er_0123456789ab', 'locked_at': '2026-11-01T00:00:00'},
         {'pk': f'WS#{OTHER}#PLUGIN_CONFIG', 'sk': 'webscraper', 'configs': '[]'},
+        {'pk': f'{prefix}PLUGIN_CONFIG#HISTORY', 'sk': 'webscraper#2026-11-01T08:00:00+00:00#a1', 'configs': '[]',
+         'updated_at': '2026-11-01T07:00:00+00:00', 'updated_by': 'sub-ada',
+         'superseded_at': '2026-11-01T08:00:00+00:00', 'superseded_by_sub': 'sub-ada'},
+        {'pk': f'WS#{OTHER}#PLUGIN_CONFIG#HISTORY', 'sk': 'webscraper#2026-11-01T08:00:00+00:00#b2',
+         'configs': '["other"]', 'superseded_at': '2026-11-01T08:00:00+00:00', 'superseded_by_sub': 'sub-other'},
     ]
     for item in aggregates:
         world.aggregates.put_item(Item=item)

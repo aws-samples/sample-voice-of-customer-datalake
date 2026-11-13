@@ -42,7 +42,7 @@ from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.api import require_admin
+from shared.api import get_caller_subject, require_admin
 from shared.aws import get_cognito_idp_client
 from shared.exceptions import ConfigurationError, ServiceError, ValidationError
 from shared.http_cache import request_header
@@ -200,10 +200,13 @@ class ResolvedRoutes:
         """The request's stored plugin settings of ``plugins`` (validated plugin ids; none: every plugin, read only):
         the shared secret deployment-wide, the resolved workspace's own in a workspace, named from that membership
         only (``ConfigurationError`` when what it needs is not configured). The module's ``clients`` are read at
-        each call, so a module's own names (and its tests' stand-ins) are the ones used."""
+        each call, so a module's own names (and its tests' stand-ins) are the ones used. A saved config list is
+        stamped with the caller's sub from the request's authorizer claims (``get_caller_subject``), never a body
+        field; read only when a list is saved."""
         if self.clients is None:
             raise ConfigurationError('Secrets not configured')
-        return credentials_store(self.context(), self.clients(), plugins)
+        event = self._resolver.current_event.raw_event
+        return credentials_store(self.context(), self.clients(), plugins, actor=lambda: get_caller_subject(event))
 
     def credentials_or_none(self, *plugins: str) -> CredentialsStore | None:
         """``credentials`` for a read route, or None where none is configured: it then answers an empty list, as
