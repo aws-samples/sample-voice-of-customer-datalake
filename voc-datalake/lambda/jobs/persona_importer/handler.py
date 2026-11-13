@@ -25,6 +25,7 @@ from shared.jobs import JobContext, job_handler
 from shared.logging import logger
 from shared.model_config import get_active_model_id
 from shared.persona_import import validate_import_config
+from shared.project_keys import personas_index_pk, project_pk
 from shared.project_writes import put_project_item_and_increment
 from shared.prompts import PERSONA_IMPORT_PROMPTS, format_prompt, load_prompt_file
 
@@ -159,9 +160,9 @@ def handle_job(ctx: JobContext, project_id: str, _job_id: str, import_config: di
     persona_id = timestamped_id('persona', now_dt)
 
     item = {
-        'pk': f'PROJECT#{project_id}',
+        'pk': project_pk(project_id),
         'sk': f'PERSONA#{persona_id}',
-        'gsi1pk': f'PROJECT#{project_id}#PERSONAS',
+        'gsi1pk': personas_index_pk(project_id),
         'gsi1sk': now,
         'persona_id': persona_id,
         'name': persona_data.get('name', 'Imported Persona'),

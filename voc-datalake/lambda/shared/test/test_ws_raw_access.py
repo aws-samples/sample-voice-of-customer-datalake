@@ -74,14 +74,16 @@ RESOURCE_CHANGE: Final = 'Object(…).put/delete'
 S3_RESOURCES: Final = frozenset({'Object', 'Bucket'})
 #: The layer's private handle (shared/ws_repo.py ``WorkspaceTable``): any use of it elsewhere is raw access.
 LAYER_PRIVATE: Final = '_unscoped_table'
-#: The data path's table getters (shared/tables.py): a table they return is reached without the layer.
-RAW_GETTERS: Final = frozenset({'get_feedback_table', 'get_aggregates_table', 'cached_table'})
+#: The data path's table getters (shared/tables.py): a table they return is reached without the layer. The projects'
+#: and jobs' too (phase 3: projects move under their workspace once the layer has scoped transactions).
+RAW_GETTERS: Final = frozenset({'get_feedback_table', 'get_aggregates_table', 'cached_table', 'get_projects_table',
+                                'get_jobs_table'})
 #: The ingestors' deployment-wide table (shared/ingest_tables.py): built directly, or asked for with no scope.
 DEPLOYMENT_TABLE: Final = 'DeploymentTable'
 UNSCOPED_INGEST_TABLE: Final = 'ingest_table(None)'
 #: Partition and object prefixes of the data path that, at the start of a string, name no workspace.
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
-                                'raw/', 'silver/')
+                                'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT')
 #: Modules that answer requests a client sent (the API, the public webhooks): their workspace is never read from
 #: what the client sent.
 REQUEST_FACING: Final = ('lambda/api/', 'plugins/_shared/base_webhook.py')
@@ -96,14 +98,15 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/agents/heartbeat/handler.py': (3, {'DATE#': 1, 'Table': 2}),
     'lambda/agents/nodes/aggregate_reviews.py': (3, {'get_aggregates_table': 1}),
     'lambda/agents/nodes/select_or_create_project.py': (3, {'get_aggregates_table': 2}),
-    'lambda/agents/plan_waits.py': (3, {'SOURCE_RUN#': 1, 'get_aggregates_table': 1}),
+    'lambda/agents/plan_waits.py': (3, {'SOURCE_RUN#': 1, 'get_aggregates_table': 1, 'get_jobs_table': 1}),
     'lambda/agents/store.py': (3, {'Table': 1}),
     # Both paths since the aggregator's slice: a workspace's record writes through `ws_table` (its keys from
     # shared/metric_keys.py `metric_partition`); METRIC#urgent moved to metric_keys (URGENT_PK). Left: the
     # category+sentiment prefix and the module-level voc-aggregates / voc-idempotency tables.
     'lambda/aggregator/handler.py': (2, {'METRIC#': 1, 'Table': 2, 'meta.client': 2}),
     'lambda/api/agents_handler.py': (3, {'get_aggregates_table': 1}),
-    'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1, 'meta.client': 1}),
+    # Its project-table reads (the project gate, shared/project_gate.py) move with projects, phase 3.
+    'lambda/api/ballots_handler.py': (2, {'get_aggregates_table': 1, 'get_projects_table': 2, 'meta.client': 1}),
     'lambda/api/chat_handler.py': (3, {'Table': 1}),
     'lambda/api/data_explorer_handler.py': (
         2, {'SOURCE#': 1, 'Table': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
@@ -123,18 +126,21 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # workspace), its partitions from shared/feedback_partitions.py and shared/metric_keys.py. Table: the
     # module-level voc-feedback and voc-aggregates the views are taken of.
     'lambda/api/metrics_handler.py': (2, {'Table': 2, 'meta.client': 1}),
-    'lambda/api/product_context.py': (3, {'generate_presigned_url': 1}),
-    'lambda/api/projects.py': (3, {'copy_object': 1, 'get_feedback_table': 1, 'meta.client': 2}),
-    'lambda/api/projects_handler.py': (3, {'get_aggregates_table': 12, 'meta.client': 3}),
+    'lambda/api/product_context.py': (3, {'generate_presigned_url': 1, 'get_projects_table': 1}),
+    'lambda/api/projects.py': (
+        3, {'copy_object': 1, 'get_feedback_table': 1, 'get_jobs_table': 1, 'get_projects_table': 1, 'meta.client': 2}),
+    'lambda/api/projects_handler.py': (
+        3, {'get_aggregates_table': 12, 'get_jobs_table': 3, 'get_projects_table': 11, 'meta.client': 3}),
     'lambda/api/radar_handler.py': (3, {'cached_table': 1, 'get_aggregates_table': 1}),
     'lambda/api/s3_import_handler.py': (
         2, {'delete_object': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
     'lambda/api/scrapers_handler.py': (2, {'get_aggregates_table': 3}),
     'lambda/api/settings_handler.py': (3, {'Table': 1, 'generate_presigned_url': 3, 'put_object': 1}),
     'lambda/api/users_handler.py': (3, {'Table': 2}),
-    'lambda/api/verification_fixture_provider.py': (3, {'get_aggregates_table': 1, 'meta.client': 2}),
+    'lambda/api/verification_fixture_provider.py': (
+        3, {'get_aggregates_table': 1, 'get_projects_table': 1, 'meta.client': 2}),
     'lambda/api/workspaces_handler.py': (3, {'cached_table': 1}),
-    'lambda/auth/board_triggers.py': (3, {'Table': 2}),
+    'lambda/auth/board_triggers.py': (3, {'Table': 2, 'get_projects_table': 1}),
     'lambda/briefing/handler.py': (3, {'Table': 1}),
     'lambda/briefing/signals.py': (3, {'DATE#': 2, 'METRIC#': 1, 'URGENCY#': 1, 'meta.client': 1}),
     'lambda/custom_resources/model_pin.py': (3, {'Table': 1, 'meta.client': 1}),
@@ -155,8 +161,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # scope, or None deployment-wide); its five key literals moved to shared/feedback_partitions.py. Table: the
     # module-level voc-feedback, voc-aggregates and voc-radar the view is taken of.
     'lambda/processor/handler.py': (2, {'Table': 3}),
-    'lambda/product_doc_extractor/handler.py': (3, {'Table': 1, 'put_object': 1}),
-    'lambda/research/research_step_handler.py': (3, {'delete_object': 1, 'get_feedback_table': 1, 'put_object': 2}),
+    'lambda/product_doc_extractor/handler.py': (3, {'PROJECT#': 2, 'Table': 1, 'put_object': 1}),
+    'lambda/research/research_step_handler.py': (
+        3, {'delete_object': 1, 'get_feedback_table': 1, 'get_projects_table': 1, 'put_object': 2}),
     'lambda/shared/agents_store.py': (3, {'Table': 1, 'meta.client': 3}),
     'lambda/shared/avatar.py': (3, {'put_object': 1}),
     'lambda/shared/cloudfront_signing.py': (3, {'generate_presigned_url': 1}),
@@ -209,7 +216,6 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
         2, {'CATEGORY#': 1, 'CHANNEL#': 1, 'DATE#': 1, 'SOURCE#': 1, 'URGENCY#': 1}),
     # The low-level client (``.meta.client``: transactions and batch reads) and getter references, counted since
     # 7.00.00 (ported from 6.14.00's audit). Phase 0: stays raw by design (the control plane, the handle plumbing).
-    'lambda/api/mcp_tokens_handler.py': (3, {'meta.client': 1}),
     'lambda/jobs/retention/boards_rekey.py': (3, {'meta.client': 1}),
     'lambda/shared/agent_run_resume.py': (3, {'meta.client': 1}),
     'lambda/shared/aws.py': (0, {'meta.client': 1}),
@@ -231,6 +237,21 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/request_workspace.py': (0, {'cached_table': 1}),
     'lambda/shared/workspace_members.py': (0, {'meta.client': 1}),
     'lambda/shared/workspace_plugin_settings.py': (0, {'meta.client': 1}),
+    # The projects' and jobs' tables (get_projects_table, get_jobs_table) and the PROJECT# / TYPE#PROJECT keys,
+    # counted since phase 3's project key builder (shared/project_keys.py): the projects, their jobs and
+    # every reader of those tables move with projects (phase 3), the MCP tokens' and grants' rows in them
+    # included.
+    'lambda/api/mcp_global_handler.py': (3, {'get_jobs_table': 2, 'get_projects_table': 3}),
+    'lambda/api/mcp_tokens_handler.py': (3, {'get_jobs_table': 3, 'get_projects_table': 3, 'meta.client': 1}),
+    'lambda/shared/assist_jobs.py': (3, {'get_jobs_table': 1}),
+    'lambda/shared/company_personas_routes.py': (3, {'get_projects_table': 1}),
+    'lambda/shared/document_review_routes.py': (3, {'get_projects_table': 1}),
+    'lambda/shared/engagement_identity.py': (3, {'get_projects_table': 1}),
+    'lambda/shared/job_notices.py': (3, {'get_jobs_table': 1}),
+    'lambda/shared/jobs.py': (3, {'get_jobs_table': 4}),
+    'lambda/shared/mcp_oauth_consent_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
+    'lambda/shared/mcp_oauth_routes.py': (3, {'get_jobs_table': 1, 'get_projects_table': 1}),
+    'lambda/shared/project_keys.py': (3, {'PROJECT#': 1, 'TYPE#PROJECT': 1}),
 }
 
 

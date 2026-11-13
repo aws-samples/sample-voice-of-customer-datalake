@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from shared.ids import write_with_fresh_id
+from shared.project_keys import project_pk
 from shared.timestamps import now_iso
 
 PROJECT_DELETION_ATTRIBUTE = 'deletion_started_at'
@@ -41,11 +42,6 @@ PROJECT_WRITABLE_ATTRIBUTE_VALUES = {
 #: `shared.ids.write_with_fresh_id(put_index=...)`: a collision is only the
 #: cancellation reason AT the Put, never the project-writable update.
 PUT_AND_INCREMENT_PUT_INDEX = 0
-
-
-def project_pk(project_id: str) -> str:
-    """A project's partition: its rows in voc-projects, and its jobs in voc-jobs."""
-    return f'PROJECT#{project_id}'
 
 
 def project_meta_key(project_id: str) -> dict[str, str]:

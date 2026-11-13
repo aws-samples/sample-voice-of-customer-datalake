@@ -40,6 +40,7 @@ from shared.indexes import PROJECTS_BY_TYPE_INDEX
 from shared.logging import logger
 from shared.memory_policy import parse_datetime
 from shared.project_access import Caller
+from shared.project_keys import PROJECT_TYPE_PK
 
 #: An org layer with new reviews since it was built is rebuilt after this long.
 ORG_MAX_AGE: Final = timedelta(hours=3)
@@ -136,7 +137,7 @@ def my_project_names(projects_table: Any, sub: str) -> list[str]:
     if projects_table is None:
         return []
     page = projects_table.query(
-        IndexName=PROJECTS_BY_TYPE_INDEX, KeyConditionExpression=Key('gsi1pk').eq('TYPE#PROJECT'),
+        IndexName=PROJECTS_BY_TYPE_INDEX, KeyConditionExpression=Key('gsi1pk').eq(PROJECT_TYPE_PK),
         ScanIndexForward=False, Limit=MAX_PROJECT_ROWS,
         ProjectionExpression='#name, owner_sub, members', ExpressionAttributeNames={'#name': 'name'},
     )

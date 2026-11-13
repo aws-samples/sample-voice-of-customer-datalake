@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.11.00] - 2026-11-13
+
+Multi-workspace, groundwork for phase 3: the voc-multiplayer-c track's project-keys slice merged. Nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).
+
+### Changed
+
+- Internal: every key of a project's rows (`PROJECT#{id}`, its documents' and personas' index keys, `TYPE#PROJECT`, where a document is listed and a document row's keys) is built in one module, `lambda/shared/project_keys.py`, ahead of projects moving into workspaces. Two exceptions remain: the product-doc extractor, a bundle with no shared code, still spells its own, and the documents' version counters (`DOCUMENT_VERSIONS#PROJECT#{id}`, `lambda/shared/document_versions.py`) are still built there and not yet counted by the guard. The raw-access guard (`lambda/shared/test/test_ws_raw_access.py`) now also counts every module that opens the projects' or jobs' table, or spells `PROJECT#` or `TYPE#PROJECT` at the start of a key. No route, stored data or stack changes.
+
+### Upgrade notes
+
+- Nothing to do: no stack, table, IAM or API change.
+
 ## [7.10.00] - 2026-11-13
 
 Multi-workspace, phase 2: the voc-multiplayer-c track's MCP and Radar slices merged. An MCP token created, or an OAuth sign-in approved, inside a workspace acts in that workspace, as its person and at most as an editor; Radar's settings and views can be read per workspace, with no caller passing one yet ([docs/multi-workspace.md](docs/multi-workspace.md)).

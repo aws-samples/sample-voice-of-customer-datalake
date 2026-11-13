@@ -29,6 +29,7 @@ from botocore.exceptions import ClientError
 from shared.dynamo_paging import iter_query
 from shared.exceptions import NotFoundError
 from shared.logging import logger
+from shared.project_keys import project_pk
 from shared.project_writes import (
     PROJECT_WRITABLE_ATTRIBUTE_NAMES,
     PROJECT_WRITABLE_ATTRIBUTE_VALUES,
@@ -132,7 +133,7 @@ def save_persona_items(
 def count_personas(table: Any, project_id: str) -> int:
     """How many PERSONA# rows the project holds (every page)."""
     return sum(1 for _ in iter_query(table, {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)) & Key('sk').begins_with('PERSONA#'),
         'ProjectionExpression': 'sk',
     }))
 

@@ -43,6 +43,7 @@ from shared.logging import tracer
 from shared.persona_save import count_personas
 from shared.project_access import Caller, project_members
 from shared.project_gate import PROJECT_NOT_FOUND, require_admin_caller
+from shared.project_keys import PROJECT_TYPE_PK
 from shared.project_writes import is_project_tombstone, is_verification_fixture, project_meta_key
 from shared.request_body import json_object_body
 
@@ -110,7 +111,7 @@ def promote_persona(project_id: str, persona_id: str):
 def _member_projects(caller: Caller, exclude: str) -> Iterator[dict]:
     """Live project METAs (index order) that ``caller`` owns or is a member of, except ``exclude``."""
     for item in iter_query(_table(), {
-        'IndexName': PROJECTS_BY_TYPE_INDEX, 'KeyConditionExpression': Key('gsi1pk').eq('TYPE#PROJECT'),
+        'IndexName': PROJECTS_BY_TYPE_INDEX, 'KeyConditionExpression': Key('gsi1pk').eq(PROJECT_TYPE_PK),
     }):
         project_id = item.get('project_id')
         if (

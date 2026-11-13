@@ -25,6 +25,7 @@ from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.exceptions import NotFoundError
 from shared.logging import logger
+from shared.project_keys import project_pk
 
 #: The persona attribute; only a literal ``True`` protects.
 PROTECTED_FIELD: Final = 'protected'
@@ -52,7 +53,7 @@ class ClearedPersonas:
 
 def _persona_rows(table: Any, project_id: str) -> list[dict]:
     return list(iter_query(table, {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)) & Key('sk').begins_with('PERSONA#'),
         'ProjectionExpression': 'pk, sk, #protected, #name',
         'ExpressionAttributeNames': {'#protected': PROTECTED_FIELD, '#name': 'name'},
     }))
@@ -60,7 +61,7 @@ def _persona_rows(table: Any, project_id: str) -> list[dict]:
 
 def _delete_unprotected(table: Any, project_id: str, sort_key: str) -> None:
     table.delete_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': sort_key},
+        Key={'pk': project_pk(project_id), 'sk': sort_key},
         ConditionExpression=_UNPROTECTED_CONDITION,
         ExpressionAttributeNames={'#protected': PROTECTED_FIELD},
         ExpressionAttributeValues={':true': True},
@@ -99,7 +100,7 @@ def set_protection(table: Any, project_id: str, persona_id: str, protected: bool
     """Mark a persona protected (or not); ``NotFoundError`` when the project has no such persona."""
     try:
         table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
             UpdateExpression='SET #protected = :protected, updated_at = :now',
             ConditionExpression='attribute_exists(pk)',
             ExpressionAttributeNames={'#protected': PROTECTED_FIELD},

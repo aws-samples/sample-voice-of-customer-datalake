@@ -26,6 +26,7 @@ from shared.aws import is_conditional_check_failure
 from shared.derivation import DERIVATION_FIELD
 from shared.dynamo_paging import iter_query
 from shared.logging import logger
+from shared.project_keys import project_pk
 
 __all__ = ['DOCUMENT_SORT_KEY_PREFIXES', 'DeletedSource', 'mark_citing_documents']
 
@@ -120,7 +121,7 @@ def _mark(table: Any, item: Mapping[str, Any], entries: list[dict[str, str]]) ->
 
 def _documents(table: Any, project_id: str) -> Iterable[Mapping[str, Any]]:
     query: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
         'ProjectionExpression': _PROJECTION,
     }
     for item in iter_query(table, query):

@@ -18,6 +18,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import realtime
 from shared.logging import logger
+from shared.project_keys import project_pk
 from shared.tables import get_jobs_table
 
 
@@ -48,7 +49,7 @@ def notify_project_job(project_id: str, job_id: str, status: str) -> bool:
         return False
     try:
         response = table.get_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'JOB#{job_id}'},
             ProjectionExpression='initiated_by, job_type',
             ConsistentRead=True,
         )

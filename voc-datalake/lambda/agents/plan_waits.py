@@ -22,6 +22,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.logging import logger
 from shared.plan_schema import CONTRACT
+from shared.project_keys import PROJECT_PREFIX
 from shared.tables import get_aggregates_table, get_jobs_table
 
 WAIT_PENDING: Final = 'pending'
@@ -50,7 +51,7 @@ _TARGETS: Final[dict[str, _Target]] = {
     'scraper_run': _Target('aggregates', ('SCRAPER_RUN#', 'scraper_id'), ('', 'execution_id'),
                            frozenset({'completed', 'completed_with_errors'}), frozenset({'error'}),
                            'The scraper run failed.'),
-    'project_job': _Target('jobs', ('PROJECT#', 'project_id'), ('JOB#', 'job_id'),
+    'project_job': _Target('jobs', (PROJECT_PREFIX, 'project_id'), ('JOB#', 'job_id'),
                            frozenset({'completed'}), frozenset({'failed'}), 'The project job failed.'),
 }
 

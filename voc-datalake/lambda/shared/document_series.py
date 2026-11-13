@@ -25,6 +25,7 @@ from shared.document_versions import (
 )
 from shared.dynamo_paging import iter_query
 from shared.exceptions import NotFoundError, ValidationError
+from shared.project_keys import project_pk
 from shared.text_clip import collapse_whitespace
 
 COMMENTABLE_TYPES: Final = MERGE_VERSIONED_DOCUMENT_TYPES
@@ -35,7 +36,7 @@ NOT_COMMENTABLE: Final = 'Comments are available on PR/FAQ and PRD documents onl
 def find_document(table: Any, project_id: str, document_id: str) -> dict:
     """The stored document row (content included); 404 when absent."""
     query = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
         'ConsistentRead': True,
         'ProjectionExpression': 'pk, sk, document_id',
     }

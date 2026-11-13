@@ -28,6 +28,7 @@ from shared.exceptions import ValidationError
 from shared.logging import logger
 from shared.memory_store import parse_json_object
 from shared.persona_context import persona_prompt_block
+from shared.project_keys import project_pk
 from shared.prompt_safety import DATA_NOTICE, data_block
 
 MAX_REVIEW_PERSONAS: Final = 6
@@ -70,7 +71,7 @@ def validate_persona_ids(body: Mapping[str, Any]) -> list[str] | None:
 
 
 def project_personas(table: Any, project_id: str) -> list[dict[str, Any]]:
-    query = {'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
+    query = {'KeyConditionExpression': Key('pk').eq(project_pk(project_id)) & Key('sk').begins_with('PERSONA#'),
              'ConsistentRead': True}
     return [row for row in iter_query(table, query) if isinstance(row.get('persona_id'), str)]
 

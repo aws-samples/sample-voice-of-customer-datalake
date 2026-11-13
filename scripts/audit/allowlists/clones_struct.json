@@ -33,13 +33,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/api/projects.py",
-        "voc-datalake/lambda/shared/decision_records.py"
-      ],
-      "reason": "two keyed reads of different records with different checks: a source document resolved by id through _find_document's stored sort key and checked by document_id; a decision addressed as DOC#<id> after an EVIDENCE_ID_RE check and checked by document_type; each answers its own 404 text"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/api/feedback_form_handler.py",
         "voc-datalake/lambda/shared/company_context.py",
         "voc-datalake/lambda/shared/dimension_config.py",
