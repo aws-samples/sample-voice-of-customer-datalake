@@ -478,12 +478,26 @@ def test_a_fresh_start_saves_its_brief_in_a_first_checkpoint_at_once(aws, tmp_pa
 
 
 def test_a_session_ending_without_finish_sends_its_task_to_a_person_never_done(aws, tmp_path):
+    calls: list[str] = []
+
+    class Ordered(FakeBoard):
+        def progress(self, run_id: str, task_id: str, agent_id: str, step: str) -> None:
+            super().progress(run_id, task_id, agent_id, step)
+            calls.append(step)
+
+        def move(self, run_id: str, task_id: str, *, to_state: str) -> None:
+            super().move(run_id, task_id, to_state=to_state)
+            calls.append(to_state)
+
     s3, _ = aws
-    board = FakeBoard()
+    board = Ordered()
     # Two answers without a tool: the loop ends the session, the model never said it was done (it may have given up).
     assert main(['run', '--adapter', 'converse', '--model', 'model-a'], _env(tmp_path), s3=s3, ports=_ports(board),
                 runner=FakeRunner(), bedrock=lambda: FakeBedrock([[], []])) == 0
     assert board.moves == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'task-1', 'needs_human')]
+    # Its last progress report says why, before the move (the board takes none once the task left its holder).
+    assert board.progress_seen[-1][1:] == ('task-1', 'fixer-1', harness_main.STOPPED_UNFINISHED)
+    assert calls[-2:] == [harness_main.STOPPED_UNFINISHED, 'needs_human']
 
 
 def test_a_finish_moves_the_task_once(aws, tmp_path):

@@ -642,7 +642,8 @@ to it from its tags; `from.kind` `coach`) among them. Not aligned yet (the runti
   function URL, `VOC_BOARD_URL`, signed as the agent's own session for the `lambda` service; the brief is the
   holder's claim, whose lease epoch goes with every heartbeat, progress report and move: in progress once briefed,
   done when the agent finishes; a session that ends without its finish (two
-  answers without a tool; a CLI ending cleanly) sends its task to a person (needs a human), never done; the inbox is read after a cursor, each notice kept once by its event id,
+  answers without a tool; a CLI ending cleanly) sends its task to a person (needs a human), never done, its last
+  progress report saying why; the inbox is read after a cursor, each notice kept once by its event id,
   `signal.save` and `signal.pause` acted on, anything else shown as data. A checkpoint holds no message: its cursor
   stops before the oldest one taken and not yet done, with every id done its continuation can meet again. A save or
   a pause is done once acted on; any other message once the model saved its notes after having it (the Converse

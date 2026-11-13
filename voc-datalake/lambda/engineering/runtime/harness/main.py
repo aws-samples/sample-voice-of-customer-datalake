@@ -53,6 +53,8 @@ from engineering.runtime.interface import check_id
 
 CHECKOUT_ROOT: Final = '/work/repo'
 HEARTBEAT_SECONDS: Final = 60.0
+#: The last progress report of a session that stopped without its ``finish`` (its task goes to a person).
+STOPPED_UNFINISHED: Final = 'Stopped without saying the task is done: a person decides what happens next.'
 
 
 class S3Store:
@@ -277,10 +279,12 @@ def _finished(session: AgentSession) -> None:
     """A session that ended without its ``finish`` (two answers without a tool; a CLI ending cleanly) never leaves
     its task in progress, nor calls it done: the task goes to a person (``needs_human``), since an agent that stops
     without saying it is done may have given up. The CLI's ``finish`` runs in its tool server: its ``finished``
-    file says it ran, so its task is done already. Any refusal (the lease not this agent's, run out, the task
-    unable to move) is raised: a crash, which the supervisor continues or ends."""
+    file says it ran, so its task is done already. Its last progress report says why first, so the person sees it
+    on the task. Any refusal (the lease not this agent's, run out, the task unable to move) is raised: a crash,
+    which the supervisor continues or ends."""
     context = session.context
     if not (context.finished or session.finished_elsewhere):
+        context.board.progress(context.run_id, context.task_id, context.agent_id, STOPPED_UNFINISHED)
         context.board.move(context.run_id, context.task_id, to_state='needs_human')
 
 
