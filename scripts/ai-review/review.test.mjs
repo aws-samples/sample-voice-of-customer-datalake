@@ -295,7 +295,8 @@ test('both Kiro review agents can read only inside the repository, and trust not
     assert.deepEqual(config.tools, ['read', 'thinking'], agent)
     assert.deepEqual(config.allowedTools, ['thinking'], agent)
     assert.deepEqual(config.toolsSettings, KIRO_READ_SETTINGS.toolsSettings, agent)
-    // kiro-cli V3 reads ONLY `permissions` (it ignores toolsSettings): the same allow + deny, one rule each.
+    // Both formats, always: kiro-cli 3.3.0 refuses a secret read through `toolsSettings` (verified live, against its
+    // docs), and `permissions` is the documented V3 form. Never drop either block.
     assert.deepEqual(config.permissions, KIRO_READ_SETTINGS.permissions, agent)
     assert.equal(config.prompt, `file://./prompts/${agent}.md`)
   }
@@ -324,8 +325,11 @@ test('every Kiro agent in the repository reads (and writes) only the repository,
     // A pre-approved read tool bypassed the deny in kiro-cli 3.3.0 (verified live): reads are approved by the rules.
     const preapproved = (config.allowedTools ?? []).filter((tool) => ['fs_read', 'read', 'grep', 'glob', '*', '@builtin'].includes(tool))
     assert.deepEqual(preapproved, [], `${name}: no read tool in allowedTools`)
+    // Fail closed: decided by what the agent CAN do (a write tool), not by whether it already has write rules.
     const writes = of('fs_write')
-    if (writes.length > 0) {
+    const canWrite = [...(config.tools ?? []), ...(config.allowedTools ?? [])]
+      .some((tool) => ['write', 'fs_write', '*', '@builtin'].includes(tool))
+    if (canWrite || writes.length > 0) {
       assert.deepEqual(writes, KIRO_WRITE_RULES, `${name}: the V3 write rules`)
       assert.deepEqual(config.toolsSettings?.fs_write, KIRO_WRITE_SETTINGS, `${name}: the write deniedPaths`)
     }
