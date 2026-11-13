@@ -12,7 +12,7 @@ import pytest
 
 from engineering.runtime.caps import Timings
 from engineering.runtime.checkpoints import checkpoint_prefix
-from engineering.runtime.interface import Command, MicroVm, RuntimeRefused
+from engineering.runtime.interface import AgentSpec, Command, MicroVm, RuntimeRefused
 from engineering.runtime.launcher import Launcher, RunStopped
 from engineering.runtime.ports import Budget, Lease
 from engineering.runtime.runs import RunCaps
@@ -165,6 +165,20 @@ def test_a_crashing_agent_is_continued_twice_then_its_task_is_reposted(world: Wo
     ended = _until(world, 1000, lambda s: s.status == 'reposted')
     assert ended.crashes == T.max_crash_continuations
     assert world.bus.kinds().count('continued') == T.max_crash_continuations
+    assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'crashed')]
+
+
+def test_an_agent_whose_new_microvm_never_starts_is_escalated_not_retried_forever(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code='import sys; sys.exit(1)')
+    _until(world, 1000, lambda s: s.status == 'working')
+
+    def down(_spec: AgentSpec) -> MicroVm:
+        raise RuntimeError('the MicroVM service refused the start')
+
+    monkeypatch.setattr(world.runtime, 'run', down)   # every continuation's start fails from now on
+    ended = _until(world, 1000, lambda s: s.status == 'reposted')
+    assert ended.crashes == T.max_crash_continuations
     assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'crashed')]
 
 

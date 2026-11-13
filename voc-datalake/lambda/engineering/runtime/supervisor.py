@@ -488,7 +488,21 @@ class Supervisor:
         self._terminate(session)
         restore = self.checkpoints.latest(session.run_id, session.agent_id, session.commit, session.task_attempt)
         spec = session.spec(restore, self.workspace_bucket, self.board_url)
-        vm = self._vm_call(lambda: self.runtime.run(spec))
+        try:
+            vm = self._vm_call(lambda: self.runtime.run(spec))
+        except MicroVmCallFailed:
+            # A crash whose new MicroVM will not start counts as one more crash (every crash is a running agent's),
+            # so one that never starts is escalated like an agent that keeps crashing (its task re-posted, a
+            # coordinator's run sent to a person), never tried again on every tick. Any other continuation leaves
+            # the row as it was: a pause's comes back here as a crash once its failures add up, and an agent held
+            # without a MicroVM is tried again (a wake's once-per-wait mark is not spent by a start that failed).
+            if crashed:
+                try:
+                    self._save(replace(session, crashes=session.crashes + 1))
+                except Exception:
+                    logger.exception('engineering supervisor: a failed start could not be counted as a crash',
+                                     extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+            raise
         continued = replace(session.on(vm, now, restore), crashes=session.crashes + 1 if crashed else 0,
                             microvm_seconds=session.microvm_seconds + self._elapsed(session, now))
         try:

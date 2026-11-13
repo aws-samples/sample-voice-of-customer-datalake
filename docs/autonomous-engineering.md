@@ -883,8 +883,10 @@ continues it in a new one once the wait closes.
   number, after a pause or a crash, the checkpoint). An agent pausing itself the same way, before a step longer
   than its MicroVM has left, is *planned* (the harness has no such tool yet). One that has not paused by 7 h 50 is treated as a crash, on an open wait too; one asked to pause for a long wait
   whose checkpoint does not come within 3 minutes is held as waiting, without its MicroVM, from its last checkpoint. A crash (an exit other than 0
-  and 75, a lapsed lease) is continued twice in a row at most, then the task is re-posted (the run coordinator: the
-  run goes to a person). Any number of continuations otherwise.
+  and 75, a lapsed lease, a running agent's new MicroVM that will not start) is continued twice in a row at most,
+  then the task is re-posted (the run coordinator: the run goes to a person). Any number of continuations
+  otherwise; an agent held without a MicroVM whose new one will not start is tried again at its next wake, tick or
+  Resume.
 - **Checkpoints.** An agent saves each checkpoint as a new object, in the workspace's layout under its task's commit
   and attempt (which its launch names),
   `ws/<ws>/runs/<run>/<agent>/commits/<sha>/_checkpoints/attempt-<n>/<seq>-<nonce>.json`: its position, plan, notes

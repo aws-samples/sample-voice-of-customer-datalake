@@ -201,6 +201,25 @@ def test_a_wake_that_fails_is_tried_again(world: World, monkeypatch: pytest.Monk
     assert _deliver(world, _for({'kind': 'agent', 'id': 'fixer-1'}), 1101)['woken'] == {'fixer-1': 'working'}
 
 
+def test_a_held_addressee_whose_new_microvm_failed_to_start_is_continued_on_the_retry(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    _until(world, 1000, 'working')
+    world.store.save(replace(world.session(), status='waiting'))
+    raw = _for({'kind': 'agent', 'id': 'fixer-1'})
+
+    def down(_spec: Any) -> Any:
+        raise RuntimeError('the MicroVM service refused the start')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(world.runtime, 'run', down)
+        with pytest.raises(AddresseeBusy):
+            _deliver(world, raw, 1100)
+    # The failed start spent nothing: the retry continues it for this wait (its once-per-wait mark unused).
+    assert _deliver(world, raw, 1101)['woken'] == {'fixer-1': 'booting'}
+    assert (world.session().continuation, world.session().crashes) == (1, 0)
+
+
 def test_a_later_message_does_not_extend_the_wake_nor_the_waits_hold(world: World):
     _suspended_on_an_open_wait(world)
     raw = _for({'kind': 'agent', 'id': 'fixer-1'})
