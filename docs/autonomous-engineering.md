@@ -366,7 +366,7 @@ What exists:
   the board's launch is refused (409) until the runtime derives the harness from the role's skill. An agent reads
   the approved knowledge pack (`knowledge`, as data) of one of its task's paths (the spec's `paths` and the ones its
   agent was launched on) or of the root (`''`, the knowledge store's `.`), never another's; a package the store
-  cannot key is a 400, and an approved version whose object is missing or whose row changed a 503. Each change is published
+  cannot key is a 400, and an approved version whose object is missing or unreadable, or whose row changed, a 503. Each change is published
   on the bus as the board's `task.*` event after the row is written. A failed publish answers 503, and the retry
   publishes the same event again. Each post, claim and move also writes a `TASKLOG#<task>#<at>#<state>` row in the
   same transaction (the actor and the operation; no past state is overwritten; a renewal or a progress report is
@@ -534,7 +534,8 @@ an engineering flow is a workflow of schema `voc-workflow/2` (start, end and the
 `reduce`, `board`, `quality_gate`, `learning_loop`, `self_improvement`, `memory`, `stop_at_pr`), held to the rules
 above (every map meets one reduce on every way out, a quality gate's GO and NO-GO arrows with NO-GO to the human
 decision point, a committer or PR author ends only at a stop at PR or a human decision point); the Agents API saves
-and validates one, keeps each workflow's kind, lists both kinds in `GET /workflows` (each with its `kind`) and keeps
+and validates one (a new one only where the engineering module is deployed, 409 elsewhere; one already saved
+anywhere), keeps each workflow's kind, lists both kinds in `GET /workflows` (each with its `kind`) and keeps
 engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's
 settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
 builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
@@ -544,8 +545,9 @@ shared fixture); its library offers New engineering flow only where the module i
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it behind an approval card, like its other writes: its workflow tools
 (`validate_workflow`, `create_workflow`, `update_workflow`) take a `voc-workflow/2` definition with the engineering
-steps, the agents API's `POST /workflows/validate` judges its rules, and the web app creates a new one only where the
-deployment has the engineering module (`features.engineering`, as the library's New engineering flow). *Planned*:
+steps, the agents API's `POST /workflows/validate` judges its rules, and a new one is created only where the
+deployment has the engineering module (the API's 409; the web app's card checks `features.engineering` first, as the
+library's New engineering flow and the editor's Save as do). *Planned*:
 "refresh the knowledge pack", "pull the latest from the repository" and "what is agent X doing" from the assistant
 too, through the same REST routes as everything else (an engineering run's reads are administrators-only, so no MCP
 tool while an MCP token never acts as an administrator: TENETS.md's tenet 4 gap).

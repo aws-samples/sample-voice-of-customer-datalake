@@ -1,9 +1,11 @@
 """Engineering flows (voc-workflow/2) in the workflow library: saved and validated like any workflow, but never run by
-an agent (the agents' interpreter runs voc-workflow/1), and a workflow never changes kind."""
+an agent (the agents' interpreter runs voc-workflow/1), a workflow never changes kind, and a NEW one is created only
+where the engineering agents module is deployed (one already saved keeps working without it)."""
 from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 from agents_handler_fixtures import create as _create
@@ -13,10 +15,22 @@ from shared.test.agents_fixtures import agent_body
 from shared.test.test_workflow_engineering import bug_fix
 
 
+@pytest.fixture(autouse=True)
+def _module_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The deployment has the engineering agents module (``shared.engineering_agents``)."""
+    monkeypatch.setenv('ENGINEERING_AGENTS', 'on')
+
+
 def _save_engineering_flow(lambda_context: Any) -> str:
     status, body = _call(lambda_context, 'POST', '/workflows', body={'definition': bug_fix()})
     assert status == 201, body
     return body['workflow']['workflow_id']
+
+
+def _rename(lambda_context: Any, workflow_id: str) -> int:
+    """Save the engineering flow's first revision again with a new name: the status."""
+    renamed = {**bug_fix(), 'name': 'Renamed flow'}
+    return _call(lambda_context, 'PUT', f'/workflows/{workflow_id}', body={'definition': renamed, 'expected_revision': 1})[0]
 
 
 def test_an_engineering_flow_is_validated_and_kept_in_the_library(lambda_context: Any) -> None:
@@ -72,6 +86,21 @@ def test_a_workflow_keeps_its_kind(lambda_context: Any) -> None:
         status, body = _call(lambda_context, 'POST', '/workflows/validate',
                              body={'definition': bug_fix(), 'workflow_id': agents_id})
         assert (status, body['valid'], 'a workflow keeps its kind' in body['errors'][0]['message']) == (200, False, True)
-        renamed = {**bug_fix(), 'name': 'Renamed flow'}
-        assert _call(lambda_context, 'PUT', f'/workflows/{engineering_id}',
-                     body={'definition': renamed, 'expected_revision': 1})[0] == 200
+        assert _rename(lambda_context, engineering_id) == 200
+
+
+def test_a_new_engineering_flow_needs_the_module_and_a_saved_one_keeps_working(lambda_context: Any,
+                                                                               monkeypatch: pytest.MonkeyPatch) -> None:
+    with _api():
+        engineering_id = _save_engineering_flow(lambda_context)
+        monkeypatch.setenv('ENGINEERING_AGENTS', 'off')
+        created = _call(lambda_context, 'POST', '/workflows', body={'definition': bug_fix()})
+        copied = _call(lambda_context, 'POST', f'/workflows/{engineering_id}/duplicate', body={})
+        assert [(status, 'only where the engineering agents module is deployed' in body['error'])
+                for status, body in (created, copied)] == [(409, True), (409, True)]
+        # The saved one still saves, and opens.
+        assert (_rename(lambda_context, engineering_id), _call(lambda_context, 'GET', f'/workflows/{engineering_id}')[0]) \
+            == (200, 200)
+        # An agents workflow is created as before.
+        assert _call(lambda_context, 'POST', '/workflows',
+                     body={'definition': workflow_schema.default_template()})[0] == 201

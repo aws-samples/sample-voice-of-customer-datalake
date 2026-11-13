@@ -131,15 +131,16 @@ The two kinds never mix: no agent runs an engineering flow (`POST`/`PUT /agents`
 its kind (a save of the other kind over it is refused: save it as a new workflow), and the agents' runtime refuses a
 `voc-workflow/2` definition. `GET /workflows` lists both kinds, each with its `kind` (`agents` | `engineering`): the
 editor opens either, and an agent's workflow picker offers only `agents` ones. An engineering flow is a
-definition, like any workflow: one already saved opens and saves in every deployment, and it runs only where the
-opt-in engineering module is on. The library has **New workflow** (an agents workflow) and, only where the module is
+definition, like any workflow: one already saved opens and saves in every deployment, a new one (`POST /workflows`: New, the
+editor's Save as, an imported draft saved as new; and the assistant's `…/duplicate`) is created only where the opt-in engineering module is on (409 elsewhere,
+on the server, whoever asks), and it runs only there. The library has **New workflow** (an agents workflow) and, only where the module is
 on (`config.json` `features.engineering`), **New engineering flow**; an engineering flow's palette shows **Engineering** (with Start and
 End), its settings panels set each step's settings (no step role and no loops: its board does the repeating), and its
 graph rules are mirrored as you edit (`WorkflowEditor/engineeringRules.ts`, held to the
 server by the shared fixture `frontend/src/test/engineeringFlows.json`). The AI assistant drafts one too, with its
 workflow tools (`validate_workflow`, then `create_workflow` or `update_workflow` behind an approval card), and the
-web app creates a new one that way only where the module is on, like the button (one already saved is changed, or
-copied with `duplicate_workflow`, anywhere, as in the editor).
+web app's card for a new one checks the module too, before the server does (one already saved is changed anywhere,
+as in the editor).
 
 ### An engineering run: monitor, board, conversation, reports
 

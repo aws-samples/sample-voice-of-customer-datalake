@@ -301,8 +301,9 @@ class BoardApi:
             pack = self.knowledge.for_agent(WORKSPACE, connection, package or ROOT)
         except PackError as exc:
             if exc.kind != 'invalid':
-                # An approved version whose object is missing or denied, or whose row changed (PackNotFound,
-                # PackConflict): the store's fault, so 503 (try again), never "none approved" nor the caller's.
+                # An approved version whose object is missing, denied or unreadable, or whose row changed
+                # (PackNotFound, PackUnavailable, PackConflict): the store's fault, so 503 (try again), never "none
+                # approved" nor the caller's.
                 raise BoardError('unavailable', 'the knowledge pack cannot be read right now') from exc
             raise BoardError('invalid', f'"package" is not a package with a knowledge pack: {exc}'[:MAX_TITLE]) from exc
         except LayoutError as exc:

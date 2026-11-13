@@ -136,6 +136,15 @@ describe('Workflow page', () => {
     expect(router.state.location.pathname).toBe('/agents/workflows/wf_2')
     expect(screen.queryByRole('dialog', { name: 'Unsaved changes' })).not.toBeInTheDocument()
   })
+
+  it.each([true, false])('offers Save as on a saved engineering flow only with the module (%s), Save either way', async (available) => {
+    engineering.available = available
+    const flow = workflowView(2, { ...emptyDefinition('Bug hunt'), schema: 'voc-workflow/2' })
+    renderAt('/agents/workflows/wf_1', { 'GET /workflows/wf_1': () => flow })
+    expect(await screen.findByRole('button', { name: 'Export' })).toBeInTheDocument()
+    expect([screen.queryByRole('button', { name: 'Save as…' }) !== null, screen.queryByRole('button', { name: 'Save' }) !== null])
+      .toStrictEqual([available, true])
+  })
 })
 
 const BUILTIN = { workflow_id: 'wf_default', name: 'Reviews → Prototype', revision: 1, builtin: true }

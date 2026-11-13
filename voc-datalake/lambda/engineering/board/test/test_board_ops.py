@@ -21,7 +21,7 @@ from engineering.bus.publish import EventBridgePublisher
 from engineering.connectors.identity import Caller
 from engineering.knowledge.notes import Note
 from engineering.knowledge.reduce import reduce_package
-from engineering.knowledge.store import Actor, PackConflict, PackError, PackNotFound, PackStore
+from engineering.knowledge.store import Actor, PackConflict, PackError, PackNotFound, PackStore, PackUnavailable
 from engineering.knowledge.test.fixtures import pack_tables
 from engineering.knowledge.workspaces import ROOT
 from engineering.rows import run_pk
@@ -52,7 +52,7 @@ class Pack:
 
 
 #: Packages the fake store cannot read (its own faults, not the caller's).
-FAULTS: dict[str, type[PackError]] = {'gone': PackNotFound, 'changed': PackConflict}
+FAULTS: dict[str, type[PackError]] = {'gone': PackNotFound, 'changed': PackConflict, 'unreadable': PackUnavailable}
 
 
 class Knowledge:
