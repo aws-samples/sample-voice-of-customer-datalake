@@ -17,6 +17,17 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.16.01] - 2026-11-13
+
+The owner's decisions on autonomous engineering, written into the tenets and the design. Docs only; no code changes behaviour.
+
+### Changed
+
+- TENETS.md tenet 3: engineering flows follow the dial, which decides how far a flow goes (Human-driven: findings and proposals, no branch pushed; AI-assisted: the change on the agents' own branches and a draft pull request, each step past the plan waiting for a person's go; AI-driven: end to end to a draft pull request). In every mode a pull request stays a draft until a person marks it ready, only a person merges, and an agent never changes the dial. The tenet 3 row says the flows do not read the dial yet: the broker's push and draft pull request code is built but not wired, and must read the dial before it is, so a Human-driven run never pushes.
+- TENETS.md's tenet 4 row names an engineering run's reports and, once merged, a person's board actions among the admin-only work with no MCP tool; the tenet 7 row names the run monitor's polling (every 5 s, its reports every 15 s, only while open) and what a MicroVM costs while a run is under way (each agent's 4 vCPU / 8 GB ARM, about $0.50 an hour; docs/deployment.md says the default 2,048 MB memory quota must be raised before a first run).
+- docs/autonomous-engineering.md: the MicroVM facts checked read-only (the `aws lambda-microvms` service, the `al2023-1` base image and its regions, the 8-hour limit, sizes, tokens, idle policy, quotas, and the price: about $0.25 an hour for a 2 vCPU / 4 GB ARM MicroVM, $0.50 for the 4 vCPU / 8 GB the runtime starts each agent at) replace the hedges, and what is still unchecked until a first run in a test account is named; the dial's paragraph follows tenet 3; agents run on the Converse loop only for now, a CLI pinned and installed after the first MicroVM run; the page's status banner says it is partly built.
+- `start_run`'s docstring says a first start naming a language is checked whether or not it has its connection and commit.
+
 ## [6.16.00] - 2026-11-13
 
 Autonomous engineering agents: the run's start launches its coordinator and a person's Resume replaces one that failed, a run's status changes record who made them, the run monitor gains its Reports panel, and the AI assistant drafts engineering flows. Merged from the voc-autonomous-b and voc-autonomous-c branches. Off by default.

@@ -1,9 +1,9 @@
 # Autonomous engineering agents
 
-> **Status: design.** This page describes the planned design of autonomous engineering agents. Every section is
-> marked *Planned* until its code is in the repository; the present tense below describes the intended behaviour,
-> not something that runs today. Nothing here is deployed by default, and nothing here costs anything until an
-> administrator connects a repository and enables an agent (TENETS.md tenet 7).
+> **Status: partly built, not yet run against AWS.** Each section says what of it is built (with its code's
+> place) and what is *Planned*; the present tense in a planned part describes the intended behaviour, not something
+> that runs today. Nothing here is deployed by default (`-c engineeringAgents=true` adds it), and nothing here costs
+> anything until an administrator connects a repository and starts a run (TENETS.md tenet 7).
 
 Connect a GitHub or GitLab repository and let agents learn how the team works, then work the way the team works:
 understand issues, hunt and fix bugs, build features, review pull requests. Every change an agent makes goes through
@@ -80,9 +80,11 @@ stack). Designed for them from day one.
 
 *Partly built*: the broker's caller identity, operations per role and write rules, the GitHub client and the
 credential reader (`voc-datalake/lambda/engineering/connectors/`), deployed only with `-c engineeringAgents=true`.
-Planned: the run records and the board's GO ledger (phase 2's board), the bundle reader, the connection page that
-stores a credential, the checkout cache by commit sha, sparse clones, and the GitLab client. Until the run records
-land, the broker finds no run, so every permitted, well-formed operation still answers 503 and nothing reaches GitHub.
+Planned: the broker reading the run records (the runtime writes each run's META, with its connection, commit and
+language, since 6.11.00; the broker is built with `runs=UNCONNECTED`), the board's GO ledger, the bundle reader, the
+connection page that stores a credential, the checkout cache by commit sha, sparse clones, and the GitLab client.
+Until the broker reads them, it finds no run, so every permitted, well-formed operation still answers 503 and
+nothing reaches GitHub.
 
 **What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
 a nine-minute App JWT (RS256, the App's private key from the connection's parameter, below) for an installation token for the connection's one repository and
@@ -111,7 +113,7 @@ transport, with no redirect followed; a token is sent only in the `Authorization
 line. The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
 Each write the host accepts gets an operational log line with the operation, the caller, the connection and what was
 written (issue or pull request number, branch, tree hash, commit count), never a body, a bundle or a token; the
-durable audit row (D4) comes with the run records.
+durable audit row (D4) comes with the broker reading the run records.
 
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
@@ -665,11 +667,24 @@ raw tool output.
 voc-datalake/engineering-images, the stack in voc-datalake/lib/stacks/engineering-runtime.ts; deployed only with
 `-c engineeringAgents=true`; the harness inside each MicroVM is built too: it reaches the board and its inbox
 through the board API, and the broker through an interface that refuses until it is wired, below; the supervisor's
-own board and bus are wired). The service's
-limits, prices, quotas and regions, its API's operation and field names, how a MicroVM receives a role session, how
-its egress allowlist is enforced and whether Mountpoint, `unshare`, `setpriv` and `iptables` run inside one are not
-yet checked against the AWS documentation; until they are, the flag stays off, and this section is corrected to what
-is verified.
+own board and bus are wired).
+
+**What is checked, and what is not yet** (read-only, AWS CLI 2.36, 2026-11-12). The service is `aws lambda-microvms`
+(run, suspend, resume and terminate a MicroVM, create a MicroVM image, auth tokens, lists). Its managed base image is
+`al2023-1` (versions 1 to 3) in us-east-1 and us-west-2. A MicroVM lives at most 8 hours (fixed); up to 16 vCPU and
+32 GB; images are single-size; auth tokens last at most 60 minutes; a MicroVM cannot suspend itself; its idle policy
+sets the idle and suspended times and auto-resume; its egress goes through network connectors (VPC egress connectors
+restrict it); on resume, random generators are reseeded and secrets rotated. Quotas: 5 starts a second (burst 5), 5
+resumes, 2 suspends and 10 terminations a second, 10 image builds at once, 2,048 MB of ARM MicroVM memory per account
+by default (adjustable). Price (us-east-1, on demand): ARM $0.0000276944 a vCPU-second and $0.0000036667 a GB-second,
+so a 2 vCPU / 4 GB ARM MicroVM is about $0.25 an hour and $2 for its 8 hours. The runtime starts each agent's
+at 4 vCPU / 8 GB (`runtime/aws.py`): about $0.50 an hour, $4 for 8 hours, and above the default 2,048 MB memory
+quota, which a deployment raises before its first run to 8,192 MB times the agents it expects at once, the
+coordinator included ([deployment.md](deployment.md)). Not yet checked, because no MicroVM has
+run yet (the first run, in a test account, waits for the owner): the exact request and answer field names the runtime
+uses (`runtime/aws.py`), how a MicroVM receives a role session, how the egress allowlist is enforced, and whether
+Mountpoint, `unshare`, `setpriv` and `iptables` run inside one. Until that run, the flag stays off, and this section
+is corrected to what it shows.
 
 The runtime names its agents as the [broker](#repository-connectors) and the
 [bus and board](#how-the-agents-work-together) read them: its roles are `connectors/identity.py`'s AGENT_ROLES (one
@@ -994,7 +1009,9 @@ continues it in a new one once the wait closes.
   out. It holds no host credential. It reports its status (step, recent tool calls, tokens
   per model) to the runner; a CLI agent's tokens are not counted yet (*planned*: the CLI's own usage report). The images ship it with boto3 pinned (`BOTO3_VERSION`), and everything they run needs
   nothing newer than Python 3.11 (their system `python3`; a test checks every shipped module). No image installs
-  a CLI yet: the CLI adapter refuses one that is missing or not the pinned version.
+  a CLI yet: the CLI adapter refuses one that is missing or not the pinned version. **Converse only for now** (owner
+  decision): every skill runs on the Converse loop (the coordinator's does, `harness: converse`); the CLI adapter
+  stays built and tested, and a CLI version is pinned and installed in the images only after the first MicroVM run.
 - **Images.** python, node, rust and java, each a Dockerfile in this repository on one shared base (git, util-linux,
   iproute2, iptables, Python for the runner, Mountpoint for Amazon S3, the two users) and one entry point, with ready
   hooks that warm the toolchain caches (only from that language's registries) and validate hooks that prove the
@@ -1199,11 +1216,13 @@ ARN, in the change that first uses it.
 
 - Writes to the host only through the broker, only to the agent's own branches and pull requests and as comments;
   people merge.
-- **Draft pull requests in every mode.** A person marks one ready and merges it. Tenet 3's dial today covers PR/FAQs
-  and PRDs only ([ways-of-working.md](ways-of-working.md)), so these flows do not read it. Letting the dial decide how
-  far a flow goes (Human-driven: proposals only; AI-assisted: draft pull requests; AI-driven: ready pull requests) and
-  whether a passing skill version applies itself would widen tenet 3; it is proposed as a TENETS.md change of its own,
-  for the owner to agree, and lands only with it.
+- **Draft pull requests in every mode; the dial decides how far a flow goes** ([TENETS.md](../TENETS.md) tenet 3,
+  agreed by the owner). Human-driven: the agents find and propose (findings, plans, proposed changes for a person to
+  make) and push no branch. AI-assisted: they write the change on their own branches and open a draft pull request,
+  each step past the plan waiting for a person's go. AI-driven: the flow runs end to end to a draft pull request. A
+  person marks a pull request ready and merges it; an agent never merges, never marks one ready and never changes the
+  dial. Whether a passing skill version may apply itself in AI-driven mode is not part of this and still waits for
+  the owner.
 - **Repository text is data, never instructions.** READMEs, code, issues, PR comments, the knowledge pack, memories,
   other agents' messages and customer feedback (which anyone can send through the public forms) reach a model inside
   DATA blocks. That lowers the risk of a planted instruction; it does
@@ -1249,7 +1268,7 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (the broker reads no run record and there is no GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, nothing invoking them yet (same place); the coach and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
