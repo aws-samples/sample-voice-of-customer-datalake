@@ -23,7 +23,7 @@ Prototypes show the company logo uploaded in the design system, and an SVG logo 
 
 ### Added
 
-- A prototype now shows the company logo from Company → Design system (`/company?tab=design`) wherever it shows the company's logo, instead of a logo the model draws. The model writes a placeholder and the build puts the uploaded logo in its place as an inline image, so the prototype stays one offline file. It follows the build dialog's **Design system** box. A logo over 1 MB is left out and the prototype gets a drawn wordmark, as before. A revision keeps the logo. See [docs/company-context.md → How the AI uses them](docs/company-context.md#how-the-ai-uses-them).
+- A prototype now shows the company logo from Company → Design system (`/company?tab=design`) wherever it shows the company's logo, instead of a logo the model draws. The model writes a placeholder and the build puts the uploaded logo in its place as an inline image, so the prototype stays one offline file. It follows the build dialog's **Design system** box. A logo over 1 MB is left out and the prototype gets a drawn wordmark, as before. A revision uses the logo uploaded when it is built: when there is none any more (or the box is unticked), the model is told to draw a wordmark instead, and a leftover logo spot shows the brand or project name as text, never an empty image. Other inline images in a prototype are never mistaken for the logo. See [docs/company-context.md → How the AI uses them](docs/company-context.md#how-the-ai-uses-them).
 
 ### Fixed
 
@@ -31,7 +31,7 @@ Prototypes show the company logo uploaded in the design system, and an SVG logo 
 
 ### Upgrade notes
 
-- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on `company-context/design/logo_*` in the raw data bucket), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
+- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on the uploaded logos only, `company-context/design/logo_????????????.*` in the raw data bucket, so not the design references' logo previews), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
 
 ## [6.05.00] - 2026-11-11
 

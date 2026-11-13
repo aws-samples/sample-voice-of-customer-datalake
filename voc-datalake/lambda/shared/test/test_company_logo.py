@@ -9,9 +9,11 @@ from botocore.exceptions import ClientError, EndpointConnectionError
 from shared import company_logo
 from shared.company_logo import (
     BLANK_IMAGE,
+    LOGO_MARKER,
     LOGO_PLACEHOLDER,
     MAX_INLINE_LOGO_BYTES,
     company_logo_data_url,
+    has_logo_placeholder,
     inline_logo,
     logo_keys,
     with_logo_placeholder,
@@ -49,7 +51,10 @@ class TestLogoKeys:
         assert logo_keys(_row(logo_s3_key=CURRENT, logo_pending_s3_key=PENDING)) == [PENDING, CURRENT]
 
     @pytest.mark.parametrize('row', [None, {}, _row(logo_s3_key='company-context/design/ref_x.png'),
-                                     _row(logo_s3_key=7), _row(logo_s3_key='prototypes/logo_x.png')])
+                                     _row(logo_s3_key=7), _row(logo_s3_key='prototypes/logo_x.png'),
+                                     # A design reference's logo preview is not the company logo.
+                                     _row(logo_s3_key='company-context/design/logo_preview_ref_0123456789ab.png'),
+                                     _row(logo_s3_key='company-context/design/logo_aaaaaaaaaaaa.svg')])
     def test_no_key_outside_the_logo_prefix(self, row):
         assert logo_keys(row) == []
 
@@ -60,26 +65,26 @@ class TestLogoKeys:
 class TestCompanyLogoDataUrl:
     def test_the_current_logo_as_a_png_data_url(self):
         url = company_logo_data_url(_row(logo_s3_key=CURRENT), _client({CURRENT: PNG}), BUCKET)
-        assert url == f'data:image/png;base64,{base64.b64encode(PNG).decode()}'
+        assert url == f'data:image/png;{LOGO_MARKER};base64,{base64.b64encode(PNG).decode()}'
 
     def test_a_landed_pending_upload_wins(self):
         webp = b'RIFF\x00\x00\x00\x00WEBPVP8 ' + b'\x00' * 8
         url = company_logo_data_url(_row(logo_s3_key=CURRENT, logo_pending_s3_key=PENDING),
                                     _client({CURRENT: PNG, PENDING: webp}), BUCKET)
         assert url is not None
-        assert url.startswith('data:image/webp;base64,')
+        assert url.startswith(f'data:image/webp;{LOGO_MARKER};base64,')
 
     def test_a_pending_upload_that_never_landed_falls_back_to_the_current_logo(self):
         url = company_logo_data_url(_row(logo_s3_key=CURRENT, logo_pending_s3_key=PENDING),
                                     _client({CURRENT: PNG}), BUCKET)
         assert url is not None
-        assert url.startswith('data:image/png;base64,')
+        assert url.startswith(f'data:image/png;{LOGO_MARKER};base64,')
 
     def test_the_type_comes_from_the_bytes_not_the_extension(self):
         jpeg = b'\xff\xd8\xff\xe0' + b'\x00' * 16
         url = company_logo_data_url(_row(logo_s3_key=CURRENT), _client({CURRENT: jpeg}), BUCKET)
         assert url is not None
-        assert url.startswith('data:image/jpeg;base64,')
+        assert url.startswith(f'data:image/jpeg;{LOGO_MARKER};base64,')
 
     def test_bytes_that_are_no_raster_image_are_refused(self):
         svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
@@ -123,22 +128,34 @@ class TestCompanyLogoDataUrl:
 
 
 class TestPlaceholder:
+    LOGO = f'data:image/png;{LOGO_MARKER};base64,{base64.b64encode(b"x" * 3000).decode()}'
+
     def test_inline_replaces_every_placeholder(self):
         html = f'<img src="{LOGO_PLACEHOLDER}"><footer><img src="{LOGO_PLACEHOLDER}"></footer>'
-        assert inline_logo(html, 'data:image/png;base64,AAAA') == (
+        assert inline_logo(html, 'data:image/png;base64,AAAA', 'Example Air') == (
             '<img src="data:image/png;base64,AAAA"><footer><img src="data:image/png;base64,AAAA"></footer>')
 
-    def test_a_leftover_placeholder_without_a_logo_becomes_a_blank_image(self):
-        assert inline_logo(f'<img src="{LOGO_PLACEHOLDER}">', None) == f'<img src="{BLANK_IMAGE}">'
+    def test_without_a_logo_a_placeholder_img_becomes_the_wordmark_as_text(self):
+        html = f'<header><IMG class="logo" src="{LOGO_PLACEHOLDER}" alt="Company logo"></header>'
+        assert inline_logo(html, None, 'Example <Air>') == (
+            '<header><span class="company-wordmark" style="font-weight:700">Example &lt;Air&gt;</span></header>')
+
+    def test_without_a_logo_a_placeholder_outside_an_img_becomes_a_blank_image(self):
+        assert inline_logo(f'.hero{{background:url({LOGO_PLACEHOLDER})}}', None, 'Example Air') == (
+            f'.hero{{background:url({BLANK_IMAGE})}}')
 
     def test_html_without_a_placeholder_is_unchanged(self):
-        assert inline_logo('<h1>Demo</h1>', 'data:image/png;base64,AAAA') == '<h1>Demo</h1>'
+        assert inline_logo('<h1>Demo</h1>', 'data:image/png;base64,AAAA', 'Example Air') == '<h1>Demo</h1>'
 
-    def test_an_inlined_logo_goes_back_to_the_placeholder(self):
-        logo = f'data:image/png;base64,{base64.b64encode(b"x" * 3000).decode()}'
-        html = inline_logo(f'<header><img src="{LOGO_PLACEHOLDER}" alt="Company logo"></header>', logo)
+    def test_the_marked_logo_goes_back_to_the_placeholder(self):
+        html = inline_logo(f'<header><img src="{LOGO_PLACEHOLDER}" alt="Company logo"></header>', self.LOGO, 'x')
         assert with_logo_placeholder(html) == f'<header><img src="{LOGO_PLACEHOLDER}" alt="Company logo"></header>'
 
-    def test_a_short_inline_image_the_model_drew_is_kept(self):
-        icon = 'data:image/png;base64,iVBORw0KGgo='
-        assert with_logo_placeholder(f'<img src="{icon}">') == f'<img src="{icon}">'
+    # Regression (commit review): every large inline image used to be taken for the logo.
+    def test_another_large_inline_image_is_never_taken_for_the_logo(self):
+        photo = f'data:image/png;base64,{base64.b64encode(b"y" * 3000).decode()}'
+        assert with_logo_placeholder(f'<img src="{photo}" alt="Hero">') == f'<img src="{photo}" alt="Hero">'
+
+    def test_has_logo_placeholder(self):
+        assert has_logo_placeholder(f'<img src="{LOGO_PLACEHOLDER}">') is True
+        assert has_logo_placeholder('<img src="data:image/png;base64,AAAA">') is False

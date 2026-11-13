@@ -128,7 +128,7 @@ export class VocCoreStack extends VocStack {
   /** How customer data is removed with the stacks (`-c protectData`). */
   public readonly dataProtection: DataProtection;
   /**
-   * Read the uploaded company logo objects (`company-context/design/logo_*`): the document generator inlines the
+   * Read the uploaded company logo objects (`company-context/design/logo_<12 hex>.<ext>`): the document generator inlines the
    * logo into a prototype (lambda/shared/company_logo.py). A managed policy here, attached in VocApiStack, because
    * that role's inline policy is at its size gate (lib/stacks/api-stack-mcp.test.ts).
    */
@@ -508,15 +508,16 @@ export class VocCoreStack extends VocStack {
       cdkCustomResourceSuppressions,
     );
 
-    // The company logo, read-only (GetObject, no List): the keys come from the design-system row.
-    const companyLogoKeys = this.rawDataBucket.arnForObjects('company-context/design/logo_*');
+    // The company logo, read-only (GetObject, no List): the keys come from the design-system row. `?` is one
+    // character: exactly `logo_<12 hex>.<ext>` (company_context.new_id), never a reference's `logo_preview_*`.
+    const companyLogoKeys = this.rawDataBucket.arnForObjects('company-context/design/logo_????????????.*');
     this.companyLogoReadPolicy = new iam.ManagedPolicy(this, 'CompanyLogoReadPolicy', {
       description: 'Read the uploaded company logo objects of the raw data bucket (docs/company-context.md)',
       statements: [new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [companyLogoKeys] })],
     });
     acknowledgeNag(this.companyLogoReadPolicy, [{
       id: 'AwsSolutions-IAM5',
-      reason: 'GetObject on ONE key prefix of the raw data bucket, the uploaded company logos (company-context/design/logo_<id>.<ext>); the trailing wildcard is the logo id, never another prefix',
+      reason: 'GetObject on ONE key prefix of the raw data bucket, the uploaded company logos (company-context/design/logo_<12 single-character wildcards>.<ext>); the wildcards are the logo id and extension, never another prefix or a reference preview',
       findings: [resourceFinding(companyLogoKeys)],
     }]);
 
