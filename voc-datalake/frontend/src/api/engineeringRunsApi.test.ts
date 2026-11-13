@@ -62,6 +62,18 @@ describe('a signal', () => {
   })
 })
 
+describe('a run\'s start', () => {
+  it('posts the request and reads the run it started; an answer naming no run is an error', async () => {
+    const request = { workflow_id: 'wf_1', connection: 'conn-1', commit: 'a'.repeat(40), language: 'python', goal: 'Fix it' }
+    fetchApi.mockResolvedValueOnce({ run: { run_id: 'RUN1', status: 'active', workflow_id: 'wf_1' } })
+    expect(await engineeringRunsApi.start(request)).toStrictEqual({ runId: 'RUN1' })
+    expect(fetchApi).toHaveBeenLastCalledWith('/agents/engineering/runs',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(request) }))
+    fetchApi.mockResolvedValueOnce({ run: {} })
+    await expect(engineeringRunsApi.start(request)).rejects.toThrow('unreadable')
+  })
+})
+
 describe('the conversation', () => {
   it('reads a page and never moves behind where it started', () => {
     const page = parseConversationPage({ items: [engineeringMessage(3), { seq: 'x' }], next_after: 1 }, 2)

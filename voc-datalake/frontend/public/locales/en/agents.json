@@ -455,6 +455,42 @@
     "title": "Workflow",
     "subtitle": "A workflow from the library. Agents that run it use its newest saved revision."
   },
+  "startRun": {
+    "action": "Start a run",
+    "title": "Start a run of {{name}}",
+    "description": "The run starts this flow as last saved, on one commit of a connected repository. It reaches the repository only once the connection’s credential is stored.",
+    "fields": {
+      "connection": "Repository connection",
+      "commit": "Commit",
+      "language": "Language",
+      "goal": "Goal"
+    },
+    "hints": {
+      "connection": "The connection’s id: letters, digits and hyphens, at most 63.",
+      "commit": "The full commit id the run starts from: 40 hexadecimal characters.",
+      "language": "The repository’s toolchain: the agents work in that language’s sandbox image.",
+      "goal": "What the run is for, on one line of at most 500 characters."
+    },
+    "invalid": {
+      "connection": "Enter the connection’s id: 1 to 63 letters, digits or hyphens.",
+      "commit": "Enter the full commit id: 40 characters, 0 to 9 and a to f.",
+      "goalEmpty": "Say what the run is for.",
+      "goalLong": "Keep the goal to {{max, number}} characters or fewer."
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript and TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "Its monthly budget is the flow’s: {{amount}}.",
+    "noBudget": "The flow has no monthly budget.",
+    "submit": "Start the run",
+    "openRun": "Open the run",
+    "mayHaveStarted": "The run may have been started: check the runs list before you start another.",
+    "openRuns": "See the flow’s runs",
+    "saveFirst": "Save the flow first: a run uses the saved version."
+  },
   "paletteGroups": {
     "flow": "Flow",
     "research": "Research",

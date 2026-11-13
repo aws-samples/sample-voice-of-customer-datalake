@@ -26,15 +26,18 @@ Permissions:
   waits for), and the runs' spend by month (``GET /agents/engineering/spend``,
   engineering/spend.py), and the hard cap's setting, read and written (``GET``/``PUT
   /agents/engineering/settings``, engineering/settings.py: one row in the agents table, written with
-  its history row; the runtime reads it at a budgeted run's first start); while the engineering
-  agents are off every caller gets 404.
+  its history row; the runtime reads it at a budgeted run's first start), and a run's start
+  (``POST /agents/engineering/runs``, a saved engineering flow on a repository's commit: the start
+  function, below); while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
 their table and workspace bucket (never a write: GetItem and Query) and ``lambda:InvokeFunction`` on the board's
 function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
-events back for this role to publish as the person (engineering/board/api.py person_request); it is to add
+events back for this role to publish as the person (engineering/board/api.py person_request), and
+``lambda:InvokeFunction`` on the start function (``ENGINEERING_START_FUNCTION``, voc-engineering-start: the runtime's
+code and role, which runs ``start_run`` and refuses every other action; never the runtime's own function); it is to add
 ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
@@ -46,10 +49,12 @@ partitions (``WS#<ws>#SPEND#<yyyy-mm>``).
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from functools import cache
 from typing import Any
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -1064,6 +1069,199 @@ def put_engineering_settings():
         logger.exception('engineering: the hard cap could not be saved')
         raise ServiceUnavailableError('the hard cap could not be saved: retry') from exc
     return saved.view()
+
+
+# A run's start (``POST /agents/engineering/runs``): an administrator acting for themselves starts a saved engineering
+# flow on a repository's commit. The API mints the run's id and invokes the start function (voc-engineering-start, the
+# runtime's code: it runs ``start_run`` and refuses every other action; this role may invoke it and never the runtime
+# itself), with the flow's budget from the stored workflow, never from the request, and the person as its actor.
+#: The task cap of a run started here (the board counts its tasks against it: runs.py RunCaps), the server's own.
+RUN_TASK_CAP = 100
+#: A run's cost and token caps when the deployment sets none (`-c engineeringRunCapUsd`, `-c engineeringRunTokenCap`:
+#: ENGINEERING_RUN_CAP_USD, ENGINEERING_RUN_TOKEN_CAP): every run started here has both, so its cost cap bounds it
+#: (TENETS.md tenet 7); with the hard cap on, the runtime lowers the cost cap to what is left of the flow's month.
+DEFAULT_RUN_CAP_USD = 50.0
+DEFAULT_RUN_TOKEN_CAP = 10_000_000
+#: The longest goal a run takes (runs.py MAX_TEXT): longer is refused, never cut.
+MAX_RUN_GOAL = 500
+#: How long the API waits for the start (under API Gateway's 29 s); a start is never retried by the client.
+START_READ_TIMEOUT_SECONDS = 25
+_START_FIELDS = frozenset({'workflow_id', 'connection', 'commit', 'language', 'goal'})
+_RUN_COMMIT = re.compile(r'[0-9a-f]{40}\Z')
+#: The runtime's refusals a person can act on, all before anything is written (its error types): 409 with its own
+#: words (no image for the language, the hard cap with nothing left of the flow's month).
+_START_REFUSALS = frozenset({'RuntimeRefused', 'RunExists', 'RunNotActive'})
+#: The start function's faults known to have written nothing, said in its words as 503 (start it again): a read the
+#: start needed failed, or the write itself failed.
+_START_NOT_WRITTEN = frozenset({'StartReadFailed', 'StartNotWritten'})
+#: Its faults once the run was written, or when it could not tell, said in its words as 503 naming the run (open it,
+#: never start another).
+_START_WRITTEN = frozenset({'StartFailed', 'StartUncertain'})
+
+
+def _run_cap(name: str, default: float, kind: type) -> Any:
+    """A run cap from the deployment (``name``, set by the stack from its context), ``default`` when it sets none; one
+    that is not a positive number is a deployment fault, logged, and the default holds (a run is never uncapped)."""
+    raw = os.environ.get(name, '')
+    try:
+        value = kind(raw) if raw else default
+    except ValueError:
+        value = 0
+    if not (value > 0 and math.isfinite(value)):
+        logger.error('engineering: a run cap of the deployment is not a positive number', extra={'variable': name})
+        return kind(default)
+    return value
+
+
+def _run_repo(connection: str) -> str:
+    """The run's ``repo``, as its reports and the spend ledger group it: the connection's repository once connections
+    are stored (the connection page is planned, so there is no record to read yet); until then the connection's id."""
+    return connection
+
+
+def _start_body(body: Mapping[str, Any]) -> dict[str, str]:
+    """The request's fields, each checked (400 for anything off): a workflow id, a connection's short id, a commit of
+    40 hexadecimal characters (lower-cased), a language with a MicroVM image, and a goal on one line, at most
+    ``MAX_RUN_GOAL`` characters, credential-shaped text redacted."""
+    from engineering.quality_gate.text import redact
+    from engineering.runtime.egress import REGISTRY_HOSTS
+    from engineering.runtime.interface import RuntimeRefused, check_id
+
+    if not set(body) <= _START_FIELDS or not all(isinstance(body.get(name), str) for name in _START_FIELDS):
+        raise ValidationError('the body is {workflow_id, connection, commit, language, goal}, each a string')
+    fields = {name: str(body[name]).strip() for name in _START_FIELDS}
+    try:
+        check_id('connection', fields['connection'])
+    except RuntimeRefused as refused:
+        raise ValidationError(f'{refused} (a connection id)') from refused
+    commit = fields['commit'].lower()
+    if not _RUN_COMMIT.fullmatch(commit):
+        raise ValidationError('commit is a full commit id: 40 hexadecimal characters')
+    if fields['language'] not in REGISTRY_HOSTS:
+        raise ValidationError(f'language is one of {", ".join(sorted(REGISTRY_HOSTS))}')
+    goal = ' '.join(fields['goal'].split())
+    if not goal or len(goal) > MAX_RUN_GOAL:
+        raise ValidationError(f'goal says what the run is for, in 1 to {MAX_RUN_GOAL} characters')
+    return {**fields, 'commit': commit, 'goal': redact(goal)}
+
+
+def _engineering_flow_budget(workflow_id: str) -> float | None:
+    """The stored engineering flow's monthly budget (None for none): 400 for an id that names no saved workflow or an
+    agents workflow, 409 for a stored budget off its rule."""
+    from shared.workflow_engineering import budget_of
+
+    workflow = _find_workflow(workflow_id)
+    if workflow is None:
+        raise ValidationError('workflow_id does not name a saved workflow')
+    definition = workflow_schema.decode_definition(workflow.get('definition')) or {}
+    if definition.get('schema') != workflow_schema.SCHEMA_V2:
+        raise ValidationError('workflow_id names an agents workflow: a run starts from an engineering flow')
+    budget, broken = budget_of(definition.get('budget'))
+    if broken:
+        raise ConflictError(f'the flow\'s stored budget is off its rule ({broken}): save the flow again')
+    return None if budget is None else float(budget['monthly_usd'])
+
+
+@cache
+def _start_client() -> Any:
+    """The Lambda client for the start (built once per container): it waits ``START_READ_TIMEOUT_SECONDS`` and never
+    retries by itself."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client('lambda', config=Config(read_timeout=START_READ_TIMEOUT_SECONDS, connect_timeout=5,
+                                                retries={'total_max_attempts': 1}))
+
+
+class _MayHaveStarted(ServiceUnavailableError):
+    """503 naming a run that was written, or may have been (nobody can tell): open its monitor, never start another.
+    Answered with the run's id beside the message (``run_id``), and the message names it too."""
+
+    def __init__(self, run_id: str, message: str = '') -> None:
+        super().__init__(message or f'run {run_id} may have been started: open the run monitor before you start '
+                                    'another')
+        self.run_id = run_id
+
+
+def _invoke_start(function: str, request: dict[str, Any]) -> dict[str, Any]:
+    """The start function's answer (``{run_id, status}``). Its refusals (all before the write) are 409 in its words; a
+    failure known to have written nothing is 503 "start it again"; anything else (written, or not known not to be: a
+    dropped connection, a timeout, a failure of an unknown kind) is a 503 naming the run, ``_MayHaveStarted``."""
+    from botocore.exceptions import ConnectTimeoutError, EndpointConnectionError
+
+    run_id = request['run_id']
+    try:
+        response = _start_client().invoke(FunctionName=function, InvocationType='RequestResponse',
+                                          Payload=json.dumps(request).encode())
+    except (EndpointConnectionError, ConnectTimeoutError, ClientError) as exc:
+        # (never connected, or the service refused the call: the start function did not run)
+        logger.exception('engineering: the start function could not be reached')
+        raise ServiceUnavailableError('the engineering runtime could not be reached: start the run again') from exc
+    except BotoCoreError as exc:
+        # (a read timeout, a connection dropped mid-call: the start may have written the run)
+        logger.warning('engineering: the run\'s start did not answer', extra={'run_id': run_id})
+        raise _MayHaveStarted(run_id) from exc
+    try:
+        # (the answer is read off the connection here: a read that fails, or a payload that is not a JSON object, says
+        # nothing of the write, so the run may have been started)
+        payload = json.loads(response['Payload'].read() or b'{}')
+    except (ValueError, KeyError, OSError, BotoCoreError) as exc:
+        logger.warning('engineering: the start\'s answer could not be read', extra={'run_id': run_id})
+        raise _MayHaveStarted(run_id) from exc
+    if not isinstance(payload, dict):
+        raise _MayHaveStarted(run_id)
+    answer: dict[str, Any] = payload
+    if response.get('FunctionError'):
+        error_type, said = answer.get('errorType'), str(answer.get('errorMessage') or '')[:500]
+        logger.warning('engineering: a start failed', extra={'run_id': run_id, 'error_type': error_type})
+        if error_type in _START_REFUSALS:
+            raise ConflictError(said or 'the runtime refused the start')
+        if error_type in _START_NOT_WRITTEN:
+            raise ServiceUnavailableError(said or 'the run could not be started: start it again')
+        if error_type in _START_WRITTEN:
+            raise _MayHaveStarted(run_id, said)
+        raise _MayHaveStarted(run_id)   # (a timeout, a crash: the function's own kind, which says nothing of the write)
+    if answer.get('run_id') != run_id:
+        raise _MayHaveStarted(run_id)
+    return answer
+
+
+@app.post('/agents/engineering/runs')
+@tracer.capture_method
+def start_engineering_run():
+    """``{workflow_id, connection, commit, language, goal}`` → 202 ``{run: {run_id, status, workflow_id, started_by}}``:
+    an administrator acting for themselves (a delegated credential gets 403) starts a saved engineering flow (404 while
+    the module is off). The run's id is minted here; its flow's budget is the stored workflow's, its caps the
+    deployment's; the runtime records who started it and when (META's ``started_by``, its ``RUNLOG#`` row: D4). 202:
+    the run is written when this answers, and its coordinator's launch is under way (the start function hands it on)."""
+    _engineering_on()
+    caller = _caller()
+    require_admin_caller(caller)
+    function = os.environ.get('ENGINEERING_START_FUNCTION', '')
+    if not function:
+        raise ServiceUnavailableError('runs cannot be started from here: the deployment names no start function')
+    fields = _start_body(json_object_body(app))
+    budget_usd = _engineering_flow_budget(fields['workflow_id'])
+    from engineering.bus.publish import new_event_id
+
+    request: dict[str, Any] = {
+        'action': 'start_run', 'run_id': new_event_id(), 'max_tasks': RUN_TASK_CAP, 'flow': fields['workflow_id'],
+        'connection': fields['connection'], 'commit': fields['commit'], 'language': fields['language'],
+        'goal': fields['goal'], 'actor': caller.subject, 'repo': _run_repo(fields['connection']),
+        'max_cost_usd': _run_cap('ENGINEERING_RUN_CAP_USD', DEFAULT_RUN_CAP_USD, float),
+        'max_tokens': _run_cap('ENGINEERING_RUN_TOKEN_CAP', DEFAULT_RUN_TOKEN_CAP, int),
+    }
+    if budget_usd is not None:
+        request['budget_usd'] = budget_usd
+    try:
+        answer = _invoke_start(function, request)
+    except _MayHaveStarted as unsure:
+        # (the run's id beside the message: the web app offers its monitor, and no second start)
+        return _json(503, {'error': unsure.message, 'run_id': unsure.run_id})
+    logger.info('Engineering run started', extra={'run_id': request['run_id'], 'workflow_id': fields['workflow_id'],
+                                                  'started_by': caller.subject})
+    return _json(202, {'run': {'run_id': request['run_id'], 'status': str(answer.get('status', 'active')),
+                               'workflow_id': fields['workflow_id'], 'started_by': caller.subject}})
 
 
 @app.get('/agents/engineering/<run_id>')

@@ -574,6 +574,23 @@
   },
   {
     "file": "api/engineeringRunsApi.ts",
+    "method": "POST",
+    "call": "'/agents/engineering/runs'",
+    "probes": [
+      {
+        "path": "/agents/engineering/runs",
+        "body": {
+          "workflow_id": "wf_7c2d9e41a0b3",
+          "connection": "conn-storefront",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "language": "node",
+          "goal": "Fix the paging bugs"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
     "method": "GET",
     "call": "engineeringRunPath(runId)",
     "probes": [

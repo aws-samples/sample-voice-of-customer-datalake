@@ -163,7 +163,8 @@ request's status, and, for now, reading an engineering run: its board, conversat
 (`GET /agents/engineering/{run_id}/…`, only with `-c engineeringAgents=true`) are for administrators only until a
 repository connection can be shared ([autonomous-engineering.md](autonomous-engineering.md)), so they have no tool yet
 (the web app's AI assistant reads them for an administrator, `get_engineering_run`, with that administrator's own
-sign-in: an MCP token is still refused there).
+sign-in: an MCP token is still refused there). Starting an engineering run (`POST /agents/engineering/runs`) is
+admin work too, so it has no tool either.
 
 The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Radar and feedback-edit tools in
 `lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in

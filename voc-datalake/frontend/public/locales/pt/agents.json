@@ -613,6 +613,42 @@
     "title": "Fluxo",
     "subtitle": "Um fluxo da biblioteca. Os agentes que o executam usam a revisão salva mais recente."
   },
+  "startRun": {
+    "action": "Iniciar uma execução",
+    "title": "Iniciar uma execução de {{name}}",
+    "description": "A execução inicia este fluxo como foi salvo por último, em um commit de um repositório conectado. Ela só chega ao repositório quando a credencial da conexão estiver armazenada.",
+    "fields": {
+      "connection": "Conexão do repositório",
+      "commit": "Commit",
+      "language": "Linguagem",
+      "goal": "Objetivo"
+    },
+    "hints": {
+      "connection": "O id da conexão: letras, dígitos e hifens, no máximo 63.",
+      "commit": "O id completo do commit de onde a execução parte: 40 caracteres hexadecimais.",
+      "language": "As ferramentas do repositório: os agentes trabalham na imagem isolada dessa linguagem.",
+      "goal": "Para que serve a execução, em uma linha de no máximo 500 caracteres."
+    },
+    "invalid": {
+      "connection": "Informe o id da conexão: de 1 a 63 letras, dígitos ou hifens.",
+      "commit": "Informe o id completo do commit: 40 caracteres, de 0 a 9 e de a a f.",
+      "goalEmpty": "Diga para que serve a execução.",
+      "goalLong": "O objetivo pode ter no máximo {{max, number}} caracteres."
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript e TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "O orçamento mensal é o do fluxo: {{amount}}.",
+    "noBudget": "O fluxo não tem orçamento mensal.",
+    "submit": "Iniciar a execução",
+    "openRun": "Abrir a execução",
+    "mayHaveStarted": "A execução pode ter sido iniciada: confira a lista de execuções antes de iniciar outra.",
+    "openRuns": "Ver as execuções do fluxo",
+    "saveFirst": "Salve o fluxo primeiro: uma execução usa a versão salva."
+  },
   "validation": {
     "scope": "Escolha pelo menos uma categoria ou subcategoria, ou acompanhe todas as categorias.",
     "name": "Dê ao agente um nome de até {{max, number}} caracteres.",

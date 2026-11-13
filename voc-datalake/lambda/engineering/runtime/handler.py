@@ -38,8 +38,15 @@
 (engineering-runtime.ts createDelivery): the router's message for an agent, the conductor or a role of a run,
 recorded in the run's inbox and its addressees woken (``delivery.py``).
 
-``actor`` is who asked (a person's id: the run monitor sends it with its signals; nothing starts or ends a run with
-it yet): a
+``start_handler`` is voc-engineering-start's entry point, the same code with a role of its own that holds only what
+a start needs (engineering-start.ts): the Agents API's ``POST /agents/engineering/runs``, whose role may invoke that
+function and never this one. It takes ``start_run`` and nothing else: an event naming any other action, or none, is
+refused before anything is read, so the API's grant can start a run and never tick, launch, signal or end one. It
+writes the run and answers; the coordinator's launch is handed on to this function's ``launch_coordinator``
+(``{"run_id", "actor"}``, asynchronous, never raising: a failure sends the run to a person).
+
+``actor`` is who asked (a person's id: the run monitor sends it with its signals, the Agents API with a start; nothing
+ends a run with it yet): a
 run's start, its end and a person's Resume of the whole run record it with the change (D4: ``runs.py``), as
 ``unattributed`` when it is missing; the supervisor's decision points record ``supervisor``.
 
@@ -75,6 +82,7 @@ from engineering.runtime.runs import (
     RunExists,
     RunNotActive,
     RunStore,
+    StartReadFailed,
     TableRunControl,
     hard_capped,
 )
@@ -146,7 +154,7 @@ def _hard_cap_on() -> bool:
         return read_hard_cap(get_dynamodb_resource().Table(os.environ['ENGINEERING_SETTINGS_TABLE'])).on
     except (ClientError, BotoCoreError, KeyError) as error:
         logger.exception('engineering runtime: the hard cap\'s setting could not be read')
-        raise RuntimeRefused('the hard cap\'s setting could not be read: start the run again') from error
+        raise StartReadFailed('the hard cap\'s setting could not be read: start the run again') from error
 
 
 def _runs() -> RunStore:
@@ -334,7 +342,7 @@ def _ensure_coordinator(run_id: str, actor: str) -> None:
         raise
 
 
-def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
+def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any]:
     """Start a run with its caps, its repository ``connection`` and ``commit`` (the board's ``launch`` and
     ``knowledge`` read them from META) and its ``language``, and launch its coordinator; the supervisor's rule is on
     from then. A first start that names a ``language`` is refused, before anything is written, when the coordinator
@@ -342,7 +350,9 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
     never gets a coordinator, but no run records a language this deployment cannot run); a start with all three
     numbers it ``coordinator-1``. A start
     whose coordinator then fails to launch (its MicroVM did not start, or the runtime refused it) sends the run to a
-    person (``needs_human`` ``coordinator``), whose Resume launches it, and raises the failure."""
+    person (``needs_human`` ``coordinator``), whose Resume launches it, and raises the failure; so does a rule that
+    could not be switched on. ``launch=False`` (voc-engineering-start) writes the run and switches the rule only: its
+    coordinator is launched by the ``launch_coordinator`` action that start hands on."""
     caps = RunCaps(max_tasks=_optional_number(event, 'max_tasks', int) or 0,
                    max_tokens=_optional_number(event, 'max_tokens', int),
                    max_cost_usd=_optional_number(event, 'max_cost_usd', float))
@@ -367,19 +377,47 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
         if run is None or run.status in ENDED:
             raise
         status = run.status  # a retry of a live run: its rule may never have been switched on
-    _switch(True)
     try:
-        _ensure_coordinator(run_id, str(event.get('actor') or ''))
+        _switch(True)
+        if launch:
+            _ensure_coordinator(run_id, str(event.get('actor') or ''))
     except SessionBusy:
         raise   # (another start's launch of it is under way: ask again)
     except Exception:
-        # Its MicroVM did not start, or the runtime refused it: the run goes to a person (the coordinator's
-        # decision point, the run monitor's Resume prompt), never left active with no coordinator and no session.
-        with contextlib.suppress(RunNotActive):   # (ended meanwhile)
-            runs.needs_human(run_id, 'coordinator', now=int(clock()),
-                             actor=str(event.get('actor') or '') or UNATTRIBUTED)
+        # The rule could not be switched on, its MicroVM did not start, or the runtime refused it: the run goes to a
+        # person (the coordinator's decision point, the run monitor's Resume prompt), never left active with no
+        # coordinator and no session.
+        _to_person(run_id, str(event.get('actor') or ''))
         raise
     return {'run_id': run_id, 'status': status}
+
+
+def _to_person(run_id: str, actor: str) -> None:
+    """The run at the coordinator's decision point (a person's Resume launches it); one that ended meanwhile stays."""
+    with contextlib.suppress(RunNotActive):
+        _runs().needs_human(run_id, 'coordinator', now=int(clock()), actor=actor or UNATTRIBUTED)
+
+
+def launch_coordinator(event: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``launch_coordinator`` action: the second half of a start from voc-engineering-start (``{"run_id",
+    "actor"}``, invoked asynchronously once the run is written), the run's coordinator launched as ``start_run``
+    launches it. Never raises (nothing retries it): a launch under way elsewhere is left to it; any other failure
+    sends the run to a person, whose Resume launches it, so a run is never left active with no coordinator."""
+    run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
+    try:
+        check_run_id(run_id)
+        _ensure_coordinator(run_id, actor)
+    except SessionBusy:
+        logger.info('engineering runtime: the run\'s coordinator launch is under way', extra={'run_id': run_id})
+        return {'run_id': run_id, 'status': 'launching'}
+    except Exception:
+        logger.exception('engineering runtime: a started run\'s coordinator was not launched', extra={'run_id': run_id})
+        try:
+            _to_person(run_id, actor)
+        except Exception:
+            logger.exception('engineering runtime: the run could not be sent to a person', extra={'run_id': run_id})
+        return {'run_id': run_id, 'status': 'needs_human'}
+    return {'run_id': run_id, 'status': 'active'}
 
 
 def end_run(event: Mapping[str, Any]) -> dict[str, Any]:
@@ -589,9 +627,86 @@ def delivery_handler(event: Mapping[str, Any], context: object) -> dict[str, Any
     return answer
 
 
+#: The one action voc-engineering-start takes (``start_handler``).
+START_ACTION: Final = 'start_run'
+
+
+class StartFailed(RuntimeError):
+    """The run was written, but the start failed after that (the rule, the launch's hand-on, a launch under way): the
+    run is there, at a person's decision point (whose Resume launches its coordinator) unless another launch of it is
+    under way. Never a refusal: the start must not be asked again under a new id, which would be a second run; the
+    run is opened instead."""
+
+
+class StartNotWritten(RuntimeError):
+    """The start failed and its run is known not to exist (read back after the failure): it can be asked again."""
+
+
+class StartUncertain(RuntimeError):
+    """The start failed and whether its run was written could not be read: it may exist, so it is opened (its run
+    monitor), never started again under a new id."""
+
+
+def _written(run_id: str) -> bool | None:
+    """Whether the run exists, read back after a failed start; None when that read fails too (nobody can tell)."""
+    try:
+        return _runs().get(run_id) is not None
+    except Exception:
+        logger.exception('engineering start: the run could not be read after a failed start', extra={'run_id': run_id})
+        return None
+
+
+def _hand_on_launch(run_id: str, actor: str) -> None:
+    """The run's coordinator launched by voc-engineering-runtime's ``launch_coordinator``, invoked asynchronously
+    (ENGINEERING_RUNTIME_FUNCTION; the supervisor's role may invoke it, the Agents API's never)."""
+    from shared.aws import invoke_lambda_async
+    invoke_lambda_async(os.environ['ENGINEERING_RUNTIME_FUNCTION'],
+                        {'action': 'launch_coordinator', 'run_id': run_id, 'actor': actor})
+
+
+@metrics.log_metrics
+@measure_invocation_cost
+def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
+    """voc-engineering-start: the Agents API's start of a run (``{"action": "start_run", ...}``). Every other action,
+    and an event naming none, is refused before anything is read: the API's role may invoke this function only
+    (engineering-start.ts, pinned by its test), so it can start a run and nothing more.
+
+    It answers as soon as the run is written (its refusals, all before the write, are raised as they are): it writes
+    the run and switches the rule on (``start_run`` with ``launch=False``), then hands the coordinator's launch on to
+    voc-engineering-runtime (``launch_coordinator``, asynchronously: a MicroVM's start does not fit behind API
+    Gateway's 29 s). Any failure once the run exists is ``StartFailed``, naming it; the run is sent to a person first
+    (the hand-on failed: still active), so it is never left active with nobody to launch its coordinator."""
+    if event.get('action') != START_ACTION:
+        logger.warning('engineering start: an action other than start_run refused',
+                       extra={'action': str(event.get('action'))[:40]})
+        raise RuntimeRefused(f'this function only starts a run (action {START_ACTION!r})')
+    run_id, actor = str(event.get('run_id', '')), str(event.get('actor') or '')
+    try:
+        answer = start_run(event, launch=False)
+        _hand_on_launch(run_id, actor)
+    except Exception as error:
+        written = _written(run_id)
+        if written is None:
+            raise StartUncertain(f'run {run_id} may have been started: open the run monitor before you start '
+                                 'another') from error
+        if not written:
+            if isinstance(error, RuntimeRefused):
+                raise   # (a refusal, all before the write: said as it is)
+            raise StartNotWritten('the run could not be started: start it again') from error
+        if not isinstance(error, SessionBusy):   # (a launch under way keeps the run: it is the run's coordinator)
+            try:
+                _to_person(run_id, actor)   # (already there when start_run sent it: no change, no row)
+            except Exception:
+                logger.exception('engineering start: the run could not be sent to a person', extra={'run_id': run_id})
+        raise StartFailed(f'run {run_id} was started, but its coordinator could not be launched: open its run '
+                          'monitor and resume it') from error
+    logger.info('engineering run started', extra={'run_id': answer.get('run_id'), 'status': answer.get('status')})
+    return answer
+
+
 ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {
     'start_run': start_run, 'end_run': end_run, 'tick': tick, 'launch': launch, 'signal': signal_action,
-    'retrospective': retrospective,
+    'retrospective': retrospective, 'launch_coordinator': launch_coordinator,
 }
 
 

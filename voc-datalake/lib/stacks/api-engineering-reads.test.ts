@@ -5,6 +5,7 @@
  * (whose tokens never act as an admin) gets no engineering tool and nothing of the module.
  */
 import { describe, expect, it } from 'vitest';
+import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 
 import { byCodeUnit } from '../utils/compare';
@@ -14,8 +15,10 @@ import {
 } from '../test-support/api-stack-template';
 import type { VocApiStack } from './api-stack';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
+import { engineeringRunCaps } from './engineering-start';
 
-const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
+const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_BOARD_FUNCTION', 'ENGINEERING_RUN_CAP_USD',
+  'ENGINEERING_RUN_TOKEN_CAP', 'ENGINEERING_START_FUNCTION', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
 const onStack = (): VocApiStack => {
   cachedOn ??= buildApiStack({ engineeringAgents: true });
@@ -64,6 +67,36 @@ describe('the engineering run reads', () => {
       [expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-board-",/)]);
     expect(JSON.stringify(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_BOARD_FUNCTION))
       .toMatch(/^"?\S*voc-engineering-board-/);
+  });
+
+  it('start a run through the start function alone, by its name: never the runtime\'s own function', () => {
+    const invokes = policyStatementsOf(on(), 'AgentsLambdaRole')
+      .filter((statement) => statement.actions.includes('lambda:InvokeFunction'));
+    const engineering = invokes.filter((statement) => /voc-engineering-/.test(statement.resource));
+    expect(engineering.map((statement) => statement.actions)).toStrictEqual([['lambda:InvokeFunction'],
+      ['lambda:InvokeFunction']]);
+    expect(engineering.map((statement) => statement.resource)).toStrictEqual([
+      expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-board-",/),
+      expect.stringMatching(/:lambda:[^"]*:function:voc-engineering-start-",/)]);
+    // The runtime itself (tick, launch, signal, end_run) is not this role's to invoke, in any form.
+    expect(JSON.stringify(invokes)).not.toMatch(/voc-engineering-(runtime|delivery)/);
+    expect(JSON.stringify(serviceEnvironment(on(), 'voc-agents-api').ENGINEERING_START_FUNCTION))
+      .toMatch(/^"?\S*voc-engineering-start-/);
+  });
+
+  it('cap every run it starts: 50 USD and 10 million tokens by default, the deployment\'s own when set', () => {
+    const env = serviceEnvironment(on(), 'voc-agents-api');
+    expect([env.ENGINEERING_RUN_CAP_USD, env.ENGINEERING_RUN_TOKEN_CAP]).toStrictEqual(['50', '10000000']);
+    const scope = (context: Record<string, unknown>) => new cdk.App({ context });
+    expect(engineeringRunCaps(scope({ engineeringRunCapUsd: '12.50', engineeringRunTokenCap: 2_000_000 })))
+      .toStrictEqual({ ENGINEERING_RUN_CAP_USD: '12.50', ENGINEERING_RUN_TOKEN_CAP: '2000000' });
+  });
+
+  it.each([
+    [{ engineeringRunCapUsd: '0' }], [{ engineeringRunCapUsd: '-5' }], [{ engineeringRunCapUsd: '1.005' }],
+    [{ engineeringRunCapUsd: 'lots' }], [{ engineeringRunTokenCap: '1.5' }], [{ engineeringRunTokenCap: '0' }],
+  ])('refuse a run cap that is not a positive number, so no run is uncapped (%j)', (context) => {
+    expect(() => engineeringRunCaps(new cdk.App({ context }))).toThrow(/is a positive/);
   });
 
   it('give the MCP endpoint nothing: the reads are admin-only and an MCP token is never an admin, so no tool', () => {

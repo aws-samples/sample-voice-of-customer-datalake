@@ -647,8 +647,9 @@ self-improvement step, ending at an administrator's acceptance. The Agents API l
 the module is deployed (`GET /workflows/templates`, 404 elsewhere); the library's **Start from a template** lists them from the file and opens
 an unsaved copy of the server's definition in the editor, and Save is the library's own `POST /workflows` (its validation, its 409 where the module
 is off): no write path of their own ([docs/autonomous-agents.md](autonomous-agents.md)). The step titles are in
-English in every language (the template's name and description are translated). Nothing runs them yet: the
-engineering runtime does not start a run from a flow. *Planned*: the templates over MCP (their route is for
+English in every language (the template's name and description are translated). A flow saved from one can be
+started since 6.25.00 ([How a flow starts](#how-the-agents-work-together), below), but nothing follows its steps
+yet: the run records the flow's id and budget, and its coordinator plans the work. *Planned*: the templates over MCP (their route is for
 administrators, and an MCP token never acts as one: TENETS.md's tenet 4 gap, as for a run's reads), and marking in
 each template where the dial stops it (tenet 3: human-driven stops at the proposal or plan, AI-assisted waits for a
 person's go after the plan); today a template does not say, and the dial is enforced server side, not by the
@@ -717,7 +718,50 @@ description says what it was built from and what it skipped. A bug fix is a corr
 not new product work, so it skips no methodology step; a "fix" that changes behaviour beyond the bug belongs in the
 Feature flow, and the commit reviewer flags one that does.
 
-**How a flow starts.** A bug hunt is started by an administrator (Run now, or the agent's schedule, which only an
+**How a flow starts.** *Built* (6.25.00): an administrator acting for themselves starts a run of a saved engineering
+flow, from the flow's page in the web app (**Start a run**, where `features.engineering` is on) or with
+`POST /agents/engineering/runs` `{workflow_id, connection, commit, language, goal}` (no MCP tool: admin work,
+TENETS.md's tenet 4 row). The Agents API checks each field (a saved `voc-workflow/2` flow; a connection's short id; a
+full commit id of 40 hexadecimal characters; a language with a MicroVM image; a goal on one line of at most 500
+characters, credential-shaped text redacted; nothing else, so the request sets neither the budget, the caps, the
+repository nor the actor), mints the run's ULID, and invokes the start function, voc-engineering-start (the runtime's
+code with a role of its own, holding only what a start needs: the run's rows and the registry, a flow's month
+total and the hard cap's row, its rule switched on, and the runtime invoked for the launch; no MicroVM, agent role,
+bus or delete. It is entered at `start_handler`, which takes `start_run` and refuses every other action
+before anything is read), with the stored flow's monthly budget, a task cap of 100, the deployment's cost cap
+(`-c engineeringRunCapUsd`, 50 USD by default, so a run's cost cap always bounds it, TENETS.md tenet 7; with the hard
+cap on, the smaller of it and what is left of the flow's month) and token cap (`-c engineeringRunTokenCap`, 10 million
+by default), the connection's id as the run's `repo` (the connection's repository once a connection's record can be
+read; none can be stored yet), and the signed-in person as the actor: the run's `started_by`, whose way of working the
+broker's dial reads, and its first `RUNLOG#` row, who and when (D4). The API's role may invoke that function by name
+and never voc-engineering-runtime, so it can start a run and never tick, launch, signal or end one
+(`lib/stacks/api-engineering-reads.test.ts`, `runtime/test/test_engineering_runtime_handler.py`). The start function
+writes the run and switches the supervisor's rule on, then hands the coordinator's launch on to voc-engineering-runtime
+(`launch_coordinator`, invoked asynchronously: a MicroVM's start takes longer than API Gateway's 29 s, and the
+runtime has 5 minutes); the API answers 202 with the run's id as soon as the run is written, and the web app opens the
+run monitor on it. `launch_coordinator` never raises: a launch under way elsewhere is left to it, and any other failure
+sends the run to a person (the coordinator's decision point), whose Resume launches it. If that invocation itself
+crashes or times out before it can, the supervisor's tick catches it: an active run started with a coordinator to
+launch (its connection, commit and language) that has no coordinator session and no live launch hold of one, more than
+6 minutes after its start or its last Resume, whichever is later (the runtime's 5-minute limit and a minute's margin,
+`supervisor.COORDINATOR_LAUNCH_SECONDS`; a Resume records `resumed_epoch` on `META`, so its new coordinator gets a full
+window of its own and no tick undoes the Resume), goes to a person (`needs_human` `coordinator`, actor `supervisor`).
+The check uses the agent rows the tick already queries (sessions and launch holds, one query per listed run) and makes
+one GetItem of the run's `META` per tick for each run with no coordinator session; it asks once, as the decision point
+already waited at changes nothing. The runtime's refusals, all before anything is written (no image for the language,
+the hard cap with nothing left of the flow's month), are answered 409 in its words. A start known to have written
+nothing (never connected, refused by the service, a read it needed that failed, `StartReadFailed`, or its write that
+failed, `StartNotWritten`) is 503 "start it again". Any start that wrote, or may have written, its run is 503 naming it,
+with its `run_id` beside the message: a failure once the run is written (the rule, the hand-on, a launch under way:
+`StartFailed`, the run sent to a person first unless a launch of its coordinator is under way), a failure whose read
+back of the run failed too (`StartUncertain`), a failure of an unknown kind (a timeout, a crash), a read timeout, a
+dropped connection. The dialog then shows **Open the run**, a link to that run's monitor (the run read from `run_id` in
+the body, else from the message), and keeps Start off, so nobody starts a second run. An answer that names no run
+after the request was sent (a 504, a 5xx with no reason of the server's own, a network failure, an answer that cannot
+be read) keeps Start off too, says the run may have been started, and links to the flow's runs (Agents → Spend grouped
+by run for the flow, the one place runs are listed, where a run shows once it has used something). Such a run launches its coordinator, but it reaches the repository only once a connection's credential can be
+stored (the connection page, *planned*: [Repository connectors](#repository-connectors)), so until then every broker
+operation of it answers 503. *Planned*: the rest of this paragraph. A bug hunt is started by an administrator (Run now, or the agent's schedule, which only an
 administrator sets or changes, checked when the agent is saved and again when the run starts), scoped to packages; in a hunt the understander writes its problem statement on the board's task, not on the host. On a public
 repository, a flow that starts from someone's text starts only from an issue or pull request a maintainer labelled
 for it. A pull request from a fork is only ever reviewed (comments), never fixed or pushed to.
@@ -955,7 +999,9 @@ continues it in a new one once the wait closes.
   of the agent roles, which trust it as they trust the supervisor (with all four session tags), since a wake hands
   the MicroVM a fresh agent session. It cannot switch the supervisor's rule, suspend a MicroVM or touch the
   registry.
-- **The run's start and end.** The runtime's `start_run` writes the run's `META` row in voc-engineering
+- **The run's start and end.** The runtime's `start_run` (reached from the Agents API's
+  `POST /agents/engineering/runs` through voc-engineering-start, the same code entered where only `start_run` runs:
+  [How a flow starts](#how-the-agents-work-together)) writes the run's `META` row in voc-engineering
   (`WS#<ws>#RUN#<run>` / `META`: its task cap, which the board counts its tasks against, its hard caps on tokens and
   cost, its goal, repository, flow, status and start time, its connection and base commit, which the board's
   launch starts the run's agents on, never taken from an agent, its language (the repository's toolchain image),
@@ -1007,8 +1053,9 @@ continues it in a new one once the wait closes.
   the time), so the run's history is more than its last state; a change that loses a race with another write of
   META is tried again. The actor is the request's `actor` (its printable text), `unattributed` when it names
   nobody, or `supervisor` for the decision points it sets. The run monitor sends the person's id with its signals,
-  so a person's Resume is theirs; no caller of `start_run` or `end_run` sends one yet, so a start or end is
-  `unattributed` until one does. A decision point asked for again, for the same reason (the supervisor asks on every
+  so a person's Resume is theirs; the Agents API's start (`POST /agents/engineering/runs`, through
+  voc-engineering-start) sends the signed-in person's, so a run started there names who started it; no caller of
+  `end_run` sends one yet, so an end is `unattributed` until one does. A decision point asked for again, for the same reason (the supervisor asks on every
   tick while a budget stays spent), changes nothing and writes no row. An agent's tokens are those of every MicroVM
   it ran in, not only the current one's.
 - **Sessions.** One row per agent of a run, the board's own `AGENT#<agent>` row in the run's partition: ids, times,
@@ -1618,8 +1665,8 @@ monitor. Grouped by workflow, this month is set against each flow's monthly budg
 Each engineering flow may set a monthly budget (`budget: {monthly_usd}`, docs/autonomous-agents.md
 "Engineering flows"). The runtime's `start_run` takes the flow's budget (`budget_usd`, under the flow's own rule,
 refused for a run with no workflow id it could key) and keeps it on the run's META: a change applies to the next run.
-Nothing in the product starts a run yet, so no run has one so far: *planned*, the start route, which is to read it
-from the stored flow, never from a request. Each workflow's month has its dollars in the ledger's partition,
+The start route (`POST /agents/engineering/runs`, 6.25.00) reads it from the stored flow, never from the request.
+Each workflow's month has its dollars in the ledger's partition,
 `FLOW#<flow>`, ADDed in the same transaction as its runs' rows (one more item in it). The supervisor's tick reads it
 with one GetItem per live run with a budget, after that tick's moves (so a level passed by an agent's last write,
 or a stopping run's, is seen), never a Query of the month. As the month passes 80%, 100% and every
@@ -1650,9 +1697,11 @@ nothing left is refused before anything is written, saying the flow, the month a
 cap then holds it (the supervisor sends it to a person once it is spent). The cap is set once, per run, at its start:
 runs of one flow at once may together pass its budget, each capped at what was left when it started. A retry of a
 live run is not capped again; a setting that cannot be read refuses a budgeted first start, saying so (retry),
-even when the cap is off, since the start cannot tell; off, nothing else changes. It counts MicroVM time only until the model broker prices tokens. Until a start route reads the flow's
-budget from the stored workflow, the starter names it (`budget_usd`, `flow`): a start that leaves it out is not
-capped. The setting is one row in voc-agents, `SETTINGS#engineering` / `HARD_CAP`, beside the workflows whose budgets
+even when the cap is off, since the start cannot tell; off, nothing else changes. It counts MicroVM time only until the model broker prices tokens. The start route reads the flow's
+budget from the stored workflow and names it to the runtime (`budget_usd`, `flow`), so a run started there is capped
+whenever its flow has a budget; a start of the runtime's own that leaves it out is not capped. The start route also
+sends the deployment's run cap (`-c engineeringRunCapUsd`, 50 USD by default) as the run's `max_cost_usd`, so the hard
+cap keeps the smaller of the two. The setting is one row in voc-agents, `SETTINGS#engineering` / `HARD_CAP`, beside the workflows whose budgets
 it caps, with a create-only history row per change (`LOG#`: who, when, what; D1, D4), in the same transaction. The
 Agents API writes it (an administrator acting for themselves) and the runtime reads it with GetItem on that one
 partition; every other role that writes voc-agents (the agents' conductor, nodes, persona panel and heartbeat) has
@@ -1710,5 +1759,5 @@ and the phase that ships them names them in that row.
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors); no connection can be stored yet, so every operation still answers 503, and with one every push and pull request would still be refused until the CI attestation is recorded); planned: the connection page, the attestation's record, GitLab, sparse clones and the checkout cache; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
-| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents planned, and no run started from a flow yet |
+| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), whose steps nothing follows yet; the agents planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor (with a flow's monthly budget), Agents → Spend (the spend ledger by workflow, repository, run, agent, model or day, this month's share of each flow's budget, and the administrators' hard cap switch, [above](#cost)), and the run monitor (the flow with its agents' steps lit, the run's flow budget and its alert flag, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's run tools planned |

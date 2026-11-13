@@ -115,6 +115,12 @@ class RunControl(Protocol):
         """The run is active: not ended, and not waiting at a decision point."""
         ...
 
+    def coordinator_awaited(self, run_id: str) -> int | None:
+        """When the run started or a person last resumed it, whichever is later (epoch seconds), if it is active and was
+        started with its connection, commit and language, so it has a coordinator to launch; None otherwise. One read
+        of the run's row."""
+        ...
+
     def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
         """The alert this tick is to say, when the run's flow has a budget and its month passed a level no run of it
         said yet (claimed for this run); with none to say, the run is flagged with the highest level passed."""

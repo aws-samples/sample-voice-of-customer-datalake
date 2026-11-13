@@ -608,6 +608,42 @@
     "title": "工作流",
     "subtitle": "来自工作流库的工作流。运行它的智能体使用其最新保存的修订版本。"
   },
+  "startRun": {
+    "action": "开始运行",
+    "title": "开始运行 {{name}}",
+    "description": "运行会以最后保存的版本，在已连接仓库的一个提交上启动此流程。只有存储了连接的凭据后，它才会访问该仓库。",
+    "fields": {
+      "connection": "仓库连接",
+      "commit": "提交",
+      "language": "语言",
+      "goal": "目标"
+    },
+    "hints": {
+      "connection": "连接的 ID：字母、数字和连字符，最多 63 个。",
+      "commit": "运行起点提交的完整 ID：40 个十六进制字符。",
+      "language": "仓库的工具链：智能体在该语言的沙盒镜像中工作。",
+      "goal": "运行的用途，一行，最多 500 个字符。"
+    },
+    "invalid": {
+      "connection": "请输入连接的 ID：1 到 63 个字母、数字或连字符。",
+      "commit": "请输入完整的提交 ID：40 个字符，0 到 9 和 a 到 f。",
+      "goalEmpty": "请说明运行的用途。",
+      "goalLong": "目标最多 {{max, number}} 个字符。"
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript 和 TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "其月度预算即流程的预算：{{amount}}。",
+    "noBudget": "该流程没有月度预算。",
+    "submit": "开始运行",
+    "openRun": "打开运行",
+    "mayHaveStarted": "运行可能已经开始：在开始另一个运行之前，请先查看运行列表。",
+    "openRuns": "查看流程的运行",
+    "saveFirst": "请先保存流程：运行使用已保存的版本。"
+  },
   "validation": {
     "scope": "请至少选择一个类别或子类别，或关注所有类别。",
     "name": "请为智能体取一个不超过 {{max, number}} 个字符的名称。",

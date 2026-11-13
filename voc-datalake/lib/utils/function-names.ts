@@ -35,6 +35,13 @@ export const DESIGN_CAPTURE_FUNCTION_BASE_NAME = 'voc-design-capture';
  * (ENGINEERING_BOARD_FUNCTION): the board's own role writes the change, the API's role writes no board row.
  */
 export const ENGINEERING_BOARD_FUNCTION_BASE_NAME = 'voc-engineering-board';
+/**
+ * The engineering runs' start function (VocProcessingStack, lib/stacks/engineering-runtime.ts; with
+ * `-c engineeringAgents=true`): the runtime's code with a role of its own, entered at `start_handler`, which takes `start_run` and
+ * refuses every other action. The Agents API in VocApiStack invokes it for `POST /agents/engineering/runs`
+ * (ENGINEERING_START_FUNCTION); its role may invoke this function and never voc-engineering-runtime.
+ */
+export const ENGINEERING_START_FUNCTION_BASE_NAME = 'voc-engineering-start';
 /** The Radar API (VocApiStack): /radar, /radar/{proxy+}; the assistant's `get_radar` reads it. */
 export const RADAR_API_FUNCTION_BASE_NAME = 'voc-radar-api';
 /**

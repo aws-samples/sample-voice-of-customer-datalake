@@ -5,6 +5,7 @@
  *   the run coordinator ───────────────────────────────────▶ voc-engineering-runtime {action: launch}
  *   the run monitor ───────────────────────────────────────▶ voc-engineering-runtime {action: signal}
  *   the inbox router (async) ──────────────────────────────▶ voc-engineering-delivery {message, seq}
+ *   the Agents API (POST /agents/engineering/runs) ────────▶ voc-engineering-start {action: start_run} (only that)
  *   a run's start / its end ──────────────▶ voc-engineering-runtime {action: start_run / end_run} (and the rule)
  *
  * One MicroVM per agent. Its agent user gets a 15-minute session of its agent role from a launcher (the supervisor's
@@ -49,6 +50,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { engineeringAgentsEnabled } from './engineering-broker';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
+import { createEngineeringStart } from './engineering-start';
 import { createWorkerFunction, grantInvokeByName, workerRole } from '../utils/worker-lambda';
 
 /** A fixed monthly cost, so an opt-in of its own (lib/test-support/fixed-cost-rules.ts OPT_IN_FIXED_COSTS). */
@@ -244,6 +246,7 @@ class EngineeringRuntime extends Construct {
     }
     const environment = this.environment(props, agentRoles, ruleName);
     const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName, environment);
+    createEngineeringStart(this, { ...props, ruleName, environment, runtime: fn });
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
     this.createDelivery(props, deliveryRole, agentRoles, environment);
     if (flag(this, SUPERVISOR_ALARM_FLAG)) this.createAlarms(fn);
@@ -523,9 +526,10 @@ class EngineeringRuntime extends Construct {
       memorySize: 512,
       serviceName: 'voc-engineering-runtime',
       environment,
-      // No asynchronous retry: its asynchronous callers are its own rule (the next tick is a minute away) and its
-      // own hand-on of a retrospective, whose every step is claimed by a create-only row and never raises; a retry
-      // of an invocation cut off at its limit would only repeat what the claim already stops.
+      // No asynchronous retry: its asynchronous callers are its own rule (the next tick is a minute away), its own
+      // hand-on of a retrospective, whose every step is claimed by a create-only row and never raises, and
+      // voc-engineering-start's hand-on of `launch_coordinator`, which never raises (a failure sends the run to a
+      // person; one cut off at its limit is caught by a later tick); a retry would only repeat what those already stop.
       retryAttempts: 0,
     });
   }

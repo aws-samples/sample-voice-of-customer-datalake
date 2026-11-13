@@ -15,6 +15,8 @@
 //                     last two only on a task the mock's admin took); 409 for an ended task or another person's hold without over
 //   GET  …/reports    the run's reports, each with its latest version
 //   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
+//   POST /agents/engineering/runs   {workflow_id, connection, commit, language, goal}: admin; a run's start, answered
+//                     202 with the sample run (written, its coordinator's launch under way) (400 for a field off the server's rules)
 //   GET|PUT /agents/engineering/settings   the administrators' hard cap {hard_cap, updated_at, updated_by}
 //   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
 //                     month, grouping or workflow id), from a few sample rows over this month and last
@@ -484,16 +486,54 @@ function settingsRoute(req, res, send, shared) {
   });
 }
 
+// ── A run's start (POST /agents/engineering/runs; agents_handler.py start_engineering_run) ──
+// The server's checks (a connection's short id, a 40-character commit, an image language, a goal of 1-500 characters
+// on one line, nothing else in the body); a start answers the sample run, so the monitor it opens has something to show.
+const START_FIELDS = ['workflow_id', 'connection', 'commit', 'language', 'goal'];
+const RUN_LANGUAGES = ['java', 'node', 'python', 'rust'];
+
+const oneLine = (text) => text.split(/\s+/).filter(Boolean).join(' ');
+/** Each check of a well-formed body, with what its 400 says. */
+const START_CHECKS = [
+  [(f) => /^[A-Za-z0-9-]{1,63}$/.test(f.connection.trim()), 'connection must be 1-63 letters, digits or "-"'],
+  [(f) => /^[0-9a-f]{40}$/.test(f.commit.trim().toLowerCase()), 'commit is a full commit id: 40 hexadecimal characters'],
+  [(f) => RUN_LANGUAGES.includes(f.language), `language is one of ${RUN_LANGUAGES.join(', ')}`],
+  [(f) => oneLine(f.goal) !== '' && Array.from(oneLine(f.goal)).length <= 500,
+    'goal says what the run is for, in 1 to 500 characters'],
+  [(f) => /^wf_[0-9a-f]{12}$/.test(f.workflow_id), 'workflow_id does not name a saved workflow'],
+];
+
+function startRun(body) {
+  const fields = body && typeof body === 'object' ? body : {};
+  const wellFormed = Object.keys(fields).every((key) => START_FIELDS.includes(key))
+    && START_FIELDS.every((key) => typeof fields[key] === 'string');
+  if (!wellFormed) return [400, { message: 'the body is {workflow_id, connection, commit, language, goal}, each a string' }];
+  const failed = START_CHECKS.find(([passes]) => !passes(fields));
+  if (failed) return [400, { message: failed[1] }];
+  // 202, as the server: the run is written and its coordinator's launch is under way.
+  return [202, { run: { run_id: SAMPLE_RUN_ID, status: 'active', workflow_id: fields.workflow_id, started_by: 'sub-admin-demo' } }];
+}
+
+function startRoute(req, res, send, shared) {
+  if (req.method !== 'POST') send(405, { message: 'Method not allowed' });
+  else if (!isAdmin()) send(403, { message: 'Admin access required' });
+  else shared.collectJson(req, res, (body) => send(...startRun(body)));
+}
+
+function spendRoute(req, res, send, _shared, url) {
+  if (req.method !== 'GET') send(405, { message: 'Method not allowed' });
+  else if (isAdmin()) send(...monthSpend(url));
+  else send(403, { message: 'Admin access required' });
+}
+
+/** The routes of one exact path under the prefix. */
+const EXACT_ROUTES = { runs: startRoute, settings: settingsRoute, spend: spendRoute };
+
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
-  if (url.pathname === `${PREFIX}settings`) {
-    settingsRoute(req, res, send, shared);
-    return true;
-  }
-  if (url.pathname === `${PREFIX}spend`) {
-    if (req.method !== 'GET') send(405, { message: 'Method not allowed' });
-    else if (isAdmin()) send(...monthSpend(url));
-    else send(403, { message: 'Admin access required' });
+  const exact = url.pathname.slice(PREFIX.length);
+  if (Object.hasOwn(EXACT_ROUTES, exact)) {
+    EXACT_ROUTES[exact](req, res, send, shared, url);
     return true;
   }
   const [runId, sub, ...rest] = url.pathname.slice(PREFIX.length).split('/').map(decodeURIComponent);

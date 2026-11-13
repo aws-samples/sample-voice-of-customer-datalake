@@ -62,6 +62,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   UserAdmin: 'Create user is a page-header action',
   RunsTab: 'Run now heads the runs list',
   Agents: 'New agent is a page-header action',
+  WorkflowPage: 'Start a run is a page-header action beside the title (it opens a dialog)',
   WorkflowEditor: 'Save sits in the editor toolbar above the canvas, top of the page, next to Save as',
   EngineeringConversation: 'Send is a chat composer\'s, under the conversation it adds to (a message, not a form\'s save row)',
   EngineeringBoardControls: 'Post is a small fold-out form\'s at the top of the board it adds a task to (an action, not a page\'s save row)',

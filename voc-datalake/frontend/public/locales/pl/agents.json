@@ -486,6 +486,42 @@
     "title": "Przepływ pracy",
     "subtitle": "Przepływ pracy z biblioteki. Agenci, którzy go uruchamiają, korzystają z jego najnowszej zapisanej wersji."
   },
+  "startRun": {
+    "action": "Uruchom przebieg",
+    "title": "Uruchom przebieg: {{name}}",
+    "description": "Przebieg uruchamia ten przepływ w ostatnio zapisanej wersji, na jednym commicie połączonego repozytorium. Dociera do repozytorium dopiero wtedy, gdy dane uwierzytelniające połączenia są zapisane.",
+    "fields": {
+      "connection": "Połączenie z repozytorium",
+      "commit": "Commit",
+      "language": "Język",
+      "goal": "Cel"
+    },
+    "hints": {
+      "connection": "Identyfikator połączenia: litery, cyfry i łączniki, najwyżej 63.",
+      "commit": "Pełny identyfikator commita, od którego zaczyna się przebieg: 40 znaków szesnastkowych.",
+      "language": "Narzędzia repozytorium: agenci pracują w odizolowanym obrazie tego języka.",
+      "goal": "Do czego służy przebieg, w jednym wierszu, najwyżej 500 znaków."
+    },
+    "invalid": {
+      "connection": "Wpisz identyfikator połączenia: od 1 do 63 liter, cyfr lub łączników.",
+      "commit": "Wpisz pełny identyfikator commita: 40 znaków, od 0 do 9 i od a do f.",
+      "goalEmpty": "Napisz, do czego służy przebieg.",
+      "goalLong": "Cel może mieć najwyżej {{max, number}} znaków."
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript i TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "Jego miesięczny budżet to budżet przepływu: {{amount}}.",
+    "noBudget": "Przepływ nie ma miesięcznego budżetu.",
+    "submit": "Uruchom przebieg",
+    "openRun": "Otwórz przebieg",
+    "mayHaveStarted": "Przebieg mógł zostać uruchomiony: sprawdź listę przebiegów, zanim uruchomisz kolejny.",
+    "openRuns": "Zobacz przebiegi przepływu",
+    "saveFirst": "Najpierw zapisz przepływ: przebieg używa zapisanej wersji."
+  },
   "paletteGroups": {
     "flow": "Przebieg",
     "research": "Badania",

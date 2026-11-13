@@ -122,6 +122,14 @@ class Run:
     budget_usd: float | None = None
     budget_alert: int = 0
     budget_alert_month: str = ''
+    #: When a person last resumed the whole run (epoch seconds; 0 for never).
+    resumed_at: int = 0
+
+
+class StartReadFailed(RuntimeRefused):
+    """A read a budgeted first start needs (the hard cap's setting, the flow's month total) failed: nothing was
+    written, and the start can be asked again. Its own type, so a caller answers it as a passing fault (503), never
+    as a refusal a person must act on."""
 
 
 def hard_capped(caps: RunCaps, *, budget_usd: float, flow: str, table: Any, now: int) -> RunCaps:
@@ -139,7 +147,7 @@ def hard_capped(caps: RunCaps, *, budget_usd: float, flow: str, table: Any, now:
     try:
         spent = flow_month_usd(table, month, flow)
     except (ClientError, BotoCoreError) as error:   # (as an unreadable setting: the start is refused, saying so)
-        raise RuntimeRefused(f'the flow {flow}\'s spend this month could not be read: start the run again') from error
+        raise StartReadFailed(f'the flow {flow}\'s spend this month could not be read: start the run again') from error
     left = budget - spent
     if left <= 0:
         raise RuntimeRefused(f'the flow {flow} has spent its monthly budget for {month} (${spent:,.2f} of '
@@ -292,11 +300,13 @@ class RunStore:
             raise
 
     def resume(self, run_id: str, *, now: int, actor: str = '') -> None:
-        """A person resumed the run from its decision point: active again; ``RunNotActive`` when it was not waiting."""
+        """A person resumed the run from its decision point: active again; ``RunNotActive`` when it was not waiting.
+        ``resumed_epoch`` records when (the supervisor gives a Resume's new coordinator its own launch window)."""
         # Never off the 30-day decision point, which offers only "stop".
         self._update_status(run_id, _history(run_id, status='active', actor=actor, now=now, reason='resumed'),
-                            'SET #status = :active REMOVE needs_human', '#status = :human AND needs_human <> :thirty',
-                            {':active': 'active', ':thirty': 'thirty_days'})
+                            'SET #status = :active, resumed_epoch = :now REMOVE needs_human',
+                            '#status = :human AND needs_human <> :thirty',
+                            {':active': 'active', ':thirty': 'thirty_days', ':now': now})
 
     def release(self, run_id: str) -> None:
         """No agent of the ended run is live: the supervisor stops watching it (idempotent)."""
@@ -316,7 +326,8 @@ class RunStore:
                    language=str(item.get('language', '')), flow=str(item.get('flow', '')),
                    repo=str(item.get('repo', '')), budget_usd=float(budget) if budget is not None else None,
                    budget_alert=int(item.get('budget_alert', 0)),
-                   budget_alert_month=str(item.get('budget_alert_month', '')))
+                   budget_alert_month=str(item.get('budget_alert_month', '')),
+                   resumed_at=int(item.get('resumed_epoch', 0)))
 
     def flag_budget(self, run_id: str, month: str, level: int) -> None:
         """Flag the run with the highest alert level its flow passed in ``month`` (for the run monitor and its
@@ -391,6 +402,12 @@ class TableRunControl:
     def is_active(self, run_id: str) -> bool:
         run = self._runs.get(run_id)
         return run is not None and run.status == 'active'
+
+    def coordinator_awaited(self, run_id: str) -> int | None:
+        run = self._runs.get(run_id)
+        if run is None or run.status != 'active' or not (run.connection and run.commit and run.language):
+            return None
+        return max(run.started_at, run.resumed_at)   # (a Resume's new coordinator gets its own window)
 
     def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
         """One GetItem of the flow's month total; each level passed above the run's flag is claimed for this run

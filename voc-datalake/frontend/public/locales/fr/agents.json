@@ -613,6 +613,42 @@
     "title": "Workflow",
     "subtitle": "Un workflow de la bibliothèque. Les agents qui l’exécutent utilisent sa dernière révision enregistrée."
   },
+  "startRun": {
+    "action": "Lancer une exécution",
+    "title": "Lancer une exécution de {{name}}",
+    "description": "L’exécution lance ce flux tel qu’il a été enregistré en dernier, sur un commit d’un dépôt connecté. Elle n’atteint le dépôt qu’une fois l’identifiant de la connexion enregistré.",
+    "fields": {
+      "connection": "Connexion au dépôt",
+      "commit": "Commit",
+      "language": "Langage",
+      "goal": "Objectif"
+    },
+    "hints": {
+      "connection": "L’identifiant de la connexion : lettres, chiffres et tirets, 63 au plus.",
+      "commit": "L’identifiant complet du commit de départ : 40 caractères hexadécimaux.",
+      "language": "La chaîne d’outils du dépôt : les agents travaillent dans l’image isolée de ce langage.",
+      "goal": "À quoi sert l’exécution, sur une ligne de 500 caractères au plus."
+    },
+    "invalid": {
+      "connection": "Saisissez l’identifiant de la connexion : 1 à 63 lettres, chiffres ou tirets.",
+      "commit": "Saisissez l’identifiant complet du commit : 40 caractères, de 0 à 9 et de a à f.",
+      "goalEmpty": "Indiquez à quoi sert l’exécution.",
+      "goalLong": "L’objectif ne doit pas dépasser {{max, number}} caractères."
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript et TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "Son budget mensuel est celui du flux : {{amount}}.",
+    "noBudget": "Le flux n’a pas de budget mensuel.",
+    "submit": "Lancer l’exécution",
+    "openRun": "Ouvrir l’exécution",
+    "mayHaveStarted": "L’exécution a peut-être été lancée : consultez la liste des exécutions avant d’en lancer une autre.",
+    "openRuns": "Voir les exécutions du flux",
+    "saveFirst": "Enregistrez d’abord le flux : une exécution utilise la version enregistrée."
+  },
   "validation": {
     "scope": "Choisissez au moins une catégorie ou sous-catégorie, ou surveillez toutes les catégories.",
     "name": "Donnez à l'agent un nom de {{max, number}} caractères au plus.",

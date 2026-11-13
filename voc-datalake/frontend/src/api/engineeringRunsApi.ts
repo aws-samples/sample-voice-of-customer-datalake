@@ -189,7 +189,28 @@ export const engineeringRunsKeys = {
 
 const engineeringRunPath = (runId: string, suffix = '') => `/agents/engineering/${encodeURIComponent(runId)}${suffix}`
 
+/** A run's start (`POST /agents/engineering/runs`): a saved engineering flow, on a repository's commit. */
+export interface StartRunRequest {
+  workflow_id: string
+  connection: string
+  commit: string
+  language: string
+  goal: string
+}
+
+/** The run the server started: the monitor opens it. */
+const StartedRunSchema = z.object({ run: z.object({ run_id: z.string().min(1) }) })
+export interface StartedRun {
+  runId: string
+}
+
 export const engineeringRunsApi = {
+  /** Start a run of a saved engineering flow (admin); an answer that names no run is an error. */
+  start: async (request: StartRunRequest): Promise<StartedRun> => {
+    const parsed = StartedRunSchema.safeParse(await fetchApi<unknown>('/agents/engineering/runs', post(request)))
+    if (!parsed.success) throw new Error('The start answer was unreadable')
+    return { runId: parsed.data.run.run_id }
+  },
   overview: async (runId: string): Promise<EngineeringOverview> => parseOverview(await fetchApi<unknown>(engineeringRunPath(runId))),
   board: async (runId: string): Promise<EngineeringTask[]> => {
     const raw = await fetchApi<unknown>(engineeringRunPath(runId, '/board'))

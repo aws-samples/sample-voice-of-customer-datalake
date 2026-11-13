@@ -59,6 +59,10 @@ SIGNALS: Final = frozenset({'save', 'pause', 'resume', 'shutdown', 'stop_now'})
 HELD_AS: Final[dict[After, Status]] = {'hold': 'paused', 'wait': 'waiting', 'shutdown': 'stopped'}
 #: How long one move may hold a session's claim: the function's own timeout (lib/stacks/engineering-runtime.ts).
 CLAIM_SECONDS: Final = 5 * 60
+#: How long after a run's start its coordinator may still be on its way: the runtime's own limit (the 5 minutes of the
+#: ``launch_coordinator`` invocation a start hands on) plus a minute's margin. Past it, a run with no coordinator
+#: session and no live launch hold of one goes to a person.
+COORDINATOR_LAUNCH_SECONDS: Final = CLAIM_SECONDS + 60
 
 
 class MicroVmCallFailed(RuntimeError):
@@ -95,12 +99,13 @@ class Supervisor:
     def tick(self, now: int) -> dict[str, int]:
         """One pass over every live session; the number of sessions in each status afterwards."""
         by_run: dict[str, list[AgentSession]] = {}
-        for run_id, every in self.sessions.watched():
+        for run_id, every, holds in self.sessions.watched_with_holds():
             live = [session for session in every if session.status in LIVE_STATUSES]
             if live:
                 by_run[run_id] = live
             try:
                 self._coordinator_lost(run_id, every, now)
+                self._coordinator_never_launched(run_id, every, holds, now)
             except Exception:
                 logger.exception('engineering supervisor: a run\'s coordinator could not be checked',
                                  extra={'run_id': run_id})
@@ -131,6 +136,24 @@ class Supervisor:
         if lease is None or lease.attempt != newest.task_attempt or lease.final_state:
             return
         if self.control.is_active(run_id):
+            self.control.needs_human(run_id, 'coordinator')
+
+    def _coordinator_never_launched(self, run_id: str, sessions: list[AgentSession], holds: dict[str, int],
+                                    now: int) -> None:
+        """Send the run to a person when its start recorded a coordinator that never got a session: the start function
+        wrote the run and handed the launch on (``handler.launch_coordinator``), and that invocation crashed or timed
+        out before it could send the run to a person itself. Only an active run with no coordinator session and no live
+        launch hold of one (from the rows the tick read already), and only ``COORDINATOR_LAUNCH_SECONDS`` after its
+        start or its last Resume, whichever is later (a person's Resume launches a new coordinator: it gets its own
+        window, and its launch hold covers the launch); then one read of the run's row. Asked once: the run is no longer active after, and a decision point it
+        waits at already changes nothing."""
+        if any(session.role == 'coordinator' for session in sessions):
+            return   # (it has one, live or not: _coordinator_lost's, or a person's to replace)
+        if any(agent.startswith('coordinator-') and until >= now for agent, until in holds.items()):
+            return   # (a launch of it is under way)
+        started = self.control.coordinator_awaited(run_id)
+        if started is not None and now - started > COORDINATOR_LAUNCH_SECONDS:
+            logger.warning('engineering supervisor: a run\'s coordinator was never launched', extra={'run_id': run_id})
             self.control.needs_human(run_id, 'coordinator')
 
     def _stopping(self, run_id: str, now: int) -> bool:

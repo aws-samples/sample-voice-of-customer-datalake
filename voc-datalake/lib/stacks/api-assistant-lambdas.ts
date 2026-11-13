@@ -11,7 +11,8 @@ import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { grantClaudeModels, grantClaudeModelsToFunction } from '../utils/claude-model-grant';
 import { grantEmbeddingModel } from '../utils/memory-recall-grant';
 import {
-  AGENTS_API_FUNCTION_BASE_NAME, ENGINEERING_BOARD_FUNCTION_BASE_NAME, MEMORY_API_FUNCTION_BASE_NAME,
+  AGENTS_API_FUNCTION_BASE_NAME, ENGINEERING_BOARD_FUNCTION_BASE_NAME, ENGINEERING_START_FUNCTION_BASE_NAME,
+  MEMORY_API_FUNCTION_BASE_NAME,
 } from '../utils/function-names';
 import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
@@ -22,6 +23,7 @@ import { createS3ImportLambda } from './api-s3-import-lambda';
 import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
 import { grantInvokeByName } from '../utils/worker-lambda';
 import { engineeringAgentsEnabled } from './engineering-broker';
+import { engineeringRunCaps } from './engineering-start';
 
 /**
  * The assistant's run ceiling: the Lambda timeout AND the /chat/stream
@@ -60,7 +62,8 @@ export interface AssistantLambdas {
  * With `-c engineeringAgents=true`, the agents API's reads of an engineering run (`/agents/engineering/<run_id>/…`,
  * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows, and the spend ledger's month
  * partitions for `GET /agents/engineering/spend`), never a write; `lambda:InvokeFunction` on the board's function
- * for a person's board actions (its own role writes them), and GetObject on the workspace
+ * for a person's board actions (its own role writes them) and on the start function for a run's start (never the
+ * runtime's own function), and GetObject on the workspace
  * bucket's reports only; its key comes with the role's grant on the stack's key. No ListBucket (it would list every
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
  * missing (404), since the role may read every report key. Returns the env that turns the routes on (shared/engineering_agents.py),
@@ -79,6 +82,10 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   // (`lambda:InvokedViaFunctionUrl`), so a direct invoke is this role's (VocProcessingStack deploys the function first;
   // reached by its deterministic name, as the plan-step runner reaches this stack's functions).
   grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME)], 'BoardPersonActions');
+  // A run's start (`POST /agents/engineering/runs`) through the start function, by name: the runtime's code with a role of
+  // its own (engineering-start.ts), entered where it takes `start_run` and refuses every other action. Never voc-engineering-runtime itself, so this
+  // role can start a run and never tick, launch, signal or end one.
+  grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME)], 'StartEngineeringRuns');
   const reports = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [reports] }));
   acknowledgeNag(role, [{
@@ -91,6 +98,8 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     ENGINEERING_TABLE: engineeringTable.tableName,
     ENGINEERING_WORKSPACE_BUCKET: engineeringWorkspaceBucket.bucketName,
     ENGINEERING_BOARD_FUNCTION: ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME),
+    ENGINEERING_START_FUNCTION: ctx.uniqueName(ENGINEERING_START_FUNCTION_BASE_NAME),
+    ...engineeringRunCaps(ctx.stack),
   };
 }
 

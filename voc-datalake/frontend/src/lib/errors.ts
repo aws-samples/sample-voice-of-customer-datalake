@@ -22,11 +22,14 @@ export class ConfigError extends Error {
 /** Thrown when an API request fails with a non-OK status. */
 export class ApiError extends Error {
   readonly status: number
+  /** The run an error body names (`run_id`: an engineering run's start that may have written it), if any. */
+  readonly runId: string | undefined
 
-  constructor(status: number, message = `API Error: ${String(status)}`) {
+  constructor(status: number, message = `API Error: ${String(status)}`, runId?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.runId = runId
   }
 }
 

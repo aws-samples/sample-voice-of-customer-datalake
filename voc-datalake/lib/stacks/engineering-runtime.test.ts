@@ -166,6 +166,49 @@ describe('with -c engineeringAgents=true', () => {
     })).toBe(1);
   });
 
+  /** voc-engineering-start's function resource. */
+  const startFunction = () => Object.values(template.findResources('AWS::Lambda::Function', {
+    Properties: { FunctionName: 'voc-engineering-start' },
+  }))[0];
+
+  it('runs voc-engineering-start on the runtime\'s code with a role of its own, entered where only start_run runs', () => {
+    const start = startFunction();
+    // (the Agents API's grant names this function alone: api-engineering-reads.test.ts)
+    expect([start?.Properties?.Handler, JSON.stringify(start?.Properties?.Role)]).toStrictEqual([
+      'engineering/runtime/handler.start_handler', expect.stringMatching(/EngineeringStartRole/)]);
+    // What a start reads (the hard cap's table, the rule it switches on, the images, the launcher's roles); no
+    // benchmark cases: it runs no retrospective.
+    const env = Object.keys(EnvSchema.parse(start?.Properties?.Environment).Variables);
+    expect(['ENGINEERING_SETTINGS_TABLE', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_IMAGE_ARNS', 'ENGINEERING_AGENT_ROLE_ARNS',
+      'ENGINEERING_RUNTIME_FUNCTION', 'ENGINEERING_BENCHMARK_CASES'].map((name) => env.includes(name)))
+      .toStrictEqual([true, true, true, true, true, false]);
+    expect(count(template, 'AWS::Lambda::EventInvokeConfig', {
+      FunctionName: { Ref: Match.stringLikeRegexp('EngineeringStart') }, MaximumRetryAttempts: 0,
+    })).toBe(1);
+  });
+
+  it('writes the run within the API\'s wait and hands the coordinator\'s launch on to the runtime, which it may invoke', () => {
+    const start = startFunction();
+    // (30 s: the API waits 25 s, under API Gateway's 29; the launch runs in the runtime's 5 minutes)
+    expect([start?.Properties?.Timeout, JSON.stringify(EnvSchema.parse(start?.Properties?.Environment).Variables
+      .ENGINEERING_RUNTIME_FUNCTION)]).toStrictEqual([30, expect.stringMatching(/EngineeringSupervisor/)]);
+    expect(policyText(template, 'EngineeringStartRole')).toMatch(/lambda:InvokeFunction[^\]]*function:/);
+  });
+
+  it('gives the start function only what a start needs: no MicroVM, no agent role, no bus, no delete, no rule off', () => {
+    const start = policyText(template, 'EngineeringStartRole');
+    expect(start).not.toMatch(/Microvm|sts:|events:(PutEvents|DisableRule)|DeleteItem|dynamodb:Query|s3:|sqs:|bedrock:/);
+    const actions = new Set(start.match(/"(dynamodb|events|lambda|kms):[A-Za-z]+"/g)
+      ?.filter((name) => !/LeadingKeys|ViaService/.test(name)));
+    expect([...actions].sort((a, b) => a.localeCompare(b, 'en'))).toStrictEqual([
+      '"dynamodb:GetItem"', '"dynamodb:PutItem"', '"dynamodb:UpdateItem"', '"events:EnableRule"',
+      '"kms:Decrypt"', '"kms:GenerateDataKey"', '"lambda:InvokeFunction"']);
+    // Its writes stay in the runs' partitions and the registry; its other reads are a flow's month and the hard cap.
+    expect(start).toMatch(/"WS#\*#RUN#\*","WS#\*#RUNS"/);
+    // The agent roles trust only the two launchers, never the start function.
+    expect(policyText(template, 'EngineeringAgentFixerRole')).not.toMatch(/EngineeringStartRole/);
+  });
+
   it('prices MicroVM time only once a price is set (-c engineeringMicrovmUsdPerSecond), and refuses a bad one', () => {
     expect(supervisorEnv(template).ENGINEERING_MICROVM_USD_PER_SECOND).toBe('0');
     const priced = runtimeStack({ engineeringAgents: 'true', engineeringMicrovmUsdPerSecond: '0.0000166' }).template;

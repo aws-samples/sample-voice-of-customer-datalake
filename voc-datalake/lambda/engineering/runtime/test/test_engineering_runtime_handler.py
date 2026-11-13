@@ -11,11 +11,12 @@ from engineering.board.store import COORDINATE_TASK, BoardError, BoardStore
 from engineering.bus.test.messages import message
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime import handler
+from engineering.runtime import supervisor as supervisor_module
 from engineering.runtime.aws import AwsMicroVmRuntime
 from engineering.runtime.board_bus import SupervisorBus
 from engineering.runtime.harness.skills import COORDINATOR, harness_argv
 from engineering.runtime.interface import AgentSpec, MicroVm, RuntimeRefused
-from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, meta_key, run_pk
+from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, StartReadFailed, meta_key, run_pk
 from engineering.runtime.sessions import LAUNCH_HOLD_SECONDS, StaleSession
 from engineering.runtime.supervisor import SessionBusy
 from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE, WORKSPACE_BUCKET
@@ -270,6 +271,20 @@ def test_with_the_hard_cap_on_a_start_is_capped_at_what_is_left_of_its_flows_mon
 
 
 @pytest.mark.usefixtures('wired')
+@pytest.mark.parametrize(('given', 'kept'), [(50.0, 3.0), (2.0, 2.0)])
+def test_the_start_routes_default_cap_is_the_smaller_of_it_and_what_is_left(given: float, kept: float) -> None:
+    """The Agents API sends the deployment's run cap (50 USD by default) with every start: the hard cap keeps the
+    smaller of it and what is left of the flow's month."""
+    _flow_spent('7')
+    _hard_cap(True)
+    handler.lambda_handler({'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'flow': 'wf_cap',
+                            'budget_usd': 10.0, 'max_cost_usd': given, 'max_tokens': 10_000_000}, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert (run.caps.max_cost_usd, run.caps.max_tokens) == (kept, 10_000_000)
+
+
+@pytest.mark.usefixtures('wired')
 def test_with_the_hard_cap_on_a_start_with_nothing_left_is_refused_before_anything_is_written() -> None:
     _flow_spent('10')
     _hard_cap(True)
@@ -320,7 +335,8 @@ def test_a_hard_cap_that_cannot_be_read_refuses_the_start_saying_so(monkeypatch:
         raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'GetItem')
 
     monkeypatch.setattr(handler, 'read_hard_cap', throttled)
-    with pytest.raises(RuntimeRefused, match='could not be read: start the run again'):
+    # (its own type, a passing fault the Agents API answers 503, never a refusal's 409)
+    with pytest.raises(StartReadFailed, match='could not be read: start the run again'):
         _start_budgeted()
     assert _runs().get(OTHER_RUN) is None
 
@@ -1097,3 +1113,259 @@ def test_the_loop_is_built_once_from_the_environment(wired: Any):
     loop = handler._learning()
     assert (loop.cases, handler._learning()) == (('slug-cut-bug',), loop)
     assert loop.coach().store is not None
+
+
+# --- voc-engineering-start: the Agents API's start of a run, and nothing else ----------------------------------------
+
+def _handing_on_launches(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """Each launch the start function hands on (to voc-engineering-runtime's launch_coordinator), kept, not run."""
+    handed: list[tuple[str, str]] = []
+    monkeypatch.setattr(handler, '_hand_on_launch', lambda run_id, actor: handed.append((run_id, actor)))
+    return handed
+
+
+def test_the_start_function_writes_the_run_as_the_person_who_asked_and_hands_its_launch_on(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _runtime, started = _recording(monkeypatch)
+    handed = _handing_on_launches(monkeypatch)
+    started_by = {**COORDINATED, 'actor': 'admin-sub', 'flow': 'wf_0123456789ab', 'budget_usd': 50.0}
+    assert handler.start_handler(started_by, None) == {'run_id': OTHER_RUN, 'status': 'active'}
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    # Answered once the run is written: no MicroVM started here, the launch handed on.
+    assert (run.status, run.flow, run.budget_usd, started, handed) == (
+        'active', 'wf_0123456789ab', 50.0, [], [(OTHER_RUN, 'admin-sub')])
+    assert handler.lambda_handler({'action': 'launch_coordinator', 'run_id': OTHER_RUN, 'actor': 'admin-sub'}, None) \
+        == {'run_id': OTHER_RUN, 'status': 'active'}
+    assert [vm.agent_id for vm in started] == [COORDINATOR_AGENT]
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    meta = table.get_item(Key=meta_key(OTHER_RUN)).get('Item')
+    assert meta is not None
+    (log,) = table.query(KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
+                         ExpressionAttributeValues={':pk': run_pk(OTHER_RUN), ':log': 'RUNLOG#'})['Items']
+    # Who started it and when (D4): on META for the broker's dial, and in the run's history row.
+    assert (meta['started_by'], log['actor'], log['status'], log['at'] == meta['started_at']) == (
+        'admin-sub', 'admin-sub', 'active', True)
+
+
+@pytest.mark.parametrize('action', ['tick', 'launch', 'signal', 'end_run', 'retrospective', 'START_RUN', None])
+def test_the_start_function_refuses_every_other_action_before_anything_is_read(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, action: str | None):
+    assert wired is not None
+    reached: list[str] = []
+
+    def nothing_may_be_read(*_args: Any, **_kwargs: Any) -> Any:
+        reached.append('read')
+        raise AssertionError('the start function read something for another action')
+
+    monkeypatch.setattr(handler, '_runs', nothing_may_be_read)
+    monkeypatch.setattr(handler, '_supervisor', nothing_may_be_read)
+    event = {**LAUNCH, 'status': 'stopped', 'signal': 'stop_now'}
+    if action is None:
+        event.pop('action')
+    else:
+        event['action'] = action
+    with pytest.raises(RuntimeRefused, match='only starts a run'):
+        handler.start_handler(event, None)
+    assert reached == []
+
+
+@pytest.mark.parametrize('failure', [_service_down, 'refused'])
+def test_a_handed_on_launch_that_fails_sends_the_run_to_a_person_and_never_raises(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, failure: Any):
+    assert wired is not None
+    _handing_on_launches(monkeypatch)
+    handler.start_handler(COORDINATED, None)
+
+    def refused(_spec: AgentSpec) -> MicroVm:
+        raise RuntimeRefused('the MicroVM service answered no MicrovmId')
+
+    monkeypatch.setattr(handler._supervisor().runtime, 'run', refused if failure == 'refused' else failure)
+    answer = handler.lambda_handler({'action': 'launch_coordinator', 'run_id': OTHER_RUN, 'actor': 'admin-sub'}, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    # Never active with no coordinator: at a person's decision point, whose Resume launches it.
+    assert (answer['status'], run.status) == ('needs_human', 'needs_human')
+
+
+def _switch_fails(_enabled: bool) -> None:
+    raise RuntimeError('EventBridge is unavailable')
+
+
+def test_a_start_whose_rule_cannot_be_switched_on_sends_the_written_run_to_a_person(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    monkeypatch.setattr(handler, '_switch', _switch_fails)
+    with pytest.raises(RuntimeError, match='EventBridge'):
+        handler.lambda_handler(COORDINATED, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.status == 'needs_human'
+
+
+def _busy_after_the_write(original: Any) -> Any:
+    def start(event: Any, **kwargs: Any) -> Any:
+        original(event, **kwargs)
+        raise SessionBusy('a launch of coordinator-1 is under way: ask again in a few minutes')
+    return start
+
+
+@pytest.mark.parametrize('failure', ['switch', 'hand_on', 'busy'])
+def test_any_failure_once_the_run_is_written_is_start_failed_naming_it_never_a_refusal(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, failure: str):
+    assert wired is not None
+    _handing_on_launches(monkeypatch)
+    if failure == 'switch':
+        monkeypatch.setattr(handler, '_switch', _switch_fails)
+    elif failure == 'hand_on':
+        monkeypatch.setattr(handler, '_hand_on_launch', lambda *_: _switch_fails(True))
+    else:
+        monkeypatch.setattr(handler, 'start_run', _busy_after_the_write(handler.start_run))
+    with pytest.raises(handler.StartFailed, match=f'run {OTHER_RUN} was started') as raised:
+        handler.start_handler(COORDINATED, None)
+    # (not a RuntimeRefused: the Agents API answers a refusal 409 and the person would start a second run)
+    assert not isinstance(raised.value, RuntimeRefused)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    # A launch under way keeps the run (it is the run's coordinator); anything else sends it to a person.
+    assert run.status == ('active' if failure == 'busy' else 'needs_human')
+
+
+def test_a_start_refused_before_anything_is_written_stays_a_refusal(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    handed = _handing_on_launches(monkeypatch)
+    with pytest.raises(RuntimeRefused, match='no rust image in this deployment') as raised:
+        handler.start_handler({**COORDINATED, 'language': 'rust'}, None)
+    assert (type(raised.value), _runs().get(OTHER_RUN), handed) == (RuntimeRefused, None, [])
+
+
+def test_the_hand_on_invokes_the_runtimes_launch_asynchronously(monkeypatch: pytest.MonkeyPatch):
+    calls: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setenv('ENGINEERING_RUNTIME_FUNCTION', 'voc-engineering-runtime')
+    monkeypatch.setattr(shared_aws, 'invoke_lambda_async', lambda name, payload: calls.append((name, payload)))
+    handler._hand_on_launch(OTHER_RUN, 'admin-sub')
+    assert calls == [('voc-engineering-runtime', {'action': 'launch_coordinator', 'run_id': OTHER_RUN,
+                                                  'actor': 'admin-sub'})]
+
+
+# --- the tick catches a start whose handed-on launch never came (it crashed or timed out) ----------------------------
+
+def _started_whose_launch_never_ran(monkeypatch: pytest.MonkeyPatch) -> int:
+    """A start that wrote the run and handed its launch on, the launch never run (as if its invocation crashed): when
+    the run started."""
+    _handing_on_launches(monkeypatch)
+    handler.start_handler(COORDINATED, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    return run.started_at
+
+
+def _tick_at(monkeypatch: pytest.MonkeyPatch, at: int) -> str:
+    """One tick at ``at``: the run's status after it."""
+    monkeypatch.setattr(handler, 'clock', lambda: float(at))
+    handler.lambda_handler({'action': 'tick'}, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    return run.status
+
+
+def _runlog() -> list[dict[str, Any]]:
+    return boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE).query(
+        KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
+        ExpressionAttributeValues={':pk': run_pk(OTHER_RUN), ':log': 'RUNLOG#'})['Items']
+
+
+def test_a_crashed_launch_is_caught_by_a_later_tick_and_the_run_sent_to_a_person_once(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    started = _started_whose_launch_never_ran(monkeypatch)
+    # Within the runtime's limit and its margin the launch may still come: nothing is asked.
+    assert _tick_at(monkeypatch, started + supervisor_module.COORDINATOR_LAUNCH_SECONDS) == 'active'
+    assert _tick_at(monkeypatch, started + supervisor_module.COORDINATOR_LAUNCH_SECONDS + 60) == 'needs_human'
+    assert _tick_at(monkeypatch, started + supervisor_module.COORDINATOR_LAUNCH_SECONDS + 120) == 'needs_human'
+    asked = [(row['status'], row['actor'], row.get('reason')) for row in _runlog() if row['status'] == 'needs_human']
+    assert asked == [('needs_human', 'supervisor', 'coordinator')]   # (once: the decision point's own rule)
+
+
+def test_a_coordinator_launch_still_under_way_is_left_alone(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    started = _started_whose_launch_never_ran(monkeypatch)
+    late = started + supervisor_module.COORDINATOR_LAUNCH_SECONDS + 60
+    # (a late launch holds the coordinator's row while its MicroVM starts)
+    handler._supervisor().sessions.hold_launch(OTHER_RUN, COORDINATOR_AGENT, late - 30)
+    assert _tick_at(monkeypatch, late) == 'active'
+
+
+def test_a_launched_coordinator_is_left_alone(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    started = _started_whose_launch_never_ran(monkeypatch)
+    handler.lambda_handler({'action': 'launch_coordinator', 'run_id': OTHER_RUN, 'actor': 'admin-sub'}, None)
+    supervisor = handler._supervisor()
+    sessions, holds = supervisor.sessions._agents_of(OTHER_RUN)
+    assert [session.agent_id for session in sessions] == [COORDINATOR_AGENT]
+    supervisor._coordinator_never_launched(OTHER_RUN, sessions, holds,
+                                           started + supervisor_module.COORDINATOR_LAUNCH_SECONDS + 60)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.status == 'active'
+
+
+def test_a_resume_gets_its_own_launch_window_and_no_tick_undoes_it(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    started = _started_whose_launch_never_ran(monkeypatch)
+    window = supervisor_module.COORDINATOR_LAUNCH_SECONDS
+    assert _tick_at(monkeypatch, started + window + 60) == 'needs_human'
+    # A person resumes it long after its start (its new coordinator's launch still on its way: no session yet).
+    resumed = started + 3600
+    _runs().resume(OTHER_RUN, now=resumed, actor='admin-sub')
+    assert _tick_at(monkeypatch, resumed + 60) == 'active'   # (measured from the Resume, not the start)
+    assert _tick_at(monkeypatch, resumed + window) == 'active'
+    assert _tick_at(monkeypatch, resumed + window + 60) == 'needs_human'   # (and that launch never came either)
+
+
+def _reads_fail_after(monkeypatch: pytest.MonkeyPatch, reads: int) -> None:
+    """The run's row reads fail from the ``reads``-th on (a throttled or unreachable table)."""
+    from botocore.exceptions import ClientError
+    original, seen = RunStore.get, [0]
+
+    def get(store: RunStore, run_id: str) -> Run | None:
+        seen[0] += 1
+        if seen[0] >= reads:
+            raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'GetItem')
+        return original(store, run_id)
+
+    monkeypatch.setattr(RunStore, 'get', get)
+
+
+def test_a_start_that_failed_and_cannot_read_its_run_back_may_have_started_it(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _handing_on_launches(monkeypatch)
+    monkeypatch.setattr(handler, '_switch', _switch_fails)
+    _reads_fail_after(monkeypatch, 2)   # (the start's own first read passes; the read back after the failure fails)
+    with pytest.raises(handler.StartUncertain, match=f'run {OTHER_RUN} may have been started: open the run monitor'):
+        handler.start_handler(COORDINATED, None)
+
+
+def test_a_start_whose_write_failed_says_start_it_again(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    from botocore.exceptions import ClientError
+    assert wired is not None
+    _handing_on_launches(monkeypatch)
+
+    def write_fails(*_args: Any, **_kwargs: Any) -> None:
+        raise ClientError({'Error': {'Code': 'InternalServerError'}}, 'TransactWriteItems')
+
+    monkeypatch.setattr(RunStore, 'start', write_fails)
+    with pytest.raises(handler.StartNotWritten, match='start it again'):
+        handler.start_handler(COORDINATED, None)
+    assert _runs().get(OTHER_RUN) is None
+
+
+def test_a_run_started_without_a_coordinator_to_launch_is_never_asked_about(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _handing_on_launches(monkeypatch)
+    handler.start_handler({key: value for key, value in COORDINATED.items() if key != 'language'}, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert _tick_at(monkeypatch, run.started_at + 3600) == 'active'

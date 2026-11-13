@@ -185,6 +185,28 @@ describe('getFeedbackById', () => {
   })
 })
 
+describe('a body that names a run', () => {
+  it('keeps a well-formed `run_id` on the error, and drops one that is not a run id', async () => {
+    const RUN = '01JDA7K3M9Q2R5T8V0W4X6Y1Z3'
+    const caught = async (body: unknown): Promise<unknown> => {
+      mockFailureOnce(503, JSON.stringify(body))
+      return fetchApi('/agents/engineering/runs').catch((error: unknown) => error)
+    }
+    const named = await caught({ error: `run ${RUN} may have been started`, run_id: RUN })
+    const forged = await caught({ error: 'down', run_id: '../other' })
+    expect([named instanceof ApiError && named.runId, forged instanceof ApiError && forged.runId])
+      .toStrictEqual([RUN, undefined])
+  })
+})
+
+describe('an accepted answer', () => {
+  it('reads a 202\'s body like a 200\'s (an engineering run\'s start: the run is written, its launch under way)', async () => {
+    fetchMock().mockResolvedValueOnce({ ok: true, status: 202, json: () => Promise.resolve({ run: { run_id: 'RUN1' } }) })
+    expect(await fetchApi<unknown>('/agents/engineering/runs', { method: 'POST', body: '{}' }))
+      .toStrictEqual({ run: { run_id: 'RUN1' } })
+  })
+})
+
 // The rejection of a non-OK response: the status is a typed field, and the
 // server's own `message` is the error text whenever it sent one, so a caller
 // (the sharing dialog, a toast) can show the reason rather than a number.

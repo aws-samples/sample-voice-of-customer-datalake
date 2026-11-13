@@ -444,10 +444,21 @@ class SessionStore:
 
     def of_run(self, run_id: str) -> list[AgentSession]:
         """Every session of one run, live or not (the run monitor's signals reach paused agents too)."""
+        return self._agents_of(run_id)[0]
+
+    def _agents_of(self, run_id: str) -> tuple[list[AgentSession], dict[str, int]]:
+        """One query of the run's agent rows: its sessions, and the launch holds of agents with no session yet (each
+        agent's hold's end, epoch seconds; a run-out hold is 0)."""
         query = {'KeyConditionExpression': 'pk = :run AND begins_with(sk, :agent)',
                  'ExpressionAttributeValues': {':run': run_pk(run_id), ':agent': 'AGENT#'}, 'ConsistentRead': True}
-        # A row the brokers metered before the session was written holds no session yet.
-        return [_from_item(item) for item in iter_query(self._table, query) if 'seq' in item]
+        sessions: list[AgentSession] = []
+        holds: dict[str, int] = {}
+        for item in iter_query(self._table, query):
+            if 'seq' in item:
+                sessions.append(_from_item(item))
+            elif LAUNCH_HOLD in item:   # (a row the brokers metered before the session was written holds neither)
+                holds[str(item['sk']).removeprefix('AGENT#')] = int(item[LAUNCH_HOLD])
+        return sessions, holds
 
     def any_live_or_moving(self, run_id: str, now: int) -> bool:
         """An agent of the run is live, or one is being moved (a Resume may be starting a MicroVM for it)."""
@@ -456,8 +467,14 @@ class SessionStore:
 
     def watched(self) -> Iterator[tuple[str, list[AgentSession]]]:
         """Every session, live or not, of each run the supervisor watches, run by run (one query per run)."""
+        for run_id, sessions, _holds in self.watched_with_holds():
+            yield run_id, sessions
+
+    def watched_with_holds(self) -> Iterator[tuple[str, list[AgentSession], dict[str, int]]]:
+        """``watched``, with each run's launch holds of agents that have no session yet (the same one query per
+        run): the tick's check for a coordinator whose launch never came reads them."""
         for run_id in self._runs.listed():
-            yield run_id, self.of_run(run_id)
+            yield run_id, *self._agents_of(run_id)
 
     def active(self) -> Iterator[AgentSession]:
         """Every live session of the runs the supervisor watches, run by run."""

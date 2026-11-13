@@ -101,16 +101,18 @@ const reasonSchema = z.string().trim().min(1).max(MAX_SERVER_MESSAGE_CHARS)
 const errorBodySchema = z.object({
   message: reasonSchema.optional().catch(undefined),
   error: reasonSchema.optional().catch(undefined),
+  // An engineering run's start that may have written its run names it (agents_handler.py start_engineering_run).
+  run_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/).optional().catch(undefined),
 })
 
-async function serverMessage(response: Response): Promise<string | undefined> {
+async function serverMessage(response: Response): Promise<{ message?: string; runId?: string }> {
   try {
     const parsed = errorBodySchema.safeParse(JSON.parse(await response.text()))
-    return parsed.success ? (parsed.data.message ?? parsed.data.error) : undefined
+    return parsed.success ? { message: parsed.data.message ?? parsed.data.error, runId: parsed.data.run_id } : {}
   } catch {
     // No body, a non-JSON body (an API Gateway error page), or a body that was
     // already consumed: the status alone is still a complete answer.
-    return undefined
+    return {}
   }
 }
 
@@ -122,8 +124,8 @@ async function serverMessage(response: Response): Promise<string | undefined> {
  * `fetchApi` for a board session (its 401 path ends the APP session).
  */
 export async function apiErrorFor(response: Response): Promise<ApiError> {
-  const message = await serverMessage(response)
-  return message === undefined ? new ApiError(response.status) : new ApiError(response.status, message)
+  const { message, runId } = await serverMessage(response)
+  return new ApiError(response.status, message ?? `API Error: ${String(response.status)}`, runId)
 }
 
 async function handleUnauthorized<T>(

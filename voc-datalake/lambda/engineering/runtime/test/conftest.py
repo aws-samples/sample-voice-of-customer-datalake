@@ -83,6 +83,8 @@ class FakeControl:
     alert: BudgetAlert | None = None
     sent: list[BudgetAlert] = field(default_factory=list)
     released: list[BudgetAlert] = field(default_factory=list)
+    #: The runs started with a coordinator to launch, and when (``coordinator_awaited``).
+    awaited: dict[str, int] = field(default_factory=dict)
 
     def budget(self, run_id: str) -> Budget:
         assert run_id
@@ -101,6 +103,10 @@ class FakeControl:
     def is_active(self, run_id: str) -> bool:
         """Active until stopped or sent to a person (a Resume is the test's to model)."""
         return run_id not in self.stops and all(run != run_id for run, _reason in self.humans)
+
+    def coordinator_awaited(self, run_id: str) -> int | None:
+        """Only for a run the test started with a coordinator to launch (``awaited``), while it is active."""
+        return self.awaited.get(run_id) if self.is_active(run_id) else None
 
     def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
         assert run_id

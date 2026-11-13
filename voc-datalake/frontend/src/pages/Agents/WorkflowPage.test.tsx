@@ -364,3 +364,42 @@ describe('Workflow library — Rename', () => {
     expect(screen.getByText('Research flow')).toBeInTheDocument()
   })
 })
+
+describe('a saved engineering flow\'s Start a run (its dialog: StartRunDialog.test.tsx)', () => {
+  const engineeringFlow = workflowView(1, { ...emptyDefinition('Bug hunt'), schema: 'voc-workflow/2' }, { kind: 'engineering' })
+
+  it('opens its dialog for an administrator, and Escape gives focus back to it', async () => {
+    renderAt('/agents/workflows/wf_1', { 'GET /workflows/wf_1': () => engineeringFlow })
+    const action = await screen.findByRole('button', { name: 'Start a run' })
+    await userEvent.click(action)
+    expect(await screen.findByRole('dialog', { name: 'Start a run of Bug hunt' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(action).toHaveFocus())
+  })
+
+  it('is off while the flow has unsaved changes, saying to save it first, and on again once they are gone', async () => {
+    renderAt('/agents/workflows/wf_1', { 'GET /workflows/wf_1': () => engineeringFlow })
+    const action = await screen.findByRole('button', { name: 'Start a run' })
+    await screen.findByRole('button', { name: 'Export' })
+    const field = within(screen.getByRole('complementary', { name: 'Step settings' })).getByLabelText('Workflow name')
+    await userEvent.type(field, ' v2')
+    await screen.findByText('Unsaved changes')
+    expect(action).toBeDisabled()
+    expect(action).toHaveAccessibleDescription('Save the flow first: a run uses the saved version.')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Bug hunt')
+    await waitFor(() => expect(action).toBeEnabled())
+  })
+
+  it.each([
+    ['on an agents workflow', () => STORED],
+    ['to a non-admin', () => { adminFlag.isAdmin = false; return engineeringFlow }],
+    ['without the engineering module', () => { engineering.available = false; return engineeringFlow }],
+  ])('is not offered %s', async (_case, arrange) => {
+    const view = arrange()
+    renderAt('/agents/workflows/wf_1', { 'GET /workflows/wf_1': () => view })
+    // (the editor has read the workflow: the page knows its kind)
+    expect(await screen.findByRole('button', { name: 'Export' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start a run' })).toBeNull()
+  })
+})

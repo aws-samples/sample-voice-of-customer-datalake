@@ -17,6 +17,8 @@ ignore_names = [
     "handler",
     # voc-engineering-delivery's entry point (lib/stacks/engineering-runtime.ts, engineering/runtime/handler).
     "delivery_handler",
+    # voc-engineering-start's entry point (lib/stacks/engineering-runtime.ts createStart, engineering/runtime/handler).
+    "start_handler",
     # Read by aws-lambda-powertools from the Lambda context; conftest fakes of that context set it.
     "memory_limit_in_mb",
     # pydantic: the model's config, read by pydantic itself (lambda/shared/ingest_schemas.py).

@@ -608,6 +608,42 @@
     "title": "Workflow",
     "subtitle": "Ein Workflow aus der Bibliothek. Agenten, die ihn ausführen, verwenden seine neueste gespeicherte Revision."
   },
+  "startRun": {
+    "action": "Lauf starten",
+    "title": "Lauf von {{name}} starten",
+    "description": "Der Lauf startet diesen Ablauf in der zuletzt gespeicherten Fassung, auf einem Commit eines verbundenen Repositorys. Er erreicht das Repository erst, wenn die Zugangsdaten der Verbindung gespeichert sind.",
+    "fields": {
+      "connection": "Repository-Verbindung",
+      "commit": "Commit",
+      "language": "Sprache",
+      "goal": "Ziel"
+    },
+    "hints": {
+      "connection": "Die ID der Verbindung: Buchstaben, Ziffern und Bindestriche, höchstens 63.",
+      "commit": "Die vollständige Commit-ID, von der der Lauf startet: 40 Hexadezimalzeichen.",
+      "language": "Die Toolchain des Repositorys: Die Agenten arbeiten im Sandbox-Image dieser Sprache.",
+      "goal": "Wofür der Lauf ist, in einer Zeile mit höchstens 500 Zeichen."
+    },
+    "invalid": {
+      "connection": "Geben Sie die ID der Verbindung ein: 1 bis 63 Buchstaben, Ziffern oder Bindestriche.",
+      "commit": "Geben Sie die vollständige Commit-ID ein: 40 Zeichen, 0 bis 9 und a bis f.",
+      "goalEmpty": "Geben Sie an, wofür der Lauf ist.",
+      "goalLong": "Das Ziel darf höchstens {{max, number}} Zeichen lang sein."
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript und TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "Sein Monatsbudget ist das des Ablaufs: {{amount}}.",
+    "noBudget": "Der Ablauf hat kein Monatsbudget.",
+    "submit": "Lauf starten",
+    "openRun": "Lauf öffnen",
+    "mayHaveStarted": "Der Lauf wurde vielleicht gestartet: Prüfen Sie die Liste der Läufe, bevor Sie einen weiteren starten.",
+    "openRuns": "Läufe des Ablaufs ansehen",
+    "saveFirst": "Speichern Sie zuerst den Ablauf: Ein Lauf verwendet die gespeicherte Fassung."
+  },
   "validation": {
     "scope": "Wählen Sie mindestens eine Kategorie oder Unterkategorie, oder beobachten Sie alle Kategorien.",
     "name": "Geben Sie dem Agenten einen Namen mit höchstens {{max, number}} Zeichen.",

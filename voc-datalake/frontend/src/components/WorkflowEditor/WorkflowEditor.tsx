@@ -15,7 +15,7 @@
  *
  * @module components/WorkflowEditor/WorkflowEditor
  */
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Copy, Download, Eraser, Loader2, RotateCcw, Save, Upload } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { workflowIssueText } from './workflowIssueText'
@@ -59,6 +59,8 @@ interface WorkflowEditorProps {
   renderTitle?: (state: Readonly<{ dirty: boolean; name: string }>) => ReactNode
   /** A definition to edit that is not stored yet (`workflowId` is then ''): unsaved until Save creates it. */
   unsaved?: WorkflowDefinition
+  /** Told whenever the draft gains or loses unsaved changes (the flow page's Start a run runs the saved version). */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 type EditorOutcome = SaveOutcome | 'import_failed' | null
@@ -102,9 +104,12 @@ function StatusLine({ outcome, dirty, issueCount, notice }: Readonly<{
 
 type Editor = ReturnType<typeof useWorkflowEditor>
 
-export function WorkflowEditor({ workflowId, canEdit, onSavedAs, notice, renderTitle, unsaved }: Readonly<WorkflowEditorProps>) {
+export function WorkflowEditor({
+  workflowId, canEdit, onSavedAs, notice, renderTitle, unsaved, onDirtyChange,
+}: Readonly<WorkflowEditorProps>) {
   const { t } = useTranslation('agents')
   const editor = useWorkflowEditor(workflowId, canEdit, unsaved)
+  useEffect(() => { onDirtyChange?.(editor.dirty) }, [editor.dirty, onDirtyChange])
   // The status line's outcome, here so the leave-page prompt's Save shows it like the toolbar's.
   const [outcome, setOutcome] = useState<EditorOutcome>(null)
   // After Save as the draft lives in the copy: moving to it is not leaving unsaved work.

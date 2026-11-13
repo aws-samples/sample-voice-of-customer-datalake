@@ -608,6 +608,42 @@
     "title": "워크플로",
     "subtitle": "라이브러리의 워크플로입니다. 이를 실행하는 에이전트는 가장 최근에 저장된 리비전을 사용합니다."
   },
+  "startRun": {
+    "action": "실행 시작",
+    "title": "{{name}} 실행 시작",
+    "description": "마지막으로 저장한 이 흐름을 연결된 저장소의 커밋 하나에서 시작합니다. 연결의 자격 증명이 저장된 뒤에만 저장소에 닿습니다.",
+    "fields": {
+      "connection": "저장소 연결",
+      "commit": "커밋",
+      "language": "언어",
+      "goal": "목표"
+    },
+    "hints": {
+      "connection": "연결 ID: 영문자, 숫자, 하이픈으로 최대 63자.",
+      "commit": "실행을 시작할 커밋의 전체 ID: 16진수 40자.",
+      "language": "저장소의 도구 체인: 에이전트는 그 언어의 샌드박스 이미지에서 작업합니다.",
+      "goal": "실행의 목적을 한 줄, 최대 500자로."
+    },
+    "invalid": {
+      "connection": "연결 ID를 입력하세요: 영문자, 숫자 또는 하이픈 1~63자.",
+      "commit": "전체 커밋 ID를 입력하세요: 0~9와 a~f로 된 40자.",
+      "goalEmpty": "실행의 목적을 적어 주세요.",
+      "goalLong": "목표는 {{max, number}}자 이하로 적어 주세요."
+    },
+    "languages": {
+      "java": "Java",
+      "node": "JavaScript 및 TypeScript",
+      "python": "Python",
+      "rust": "Rust"
+    },
+    "budget": "월 예산은 흐름의 예산입니다: {{amount}}.",
+    "noBudget": "이 흐름에는 월 예산이 없습니다.",
+    "submit": "실행 시작",
+    "openRun": "실행 열기",
+    "mayHaveStarted": "실행이 시작되었을 수 있습니다. 다른 실행을 시작하기 전에 실행 목록을 확인하세요.",
+    "openRuns": "흐름의 실행 보기",
+    "saveFirst": "먼저 흐름을 저장하세요. 실행은 저장된 버전을 사용합니다."
+  },
   "validation": {
     "scope": "카테고리나 하위 카테고리를 하나 이상 선택하거나, 모든 카테고리를 지켜보도록 하세요.",
     "name": "에이전트 이름은 {{max, number}}자 이내로 입력하세요.",
