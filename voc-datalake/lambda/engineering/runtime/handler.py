@@ -1,7 +1,8 @@
 """voc-engineering-runtime: a run's start and end, the supervisor's tick, the launcher, the run monitor's signals.
 
 - ``{"action": "start_run", "run_id", "max_tasks", "max_tokens"?, "max_cost_usd"?, "goal"?, "repo"?, "flow"?,
-  "connection"?, "commit"?, "language"?, "actor"?}``: the run's ``META`` row and its ``coordinate`` task
+  "budget_usd"? (the flow's monthly budget, copied onto the run for its alerts), "connection"?, "commit"?,
+  "language"?, "actor"?}``: the run's ``META`` row and its ``coordinate`` task
   (``runs.RunStore.start``), the supervisor's rule switched on, and, for a run with its connection, commit and
   language, its coordinator launched on that task (``coordinator-1``, on the coordinator's skill's harness). A run
   started without its connection or commit can launch no agent and read no knowledge (the board answers 409); one
@@ -317,7 +318,8 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
         runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),
                    repo=str(event.get('repo', '')), flow=str(event.get('flow', '')),
                    connection=str(event.get('connection', '')), commit=str(event.get('commit', '')),
-                   language=language, actor=str(event.get('actor') or ''))
+                   language=language, actor=str(event.get('actor') or ''),
+                   budget_usd=_optional_number(event, 'budget_usd', float))
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:

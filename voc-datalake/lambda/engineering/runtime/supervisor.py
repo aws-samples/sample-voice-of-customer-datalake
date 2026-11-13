@@ -18,7 +18,8 @@ Per run it honours a stop (a person's, an agent's kill switch, or the 30-day sto
 decision point offering only "stop"): every MicroVM is ended at once without waiting for the agents, and the
 launcher renews none of their sessions. A spent budget opens a human decision point and holds every agent
 (checkpointed, without a MicroVM) for a person to resume; no new MicroVM starts while it is spent. It emits
-``run.health``. It never switches its own schedule: the handler does, around the runs (``handler.start_run``, and its settling
+``run.health``, and after each run's moves its flow's budget alert, when the flow's month passed a level of its
+monthly budget (``run.budget_alert``: measured, never a stop). It never switches its own schedule: the handler does, around the runs (``handler.start_run``, and its settling
 after an ``end_run`` and after each tick).
 
 ``signal`` is the server side of the run monitor's controls: Save (checkpoint now), Pause (checkpoint, then
@@ -145,6 +146,7 @@ class Supervisor:
         if self._stopping(run_id, now):
             results = [self._ticked(session, now, lambda s: self._end(s, 'stopped', now)) for session in run_sessions]
             self.bus.emit(run_id, 'run', 'run.health', f'Stopped: {len(results)} MicroVM(s) ended.')
+            self._budget_alert(run_id, now)   # (its agents' last writes may have passed a level)
             return [session.status for session in results]
         budget = self.control.budget(run_id)
         if budget.exceeded:
@@ -153,11 +155,39 @@ class Supervisor:
         else:
             self._spent.discard(run_id)
         results = [self._ticked(session, now, lambda s: self._advance(s, now)) for session in run_sessions]
+        # After the moves: a level passed by this tick's writes (an agent's last, too) is said now, even if no agent of
+        # the run is live by the next tick.
+        self._budget_alert(run_id, now)
         counts = Counter(session.status for session in results)
         self.bus.emit(run_id, 'run', 'run.health',
                       ', '.join(f'{count} {status}' for status, count in sorted(counts.items())),
                       {'tokens': str(budget.tokens), 'cost_usd': f'{budget.cost_usd:.2f}'})
         return [session.status for session in results]
+
+    def _budget_alert(self, run_id: str, now: int) -> None:
+        """The run's flow passed a level of its monthly budget: said to the run, at least once per flow, budget, level
+        and month, from the supervisor's own source. A failed read or write is logged and the run goes on; a send
+        that fails gives the claim back for any live run of the flow's next tick (this run may have none). A run being
+        wound down (stopping) is checked too, for its agents' last writes: it may be the one that says a level
+        another run of the flow passed."""
+        try:
+            alert = self.control.budget_alert(run_id, now)
+        except Exception:
+            logger.exception('engineering supervisor: the flow\'s budget could not be checked', extra={'run_id': run_id})
+            return
+        if alert is None:
+            return
+        try:
+            self.bus.emit(run_id, 'run', 'run.budget_alert', alert.summary())
+        except Exception:
+            logger.exception('engineering supervisor: the flow\'s budget alert was not sent', extra={'run_id': run_id})
+            with contextlib.suppress(Exception):   # (best effort: else it is taken over past the claim's time)
+                self.control.alert_not_sent(run_id, alert)
+            return
+        try:
+            self.control.alert_sent(run_id, alert, now)
+        except Exception:
+            logger.exception('engineering supervisor: a sent budget alert was not closed', extra={'run_id': run_id})
 
     def _guarded(self, session: AgentSession, now: int, move: Callable[[AgentSession], AgentSession]) -> AgentSession:
         """``move`` on the session, claimed for this move only (a claim someone else holds leaves it to them).
@@ -172,6 +202,12 @@ class Supervisor:
         try:
             return self._release(move(claimed))
         except StaleSession:
+            # The move's write was refused. When the row is still as this move last left it (the refusal was a
+            # transaction conflict that outlasted its tries, say on a flow's shared month total), the claim is given
+            # back, so the next tick moves the agent rather than waiting out the claim; a row someone else moved is
+            # theirs, and the release is refused too.
+            with contextlib.suppress(Exception):
+                return self._release(self._latest(claimed))
             return claimed
         except MicroVmCallFailed:
             logger.exception('engineering supervisor: a MicroVM call failed',

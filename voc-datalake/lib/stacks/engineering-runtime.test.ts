@@ -9,6 +9,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { policiesWithStatement } from '../test-support/engineering-template';
 import { fixtureBucket } from '../test-support/fixture-resources';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
@@ -401,21 +402,33 @@ describe('with -c engineeringAgents=true', () => {
     expect(delivery).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
   });
 
+  /** The policies of `role` holding statement `sid`: `action` on the table, only on `keys`' partitions. */
+  const keyedGrants = (role: string, sid: string, action: string | string[], keys: string) => policiesWithStatement(
+    template, role, { Sid: sid, Action: action, Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [keys] } } });
+
   it.each(['EngineeringSupervisorRole', 'EngineeringDeliveryRole'])(
     'lets %s update the spend ledger\'s month partitions only (the same transaction as a priced session write)', (role) => {
-      const policies = template.findResources('AWS::IAM::Policy', {
-        Properties: {
-          Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(role) }]),
-          PolicyDocument: Match.objectLike({
-            Statement: Match.arrayWith([Match.objectLike({
-              Sid: 'SpendLedger', Action: 'dynamodb:UpdateItem',
-              Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#SPEND#20??-??'] } },
-            })]),
-          }),
-        },
-      });
-      expect(Object.keys(policies)).toHaveLength(1);
+      expect(keyedGrants(role, 'SpendLedger', 'dynamodb:UpdateItem', 'WS#default#SPEND#20??-??')).toHaveLength(1);
     });
+
+  it.each([
+    ['SpendTotals', 'dynamodb:GetItem', 'WS#default#SPEND#20??-??'],
+    ['BudgetAlerts', ['dynamodb:GetItem', 'dynamodb:UpdateItem'], 'WS#default#BUDGET#20??-??'],
+  ])('gives the supervisor alone %s (%s on %s): a flow\'s month total, the alerts\' own partition', (sid, action, keys) => {
+    expect(keyedGrants('EngineeringSupervisorRole', sid, action, keys)).toHaveLength(1);
+    expect(policyText(template, 'EngineeringDeliveryRole')).not.toContain('#BUDGET#');
+  });
+
+  it('gives the delivery role only UpdateItem on the spend ledger, whatever the statement', () => {
+    const Statement = z.array(z.looseObject({ Action: z.union([z.string(), z.array(z.string())]), Condition: z.unknown().optional() }));
+    const policies = template.findResources('AWS::IAM::Policy', {
+      Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }]) },
+    });
+    const onLedger = Object.values(policies)
+      .flatMap((policy) => Statement.parse(policy.Properties?.PolicyDocument?.Statement))
+      .filter((statement) => JSON.stringify(statement.Condition ?? {}).includes('#SPEND#'));
+    expect(onLedger.flatMap((statement) => [statement.Action].flat())).toStrictEqual(['dynamodb:UpdateItem']);
+  });
 
   it('runs the delivery without what only the supervisor uses (its rule\'s name, the extra egress of a launch)', () => {
     const [fn] = Object.values(template.findResources('AWS::Lambda::Function', {

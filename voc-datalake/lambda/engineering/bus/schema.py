@@ -35,7 +35,7 @@ TYPES = frozenset({
     'review.requested', 'review.result',
     'gate.go', 'gate.no_go',
     'run.started', 'run.health', 'run.paused', 'run.resumed', 'run.ended',
-    'run.agent_continued', 'run.agent_timed_out', 'run.agent_failed',
+    'run.agent_continued', 'run.agent_timed_out', 'run.agent_failed', 'run.budget_alert',
     'signal.save', 'signal.pause', 'signal.resume', 'signal.shutdown', 'signal.stop_now', 'signal.check_in',
     'skill.proposed', 'skill.accepted', 'skill.rolled_back',
     'outcome.pr_opened', 'outcome.accepted', 'outcome.merged', 'outcome.closed', 'outcome.reverted',

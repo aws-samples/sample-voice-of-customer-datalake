@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 
 from engineering.runtime.caps import Timings
 from engineering.runtime.checkpoints import checkpoint_prefix
 from engineering.runtime.interface import AgentSpec, Command, MicroVm, RuntimeRefused
 from engineering.runtime.launcher import Launcher, RunStopped
-from engineering.runtime.ports import Budget, Lease
+from engineering.runtime.ports import Budget, BudgetAlert, Lease
 from engineering.runtime.runs import RunCaps
 from engineering.runtime.sessions import AgentSession, StaleSession
 from engineering.runtime.supervisor import THIRTY_DAYS
@@ -601,6 +602,66 @@ def test_once_the_budget_is_raised_resume_brings_a_held_agent_back(world: World)
     assert world.session().continuation == 1
 
 
+def test_a_flows_budget_alert_is_said_to_the_run_from_the_supervisor(world: World):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    given = BudgetAlert(flow='wf_fix', month='2026-11', levels=(100,), flag=100, spent_usd=10.0, budget_usd=10.0)
+    world.control.alert = given
+    world.supervisor.tick(1001)
+    (alert,) = [event for event in world.bus.events if event['kind'] == 'run.budget_alert']
+    assert (alert['to'], alert['summary'], world.control.sent) == ('run', given.summary(), [given])
+    # Measured, not enforced: the agent works on.
+    assert world.session().status == 'working'
+    assert world.control.humans == []
+
+
+def test_a_level_passed_by_a_runs_last_writes_is_said_in_that_tick(world: World):
+    # (checked after the moves, and on a stopping run: no later tick may see the run)
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    world.control.stops.add(RUN)
+    given = BudgetAlert(flow='wf_fix', month='2026-11', levels=(100,), flag=100, spent_usd=10.0, budget_usd=10.0)
+    world.control.alert = given
+    world.supervisor.tick(1001)
+    assert world.session().status == 'stopped'
+    assert world.control.sent == [given]
+
+
+def test_an_alert_the_bus_refused_is_said_by_the_next_tick(world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    given = BudgetAlert(flow='wf_fix', month='2026-11', levels=(80,), flag=80, spent_usd=8.0, budget_usd=10.0)
+    world.control.alert = given
+    emit = world.bus.emit
+
+    def refusing(run_id: str, to: str, kind: str, *args: Any, **kwargs: Any) -> None:
+        if kind == 'run.budget_alert':
+            raise RuntimeError('the bus refused it')
+        emit(run_id, to, kind, *args, **kwargs)
+
+    monkeypatch.setattr(world.bus, 'emit', refusing)
+    world.supervisor.tick(1001)
+    assert (world.control.sent, world.session().status) == ([], 'working')   # (not closed; the run goes on)
+    assert world.control.released == [given]   # (given back, for any live run of the flow)
+    monkeypatch.setattr(world.bus, 'emit', emit)
+    world.supervisor.tick(1002)
+    assert world.control.sent == [given]
+    assert world.bus.kinds().count('run.budget_alert') == 1
+
+
+def test_a_budget_check_that_fails_is_logged_and_the_tick_goes_on(world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+
+    def failing(_run_id: str, _now: int) -> None:
+        raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException'}}, 'GetItem')
+
+    monkeypatch.setattr(world.control, 'budget_alert', failing)
+    world.supervisor.tick(1001)
+    assert 'run.budget_alert' not in world.bus.kinds()
+    assert any(event['kind'] == 'run.health' for event in world.bus.events)
+
+
 def test_shut_down_during_an_eight_hour_pause_stops_the_agent_instead_of_continuing_it(world: World):
     world.launch(code=PAUSE_WHEN_ASKED)
     working = _until(world, 1000, lambda s: s.status == 'working')
@@ -809,6 +870,29 @@ def test_a_lost_claim_on_a_continuation_ends_the_microvm_it_started(world: World
     assert started
     with pytest.raises(RuntimeRefused, match='terminated'):
         world.runtime.mint_token(started[0])
+
+
+def test_a_move_whose_write_was_refused_gives_the_claim_back_for_the_next_tick(world: World,
+                                                                             monkeypatch: pytest.MonkeyPatch):
+    # (a transaction conflict that outlasted its tries: the row is still as the move left it)
+    world.launch(code='import sys; sys.exit(75)')
+    real_save = world.store.save
+    refused: list[int] = []
+
+    def save(session):
+        if session.continuation == 1 and not refused:
+            refused.append(1)
+            raise StaleSession('the flow\'s month total was held')
+        return real_save(session)
+
+    monkeypatch.setattr(world.store, 'save', save)
+    for now in range(1000, 1010):
+        world.supervisor.tick(now)
+        if refused:
+            break
+        time.sleep(0.05)
+    assert refused
+    assert world.session().claimed_until is None   # (not held for the claim's 5 minutes)
 
 
 def test_time_without_a_microvm_is_not_counted_as_microvm_seconds(world: World):

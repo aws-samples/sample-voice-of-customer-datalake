@@ -220,6 +220,15 @@ def test_launch_refuses_a_bad_request_before_anything_starts(wired: Any, change:
     assert list(handler._supervisor().sessions.active()) == []
 
 
+def test_a_start_copies_the_flows_monthly_budget_onto_the_run(wired: Any):
+    assert _state(wired) == 'ENABLED'
+    handler.lambda_handler({'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'flow': 'bug-hunt',
+                            'budget_usd': 25.5}, None)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.budget_usd == 25.5
+
+
 def test_a_runs_start_and_end_switch_the_supervisor_on_and_off_with_the_last_active_run(wired: Any):
     assert _state(wired) == 'ENABLED'
     handler.lambda_handler({'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5}, None)

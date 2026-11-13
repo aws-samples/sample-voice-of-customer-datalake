@@ -131,7 +131,11 @@ An engineering flow may carry `budget: {monthly_usd}`: what its runs may spend i
 in dollars and cents from 0.01 to 100,000 (more decimals are refused, not rounded, so the amount approved is the
 amount kept; else 400, and 400 on an agents workflow; the editor's Monthly budget field
 under the flow's description, empty for none; leave `budget` out for none, never `null` in the assistant's draft). It
-is recorded with the flow and, for now, nothing reads it: alerts against the spend ledger are planned. A flow saved without one reads and saves as before. Only a signed-in administrator saves a workflow
+is recorded with the flow. A run started with it (by the runtime's `start_run`: no route starts one yet) says so in
+its conversation as its flow's month passes 80%, 100% and every further 50% up to 1,000%
+(docs/autonomous-engineering.md, Cost),
+MicroVM time only until tokens are priced (a deployment with MicroVM time unpriced, the default, never alerts); it
+stops nothing. A flow saved without one reads and saves as before. Only a signed-in administrator saves a workflow
 (a delegated credential, an MCP token or an agent, gets 403), so the assistant changes a budget only through its
 `create_workflow` and `update_workflow` cards, which say it in dollars ("Monthly budget set to $80.00", "Monthly
 budget: $50.00 → $80.00", or removed) for the person approving it; a duplicate keeps its source's budget.

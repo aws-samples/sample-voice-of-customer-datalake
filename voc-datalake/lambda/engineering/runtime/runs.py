@@ -30,6 +30,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Final
 
 from botocore.exceptions import ClientError
@@ -39,10 +40,21 @@ from engineering.connectors.identity import WORKSPACE
 from engineering.runtime.checkout import COMMIT_RE
 from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.interface import RuntimeRefused, check_id, check_run_id
-from engineering.runtime.ports import Budget
-from shared.aws import consistent_item
+from engineering.runtime.ports import Budget, BudgetAlert
+from engineering.spend import (
+    ALERT_CLAIM_SECONDS,
+    alert_levels,
+    alert_sent,
+    claim_alert,
+    flow_month_usd,
+    keyable,
+    month_of,
+    release_alert,
+)
+from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.ids import is_key_collision
+from shared.workflow_engineering import BUDGET_RULE, budget_of
 
 #: How a run ends (``active`` and ``needs_human`` are its live statuses).
 ENDED: Final = frozenset({'done', 'failed', 'stopped'})
@@ -103,6 +115,11 @@ class Run:
     #: The run's workflow and repository, as its start recorded them (the spend ledger's grouping).
     flow: str = ''
     repo: str = ''
+    #: Its flow's monthly budget as the start gave it (copied from the flow: a change applies to the next run), and the
+    #: highest alert level the flow passed in ``budget_alert_month`` (the run's flag; 0 for none).
+    budget_usd: float | None = None
+    budget_alert: int = 0
+    budget_alert_month: str = ''
 
 
 class RunExists(RuntimeRefused):
@@ -149,18 +166,25 @@ class RunStore:
         self._table = table
 
     def start(self, run_id: str, *, caps: RunCaps, now: int, goal: str = '', repo: str = '', flow: str = '',
-              connection: str = '', commit: str = '', language: str = '', actor: str = '') -> None:
+              connection: str = '', commit: str = '', language: str = '', actor: str = '',
+              budget_usd: float | None = None) -> None:
         """Write the run's ``META`` and list it for the supervisor; ``RunExists`` when it was started already.
 
         ``connection`` and ``commit`` (a full object id), when given, are what the board's ``launch`` op starts the
         run's agents on: read from here, never from the agent asking; ``language``, the repository's toolchain,
-        is the image its coordinator runs in."""
+        is the image its coordinator runs in. ``budget_usd``, the flow's monthly budget (its ``budget.monthly_usd``,
+        under the flow's own rule), is what the alerts measure the flow's month against."""
         if connection:
             check_id('connection', connection)
         if commit and not COMMIT_RE.match(commit):
             raise RuntimeRefused('a commit is a full hexadecimal object id')
         if language and language not in REGISTRY_HOSTS:
             raise RuntimeRefused(f'no toolchain image for language {language!r}')
+        if budget_usd is not None and budget_of({'monthly_usd': budget_usd})[1]:
+            raise RuntimeRefused(BUDGET_RULE)
+        if budget_usd is not None and not keyable(flow):
+            # (its alerts and its cap are keyed by the flow: one that cannot be a key would measure nothing)
+            raise RuntimeRefused('a budget is a flow\'s: the run names its workflow id')
         name = self._table.name
         meta: dict[str, Any] = {**meta_key(run_id), 'run_id': run_id, 'status': 'active', 'started_at': _iso(now),
                                 'started_epoch': now, 'max_tasks': caps.max_tasks, 'goal': _text(goal),
@@ -170,6 +194,8 @@ class RunStore:
             meta['max_tokens'] = caps.max_tokens
         if caps.max_cost_usd is not None:
             meta['max_cost_usd'] = str(caps.max_cost_usd)
+        if budget_usd is not None:
+            meta['budget_usd'] = str(budget_usd)
         # The run coordinator's task, open for it alone (the board's: it claims it like any agent, so the supervisor
         # watches it by its lease).
         coordinate = BoardStore(self._table.meta.client, name, new_id=lambda: '').coordinate_items(
@@ -255,10 +281,33 @@ class RunStore:
         caps = RunCaps(max_tasks=int(item['max_tasks']),
                        max_tokens=int(item['max_tokens']) if item.get('max_tokens') is not None else None,
                        max_cost_usd=float(cost) if cost is not None else None)
+        budget = item.get('budget_usd')
         return Run(run_id=run_id, status=str(item['status']), started_at=int(item['started_epoch']), caps=caps,
                    connection=str(item.get('connection', '')), commit=str(item.get('commit', '')),
                    language=str(item.get('language', '')), flow=str(item.get('flow', '')),
-                   repo=str(item.get('repo', '')))
+                   repo=str(item.get('repo', '')), budget_usd=float(budget) if budget is not None else None,
+                   budget_alert=int(item.get('budget_alert', 0)),
+                   budget_alert_month=str(item.get('budget_alert_month', '')))
+
+    def flag_budget(self, run_id: str, month: str, level: int) -> None:
+        """Flag the run with the highest alert level its flow passed in ``month`` (for the run monitor and its
+        reports, which do not show it yet): only ever upward within a month, never on a run that is gone."""
+        try:
+            self._table.update_item(
+                Key=meta_key(run_id),
+                UpdateExpression='SET budget_alert = :level, budget_alert_month = :month',
+                ConditionExpression=('attribute_exists(pk) AND (attribute_not_exists(budget_alert) '
+                                     'OR budget_alert_month < :month '
+                                     'OR (budget_alert_month = :month AND budget_alert < :level))'),
+                ExpressionAttributeValues={':level': level, ':month': month})
+        except ClientError as error:
+            if not is_conditional_check_failure(error):
+                raise
+
+    @property
+    def table(self) -> Any:
+        """The engineering table (the spend ledger's month partitions are in it too)."""
+        return self._table
 
     def listed(self) -> list[str]:
         """The runs the supervisor watches (live, or ended with a live agent), oldest first (a ULID sorts by time)."""
@@ -275,6 +324,11 @@ class RunStore:
             tokens += int(item.get('input_tokens', 0)) + int(item.get('output_tokens', 0))
             cost += float(item.get('cost_usd', 0))
         return tokens, cost
+
+
+#: How far into a month the month before is still checked, past an alert claim's time: two ticks more, so a claim
+#: left in its last minute is taken over.
+LOOK_BACK_TICKS_SECONDS: Final = 120
 
 
 class TableRunControl:
@@ -308,3 +362,55 @@ class TableRunControl:
     def is_active(self, run_id: str) -> bool:
         run = self._runs.get(run_id)
         return run is not None and run.status == 'active'
+
+    def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
+        """One GetItem of the flow's month total; each level passed above the run's flag is claimed for this run
+        (spend.claim_alert). Claims to say: the alert, flagged once said (``alert_sent``); none: the run is flagged now.
+        Nothing without a budget (only a run with a flow has one)."""
+        run = self._run(run_id)
+        if run.budget_usd is None:
+            return None
+        at = datetime.fromtimestamp(now, UTC)
+        # In a month's first minutes, the month before too: a level it passed, or a claim it left unsaid, in its last
+        # minute is said then, never lost to the turn of the month.
+        before = datetime.fromtimestamp(now - ALERT_CLAIM_SECONDS - LOOK_BACK_TICKS_SECONDS, UTC)
+        # (the month before only while the run's flag does not name a later one yet: once it does, it was looked at)
+        months = [month for month in dict.fromkeys((month_of(before), month_of(at)))
+                  if month == month_of(at) or run.budget_alert_month <= month]
+        for month in months:
+            alert = self._month_alert(run, run_id, month, at, Decimal(str(run.budget_usd)))
+            if alert is not None:
+                return alert
+        return None
+
+    def _month_alert(self, run: Run, run_id: str, month: str, at: datetime, budget: Decimal) -> BudgetAlert | None:
+        seen = run.budget_alert if run.budget_alert_month == month else 0
+        spent = flow_month_usd(self._runs.table, month, run.flow)
+        levels = [level for level in alert_levels(spent, budget) if level > seen]
+        if not levels:
+            return None
+        found = {level: claim_alert(self._runs.table, month, run.flow, level, run_id=run_id, spent=spent,
+                                    budget=budget, at=at) for level in levels}
+        # The run's flag rises only past levels said (or said by this tick): one another run holds unsaid stays
+        # above it, so this run's later ticks try it again and may take it over.
+        held = [level for level, claim in found.items() if claim == 'held']
+        flag = max((level for level in levels if not held or level < held[0]), default=seen)
+        claimed = tuple(level for level, claim in found.items() if claim == 'claimed')
+        if not claimed:
+            if flag > seen:
+                self._runs.flag_budget(run_id, month, flag)
+            return None
+        return BudgetAlert(flow=run.flow, month=month, levels=claimed, flag=flag, spent_usd=float(spent),
+                           budget_usd=float(budget))
+
+    def alert_not_sent(self, run_id: str, alert: BudgetAlert) -> None:
+        budget = Decimal(str(alert.budget_usd))
+        for level in alert.levels:
+            release_alert(self._runs.table, alert.month, alert.flow, level, run_id=run_id, budget=budget)
+
+    def alert_sent(self, run_id: str, alert: BudgetAlert, now: int) -> None:
+        at = datetime.fromtimestamp(now, UTC)
+        budget = Decimal(str(alert.budget_usd))
+        for level in alert.levels:
+            alert_sent(self._runs.table, alert.month, alert.flow, level, run_id=run_id, budget=budget, at=at)
+        self._runs.flag_budget(run_id, alert.month, alert.flag)

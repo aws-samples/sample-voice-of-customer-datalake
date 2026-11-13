@@ -14,9 +14,10 @@
  * own source (its policy and the bus's both deny any other); it reads no queue (there are none: the router invokes
  * voc-engineering-delivery, which records its run's messages in the run's inbox and wakes it).
  * No MicroVM holds a host token (the connector's broker does). The supervisor's role: the run and session rows and
- * the registry, the checkpoints it reads, its own rule, the MicroVM operations and the launcher's AssumeRole. The
- * delivery's role: the runs' rows only (no registry, no delete), the checkpoints, resuming, continuing and ending a
- * MicroVM, the launcher's AssumeRole and its failure records; no rule. No IAM write: a stop cuts a run's sessions by
+ * the registry, the spend ledger's ADDs and a flow's month total (GetItem), the budget alerts' own partition, the
+ * checkpoints it reads, its own rule, the MicroVM operations and the launcher's AssumeRole. The delivery's role: the
+ * runs' rows only (no registry, no delete), the spend ledger's ADDs, the checkpoints, resuming, continuing and
+ * ending a MicroVM, the launcher's AssumeRole and its failure records; no rule. No IAM write: a stop cuts a run's sessions by
  * not renewing them.
  *
  * Deployed only with `-c engineeringAgents=true`: the default synth has none of it, so no fixed cost and nothing for
@@ -39,7 +40,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
-import { ENGINEERING_CACHE_PREFIX, ENGINEERING_SPEND_PARTITIONS } from './core-buckets';
+import { ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_CACHE_PREFIX, ENGINEERING_SPEND_PARTITIONS } from './core-buckets';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { engineeringAgentsEnabled } from './engineering-broker';
@@ -97,7 +98,8 @@ const AGENT_ROLES = [
 /**
  * The spend ledger's rows (engineering/spend.py): the session store ADDs to them in the same transaction as each
  * priced write of a session (a transaction is authorised by its items' own actions), so every role that saves a
- * session needs this. UpdateItem only, on the month partitions only; never a read, never a delete.
+ * session needs this. UpdateItem only, on the month partitions only; never a delete (the supervisor's own GetItem of a
+ * flow's month total is a statement of its own).
  */
 function grantSpendLedger(role: iam.IRole, table: dynamodb.ITable): void {
   role.addToPrincipalPolicy(new iam.PolicyStatement({
@@ -467,6 +469,24 @@ class EngineeringRuntime extends Construct {
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS, RUN_REGISTRY] } },
     }));
     grantSpendLedger(role, engineeringTable);
+    // A flow's month total, read by GetItem for its budget's alerts (spend.py flow_month_usd); never a Query of a
+    // month.
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'SpendTotals',
+      actions: ['dynamodb:GetItem'],
+      resources: [engineeringTable.tableArn],
+      conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_SPEND_PARTITIONS] } },
+    }));
+    // The budget alerts' claims and their close (spend.py claim_alert, alert_sent), in a partition of their own: the
+    // delivery role has no grant on it, and the bus's table-wide roles an explicit Deny (engineering-bus.ts
+    // denyCostRows), so no other writer can make, and so mute, an alert.
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'BudgetAlerts',
+      // (GetItem: a refused claim reads back the row it found, ReturnValuesOnConditionCheckFailure)
+      actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+      resources: [engineeringTable.tableArn],
+      conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_BUDGET_ALERT_PARTITIONS] } },
+    }));
     // Its one delete: an ended run's row in the registry of active runs; never a run's own rows.
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['dynamodb:DeleteItem'],

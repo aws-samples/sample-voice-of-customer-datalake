@@ -12,7 +12,7 @@ from engineering.runtime.caps import Timings
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.interface import ROLES, Command
 from engineering.runtime.launcher import Launcher
-from engineering.runtime.ports import Budget, Lease
+from engineering.runtime.ports import Budget, BudgetAlert, Lease
 from engineering.runtime.runs import RunCaps, RunStore
 from engineering.runtime.sessions import AgentSession, SessionStore
 from engineering.runtime.supervisor import Supervisor
@@ -79,6 +79,10 @@ class FakeControl:
     stops: set[str] = field(default_factory=set)
     humans: list[tuple[str, str]] = field(default_factory=list)
     started: int = 0
+    #: The alert the next tick's check gives (None: no alert); ``sent``, each one the supervisor closed.
+    alert: BudgetAlert | None = None
+    sent: list[BudgetAlert] = field(default_factory=list)
+    released: list[BudgetAlert] = field(default_factory=list)
 
     def budget(self, run_id: str) -> Budget:
         assert run_id
@@ -97,6 +101,21 @@ class FakeControl:
     def is_active(self, run_id: str) -> bool:
         """Active until stopped or sent to a person (a Resume is the test's to model)."""
         return run_id not in self.stops and all(run != run_id for run, _reason in self.humans)
+
+    def budget_alert(self, run_id: str, now: int) -> BudgetAlert | None:
+        assert run_id
+        assert now >= 0
+        return self.alert
+
+    def alert_not_sent(self, run_id: str, alert: BudgetAlert) -> None:
+        assert run_id
+        self.released.append(alert)
+
+    def alert_sent(self, run_id: str, alert: BudgetAlert, now: int) -> None:
+        assert run_id
+        assert now >= 0
+        self.sent.append(alert)
+        self.alert = None
 
 
 def quick_checkout(_commit: str, _paths: Sequence[str]) -> list[Command]:

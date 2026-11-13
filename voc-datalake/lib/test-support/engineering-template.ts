@@ -3,7 +3,7 @@
  * Processing stack synthesized per context once per suite, a function's role, and the statements of its policies.
  */
 import { beforeAll, expect } from 'vitest';
-import type { Template } from 'aws-cdk-lib/assertions';
+import { Match, type Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
 import { synthProcessingTemplate } from './processing-stack-fixture';
@@ -64,4 +64,15 @@ export function functionUrlAuthTypes(template: Template, fnId: string): unknown[
   return Object.values(template.findResources('AWS::Lambda::Url'))
     .filter((url) => JSON.stringify(url.Properties?.TargetFunctionArn).includes(`"${fnId}"`))
     .map((url) => url.Properties?.AuthType);
+}
+
+/** The logical ids of `role`'s IAM policies (its construct path matched as a pattern) that hold `statement` (its fields
+ * matched as given). */
+export function policiesWithStatement(template: Template, role: string, statement: Record<string, unknown>): string[] {
+  return Object.keys(template.findResources('AWS::IAM::Policy', {
+    Properties: {
+      Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(role) }]),
+      PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([Match.objectLike(statement)]) }),
+    },
+  }));
 }

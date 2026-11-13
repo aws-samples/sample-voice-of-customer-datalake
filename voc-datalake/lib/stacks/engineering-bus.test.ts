@@ -13,7 +13,8 @@ import { ENGINEERING_DLQ_BASE_NAME, ENGINEERING_WORKSPACE_READER_SERVICES } from
 import { ENGINEERING_REPORTS_FUNCTION_BASE_NAME } from './engineering-bus';
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
 import {
-  AGENT_ROLE_NAME_PATTERN_JOIN, functionRoleId, functionStatements as statementsOf, functionUrlAuthTypes, processingSynths,
+  AGENT_ROLE_NAME_PATTERN_JOIN, functionRoleId, functionStatements as statementsOf, functionUrlAuthTypes,
+  policiesWithStatement, processingSynths,
 } from '../test-support/engineering-template';
 import { byCodeUnit } from '../utils/compare';
 
@@ -28,8 +29,10 @@ function functionId(synthesized: Template, baseName: string): string {
   return ids[0] ?? '';
 }
 
+/** The calls the function's role is allowed (its Deny of the cost rows has a test of its own). */
 function actionsOf(synthesized: Template, fnId: string): string[] {
-  return [...new Set(statementsOf(synthesized, fnId).flatMap((statement) => [statement.Action].flat()))].sort(byCodeUnit);
+  return [...new Set(statementsOf(synthesized, fnId).filter((statement) => statement.Effect !== 'Deny')
+    .flatMap((statement) => [statement.Action].flat()))].sort(byCodeUnit);
 }
 
 /** The logical ids of the queues whose physical name starts with `baseName`. */
@@ -73,6 +76,15 @@ function routerEnv(on: Template): Record<string, unknown> {
 }
 
 describe('the engineering bus', () => {
+  it.each(['ReportsRole', 'RouterRole', 'BoardRole'])(
+    'denies %s every write of the spend ledger and the budget alerts (the runtime\'s), whatever it may write elsewhere', (role) => {
+      expect(policiesWithStatement(template('on'), role, {
+        Sid: 'DenyCostRowWrites', Effect: 'Deny', Resource: Match.objectLike({ 'Fn::ImportValue': Match.stringLikeRegexp('Engineering') }),
+        Action: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
+        Condition: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#SPEND#20??-??', 'WS#default#BUDGET#20??-??'] } },
+      })).toHaveLength(1);
+    });
+
   it('runs the board and the report builder under the services the denied-reads alarm sums (dlq-alarms.ts)', () => {
     const on = template('on');
     const service = (base: string) => z.record(z.string(), z.unknown()).parse(

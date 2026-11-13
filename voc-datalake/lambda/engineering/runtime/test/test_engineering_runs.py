@@ -1,5 +1,7 @@
 """A run's start and end on voc-engineering: the META row the board and the router count on, the listed runs."""
 import math
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import boto3
@@ -7,9 +9,11 @@ import pytest
 from botocore.exceptions import ClientError
 
 from engineering.board.store import BoardStore
+from engineering.runtime import runs as runs_module
 from engineering.runtime.interface import RuntimeRefused
 from engineering.runtime.runs import RunCaps, RunExists, RunNotActive, RunStore, TableRunControl
 from engineering.runtime.test.conftest import RUN
+from engineering.spend import MICROVM, Usage, Where, ledger_updates
 
 OTHER = '01JD3R4NZXQ7Y2W8K4M6P9T0CD'
 META = {'pk': f'WS#default#RUN#{RUN}', 'sk': 'META'}
@@ -254,3 +258,220 @@ def test_a_change_with_no_actor_is_unattributed_and_an_actor_is_kept_to_its_prin
     runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)
     runs.end(RUN, 'done', now=1, actor='admin\n1' + 'a' * 300)   # a stop never fails over its label
     assert [actor for _status, actor, _reason, _at in _history(aws[1])] == ['unattributed', 'admin1' + 'a' * 194]
+
+
+NOV = int(datetime(2026, 11, 13, 12, 0, tzinfo=UTC).timestamp())
+
+
+def _spend(aws: Any, usd: str, *, run: str = RUN, flow: str = 'wf_fix', at: int = NOV) -> None:
+    """A priced write of ``run`` (as the session store makes it: its rows and its flow's month total)."""
+    aws[1].meta.client.transact_write_items(TransactItems=ledger_updates(
+        aws[1].name, datetime.fromtimestamp(at, UTC), Where(run, 'fixer-1', flow), {MICROVM: Usage(usd=Decimal(usd))}))
+
+
+def test_a_run_keeps_its_flows_monthly_budget_from_its_start(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=50.0)
+    run = runs.get(RUN)
+    assert run is not None
+    assert (run.budget_usd, run.budget_alert) == (50.0, 0)
+    # A budget off the flow's own rule, or with no flow it could be keyed by, is refused before anything is written.
+    with pytest.raises(RuntimeRefused, match='dollars and cents'):
+        runs.start(OTHER, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=0.001)
+    for flow in ('', 'a#b', 'é', '-'):
+        with pytest.raises(RuntimeRefused, match='names its workflow id'):
+            runs.start(OTHER, caps=RunCaps(max_tasks=5), now=0, flow=flow, budget_usd=50.0)
+    assert runs.get(OTHER) is None
+
+
+def _two_runs_of_one_flow(aws: Any) -> tuple[RunStore, TableRunControl]:
+    """RUN and OTHER, both of wf_fix with a $10 budget, and the control over them."""
+    runs = RunStore(aws[1])
+    for run in (RUN, OTHER):
+        runs.start(run, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=10.0)
+    return runs, TableRunControl(runs)
+
+
+def test_a_flows_month_past_80_percent_is_alerted_once_and_every_run_of_it_is_flagged(aws: Any):
+    runs, control = _two_runs_of_one_flow(aws)
+    _spend(aws, '7.99')
+    assert control.budget_alert(RUN, NOV) is None
+    _spend(aws, '0.01', run=OTHER)   # (the flow's month, whichever of its runs spent it)
+    alert = control.budget_alert(RUN, NOV)
+    assert alert is not None
+    assert (alert.flow, alert.month, alert.levels, alert.flag, alert.spent_usd, alert.budget_usd) == (
+        'wf_fix', '2026-11', (80,), 80, 8.0, 10.0)
+    assert alert.summary() == ('Workflow wf_fix has spent $8.00 of its $10.00 monthly budget for 2026-11 (80%, past '
+                               '80%). MicroVM time only: model tokens are not priced yet.')
+    # The other run of the flow says nothing while it is claimed, and is not flagged past it (it tries again);
+    # once said, nothing more, and it is flagged.
+    assert control.budget_alert(OTHER, NOV) is None
+    other = runs.get(OTHER)
+    assert other is not None
+    assert other.budget_alert == 0
+    control.alert_sent(RUN, alert, NOV)
+    assert (control.budget_alert(RUN, NOV), control.budget_alert(OTHER, NOV)) == (None, None)
+    flags = [(run.budget_alert, run.budget_alert_month) for run in (runs.get(RUN), runs.get(OTHER)) if run]
+    assert flags == [(80, '2026-11'), (80, '2026-11')]
+
+
+def test_a_jump_past_several_levels_sends_the_highest_and_a_new_month_starts_again(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=10.0)
+    control = TableRunControl(runs)
+    _spend(aws, '16')
+    alert = control.budget_alert(RUN, NOV)
+    assert alert is not None
+    assert (alert.levels, alert.flag) == ((80, 100, 150), 150)
+    assert '(160%, past 150%)' in alert.summary()
+    control.alert_sent(RUN, alert, NOV)
+    alerts = aws[1].query(KeyConditionExpression='pk = :pk', ExpressionAttributeValues={
+        ':pk': 'WS#default#BUDGET#2026-11'})['Items']
+    assert [(item['sk'], 'sent_at' in item) for item in alerts] == [
+        (f'ALERT#wf_fix#000000001000#{level:04d}', True) for level in (80, 100, 150)]
+    december = int(datetime(2026, 12, 2, tzinfo=UTC).timestamp())
+    assert control.budget_alert(RUN, december) is None   # (nothing spent in December yet)
+    _spend(aws, '8.5', at=december)
+    december_alert = control.budget_alert(RUN, december)
+    assert december_alert is not None
+    assert (december_alert.month, december_alert.levels) == ('2026-12', (80,))
+
+
+def test_a_run_with_no_budget_is_never_alerted(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix')
+    _spend(aws, '100')
+    assert TableRunControl(runs).budget_alert(RUN, NOV) is None
+
+
+def test_an_alert_never_said_is_said_by_the_next_tick(aws: Any):
+    # (the bus refused it, or the tick ended between the claim and the send)
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=10.0)
+    control = TableRunControl(runs)
+    _spend(aws, '9')
+    first = control.budget_alert(RUN, NOV)
+    again = control.budget_alert(RUN, NOV + 60)
+    assert first is not None
+    assert again is not None
+    assert again.levels == first.levels == (80,)
+    run = runs.get(RUN)
+    assert run is not None
+    assert run.budget_alert == 0   # (flagged only once said)
+
+
+def test_a_new_budget_has_alerts_of_its_own(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=10.0)
+    runs.start(OTHER, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=100.0)   # (raised meanwhile)
+    control = TableRunControl(runs)
+    _spend(aws, '85')
+    old = control.budget_alert(RUN, NOV)
+    new = control.budget_alert(OTHER, NOV)
+    assert old is not None
+    assert new is not None
+    assert (old.levels[-1], new.levels) == (850, (80,))   # ($85: 850% of the old $10, 85% of the new $100)
+
+
+def test_a_runs_flag_only_rises_within_a_month_and_starts_again_in_the_next(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=10.0)
+
+    def flag() -> tuple[int, str]:
+        run = runs.get(RUN)
+        assert run is not None
+        return run.budget_alert, run.budget_alert_month
+
+    runs.flag_budget(RUN, '2026-11', 150)
+    runs.flag_budget(RUN, '2026-11', 80)   # (a late writer: never lower)
+    assert flag() == (150, '2026-11')
+    runs.flag_budget(RUN, '2026-12', 80)
+    runs.flag_budget(RUN, '2026-11', 200)   # (a late November one never steps December back)
+    assert flag() == (80, '2026-12')
+    runs.flag_budget(OTHER, '2026-12', 80)   # (no run: nothing written)
+    assert runs.get(OTHER) is None
+
+
+def test_a_claim_another_run_left_unsaid_is_taken_over_by_a_run_of_the_flow(aws: Any):
+    _, control = _two_runs_of_one_flow(aws)
+    _spend(aws, '9')
+    assert control.budget_alert(RUN, NOV) is not None   # (claimed; RUN's tick then fails before saying it)
+    assert control.budget_alert(OTHER, NOV + 60) is None   # (held: not yet)
+    taken = control.budget_alert(OTHER, NOV + 400)   # (past the claim's time)
+    assert taken is not None
+    assert taken.levels == (80,)
+
+
+def test_the_flag_never_passes_a_level_another_run_holds_unsaid(aws: Any):
+    runs, control = _two_runs_of_one_flow(aws)
+    _spend(aws, '8')
+    assert control.budget_alert(RUN, NOV) is not None   # (RUN claims 80%, and does not say it yet)
+    _spend(aws, '2', run=OTHER)
+    later = control.budget_alert(OTHER, NOV + 60)   # (80% held by RUN; OTHER claims 100% and says it)
+    assert later is not None
+    assert later.levels == (100,)
+    control.alert_sent(OTHER, later, NOV + 60)
+
+    def flag(run_id: str) -> int:
+        run = runs.get(run_id)
+        assert run is not None
+        return run.budget_alert
+
+    assert flag(OTHER) == 0   # (never past the 80% RUN holds: its later ticks try it again)
+    first = control.budget_alert(RUN, NOV + 120)
+    assert first is not None
+    assert first.levels == (80,)   # (100% was said by OTHER)
+    control.alert_sent(RUN, first, NOV + 120)
+    assert control.budget_alert(OTHER, NOV + 180) is None
+    assert (flag(RUN), flag(OTHER)) == (100, 100)
+
+
+def test_a_level_passed_in_a_months_last_minute_is_said_in_the_next_months_first(aws: Any,
+                                                                                  monkeypatch: pytest.MonkeyPatch):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, flow='wf_fix', budget_usd=10.0)
+    control = TableRunControl(runs)
+    last_minute = int(datetime(2026, 11, 30, 23, 59, 40, tzinfo=UTC).timestamp())
+    _spend(aws, '10', at=last_minute)
+    first_minute = int(datetime(2026, 12, 1, 0, 0, 20, tzinfo=UTC).timestamp())
+    alert = control.budget_alert(RUN, first_minute)
+    assert alert is not None
+    assert (alert.month, alert.levels) == ('2026-11', (80, 100))
+    control.alert_sent(RUN, alert, first_minute)
+    assert control.budget_alert(RUN, first_minute + 60) is None
+    # Once the flag names December, November is not looked at again (no claims that can only be refused).
+    _spend(aws, '9', at=first_minute)
+    december = control.budget_alert(RUN, first_minute + 120)
+    assert december is not None
+    control.alert_sent(RUN, december, first_minute + 120)
+    claims: list[str] = []
+    real = runs_module.claim_alert
+
+    def counting(*args: Any, **kwargs: Any) -> Any:
+        claims.append(args[1])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(runs_module, 'claim_alert', counting)
+    assert control.budget_alert(RUN, first_minute + 180) is None
+    assert '2026-11' not in claims
+
+
+def test_a_claim_given_back_is_taken_by_another_run_at_once(aws: Any):
+    _, control = _two_runs_of_one_flow(aws)
+    _spend(aws, '9')
+    claimed = control.budget_alert(RUN, NOV)
+    assert claimed is not None
+    control.alert_not_sent(RUN, claimed)   # (RUN's send failed, on what may be its last tick)
+    taken = control.budget_alert(OTHER, NOV + 60)
+    assert taken is not None
+    assert taken.levels == (80,)
+
+
+def test_a_claim_left_in_a_months_last_seconds_is_taken_over_in_the_next_months_first_minutes(aws: Any):
+    _, control = _two_runs_of_one_flow(aws)
+    last = int(datetime(2026, 11, 30, 23, 59, 50, tzinfo=UTC).timestamp())
+    _spend(aws, '9', at=last)
+    assert control.budget_alert(RUN, last) is not None   # (claimed; RUN's tick then fails before saying it)
+    taken = control.budget_alert(OTHER, last + 310)   # (00:05:00 on the 1st: past the claim's time)
+    assert taken is not None
+    assert (taken.month, taken.levels) == ('2026-11', (80,))

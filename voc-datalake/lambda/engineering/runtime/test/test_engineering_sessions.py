@@ -93,9 +93,10 @@ def test_microvm_seconds_are_priced_once_into_cost_usd_beside_the_brokers(aws):
     assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('2.09')
 
 
-def _ledger(table: Any) -> dict[str, dict[str, Any]]:
-    rows = table.query(KeyConditionExpression='pk = :pk',
-                       ExpressionAttributeValues={':pk': 'WS#default#SPEND#2026-11'})['Items']
+def _ledger(table: Any, prefix: str = 'DAY#') -> dict[str, dict[str, Any]]:
+    """The month's ledger rows (``prefix``: ``FLOW#`` for the flows' month totals)."""
+    rows = table.query(KeyConditionExpression='pk = :pk AND begins_with(sk, :prefix)',
+                       ExpressionAttributeValues={':pk': 'WS#default#SPEND#2026-11', ':prefix': prefix})['Items']
     return {str(row['sk']): row for row in rows}
 
 
@@ -118,10 +119,14 @@ def test_each_metered_write_adds_its_seconds_cost_and_new_tokens_to_the_spend_le
     assert (microvm['updated_by'], microvm['updated_at'], microvm['session_seq']) == (
         'runtime/sessions', at.isoformat(), 4)
     assert (model['tokens_in'], model['tokens_out'], model['usd']) == (15, 4, 0)
+    # The flow's month total, in the same writes: the sum of its rows.
+    (total,) = _ledger(aws[1], 'FLOW#').values()
+    assert (total['sk'], total['usd']) == ('FLOW#wf_hunt', Decimal('0.09'))
     # A write that loses its race adds nothing: the ledger and the session never drift.
     with pytest.raises(StaleSession):
         store.save(replace(created, microvm_seconds=5000, tokens={'model-a': {'in': 99, 'out': 9}}))
     assert _ledger(aws[1]) == ledger
+    assert _ledger(aws[1], 'FLOW#')['FLOW#wf_hunt']['usd'] == Decimal('0.09')
 
 
 def _ledgering(aws: Any, price: Decimal = Decimal(0)) -> tuple[SessionStore, AgentSession]:
@@ -194,10 +199,13 @@ def test_a_run_started_without_a_workflow_books_under_none_and_a_missing_meta_is
     assert reads == [RUN, RUN]
 
 
-def test_a_conflicted_transaction_is_tried_once_more_then_is_a_stale_session(aws, monkeypatch: pytest.MonkeyPatch):
+def test_a_conflicted_transaction_is_tried_again_after_a_pause_then_is_a_stale_session(
+        aws, monkeypatch: pytest.MonkeyPatch):
     from botocore.exceptions import ClientError
 
     store, created = _ledgering(aws)
+    pauses: list[float] = []
+    store._pause = pauses.append
     conflict = ClientError({'Error': {'Code': 'TransactionCanceledException', 'Message': 'x'},
                             'CancellationReasons': [{'Code': 'None'}, {'Code': 'TransactionConflict'}]},
                            'TransactWriteItems')
@@ -212,17 +220,34 @@ def test_a_conflicted_transaction_is_tried_once_more_then_is_a_stale_session(aws
             return real(**request)
         return write
 
-    # Once: the second try lands (a broker's ADD held the row at that moment).
-    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', conflicted(1))
+    # Three times (another agent's write of the flow's month total, say): the fourth try lands.
+    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', conflicted(3))
     moved = store.save(replace(created, microvm_seconds=60))
     assert (len(tries), _ledger(aws[1])[f'DAY#13#WF#wf_hunt#RUN#{RUN}#AGENT#fixer-1#MODEL#microvm']['microvm_seconds']) == (
-        2, 60)
-    # Twice: the move did not happen; the next tick reads the row again.
+        4, 60)
+    # Each pause is short and grows: about 20, 40, 60 ms, jittered.
+    assert len(pauses) == 3
+    assert all(0.02 * n <= pause < 0.04 * n for n, pause in enumerate(pauses, start=1))
+    # Four times: the move did not happen; the next tick reads the row again.
     tries.clear()
-    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', conflicted(2))
+    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', conflicted(4))
     with pytest.raises(StaleSession):
         store.save(replace(moved, microvm_seconds=120))
-    assert len(tries) == 2
+    assert len(tries) == 4
+    # A conflict beside a failed condition: one try (it can never land).
+    tries.clear()
+    both = ClientError({'Error': {'Code': 'TransactionCanceledException', 'Message': 'x'},
+                        'CancellationReasons': [{'Code': 'ConditionalCheckFailed'}, {'Code': 'TransactionConflict'}]},
+                       'TransactWriteItems')
+
+    def refused(**_request: Any) -> Any:
+        tries.append(1)
+        raise both
+
+    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', refused)
+    with pytest.raises(StaleSession):
+        store.save(replace(moved, microvm_seconds=120))
+    assert len(tries) == 1
 
 
 def test_without_a_price_microvm_time_adds_nothing_and_a_later_price_applies_from_then_on(aws):

@@ -60,7 +60,8 @@ import { ENGINEERING_BOARD_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 import {
-  ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
+  ENGINEERING_BUDGET_ALERT_PARTITIONS, ENGINEERING_SPEND_PARTITIONS, ENGINEERING_WORKSPACE,
+  ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
 } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
 import { imageArns } from './engineering-runtime';
@@ -164,6 +165,7 @@ export class EngineeringBus extends Construct {
   private createReports(props: EngineeringBusProps): void {
     const role = workerRole(this, 'ReportsRole');
     props.engineeringTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem');
+    denyCostRows(role, props.engineeringTable);
     const bucket = props.workspaceBucket;
     const runObjects = bucket.arnForObjects(ENGINEERING_WORKSPACE_RUNS_KEYS);
     const reportObjects = bucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
@@ -234,6 +236,7 @@ export class EngineeringBus extends Construct {
   private createRouter(props: EngineeringBusProps): void {
     const role = workerRole(this, 'RouterRole');
     props.engineeringTable.grant(role, ...TABLE_ACTIONS);
+    denyCostRows(role, props.engineeringTable);
     const delivery = props.uniqueName(ENGINEERING_DELIVERY_FUNCTION_BASE_NAME);
     // By name: the delivery function is the runtime's and is deployed with it, so no construct to grant on.
     this.grantInvokeByName(role, 'EngineeringDelivery', delivery);
@@ -290,6 +293,7 @@ export class EngineeringBus extends Construct {
     this.addPublisher('Board', role, 'voc.engineering/board');
     // Query: the inbox op reads the caller's INBOX# rows (board/inbox.py).
     props.engineeringTable.grant(role, ...TABLE_ACTIONS, 'dynamodb:Query');
+    denyCostRows(role, props.engineeringTable);
     const runtime = props.uniqueName(ENGINEERING_RUNTIME_FUNCTION_BASE_NAME);
     this.grantInvokeByName(role, 'EngineeringRuntimeLaunch', runtime);
     const knowledge = props.workspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS);
@@ -331,6 +335,22 @@ export class EngineeringBus extends Construct {
     const url = board.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM }).url;
     return { fn: board, url };
   }
+}
+
+/**
+ * The bus's roles write voc-engineering table-wide (a run's partition has no key IAM can name per run): an explicit
+ * Deny keeps them off the cost rows, the spend ledger's month partitions and the budget alerts' (the runtime's to
+ * write: spend.py), so no bug in the board, the router or the report builder can change a total or make, and so
+ * mute, an alert. `ForAnyValue`, as audit-row-guard.ts: denied when ANY key a request names is one of them.
+ */
+function denyCostRows(role: iam.Role, table: dynamodb.ITable): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'DenyCostRowWrites',
+    effect: iam.Effect.DENY,
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
+    resources: [table.tableArn],
+    conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_SPEND_PARTITIONS, ENGINEERING_BUDGET_ALERT_PARTITIONS] } },
+  }));
 }
 
 function queueEncryption(key: kms.IKey): Pick<sqs.QueueProps, 'encryption' | 'encryptionMasterKey' | 'enforceSSL'> {

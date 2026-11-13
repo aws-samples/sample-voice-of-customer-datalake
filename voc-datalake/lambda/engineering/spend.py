@@ -14,9 +14,19 @@ The rows are cost records (D5): never deleted, no TTL; anything that ever remove
 Rows are booked to the day (UTC) of the write that measured them, which is when the supervisor counted the MicroVM time
 or the harness's report reached it: the ledger starts when this is deployed (a session's earlier tokens are not booked).
 
-The administrators' reads (``month_spend``, ``GET /agents/engineering/spend``) are one Query of one month partition, grouped here by what was asked
-(never a whole-table read), bounded by ``MAX_ROWS``: a month with more rows than that answers what it read, marked
-``truncated``.
+The administrators' reads (``month_spend``, ``GET /agents/engineering/spend``) are one Query of one month partition's
+``DAY#`` rows, grouped here by what was asked (never a whole-table read), bounded by ``MAX_ROWS``: a month with more
+rows than that answers what it read, marked ``truncated``.
+
+Each workflow also has its month's total, ``FLOW#<flow>`` in the same partition, ADDed in the same transaction as its
+runs' rows: what a flow has spent this month is one GetItem (``flow_month_usd``), for its budget's alerts (and the
+planned hard cap), never a Query of the month. The alerts (``alert_levels``) are as the month passes 80% and 100% of the
+flow's budget, then every further 50%; each has its row, ``ALERT#<flow>#<budget>#<percent>`` in the month's
+``WS#<ws>#BUDGET#<yyyy-mm>`` partition (only the supervisor writes it): a run's tick claims it (``claim_alert``),
+says it, then closes it (``alert_sent``). It is said at least once per flow, budget, level and month while a run of
+the flow is live: a send that fails gives the claim back (``release_alert``) for any live run's next tick (an unsaid
+claim is also taken over past its time), and one whose close failed may be said again. With no run of the flow left
+live (its last run's last tick failed to say it), it waits for one: a later run of the flow that month.
 """
 from __future__ import annotations
 
@@ -25,14 +35,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any, Final, Literal
+
+from botocore.exceptions import ClientError
 
 from engineering.connectors.identity import WORKSPACE
+from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 
 #: The pseudo model MicroVM time is priced under (a run's tokens are under their own models).
 MICROVM: Final = 'microvm'
-#: The most ledger rows one write adds (its transaction also holds the session's row; DynamoDB takes 100 items).
+#: The most ledger rows one write adds (its transaction also holds the session's row and its flow's month total;
+#: DynamoDB takes 100 items).
 MAX_MODEL_ROWS: Final = 32
 #: What a harness's model named like the MicroVM row is ledgered as, so its tokens never read as MicroVM time.
 REPORTED_MICROVM: Final = 'microvm-reported'
@@ -122,6 +136,8 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
     day = at.astimezone(UTC).strftime('%d')
     by_model: dict[str, Usage] = {}
     for model, used in usage.items():
+        if min(used.usd, used.tokens_in, used.tokens_out, used.microvm_seconds) < 0:
+            raise ValueError('a ledger write only adds: nothing in it is below zero')
         part = _part(model)
         by_model[part] = by_model.get(part, Usage()) + used
     if len(by_model) > MAX_MODEL_ROWS:
@@ -131,7 +147,7 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
         rest = sum((used for part, used in by_model.items() if part not in keep), Usage())
         by_model = {part: by_model[part] for part in keep}
         by_model[_NONE] = by_model.get(_NONE, Usage()) + rest
-    updates = []
+    updates: list[dict[str, Any]] = []
     for model, used in sorted(by_model.items()):
         if not used:
             continue
@@ -148,7 +164,121 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
                 ':day': day, ':flow': where.flow, ':repo': where.repo, ':run': where.run_id, ':agent': where.agent_id,
                 ':model': model, ':at': at.astimezone(UTC).isoformat(), ':by': WRITER, ':seq': where.seq},
         }})
+    dollars = sum((used.usd for used in by_model.values()), Decimal(0))
+    # (only a write that adds dollars: a tokens-only one, or unpriced MicroVM time, leaves the hot item alone)
+    if updates and dollars > 0 and keyable(where.flow):
+        # (dollars only: what the alerts read, as the planned hard cap will; the month's tokens and time are the DAY#
+        # rows')
+        updates.append({'Update': {
+            'TableName': table, 'Key': flow_total_key(month_of(at), where.flow),
+            'UpdateExpression': 'ADD usd :usd SET updated_at = :at, updated_by = :by',
+            'ExpressionAttributeValues': {
+                ':usd': dollars,
+                ':at': at.astimezone(UTC).isoformat(), ':by': WRITER},
+        }})
     return updates
+
+
+def flow_total_key(month: str, flow: str) -> dict[str, str]:
+    """The key of a workflow's month total (its runs' whole month, ADDed with each of their ledger writes)."""
+    return {'pk': ledger_pk(month), 'sk': f'FLOW#{_part(flow)}'}
+
+
+def flow_month_usd(table: Any, month: str, flow: str) -> Decimal:
+    """What ``flow``'s runs spent in ``month`` (priced: MicroVM time until tokens are), from its month total: one
+    GetItem."""
+    item = table.get_item(Key=flow_total_key(month, flow)).get('Item') or {}
+    return Decimal(str(item.get('usd', 0)))
+
+
+#: The alert levels as a flow's month passes its budget, in percent: 80, 100, then every further 50 up to 1,000 (a
+#: month ten times over has said so enough, and a tick never writes more than these 20 rows).
+_LEVELS: Final = (80, 100, *range(150, 1001, 50))
+#: Who records an alert: the supervisor's tick.
+ALERT_WRITER: Final = 'runtime/supervisor'
+#: A claimed alert not sent in this long (its run's tick failed between the claim and the send) may be taken over by
+#: another run of the flow.
+ALERT_CLAIM_SECONDS: Final = 300
+
+
+def alert_levels(spent: Decimal, budget: Decimal) -> list[int]:
+    """The alert levels (percent of ``budget``) that ``spent`` has passed, lowest first."""
+    if budget <= 0:
+        return []
+    percent = spent * 100 / budget
+    return [level for level in _LEVELS if percent >= level]
+
+
+def keyable(flow: str) -> bool:
+    """``flow`` is a ledger key part of its own (never the '-' row of what cannot be one): the totals and the alerts
+    key by it."""
+    return _part(flow) != _NONE
+
+
+def alerts_pk(month: str) -> str:
+    """The month's budget alerts: a partition of their own, which only the supervisor's role may write (the ledger's
+    other writers can never make, and so mute, an alert)."""
+    ledger_pk(month)   # (the same month rule)
+    return f'WS#{WORKSPACE}#BUDGET#{month}'
+
+
+def _alert_key(month: str, flow: str, budget: Decimal, level: int) -> dict[str, str]:
+    # The budget is in the key: a flow's new budget has alerts of its own, never silenced by the old one's.
+    return {'pk': alerts_pk(month), 'sk': f'ALERT#{_part(flow)}#{int(budget * 100):012d}#{level:04d}'}
+
+
+#: What a claim found: this run is to say it (``claimed``), it was said (``said``), or another run holds it unsaid
+#: (``held``: try again on a later tick, which may take it over).
+Claim = Literal['claimed', 'said', 'held']
+
+
+def claim_alert(table: Any, month: str, flow: str, level: int, *, run_id: str, spent: Decimal, budget: Decimal,
+                at: datetime) -> Claim:
+    """Claim the saying of ``flow``'s ``level`` (at ``budget``) in ``month``: its ``ALERT#`` row, made once and never
+    deleted (D1). It names the latest claim (D4: which run's tick, when, at what spend) until it is closed: a claim
+    renewed or taken over before the alert is said replaces those three fields, and once ``sent_at`` closes the row
+    nothing changes it. ``claimed`` when this run says it: it made the row, or its own claim was not said yet, or
+    another run's claim went unsaid past ``ALERT_CLAIM_SECONDS``."""
+    stale = datetime.fromtimestamp(at.timestamp() - ALERT_CLAIM_SECONDS, UTC).isoformat()
+    try:
+        table.update_item(
+            Key=_alert_key(month, flow, budget, level),
+            UpdateExpression='SET run_id = :run, spent_usd = :spent, alerted_at = :at, updated_by = :by',
+            ConditionExpression=('attribute_not_exists(sk) OR (attribute_not_exists(sent_at) '
+                                 'AND (run_id = :run OR alerted_at < :stale))'),
+            ExpressionAttributeValues={':run': run_id, ':spent': spent, ':stale': stale,
+                                       ':at': at.astimezone(UTC).isoformat(), ':by': ALERT_WRITER},
+            ReturnValuesOnConditionCheckFailure='ALL_OLD')
+    except ClientError as error:
+        if is_conditional_check_failure(error):
+            return 'said' if 'sent_at' in (error.response.get('Item') or {}) else 'held'
+        raise
+    return 'claimed'
+
+
+def release_alert(table: Any, month: str, flow: str, level: int, *, run_id: str, budget: Decimal) -> None:
+    """Give back a claim whose saying failed (only the run holding it, only while unsaid): its claim time goes to the
+    epoch, so any run of the flow takes it over on its next tick (its own run may have none: its last tick)."""
+    try:
+        table.update_item(
+            Key=_alert_key(month, flow, budget, level), UpdateExpression='SET alerted_at = :released',
+            ConditionExpression='attribute_exists(sk) AND run_id = :run AND attribute_not_exists(sent_at)',
+            ExpressionAttributeValues={':run': run_id, ':released': datetime.fromtimestamp(0, UTC).isoformat()})
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            raise
+
+
+def alert_sent(table: Any, month: str, flow: str, level: int, *, run_id: str, budget: Decimal, at: datetime) -> None:
+    """The claimed alert was said: its row is closed (once; only by the run holding it)."""
+    try:
+        table.update_item(
+            Key=_alert_key(month, flow, budget, level), UpdateExpression='SET sent_at = :at',
+            ConditionExpression='attribute_exists(sk) AND run_id = :run AND attribute_not_exists(sent_at)',
+            ExpressionAttributeValues={':run': run_id, ':at': at.astimezone(UTC).isoformat()})
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            raise
 
 
 def token_deltas(now: Mapping[str, Mapping[str, int]], ledgered: Mapping[str, Mapping[str, int]]) -> dict[str, Usage]:
@@ -198,8 +328,9 @@ def month_spend(table: Any, month: str, by: str, *, flow: str = '') -> MonthSpen
     """The ledger's read: ``month``'s spend grouped ``by`` one of the groupings (only ``flow``'s, when given), from
     one Query of its partition (``check_query`` first)."""
     check_query(month, by)
-    query: dict[str, Any] = {'KeyConditionExpression': 'pk = :pk',
-                             'ExpressionAttributeValues': {':pk': ledger_pk(month)}}
+    # (its DAY# rows: the flows' month totals share the partition)
+    query: dict[str, Any] = {'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :day)',
+                             'ExpressionAttributeValues': {':pk': ledger_pk(month), ':day': 'DAY#'}}
     spend = MonthSpend(month=month, by=by)
     rows = 0
     for item in iter_query(table, query, max_items=MAX_ROWS + 1):

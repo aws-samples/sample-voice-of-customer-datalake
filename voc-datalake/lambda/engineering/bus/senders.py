@@ -52,6 +52,7 @@ ALLOWED = {
     'run.agent_continued': frozenset({'supervisor'}),
     'run.agent_timed_out': frozenset({'supervisor'}),
     'run.agent_failed': frozenset({'supervisor'}),
+    'run.budget_alert': frozenset({'supervisor'}),
     'outcome.': frozenset({'webhook'}),
     'msg.': _TALK,
     'msg.answer': _TALK | {'api'},

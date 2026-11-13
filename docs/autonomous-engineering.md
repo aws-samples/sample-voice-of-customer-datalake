@@ -473,7 +473,8 @@ progress and moves through it) and from the API's own source as the signed-in pe
 rollback, as the signed-in person) and the run's coach (`skill.proposed`, from its run-scoped source), and the talk (`finding`, `question`, `answer`,
 `review.*`, `handoff`) from the run's own agents, with a person's `answer` from the API; the runtime's `pause`,
 `continued`, `timed_out` and `run.health` only from the supervisor (on the bus: `signal.check_in` to an agent,
-`run.agent_continued`, `run.agent_timed_out`, `run.agent_failed` and `run.health` to the run, and the `task.posted`
+`run.agent_continued`, `run.agent_timed_out`, `run.agent_failed`, `run.health` and `run.budget_alert` to the run, and
+the `task.posted`
 of a task it re-posts), `pause.ack` only from the paused agent, and
 `methodology`, `run.done` and `run.failed` only from the board's API and the supervisor (trusted code, on the run
 coordinator's or the flow's word). And the broker opens
@@ -1369,16 +1370,41 @@ without end; a model that sorts earlier and is first reported later moves a late
 totals unchanged),
 one write adds at most 32 rows (a transaction holds 100 items), and a reported model named `microvm` is ledgered as
 `microvm-reported`, so no report can fail the session's write, flood the month or pass for MicroVM time. The writers' roles
-may update the month partitions only (`WS#default#SPEND#20??-??`: UpdateItem, never a read or a delete; IAM cannot
-limit an update to ADDs, the code only ADDs to the counters); the Agents API reads them.
+may update the month partitions only (`WS#default#SPEND#20??-??`: UpdateItem, never a delete; IAM cannot limit an
+update to ADDs, the code only ADDs to the counters, and refuses anything below zero); the supervisor alone also reads a
+flow's month total there (GetItem); the Agents API reads them.
 `GET /agents/engineering/spend?month=&by=&workflow=` (administrators) answers a month grouped by workflow,
 repository, run, agent, model or day. The web app's **Spend** tab (Agents → Spend, `?tab=spend`: administrators,
 while the engineering agents are on) reads it: the month's cost, tokens and MicroVM time, then each group, biggest
 first; the month (the last 24 in its picker, any older one by its address), the grouping and a workflow are view
 options in the address; a workflow's row narrows the view to its runs, and a run's or an agent's opens its run
 monitor. Each engineering flow may set a monthly budget (`budget: {monthly_usd}`, docs/autonomous-agents.md
-"Engineering flows"), recorded with the flow; *planned*: measuring it against this ledger, alerts as a flow's month passes 80%, 100% and each
-further 50% of it, and the administrators' opt-in hard cap. The ledger is a dated view of what the sessions measured: each agent's own
+"Engineering flows"). The runtime's `start_run` takes the flow's budget (`budget_usd`, under the flow's own rule,
+refused for a run with no workflow id it could key) and keeps it on the run's META: a change applies to the next run.
+Nothing in the product starts a run yet, so no run has one so far: *planned*, the start route, which is to read it
+from the stored flow, never from a request. Each workflow's month has its dollars in the ledger's partition,
+`FLOW#<flow>`, ADDed in the same transaction as its runs' rows (one more item in it). The supervisor's tick reads it
+with one GetItem per live run with a budget, after that tick's moves (so a level passed by an agent's last write,
+or a stopping run's, is seen), never a Query of the month. As the month passes 80%, 100% and every
+further 50% of the budget (up to 1,000%), each level's row, `ALERT#<flow>#<budget>#<percent>` in the month's
+`WS#<ws>#BUDGET#<yyyy-mm>` partition (only the supervisor's role may write it: the delivery role has no grant on it,
+and the bus's roles, which write the table elsewhere, an explicit Deny on it and on the ledger's months, so no other
+writer can make, and so mute, an alert), is claimed by the live run whose tick saw it (D1, D4: which run, when, at what spend). That run says
+it to its conversation (`run.budget_alert`, from the supervisor's own source) and then closes the row (`sent_at`): at
+least once per flow, budget, level and month while a run of the flow is live. A send that fails gives the claim back
+at once, for any live run of the flow's next tick (an unsaid claim is also taken over after 5 minutes; one whose close
+failed after it was said may be said again); with no run of the flow left live, it waits for a later run that month.
+A run being wound down is checked too (its agents' last writes), so it may be the one that says a level another run
+passed. The budget and the flag are on the run's META, which the run's other trusted writers (the board, the router,
+the delivery function) could also write: the alert trusts them as the run's caps do; a level passed
+in a month's last minutes is said in the next month's first; a new budget has alerts of its own. Each live run of the flow (one the
+supervisor ticks) is flagged with
+the highest level said that month (`budget_alert`, `budget_alert_month` on META, only ever upward: never past a level
+another run holds unsaid, which its later ticks try again); a tick that
+jumps several levels claims each and says how far the month is. It is MicroVM time only until the model broker
+prices tokens, so a deployment that leaves MicroVM time unpriced (`-c engineeringMicrovmUsdPerSecond`, 0 by
+default) spends no dollars and never alerts; and it stops nothing: *planned*: the administrators' opt-in hard cap, and the flag shown in the run
+monitor and its reports. The ledger is a dated view of what the sessions measured: each agent's own
 totals (its `cost_usd`, MicroVM seconds and tokens per model) stay on its session row, the record each run's caps and
 the run monitor read, and every ledger row only ever grows with the session write that measured it, naming its
 writer (`updated_by`), when (`updated_at`) and that session write's version (`session_seq`, D4). The rows are cost
@@ -1394,7 +1420,17 @@ second (MicroVM and model); at 2× (100 agents) 4, at 10× (500 agents) about 20
 transaction with the session row, which DynamoDB bills at 2 write units per KB per item (about twice the plain update
 it replaces), and a partition takes about 500 transactional writes a second: 20 is far under it, so no sharding. The read is one Query of one month partition (eventually consistent), grouped
 server-side by the route, never a whole-table read, and stops at 20,000 rows (`MAX_ROWS`; a month past it is answered
-as far as it read and marked `truncated`): a month of 50 agents on 10 workflows stays in the low thousands of rows.
+as far as it read and marked `truncated`): a month of 50 agents on 10 workflows stays in the low thousands of rows; it
+reads the `DAY#` rows only. A flow's month total (`FLOW#<flow>`) is a hot key per flow: every priced write of its runs
+ADDs to it in that same transaction, about 1 write a second with 50 live agents of one flow, 2 at 2× (100 agents),
+about 10 at 10× (500 agents), far under the 1,000 writes a second one item takes. Two transactions on one item at
+the same moment conflict: the session store tries again after a short jittered pause, 4 tries in all (120 to 240 ms
+of pauses at most), then leaves the move to the next tick. Nothing in the ledger is lost (the seconds are priced again then),
+but a continuation whose save after its MicroVM started loses all four ends that MicroVM and boots again on the
+next tick. At 10× on one flow conflicts become common; past it, the total is to leave the transaction (it is derived
+from the DAY# rows). Its reads, per live run with a budget per tick: one GetItem of its META and one of the month
+total (two in a month's first 7 minutes: the month before too)
+(about 1 a minute each); an alert row is written about twice per flow, level and month (the claim, the close).
 
 ## Phases and status
 
