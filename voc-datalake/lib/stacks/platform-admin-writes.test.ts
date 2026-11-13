@@ -30,6 +30,7 @@ const sorted = (actions: string[]): string[] => [...actions].sort((a, b) => a.lo
 describe.each([
   ['voc-settings-api', 'SettingsLambdaRole'],
   ['voc-logs-api', 'LogsLambdaRole'],
+  ['voc-memory-api', 'MemoryLambdaRole'],
 ])('%s runs the live platform-admin check', (service, role) => {
   it('names its user pool', () => {
     expect(serviceEnvironment(api(), service).USER_POOL_ID).toBeDefined();
@@ -54,6 +55,16 @@ describe('voc-settings-api resolves the workspace of a request', () => {
     const table = serviceEnvironment(api(), 'voc-users-api').WORKSPACES_TABLE;
     expect(table).toBeDefined();
     expect(serviceEnvironment(api(), 'voc-settings-api').WORKSPACES_TABLE).toStrictEqual(table);
+  });
+
+  it('is attached to the memory role too, which writes nothing in voc-workspaces itself', () => {
+    const ids = resolutionEntries().map(([id]) => id);
+    const memoryRole = JSON.stringify(Object.entries(api().findResources('AWS::IAM::Role'))
+      .find(([id]) => id.startsWith('MemoryLambdaRole'))?.[1]);
+    expect(memoryRole).toContain(JSON.stringify({ Ref: ids[0] }));
+    const ownWrites = policyStatementsOf(api(), 'MemoryLambdaRole')
+      .filter((statement) => statement.resource.includes('Workspaces'));
+    expect(ownWrites).toStrictEqual([]);
   });
 
   it('holds the one workspace-resolution policy, attached to its role', () => {

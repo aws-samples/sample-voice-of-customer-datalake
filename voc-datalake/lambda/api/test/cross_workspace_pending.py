@@ -208,21 +208,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /logs/validation',
     }),
     # A token is minted inside a workspace and pins it.
-    'memory_handler.py': frozenset({
-        'GET /memory',
-        'GET /memory/conflict-check',
-        'GET /memory/imports/<import_id>',
-        'GET /memory/review',
-        'POST /memory',
-        'POST /memory/<memory_id>/confirm',
-        'POST /memory/<memory_id>/forget',
-        'POST /memory/<memory_id>/restore',
-        'POST /memory/imports',
-        'POST /memory/merge',
-        'POST /memory/retrieve',
-        'POST /memory/review/<memory_id>/resolve',
-        'PUT /memory/<memory_id>',
-    }),
     # The public unsubscribe finds the workspace from its token.
     'participants_ask_routes.py': frozenset({
         'DELETE /participants/projects/<project_id>/lists/<list_id>',

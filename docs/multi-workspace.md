@@ -197,9 +197,18 @@ partitions when given one (`WS#{ws}#MEM#company`, `WS#{ws}#MEM#user#{sub}`, `WS#
 `WS#{ws}#MEMEVT#…`, `WS#{ws}#MEMCURSOR`, `WS#{ws}#MEMIMPORT`; a `Candidate` names its workspace), and every operation on
 a stored key or row reads its workspace from that key's `pk` and goes through the layer's view of voc-memory (the same
 calls as before for a deployment key, so reinforcing, editing, archiving and merging follow their rows' partition);
-retrieval, conflict checks, listing, counts, cursors and imports take an optional workspace. No caller passes one yet: the memory API, the scanner and the extractor move together in the next slice
-(the API resolving the workspace, the scanner carrying `workspace_id` for a workspace's conversation, the extractor
-writing in it), so until then no workspace's memories exist and none are mined from its conversations. Plan steps carry it too (since
+retrieval, conflict checks, listing, counts, cursors and imports take an optional workspace. The memory API (Unreleased) acts in the workspace a request names: every `/memory` route resolves it
+first (`lambda/api/memory_handler.py`, its first middleware; fresh for a write, the warm cache for a read and for
+the assistant's `POST /memory/retrieve`, its `used` marks included) and reads and writes that workspace's
+memories, the stream assistant's recall and the MCP `search_memory` tool included (both send the header); inside one
+its admins curate (the deployment's `admins` group and the `memory_reviewer` flag grant nothing there), a viewer
+reads only, and page imports answer 409 until the extraction writes in a workspace. Without the header, the
+deployment's memories and rules, as before. Nothing is migrated: the memories kept before stay the deployment's, and
+the web app no longer shows them to anyone who has a workspace (the gate always enters one): they are kept and
+readable through a call that names no workspace, but memory inside a workspace starts empty, and the assistant
+recalls only that workspace's (an upgrade note for the release, as for the conversations). Memory retention sweeps each active workspace's memories too (`lambda/memory/retention/handler.py`, after the
+deployment's, the workspaces from the platform's listing). Not yet: the scanner and the extractor (a workspace's
+conversations still give no memories) and page imports in a workspace; the next slice moves them. Plan steps carry it too (since
 6.18.00): the approval's `X-Workspace-Id` is kept on the plan (one that is not a workspace id is the one 404) and each step names it to the
 domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). And the global
 MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`), and an

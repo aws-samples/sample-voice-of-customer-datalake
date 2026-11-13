@@ -219,6 +219,8 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # counted since phase 3's project key builder (shared/project_keys.py): the projects, their jobs and
     # every reader of those tables move with projects (phase 3), the MCP tokens' and grants' rows in them
     # included.
+    # The platform's listing of workspaces (the control plane), to sweep each workspace's memories.
+    'lambda/memory/retention/handler.py': (0, {'Table': 1}),
     'lambda/api/mcp_global_handler.py': (3, {'get_jobs_table': 2, 'get_projects_table': 3}),
     'lambda/api/mcp_tokens_handler.py': (3, {'get_jobs_table': 3, 'get_projects_table': 3, 'meta.client': 1}),
     'lambda/shared/assist_jobs.py': (3, {'get_jobs_table': 1}),

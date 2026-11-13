@@ -19,8 +19,9 @@ with the workspace's prefix, ``WS#{ws}#MEM#company``, ``WS#{ws}#MEMSTATUS#…``,
 key or row reads its workspace from that key's ``pk`` (shared/ws_repo.py ``partition_scope``) and goes through the
 layer's view of the table (shared/ingest_tables.py ``table_view``: the table itself for a deployment key, the same
 calls as before; ``ws_table`` for a workspace's, which refuses a key outside it before DynamoDB). Objective alignment
-reads the deployment's company context (``read_company_context``) until company context moves under its workspace. No
-caller passes a workspace yet: the memory API, the scanner and the extractor move with their own slice.
+reads the deployment's company context (``read_company_context``) until company context moves under its workspace. The
+memory API passes the workspace a request names (api/memory_handler.py); the scanner and the extractor do not yet
+(their slice is next).
 
 Subjects never leave this module in a response and are never logged: personal
 rows carry the owner only in ``pk``/``owner_sub``, and supporters are stored as

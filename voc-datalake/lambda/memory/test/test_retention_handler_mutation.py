@@ -241,15 +241,33 @@ class TestTheHandlerWiring:
     @pytest.mark.usefixtures('world')
     def test_the_handler_passes_now_and_the_contexts_clock_to_the_sweep(self, worker_context, monkeypatch):
         seen: list[tuple] = []
-        monkeypatch.setattr(retention, 'sweep', lambda table, now, clock: seen.append((table, now, clock)) or {
-            'checked': 0, 'expired': 0, 'decayed': 0})
+        monkeypatch.setattr(retention, 'sweep', lambda table, now, clock, workspaces: seen.append(
+            (table, now, clock, workspaces)) or {'checked': 0, 'expired': 0, 'decayed': 0})
+        monkeypatch.delenv('WORKSPACES_TABLE', raising=False)
         before = datetime.now(UTC)
         assert retention.lambda_handler({}, worker_context) == {'checked': 0, 'expired': 0, 'decayed': 0}
-        [(table, now, clock)] = seen
+        [(table, now, clock, workspaces)] = seen
+        assert workspaces() == []  # no workspaces table configured: the deployment's memories only
         assert table is store.get_memory_table()
         assert before <= now <= datetime.now(UTC)
         assert now.tzinfo is UTC
         assert clock is worker_context.get_remaining_time_in_millis
+
+    @pytest.mark.usefixtures('world')
+    def test_with_the_workspaces_table_the_sweep_lists_the_active_workspaces(self, worker_context, monkeypatch):
+        from api.test.moto_helpers import pk_sk_table
+
+        ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+        listing = pk_sk_table('workspaces')
+        listing.put_item(Item={'pk': 'WORKSPACES', 'sk': f'acme#{ws}', 'workspace_id': ws, 'name': 'Acme',
+                               'slug': 'acme', 'status': 'active'})
+        monkeypatch.setenv('WORKSPACES_TABLE', 'workspaces')
+        seen: list = []
+        monkeypatch.setattr(retention, 'sweep', lambda _table, _now, _clock, workspaces: seen.append(workspaces) or {
+            'checked': 0, 'expired': 0, 'decayed': 0})
+        retention.lambda_handler({}, worker_context)
+        [workspaces] = seen
+        assert [scope.ws for scope in workspaces()] == [ws]
 
     def test_the_metric_is_the_sum_of_both_reasons(self, world, worker_context):
         _seed_two_decayed_one_expired(world)

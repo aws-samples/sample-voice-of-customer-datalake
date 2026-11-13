@@ -50,6 +50,8 @@ export interface MemoryWorkersProps {
   conversationsTable: dynamodb.ITable;
   aggregatesTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
+  /** voc-workspaces: the retention sweep reads the platform's listing to sweep each workspace's memories too. */
+  workspacesTable: dynamodb.ITable;
 }
 
 export class MemoryWorkers extends Construct {
@@ -174,11 +176,17 @@ export class MemoryWorkers extends Construct {
 
   /** Daily: decay (90 days untouched) and dated (past expires_at) -> archived. */
   private createRetention(): void {
-    const { uniqueName, kmsKey, memoryTable } = this.props;
+    const { uniqueName, kmsKey, memoryTable, workspacesTable } = this.props;
     const role = workerRole(this, 'MemoryRetentionRole');
     // Query the status index, archive in place (UpdateItem), append an audit event (PutItem).
     memoryTable.grant(role, 'dynamodb:Query', 'dynamodb:UpdateItem', 'dynamodb:PutItem');
     kmsKey.grantEncryptDecrypt(role);
+    // Each workspace's memories too: the platform's listing of workspaces (one partition, read only).
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:Query'],
+      resources: [workspacesTable.tableArn],
+      conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['WORKSPACES'] } },
+    }));
 
     const fn = createWorkerFunction(this, 'MemoryRetention', {
       tree: 'memory',
@@ -189,7 +197,7 @@ export class MemoryWorkers extends Construct {
       timeout: cdk.Duration.minutes(15),
       memorySize: 512,
       serviceName: 'voc-memory-retention',
-      environment: { MEMORY_TABLE: memoryTable.tableName },
+      environment: { MEMORY_TABLE: memoryTable.tableName, WORKSPACES_TABLE: workspacesTable.tableName },
     });
     scheduleWorker(this, 'MemoryRetentionSchedule', fn, uniqueName('voc-memory-retention-schedule'),
       // 03:15 UTC - off the quarter-hour the scanner and heartbeat fire on.

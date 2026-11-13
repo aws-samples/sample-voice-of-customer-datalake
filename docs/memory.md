@@ -6,7 +6,7 @@ statement, such as "Our customers compare prices before checkout" or "I like sho
 
 | Scope | Who sees it | Who can change it |
 |---|---|---|
-| **Company** | every signed-in user, except that a user restricted to some categories never sees a memory about, or naming, a category outside their access ([Category access](#category-access)) | curators: admins and users with the **memory reviewer** flag. Anyone else's company add is stored as `proposed` |
+| **Company** | every signed-in user, except that a user restricted to some categories never sees a memory about, or naming, a category outside their access ([Category access](#category-access)) | curators: admins and users with the **memory reviewer** flag; inside a workspace, its admins only, and its viewers read only ([multi-workspace](multi-workspace.md)). Anyone else's company add is stored as `proposed` |
 | **Personal** | its owner only (admins never see its content) | its owner |
 
 The extractor files generic knowledge about the product, customers or projects as **company** and anything
@@ -129,11 +129,18 @@ company objective`, top 8 (company + the caller's personal), updating `last_used
 | `MEMCURSOR` | `SESSION#{session_id}` | extraction cursor `{owner_sub, extracted_count, updated_at}` |
 | `MEMIMPORT` | `{import_id}` | page import record (original text in the raw bucket under `memory-imports/`) |
 
+A workspace's memories are the same rows inside its partitions: `WS#{ws}#MEM#company`, `WS#{ws}#MEM#user#{sub}`
+(`gsi1pk=WS#{ws}#MEMSTATUS#{scope}#{status}`), `WS#{ws}#MEMEVT#{memory_id}`, `WS#{ws}#MEMCURSOR` and
+`WS#{ws}#MEMIMPORT` (`lambda/shared/memory_store.py`; [multi-workspace](multi-workspace.md)).
+
 Index: `gsi1-by-memory-status` (`gsi1pk`/`gsi1sk`). Embeddings are Titan Text Embeddings V2 (1024 floats,
 compressed binary); the model is fixed (`EMBEDDING_MODEL_ID` in `lib/utils/model-allowlist.ts`), not a picker
 choice, because vectors from two models are not comparable. No vector database: brute-force cosine per scope.
 
 ## API — `voc-memory-api` (`memory_handler.py`, all routes Cognito)
+
+Every route acts in the workspace a request names (`X-Workspace-Id`, resolved first) on that workspace's memories,
+and on the deployment's without one ([multi-workspace](multi-workspace.md)).
 
 `GET /memory?scope=&status=&kind=&q=&cursor=`, `POST /memory`, `POST /memory/{id}/confirm`, `PUT /memory/{id}`,
 `POST /memory/{id}/forget`, `POST /memory/{id}/restore`, `POST /memory/merge`, `GET /memory/review`,
@@ -191,10 +198,10 @@ or company context text, so internal facts (codenames, targets) never become web
 
 | Lambda | Stack | Trigger | Grants (exact) |
 |---|---|---|---|
-| `voc-memory-api` | Api | API Gateway `/memory`, `/memory/{proxy+}` | memory Get/BatchGet/Put/Update/Query; aggregates Get/Query; raw `memory-imports/*` read+put; SendMessage memory-extract; Bedrock allowlist + Titan V2 |
+| `voc-memory-api` | Api | API Gateway `/memory`, `/memory/{proxy+}` | memory Get/BatchGet/Put/Update/Query; the stack's workspace-resolution managed policy and Cognito `AdminListGroupsForUser`/`AdminGetUser` (a workspace's members, a platform admin's live-checked entry); aggregates Get/Query; raw `memory-imports/*` read+put; SendMessage memory-extract; Bedrock allowlist + Titan V2 |
 | `voc-memory-extractor` | Processing | SQS `voc-memory-extract` (batch 5, partial failures) | memory Get/Put/Update/Query; conversations Get; agents Get/Query; aggregates Get; raw `memory-imports/*` read; Bedrock allowlist + Titan V2 |
 | `voc-memory-scanner` | Processing | EventBridge `rate(15 minutes)` | conversations Query on the `gsi1-by-kind-updated-at` index only (no Scan, no base-table read); memory BatchGet/Update (cursors); SendMessage memory-extract |
-| `voc-memory-retention` | Processing | EventBridge `cron(15 3 * * ? *)` | memory Query/Get/Update/Put |
+| `voc-memory-retention` | Processing | EventBridge `cron(15 3 * * ? *)` | memory Query/Get/Update/Put; voc-workspaces Query of the `WORKSPACES` listing only (each workspace's memories) |
 
 The queue's visibility timeout is 6× the extractor timeout (30 min); 3 receives then the DLQ (14 days).
 
