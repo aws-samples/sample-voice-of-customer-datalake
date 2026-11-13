@@ -72,10 +72,17 @@ function isImageContentType(value: string): value is ImageContentType {
 }
 
 /** One rung of the degrade ladder. `quality` is ignored for PNG. */
-interface EncodeStep {
-  readonly type: 'image/png' | 'image/jpeg'
+export interface EncodeStep {
+  readonly type: 'image/png' | 'image/jpeg' | 'image/webp'
   readonly quality?: number
   readonly maxEdge: number
+}
+
+/** What an upload must fit: its byte cap, its long-edge ceiling and the rungs tried in order. */
+export interface ImagePolicy {
+  readonly maxBytes: number
+  readonly maxEdge: number
+  readonly ladder: readonly EncodeStep[]
 }
 
 /**
@@ -98,6 +105,9 @@ const ENCODE_LADDER: readonly EncodeStep[] = [
   { type: 'image/jpeg', quality: 0.7, maxEdge: 1200 },
   { type: 'image/jpeg', quality: 0.6, maxEdge: 1024 },
 ]
+
+/** The product-doc and persona-image policy (the Converse image limits above). */
+const MODEL_IMAGE_POLICY: ImagePolicy = { maxBytes: MAX_IMAGE_BYTES, maxEdge: MAX_IMAGE_EDGE_PX, ladder: ENCODE_LADDER }
 
 /** Why preparation failed, in the two cases a user can act on. */
 export type ImagePrepFailure = 'unreadable' | 'too-large'
@@ -293,13 +303,13 @@ function passThrough(file: File): PreparedUpload {
   return { blob: file, filename: file.name, contentType: file.type, sizeBytes: file.size }
 }
 
-async function runLadder(decoded: DecodedImage, file: File): Promise<PreparedUpload> {
-  for (const step of ENCODE_LADDER) {
+async function runLadder(decoded: DecodedImage, file: File, policy: ImagePolicy): Promise<PreparedUpload> {
+  for (const step of policy.ladder) {
     // A rung's maxEdge is a ceiling, not a target: fitWithin never upscales, so
     // an image already under it walks the ladder at its own size.
     const size = fitWithin(decoded.width, decoded.height, step.maxEdge)
     const blob = await encode(decoded.source, size.width, size.height, step)
-    if (blob.size <= MAX_IMAGE_BYTES) {
+    if (blob.size <= policy.maxBytes) {
       return {
         blob,
         filename: withExtensionFor(file.name, step.type),
@@ -310,7 +320,7 @@ async function runLadder(decoded: DecodedImage, file: File): Promise<PreparedUpl
   }
   throw new ImagePrepError(
     'too-large',
-    `image is still over ${MAX_IMAGE_BYTES} bytes after the lowest quality step`,
+    `image is still over ${policy.maxBytes} bytes after the lowest quality step`,
   )
 }
 
@@ -322,15 +332,20 @@ async function runLadder(decoded: DecodedImage, file: File): Promise<PreparedUpl
  * would silently flatten the animation to its first frame.
  */
 export async function resizeImageForUpload(file: File): Promise<PreparedUpload> {
+  return prepareImage(file, MODEL_IMAGE_POLICY)
+}
+
+/** {@link resizeImageForUpload} under any `policy` (the company logo has its own, pages/Company/logoImage.ts). */
+export async function prepareImage(file: File, policy: ImagePolicy): Promise<PreparedUpload> {
   if (!isImageContentType(file.type)) return passThrough(file)
 
   const decoded = await decodeImage(file)
   try {
-    const withinPixels = Math.max(decoded.width, decoded.height) <= MAX_IMAGE_EDGE_PX
-    if (withinPixels && file.size <= MAX_IMAGE_BYTES) {
+    const withinPixels = Math.max(decoded.width, decoded.height) <= policy.maxEdge
+    if (withinPixels && file.size <= policy.maxBytes) {
       return passThrough(file)
     }
-    return await runLadder(decoded, file)
+    return await runLadder(decoded, file, policy)
   } finally {
     decoded.release()
   }

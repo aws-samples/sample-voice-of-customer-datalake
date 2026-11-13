@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 import { designCalls, registerDesignSectionHooks, renderDesignSection } from '@test/designSectionHarness'
 import { installFetchMock } from '@test/fetch-mock'
 import { SvgConversionError } from '../../utils/svgToPng'
+import { imageFile, stubImaging, stubOversizedImaging } from '../ProjectDetail/imaging-fixtures'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
@@ -101,5 +102,36 @@ describe('a PNG or JPEG logo', () => {
     expect(convert).not.toHaveBeenCalled()
     expect(createUpload).toHaveBeenCalledWith({ content_type: type, size_bytes: 512 })
     expect(put.mock.calls[0]?.[1]).toMatchObject({ body: file })
+  })
+})
+
+describe('a raster logo over 1 MB', () => {
+  it('is made smaller in the browser and the smaller PNG is uploaded', async () => {
+    stubImaging(3000, 1000)
+    const { createUpload, put } = renderLogo()
+    await userEvent.upload(await picker(), imageFile('big.jpg', 'image/jpeg', 3_000_000))
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
+    // The fake encoder answers half a byte per pixel: 1024 × 341 / 2.
+    expect(createUpload).toHaveBeenCalledWith({ content_type: 'image/png', size_bytes: 174_592 })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('that cannot be made smaller than 1 MB is explained and nothing is uploaded', async () => {
+    stubOversizedImaging()
+    const { createUpload, put } = renderLogo()
+    await userEvent.upload(await picker(), imageFile('huge.png', 'image/png', 4_000_000))
+    expect(await screen.findByRole('alert')).toHaveTextContent('huge.png could not be made smaller than 1 MB')
+    expect(createUpload).not.toHaveBeenCalled()
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  it('over 25 MB is refused before it is decoded', async () => {
+    const decode = vi.fn()
+    vi.stubGlobal('createImageBitmap', decode)
+    const { createUpload } = renderLogo()
+    await userEvent.upload(await picker(), imageFile('poster.png', 'image/png', 26 * 1024 * 1024))
+    expect(await screen.findByRole('alert')).toHaveTextContent('poster.png is larger than 25 MB.')
+    expect(decode).not.toHaveBeenCalled()
+    expect(createUpload).not.toHaveBeenCalled()
   })
 })

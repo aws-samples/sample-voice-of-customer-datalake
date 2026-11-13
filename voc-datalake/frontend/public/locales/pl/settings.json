@@ -752,6 +752,8 @@
     "uploadBadType": "Plik {{name}} ma niedozwolony typ.",
     "uploadTooLarge": "Plik {{name}} jest większy niż {{mb}} MB.",
     "uploadFailed": "Przesyłanie nie powiodło się. Spróbuj ponownie.",
+    "logoNotShrunk": "Nie udało się zmniejszyć pliku {{name}} poniżej 1 MB. Wyeksportuj mniejszy plik PNG i prześlij go.",
+    "logoUnreadable": "Nie udało się odczytać pliku {{name}} jako obrazu. Wyeksportuj go jako PNG i prześlij.",
     "integrations": "Integracje projektowe",
     "integrationsHint": "Tokeny są przechowywane w formie zaszyfrowanej i nigdy więcej nie są wyświetlane. Pozostaw pole puste, aby zachować obecny token.",
     "tokenPlaceholder": "Wklej token",
