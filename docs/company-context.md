@@ -90,7 +90,7 @@ one with a 400 (`COMPANY_LOGO_MAX_BYTES`, `lambda/shared/design_logo.py`), so th
 the web app and every saved logo fits a prototype. The logo picker also takes an
 SVG (≤ 1 MB): the browser draws it to a PNG (longest side 1024 px, transparent background) and uploads only that PNG, so
 the API still never receives an SVG. The SVG is loaded into an `<img>` from a `data:image/svg+xml` URL, never a
-`blob:` one: the site's CSP allows `img-src 'self' data:` only, so a blob URL is blocked (before 6.06.00 every SVG
+`blob:` one: the site's CSP allows `img-src 'self' data:` only, so a blob URL is blocked (before 7.00.00 every SVG
 upload failed that way, reported as unreadable); an SVG the browser cannot convert (some browsers refuse one with a
 `<foreignObject>`, or one without a size) is explained with "export it as PNG and upload that". Figma and GitHub tokens live
 in the Secrets Manager secret `voc/design-integrations-<account>-<region>` (Core stack, KMS, kept on stack deletion unless `-c protectData=false`), JSON
@@ -278,7 +278,7 @@ side and keeps that PNG as the reference's logo preview (marked rendered, like a
 copies the smaller PNG (`lambda/design_capture/raster_logo.py`). Every rendered logo (an SVG or an oversized raster)
 fits the 1 MB company-logo cap: a PNG over it at 1,024 px is drawn again at 768, then 512 px
 (`lambda/design_capture/logo_render.py`). The address passes the same URL policy before the
-browser opens it; if drawing fails, the reference simply has no logo preview. A reference read before 6.06.00, or a
+browser opens it; if drawing fails, the reference simply has no logo preview. A reference read before 7.00.00, or a
 GitHub repository's logo over 2 MB, still answers "Use this logo" with a 400 that says what to do: upload it as the
 company logo (the browser makes it smaller) or refresh a website reference.
 
