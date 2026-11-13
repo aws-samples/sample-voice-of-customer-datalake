@@ -925,6 +925,11 @@ function listDocumentVersions(ctx, documentId) {
 // shared/prototype_versions._PROTOTYPE_ROW_FIELDS beyond ROW_IDENTITY: what described the version a restore copies.
 const PROTOTYPE_ROW_ONLY = ['job_id', 'revised_from_id', 'revision_feedback'];
 
+/** prototype_versions.version_html's rule: inline content is HTML when marked so or shaped like a document. */
+const isInlineHtml = (row) => (row.content ?? '') === '' || row.prototype_format === 'html' || /^\s*<(?:!doctype html|html)/i.test(row.content);
+/** prototype_versions.version_html's 400 for an early JSON screen spec (Back to vN and a draft's base alike). */
+const EARLY_SPEC = bad('This prototype is an early screen spec, not HTML, so it cannot be restored. Build a new prototype instead.');
+
 /**
  * Back to vN (shared/prototype_versions.restore_prototype_version): a NEW version from vN's HTML
  * (inline here: the mock has no S3), recorded `edited_by` the caller. Never "unchanged": a stored
@@ -934,11 +939,7 @@ function restorePrototypeVersion(ctx, doc, versionId) {
   const series = seriesOf(ctx.detail, doc);
   const source = series.find((d) => d.document_id === versionId);
   if (!source) return [404, { success: false, error: 'Version not found' }];
-  // prototype_versions._version_html: inline content must be HTML (marked so, or starting like a document).
-  const inline = source.content ?? '';
-  if (inline !== '' && source.prototype_format !== 'html' && !/^\s*<(?:!doctype html|html)/i.test(inline)) {
-    return bad('This prototype is an early screen spec, not HTML, so it cannot be restored. Build a new prototype instead.');
-  }
+  if (!isInlineHtml(source)) return EARLY_SPEC;
   const [latest] = series;
   const [editId, editIdError] = editIdOf(ctx.body, versionId);
   if (editIdError) return editIdError;
@@ -1080,6 +1081,118 @@ function startPrototypeBuild(ctx) {
       return { document_id: doc.document_id, title: doc.title };
     },
   }), block);
+}
+
+// ── Prototype drafts (docs/prototype-builder.md, part 2) ────────────────────
+// A draft is a finished `draft_prototype` job: its detail (and, the mock having no S3, its HTML)
+// lives on the job entry, never on the job record a job route answers, so the job DELETE (Discard)
+// removes it. Its preview is served by this mock at /mock-prototype-drafts/{draft_id}.html.
+
+const MAX_INSTRUCTION_CHARS = 2000;
+const DRAFT_LLM = { model: 'mock', prompt_version: 'prototype-draft-mock-1' };
+const DRAFT_PREVIEW_PATH = /^\/mock-prototype-drafts\/([^/]+)\.html$/;
+const PROTOTYPE_NOT_FOUND = [404, { success: false, error: 'Prototype not found' }];
+const DRAFT_NOT_FOUND = [404, { success: false, error: 'Draft not found' }];
+const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** The prototype `documentId` names in this project, or null. */
+function prototypeOf(ctx, documentId) {
+  const doc = findDocument(ctx.detail, documentId);
+  return doc?.document_type === 'prototype' ? doc : null;
+}
+
+/** The mock's draft "HTML": the base's, with a visible note of the instruction at the top of its body. */
+function draftHtml(base, instruction) {
+  const note = `<p data-draft-note style="margin:0;padding:8px 24px;background:#fff4d6;color:#1d2330;font:13px system-ui,sans-serif">Draft: ${escapeHtml(instruction)}</p>`;
+  const html = base.content || prototypeHtml(base.title ?? 'Prototype', [], '');
+  return /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, (open) => `${open}${note}`) : `${note}${html}`;
+}
+
+/** POST /prototypes/{document_id}/drafts: `{instruction}` → a draft job on the series' newest version. */
+function startPrototypeDraft(ctx, documentId) {
+  const { body } = ctx;
+  if (own(body, 'pin_ids')) return bad('Incorporating feedback into a draft is not available yet');
+  if (typeof body.instruction !== 'string') return bad('instruction must be a string');
+  const instruction = body.instruction.trim();
+  if (instruction === '' || instruction.length > MAX_INSTRUCTION_CHARS) return bad(`instruction must be 1-${MAX_INSTRUCTION_CHARS} characters`);
+  const doc = prototypeOf(ctx, documentId);
+  if (!doc) return PROTOTYPE_NOT_FOUND;
+  const [base] = seriesOf(ctx.detail, doc);
+  if (!isInlineHtml(base)) return EARLY_SPEC;
+  const started = startJob(ctx.projectId, {
+    jobType: 'draft_prototype', status: 'pending', message: 'Prototype draft started.',
+    runningStep: 'invoking_bedrock', errorMessage: 'Prototype draft failed', complete: () => ({}),
+  });
+  const entry = jobs.get(started[1].job_id);
+  const baseId = base.document_id;
+  const baseVersion = base.version ?? 1;
+  entry.complete = (detail) => {
+    const row = findDocument(detail, baseId);
+    if (!row) throw new Error('The prototype this draft revises no longer exists');
+    const quoted = instruction.slice(0, 120);
+    entry.draft = {
+      base_document_id: baseId, base_version: baseVersion, instruction, html: draftHtml(row, instruction),
+      summary: `All screens: changed as asked ("${quoted}")\nHeader: a draft note names the instruction`,
+    };
+    return { draft_id: entry.record.job_id };
+  };
+  return started;
+}
+
+/** The job entry of a finished draft of `documentId`'s series in this project, or null (every refusal is a 404). */
+function draftEntry(ctx, documentId, draftId) {
+  const doc = prototypeOf(ctx, documentId);
+  const entry = jobs.get(draftId);
+  if (!doc || entry?.projectId !== ctx.projectId || !entry.draft) return null;
+  if (entry.record.job_type !== 'draft_prototype' || entry.record.status !== 'completed') return null;
+  const inSeries = seriesOf(ctx.detail, doc).some((d) => d.document_id === entry.draft.base_document_id);
+  return inSeries ? { doc, entry } : null;
+}
+
+/** GET /prototypes/{document_id}/drafts/{draft_id} (EDIT). */
+function getPrototypeDraft(ctx, documentId, draftId) {
+  const found = draftEntry(ctx, documentId, draftId);
+  if (!found) return DRAFT_NOT_FOUND;
+  const { record, draft } = found.entry;
+  return [200, {
+    draft_id: record.job_id, base_document_id: draft.base_document_id, base_version: draft.base_version,
+    instruction: draft.instruction, summary: draft.summary,
+    preview_url: `${ctx.origin}/mock-prototype-drafts/${encodeURIComponent(record.job_id)}.html`,
+    completed_at: record.completed_at,
+  }];
+}
+
+/**
+ * POST …/drafts/{draft_id}/apply: the draft as the next version (`apply:{draft_id}` allocation), 201 for the
+ * call that wrote it and 200 with the same version on a replay; 409 once the series moved past the base.
+ */
+function applyPrototypeDraft(ctx, documentId, draftId) {
+  const found = draftEntry(ctx, documentId, draftId);
+  if (!found) return DRAFT_NOT_FOUND;
+  const { draft } = found.entry;
+  const base = findDocument(ctx.detail, draft.base_document_id);
+  if (!base) return DRAFT_NOT_FOUND;
+  const key = `${ctx.projectId}:prototype:apply:${draftId}`;
+  const replayed = findDocument(ctx.detail, allocations.get(key) ?? '');
+  if (replayed) return [200, { success: true, document: replayed }];
+  if ((seriesOf(ctx.detail, base)[0]?.version ?? 1) !== draft.base_version) return STALE_DOCUMENT;
+  const carried = Object.fromEntries(Object.entries(base).filter(([field]) => !PROTOTYPE_ROW_ONLY.includes(field)));
+  const saved = newManagedVersion(ctx, carried, draft.html, {
+    edit_kind: 'revise', revised_from_id: base.document_id, revision_feedback: draft.instruction.slice(0, MAX_INSTRUCTION_CHARS),
+    edited_by: { sub: ctx.shared.mockCaller?.sub ?? MOCK_CALLER_SUB, kind: 'user' }, llm_metadata: { ...DRAFT_LLM },
+  });
+  allocations.set(key, saved.document_id);
+  return [201, { success: true, document: saved }];
+}
+
+/** GET /mock-prototype-drafts/{draft_id}.html: the draft's page (the stand-in for its signed CloudFront URL). */
+function serveDraftPreview(req, res, url) {
+  const match = req.method === 'GET' ? url.pathname.match(DRAFT_PREVIEW_PATH) : null;
+  if (!match) return false;
+  const html = jobs.get(safeDecode(match[1]))?.draft?.html;
+  res.writeHead(html ? 200 : 404, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(html ?? '<!doctype html><title>Not found</title><p>This draft is gone.</p>');
+  return true;
 }
 
 // ── AI helpers (assist jobs: their answer is the job `result`, see `assisted`) ──
@@ -1256,6 +1369,10 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/prfaq-autofill$/, body: 'lenient', run: assisted('assist_prfaq_autofill', autofillPrfaq) },
   { method: 'POST', pattern: /^\/build-prototype$/, body: 'object', run: startPrototypeBuild },
 
+  { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/drafts$/, body: 'object', run: startPrototypeDraft },
+  { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/drafts\/([^/]+)$/, run: getPrototypeDraft },
+  { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/drafts\/([^/]+)\/apply$/, body: 'lenient', run: applyPrototypeDraft },
+
   { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/pins$/, run: listPins },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/replies$/, body: 'object', run: replyToPin },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/resolve$/, body: 'object', run: (ctx, doc, pin) => changePinStatus(ctx, doc, pin, 'resolve') },
@@ -1276,16 +1393,17 @@ function routeBody(route, raw) {
   return [isPlainObject(raw) ? raw : {}, null];
 }
 
-function dispatch(route, { projectId, groups, raw, params, shared }) {
+function dispatch(route, { projectId, groups, raw, params, shared, origin }) {
   const detail = detailOf(shared, projectId);
   if (!detail) return NOT_FOUND;
   const [body, error] = routeBody(route, raw);
   if (error) return error;
-  return route.run({ projectId, detail, body, params, shared }, ...groups);
+  return route.run({ projectId, detail, body, params, shared, origin }, ...groups);
 }
 
 /** Handle the project action routes above; returns true when the request was taken. */
 export function handleProjectActionRoutes(req, res, url, send, shared) {
+  if (serveDraftPreview(req, res, url)) return true;
   const match = url.pathname.match(PROJECT_PATH);
   if (!match) return false;
   const projectId = safeDecode(match[1]);
@@ -1296,11 +1414,11 @@ export function handleProjectActionRoutes(req, res, url, send, shared) {
     send(...NOT_FOUND);
     return true;
   }
-  return serveRoute(req, res, { projectId, rest: match[2], params: url.searchParams, send, shared });
+  return serveRoute(req, res, { projectId, rest: match[2], params: url.searchParams, send, shared, origin: url.origin });
 }
 
 /** Find and run the route for `rest` on `projectId`; false when no route takes it. */
-function serveRoute(req, res, { projectId, rest, params, send, shared, routes = ROUTES, bodyPatch }) {
+function serveRoute(req, res, { projectId, rest, params, send, shared, routes = ROUTES, bodyPatch, origin = '' }) {
   const route = routes.find((r) => r.method === req.method && r.pattern.test(rest));
   if (!route) return false;
   const groups = rest.match(route.pattern).slice(1).map(safeDecode);
@@ -1308,7 +1426,7 @@ function serveRoute(req, res, { projectId, rest, params, send, shared, routes = 
   const respond = (raw) => {
     // A patch always lands: on a non-object body it is the whole body (never a lost override).
     const patched = bodyPatch ? { ...(isPlainObject(raw) ? raw : {}), ...bodyPatch } : raw;
-    const [status, payload] = dispatch(route, { projectId, groups, raw: patched, params, shared });
+    const [status, payload] = dispatch(route, { projectId, groups, raw: patched, params, shared, origin });
     send(status, payload);
   };
   if (route.body) {

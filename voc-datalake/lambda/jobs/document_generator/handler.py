@@ -60,6 +60,7 @@ from shared.derivation import (
     build_derivation,
     derivation_source,
 )
+from shared.document_revision import pass_llm_metadata
 from shared.document_versions import (
     get_versioned_document_by_allocation,
     persist_versioned_document,
@@ -68,6 +69,7 @@ from shared.document_versions import (
 )
 from shared.document_writer_brief import clean_stored_text, prompt_feature_idea, with_writer_brief
 from shared.dynamo_paging import iter_query
+from shared.exceptions import NotFoundError, ValidationError
 from shared.feature_request_context import document_context, input_feature_request_fields
 from shared.feedback import (
     feedback_char_budget,
@@ -92,6 +94,15 @@ from shared.model_profile import model_profile_scope, payload_fields, profile_fr
 from shared.persona_context import personas_prompt_context
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
+from shared.prototype_drafts import (
+    DRAFT_FIELD,
+    DRAFT_JOB_TYPE,
+    DRAFT_PROMPT_VERSION,
+    draft_object_exists,
+    parse_change_summary,
+    put_draft_html,
+    record_draft,
+)
 from shared.prototype_pins import (
     PIN_SUBMIT_API_BASE_ENV,
     ensure_pin_form,
@@ -99,7 +110,8 @@ from shared.prototype_pins import (
     pin_submit_url,
     strip_pin_widget,
 )
-from shared.prototype_versions import put_prototype_html, read_prototype_html
+from shared.prototype_versions import put_prototype_html, read_prototype_html, version_html
+from shared.tables import get_jobs_table
 from shared.timestamps import now_iso
 
 # Environment
@@ -1186,9 +1198,7 @@ def _base_prototype(projects_table, project_id: str, base_prototype_id: str) -> 
     """
     if not base_prototype_id:
         return None
-    item = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{base_prototype_id}'},
-    ).get('Item')
+    item = _document_by_id(projects_table, project_id, 'PROTOTYPE#', base_prototype_id)
     if not item:
         raise RuntimeError(
             f'base_prototype_id: no PROTOTYPE document "{base_prototype_id}" in this project.'
@@ -1547,6 +1557,101 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     return {'document_id': item['document_id'], 'title': item['title']}
 
 
+# A draft (docs/prototype-builder.md, part 2) is the build's prompt with its grounding, asked for one
+# change and a summary of it. The build's system prompt says "the HTML and nothing else", so this
+# replaces that one rule for a draft; every other rule of the build holds.
+PROTOTYPE_DRAFT_OUTPUT_RULES = """
+
+THIS REQUEST IS A DRAFT REVISION, AND ITS OUTPUT FORMAT REPLACES "OUTPUT FORMAT" ABOVE:
+- First a <change_summary> block: plain text, one line per change in the form "screen: what changed", at most 12 lines, no HTML and no Markdown.
+- Then the full revised HTML document, starting with <!DOCTYPE html> and ending with </html>.
+- Nothing before, between or after them."""
+
+PROTOTYPE_DRAFT_USER_TEMPLATE = """Revise the clickable HTML prototype below as the editor asks. Make the change asked for and keep everything else as it is.
+
+PROJECT: {project_name}
+{design_system_section}{company_context_section}
+
+EDITOR'S INSTRUCTION:
+{instruction}
+
+Answer with the <change_summary> block first (at most 12 lines, "screen: what changed"), then the full revised HTML document. Keep the offline-first single-HTML rules. {lang_hint}
+
+EXISTING PROTOTYPE (revise this):
+{prior_html}"""
+
+
+def _prior_draft_attempt(project_id: str, job_id: str) -> bool:
+    """Whether an earlier delivery of this job already stored its detail AND its object.
+
+    The detail is written before the object, so both present means one attempt wrote both and
+    they describe the same HTML: the job completes without a second model call. Anything less
+    is drafted again (the object, write-once, is only ever written after its own detail).
+    """
+    row = get_jobs_table().get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'},
+                                    ConsistentRead=True).get('Item') or {}
+    return isinstance(row.get(DRAFT_FIELD), Mapping) and draft_object_exists(_s3(), SCRATCH_BUCKET, project_id, job_id)
+
+
+def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
+    """One draft: the base version's HTML revised by the editor's instruction, stored as the job's draft.
+
+    Writes no document row and no pin form: the detail (``summary``, the base, the
+    instruction, ``llm_metadata``) on the job row, then the HTML at the job's draft key
+    with no metadata, the pin widget stripped (the model may echo one). The result is
+    exactly ``{draft_id}``, which the job status shows a viewer too. The base is re-read
+    by id; a series that moved past it still gets its draft (Apply then answers 409).
+    """
+    from shared.converse import answering_model, converse_detailed
+
+    if _prior_draft_attempt(project_id, job_id):
+        ctx.update_progress(100, 'saved')
+        return {'draft_id': job_id}
+    base_id = str(doc_config.get('base_document_id') or '')
+    base = _document_by_id(projects_table, project_id, 'PROTOTYPE#', base_id) if base_id else None
+    if base is None:
+        raise NotFoundError('The prototype version this draft was asked on no longer exists.')
+    prior_html = strip_pin_widget(version_html(_s3(), SCRATCH_BUCKET, project_id, base))
+    instruction = str(doc_config.get('instruction') or '').strip()
+    if not instruction:
+        raise ValidationError('The draft has no instruction.')
+
+    proj_resp = projects_table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
+    project_name = (proj_resp.get('Item') or {}).get('name') or 'Project'
+    korean = str(doc_config.get('response_language')).startswith('ko')
+    lang_hint = 'Write the UI text in Korean.' if korean else 'Match the language of the existing prototype.'
+    # The grounding a revision gets: company knowledge in the system prompt, and the design
+    # system unless the base was built without it (a revision inherits that choice).
+    grounding = _document_grounding(doc_config, fallback_query=str(base.get('title') or ''))
+    with_design_system = (base.get(DERIVATION_FIELD) or {}).get('design_system_included') is not False
+    design_system_section, company_context_section = _prototype_org_sections(
+        grounding, with_design_system=with_design_system)
+    user_prompt = PROTOTYPE_DRAFT_USER_TEMPLATE.format(
+        project_name=project_name, design_system_section=design_system_section,
+        company_context_section=company_context_section, instruction=instruction, lang_hint=lang_hint,
+        prior_html=prior_html[:PROTOTYPE_PRIOR_CAP],
+    )
+    system_prompt = with_guidance(PROTOTYPE_HTML_SYSTEM_PROMPT + PROTOTYPE_DRAFT_OUTPUT_RULES, grounding)
+
+    ctx.update_progress(40, 'invoking_bedrock')
+    reply = converse_detailed(prompt=user_prompt, system_prompt=system_prompt, surface='prototype',
+                              max_tokens=32000, step_name='draft_prototype')
+    summary, rest = parse_change_summary(reply.text)
+    html = _extract_html(rest)
+    if not html:
+        raise RuntimeError('Prototype model did not return an HTML document.')
+
+    ctx.update_progress(80, 'saving_draft')
+    record_draft(get_jobs_table(), project_id, job_id, {
+        'summary': summary, 'base_document_id': base_id, 'base_version': int(doc_config['base_version']),
+        'instruction': instruction,
+        'llm_metadata': pass_llm_metadata(answering_model(reply, 'prototype'), DRAFT_PROMPT_VERSION),
+    })
+    put_draft_html(_s3(), SCRATCH_BUCKET, project_id, job_id, strip_pin_widget(html))
+    ctx.update_progress(100, 'saved')
+    return {'draft_id': job_id}
+
+
 @job_handler(error_message='Document generation failed')
 def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) -> dict:
     """Handle async document generation job (PRD/PRFAQ).
@@ -1599,6 +1704,11 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
     if doc_type == 'build_prototype':
         ctx.update_progress(20, 'loading_source_documents')
         return _generate_prototype(ctx, projects_table, project_id, job_id, doc_config)
+
+    # A draft of an editor's instruction (docs/prototype-builder.md, part 2): no row, one object.
+    if doc_type == DRAFT_JOB_TYPE:
+        ctx.update_progress(20, 'loading_base_prototype')
+        return _draft_prototype(ctx, projects_table, project_id, job_id, doc_config)
 
     # Resolved BEFORE anything is read or billed: an unmapped type fails the job
     # here with a clear message instead of being generated as something else.

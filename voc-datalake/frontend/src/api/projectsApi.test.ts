@@ -370,6 +370,45 @@ describe('projectsApi', () => {
       })
     })
   })
+
+  // Prototype drafts (docs/prototype-builder.md, part 2): read (a 404 is "no draft") and Apply.
+  describe('prototype drafts', () => {
+    const DRAFT = {
+      draft_id: 'job_1', base_document_id: 'proto_2', base_version: 2, instruction: 'make the footer sticky',
+      summary: 'Checkout: the footer sticks\nCart: unchanged', preview_url: 'https://cdn.example.com/prototypes/p1/drafts/job_1.html?Signature=x',
+    }
+
+    it('reads a draft through its own route, normalised (what the page does not read is dropped)', async () => {
+      mockJsonOnce({ ...DRAFT, completed_at: '2026-11-13T10:00:00Z' })
+
+      const draft = await projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')
+
+      expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts/job_1`)
+      expect(draft).toStrictEqual(DRAFT)
+    })
+
+    it('reads a 404 as no draft (expired, discarded, another series) and rethrows anything else', async () => {
+      mockStatusOnce(404)
+      await expect(projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')).resolves.toBeNull()
+
+      mockStatusOnce(500)
+      await expect(projectsApi.getPrototypeDraft('p1', 'proto_2', 'job_1')).rejects.toMatchObject({ status: 500 })
+    })
+
+    it('applies through its own route and answers the version it wrote, normalised', async () => {
+      mockJsonOnce({ success: true, document: { document_id: 'proto_3', document_type: 'prototype', title: 'Checkout (v3)', version: 3 } })
+
+      const applied = await projectsApi.applyPrototypeDraft('p1', 'proto_2', 'job_1')
+
+      expectFetchedWith(`${API}/projects/p1/prototypes/proto_2/drafts/job_1/apply`, { method: 'POST' })
+      expect(applied).toMatchObject({ document_id: 'proto_3', version: 3 })
+    })
+
+    it('rejects a stale Apply (409) like any refusal', async () => {
+      mockStatusOnce(409)
+      await expect(projectsApi.applyPrototypeDraft('p1', 'proto_2', 'job_1')).rejects.toMatchObject({ status: 409 })
+    })
+  })
 })
 
 

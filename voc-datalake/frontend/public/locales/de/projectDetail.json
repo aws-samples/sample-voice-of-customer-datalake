@@ -122,7 +122,23 @@
       "visuals": "Visuelle Mockups ({{total, number}})",
       "visualsFailed": "{{total, number}} fehlgeschlagen — erneut hochladen, um sie zu nutzen",
       "visualsLimit": "Höchstens {{max, number}} Mockups pro Build",
-      "visualsNotReady": "{{total, number}} werden noch verarbeitet"
+      "visualsNotReady": "{{total, number}} werden noch verarbeitet",
+      "draft": {
+        "heading": "Entwurf fertig: in einer Vorschau angewendet, nicht gespeichert",
+        "previewHeading": "Entwurfsvorschau",
+        "previewLabel": "Vorschau",
+        "showDraft": "Entwurf",
+        "showCurrent": "Aktuell",
+        "instructionLabel": "Anweisung:",
+        "summaryLabel": "Was sich geändert hat",
+        "stale": "Der Prototyp hat sich seit diesem Entwurf geändert: Bitten Sie auf der neuesten Version erneut darum",
+        "apply": "Als v{{n}} übernehmen",
+        "discard": "Verwerfen",
+        "applyFailed": "Der Entwurf konnte nicht übernommen werden. Versuchen Sie es erneut.",
+        "discardFailed": "Der Entwurf konnte nicht verworfen werden. Versuchen Sie es erneut.",
+        "noPreview": "Eine Vorschau dieses Entwurfs ist hier nicht verfügbar.",
+        "frameTitle": "{{title}} (Entwurf)"
+      }
     },
     "revision": {
       "feedback": "Rückmeldung: {{feedback}}",
@@ -227,7 +243,8 @@
       "generateProductReport": "Produktbericht-Generierung",
       "importPersona": "Persona-Import",
       "mergeDocuments": "Dokument-Zusammenführung",
-      "research": "Recherche"
+      "research": "Recherche",
+      "draftPrototype": "Prototyp-Entwurf"
     }
   },
   "notFound": {

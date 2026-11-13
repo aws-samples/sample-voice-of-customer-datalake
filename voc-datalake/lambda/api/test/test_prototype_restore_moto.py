@@ -223,6 +223,26 @@ class TestTheOldestPrototypes:
         # Now S3-backed (content ''), so the answer is signed rather than left to the inline path.
         assert restored['prototype_url'] == 'https://cdn.example/signed'
 
+    @pytest.mark.parametrize('lead', ['\N{ZERO WIDTH NO-BREAK SPACE}', ' \N{ZERO WIDTH NO-BREAK SPACE}\n ',
+                                      '\N{ZERO WIDTH NO-BREAK SPACE}' + ' ' * 300])
+    def test_unmarked_inline_html_after_a_byte_order_mark_is_restored(self, world, lead):
+        """The SPA's ``trimStart`` drops a BOM before it looks for ``<!doctype html``, so this does too."""
+        old = self._inline(world, 'job_1', f'{lead}<!DOCTYPE html><html><body><h1>Bom</h1></body></html>')
+        v2 = world.prototype('job_22', '<h1>Two</h1>')
+
+        restored = world.restore(v2['document_id'], old['document_id'])['document']
+
+        assert '<h1>Bom</h1>' in world.html(restored['document_id'])
+
+    def test_a_bom_before_a_json_spec_is_still_refused(self, world):
+        from shared.exceptions import ValidationError
+
+        spec = self._inline(world, 'job_1', '\N{ZERO WIDTH NO-BREAK SPACE}{"title": "Checkout", "screens": []}')
+        v2 = world.prototype('job_22', '<h1>Two</h1>')
+
+        with pytest.raises(ValidationError, match='early screen spec'):
+            world.restore(v2['document_id'], spec['document_id'])
+
     def test_a_json_screen_spec_is_refused_and_nothing_is_written(self, world):
         from shared.exceptions import ValidationError
 

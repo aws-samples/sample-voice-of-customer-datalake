@@ -25,6 +25,7 @@ import { DocumentCoachingNotice } from '../../components/AiCoach/HumanDrivenNoti
 import DocumentProvenance from '../../components/DocumentCanvas/page/DocumentProvenance'
 import DeleteDocumentButton from '../../components/DocumentCanvas/actions/DeleteDocumentButton'
 import PrototypeBackButton from './PrototypeBack'
+import { PrototypeWithDraft } from './PrototypeDraftBanner'
 import { useFocusViewActive } from '../../components/DocumentCanvas/page/focusView'
 
 const DocumentPage = lazy(() => import('../../components/DocumentCanvas/page/DocumentPage'))
@@ -182,28 +183,33 @@ function PrototypePane({
           <DocumentCoachingNotice documentType={document.document_type} title={document.title}
             hasContent={document.content.trim() !== ''} />
         ) : null}
-        <PrototypeView
-          projectId={project.project_id}
-          documentId={document.document_id}
-          html={document.content}
-          url={document.prototype_url}
-          title={document.title}
-          prototypeFormat={document.prototype_format}
-          // Blank when the inherited source no longer exists, because the
-          // API rejects an id it cannot resolve — and a prototype whose PRD
-          // has since been deleted would otherwise become permanently
-          // unrevisable. Blank reads as "not aimed", so the revision falls
-          // back to newest-of-type: not a silent substitution, since the
-          // document it would have preserved is gone.
-          sourcePrdId={stillPresent(document.source_prd_id, documents)}
-          sourcePrfaqId={stillPresent(document.source_prfaq_id, documents)}
-          sourcesDropped={hasDroppedSource(document, documents)}
-          // The optional inputs the BASE was built with, not today's
-          // defaults — see `inheritedExtraSources`.
-          extraSources={inheritedExtraSources(document, documents, productDocs)}
-          canEdit={canEdit}
-          onJobStarted={onJobStarted}
-        />
+        {/* A finished draft of this series (editors only) gets its banner, and the preview shows it until
+            the editor switches back to this version. */}
+        <PrototypeWithDraft projectId={project.project_id} document={document} documents={documents} canEdit={canEdit}
+          onSelectDoc={onSelectDoc}>
+          <PrototypeView
+            projectId={project.project_id}
+            documentId={document.document_id}
+            html={document.content}
+            url={document.prototype_url}
+            title={document.title}
+            prototypeFormat={document.prototype_format}
+            // Blank when the inherited source no longer exists, because the
+            // API rejects an id it cannot resolve — and a prototype whose PRD
+            // has since been deleted would otherwise become permanently
+            // unrevisable. Blank reads as "not aimed", so the revision falls
+            // back to newest-of-type: not a silent substitution, since the
+            // document it would have preserved is gone.
+            sourcePrdId={stillPresent(document.source_prd_id, documents)}
+            sourcePrfaqId={stillPresent(document.source_prfaq_id, documents)}
+            sourcesDropped={hasDroppedSource(document, documents)}
+            // The optional inputs the BASE was built with, not today's
+            // defaults — see `inheritedExtraSources`.
+            extraSources={inheritedExtraSources(document, documents, productDocs)}
+            canEdit={canEdit}
+            onJobStarted={onJobStarted}
+          />
+        </PrototypeWithDraft>
         {/* Prototypes keep their own revision lineage (the revision footer), no content versions. */}
         <DocumentProvenance document={document} documents={documents} onSelectDoc={onSelectDoc} />
         <FeedbackCorpus feedbackIds={document.input_feedback_ids}

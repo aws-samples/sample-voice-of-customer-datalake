@@ -129,7 +129,23 @@
       "visuals": "Maquetes visuais ({{total, number}})",
       "visualsFailed": "{{total, number}} com falha — envie novamente para usar",
       "visualsLimit": "No máximo {{max, number}} maquetes por build",
-      "visualsNotReady": "{{total, number}} ainda em processamento"
+      "visualsNotReady": "{{total, number}} ainda em processamento",
+      "draft": {
+        "heading": "Rascunho pronto: aplicado a uma pré-visualização, não salvo",
+        "previewHeading": "Pré-visualização do rascunho",
+        "previewLabel": "Pré-visualização",
+        "showDraft": "Rascunho",
+        "showCurrent": "Atual",
+        "instructionLabel": "Instrução:",
+        "summaryLabel": "O que mudou",
+        "stale": "O protótipo mudou desde este rascunho: peça de novo na versão mais recente",
+        "apply": "Aplicar como v{{n}}",
+        "discard": "Descartar",
+        "applyFailed": "Não foi possível aplicar o rascunho. Tente de novo.",
+        "discardFailed": "Não foi possível descartar o rascunho. Tente de novo.",
+        "noPreview": "A pré-visualização deste rascunho não está disponível aqui.",
+        "frameTitle": "{{title}} (rascunho)"
+      }
     },
     "revision": {
       "feedback": "Comentários: {{feedback}}",
@@ -238,7 +254,8 @@
       "generateProductReport": "Geração de relatório do produto",
       "importPersona": "Importação de Persona",
       "mergeDocuments": "Mesclagem de Documentos",
-      "research": "Pesquisa"
+      "research": "Pesquisa",
+      "draftPrototype": "Rascunho de protótipo"
     },
     "completedCount_many": "{{count, number}} concluídos",
     "moreFailedCount_many": "{{count, number}} mais com falha"

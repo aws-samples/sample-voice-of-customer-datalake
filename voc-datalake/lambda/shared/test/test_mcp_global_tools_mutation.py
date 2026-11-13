@@ -188,6 +188,32 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
          '`thread_ids`: 1 to 50 comment ids. Answers the threads.'),
         _object({'project_id': ID, 'document_id': ID, 'thread_ids': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 50}, 'addressed': {'type': 'boolean', 'default': True}}, 'document_id', 'thread_ids'),
         True, False, True),
+    'documents_draft_prototype_revision': (
+        'Draft a prototype revision',
+        ('Ask for a change to a prototype in words (write token): `document_id` (any version of it) and '
+         '`instruction`. The AI drafts the change on the newest version; nothing is saved. Answers a job_id: '
+         'its result is the `draft_id` (projects_get_job); read it with documents_get_prototype_draft.'),
+        _object({'project_id': ID, 'document_id': ID, 'instruction': {'type': 'string', 'maxLength': 2000}}, 'document_id', 'instruction'),
+        True, False, True),
+    'documents_get_prototype_draft': (
+        'Get a prototype draft',
+        ("Read a prototype draft: its instruction, the AI's summary of what changed and the version it was "
+         'drafted on (`base_version`). No preview: the user sees it on the prototype page.'),
+        _object({'project_id': ID, 'document_id': ID, 'draft_id': ID}, 'document_id', 'draft_id'),
+        False, False, True),
+    'documents_apply_prototype_draft': (
+        'Apply a prototype draft',
+        ('Save a prototype draft as the next version (write token); earlier versions are kept, and applying it '
+         'again gives the same version. Refused when a version was saved since the draft: ask again. Confirm '
+         'with the user first.'),
+        _object({'project_id': ID, 'document_id': ID, 'draft_id': ID}, 'document_id', 'draft_id'),
+        True, False, True),
+    'documents_discard_prototype_draft': (
+        'Discard a prototype draft',
+        ('Discard a prototype draft by `document_id` and `draft_id` (write token): it is gone for everyone. '
+         'Saved versions are untouched.'),
+        _object({'project_id': ID, 'document_id': ID, 'draft_id': ID}, 'document_id', 'draft_id'),
+        True, False, True),
     'agents_list': (
         'List agents',
         ('List the autonomous agents you can see, with their status. Use it to find the `agent_id` the agents_ '
@@ -320,7 +346,10 @@ class TestTheOldNames:
         listed = {tool.name for tool in tools.TOOLS}
         assert not listed & set(tools.RENAMED)
         new_in_6_10 = {'documents_revise_from_comments', 'documents_mark_comments_addressed'}
-        assert set(tools.RENAMED.values()) == listed - new_in_6_10
+        # 6.12.00's prototype-draft tools never had an older name.
+        new_in_6_12 = {'documents_draft_prototype_revision', 'documents_get_prototype_draft',
+                       'documents_apply_prototype_draft', 'documents_discard_prototype_draft'}
+        assert set(tools.RENAMED.values()) == listed - new_in_6_10 - new_in_6_12
 
     @pytest.mark.parametrize(('old', 'new'), list(RENAMED_IN_6_10.items()))
     def test_an_old_name_resolves_to_its_tool_with_the_same_arguments(self, old, new):

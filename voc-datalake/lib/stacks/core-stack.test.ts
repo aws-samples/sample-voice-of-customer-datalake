@@ -30,7 +30,7 @@ import {
 import { SYNTH_ACCOUNT, SYNTH_TIMEOUT_MS, cdkJsonContextStrict, committedFeatureFlags } from '../test-support/synth-app';
 import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
 import { byCodeUnit } from '../utils/compare';
-import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
+import { PROTOTYPE_BASE_CSP, PROTOTYPE_DRAFT_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 
 /** The construct of `stack` that renders the resource `logicalId`. */
 function constructRendering(stack: cdk.Stack, logicalId: string): cdk.CfnElement {
@@ -560,7 +560,7 @@ describe('VocCoreStack S3 server access logging', () => {
  * covered without anyone remembering to extend them.
  */
 describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
-  const PRIVATE_PATHS = ['/avatars/*', '/prototypes/*'];
+  const PRIVATE_PATHS = ['/avatars/*', '/prototypes/*/drafts/*', '/prototypes/*'];
 
   const BehaviorSchema = z.object({
     PathPattern: z.string(),
@@ -749,6 +749,9 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
     expect({ policy: posture(policyCsp), function: posture(functionCode) })
       .toStrictEqual({ policy: expected, function: expected });
   });
+
+  // The draft behaviour's own checks (order, origin, key group, policy, no function) are in
+  // core-cdn-drafts.test.ts; PRIVATE_PATHS above holds it to a signature like every private path.
 
   it('never puts signing key MATERIAL in the template', () => {
     // The whole reason a custom resource mints the keypair at deploy time: the
@@ -1460,8 +1463,8 @@ describe('raw bucket scratch copies (DATA-4)', () => {
 describe('the SPA security headers (WA SEC11, EDGE-3/4/6)', () => {
   const spaPolicy = () => Object.values(synthCoreTemplate().findResources('AWS::CloudFront::ResponseHeadersPolicy'))
     .map((policy) => recordAt(policy, 'Properties', 'ResponseHeadersPolicyConfig'))
-    .find((config) => recordAt(config, 'SecurityHeadersConfig', 'ContentSecurityPolicy')?.ContentSecurityPolicy
-      !== PROTOTYPE_BASE_CSP);
+    .find((config) => ![PROTOTYPE_BASE_CSP, PROTOTYPE_DRAFT_CSP].includes(
+      String(recordAt(config, 'SecurityHeadersConfig', 'ContentSecurityPolicy')?.ContentSecurityPolicy)));
 
   it('limits form posts to the app and drops the dead Lambda Function URL source', () => {
     const csp = String(recordAt(spaPolicy(), 'SecurityHeadersConfig', 'ContentSecurityPolicy')?.ContentSecurityPolicy);

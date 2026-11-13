@@ -154,6 +154,19 @@ def rest_event(method, path, *, claims, body=None, path_params=None):
     }
 
 
+def project_route_call(api_gateway_event, context, claims, method, path, body=None):
+    """``method path`` through ``projects_handler.lambda_handler`` as ``claims``; returns (status, body).
+
+    ``api_gateway_event`` is the conftest factory; the path's project id is passed as its path parameter.
+    """
+    import projects_handler
+
+    event = api_gateway_event(method=method, path=path, body=body, claims=claims,
+                              path_params={'project_id': path.split('/')[2]})
+    response = projects_handler.lambda_handler(event, context)
+    return response['statusCode'], json.loads(response['body'])
+
+
 def invoke(handler_module, event, context, **tables):
     """Run ``handler_module.lambda_handler`` with each ``get_<name>_table`` patched.
 

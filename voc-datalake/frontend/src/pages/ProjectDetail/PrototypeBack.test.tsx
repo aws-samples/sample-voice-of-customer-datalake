@@ -53,6 +53,12 @@ describe('backTarget', () => {
     expect(backTarget(spec, [spec, v2])).toBeNull()
     expect(backTarget(v2, [inline, v2])).toStrictEqual({ target: inline, kind: 'back' })
   })
+
+  it('offers a way back to unmarked inline HTML (no prototype_format: an early build that starts like a document)', () => {
+    const unmarked = prototype(1, { content: '\n  <!doctype html><html><body>Checkout</body></html>' })
+    expect(backTarget(v2, [unmarked, v2])).toStrictEqual({ target: unmarked, kind: 'back' })
+    expect(backTarget(unmarked, [unmarked, v2])).toStrictEqual({ target: unmarked, kind: 'restore' })
+  })
 })
 
 describe('PrototypeBackButton', () => {
@@ -109,6 +115,8 @@ describe('PrototypeBackButton', () => {
     ['a refusal with its reason', new ApiError(404, GONE), GONE],
     ['a refusal without one', new ApiError(404), RETRY],
     ['a server failure', new ApiError(500, 'Internal error'), RETRY],
+    // A throttle passes: its words are no instruction, so it keeps "try again".
+    ['a throttled request', new ApiError(429, 'Too many requests'), RETRY],
   ])('on %s the alert reads its text', async (_case, error, text) => {
     restoreDocumentVersion.mockRejectedValue(error)
     const { user } = renderButton(v3)

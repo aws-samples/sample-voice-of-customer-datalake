@@ -87,6 +87,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   PrioritizationHeader: 'Save sits in the page header',
   RoomVotePanel: 'Open room vote is a per-row control in the expanded row',
   DocumentsTab: 'New document is a tab-header action',
+  PrototypeDraftBanner: 'Apply as vN sits in the draft banner at the top of the prototype pane, above the preview, left-aligned; no form to save',
   DecisionsTab: 'New decision is a tab-header action',
   DecisionCard: 'per-decision Draft PR/FAQ, one of many in the decision list',
   OverviewTab: 'per-step card CTAs in the overview grid',

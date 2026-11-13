@@ -444,6 +444,9 @@ _ROUTE_OVERRIDES: Final = (
     ('POST', ('documents', '*', 'comments', '*', 'resolve'), LEVEL_VIEW),
     ('POST', ('documents', '*', 'comments', '*', 'reopen'), LEVEL_VIEW),
     ('DELETE', ('documents', '*', 'comments', '*'), LEVEL_VIEW),
+    # A prototype draft (docs/prototype-builder.md, part 2) is for editors: its summary is model text
+    # about a change no one has applied yet, and its preview URL signs model HTML not yet a version.
+    ('GET', ('prototypes', '*', 'drafts', '*'), LEVEL_EDIT),
 )
 
 

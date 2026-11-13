@@ -15,6 +15,11 @@ do for the web app.
   ``documents_mark_comments_addressed`` marks or clears its threads
   (docs/document-review.md). Before 6.10.00 both were ``generate`` with
   ``step: revise``; ``legacy_revise`` maps such a call to them.
+* ``documents_draft_prototype_revision``, ``documents_get_prototype_draft``,
+  ``documents_apply_prototype_draft`` and ``documents_discard_prototype_draft``: a
+  prototype draft from an instruction, read, applied as the next version, or discarded
+  (docs/prototype-builder.md, part 2). The draft's signed preview URL never leaves: a
+  token holder reads the summary only.
 * ``radar_read`` reads other brands' reviews (docs/radar.md).
 * ``feedback_edit`` corrects one review's category, or its dimensions and tags.
 """
@@ -37,12 +42,14 @@ from shared.mcp_global_kit import (
     RouteRequest,
     id_arg,
     int_arg,
+    public,
     require_project,
     schema,
     stripped,
     text_arg,
 )
 from shared.methodology import STEPS
+from shared.prototype_drafts import MAX_INSTRUCTION_CHARS
 
 MAX_BRIEF_CHARS: Final = 4000
 MAX_TITLE_CHARS: Final = 200
@@ -137,6 +144,43 @@ def _revise_started(payload: object, _args: Mapping[str, Any]) -> dict:
     """The pass's job: read its result with ``projects_get_job``."""
     answer = payload if isinstance(payload, Mapping) else {}
     return {key: answer[key] for key in _REVISE_FIELDS if key in answer}
+
+
+def _start_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    """Start a draft (POST …/drafts): the route drafts on the newest version of ``document_id``'s series."""
+    instruction = text_arg(args, 'instruction', max_length=MAX_INSTRUCTION_CHARS, required=True)
+    p = require_project(project)
+    d = id_arg(args, 'document_id')
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/prototypes/{d}/drafts',
+                        body={'instruction': instruction})
+
+
+def _get_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    p = require_project(project)
+    d = id_arg(args, 'document_id')
+    draft = id_arg(args, 'draft_id')
+    return RouteRequest(DOMAIN_PROJECTS, 'GET', f'/projects/{p}/prototypes/{d}/drafts/{draft}')
+
+
+def _apply_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    p = require_project(project)
+    d = id_arg(args, 'document_id')
+    draft = id_arg(args, 'draft_id')
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/prototypes/{d}/drafts/{draft}/apply', body={})
+
+
+def _discard_draft(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    """Discard (DELETE …/drafts/{draft_id}): the draft's job deleted, and only a draft job of that prototype's series."""
+    p = require_project(project)
+    d = id_arg(args, 'document_id')
+    draft = id_arg(args, 'draft_id')
+    return RouteRequest(DOMAIN_PROJECTS, 'DELETE', f'/projects/{p}/prototypes/{d}/drafts/{draft}')
+
+
+def _applied(payload: object, _args: Mapping[str, Any]) -> dict:
+    """The new version, without its storage keys or its signed prototype URL."""
+    answer = payload if isinstance(payload, Mapping) else {}
+    return {'success': answer.get('success'), 'document': public(answer.get('document'))}
 
 
 def _get_job(args: Mapping[str, Any], project: str | None) -> RouteRequest:
@@ -237,6 +281,36 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'thread_ids': _THREAD_IDS,
                 'addressed': {'type': 'boolean', 'default': True}}, ('document_id', 'thread_ids')),
         _mark_addressed, stripped, write=True, project_scoped=True),
+    GlobalTool(
+        'documents_draft_prototype_revision', 'Draft a prototype revision',
+        'Ask for a change to a prototype in words (write token): `document_id` (any version of it) and '
+        '`instruction`. The AI drafts the change on the newest version; nothing is saved. Answers a job_id: '
+        'its result is the `draft_id` (projects_get_job); read it with documents_get_prototype_draft.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
+                'instruction': {'type': 'string', 'maxLength': MAX_INSTRUCTION_CHARS}}, ('document_id', 'instruction')),
+        _start_draft, _revise_started, write=True, project_scoped=True),
+    GlobalTool(
+        'documents_get_prototype_draft', 'Get a prototype draft',
+        "Read a prototype draft: its instruction, the AI's summary of what changed and the version it was "
+        'drafted on (`base_version`). No preview: the user sees it on the prototype page.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'draft_id': ID_SCHEMA},
+               ('document_id', 'draft_id')),
+        _get_draft, stripped, project_scoped=True),
+    GlobalTool(
+        'documents_apply_prototype_draft', 'Apply a prototype draft',
+        'Save a prototype draft as the next version (write token); earlier versions are kept, and applying it '
+        'again gives the same version. Refused when a version was saved since the draft: ask again. Confirm '
+        'with the user first.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'draft_id': ID_SCHEMA},
+               ('document_id', 'draft_id')),
+        _apply_draft, _applied, write=True, project_scoped=True),
+    GlobalTool(
+        'documents_discard_prototype_draft', 'Discard a prototype draft',
+        'Discard a prototype draft by `document_id` and `draft_id` (write token): it is gone for everyone. '
+        'Saved versions are untouched.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'draft_id': ID_SCHEMA},
+               ('document_id', 'draft_id')),
+        _discard_draft, stripped, write=True, project_scoped=True),
     GlobalTool(
         'radar_read', 'Read Radar',
         "Read Radar: competitors' and other brands' public reviews, kept apart from your own customer feedback "

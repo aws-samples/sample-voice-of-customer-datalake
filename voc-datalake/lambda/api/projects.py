@@ -3130,6 +3130,35 @@ def stored_document_type(project_id: str, document_id: str) -> str | None:
     return managed_document_type(_source_document_item(project_id, document_id))
 
 
+def prototype_store() -> PrototypeStore:
+    """Where this Lambda's prototype versions and drafts live (the pin forms are in the aggregates table)."""
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+    pins_table = get_aggregates_table()
+    if not pins_table:
+        raise ConfigurationError('Aggregates table not configured')
+    return PrototypeStore(table=projects_table, pins_table=pins_table, s3=get_s3_client(),
+                          bucket=os.environ.get('RAW_DATA_BUCKET', ''),
+                          api_base=os.environ.get(PIN_SUBMIT_API_BASE_ENV))
+
+
+def prototype_document(project_id: str, document_id: str) -> dict:
+    """The ``PROTOTYPE#`` row ``document_id`` names in this project; 404 for anything else."""
+    if not projects_table:
+        raise ConfigurationError('Projects table not configured')
+    item = projects_table.get_item(
+        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{document_id}'}, ConsistentRead=True,
+    ).get('Item')
+    if not item:
+        raise NotFoundError('Prototype not found')
+    return item
+
+
+def signed_prototype_document(item: dict, project_id: str) -> dict:
+    """A prototype row as a route answers it: with the fresh signed URL the project read would mint."""
+    return _with_signed_prototype_url(dict(item), project_id)
+
+
 @tracer.capture_method
 def restore_document(project_id: str, document_id: str, version_id: str, body: dict, *,
                      actor: Mapping[str, str]) -> dict:
@@ -3144,13 +3173,8 @@ def restore_document(project_id: str, document_id: str, version_id: str, body: d
     document = _source_document_item(project_id, document_id)
     _refuse_decision_edit(document)
     if managed_document_type(document) == 'prototype':
-        pins_table = get_aggregates_table()
-        if not pins_table:
-            raise ConfigurationError('Aggregates table not configured')
-        store = PrototypeStore(table=projects_table, pins_table=pins_table, s3=get_s3_client(),
-                               bucket=os.environ.get('RAW_DATA_BUCKET', ''),
-                               api_base=os.environ.get(PIN_SUBMIT_API_BASE_ENV))
-        answer = restore_prototype_version(store, project_id, document, version_id, body, now=now_iso(), actor=actor)
+        answer = restore_prototype_version(prototype_store(), project_id, document, version_id, body, now=now_iso(),
+                                           actor=actor)
         # The SPA shows the answered row at once: it needs the fresh signed URL the project read would mint.
         return {**answer, 'document': _with_signed_prototype_url(dict(answer['document']), project_id)}
     return restore_document_version(projects_table, project_id, document, version_id, body,

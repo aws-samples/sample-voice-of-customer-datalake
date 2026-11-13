@@ -368,6 +368,13 @@ def test_project_route(path, expected):
         ('PUT', ('members', 's1'), 'manage'),
         ('DELETE', ('members', 's1'), 'view'),
         ('patch', ('anything',), 'edit'),
+        # A prototype draft's GET is for editors (docs/prototype-builder.md, part 2); the override is
+        # that one path shape: the pins' GET (checked in its own route) and a bare drafts GET stay view.
+        ('GET', ('prototypes', 'p1', 'drafts', 'job_1'), 'edit'),
+        ('POST', ('prototypes', 'p1', 'drafts'), 'edit'),
+        ('POST', ('prototypes', 'p1', 'drafts', 'job_1', 'apply'), 'edit'),
+        ('GET', ('prototypes', 'p1', 'pins'), 'view'),
+        ('GET', ('prototypes', 'p1', 'drafts'), 'view'),
     ],
 )
 def test_required_level(method, rest, level):

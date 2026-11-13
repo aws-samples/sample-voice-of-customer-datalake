@@ -122,7 +122,23 @@
       "visuals": "ビジュアルモックアップ ({{total, number}})",
       "visualsFailed": "{{total, number}} 件は処理に失敗しました — 再アップロードしてください",
       "visualsLimit": "1 回のビルドで最大 {{max, number}} 件のモックアップ",
-      "visualsNotReady": "{{total, number}} 件は処理中です"
+      "visualsNotReady": "{{total, number}} 件は処理中です",
+      "draft": {
+        "heading": "下書きの準備ができました：プレビューに適用済み、未保存",
+        "previewHeading": "下書きのプレビュー",
+        "previewLabel": "プレビュー",
+        "showDraft": "下書き",
+        "showCurrent": "現在",
+        "instructionLabel": "指示：",
+        "summaryLabel": "変更点",
+        "stale": "この下書きの作成後にプロトタイプが変更されました：最新バージョンでもう一度依頼してください",
+        "apply": "v{{n}} として適用",
+        "discard": "破棄",
+        "applyFailed": "下書きを適用できませんでした。もう一度お試しください。",
+        "discardFailed": "下書きを破棄できませんでした。もう一度お試しください。",
+        "noPreview": "この下書きのプレビューはここでは利用できません。",
+        "frameTitle": "{{title}}（下書き）"
+      }
     },
     "revision": {
       "feedback": "フィードバック: {{feedback}}",
@@ -227,7 +243,8 @@
       "generateProductReport": "製品レポート生成",
       "importPersona": "ペルソナインポート",
       "mergeDocuments": "ドキュメントマージ",
-      "research": "リサーチ"
+      "research": "リサーチ",
+      "draftPrototype": "プロトタイプの下書き"
     }
   },
   "notFound": {

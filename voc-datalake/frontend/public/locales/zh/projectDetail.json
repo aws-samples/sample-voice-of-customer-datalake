@@ -122,7 +122,23 @@
       "visuals": "视觉稿（{{total, number}}）",
       "visualsFailed": "{{total, number}} 份处理失败 — 请重新上传后使用",
       "visualsLimit": "每次构建最多 {{max, number}} 份视觉稿",
-      "visualsNotReady": "{{total, number}} 份仍在处理中"
+      "visualsNotReady": "{{total, number}} 份仍在处理中",
+      "draft": {
+        "heading": "草稿已就绪：已应用到预览，尚未保存",
+        "previewHeading": "草稿预览",
+        "previewLabel": "预览",
+        "showDraft": "草稿",
+        "showCurrent": "当前",
+        "instructionLabel": "指令：",
+        "summaryLabel": "更改内容",
+        "stale": "此草稿生成后原型已更改：请在最新版本上重新提出",
+        "apply": "应用为 v{{n}}",
+        "discard": "丢弃",
+        "applyFailed": "无法应用草稿，请重试。",
+        "discardFailed": "无法丢弃草稿，请重试。",
+        "noPreview": "此处无法查看此草稿的预览。",
+        "frameTitle": "{{title}}（草稿）"
+      }
     },
     "revision": {
       "feedback": "反馈：{{feedback}}",
@@ -227,7 +243,8 @@
       "generateProductReport": "产品报告生成",
       "importPersona": "用户角色导入",
       "mergeDocuments": "文档合并",
-      "research": "研究"
+      "research": "研究",
+      "draftPrototype": "原型草稿"
     }
   },
   "notFound": {

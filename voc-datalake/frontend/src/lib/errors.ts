@@ -49,3 +49,15 @@ export function serverReason(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null
   return error.message === new ApiError(error.status).message ? null : error.message
 }
+
+const TOO_MANY_REQUESTS = 429
+
+/**
+ * The server's reason for a refusal that trying again cannot fix (a 4xx with a reason: the version's
+ * HTML is gone, an early spec), or null when "try again" is the right answer: a 5xx, no answer at all,
+ * a refusal without a reason, and a 429 (a throttle passes; its reason is no instruction).
+ */
+export function refusalReason(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status < 400 || error.status >= 500 || error.status === TOO_MANY_REQUESTS) return null
+  return serverReason(error)
+}

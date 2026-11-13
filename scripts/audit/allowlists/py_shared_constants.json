@@ -21,8 +21,8 @@
       "reason": "a memory extraction cursor (voc-memory) and a ballot session row (voc-aggregates): different tables, same word"
     },
     {
-      "key": "PROMPT_VERSION|REVISE_PROMPT_VERSION|SERVER_VERSION::*",
-      "reason": "the feature-request enrichment prompt's version, the Revise from comments prompt's version and the MCP server's advertised version; each bumps on its own, all 1.0.0 by coincidence"
+      "key": "DRAFT_PROMPT_VERSION|PROMPT_VERSION|REVISE_PROMPT_VERSION|SERVER_VERSION::*",
+      "reason": "the prototype draft prompt's version, the feature-request enrichment prompt's version, the Revise from comments prompt's version and the MCP server's advertised version; each bumps on its own, all 1.0.0 by coincidence"
     },
     {
       "key": "DATA_SOURCE_KEY|FEATURE_REQUESTS_SOURCE::*",

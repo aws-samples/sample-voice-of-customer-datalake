@@ -129,7 +129,23 @@
       "visuals": "Maquettes visuelles ({{total, number}})",
       "visualsFailed": "{{total, number}} en échec — importez-les à nouveau pour les utiliser",
       "visualsLimit": "Au maximum {{max, number}} maquettes par génération",
-      "visualsNotReady": "{{total, number}} en cours de traitement"
+      "visualsNotReady": "{{total, number}} en cours de traitement",
+      "draft": {
+        "heading": "Brouillon prêt : appliqué à un aperçu, non enregistré",
+        "previewHeading": "Aperçu du brouillon",
+        "previewLabel": "Aperçu",
+        "showDraft": "Brouillon",
+        "showCurrent": "Actuel",
+        "instructionLabel": "Consigne :",
+        "summaryLabel": "Ce qui a changé",
+        "stale": "Le prototype a changé depuis ce brouillon : redemandez-le sur la version la plus récente",
+        "apply": "Appliquer comme v{{n}}",
+        "discard": "Abandonner",
+        "applyFailed": "Le brouillon n’a pas pu être appliqué. Réessayez.",
+        "discardFailed": "Le brouillon n’a pas pu être abandonné. Réessayez.",
+        "noPreview": "L’aperçu de ce brouillon n’est pas disponible ici.",
+        "frameTitle": "{{title}} (brouillon)"
+      }
     },
     "revision": {
       "feedback": "Retour : {{feedback}}",
@@ -238,7 +254,8 @@
       "generateProductReport": "Génération du rapport produit",
       "importPersona": "Import de persona",
       "mergeDocuments": "Fusion de documents",
-      "research": "Recherche"
+      "research": "Recherche",
+      "draftPrototype": "Brouillon de prototype"
     },
     "completedCount_many": "{{count, number}} terminées",
     "moreFailedCount_many": "{{count, number}} autres en échec"

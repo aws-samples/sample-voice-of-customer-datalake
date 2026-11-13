@@ -42,20 +42,29 @@ export function seriesKeyOf(document: ProjectDocument): string {
 }
 
 /**
+ * The numbered versions of `document`'s series among `documents` (its type and series key), newest first.
+ * `document` itself counts even before the list has it (a version just written and selected).
+ */
+export function numberedSeries(document: ProjectDocument, documents: readonly ProjectDocument[]): ProjectDocument[] {
+  const key = seriesKeyOf(document)
+  const listed = documents.some((d) => d.document_id === document.document_id)
+  return [...documents, ...(listed ? [] : [document])]
+    .filter((d) => d.document_type === document.document_type && seriesKeyOf(d) === key && d.version !== undefined)
+    .sort((a, b) => (b.version ?? 0) - (a.version ?? 0))
+}
+
+/**
  * What a prototype's Back to vN restores (docs/prototype-builder.md, part 2): on the newest version of its
  * series, the version before it (`back`); on an older version, that version itself (`restore`). Null with
  * one version, for a row that does not know its version number, and when the target has no HTML to restore.
  * A version's HTML is in S3 (`content` empty) or inline in `content`; an early JSON screen spec has none,
- * and the server refuses it by the same rule (`_version_html` in shared/prototype_versions.py).
+ * and the server refuses it by the same rule (`version_html` in shared/prototype_versions.py).
  */
 export function backTarget(
   document: ProjectDocument, documents: readonly ProjectDocument[],
 ): { readonly target: ProjectDocument; readonly kind: 'back' | 'restore' } | null {
   if (document.version === undefined) return null
-  const key = seriesKeyOf(document)
-  const series = documents
-    .filter((d) => d.document_type === document.document_type && seriesKeyOf(d) === key && d.version !== undefined)
-    .sort((a, b) => (b.version ?? 0) - (a.version ?? 0))
+  const series = numberedSeries(document, documents)
   const head = series[0]
   if (head === undefined) return null
   const isHead = head.document_id === document.document_id

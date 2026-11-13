@@ -271,8 +271,9 @@ prototype in the panel's context (a chip, "Editing: Checkout prototype (v3)").
    draft twice (a double click, a retry) gives the same version, not two. If the series has moved past the draft's
    base in the meantime, Apply answers 409 and the editor asks again on the newest version. A draft can be applied
    for 7 days after it is ready (its job's lifetime); after that it is gone and the editor asks again.
-   **Discard** deletes the draft's job (the existing `DELETE /projects/{id}/jobs/{job_id}`), so the draft is gone at
-   once, over every surface.
+   **Discard** deletes the draft's job (`DELETE /projects/{id}/prototypes/{document_id}/drafts/{draft_id}`, which
+   deletes only a draft job of that series; the page uses the existing `DELETE /projects/{id}/jobs/{job_id}`, which
+   deletes the same row), so the draft is gone at once, over every surface.
    The version header gets **Back to v3**, one click, which writes v5 from v3's HTML (a restore is a new version,
    as for prose documents); nothing is deleted.
 
@@ -284,10 +285,12 @@ prototype; the assistant offers them no edit (the server refuses one with 403 re
 
 - **A draft** is a finished draft job plus one S3 object in the raw-data bucket (`RAW_DATA_BUCKET`, where live
   prototypes are), inside the project's own prototype prefix: the candidate HTML at
-  `prototypes/{project_id}/drafts/{job_id}.html` (planned key), write-once, with no pin-submit metadata. Its detail
-  (the model's summary and, for a feedback draft, the per-pin notes, each capped) is an attribute of the job row
-  that no job route returns, as the job's config is not (`_project_job_row` in `lambda/api/projects_handler.py`);
-  only the draft GET reads it. The draft id is the job id. A draft's base is always a saved version, never another draft. The
+  `prototypes/{project_id}/drafts/{job_id}.html` (`prototype_draft_s3_key` in `lambda/shared/prototypes.py`, built
+  in 6.12.00), write-once, with no pin-submit metadata. Its detail is the job row's `draft` attribute (`{summary,
+  base_document_id, base_version, instruction, llm_metadata}`; the summary is the model's `<change_summary>` block
+  as plain text, tags and angle brackets dropped, at most 12 lines of 240 characters and 2,000 in all; for a
+  feedback draft, part 3, the per-pin notes too), which no job route returns, as the job's config is not
+  (`_project_job_row` in `lambda/api/projects_handler.py`); only the draft GET reads it. The draft id is the job id. A draft's base is always a saved version, never another draft. The
   draft's pin widget is inert: no pin form exists for it until Apply, and the object names none. No row exists
   until Apply, so a draft is in no list, no project read and no Prioritization row.
 - **Why under `prototypes/`.** Every rule that guards prototype objects today already covers that key, with no new
@@ -299,32 +302,45 @@ prototype; the assistant offers them no edit (the server refuses one with 403 re
   acknowledgements of `prototypes/*` (`lib/utils/nag-stack-acknowledgements.ts`), and the project delete, which
   removes everything under `prototype_project_prefix` (`prototypes/{project_id}/`, `lambda/api/projects.py`). The
   agent nodes and the persona panel can read `prototypes/*` (`lib/stacks/agent-runtime.ts`), so they could read a
-  draft: accepted, as it is a read of the same project's data, with no write. Two things do change (planned): the
+  draft: accepted, as it is a read of the same project's data, with no write. Two things changed (6.12.00): the
   project export (`scripts/project_bundle/exporter.py`, which copies every object under `prototypes/{project_id}/`)
-  skips `drafts/`, so a draft is in no bundle; and drafts get their own CloudFront behaviour (below).
-- **Served by its own behaviour.** A planned behaviour `/prototypes/*/drafts/*` on the same distribution
-  (`lib/stacks/core-cdn.ts`), at a higher precedence than `/prototypes/*` so a draft never gets the live policy,
-  with the same trusted key group and the draft policy ([Security boundary](#security-boundary): no `allow-popups`,
-  no `connect-src`, no pin-CSP function). CDK test (planned, beside the prototype checks in
-  `lib/stacks/core-stack.test.ts`): the behaviour's path pattern and its place before `/prototypes/*`, its trusted
-  key group, and its response-headers policy.
+  skips `drafts/`, so a draft is in no bundle; and drafts have their own CloudFront behaviour (below).
+- **Served by its own behaviour.** `/prototypes/*/drafts/*` on the same distribution (`lib/stacks/core-cdn.ts`,
+  6.12.00), added before `/prototypes/*` so a draft never gets the live policy, with the same origin, trusted key
+  group and cache policy, and the draft policy `PROTOTYPE_DRAFT_CSP` (`lib/utils/prototype-csp.ts`; [Security
+  boundary](#security-boundary): no `allow-popups`, no `connect-src`, no pin-CSP function). CDK tests in
+  `lib/stacks/core-cdn-drafts.test.ts`: the path pattern and its place before `/prototypes/*`, its origin, key
+  group and cache, its policy, and no function; `lib/stacks/core-stack.test.ts` holds it to a signature with every
+  other private path.
 - **The job result holds only `draft_id`.** The job status route is a GET at VIEW, so the summary and outcomes are
   never in the job's result; they are read through the draft GET, at EDIT. A viewer polling the job of a draft
   sees its status and `draft_id`, nothing else. The job row also keeps what the draft was made from (the base
   version, the instruction, or the `pin_ids` the server accepted and the ones it withheld), which Apply trusts
   instead of the request.
 - **A draft lives as long as its job row.** A finished job expires 7 days after it ends (the job's TTL,
-  `lambda/shared/jobs.py`), and an editor may delete it sooner (`DELETE /projects/{id}/jobs/{job_id}`). Once the row
+  `lambda/shared/jobs.py`), and an editor may delete it sooner (Discard: the draft DELETE below, or
+  `DELETE /projects/{id}/jobs/{job_id}`). Once the row
   is gone, the draft GET and Apply answer 404; they never fall back to a key built from the request. DynamoDB
   removes an expired row late (TTL deletion is best effort), so both also treat a row whose `ttl` is past as gone.
   The draft's object is removed with the project (the project delete above); until then no app route reaches it.
 - **Bound to its job.** `GET …/drafts/{draft_id}` and Apply accept a draft only when the job row is a finished
   draft job of this project whose base is a version of this series; GET signs only that job's draft key.
+- **The drafting job** (6.12.00, `_draft_prototype` in `lambda/jobs/document_generator/handler.py`): the base
+  is the head of the series when the drafts POST arrives, re-read by id; one call on the `prototype` surface with the
+  build's system prompt and grounding (its output rule replaced: the `<change_summary>` block first, then the whole
+  HTML) and the base's HTML (pin widget stripped, capped as a revision's is); the detail is written to the job row
+  first, then the object (widget stripped again), so a retried job that finds both completes without a second
+  model call. `llm_metadata` is `pass_llm_metadata` (`lambda/shared/document_revision.py`) of the model that
+  answered (`answering_model`) and `DRAFT_PROMPT_VERSION` (`lambda/shared/prototype_drafts.py`). No HTML in the
+  answer fails the job; a job deleted (discarded) while it runs ends without an object.
 - **Apply is idempotent.** Apply persists the version through `persist_versioned_document`
-  (`lambda/shared/document_versions.py`) with an allocation id derived from the draft. That function already returns
+  (`lambda/shared/document_versions.py`) with an allocation id derived from the draft (`apply:{draft_id}`). That function already returns
   the version that landed when the same allocation is replayed, before any new write, and also when a concurrent
-  write of the same allocation wins the race. So a second or concurrent Apply of one draft gets the same version
-  back, with 200 (201 only for the call that created it), never a second version. The object write is idempotent
+  write of the same allocation wins the race; and an Apply refused as stale because the draft's own version
+  landed meanwhile answers that version (`apply_draft` in `lambda/shared/prototype_drafts.py` re-reads the
+  allocation before it says 409). So a replayed Apply (the version already there when it arrives) answers 200 with
+  the same version, and two Applies at the same moment give one version, both possibly answering 201 (each looked
+  before the other landed); never a second version. The object write is idempotent
   too: version from HTML treats S3's `PreconditionFailed` (or `ConditionalRequestConflict`) on the new version's
   key as an earlier attempt's write, as the generator's `_put_prototype_html` does today
   (`lambda/jobs/document_generator/handler.py`), so an Apply whose first attempt wrote the object but not the row
@@ -370,14 +386,17 @@ prototype; the assistant offers them no edit (the server refuses one with 403 re
   check, and restoring a version whose HTML matches the newest writes one redundant version (D1 keeps it; nothing
   is lost).
 
-### API (planned)
+### API
 
-| Route (planned) | Who | What |
+The first four are built (6.12.00, `{instruction}` only); the rest is planned.
+
+| Route | Who | What |
 |---|---|---|
-| `POST /projects/{id}/prototypes/{document_id}/drafts` | edit | `{instruction}` (kind `chat`) or `{pin_ids: [≤ 50]}` (kind `feedback`, part 3: at most 50 pins) → 202 job; the result is `{draft_id}` |
-| `GET /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit (listed in `_ROUTE_OVERRIDES`) | `preview_url`, the draft's signed URL (its own key only), the model's summary and, for a feedback draft, the per-pin outcomes |
-| `POST /projects/{id}/prototypes/{document_id}/drafts/{draft_id}/apply` | edit | No body: the base and its version come from the job row → 201 and the new version; 200 and the same version on a replayed or concurrent Apply; 409 when the series moved past the base; 404 when the job row is gone |
-| `GET /projects/{id}/prototypes/{document_id}/outline` | view | The version's outline: screens (routes), headings and visible text, extracted from its HTML on the server, capped, with the pin widget and the walkthrough stripped |
+| `POST /projects/{id}/prototypes/{document_id}/drafts` | edit | `{instruction}` (kind `chat`: stripped, 1 to 2,000 characters; optional `response_language`) → `{success, job_id, status: pending, message}`, the job's result `{draft_id}`. Planned (part 3): `{pin_ids: [≤ 50]}` (kind `feedback`); until then a body with `pin_ids` is a 400 "Incorporating feedback into a draft is not available yet". 404 unless `document_id` is a prototype of the project; its series' head is the base, and a head whose HTML cannot be read is refused before any job (400 for an early JSON spec, 404 for a lost object) |
+| `GET /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit (listed in `_ROUTE_OVERRIDES`) | `{draft_id, base_document_id, base_version, instruction, summary, preview_url, completed_at}`: `preview_url` the draft's signed URL (its own key only; null when signing is unavailable). Planned (part 3): the per-pin outcomes of a feedback draft |
+| `POST /projects/{id}/prototypes/{document_id}/drafts/{draft_id}/apply` | edit | No body: the base and its version come from the job row → 201 `{success, document}` (the new version, signed as the project read signs it); 200 and the same version on a replayed Apply; 409 when the series moved past the base; 404 when the job row is gone |
+| `DELETE /projects/{id}/prototypes/{document_id}/drafts/{draft_id}` | edit | Discard → `{success: true}`: the draft's job row deleted, as `DELETE /projects/{id}/jobs/{job_id}` deletes it. 404 unless the row is a `draft_prototype` job of this project whose base (from its config) is a version of `document_id`'s series, in any state (a draft still being made can be discarded); so it deletes nothing but drafts. The MCP tool calls it; the page uses the job DELETE |
+| `GET /projects/{id}/prototypes/{document_id}/outline` | view | Planned. The version's outline: screens (routes), headings and visible text, extracted from its HTML on the server, capped, with the pin widget and the walkthrough stripped |
 
 The drafts body is validated: exactly one of `instruction` and `pin_ids`; with `pin_ids` there is no free text
 for the pins: the server writes the instruction and builds the pins DATA block from the ids (part 3). Back to vN
@@ -403,12 +422,13 @@ moves"). "Draft ready" reaches the browser as the person's AppSync Events notice
   name the version on screen. It is a hint only: every route a tool calls with it checks access itself.
   Test (planned): the schema accepts a `documentId` within `MAX_ID_LENGTH` and refuses a longer one, and the SPA
   sets it on a prototype's page and leaves it out elsewhere.
-- MCP (planned): `documents_get_prototype_outline` (read, project: the outline GET),
+- MCP (built in 6.12.00, `lambda/shared/mcp_global_tools_steps.py`, [mcp.md](mcp.md)):
   `documents_draft_prototype_revision`, `documents_apply_prototype_draft`, `documents_discard_prototype_draft`
-  (write, project; the last is the job DELETE), with the job polled through `projects_get_job` (status and
-  `draft_id`) and the draft read through a planned `documents_get_prototype_draft` (the EDIT draft GET): its
-  summary and per-pin outcomes only, the `preview_url` projected out as every signed URL is for a token holder
-  (`public()` in `lambda/shared/mcp_global_kit.py` drops keys holding `url`).
+  (write, project; the last is the draft DELETE, never the bare job DELETE), with the job polled through `projects_get_job` (status and
+  `draft_id`) and the draft read through `documents_get_prototype_draft` (the EDIT draft GET): its summary (and,
+  planned, per-pin outcomes) only, the `preview_url` projected out as every signed URL is for a token holder
+  (`public()` in `lambda/shared/mcp_global_kit.py` drops keys holding `url`); Apply's answer drops the version's
+  signed `prototype_url` the same way. Planned: `documents_get_prototype_outline` (read, project: the outline GET).
 - Back to vN has no tool of its own here: the existing restore route has no MCP or assistant tool for any document
   type today, and a restore tool for every versioned type is a follow-up.
 - The existing `build_prototype` tool and `build-prototype` route keep revising straight to a new version, as
@@ -584,7 +604,7 @@ and assistant listings, so every client and the bundle agree:
   address, carrying data in the URL. That is the exit today for every prototype, and it stays for applied versions
   (prototypes link out by design). The data such a script can see is the prototype itself and what the viewer types
   into it, never the app's (opaque origin, no `allow-same-origin`, no top navigation).
-- **Drafts are narrower.** A draft is served from its own planned `/prototypes/*/drafts/*` behaviour, ahead of
+- **Drafts are narrower.** A draft is served from its own `/prototypes/*/drafts/*` behaviour (6.12.00), ahead of
   `/prototypes/*`, signed with the same trusted key group, with a draft variant of the policy: the same CSP without `allow-popups` and with no `connect-src` at
   all. It runs only in the editor's own in-app frame, whose `sandbox` attribute also leaves out `allow-popups`. The
   viewer never renders model HTML any other way (no `srcdoc` of a draft, no `blob:` URL). A draft can still
@@ -592,7 +612,8 @@ and assistant listings, so every client and the bundle agree:
 - **A second writer of the pin-submit metadata.** The CloudFront function trusts an object's `pin-submit-url`
   metadata to widen `connect-src` to one submit URL. The document generator writes it, and since 6.11.00 the
   projects Lambda too (version from HTML), always through `prototype_object_metadata` for the new version's own
-  form and `PIN_SUBMIT_API_BASE`, never from a value in the request. Draft objects (planned) carry none.
+  form and `PIN_SUBMIT_API_BASE`, never from a value in the request. Draft objects carry none (`put_draft_html`
+  in `lambda/shared/prototype_drafts.py` writes no metadata).
 - **The draft summary and per-item notes are model text**: rendered as plain text, capped, never as Markdown links
   or HTML, and read only at EDIT (the draft GET).
 - **Model-written walkthrough blocks.** A model could write walkthrough markers in its HTML to fake steps. Every
@@ -641,7 +662,8 @@ Part 4 adds no call at all.
   removes the draft objects (they are under `prototype_project_prefix`); GET and Apply refuse a job of another
   project or series, an unfinished job and a non-draft job, and answer 404 once the job row is gone (expired or
   deleted, and for a row still present whose `ttl` is past) without reading any key from the request; Discard
-  (the job DELETE) makes the draft GET and Apply 404; no job route returns the draft's detail; a second Apply of
+  (the draft DELETE or the job DELETE) makes the draft GET and Apply 404, and the draft DELETE refuses a job that
+  is not a draft and a draft of another series (404, nothing deleted); no job route returns the draft's detail; a second Apply of
   the same draft answers 200 with the same version as the first (201), and two concurrent Applies give one
   version, with one set of marks and replies; an Apply whose first attempt wrote the object but not the row
   succeeds on retry; an Apply that failed after the version landed, retried, writes the marks and replies exactly
@@ -765,8 +787,12 @@ The order 4 → 1 → 2 → 3 would ship the demo sooner but write the version-f
 
 **Built so far.** 6.11.00: part 2's first slice, version from HTML and Back to vN (the button on the
 prototype's pane: "Back to v3" on the newest version, "Restore v2" on an older one, editors only), with
-`PIN_SUBMIT_API_BASE` on the projects Lambda. Next in part 2: the drafts job, the draft GET, Apply and Discard, the
-draft CloudFront behaviour and the export's skip of `drafts/`; then the outline, the tools and the chat bubble.
+`PIN_SUBMIT_API_BASE` on the projects Lambda. 6.12.00: part 2's drafts from an instruction: the drafts route and
+job (`doc_type: draft_prototype` in the document generator), the draft GET, Apply and Discard
+(`lambda/shared/prototype_drafts.py`, the routes in `lambda/api/projects_handler.py`), the
+`/prototypes/*/drafts/*` behaviour with `PROTOTYPE_DRAFT_CSP`, the export's skip of `drafts/`, the four MCP draft
+tools, and the draft banner on the prototype pane. Not yet: `pin_ids` drafts (part 3), the outline, the
+assistant's tools and **Edit with the assistant**.
 
 ## Decisions (2026-11-13)
 

@@ -123,6 +123,99 @@ class TestBothReviewTools:
         assert (tool.write, tool.admin_only, tool.project_scoped, tool.workspace_wide) == (True, False, True, False)
 
 
+DRAFT = 'documents_draft_prototype_revision'
+GET_DRAFT = 'documents_get_prototype_draft'
+APPLY_DRAFT = 'documents_apply_prototype_draft'
+DISCARD_DRAFT = 'documents_discard_prototype_draft'
+DRAFT_ID = 'job_0123456789abcdef'
+SIGNED = 'https://cdn.example/prototypes/proj_1/drafts/job_0123456789abcdef.html?Signature=s'
+
+
+class TestPrototypeDrafts:
+    """The four draft tools (docs/prototype-builder.md, part 2): each is ONE route, and no signed URL leaves."""
+
+    @pytest.mark.parametrize(('name', 'args', 'method', 'path', 'body'), [
+        (DRAFT, {'document_id': 'd1', 'instruction': '  Make the summary a sticky footer  '}, 'POST',
+         '/projects/proj_1/prototypes/d1/drafts', {'instruction': 'Make the summary a sticky footer'}),
+        (GET_DRAFT, {'document_id': 'd1', 'draft_id': DRAFT_ID}, 'GET',
+         f'/projects/proj_1/prototypes/d1/drafts/{DRAFT_ID}', None),
+        (APPLY_DRAFT, {'document_id': 'd1', 'draft_id': DRAFT_ID}, 'POST',
+         f'/projects/proj_1/prototypes/d1/drafts/{DRAFT_ID}/apply', {}),
+        # Discard is the draft route's DELETE, never the bare job DELETE (which takes any job).
+        (DISCARD_DRAFT, {'document_id': 'd1', 'draft_id': DRAFT_ID}, 'DELETE',
+         f'/projects/proj_1/prototypes/d1/drafts/{DRAFT_ID}', None),
+    ])
+    def test_each_tool_is_its_route(self, name, args, method, path, body):
+        request = _build(name, args)
+        assert (request.domain, request.method, request.path, request.body, request.query) == (
+            'projects', method, path, body, {})
+
+    @pytest.mark.parametrize(('args', 'message'), [
+        ({'document_id': 'd1'}, 'instruction is required'),
+        ({'document_id': 'd1', 'instruction': '   '}, 'instruction is required'),
+        ({'document_id': 'd1', 'instruction': 7}, 'instruction must be a string'),
+        ({'document_id': 'd1', 'instruction': 'x' * 2001}, 'instruction must be at most 2000 characters'),
+        ({'instruction': 'Blue'}, 'document_id is required'),
+    ])
+    def test_a_draft_needs_a_document_and_an_instruction_of_at_most_2000_characters(self, args, message):
+        with pytest.raises(InvalidToolArgument, match=message):
+            _build(DRAFT, args)
+
+    def test_an_instruction_of_2000_characters_is_sent(self):
+        assert _build(DRAFT, {'document_id': 'd1', 'instruction': 'x' * 2000}).body == {'instruction': 'x' * 2000}
+
+    @pytest.mark.parametrize('name', [GET_DRAFT, APPLY_DRAFT, DISCARD_DRAFT])
+    @pytest.mark.parametrize('draft_id', [None, '', 'job/1', '../x'])
+    def test_a_draft_id_must_be_an_id(self, name, draft_id):
+        with pytest.raises(InvalidToolArgument, match='draft_id is required'):
+            _build(name, {'document_id': 'd1', 'draft_id': draft_id})
+
+    @pytest.mark.parametrize('name', [DRAFT, GET_DRAFT, APPLY_DRAFT, DISCARD_DRAFT])
+    def test_a_project_is_required(self, name):
+        with pytest.raises(InvalidToolArgument, match='project_id is required'):
+            _build(name, {'document_id': 'd1', 'draft_id': DRAFT_ID, 'instruction': 'Blue'}, project=None)
+
+    @pytest.mark.parametrize(('name', 'write'), [(DRAFT, True), (GET_DRAFT, False), (APPLY_DRAFT, True),
+                                                 (DISCARD_DRAFT, True)])
+    def test_the_get_is_a_read_and_the_rest_are_writes_all_project_scoped(self, name, write):
+        tool = TOOLS_BY_NAME[name]
+        assert (tool.write, tool.admin_only, tool.project_scoped, tool.workspace_wide) == (write, False, True, False)
+
+    def test_the_start_answers_the_job(self):
+        payload = {'success': True, 'job_id': DRAFT_ID, 'status': 'pending', 'message': 'Prototype draft started.',
+                   'pk': 'x'}
+        assert TOOLS_BY_NAME[DRAFT].shape(payload, {}) == {
+            'job_id': DRAFT_ID, 'status': 'pending', 'message': 'Prototype draft started.'}
+
+    def test_the_draft_is_read_without_its_signed_preview_url(self):
+        payload = {'draft_id': DRAFT_ID, 'base_document_id': 'd1', 'base_version': 3, 'instruction': 'Blue',
+                   'summary': 'Home: the button is blue', 'preview_url': SIGNED, 'completed_at': 't'}
+        assert TOOLS_BY_NAME[GET_DRAFT].shape(payload, {}) == {
+            'draft_id': DRAFT_ID, 'base_document_id': 'd1', 'base_version': 3, 'instruction': 'Blue',
+            'summary': 'Home: the button is blue', 'completed_at': 't'}
+
+    def test_the_applied_version_is_answered_without_its_signed_url_or_storage_keys(self):
+        payload = {'success': True, 'document': {
+            'document_id': 'd4', 'version': 4, 'title': 'Checkout (v4)', 'prototype_url': SIGNED,
+            'pk': 'PROJECT#proj_1', 'sk': 'PROTOTYPE#d4', 'edit_kind': 'revise'}}
+        assert TOOLS_BY_NAME[APPLY_DRAFT].shape(payload, {}) == {'success': True, 'document': {
+            'document_id': 'd4', 'version': 4, 'title': 'Checkout (v4)', 'edit_kind': 'revise'}}
+        assert SIGNED not in str(TOOLS_BY_NAME[APPLY_DRAFT].shape(payload, {}))
+
+    @pytest.mark.parametrize('payload', [None, [], 'x', {'success': True}])
+    def test_an_unreadable_apply_answer_is_empty(self, payload):
+        shaped = TOOLS_BY_NAME[APPLY_DRAFT].shape(payload, {})
+        assert shaped['document'] == {}
+
+    @pytest.mark.parametrize('document_id', [None, '', 'd/1'])
+    def test_a_discard_needs_the_prototype_it_belongs_to(self, document_id):
+        with pytest.raises(InvalidToolArgument, match='document_id is required'):
+            _build(DISCARD_DRAFT, {'document_id': document_id, 'draft_id': DRAFT_ID})
+
+    def test_the_discard_answer_is_the_route_body(self):
+        assert TOOLS_BY_NAME[DISCARD_DRAFT].shape({'success': True}, {}) == {'success': True}
+
+
 class TestTheOldGenerateRevise:
     """Before 6.10.00 "Revise from comments" was ``generate`` with ``step: revise``: still accepted this release."""
 

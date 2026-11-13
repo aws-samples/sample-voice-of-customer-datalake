@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.12.00] - 2026-11-13
+
+A prototype can be changed by asking in words: the change comes back as a draft to preview, then is applied as a new version or discarded (the Prototype builder, part 2's second slice).
+
+### Added
+
+- **Prototype drafts.** `POST /projects/{id}/prototypes/{document_id}/drafts` with `{instruction}` (up to 2,000 characters) starts a job that drafts the change on the newest version of the series. Nothing is saved, and the job's result names only the `draft_id`. `GET …/drafts/{draft_id}` (editors) answers the instruction, the AI's summary of what changed and a signed preview link. `POST …/drafts/{draft_id}/apply` saves the draft as the next version: 201 the first time, 200 with the same version on a retry, 409 when a version was saved since the draft. The version records the instruction, who applied it (`edited_by`) and the model (`llm_metadata`), and gets its own pin form. `DELETE …/drafts/{draft_id}` discards a draft (only a draft job of that series; the banner uses the job's existing delete). A draft can be opened and applied for 7 days.
+- **The draft banner** on a prototype's pane, for editors: "Draft ready: applied to a preview, not saved", the instruction, the summary, a Draft / Current toggle, **Apply as vN** and **Discard**. A draft whose series moved on offers only Discard.
+- **MCP:** `documents_draft_prototype_revision`, `documents_get_prototype_draft` (no preview link), `documents_apply_prototype_draft` and `documents_discard_prototype_draft`.
+
+### Changed
+
+- A restore or apply that is refused with a reason (a version whose HTML is gone, an early screen spec) shows the server's reason; a draft whose prototype moved on says "The prototype changed since this draft: ask again on the newest version"; "Try again" stays for errors a retry can fix, a 429 included.
+
+### Security
+
+- Drafts are served from their own CloudFront behaviour, `/prototypes/*/drafts/*`, ahead of `/prototypes/*`, with a stricter policy: the sandbox without `allow-popups`, no `connect-src` and no pin-form exception. The app's draft frame drops the popups permission too, and pin messages from a draft are ignored. A draft is in no project read and no project export.
+
+### Upgrade notes
+
+- Deploy the Core stack (the new CloudFront behaviour) before or with the Api stack and the frontend.
+
 ## [6.11.00] - 2026-11-13
 
 A prototype can go back to an earlier version in one click (the Prototype builder, part 2's first slice).

@@ -10,11 +10,12 @@ What a project owns on main (enumerated from `api/projects.py` `delete_project`,
   row, which points at a review link;
 * aggregates table: each prototype's pin form (`FEEDBACK_FORM` / `FORM#pf_…`, carrying the
   project id) and its pins (`PINS#{form_id}` / `PIN#…`);
-* raw bucket: `prototypes/{id}/`, `projects/{id}/product_docs/`, and every `avatars/…` object
-  a row names by `s3://<bucket>/…` URI.
+* raw bucket: `prototypes/{id}/` (without its prototype drafts, `drafts/`),
+  `projects/{id}/product_docs/`, and every `avatars/…` object a row names by `s3://<bucket>/…` URI.
 
 NOT carried: review links (`DOCSHARE#…`, `DCRATE#…`) and MCP tokens (credentials), jobs
-(the jobs table: transient progress rows with a TTL), feedback, participant links and
+(the jobs table: transient progress rows with a TTL) and the prototype drafts that live as long
+as their job, feedback, participant links and
 Prioritization rows (they reference the deployment's own people and data).
 """
 from __future__ import annotations
@@ -113,12 +114,18 @@ def _uris(value: Any, prefix: str) -> Iterator[str]:
 
 
 def object_keys(s3: Any, bucket: str, project_id: str, rows: list[dict[str, Any]]) -> list[str]:
-    """The project's prototype and product-doc objects, plus every avatar its rows name."""
+    """The project's prototype and product-doc objects, plus every avatar its rows name.
+
+    Prototype drafts (`prototypes/{id}/drafts/`, docs/prototype-builder.md part 2) are left out:
+    a draft lives as long as its job row, and jobs are not carried, so on the target nothing
+    could ever open or apply one.
+    """
     keys: list[str] = []
+    drafts = f'prototypes/{project_id}/drafts/'
     paginator = s3.get_paginator('list_objects_v2')
     for prefix in (f'prototypes/{project_id}/', f'projects/{project_id}/product_docs/'):
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            keys.extend(entry['Key'] for entry in page.get('Contents', []))
+            keys.extend(entry['Key'] for entry in page.get('Contents', []) if not entry['Key'].startswith(drafts))
     named = {key for row in rows for key in _uris(row, f's3://{bucket}/') if key.startswith('avatars/')}
     return keys + sorted(named - set(keys))
 

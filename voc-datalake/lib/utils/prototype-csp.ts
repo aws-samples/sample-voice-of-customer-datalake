@@ -42,11 +42,22 @@
 /** The sandbox flags every prototype document gets: scripts and popups, nothing else. */
 const PROTOTYPE_SANDBOX = 'sandbox allow-scripts allow-popups';
 
-/** Every prototype's policy without the pin exception. */
-export const PROTOTYPE_BASE_CSP =
+/** Everything but the sandbox: what a saved prototype and a draft share. */
+const PROTOTYPE_DIRECTIVES =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; " +
-  "frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; " +
-  `${PROTOTYPE_SANDBOX};`;
+  "frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; ";
+
+/** Every prototype's policy without the pin exception. */
+export const PROTOTYPE_BASE_CSP = `${PROTOTYPE_DIRECTIVES}${PROTOTYPE_SANDBOX};`;
+
+/**
+ * A prototype DRAFT's policy (`/prototypes/<project>/drafts/<draft>.html`, served by its own
+ * behaviour; docs/prototype-builder.md part 2): model HTML no editor has applied yet, so
+ * narrower than BASE. The sandbox drops `allow-popups` (a draft opens no window), and there
+ * is never a `connect-src`: the draft behaviour runs no CSP function, and a draft object
+ * carries no pin-submit metadata.
+ */
+export const PROTOTYPE_DRAFT_CSP = `${PROTOTYPE_DIRECTIVES}sandbox allow-scripts;`;
 
 /** S3 user-metadata key (sent by S3 as `x-amz-meta-<key>`), written by the document generator and the projects API. */
 export const PIN_SUBMIT_URL_METADATA_KEY = 'pin-submit-url';

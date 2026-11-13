@@ -22,6 +22,7 @@ later — goes through ``version_from_html`` here, so each new version gets:
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -35,11 +36,13 @@ from shared.document_history import (
     validated_edit_id,
 )
 from shared.document_versions import (
+    STALE_SERIES_MESSAGE,
     get_versioned_document_by_allocation,
     persist_versioned_document,
+    series_head_version,
     versioned_document_id,
 )
-from shared.exceptions import ConfigurationError, NotFoundError, ValidationError
+from shared.exceptions import ConfigurationError, ConflictError, NotFoundError, ValidationError
 from shared.prototype_pins import (
     ensure_pin_form,
     inject_pin_widget,
@@ -112,17 +115,24 @@ class PrototypeStore:
 
 
 def version_from_html(store: PrototypeStore, project_id: str, source: Mapping[str, Any], html: str, *,
-                      allocation_id: str, now: str, provenance: Mapping[str, Any]) -> dict:
+                      allocation_id: str, now: str, provenance: Mapping[str, Any],
+                      expected_last_version: int | None = None) -> dict:
     """``html`` as the next version of ``source``'s series; its row.
 
     A replay of an allocation that already landed returns that version and writes
     nothing. ``provenance`` (``edit_kind`` and its fields) is the caller's; the row
-    keeps ``source``'s sources and lineage.
+    keeps ``source``'s sources and lineage. ``expected_last_version`` (an applied
+    draft: the version it was drafted on) makes a series that moved past it the
+    stale-series ConflictError, checked before the form and the object are written
+    and again, atomically, by ``persist_versioned_document``.
     """
     existing = get_versioned_document_by_allocation(store.table, project_id, PROTOTYPE_TYPE, allocation_id)
     if existing is not None:
         return existing
     base = series_base(dict(source))
+    if expected_last_version is not None and \
+            series_head_version(store.table, project_id, PROTOTYPE_TYPE, base) != expected_last_version:
+        raise ConflictError(STALE_SERIES_MESSAGE)
     doc_id = versioned_document_id(project_id, PROTOTYPE_TYPE, allocation_id)
     form_id = ensure_pin_form(store.pins_table, project_id, doc_id, base)
     page = inject_pin_widget(strip_pin_widget(html), form_id, pin_submit_url(form_id, store.api_base))
@@ -133,34 +143,45 @@ def version_from_html(store: PrototypeStore, project_id: str, source: Mapping[st
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS', 'gsi1sk': now,
         'created_at': now, 'updated_at': now, **provenance,
     })
-    return persist_versioned_document(store.table, project_id, PROTOTYPE_TYPE, base, allocation_id, fields)
+    return persist_versioned_document(store.table, project_id, PROTOTYPE_TYPE, base, allocation_id, fields,
+                                      expected_last_version=expected_last_version)
+
+
+# What JavaScript's ``trimStart`` drops and Python's ``str.lstrip`` keeps: a byte-order mark (U+FEFF is
+# not whitespace to Python). The SPA trims it before its own test, so this does too.
+_LEADING_SPACE_OR_BOM = re.compile(r'^[\s\N{ZERO WIDTH NO-BREAK SPACE}]*')
 
 
 def _is_inline_html(row: Mapping[str, Any], content: str) -> bool:
     """Inline ``content`` that is HTML: marked so, or starting like an HTML document.
 
     The SPA's rule for the same rows (``looksLikeHtmlDocument`` in frontend/src/components/prototypeSpec.ts,
-    read by its Back to vN through ``backTarget``), so the button is offered exactly where this accepts.
+    read by its Back to vN through ``backTarget``), so the button is offered exactly where this accepts:
+    leading whitespace and a byte-order mark are skipped, as its ``trimStart`` skips them.
     """
-    head = content.lstrip()[:200].lower()
+    lead = _LEADING_SPACE_OR_BOM.match(content)
+    start = lead.end() if lead else 0  # pragma: no mutate  the pattern matches every string (``*``)
+    head = content[start:start + 200].lower()
     return row.get('prototype_format') == 'html' or head.startswith(('<!doctype html', '<html'))
 
 
-def _version_html(store: PrototypeStore, project_id: str, source: Mapping[str, Any]) -> str:
+_EARLY_SPEC = 'This prototype is an early screen spec, not HTML, so it cannot be restored. Build a new prototype instead.'
+
+
+def version_html(s3: Any, bucket: str, project_id: str, row: Mapping[str, Any]) -> str:
     """The HTML of a stored version: its object, or the HTML the oldest prototypes kept inline in ``content``.
 
     The same discriminator as the read path (``_with_signed_prototype_url`` in api/projects.py): a row
     with ``content`` has no object. Inline content that is not HTML (an early JSON screen spec) is a 400;
-    an object that is gone is a 404.
+    an object that is gone is a 404. Back to vN reads its version's HTML here, and a draft job its base's.
     """
-    content = source.get('content')
+    content = row.get('content')
     if isinstance(content, str) and content:
-        if not _is_inline_html(source, content):
-            raise ValidationError('This prototype is an early screen spec, not HTML, so it cannot be restored. '
-                                  'Build a new prototype instead.')
+        if not _is_inline_html(row, content):
+            raise ValidationError(_EARLY_SPEC)
         return content
     try:
-        return read_prototype_html(store.s3, store.bucket, project_id, str(source['document_id']))
+        return read_prototype_html(s3, bucket, project_id, str(row['document_id']))
     except ClientError as error:
         if is_missing_s3_object(error):
             raise NotFoundError("This version's HTML is no longer stored, so it cannot be restored") from error
@@ -179,7 +200,7 @@ def restore_prototype_version(store: PrototypeStore, project_id: str, document: 
     """
     source, latest = restore_rows(store.table, project_id, dict(document), version_id)
     allocation_id = f"restore:{version_id}:{validated_edit_id(body.get('edit_id'), version_id)}"
-    html = _version_html(store, project_id, source)
+    html = version_html(store.s3, store.bucket, project_id, source)
     item = version_from_html(store, project_id, source, html, allocation_id=allocation_id, now=now, provenance={
         'edit_kind': EDIT_KIND_RESTORE, 'edited_from_id': latest['document_id'], 'edited_by': dict(actor),
         'restored_from_id': version_id, 'restored_from_version': source['version'],

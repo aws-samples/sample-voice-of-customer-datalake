@@ -141,7 +141,23 @@
       "visuals": "Makiety wizualne ({{total, number}})",
       "visualsFailed": "{{total, number}} nie udało się przetworzyć — prześlij ponownie, aby użyć",
       "visualsLimit": "Maksymalnie {{max, number}} makiet na jedno utworzenie",
-      "visualsNotReady": "{{total, number}} wciąż w trakcie przetwarzania"
+      "visualsNotReady": "{{total, number}} wciąż w trakcie przetwarzania",
+      "draft": {
+        "heading": "Wersja robocza gotowa: zastosowana w podglądzie, niezapisana",
+        "previewHeading": "Podgląd wersji roboczej",
+        "previewLabel": "Podgląd",
+        "showDraft": "Wersja robocza",
+        "showCurrent": "Bieżąca",
+        "instructionLabel": "Polecenie:",
+        "summaryLabel": "Co się zmieniło",
+        "stale": "Prototyp zmienił się od czasu tej wersji roboczej: poproś ponownie na najnowszej wersji",
+        "apply": "Zastosuj jako v{{n}}",
+        "discard": "Odrzuć",
+        "applyFailed": "Nie udało się zastosować wersji roboczej. Spróbuj ponownie.",
+        "discardFailed": "Nie udało się odrzucić wersji roboczej. Spróbuj ponownie.",
+        "noPreview": "Podgląd tej wersji roboczej nie jest tu dostępny.",
+        "frameTitle": "{{title}} (wersja robocza)"
+      }
     },
     "deletedSources": {
       "personaNamed": "Napisano na podstawie persony, która została później usunięta: {{name}}",
@@ -241,7 +257,8 @@
       "generateProductReport": "Generowanie raportu produktu",
       "importPersona": "Import persony",
       "mergeDocuments": "Scalanie dokumentów",
-      "research": "Badania"
+      "research": "Badania",
+      "draftPrototype": "Wersja robocza prototypu"
     },
     "backgroundJobs": "Zadania w tle",
     "backgroundJobsDesc": "Długotrwałe zadania dla tego projektu",

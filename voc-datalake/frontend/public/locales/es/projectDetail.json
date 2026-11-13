@@ -129,7 +129,23 @@
       "visuals": "Maquetas visuales ({{total, number}})",
       "visualsFailed": "{{total, number}} con error — vuelve a subirlas para usarlas",
       "visualsLimit": "Máximo {{max, number}} maquetas por compilación",
-      "visualsNotReady": "{{total, number}} en procesamiento"
+      "visualsNotReady": "{{total, number}} en procesamiento",
+      "draft": {
+        "heading": "Borrador listo: aplicado a una vista previa, sin guardar",
+        "previewHeading": "Vista previa del borrador",
+        "previewLabel": "Vista previa",
+        "showDraft": "Borrador",
+        "showCurrent": "Actual",
+        "instructionLabel": "Instrucción:",
+        "summaryLabel": "Qué cambió",
+        "stale": "El prototipo cambió desde este borrador: vuelve a pedirlo sobre la versión más reciente",
+        "apply": "Aplicar como v{{n}}",
+        "discard": "Descartar",
+        "applyFailed": "No se pudo aplicar el borrador. Inténtalo de nuevo.",
+        "discardFailed": "No se pudo descartar el borrador. Inténtalo de nuevo.",
+        "noPreview": "La vista previa de este borrador no está disponible aquí.",
+        "frameTitle": "{{title}} (borrador)"
+      }
     },
     "revision": {
       "feedback": "Comentarios: {{feedback}}",
@@ -238,7 +254,8 @@
       "generateProductReport": "Generación de informe de producto",
       "importPersona": "Importación de persona",
       "mergeDocuments": "Fusión de documentos",
-      "research": "Investigación"
+      "research": "Investigación",
+      "draftPrototype": "Borrador de prototipo"
     },
     "completedCount_many": "{{count, number}} completados",
     "moreFailedCount_many": "{{count, number}} más con error"

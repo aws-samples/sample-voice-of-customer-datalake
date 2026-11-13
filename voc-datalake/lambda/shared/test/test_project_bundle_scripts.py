@@ -37,6 +37,8 @@ SRC_API = 'https://abcdefghij.execute-api.us-east-1.amazonaws.com/v1'
 TGT_API = 'https://klmnopqrst.execute-api.us-east-1.amazonaws.com/v1'
 SUBMIT_URL = f'{SRC_API}/feedback-forms/{FORM_ID}/submit'
 AVATAR_KEY = f'avatars/{PERSONAS[0]}/0123abcd.png'
+# A prototype draft (docs/prototype-builder.md, part 2): never in a bundle.
+DRAFT_KEY = f'prototypes/{PID}/drafts/job_0123456789abcdef.html'
 OWNER, EDITOR, GONE = 'sub-src-owner', 'sub-src-editor', 'sub-src-gone'
 
 
@@ -119,6 +121,7 @@ def _seed_source(projects: Any, aggregates: Any, s3: Any) -> None:
     aggregates.put_item(Item={'pk': f'PINS#{FORM_ID}', 'sk': 'PIN#pin_1', 'comment': 'Button is hidden'})
     s3.put_object(Bucket='src-bucket', Key=f'prototypes/{PID}/{PROTO_ID}.html', ContentType='text/html',
                   Body=f'<script>{json.dumps(SUBMIT_URL)}</script>'.encode(), Metadata={'pin-submit-url': SUBMIT_URL})
+    s3.put_object(Bucket='src-bucket', Key=DRAFT_KEY, ContentType='text/html', Body=b'<html>draft</html>')
     s3.put_object(Bucket='src-bucket', Key=f'projects/{PID}/product_docs/raw/brief.pdf', Body=b'%PDF')
     s3.put_object(Bucket='src-bucket', Key=AVATAR_KEY, Body=b'png', Metadata={'project-id': PID})
 
@@ -200,6 +203,17 @@ class TestRoundTrip:
         assert {r['pk'] for r in _rows(world['tables']['tgt-a'])} == {'FEEDBACK_FORM', f'PINS#{FORM_ID}'}
         assert sorted(_target_keys(world)) == sorted(
             [AVATAR_KEY, f'prototypes/{PID}/{PROTO_ID}.html', f'projects/{PID}/product_docs/raw/brief.pdf'])
+
+    def test_a_prototype_draft_is_in_no_bundle(self, world):
+        assert _export(world, PID) == 0
+        bundle = world['bundle']
+        written = [path.relative_to(bundle).as_posix() for path in bundle.rglob('*') if path.is_file()]
+        # The live prototype beside it is carried (objects sit at their source key under objects/).
+        assert f'objects/prototypes/{PID}/{PROTO_ID}.html' in written
+        assert [path for path in written if '/drafts/' in path] == []
+        carried = [json.loads(line)['key'] for line in (bundle / 'objects.jsonl').read_text().splitlines()]
+        assert f'prototypes/{PID}/{PROTO_ID}.html' in carried
+        assert DRAFT_KEY not in carried
 
     def test_the_prototype_pin_url_points_at_the_target_api(self, world):
         _export(world, PID)

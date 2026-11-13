@@ -122,7 +122,23 @@
       "visuals": "Visual mockups ({{total, number}})",
       "visualsFailed": "{{total, number}} failed to process — upload again to use",
       "visualsLimit": "At most {{max, number}} visuals per build",
-      "visualsNotReady": "{{total, number}} still being processed"
+      "visualsNotReady": "{{total, number}} still being processed",
+      "draft": {
+        "heading": "Draft ready: applied to a preview, not saved",
+        "previewHeading": "Draft preview",
+        "previewLabel": "Preview",
+        "showDraft": "Draft",
+        "showCurrent": "Current",
+        "instructionLabel": "Instruction:",
+        "summaryLabel": "What changed",
+        "stale": "The prototype changed since this draft: ask again on the newest version",
+        "apply": "Apply as v{{n}}",
+        "discard": "Discard",
+        "applyFailed": "The draft couldn't be applied. Try again.",
+        "discardFailed": "The draft couldn't be discarded. Try again.",
+        "noPreview": "A preview of this draft is not available here.",
+        "frameTitle": "{{title}} (draft)"
+      }
     },
     "revision": {
       "feedback": "Feedback: {{feedback}}",
@@ -227,7 +243,8 @@
       "generateProductReport": "Product Report Generation",
       "importPersona": "Persona Import",
       "mergeDocuments": "Document Merge",
-      "research": "Research"
+      "research": "Research",
+      "draftPrototype": "Prototype Draft"
     }
   },
   "notFound": {

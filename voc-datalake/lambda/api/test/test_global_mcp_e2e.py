@@ -33,10 +33,11 @@ from shared import mcp_global_tokens as gt
 READ_TOOLS = {'feedback_search', 'feedback_get', 'feedback_get_metrics', 'feedback_list_categories',
               'feedback_list_dimensions', 'feedback_get_catalogue', 'memory_search', 'company_get_context',
               'projects_list', 'projects_get', 'projects_get_job', 'documents_get', 'agents_list', 'agents_get_run',
-              'feature_requests_search', 'radar_read', 'prioritization_get'}
+              'feature_requests_search', 'radar_read', 'prioritization_get', 'documents_get_prototype_draft'}
 WRITE_TOOLS = {'documents_create', 'documents_update', 'documents_revise_from_comments',
                'documents_mark_comments_addressed', 'projects_generate', 'feedback_edit', 'prioritization_score',
-               'feature_requests_write'}
+               'feature_requests_write', 'documents_draft_prototype_revision', 'documents_apply_prototype_draft',
+               'documents_discard_prototype_draft'}
 
 
 @pytest.fixture

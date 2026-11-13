@@ -2140,6 +2140,26 @@
   },
   {
     "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/drafts/job_probe"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}/apply`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/drafts/job_probe/apply"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
     "method": "POST",
     "call": "`/projects/${projectId}/document`",
     "probes": [

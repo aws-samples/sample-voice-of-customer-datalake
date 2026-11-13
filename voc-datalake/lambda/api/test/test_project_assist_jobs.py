@@ -7,12 +7,12 @@ body the synchronous route used to answer as `result`. Cheap refusals stay
 synchronous; the Background jobs list never shows an assist; a caller who cannot
 view the project gets 404 on the poll.
 """
-import json
 from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
 import test_project_jobs_access as job_routes
+from moto_helpers import project_route_call
 
 # The same moto tables and project (owner + one editor) as the other job routes' suite.
 _tables = job_routes._tables
@@ -67,10 +67,7 @@ def world(tables, request, api_gateway_event, lambda_context, monkeypatch):
 
     class World:
         def call(self, claims, method, path, body=None):
-            event = api_gateway_event(method=method, path=path, body=body, claims=claims,
-                                      path_params={'project_id': path.split('/')[2]})
-            response = projects_handler.lambda_handler(event, lambda_context)
-            return response['statusCode'], json.loads(response['body'])
+            return project_route_call(api_gateway_event, lambda_context, claims, method, path, body)
 
         def work(self):
             outcomes = [projects_handler.lambda_handler(ev, lambda_context) for _, ev in invokes]

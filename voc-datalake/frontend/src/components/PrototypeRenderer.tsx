@@ -92,6 +92,13 @@ function useLoadedUrl(url: string | undefined): string | undefined {
 const PROTOTYPE_FRAME_SANDBOX = 'allow-scripts allow-popups'
 
 /**
+ * A draft's frame (docs/prototype-builder.md, part 2): the sandbox of the drafts behaviour's response
+ * CSP (PROTOTYPE_DRAFT_CSP in lib/utils/prototype-csp.ts): scripts only, no popups. Nothing of a draft
+ * opens a window, and its pin widget is inert (the host listens to no draft frame).
+ */
+const PROTOTYPE_DRAFT_FRAME_SANDBOX = 'allow-scripts'
+
+/**
  * Renders a self-contained HTML prototype inside an iframe.
  *
  * `url` (new, preferred): loads the prototype from its own CloudFront path
@@ -113,7 +120,7 @@ const PROTOTYPE_FRAME_SANDBOX = 'allow-scripts allow-popups'
  * but non-breaking to display.
  */
 export function HtmlPrototypeFrame({
-  url, html, title, className, frameRef,
+  url, html, title, className, frameRef, draft = false,
 }: {
   readonly url?: string
   readonly html?: string
@@ -121,6 +128,8 @@ export function HtmlPrototypeFrame({
   readonly className?: string
   /** The CDN frame, for the prototype pin bridge (components/PrototypePins). */
   readonly frameRef?: Ref<HTMLIFrameElement>
+  /** A draft's signed URL: sandboxed without popups (a draft is only ever served from its URL). */
+  readonly draft?: boolean
 }) {
   const loadedUrl = useLoadedUrl(url)
 
@@ -130,7 +139,7 @@ export function HtmlPrototypeFrame({
         ref={frameRef}
         title={orFallback(title, 'Prototype')}
         src={loadedUrl}
-        sandbox={PROTOTYPE_FRAME_SANDBOX}
+        sandbox={draft ? PROTOTYPE_DRAFT_FRAME_SANDBOX : PROTOTYPE_FRAME_SANDBOX}
         className={className ?? 'w-full h-full border-0'}
       />
     )

@@ -2,6 +2,9 @@
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
 import { del, post, put } from './requestKit'
 import { fetchApi } from './client'
+import { apiErrorStatus } from './apiErrorStatus'
+import { normalizePrototypeDraft } from './prototypeDraftSchema'
+import type { PrototypeDraft } from './prototypeDraftSchema'
 import { getDateBasisBodyParams } from './baseUrl'
 import {
   normalizeDocumentVersions, normalizeMemberCandidates, normalizeProject, normalizeProjectDetail,
@@ -43,6 +46,8 @@ import type {
 
 /** = MAX_PROJECT_DETAIL_BATCH in lambda/api/projects.py (the server answers 400 above it). */
 export const MAX_PROJECT_DETAIL_BATCH = 200
+
+const HTTP_NOT_FOUND = 404
 
 /** A JSON POST's request init (`post(...)` is what check-mock-coverage reads as POST). */
 
@@ -449,6 +454,33 @@ export const projectsApi = {
       status: string;
       message: string
     }>(`/projects/${projectId}/build-prototype`, post(body)),
+
+  // ── Prototype drafts (docs/prototype-builder.md, part 2; EDIT on the project) ──
+  // A draft is a finished `draft_prototype` job plus its own object: no document row until Apply.
+  // Discard is the job delete (`dismissJob`), which makes the draft GET and Apply 404 at once.
+  // Starting a draft (POST …/drafts) has no caller in the app yet: REST and MCP start them.
+
+  /** A finished draft of this series, or null when there is none to show (404: expired, discarded, another series). */
+  getPrototypeDraft: async (projectId: string, documentId: string, draftId: string): Promise<PrototypeDraft | null> => {
+    try {
+      return normalizePrototypeDraft(await fetchApi<unknown>(
+        `/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}`))
+    } catch (error: unknown) {
+      if (apiErrorStatus(error) === HTTP_NOT_FOUND) return null
+      throw error
+    }
+  },
+
+  /**
+   * Writes the draft as the next version of its series (no body: the base comes from the job): the version,
+   * the same one on a replay of an Apply that already landed (201 the first time, 200 after). A series that
+   * moved past the draft's base is a 409.
+   */
+  applyPrototypeDraft: async (projectId: string, documentId: string, draftId: string): Promise<ProjectDocument | null> => {
+    const raw = await fetchApi<unknown>(
+      `/projects/${projectId}/prototypes/${encodeURIComponent(documentId)}/drafts/${encodeURIComponent(draftId)}/apply`, post())
+    return normalizeProjectDocument(asRecord(raw)?.document)
+  },
 
   generateProductReport: (projectId: string, body: { response_language?: string; title?: string }) =>
     fetchApi<{

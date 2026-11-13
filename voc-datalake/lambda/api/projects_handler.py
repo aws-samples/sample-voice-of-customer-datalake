@@ -102,6 +102,7 @@ from shared import (
     persona_evidence_marker,
     project_access,
     project_gate,
+    prototype_drafts,
     prototype_pins,
     row_lineage_ack,
 )
@@ -110,6 +111,7 @@ from shared.api import (
     MAX_PERSONAS_PER_GENERATION,
     api_handler,
     create_api_resolver,
+    decimal_default,
     get_caller_subject,
     # Appended rather than sorted in, to avoid a conflict with #344 and #330 while
     # they are open; sort this block once both have landed.
@@ -154,6 +156,7 @@ from shared.project_writes import (
     is_verification_fixture,
     project_pk,
 )
+from shared.prototypes import prototype_draft_signed_url
 from shared.request_body import json_body_value, json_object_body
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN, is_clampable_number, validated_row_id
 from shared.tables import get_aggregates_table, get_jobs_table, get_projects_table
@@ -1258,6 +1261,11 @@ def _job_list(project_id: str) -> dict:
 @app.delete("/projects/<project_id>/jobs/<job_id>")
 @tracer.capture_method
 def api_delete_job(project_id: str, job_id: str):
+    return _delete_job_row(project_id, job_id)
+
+
+def _delete_job_row(project_id: str, job_id: str) -> dict:
+    """Delete one job row of the project (a missing row is no error); the job DELETE and a draft's Discard."""
     get_jobs_table().delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'})
     return {'success': True}
 
@@ -4946,6 +4954,93 @@ def resolve_addressed_prototype_pins(project_id: str, document_id: str):
     """Resolve ADDRESSED pins after the revision that addressed them passed review."""
     return _batch_status_change(project_id, document_id, prototype_pins.STATUS_RESOLVED,
                                 (prototype_pins.STATUS_ADDRESSED,))
+
+
+# ---- Prototype drafts (docs/prototype-builder.md, part 2) ----------------------
+#
+# A draft is a finished `draft_prototype` job plus its own object; Apply makes it
+# the next version, Discard is the job DELETE (`DELETE /projects/{id}/jobs/{job_id}`).
+# The gate requires EDIT for all three: the two POSTs by default, the GET by its
+# `_ROUTE_OVERRIDES` entry (the summary is model text about an unapplied change, for
+# editors). Every check is in shared/prototype_drafts.py; the job row, never the
+# request, names the draft's object.
+
+def _draft_job(project_id: str, document_id: str, draft_id: str) -> tuple[dict, dict, dict]:
+    """``(job row, its draft detail, the draft's base)``, the base a version of ``document_id``'s series; or a 404."""
+    document = projects.prototype_document(project_id, document_id)
+    job = _project_job_row(project_id, draft_id)
+    draft = prototype_drafts.usable_draft(job, now_epoch=int(time.time()))
+    if job is None or draft is None:
+        raise NotFoundError(prototype_drafts.DRAFT_NOT_FOUND)
+    base = prototype_drafts.drafted_base(get_projects_table(), project_id, document, draft)
+    return job, dict(draft), base
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/drafts")
+@tracer.capture_method
+def api_start_prototype_draft(project_id: str, document_id: str):
+    """``{instruction, response_language?}``: a draft of the series' newest version, as a job.
+
+    The base is the head of ``document_id``'s series when the request arrives, whichever
+    version it names. Its HTML must be readable (Back to vN's rule): an early JSON spec is
+    a 400, a lost object a 404, both before any job. The job's result is ``{draft_id}``.
+    """
+    body = json_object_body(app)
+    instruction = prototype_drafts.validated_instruction(body)
+    document = projects.prototype_document(project_id, document_id)
+    config = prototype_drafts.draft_config(projects.prototype_store(), project_id, document, instruction,
+                                           body.get('response_language'))
+    # The starter's category scope, as every generator job records it: the company memories
+    # the draft's grounding reads are those the editor may see.
+    config[category_access.SCOPE_CONFIG_KEY] = _caller_category_scope()
+    return _started_generator_job(project_id, prototype_drafts.DRAFT_JOB_TYPE, config, 'Prototype draft started.')
+
+
+@app.get("/projects/<project_id>/prototypes/<document_id>/drafts/<draft_id>")
+@tracer.capture_method
+def api_get_prototype_draft(project_id: str, document_id: str, draft_id: str):
+    """``{draft_id, base_document_id, base_version, instruction, summary, preview_url, completed_at}``."""
+    job, draft, _ = _draft_job(project_id, document_id, draft_id)
+    preview_url = prototype_draft_signed_url(project_id, str(job['job_id']))
+    return prototype_drafts.draft_view(job, draft, preview_url)
+
+
+@app.post("/projects/<project_id>/prototypes/<document_id>/drafts/<draft_id>/apply")
+@tracer.capture_method
+def api_apply_prototype_draft(project_id: str, document_id: str, draft_id: str):
+    """The draft as the next version: 201 ``{success, document}`` when this call wrote it, 200 on a replay.
+
+    409 when the series moved past the draft's base (ask again on the newest version).
+    """
+    _require_autonomous_edit_allowed(project_id, document_id)
+    job, draft, base = _draft_job(project_id, document_id, draft_id)
+    item, created = prototype_drafts.apply_draft(
+        projects.prototype_store(), project_id, job, draft, base, now=now_iso(),
+        actor=actor_from_event(app.current_event.raw_event),
+    )
+    answer = {'success': True, 'document': projects.signed_prototype_document(item, project_id)}
+    if not created:
+        return answer
+    return Response(status_code=201, content_type=content_types.APPLICATION_JSON,
+                    body=json.dumps(answer, default=decimal_default))
+
+
+@app.delete("/projects/<project_id>/prototypes/<document_id>/drafts/<draft_id>")
+@tracer.capture_method
+def api_discard_prototype_draft(project_id: str, document_id: str, draft_id: str):
+    """Discard: the draft's job row deleted, as the job DELETE does; ``{success: true}``.
+
+    Only a draft job of this prototype's series, in any state (a draft still being made can
+    be discarded too): any other job is a 404, so this route deletes nothing but drafts. The
+    SPA's job DELETE stays; this is the one the MCP tool calls.
+    """
+    document = projects.prototype_document(project_id, document_id)
+    job = _project_job_row(project_id, draft_id)
+    base_id = prototype_drafts.drafted_base_id(job)
+    if job is None or base_id is None:
+        raise NotFoundError(prototype_drafts.DRAFT_NOT_FOUND)
+    prototype_drafts.drafted_base(get_projects_table(), project_id, document, {'base_document_id': base_id})
+    return _delete_job_row(project_id, draft_id)
 
 
 @app.post("/projects/<project_id>/build-prototype")
