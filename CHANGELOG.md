@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.18.00] - 2026-11-13
+
+Multi-workspace: the voc-multiplayer-c track's company-context slice merged. Internal only: nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md), [docs/company-context.md](docs/company-context.md)).
+
+### Changed
+
+- Internal: company context's store can keep a workspace's vision, objectives and each person's own objectives (`WS#{ws}#SETTINGS#company_context`, `WS#{ws}#USERCTX#{sub}`; `lambda/shared/company_context.py`), and the settings API saves both through the store's own writers. Nothing uses a workspace's rows yet: the Company page, the generators and the assistant keep the deployment's company context, and move into workspaces with projects.
+
+### Upgrade notes
+
+- Nothing to do: no stack, table, IAM or API change.
+
 ## [7.17.00] - 2026-11-13
 
 Multi-workspace, phase 4a: the voc-multiplayer-b track's export and config-history slices merged. A workspace's admins export the workspace from Workspace settings and download it for 7 days, and a workspace's plugin config lists keep their history ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). The export does not yet hold the workspace's memory or its members' conversations (per workspace since 7.16.00 and 7.15.00): the manifest lists them as not exported, an open gap.

@@ -1149,10 +1149,7 @@ def put_company_context_route():
     require_admin(event)
     table = _configured_table()
     clean = company_context.validate_company_context(json_object_body(app))
-    table.put_item(Item={
-        'pk': company_context.COMPANY_CONTEXT_PK, 'sk': company_context.CONFIG_SK,
-        **clean, 'updated_at': now_iso(), 'updated_by_username': _caller_username(event),
-    })
+    company_context.put_company_context(table, clean, updated_at=now_iso(), updated_by_username=_caller_username(event))
     logger.info('Company context saved', extra={'objectives': len(clean['objectives'])})
     return company_context.get_company_context(table)
 
@@ -1172,10 +1169,7 @@ def put_my_context_route():
     sub = get_caller_subject(app.current_event.raw_event)
     table = _configured_table()
     clean = company_context.validate_my_context(json_object_body(app))
-    table.put_item(Item={
-        'pk': company_context.user_context_pk(sub), 'sk': company_context.CONFIG_SK,
-        **clean, 'updated_at': now_iso(),
-    })
+    company_context.put_my_context(table, sub, clean, updated_at=now_iso())
     return company_context.get_my_context(table, sub)
 
 
