@@ -184,7 +184,14 @@ kind index, which only the memory scanner reads, holds both). Nothing is migrate
 stay the caller's outside workspaces, at `USER#{sub}`, and the web app no longer shows them to anyone who has a
 workspace (the gate always enters one, so every call carries the header): they are kept, and readable through an API
 call that names no workspace, but the assistant's history inside a workspace starts empty. A deployment upgrading
-says so in its release notes (a later web-app change can offer the earlier conversations, read without the header). Plan steps carry it too (since
+says so in its release notes (a later web-app change can offer the earlier conversations, read without the header).
+The logs API's readers (Unreleased) can read a workspace's own trail: the validation, processing and summary
+readers and the scraper runs' (`lambda/api/logs_handler.py`) take an optional workspace and read its
+`WS#{ws}#LOGS#{kind}#{source}` rows (`lambda/shared/processing_logs.py` `log_partition`, what the processor writes for
+a workspace's messages since 7.00.00) and `WS#{ws}#SCRAPER_RUN#{id}` runs through the layer's view of voc-aggregates.
+No route passes one: no workspace's ingestion runs until phase 2's cut-over, so every log row is still the
+deployment's, and `GET /logs/*` keeps reading it for everyone; the routes resolve the workspace with that cut-over,
+when the clear of a workspace's validation trail lands too (its admins', with an audit row). Plan steps carry it too (since
 6.18.00): the approval's `X-Workspace-Id` is kept on the plan (one that is not a workspace id is the one 404) and each step names it to the
 domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). And the global
 MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`), and an
