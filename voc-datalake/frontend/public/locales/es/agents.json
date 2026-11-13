@@ -702,6 +702,7 @@
     "hardCap": "Límite estricto en el presupuesto mensual de cada flujo de trabajo",
     "hardCapHint": "Desactivado por defecto. Activado: una ejecución iniciada desde un flujo con presupuesto recibe un límite de coste igual a lo que queda del mes del flujo, y no se inicia si no queda nada. El límite de cada ejecución se fija al iniciarse, así que varias ejecuciones simultáneas de un flujo pueden superar juntas su presupuesto (por ahora, solo el tiempo de MicroVM). Por ahora nada en este ejemplo inicia una ejecución desde un flujo, y el tiempo de MicroVM no tiene precio salvo que la implementación lo fije, así que de momento nada queda limitado.",
     "hardCapFailed": "No se pudo guardar el límite estricto. Inténtalo de nuevo.",
+    "hardCapSaving": "Guardando…",
     "hardCapUnread": "No se pudo cargar la configuración del límite estricto.",
     "none": "Sin registrar",
     "otherModels": "Otros modelos",

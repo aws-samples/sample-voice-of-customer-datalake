@@ -1,6 +1,6 @@
 /**
  * @fileoverview Agents → Spend's hard cap: its state as saved, an administrator's change (PUT, then shown as saved,
- * the switch keeping its focus meanwhile), a failed save, a failed load and its retry, an unreadable answer.
+ * the switch keeping its focus and saying "Saving…" meanwhile, a click then ignored), a failed save, a failed load and its retry, an unreadable answer.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -34,6 +34,26 @@ describe('the hard cap', () => {
     await waitFor(() => expect(toggle).toBeChecked())
     expect(toggle).toHaveFocus()
     expect(fetchApi.mock.calls.at(-1)?.[1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ hard_cap: true }) })
+  })
+
+  it('says "Saving…" while a change is saved, the switch enabled meanwhile, and ignores a click until then', async () => {
+    const user = userEvent.setup()
+    const answers: Array<(value: unknown) => void> = []
+    routeFetchApi({
+      'GET /agents/engineering/settings': () => settings(false),
+      'PUT /agents/engineering/settings': () => new Promise((resolve) => { answers.push(resolve) }),
+    }, { missStatus: 500 })
+    renderWithQueryClient(<EngineeringHardCap />)
+    const toggle = await screen.findByRole('switch', { name: LABEL })
+    await user.click(toggle)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Saving…'))
+    // (never disabled: a disabled switch would lose its keyboard focus)
+    expect(toggle).toBeEnabled()
+    await user.click(toggle)
+    answers[0]?.(settings(true))
+    await waitFor(() => expect(toggle).toBeChecked())
+    const puts = fetchApi.mock.calls.filter(([, options]) => options?.method === 'PUT')
+    expect([screen.getByRole('status').textContent, puts.length]).toStrictEqual(['', 1])
   })
 
   it('says a failed save, and keeps the state as saved', async () => {

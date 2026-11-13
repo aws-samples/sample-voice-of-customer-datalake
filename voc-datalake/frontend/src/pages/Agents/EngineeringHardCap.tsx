@@ -31,10 +31,15 @@ export function EngineeringHardCap() {
   }
   return (
     <div className="card p-4 space-y-1">
-      {/* (never disabled while a change is saved: a disabled switch would lose its keyboard focus; a click meanwhile
-          is ignored) */}
-      <SwitchField checked={settings.hard_cap} label={t('spend.hardCap')} hint={t('spend.hardCapHint')}
-        onChange={(on) => { if (!save.isPending) save.mutate(on) }} />
+      {/* (the switch shows the saved state, so "Saving…" confirms a change until it is saved; never disabled
+          meanwhile: a disabled switch would lose its keyboard focus; a click meanwhile is ignored. The status is
+          always mounted, so a screen reader hears it when it fills, and sits with the switch, outside the card's
+          spacing) */}
+      <div>
+        <SwitchField checked={settings.hard_cap} label={t('spend.hardCap')} hint={t('spend.hardCapHint')}
+          onChange={(on) => { if (!save.isPending) save.mutate(on) }} />
+        <p role="status" className="text-[12px] text-muted">{save.isPending ? t('spend.hardCapSaving') : ''}</p>
+      </div>
       {save.isError && <p role="alert" className="text-[12px] text-danger">{t('spend.hardCapFailed')}</p>}
     </div>
   )
