@@ -31,7 +31,7 @@ from __future__ import annotations
 import base64
 from typing import Any, Final, Protocol
 
-from png_check import MAX_SIDE_PX, MIN_SIDE_PX, png_problem
+from png_check import MAX_SIDE_PX, MIN_SIDE_PX, TOO_LARGE_REASON, png_problem
 
 from shared.design_logo import COMPANY_LOGO_MAX_BYTES
 from shared.logging import logger
@@ -176,9 +176,15 @@ def render_svg_logo(cdp: Cdp, url: str, *, what: str = 'SVG logo') -> bytes | No
     """
     for max_side in RENDER_SIDES_PX:
         png = _render_once(cdp, url, what, max_side)
-        if png is None or (isinstance(png, bytes) and len(png) <= COMPANY_LOGO_MAX_BYTES):
-            return png
-        logger.info(f'{what} over the company-logo cap; drawn smaller', extra={'max_side': max_side})
+        if png is None:
+            return None
+        if isinstance(png, bytes):
+            if len(png) <= COMPANY_LOGO_MAX_BYTES:
+                return png
+            reason = 'over_company_logo_cap'   # a usable PNG, over the 1 MB company-logo cap
+        else:
+            reason = 'png_check_too_large'     # the PNG check refused it (over 2 MB or 1024 px)
+        logger.info(f'{what} too large; drawn smaller', extra={'max_side': max_side, 'reason': reason})
     logger.info(f'{what} not rendered', extra={'reason': 'over_company_logo_cap'})
     return None
 
@@ -196,7 +202,7 @@ def _render_once(cdp: Cdp, url: str, what: str, max_side: int) -> bytes | _TooLa
         tab = _RenderTab(cdp)
         png = tab.render(url, max_side)
     except RenderRefused as exc:
-        if str(exc) == 'too_large':
+        if str(exc) == TOO_LARGE_REASON:
             return TOO_LARGE
         logger.info(f'{what} not rendered', extra={'reason': str(exc)})
         return None
