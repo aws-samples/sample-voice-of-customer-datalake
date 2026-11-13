@@ -37,8 +37,11 @@ prompt:
   (the prototype CSP allows `img-src data:` only), so the model never sees the image bytes
   (`lambda/shared/company_logo.py`). The type comes from the file's bytes (PNG, JPEG or WebP). A logo over 1 MB is
   left out (logged) and the model draws a wordmark as before; so does a build with no logo or with the box
-  unticked. A revision sends the base prototype back with the inlined logo turned into the placeholder again, so
-  the base HTML budget is spent on markup. The document generator role reads `company-context/design/logo_*` only
+  unticked. The inlined logo is marked (`data:image/png;voc=company-logo;base64,…`): a revision sends the base
+  prototype back with exactly that image turned into the placeholder again (no other inline image), so the base
+  HTML budget is spent on markup. When a revision has no logo to use, the prompt asks for a drawn wordmark, and a
+  placeholder `<img>` the model still writes becomes the brand (or project) name as text. The document generator
+  role reads the uploaded logos only, `company-context/design/logo_????????????.*` (not the references' previews)
   (`s3:GetObject`, VocCoreStack's `CompanyLogoReadPolicy` managed policy, attached in VocApiStack).
 - **Category scope applies to the design system too.** Like the vision and objectives, guideline paragraphs,
   token entries and references whose text names a category the reader may not see are left out

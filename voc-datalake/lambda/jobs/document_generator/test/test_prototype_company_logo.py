@@ -17,9 +17,9 @@ from jobs.document_generator.test.prototype_table_fixtures import (
     run_prototype_build,
     wire_projects_table,
 )
-from shared.company_logo import LOGO_INSTRUCTION, LOGO_PLACEHOLDER
+from shared.company_logo import LOGO_INSTRUCTION, LOGO_MARKER, LOGO_PLACEHOLDER, LOGO_REMOVED_INSTRUCTION
 
-LOGO = f'data:image/png;base64,{base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 3000).decode()}'
+LOGO = f'data:image/png;{LOGO_MARKER};base64,{base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 3000).decode()}'
 MODEL_HTML = f'<!DOCTYPE html><html><body><img src="{LOGO_PLACEHOLDER}" alt="Company logo"></body></html>'
 
 
@@ -47,11 +47,26 @@ class TestPrototypeLogo:
         assert f'<img src="{LOGO}" alt="Company logo">' in stored
         assert LOGO_PLACEHOLDER not in stored
 
-    def test_no_logo_leaves_the_prompt_alone_and_blanks_a_stray_placeholder(
+    def test_no_logo_leaves_the_prompt_alone_and_writes_a_stray_placeholder_as_the_wordmark(
         self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context,
     ):
-        prompt, _ = _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, logo=None)
+        prompt, _ = _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, logo=None,
+                           brand='Example Air')
         assert 'COMPANY LOGO' not in prompt
+        stored = _stored_html(mock_s3)
+        assert LOGO_PLACEHOLDER not in stored
+        assert '<span class="company-wordmark" style="font-weight:700">Example Air</span>' in stored
+
+    def test_a_revision_without_a_logo_asks_for_a_wordmark_instead_of_the_placeholder(
+        self, mock_dynamodb, mock_converse, mock_s3, sample_job_event, lambda_context,
+    ):
+        prior = f'<!DOCTYPE html><html><body><img src="{LOGO}" alt="Company logo"></body></html>'
+        with patch.object(handler, '_base_prototype', return_value={'document_id': 'base'}), \
+                patch.object(handler, '_prior_prototype_html', return_value=prior):
+            prompt, _ = _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, logo=None,
+                               feedback='make it bolder', base_prototype_id='base')
+        assert LOGO_REMOVED_INSTRUCTION in prompt
+        assert LOGO not in prompt
         assert LOGO_PLACEHOLDER not in _stored_html(mock_s3)
 
     @pytest.mark.usefixtures('mock_s3')

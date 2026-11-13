@@ -52,7 +52,14 @@ from shared import category_access, methodology
 from shared.api import validate_date_basis
 from shared.aws import get_dynamodb_resource, get_s3_client
 from shared.company_context import CONFIG_SK, DESIGN_SYSTEM_PK, company_context_block, design_system_block
-from shared.company_logo import LOGO_INSTRUCTION, company_logo_data_url, inline_logo, with_logo_placeholder
+from shared.company_logo import (
+    LOGO_INSTRUCTION,
+    LOGO_REMOVED_INSTRUCTION,
+    company_logo_data_url,
+    has_logo_placeholder,
+    inline_logo,
+    with_logo_placeholder,
+)
 from shared.converse import converse_chain
 from shared.derivation import (
     DERIVATION_FIELD,
@@ -1467,6 +1474,9 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     logo_url = _company_logo(with_design_system)
     if logo_url:
         design_system_section += f'\n\n{LOGO_INSTRUCTION}'
+    elif has_logo_placeholder(feedback_section):
+        # The base prototype showed the uploaded logo, and there is none to use now: a drawn wordmark instead.
+        feedback_section += f'\n\n{LOGO_REMOVED_INSTRUCTION}'
 
     user_prompt = PROTOTYPE_HTML_USER_TEMPLATE.format(
         project_name=project_name,
@@ -1497,7 +1507,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     html = _extract_html(raw)
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
-    html = inline_logo(html, logo_url)
+    html = inline_logo(html, logo_url, brand or project_name)
     html = _with_pin_widget(project_id, doc_id, title, html)
 
     ctx.update_progress(80, 'saving_prototype')
