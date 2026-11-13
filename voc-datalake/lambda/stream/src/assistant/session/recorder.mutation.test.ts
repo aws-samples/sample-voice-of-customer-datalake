@@ -30,7 +30,7 @@ function record() {
     settled: () => Promise.resolve(),
   };
   const recorder = createSessionRecorder({
-    callerSub: 'sub-9', threadId: 'thread-9', runId: 'run-9', page: { kind: 'dashboard', path: '/' },
+    owner: { sub: 'sub-9' }, threadId: 'thread-9', runId: 'run-9', page: { kind: 'dashboard', path: '/' },
     history: [{ id: 'h1', role: 'user', content: 'question' }], createdAt: 'created',
   }, writer, () => START_MS);
   const lastItem = (): Record<string, unknown> => {

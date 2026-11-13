@@ -54,8 +54,8 @@ function resolutionPolicy(scope: iam.Role, workspacesTable: dynamodb.ITable): ia
 /** Only the membership reads (GetItem on `WS#*`: the caller's `MEMBER#` row and `META`), for a Lambda that
  *  resolves without a platform admin's entry (lambda/shared/request_workspace.py `elevate=False`): no audit row to
  *  write, so no PutItem. Returns the Lambda's `WORKSPACES_TABLE`. */
-export function grantWorkspaceMembershipReads(workspacesTable: dynamodb.ITable, role: iam.Role): Record<string, string> {
-  role.addToPolicy(new iam.PolicyStatement({
+export function grantWorkspaceMembershipReads(workspacesTable: dynamodb.ITable, role: iam.IRole): Record<string, string> {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem'],
     resources: [workspacesTable.tableArn],
     conditions: leadingKeys(['WS#*']),

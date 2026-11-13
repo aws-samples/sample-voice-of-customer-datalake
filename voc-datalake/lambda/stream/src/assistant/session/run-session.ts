@@ -21,6 +21,7 @@ import { isStorableThreadId } from './record.js';
 import { createSessionWriter } from './writer.js';
 import type { SessionStore, StoredSession } from './store.js';
 import type { PublishNotice } from '../../lib/realtime-publish.js';
+import type { SessionOwner, WorkspaceMembership } from './workspace-member.js';
 
 const LOAD_TIMEOUT_MS = 1500;
 
@@ -35,6 +36,11 @@ export interface SessionPersistence {
    * revision}`, so a reloaded tab following the run re-reads it at once. Absent = no notice.
    */
   notify?: PublishNotice;
+  /**
+   * Who may save inside a workspace (workspace-member.ts): the caller's membership of the workspace the request
+   * names. Absent = this deployment has no membership table: a run that names a workspace is refused (404).
+   */
+  membership?: WorkspaceMembership;
 }
 
 export interface SessionEmitter extends Emitter {
@@ -77,13 +83,13 @@ export function createSessionEmitter(inner: Emitter): SessionEmitter {
   };
 }
 
-async function loadWithin(store: SessionStore, callerSub: string, threadId: string): Promise<StoredSession | null> {
+async function loadWithin(store: SessionStore, owner: SessionOwner, threadId: string): Promise<StoredSession | null> {
   const timer: { id: ReturnType<typeof setTimeout> | undefined } = { id: undefined };
   const timeout = new Promise<null>((resolve) => {
     timer.id = setTimeout(() => resolve(null), LOAD_TIMEOUT_MS);
   });
   try {
-    return await Promise.race([store.load(callerSub, threadId), timeout]);
+    return await Promise.race([store.load(owner, threadId), timeout]);
   } catch (error) {
     console.warn(`Assistant session: could not read the stored conversation (${error instanceof Error ? error.name : 'UnknownError'}); saving without it`);
     return null;
@@ -106,7 +112,7 @@ export function mergeHistory(wire: readonly Message[], stored: readonly Message[
 }
 
 export interface RunSessionInput {
-  callerSub: string;
+  owner: SessionOwner;
   input: RunAgentInput;
   page: PageContext;
 }
@@ -119,7 +125,7 @@ export interface RunSessionInput {
 export async function startRunSession(
   emitter: SessionEmitter,
   persistence: SessionPersistence | undefined,
-  { callerSub, input, page }: RunSessionInput,
+  { owner, input, page }: RunSessionInput,
 ): Promise<void> {
   if (persistence === undefined) return;
   if (!isStorableThreadId(input.threadId)) {
@@ -127,10 +133,10 @@ export async function startRunSession(
     return;
   }
   const { store, nowMs } = persistence;
-  const stored = await loadWithin(store, callerSub, input.threadId);
-  const writer = createSessionWriter((item, revision) => store.put(callerSub, item, revision), nowMs);
+  const stored = await loadWithin(store, owner, input.threadId);
+  const writer = createSessionWriter((item, revision) => store.put(owner, item, revision), nowMs);
   const recorder = createSessionRecorder({
-    callerSub,
+    owner,
     threadId: input.threadId,
     runId: input.runId,
     page,
@@ -139,7 +145,7 @@ export async function startRunSession(
     ...(stored?.customTitle === undefined ? {} : { customTitle: stored.customTitle }),
   }, writer, nowMs);
   emitter.attach(recorder, () => settleAndNotify(writer.settled(), recorder, persistence.notify, {
-    callerSub, threadId: input.threadId,
+    callerSub: owner.sub, threadId: input.threadId,
   }));
   recorder.flush();
 }

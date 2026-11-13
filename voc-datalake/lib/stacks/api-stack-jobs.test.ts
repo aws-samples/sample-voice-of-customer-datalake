@@ -157,6 +157,17 @@ describe('ChatStream (AI assistant) delegation', () => {
     expect(JSON.stringify(chat.properties.Environment.Variables.CONVERSATIONS_TABLE)).toMatch(/Conversations/);
   });
 
+  // A conversation inside a workspace is the caller's there, only when they are a member: both its writers resolve
+  // membership without a platform admin's entry (session/workspace-member.ts; api/chat_handler.py, elevate=False).
+  it.each(['ChatStreamApi', 'ChatApi'])('%s reads only membership rows of voc-workspaces and writes nothing there', (prefix) => {
+    const fn = byLogicalPrefix(functions(), prefix);
+    const onWorkspaces = chatGrants(fn).filter((statement) => JSON.stringify(statement.Resource).includes('Workspaces'));
+    expect(onWorkspaces.map((statement) => ({ actions: actionsOf(statement), condition: statement.Condition }))).toStrictEqual([
+      { actions: ['dynamodb:GetItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } } },
+    ]);
+    expect(JSON.stringify(fn.properties.Environment.Variables.WORKSPACES_TABLE)).toMatch(/Workspaces/);
+  });
+
   it('keeps the ChatStream role policy well under the inline IAM quota', () => {
     const chat = byLogicalPrefix(functions(), 'ChatStreamApi');
     const chars = JSON.stringify({ Statement: chatStatements(chat) }).length;

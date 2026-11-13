@@ -5,7 +5,7 @@
       "reason": "two unrelated names that happen to be spelled workspace_id: the field an asynchronous message names its workspace in (shared/ws_repo.py) and the tag key on a workspace's credentials secret (shared/platform_workspaces.py)"
     },
     {
-      "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PK_PREFIX::*",
+      "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PARTITION_PREFIX::*",
       "reason": "three unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row and a category-access row"
     },
     {

@@ -15,7 +15,7 @@ import type { Message } from '@ag-ui/core';
 import { buildSessionItem, estimatedItemBytes, isStorableThreadId, MAX_ITEM_BYTES } from './record.js';
 
 const snapshotBase = {
-  callerSub: 'sub-1', threadId: 'thread-1', runId: 'run-1', status: 'running' as const,
+  owner: { sub: 'sub-1' }, threadId: 'thread-1', runId: 'run-1', status: 'running' as const,
   page: { kind: 'chat' as const, path: '/chat' }, pendingInterrupts: [], createdAt: 'c', updatedAt: 'u', revision: 3,
 };
 

@@ -5,7 +5,8 @@
  * marker (session/cancel.ts). IAM grants exactly GetItem +
  * PutItem on the table (api-assistant-lambdas.ts); the per-caller partition cannot be
  * expressed in IAM for a Cognito sub, so it is enforced HERE: every key is
- * built by `sessionKey(callerSub, …)` from the verified authorizer claims, and
+ * built by `sessionKey(owner, …)` from the verified authorizer claims (and the workspace
+ * they were verified a member of, workspace-member.ts), and
  * a put whose item names another partition is refused before it is sent.
  */
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -15,6 +16,7 @@ import type { Message } from '@ag-ui/core';
 import { z } from 'zod';
 import { callerPartition, cancelKey, sessionKey } from './record.js';
 import type { PutOutcome } from './writer.js';
+import type { SessionOwner } from './workspace-member.js';
 
 export interface StoredSession {
   createdAt: string | null;
@@ -24,11 +26,11 @@ export interface StoredSession {
 }
 
 export interface SessionStore {
-  load(callerSub: string, threadId: string): Promise<StoredSession | null>;
-  /** Conditional put scoped to `callerSub`'s partition; refused when the stored revision is not older. */
-  put(callerSub: string, item: Record<string, unknown>, revision: number): Promise<PutOutcome>;
+  load(owner: SessionOwner, threadId: string): Promise<StoredSession | null>;
+  /** Conditional put scoped to `owner`'s partition; refused when the stored revision is not older. */
+  put(owner: SessionOwner, item: Record<string, unknown>, revision: number): Promise<PutOutcome>;
   /** The user pressed Stop on this run: chat_handler's cancel marker names `runId`. */
-  cancelRequested(callerSub: string, threadId: string, runId: string): Promise<boolean>;
+  cancelRequested(owner: SessionOwner, threadId: string, runId: string): Promise<boolean>;
 }
 
 /** What the store needs of a document client. */
@@ -62,10 +64,10 @@ function decodeMessages(raw: unknown): Message[] {
 
 export function createDynamoSessionStore(client: SessionDocClient, tableName: string): SessionStore {
   return {
-    async load(callerSub, threadId) {
+    async load(owner, threadId) {
       const response = await client.send(new GetCommand({
         TableName: tableName,
-        Key: sessionKey(callerSub, threadId),
+        Key: sessionKey(owner, threadId),
         ProjectionExpression: '#created, #messages, #ct',
         ExpressionAttributeNames: { '#created': 'created_at', '#messages': 'messages_json', '#ct': 'custom_title' },
       }));
@@ -79,18 +81,18 @@ export function createDynamoSessionStore(client: SessionDocClient, tableName: st
         ...(customTitle === undefined ? {} : { customTitle }),
       };
     },
-    async cancelRequested(callerSub, threadId, runId) {
+    async cancelRequested(owner, threadId, runId) {
       const response = await client.send(new GetCommand({
         TableName: tableName,
-        Key: cancelKey(callerSub, threadId),
+        Key: cancelKey(owner, threadId),
         ProjectionExpression: '#run',
         ExpressionAttributeNames: { '#run': 'run_id' },
       }));
       const parsed = cancelItemSchema.safeParse(response);
       return parsed.success && parsed.data.Item?.run_id === runId;
     },
-    async put(callerSub, item, revision) {
-      if (item.pk !== callerPartition(callerSub)) throw new RangeError('Session item outside the caller partition');
+    async put(owner, item, revision) {
+      if (item.pk !== callerPartition(owner)) throw new RangeError('Session item outside the caller partition');
       try {
         await client.send(new PutCommand({
           TableName: tableName,

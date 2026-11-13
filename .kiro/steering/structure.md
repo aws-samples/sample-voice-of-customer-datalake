@@ -210,7 +210,7 @@ voice-of-customer-datalake/       # Root repository
 | `voc-watermarks` | `{source}` | - | Ingestion state tracking |
 | `voc-projects` | `PROJECT#{id}` | `META\|PERSONA#{id}\|PRD#{id}\|PRFAQ#{id}` | Projects with personas, PRDs, PR/FAQs — kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` |
 | `voc-jobs` | `PROJECT#{id}` | `JOB#{id}` | Long-running async jobs (research, persona generation) |
-| `voc-conversations` | `USER#{id}` | `CONV#{id}` | AI chat conversation history; assistant items also carry `run_id`/`run_status`/`revision`, written by the stream Lambda while a run streams; index `gsi1-by-kind-updated-at` (`kind` + `updated_at`, projects `message_count`) is the memory scanner's window read (docs/memory.md) |
+| `voc-conversations` | `USER#{id}`, `WS#{ws}#USER#{id}` (inside a workspace) | `CONV#{id}` | AI chat conversation history; assistant items also carry `run_id`/`run_status`/`revision`, written by the stream Lambda while a run streams; index `gsi1-by-kind-updated-at` (`kind` + `updated_at`, projects `message_count`) is the memory scanner's window read (docs/memory.md) |
 | `voc-idempotency` | `{id}` | - | Lambda Powertools idempotency tracking |
 | `voc-memory` | `MEM#company\|MEM#user#{sub}`, `MEMEVT#{id}`, `MEMCURSOR`, `MEMIMPORT` | `MEM#{id}`, `{iso}#{n}`, `SESSION#{id}`, `{import_id}` | Memories (index `gsi1-by-memory-status`), audit, extraction cursors, imports — kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` (docs/memory.md) |
 | `voc-agents` | `AGENT#{id}`, `WORKFLOW#{id}`, `RUN#{run_id}`, `PLAN#{plan_id}` | `META\|RUN#{run_id}`, `REV#{n}\|CURRENT`, `EVT#{seq}\|MATE#{role}#{seq}`, `META\|STEP#{id}\|EVT#{seq}` | Agents, versioned workflows, runs + journal, approved assistant plans + steps (index `gsi1-by-agents-listing`, plans under `PLANS#{approver_sub}`) — kept while the platform runs (no TTL), deleted with the stack only under `-c protectData=false` (docs/autonomous-agents.md) |
@@ -271,13 +271,15 @@ Per-day walks stop on a time budget and say so (`is_partial`, `partial_reason:
 | PUT | `/chat/conversations/{id}/title` | Rename (title only; `custom_title` survives later saves and runs; 409 while a run is live) |
 | POST | `/chat/conversations/{id}/cancel` | Stop `{runId}`: writes the `RUNCANCEL#{id}` marker (TTL 1 day) the running stream Lambda polls; it stops generating and saves the partial answer as `stopped` |
 
-Every route is scoped to `USER#{cognito sub}`. The assistant itself streams at
+Every route is scoped to `USER#{cognito sub}` (`WS#{ws}#USER#{cognito sub}` for a request inside a workspace the
+caller is a member of; docs/multi-workspace.md). The assistant itself streams at
 `POST /chat/stream` (`voc-chat-stream`, TypeScript): AG-UI `RunAgentInput` in,
 AG-UI events out; read-only server tools, human-approved client-tool writes.
 
 **Server-side session persistence.** While a run streams, `voc-chat-stream` saves the
 conversation (user turn + the in-progress answer, tool calls/results trimmed) to the
-SAME assistant item, in the caller's own `USER#{verified sub}` partition (enforced in
+SAME assistant item, in the caller's own `USER#{verified sub}` partition (or theirs inside the workspace they are a
+verified member of; enforced in
 code: `lambda/stream/src/assistant/session/`), adding `run_id`, `run_status`
 (`running|finished|failed|interrupted|stopped`) and `revision` (grows only). Writes are
 throttled (every 2 s / 2,000 chars, at tool boundaries, at the end), ordered,

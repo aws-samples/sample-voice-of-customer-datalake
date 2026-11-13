@@ -15,6 +15,7 @@ import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
 import { appVersion } from '../utils/connector-version';
+import { grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
 import type { ApiStackContext } from './api-context';
 import { createS3ImportLambda } from './api-s3-import-lambda';
 
@@ -264,13 +265,20 @@ export function createAssistantLambdas(
   // + conditional PutItem — nothing else (no Query,
   // no Delete, no Update). IAM cannot pin the partition to a per-caller
   // Cognito sub (no LeadingKeys variable for a REST/Lambda caller), so the
-  // stream code enforces USER#{verified sub} on every key (session/store.ts,
+  // stream code enforces USER#{verified sub} (WS#{verified member's workspace}#USER#{sub}) on every key (session/store.ts,
   // pinned by session.test.ts). Pinned here by 'ChatStream (AI assistant) delegation'.
   // An explicit statement rather than table.grant(), which adds `<table>/index/*`.
   chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
     resources: [conversationsTable.tableArn],
   }));
+  // Inside a workspace the conversation is the caller's there, only when they are a member (session/workspace-member.ts:
+  // their MEMBER# row and the workspace's META, no platform-admin entry, so only these reads; the code builds every
+  // key from the verified sub and that workspace).
+  if (chatStreamLambda.role === undefined) throw new Error('The chat stream Lambda has no role');
+  for (const [name, value] of Object.entries(grantWorkspaceMembershipReads(ctx.props.workspacesTable, chatStreamLambda.role))) {
+    chatStreamLambda.addEnvironment(name, value);
+  }
   // No projects-table grant: the assistant is read-only server-side and
   // reaches project data only through the Projects API below.
   // Read-only server tools delegate to the canonical domain APIs (internal

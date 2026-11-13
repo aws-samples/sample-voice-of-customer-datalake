@@ -17,6 +17,7 @@
 import type { SessionPersistence } from './run-session.js';
 import { isStorableThreadId } from './record.js';
 import { errorName } from '../../lib/error-name.js';
+import type { SessionOwner } from './workspace-member.js';
 
 const POLL_INTERVAL_MS = 1500;
 
@@ -28,7 +29,7 @@ export interface CancelWatch {
 }
 
 export interface CancelTarget {
-  callerSub: string;
+  owner: SessionOwner;
   threadId: string;
   runId: string;
 }
@@ -64,5 +65,5 @@ export function createCancelWatch(check: () => Promise<boolean>, intervalMs: num
 export function watchForStop(persistence: SessionPersistence | undefined, target: CancelTarget): CancelWatch | undefined {
   if (persistence === undefined || !isStorableThreadId(target.threadId)) return undefined;
   const { store, stopPollMs } = persistence;
-  return createCancelWatch(() => store.cancelRequested(target.callerSub, target.threadId, target.runId), stopPollMs);
+  return createCancelWatch(() => store.cancelRequested(target.owner, target.threadId, target.runId), stopPollMs);
 }

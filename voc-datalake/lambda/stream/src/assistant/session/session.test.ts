@@ -30,13 +30,13 @@ function fakeStore(options: { stored?: StoredSession | null; fail?: boolean } = 
   return {
     puts,
     loads,
-    load: (callerSub, threadId) => {
-      loads.push([callerSub, threadId]);
+    load: (owner, threadId) => {
+      loads.push([owner.sub, threadId]);
       return Promise.resolve(options.stored ?? null);
     },
-    put: (callerSub, item, revision) => {
+    put: (owner, item, revision) => {
       if (options.fail) return Promise.reject(new ServiceError('ProvisionedThroughputExceeded'));
-      puts.push({ callerSub, item, revision });
+      puts.push({ callerSub: owner.sub, item, revision });
       return Promise.resolve('written');
     },
     cancelRequested: () => Promise.resolve(false),
@@ -170,9 +170,9 @@ describe('the partition is always the verified caller', () => {
     }) };
     const store = createDynamoSessionStore(client, 'conv-table');
 
-    await store.load('caller-sub', 'thread-1');
-    await store.put('caller-sub', { pk: 'USER#caller-sub', sk: 'CONV#thread-1' }, 7);
-    await expect(store.put('caller-sub', { pk: 'USER#other', sk: 'CONV#thread-1' }, 8)).rejects.toThrow(/partition/);
+    await store.load({ sub: 'caller-sub' }, 'thread-1');
+    await store.put({ sub: 'caller-sub' }, { pk: 'USER#caller-sub', sk: 'CONV#thread-1' }, 7);
+    await expect(store.put({ sub: 'caller-sub' }, { pk: 'USER#other', sk: 'CONV#thread-1' }, 8)).rejects.toThrow(/partition/);
 
     expect(sent).toStrictEqual([
       expect.objectContaining({ TableName: 'conv-table', Key: { pk: 'USER#caller-sub', sk: 'CONV#thread-1' } }),
@@ -187,14 +187,14 @@ describe('the partition is always the verified caller', () => {
   it('reports a refused conditional write as superseded, not as a failure', async () => {
     const refusal = new ConditionalCheckFailedException({ message: 'no', $metadata: {} });
     const store = createDynamoSessionStore({ send: async () => Promise.reject(refusal) }, 't');
-    await expect(store.put('a', { pk: 'USER#a' }, 1)).resolves.toBe('superseded');
+    await expect(store.put({ sub: 'a' }, { pk: 'USER#a' }, 1)).resolves.toBe('superseded');
   });
 
   it('reads the stored rename (custom_title) with the conversation, and ignores a blank one', async () => {
     const stored = (item: Record<string, unknown>) => createDynamoSessionStore({ send: () => Promise.resolve({ Item: item }) }, 't');
-    await expect(stored({ created_at: 'c', messages_json: '[]', custom_title: 'Pricing churn' }).load('a', 't1'))
+    await expect(stored({ created_at: 'c', messages_json: '[]', custom_title: 'Pricing churn' }).load({ sub: 'a' }, 't1'))
       .resolves.toStrictEqual({ createdAt: 'c', messages: [], customTitle: 'Pricing churn' });
-    await expect(stored({ created_at: 'c', messages_json: '[]', custom_title: '' }).load('a', 't1'))
+    await expect(stored({ created_at: 'c', messages_json: '[]', custom_title: '' }).load({ sub: 'a' }, 't1'))
       .resolves.toStrictEqual({ createdAt: 'c', messages: [] });
   });
 });
@@ -208,7 +208,7 @@ describe('throttling (fake clock)', () => {
       return items.length;
     }, settled: async () => {} };
     const recorder = createSessionRecorder({
-      callerSub: 's', threadId: 't', runId: 'r', page: { kind: 'chat', path: '/chat' },
+      owner: { sub: 's' }, threadId: 't', runId: 'r', page: { kind: 'chat', path: '/chat' },
       history: [{ id: 'u1', role: 'user', content: 'hi' }], createdAt: '2026-01-01T00:00:00.000Z',
     }, writer, nowMs);
     return { items, recorder };
@@ -316,7 +316,7 @@ describe('the writer: ordered, coalescing, fire-and-forget', () => {
 
 describe('the stored item', () => {
   const base = {
-    callerSub: 's', threadId: 't', runId: 'r', status: 'running' as const, page: { kind: 'chat' as const, path: '/chat' },
+    owner: { sub: 's' }, threadId: 't', runId: 'r', status: 'running' as const, page: { kind: 'chat' as const, path: '/chat' },
     pendingInterrupts: [], createdAt: 'c', updatedAt: 'u', revision: 1,
   };
 

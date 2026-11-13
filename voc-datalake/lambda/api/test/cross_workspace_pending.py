@@ -143,13 +143,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /agents/<agent_id>',
         'PUT /workflows/<workflow_id>',
     }),
-    'chat_handler.py': frozenset({
-        'DELETE /chat/conversations/<conversation_id>',
-        'GET /chat/conversations/<conversation_id>',
-        'POST /chat/conversations/<conversation_id>',
-        'POST /chat/conversations/<conversation_id>/cancel',
-        'PUT /chat/conversations/<conversation_id>/title',
-    }),
     'company_personas_routes.py': frozenset({
         'DELETE /company-personas/<persona_id>',
         'GET /company-personas',

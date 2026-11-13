@@ -164,7 +164,27 @@ The assistant's reads (the stream Lambda calling the domain Lambdas as the signe
 stream request's header (`assistant/runtime/event.ts`, as it came, not judged there; the web app sends it once it is
 inside a workspace, Request flow step 2) goes on every domain call as its `X-Workspace-Id` header, never as a claim,
 and each domain Lambda answers it exactly as it answers the caller's own request (membership, the 400 and the one
-404). So a route that moves into its workspace keeps working for the assistant. Plan steps carry it too (since
+404). So a route that moves into its workspace keeps working for the assistant. Its conversations (Unreleased) are the
+caller's own inside the workspace: a request that names one keeps them at `WS#{ws}#USER#{sub}` in
+voc-conversations (the same `CONV#{id}` and `RUNCANCEL#{id}` sort keys; `lambda/shared/conversations.py`
+`conversation_partition`, and the stream Lambda's `assistant/session/record.ts` `callerPartition`, in lockstep), one
+that names none at `USER#{sub}`, as before. Both writers check the membership before any read or write: the chat
+routes (`lambda/api/chat_handler.py`, through `lambda/shared/request_workspace.py` with `elevate=False`, fresh for a
+write, every call through the layer's view of the table) and the stream Lambda, which judges the header itself
+(`assistant/session/workspace-member.ts`: the caller's `MEMBER#` row with a known role and an `active` workspace,
+read fresh at the start of each run; a malformed id, a non-member or a service subject ends the run with the one 404
+before any session row; the chat routes refuse a service subject inside a workspace too). Neither enters as a platform admin (decision 2's entry needs the live check and its audit row): for a
+platform admin who is not a member the assistant still answers there (each domain API it reads through admits them,
+live-checked), but nothing of the conversation is kept, the stream Lambda reading and writing no session row and the
+chat routes (list, open, save, rename, delete, Stop) answering the one 404, until they add themselves as a member;
+with no Stop watch, such a run cannot be stopped and runs to its end (at most the stream Lambda's 15 minutes). Both roles read only `WS#*` rows of voc-workspaces. A deleted conversation's
+`AUDIT#delete` row stays in the deployment's audit partition and names the workspace. The memory workers still mine
+only `USER#` partitions, so a workspace's conversations give no memories until memory moves (the conversations'
+kind index, which only the memory scanner reads, holds both). Nothing is migrated: the conversations saved before
+stay the caller's outside workspaces, at `USER#{sub}`, and the web app no longer shows them to anyone who has a
+workspace (the gate always enters one, so every call carries the header): they are kept, and readable through an API
+call that names no workspace, but the assistant's history inside a workspace starts empty. A deployment upgrading
+says so in its release notes (a later web-app change can offer the earlier conversations, read without the header). Plan steps carry it too (since
 6.18.00): the approval's `X-Workspace-Id` is kept on the plan (one that is not a workspace id is the one 404) and each step names it to the
 domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). And the global
 MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`), and an

@@ -15,6 +15,7 @@ import { AGUI_PROTOCOL_VERSION, CUSTOM_EVENTS, type ForwardedProps } from '../co
 import type {
   AssistantRunContext,
   AssistantToolset,
+  CallerClaims,
   FeedbackSource,
   ToolsetOptions,
   WebSourceRef,
@@ -40,8 +41,9 @@ import { buildDynamicPrompt, buildStaticPrompt } from './system-prompt.js';
 import { buildTail, inspectTail } from './tail.js';
 import { logUsage, toAguiUsage } from './usage.js';
 import { createSessionEmitter, startRunSession, type SessionEmitter, type SessionPersistence } from '../session/run-session.js';
-import { watchForStop } from '../session/cancel.js';
+import { watchForStop, type CancelWatch } from '../session/cancel.js';
 import type { PersonaRound } from './persona-round.js';
+import { resolveSessionOwner, type SessionOwner } from '../session/workspace-member.js';
 
 export interface RuntimeDeps {
   converse: ConverseFn;
@@ -169,6 +171,30 @@ function toolsetForRun(toolset: AssistantToolset, preload: ProjectPreload | unde
   return aiWriting.interactive.size === 0 ? withoutDocumentGeneration(writable) : writable;
 }
 
+/** Where this run saves its conversation, and as whom; undefined when it saves nothing. */
+interface RunSession {
+  persistence: SessionPersistence;
+  owner: SessionOwner;
+}
+
+/**
+ * The run's session: the caller's own conversation, inside the workspace the request names only when they are a
+ * member there (session/workspace-member.ts). A workspace they are not is the one 404, before any session row, but for
+ * an entered platform admin, whose run answers and saves nothing; no persistence configured saves nothing either.
+ */
+async function runSessionFor(persistence: SessionPersistence | undefined, claims: CallerClaims): Promise<RunSession | undefined> {
+  if (persistence === undefined) return undefined;
+  const owner = await resolveSessionOwner(persistence.membership, claims);
+  return owner === undefined ? undefined : { persistence, owner };
+}
+
+/** Stop in the SPA (session/cancel.ts), for a run that saves its conversation. */
+function stopWatchFor(session: RunSession | undefined, input: { threadId: string; runId: string }): CancelWatch | undefined {
+  return session === undefined
+    ? undefined
+    : watchForStop(session.persistence, { owner: session.owner, threadId: input.threadId, runId: input.runId });
+}
+
 async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: RuntimeDeps, limits: RunLimits): Promise<void> {
   const input = parseRunAgentInput(getBodyText(event));
   emitter.emit(events.runStarted(input.threadId, input.runId, AGUI_PROTOCOL_VERSION));
@@ -193,6 +219,7 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
     ...(limits.deadlineMs === undefined ? {} : { deadlineMs: limits.deadlineMs }),
   };
   const now = deps.now();
+  const session = await runSessionFor(deps.sessions, claims);
   // Independent work before the first turn: the project on screen, the memories
   // for this message, and starting the server-side save of this run (its
   // partition is the verified caller's sub from the authorizer claims, never
@@ -203,11 +230,11 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
     briefForRun(deps.loadCompanyBrief, ctx),
     restrictionForRun(deps.loadCategoryRestriction, ctx),
     aiWritingForRun(deps.loadAiWriting, claims.sub),
-    startRunSession(emitter, deps.sessions, { callerSub: claims.sub, input, page }),
+    session === undefined ? undefined : startRunSession(emitter, session.persistence, { owner: session.owner, input, page }),
   ]);
   ctx.aiWriting = aiWriting;
   // Stop in the SPA (session/cancel.ts): polled for the rest of the run (persona round included), ended with it.
-  const stopWatch = watchForStop(deps.sessions, { callerSub: claims.sub, threadId: input.threadId, runId: input.runId });
+  const stopWatch = stopWatchFor(session, input);
   // Review-only persona answers, allowed in every way of working (the model's own turn keeps its mode).
   const mentionsBlock = await mentionsForRun({ deps, props, question: textOfParts(split.user.content), ctx, signal: stopWatch?.signal });
   const toolset = toolsetForRun(pageToolset, projectPreload, aiWriting);

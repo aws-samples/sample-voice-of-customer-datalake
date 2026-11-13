@@ -280,10 +280,39 @@ _CURSOR_IDS = {'A': {'cursor': _members_cursor(WS_A, 'sub-ada')},
 _A_ROLE = 'a workspace role (admin, editor or viewer), the same words in every workspace'
 
 #: handler file -> the world its routes run in.
+# ── voc-chat-api (lambda/api/chat_handler.py): the caller's conversations inside a workspace ──
+
+#: Each caller's conversation in each partition: the deployment's (no workspace), A's and B's. A conversation id is
+#: the caller's own name for it, so the deployment's partition holds one under A's id too (check 3 reads it).
+_CONVERSATION_IDS = {'A': {'conversation_id': 'conv_a'}, 'B': {'conversation_id': 'conv_b'},
+                     UNKNOWN: {'conversation_id': 'conv_unknown'}}
+
+
+def _conversation(pk: str, conversation_id: str, title: str) -> dict:
+    return {'pk': pk, 'sk': f'CONV#{conversation_id}', 'conversation_id': conversation_id, 'kind': 'assistant',
+            'title': title, 'messages_json': '[]', 'page_json': '{}', 'pending_json': '[]', 'message_count': 0,
+            'created_at': '2026-11-01T00:00:00+00:00', 'updated_at': '2026-11-01T00:00:00+00:00', 'revision': 1}
+
+
+@contextmanager
+def chat_world(lambda_context: Any) -> Generator[World]:
+    import chat_handler
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        conversations = pk_sk_table('conversations')
+        stack.enter_context(patch.object(chat_handler, 'conversations_table', conversations))
+        conversations.put_item(Item=_conversation('USER#sub-ada', 'conv_a', 'Before workspaces'))
+        conversations.put_item(Item=_conversation(f'WS#{WS_A}#USER#sub-ada', 'conv_a', f'{A_MARK} returns'))
+        conversations.put_item(Item=_conversation(f'WS#{WS_B}#USER#sub-{B_MARK}-bea', 'conv_b', f'{B_MARK} chains'))
+        yield World(call=_caller(chat_handler, lambda_context), doubles={'cognito': cognito})
+
+
 WORLDS: dict[str, Callable[[Any], Any]] = {
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
+    'chat_handler.py': chat_world,
     'mcp_oauth_consent_routes.py': tokens_world,
 }
 
@@ -329,6 +358,28 @@ CASES: dict[tuple[str, str], RouteCase] = {
         body={'authorize_query': _AUTHORIZE_QUERY, 'scope': 'read'},
         literals={_AUTHORIZE_QUERY: "a sign-in request of the deployment's web client, the same in every workspace",
                   'read': 'a token scope, the same everywhere'},
+        without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'GET /chat/conversations/<conversation_id>'): RouteCase(
+        ids=_CONVERSATION_IDS, without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'DELETE /chat/conversations/<conversation_id>'): RouteCase(
+        # A delete of a conversation the caller has none of deletes nothing and answers success, as before.
+        ids=_CONVERSATION_IDS, refused_status=200, without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'PUT /chat/conversations/<conversation_id>/title'): RouteCase(
+        ids=_CONVERSATION_IDS, body={'title': 'Renamed'},
+        literals={'Renamed': 'a title the person typed, not a row of a workspace'}, without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'POST /chat/conversations/<conversation_id>'): RouteCase(
+        no_ids="a conversation id is the caller's own name for it in their own partition (the save creates it), "
+               'the workspace is the header: check 1',
+        shared={'conversation_id': 'conv_new'}, body={'title': 'Trip notes', 'messages': []},
+        literals={'conv_new': "the caller's own name for a new conversation, in their own partition",
+                  'Trip notes': 'a title the person typed, not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'POST /chat/conversations/<conversation_id>/cancel'): RouteCase(
+        no_ids="the Stop marker lands in the caller's own partition under the id they name, the workspace is the "
+               'header: check 1',
+        shared={'conversation_id': 'conv_a'}, body={'runId': 'run_1'},
+        literals={'conv_a': "the caller's own conversation, in their own partition",
+                  'run_1': 'the id of a run the stream Lambda started for the caller'},
         without_a_workspace=_AS_BEFORE),
     ('settings_handler.py', 'GET /settings/brand'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own brand)',
