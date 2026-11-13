@@ -11,11 +11,20 @@ import { engineeringMessage, engineeringOverview } from '@test/engineeringRunFix
 vi.mock('./client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 describe('parseOverview', () => {
+  it.each([
+    [{ monthly_usd: 50, alert_percent: 150, alert_month: '2026-11' }, { monthly_usd: 50, alert_percent: 150, alert_month: '2026-11' }],
+    [{ monthly_usd: 50, alert_percent: null, alert_month: null }, { monthly_usd: 50, alert_percent: null, alert_month: null }],
+    [{ monthly_usd: 50, alert_percent: 'x' }, { monthly_usd: 50, alert_percent: null, alert_month: null }],
+    [{ monthly_usd: -1 }, null], ['lots', null], [null, null],
+  ])('reads the run\'s flow budget leniently (%o)', (budget, read) => {
+    expect(parseOverview(engineeringOverview({ budget })).run.budget).toStrictEqual(read)
+  })
+
   it('reads a full overview as the server writes it', () => {
     const overview = parseOverview(engineeringOverview())
     expect(overview.run).toStrictEqual({
       run_id: 'RUN1', goal: 'Fix the paging bugs', repo: 'example-org/storefront', flow: 'wf_flow', status: 'running',
-      started_at: '2026-11-12T08:00:00Z', ended_at: null,
+      started_at: '2026-11-12T08:00:00Z', ended_at: null, budget: null,
     })
     expect(overview.agents.map((agent) => [agent.agent, agent.status, agent.task_id, agent.tokens.length])).toStrictEqual([
       ['coordinator-0', 'waiting', null, 1], ['fixer-1', 'working', 'task-1', 1], ['final-go-1', 'working', 'task-3', 0],

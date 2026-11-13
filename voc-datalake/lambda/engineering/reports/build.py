@@ -156,7 +156,9 @@ def build_report(level: str, subject: str, inputs: Inputs, *, version: int, buil
         'cost': {'events': facts.events, 'microvm_seconds': sum(a.microvm_seconds for a in agents),
                  'input_tokens': sum(a.input_tokens for a in agents),
                  'output_tokens': sum(a.output_tokens for a in agents),
-                 'usd': str(sum((a.cost_usd for a in agents), Decimal(0)))},
+                 'usd': str(sum((a.cost_usd for a in agents), Decimal(0))),
+                 # The run's flow budget and its flag (None: no budget): measured, never a stop.
+                 'budget': facts.budget},
         'time': {'started_at': facts.started_at, 'ended_at': facts.ended_at,
                  'seconds': _seconds(facts.started_at, facts.ended_at)},
         'tasks': {'by_state': dict(Counter(task.state for task in inputs.tasks))},

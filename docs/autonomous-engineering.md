@@ -1378,7 +1378,9 @@ repository, run, agent, model or day. The web app's **Spend** tab (Agents → Sp
 while the engineering agents are on) reads it: the month's cost, tokens and MicroVM time, then each group, biggest
 first; the month (the last 24 in its picker, any older one by its address), the grouping and a workflow are view
 options in the address; a workflow's row narrows the view to its runs, and a run's or an agent's opens its run
-monitor. Each engineering flow may set a monthly budget (`budget: {monthly_usd}`, docs/autonomous-agents.md
+monitor. Grouped by workflow, this month is set against each flow's monthly budget as it is now (the library's
+`monthly_budget_usd`), its share marked from 80% (the first alert) and in the danger tone from 100%.
+Each engineering flow may set a monthly budget (`budget: {monthly_usd}`, docs/autonomous-agents.md
 "Engineering flows"). The runtime's `start_run` takes the flow's budget (`budget_usd`, under the flow's own rule,
 refused for a run with no workflow id it could key) and keeps it on the run's META: a change applies to the next run.
 Nothing in the product starts a run yet, so no run has one so far: *planned*, the start route, which is to read it
@@ -1403,8 +1405,13 @@ the highest level said that month (`budget_alert`, `budget_alert_month` on META,
 another run holds unsaid, which its later ticks try again); a tick that
 jumps several levels claims each and says how far the month is. It is MicroVM time only until the model broker
 prices tokens, so a deployment that leaves MicroVM time unpriced (`-c engineeringMicrovmUsdPerSecond`, 0 by
-default) spends no dollars and never alerts; and it stops nothing: *planned*: the administrators' opt-in hard cap, and the flag shown in the run
-monitor and its reports. The ledger is a dated view of what the sessions measured: each agent's own
+default) spends no dollars and never alerts; and it stops nothing: *planned*: the administrators' opt-in hard cap.
+The run monitor's header and the run's reports (`cost.budget`, and a line under Cost and time in the goal and
+commit reports' Markdown, never a pull request's, which is its description in the target repository) show the run's
+flow budget and its flag: the highest level this run saw its flow's month pass (it stops rising when the run ends).
+Agents → Spend, grouped by workflow, sets this month against each flow's budget as it is now (a past month ran
+under the budgets its runs kept, which the alerts measured, so it shows none). The total is read consistently, right after
+the tick's own writes. The ledger is a dated view of what the sessions measured: each agent's own
 totals (its `cost_usd`, MicroVM seconds and tokens per model) stay on its session row, the record each run's caps and
 the run monitor read, and every ledger row only ever grows with the session write that measured it, naming its
 writer (`updated_by`), when (`updated_at`) and that session write's version (`session_seq`, D4). The rows are cost

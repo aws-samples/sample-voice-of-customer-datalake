@@ -834,6 +834,13 @@ def archive_workflow(table: Any, workflow_id: str, *, archived_by: str, username
     return response['Attributes']
 
 
+def _monthly_budget(definition: Mapping[str, Any] | None) -> Any:
+    """An engineering flow's ``budget.monthly_usd`` as stored, None for none (or a stored budget that is not one:
+    a row from before its rule never fails the library's list)."""
+    budget = (definition or {}).get('budget')
+    return budget.get('monthly_usd') if isinstance(budget, Mapping) else None
+
+
 def workflow_view(item: Mapping[str, Any], *, include_definition: bool = True) -> dict[str, Any]:
     data = plain(dict(item))
     definition = workflow_schema.decode_definition(data.get('definition'))
@@ -846,6 +853,8 @@ def workflow_view(item: Mapping[str, Any], *, include_definition: bool = True) -
         'created_at': data.get('created_at'), 'updated_at': data.get('updated_at'),
         'updated_by_username': data.get('updated_by_username'),
         'status': WORKFLOW_STATUS_ARCHIVED if is_archived_workflow(data) else AGENT_STATUS_ACTIVE,
+        # An engineering flow's monthly budget (its definition's budget.monthly_usd), None for none.
+        'monthly_budget_usd': _monthly_budget(definition),
     }
     if include_definition:
         view['definition'] = definition

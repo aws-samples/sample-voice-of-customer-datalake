@@ -4,7 +4,7 @@
  * first 8 by name); the month and the grouping as view options in the address; a workflow's row narrowing to its
  * runs and the filter cleared; an empty month, a read cut at its limit, and a failed read with its retry.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes, useLocation } from 'react-router-dom'
@@ -12,7 +12,7 @@ import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { ApiError } from '../../lib/errors'
-import { monthsOffered, spendQueryOf } from './spendView'
+import { budgetShare, monthsOffered, shareTone, spendQueryOf } from './spendView'
 import type { RouteHandler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -74,6 +74,70 @@ describe('Agents → Spend: the month', () => {
     expect(within(table).getByRole('button', { name: FIX_ROWS.label })).toHaveTextContent('Fix the reported bugs')
     expect(within(table).getByRole('button', { name: 'wf_gone: show its runs' })).toBeInTheDocument()
     expect(within(table).getByText('$3.38')).toBeInTheDocument()
+  })
+
+  describe('the monthly budget column (this month: November 2026)', () => {
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-13T10:00:00Z') }) })
+    afterEach(() => { vi.useRealTimers() })
+
+    const budgeted = () => ({ items: [
+      { workflow_id: 'wf_fix', name: 'Fix the reported bugs', monthly_budget_usd: 40 },
+      { workflow_id: 'wf_hunt', name: 'Hunt', monthly_budget_usd: 100 },
+      { workflow_id: 'wf_tight', name: 'Tight', monthly_budget_usd: 2.99 },
+      { workflow_id: 'wf_free', name: 'Free' },
+    ] })
+    const header = { name: 'Monthly budget' }
+
+    const renderBudgeted = async () => {
+      routeFetchApi({
+        'GET /workflows': budgeted,
+        [BY_WORKFLOW]: () => answer('workflow', [
+          { key: 'wf_fix', ...usage(34) }, { key: 'wf_hunt', ...usage(12) }, { key: 'wf_tight', ...usage(2.99) },
+          { key: 'wf_free', ...usage(1) }]),
+      }, { missStatus: 500 })
+      renderSpend()
+      return screen.findByRole('table')
+    }
+
+    it('sets each workflow\'s spend against its budget, marked from 80%', async () => {
+      const table = await renderBudgeted()
+      expect(within(table).getByRole('columnheader', header)).toBeInTheDocument()
+      expect(within(table).getByText('85%')).toHaveClass('badge-warn')
+      expect(within(table).getByText('12%')).not.toHaveClass('badge')
+      expect(screen.getByText(/as it is now, and the share of it spent this month/)).toBeInTheDocument()
+    })
+
+    it('says a budget spent exactly is 100% and over it, and a workflow with none has none', async () => {
+      const table = await renderBudgeted()
+      // (never 99% by a float's rounding; said, not only coloured)
+      expect(within(table).getByText('100%')).toHaveClass('badge-danger')
+      expect(within(table).getByText('over budget')).toHaveClass('sr-only')
+      expect(within(table).getByText('No budget')).toBeInTheDocument()
+    })
+
+    it('shows none by another grouping', async () => {
+      routeFetchApi({
+        'GET /workflows': budgeted,
+        [spendPath('month=2026-11&by=run')]: () => answer('run', [{ key: 'RUN1', ...usage(1) }]),
+      }, { missStatus: 500 })
+      renderSpend('/agents?tab=spend&month=2026-11&by=run')
+      expect(within(await screen.findByRole('table')).queryByRole('columnheader', header)).not.toBeInTheDocument()
+    })
+
+    it('shows none for a past month (it ran under the budgets its runs kept)', async () => {
+      routeFetchApi({
+        'GET /workflows': budgeted,
+        [spendPath('month=2026-10&by=workflow')]: () => answer('workflow', [{ key: 'wf_fix', ...usage(1) }], { month: '2026-10' }),
+      }, { missStatus: 500 })
+      renderSpend('/agents?tab=spend&month=2026-10')
+      expect(within(await screen.findByRole('table')).queryByRole('columnheader', header)).not.toBeInTheDocument()
+    })
+
+    it('shows none when no workflow has a budget', async () => {
+      route({ [BY_WORKFLOW]: () => answer('workflow', [{ key: 'wf_fix', ...usage(1) }]) })
+      renderSpend()
+      expect(within(await screen.findByRole('table')).queryByRole('columnheader', header)).not.toBeInTheDocument()
+    })
   })
 
   it('a workflow row narrows the view to its runs, each opening its monitor', async () => {
@@ -203,5 +267,17 @@ describe('the Spend view options', () => {
     expect(months.slice(0, 3)).toStrictEqual(['2026-11', '2026-10', '2026-09'])
     expect(months.at(-1)).toBe('2024-12')
     expect(monthsOffered('2020-01', now).at(-1)).toBe('2020-01')
+  })
+})
+
+describe('a workflow\'s share of its budget', () => {
+  it('counts a budget spent exactly as 100%, as the server\'s levels do', () => {
+    expect([budgetShare(2.99, 2.99), budgetShare(0.17, 0.17), budgetShare(0.21, 0.14), budgetShare(7.99, 10)])
+      .toStrictEqual([100, 100, 150, 79])
+  })
+
+  it('marks from 80% and over the budget from 100%', () => {
+    expect([shareTone(79), shareTone(80), shareTone(99), shareTone(100)])
+      .toStrictEqual(['', 'badge badge-warn', 'badge badge-warn', 'badge badge-danger'])
   })
 })

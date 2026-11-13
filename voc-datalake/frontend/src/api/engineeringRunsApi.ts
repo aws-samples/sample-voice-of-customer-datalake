@@ -78,9 +78,17 @@ export type EngineeringAgent = z.output<typeof AgentSchema>
 
 const PartySchema = z.object({ kind: text, id: text }).catch({ kind: '', id: '' })
 
+/** The run's flow budget (copied at its start) and the highest level its flow's month passed; null for none. */
+const RunBudgetSchema = z.object({
+  monthly_usd: z.number().positive(),
+  alert_percent: z.number().int().positive().nullable().catch(null),
+  alert_month: z.string().nullable().catch(null),
+}).nullable().catch(null)
+
 const OverviewSchema = z.object({
   run: z.object({
     run_id: text, goal: text, repo: text, flow: text, status: text, started_at: maybeText, ended_at: maybeText,
+    budget: RunBudgetSchema.optional().transform((budget) => budget ?? null),
   }),
   agents: eachOf(AgentSchema),
   /** The signals and answers can reach the run (the stack names the runtime and the bus); false when unsaid. */

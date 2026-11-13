@@ -187,7 +187,8 @@ def flow_total_key(month: str, flow: str) -> dict[str, str]:
 def flow_month_usd(table: Any, month: str, flow: str) -> Decimal:
     """What ``flow``'s runs spent in ``month`` (priced: MicroVM time until tokens are), from its month total: one
     GetItem."""
-    item = table.get_item(Key=flow_total_key(month, flow)).get('Item') or {}
+    # (consistent: read right after this tick's own writes, so a level they passed is seen in this tick)
+    item = table.get_item(Key=flow_total_key(month, flow), ConsistentRead=True).get('Item') or {}
     return Decimal(str(item.get('usd', 0)))
 
 

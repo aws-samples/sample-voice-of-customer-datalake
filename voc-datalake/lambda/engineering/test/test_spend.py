@@ -207,3 +207,18 @@ def test_only_the_run_holding_a_claim_closes_it(table: Any):
     item = table.get_item(Key={'pk': 'WS#default#BUDGET#2026-11', 'sk': 'ALERT#wf#000000010000#0080'})['Item']
     assert 'sent_at' not in item
     assert _claim(table) == 'claimed'
+
+
+def test_a_flows_total_is_read_consistently_right_after_the_ticks_own_writes() -> None:
+    # (an eventually consistent read could miss the level this tick's writes passed)
+    class Table:
+        def __init__(self) -> None:
+            self.asked: dict[str, Any] = {}
+
+        def get_item(self, **request: Any) -> dict[str, Any]:
+            self.asked = request
+            return {'Item': {'usd': Decimal('2.5')}}
+
+    table = Table()
+    assert flow_month_usd(table, '2026-11', 'wf') == Decimal('2.5')
+    assert table.asked == {'Key': {'pk': 'WS#default#SPEND#2026-11', 'sk': 'FLOW#wf'}, 'ConsistentRead': True}

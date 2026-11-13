@@ -1,11 +1,13 @@
 /**
  * @fileoverview The run monitor's header: the run's goal, repository, status and start, and its MicroVM time, messages
- * and tokens per model. No cost or budget: they come with the run control's own item.
+ * and tokens per model, and its flow's monthly budget with the highest level its flow's month passed (the flag the
+ * supervisor sets as it says each alert). No cost yet: it comes with the run control's own item.
  *
  * @module pages/Agents/EngineeringRunHeader
  */
 import { useTranslation } from 'react-i18next'
-import { formatDateTime } from '../../utils/dateUtils'
+import { formatCalendarMonth, formatDateTime } from '../../utils/dateUtils'
+import { shareTone } from './spendView'
 import type { EngineeringOverview } from '../../api/engineeringRunsApi'
 
 function Totals({ totals }: Readonly<{ totals: EngineeringOverview['totals'] }>) {
@@ -26,6 +28,22 @@ function Totals({ totals }: Readonly<{ totals: EngineeringOverview['totals'] }>)
   )
 }
 
+function BudgetFlag({ budget }: Readonly<{ budget: NonNullable<EngineeringOverview['run']['budget']> }>) {
+  const { t, i18n } = useTranslation('agents')
+  const amount = new Intl.NumberFormat(i18n.language, { style: 'currency', currency: 'USD' }).format(budget.monthly_usd)
+  return (
+    <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+      <span>{t('engineeringRun.budget', { amount })}</span>
+      {budget.alert_percent !== null && (
+        <span className={shareTone(budget.alert_percent)}>
+          {t('engineeringRun.budgetPassed', {
+            percent: budget.alert_percent, month: formatCalendarMonth(budget.alert_month ?? '', i18n.language) })}
+        </span>
+      )}
+    </p>
+  )
+}
+
 export function EngineeringRunHeader({ overview }: Readonly<{ overview: EngineeringOverview }>) {
   const { t, i18n } = useTranslation('agents')
   const { run } = overview
@@ -41,6 +59,7 @@ export function EngineeringRunHeader({ overview }: Readonly<{ overview: Engineer
         </p>
       </div>
       <Totals totals={overview.totals} />
+      {run.budget !== null && <BudgetFlag budget={run.budget} />}
     </div>
   )
 }

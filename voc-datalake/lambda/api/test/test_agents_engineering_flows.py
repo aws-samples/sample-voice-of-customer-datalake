@@ -126,6 +126,9 @@ def test_a_flow_keeps_its_monthly_budget_and_only_a_signed_in_admin_changes_it(l
         assert status == 200, body
         assert _call(lambda_context, 'GET', f'/workflows/{workflow_id}')[1]['workflow']['definition']['budget'] \
             == {'monthly_usd': 49.99}
+        # The library lists it (the Spend tab's budget column); a flow without one lists None.
+        listed = {w['workflow_id']: w['monthly_budget_usd'] for w in _call(lambda_context, 'GET', '/workflows')[1]['items']}
+        assert (listed[workflow_id], listed['wf_default']) == (49.99, None)
 
 
 def test_a_budget_off_its_rule_or_on_an_agents_workflow_is_refused(lambda_context: Any) -> None:
@@ -136,3 +139,9 @@ def test_a_budget_off_its_rule_or_on_an_agents_workflow_is_refused(lambda_contex
         status, body = _call(lambda_context, 'POST', '/workflows',
                              body={'definition': {**workflow_schema.default_template(), 'budget': {'monthly_usd': 5}}})
         assert (status, body['errors']) == (400, [{'message': 'only an engineering flow has a budget'}])
+
+
+def test_a_stored_budget_that_is_not_one_never_fails_the_library():
+    from shared.agents_store import _monthly_budget
+    assert (_monthly_budget({'budget': 'lots'}), _monthly_budget({'budget': [50]}), _monthly_budget(None),
+            _monthly_budget({'budget': {'monthly_usd': 50}})) == (None, None, None, 50)

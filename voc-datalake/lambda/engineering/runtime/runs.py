@@ -291,7 +291,7 @@ class RunStore:
 
     def flag_budget(self, run_id: str, month: str, level: int) -> None:
         """Flag the run with the highest alert level its flow passed in ``month`` (for the run monitor and its
-        reports, which do not show it yet): only ever upward within a month, never on a run that is gone."""
+        reports): only ever upward within a month, never on a run that is gone."""
         try:
             self._table.update_item(
                 Key=meta_key(run_id),
