@@ -47,10 +47,16 @@ describe('the engineering run reads', () => {
     expect(JSON.stringify(env.ENGINEERING_WORKSPACE_BUCKET)).toMatch(/Fn::ImportValue.*EngineeringWorkspace/);
   });
 
-  it('grant the agents API only the reads its views make: the run\'s rows and the reports', () => {
+  it('grant the agents API only what its views and a person\'s board actions use: never a delete', () => {
     const statements = engineeringStatements(on());
     expect(actionsWithPrefix(statements, '')).toStrictEqual(
-      ['dynamodb:GetItem', 'dynamodb:Query', 's3:GetObject']);
+      ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem', 's3:GetObject']);
+    expect(JSON.stringify(statements)).not.toMatch(/Delete/);
+    // The writes only in a run's partition: never the skills' or the knowledge packs' rows.
+    const writes = statements.filter((statement) => statement.actions.includes('dynamodb:PutItem'));
+    expect(writes.map((statement) => [statement.actions, statement.condition])).toStrictEqual([[
+      ['dynamodb:PutItem', 'dynamodb:UpdateItem'], { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } },
+    ]]);
     const objects = statements.filter((statement) => statement.actions.includes('s3:GetObject'));
     expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);
   });

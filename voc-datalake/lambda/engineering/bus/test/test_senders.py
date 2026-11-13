@@ -48,6 +48,10 @@ def test_sources(source, expected):
     ({'type': 'run.ended', 'from': {'kind': 'system', 'id': 'board'}, 'to': {'kind': 'run', 'id': RUN}}, BOARD),
     ({'type': 'msg.handoff', 'from': {'kind': 'conductor', 'id': 'c'}}, CONDUCTOR),
     ({'type': 'skill.proposed', 'from': {'kind': 'coach', 'id': 'coach'}, 'refs': {'s3': []}}, COACH),
+    # A person's board actions (board.api.PersonBoard), published by the API as its user.
+    ({**TASK, 'from': {'kind': 'human', 'id': 'user-1'}}, 'voc.engineering/api'),
+    ({**TASK, 'type': 'task.needs_human', 'to': {'kind': 'run', 'id': RUN}, 'from': {'kind': 'human', 'id': 'user-1'}},
+     'voc.engineering/api'),
     # An administrator's proposal, acceptance (or promotion) and rollback, published by the API as its user.
     *(({'type': kind, 'from': {'kind': 'human', 'id': 'user-1'}, 'refs': {'s3': []}}, 'voc.engineering/api')
       for kind in ('skill.proposed', 'skill.accepted', 'skill.rolled_back')),
@@ -70,6 +74,11 @@ def test_allowed(changes, source):
 
 @pytest.mark.parametrize(('changes', 'source', 'reason'), [
     (TASK, AGENT_SOURCE, 'agent may not send task.posted'),
+    # The API's task.* is a person's only: never the board's or an agent's voice (the drop the bus pins).
+    ({**TASK, 'from': {'kind': 'system', 'id': 'board'}}, 'voc.engineering/api',
+     'from.kind system is not what the source api proves'),
+    ({**TASK, 'type': 'task.claimed', 'to': {'kind': 'run', 'id': RUN}, 'from': {'kind': 'agent', 'id': 'fixer-1'}},
+     'voc.engineering/api', 'from.kind agent is not what the source api proves'),
     ({'type': 'signal.pause', 'to': {'kind': 'run', 'id': RUN}}, AGENT_SOURCE, 'agent may not send signal.pause'),
     ({'type': 'gate.go', 'to': {'kind': 'run', 'id': RUN}}, AGENT_SOURCE,
      'only the final-go agent gives the verdict, not fixer'),

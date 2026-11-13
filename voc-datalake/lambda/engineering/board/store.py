@@ -42,7 +42,7 @@ from typing import Any
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
-from engineering.board.model import CLAIMED, FINAL, MOVES, OPEN, Move, Task, task_key
+from engineering.board.model import CLAIMED, FINAL, MOVES, NEEDS_HUMAN, OPEN, Move, Task, task_key
 from engineering.quality_gate.text import redact
 from engineering.rows import Refused, get_row, run_pk, run_rows
 from engineering.workspace.layout import parse_agent_key
@@ -57,6 +57,13 @@ MAX_RESULT_KEYS = 16
 MAX_KEY_LENGTH = 512
 #: A progress step or a re-post's reason: a line, not a log.
 MAX_LINE = 200
+#: A task's priority, either way (an agent's post takes the same bound: board/api.py MAX_INT).
+MAX_PRIORITY = 1_000_000
+#: A person's id on the board (a history row's actor, a held lease's agent): ``human:<their subject>``. An agent's id is
+#: ``<role>-<n>``, so the two never meet.
+PERSON_PREFIX = 'human:'
+#: A person's lease never runs out: the largest epoch-seconds a lease takes (the year 9999).
+PERSON_LEASE_EXPIRES = 253_402_300_799
 #: The run's coordinate task (one per run, the coordinator's): its id and its role.
 COORDINATE_TASK = 'coordinate'
 COORDINATOR = 'coordinator'
@@ -427,6 +434,8 @@ class BoardStore:
             raise BoardError('conflict', f'a {current.state} task is not re-posted')
         if current.attempt != attempt:
             raise BoardError('conflict', f'the task is at attempt {current.attempt}, not the {attempt} judged')
+        if current.lease_agent.startswith(PERSON_PREFIX):
+            raise BoardError('conflict', 'a person holds the task: it is theirs until they move it')
         at = self.now().isoformat()
         why = redact(reason.strip())[:MAX_LINE]
         ended = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
@@ -434,15 +443,88 @@ class BoardStore:
             # The last attempt's progress goes with its lease: the next holder starts with none, never stalled.
             set_expr='SET #state = :open, attempt = attempt + :one, waiting = :no, updated_by = :actor, '
                      'updated_at = :at REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
+            # Never a task a person took (their lease, held in the write too: a take between the read and this).
             condition=(f'attempt = :attempt AND (NOT #state IN (:open, {", ".join(ended)}) '
-                       'OR (#state = :open AND launched_attempt = :attempt))'),
+                       'OR (#state = :open AND launched_attempt = :attempt)) '
+                       'AND (attribute_not_exists(lease_agent) OR NOT begins_with(lease_agent, :person))'),
             names={'#state': 'state'},
-            values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False},
+            values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False}, ':person': {'S': PERSON_PREFIX},
                     ':actor': {'S': 'supervisor'}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
             # Another re-post of the same attempt landed between the read and the write.
             already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
             refusal='the task moved on since it was read'),
             Move(task_id, OPEN, 'supervisor', at, attempt + 1, 'repost', reason=why).item(ws, run_id))
+
+    # ---- a person's board actions (the Agents API's, admins acting for themselves; plan v3 4.3) --------------------
+
+    def _person_read(self, ws: str, run_id: str, task_id: str, actor: str) -> Task:
+        """The task a person acts on: never the coordinate task (the run's own), never as an agent's id."""
+        if not actor.startswith(PERSON_PREFIX):
+            raise BoardError('invalid', f'a person acts as {PERSON_PREFIX}<their id>')
+        current = self.task(ws, run_id, task_id)
+        if current.task_id == COORDINATE_TASK:
+            raise BoardError('forbidden', "the coordinate task is the run coordinator's: signal the run instead")
+        return current
+
+    def _person_write(self, ws: str, run_id: str, current: Task, *, op: str, actor: str, set_expr: str,
+                      values: Mapping[str, Any], to_state: str | None, reason: str,
+                      done: Callable[[Task], bool], remove: str = '') -> Task:
+        """A person's change of ``current`` (as read), with its history row naming them; ``to_state`` None keeps the
+        state. ``done``: the change is already there (a retry), so it is answered as it is and writes nothing. Else
+        the task must not have ended, and the write holds the state and attempt it read (a move in between, an agent's
+        or a re-post, refuses it: never undone)."""
+        if done(current):
+            return current
+        if current.state in FINAL:
+            raise BoardError('conflict', 'the task has ended')
+        at = self.now().isoformat()
+        return self._write(ws, run_id, current.task_id, _Write(
+            set_expr=f'SET {set_expr}, updated_by = :actor, updated_at = :at' + (f' REMOVE {remove}' if remove else ''),
+            condition='#state = :was AND attempt = :attempt', names={'#state': 'state'},
+            values={**values, ':was': {'S': current.state}, ':actor': {'S': actor}, ':at': {'S': at},
+                    ':attempt': {'N': str(current.attempt)}},
+            already=done, refusal='the task has ended or moved on since it was read: read the board again'),
+            Move(current.task_id, to_state or current.state, actor, at, current.attempt, op,
+                 reason=reason).item(ws, run_id))
+
+    def reprioritise(self, ws: str, run_id: str, task_id: str, *, priority: int, actor: str) -> Task:
+        """A person changes the priority of a task that has not ended (its state as it is)."""
+        if isinstance(priority, bool) or abs(priority) > MAX_PRIORITY:
+            raise BoardError('invalid', f'a priority is a whole number of at most {MAX_PRIORITY} either way')
+        current = self._person_read(ws, run_id, task_id, actor)
+        return self._person_write(ws, run_id, current, op='priority', actor=actor, set_expr='priority = :priority',
+                                  values={':priority': {'N': str(priority)}}, to_state=None,
+                                  reason=f'priority {priority}',
+                                  done=lambda t: t.priority == priority and t.state not in FINAL)
+
+    def block(self, ws: str, run_id: str, task_id: str, *, reason: str, actor: str) -> Task:
+        """A person stops a task that has not ended: it needs a person (``needs_human``), with their reason; its
+        holder's lease is cleared, so the agent on it can move it no more."""
+        why = redact(reason.strip())[:MAX_LINE]
+        if not why:
+            raise BoardError('invalid', 'a block says why (a line)')
+        current = self._person_read(ws, run_id, task_id, actor)
+        return self._person_write(
+            ws, run_id, current, op='block', actor=actor, to_state=NEEDS_HUMAN, reason=why,
+            # (the reason is the history row's: a block is a move, D1)
+            set_expr='#state = :blocked', remove='lease_agent, lease_epoch, lease_expires, waiting',
+            values={':blocked': {'S': NEEDS_HUMAN}},
+            # Their own block, retried: one an agent's move or another person made is the task having ended (409).
+            done=lambda t: t.state == NEEDS_HUMAN and t.updated_by == actor)
+
+    def take(self, ws: str, run_id: str, task_id: str, *, actor: str) -> Task:
+        """A person takes a task that has not ended: they hold it from now, with no expiry (``lease_expires`` the
+        largest a lease takes), at its attempt, so its agent can move it no more and the supervisor, which judges
+        agents' sessions, leaves it alone; they move it on like any holder (``move`` with their id and the attempt).
+        An open task is claimed by them; one under way keeps its state."""
+        current = self._person_read(ws, run_id, task_id, actor)
+        state = CLAIMED if current.state == OPEN else current.state
+        return self._person_write(
+            ws, run_id, current, op='take', actor=actor, to_state=state, reason='taken by a person',
+            set_expr=('#state = :held, lease_agent = :actor, lease_epoch = attempt, lease_expires = :forever, '
+                      'waiting = :no'),
+            values={':held': {'S': state}, ':forever': {'N': str(PERSON_LEASE_EXPIRES)}, ':no': {'BOOL': False}},
+            done=lambda t: t.lease_agent == actor and t.lease_epoch == t.attempt and t.state not in FINAL)
 
     def move(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, to_state: str,
              result_keys: Sequence[object]) -> Task:

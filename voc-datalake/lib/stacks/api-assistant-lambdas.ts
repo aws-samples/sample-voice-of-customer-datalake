@@ -55,7 +55,8 @@ export interface AssistantLambdas {
 
 /**
  * With `-c engineeringAgents=true`, the agents API's reads of an engineering run (`/agents/engineering/<run_id>/…`,
- * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows) and GetObject on the workspace
+ * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows), PutItem and UpdateItem for a
+ * person's board actions (never DeleteItem), and GetObject on the workspace
  * bucket's reports only; its key comes with the role's grant on the stack's key. No ListBucket (it would list every
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
  * missing (404), since the role may read every report key. Returns the env that turns the routes on (shared/engineering_agents.py),
@@ -68,6 +69,14 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table and voc-eng-workspace bucket');
   }
   engineeringTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query');
+  // PutItem and UpdateItem: a person's board actions (engineering/board/api.py PersonBoard), each the board store's
+  // conditional write in one transaction with its history row (a TransactWriteItems is authorised by its items'
+  // own actions: there is no IAM action of its own). Only in a run's partition (`WS#<ws>#RUN#<run>`: its META, tasks,
+  // SPEC# markers and TASKLOG# rows), never the skills', the knowledge packs' or any other; never DeleteItem.
+  role.addToPolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'], resources: [engineeringTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } },
+  }));
   const reports = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [reports] }));
   acknowledgeNag(role, [{

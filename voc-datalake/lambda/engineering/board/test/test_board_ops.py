@@ -253,6 +253,88 @@ def test_only_the_coordinator_lists_its_runs_tasks(run: Board) -> None:
     assert call(run, FIXER, op='tasks')[0] == 403
 
 
+# --- a person's actions (the store's; the Agents API's routes are tested in api/test) ----------------------------
+
+PERSON = 'human:admin-1'
+
+
+def test_a_person_who_takes_a_task_holds_it_with_no_expiry_and_its_agent_can_move_it_no_more(run: Board) -> None:
+    task_id = fixer_task(run)
+    call(run, FIXER, op='claim', task_id=task_id)
+    taken = run.store.take(WS, RUN, task_id, actor=PERSON)
+    again = run.store.take(WS, RUN, task_id, actor=PERSON)   # (a retry: the same hold)
+    assert (taken.state, taken.lease_agent, taken.lease_epoch, taken.lease_expires, again == taken) == (
+        'claimed', PERSON, 1, 253_402_300_799, True)
+    assert call(run, FIXER, op='move', task_id=task_id, epoch=1, to='in_progress')[0] == 409
+    moved = run.store.move(WS, RUN, task_id, agent=PERSON, epoch=1, to_state='in_progress', result_keys=())
+    last = run.store.history(WS, RUN)[task_id][-1]
+    assert (moved.state, last.actor, last.op) == ('in_progress', PERSON, 'move')
+
+
+def test_a_person_blocks_or_reprioritises_a_task_that_has_not_ended(run: Board) -> None:
+    task_id = fixer_task(run)
+    assert run.store.reprioritise(WS, RUN, task_id, priority=-3, actor=PERSON).priority == -3
+    call(run, FIXER, op='claim', task_id=task_id)
+    blocked = run.store.block(WS, RUN, task_id, reason='  Wrong repository  ', actor=PERSON)
+    last = run.store.history(WS, RUN)[task_id][-1]
+    assert (blocked.state, blocked.lease_agent, last.op, last.reason, last.actor) == (
+        'needs_human', '', 'block', 'Wrong repository', PERSON)
+    assert call(run, FIXER, op='renew', task_id=task_id, epoch=1)[0] == 409   # (its holder's lease is gone)
+    with pytest.raises(BoardError, match='ended'):
+        run.store.reprioritise(WS, RUN, task_id, priority=1, actor=PERSON)
+
+
+@pytest.mark.parametrize(('task', 'actor', 'match'), [
+    (COORDINATE_TASK, PERSON, "the run coordinator's"),
+    ('fixer', 'coordinator-1', 'a person acts as human:'),
+])
+def test_a_person_never_acts_on_the_coordinate_task_nor_as_an_agent(run: Board, task: str, actor: str,
+                                                                    match: str) -> None:
+    task_id = COORDINATE_TASK if task == COORDINATE_TASK else fixer_task(run)
+    with pytest.raises(BoardError, match=match):
+        run.store.take(WS, RUN, task_id, actor=actor)
+
+
+def test_a_retried_priority_writes_nothing_and_another_block_is_the_task_having_ended(run: Board) -> None:
+    task_id = fixer_task(run)
+    first = run.store.reprioritise(WS, RUN, task_id, priority=5, actor=PERSON)
+    rows = len(run.store.history(WS, RUN)[task_id])
+    again = run.store.reprioritise(WS, RUN, task_id, priority=5, actor=PERSON)
+    assert (again.updated_at, len(run.store.history(WS, RUN)[task_id])) == (first.updated_at, rows)
+    run.store.block(WS, RUN, task_id, reason='Wrong repository', actor=PERSON)
+    assert run.store.block(WS, RUN, task_id, reason='Wrong repository', actor=PERSON).state == 'needs_human'
+    with pytest.raises(BoardError, match='ended'):   # (someone else's block: theirs is not answered as done)
+        run.store.block(WS, RUN, task_id, reason='Also wrong', actor='human:admin-2')
+
+
+def test_a_take_never_undoes_a_move_made_since_it_read_the_task(run: Board) -> None:
+    task_id = fixer_task(run)
+    call(run, FIXER, op='claim', task_id=task_id)
+    read = run.store.task(WS, RUN, task_id)   # (claimed, as the person's take read it)
+    call(run, FIXER, op='move', task_id=task_id, epoch=1, to='in_progress')
+    with pytest.raises(BoardError, match='moved on'):
+        run.store._person_write(WS, RUN, read, op='take', actor=PERSON, to_state='claimed', reason='',
+                                set_expr='lease_agent = :actor', values={}, done=lambda _t: False)
+    assert run.store.task(WS, RUN, task_id).state == 'in_progress'
+
+
+def test_the_supervisors_repost_never_takes_a_task_from_the_person_holding_it(run: Board) -> None:
+    task_id = fixer_task(run)
+    call(run, FIXER, op='claim', task_id=task_id)
+    run.store.take(WS, RUN, task_id, actor=PERSON)
+    with pytest.raises(BoardError, match='a person holds the task'):
+        run.store.repost(WS, RUN, task_id, reason='the agent stalled', attempt=1)
+    assert run.store.task(WS, RUN, task_id).lease_agent == PERSON
+
+
+def test_a_block_says_why_and_a_priority_is_bounded(run: Board) -> None:
+    task_id = fixer_task(run)
+    with pytest.raises(BoardError, match='says why'):
+        run.store.block(WS, RUN, task_id, reason='  ', actor=PERSON)
+    with pytest.raises(BoardError, match='whole number'):
+        run.store.reprioritise(WS, RUN, task_id, priority=10**7, actor=PERSON)
+
+
 # --- launch -----------------------------------------------------------------------------------------------------
 
 def test_the_coordinator_launches_an_agent_for_an_open_task_once(run: Board) -> None:

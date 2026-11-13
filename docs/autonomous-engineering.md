@@ -400,8 +400,8 @@ What exists:
   each agent role every source but its own.
 
 Not built yet: the harness's side (its board, inbox and broker interfaces still refuse every call, and so do the run
-coordinator's: [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); a person's board actions (POST), planned
-as the run monitor's board controls; the agents' findings in the workspace (the runtime writes their checkpoints and patches
+coordinator's: [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); the run monitor's board controls (a
+person's board actions are built through the API, below); the agents' findings in the workspace (the runtime writes their checkpoints and patches
 there). The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
 holds, and the design's type table is what the next slices bring the code to or the table to.
@@ -440,7 +440,8 @@ the event's `source`, which the bus's policy pins to the session's own agent tag
 run, so no agent can forge another's message or write into another run. The router also holds which sender may send
 which type, and drops (and journals) anything else: `decision` and `stop` only from the API's own source, `gate.go`
 and `gate.no_go` only from the run's final-go agent, the `task.*` events only from the board's API (agents report
-progress and moves through it), the `skill.*` announcements only from the API (all three: an administrator's proposal, acceptance, promotion or
+progress and moves through it) and from the API's own source as the signed-in person (a person's board actions,
+`from.kind` human only; the supervisor's re-post as itself), the `skill.*` announcements only from the API (all three: an administrator's proposal, acceptance, promotion or
 rollback, as the signed-in person) and the run's coach (`skill.proposed`, from its run-scoped source), and the talk (`finding`, `question`, `answer`,
 `review.*`, `handoff`) from the run's own agents, with a person's `answer` from the API; the runtime's `pause`,
 `continued`, `timed_out` and `run.health` only from the supervisor (on the bus: `signal.check_in` to an agent,
@@ -480,7 +481,13 @@ another agent, which resumes it from its checkpoint. An agent suspended on an op
 `review.requested`, a human decision point) keeps its lease while the wait is open. Tasks are claimed: an agent of
 the right role, told of a posted task in its inbox, claims it on the board; the run coordinator posts and orders tasks and may hand one
 to a named agent (`task.assigned`). Agents post tasks within the run's budget and the flow's rules.
-A person can post, re-prioritise, block or take a task, through the API.
+A person can post, re-prioritise, block or take a task, through the API (an administrator acting for themselves:
+`/agents/engineering/<run_id>/board/tasks…`, [docs/autonomous-agents.md](autonomous-agents.md)). Each is the board
+store's own conditional write, with a history row naming `human:<subject>`, published as the board's `task.*` event
+from the API's own source with `from.kind` human (the only `task.*` the bus takes from the API). Taking a task makes
+the person its holder with no expiry (`lease_agent` `human:<subject>`, the lease's epoch its attempt): its agent can
+move it no more, and the supervisor, which judges agents' sessions, leaves it alone; the person moves it on like any
+holder. Blocking it ends it as needing a person, with their reason. Never the coordinate task.
 
 **The conversation.** Every event is also written to the run's conversation (DynamoDB, append-only, D1), which the run
 view shows live as a chat between the agents beside the board. The person is a participant: their decisions, answers

@@ -38,9 +38,11 @@ _TALK = frozenset({'agent', 'conductor'})
 #: Per type family (or exact type), the kinds of source that may send it. A person (the API) talks only by
 #: answering; the supervisor signals agents too (the pause before a MicroVM's time is up).
 ALLOWED = {
-    'task.': frozenset({'board'}),
+    # The board's changes, and a person's board actions (board.api.PersonBoard), which the API publishes as the
+    # signed-in person: its source proves from.kind human, never another kind (FROM_KINDS).
+    'task.': frozenset({'board', 'api'}),
     # A task the supervisor re-posts (board.api.repost_task), published with the supervisor's own source.
-    'task.posted': frozenset({'board', 'supervisor'}),
+    'task.posted': frozenset({'board', 'supervisor', 'api'}),
     'signal.': frozenset({'api', 'supervisor'}),
     # The supervisor asks a silent agent for its state; a person's check-in is a message.
     'signal.check_in': frozenset({'supervisor'}),
