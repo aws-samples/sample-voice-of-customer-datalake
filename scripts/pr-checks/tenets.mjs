@@ -12,8 +12,8 @@
  */
 import { contentLines, findSection, plainLine } from './markdown.mjs'
 
-/** Product tenets 1-7 and data lake tenets D1-D7, as TENETS.md numbers them. */
-export const TENET_IDS = Object.freeze(['1', '2', '3', '4', '5', '6', '7', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7'])
+/** Product tenets 1-7 and data lake tenets D1-D8, as TENETS.md numbers them. */
+export const TENET_IDS = Object.freeze(['1', '2', '3', '4', '5', '6', '7', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'])
 const TOUCHED = /^tenets touched:\s*(.*)$/i
 const NONE = /^none\b/i
 
@@ -37,7 +37,7 @@ export function tenetsProblems(all) {
   const value = lines[0][1].trim()
   if (NONE.test(value)) return []
   const ids = touchedIds(value)
-  if (ids.length === 0) return ['Tenets: `Tenets touched:` must start with tenet ids (1-7, D1-D7, e.g. `3, D1`) or `none`']
+  if (ids.length === 0) return ['Tenets: `Tenets touched:` must start with tenet ids (1-7, D1-D8, e.g. `3, D1`) or `none`']
   const unknown = ids.filter((id) => !TENET_IDS.includes(id))
-  return unknown.length === 0 ? [] : [`Tenets: ${unknown.join(', ')} is not a tenet in TENETS.md (1-7, D1-D7)`]
+  return unknown.length === 0 ? [] : [`Tenets: ${unknown.join(', ')} is not a tenet in TENETS.md (1-7, D1-D8)`]
 }

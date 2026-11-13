@@ -133,6 +133,12 @@ of the item, because lineage tells us where those copies are.
 The workspace artifacts people create (projects, personas, documents, boards, lists, conversations) belong to them:
 deleting one really deletes it, the deletion is recorded (D4), and an artifact that cited it says so.
 
+Deleting a whole workspace is its data controller's own request, a retention limit under its agreement with the
+deployment: it states its basis, is approved by typing the workspace's slug, is recorded in an audit row, leaves a
+tombstone per deleted item, and offers an export first. "Every derived copy" means every copy inside the workspace
+that holds the item: a copy another workspace imported is that workspace's own data (D8), and nothing done in the
+source reaches it.
+
 ### D6. Flexible pipelines, fixed contracts.
 
 Anyone can add, change and chain transformations, enrichments, rules and models. The tier contracts (schema,
@@ -143,6 +149,13 @@ versioning, lineage, audit) stay fixed. Flexibility never gets past the contract
 Data that nobody can find or understand is worthless. Every dataset and field is catalogued, described and tagged. A
 shared ontology (products, features, personas, problems, channels, customers) connects records across sources.
 Users and agents can explore, search and discover the data with or without AI.
+
+### D8. Each workspace is its own boundary.
+
+A workspace's data stays in that workspace. Sharing data with another workspace copies it there, and from then on
+the copy belongs to the workspace that imported it: nothing done in the source (an edit, an erasure, deleting the
+source workspace) reaches it. Each workspace's admins answer for the data it holds. The share step says so before
+anything is copied: "it will be copied to <workspace>, which then owns its copy".
 
 ```mermaid
 flowchart LR
@@ -181,6 +194,7 @@ tenet; closing a gap is a change of its own. Known gaps (2026-11):
 | D5 | Only `voc-retention` deletes feedback, Radar and raw items, for an opt-in retention window or an erasure request (hashed, audited); each states its legal basis (an erasure's `legal_basis`, a profile's `retention_legal_basis`), and every deleted item leaves a contentless tombstone (`AUDIT#tombstone#<source>`) written before the delete. An erased source's uploaded CSV/JSON files go with it, and artifacts that cited an erased item lose its id and carry `erased_evidence`. Participant erasure states its legal basis and records a tombstone and an `AUDIT#delete` row. An erasure by email also reaches the feedback boards: the person's requests and +1s are de-identified (a +1 re-keyed under a new random id) and their opt-in raw copies deleted; and, without a source, the workspace memberships (6.11.00): the email and name on the person's `MEMBER#` rows in `voc-workspaces` are removed, each row tombstoned first. Deleting a user removes their workspace memberships before the account, each removal audited (`AUDIT#WS#`). Workspace deletes (projects, personas, documents, boards, lists, conversations, …) remove every S3 version and record an `AUDIT#delete` row (who, what, when); documents written from a deleted source carry `deleted_sources`. No role holds a delete its code does not use, and no role can change or remove an `AUDIT#` row (`voc-datalake/lib/utils/audit-row-guard.ts`). | A retention period saved before 6.00.00 runs with its basis "not recorded" until an admin sets one; a field erasure (author, email, …) keeps a whole-file CSV/JSON upload that also holds other rows and lists it for review; text an artifact derived from an erased review is not rewritten. The `inbound-raw/` copy of each accepted email (unredacted, 90 days, even for a redact source) is outside erasure; an `AUDIT#delete` row of a feedback-board +1 removed before an erasure keeps that +1's email-derived id. A field erasure matches items as stored now, so a value kept only in an older Silver version (an `author` or email a correction replaced) is not reached. An erasure by name (author) does not reach the feedback boards or the workspace memberships: only an erasure by email de-identifies a request's `reporter_name`, a +1's `name` and a membership's `name`; the person's Cognito account (the directory, outside the lake) is not erased by an erasure job, only by deleting the user. An erasure by email and a retention window (since 7.03.00) reach every workspace's matching items too (`WS#<ws>#SOURCE#…` in `voc-feedback`), with their Silver versions (`ws/<ws>/silver/`) and every version of their raw objects (`ws/<ws>/raw/`), each tombstoned first (`AUDIT#tombstone#<source>` / `<ws>#<feedback_id>`, with the workspace); the job counts them (`deleted_workspace_items`). A window binds workspace items because a workspace's messages are processed under the deployment's source profiles until per-workspace profiles replace them (phase 3). A whole-source erasure does not reach them (a request about the deployment's own source), nor does an erasure by author, source id or CSV row: an author is a display name, not unique even within one source, and an id is unique only within one source account or upload while each workspace has its own, so those stay the deployment's until a job can name its workspace (a gap: an erasure by author does not reach a workspace's copies of that person's reviews; erase by their email). An S3 import's original file (`raw/s3_import/…`, a workspace's `ws/<ws>/raw/s3_import/…`) is linked from no row, so any erasure (of any field: email, author, source id, CSV row, source) that deletes an import's items keeps it and lists that scope's originals folder for review (`files_needing_review`, `lambda/jobs/retention/copies.py`), as it does a whole-file CSV/JSON upload. The lineage marking finds no workspace item: no artifact cites one until projects are keyed by workspace (phase 3). |
 | D6 | Enrichments, categories, dimensions and tags are configurable without code changes. | The contracts that flexibility must respect are themselves incomplete (D2 versions, D4 audit), so nothing yet stops a new transformation from writing without them. |
 | D7 | Dimensions, tags and categories are configured and documented (`docs/dimensions.md`); the processed feedback item has a machine-readable catalogue (`GET /feedback/catalogue`, [docs/data-catalogue.md](docs/data-catalogue.md)) that a test keeps in step with every writer, served to MCP (`get_feedback_catalogue`) and shown in Data Explorer → Fields. | The catalogue covers `voc-feedback` only (not projects, documents or aggregates); there is no shared ontology. |
+| D8 | A request names its workspace (`X-Workspace-Id`), and a member of another workspace gets the one 404 on every workspace-scoped route (`voc-datalake/lambda/api/test/test_cross_workspace_routes.py`); a workspace's feedback, dashboards, brand and resolved problems are its own (7.04.00), behind the repository layer (`voc-datalake/lambda/shared/ws_repo.py`) and the raw-access guard. | Projects, the assistant, Radar and most settings are still shared by the deployment (phase 3); sharing between workspaces is not built yet (phase 5: the import plugin, which copies and says so in the share step). |
 
 ---
 
@@ -189,7 +203,7 @@ tenet; closing a gap is a change of its own. Known gaps (2026-11):
 The same checks run locally and on GitHub, so a green local run means a green pipeline.
 
 - **Pull request description** (`scripts/pr-checks/check-pr-body.mjs`, the `PR description` workflow): every PR has a
-  `## Tenets` section with a `Tenets touched:` line naming the tenets it touches (`1`–`7`, `D1`–`D7`) or `none`.
+  `## Tenets` section with a `Tenets touched:` line naming the tenets it touches (`1`–`7`, `D1`–`D8`) or `none`.
 - **No fixed cost by default** (tenet 7, `voc-datalake/lib/fixed-cost-guard.test.ts`, part of `scripts/validate.sh`):
   the default synth of every stack fails on a WAF, SnapStart, provisioned concurrency or capacity, a NAT gateway, an
   Elastic IP, an interface VPC endpoint, an always-on database, cache, cluster or container, a Global Accelerator, an API Gateway cache, a CloudFront dedicated IP or a created hosted zone.
@@ -231,6 +245,7 @@ Tenets touched: <!-- e.g. 3, D1, D4 — or "none" -->
 - [ ] Replay: the change can be reprocessed from Bronze and records its pipeline/model version (D3)
 - [ ] Audit: new writes record actor, time, reason and version (D4)
 - [ ] No new delete path for customer data outside a legal obligation; workspace deletes are recorded (D5)
+- [ ] Workspaces: a workspace's data is read and written only in that workspace; a share copies and says so (D8)
 - [ ] Methodology: no step can be skipped silently; artifacts cite their evidence (2)
 - [ ] AI modes: PR/FAQ and PRD writing follows the person's mode, enforced server-side; the rest works without AI (3)
 - [ ] Headless: available and enforced via the API/MCP, not only the UI (4)

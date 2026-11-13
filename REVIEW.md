@@ -12,7 +12,7 @@ instead of answering it again.
 | Docs, steering, CHANGELOG | **it lies**: a route, path, limit, version or behaviour that the code does not have. A doc that names a file must name one that exists. |
 | IAM and stacks (`voc-datalake/lib/stacks/`) | a grant is wider than the code needs (`grantReadWriteData` where it only reads, `*` resources), a new role can delete customer data, or a resource adds a fixed monthly cost by default (tenet 7). |
 | API routes (`voc-datalake/lambda/api/`) | a route lacks its auth or admin check, a public route lacks a throttle, or the handler and the SPA type, Zod schema, dev mock or MCP tool disagree on a payload. |
-| Data (`voc-feedback`, `raw/`, projects) | a write overwrites instead of versioning (D1), drops actor, time or version (D4), or deletes outside `voc-retention` (D5). |
+| Data (`voc-feedback`, `raw/`, projects) | a write overwrites instead of versioning (D1), drops actor, time or version (D4), or deletes outside `voc-retention` (D5); a workspace reads or writes another's data outside the workspace layer (D8). |
 | AI writing (`shared/ai_writing.py`, prompts, model ids) | an AI path skips the person's AI mode (tenet 3), or a model id changes without its IAM ARN. |
 | Frontend (`voc-datalake/frontend/`) | a user-visible string has no i18n key in every locale, runtime data is trusted without its Zod normaliser, or a rule exists only in the UI (tenet 4). |
 | CI and the reviewers (`.github/`, `scripts/ai-review/`, `tools/ai-review-ci/`) | pull request code runs with secrets, a token or role gets wider, or a check can pass without checking. |

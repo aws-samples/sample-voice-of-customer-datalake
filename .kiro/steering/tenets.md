@@ -1,6 +1,6 @@
 # Tenets — check every change against TENETS.md
 
-`TENETS.md` (repository root) holds the ranked product tenets (1–7) and the data lake tenets (D1–D7). Read it before
+`TENETS.md` (repository root) holds the ranked product tenets (1–7) and the data lake tenets (D1–D8). Read it before
 designing a change, and check the change against it before you hand it over. A change may not move the platform
 further from a tenet. When two tenets conflict, the higher one wins, and the PR says so.
 
@@ -12,6 +12,8 @@ Stop and raise it with the user, instead of building it, when a change would:
   `voc-datalake/lib/test-support/fixed-cost-rules.ts` (checked by `lib/fixed-cost-guard.test.ts`). Prefer making the Lambda faster over paying to hide a slow one;
 - delete or overwrite customer data (raw items and the feedback records derived from them) outside a legal
   obligation carried out by `voc-retention`, or delete a workspace artifact without recording it (D1, D5);
+- read or write one workspace's data from another, outside the workspace layer (`lambda/shared/ws_repo.py`), or let
+  anything done in a source workspace reach a copy another workspace imported (D8);
 - enforce a rule, permission or AI mode only in the SPA, and not in the API / MCP (tenets 3 and 4);
 - let an AI write bypass the server-side way-of-working check in `shared/ai_writing.py`, including by filing PR/FAQ or
   PRD text under another document type (tenet 3);

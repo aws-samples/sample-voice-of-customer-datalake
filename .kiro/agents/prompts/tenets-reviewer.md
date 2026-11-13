@@ -35,6 +35,9 @@ WIDENS it (for example a new in-place overwrite of processed feedback, adding to
 - D2 / D3 / D4: a new write of derived data that cannot be rebuilt from raw data, or that drops the actor, time,
   reason or version it used to record.
 - Tenet 5: a new source that needs a platform change instead of a plugin and its manifest.
+- D8: a read or write of one workspace's data from another outside the workspace layer
+  (`voc-datalake/lambda/shared/ws_repo.py`); a source workspace's edit, erasure or delete that reaches a copy another
+  workspace imported; a share that copies without saying so first.
 - Tenet 6: a change that weakens tenant isolation, least privilege, encryption or infrastructure as code.
 
 ## Method
@@ -65,7 +68,7 @@ CONCERN -- <path>:<line> -- tenet <id>: <one-line title>
 Why: <one or two lines>
 ```
 
-`<id>` is one of 1-7 or D1-D7, exactly as TENETS.md numbers them.
+`<id>` is one of 1-7 or D1-D8, exactly as TENETS.md numbers them.
 
 Then, as the LAST line, exactly one of:
 
