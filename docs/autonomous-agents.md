@@ -135,7 +135,8 @@ is recorded with the flow. A run started with it (by the runtime's `start_run`: 
 its conversation as its flow's month passes 80%, 100% and every further 50% up to 1,000%
 (docs/autonomous-engineering.md, Cost),
 MicroVM time only until tokens are priced (a deployment with MicroVM time unpriced, the default, never alerts); it
-stops nothing. A flow saved without one reads and saves as before. Only a signed-in administrator saves a workflow
+stops nothing unless an administrator turns the hard cap on (`PUT /agents/engineering/settings`): then a run's first
+start is capped at what is left of the month, or refused when nothing is. A flow saved without one reads and saves as before. Only a signed-in administrator saves a workflow
 (a delegated credential, an MCP token or an agent, gets 403), so the assistant changes a budget only through its
 `create_workflow` and `update_workflow` cards, which say it in dollars ("Monthly budget set to $80.00", "Monthly
 budget: $50.00 → $80.00", or removed) for the person approving it; a duplicate keeps its source's budget.

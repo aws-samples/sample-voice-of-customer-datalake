@@ -33,7 +33,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.store import BoardStore
 from engineering.connectors.identity import WORKSPACE
@@ -134,7 +134,10 @@ def hard_capped(caps: RunCaps, *, budget_usd: float, flow: str, table: Any, now:
         raise RuntimeRefused('a budget is a flow\'s: the run names its workflow id')
     month = month_of(datetime.fromtimestamp(now, UTC))
     budget = Decimal(str(budget_usd))
-    spent = flow_month_usd(table, month, flow)
+    try:
+        spent = flow_month_usd(table, month, flow)
+    except (ClientError, BotoCoreError) as error:   # (as an unreadable setting: the start is refused, saying so)
+        raise RuntimeRefused(f'the flow {flow}\'s spend this month could not be read: start the run again') from error
     left = budget - spent
     if left <= 0:
         raise RuntimeRefused(f'the flow {flow} has spent its monthly budget for {month} (${spent:,.2f} of '

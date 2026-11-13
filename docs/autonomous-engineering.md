@@ -1448,7 +1448,10 @@ reads the `DAY#` rows only. A flow's month total (`FLOW#<flow>`) is a hot key pe
 ADDs to it in that same transaction, about 1 write a second with 50 live agents of one flow, 2 at 2× (100 agents),
 about 10 at 10× (500 agents), far under the 1,000 writes a second one item takes. Two transactions on one item at
 the same moment conflict: the session store tries again after a short jittered pause, 4 tries in all (120 to 240 ms
-of pauses at most), then leaves the move to the next tick. Nothing in the ledger is lost (the seconds are priced again then),
+of pauses at most), then leaves the move to the next tick. A try whose answer was lost while it was still under way
+is tried again with its own request token, so it is answered as it ended (as landed when it landed; still under way
+after the last try, the next tick's read says which). A ledger row the table refuses refuses the whole write, so the
+session never moves without its ledger rows. Nothing in the ledger is lost (the seconds are priced again then),
 but a continuation whose save after its MicroVM started loses all four ends that MicroVM and boots again on the
 next tick. At 10× on one flow conflicts become common; past it, the total is to leave the transaction (it is derived
 from the DAY# rows). Its reads, per live run with a budget per tick: one GetItem of its META and one of the month

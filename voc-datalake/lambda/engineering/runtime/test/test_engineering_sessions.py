@@ -250,6 +250,84 @@ def test_a_conflicted_transaction_is_tried_again_after_a_pause_then_is_a_stale_s
     assert len(tries) == 1
 
 
+def _cancelled(*codes: str) -> Any:
+    from botocore.exceptions import ClientError
+
+    return ClientError({'Error': {'Code': 'TransactionCanceledException', 'Message': 'x'},
+                        'CancellationReasons': [{'Code': code} for code in codes]}, 'TransactWriteItems')
+
+
+def _under_way() -> Any:
+    from botocore.exceptions import ClientError
+
+    return ClientError({'Error': {'Code': 'TransactionInProgressException', 'Message': 'x'}}, 'TransactWriteItems')
+
+
+def test_a_priced_write_keeps_one_request_token_through_its_tries_and_a_try_under_way_is_waited_for(
+        aws, monkeypatch: pytest.MonkeyPatch):
+    store, created = _ledgering(aws)
+    store._pause = lambda _seconds: None
+    real = aws[1].meta.client.transact_write_items
+    tokens: list[str] = []
+    answers = [_cancelled('None', 'TransactionConflict'), _under_way()]
+
+    def write(**request: Any) -> Any:
+        tokens.append(request['ClientRequestToken'])
+        if answers:
+            raise answers.pop(0)
+        return real(**request)
+
+    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', write)
+    moved = store.save(replace(created, microvm_seconds=60))
+    # A conflict (that try did not land: a new token), then that token's earlier try still under way (the same
+    # token, answered as it ended): the third try lands.
+    assert (len(tokens), tokens[0] != tokens[1], tokens[1] == tokens[2]) == (3, True, True)
+    # The next write is a request of its own.
+    store.save(replace(moved, microvm_seconds=120))
+    assert (len(tokens), tokens[3] not in tokens[:3]) == (4, True)
+    # A try still under way past the last: a StaleSession (the next tick's read says whether it landed).
+    tokens.clear()
+    answers.extend([_under_way() for _ in range(4)])
+    with pytest.raises(StaleSession):
+        store.save(replace(moved, microvm_seconds=180))
+    assert len(tokens) == 4
+
+
+def test_a_ledger_row_the_table_refuses_stops_the_sessions_move(aws):
+    from botocore.exceptions import ClientError
+
+    store, created = _ledgering(aws)
+    sk = f'DAY#13#WF#wf_hunt#RUN#{RUN}#AGENT#fixer-1#MODEL#microvm'
+    # A ledger row whose seconds are not a number: the ADD to it is refused, and with it the whole write.
+    aws[1].put_item(Item={'pk': 'WS#default#SPEND#2026-11', 'sk': sk, 'microvm_seconds': 'many'})
+    before = aws[1].get_item(Key=KEY)['Item']
+    # (not a StaleSession: no condition failed, the write itself is refused, and says why; DynamoDB cancels the
+    # transaction with a ValidationError reason, the local stand-in answers ValidationException)
+    with pytest.raises(ClientError, match='TransactWriteItems'):
+        store.save(replace(created, microvm_seconds=60))
+    after = aws[1].get_item(Key=KEY)['Item']
+    assert (after['seq'], after['microvm_seconds'], after.get('priced_seconds', 0)) == (
+        before['seq'], before['microvm_seconds'], before.get('priced_seconds', 0))
+    assert _ledger(aws[1])[sk]['microvm_seconds'] == 'many'
+
+
+def test_a_refusal_as_dynamodb_answers_it_is_tried_once_and_is_never_a_stale_session(
+        aws, monkeypatch: pytest.MonkeyPatch):
+    from botocore.exceptions import ClientError
+
+    store, created = _ledgering(aws)
+    tries: list[int] = []
+
+    def refused(**_request: Any) -> Any:
+        tries.append(1)
+        raise _cancelled('None', 'ValidationError')
+
+    monkeypatch.setattr(aws[1].meta.client, 'transact_write_items', refused)
+    with pytest.raises(ClientError) as raised:
+        store.save(replace(created, microvm_seconds=60))
+    assert (raised.type, len(tries)) == (ClientError, 1)
+
+
 def test_without_a_price_microvm_time_adds_nothing_and_a_later_price_applies_from_then_on(aws):
     runs = RunStore(aws[1])
     runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)

@@ -499,6 +499,18 @@ def test_the_hard_cap_counts_only_the_starts_own_month(aws: Any):
     assert hard_capped(RunCaps(max_tasks=5), budget_usd=10.0, flow='wf_fix', table=aws[1], now=december).max_cost_usd == 10.0
 
 
+def test_the_hard_cap_refuses_a_start_whose_flows_month_cannot_be_read_saying_so():
+    from unittest.mock import MagicMock
+
+    from botocore.exceptions import ClientError
+
+    table = MagicMock()
+    table.get_item.side_effect = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException',
+                                                        'Message': 'x'}}, 'GetItem')
+    with pytest.raises(RuntimeRefused, match="the flow wf_fix's spend this month could not be read"):
+        hard_capped(RunCaps(max_tasks=5), budget_usd=10.0, flow='wf_fix', table=table, now=NOV)
+
+
 @pytest.mark.parametrize(('budget', 'flow', 'match'), [
     (0.0, 'wf_fix', 'dollars and cents'), (float('nan'), 'wf_fix', 'dollars and cents'),
     (float('inf'), 'wf_fix', 'dollars and cents'), (10.0, '', 'names its workflow id'), (10.0, '-', 'names its workflow id'),

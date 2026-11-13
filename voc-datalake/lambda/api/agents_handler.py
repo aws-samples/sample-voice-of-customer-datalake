@@ -22,7 +22,10 @@ Permissions:
   and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision) and a
   person's board actions (``POST …/board/tasks``, ``…/board/tasks/<task_id>/<action>``:
   engineering/board/api.py PersonBoard), and the runs' spend by month (``GET /agents/engineering/spend``,
-  engineering/spend.py); while the engineering agents are off every caller gets 404.
+  engineering/spend.py), and the hard cap's setting, read and written (``GET``/``PUT
+  /agents/engineering/settings``, engineering/settings.py: one row in the agents table, written with
+  its history row; the runtime reads it at a budgeted run's first start); while the engineering
+  agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
