@@ -33,6 +33,8 @@ const FIX_ROWS = { label: 'Fix the reported bugs: show its runs' }
 function route(routes: Record<string, RouteHandler>) {
   routeFetchApi({
     'GET /workflows': () => ({ items: [{ workflow_id: 'wf_fix', name: 'Fix the reported bugs' }] }),
+    // (the hard cap above the spend: off; its own tests are EngineeringHardCap.test.tsx)
+    'GET /agents/engineering/settings': () => ({ hard_cap: false, updated_at: null, updated_by: null }),
     ...routes,
   }, { missStatus: 500 })
 }

@@ -682,6 +682,29 @@
   {
     "file": "api/engineeringSpendApi.ts",
     "method": "GET",
+    "call": "'/agents/engineering/settings'",
+    "probes": [
+      {
+        "path": "/agents/engineering/settings"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSpendApi.ts",
+    "method": "PUT",
+    "call": "'/agents/engineering/settings'",
+    "probes": [
+      {
+        "path": "/agents/engineering/settings",
+        "body": {
+          "hard_cap": false
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringSpendApi.ts",
+    "method": "GET",
     "call": "`/agents/engineering/spend?${params.toString()}`",
     "probes": [
       {

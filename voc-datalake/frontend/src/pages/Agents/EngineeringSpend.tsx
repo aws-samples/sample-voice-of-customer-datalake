@@ -23,6 +23,7 @@ import {
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { useConfigStore } from '../../store/configStore'
 import { budgetShare, monthsOffered, shareTone, spendQueryOf } from './spendView'
+import { EngineeringHardCap } from './EngineeringHardCap'
 import type { LucideIcon } from 'lucide-react'
 import type { MonthSpend, SpendGroup, SpendGrouping, SpendQuery, SpendUsage } from '../../api/engineeringSpendApi'
 
@@ -252,6 +253,7 @@ export function EngineeringSpend() {
   return (
     <section className="space-y-4" aria-busy={read.isFetching}>
       <p className="text-sm text-muted max-w-prose">{t('spend.hint')}</p>
+      <EngineeringHardCap />
       <Controls query={query} names={names} onChange={change} />
       {read.isLoading && <div className="skeleton h-24" />}
       {failure.loadFailed && <LoadFailed message={t('spend.loadFailed')} onRetry={failure.retry} retrying={failure.retrying} />}

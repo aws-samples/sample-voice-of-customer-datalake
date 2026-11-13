@@ -1405,7 +1405,23 @@ the highest level said that month (`budget_alert`, `budget_alert_month` on META,
 another run holds unsaid, which its later ticks try again); a tick that
 jumps several levels claims each and says how far the month is. It is MicroVM time only until the model broker
 prices tokens, so a deployment that leaves MicroVM time unpriced (`-c engineeringMicrovmUsdPerSecond`, 0 by
-default) spends no dollars and never alerts; and it stops nothing: *planned*: the administrators' opt-in hard cap.
+default) spends no dollars and never alerts; and the alerts stop nothing.
+
+**The hard cap** (`voc-datalake/lambda/engineering/settings.py`, built; off by default). An administrator may turn
+it on (Agents → Spend; `PUT /agents/engineering/settings {hard_cap}`): then a run's first start with its flow's
+budget (`start_run`'s `budget_usd`) gets a cost cap (`max_cost_usd`) of what is left of the flow's month, the
+budget less the flow's month total (one consistent GetItem), or the cap it was given if smaller, and a start with
+nothing left is refused before anything is written, saying the flow, the month and the figures. The run's own cost
+cap then holds it (the supervisor sends it to a person once it is spent). The cap is set once, per run, at its start:
+runs of one flow at once may together pass its budget, each capped at what was left when it started. A retry of a
+live run is not capped again; a setting that cannot be read refuses the start, saying so (retry); off, nothing
+changes. It counts MicroVM time only until the model broker prices tokens. Until a start route reads the flow's
+budget from the stored workflow, the starter names it (`budget_usd`, `flow`): a start that leaves it out is not
+capped. The setting is one row in voc-agents, `SETTINGS#engineering` / `HARD_CAP`, beside the workflows whose budgets
+it caps, with a create-only history row per change (`LOG#`: who, when, what; D1, D4), in the same transaction. The
+Agents API writes it (an administrator acting for themselves) and the runtime reads it with GetItem on that one
+partition; nothing else is granted on it.
+
 The run monitor's header and the run's reports (`cost.budget`, and a line under Cost and time in the goal and
 commit reports' Markdown, never a pull request's, which is its description in the target repository) show the run's
 flow budget and its flag: the highest level this run saw its flow's month pass (it stops rising when the run ends).

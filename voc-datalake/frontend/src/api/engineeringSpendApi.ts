@@ -9,6 +9,7 @@
  */
 import { z } from 'zod'
 import { fetchApi } from './client'
+import { put } from './requestKit'
 import { parseEach } from './lenientFields'
 import { isRecord } from '../lib/typeGuards'
 
@@ -76,4 +77,27 @@ export const engineeringSpendApi = {
     if (query.workflow !== '') params.set('workflow', query.workflow)
     return parseMonthSpend(await fetchApi<unknown>(`/agents/engineering/spend?${params.toString()}`), query)
   },
+}
+
+// ── The administrators' hard cap (GET/PUT /agents/engineering/settings; engineering/settings.py) ──
+
+const SettingsSchema = z.object({
+  hard_cap: z.boolean().catch(false),
+  updated_at: z.string().nullable().catch(null),
+  updated_by: z.string().nullable().catch(null),
+})
+export type EngineeringSettings = z.output<typeof SettingsSchema>
+
+/** The settings as the server answered them; an unreadable answer is an error, never "the cap is off". */
+export function parseSettings(raw: unknown): EngineeringSettings {
+  if (!isRecord(raw) || typeof raw.hard_cap !== 'boolean') throw new Error('The settings answer was unreadable')
+  return SettingsSchema.parse(raw)
+}
+
+export const engineeringSettingsKeys = { settings: () => ['engineering-settings'] as const }
+
+export const engineeringSettingsApi = {
+  get: async (): Promise<EngineeringSettings> => parseSettings(await fetchApi<unknown>('/agents/engineering/settings')),
+  setHardCap: async (hardCap: boolean): Promise<EngineeringSettings> =>
+    parseSettings(await fetchApi<unknown>('/agents/engineering/settings', put({ hard_cap: hardCap }))),
 }

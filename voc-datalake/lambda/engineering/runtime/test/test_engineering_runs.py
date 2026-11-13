@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError
 from engineering.board.store import BoardStore
 from engineering.runtime import runs as runs_module
 from engineering.runtime.interface import RuntimeRefused
-from engineering.runtime.runs import RunCaps, RunExists, RunNotActive, RunStore, TableRunControl
+from engineering.runtime.runs import RunCaps, RunExists, RunNotActive, RunStore, TableRunControl, hard_capped
 from engineering.runtime.test.conftest import RUN
 from engineering.spend import MICROVM, Usage, Where, ledger_updates
 
@@ -475,3 +475,34 @@ def test_a_claim_left_in_a_months_last_seconds_is_taken_over_in_the_next_months_
     taken = control.budget_alert(OTHER, last + 310)   # (00:05:00 on the 1st: past the claim's time)
     assert taken is not None
     assert (taken.month, taken.levels) == ('2026-11', (80,))
+
+
+def test_the_hard_cap_caps_a_start_at_what_is_left_of_its_flows_month(aws: Any):
+    _spend(aws, '6.5')
+    capped = hard_capped(RunCaps(max_tasks=5), budget_usd=10.0, flow='wf_fix', table=aws[1], now=NOV)
+    assert capped.max_cost_usd == 3.5
+    # A smaller cap given stays; another flow's spend counts nothing here.
+    assert hard_capped(RunCaps(max_tasks=5, max_cost_usd=1.0), budget_usd=10.0, flow='wf_fix', table=aws[1],
+                       now=NOV).max_cost_usd == 1.0
+    assert hard_capped(RunCaps(max_tasks=5), budget_usd=10.0, flow='wf_other', table=aws[1], now=NOV).max_cost_usd == 10.0
+
+
+def test_the_hard_cap_refuses_a_start_with_nothing_left(aws: Any):
+    _spend(aws, '10')
+    with pytest.raises(RuntimeRefused, match=r'has spent its monthly budget for 2026-11 \(\$10.00 of \$10.00\)'):
+        hard_capped(RunCaps(max_tasks=5), budget_usd=10.0, flow='wf_fix', table=aws[1], now=NOV)
+
+
+def test_the_hard_cap_counts_only_the_starts_own_month(aws: Any):
+    _spend(aws, '9')   # (November)
+    december = int(datetime(2026, 12, 1, 0, 5, tzinfo=UTC).timestamp())
+    assert hard_capped(RunCaps(max_tasks=5), budget_usd=10.0, flow='wf_fix', table=aws[1], now=december).max_cost_usd == 10.0
+
+
+@pytest.mark.parametrize(('budget', 'flow', 'match'), [
+    (0.0, 'wf_fix', 'dollars and cents'), (float('nan'), 'wf_fix', 'dollars and cents'),
+    (float('inf'), 'wf_fix', 'dollars and cents'), (10.0, '', 'names its workflow id'), (10.0, '-', 'names its workflow id'),
+])
+def test_the_hard_cap_refuses_what_the_start_would_refuse_for_that(aws: Any, budget: float, flow: str, match: str):
+    with pytest.raises(RuntimeRefused, match=match):
+        hard_capped(RunCaps(max_tasks=5), budget_usd=budget, flow=flow, table=aws[1], now=NOV)

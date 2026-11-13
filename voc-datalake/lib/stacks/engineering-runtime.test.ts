@@ -48,6 +48,10 @@ function runtimeStack(context: Record<string, unknown>, withPeers = true): Runti
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
     }),
+    agentsTable: new dynamodb.Table(stack, 'Agents', {
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    }),
     rawDataBucket: fixtureBucket(stack, 'Raw'),
     workspaceBucket: fixtureBucket(stack, 'Workspace'),
     peers: withPeers ? fakePeers(stack, kmsKey, pins) : undefined,
@@ -414,9 +418,10 @@ describe('with -c engineeringAgents=true', () => {
   it.each([
     ['SpendTotals', 'dynamodb:GetItem', 'WS#default#SPEND#20??-??'],
     ['BudgetAlerts', ['dynamodb:GetItem', 'dynamodb:UpdateItem'], 'WS#default#BUDGET#20??-??'],
+    ['HardCapSetting', 'dynamodb:GetItem', 'SETTINGS#engineering'],
   ])('gives the supervisor alone %s (%s on %s): a flow\'s month total, the alerts\' own partition', (sid, action, keys) => {
     expect(keyedGrants('EngineeringSupervisorRole', sid, action, keys)).toHaveLength(1);
-    expect(policyText(template, 'EngineeringDeliveryRole')).not.toContain('#BUDGET#');
+    expect(policyText(template, 'EngineeringDeliveryRole')).not.toMatch(/#BUDGET#|SETTINGS#/);
   });
 
   it('gives the delivery role only UpdateItem on the spend ledger, whatever the statement', () => {
@@ -442,5 +447,6 @@ describe('with -c engineeringAgents=true', () => {
       'RAW_DATA_BUCKET']));
     expect(env).not.toContain('SUPERVISOR_RULE_NAME');
     expect(env).not.toContain('ENGINEERING_EXTRA_EGRESS');
+    expect(env).not.toContain('ENGINEERING_SETTINGS_TABLE');
   });
 });

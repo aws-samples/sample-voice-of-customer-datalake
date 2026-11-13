@@ -19,8 +19,8 @@ The administrators' reads (``month_spend``, ``GET /agents/engineering/spend``) a
 rows than that answers what it read, marked ``truncated``.
 
 Each workflow also has its month's total, ``FLOW#<flow>`` in the same partition, ADDed in the same transaction as its
-runs' rows: what a flow has spent this month is one GetItem (``flow_month_usd``), for its budget's alerts (and the
-planned hard cap), never a Query of the month. The alerts (``alert_levels``) are as the month passes 80% and 100% of the
+runs' rows: what a flow has spent this month is one GetItem (``flow_month_usd``), for its budget's alerts and the
+hard cap, never a Query of the month. The alerts (``alert_levels``) are as the month passes 80% and 100% of the
 flow's budget, then every further 50%; each has its row, ``ALERT#<flow>#<budget>#<percent>`` in the month's
 ``WS#<ws>#BUDGET#<yyyy-mm>`` partition (only the supervisor writes it): a run's tick claims it (``claim_alert``),
 says it, then closes it (``alert_sent``). It is said at least once per flow, budget, level and month while a run of
@@ -167,8 +167,7 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
     dollars = sum((used.usd for used in by_model.values()), Decimal(0))
     # (only a write that adds dollars: a tokens-only one, or unpriced MicroVM time, leaves the hot item alone)
     if updates and dollars > 0 and keyable(where.flow):
-        # (dollars only: what the alerts read, as the planned hard cap will; the month's tokens and time are the DAY#
-        # rows')
+        # (dollars only: what the alerts and the hard cap read; the month's tokens and time are the DAY# rows')
         updates.append({'Update': {
             'TableName': table, 'Key': flow_total_key(month_of(at), where.flow),
             'UpdateExpression': 'ADD usd :usd SET updated_at = :at, updated_by = :by',

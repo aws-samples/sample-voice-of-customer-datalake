@@ -47,6 +47,9 @@ import { engineeringAgentsEnabled } from './engineering-broker';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
 
+/** The hard cap's partition in voc-agents (lambda/engineering/settings.py SETTINGS_KEY). */
+const HARD_CAP_PARTITION = 'SETTINGS#engineering';
+
 /** A fixed monthly cost, so an opt-in of its own (lib/test-support/fixed-cost-rules.ts OPT_IN_FIXED_COSTS). */
 export const SUPERVISOR_ALARM_FLAG = 'engineeringSupervisorAlarm';
 /** `-c engineeringImageArns='{"python":"arn:…",…}'`: the MicroVM image per language; `{}` (no launch) by default. */
@@ -159,6 +162,8 @@ interface EngineeringRuntimeProps {
    * Required with the flag on; it is deployed with the same flag.
    */
   engineeringTable: dynamodb.ITable | undefined;
+  /** voc-agents (VocCoreStack): the administrators' hard cap row, beside the workflows whose budgets it caps. */
+  agentsTable: dynamodb.ITable;
   /** The raw data lake: the connections' caches (`engineering/cache/`). */
   rawDataBucket: s3.IBucket;
   /**
@@ -287,6 +292,8 @@ class EngineeringRuntime extends Construct {
     const stack = cdk.Stack.of(this);
     return {
       ENGINEERING_TABLE: props.engineeringTable.tableName,
+      // voc-agents: the administrators' hard cap row (engineering/settings.py), read by a start.
+      ENGINEERING_SETTINGS_TABLE: props.agentsTable.tableName,
       ENGINEERING_BUS_NAME: props.peers.bus.eventBusName,
       ENGINEERING_BOARD_URL: props.peers.boardUrl,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
@@ -359,7 +366,8 @@ class EngineeringRuntime extends Construct {
       // It never takes the launch action (a continuation reuses the session's stored egress) and switches no rule:
       // neither the extra egress nor the rule's name.
       environment: Object.fromEntries(Object.entries(environment)
-        .filter(([name]) => !['ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME'].includes(name))),
+        // (the hard cap's table too: only a start reads it, and the delivery has no grant on it)
+        .filter(([name]) => !['ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_SETTINGS_TABLE'].includes(name))),
       // The inbox row is written once (a conditional put), so a retry only wakes again.
       retryAttempts: 2,
       // Not destinations.SqsDestination, whose grant adds every key action: the send above and the key's use
@@ -486,6 +494,14 @@ class EngineeringRuntime extends Construct {
       actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
       resources: [engineeringTable.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_BUDGET_ALERT_PARTITIONS] } },
+    }));
+    // The administrators' hard cap (engineering/settings.py): its one row in voc-agents, read at a budgeted start;
+    // the Agents API writes it. GetItem of that partition only.
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'HardCapSetting',
+      actions: ['dynamodb:GetItem'],
+      resources: [props.agentsTable.tableArn],
+      conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [HARD_CAP_PARTITION] } },
     }));
     // Its one delete: an ended run's row in the registry of active runs; never a run's own rows.
     role.addToPrincipalPolicy(new iam.PolicyStatement({

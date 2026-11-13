@@ -997,6 +997,51 @@ def get_engineering_spend():
     return spend.view()
 
 
+def _engineering_on() -> None:
+    """404 while the engineering agents are off (the caller is checked after)."""
+    if not (engineering_agents_on() and os.environ.get('ENGINEERING_TABLE')):
+        raise NotFoundError('The engineering agents are not on in this deployment')
+
+
+@app.get('/agents/engineering/settings')
+@tracer.capture_method
+def get_engineering_settings():
+    """The administrators' hard cap on engineering runs (engineering/settings.py, its one row in voc-agents):
+    ``{hard_cap, updated_at, updated_by}``; administrators only, 404 while the module is off, 503 when the read
+    fails."""
+    _engineering_on()
+    require_admin_caller(_caller())
+    from engineering.settings import read_hard_cap
+    try:
+        return read_hard_cap(_agents_table()).view()
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: the hard cap could not be read')
+        raise ServiceUnavailableError('the hard cap could not be read: retry') from exc
+
+
+@app.put('/agents/engineering/settings')
+@tracer.capture_method
+def put_engineering_settings():
+    """``{hard_cap: bool}``: an administrator (signed in, acting for themselves: a delegated credential gets 403) turns
+    the hard cap on or off, saved with its history row (voc-agents, beside the workflows; the runtime reads it at a
+    start). 503 when the write fails."""
+    _engineering_on()
+    caller = _caller()
+    require_admin_caller(caller)
+    body = json_object_body(app)
+    hard_cap = body.get('hard_cap')
+    if set(body) != {'hard_cap'} or not isinstance(hard_cap, bool):
+        raise ValidationError('the body is {hard_cap: true | false}')
+    from engineering.settings import save_hard_cap
+    try:
+        saved = save_hard_cap(_agents_table(), on=hard_cap, by=caller.username or caller.subject,
+                              at=datetime.now(UTC))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: the hard cap could not be saved')
+        raise ServiceUnavailableError('the hard cap could not be saved: retry') from exc
+    return saved.view()
+
+
 @app.get('/agents/engineering/<run_id>')
 @tracer.capture_method
 def get_engineering_run(run_id: str):

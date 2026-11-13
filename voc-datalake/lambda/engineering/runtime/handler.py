@@ -1,8 +1,9 @@
 """voc-engineering-runtime: a run's start and end, the supervisor's tick, the launcher, the run monitor's signals.
 
 - ``{"action": "start_run", "run_id", "max_tasks", "max_tokens"?, "max_cost_usd"?, "goal"?, "repo"?, "flow"?,
-  "budget_usd"? (the flow's monthly budget, copied onto the run for its alerts), "connection"?, "commit"?,
-  "language"?, "actor"?}``: the run's ``META`` row and its ``coordinate`` task
+  "budget_usd"? (the flow's monthly budget, copied onto the run for its alerts and, with the administrators' hard
+  cap on, its first start's cost cap: ``runs.hard_capped``, ``engineering/settings.py``), "connection"?,
+  "commit"?, "language"?, "actor"?}``: the run's ``META`` row and its ``coordinate`` task
   (``runs.RunStore.start``), the supervisor's rule switched on, and, for a run with its connection, commit and
   language, its coordinator launched on that task (``coordinator-1``, on the coordinator's skill's harness). A run
   started without its connection or commit can launch no agent and read no knowledge (the board answers 409); one
@@ -67,9 +68,11 @@ from engineering.runtime.runs import (
     RunNotActive,
     RunStore,
     TableRunControl,
+    hard_capped,
 )
 from engineering.runtime.sessions import LIVE_STATUSES, AgentSession, LaunchUnderWay, SessionStore, StaleSession
 from engineering.runtime.supervisor import SessionBusy, Supervisor
+from engineering.settings import read_hard_cap
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
 
@@ -116,6 +119,20 @@ def _supervisor() -> Supervisor:
             board_url=os.environ['ENGINEERING_BOARD_URL'],
         )
     return _supervisor_cache
+
+
+def _hard_cap_on() -> bool:
+    """The administrators' hard cap (voc-agents' one settings row: ENGINEERING_SETTINGS_TABLE), read at a budgeted
+    first start. A read that fails refuses the start, saying so (nothing is written yet: retry), rather than start
+    a run the cap may have refused."""
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    from shared.aws import get_dynamodb_resource
+    try:
+        return read_hard_cap(get_dynamodb_resource().Table(os.environ['ENGINEERING_SETTINGS_TABLE'])).on
+    except (ClientError, BotoCoreError, KeyError) as error:
+        logger.exception('engineering runtime: the hard cap\'s setting could not be read')
+        raise RuntimeRefused('the hard cap\'s setting could not be read: start the run again') from error
 
 
 def _runs() -> RunStore:
@@ -312,14 +329,20 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
                    max_cost_usd=_optional_number(event, 'max_cost_usd', float))
     run_id, runs, status = str(event.get('run_id', '')), _runs(), 'active'
     language = str(event.get('language', ''))
-    if language and runs.get(run_id) is None:   # (any first start naming a language: no run records one it cannot run)
+    budget_usd, flow = _optional_number(event, 'budget_usd', float), str(event.get('flow', ''))
+    first = runs.get(run_id) is None
+    if language and first:   # (any first start naming a language: no run records one it cannot run)
         _coordinator_launchable(language)
+    if first and budget_usd is not None and _hard_cap_on():
+        # (the administrators' hard cap: what is left of the flow's month, or no start; a retry of a live run is not
+        # capped again)
+        caps = hard_capped(caps, budget_usd=budget_usd, flow=flow, table=runs.table, now=int(clock()))
     try:
         runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),
-                   repo=str(event.get('repo', '')), flow=str(event.get('flow', '')),
+                   repo=str(event.get('repo', '')), flow=flow,
                    connection=str(event.get('connection', '')), commit=str(event.get('commit', '')),
                    language=language, actor=str(event.get('actor') or ''),
-                   budget_usd=_optional_number(event, 'budget_usd', float))
+                   budget_usd=budget_usd)
     except RunExists:
         run = runs.get(run_id)
         if run is None or run.status in ENDED:

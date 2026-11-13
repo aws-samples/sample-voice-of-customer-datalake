@@ -28,7 +28,7 @@ import math
 import secrets
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
@@ -120,6 +120,27 @@ class Run:
     budget_usd: float | None = None
     budget_alert: int = 0
     budget_alert_month: str = ''
+
+
+def hard_capped(caps: RunCaps, *, budget_usd: float, flow: str, table: Any, now: int) -> RunCaps:
+    """The administrators' hard cap on a start (settings.py): the run's cost cap is what is left of its flow's month
+    (its budget less the flow's month total), or the cap it was given if smaller; ``RuntimeRefused`` with nothing left,
+    before anything is written. Set once, for this run: runs of the flow at once may together pass its budget.
+    MicroVM time only until tokens are priced."""
+    # (the start's own checks first: a budget off its rule, or a flow that cannot key one, is refused for that)
+    if budget_of({'monthly_usd': budget_usd})[1]:
+        raise RuntimeRefused(BUDGET_RULE)
+    if not keyable(flow):
+        raise RuntimeRefused('a budget is a flow\'s: the run names its workflow id')
+    month = month_of(datetime.fromtimestamp(now, UTC))
+    budget = Decimal(str(budget_usd))
+    spent = flow_month_usd(table, month, flow)
+    left = budget - spent
+    if left <= 0:
+        raise RuntimeRefused(f'the flow {flow} has spent its monthly budget for {month} (${spent:,.2f} of '
+                             f'${budget:,.2f}): raise its budget, or turn the hard cap off, to start a run of it')
+    cap = float(left) if caps.max_cost_usd is None else min(caps.max_cost_usd, float(left))
+    return replace(caps, max_cost_usd=cap)
 
 
 class RunExists(RuntimeRefused):

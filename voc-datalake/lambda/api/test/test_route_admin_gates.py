@@ -68,6 +68,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /agents/engineering/<run_id>/signals', 'POST /agents/engineering/<run_id>/messages',
         # A person's board actions on an engineering run: the same gate (engineering/board/api.py PersonBoard).
         'POST /agents/engineering/<run_id>/board/tasks', 'POST /agents/engineering/<run_id>/board/tasks/<task_id>/<action>',
+        # The administrators' hard cap on engineering runs (engineering/settings.py): an admin acting for themselves.
+        'PUT /agents/engineering/settings',
         'POST /workflows', 'PUT /workflows/<workflow_id>',
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',
