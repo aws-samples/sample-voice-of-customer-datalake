@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { Match, type Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
-import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
+import { ENGINEERING_DLQ_BASE_NAME, ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { ENGINEERING_REPORTS_FUNCTION_BASE_NAME } from './engineering-bus';
 import { OPTIONAL_FUNCTION_SIZES } from '../sizing/policy';
 import {
@@ -73,6 +73,15 @@ function routerEnv(on: Template): Record<string, unknown> {
 }
 
 describe('the engineering bus', () => {
+  it('runs the board and the report builder under the services the denied-reads alarm sums (dlq-alarms.ts)', () => {
+    const on = template('on');
+    const service = (base: string) => z.record(z.string(), z.unknown()).parse(
+      on.findResources('AWS::Lambda::Function')[functionId(on, base)]?.Properties?.Environment?.Variables)
+      .POWERTOOLS_SERVICE_NAME;
+    expect([service('voc-engineering-board'), service(ENGINEERING_REPORTS_FUNCTION_BASE_NAME)])
+      .toStrictEqual(ENGINEERING_WORKSPACE_READER_SERVICES.slice(1));
+  });
+
   it('is absent by default: no bus, rule, router, board, queue or function URL', () => {
     const off = template('off');
     expect(Object.keys(off.findResources('AWS::Events::EventBus'))).toStrictEqual([]);

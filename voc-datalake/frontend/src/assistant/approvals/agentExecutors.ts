@@ -62,8 +62,19 @@ export async function cancelAgentRun(args: CancelAgentRunArgs, ctx: WriteToolExe
   return { summary: `Run ${args.run_id} is now ${run.status}; work already written to its project stays.` }
 }
 
+/** A create's only 409 (agents_handler `_create_from`): a new engineering flow where the module is not deployed. */
+const ENGINEERING_CREATE_OFF = 'Engineering flows are created only where the engineering module is deployed; nothing '
+  + 'was created.'
+
+/** A new workflow's write: the server's only 409 for it means the deployment has no engineering module. */
+const engineeringOffOn409 = (message: string) => (error: unknown): never => {
+  if (apiErrorStatus(error) === 409) throw new StaleApprovalError(message)
+  throw error
+}
+
 export async function createWorkflow(args: CreateWorkflowArgs, ctx: WriteToolExecutionContext) {
-  const view = await workflowsApi.create(args.definition)
+  // The card checks the module first; this 409 means the app and the server disagree about it.
+  const view = await workflowsApi.create(args.definition).catch(engineeringOffOn409(ENGINEERING_CREATE_OFF))
   void invalidateKeys(ctx.queryClient, keysFor.workflows())
   return { summary: `Created workflow "${view.name}" (${view.workflow_id}, revision ${view.revision}).`, data: { workflow_id: view.workflow_id } }
 }
@@ -87,10 +98,7 @@ const ENGINEERING_COPY_OFF = 'Engineering flows are copied only where the engine
   + 'created (the flow itself still opens and saves).'
 
 export async function duplicateWorkflow(args: DuplicateWorkflowArgs, ctx: WriteToolExecutionContext) {
-  const view = await workflowsApi.duplicate(args.workflow_id, args.name).catch((error: unknown) => {
-    if (apiErrorStatus(error) === 409) throw new StaleApprovalError(ENGINEERING_COPY_OFF)
-    throw error
-  })
+  const view = await workflowsApi.duplicate(args.workflow_id, args.name).catch(engineeringOffOn409(ENGINEERING_COPY_OFF))
   void invalidateKeys(ctx.queryClient, keysFor.workflows())
   return { summary: `Copied workflow ${args.workflow_id} to "${view.name}" (${view.workflow_id}).`, data: { workflow_id: view.workflow_id } }
 }

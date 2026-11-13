@@ -13,6 +13,7 @@ import {
   actionsWithPrefix, apiTemplate, buildApiStack, policyStatementsOf, serviceEnvironment,
 } from '../test-support/api-stack-template';
 import type { VocApiStack } from './api-stack';
+import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 
 const ENGINEERING_ENV = ['ENGINEERING_AGENTS', 'ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET'];
 let cachedOn: VocApiStack | undefined;
@@ -57,6 +58,15 @@ describe('the engineering run reads', () => {
   it('give the MCP endpoint nothing: the reads are admin-only and an MCP token is never an admin, so no tool', () => {
     const env = serviceEnvironment(on(), GLOBAL_MCP_SERVICE_NAME);
     expect(Object.keys(env).filter((name) => name.startsWith('ENGINEERING_'))).toStrictEqual([]);
+  });
+});
+
+describe('the alarm on denied workspace reads (alerting, created at runtime only once an admin turns it on)', () => {
+  it('names the readers\' services to the logs API only with the module, the agents API\'s among them', () => {
+    expect(serviceEnvironment(apiTemplate(), 'voc-logs-api').OPS_ALERTS_ENGINEERING_SERVICES).toBeUndefined();
+    expect(serviceEnvironment(on(), 'voc-logs-api').OPS_ALERTS_ENGINEERING_SERVICES)
+      .toBe(ENGINEERING_WORKSPACE_READER_SERVICES.join(','));
+    expect(serviceEnvironment(on(), 'voc-agents-api').POWERTOOLS_SERVICE_NAME).toBe(ENGINEERING_WORKSPACE_READER_SERVICES[0]);
   });
 });
 

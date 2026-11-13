@@ -378,7 +378,8 @@ What exists:
   Agents API and the board's `knowledge`, take a denied read as missing, and each such read is logged and counted
   as the `EngineeringWorkspaceDeniedReads` metric; a plain missing object counts too, as it is denied as well (a
   failed attempt's result, or a report version that was counted and never written when someone opens it), so a
-  broken policy shows as the count rising well above its usual level). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
+  broken policy shows as the count rising well above its usual level; alerting's `engineering-denied-reads` alarm
+  watches it, [docs/deployment.md](deployment.md)). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
   encrypted with the stack's key, versioned, access-logged, kept under `-c protectData`), where nothing expires
   until a retention that writes its `AUDIT#delete` row exists (*planned*; "The workspace" further down this
   section). Nothing writes agents' objects there yet: the runtime's agent roles write
