@@ -117,6 +117,7 @@ export interface DocumentDerivation {
   company_context_included?: boolean
   /** Prototypes: the design system was read (true) or the build was told not to (false). */
   design_system_included?: boolean
+  /** Prototypes: the uploaded company logo was inlined (true) or uploaded but left out, over 1 MB or unreadable (false). */
   company_logo_included?: boolean
 }
 

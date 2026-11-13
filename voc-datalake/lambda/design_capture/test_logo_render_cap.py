@@ -5,6 +5,8 @@ A PNG over the cap at 1024 px is drawn again at 768, then 512 px; one still over
 from unittest.mock import MagicMock, patch
 
 import logo_render
+import png_check
+import pytest
 
 from shared.design_logo import COMPANY_LOGO_MAX_BYTES
 
@@ -37,13 +39,18 @@ def test_a_render_the_png_check_refused_as_too_large_is_drawn_again_smaller():
     assert _render(logo_render.TOO_LARGE, logo_render.TOO_LARGE, logo_render.TOO_LARGE) == (None, [1024, 768, 512])
 
 
-def test_render_once_answers_too_large_for_a_size_refusal_and_none_for_any_other():
-    for reason, expected in (('too_large', logo_render.TOO_LARGE), ('blank', None)):
-        tab = MagicMock()
-        tab.render.side_effect = logo_render.RenderRefused(reason)
-        with patch.object(logo_render, '_RenderTab', return_value=tab):
-            assert logo_render._render_once(MagicMock(), 'https://www.example.com/logo.png', 'Logo', 1024) is expected
-        tab.close.assert_called_once()
+@pytest.mark.parametrize(('reason', 'expected'), [(png_check.TOO_LARGE_REASON, logo_render.TOO_LARGE), ('blank', None)])
+def test_render_once_answers_too_large_for_a_size_refusal_and_none_for_any_other(reason, expected):
+    tab = MagicMock()
+    tab.render.side_effect = logo_render.RenderRefused(reason)
+    with patch.object(logo_render, '_RenderTab', return_value=tab):
+        assert logo_render._render_once(MagicMock(), 'https://www.example.com/logo.png', 'Logo', 1024) is expected
+    tab.close.assert_called_once()
+
+
+# Review (PR #556): the retry keys on png_check's reason; a rename there must fail here, not silently stop retrying.
+def test_the_png_check_names_an_oversized_png_with_the_reason_the_retry_keys_on():
+    assert png_check.png_problem(b'\x89PNG\r\n\x1a\n' + b'\x00' * (png_check.MAX_LOGO_BYTES + 1)) == png_check.TOO_LARGE_REASON
 
 
 def test_a_failed_render_is_not_retried():
