@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   BRAND_REFUSALS, DEPLOYMENT_BRAND_REFUSALS, MEMBER_REFUSALS, PLATFORM_ADMIN_REFUSALS, PLATFORM_REFUSALS, PLUGIN_REFUSALS,
+  PLUGIN_NOT_ENABLED,
 } from './workspaceRefusals'
 
 const LAMBDA = join(__dirname, '../../../lambda')
@@ -47,7 +48,7 @@ const SERVER_REASONS: readonly (readonly [string, string | null])[] = [
   ['workspace_members NO_LONGER_ADMIN', constant('shared/workspace_members.py', 'NO_LONGER_ADMIN')],
   ['workspace_members NEW_ACCOUNT_ADMINS_ONLY', constant('shared/workspace_members.py', 'NEW_ACCOUNT_ADMINS_ONLY')],
   ['workspace_members MEMBER_NOT_FOUND', constant('shared/workspace_members.py', 'MEMBER_NOT_FOUND')],
-  ['workspace_plugin_settings INGESTION_NOT_YET', constant('shared/workspace_plugin_settings.py', 'INGESTION_NOT_YET')],
+  ['workspace_plugin_settings PLUGIN_NOT_ENABLED', constant('shared/workspace_plugin_settings.py', 'PLUGIN_NOT_ENABLED')],
   ['workspace_plugin_settings CHANGED_MEANWHILE', constant('shared/workspace_plugin_settings.py', 'CHANGED_MEANWHILE')],
   ['workspace_plugin_settings PLUGIN_NOT_FOUND', constant('shared/workspace_plugin_settings.py', 'PLUGIN_NOT_FOUND')],
   ['platform_workspaces SLUG_TAKEN', constant('shared/platform_workspaces.py', 'SLUG_TAKEN')],
@@ -56,9 +57,14 @@ const SERVER_REASONS: readonly (readonly [string, string | null])[] = [
 ]
 
 // A reason two tables share (NO_LONGER_ADMIN: the members' and the plugins' writes) counts once.
+// The run's refusal (`isPluginNotEnabled`) is matched by its constant, not by a table row.
 const tableReasons = [...new Set([
-  ...MEMBER_REFUSALS, ...PLUGIN_REFUSALS, ...BRAND_REFUSALS, ...DEPLOYMENT_BRAND_REFUSALS, ...PLATFORM_REFUSALS, ...PLATFORM_ADMIN_REFUSALS,
-].flatMap((row) => (row.reason === undefined ? [] : [row.reason])))]
+  ...[
+    ...MEMBER_REFUSALS, ...PLUGIN_REFUSALS, ...BRAND_REFUSALS, ...DEPLOYMENT_BRAND_REFUSALS, ...PLATFORM_REFUSALS,
+    ...PLATFORM_ADMIN_REFUSALS,
+  ].flatMap((row) => (row.reason === undefined ? [] : [row.reason])),
+  PLUGIN_NOT_ENABLED,
+])]
 
 describe('the refusal tables mirror the API', () => {
   it.each(SERVER_REASONS)('%s is in the API\'s code', (_where, value) => {

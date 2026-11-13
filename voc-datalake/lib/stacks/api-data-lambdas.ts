@@ -31,7 +31,9 @@ import { WORKSPACE_PARAMETER_BASE_PATH, grantWorkspaceParametersReadWrite } from
 import { CIRCUIT_ROW_PARTITIONS } from './ingestion-roles';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
-import { grantRequestWorkspace, grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
+import {
+  grantRequestWorkspace, grantWorkspaceAttributeRead, grantWorkspaceResolution, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS,
+} from '../utils/workspace-resolution-grants';
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
@@ -180,6 +182,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // workspace's own parameters read and written (credentials, app connectors; decision 19). The deployment key,
   // unconditioned, for the shared secret it reads and writes (encrypted with it).
   const integrationsWorkspaceEnv = grantRequestWorkspace(workspacesTable, integrationsRole, userPool);
+  // Run now in a workspace runs only a plugin the workspace enabled: its PLUGIN# row's key, read (7.14.00).
+  grantWorkspaceAttributeRead(integrationsRole, workspacesTable, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS);
   kmsKey.grantEncryptDecrypt(integrationsRole);
   const workspaceSecretsEnv = grantWorkspaceParametersReadWrite(
     stack, integrationsRole, ctx.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey);
@@ -259,6 +263,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // X-Workspace-Id as the integrations API resolves it; a workspace's scraper configs are its WS#{ws}#PLUGIN_CONFIG
   // row in voc-aggregates (the PutItem above), its credentials its own parameters.
   const scrapersWorkspaceEnv = grantRequestWorkspace(workspacesTable, scrapersRole, userPool);
+  // A scraper's run in a workspace needs the webscraper plugin enabled there: its PLUGIN# row's key, read (7.14.00).
+  grantWorkspaceAttributeRead(scrapersRole, workspacesTable, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS);
   const scrapersWorkspaceSecretsEnv = grantWorkspaceParametersReadWrite(
     stack, scrapersRole, ctx.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey);
   // POST /scrapers/{id}/run invokes the webscraper ingestor by its exact name

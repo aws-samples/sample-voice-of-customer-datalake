@@ -61,6 +61,8 @@ DEPLOYMENT_ADMIN = _claims('sub-deploy', 'admins')
 PLATFORM_ADMIN = _claims('sub-platform', 'admins,platform-admins')
 MEMBERS = ((WS_A, ADMIN_A, 'admin'), (WS_A, EDITOR_A, 'editor'), (WS_A, VIEWER_A, 'viewer'),
            (WS_B, ADMIN_B, 'admin'), (WS_NEW, ADMIN_NEW, 'admin'))
+#: The workspaces whose admins enabled the webscraper plugin (shared/workspace_plugin_settings.py); B has not.
+ENABLED_WEBSCRAPER: Final = (WS_A, WS_NEW)
 
 
 @dataclass
@@ -123,11 +125,9 @@ def _ws_parameter(ws: str, plugin: str) -> str:
 
 @pytest.fixture
 def world(monkeypatch, request) -> Iterator[World]:
-    """The operator routes as they act once per-workspace ingestion is on (the hold lifted); ``held_world`` keeps
-    the flag as it ships, off."""
+    """The operator routes in three workspaces; A and the new one enabled the webscraper plugin (their
+    ``PLUGIN#webscraper`` rows), B enabled nothing."""
     request.getfixturevalue('plugin_secret_defaults')  # the plugins CDK tells the integrations API about
-    if 'held' not in request.fixturenames:
-        monkeypatch.setattr(workspace_plugin_settings, 'PER_WORKSPACE_INGESTION', True)
     monkeypatch.setenv('WORKSPACE_PARAMETER_PREFIX', PREFIX)
     monkeypatch.setenv('WORKSPACE_PARAMETER_KEY_ARN', KEY)
     monkeypatch.setenv('AGGREGATES_TABLE', 'aggregates')
@@ -139,7 +139,10 @@ def world(monkeypatch, request) -> Iterator[World]:
                                       'slug': ws[-6:].lower(), 'secret_status': 'ready'})
         for ws, claims, role in MEMBERS:
             workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': f"MEMBER#{claims['sub']}", 'role': role})
-        secrets = boto3.client('secretsmanager', region_name='us-east-1')
+        for ws in ENABLED_WEBSCRAPER:
+            workspaces.put_item(Item={'pk': 'PLUGIN#webscraper', 'sk': f'WS#{ws}', 'enabled_by': 'sub-admin',
+                                      'enabled_at': '2026-11-13T00:00:00+00:00'})
+        secrets =boto3.client('secretsmanager', region_name='us-east-1')
         secrets.create_secret(Name=SHARED_SECRET, SecretString='{}')
         ssm = boto3.client('ssm', region_name='us-east-1')
         resolver = RequestWorkspace(table=lambda: workspaces, confirm_platform_admin=lambda _event: True)
@@ -776,10 +779,8 @@ class TestTheS3ImportApiRefusesAWorkspace:
         ('GET', '/s3-import/files', VIEWER_A), ('GET', '/s3-import/reprocess/run_s3_import_20261101000000_0a0b0c0d',
                                                 ADMIN_B)])
     @pytest.mark.parametrize('ws', [WS_A, ''])
-    def test_one_answer_for_everyone_before_anything_is_read(self, lambda_context, monkeypatch, method, path, claims,
-                                                             ws):
-        # The hold lifted: a reprocess, like every other route, gets the one 400 (the hold's 409 is below).
-        monkeypatch.setattr(workspace_plugin_settings, 'PER_WORKSPACE_INGESTION', True)
+    def test_one_answer_for_everyone_before_anything_is_read(self, lambda_context, method, path, claims, ws):
+        # A reprocess too: the import bucket is the deployment's, so no plugin of a workspace is ever named here.
         with patch.object(s3_import_handler, 's3_client') as s3, \
                 patch.object(s3_import_handler, 'get_aggregates_table') as table:
             status, body = _call(s3_import_handler, lambda_context, method, path, claims=claims, ws=ws,
@@ -790,70 +791,88 @@ class TestTheS3ImportApiRefusesAWorkspace:
         assert table.mock_calls == []
 
 
-# ── The ingestion hold (shared/workspace_plugin_settings.py hold_workspace_ingestion) ─────────────────────────────
+# ── A run in a workspace needs its plugin enabled there (shared/workspace_plugin_settings.py) ─────────────────────
 
-@pytest.fixture
-def held(world: World) -> World:
-    """``world`` with the flag as it ships: per-workspace ingestion held."""
-    assert workspace_plugin_settings.PER_WORKSPACE_INGESTION is False
-    return world
+NOT_ENABLED: Final = (409, workspace_plugin_settings.PLUGIN_NOT_ENABLED)
 
 
-HELD: Final = (409, workspace_plugin_settings.INGESTION_NOT_YET)
+class TestARunNeedsThePluginEnabledInTheWorkspace:
+    """Since 7.14.00 a workspace's Run now and a scraper's run run only a plugin the workspace enabled (its
+    ``PLUGIN#{plugin}`` / ``WS#{ws}`` row, the one the scheduled tick fans out over): otherwise 409
+    ``PLUGIN_NOT_ENABLED``, after the admin gate and the source check, before a row is written or a run invoked.
+    Deployment-wide nothing is read and the run starts as before."""
 
+    def test_run_now_of_a_plugin_the_workspace_has_not_enabled_starts_nothing(self, world, lambda_context):
+        status, body = _integrations(lambda_context, 'POST', '/sources/webscraper/run', claims=ADMIN_B, ws=WS_B)
 
-class TestNoWorkspaceRunStartsWhileIngestionIsHeld:
-    """While ``PER_WORKSPACE_INGESTION`` is off, a run in the request's workspace answers the plugin settings' 409,
-    the one reason enabling a plugin gets, before any credentials are read or a row written or a run invoked; a request
-    without a workspace runs deployment-wide as before."""
+        assert (status, body['error']) == NOT_ENABLED
+        assert world.ingestor.invoke.call_count == 0
+        assert world.aggregates.scan()['Items'] == []
 
-    def test_run_now_in_a_workspace_is_held_and_starts_nothing(self, held, lambda_context):
-        status, body = _integrations(lambda_context, 'POST', '/sources/webscraper/run', claims=ADMIN_A, ws=WS_A)
+    def test_another_workspaces_enable_counts_for_nothing(self, world, lambda_context):
+        """WS_A enabled the webscraper; its app reviews plugin is not on, whatever another workspace enabled."""
+        world.workspaces.put_item(Item={'pk': 'PLUGIN#app_reviews_ios', 'sk': f'WS#{WS_B}'})
 
-        assert (status, body['error']) == HELD
-        assert held.ingestor.invoke.call_count == 0
-        assert held.aggregates.scan()['Items'] == []
+        status, body = _integrations(lambda_context, 'POST', '/sources/app_reviews_ios/run', claims=ADMIN_A, ws=WS_A)
 
-    def test_a_scraper_run_in_a_workspace_is_held_and_starts_nothing(self, held, lambda_context):
-        status, body = _scrapers(lambda_context, 'POST', '/scrapers/shop/run', claims=ADMIN_A, ws=WS_A)
+        assert (status, body['error']) == NOT_ENABLED
+        assert world.ingestor.invoke.call_count == 0
 
-        assert (status, body['error']) == HELD
-        assert held.webscraper.invoke.call_count == 0
-        assert held.aggregates.scan()['Items'] == []
+    def test_a_scraper_run_of_a_workspace_without_the_webscraper_starts_nothing(self, world, lambda_context):
+        status, body = _scrapers(lambda_context, 'POST', '/scrapers/shop/run', claims=ADMIN_B, ws=WS_B)
 
-    @pytest.mark.parametrize('ws', [WS_A, ''])
-    def test_an_s3_import_reprocess_naming_a_workspace_is_held(self, lambda_context, ws):
-        with patch.object(s3_import_handler, 's3_client') as s3, \
-                patch.object(s3_import_handler, 'get_aggregates_table') as table:
-            status, body = _call(s3_import_handler, lambda_context, 'POST', '/s3-import/reprocess', claims=ADMIN_A,
-                                 ws=ws, body={'key': 'default/reviews.csv'})
+        assert (status, body['error']) == NOT_ENABLED
+        assert world.webscraper.invoke.call_count == 0
+        assert world.aggregates.scan()['Items'] == []
 
-        assert (status, body['error']) == HELD
-        assert s3.mock_calls == []
-        assert table.mock_calls == []
+    def test_once_its_admin_enables_the_plugin_the_run_starts_and_a_disable_stops_it_again(self, world,
+                                                                                        lambda_context):
+        event = rest_event('PUT', '/me/workspaces/current/plugins/webscraper', claims=ADMIN_B)
+        event['headers']['X-Workspace-Id'] = WS_B
+        context = world.resolver.context(event, fresh=True)
+        assert context is not None
+        workspace_plugin_settings.set_plugin_enabled(world.workspaces, context, 'webscraper', True, ADMIN_B['sub'])
+        started, body = _integrations(lambda_context, 'POST', '/sources/webscraper/run', claims=ADMIN_B, ws=WS_B)
+        workspace_plugin_settings.set_plugin_enabled(world.workspaces, context, 'webscraper', False, ADMIN_B['sub'])
+        refused, again = _integrations(lambda_context, 'POST', '/sources/webscraper/run', claims=ADMIN_B, ws=WS_B)
 
-    def test_the_other_s3_import_routes_keep_their_400(self, lambda_context):
-        with patch.object(s3_import_handler, 's3_client'), patch.object(s3_import_handler, 'get_aggregates_table'):
-            status, body = _call(s3_import_handler, lambda_context, 'GET', '/s3-import/files', claims=VIEWER_A, ws=WS_A)
+        assert started == 200, body
+        assert world.invoked_payload(world.ingestor)['workspace_id'] == WS_B
+        assert (refused, again['error']) == NOT_ENABLED
 
-        assert (status, body['error']) == (400, DEPLOYMENT_ONLY)
+    @pytest.mark.parametrize('claims', [EDITOR_A, VIEWER_A])
+    @pytest.mark.usefixtures('world')
+    def test_the_admin_gate_answers_first(self, lambda_context, claims):
+        status, _ = _integrations(lambda_context, 'POST', '/sources/app_reviews_ios/run', claims=claims, ws=WS_A)
 
-    @pytest.mark.usefixtures('held')
-    def test_the_source_is_checked_and_s3_import_refused_before_the_hold(self, lambda_context):
-        unknown, _ = _integrations(lambda_context, 'POST', '/sources/no_such_plugin/run', claims=ADMIN_A, ws=WS_A)
-        s3_import, body = _integrations(lambda_context, 'POST', '/sources/s3_import/run', claims=ADMIN_A, ws=WS_A)
+        assert status == 403
+
+    def test_the_source_is_checked_and_s3_import_refused_before_the_plugin(self, world, lambda_context):
+        unknown, _ = _integrations(lambda_context, 'POST', '/sources/no_such_plugin/run', claims=ADMIN_B, ws=WS_B)
+        s3_import, body = _integrations(lambda_context, 'POST', '/sources/s3_import/run', claims=ADMIN_B, ws=WS_B)
 
         assert unknown == 400
         assert (s3_import, body['error']) == (400, DEPLOYMENT_ONLY)
+        assert world.ingestor.invoke.call_count == 0
 
-    def test_a_deployment_wide_run_is_not_held(self, held, lambda_context):
-        status, body = _integrations(lambda_context, 'POST', '/sources/webscraper/run', claims=DEPLOYMENT_ADMIN, ws=None)
+    def test_a_read_fault_is_the_fixed_500_and_starts_nothing(self, world, lambda_context):
+        denied = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'no'}}, 'GetItem')
+        with patch('shared.workspace_request.require_plugin_enabled', side_effect=denied):
+            status, _ = _integrations(lambda_context, 'POST', '/sources/webscraper/run', claims=ADMIN_A, ws=WS_A)
+
+        assert status == 500
+        assert world.ingestor.invoke.call_count == 0
+
+    def test_a_deployment_wide_run_reads_no_plugin_row(self, world, lambda_context):
+        with patch('shared.workspace_request.require_plugin_enabled') as enabled:
+            status, body = _integrations(lambda_context, 'POST', '/sources/webscraper/run', claims=DEPLOYMENT_ADMIN,
+                                         ws=None)
 
         assert status == 200, body
-        assert 'workspace_id' not in held.invoked_payload(held.ingestor)
+        enabled.assert_not_called()
+        assert 'workspace_id' not in world.invoked_payload(world.ingestor)
 
-    def test_enabling_a_plugin_and_a_run_share_one_check(self):
-        """The one check beside the flag: the unlock lifts the enable and every run at once."""
-        assert inspect.getsource(workspace_plugin_settings).count('raise ConflictError(INGESTION_NOT_YET)') == 1
-        for module in (integrations_handler, scrapers_handler):
-            assert 'hold_workspace_ingestion()' in inspect.getsource(module)
+    def test_both_run_routes_check_the_plugin_through_the_one_gate(self):
+        for module, plugin in ((integrations_handler, '_request.require_plugin_enabled(source)'),
+                               (scrapers_handler, '_request.require_plugin_enabled(WEBSCRAPER_PLUGIN)')):
+            assert inspect.getsource(module).count(plugin) == 1

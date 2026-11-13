@@ -106,7 +106,7 @@ reading it:
 | Body at most 1 MB | 413 |
 | `X-Hub-Signature-256` present and equal to `sha256=` + HMAC-SHA256(raw body, secret), constant-time compare | 401 |
 
-In a workspace (multi-workspace, since 7.06.00; held: a delivery answers 409 until per-workspace ingestion is on) the payload URL is
+In a workspace (multi-workspace, since 7.06.00; its deliveries are ingested into it since 7.14.00) the payload URL is
 `<API endpoint>/webhooks/github_issues/{workspace id}`, and the secret, repositories and labels
 are the workspace's own; an unknown workspace or one without a webhook secret answers 401 like
 a bad signature ([plugin-architecture.md](plugin-architecture.md#a-workspaces-webhook-endpoint-since-70600)).

@@ -338,15 +338,18 @@ describe("a workspace's webhook endpoint", () => {
     expect(JSON.stringify(workspace.Integration.Uri)).toBe(JSON.stringify(deployment.Integration.Uri));
   });
 
-  it('reads only the routing attributes of WS#* rows of voc-workspaces, and writes none', () => {
-    // IAM, not only the code, keeps a MEMBER# row's email and name out of the webhook's reach.
+  it('reads only the routing attributes of WS#* rows and the key of PLUGIN#* rows of voc-workspaces, and writes none', () => {
+    // IAM, not only the code, keeps a MEMBER# row's email and name out of the webhook's reach; a read naming no
+    // attributes is refused (Null), and of a PLUGIN# row (the workspace enabled the plugin, 7.14.00) only its pk.
     const onWorkspaces = roleStatements().filter((s) => JSON.stringify(s.Resource).includes('Workspaces'));
+    const attributeRead = (partition: string, attributes: string[]) => ({ actions: ['dynamodb:GetItem'], condition: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [partition] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': attributes },
+      StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      Null: { 'dynamodb:Attributes': 'false' },
+    } })
     expect(onWorkspaces.map((s) => ({ actions: actionsOf(s), condition: s.Condition })))
-      .toStrictEqual([{ actions: ['dynamodb:GetItem'], condition: {
-        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
-        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'status'] },
-        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
-      } }]);
+      .toStrictEqual([attributeRead('WS#*', ['pk', 'sk', 'status']), attributeRead('PLUGIN#*', ['pk'])]);
   });
 
   it('grants exactly the attributes the routing read projects', () => {

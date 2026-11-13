@@ -164,7 +164,7 @@
       "editor": "Edición",
       "viewer": "Lectura"
     },
-    "sharedData": "Cada espacio de trabajo tiene sus propios comentarios, paneles, marca, problemas resueltos, categorías, dimensiones y políticas de fuentes; todavía no pueden llegar comentarios a un espacio de trabajo. Los proyectos, el asistente, Radar y los demás ajustes siguen siendo compartidos por todos los espacios de trabajo.",
+    "sharedData": "Cada espacio de trabajo tiene sus propios comentarios, paneles, marca, problemas resueltos, categorías, dimensiones y políticas de fuentes, y los plugins que activan sus administradores recopilan comentarios en él. Los proyectos, el asistente, Radar y los demás ajustes siguen compartidos por todos los espacios de trabajo.",
     "moreFailed": "No se pudo cargar la página siguiente. Elige Mostrar más para volver a intentarlo.",
     "refreshFailed": "No se pudo actualizar la lista, así que puede no estar al día.",
     "members": {
@@ -236,7 +236,7 @@
       "brandDescription": "La marca propia de este espacio de trabajo. Un espacio de trabajo nuevo empieza con una vacía: no se copia nada de la marca de la implementación.",
       "brandReadOnly": "Solo los administradores de este espacio de trabajo pueden cambiar su marca. Puedes consultarla aquí.",
       "pluginsTitle": "Plugins",
-      "pluginsDescription": "Los plugins que ofrece esta implementación y si este espacio de trabajo ha activado cada uno. Todos los plugins siguen recopilando comentarios para toda la implementación, como antes.",
+      "pluginsDescription": "Los plugins que ofrece esta implementación y si este espacio de trabajo ha activado cada uno. Un plugin activado aquí se ejecuta según su programación para este espacio de trabajo, y Ejecutar ahora lo ejecuta aquí.",
       "pluginsReadOnly": "Solo los administradores de este espacio de trabajo pueden activar o desactivar plugins.",
       "pluginsLoading": "Cargando los plugins…",
       "pluginsLoadFailed": "No se pudieron cargar los plugins.",
@@ -285,8 +285,7 @@
       "userGone": "Ese usuario ya no existe. Recarga la página.",
       "pluginGone": "Esta implementación ya no ofrece ese plugin. Vuelve a cargar la página.",
       "pluginsChangedMeanwhile": "Los plugins del espacio de trabajo cambiaron mientras tanto. Vuelve a cargar la página e inténtalo de nuevo.",
-      "ingestionNotYet": "La ingesta por espacio de trabajo llega con una versión posterior: un espacio de trabajo aún no puede activar un plugin.",
-      "ingestionRunNotYet": "La ingesta por espacio de trabajo llega con una versión posterior: todavía no se puede iniciar una ejecución en un espacio de trabajo.",
+      "pluginNotEnabled": "Activa primero este plugin para el espacio de trabajo: Configuración del espacio de trabajo → Plugins.",
       "notDeploymentAdmin": "Solo los administradores de la implementación pueden cambiar la marca predeterminada.",
       "notBrandAdmin": "Solo los administradores de este espacio de trabajo pueden cambiar su marca.",
       "generic": "No funcionó. Inténtalo de nuevo.",

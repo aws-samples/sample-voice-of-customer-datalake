@@ -164,7 +164,7 @@
       "editor": "Édition",
       "viewer": "Lecture"
     },
-    "sharedData": "Chaque espace de travail a ses propres retours, tableaux de bord, marque, problèmes résolus, catégories, dimensions et politiques des sources ; aucun retour ne peut encore arriver dans un espace de travail. Les projets, l’assistant, Radar et les autres paramètres restent partagés par tous les espaces de travail.",
+    "sharedData": "Chaque espace de travail a ses propres retours, tableaux de bord, marque, problèmes résolus, catégories, dimensions et politiques des sources, et les plugins qu’activent ses administrateurs y collectent des retours. Les projets, l’assistant, Radar et les autres paramètres restent partagés par tous les espaces de travail.",
     "moreFailed": "La page suivante n’a pas pu être chargée. Choisissez Afficher plus pour réessayer.",
     "refreshFailed": "La liste n’a pas pu être actualisée : elle n’est peut-être plus à jour.",
     "members": {
@@ -236,7 +236,7 @@
       "brandDescription": "La marque propre à cet espace de travail. Un nouvel espace de travail commence avec une marque vide : rien n’est copié depuis la marque du déploiement.",
       "brandReadOnly": "Seuls les administrateurs de cet espace de travail peuvent modifier sa marque. Vous pouvez la consulter ici.",
       "pluginsTitle": "Plugins",
-      "pluginsDescription": "Les plugins que propose ce déploiement, et si cet espace de travail a activé chacun d’eux. Chaque plugin collecte toujours les retours pour l’ensemble du déploiement, comme avant.",
+      "pluginsDescription": "Les plugins que propose ce déploiement, et si cet espace de travail a activé chacun d’eux. Un plugin activé ici s’exécute selon sa planification pour cet espace de travail, et Exécuter maintenant l’exécute ici.",
       "pluginsReadOnly": "Seuls les administrateurs de cet espace de travail peuvent activer ou désactiver des plugins.",
       "pluginsLoading": "Chargement des plugins…",
       "pluginsLoadFailed": "Les plugins n’ont pas pu être chargés.",
@@ -285,8 +285,7 @@
       "userGone": "Cet utilisateur n’existe plus. Rechargez la page.",
       "pluginGone": "Ce déploiement ne propose plus ce plugin. Rechargez la page.",
       "pluginsChangedMeanwhile": "Les plugins de l’espace de travail ont changé entre-temps. Rechargez la page et réessayez.",
-      "ingestionNotYet": "L’ingestion par espace de travail arrive dans une version ultérieure : un espace de travail ne peut pas encore activer de plugin.",
-      "ingestionRunNotYet": "L’ingestion par espace de travail arrive dans une version ultérieure : aucune exécution ne peut encore démarrer dans un espace de travail.",
+      "pluginNotEnabled": "Activez d’abord ce plugin pour l’espace de travail : Réglages de l’espace de travail → Plugins.",
       "notDeploymentAdmin": "Seuls les administrateurs du déploiement peuvent modifier la marque par défaut.",
       "notBrandAdmin": "Seuls les administrateurs de cet espace de travail peuvent modifier sa marque.",
       "generic": "Cela n’a pas fonctionné. Réessayez.",

@@ -73,23 +73,33 @@ export function grantWorkspaceResolution(workspacesTable: dynamodb.ITable, role:
   return { WORKSPACES_TABLE: workspacesTable.tableName };
 }
 
+/** A `PLUGIN#{plugin}` / `WS#{ws}` row's key, the one attribute a check of whether a workspace enabled a plugin
+ *  reads (lambda/shared/workspace_plugin_settings.py `require_plugin_enabled` projects `pk`): with
+ *  {@link PLUGIN_ROW_PARTITIONS}, the attribute-limited read the operator APIs and the webhooks hold (7.14.00). */
+export const PLUGIN_ROW_KEY = ['pk'] as const;
+export const PLUGIN_ROW_PARTITIONS = ['PLUGIN#*'] as const;
+
 /**
- * GetItem on voc-workspaces' `WS#*` rows, held to `attributes` (`dynamodb:Attributes`, and a projection required:
- * `dynamodb:Select` `SPECIFIC_ATTRIBUTES` when it is sent), for a role that reads a workspace's row without resolving
- * a member through the policy above: the webhooks' routing read of a `META` (lib/stacks/api-stack.ts). A role that
- * attaches the policy needs none (the settings API's erasure routes read a membership through it, lambda/shared/
- * erasure_scope.py, with the resolver's projections, lambda/shared/workspace.py MEMBER_READ_ATTRIBUTES and
- * META_READ_ATTRIBUTES).
+ * GetItem on voc-workspaces' `partitions` (default `WS#*`), held to `attributes` (`dynamodb:Attributes`, which must
+ * be sent, and a projection required: `dynamodb:Select` `SPECIFIC_ATTRIBUTES` when it is sent), for a role that
+ * reads a workspace's row without resolving a member through the policy above: the webhooks' routing read of a
+ * `META` (lib/stacks/api-stack.ts), the MCP tokens' membership reads, and a `PLUGIN#` row's key
+ * ({@link PLUGIN_ROW_KEY}). A role that attaches the policy needs none (the settings API's erasure routes read a
+ * membership through it, lambda/shared/erasure_scope.py, with the resolver's projections, lambda/shared/workspace.py
+ * MEMBER_READ_ATTRIBUTES and META_READ_ATTRIBUTES).
  */
 export function grantWorkspaceAttributeRead(
-  role: iam.Role, workspacesTable: dynamodb.ITable, attributes: readonly string[],
+  role: iam.Role, workspacesTable: dynamodb.ITable, attributes: readonly string[], partitions: readonly string[] = ['WS#*'],
 ): void {
   role.addToPolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
     conditions: {
-      ...leadingKeys(['WS#*']),
+      ...leadingKeys([...partitions]),
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...attributes] },
       StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      // A GetItem that names no attributes carries no `dynamodb:Attributes`, which `ForAllValues` alone would let
+      // through with the whole row: it is refused (every caller sends a projection).
+      Null: { 'dynamodb:Attributes': 'false' },
     },
   }));
 }

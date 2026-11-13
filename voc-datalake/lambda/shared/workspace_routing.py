@@ -31,7 +31,6 @@ from botocore.exceptions import ClientError
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.workspace import ACTIVE, WorkspaceContext
 from shared.workspace_ids import is_workspace_id, ws_key
-from shared.workspace_plugin_settings import hold_workspace_ingestion
 from shared.ws_repo import FORM_LOOKUP_PREFIX, LOOKUP_SORT_KEY, WORKSPACE_FIELD, WorkspaceScope, scope_from_lookup
 
 __all__ = [
@@ -126,7 +125,7 @@ def release_lookup(table: Any, form_id: str, scope: WorkspaceScope) -> None:
             raise
 
 
-def workspace_payload(payload: Mapping[str, Any], source: object, *, ingestion: bool = True) -> dict[str, Any]:
+def workspace_payload(payload: Mapping[str, Any], source: object) -> dict[str, Any]:
     """An asynchronous payload or message on either path: an operator route's invoke payload (Run now, a web
     scraper's run), a form's submission, a webhook's delivery, an erasure job's row and invoke event.
 
@@ -135,18 +134,10 @@ def workspace_payload(payload: Mapping[str, Any], source: object, *, ingestion: 
     set after every other field. ``source`` must be a ``WorkspaceContext`` (a request's resolved membership, built only
     by shared/workspace.py and shared/workspace_members.py) or a ``RoutedWorkspace`` (a stored row's, built only
     here): anything else is a ``TypeError``, never a workspace (typed ``object`` so the check is also a type guard).
-
-    A payload that starts ingestion in that workspace (``ingestion``, the default: every one but an erasure's) is
-    refused here while per-workspace ingestion is held (shared/workspace_plugin_settings.py
-    ``hold_workspace_ingestion``, 409): the backstop behind each route's own earlier call, so no ingestion payload
-    carries a ``workspace_id`` past the hold. An erasure (``ingestion=False``, shared/erasure_scope.py) is never
-    held: it deletes a workspace's data, it never brings any in.
     """
     fields = {name: value for name, value in payload.items() if name != WORKSPACE_FIELD}
     if source is None:
         return fields
     if not isinstance(source, WorkspaceContext | RoutedWorkspace):
         raise TypeError('a workspace payload needs a resolved or a stored-row workspace')
-    if ingestion:
-        hold_workspace_ingestion()
     return {**fields, WORKSPACE_FIELD: source.ws}

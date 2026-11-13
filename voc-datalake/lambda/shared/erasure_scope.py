@@ -118,7 +118,7 @@ def scoped_job_row(row: Mapping[str, Any], context: WorkspaceContext | None) -> 
     (``workspace_payload``: never a value the row carried). A whole-source row never names a workspace."""
     if context is not None and row.get('field') == SOURCE_FIELD:
         raise ValidationError(WHOLE_SOURCE_NOT_IN_WORKSPACES)
-    return workspace_payload({**row, 'pk': job_partition(_scope(context))}, context, ingestion=False)
+    return workspace_payload({**row, 'pk': job_partition(_scope(context))}, context)
 
 
 def put_job_row(table: Any, row: Mapping[str, Any], context: WorkspaceContext | None, now: datetime) -> None:
@@ -143,7 +143,7 @@ def put_job_row(table: Any, row: Mapping[str, Any], context: WorkspaceContext | 
 def job_event(job_id: str, value: str, context: WorkspaceContext | None) -> dict[str, Any]:
     """The worker's invoke event: the value travels here only; in a workspace the resolved workspace too, so the worker
     reads the row in that workspace's partition (``workspace_payload``)."""
-    return workspace_payload({'mode': 'erase', 'job_id': job_id, 'value': value}, context, ingestion=False)
+    return workspace_payload({'mode': 'erase', 'job_id': job_id, 'value': value}, context)
 
 
 def fail_unstarted_job(table: Any, job: Mapping[str, Any], context: WorkspaceContext | None, now: datetime) -> None:

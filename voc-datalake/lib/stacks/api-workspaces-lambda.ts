@@ -14,7 +14,7 @@
  *     UpdateItem on `WS#*` and `USER#*` with the attribute `role` only (a role change); DeleteItem on `WS#*`
  *     and `USER#*` ({@link MEMBERSHIP_PARTITIONS}: a removal's `MEMBER#` and `USER#` rows; IAM cannot pin a sort key,
  *     so `META` in `WS#*` is in reach of IAM and kept out by the code) and on `PLUGIN#*` (a workspace's plugin
- *     disabled, lambda/shared/workspace_plugin_settings.py; no PutItem there until a workspace may enable one); ConditionCheckItem on `WS#*`. The audit-row
+ *     disabled, lambda/shared/workspace_plugin_settings.py; its PutItem there, since 7.14.00, is the enable); ConditionCheckItem on `WS#*`. The audit-row
  *     guard (lib/utils/audit-row-guard.ts, which names this role the table's audit writer) denies it changing or
  *     removing an audit row. No BatchWriteItem or Scan;
  *   - Cognito AdminListGroupsForUser + AdminGetUser on the user pool: the live platform-admin check
@@ -33,10 +33,10 @@ import type { ApiStackContext } from './api-context';
 
 const WORKSPACES_API_FUNCTION_BASE_NAME = 'voc-workspaces-api';
 const WORKSPACES_HANDLER_FILE = 'workspaces_handler.py';
-/** Where the workspaces API puts (platform_workspaces.py, workspace.py, workspace_members.py): a create's rows, an
- * add's rows, the audits. Not `PLUGIN#*` yet: a workspace enables no plugin until phase 2's data path is in
- * (PER_WORKSPACE_INGESTION, lambda/shared/workspace_plugin_settings.py); the change that turns it on adds it back. */
-const WORKSPACE_WRITE_PARTITIONS = ['AUDIT#WS#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'];
+/** Where the workspaces API puts (platform_workspaces.py, workspace.py, workspace_members.py,
+ * workspace_plugin_settings.py): a create's rows, an add's rows, the audits, and since 7.14.00 an enabled plugin's
+ * `PLUGIN#{plugin}` / `WS#{ws}` row (the partition the plugin's scheduled ingestor fans out over). */
+const WORKSPACE_WRITE_PARTITIONS = ['AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'];
 /** A membership's two rows (lambda/shared/workspace_members.py): `WS#{ws}` / `MEMBER#{sub}` and `USER#{sub}` / `WS#{ws}`. */
 const MEMBERSHIP_PARTITIONS = ['USER#*', 'WS#*'];
 /** What the workspaces API deletes: a removal's two membership rows, and a disabled plugin's

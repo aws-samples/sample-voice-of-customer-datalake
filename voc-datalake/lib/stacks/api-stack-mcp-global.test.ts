@@ -218,6 +218,8 @@ describe('MCP token API IAM', () => {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': resolverAttributes() },
         StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+        // A read naming no attributes (the whole row) is refused, not let through by an empty ForAllValues.
+        Null: { 'dynamodb:Attributes': 'false' },
       } },
     ]);
     expect(resolverAttributes()).not.toContain('email');

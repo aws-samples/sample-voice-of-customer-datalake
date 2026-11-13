@@ -184,9 +184,22 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
 // (lambda/shared/workspace_request.py) through the stack's one workspace-resolution policy, as the settings API does
 // (platform-admin-writes.test.ts pins what that policy allows: GetItem on WS#* and AUDIT#WS#*, PutItem on AUDIT#WS#*
 // only), and run the live platform-admin check in Cognito; nothing else of the control plane.
+// The operator APIs also read, from their own policy, a PLUGIN# row's key: a run in a workspace starts only a plugin
+// the workspace enabled (7.14.00, lambda/shared/workspace_plugin_settings.py require_plugin_enabled, which projects
+// pk); a read naming no attributes is refused (Null); nothing else there.
+const PLUGIN_KEY_READ = [{
+  actions: ['dynamodb:GetItem'],
+  condition: {
+    'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PLUGIN#*'] },
+    'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk'] },
+    StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    Null: { 'dynamodb:Attributes': 'false' },
+  },
+}];
 describe.each([
-  'MetricsLambdaRole', 'FeedbackEditLambdaRole', 'IntegrationsLambdaRole', 'ScrapersLambdaRole',
-])('%s resolves X-Workspace-Id', (role) => {
+  ['MetricsLambdaRole', []], ['FeedbackEditLambdaRole', []],
+  ['IntegrationsLambdaRole', PLUGIN_KEY_READ], ['ScrapersLambdaRole', PLUGIN_KEY_READ],
+])('%s resolves X-Workspace-Id', (role, own) => {
   it('attaches the one workspace-resolution policy and writes nothing in voc-workspaces from its own', () => {
     const policies = Object.keys(apiTemplate().findResources('AWS::IAM::ManagedPolicy'))
       .filter((id) => id.startsWith(WORKSPACE_RESOLUTION_POLICY_ID));
@@ -195,8 +208,9 @@ describe.each([
       .find(([id]) => id.startsWith(role))?.[1]);
     expect(attached).toContain(JSON.stringify({ Ref: policies[0] }));
     expect(policyStatementsOf(apiTemplate(), role)
-      .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:'))))
-      .toStrictEqual([]);
+      .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:')))
+      .map((s) => ({ actions: s.actions, condition: s.condition })))
+      .toStrictEqual(own);
   });
 });
 

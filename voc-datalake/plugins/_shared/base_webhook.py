@@ -7,11 +7,12 @@ Two paths (docs/multi-workspace.md, "Public and non-user entry points"; docs/plu
   that name no workspace);
 * ``POST /webhooks/{plugin}/{ws}``: the ``{ws}`` path value is only the key of a workspace's own ``META`` row
   (``delivery_workspace``, over shared/workspace_routing.py ``route_workspace_id``): it must be a well-formed id of an
-  ``active`` workspace. The webhook secret and the plugin's settings then come from THAT workspace's parameter of
+  ``active`` workspace that enabled this plugin (its ``PLUGIN#{plugin}`` / ``WS#{ws}`` row, since 7.14.00). The
+  webhook secret and the plugin's settings then come from THAT workspace's parameter of
   this plugin, ``{prefix}/{ws}/credentials/{plugin}`` (decision 19, shared/workspace_credentials.py), never the shared
   secret; a verified delivery is archived under ``ws/{ws}/raw/<plugin>/…`` and queued with that ``workspace_id``
   (``workspace_payload``, after every other field). Anything that routes nowhere (a malformed or unknown id, a
-  ``deleting`` workspace, a parameter missing, unreadable or without the plugin's webhook secret) gets the plugin's
+  ``deleting`` workspace, a workspace that has not enabled the plugin, a parameter missing, unreadable or without the plugin's webhook secret) gets the plugin's
   own bad-signature answer, so the answer confirms no workspace.
 """
 
@@ -35,7 +36,7 @@ from shared.plugin_identity import is_valid_plugin_identifier
 from shared.source_profiles import SourceProfilesUnavailable
 from shared.tables import get_workspaces_table
 from shared.workspace_credentials import MalformedCredentials, read_credentials
-from shared.workspace_plugin_settings import hold_workspace_ingestion
+from shared.workspace_plugin_settings import require_plugin_enabled
 from shared.workspace_routing import RoutedWorkspace, Unroutable, route_workspace_id, workspace_payload
 
 from .audit import emit_audit_event
@@ -135,8 +136,10 @@ def _on_workspace_route(event: dict) -> bool:
 def delivery_workspace(event: dict) -> tuple[bool, RoutedWorkspace | None]:
     """``(refused, routed)`` of one delivery. ``/webhooks/{plugin}`` (no ``{ws}`` path parameter): ``(False, None)``,
     deployment-wide. ``/webhooks/{plugin}/{ws}``: ``(False, routed)`` for an active workspace,
-    read from its stored ``META`` (the path value is only the row's key), else ``(True, None)``: refused, never served
-    deployment-wide. A read fault raises, for the plugin's 500: a provider such as GitHub does not redeliver a failed
+    read from its stored ``META`` (the path value is only the row's key), that enabled this plugin (its
+    ``PLUGIN#{plugin}`` / ``WS#{ws}`` row, shared/workspace_plugin_settings.py: a disable stops its deliveries at
+    once), else ``(True, None)``: refused with the bad signature's 401 before any secret is read or the body parsed,
+    never served deployment-wide, so the answer says nothing of which. A read fault raises, for the plugin's 500: a provider such as GitHub does not redeliver a failed
     delivery by itself, so the scheduled poll picks the item up and the 500 tells the operator."""
     if not _on_workspace_route(event):
         return False, None
@@ -146,9 +149,11 @@ def delivery_workspace(event: dict) -> tuple[bool, RoutedWorkspace | None]:
         logger.warning("WORKSPACES_TABLE not configured: a workspace webhook is refused")
         return True, None
     try:
-        return False, route_workspace_id(table, parameters.get(WORKSPACE_PATH_PARAMETER))
-    except Unroutable:
+        routed = route_workspace_id(table, parameters.get(WORKSPACE_PATH_PARAMETER))
+        require_plugin_enabled(table, routed.ws, SOURCE_PLATFORM)
+    except (Unroutable, ConflictError, ValueError):  # ValueError: no plugin id configured (SOURCE_PLATFORM)
         return True, None
+    return False, routed
 
 
 class BaseWebhook(ABC):
@@ -311,14 +316,6 @@ class BaseWebhook(ABC):
         client_ip = self._extract_client_ip(event)
         if self.refused or (_on_workspace_route(event) and self.routed is None):
             return {"statusCode": 401, "body": json.dumps({"error": "Invalid signature"})}
-        if self.routed is not None:
-            # A verified delivery to a workspace is ingestion into it: held, like every run in a workspace, while
-            # per-workspace ingestion is off (the one check, the same 409 and reason), before anything is parsed,
-            # archived or queued.
-            try:
-                hold_workspace_ingestion()
-            except ConflictError as held:
-                return {"statusCode": 409, "body": json.dumps({"error": held.message})}
 
         emit_audit_event("webhook.received", self.source_platform, True, {
             "ip_address": client_ip,

@@ -161,7 +161,7 @@
       "editor": "Editor",
       "viewer": "Viewer"
     },
-    "sharedData": "Each workspace keeps its own feedback, dashboards, brand, resolved problems, categories, dimensions and source policies; no feedback can reach a workspace yet. Projects, the assistant, Radar and the other settings are still shared by every workspace.",
+    "sharedData": "Each workspace keeps its own feedback, dashboards, brand, resolved problems, categories, dimensions and source policies, and the plugins its admins turn on collect feedback into it. Projects, the assistant, Radar and the other settings are still shared by every workspace.",
     "moreFailed": "The next page could not be loaded. Choose Show more to try again.",
     "refreshFailed": "The list could not be refreshed, so it may be out of date.",
     "members": {
@@ -233,7 +233,7 @@
       "brandDescription": "This workspace's own brand. A new workspace starts with an empty one: nothing is copied from the deployment's brand.",
       "brandReadOnly": "Only this workspace's admins can change its brand. You can view it here.",
       "pluginsTitle": "Plugins",
-      "pluginsDescription": "The plugins this deployment offers, and whether this workspace has turned each one on. Every plugin still collects feedback for the whole deployment, as before.",
+      "pluginsDescription": "The plugins this deployment offers, and whether this workspace has turned each one on. A plugin turned on here runs on its schedule for this workspace, and Run now runs it here.",
       "pluginsReadOnly": "Only this workspace's admins can turn plugins on or off.",
       "pluginsLoading": "Loading the plugins…",
       "pluginsLoadFailed": "The plugins could not be loaded.",
@@ -282,8 +282,7 @@
       "userGone": "That user no longer exists. Reload the page.",
       "pluginGone": "This deployment no longer offers that plugin. Reload the page.",
       "pluginsChangedMeanwhile": "The workspace's plugins changed meanwhile. Reload the page and try again.",
-      "ingestionNotYet": "Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet.",
-      "ingestionRunNotYet": "Per-workspace ingestion arrives with a later release: a run cannot start in a workspace yet.",
+      "pluginNotEnabled": "Enable this plugin for the workspace first: Workspace settings → Plugins.",
       "notDeploymentAdmin": "Only the deployment's administrators can change the default brand.",
       "notBrandAdmin": "Only this workspace's admins can change its brand.",
       "generic": "That did not work. Try again.",

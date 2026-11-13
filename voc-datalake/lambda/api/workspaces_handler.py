@@ -41,8 +41,7 @@ plugins, ENABLED_SOURCES from cdk.context.json, are the ceiling), resolved the s
     GET /me/workspaces/current/plugins          {plugins: [{id, enabled, enabled_at?, enabled_by?}]}: any member,
                                                 every plugin the deployment offers, in its order
     PUT /me/workspaces/current/plugins/{id}     {enabled} -> {plugin: {id, enabled, ...}}: workspace admins only
-                                                (after the 404 and the body's 400, an enable is 409 for
-                                                everyone until PER_WORKSPACE_INGESTION is on);
+                                                (an enable writes PLUGIN#{id} / WS#{ws}, a disable deletes it);
                                                 404 for a plugin the deployment does not offer; audited first.
 Each write resolves the caller's role from the table, never the 30 s cache (a demoted admin cannot undo it), commits
 only while the acting admin is still admin (a check in its transaction: 403 when they were demoted meanwhile), writes

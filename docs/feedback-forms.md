@@ -301,8 +301,7 @@ workspace's lookup row holds answers 404.
 
 With `X-Workspace-Id` the routes act in that workspace only ([Workspaces](#workspaces-since-70600)):
 any member reads its forms, only its editors and admins create, update and delete
-them (a viewer gets 403), and anyone else gets the one 404. While per-workspace
-ingestion is held, creating a workspace form answers 409. The public routes are
+them (a viewer gets 403), and anyone else gets the one 404. The public routes are
 protected by the input validation above, and choose a form's workspace only from its
 lookup row.
 
@@ -318,9 +317,9 @@ updates only a form that exists: an unknown id answers 404 and creates nothing.
 ## Workspaces (since 7.06.00)
 
 Inside a workspace the web app sends `X-Workspace-Id` ([multi-workspace.md](multi-workspace.md)), so a form
-created there is that workspace's. While per-workspace ingestion is held (`PER_WORKSPACE_INGESTION` off, [multi-workspace.md](multi-workspace.md#per-workspace-configuration)), creating a form in a workspace, and a submission to a
-workspace's form, answer 409 with the hold's reason, before anything is written, archived or queued; a
-workspace form's config and iframe answer as before.
+created there is that workspace's, and since 7.14.00 (the ingestion hold lifted,
+[multi-workspace.md](multi-workspace.md#per-workspace-configuration)) its submissions are ingested into that
+workspace. From 7.06.00 to 7.13.00 creating a form in a workspace and a submission to one answered 409.
 
 - The signed-in routes (`GET`/`POST /feedback-forms`, `PUT`/`DELETE /feedback-forms/{id}`,
   `GET /feedback-forms/{id}/stats` and `/submissions`) act in the workspace that
@@ -345,8 +344,6 @@ workspace form's config and iframe answer as before.
   copy kept under `ws/{ws}/raw/feedback_form/`. A form without a lookup row is a
   deployment form, exactly as before. A lookup row whose workspace is unknown or being
   deleted, a lookup row without its form, and an unknown id all answer the same 404.
-  While per-workspace ingestion is held, a submission to a workspace's form answers 409
-  (above) and nothing is archived or queued.
 - A workspace's form uses its workspace's own categories (its preset routing) and
   `feedback_form` source profile (its PII policy; its raw copy is opt-in through that
   workspace's own profile), since 7.08.00; the deployment's profile opts no workspace in. Participant

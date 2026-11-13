@@ -412,6 +412,18 @@ describe('Scrapers', () => {
         expect(mockRunScraper).toHaveBeenCalledWith('scraper-1')
       })
     })
+
+    // Inside a workspace a scraper's run needs the webscraper plugin enabled there (PLUGIN_NOT_ENABLED, 409).
+    it('says on the card to enable the plugin first when the workspace refuses its run', async () => {
+      mockRunScraper.mockRejectedValueOnce(new ApiError(409, 'Enable this plugin for the workspace first'))
+      const user = await renderLoaded()
+
+      await user.click(at(screen.getAllByRole('button', { name: 'Run now' }), 0))
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Fetch reviews' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(enCommon.workspaces.errors.pluginNotEnabled)
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+    })
   })
 
   describe('saving from the editor', () => {

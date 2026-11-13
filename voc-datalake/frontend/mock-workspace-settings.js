@@ -3,9 +3,8 @@
 // without the header on the plugins routes, one 404 for a workspace the caller cannot enter):
 //   GET  /me/workspaces/current/plugins            → {plugins: [{id, enabled, enabled_at?, enabled_by?}]}, any member
 //   PUT  /me/workspaces/current/plugins/{id}       {enabled} → {plugin: {id, enabled, …}}: 404 for a plugin the
-//        deployment does not offer, 400 for a bad body, an enable 409 INGESTION_NOT_YET for everyone (before the
-//        workspace is resolved), then 403 for a non-admin; a disable answers and changes nothing (no plugin can be
-//        enabled yet, so none is)
+//        deployment does not offer, 400 for a bad body, then 403 for a non-admin; an enable or a disable changes
+//        the workspace's own list (asking for what holds changes nothing)
 //   GET  /settings/brand  with X-Workspace-Id     → the workspace's brand (empty until saved), any member
 //   PUT  /settings/brand  with X-Workspace-Id     → the workspace's admins only (403 'Workspace admin access required')
 // (lambda/api/workspaces_handler.py and shared/workspace_plugin_settings.py; settings_handler.py and
@@ -20,28 +19,39 @@ const PLUGINS_ROUTE = '/me/workspaces/current/plugins';
 const PLUGIN_ROUTE = /^\/me\/workspaces\/current\/plugins\/([^/]+)$/;
 const BRAND_ROUTE = '/settings/brand';
 
-/** The deployment's ceiling: the plugins cdk.context.json enables, in its order (the Lambda's ENABLED_SOURCES). */
-const OFFERED = ['webscraper', 'app_reviews_ios', 'app_reviews_android', 's3_import', 'synthetic_reviews', 'github_issues', 'web_reviews'];
+/** What a workspace is offered: the deployment's ceiling (cdk.context.json, in its order) without its deployment-only
+ *  plugins, as the server lists it (workspace_plugin_settings.py `workspace_ceiling`: no `s3_import`). */
+const OFFERED = ['webscraper', 'app_reviews_ios', 'app_reviews_android', 'synthetic_reviews', 'github_issues', 'web_reviews'];
 
 // The refusals' texts: workspace_plugin_settings.py, workspace.py.
-const INGESTION_NOT_YET = 'Per-workspace ingestion arrives with phase 2 of multi-workspace: a workspace cannot enable a plugin yet';
 const PLUGIN_NOT_FOUND = 'Plugin not found';
 const NOT_WORKSPACE_ADMIN = 'Workspace admin access required';
 
 const refuse = (send, [status, error]) => send(status, { success: false, error });
 
-/** Every plugin of the ceiling, none enabled: no workspace can enable one yet, so no `PLUGIN#` row exists. */
-function listPlugins(send) {
-  return send(200, { plugins: OFFERED.map((id) => ({ id, enabled: false })) });
+/** The workspace's enabled plugins (its `PLUGIN#` rows on the server): id → {enabled_at, enabled_by}. */
+const enabledOf = (workspace) => {
+  workspace.plugins ??= {};
+  return workspace.plugins;
+};
+
+/** A plugin's entry as GET lists it. */
+const entryOf = (workspace, id) => {
+  const row = enabledOf(workspace)[id];
+  return row === undefined ? { id, enabled: false } : { id, enabled: true, ...row };
+};
+
+/** Every plugin of the ceiling, in its order, with whether the workspace enabled it. */
+function listPlugins(send, workspace) {
+  return send(200, { plugins: OFFERED.map((id) => entryOf(workspace, id)) });
 }
 
-/** The body's `enabled`, or the refusal parse_plugin_change makes (400, or the 409 of a held enable). */
+/** The body's `enabled`, or the 400 parse_plugin_change makes. */
 function parseChange(body) {
   const extra = body !== null && typeof body === 'object' ? Object.keys(body).filter((key) => key !== 'enabled') : [];
   if (extra.length > 0) return { refusal: [400, `Unknown field: ${extra[0]}`] };
   if (typeof body?.enabled !== 'boolean') return { refusal: [400, 'enabled must be true or false'] };
-  if (body.enabled) return { refusal: [409, INGESTION_NOT_YET] };
-  return { enabled: false };
+  return { enabled: body.enabled };
 }
 
 function changePlugin(req, res, send, shared, pluginId) {
@@ -53,8 +63,14 @@ function changePlugin(req, res, send, shared, pluginId) {
     const entry = resolve(req, shared);
     if (entry.refusal) return refuse(send, entry.refusal);
     if (entry.role !== 'admin') return refuse(send, [403, NOT_WORKSPACE_ADMIN]);
-    // Asking for what holds (not enabled) changes and records nothing, as on the server.
-    return send(200, { plugin: { id: pluginId, enabled: false } });
+    const enabled = enabledOf(entry.workspace);
+    // Asking for what holds changes and records nothing, as on the server.
+    if (change.enabled && enabled[pluginId] === undefined) {
+      enabled[pluginId] = { enabled_at: new Date().toISOString(), enabled_by: shared.mockCaller.sub };
+    } else if (!change.enabled) {
+      delete enabled[pluginId];
+    }
+    return send(200, { plugin: entryOf(entry.workspace, pluginId) });
   });
 }
 
@@ -93,6 +109,6 @@ export function handleWorkspaceSettingsRoutes(req, res, url, send, shared) {
   if (url.pathname !== PLUGINS_ROUTE || req.method !== 'GET') return false;
   const entry = resolve(req, shared);
   if (entry.refusal) refuse(send, entry.refusal);
-  else listPlugins(send);
+  else listPlugins(send, entry.workspace);
   return true;
 }

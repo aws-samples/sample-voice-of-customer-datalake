@@ -131,11 +131,17 @@ describe('mock workspaces', () => {
       assert.equal((await inWorkspace(undefined, 'GET', PLUGINS))[0], 400)
     })
 
-    it('holds every enable (409, the server\'s reason) and answers a disable; 404 for a plugin not offered', async () => {
+    it('enables and disables a plugin in its workspace only (an editor 403); 404 for a plugin not offered', async () => {
       const { acme, juniper } = await mine()
-      const held = [409, { success: false, error: 'Per-workspace ingestion arrives with phase 2 of multi-workspace: a workspace cannot enable a plugin yet' }]
-      assert.deepEqual(await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: true }), held)
-      assert.deepEqual(await inWorkspace(juniper.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: true }), held)
+      const [status, body] = await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: true })
+      assert.equal(status, 200)
+      assert.deepEqual({ id: body.plugin.id, enabled: body.plugin.enabled, by: body.plugin.enabled_by },
+        { id: 'webscraper', enabled: true, by: 'sub-admin-demo' })
+      const acmeList = (await inWorkspace(acme.id, 'GET', PLUGINS))[1].plugins
+      const juniperList = (await inWorkspace(juniper.id, 'GET', PLUGINS))[1].plugins
+      assert.deepEqual(acmeList.filter(({ enabled }) => enabled).map(({ id }) => id), ['webscraper'])
+      assert.deepEqual(juniperList.filter(({ enabled }) => enabled), [])
+      assert.equal((await inWorkspace(juniper.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: true }))[0], 403)
       assert.deepEqual(await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: false }), [200, { plugin: { id: 'webscraper', enabled: false } }])
       assert.deepEqual(await inWorkspace(acme.id, 'PUT', `${PLUGINS}/nope`, { enabled: false }), [404, { success: false, error: 'Plugin not found' }])
       assert.equal((await inWorkspace(acme.id, 'PUT', `${PLUGINS}/webscraper`, { enabled: 'no' }))[0], 400)

@@ -7,7 +7,7 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
-import { grantWorkspaceAttributeRead } from '../utils/workspace-resolution-grants';
+import { grantWorkspaceAttributeRead, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS } from '../utils/workspace-resolution-grants';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
@@ -477,13 +477,16 @@ export class VocApiStack extends VocStack {
    * The webhook role's reach into the workspaces (docs/multi-workspace.md, "Public and non-user entry points"):
    * GetItem on voc-workspaces' `WS#*` partitions only, of the routing attributes only (`pk`, `sk`, `status`:
    * `dynamodb:Attributes`, with a projection the code always sends, lambda/shared/workspace_routing.py
-   * META_ROUTING_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach; no write. And GetParameter
+   * META_ROUTING_ATTRIBUTES), so IAM keeps a MEMBER# row's email and name out of reach, and of `PLUGIN#*` rows their
+   * `pk` only (the workspace enabled the plugin, 7.14.00); no write. And GetParameter
    * (and kms:Decrypt through SSM) on `voc/ws/{one workspace id}/credentials/{plugin}` of the webhook plugins only
    * (decision 19, lib/utils/workspace-secrets.ts). Returns the parameter prefix's environment.
    */
   private grantWebhookWorkspaces(role: iam.Role, workspacesTable: dynamodb.ITable, pluginIds: readonly string[],
     kmsKey: kms.IKey): Record<string, string> {
     grantWorkspaceAttributeRead(role, workspacesTable, WEBHOOK_META_ATTRIBUTES);
+    // Since 7.14.00 a delivery is taken in only for a workspace that enabled the plugin: its PLUGIN# row's key.
+    grantWorkspaceAttributeRead(role, workspacesTable, PLUGIN_ROW_KEY, PLUGIN_ROW_PARTITIONS);
     return grantWorkspaceParameterRead(this, role, this.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey, pluginIds);
   }
 

@@ -61,18 +61,18 @@ export const PLATFORM_ADMIN_REFUSALS: readonly Refusal[] = [
   { status: 404, messageKey: 'common:workspaces.errors.userGone' },
 ]
 
-/** The server's reason when a workspace may not enable a plugin yet (`INGESTION_NOT_YET`, workspace_plugin_settings.py);
- *  a run in a workspace (Run now, a scraper's run) is held with the same reason (`hold_workspace_ingestion`). */
-export const INGESTION_NOT_YET = 'Per-workspace ingestion arrives with phase 2 of multi-workspace: a workspace cannot enable a plugin yet'
+/** The server's reason when a run in a workspace (Run now, a scraper's run) names a plugin the workspace has not
+ *  enabled (`PLUGIN_NOT_ENABLED`, workspace_plugin_settings.py `require_plugin_enabled`). */
+export const PLUGIN_NOT_ENABLED = 'Enable this plugin for the workspace first'
 
-/** Whether a failed enable or run is the server holding per-workspace ingestion back (and not another refusal). */
-export function isIngestionHeld(error: unknown): boolean {
-  return apiErrorStatus(error) === 409 && serverReason(error) === INGESTION_NOT_YET
+/** Whether a failed run is the server saying the workspace has not enabled the plugin (and not another refusal):
+ *  the run's own panel or card then says `common:workspaces.errors.pluginNotEnabled`. */
+export function isPluginNotEnabled(error: unknown): boolean {
+  return apiErrorStatus(error) === 409 && serverReason(error) === PLUGIN_NOT_ENABLED
 }
 
 /** The refusals of `PUT /me/workspaces/current/plugins/{plugin_id}` (workspace_plugin_settings.py, workspace.py). */
 export const PLUGIN_REFUSALS: readonly Refusal[] = [
-  { status: 409, reason: INGESTION_NOT_YET, messageKey: 'common:workspaces.errors.ingestionNotYet' },
   { status: 409, reason: "The workspace's plugins changed meanwhile: reload them and try again", messageKey: 'common:workspaces.errors.pluginsChangedMeanwhile' },
   { status: 403, reason: 'You are no longer an admin of this workspace', messageKey: 'common:workspaces.errors.noLongerAdmin' },
   { status: 403, messageKey: 'common:workspaces.errors.notWorkspaceAdmin' },

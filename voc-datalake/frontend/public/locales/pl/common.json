@@ -154,7 +154,7 @@
       "editor": "Edycja",
       "viewer": "Podgląd"
     },
-    "sharedData": "Każdy obszar roboczy ma własne opinie, pulpity, markę, rozwiązane problemy, kategorie, wymiary i zasady źródeł; żadne opinie nie mogą jeszcze trafić do obszaru roboczego. Projekty, asystent, Radar i pozostałe ustawienia są nadal wspólne dla wszystkich obszarów roboczych.",
+    "sharedData": "Każdy obszar roboczy ma własne opinie, pulpity, markę, rozwiązane problemy, kategorie, wymiary i zasady źródeł, a wtyczki włączone przez jego administratorów zbierają do niego opinie. Projekty, asystent, Radar i pozostałe ustawienia są nadal wspólne dla wszystkich obszarów roboczych.",
     "moreFailed": "Nie udało się wczytać następnej strony. Wybierz Pokaż więcej, aby spróbować ponownie.",
     "refreshFailed": "Nie udało się odświeżyć listy, więc może być nieaktualna.",
     "members": {
@@ -226,7 +226,7 @@
       "brandDescription": "Własna marka tego obszaru roboczego. Nowy obszar roboczy zaczyna z pustą marką: nic nie jest kopiowane z marki wdrożenia.",
       "brandReadOnly": "Tylko administratorzy tego obszaru roboczego mogą zmieniać jego markę. Możesz ją tutaj przeglądać.",
       "pluginsTitle": "Wtyczki",
-      "pluginsDescription": "Wtyczki, które oferuje to wdrożenie, i to, czy ten obszar roboczy włączył każdą z nich. Każda wtyczka nadal zbiera opinie dla całego wdrożenia, jak dotąd.",
+      "pluginsDescription": "Wtyczki, które oferuje to wdrożenie, i to, czy ten obszar roboczy włączył każdą z nich. Wtyczka włączona tutaj działa według swojego harmonogramu dla tego obszaru roboczego, a Uruchom teraz uruchamia ją tutaj.",
       "pluginsReadOnly": "Tylko administratorzy tego obszaru roboczego mogą włączać i wyłączać wtyczki.",
       "pluginsLoading": "Wczytywanie wtyczek…",
       "pluginsLoadFailed": "Nie udało się wczytać wtyczek.",
@@ -275,8 +275,7 @@
       "userGone": "Ten użytkownik już nie istnieje. Odśwież stronę.",
       "pluginGone": "To wdrożenie nie oferuje już tej wtyczki. Odśwież stronę.",
       "pluginsChangedMeanwhile": "Wtyczki obszaru roboczego w międzyczasie się zmieniły. Odśwież stronę i spróbuj ponownie.",
-      "ingestionNotYet": "Pozyskiwanie danych dla obszaru roboczego pojawi się w późniejszej wersji: obszar roboczy nie może jeszcze włączyć wtyczki.",
-      "ingestionRunNotYet": "Pozyskiwanie danych dla obszaru roboczego pojawi się w późniejszej wersji: w obszarze roboczym nie można jeszcze uruchomić przebiegu.",
+      "pluginNotEnabled": "Najpierw włącz tę wtyczkę dla obszaru roboczego: Ustawienia obszaru roboczego → Wtyczki.",
       "notDeploymentAdmin": "Tylko administratorzy wdrożenia mogą zmieniać domyślną markę.",
       "notBrandAdmin": "Tylko administratorzy tego obszaru roboczego mogą zmieniać jego markę.",
       "generic": "Nie udało się. Spróbuj ponownie.",

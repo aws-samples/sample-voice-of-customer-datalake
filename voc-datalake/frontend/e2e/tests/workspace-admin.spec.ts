@@ -12,8 +12,8 @@
  * 4. The platform console enters juniper, which the caller is no longer a member of: the gate lets them in once the
  *    server answers it, as admin, and every call names juniper.
  * 5. In acme, Workspace settings (the workspace menu) saves acme's brand, not the deployment's, and lists the
- *    deployment's plugins; Enable is refused with the held reason (409 until phase 2's retention slice) and offered
- *    no more.
+ *    deployment's plugins; Enable turns Web Scraper on for acme (the list reads it back as On, with Disable), and
+ *    Disable turns it off again.
  * 6. The platform console, inside acme, edits the deployment's default brand: the save names no workspace, and the
  *    deployment's brand (read without the header) has the new name; the spec puts the old one back.
  *
@@ -39,7 +39,6 @@ const TEXT = {
   acme: 'Acme Outfitters',
   juniper: 'Juniper Trail Co.',
   lastAdmin: 'A workspace needs an admin: make another member an admin first.',
-  held: 'Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet.',
   acmeBrand: 'Acme Outfitters Trail Gear',
   deploymentBrand: 'Acme Outfitters Basecamp',
 } as const
@@ -151,7 +150,7 @@ test.describe('workspace administration', () => {
     })
   })
 
-  test("a workspace admin saves the workspace's brand and is told enabling a plugin is held", async ({ page }, testInfo) => {
+  test("a workspace admin saves the workspace's brand and turns a plugin on and off for it", async ({ page }, testInfo) => {
     await assertStep(page, roleOf(testInfo), 'workspace-admin-05-workspace-settings', async () => {
       const acmeId = await workspaceId('acme')
       await page.goto(site('/w/acme/dashboard'), { waitUntil: 'domcontentloaded' })
@@ -170,9 +169,10 @@ test.describe('workspace administration', () => {
       const plugins = page.getByRole('region', { name: 'Plugins' })
       await expect(plugins.getByRole('list', { name: 'Plugins this deployment offers' })).toContainText('Web Scraper')
       await plugins.getByRole('button', { name: 'Enable Web Scraper for this workspace' }).click()
-      await expect(plugins.getByRole('status')).toHaveText(TEXT.held)
-      // Held: still focusable for its description, but inert.
-      await expect(plugins.getByRole('button', { name: 'Enable Web Scraper for this workspace' })).toHaveAttribute('aria-disabled', 'true')
+      await expect(plugins.getByRole('button', { name: 'Disable Web Scraper for this workspace' })).toBeEnabled()
+      await expect(plugins.getByRole('list', { name: 'Plugins this deployment offers' })).toContainText(/Web Scraper\s*On/)
+      await plugins.getByRole('button', { name: 'Disable Web Scraper for this workspace' }).click()
+      await expect(plugins.getByRole('button', { name: 'Enable Web Scraper for this workspace' })).toBeEnabled()
     })
   })
 

@@ -28,7 +28,6 @@ import { ApiError } from '../../lib/errors'
 import { useAuthStore } from '../../store/authStore'
 import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
 import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
-import { INGESTION_NOT_YET } from '../../workspace/workspaceRefusals'
 import WorkspaceSettings from './WorkspaceSettings'
 
 const PLUGINS = '/me/workspaces/current/plugins'
@@ -168,26 +167,26 @@ describe('WorkspaceSettings: the plugins', () => {
     expect(screen.queryByRole('button', { name: /^(Enable|Disable) / })).not.toBeInTheDocument()
   })
 
-  it('says why an enable is held back, and keeps Enable focusable, described by the reason', async () => {
-    const change = vi.fn<RouteHandler>(() => { throw new ApiError(409, INGESTION_NOT_YET) })
-    renderPage(ACME, { [`PUT ${PLUGINS}/webscraper`]: change })
+  it('enables a plugin for the workspace and reads the list back', async () => {
+    const server = { plugins: OFFERED }
+    const change = vi.fn<RouteHandler>(() => {
+      server.plugins = OFFERED.map((plugin) => (plugin.id === 'webscraper' ? { ...plugin, enabled: true } : plugin))
+      return { plugin: { id: 'webscraper', enabled: true, enabled_at: '2026-11-13T09:00:00Z', enabled_by: 'sub-ada' } }
+    })
+    renderPage(ACME, { [`GET ${PLUGINS}`]: () => server, [`PUT ${PLUGINS}/webscraper`]: change })
     await userEvent.click(await screen.findByRole('button', { name: 'Enable Web Scraper for this workspace' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet.')
-    const enable = screen.getByRole('button', { name: 'Enable Web Scraper for this workspace' })
-    expect(enable).toHaveAttribute('aria-disabled', 'true')
-    enable.focus()
-    expect(enable).toHaveFocus()
-    expect(enable).toHaveAccessibleDescription('Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet.')
+    expect(await screen.findByRole('button', { name: 'Disable Web Scraper for this workspace' })).toBeEnabled()
+    expect(change).toHaveBeenCalledWith({ enabled: true })
+    expect(screen.getByRole('list', { name: 'Plugins this deployment offers' })).toHaveTextContent(/Web Scraper\s*On/)
   })
 
-  it('sends nothing when a held Enable is pressed again', async () => {
-    const change = vi.fn<RouteHandler>(() => { throw new ApiError(409, INGESTION_NOT_YET) })
-    renderPage(ACME, { [`PUT ${PLUGINS}/webscraper`]: change })
+  it('says a change made meanwhile in words, and offers Enable again', async () => {
+    renderPage(ACME, {
+      [`PUT ${PLUGINS}/webscraper`]: () => { throw new ApiError(409, "The workspace's plugins changed meanwhile: reload them and try again") },
+    })
     await userEvent.click(await screen.findByRole('button', { name: 'Enable Web Scraper for this workspace' }))
-    await screen.findByRole('status')
-    await userEvent.click(screen.getByRole('button', { name: 'Enable Web Scraper for this workspace' }))
-    await userEvent.keyboard('{Enter}')
-    expect(change).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed meanwhile/)
+    expect(screen.getByRole('button', { name: 'Enable Web Scraper for this workspace' })).toBeEnabled()
   })
 
   it('disables an enabled plugin and reads the list back', async () => {

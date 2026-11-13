@@ -26,7 +26,6 @@ from _shared import base_webhook
 from _shared.test.scoped_secret import scoped_secret
 from _shared.test.sqs_response_fixtures import echo_batch_success
 from _shared.test.webhook_fixtures import webhook_event
-from shared import workspace_plugin_settings
 
 WS_A = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 WS_B = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
@@ -35,6 +34,8 @@ WS_OLD_PENDING = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DA'
 WS_GONE = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DB'
 WS_UNKNOWN = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DC'
 WS_NO_HOOK = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DD'
+#: An active workspace with its own webhook secret that has not enabled the plugin (no ``PLUGIN#`` row).
+WS_NOT_ENABLED = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7DE'
 SECRET_A = 'secret-of-a'
 SECRET_B = 'secret-of-b'
 SHARED = 'shared-secret'
@@ -47,6 +48,7 @@ META = {
     WS_OLD_PENDING: {'status': 'active', 'secret_status': 'pending'},
     WS_GONE: {'status': 'deleting'},
     WS_NO_HOOK: {'status': 'active'},
+    WS_NOT_ENABLED: {'status': 'active'},
 }
 
 
@@ -60,6 +62,7 @@ SECRETS = {
     _parameter(WS_B): {'webhook_secret': SECRET_B, 'repos': REPO},
     _parameter(WS_OLD_PENDING): {'webhook_secret': SECRET_A, 'repos': REPO},
     _parameter(WS_GONE): {'webhook_secret': SECRET_A, 'repos': REPO},
+    _parameter(WS_NOT_ENABLED): {'webhook_secret': SECRET_A, 'repos': REPO},
     # Another plugin's parameter only: none of this plugin's.
     _parameter(WS_NO_HOOK, 'webscraper'): {'webhook_secret': SECRET_A},
     SHARED_ARN: scoped_secret(webhook_secret=SHARED, repos=REPO),
@@ -67,20 +70,32 @@ SECRETS = {
 
 
 class _Workspaces:
-    """voc-workspaces' META rows (a GetItem by key, as the routing reads them)."""
+    """voc-workspaces' META rows and this plugin's ``PLUGIN#`` rows (a GetItem by key, as the routing reads them):
+    every workspace of ``META`` enabled the plugin but ``WS_NOT_ENABLED`` (``enabled`` can change it)."""
 
     def __init__(self) -> None:
         self.reads: list[dict] = []
+        self.enabled = set(META) - {WS_NOT_ENABLED}
 
-    def get_item(self, Key: dict, **_kwargs: Any) -> dict:
+    def get_item(self, Key: dict, **kwargs: Any) -> dict:
         self.reads.append(Key)
+        if Key['pk'] == f'PLUGIN#{base_webhook.SOURCE_PLATFORM}':
+            # The webhook role reads the key alone (IAM: dynamodb:Attributes pk, a projection required).
+            assert kwargs.get('ProjectionExpression') == 'pk'
+            ws = Key['sk'].removeprefix('WS#')
+            return {'Item': {'pk': Key['pk']}} if ws in self.enabled else {}
         ws = Key['pk'].removeprefix('WS#')
         row = META.get(ws)
         return {'Item': {'pk': Key['pk'], 'sk': 'META', **row}} if row and Key['sk'] == 'META' else {}
 
 
 @pytest.fixture
-def hook() -> Iterator[tuple[Any, MagicMock, MagicMock, MagicMock]]:
+def workspaces() -> _Workspaces:
+    return _Workspaces()
+
+
+@pytest.fixture
+def hook(workspaces: _Workspaces) -> Iterator[tuple[Any, MagicMock, MagicMock, MagicMock]]:
     sqs = MagicMock()
     sqs.send_message_batch.side_effect = echo_batch_success
     # One double for both reads, by name: the shared secret's (`get_secret`) and a workspace parameter's
@@ -93,7 +108,7 @@ def hook() -> Iterator[tuple[Any, MagicMock, MagicMock, MagicMock]]:
         patch.object(base_webhook, '_read_credentials', lambda ws, plugin: secrets(_parameter(ws, plugin))),
         patch.object(base_webhook, 'get_s3_client'),
         patch.object(base_webhook, 'archive_raw_item', return_value=None) as archive,
-        patch.object(base_webhook, 'get_workspaces_table', return_value=_Workspaces()),
+        patch.object(base_webhook, 'get_workspaces_table', return_value=workspaces),
         patch.object(base_webhook, 'SECRETS_ARN', SHARED_ARN),
         patch.object(base_webhook, 'WORKSPACE_PARAMETER_PREFIX', PREFIX),
         patch('github_issues.webhook.handler.emit_audit_event'),
@@ -125,7 +140,6 @@ def _queued(sqs: MagicMock) -> list[dict]:
     return [json.loads(e['MessageBody']) for c in sqs.send_message_batch.call_args_list for e in c.kwargs['Entries']]
 
 
-@pytest.mark.usefixtures('ingestion_on')
 def test_a_delivery_signed_with_the_workspaces_own_secret_lands_in_it(hook):
     handler, sqs, secrets, archive = hook
 
@@ -140,7 +154,6 @@ def test_a_delivery_signed_with_the_workspaces_own_secret_lands_in_it(hook):
     assert [call.args[0] for call in secrets.call_args_list] == [_parameter(WS_A)]
 
 
-@pytest.mark.usefixtures('ingestion_on')
 def test_an_old_pending_meta_no_longer_refuses_the_delivery(hook):
     """Decision 19: nothing is made with a workspace, so ``secret_status`` is not read; its parameter decides."""
     handler, sqs, _secrets, _archive = hook
@@ -273,7 +286,6 @@ def _parameter_store(store: dict[str, dict]) -> Generator[tuple[MagicMock, _Cloc
         yield client, clock
 
 
-@pytest.mark.usefixtures('ingestion_on')
 def test_a_rotated_workspace_secret_takes_effect_within_the_ttl(hook):
     handler, sqs, _secrets, _archive = hook
     name = _parameter(WS_A)
@@ -328,7 +340,6 @@ def test_the_cache_is_bounded_and_starts_again_empty_when_full():
     assert reads[-1] == 'ws-0'
 
 
-@pytest.mark.usefixtures('ingestion_on')
 def test_a_failed_read_is_not_kept(hook):
     handler, _sqs, _secrets, _archive = hook
     with _parameter_store({}) as (client, _clock):
@@ -366,14 +377,47 @@ def test_a_workspace_delivery_that_was_not_routed_is_never_handled(refused, path
     sqs.return_value.send_message_batch.assert_not_called()
 
 
-def test_a_verified_delivery_to_a_workspace_is_held_and_queues_nothing(hook):
-    """While per-workspace ingestion is off, a delivery on a workspace's own endpoint is ingestion into it: the same
-    409 and reason as enabling a plugin (shared/workspace_plugin_settings.py hold_workspace_ingestion), after the
-    signature is checked and before anything is archived or queued."""
+def test_two_workspaces_deliveries_each_land_in_their_own(hook):
+    """Since 7.14.00 (no hold): a verified delivery on each workspace's endpoint is queued and archived in that
+    workspace only, each signed with its own secret."""
     handler, sqs, _secrets, archive = hook
 
-    status, body = _call(handler, _delivery(WS_A, SECRET_A))
+    status_a, _ = _call(handler, _delivery(WS_A, SECRET_A))
+    status_b, _ = _call(handler, _delivery(WS_B, SECRET_B))
 
-    assert (status, body['error']) == (409, workspace_plugin_settings.INGESTION_NOT_YET)
+    assert (status_a, status_b) == (200, 200)
+    assert [message['workspace_id'] for message in _queued(sqs)] == [WS_A, WS_B]
+    assert [call.kwargs['scope'].ws for call in archive.call_args_list] == [WS_A, WS_B]
+
+
+def test_a_workspace_that_has_not_enabled_the_plugin_gets_the_bad_signatures_401(hook):
+    """A validly signed delivery to a workspace without its ``PLUGIN#{plugin}`` row is refused as an unverified one
+    is, before any secret is read or anything parsed, archived or queued: the answer reveals nothing."""
+    handler, sqs, secrets, archive = hook
+
+    answer = _call(handler, _delivery(WS_NOT_ENABLED, SECRET_A))
+
+    assert answer == BAD_SIGNATURE
     assert _queued(sqs) == []
     archive.assert_not_called()
+    assert _parameter(WS_NOT_ENABLED) not in [call.args[0] for call in secrets.call_args_list]
+
+
+def test_disabling_the_plugin_stops_the_workspaces_deliveries_at_once(hook, workspaces):
+    handler, sqs, _secrets, _archive = hook
+
+    before, _ = _call(handler, _delivery(WS_A, SECRET_A))
+    workspaces.enabled.discard(WS_A)
+    after = _call(handler, _delivery(WS_A, SECRET_A))
+
+    assert before == 200
+    assert after == BAD_SIGNATURE
+    assert [message['workspace_id'] for message in _queued(sqs)] == [WS_A]
+
+
+def test_the_plugin_row_read_is_the_routed_workspaces_key_only(hook, workspaces):
+    handler, _sqs, _secrets, _archive = hook
+
+    _call(handler, _delivery(WS_A, SECRET_A))
+
+    assert {'pk': f'PLUGIN#{base_webhook.SOURCE_PLATFORM}', 'sk': f'WS#{WS_A}'} in workspaces.reads

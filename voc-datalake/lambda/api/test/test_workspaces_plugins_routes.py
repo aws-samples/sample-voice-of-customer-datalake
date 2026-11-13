@@ -11,7 +11,7 @@ from moto import mock_aws
 from moto_helpers import invoke, pk_sk_table, rest_event
 
 import workspaces_handler
-from shared import platform_admin_gate, workspace_plugin_settings
+from shared import platform_admin_gate
 from shared.test.cognito_doubles import live_cognito
 from shared.workspace import MembershipCache
 
@@ -27,13 +27,6 @@ PAT = {'sub': 'sub-pat', 'cognito:username': 'pat', 'cognito:groups': '[admins, 
 class World:
     table: Any
     cognito: MagicMock
-
-
-@pytest.fixture
-def ingestion(monkeypatch) -> None:
-    """The per-workspace data path is in (shared/workspace_plugin_settings.py PER_WORKSPACE_INGESTION): the enable
-    path this file tests beside today's refusal, so the change that turns it on only flips the flag."""
-    monkeypatch.setattr(workspace_plugin_settings, 'PER_WORKSPACE_INGESTION', True)
 
 
 @pytest.fixture
@@ -55,14 +48,24 @@ def world(monkeypatch) -> Iterator[World]:
         yield World(table, cognito)
 
 
-@pytest.mark.parametrize('claims', [ADA, PAT, VIC], ids=['admin', 'platform-admin', 'viewer'])
-def test_until_per_workspace_ingestion_is_in_enabling_is_409_and_writes_nothing(world, lambda_context, claims):
-    """The deployed default: refused before the workspace is resolved, so no PLUGIN# row (the ingestor's fan-out) and
-    no audit row, not even a platform admin's entry; the reason says when."""
+def test_a_viewer_cannot_enable_and_nothing_is_written(world, lambda_context):
+    """Since 7.14.00 enabling writes the row the ingestors' fan-out reads, for the workspace's admins only."""
     before = world.table.scan()['Items']
-    assert _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', claims=claims, body={'enabled': True}) == (
-        409, {'success': False, 'error': workspace_plugin_settings.INGESTION_NOT_YET})
-    assert world.table.scan()['Items'] == before
+    status, _ = _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', claims=VIC, body={'enabled': True})
+    after = world.table.scan()['Items']
+    assert status == 403
+    assert after == before
+
+
+def test_the_enabled_row_is_the_one_the_ingestors_fan_out_reads(world, lambda_context):
+    """The enable writes ``PLUGIN#{plugin}`` / ``WS#{ws}``, which shared/workspace_plugins.py lists for the tick."""
+    from shared.workspace_plugins import workspaces_with_plugin
+
+    status, _ = _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True})
+    fanned_out = workspaces_with_plugin(world.table, 'webscraper')
+    assert (status, fanned_out, workspaces_with_plugin(world.table, 'app_reviews_ios')) == (200, [WS], [])
+    _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': False})
+    assert workspaces_with_plugin(world.table, 'webscraper') == []
 
 
 def _call(world, lambda_context, method, path, claims=ADA, body=None):
@@ -87,6 +90,20 @@ def test_every_member_lists_the_plugins_the_deployment_offers_in_its_order(world
         {'id': 'webscraper', 'enabled': False}, {'id': 'app_reviews_ios', 'enabled': False}]})
 
 
+def test_a_deployment_only_plugin_is_neither_listed_nor_enabled_in_a_workspace(world, lambda_context, monkeypatch):
+    """The S3 import never runs in a workspace (its API acts deployment-wide only): a workspace is not offered it,
+    and enabling it is the one 404 of a plugin the deployment does not offer, with nothing written."""
+    monkeypatch.setenv('ENABLED_SOURCES', '["webscraper", "s3_import", "app_reviews_ios"]')
+
+    listed = _call(world, lambda_context, 'GET', PLUGINS)
+    enabled = _call(world, lambda_context, 'PUT', f'{PLUGINS}/s3_import', body={'enabled': True})
+
+    assert listed == (200, {'plugins': [{'id': 'webscraper', 'enabled': False},
+                                        {'id': 'app_reviews_ios', 'enabled': False}]})
+    assert enabled == (404, {'success': False, 'error': 'Plugin not found'})
+    assert (_row(world, 's3_import'), _audit(world)) == (None, [])
+
+
 def test_another_workspace_s_enabled_plugin_is_not_this_one_s(world, lambda_context):
     world.table.put_item(Item={'pk': 'PLUGIN#webscraper', 'sk': 'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9',
                                'enabled_by': 'sub-other', 'enabled_at': '2026-11-12T00:00:00Z'})
@@ -94,7 +111,6 @@ def test_another_workspace_s_enabled_plugin_is_not_this_one_s(world, lambda_cont
     assert [(p['id'], p['enabled']) for p in listed['plugins']] == [('webscraper', False), ('app_reviews_ios', False)]
 
 
-@pytest.mark.usefixtures('ingestion')
 def test_an_admin_enables_a_plugin_audited_first_and_the_ingestor_s_partition_holds_it(world, lambda_context):
     status, body = _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True})
     assert status == 200
@@ -106,7 +122,6 @@ def test_an_admin_enables_a_plugin_audited_first_and_the_ingestor_s_partition_ho
     assert [(p['id'], p['enabled']) for p in listed['plugins']] == [('webscraper', True), ('app_reviews_ios', False)]
 
 
-@pytest.mark.usefixtures('ingestion')
 def test_an_admin_disables_it_again(world, lambda_context):
     _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True})
     assert _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': False}) == (
@@ -121,7 +136,6 @@ def test_asking_for_what_holds_changes_and_records_nothing(world, lambda_context
     assert (_row(world, 'webscraper'), _audit(world)) == (None, [])
 
 
-@pytest.mark.usefixtures('ingestion')
 def test_enabling_an_enabled_plugin_changes_nothing_and_answers_it_as_get_does(world, lambda_context):
     _, first = _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True})
     assert _call(world, lambda_context, 'PUT', f'{PLUGINS}/webscraper', body={'enabled': True}) == (200, first)
@@ -151,7 +165,6 @@ def test_a_bad_body_is_a_400(world, lambda_context, body):
     assert _audit(world) == []
 
 
-@pytest.mark.usefixtures('ingestion')
 def test_a_platform_admin_enables_one_audited_as_such(world, lambda_context):
     status, _ = _call(world, lambda_context, 'PUT', f'{PLUGINS}/app_reviews_ios', claims=PAT, body={'enabled': True})
     assert status == 200
@@ -161,7 +174,6 @@ def test_a_platform_admin_enables_one_audited_as_such(world, lambda_context):
     assert next(row for row in kinds if row['kind'] == 'plugin_enabled')['platform_admin'] is True
 
 
-@pytest.mark.usefixtures('ingestion')
 def test_an_admin_demoted_meanwhile_is_refused_at_commit(world, lambda_context):
     real = workspaces_handler.set_plugin_enabled
 
@@ -176,7 +188,6 @@ def test_an_admin_demoted_meanwhile_is_refused_at_commit(world, lambda_context):
     assert _row(world, 'webscraper') is None
 
 
-@pytest.mark.usefixtures('ingestion')
 def test_a_workspace_set_to_deleting_meanwhile_is_the_one_404(world, lambda_context):
     real = workspaces_handler.set_plugin_enabled
 
@@ -191,7 +202,6 @@ def test_a_workspace_set_to_deleting_meanwhile_is_the_one_404(world, lambda_cont
     assert _row(world, 'webscraper') is None
 
 
-@pytest.mark.usefixtures('ingestion')
 def test_a_row_written_meanwhile_is_409_and_the_attempt_stays_audited(world, lambda_context):
     real = workspaces_handler.set_plugin_enabled
 
@@ -209,7 +219,6 @@ def test_a_row_written_meanwhile_is_409_and_the_attempt_stays_audited(world, lam
     assert _audit(world) == [('plugin_enabled', 'webscraper')]
 
 
-@pytest.mark.usefixtures('ingestion')
 def test_a_transaction_conflict_is_409(world, lambda_context):
     conflict = ClientError({'Error': {'Code': 'TransactionCanceledException', 'Message': 'cancelled'},
                             'CancellationReasons': [{'Code': 'None'}, {'Code': 'None'}, {'Code': 'TransactionConflict'}]},

@@ -139,13 +139,6 @@ def no_real_aws_calls():
     )
 
 
-@pytest.fixture
-def ingestion_on(monkeypatch):
-    """The plugins' webhook and ingestor tests that run in a workspace once the hold is lifted take this; the
-    others keep the shipped flag (off), which refuses every workspace delivery."""
-    monkeypatch.setattr('shared.workspace_plugin_settings.PER_WORKSPACE_INGESTION', True)
-
-
 @pytest.fixture(autouse=True)
 def workspace_parameters_through_get_secret(monkeypatch):
     """A run in a workspace reads its plugin's own credentials parameter and config row (decision 19,

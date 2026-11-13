@@ -52,7 +52,8 @@ runs (`_request.middleware`: 400 for an empty header, the one 404 for a non-memb
 platform admin enters as admin, live-checked and audited; a write's role read from the
 table). There the admin routes need the caller's admin role in the workspace
 (`_request.require_request_admin`; the deployment's `admins` grants nothing there), the
-reads any member; the scraper configs are the workspace's own config row
+reads any member; a scraper's run there needs the webscraper plugin enabled in the
+workspace (409 `PLUGIN_NOT_ENABLED` otherwise, shared/workspace_plugin_settings.py); the scraper configs are the workspace's own config row
 `WS#{ws}#PLUGIN_CONFIG` / `webscraper` in voc-aggregates (decision 19,
 shared/workspace_plugin_store.py and shared/plugin_configs.py; the same limits as in the
 shared secret), which the webscraper's run in that workspace reads, and
@@ -104,7 +105,6 @@ from shared.url_policy import (
     scraper_url_error,
     validate_url,
 )
-from shared.workspace_plugin_settings import hold_workspace_ingestion
 from shared.workspace_plugin_store import CredentialsStore, StoreClients
 from shared.workspace_request import ResolvedRoutes
 from shared.workspace_routing import workspace_payload
@@ -593,14 +593,13 @@ def run_scraper(scraper_id: str):
     In a workspace: its admins. The payload's `workspace_id` is the RESOLVED
     workspace (`workspace_payload`), so the webscraper runs there, finds the
     scraper in that workspace's own config row (an id it does not hold finds
-    nothing) and moves the workspace's `WS#{ws}#SCRAPER_RUN#{id}` row written here. While per-workspace
-    ingestion is held (`PER_WORKSPACE_INGESTION` off) such a run answers the plugin settings' 409
-    (`hold_workspace_ingestion`, `INGESTION_NOT_YET`) before anything is read or written.
+    nothing) and moves the workspace's `WS#{ws}#SCRAPER_RUN#{id}` row written here. A workspace that has
+    not enabled the webscraper plugin gets 409 `PLUGIN_NOT_ENABLED`
+    (shared/workspace_plugin_settings.py) before anything is read or written.
     """
     _request.require_request_admin()
     context, scope = _request.context(), _request.scope()
-    if context is not None:
-        hold_workspace_ingestion()
+    _request.require_plugin_enabled(WEBSCRAPER_PLUGIN)
     execution_id = timestamped_id(f'run_{scraper_id}', datetime.now(UTC))
     # `execution_id` marks a manual run for the webscraper (it clears the secret cache, moves the run row); the
     # `manual_run: true` this payload once carried was read by nothing, so it is no longer sent.

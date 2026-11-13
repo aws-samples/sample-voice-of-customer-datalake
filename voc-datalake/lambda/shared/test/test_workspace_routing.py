@@ -143,7 +143,6 @@ class TestWorkspacePayload:
         RoutedWorkspace(WorkspaceScope(WS_A)),
         WorkspaceContext(ws=WS_A, role='admin', name='A', slug='a', platform_admin=False),
     ])
-    @pytest.mark.usefixtures('ingestion_on')
     def test_a_server_side_workspace_is_set_last(self, source):
         payload = workspace_payload({'workspace_id': WS_B, 'text': 't'}, source)
 

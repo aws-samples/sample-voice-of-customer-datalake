@@ -141,7 +141,6 @@ def test_a_run_in_a_workspace_applies_the_workspaces_policy_never_the_deployment
     assert archives == (in_workspace is _ALLOW, deployment_wide is _ALLOW)
 
 
-@pytest.mark.usefixtures('ingestion_on')
 def test_a_routed_webhook_applies_its_workspaces_policy():
     """A delivery routed to a workspace passes that workspace's source policy, not the deployment's."""
     from shared.workspace_routing import route_workspace_id
@@ -156,7 +155,6 @@ def test_a_routed_webhook_applies_its_workspaces_policy():
     assert webhook_send.call_args.args[2] == [{**_REDACT, 'workspace_id': WS}]
 
 
-@pytest.mark.usefixtures('ingestion_on')
 def test_a_routed_webhook_names_the_stored_rows_workspace_last_never_the_payloads():
     """A delivery on `/webhooks/{plugin}/{ws}` names the workspace its stored META row routed it to (workspace_payload),
     after every field; a `workspace_id` the provider's payload carried is dropped by the policy first."""

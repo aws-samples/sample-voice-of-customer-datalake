@@ -3,9 +3,9 @@
  * lambda/shared/workspace_plugin_settings.py, docs/multi-workspace.md → Per-workspace configuration).
  *
  * The list is every plugin the deployment offers (its ceiling), in the server's order, with whether this workspace
- * enabled it; any member reads it. Only a workspace admin turns one on or off. Until phase 2's retention slice,
- * enabling answers 409 for everyone and writes nothing (`INGESTION_NOT_YET`); disabling answers, and with no row
- * written it changes nothing. Every call names the workspace in `X-Workspace-Id` (api/baseUrl.ts). The list is
+ * enabled it; any member reads it. Only a workspace admin turns one on or off: enabling writes the workspace's
+ * `PLUGIN#` row (the plugin's scheduled runs then collect into the workspace, and its Run now there runs), disabling
+ * deletes it. Every call names the workspace in `X-Workspace-Id` (api/baseUrl.ts). The list is
  * read leniently: a row this build cannot read is left out.
  *
  * @module api/workspacePluginsApi
@@ -44,7 +44,7 @@ export const workspacePluginsKey = (workspaceId: string) => ['my-workspaces', 'p
 // Each path is written out in full, so the route audit (scripts/audit/py_route_callers.py) reads it as the caller.
 export const workspacePluginsApi = {
   list: async (): Promise<WorkspacePlugin[]> => readWorkspacePlugins(await fetchApi<unknown>('/me/workspaces/current/plugins')),
-  /** Workspace admins only; an enable answers 409 until per-workspace ingestion is in (workspaceRefusals.ts). */
+  /** Workspace admins only; its refusals are workspaceRefusals.ts `PLUGIN_REFUSALS`. */
   setEnabled: async (pluginId: string, enabled: boolean): Promise<WorkspacePlugin> =>
     ChangeSchema.parse(await fetchApi<unknown>(`/me/workspaces/current/plugins/${encodeURIComponent(pluginId)}`, put({ enabled }))).plugin,
 }

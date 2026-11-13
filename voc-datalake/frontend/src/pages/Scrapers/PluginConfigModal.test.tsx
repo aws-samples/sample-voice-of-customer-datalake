@@ -9,7 +9,7 @@ import PluginConfigModal from './PluginConfigModal'
 // about admin access. See the constant's own docstring for why it is still English.
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import { ApiError } from '../../lib/errors'
-import { INGESTION_NOT_YET } from '../../workspace/workspaceRefusals'
+import { PLUGIN_NOT_ENABLED } from '../../workspace/workspaceRefusals'
 import type { PluginManifest } from '../../plugins/types'
 import { at } from '@test/defined'
 
@@ -222,20 +222,20 @@ describe('PluginConfigModal', () => {
     })
   })
 
-  // Inside a workspace, Run now is held with the plugin settings' reason while per-workspace ingestion is off
-  // (INGESTION_NOT_YET, the text workspaceRefusals.lockstep.test.ts holds to the server's).
-  describe('a Run now the server holds in a workspace', () => {
-    it("shows the hold's reason, and nothing for any other failure", async () => {
-      mockRunSource.mockRejectedValueOnce(new ApiError(409, INGESTION_NOT_YET))
+  // Inside a workspace, Run now runs only a plugin the workspace enabled (PLUGIN_NOT_ENABLED, the text
+  // workspaceRefusals.lockstep.test.ts holds to the server's).
+  describe('a Run now of a plugin the workspace has not enabled', () => {
+    it('says to enable it first, and nothing for any other failure', async () => {
+      mockRunSource.mockRejectedValueOnce(new ApiError(409, PLUGIN_NOT_ENABLED))
       const user = await renderLoaded(true)
 
       await user.click(screen.getByRole('button', { name: /run now/i }))
 
-      expect(await screen.findByText('Per-workspace ingestion arrives with a later release: a run cannot start in a workspace yet.'))
+      expect(await screen.findByText('Enable this plugin for the workspace first: Workspace settings → Plugins.'))
         .toBeInTheDocument()
       mockRunSource.mockRejectedValueOnce(new ApiError(409, 'Something else'))
       await user.click(screen.getByRole('button', { name: /run now/i }))
-      await waitFor(() => { expect(screen.queryByText(/a run cannot start in a workspace yet/)).not.toBeInTheDocument() })
+      await waitFor(() => { expect(screen.queryByText(/Enable this plugin for the workspace first/)).not.toBeInTheDocument() })
     })
   })
 

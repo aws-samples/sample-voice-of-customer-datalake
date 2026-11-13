@@ -24,7 +24,8 @@ live-checked and audited; a write resolves the role from the table, never the 30
   ``POST /sources/{source}/reset`` clears the workspace's ``WS#{ws}#CIRCUIT#{source}`` row only (shared/plugin_circuit.py);
 * ``PUT /sources/{source}/enable`` and ``/disable`` are refused (400): they turn the plugin's one EventBridge rule
   on and off, which serves every workspace; which plugins a workspace runs is its plugin settings' (``PLUGIN#`` rows
-  in voc-workspaces, not built yet).
+  in voc-workspaces, since 7.14.00), and Run now there answers 409 ``PLUGIN_NOT_ENABLED`` for a plugin it has not
+  enabled (shared/workspace_plugin_settings.py).
 
 A request without the header acts deployment-wide, exactly as before.
 """
@@ -65,7 +66,6 @@ from shared.url_policy import scraper_url_error, validate_url
 from shared.warm_init import warm_at_init
 from shared.web_review_targets import PLUGIN_ID as WEB_REVIEWS_PLUGIN
 from shared.web_review_targets import TargetError, target_source_id, validated_target
-from shared.workspace_plugin_settings import hold_workspace_ingestion
 from shared.workspace_plugin_store import CredentialsStore, StoreClients
 from shared.workspace_request import DEPLOYMENT_ONLY, ResolvedRoutes
 from shared.workspace_routing import workspace_payload
@@ -931,11 +931,10 @@ def run_source(source: str):
     In a workspace: its admins. The ingestor runs in the workspace (its credentials, watermarks, breaker, raw
     objects and queued messages are the workspace's; plugins/_shared/base_ingestor.py ``run_in_workspace``): the
     payload's ``workspace_id`` is the RESOLVED workspace (``workspace_payload``), never a body field, and the
-    ``running`` row is ``WS#{ws}#SOURCE_RUN#{source}``, the one the run moves. A workspace's runs are not gated on
-    its plugin settings (``PLUGIN#`` rows, not built yet), but they are held with them: while
-    ``PER_WORKSPACE_INGESTION`` is off the route answers the plugin settings' 409 (``hold_workspace_ingestion``,
-    ``INGESTION_NOT_YET``) after the source is validated and ``s3_import`` refused, before anything is read or
-    written. A run whose workspace holds none of the plugin's credentials (no parameter saved for it) ends ``error``
+    ``running`` row is ``WS#{ws}#SOURCE_RUN#{source}``, the one the run moves. A workspace runs only a plugin it
+    enabled (its ``PLUGIN#{source}`` / ``WS#{ws}`` row, shared/workspace_plugin_settings.py): otherwise the route
+    answers 409 ``PLUGIN_NOT_ENABLED`` after the source is validated and ``s3_import`` refused, before anything is
+    read or written. A run whose workspace holds none of the plugin's credentials (no parameter saved for it) ends ``error``
     on its run row,
     naming ``WorkspaceCredentialsNotSet``, and is not counted against the workspace's breaker (plugins/_shared/
     base_ingestor.py). ``s3_import`` is refused there (400, the S3 import API's one answer: the import bucket is not
@@ -953,8 +952,8 @@ def run_source(source: str):
     if context is not None:
         if source == S3_IMPORT_SOURCE:
             raise ValidationError(DEPLOYMENT_ONLY)
-        # No workspace run starts while per-workspace ingestion is held (409, the plugin settings' one check).
-        hold_workspace_ingestion()
+        # A workspace runs only the plugins its admins enabled there (409 otherwise, nothing read or written).
+        _request.require_plugin_enabled(source)
 
     function_name = _build_ingestor_function_name(source)
 

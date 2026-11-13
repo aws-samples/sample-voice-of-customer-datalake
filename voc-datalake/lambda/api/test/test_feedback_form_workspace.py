@@ -22,7 +22,6 @@ from moto import mock_aws
 from moto_helpers import pk_sk_table, rest_event
 
 import feedback_form_handler as h
-from shared import workspace_plugin_settings
 from shared.test.raw_lake_fixtures import RAW_BUCKET, raw_keys, raw_lake_client
 from shared.test.source_profile_fixtures import no_source_profiles, seeded_source_profiles
 from shared.workspace_request import RequestWorkspace
@@ -103,7 +102,7 @@ def _queued(world: dict) -> dict:
     return json.loads(world['sqs'].send_message.call_args.kwargs['MessageBody'])
 
 
-@pytest.mark.usefixtures('world', 'ingestion_on')
+@pytest.mark.usefixtures('world')
 class TestSignedInRoutesInAWorkspace:
     def test_an_editor_creates_a_form_of_the_workspace_with_its_lookup_row(self, world, lambda_context):
         status, body = _call(lambda_context, 'POST', '/feedback-forms', claims=EDITOR, ws=WS_A, body={'name': 'N'})
@@ -251,7 +250,6 @@ class TestSignedInRoutesInAWorkspace:
 
 
 @pytest.mark.usefixtures('world')
-@pytest.mark.usefixtures('ingestion_on')
 class TestThePublicRoutes:
     def test_a_workspaces_form_serves_its_own_config_whatever_header_is_sent(self, lambda_context):
         status, body = _call(lambda_context, 'GET', f'/feedback-forms/{FORM_A}/config', ws=WS_B, form_id=FORM_A)
@@ -478,36 +476,22 @@ def test_new_ids_are_unguessable_distinct_and_only_a_workspaces_is_routable():
     assert all(h._validated_form_id(form_id) == form_id for form_id in deployment_ids)
 
 
-@pytest.mark.usefixtures('world')
-class TestAWorkspaceFormsSubmissionIsHeld:
-    """While per-workspace ingestion is off (shared/workspace_plugin_settings.py hold_workspace_ingestion), a
-    workspace form's submission is ingestion into that workspace: the same 409 as enabling a plugin, before anything
-    is archived or queued; a deployment form's submission is accepted as before."""
+def test_a_form_created_in_a_workspace_takes_submissions_into_it(world, lambda_context):
+    """Since 7.14.00 (the ingestion hold lifted): an editor creates a form in the workspace, and a visitor's
+    submission to it is queued for that workspace (the processor stores it under ``WS#{ws}#``) with its raw copy
+    under ``ws/{ws}/raw/``, whatever the visitor's request names."""
+    status, created = _call(lambda_context, 'POST', '/feedback-forms', claims=EDITOR, ws=WS_A,
+                            body={'name': 'Checkout', 'enabled': True})
+    assert status == 200, created
+    form_id = created['form']['form_id']
 
-    def test_a_workspace_forms_submission_answers_the_hold_and_queues_nothing(self, world, lambda_context):
-        with raw_lake_client() as s3:
-            status, answer = _call(lambda_context, 'POST', f'/feedback-forms/{FORM_A}/submit', body={'text': 'Hello'},
-                                   form_id=FORM_A)
-            archived = raw_keys(s3)
+    allow = [{'id': 'feedback_form', 'label': 'Forms', 'pii': 'allow'}]
+    with raw_lake_client() as s3, seeded_source_profiles([], workspaces={WS_A: allow}):
+        status, answer = _call(lambda_context, 'POST', f'/feedback-forms/{form_id}/submit', ws=WS_B,
+                               body={'text': 'Checkout is slow', 'workspace_id': WS_B}, form_id=form_id)
+        [key] = raw_keys(s3)
 
-        assert (status, answer['error']) == (409, workspace_plugin_settings.INGESTION_NOT_YET)
-        world['sqs'].send_message.assert_not_called()
-        assert archived == []
-
-    def test_a_deployment_forms_submission_is_not_held(self, world, lambda_context):
-        status, answer = _call(lambda_context, 'POST', f'/feedback-forms/{LEGACY}/submit', body={'text': 'Hello'},
-                               form_id=LEGACY)
-
-        assert status == 200, answer
-        assert 'workspace_id' not in _queued(world)
-
-
-@pytest.mark.usefixtures('world')
-def test_a_workspace_form_cannot_be_created_while_ingestion_is_held(world, lambda_context):
-    """A workspace form exists to take submissions into its workspace, which the hold refuses: its create answers the
-    same 409 and writes nothing (no form, no lookup row)."""
-    before = world['workspaces'].scan()['Count'], world['aggregates'].scan()['Count']
-    status, body = _call(lambda_context, 'POST', '/feedback-forms', claims=EDITOR, ws=WS_A, body={'name': 'N'})
-
-    assert (status, body['error']) == (409, workspace_plugin_settings.INGESTION_NOT_YET)
-    assert (world['workspaces'].scan()['Count'], world['aggregates'].scan()['Count']) == before
+    assert status == 200, answer
+    message = _queued(world)
+    assert (message['workspace_id'], message['source_channel']) == (WS_A, f'form_{form_id}')
+    assert key.startswith(f'ws/{WS_A}/raw/feedback_form/')

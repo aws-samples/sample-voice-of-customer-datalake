@@ -986,7 +986,7 @@ def start_category_reprocess():
     mode, days = job.get('mode'), job.get('days')
     try:
         invoke_lambda_async(CATEGORY_REPROCESS_FUNCTION,
-                            workspace_payload({'job_id': job['sk'], **payload_fields()}, context, ingestion=False))
+                            workspace_payload({'job_id': job['sk'], **payload_fields()}, context))
     except Exception as e:
         logger.exception("Failed to start category reprocess worker")
         reprocess_jobs.finish_job(table, job['sk'], reprocess_jobs.STATUS_FAILED,

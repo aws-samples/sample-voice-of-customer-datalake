@@ -17,6 +17,38 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.14.00] - 2026-11-13
+
+Multi-workspace, phase 2's data path is done: a workspace's own ingestion runs. The hold that kept every workspace from ingesting is lifted, now that a workspace's feedback is processed, counted, read, erased and replayed in it (7.00.00 to 7.13.00). A workspace's admins enable its plugins; an enabled plugin runs in the workspace on its schedule and through Run now; a workspace's feedback forms and webhooks take feedback into it (docs/multi-workspace.md, the 7.14.00 row and Phases).
+
+### Added
+
+- A run in a workspace runs only a plugin the workspace enabled: `POST /sources/{source}/run` and `POST /scrapers/{id}/run` (the webscraper plugin) answer 409 "Enable this plugin for the workspace first" otherwise, after the admin gate and the source check, before anything is written or invoked. Without `X-Workspace-Id` nothing changes.
+- Inside a workspace, Run now in a plugin's configuration dialog and a scraper card's Run say "Enable this plugin for the workspace first: Workspace settings → Plugins." on that refusal (9 locales).
+- A delivery on a workspace's webhook endpoint is taken in only when the workspace enabled that plugin; otherwise it gets the same 401 as a bad signature, before any secret is read, so disabling a plugin stops its deliveries too.
+- A cross-path test (`lambda/jobs/test/test_workspace_cross_path.py`): one workspace's message through the processor, the aggregator, the workspace's category reprocess and an erasure by email, stored, counted, replayed and erased in that workspace only; two workspaces' copies of one source item stay apart.
+
+### Changed
+
+- Enabling a plugin for a workspace (Workspace settings → Plugins, its admins) writes the workspace's `PLUGIN#{plugin}` / `WS#{ws}` row, audited first; disabling deletes it. The plugin's scheduled tick then also runs in each workspace that enabled it, with that workspace's credentials, watermarks, breaker, raw data and messages.
+- A workspace's editors and admins can create feedback forms in it, and a submission to one is ingested into that workspace. A verified delivery on a workspace's webhook endpoint (`POST /webhooks/{plugin}/{ws}`) for a plugin it enabled is ingested into that workspace.
+- Workspace settings no longer offers the S3 import, which never runs in a workspace (`GET /me/workspaces/current/plugins` leaves it out, and enabling it answers 404).
+- An S3 import reprocess that names a workspace gets the S3 import API's one 400 (it acts deployment-wide only), like its other routes, instead of the hold's 409.
+- The members page's and the platform console's notice and the Workspace settings plugins card say that the plugins a workspace's admins turn on collect feedback into it (9 locales).
+- IAM: the workspaces API's role (`voc-workspaces-api`) may put `PLUGIN#*` rows in `voc-workspaces` (its DeleteItem there is unchanged); the integrations, scrapers and webhook roles may read a `PLUGIN#*` row's `pk` there (GetItem). Every attribute-limited GetItem on `voc-workspaces` (those, the webhooks' routing read and the MCP tokens' membership reads) now refuses a read that names no attributes.
+
+### Removed
+
+- The ingestion hold: `PER_WORKSPACE_INGESTION`, `hold_workspace_ingestion` and its 409 reason `INGESTION_NOT_YET` (`lambda/shared/workspace_plugin_settings.py`), with every refusal it gave (enabling a plugin, Run now and a scraper's run in a workspace, a workspace form's create and submission, a workspace webhook's delivery, an S3 import reprocess naming a workspace) and `workspace_payload`'s `ingestion` parameter. No flag replaces it.
+- The web app's held state on Workspace settings (the inert Enable and its note), and the strings `workspaces.errors.ingestionNotYet` and `workspaces.errors.ingestionRunNotYet`.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root). IAM: the workspaces role's PutItem gains the `PLUGIN#*` partition of `voc-workspaces`, the integrations, scrapers and webhook roles gain GetItem on `PLUGIN#*` limited to `pk`, and the attribute-limited GetItem grants on `voc-workspaces` gain a `Null` condition on `dynamodb:Attributes`; no table, index, bucket or cross-stack reference changes, and nothing is migrated.
+- Nothing starts ingesting into a workspace on deploy: a workspace has no `PLUGIN#` row until its admins enable a plugin, so the scheduled ticks fan out to no workspace until then. Once one is enabled, each tick of that plugin makes one more asynchronous invoke per workspace that enabled it, and a workspace's run calls the source with that workspace's own credentials.
+- A workspace webhook that delivered before (and was refused while the hold was on) needs its plugin enabled on that workspace's settings page; until then its deliveries get 401.
+- Not yet: a workspace's own whole-source erasure (phase 4); a whole-source erasure stays the deployment's request.
+
 ## [7.13.00] - 2026-11-13
 
 Multi-workspace, phase 2: a workspace's reviews can be replayed (TENETS.md D3). A workspace's admins run the category reprocess on that workspace's own reviews, with its own categories and dimensions, from its Workspace settings page; the deployment's reprocess is unchanged. This meets the last condition of the per-workspace ingestion hold, which stays on in this release: the unlock is a release of its own, next ([docs/multi-workspace.md](docs/multi-workspace.md)).

@@ -161,7 +161,7 @@
       "editor": "Bearbeitung",
       "viewer": "Lesezugriff"
     },
-    "sharedData": "Jeder Arbeitsbereich hat sein eigenes Feedback, eigene Dashboards, eine eigene Marke, eigene gelöste Probleme, Kategorien, Dimensionen und Quellrichtlinien; noch kann kein Feedback in einen Arbeitsbereich gelangen. Projekte, der Assistent, Radar und die übrigen Einstellungen teilen sich weiterhin alle Arbeitsbereiche.",
+    "sharedData": "Jeder Arbeitsbereich hat sein eigenes Feedback, eigene Dashboards, eine eigene Marke, eigene gelöste Probleme, Kategorien, Dimensionen und Quellrichtlinien, und die Plugins, die seine Admins einschalten, sammeln Feedback in ihn. Projekte, der Assistent, Radar und die übrigen Einstellungen werden weiterhin von allen Arbeitsbereichen geteilt.",
     "moreFailed": "Die nächste Seite konnte nicht geladen werden. Wählen Sie „Mehr anzeigen“, um es erneut zu versuchen.",
     "refreshFailed": "Die Liste konnte nicht aktualisiert werden und ist möglicherweise nicht mehr aktuell.",
     "members": {
@@ -233,7 +233,7 @@
       "brandDescription": "Die eigene Marke dieses Arbeitsbereichs. Ein neuer Arbeitsbereich beginnt mit einer leeren Marke: Von der Marke der Bereitstellung wird nichts übernommen.",
       "brandReadOnly": "Nur die Admins dieses Arbeitsbereichs können seine Marke ändern. Hier können Sie sie ansehen.",
       "pluginsTitle": "Plugins",
-      "pluginsDescription": "Die Plugins, die diese Bereitstellung anbietet, und ob dieser Arbeitsbereich jedes davon eingeschaltet hat. Jedes Plugin sammelt Feedback weiterhin für die gesamte Bereitstellung, wie bisher.",
+      "pluginsDescription": "Die Plugins, die diese Bereitstellung anbietet, und ob dieser Arbeitsbereich jedes davon eingeschaltet hat. Ein hier eingeschaltetes Plugin läuft nach seinem Zeitplan für diesen Arbeitsbereich, und „Jetzt ausführen“ führt es hier aus.",
       "pluginsReadOnly": "Nur die Admins dieses Arbeitsbereichs können Plugins ein- oder ausschalten.",
       "pluginsLoading": "Plugins werden geladen…",
       "pluginsLoadFailed": "Die Plugins konnten nicht geladen werden.",
@@ -282,8 +282,7 @@
       "userGone": "Diese Person gibt es nicht mehr. Laden Sie die Seite neu.",
       "pluginGone": "Diese Bereitstellung bietet dieses Plugin nicht mehr an. Laden Sie die Seite neu.",
       "pluginsChangedMeanwhile": "Die Plugins des Arbeitsbereichs haben sich inzwischen geändert. Laden Sie die Seite neu und versuchen Sie es erneut.",
-      "ingestionNotYet": "Die Erfassung pro Arbeitsbereich kommt mit einer späteren Version: Ein Arbeitsbereich kann noch kein Plugin einschalten.",
-      "ingestionRunNotYet": "Die Erfassung pro Arbeitsbereich kommt mit einer späteren Version: In einem Arbeitsbereich kann noch kein Lauf starten.",
+      "pluginNotEnabled": "Schalten Sie dieses Plugin zuerst für den Arbeitsbereich ein: Einstellungen des Arbeitsbereichs → Plugins.",
       "notDeploymentAdmin": "Nur die Administration der Bereitstellung kann die Standardmarke ändern.",
       "notBrandAdmin": "Nur die Admins dieses Arbeitsbereichs können seine Marke ändern.",
       "generic": "Das hat nicht funktioniert. Versuchen Sie es erneut.",

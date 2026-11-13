@@ -31,6 +31,8 @@ middleware, admin gate, stored credentials and Radar refusal); its rules:
   shared/workspace_members.py build), set after every other field, so a body's ``workspace_id`` never chooses it;
 * ``ResolvedRoutes.refuse_radar_brand``: a workspace cannot save a Radar brand (Radar is not keyed by workspace; the processor would
   refuse every message it stamped);
+* ``ResolvedRoutes.require_plugin_enabled``: a run in a workspace runs only a plugin the workspace enabled
+  (shared/workspace_plugin_settings.py ``PLUGIN_NOT_ENABLED``, 409), before anything is read, written or invoked;
 * ``deployment_only``: the resolver middleware of a module that does not act in a workspace yet
   (lambda/api/s3_import_handler.py): a request that sends the header is refused with one fixed 400 before anything
   is read, whoever sends it, so the answer confirms no workspace.
@@ -56,7 +58,7 @@ from shared.workspace import (
     require_workspace_admin,
     resolve_workspace,
 )
-from shared.workspace_plugin_settings import hold_workspace_ingestion
+from shared.workspace_plugin_settings import require_plugin_enabled
 from shared.workspace_plugin_store import CredentialsStore, StoreClients, credentials_store
 from shared.ws_repo import WorkspaceScope, scope_of
 
@@ -92,6 +94,15 @@ class RequestWorkspace:
         self._table = table
         self._confirm = confirm_platform_admin
         self.memberships = memberships if memberships is not None else MembershipCache()
+
+    def require_plugin_enabled(self, context: WorkspaceContext, plugin_id: str) -> None:
+        """409 unless ``context``'s workspace enabled ``plugin_id`` (shared/workspace_plugin_settings.py), read in
+        the table this resolver reads; a DynamoDB fault the fixed 500, as for a resolution."""
+        try:
+            require_plugin_enabled(self._table(), context.ws, plugin_id)
+        except (ClientError, BotoCoreError) as exc:
+            logger.exception('Error reading whether a workspace enabled a plugin')
+            raise ServiceError(WORKSPACE_FAULT) from exc
 
     def context(self, event: dict, *, fresh: bool = False) -> WorkspaceContext | None:
         """The resolved membership, or None for a request that names no workspace (see the module docstring).
@@ -208,22 +219,20 @@ class ResolvedRoutes:
         if self.context() is not None and radar_brand:
             raise ValidationError(RADAR_NOT_IN_WORKSPACES)
 
-
-#: The deployment-only routes that would start ingestion in the workspace a request names (method, path): while
-#: per-workspace ingestion is held they answer its 409 (shared/workspace_plugin_settings.py
-#: ``hold_workspace_ingestion``), the answer every other run in a workspace gets, before ``DEPLOYMENT_ONLY``.
-INGESTION_STARTS: Final = frozenset({('POST', '/s3-import/reprocess')})
+    def require_plugin_enabled(self, plugin_id: str) -> None:
+        """In a workspace, 409 ``PLUGIN_NOT_ENABLED`` unless it enabled ``plugin_id`` (a validated plugin id or a
+        module constant): a run there runs only a plugin its admins turned on. Deployment-wide nothing is read."""
+        context = self.context()
+        if context is not None:
+            self.workspace.require_plugin_enabled(context, plugin_id)
 
 
 def deployment_only(app: Any, next_middleware: Callable[[Any], Any]) -> Any:
     """Resolver middleware of a module that does not act in a workspace yet: a request that sends
     ``X-Workspace-Id`` (empty or not) is refused with ``DEPLOYMENT_ONLY`` (400) before anything is read, never served
-    deployment-wide (the rule of the module docstring). One answer for every caller: it confirms no workspace. A
-    request that would start ingestion there (``INGESTION_STARTS``) gets the ingestion hold's 409 first while it is
-    on."""
+    deployment-wide (the rule of the module docstring). One answer for every caller, an S3 import's reprocess
+    included: it confirms no workspace."""
     event = app.current_event
     if names_a_workspace(event.raw_event):
-        if (event.http_method, event.path) in INGESTION_STARTS:
-            hold_workspace_ingestion()
         raise ValidationError(DEPLOYMENT_ONLY)
     return next_middleware(app)

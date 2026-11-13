@@ -57,7 +57,6 @@ from shared.onboarding import FEEDBACK_FORM_PK
 from shared.scoped_query import query_partition
 from shared.tables import configured_table, get_workspaces_table
 from shared.workspace import EDITING_ROLES, audit_key, audit_sort_key
-from shared.workspace_plugin_settings import hold_workspace_ingestion
 from shared.workspace_request import RequestWorkspace
 from shared.workspace_routing import (
     RoutedWorkspace,
@@ -885,11 +884,6 @@ def list_forms():
 def create_form():
     """Create a new feedback form (in a workspace: its form, and the lookup row that routes its public id there)."""
     scope = _request_scope(write=True)
-    if scope is not None:
-        # A workspace form exists to take submissions into its workspace, which the ingestion hold refuses: while it
-        # is on, creating one answers the same 409 (shared/workspace_plugin_settings.py), so no form is embedded that
-        # would refuse every visitor's feedback.
-        hold_workspace_ingestion()
     body = json_object_body(app)
     _validate_form_labels(body, scope)
     # Link fields are validated inside build_form_item, structurally.
@@ -1072,10 +1066,6 @@ def submit_form_feedback(form_id: str):
     widget_dimensions = _widget_dimensions(body)
     form_id, form, routed = _public_form(form_id, 'Failed to load form configuration')
     scope = routed.scope if routed is not None else None
-    if scope is not None:
-        # A workspace form's submission is ingestion into that workspace: held, like enabling a plugin and every run in
-        # a workspace, while per-workspace ingestion is off (409, before anything is archived, anchored or queued).
-        hold_workspace_ingestion()
     if not form.get('enabled', False):
         raise ValidationError('This form is not enabled')
     # Defence in depth: no workspace form carries this form_type (only the document generator sets it, on
