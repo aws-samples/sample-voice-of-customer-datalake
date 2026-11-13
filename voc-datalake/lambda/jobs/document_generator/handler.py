@@ -51,7 +51,8 @@ from botocore.exceptions import ClientError
 from shared import category_access, methodology
 from shared.api import validate_date_basis
 from shared.aws import get_dynamodb_resource, get_s3_client
-from shared.company_context import company_context_block, design_system_block
+from shared.company_context import CONFIG_SK, DESIGN_SYSTEM_PK, company_context_block, design_system_block
+from shared.company_logo import LOGO_INSTRUCTION, company_logo_data_url, inline_logo, with_logo_placeholder
 from shared.converse import converse_chain
 from shared.derivation import (
     DERIVATION_FIELD,
@@ -487,6 +488,23 @@ def _prototype_org_sections(grounding: Grounding | None = None, *,
     design_section = f'\n\n{design_block}\n\n{DESIGN_SYSTEM_INSTRUCTION}' if design_block else ''
     company_section = f'\n\n{company_block}\n\n{COMPANY_CONTEXT_INSTRUCTION}' if company_block else ''
     return design_section, company_section
+
+
+def _company_logo(with_design_system: bool) -> str | None:
+    """The company logo as a ``data:`` URL for this build, or None (opted out, none, unreadable).
+
+    The logo belongs to the design system, so the build dialog's "Design system" box decides
+    for it too. Never raises: a failed read builds the prototype without the logo.
+    """
+    table = _aggregates_table() if with_design_system else None
+    if table is None:
+        return None
+    try:
+        row = table.get_item(Key={'pk': DESIGN_SYSTEM_PK, 'sk': CONFIG_SK}).get('Item')
+    except Exception as exc:  # noqa: BLE001 - optional prompt context must never fail a build
+        logger.warning('Company logo unavailable for the prototype', extra={'error_type': type(exc).__name__})
+        return None
+    return company_logo_data_url(row, _s3(), SCRATCH_BUCKET)
 
 
 def _design_system_record(requested: bool, section: str) -> bool | None:
@@ -1312,7 +1330,8 @@ def _revision_feedback_section(project_id: str, base: dict | None, feedback: str
     # enough to understand structure/style and revise it toward the feedback.
     # The pin widget is ours, not the model's: it is re-injected (with the
     # revision's own form) after generation, so the model never sees it.
-    prior_html = strip_pin_widget(_prior_prototype_html(project_id, base))
+    # An inlined company logo goes back to its placeholder: base64 would eat the prior-HTML cap.
+    prior_html = with_logo_placeholder(strip_pin_widget(_prior_prototype_html(project_id, base)))
     prior_block = (
         f'\n\nEXISTING PROTOTYPE (revise this):\n{prior_html[:PROTOTYPE_PRIOR_CAP]}' if prior_html else ''
     )
@@ -1444,6 +1463,10 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     with_design_system = _use_design_system(doc_config)
     design_system_section, company_context_section = _prototype_org_sections(
         grounding, with_design_system=with_design_system)
+    # The model writes a placeholder for the uploaded logo; the image is inlined after generation.
+    logo_url = _company_logo(with_design_system)
+    if logo_url:
+        design_system_section += f'\n\n{LOGO_INSTRUCTION}'
 
     user_prompt = PROTOTYPE_HTML_USER_TEMPLATE.format(
         project_name=project_name,
@@ -1474,6 +1497,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     html = _extract_html(raw)
     if not html:
         raise RuntimeError('Prototype model did not return an HTML document.')
+    html = inline_logo(html, logo_url)
     html = _with_pin_widget(project_id, doc_id, title, html)
 
     ctx.update_progress(80, 'saving_prototype')

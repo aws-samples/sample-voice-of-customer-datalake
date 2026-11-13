@@ -99,6 +99,8 @@ export interface VocApiStackProps extends VocStackProps {
   userPoolDomainPrefix: string;
   /** VocCoreStack's AppSync Events API: its hosts and per-namespace publish policies (core-realtime.ts). */
   realtime: CoreRealtime;
+  /** VocCoreStack's read of the uploaded company logo, for the document generator's prototypes. */
+  companyLogoReadPolicy: iam.IManagedPolicy;
 
   // Ingestion stack resources
   processingQueueUrl: string;
