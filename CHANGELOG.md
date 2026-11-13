@@ -17,6 +17,22 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.06.00] - 2026-11-13
+
+Prototypes show the company logo uploaded in the design system, and an SVG logo can be uploaded again.
+
+### Added
+
+- A prototype now shows the company logo from Company → Design system (`/company?tab=design`) wherever it shows the company's logo, instead of a logo the model draws. The model writes a placeholder and the build puts the uploaded logo in its place as an inline image, so the prototype stays one offline file. It follows the build dialog's **Design system** box. A logo over 1 MB is left out and the prototype gets a drawn wordmark, as before. A revision keeps the logo. See [docs/company-context.md → How the AI uses them](docs/company-context.md#how-the-ai-uses-them).
+
+### Fixed
+
+- Company → Design system → **Upload logo** refused every SVG file with "could not be read as an SVG image. Export it as PNG and upload that." The browser converts an SVG to PNG before the upload, and it loaded the SVG from a `blob:` URL, which the site's Content-Security-Policy (`img-src 'self' data:`) blocks. It now loads it from a `data:` URL, and the policy is unchanged. PNG, JPEG and WebP uploads were not affected.
+
+### Upgrade notes
+
+- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on `company-context/design/logo_*` in the raw data bucket), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
+
 ## [6.05.00] - 2026-11-11
 
 The repository's tooling needs Node.js 24, and the minimatch and fast-xml-parser security alerts are fixed.
