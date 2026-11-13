@@ -18,7 +18,8 @@
   "views": {
     "label": "Bereiche der Agentenseite",
     "agents": "Agenten",
-    "workflows": "Workflows"
+    "workflows": "Workflows",
+    "spend": "Ausgaben"
   },
   "list": {
     "title": "Autonome Agenten",
@@ -666,6 +667,33 @@
         "help": "Es läuft nichts mehr. Was der Lauf erstellt hat, bleibt im Projekt."
       }
     }
+  },
+  "spend": {
+    "hint": "Was die Engineering-Agenten ausgegeben haben, laut Ausgabenbuch: Kosten, Tokens und MicroVM-Zeit jeder Sitzung, wie die Laufzeitumgebung sie gemessen hat. Die Kosten sind bisher nur die MicroVM-Zeit: Modell-Tokens werden gezählt, aber noch nicht bepreist. Monate in UTC.",
+    "month": "Monat",
+    "groupBy": "Gruppieren nach",
+    "by": {
+      "workflow": "Workflow",
+      "repo": "Repository",
+      "run": "Lauf",
+      "agent": "Agent",
+      "model": "Modell",
+      "day": "Tag"
+    },
+    "cost": "Kosten",
+    "tokensIn": "Eingabe-Tokens",
+    "tokensOut": "Ausgabe-Tokens",
+    "microvm": "MicroVM-Zeit",
+    "none": "Nicht erfasst",
+    "otherModels": "Andere Modelle",
+    "workflowRuns": "{{name}}: Läufe anzeigen",
+    "inRun": "in Lauf {{run}}",
+    "onlyWorkflow": "Workflow: {{name}}",
+    "allWorkflows": "Alle Workflows anzeigen",
+    "tableCaption": "Ausgaben im {{month}}, gruppiert nach: {{by}}",
+    "loadFailed": "Die Ausgaben konnten nicht geladen werden.",
+    "truncated": "Dieser Monat hat mehr Zeilen, als ein Lesevorgang abruft: Die Zahlen sind eine Untergrenze.",
+    "empty": "Im {{month}} wurde nichts ausgegeben."
   },
   "engineeringRun": {
     "untitled": "Engineering-Lauf",

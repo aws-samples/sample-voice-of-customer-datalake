@@ -515,7 +515,7 @@ def test_a_board_that_fails_after_writing_is_a_503_and_the_retry_sends_the_event
     assert json.loads(entry['Detail'])['summary'].endswith('take by a person')
 
 
-@pytest.mark.parametrize('forge', ['type', 'sender', 'run', 'task', 'two'])
+@pytest.mark.parametrize('forge', ['type', 'sender', 'run', 'task', 'two', 'schema', 'summary', 'credential'])
 def test_an_event_the_board_hands_back_that_is_not_the_persons_action_is_never_sent(
         lambda_context: Any, run: tuple[Any, EngineeringRun], actions: Actions, monkeypatch: pytest.MonkeyPatch,
         forge: str) -> None:
@@ -529,12 +529,16 @@ def test_an_event_the_board_hands_back_that_is_not_the_persons_action_is_never_s
             forged = {'type': {**event, 'type': 'signal.stop_now'},
                       'sender': {**event, 'from': {'kind': 'human', 'id': 'other-admin'}},
                       'run': {**event, 'run_id': '01JD0000000000000000000009'},
-                      'task': {**event, 'task_id': 'task-9'}}
+                      'task': {**event, 'task_id': 'task-9'},
+                      # (not voc-msg/1: the board's fault, never the person's words, which it checks before writing)
+                      'schema': {**event, 'schema': 'voc-msg/0'},
+                      'summary': {**event, 'summary': 'x' * 2048},
+                      'credential': {**event, 'summary': 'AKIA' + 'Q' * 16}}
             answer['events'] = [event, event] if forge == 'two' else [forged[forge]]
             return {'StatusCode': 200, 'Payload': io.BytesIO(json.dumps(answer).encode())}
 
     monkeypatch.setattr('shared.aws.get_lambda_client', lambda: Forging(actions.runtime, engineering.client))
-    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{engineering.task_id}/take', body={})[0] in (400, 503)
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{engineering.task_id}/take', body={})[0] == 503
     assert actions.bus.entries == []
 
 

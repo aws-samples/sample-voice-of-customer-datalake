@@ -15,6 +15,8 @@
 //                     the mock's admin took); 409 for an ended task or another person's hold without over
 //   GET  …/reports    the run's reports, each with its latest version
 //   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
+//   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
+//                     month, grouping or workflow id), from a few sample rows over this month and last
 // Every GET of the overview moves the run a little (the agents' ages), so polling shows it live.
 // MOCK_AGENTS_NON_ADMIN=1 makes the caller a non-admin: 403 on every route, as the server answers (admins only).
 // Wired into mock-server.js by handleDomainModules (before the agents routes, which would read `engineering` as an
@@ -406,8 +408,68 @@ function routePost(sub, rest, body) {
   return [404, { message: 'Engineering run not found' }];
 }
 
+// ── The spend ledger (GET /agents/engineering/spend?month=&by=&workflow=; lambda/engineering/spend.py) ──
+// Rows for this month (the sample run, and an earlier run of the same flow) and last month (one run of another
+// flow), in the ledger's shape: one per day, run, agent and model; `microvm` carries MicroVM time, the only priced
+// one (model tokens are counted, not yet priced: their rows have no dollars, as the server's).
+const SPEND_BY = { workflow: 'flow', repo: 'repo', run: 'run_id', agent: 'agent_id', model: 'model', day: 'day' };
+const OTHER_FLOW_ID = 'wf_3f8a1b62c9d0';
+const MONTH = /^20\d{2}-(0[1-9]|1[0-2])$/;   // (spend.py's ledger_pk)
+
+function spendRows(now = new Date()) {
+  const monthOf = (back) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1)).toISOString().slice(0, 7);
+  const today = String(now.getUTCDate()).padStart(2, '0');
+  const row = (month, day, flow, run_id, agent_id, model, usd, tokens_in, tokens_out, microvm_seconds = 0) => ({
+    month, day, flow, repo: 'example-org/storefront', run_id, agent_id, model, usd, tokens_in, tokens_out, microvm_seconds,
+  });
+  const earlier = '01JD9Q4W2E7R1T6Y3U8I0O5P2A';
+  return [
+    row(monthOf(0), today, SAMPLE_FLOW_ID, SAMPLE_RUN_ID, 'coordinator-1', 'model-large', 0, 42_000, 6_100),
+    row(monthOf(0), today, SAMPLE_FLOW_ID, SAMPLE_RUN_ID, 'coordinator-1', 'microvm', 0.0031, 0, 0, 310),
+    row(monthOf(0), today, SAMPLE_FLOW_ID, SAMPLE_RUN_ID, 'fixer-3', 'model-medium', 0, 61_500, 9_800),
+    row(monthOf(0), today, SAMPLE_FLOW_ID, SAMPLE_RUN_ID, 'fixer-3', 'microvm', 0.0142, 0, 0, 1_420),
+    row(monthOf(0), today, SAMPLE_FLOW_ID, SAMPLE_RUN_ID, 'final-go-5', 'model-large', 0, 12_000, 900),
+    row(monthOf(0), '01', SAMPLE_FLOW_ID, earlier, 'fixer-1', 'model-medium', 0, 240_000, 31_000),
+    row(monthOf(0), '01', SAMPLE_FLOW_ID, earlier, 'fixer-1', 'microvm', 0.072, 0, 0, 7_200),
+    row(monthOf(1), '17', OTHER_FLOW_ID, '01JC2M8N4B6V0C3X5Z7L9K1J4H', 'hunter-1', 'model-small', 0, 30_000, 2_000),
+    row(monthOf(1), '17', OTHER_FLOW_ID, '01JC2M8N4B6V0C3X5Z7L9K1J4H', 'hunter-1', 'microvm', 0.009, 0, 0, 900),
+  ];
+}
+
+/** The month's spend grouped `by` (biggest first), as spend.py's MonthSpend.view() answers it. */
+function monthSpend(url) {
+  const month = url.searchParams.get('month') ?? new Date().toISOString().slice(0, 7);
+  const by = url.searchParams.get('by') ?? 'workflow';
+  const flow = url.searchParams.get('workflow') ?? '';
+  if (!MONTH.test(month)) return [400, { message: 'month is YYYY-MM' }];
+  if (!(by in SPEND_BY)) return [400, { message: `by is one of ${Object.keys(SPEND_BY).join(', ')}` }];
+  if (flow.length > 500 || flow.includes('#')) return [400, { message: 'workflow is a workflow id' }];
+  const zero = () => ({ usd: 0, tokens_in: 0, tokens_out: 0, microvm_seconds: 0 });
+  const add = (sum, row) => {
+    for (const field of ['usd', 'tokens_in', 'tokens_out', 'microvm_seconds']) sum[field] += row[field];
+  };
+  const total = zero();
+  const groups = new Map();
+  for (const row of spendRows().filter((r) => r.month === month && (flow === '' || r.flow === flow))) {
+    const value = row[SPEND_BY[by]];
+    const key = by === 'agent' ? `${row.run_id}/${value}` : value;
+    if (!groups.has(key)) groups.set(key, zero());
+    add(groups.get(key), row);
+    add(total, row);
+  }
+  const ordered = [...groups.entries()].sort(([ka, a], [kb, b]) =>
+    b.usd - a.usd || (b.tokens_in + b.tokens_out) - (a.tokens_in + a.tokens_out) || b.microvm_seconds - a.microvm_seconds || ka.localeCompare(kb));
+  return [200, { month, by, total, truncated: false, groups: ordered.map(([key, sum]) => ({ key, ...sum })) }];
+}
+
 export function handleEngineeringRunRoutes(req, res, url, send, shared) {
   if (!url.pathname.startsWith(PREFIX)) return false;
+  if (url.pathname === `${PREFIX}spend`) {
+    if (req.method !== 'GET') send(405, { message: 'Method not allowed' });
+    else if (isAdmin()) send(...monthSpend(url));
+    else send(403, { message: 'Admin access required' });
+    return true;
+  }
   const [runId, sub, ...rest] = url.pathname.slice(PREFIX.length).split('/').map(decodeURIComponent);
   const nested = (req.method === 'GET' && sub === 'reports') || (req.method === 'POST' && sub === 'board');
   if (runId !== SAMPLE_RUN_ID || (rest.length > 0 && !nested)) {

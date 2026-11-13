@@ -19,7 +19,8 @@
   "views": {
     "label": "Sections de la page des agents",
     "agents": "Agents",
-    "workflows": "Workflows"
+    "workflows": "Workflows",
+    "spend": "Dépenses"
   },
   "list": {
     "title": "Agents autonomes",
@@ -672,6 +673,33 @@
         "help": "Plus rien ne s’exécute. Ce que l’exécution a produit reste dans le projet."
       }
     }
+  },
+  "spend": {
+    "hint": "Ce qu’ont dépensé les agents d’ingénierie, d’après le registre des dépenses : le coût, les jetons et le temps MicroVM de chaque session, tels que l’environnement d’exécution les a mesurés. Pour l’instant, le coût est celui du temps MicroVM : les jetons du modèle sont comptés, pas encore facturés. Les mois sont en UTC.",
+    "month": "Mois",
+    "groupBy": "Regrouper par",
+    "by": {
+      "workflow": "Workflow",
+      "repo": "Dépôt",
+      "run": "Exécution",
+      "agent": "Agent",
+      "model": "Modèle",
+      "day": "Jour"
+    },
+    "cost": "Coût",
+    "tokensIn": "Jetons en entrée",
+    "tokensOut": "Jetons en sortie",
+    "microvm": "Temps MicroVM",
+    "none": "Non enregistré",
+    "otherModels": "Autres modèles",
+    "workflowRuns": "{{name}} : voir ses exécutions",
+    "inRun": "dans l’exécution {{run}}",
+    "onlyWorkflow": "Workflow : {{name}}",
+    "allWorkflows": "Voir tous les workflows",
+    "tableCaption": "Dépenses de {{month}}, regroupées par : {{by}}",
+    "loadFailed": "Impossible de charger les dépenses.",
+    "truncated": "Ce mois compte plus de lignes qu’une lecture n’en prend : les chiffres affichés sont un minimum.",
+    "empty": "Aucune dépense en {{month}}."
   },
   "engineeringRun": {
     "untitled": "Exécution d’ingénierie",

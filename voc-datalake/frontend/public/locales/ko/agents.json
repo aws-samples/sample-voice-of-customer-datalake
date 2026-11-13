@@ -18,7 +18,8 @@
   "views": {
     "label": "에이전트 페이지 섹션",
     "agents": "에이전트",
-    "workflows": "워크플로"
+    "workflows": "워크플로",
+    "spend": "비용"
   },
   "list": {
     "title": "자율 에이전트",
@@ -666,6 +667,33 @@
         "help": "더 이상 실행되지 않습니다. 실행 결과는 프로젝트에 남습니다."
       }
     }
+  },
+  "spend": {
+    "hint": "엔지니어링 에이전트가 사용한 비용(비용 원장 기준): 각 세션의 비용, 토큰, MicroVM 시간을 런타임이 측정한 대로 보여 줍니다. 현재 비용은 MicroVM 시간만 반영하며, 모델 토큰은 집계되지만 아직 가격이 매겨지지 않습니다. 월은 UTC 기준입니다.",
+    "month": "월",
+    "groupBy": "그룹 기준",
+    "by": {
+      "workflow": "워크플로",
+      "repo": "저장소",
+      "run": "실행",
+      "agent": "에이전트",
+      "model": "모델",
+      "day": "일"
+    },
+    "cost": "비용",
+    "tokensIn": "입력 토큰",
+    "tokensOut": "출력 토큰",
+    "microvm": "MicroVM 시간",
+    "none": "기록 없음",
+    "otherModels": "기타 모델",
+    "workflowRuns": "{{name}}: 실행 보기",
+    "inRun": "실행 {{run}}",
+    "onlyWorkflow": "워크플로: {{name}}",
+    "allWorkflows": "모든 워크플로 보기",
+    "tableCaption": "{{month}} 비용, 그룹 기준: {{by}}",
+    "loadFailed": "비용을 불러오지 못했습니다.",
+    "truncated": "이 달의 행이 한 번에 읽을 수 있는 수보다 많습니다. 표시된 수치는 최솟값입니다.",
+    "empty": "{{month}}에 사용한 비용이 없습니다."
   },
   "engineeringRun": {
     "untitled": "엔지니어링 실행",

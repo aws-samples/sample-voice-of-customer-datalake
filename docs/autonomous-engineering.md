@@ -1350,8 +1350,8 @@ Then, per use: model tokens (Bedrock), MicroVM time while an agent works (suspen
 event, SQS for the one dead-letter queue (no task queues), DynamoDB on demand, S3 for the workspace, caches and packs, the supervisor's invocations while a run is
 active. The connection's credential is a standard SecureString parameter, with no monthly charge. No NAT gateway and
 no other fixed cost by default. Each run's MicroVM seconds and model tokens are measured on its agents' session rows
-(MicroVM time priced, tokens counted) and kept by month in the spend ledger below; *planned*: the run monitor's cost
-line and the Spend tab that show it, and the model broker's pricing of tokens.
+(MicroVM time priced, tokens counted) and kept by month in the spend ledger below, which Agents → Spend shows;
+*planned*: the run monitor's cost line, and the model broker's pricing of tokens.
 
 **The spend ledger** (`voc-datalake/lambda/engineering/spend.py`, built). What the runs use is kept by day, workflow, run, agent and
 model: one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per
@@ -1372,7 +1372,11 @@ one write adds at most 32 rows (a transaction holds 100 items), and a reported m
 may update the month partitions only (`WS#default#SPEND#20??-??`: UpdateItem, never a read or a delete; IAM cannot
 limit an update to ADDs, the code only ADDs to the counters); the Agents API reads them.
 `GET /agents/engineering/spend?month=&by=&workflow=` (administrators) answers a month grouped by workflow,
-repository, run, agent, model or day. The ledger is a dated view of what the sessions measured: each agent's own
+repository, run, agent, model or day. The web app's **Spend** tab (Agents → Spend, `?tab=spend`: administrators,
+while the engineering agents are on) reads it: the month's cost, tokens and MicroVM time, then each group, biggest
+first; the month (the last 24 in its picker, any older one by its address), the grouping and a workflow are view
+options in the address; a workflow's row narrows the view to its runs, and a run's or an agent's opens its run
+monitor. The ledger is a dated view of what the sessions measured: each agent's own
 totals (its `cost_usd`, MicroVM seconds and tokens per model) stay on its session row, the record each run's caps and
 the run monitor read, and every ledger row only ever grows with the session write that measured it, naming its
 writer (`updated_by`), when (`updated_at`) and that session write's version (`session_seq`, D4). The rows are cost

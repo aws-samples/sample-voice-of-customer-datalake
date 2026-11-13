@@ -680,6 +680,19 @@
     ]
   },
   {
+    "file": "api/engineeringSpendApi.ts",
+    "method": "GET",
+    "call": "`/agents/engineering/spend?${params.toString()}`",
+    "probes": [
+      {
+        "path": "/agents/engineering/spend?month=2026-11&by=workflow"
+      },
+      {
+        "path": "/agents/engineering/spend?month=2026-11&by=run&workflow=wf_7c2d9e41a0b3"
+      }
+    ]
+  },
+  {
     "file": "api/participantsApi.ts",
     "method": "GET",
     "call": "'/participants/settings'",

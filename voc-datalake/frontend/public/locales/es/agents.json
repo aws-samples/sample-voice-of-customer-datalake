@@ -19,7 +19,8 @@
   "views": {
     "label": "Secciones de la página de agentes",
     "agents": "Agentes",
-    "workflows": "Flujos de trabajo"
+    "workflows": "Flujos de trabajo",
+    "spend": "Gasto"
   },
   "list": {
     "title": "Agentes autónomos",
@@ -672,6 +673,33 @@
         "help": "No se ejecuta nada más. Lo que produjo la ejecución queda en el proyecto."
       }
     }
+  },
+  "spend": {
+    "hint": "Lo que gastaron los agentes de ingeniería, según el registro de gasto: el coste, los tokens y el tiempo de MicroVM de cada sesión, tal como los midió el entorno de ejecución. Por ahora el coste es el tiempo de MicroVM: los tokens del modelo se cuentan, pero aún no tienen precio. Los meses están en UTC.",
+    "month": "Mes",
+    "groupBy": "Agrupar por",
+    "by": {
+      "workflow": "Flujo de trabajo",
+      "repo": "Repositorio",
+      "run": "Ejecución",
+      "agent": "Agente",
+      "model": "Modelo",
+      "day": "Día"
+    },
+    "cost": "Coste",
+    "tokensIn": "Tokens de entrada",
+    "tokensOut": "Tokens de salida",
+    "microvm": "Tiempo de MicroVM",
+    "none": "Sin registrar",
+    "otherModels": "Otros modelos",
+    "workflowRuns": "{{name}}: ver sus ejecuciones",
+    "inRun": "en la ejecución {{run}}",
+    "onlyWorkflow": "Flujo de trabajo: {{name}}",
+    "allWorkflows": "Ver todos los flujos de trabajo",
+    "tableCaption": "Gasto en {{month}}, agrupado por: {{by}}",
+    "loadFailed": "No se pudo cargar el gasto.",
+    "truncated": "Este mes tiene más filas de las que caben en una lectura: las cifras son un mínimo.",
+    "empty": "No hubo gasto en {{month}}."
   },
   "engineeringRun": {
     "untitled": "Ejecución de ingeniería",

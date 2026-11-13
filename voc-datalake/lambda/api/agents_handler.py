@@ -1041,7 +1041,7 @@ def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
     person_request); the events it hands back are published here, from the API's source, as the person."""
     monitor, caller = _acting_monitor(run_id)
     from engineering.bus.publish import PublishError
-    from engineering.bus.schema import MessageError, parse
+    from engineering.bus.schema import parse
     from engineering.rows import Refused
 
     board = os.environ.get('ENGINEERING_BOARD_FUNCTION', '')
@@ -1063,8 +1063,6 @@ def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
     except (ClientError, BotoCoreError) as exc:
         logger.exception('engineering: the board could not be reached')
         raise ServiceUnavailableError('the board could not be reached: retry') from exc
-    except MessageError as exc:
-        raise ValidationError('the board changed but its event could not be built: shorten the text') from exc
     except PublishError as exc:
         raise ServiceUnavailableError('the board changed but its event was not published: retry') from exc
 
@@ -1072,17 +1070,22 @@ def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
 def _persons_events(raw: Any, parse: Any, run_id: str, subject: str, request: dict[str, str]) -> list[Any]:
     """The events the board handed back, each checked to be this person's board action before it goes out under the
     API's source (which the bus lets send more than ``task.*``): at most one, a ``task.*`` of this run (and of this
-    task, for an action on one) from ``human:<subject>``. Anything else is the board's fault: 503, nothing sent."""
-    from engineering.bus.schema import Party
+    task, for an action on one) from ``human:<subject>``. Anything else, an event that is not voc-msg/1 too, is the
+    board's fault (docs/autonomous-agents.md): 503, nothing sent."""
+    from engineering.bus.schema import MessageError, Party
 
     events = raw if isinstance(raw, list) else []
-    messages = [parse(event) for event in events]
     expected = Party('human', subject)
-    if len(messages) > 1 or any(
-            not message.type.startswith('task.') or message.sender != expected or message.run_id != run_id
-            or ('task_id' in request and message.task_id != request['task_id']) for message in messages):
+    try:
+        messages = [parse(event) for event in events]
+        persons = len(messages) <= 1 and all(
+            message.type.startswith('task.') and message.sender == expected and message.run_id == run_id
+            and ('task_id' not in request or message.task_id == request['task_id']) for message in messages)
+    except MessageError:
+        messages, persons = [], False
+    if not persons:
         logger.error('engineering: the board handed back an event that is not the person\'s action',
-                     extra={'types': [message.type for message in messages]})
+                     extra={'events': len(events), 'types': [message.type for message in messages]})
         raise ServiceUnavailableError('the board could not be reached: retry')
     return messages
 
