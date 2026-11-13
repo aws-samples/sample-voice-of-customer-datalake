@@ -5,8 +5,8 @@ only ever reads and writes its own rows and objects. This module is the one plac
 
 * ``WorkspaceScope``: a verified workspace. Made only from what the server trusts: the request's resolved
   membership (``scope_of``, after shared/workspace.py ``resolve_workspace``), an asynchronous message's
-  ``workspace_id`` field (``scope_from_message``: SQS bodies, Lambda async payloads, written by our own code from
-  a scope), a stored partition key (``scope_from_key``: DynamoDB Stream records; ``partition_scope`` for a
+  ``workspace_id`` field (``scope_from_message``: SQS bodies, Lambda async payloads, an erasure job's row, written by
+  our own code from a scope), a stored partition key (``scope_from_key``: DynamoDB Stream records; ``partition_scope`` for a
   worker that reads both kinds of row, None for a deployment-wide one), or a stored control-plane routing row
   (``scope_from_lookup``: a public route's ``FORM#{id}``, a webhook's workspace ``META``, read by
   shared/workspace_routing.py). Never from a request field.
@@ -30,6 +30,7 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
     voc-aggregates  pk WS#{ws}#METRIC#{name}     metric_type WS#{ws}#{type}
                     pk WS#{ws}#SOURCE_RUN#{source}        pk WS#{ws}#SCRAPER_RUN#{scraper_id}
                     pk WS#{ws}#FAILURES#{plugin}          pk WS#{ws}#CIRCUIT#{plugin} (the plugins' breaker)
+                    pk WS#{ws}#JOB#erasure (a workspace's erasure jobs and their lock)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...
     secrets         {prefix}/{ws}/credentials (prefix voc/ws, <deployment prefix>-voc/ws in a prefixed deployment)
@@ -55,6 +56,7 @@ __all__ = [
     'category_pk',
     'channel_pk',
     'date_pk',
+    'erasure_job_pk',
     'feedback_id_pk',
     'feedback_key',
     'is_workspace_key',
@@ -261,6 +263,11 @@ def source_run_pk(scope: WorkspaceScope, source: str) -> str:
 def scraper_run_pk(scope: WorkspaceScope, scraper_id: str) -> str:
     """A web scraper's run records (a Run now's progress): ``WS#{ws}#SCRAPER_RUN#{scraper_id}``."""
     return scope.key('SCRAPER_RUN', scraper_id)
+
+
+def erasure_job_pk(scope: WorkspaceScope) -> str:
+    """A workspace's erasure jobs and their lock (voc-aggregates, shared/erasure_jobs.py): ``WS#{ws}#JOB#erasure``."""
+    return scope.key('JOB', 'erasure')
 
 
 def watermark_key(scope: WorkspaceScope, plugin: str, key: str) -> str:

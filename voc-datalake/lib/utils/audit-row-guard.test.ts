@@ -34,7 +34,8 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   // de-identification) gets the forge Deny. The data-path APIs that resolve X-Workspace-Id (the metrics API, the
   // feedback edits, the integrations and scrapers APIs, the feedback forms' signed-in routes) write a platform admin's
   // entry (AUDIT#WS#* only); the feedback forms also write a workspace form's `form_deleted` row there, before the
-  // delete.
+  // delete. The settings API's erasure routes only read memberships (they never let a platform admin enter), so it
+  // writes nothing there.
   WorkspacesTable: ['VocApiStack/FeedbackEditLambdaRole', 'VocApiStack/FeedbackFormLambdaRole',
     'VocApiStack/IntegrationsLambdaRole',
     'VocApiStack/MetricsLambdaRole', 'VocApiStack/ScrapersLambdaRole', 'VocApiStack/UsersLambdaRole',

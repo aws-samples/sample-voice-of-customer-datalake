@@ -219,6 +219,36 @@ describe.each([
   });
 });
 
+// The settings API's erasure routes (lambda/shared/erasure_scope.py) resolve X-Workspace-Id for a member admin only:
+// they never let a platform admin enter, so they read the membership and write nothing in voc-workspaces (no entry
+// audit row, no live check: the role's Cognito access stays the morning brief's AdminGetUser).
+describe('SettingsLambdaRole reads a workspace membership for the erasure routes', () => {
+  const role = 'SettingsLambdaRole';
+
+  it('may GetItem WS#* in voc-workspaces, only the attributes the resolver projects, and nothing else there', () => {
+    const onWorkspaces = policyStatementsOf(apiTemplate(), role).filter((s) => s.resource.includes('Workspaces'));
+    expect(onWorkspaces.map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition })))
+      .toStrictEqual([{ actions: ['dynamodb:GetItem'],
+        condition: {
+          'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+          // Never a member's email or name (lambda/shared/workspace.py MEMBER_READ_ATTRIBUTES, META_READ_ATTRIBUTES).
+          'ForAllValues:StringEquals': {
+            'dynamodb:Attributes': ['pk', 'sk', 'role', 'status', 'name', 'slug', 'secret_status'] },
+          StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+        } }]);
+  });
+
+  it('runs no live platform-admin check', () => {
+    expect(actionsWithPrefix(roleStatements(apiTemplate(), role), 'cognito-idp:'))
+      .toStrictEqual(['cognito-idp:AdminGetUser']);
+  });
+
+  it('is handed the workspaces table', () => {
+    expect(Object.keys(lambdaEnv(apiTemplate(), 'settings_handler.lambda_handler')))
+      .toStrictEqual(expect.arrayContaining(['WORKSPACES_TABLE']));
+  });
+});
+
 // The operator APIs keep a workspace's plugin credentials, app connectors and scraper configs in its own secret
 // (lambda/shared/workspace_plugin_store.py): Get and Put on `voc/ws/*` beside the shared secret, never Create, Delete,
 // Describe or Tag (the workspaces API makes them), and the prefix in WORKSPACE_SECRET_PREFIX.

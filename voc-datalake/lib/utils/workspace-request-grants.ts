@@ -37,6 +37,31 @@ export function grantWorkspaceResolution(
   userPool.grant(role, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
 }
 
+/**
+ * GetItem on voc-workspaces' `WS#*` rows, held to `attributes` (`dynamodb:Attributes`, and a projection required:
+ * `dynamodb:Select` `SPECIFIC_ATTRIBUTES` when it is sent). The webhooks' routing read of a `META`, and the settings
+ * API's membership read with `MEMBERSHIP_READ_ATTRIBUTES`: its erasure routes resolve `X-Workspace-Id` for MEMBERS
+ * only (no platform-admin entry, so no entry audit row, no live check, nothing in Cognito; the settings role is near
+ * its inline-policy ceiling, and the entry audit's PutItem with its audit-row guard Denies would take it past the 70%
+ * line, lib/stacks/memory-agents-stack.test.ts, whose rule is to split the domain).
+ */
+export function grantWorkspaceAttributeRead(
+  role: iam.Role, workspacesTable: dynamodb.ITable, attributes: readonly string[],
+): void {
+  role.addToPolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': [...attributes] },
+      StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    },
+  }));
+}
+
+/** The attributes the resolver reads of a `MEMBER#` row and a `META` row, keys included (lambda/shared/workspace.py):
+ *  never a member's email. */
+export const MEMBERSHIP_READ_ATTRIBUTES = ['pk', 'sk', 'role', 'status', 'name', 'slug', 'secret_status'] as const;
+
 /** The resolver's environment (lambda/shared/workspace_request.py, lambda/shared/tables.py). */
 export function workspaceResolutionEnv(
   workspacesTable: dynamodb.ITable, userPool: cognito.IUserPool,

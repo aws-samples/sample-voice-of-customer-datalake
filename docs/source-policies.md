@@ -142,6 +142,7 @@ source's retention window, and participant erasure (`DELETE /participants/people
 | `retention` | Daily schedule, 04:15 UTC | Items (in `voc-feedback` and `voc-radar`) of sources whose profile sets `retention_days`, with `date` older than the cutoff, under the profile's `retention_legal_basis` |
 | `erase` | `POST /settings/erasure` (admin) `{field, value, source?, legal_basis}` | Items where `field == value`. `field` is `author`, `source_id`, `csv_row_id` or `email` (`metadata.email` / `metadata.submitter_email`); optionally limited to one `source`, which is **required** for `source_id` and `csv_row_id` (an id is unique only within its source; 400 without it) |
 | `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy & access → Source policies → **Delete all data from a source** | Every item whose `source_platform` is the source, its Radar reviews, its whole-file uploads, then every object version left under `raw/<source>/` and `silver/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)) |
+| `erase` in one workspace (Unreleased) | `POST /settings/erasure` with `X-Workspace-Id` (that workspace's member admin) `{field, value, source?, legal_basis}` | That workspace's items only where `field == value` (`author`, `source_id`, `csv_row_id` or `email`; a whole source is refused, 400), with their copies under `ws/<ws>/` (see Workspace items, below) |
 
 How it works:
 
@@ -228,15 +229,40 @@ How it works:
   [multi-workspace.md → Invites](multi-workspace.md#invites) says why not a look-up by account). The
   person's Cognito account is not part of the lake: deleting the user (`DELETE /users/{username}`)
   removes the account and its memberships.
-- **Workspace items** (Unreleased; [multi-workspace.md](multi-workspace.md)). An erasure job is the
-  deployment's (a deployment admin starts it), and a person's data is erased wherever it is: an erasure by
-  `email` (with or without a source) also matches every workspace's items (`WS#{ws}#SOURCE#…` in
-  `voc-feedback`) in the same item scan; Administration's erasure form and its confirm dialog say so. An
-  erasure by `author`, `source_id` or `csv_row_id` does **not**: an author is a display name, not unique
-  even within one source (the deployment's Jane Doe is not every workspace's Jane Doe), and an id is unique
-  only within one source account or upload while each workspace has its own (the deployment's ticket 12345
-  is not a workspace's); those stay the deployment's until a job can name its workspace. To reach a
-  person's reviews in the workspaces, erase by their email. A **retention window** reaches workspace items too: a
+- **Workspace items** (Unreleased; [multi-workspace.md](multi-workspace.md)). An erasure job started
+  without `X-Workspace-Id` is the deployment's (a deployment admin starts it), and a person's data is erased
+  wherever it is: an erasure by `email` (with or without a source) also matches every workspace's items
+  (`WS#{ws}#SOURCE#…` in `voc-feedback`) in the same item scan; Administration's erasure form and its confirm
+  dialog say so. Such an erasure by `author`, `source_id` or `csv_row_id` does **not**: an author is a display
+  name, not unique even within one source (the deployment's Jane Doe is not every workspace's Jane Doe), and an
+  id is unique only within one source account or upload while each workspace has its own (the deployment's
+  ticket 12345 is not a workspace's). **An erasure in one workspace** reaches them there: `POST
+  /settings/erasure` with `X-Workspace-Id`, by a member admin of that workspace (a viewer or an editor 403;
+  a non-member, the deployment's `admins` included, the one 404; a platform admin is not elevated on these
+  routes and acts with their own membership, so a platform admin makes themselves a member admin first, in
+  the platform console), writes the job row in the workspace's own partition (`WS#{ws}#JOB#erasure`) with
+  `workspace_id` from the resolved membership only (a `workspace_id` in the body is dropped,
+  `lambda/shared/erasure_scope.py`); one erasure per workspace runs at a time (a second start answers 409 until
+  it finishes; a lock row in that partition, released when the job ends, stale after an hour), and
+  `voc-retention` then erases
+  that workspace's items only (`WS#{ws}#…`, by `author`, `source_id`, `csv_row_id` or `email`, optionally in
+  one source, which `source_id` and `csv_row_id` still require), each tombstoned first, with its Silver
+  versions and raw versions as below; never the deployment's items, another workspace's, Radar, the feedback
+  boards or the memberships. An erasure by `email` in a workspace stays in it too: that workspace's admin
+  answers for its data only, and the deployment's erasure by email still reaches everyone's. The worker reads
+  the row from the partition its invoke event names and fails the job (`Run failed (ValueError)`, nothing
+  deleted) when the row names another workspace, none, or one on a whole-source job; it checks every matched
+  row's partition before any tombstone; the job and audit rows carry `workspace_id` and count the items in
+  `deleted_workspace_items`, and the workspace's own data_version moves. A **whole-source erasure** in a
+  workspace is refused (400) before anything is read (an unknown field gets the usual "field must be one of"
+  answer): the sources it may name, its lock and its sweep of `raw/<source>/` are the deployment's (a
+  workspace's own whole-source erasure, over its counters, its own lock and `ws/{ws}/raw/<source>/`, is a
+  follow-up). A workspace's job never blocks the deployment's whole-source erasure of the same source. Like
+  every erasure, a workspace's job is one whole-table Scan of `voc-feedback` (its items span many partitions and
+  no index serves one workspace's items); one live job per workspace bounds that cost, and a per-workspace index
+  is a later optimisation.
+  `GET /settings/erasure` with the header lists that workspace's newest 20 jobs (one Query of its partition)
+  and no sources; without it, the deployment's jobs as before. Administration does not send the header yet. A **retention window** reaches workspace items too: a
   workspace's messages are processed under the deployment's source profiles (their PII and raw-copy policy;
   a source with a window keeps no whole-file original, because the window deletes item by item), so the
   profile's window binds the workspace's items too, until per-workspace profiles replace the deployment's

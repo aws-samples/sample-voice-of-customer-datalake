@@ -44,7 +44,11 @@ GATE_PRIMITIVE = 'require_admin'
 # `require_request_admin` (``shared.workspace_request``): a two-path route's gate, `require_admin` without
 # X-Workspace-Id and `require_workspace_admin` with it (both branches pinned below).
 TWO_PATH_GATE = 'require_request_admin'
-GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin', TWO_PATH_GATE})
+# `require_erasure_admin` (``shared.erasure_scope``): the erasure routes' gate on both paths, `require_admin` without
+# X-Workspace-Id and `require_workspace_admin` with it (both branches pinned below, WORKSPACE_PARTIAL).
+ERASURE_GATE = 'require_erasure_admin'
+GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin', TWO_PATH_GATE,
+                             ERASURE_GATE})
 # Shared resolver middlewares that gate a whole module (checked the same way, below).
 GATE_MIDDLEWARES = frozenset({'admins_only'})
 SHARED_DIR = API_DIR.parent / 'shared'
@@ -660,10 +664,88 @@ def _resolves(source: str) -> bool:
     return f'{WORKSPACE_RESOLVER}(' in source or f'{SHARED_RESOLVER}(' in source
 
 
+#: Modules that resolve X-Workspace-Id on some routes only (every other route of the module stays deployment-wide and
+#: reads no header): the resolver instance, its gate (resolve, then the admin role on the request's path) and the
+#: routes. Each listed route's first statement is `context = <gate>(<resolver>, <event>)`, and no other route of the
+#: module names the resolver. The erasure routes (shared/erasure_scope.py): in a workspace its admins erase that
+#: workspace's items only and see its jobs only.
+WORKSPACE_PARTIAL: dict[str, tuple[str, str, frozenset[str]]] = {
+    'settings_handler.py': ('_erasure_workspace', ERASURE_GATE, frozenset({
+        'POST /settings/erasure', 'GET /settings/erasure',
+    })),
+}
+
+
 def test_only_the_listed_modules_resolve_a_requests_workspace_for_the_data_path():
     resolving = {path.name for path in _handler_files() if _resolves(path.read_text(encoding='utf-8'))}
-    assert resolving == set(WORKSPACE_SCOPED)
+    assert resolving == set(WORKSPACE_SCOPED) | set(WORKSPACE_PARTIAL)
+    assert not set(WORKSPACE_SCOPED) & set(WORKSPACE_PARTIAL)
     assert set(WORKSPACE_FIRST_MIDDLEWARE) | set(WORKSPACE_FIRST_CALL) | TWO_PATH_MODULES == set(WORKSPACE_SCOPED)
+
+
+def _first_statement(fn: ast.FunctionDef) -> ast.stmt:
+    """The route's first statement past its docstring and its `event = app.current_event.raw_event`."""
+    return next(stmt for stmt in fn.body if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
+                and not (isinstance(stmt, ast.Assign) and ast.unparse(stmt.value) == 'app.current_event.raw_event'))
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler, (_resolver, _gate, routes) in WORKSPACE_PARTIAL.items() for route in routes))
+def test_every_partial_route_resolves_and_gates_first(handler, route):
+    """The route's first statement resolves the workspace and gates it (before the body is read, so a non-member's
+    malformed body still gets the one 404), and the route calls no other admin gate."""
+    resolver, gate, _routes = WORKSPACE_PARTIAL[handler]
+    fn = _route_function(handler, route)
+    first = _first_statement(fn)
+    assert isinstance(first, ast.Assign)
+    assert isinstance(first.value, ast.Call)
+    assert _called_name(first.value) == gate
+    assert isinstance(first.value.args[0], ast.Name)
+    assert first.value.args[0].id == resolver
+    assert [ast.unparse(target) for target in first.targets] == ['context']
+    assert not {GATE_PRIMITIVE, WORKSPACE_GATE} & {_called_name(node) for node in ast.walk(fn)}
+    assert route in ADMIN_ONLY.get(handler, frozenset()) | ADMIN_ONLY_READS.get(handler, frozenset())
+
+
+@pytest.mark.parametrize('handler', sorted(WORKSPACE_PARTIAL))
+def test_only_the_partial_routes_name_the_resolver(handler):
+    resolver, _gate, routes = WORKSPACE_PARTIAL[handler]
+    tree = ast.parse(_source(handler))
+    naming = {key for fn in _module_functions(tree).values()
+              if any(isinstance(node, ast.Name) and node.id == resolver for node in ast.walk(fn))
+              for key in _route_keys(fn, ALL_METHODS)}
+    assert naming == routes
+    # Bound once, at module level, to the shared resolver, members only: a platform admin is never elevated there, so
+    # the module writes no entry audit row (its role holds no put in voc-workspaces, shared/erasure_scope.py).
+    assigned = [ast.unparse(stmt) for stmt in tree.body if isinstance(stmt, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == resolver for target in stmt.targets)]
+    assert assigned == [f'{resolver} = {WORKSPACE_RESOLVER}(confirm_platform_admin=no_platform_admin_entry)']
+
+
+def test_the_erasure_gate_resolves_afresh_then_checks_each_path():
+    """`require_erasure_admin`: the workspace resolved from the table (`fresh=True`) first, then `require_admin` when
+    none was named and `require_workspace_admin` otherwise (the classifier above trusts the name; this pins it)."""
+    functions = _module_functions(ast.parse((SHARED_DIR / 'erasure_scope.py').read_text(encoding='utf-8')))
+    body = [stmt for stmt in functions[ERASURE_GATE].body
+            if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))]
+    resolve, branch = body[0], body[1]
+    assert isinstance(resolve, ast.Assign)
+    assert ast.unparse(resolve.value) == 'workspace.context(event, fresh=True)'
+    assert isinstance(branch, ast.If)
+    _assert_gates_each_path(branch)
+    # Its live platform-admin check never confirms: a platform admin is never elevated on these routes.
+    entry = functions['no_platform_admin_entry'].body[-1]
+    assert isinstance(entry, ast.Return)
+    assert isinstance(entry.value, ast.Constant)
+    assert entry.value.value is False
+
+
+def _assert_gates_each_path(branch: ast.If) -> None:
+    """`if <context> is None: require_admin(…)` `else: require_workspace_admin(…)`: a two-path gate's one branch."""
+    assert isinstance(branch.test, ast.Compare)
+    assert isinstance(branch.test.ops[0], ast.Is)
+    assert [_called_name(s.value) for s in branch.body if isinstance(s, ast.Expr)] == [GATE_PRIMITIVE]
+    assert [_called_name(s.value) for s in branch.orelse if isinstance(s, ast.Expr)] == [WORKSPACE_GATE]
 
 
 @pytest.mark.parametrize('handler', sorted(WORKSPACE_SCOPED))
@@ -795,10 +877,7 @@ def test_the_two_path_gate_checks_each_path():
     """`ResolvedRoutes.require_request_admin`: `require_admin` when no workspace was resolved,
     `require_workspace_admin` otherwise (the classifier above trusts the name; this pins what it does)."""
     [branch] = [stmt for stmt in _method(TWO_PATH_GATE).body if isinstance(stmt, ast.If)]
-    assert isinstance(branch.test, ast.Compare)
-    assert isinstance(branch.test.ops[0], ast.Is)
-    assert [_called_name(s.value) for s in branch.body if isinstance(s, ast.Expr)] == [GATE_PRIMITIVE]
-    assert [_called_name(s.value) for s in branch.orelse if isinstance(s, ast.Expr)] == [WORKSPACE_GATE]
+    _assert_gates_each_path(branch)
 
 
 @pytest.mark.parametrize(('handler', 'route'), sorted(
@@ -888,6 +967,8 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
     'workspaces_handler.py': frozenset({'GET /platform/workspaces'}),
     # Which credentials are set, and their non-secret values: administrators (in a workspace, its admins).
     **TWO_PATH_ADMIN_READS,
+    # The erasure jobs (field, value hash, counts, who started them): administrators (in a workspace, its admins).
+    'settings_handler.py': frozenset({'GET /settings/erasure'}),
 }
 
 

@@ -27,7 +27,9 @@ import type { ApiStackContext } from './api-context';
 import {
   AGGREGATES_VERSION_PARTITION, grantCacheVersionBump, grantWorkspaceCacheVersionBump,
 } from '../utils/cache-version-grants';
-import { grantWorkspaceResolution, workspaceResolutionEnv } from '../utils/workspace-request-grants';
+import {
+  MEMBERSHIP_READ_ATTRIBUTES, grantWorkspaceAttributeRead, grantWorkspaceResolution, workspaceResolutionEnv,
+} from '../utils/workspace-request-grants';
 import { WORKSPACE_SECRET_BASE_PREFIX, grantWorkspaceSecretsReadWrite } from '../utils/workspace-secrets';
 import { CIRCUIT_ROW_PARTITIONS } from './ingestion-roles';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
@@ -430,6 +432,11 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // The morning brief (docs/briefing.md): Refresh queues, the caller's own email subscription.
   const briefing = briefingApiWiring(stack, ctx.uniqueName, kmsKey, ctx.props.userPool);
   briefing.grant(settingsRole);
+  // The erasure routes (POST and GET /settings/erasure) resolve X-Workspace-Id for a member admin
+  // (lambda/shared/erasure_scope.py): the membership read only, no platform-admin entry, so no entry audit row and no
+  // live check, and only the attributes the resolver projects: never a member's email
+  // (lib/utils/workspace-request-grants.ts). The job's deletes stay voc-retention's.
+  grantWorkspaceAttributeRead(settingsRole, workspacesTable, MEMBERSHIP_READ_ATTRIBUTES);
 
   const settingsProps: lambda.FunctionProps = {
     functionName: settingsFunctionName,
@@ -458,6 +465,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       JOBS_TABLE: jobsTable.tableName,
       [ASSIST_WORKER_ENV]: settingsWorkerName,
       ...briefing.environment,
+      // The erasure routes' X-Workspace-Id: the memberships' table (lambda/shared/workspace_request.py).
+      WORKSPACES_TABLE: workspacesTable.tableName,
       // Settings → Email inbox (docs/email-intake.md); nothing when the inbox is off.
       ...inboundEmailSettingsEnv(stack.node, () => ctx.uniqueName(INBOUND_EMAIL_RULE_BASE_NAME)),
     },

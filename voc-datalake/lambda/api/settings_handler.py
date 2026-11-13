@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 # Add shared module to path
@@ -76,6 +75,16 @@ from shared.dimension_config import (
     validate_dimensions,
     with_builtin_dimensions,
 )
+from shared.erasure_scope import (
+    fail_unstarted_job,
+    job_event,
+    listed_jobs,
+    no_platform_admin_entry,
+    put_job_row,
+    refuse_field_in_workspace,
+    require_erasure_admin,
+    scoped_job_row,
+)
 from shared.exceptions import (
     ConfigurationError,
     ConflictError,
@@ -130,6 +139,8 @@ from shared.source_profiles import (
 )
 from shared.timestamps import now_iso, parse_iso
 from shared.url_policy import validate_url
+from shared.workspace import WorkspaceContext
+from shared.workspace_request import RequestWorkspace
 
 dynamodb = get_dynamodb_resource()
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
@@ -1805,7 +1816,12 @@ MAX_LISTED_ERASURE_JOBS = 20
 ERASURE_VIEW_FIELDS = (
     'job_id', 'status', 'field', 'source', 'value_hash', 'legal_basis', 'deleted_items', 'deleted_objects',
     'started_by', 'created_at', 'finished_at', 'error', 'phase', 'progress_at',
+    # The one workspace a job erases in (shared/erasure_scope.py), on its row only when it names one.
+    'workspace_id',
 )
+# The erasure routes' workspace (shared/erasure_scope.py): read afresh per request, members only (no platform-admin
+# entry, so nothing is written to voc-workspaces).
+_erasure_workspace = RequestWorkspace(confirm_platform_admin=no_platform_admin_entry)
 
 
 SOURCE_SCOPED_ERASURE_FIELDS: Final = frozenset({'source_id', 'csv_row_id'})
@@ -1897,7 +1913,7 @@ def erasure_job_view(item: dict) -> dict:
     return view
 
 
-def _new_erasure_job(request: ErasureRequest, event: dict) -> dict:
+def _new_erasure_job(request: ErasureRequest, event: dict, context: WorkspaceContext | None) -> dict:
     now = datetime.now(UTC)
     job_id = f'{ERASURE_JOB_PREFIX}{int(now.timestamp() * 1000):012x}'
     item = {
@@ -1911,6 +1927,8 @@ def _new_erasure_job(request: ErasureRequest, event: dict) -> dict:
         item['started_by_sub'] = starter_sub
     if request.source:
         item['source'] = request.source
+    # The workspace the job erases in: the request's resolved membership only, never the body (shared/erasure_scope.py).
+    item = scoped_job_row(item, context)
     if request.field == SOURCE_FIELD:
         # Closes the race the live-job check leaves open (shared/source_erasure.py).
         try:
@@ -1918,7 +1936,8 @@ def _new_erasure_job(request: ErasureRequest, event: dict) -> dict:
         except SourceLocked as exc:
             raise ConflictError('An erasure of this source is already running') from exc
     try:
-        _configured_table().put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
+        # In a workspace: its own job partition and its one-live-erasure lock (409, shared/erasure_scope.py).
+        put_job_row(_configured_table(), item, context, now)
     except ClientError as exc:
         _release_erasure_lock(item)
         if _error_code(exc) == 'ConditionalCheckFailedException':
@@ -1952,24 +1971,23 @@ def start_erasure_route():
     The retention worker (``RETENTION_FUNCTION``) does the deleting; the value
     travels in its async event only — the job row keeps a SHA-256 of it, and
     nothing here logs it.
+
+    With ``X-Workspace-Id`` (shared/erasure_scope.py): the workspace's member admins, by author, source_id,
+    csv_row_id or email; the job erases that workspace's items only. Without it the deployment's admins, as before.
     """
     event = app.current_event.raw_event
-    require_admin(event)
+    context = require_erasure_admin(_erasure_workspace, event)
     if not RETENTION_FUNCTION:
         raise ConfigurationError('Retention worker not configured')
-    request = _erasure_request(json_object_body(app))
-    job = _new_erasure_job(request, event)
+    body = json_object_body(app)
+    refuse_field_in_workspace(body.get('field'), context)
+    request = _erasure_request(body)
+    job = _new_erasure_job(request, event, context)
     try:
-        invoke_lambda_async(RETENTION_FUNCTION, {'mode': 'erase', 'job_id': job['job_id'], 'value': request.value})
+        invoke_lambda_async(RETENTION_FUNCTION, job_event(job['job_id'], request.value, context))
     except Exception as e:
         logger.warning('Failed to start the erasure worker', extra={'error_type': type(e).__name__})
-        _configured_table().update_item(
-            Key={'pk': ERASURE_JOB_PK, 'sk': job['job_id']},
-            UpdateExpression='SET #s = :failed, finished_at = :now, #e = :error',
-            ExpressionAttributeNames={'#s': 'status', '#e': 'error'},
-            ExpressionAttributeValues={':failed': 'failed', ':now': now_iso(),
-                                       ':error': 'Could not start the erasure worker'},
-        )
+        fail_unstarted_job(_configured_table(), job, context, datetime.now(UTC))
         _release_erasure_lock(job)
         raise ServiceError('Failed to start the erasure job') from e
     logger.info('Erasure job started', extra={'job_id': job['job_id'], 'field': request.field})
@@ -1983,14 +2001,14 @@ def start_erasure_route():
 @app.get("/settings/erasure")
 @tracer.capture_method
 def list_erasure_route():
-    """The newest erasure jobs (admin), at most 20, and the sources a whole-source erasure may name."""
-    require_admin(app.current_event.raw_event)
-    response = _configured_table().query(
-        KeyConditionExpression=Key('pk').eq(ERASURE_JOB_PK) & Key('sk').begins_with(ERASURE_JOB_PREFIX),
-        ScanIndexForward=False,
-        Limit=MAX_LISTED_ERASURE_JOBS,
-    )
-    return {'jobs': [erasure_job_view(item) for item in response.get('Items', [])], 'sources': _erasable_sources()}
+    """The newest erasure jobs (admin), at most 20, and the sources a whole-source erasure may name.
+
+    With ``X-Workspace-Id`` the workspace's admins see that workspace's jobs only, and no source (a whole-source
+    erasure is the deployment's); without it the deployment's admins see the jobs that name no workspace."""
+    context = require_erasure_admin(_erasure_workspace, app.current_event.raw_event)
+    jobs = listed_jobs(_configured_table(), context, MAX_LISTED_ERASURE_JOBS)
+    return {'jobs': [erasure_job_view(item) for item in jobs],
+            'sources': _erasable_sources() if context is None else []}
 
 
 @api_handler

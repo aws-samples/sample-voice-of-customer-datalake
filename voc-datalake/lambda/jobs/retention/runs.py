@@ -3,7 +3,8 @@
 A run's state travels across hand-overs in the event (``run``). Every finished
 (or failed) run writes ONE audit row (``pk AUDIT#retention``, no ``ttl``: an
 audit trail never expires, TENETS.md D4) with its counts and legal basis, never
-the erased value. An erasure job's row (``pk JOB#erasure``) is claimed, kept
+the erased value. An erasure job's row (``pk JOB#erasure``; a workspace's job ``WS#{ws}#JOB#erasure``,
+shared/erasure_jobs.py) is claimed, kept
 moving while the job runs, and closed with the outcome; closing it tells the admin who started it
 (``/jobs/<sub>``, best effort, docs/realtime.md).
 """
@@ -19,8 +20,11 @@ from botocore.exceptions import ClientError
 
 from shared import job_notices
 from shared.aws import is_conditional_check_failure
-from shared.retention import ERASURE_JOB_COUNTERS, ERASURE_JOB_PK, ERASURE_OPTIONAL_COUNTERS
+from shared.erasure_jobs import job_key
+from shared.ingest_tables import table_view
+from shared.retention import ERASURE_JOB_COUNTERS, ERASURE_OPTIONAL_COUNTERS
 from shared.timestamps import now_iso
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, scope_from_message
 
 MODE_RETENTION: Final = 'retention'
 MODE_ERASE: Final = 'erase'
@@ -40,8 +44,9 @@ COUNTERS: Final = ('scanned', *ERASURE_JOB_COUNTERS)
 # like the others, and written on the job and audit rows only once above 0 (a run without boards, members or
 # workspace items reads as before).
 _CARRIED_LISTS: Final = ('erased_sources', 'review_files')
+# ``workspace_id``: the one workspace a job named (its row's, checked by the handler's ``_named_workspace``).
 _AUDIT_OPTIONAL: Final = ('job_id', 'field', 'source', 'value_hash', 'cutoffs', 'legal_basis', 'legal_bases',
-                          'erased_sources')
+                          'erased_sources', 'workspace_id')
 
 
 def new_run(event: Mapping[str, Any], mode: str) -> dict[str, Any]:
@@ -117,15 +122,25 @@ def write_audit(aggregates_table: Any, run: Mapping[str, Any], status: str, erro
     aggregates_table.put_item(Item=item)
 
 
-def _job_key(job_id: str) -> dict[str, str]:
-    return {'pk': ERASURE_JOB_PK, 'sk': job_id}
+def job_scope(run: Mapping[str, Any]) -> WorkspaceScope | None:
+    """The workspace whose partition holds the run's job row (``run['workspace_id']``, set by the handler from its
+    invoke event before the claim), or None for the deployment's ``JOB#erasure``."""
+    return scope_from_message(run) if run.get(WORKSPACE_FIELD) else None
 
 
-def claim_erasure_job(aggregates_table: Any, job_id: str) -> dict[str, Any] | None:
-    """The job, marked running; None when it is missing or already finished."""
+def _job_row(aggregates_table: Any, run: Mapping[str, Any]) -> tuple[Any, dict[str, str]]:
+    """The table view and the key of the run's job row (shared/erasure_jobs.py)."""
+    scope = job_scope(run)
+    return table_view(scope, aggregates_table), job_key(str(run['job_id']), scope)
+
+
+def claim_erasure_job(aggregates_table: Any, job_id: str, scope: WorkspaceScope | None = None) -> dict[str, Any] | None:
+    """The job ``job_id`` in ``scope``'s job partition (the deployment's ``JOB#erasure`` for None), marked running;
+    None when it is missing or already finished."""
+    table, key = table_view(scope, aggregates_table), job_key(job_id, scope)
     try:
-        response = aggregates_table.update_item(
-            Key=_job_key(job_id),
+        response = table.update_item(
+            key,
             UpdateExpression='SET #status = :running, started_at = if_not_exists(started_at, :now)',
             ConditionExpression='attribute_exists(pk) AND #status IN (:queued, :running)',
             ExpressionAttributeNames={'#status': 'status'},
@@ -160,10 +175,9 @@ def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: st
         expression += ', #error = :error'
         names['#error'] = 'error'
         values[':error'] = error
-    aggregates_table.update_item(
-        Key=_job_key(run['job_id']), UpdateExpression=expression,
-        ExpressionAttributeNames=names, ExpressionAttributeValues=values,
-    )
+    table, key = _job_row(aggregates_table, run)
+    table.update_item(key, UpdateExpression=expression, ExpressionAttributeNames=names,
+                      ExpressionAttributeValues=values)
     job_notices.notify(run.get('started_by_sub'), run['job_id'], status, job_type=ERASURE_JOB_TYPE)
 
 
@@ -183,9 +197,10 @@ def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str) -> N
             and time.monotonic() - last[1] < PROGRESS_EVERY_SECONDS:
         return
     clauses, values = _counter_sets(run)
+    table, key = _job_row(aggregates_table, run)
     try:
-        aggregates_table.update_item(
-            Key=_job_key(run['job_id']),
+        table.update_item(
+            key,
             UpdateExpression=f'SET {clauses}, phase = :phase, progress_at = :now',
             ConditionExpression='#status = :running',
             ExpressionAttributeNames={'#status': 'status'},
