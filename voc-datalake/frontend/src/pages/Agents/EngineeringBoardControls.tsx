@@ -181,8 +181,8 @@ function OverConfirm({ asking, holder, busy, onCancel, onConfirm }: Readonly<{
 }
 
 /**
- * A task's controls: take (or take over), block, priority, and the moves of a task the admin holds; none on the
- * coordinator's task or a task that has ended.
+ * A task's controls: take (or take over), block, priority, and on a task the admin holds its moves and Give back
+ * to the agents; none on the coordinator's task or a task that has ended.
  */
 export function TaskControls(props: Readonly<{ runId: string; task: EngineeringTask; me: string }>) {
   // Keyed by the priority read: a change the board shows since (someone else's) starts the field from it.

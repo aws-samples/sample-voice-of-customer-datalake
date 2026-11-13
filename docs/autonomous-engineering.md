@@ -580,10 +580,12 @@ you can fix") makes the AI assistant draft it behind an approval card, like its 
 (`validate_workflow`, `create_workflow`, `update_workflow`) take a `voc-workflow/2` definition with the engineering
 steps, the agents API's `POST /workflows/validate` judges its rules, and a new one is created only where the
 deployment has the engineering module (the API's 409; the web app's card checks `features.engineering` first, as the
-library's New engineering flow and the editor's Save as do). *Planned*:
-"refresh the knowledge pack", "pull the latest from the repository" and "what is agent X doing" from the assistant
-too, through the same REST routes as everything else (an engineering run's reads are administrators-only, so no MCP
-tool while an MCP token never acts as an administrator: TENETS.md's tenet 4 gap).
+library's New engineering flow and the editor's Save as do). "What is agent X doing" is the assistant's
+`get_engineering_run` (administrators; read only; the run on screen by default): the run monitor's own routes, read
+with the administrator's sign-in, the agents' words passed to the model as data. *Planned*: "refresh the knowledge
+pack" and "pull the latest from the repository" from the assistant (an administrator's action through a model, so an
+approval card and an owner decision first). An engineering run's reads are administrators-only, so no MCP tool while
+an MCP token never acts as an administrator (TENETS.md's tenet 4 gap).
 
 **The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
 live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,

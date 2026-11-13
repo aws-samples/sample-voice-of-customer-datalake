@@ -161,7 +161,9 @@ MCP call never sees an archived board.
 there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes, a board
 request's status, and, for now, reading an engineering run: its board, conversation and reports
 (`GET /agents/engineering/{run_id}/…`, only with `-c engineeringAgents=true`) are for administrators only until a
-repository connection can be shared ([autonomous-engineering.md](autonomous-engineering.md)), so they have no tool yet.
+repository connection can be shared ([autonomous-engineering.md](autonomous-engineering.md)), so they have no tool yet
+(the web app's AI assistant reads them for an administrator, `get_engineering_run`, with that administrator's own
+sign-in: an MCP token is still refused there).
 
 The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Radar and feedback-edit tools in
 `lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in

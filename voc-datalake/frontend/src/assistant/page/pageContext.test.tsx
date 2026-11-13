@@ -24,6 +24,10 @@ describe('pageContextFromLocation', () => {
     ['/settings', '?tab=a%20b', { kind: 'settings', path: '/settings' }],
     ['/agents/workflows', '', { kind: 'agents', path: '/agents/workflows' }],
     ['/agents/ag_1', '', { kind: 'agent', path: '/agents/ag_1', agentId: 'ag_1' }],
+    ['/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3', '', { kind: 'agents',
+      path: '/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3', engineeringRunId: '01JDA7K3M9Q2R5T8V0W4X6Y1Z3' }],
+    // (not a run id: the run monitor answers not found, and the context names no run)
+    ['/agents/engineering/run-1', '', { kind: 'agents', path: '/agents/engineering/run-1' }],
     ['/radar', '', { kind: 'radar', path: '/radar' }],
     ['/participants', '?tab=lists', { kind: 'participants', path: '/participants', tab: 'lists' }],
     ['/feature-requests', '', { kind: 'other', path: '/feature-requests' }],

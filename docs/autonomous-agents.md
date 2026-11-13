@@ -147,7 +147,12 @@ as in the editor).
 Where the engineering agents are on (`ENGINEERING_AGENTS=on`, with their table and workspace bucket), the Agents API
 lets an administrator acting for themselves read a run and act on it (403 for anyone else, a delegated MCP or agent
 credential included, like a run's decision; 404 for an unknown run, and for everyone while the module is off). There is
-no MCP tool for engineering runs yet (docs/mcp.md). The web app's page for a run is `/agents/engineering/<run_id>`:
+no MCP tool for engineering runs yet (docs/mcp.md). The web app's AI assistant answers "what is agent X doing" for an
+administrator with `get_engineering_run {run_id?, agent?}` (read only, the run on screen by default: the run and each
+agent's status, task, step, why it looks stuck and recent tool calls, live agents first, the agents' words passed to
+the model as data), through these same routes and gate (in a plan, only a think step whose approver the conductor
+re-checks as an administrator before the step, as with the assistant's other admin-only reads); "refresh the knowledge pack" through the assistant waits on an owner decision (an admin action through a
+model needs its approval card). The web app's page for a run is `/agents/engineering/<run_id>`:
 its flow with the steps its agents are on, and the Agents, Board, Conversation and Reports panels (the reports by
 level, goal first; the one chosen shows its latest version's Markdown, rendered as Markdown only, with a picker for
 the earlier versions). On a run under way, an administrator acts from the page: signals and answers, and on the Board

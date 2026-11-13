@@ -196,8 +196,10 @@ runtime and MCP tokens use.
 - Project writes go through the Projects API, which applies per-project access (`shared/project_access.py`).
 - Every read uses the approver's category and source scope (`shared/category_access.py`).
 - Think steps get the read-only server tools of their pack plus `core`. They never get web search, the plan tools
-  or the user directory (`list_users`, `get_user_access`), so `voc-plan-step` has no Users API grant. In `scrapers`
-  and `settings` a think step reads as an admin only while the approver still is one.
+  or the user directory (`list_users`, `get_user_access`), so `voc-plan-step` has no Users API grant. In `scrapers`,
+  `settings` and `agents` (its admin-only read, `get_engineering_run`) a think step reads as an admin only while the
+  approver still is one: the conductor re-checks `admins` in Cognito before the step (a directory it cannot reach
+  stops the step), and the step's other reads of that pack then see what an administrator's chat on the page would.
 - `run_agent` and `cancel_agent_run` are admin-only tools, matching their routes.
 
 ## Failure, cancel and delete
