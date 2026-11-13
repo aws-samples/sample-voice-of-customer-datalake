@@ -191,7 +191,15 @@ readers and the scraper runs' (`lambda/api/logs_handler.py`) take an optional wo
 a workspace's messages since 7.00.00) and `WS#{ws}#SCRAPER_RUN#{id}` runs through the layer's view of voc-aggregates.
 No route passes one: no workspace's ingestion runs until phase 2's cut-over, so every log row is still the
 deployment's, and `GET /logs/*` keeps reading it for everyone; the routes resolve the workspace with that cut-over,
-when the clear of a workspace's validation trail lands too (its admins', with an audit row). Plan steps carry it too (since
+when the clear of a workspace's validation trail lands too (its admins', with an audit row). Memory's store
+(Unreleased) can keep a workspace's memories: `lambda/shared/memory_store.py` builds every key inside the workspace's
+partitions when given one (`WS#{ws}#MEM#company`, `WS#{ws}#MEM#user#{sub}`, `WS#{ws}#MEMSTATUS#…` in `gsi1pk`,
+`WS#{ws}#MEMEVT#…`, `WS#{ws}#MEMCURSOR`, `WS#{ws}#MEMIMPORT`; a `Candidate` names its workspace), and every operation on
+a stored key or row reads its workspace from that key's `pk` and goes through the layer's view of voc-memory (the same
+calls as before for a deployment key, so reinforcing, editing, archiving and merging follow their rows' partition);
+retrieval, conflict checks, listing, counts, cursors and imports take an optional workspace. No caller passes one yet: the memory API, the scanner and the extractor move together in the next slice
+(the API resolving the workspace, the scanner carrying `workspace_id` for a workspace's conversation, the extractor
+writing in it), so until then no workspace's memories exist and none are mined from its conversations. Plan steps carry it too (since
 6.18.00): the approval's `X-Workspace-Id` is kept on the plan (one that is not a workspace id is the one 404) and each step names it to the
 domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). And the global
 MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`), and an

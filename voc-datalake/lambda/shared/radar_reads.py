@@ -19,17 +19,13 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from shared.ingest_tables import table_view
+from shared.scoped_keys import scoped_pk
 from shared.ws_repo import WorkspaceScope
 
-__all__ = ['SortRange', 'partition_query', 'scoped_key', 'scoped_pk']
+__all__ = ['SortRange', 'partition_query', 'scoped_key']
 
 #: The sort key's placeholder (``sk`` is spelled through a name, as the layer spells ``pk``).
 _SK: Final = '#radar_sk'
-
-
-def scoped_pk(workspace: WorkspaceScope | None, pk: str) -> str:
-    """``pk`` itself without a workspace, else the workspace's copy of it (``WS#{ws}#{pk}``)."""
-    return pk if workspace is None else workspace.key(pk)
 
 
 def scoped_key(workspace: WorkspaceScope | None, key: Mapping[str, str]) -> dict[str, str]:
