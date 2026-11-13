@@ -113,6 +113,11 @@ def _version(pin: Mapping[str, Any]) -> int | None:
     return int(value) if isinstance(value, (int, Decimal)) and not isinstance(value, bool) else None
 
 
+def _flagged(pin: Mapping[str, Any]) -> bool:
+    """Fail closed: a pin is flagged unless it is marked clean (a missing mark is not a clean one)."""
+    return pin.get('flagged') is not False
+
+
 def pin_view(pin: Mapping[str, Any]) -> dict:
     """One pin as the feedback answer lists it."""
     addressed_by = pin.get('addressed_by')
@@ -123,7 +128,7 @@ def pin_view(pin: Mapping[str, Any]) -> dict:
         'status': as_text(pin, 'status') or prototype_pins.STATUS_OPEN,
         'created_at': as_text(pin, 'created_at'),
         'addressed_by': addressed_by if isinstance(addressed_by, str) and addressed_by else None,
-        'flagged': bool(pin.get('flagged')),
+        'flagged': _flagged(pin),
         'text': as_text(pin, 'comment'),
         'replies': _replies(pin),
     }
@@ -135,7 +140,7 @@ def _new_item(pin: Mapping[str, Any]) -> dict:
         'item_id': as_text(pin, 'pin_id'),
         'pin_ids': [],
         'count': 0,
-        'flagged': bool(pin.get('flagged')),
+        'flagged': _flagged(pin),
         'text': as_text(pin, 'comment'),
         'anchor': {key: as_text(anchor, key) for key in prototype_pins.ANCHOR_TEXT_FIELDS},
         # The fields a model must not get (the editor sees them): judged one by one, as the comment is.
@@ -161,7 +166,7 @@ def group_pins(pins: Iterable[Mapping[str, Any]]) -> list[dict]:
     groups: dict[str, list[dict]] = {}
     for pin in sorted(pins, key=_sort_key):
         items = groups.setdefault(as_text(_anchor(pin), 'route'), [])
-        item = None if pin.get('flagged') else next((i for i in items if _folds_into(i, pin)), None)
+        item = None if _flagged(pin) else next((i for i in items if _folds_into(i, pin)), None)
         if item is None:
             item = _new_item(pin)
             items.append(item)

@@ -127,6 +127,17 @@ class TestGrouping:
         assert _items(groups) == [['pin_1'], ['pin_2', 'pin_4'], ['pin_3']]
         assert [item['flagged'] for item in groups[0]['items']] == [True, False, True]
 
+    def test_a_pin_without_a_flagged_mark_fails_closed_and_never_folds(self):
+        unmarked = {k: v for k, v in _pin('pin_2', at='2026-11-13T10:00:00').items() if k != 'flagged'}
+        pins = [_pin('pin_1', at='2026-11-13T09:00:00'), unmarked, _pin('pin_3', at='2026-11-13T11:00:00')]
+        groups = feedback.group_pins(pins)
+        assert _items(groups) == [['pin_1', 'pin_3'], ['pin_2']]
+        assert [item['flagged'] for item in groups[0]['items']] == [False, True]
+        assert groups[0]['items'][1]['pins'][0]['flagged'] is True
+        # Nothing folds into it either, when it comes first.
+        first = feedback.group_pins([{**unmarked, 'created_at': '2026-11-13T08:00:00'}, _pin('pin_1')])
+        assert _items(first) == [['pin_2'], ['pin_1']]
+
     def test_a_pin_folds_into_the_first_matching_item_only(self):
         # pin_1 and pin_2 share 12 of 16 words (0.75), so pin_2 starts an item; pin_3's 12 words match both
         # (12 of 14 each, 0.86), and it joins pin_1's, the first.
@@ -190,6 +201,8 @@ class TestGrouping:
         assert view[0]['items'][0]['pins'][0]['addressed_by'] is None
         assert view[0]['items'][0]['pins'][0]['version'] is None
         assert view[0]['items'][0]['pins'][0]['status'] == 'open'
+        assert view[0]['items'][0]['flagged'] is True  # no mark is not a clean mark
+        assert view[0]['items'][0]['pins'][0]['flagged'] is True
 
 
 class TestQuery:

@@ -162,6 +162,24 @@ describe('get_prototype_feedback', () => {
     expect(body.replies).toStrictEqual(['r2', 'r3', 'r4', 'r5', 'r6'].map((text) => `${text.padEnd(299, '.')}…`));
   });
 
+  it.each([
+    [0, (text: string) => text],
+    [1, (text: string) => `${text.slice(0, -2)}…`],
+  ])('keeps a comment, reply and selector at exactly their cap and cuts one character over (+%i)', async (over, expected) => {
+    const comment = 'c'.repeat(600 + over);
+    const reply = 'r'.repeat(300 + over);
+    const selector = 's'.repeat(200 + over);
+    const item = {
+      ...ANSWER.groups[0]?.items[0], text: comment, anchor: { route: '/checkout', selector, text_snippet: 'Total' },
+      pins: [pin('pin_a', false, comment, [{ name: 'E', text: reply, at: 'z' }])],
+    };
+    const result = await feedbackFor({ route_unsafe: false, items: [item] });
+    const body = firstItem(JSON.parse(result));
+    expect([body.text, body.pinText, body.replies, itemOf(result)?.anchor.selector])
+      .toStrictEqual([expected(comment), expected(comment), [expected(reply)], expected(selector)]);
+    expect([body.text?.length, body.replies?.[0]?.length, itemOf(result)?.anchor.selector?.length]).toStrictEqual([600, 300, 200]);
+  });
+
   it('answers an unreadable body as unavailable', async () => {
     const deps = fakeDeps({ [ROUTE]: { groups: 'nope' } });
     await expect(serverTool(deps, 'get_prototype_feedback').execute({ document_id: 'doc_3' }, onProject()))

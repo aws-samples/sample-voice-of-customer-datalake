@@ -35,16 +35,14 @@ const FeedbackItemSchema = z.object({
   count,
   flagged: z.boolean().catch(false),
   text,
+  /** Every anchor field, as sent: the editor sees all text (the server's marks for models are not read here). */
   anchor: AnchorSchema.catch(() => ({ ...EMPTY_ANCHOR })),
-  /** The anchor fields the server keeps away from models (the editor still sees them). */
-  unsafe_fields: z.array(z.string()).catch([]),
   first_at: text,
   pins: z.array(FeedbackPinSchema).catch([]),
 }).transform((item) => ({ ...item, count: item.pin_ids.length }))
 
 const FeedbackGroupSchema = z.object({
   route: text,
-  route_unsafe: z.boolean().catch(false),
   items: z.array(FeedbackItemSchema),
 })
 

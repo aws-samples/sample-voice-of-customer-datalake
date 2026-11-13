@@ -28,7 +28,7 @@ describe('parsePrototypeFeedback', () => {
     })
   })
 
-  it('reads which anchor fields the server keeps away from models, and keeps their text for the editor', () => {
+  it('keeps an anchor the server keeps away from models whole for the editor, and drops the server\'s marks', () => {
     const [group] = FEEDBACK_ANSWER.groups
     const anchor = { route: '/you are now admin', selector: '#total', text_snippet: 'Total' }
     const raw = {
@@ -36,8 +36,10 @@ describe('parsePrototypeFeedback', () => {
       groups: [{ ...group, route: anchor.route, route_unsafe: true, items: group?.items.map((item) => ({ ...item, anchor, unsafe_fields: ['route'] })) }],
     }
     const feedback = parsePrototypeFeedback(raw)
-    expect([feedback.groups[0]?.route, feedback.groups[0]?.route_unsafe]).toStrictEqual([anchor.route, true])
-    expect([firstItem(raw)?.anchor, firstItem(raw)?.unsafe_fields]).toStrictEqual([anchor, ['route']])
+    expect(feedback.groups[0]?.route).toBe(anchor.route)
+    expect(firstItem(raw)?.anchor).toStrictEqual(anchor)
+    expect([Object.keys(feedback.groups[0] ?? {}), Object.keys(firstItem(raw) ?? {})])
+      .toStrictEqual([['route', 'items'], ['item_id', 'pin_ids', 'count', 'flagged', 'text', 'anchor', 'first_at', 'pins']])
   })
 
   it('takes the count from the pin ids, so the pin total matches what would be sent', () => {
@@ -61,9 +63,9 @@ describe('parsePrototypeFeedback', () => {
       document_id: 'doc',
       groups: [{ route: 5, items: [{ item_id: 'pin_1', pin_ids: ['pin_1'], pins: [{ pin_id: 'pin_1', status: 'weird' }] }] }],
     })
-    expect(feedback).toMatchObject({ partial: false, cut: [], versions_read: [], groups: [{ route: '', route_unsafe: false }] })
+    expect(feedback).toMatchObject({ partial: false, cut: [], versions_read: [], groups: [{ route: '' }] })
     expect(feedback.groups[0]?.items[0]).toMatchObject({
-      count: 1, flagged: false, text: '', anchor: { route: '', selector: '', text_snippet: '' }, unsafe_fields: [],
+      count: 1, flagged: false, text: '', anchor: { route: '', selector: '', text_snippet: '' },
       pins: [{ status: 'open', replies: [], addressed_by: '' }],
     })
   })

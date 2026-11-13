@@ -65,8 +65,10 @@ MAX_REPLIES = 50
 MAX_REPLY_CHARS = 2000
 MAX_PINS_LISTED = 200
 # The anchor fields a tester's browser sends as text. A pin is flagged on its comment alone; each of these is judged
-# on its own wherever it would reach a model (unsafe_anchor_fields), and left out there when it reads like an
-# instruction, so the prototype's own words ("You are now signed in") never take a pin away from the AI.
+# on its own (unsafe_anchor_fields) in the prototype feedback tools (MCP documents_list_prototype_feedback, the
+# assistant's get_prototype_feedback) and incorporation_pins_block, and left out there when it reads like an
+# instruction, so the prototype's own words ("You are now signed in") never take a pin away from the AI. The agents'
+# revision path (lambda/agents/pins.py) does not screen these fields yet.
 ANCHOR_TEXT_FIELDS = ('route', 'selector', 'text_snippet')
 MAX_BATCH_PINS = 50
 MAX_VIEWPORT_PX = 20_000

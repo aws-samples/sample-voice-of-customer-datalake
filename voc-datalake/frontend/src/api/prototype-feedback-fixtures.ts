@@ -18,10 +18,9 @@ export const FEEDBACK_ANSWER = {
   pin_count: 2,
   groups: [{
     route: '/checkout',
-    route_unsafe: false,
     items: [{
       item_id: 'pin_1', pin_ids: ['pin_1', 'pin_2'], count: 2, flagged: false, text: 'The total is hidden on phones',
-      anchor: { route: '/checkout', selector: '#total', text_snippet: 'Total' }, unsafe_fields: [],
+      anchor: { route: '/checkout', selector: '#total', text_snippet: 'Total' },
       first_at: '2026-11-13T10:00:00+00:00',
       pins: [PIN, { ...PIN, pin_id: 'pin_2', addressed_by: 'doc_v4', status: 'addressed' }],
     }],

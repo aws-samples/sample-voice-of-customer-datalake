@@ -27,7 +27,7 @@ const call = mockCaller(mock)
 /** A selector-less pin on `/` at a bbox (percent of the viewport) with a pixel viewport beside it. */
 function placedPin(pinId, comment, bbox, fields = {}) {
   return {
-    pin_id: pinId, document_id: 'proto_1', version: 1, status: 'open', comment,
+    pin_id: pinId, document_id: 'proto_1', version: 1, status: 'open', flagged: false, comment,
     created_at: `2026-11-13T10:00:0${pinId.at(-1)}+00:00`,
     anchor: { route: '/', selector: '', text_snippet: '', bbox, viewport: { w: 1000, h: 800 } },
     ...fields,
@@ -81,6 +81,23 @@ describe('groupFeedbackPins (group_pins)', () => {
     assert.deepEqual(itemIds(answer), [['pin_1', 'pin_3'], ['pin_2'], ['pin_4']])
     assert.equal(answer[0].items[1].flagged, true)
     assert.deepEqual(groupFeedbackPins([...pins].reverse()), answer)
+  })
+
+  it('fails closed on a pin with no flagged mark: it comes out flagged and never folds', () => {
+    const box = { x: 10, y: 10, w: 10, h: 10 }
+    const unmarked = placedPin('pin_2', 'The total is hidden', box)
+    delete unmarked.flagged
+    const answer = groupFeedbackPins([
+      placedPin('pin_1', 'The total is hidden', box),
+      unmarked,
+      placedPin('pin_3', 'The total is hidden', box),
+    ])
+    assert.deepEqual(itemIds(answer), [['pin_1', 'pin_3'], ['pin_2']])
+    assert.equal(answer[0].items[1].flagged, true)
+    assert.equal(answer[0].items[1].pins[0].flagged, true)
+    // Nothing folds into it either, when it comes first.
+    const first = groupFeedbackPins([{ ...unmarked, pin_id: 'pin_0', created_at: '2026-11-13T09:00:00+00:00' }, placedPin('pin_1', 'The total is hidden', box)])
+    assert.deepEqual(itemIds(first), [['pin_0'], ['pin_1']])
   })
 
   it('names the anchor fields that read like an instruction, one by one, and an unsafe group route', () => {

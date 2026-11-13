@@ -22,7 +22,9 @@ import { idProperty, idSchema, parseToolInput, resolveId, toolSpec } from '../sp
 import { seg, serverTool } from './common.js';
 
 const PIN_STATUSES = ['open', 'addressed', 'resolved'] as const;
-/** The same caps the incorporation block uses (lambda/shared/prototype_pins.py). */
+/** The MCP tool's caps (lambda/shared/mcp_global_tools.py, `_FEEDBACK_*`): a comment 600 characters, a reply 300,
+ *  the newest 5 replies, and 200 for each anchor field. The incorporation block (prototype_pins.py's
+ *  INCORPORATION_CAPS) has the same comment, reply and reply-count caps but cuts the element text at 120. */
 const MAX_COMMENT_CHARS = 600;
 const MAX_REPLY_CHARS = 300;
 const MAX_REPLIES = 5;
@@ -96,7 +98,7 @@ type Anchor = z.infer<typeof anchorSchema>;
 /** ``value`` within ``total`` characters, its ellipsis included (format.ts's clip adds it after ``max``): the
  *  caps the MCP tool applies, so both clients hand a model the same text. */
 function capped(value: string, total: number): string {
-  return clip(value, total - 1);
+  return value.length <= total ? value : clip(value, total - 1);
 }
 
 function place(value: string | null): string | null {

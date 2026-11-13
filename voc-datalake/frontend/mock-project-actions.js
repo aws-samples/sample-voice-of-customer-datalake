@@ -1291,7 +1291,7 @@ const feedbackPin = (pin) => ({
   version: Number.isInteger(pin.version) ? pin.version : null,
   status: stringOr(pin.status, '') || 'open', created_at: stringOr(pin.created_at, ''),
   addressed_by: typeof pin.addressed_by === 'string' && pin.addressed_by ? pin.addressed_by : null,
-  flagged: Boolean(pin.flagged), text: stringOr(pin.comment, ''),
+  flagged: pin.flagged !== false, text: stringOr(pin.comment, ''),
   replies: (Array.isArray(pin.replies) ? pin.replies : []).filter(isPlainObject).map(replyView),
 });
 
@@ -1303,15 +1303,15 @@ const pinSortKey = (pin) => [routeOf(pin), selectorOf(pin), stringOr(pin.created
 function foldPins(pins) {
   const items = [];
   for (const pin of pins) {
-    const into = pin.flagged ? undefined
-      : items.find((item) => !item.first.flagged && samePosition(item.first, pin) && textsMatch(item.first.comment, pin.comment));
+    const into = pin.flagged !== false ? undefined
+      : items.find((item) => item.first.flagged === false && samePosition(item.first, pin) && textsMatch(item.first.comment, pin.comment));
     if (into) into.pins.push(pin);
     else items.push({ first: pin, pins: [pin] });
   }
   return items
     .map(({ first, pins: folded }) => ({
       item_id: stringOr(first.pin_id, ''), pin_ids: folded.map((p) => stringOr(p.pin_id, '')), count: folded.length,
-      flagged: Boolean(first.flagged), text: stringOr(first.comment, ''),
+      flagged: first.flagged !== false, text: stringOr(first.comment, ''),
       anchor: { route: routeOf(first), selector: selectorOf(first), text_snippet: stringOr(anchorOf(first).text_snippet, '') },
       unsafe_fields: unsafeAnchorFields(anchorOf(first)),
       first_at: stringOr(first.created_at, ''), pins: folded.map(feedbackPin),
