@@ -17,6 +17,14 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.10.01] - 2026-11-13
+
+The Prototype builder's spec.
+
+### Added
+
+- `docs/prototype-builder.md`: what prototypes are today, the four parts of the Prototype builder (guided demo, edits from a chat bubble, feedback into the prototype, documents in sections) with their data model, planned routes and authorization, tools, security boundary, cost, tests and tenet check, the order they are built in, the decisions taken and the two questions left for the owner. Nothing is built yet.
+
 ## [6.10.00] - 2026-11-13
 
 The MCP tools are easier for a model to find: names start with their area, descriptions say what each tool is for, and Revise from comments has its own tools.
