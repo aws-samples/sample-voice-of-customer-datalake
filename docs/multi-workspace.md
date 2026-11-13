@@ -364,9 +364,18 @@ decision 13): `lambda/shared/radar_keys.py` keys a workspace's scan settings and
 `load_brand_list` (`shared/radar_brands.py`), the brief's `effective_brands` (`briefing/radar_cards.py`, with that
 workspace's source profiles) and the processor's brand labels (`shared/radar_routing.py` `BrandLabels`, cached per
 workspace, a failed read forgetting only that workspace's copy) take an optional scope and read through `ws_table`.
-No caller passes one: the Radar routes, the scan job (its last scan, `RADARSCAN`) and the processor's routing
-stay the deployment's and move together at the cut-over, with Radar's reviews, counters and releases; its data
-version (`SETTINGS#radar` / `version`) moves with the cached reads' version counters. The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
+Radar's views can too (`lambda/shared/radar_reads.py`): a workspace's reviews, markers, daily counters and
+releases are the deployment's keys inside its partitions (`WS#{ws}#RADAR#{brand}#…`, `WS#{ws}#RADARID#{brand}`,
+`WS#{ws}#RELEASE#{brand}`, `scoped_pk`), and so are the counters of its own feedback that the comparison reads
+(`WS#{ws}#METRIC#…`, as `lambda/shared/ws_repo.py` `metric_pk` builds them); every reader of them
+(`shared/radar_store.py` `daily_rows`, `sum_counter`, `recent_items`; `shared/radar_reviews.py`'s list,
+cursor and detail; `shared/radar_counts.py`; `shared/radar_views.py`'s totals, trend, themes and comparison, both
+sides; `shared/radar_releases.py` `list_releases`, `count_releases`; `shared/radar_all.py`) takes an optional
+`workspace` and reads through `lambda/shared/ingest_tables.py` `table_view`: `ws_table` with one, which refuses a
+partition or a cursor outside it before DynamoDB (a cursor of another partition is a 400; a marker pointing outside
+the workspace reads as absent), the table itself without, both with one key condition (the same rows as before). No caller passes one: the Radar routes, the brief, the scan job (its last scan, `RADARSCAN`,
+and its release writes) and the processor's routing, dedupe check and writes stay the deployment's and move together at the
+cut-over; its data version (`SETTINGS#radar` / `version`) moves with the cached reads' version counters. The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
 whose case says why, the deployment's answer with no row of either workspace touched instead of the 400; for the
 brand's `PUT`, 403 to a caller outside the deployment's `admins`). The
 deployment kinds' writes need the deployment's `admins` and a live platform admin (since 6.18.00): `PUT /settings/appearance` and the three alert writes

@@ -50,8 +50,10 @@ from shared.memory_store import cosine, decode_embedding, encode_embedding
 from shared.radar_brand_citations import BrandMatch, brand_citations, on_domains
 from shared.radar_citations import clean_citations, page_key
 from shared.radar_listing_pages import HUB_MIN_RECORDS, hub_pages, index_titles, is_listing_page
+from shared.radar_reads import SortRange, partition_query, scoped_pk
 from shared.radar_release_merge import OFFICIAL, collapse, feature_key, padded_titles, same_name
 from shared.radar_store import query_all
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'ReleaseCandidate',
@@ -242,15 +244,21 @@ def _without_hub_titles(views: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{**view, 'titles': index_titles(view.get('urls') or [], view.get('titles') or [], hubs)} for view in views]
 
 
-def list_releases(table: Any, brand: str, start: date, limit: int, match: BrandMatch | None = None) -> list[dict[str, Any]]:
+def _releases_since(table: Any, brand: str, start: date, workspace: WorkspaceScope | None) -> Any:
+    """The query of ``brand``'s records filed since ``start`` (``workspace``'s with one)."""
+    return partition_query(table, workspace, scoped_pk(workspace, release_pk(brand)), SortRange(start.isoformat()))
+
+
+def list_releases(table: Any, brand: str, start: date, limit: int, match: BrandMatch | None = None,
+                  workspace: WorkspaceScope | None = None) -> list[dict[str, Any]]:
     """``brand``'s records filed since ``start``, one per feature name, newest release first, at most ``limit``.
 
     Every record since ``start`` is read (a brand files a few hundred a year at most), so two
     records of one name collapse wherever they sit in the timeline and ``limit`` counts the
     collapsed rows. ``match``: see ``public_release``; index titles (listing pages and hubs among
-    the collapsed rows) are blanked only with it.
+    the collapsed rows) are blanked only with it. ``workspace``: its records (shared/radar_reads.py).
     """
-    rows = query_all(table, Key('pk').eq(release_pk(brand)) & Key('sk').gte(start.isoformat()))
+    rows = dynamo_paging.query_all(_releases_since(table, brand, start, workspace), {})
     rows.sort(key=lambda row: str(row.get('sk') or ''), reverse=True)  # the newest-filed record leads a tie
     views = collapse((public_release(row, match) for row in rows), _found_via)
     if match is not None:
@@ -258,15 +266,13 @@ def list_releases(table: Any, brand: str, start: date, limit: int, match: BrandM
     return sorted(views, key=lambda view: str(view.get('release_date', '')), reverse=True)[:limit]
 
 
-def count_releases(table: Any, brand: str, start: date) -> int:
+def count_releases(table: Any, brand: str, start: date, workspace: WorkspaceScope | None = None) -> int:
     """How many rows ``list_releases`` would return for ``start`` without its cap: one per feature name.
 
     Only the ``feature`` attribute is read (``ProjectionExpression``), so the count follows the
     read-time collapse (``radar_release_merge``) without moving any citation or embedding.
     """
-    rows = dynamo_paging.query_all(table, {
-        'KeyConditionExpression': Key('pk').eq(release_pk(brand)) & Key('sk').gte(start.isoformat()),
-        'ProjectionExpression': '#f', 'ExpressionAttributeNames': {'#f': 'feature'},
-    })
+    rows = dynamo_paging.query_all(_releases_since(table, brand, start, workspace), {
+        'ProjectionExpression': '#f', 'ExpressionAttributeNames': {'#f': 'feature'}})
     keys = [feature_key(row.get('feature')) for row in rows]
     return len({key for key in keys if key}) + sum(1 for key in keys if not key)

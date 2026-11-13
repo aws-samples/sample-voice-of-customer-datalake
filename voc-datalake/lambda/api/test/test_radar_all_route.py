@@ -168,6 +168,7 @@ def test_count_releases_follows_every_page_reads_only_the_name_and_counts_one_pe
     assert count_releases(table, 'acme', datetime(2026, 1, 1, tzinfo=UTC).date()) == 4
     first, second = (call.kwargs for call in table.query.call_args_list)
     assert first['ProjectionExpression'] == second['ProjectionExpression'] == '#f'
-    assert first['ExpressionAttributeNames'] == {'#f': 'feature'}
+    # The projection's one name, beside the key condition's (shared/radar_reads.py).
+    assert first['ExpressionAttributeNames'] == {'#f': 'feature', '#p': 'pk', '#radar_sk': 'sk'}
     assert 'ExclusiveStartKey' not in first
     assert second['ExclusiveStartKey'] == {'sk': 'x'}
