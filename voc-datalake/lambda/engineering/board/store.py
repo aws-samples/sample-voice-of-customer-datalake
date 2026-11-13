@@ -7,7 +7,7 @@
   once the first ended (nothing is deleted, D5).
 - ``claim``: only an ``open`` task of the caller's role; the lease's epoch is the task's attempt. A claim by the
   agent that already holds the lease, on a task that has not ended, answers the task as it is (a continuation in a
-  new MicroVM reads its brief by claiming again). A task with a launch recorded at its attempt is claimed only by
+  new session reads its brief by claiming again). A task with a launch recorded at its attempt is claimed only by
   that launch's agent; an agent launched for an older attempt (the task re-posted or given back since) claims it
   never again, in the write's condition too.
 - ``coordinate_items``: the run's ``coordinate`` task (role ``coordinator``), which only the run's start writes,

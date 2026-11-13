@@ -15,12 +15,12 @@ the same transaction as the row, makes it once: a redelivery (the bus is at-leas
 Nothing deletes an inbox row or marks it read: the board API's ``inbox`` op reads them for the caller's own run
 only, after an ``inbox_seq`` cursor, and the harness keeps each message once by its event id.
 
-There is no queue: a suspended MicroVM runs no code, so delivery is a push (``Supervisor.wake``): a working agent's
-MicroVM is resumed and kept awake to read it, an agent held without a MicroVM on a long wait is continued in a new
+There is no queue: a suspended session runs no code, so delivery is a push (``Supervisor.wake``): a working agent's
+session is resumed and kept awake to read it, an agent held without a session on a long wait is continued in a new
 one, and a booting or pausing one reads its inbox once it runs. An addressee another move holds is ``busy``: the
 invocation fails, and Lambda's own retry (twice) delivers again; the row is already there, so only the wake repeats.
 It runs the supervisor's code (``handler.delivery_handler``) with a role of its own (lib/stacks/engineering-runtime.ts
-createDelivery): only what a wake needs, the runs' rows, resuming and continuing MicroVMs and the launcher's
+createDelivery): only what a wake needs, the runs' rows, resuming and continuing sessions and the launcher's
 AssumeRole; never the supervisor's rule or the registry of active runs. A deployment has one workspace (``connectors/identity.py`` WORKSPACE): a message of another is refused.
 """
 from __future__ import annotations

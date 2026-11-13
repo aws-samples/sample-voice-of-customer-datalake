@@ -20,7 +20,7 @@ def _cost_lines(report: Mapping[str, Any]) -> list[str]:
     return [
         '### Cost and time', '',
         (f'- Cost: ${cost["usd"]} (as metered); tokens in {cost["input_tokens"]}, '
-         f'out {cost["output_tokens"]}; MicroVM-seconds {cost["microvm_seconds"]}; events {cost["events"]}'),
+         f'out {cost["output_tokens"]}; session-seconds {cost["microvm_seconds"]}; events {cost["events"]}'),
         f'- Time: {cell(time["started_at"], 40) or "not started"} to {cell(time["ended_at"], 40) or "running"}'
         + (f' ({seconds} s)' if seconds is not None else ''),
         # (never in a pull request's report: its Markdown is the PR's description, in the target repository)
@@ -29,13 +29,13 @@ def _cost_lines(report: Mapping[str, Any]) -> list[str]:
 
 
 def _budget_lines(budget: Mapping[str, Any] | None) -> list[str]:
-    """The flow's monthly budget and its flag (measured: MicroVM time only until tokens are priced)."""
+    """The flow's monthly budget and its flag (measured: session time only until tokens are priced)."""
     if not budget:
         return []
     line = f'- Flow budget: ${budget["monthly_usd"]:,.2f} a month'
     if budget.get('alert_percent'):
         line += f'; its month passed {budget["alert_percent"]}% of it ({cell(str(budget["alert_month"]), 10)})'
-    return [line + ' (MicroVM time only until tokens are priced)']
+    return [line + ' (session time only until tokens are priced)']
 
 
 def _agent_lines(report: Mapping[str, Any]) -> list[str]:

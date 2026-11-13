@@ -11,9 +11,9 @@ from typing import Any
 import pytest
 from botocore.exceptions import ClientError
 
-from engineering.runtime.caps import Timings
+from engineering.runtime.caps import SessionPricing, SessionRates, Timings
 from engineering.runtime.checkpoints import checkpoint_prefix
-from engineering.runtime.interface import AgentSpec, Command, MicroVm, RuntimeRefused
+from engineering.runtime.interface import AgentSpec, Command, RuntimeRefused, RuntimeSession, SessionsFull
 from engineering.runtime.launcher import Launcher, RunStopped
 from engineering.runtime.ports import Budget, BudgetAlert, Lease
 from engineering.runtime.runs import RunCaps
@@ -58,8 +58,7 @@ def _until(world: World, now: int, done: Callable[[AgentSession], bool], agent_i
 
 
 def _assert_terminated(world: World, session: AgentSession) -> None:
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        world.runtime.mint_token(session.vm)
+    assert world.runtime.state_of(session.vm) == 'terminated'
 
 
 def test_a_session_boots_its_checkout_then_its_harness_and_ends_its_microvm_when_done(world: World):
@@ -92,14 +91,31 @@ def _on_an_open_wait(world: World, code: str) -> tuple[AgentSession, Lease]:
 def test_an_agent_on_an_open_wait_is_suspended_neither_polled_nor_stopped_and_resumed_after(world: World):
     working, _ = _on_an_open_wait(world, SLEEP)
     world.supervisor.tick(1000 + T.stall_after + T.lease_ttl + T.answer_window)
-    with pytest.raises(RuntimeRefused, match='suspended'):
-        world.runtime.mint_token(working.vm)
+    assert world.runtime.state_of(working.vm) == 'suspended'
     assert (world.session().status, world.session().asked_at, world.session().suspended) == ('working', None, True)
     assert world.bus.kinds() == []
     world.renew(2000)
     world.supervisor.tick(2000)
     assert world.session().suspended is False
-    assert world.runtime.mint_token(working.vm).value
+    assert world.runtime.state_of(working.vm) == 'running'
+
+
+def test_a_session_held_past_its_role_sessions_life_gets_a_fresh_one_at_its_wake(world: World):
+    working, _ = _on_an_open_wait(world, SLEEP)
+    held = world.session()
+    assert held.suspended is True
+    calls = len(world.sts.calls)
+    # 25 minutes on hold (its 15-minute role session long lapsed, none renewed meanwhile), then the wait closes.
+    woken = 1001 + 25 * 60
+    assert woken - 1001 < T.wait_suspend_limit
+    world.supervisor.tick(woken - 60)
+    assert len(world.sts.calls) == calls
+    world.renew(woken)
+    world.supervisor.tick(woken)
+    awake = world.session()
+    # A fresh role session, handed at the wake (the runner counts its lapse from there).
+    assert (awake.suspended, len(world.sts.calls)) == (False, calls + 1)
+    assert world.runtime.state_of(working.vm) == 'running'
 
 
 def test_a_long_wait_whose_checkpoint_never_comes_is_held_without_its_microvm(world: World):
@@ -174,13 +190,51 @@ def test_an_agent_whose_new_microvm_never_starts_is_escalated_not_retried_foreve
     world.launch(code='import sys; sys.exit(1)')
     _until(world, 1000, lambda s: s.status == 'working')
 
-    def down(_spec: AgentSpec) -> MicroVm:
+    def down(_spec: AgentSpec) -> RuntimeSession:
         raise RuntimeError('the MicroVM service refused the start')
 
     monkeypatch.setattr(world.runtime, 'run', down)   # every continuation's start fails from now on
     ended = _until(world, 1000, lambda s: s.status == 'reposted')
     assert ended.crashes == T.max_crash_continuations
     assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'crashed')]
+
+
+def test_a_continuation_the_service_has_no_room_for_is_held_and_continued_once_there_is_room(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code='import sys; sys.exit(1)')
+    _until(world, 1000, lambda s: s.status == 'working')
+    real = world.runtime.run
+    full = iter([True])
+
+    def no_room_once(spec: AgentSpec) -> RuntimeSession:
+        if next(full, False):
+            raise SessionsFull('AgentCore has no room for a new session now')
+        return real(spec)
+
+    monkeypatch.setattr(world.runtime, 'run', no_room_once)
+    held = _until(world, 1000, lambda s: s.status == 'waiting')
+    # Not a crash: held without a session, saying why.
+    assert (held.crashes, held.inspect['last_failure']) == (0, 'no free agent session: continued once one ends')
+    continued = _until(world, 1060, lambda s: s.continuation == 1)
+    assert continued.status in ('booting', 'working')
+
+
+def test_a_continuation_that_never_finds_room_goes_to_a_person_after_a_bounded_number_of_ticks(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code='import sys; sys.exit(1)')
+    _until(world, 1000, lambda s: s.status == 'working')
+
+    def never(_spec: AgentSpec) -> RuntimeSession:
+        raise SessionsFull('AgentCore has no room for a new session now')
+
+    monkeypatch.setattr(world.runtime, 'run', never)
+    for tick in range(T.max_no_room - 1):
+        world.supervisor.tick(1000 + 60 * (tick + 1))
+    assert (world.session().status, world.session().no_room) == ('waiting', T.max_no_room - 1)
+    world.supervisor.tick(1000 + 60 * T.max_no_room)
+    held = world.session()
+    assert (held.status, held.no_room, held.crashes) == ('paused', 0, 0)
+    assert any('no free agent session' in event['summary'] for event in world.bus.events)
 
 
 def test_a_run_coordinator_that_keeps_crashing_goes_to_a_person_not_to_the_board(world: World):
@@ -266,6 +320,32 @@ def test_a_stop_ends_every_microvm_at_once_and_renews_no_session(world: World):
         _assert_terminated(world, session)
 
 
+def test_a_session_whose_stop_fails_is_stopped_again_every_tick_and_its_time_counted_meanwhile(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    first = world.launch(code=SLEEP)
+    _until(world, 1000, lambda s: s.status == 'working')
+    real = world.runtime.terminate
+    refusals = iter([True, True])
+
+    def flaky(vm: RuntimeSession) -> None:
+        if next(refusals, False):
+            raise RuntimeError('the service refused the stop')
+        real(vm)
+
+    monkeypatch.setattr(world.runtime, 'terminate', flaky)
+    world.control.stops.add(RUN)
+    world.supervisor.tick(2000)
+    pending = world.session()
+    # Stopped as far as the run is concerned, but kept: still running, and counted.
+    assert (pending.status, pending.stop_pending, world.runtime.state_of(first.vm)) == ('stopped', True, 'running')
+    world.supervisor.tick(2060)
+    assert (world.session().stop_pending, world.session().microvm_seconds) == (True, pending.microvm_seconds + 60)
+    world.supervisor.tick(2120)
+    ended = world.session()
+    assert (ended.status, ended.stop_pending, ended.microvm_seconds) == ('stopped', False, pending.microvm_seconds + 120)
+    _assert_terminated(world, first)
+
+
 def test_the_launcher_refuses_a_stopped_runs_agents():
     with pytest.raises(RunStopped):
         Launcher(FakeSts(), ROLE_ARNS).session_for(role='fixer', connection='c', run_id='r', agent_id='a', stopped=True)
@@ -312,7 +392,7 @@ def test_a_continued_session_keeps_the_tokens_of_its_earlier_microvms():
     first = AgentSession(run_id=RUN, agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
                          egress=(), connection='conn-1', commit=COMMIT, paths=(), harness=('true',), vm_id='vm-1',
                          endpoint='', started_at=0, tokens={'model-a': {'in': 100, 'out': 10}})
-    continued = first.on(MicroVm(vm_id='vm-2', agent_id='fixer-1', endpoint=''), 10, None)
+    continued = first.on(RuntimeSession(vm_id='vm-2', agent_id='fixer-1', endpoint=''), 10, None)
     # The new MicroVM's harness counts from zero.
     tokens = continued.reported({'model-a': {'in': 5, 'out': 1}, 'model-b': {'in': 2, 'out': 0}})
     assert tokens == {'model-a': {'in': 105, 'out': 11}, 'model-b': {'in': 2, 'out': 0}}
@@ -505,7 +585,8 @@ def test_an_agents_tokens_add_up_over_every_microvm_it_ran_in(world: World):
 
 
 def test_an_agents_microvm_time_is_priced_once_across_its_continuations(world: World):
-    world.store._usd_per_second = Decimal('0.0001')  # the deployment's price
+    # The deployment's rates: a running standard session's 2 vCPU at 0.18 an hour each, 0.0001 a second.
+    world.store.pricing = SessionPricing(rates=SessionRates(Decimal('0.18'), Decimal(0), Decimal(0), Decimal(0)))
     first = world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
     world.supervisor.tick(1600)
@@ -685,15 +766,14 @@ def test_a_failing_board_never_counts_against_a_healthy_microvm(world: World, mo
         world.supervisor.tick(now)
     assert (world.session().status, world.session().failures, world.session().continuation) == ('working', 0, 0)
     assert world.session().claimed_until is None
-    assert world.runtime.mint_token(working.vm).value
+    assert world.runtime.state_of(working.vm) == 'running'
 
 
 @pytest.mark.parametrize(('kind', 'status'), [('shutdown', 'stopped'), ('pause', 'paused')])
 def test_shut_down_or_pause_on_an_agent_still_booting_takes_effect_at_once(world: World, kind: str, status: str):
     booting = world.launch(code=SLEEP)
     assert world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', None, kind, 1000) == {'fixer-1': status}
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        world.runtime.mint_token(booting.vm)
+    assert world.runtime.state_of(booting.vm) == 'terminated'
 
 
 def test_a_booting_agent_whose_open_task_a_person_blocked_is_ended_on_the_next_tick(world: World):
@@ -792,7 +872,7 @@ def test_one_failing_session_does_not_stop_the_others_and_a_gone_microvm_becomes
     assert done.status == 'done'
     continued = _until(world, 1000, lambda s: s.continuation == 1, agent_id='hunter-1')
     assert (continued.vm_id != 'gone', continued.crashes, continued.failures) == (True, 1, 0)
-    assert continued.inspect['last_failure'] == 'the MicroVM stopped answering'
+    assert continued.inspect['last_failure'] == 'the session stopped answering'
 
 
 def test_a_boot_that_takes_too_long_is_a_crash(world: World):
@@ -841,7 +921,7 @@ def test_save_on_a_suspended_agent_wakes_it_renews_its_session_and_saves(world: 
     world.supervisor.signal('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1', 'save', 1001 + 20 * 60)
     assert world.session().suspended is False
     assert len(world.sts.calls) == calls + 1
-    assert world.runtime.mint_token(working.vm).value
+    assert world.runtime.state_of(working.vm) == 'running'
 
 
 def test_a_lost_claim_on_a_continuation_ends_the_microvm_it_started(world: World, monkeypatch: pytest.MonkeyPatch):
@@ -868,8 +948,7 @@ def test_a_lost_claim_on_a_continuation_ends_the_microvm_it_started(world: World
             break
         time.sleep(0.05)
     assert started
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        world.runtime.mint_token(started[0])
+    assert world.runtime.state_of(started[0]) == 'terminated'
 
 
 def test_a_move_whose_write_was_refused_gives_the_claim_back_for_the_next_tick(world: World,

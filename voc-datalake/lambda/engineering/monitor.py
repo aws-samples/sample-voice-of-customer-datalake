@@ -3,8 +3,8 @@
 ``overview``: the run (its ``META`` in voc-engineering: goal, repository, flow, status, times, how many messages it
 has numbered), and every agent as the supervisor last saw it: its session row in the run's partition
 (``WS#<ws>#RUN#<run>`` / ``AGENT#<agent>``, ``engineering.runtime.sessions``): role, task, status, continuation, the inspection data
-(step, recent tool calls, last progress, heartbeat age, MicroVM state and age, why it looks stuck) and the live cost
-counters (MicroVM-seconds, tokens per model), with the totals per model and for the run, and the run's flow budget
+(step, recent tool calls, last progress, heartbeat age, session state and age, why it looks stuck) and the live cost
+counters (session-seconds, tokens per model), with the totals per model and for the run, and the run's flow budget
 with its alert flag from META (``rows.budget_view``). The run's cost is to come from the run control
 (``engineering.runtime.ports.RunControl.budget``) once it is wired.
 

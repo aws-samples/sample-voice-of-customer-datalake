@@ -5,7 +5,7 @@ counter to update in place; a version's history is its rows), in the ``voc-engin
 
     WS#<ws>#SCORE#<connection>#<role>#<version> / RUN#<run>   voc-scorecard/1: tasks done, failed and needing a
                                                               person, re-posts, review rounds, attempts, cost,
-                                                              MicroVM seconds; who wrote it and when (D4)
+                                                              session seconds; who wrote it and when (D4)
 
 ``<version>`` is the session rows' label (``<role>@<n>``; ``none`` for a role with no skill yet, ``unlabelled`` for a
 label off that shape). One connection's rows are its own partition, so its scorecards are read only as the

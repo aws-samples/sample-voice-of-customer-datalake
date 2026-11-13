@@ -37,7 +37,7 @@ MAX_BRIEF: Final = 16 * 1024
 
 @dataclass
 class AgentSession:
-    """One agent's session on one task, in one MicroVM."""
+    """One agent's session on one task, in one session."""
 
     context: AgentContext
     tools: ToolBox

@@ -1,7 +1,7 @@
 """How the gate runs a command: the ``CommandRunner`` interface and a local subprocess runner.
 
 Repository code runs in the runtime's sandbox (a separate OS user with no credential and no network, in the gate
-runner's MicroVM), which hands the gate a runner of its own. ``LocalRunner`` runs commands as local subprocesses:
+runner's session), which hands the gate a runner of its own. ``LocalRunner`` runs commands as local subprocesses:
 the tests use it on temporary checkouts, and so does a local run on a trusted repository. The gate only sees this
 interface.
 """

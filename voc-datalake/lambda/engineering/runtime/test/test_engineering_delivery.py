@@ -9,7 +9,7 @@ from engineering.bus.test.messages import message
 from engineering.runtime import delivery
 from engineering.runtime.caps import Timings
 from engineering.runtime.delivery import AddresseeBusy, deliver
-from engineering.runtime.interface import MicroVm, RuntimeRefused
+from engineering.runtime.interface import RuntimeRefused, RuntimeSession
 from engineering.runtime.sessions import AgentSession
 from engineering.runtime.test.conftest import RUN, World
 
@@ -141,7 +141,7 @@ def test_a_message_wakes_a_suspended_addressee_which_stays_awake_to_read_it(worl
     woken = world.session()
     # Resumed, with a fresh role session, and marked so the open wait does not suspend it again at once.
     assert (woken.suspended, woken.woken_at, len(world.sts.calls)) == (False, now, calls + 1)
-    assert world.runtime.mint_token(suspended.vm).value
+    assert world.runtime.state_of(suspended.vm) == 'running'
     world.supervisor.tick(now + T.wake_grace - 1)
     assert world.session().suspended is False
     # Its wait still open after the grace: suspended again.
@@ -245,7 +245,7 @@ def test_a_held_agent_is_continued_once_per_wait(world: World):
     assert _deliver(world, _for({'kind': 'agent', 'id': 'fixer-1'}), 1200)['woken'] == {'fixer-1': 'waiting'}
     assert world.session().continuation == continued.continuation
     # Nor after a crashed boot continued it again: a continuation keeps the record of the wait it was woken for.
-    again = world.session().on(MicroVm(vm_id='vm-9', agent_id='fixer-1', endpoint=''), 1250, None)
+    again = world.session().on(RuntimeSession(vm_id='vm-9', agent_id='fixer-1', endpoint=''), 1250, None)
     assert (again.woken_wait, again.wait_since, again.woken_at) == (1001, 1001, None)
 
 

@@ -2,7 +2,7 @@
 
 Which CLI: the same order as the repository's own AI reviews (scripts/ai-review/lib.mjs: kiro-cli, else
 claude), minus any that needs an endpoint or a login other than Bedrock with the agent's session. kiro-cli
-signs in to its own service, which a MicroVM neither reaches nor holds a login for, so it is not offered;
+signs in to its own service, which a session neither reaches nor holds a login for, so it is not offered;
 ``claude`` reaches models through Bedrock (``CLAUDE_CODE_USE_BEDROCK=1``, the agent's session through
 ``AWS_CONFIG_FILE``) and is offered at one pinned version only.
 
@@ -40,8 +40,8 @@ from engineering.runtime.harness.interface import AgentSession, Ending
 from engineering.runtime.harness.tool_server import SERVER_NAME, SessionFiles
 
 CLAUDE: Final = 'claude'
-#: The CLIs the repository's AI reviews know, and why each is or is not offered in a MicroVM.
-NOT_OFFERED: Final = {'kiro': 'kiro-cli signs in to its own service: a MicroVM has no such login or endpoint'}
+#: The CLIs the repository's AI reviews know, and why each is or is not offered in a session.
+NOT_OFFERED: Final = {'kiro': 'kiro-cli signs in to its own service: a session has no such login or endpoint'}
 #: The harness's own tool server, as the CLI starts it (the image's copy of this package; ``-I``: isolated).
 TOOL_SERVER: Final = ('/usr/bin/python3', '-I', '/opt/voc/harness.py', 'tool-server')
 INBOX_POLL_SECONDS: Final = 5.0

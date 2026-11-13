@@ -1,15 +1,16 @@
-"""Agent sessions: one row per agent of a run, the supervisor's view of its MicroVM.
+"""Agent sessions: one row per agent of a run, the supervisor's view of its AgentCore session (its own microVM).
 
 ``WS#<ws>#RUN#<run>`` / ``AGENT#<agent>`` in voc-engineering: the row the board's table keeps for each agent
-of a run, which the reports read (role, skill version, model, MicroVM seconds, tokens in and out) and the
+of a run, which the reports read (role, skill version, model, session seconds, tokens in and out) and the
 brokers add their own metering to (the cost they priced). So this store never writes the whole item: it
 creates the row once and from then on updates only its own attributes. The supervisor finds the live sessions
 through the runs the supervisor watches (``runs.RunStore.listed``: the table has no index). Every write is
 conditional on the row's ``seq``, so overlapping ticks never write over each other: the second gets
 ``StaleSession`` and leaves the session to the next tick.
 
-A row holds ids, times, the MicroVM's id and endpoint, the run monitor's inspection data and the live cost
-counters (MicroVM seconds, tokens per model and their totals), never a token, a credential or a command's output.
+A row holds ids, times, the session's id and its runtime's ARN (``vm_id``, ``endpoint``), the run monitor's inspection
+data and the live cost counters (the session's seconds running and held, its vCPU- and GB-seconds, tokens per model and
+their totals), never a token, a credential or a command's output.
 """
 from __future__ import annotations
 
@@ -25,7 +26,8 @@ from typing import Any, Final, Literal
 from botocore.exceptions import ClientError
 
 from engineering.rows import LAUNCH_HOLD
-from engineering.runtime.interface import AgentSpec, MicroVm
+from engineering.runtime.caps import UNPRICED, SessionPricing
+from engineering.runtime.interface import AgentSpec, RuntimeSession
 from engineering.runtime.runs import RunNotActive, RunStore, meta_key, run_pk, transaction_conflict
 from engineering.spend import (
     MAX_SESSION_MODELS,
@@ -44,10 +46,10 @@ from shared.ids import is_key_collision
 
 Status = Literal['booting', 'working', 'pause_requested', 'waiting', 'paused', 'done', 'failed', 'stopped',
                  'reposted']
-#: The sessions the supervisor checks each tick. All but ``waiting`` have a MicroVM; a ``waiting`` session
-#: paused for a long open wait and is continued in a new MicroVM once the wait closes.
+#: The sessions the supervisor checks each tick. All but ``waiting`` have a session; a ``waiting`` session
+#: paused for a long open wait and is continued in a new session once the wait closes.
 LIVE_STATUSES: Final = frozenset({'booting', 'working', 'pause_requested', 'waiting'})
-WITH_MICROVM: Final = frozenset({'booting', 'working', 'pause_requested'})
+WITH_SESSION: Final = frozenset({'booting', 'working', 'pause_requested'})
 #: What a ``pause_requested`` session does once its harness has paused: a continuation (the 8-hour limit),
 #: held for a person to resume (``hold``: a person's pause, a spent budget), held until its open wait closes
 #: (``wait``), or stopped (``shutdown``).
@@ -91,36 +93,46 @@ class AgentSession:
     asked_at: int | None = None
     pause_requested_at: int | None = None
     after_pause: After = 'continue'
-    #: The supervisor suspended this MicroVM for an open wait (resumed when the wait ends), since when.
+    #: The supervisor suspended this session for an open wait (resumed when the wait ends), since when.
     suspended: bool = False
-    #: Calls to this MicroVM that failed in a row (the third is a crash: it is gone or never came up).
+    #: Its stop failed: the supervisor stops it again every tick (whatever its status) and counts its time meanwhile.
+    stop_pending: bool = False
+    #: Continuations in a row the service had no room for (``Supervisor._no_room``); 0 once one starts.
+    no_room: int = 0
+    #: Calls to this session that failed in a row (the third is a crash: it is gone or never came up).
     failures: int = 0
     #: A tick or a signal is moving this session until then (epoch seconds): nobody else may (``SessionStore.claim``).
     claimed_until: int | None = None
-    #: The checkpoint this MicroVM restored from (None: the task's start).
+    #: The checkpoint this session restored from (None: the task's start).
     restore_key: str | None = None
-    #: When the launcher's role session handed to this MicroVM lapses (None: none handed yet).
+    #: When the launcher's role session handed to this session lapses (None: none handed yet).
     session_expires_at: int | None = None
     #: When a message last woke it (``Supervisor.wake``): an open wait does not suspend it again for a while.
     woken_at: int | None = None
-    #: When this MicroVM's harness started (its boot's last command): a fresh agent's claim is due within the
+    #: When this session's harness started (its boot's last command): a fresh agent's claim is due within the
     #: crash clock from then.
     harness_at: int | None = None
     #: The task's attempt it works on (the board's; its workspace keys go under it).
     task_attempt: int = 1
     #: When its current open wait began (None: no open wait): the 45-minute hold counts from here, awake or not.
     wait_since: int | None = None
-    #: The wait (its ``wait_since``) a message already continued it in a new MicroVM for: once per wait, whatever
+    #: The wait (its ``wait_since``) a message already continued it in a new session for: once per wait, whatever
     #: continuations (a crashed boot) follow.
     woken_wait: int | None = None
     #: The continuation that message made: it alone gets the grace to read it (none that follows it does).
     woken_continuation: int | None = None
-    #: Live cost and inspection data for the run monitor.
+    #: Live cost and inspection data for the run monitor: the seconds its sessions ran (``microvm_seconds``, the name
+    #: the reports and the ledger keep) and were held for an open wait (``held_seconds``).
     microvm_seconds: int = 0
-    #: How many of its MicroVM seconds are already priced into the row's ``cost_usd`` (``SessionStore``).
+    held_seconds: int = 0
+    #: How many of those seconds are already priced into the row's ``cost_usd`` (``SessionStore``).
     priced_seconds: int = 0
+    priced_held_seconds: int = 0
+    #: What the priced seconds were counted as: vCPU-seconds and GB-seconds at its role's size (``caps.SessionPricing``).
+    vcpu_seconds: int = 0
+    gb_seconds: int = 0
     last_tick_at: int | None = None
-    #: Tokens per model (``{"in", "out"}``) of every MicroVM of this session so far: ``tokens_before`` (the
+    #: Tokens per model (``{"in", "out"}``) of every session of this session so far: ``tokens_before`` (the
     #: earlier ones', fixed when it continues) plus what the current one's harness reported, which starts at zero.
     tokens: dict[str, dict[str, int]] = field(default_factory=dict)
     tokens_before: dict[str, dict[str, int]] = field(default_factory=dict)
@@ -139,9 +151,9 @@ class AgentSession:
         return sum(counts.get('out', 0) for counts in self.tokens.values())
 
     def reported(self, current: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
-        """The session's tokens, given what the current MicroVM's harness reported.
+        """The session's tokens, given what the current session's harness reported.
 
-        The report comes from inside the MicroVM, so it can only add: a negative count is none, and no total ever
+        The report comes from inside the session, so it can only add: a negative count is none, and no total ever
         drops below what was saved (the run's token cap must not be talked down).
         """
         totals = {model: dict(counts) for model, counts in self.tokens_before.items()}
@@ -162,15 +174,15 @@ class AgentSession:
                          workspace_bucket=workspace_bucket, board_url=board_url)
 
     @property
-    def vm(self) -> MicroVm:
-        return MicroVm(vm_id=self.vm_id, agent_id=self.agent_id, endpoint=self.endpoint)
+    def vm(self) -> RuntimeSession:
+        return RuntimeSession(vm_id=self.vm_id, agent_id=self.agent_id, endpoint=self.endpoint)
 
-    def on(self, vm: MicroVm, now: int, restore_key: str | None) -> AgentSession:
+    def on(self, vm: RuntimeSession, now: int, restore_key: str | None) -> AgentSession:
         """This session continued in ``vm``: booting again, the next continuation, nothing in flight."""
         return replace(self, vm_id=vm.vm_id, endpoint=vm.endpoint, started_at=now, status='booting',
                        continuation=self.continuation + 1, boot_index=0, exec_id=None, asked_at=None,
                        pause_requested_at=None, after_pause='continue', suspended=False,
-                       failures=0, restore_key=restore_key, tokens_before=self.tokens, woken_at=None, harness_at=None,
+                       failures=0, no_room=0, restore_key=restore_key, tokens_before=self.tokens, woken_at=None, harness_at=None,
                        session_expires_at=None, last_tick_at=now)
 
 
@@ -204,8 +216,11 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
         started_at=int(item['started_at']), status=item['status'], continuation=int(item.get('continuation', 0)),
         crashes=int(item.get('crashes', 0)), boot_index=int(item.get('boot_index', 0)),
         after_pause=item.get('after_pause', 'continue'), suspended=bool(item.get('suspended', False)),
+        stop_pending=bool(item.get('stop_pending', False)), no_room=int(item.get('no_room', 0)),
         failures=int(item.get('failures', 0)), task_attempt=int(item.get('task_attempt', 1)),
         microvm_seconds=int(item.get('microvm_seconds', 0)), priced_seconds=int(item.get('priced_seconds', 0)),
+        held_seconds=int(item.get('held_seconds', 0)), priced_held_seconds=int(item.get('priced_held_seconds', 0)),
+        vcpu_seconds=int(item.get('vcpu_seconds', 0)), gb_seconds=int(item.get('gb_seconds', 0)),
         tokens=plain(item.get('tokens') or {}), tokens_before=plain(item.get('tokens_before') or {}),
         ledgered_tokens=plain(item.get('tokens') or {}),
         inspect=plain(item.get('inspect') or {}),
@@ -232,17 +247,18 @@ def _in_progress(error: ClientError) -> bool:
 
 
 class SessionStore:
-    """``usd_per_second``: the deployment's price of a MicroVM second (0: not priced). Each write that moves the
-    session adds the seconds it has not priced yet to the row's ``cost_usd`` (an ADD, as the brokers add theirs, so
-    neither writes over the other), in the same conditional write, so a move counted once is priced once. Pricing
-    goes forward only: time used while the price is 0 is never priced later."""
+    """``pricing``: the deployment's AgentCore rates and each role's session size (``caps.SessionPricing``; the
+    default prices nothing). Each write that moves the session adds the seconds it has not priced yet (running and
+    held) to the row's ``cost_usd`` (an ADD, as the brokers add theirs, so neither writes over the other), with the
+    vCPU- and GB-seconds they count as, in the same conditional write, so a move counted once is priced once. Pricing
+    goes forward only: time used while the rates are 0 is never priced later."""
 
-    def __init__(self, table: Any, runs: RunStore, usd_per_second: Decimal = Decimal(0),
+    def __init__(self, table: Any, runs: RunStore, pricing: SessionPricing | None = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._table = table
         self._pause: Callable[[float], None] = time.sleep   # (a test sets its own)
         self._runs = runs
-        self._usd_per_second = usd_per_second
+        self.pricing = pricing or SessionPricing(rates=UNPRICED)
         self._clock = clock
         self._runs_seen: dict[str, tuple[str, str]] = {}
 
@@ -274,9 +290,9 @@ class SessionStore:
         return first
 
     def hold_launch(self, run_id: str, agent_id: str, now: int) -> None:
-        """Take the agent's launch before its MicroVM starts, for ``LAUNCH_HOLD_SECONDS``: one conditional write on the
+        """Take the agent's launch before its session starts, for ``LAUNCH_HOLD_SECONDS``: one conditional write on the
         agent's row while it holds no session yet. ``LaunchUnderWay`` when the agent has its session already, or
-        another launch of it holds it (a retry while the first still boots never starts a second MicroVM)."""
+        another launch of it holds it (a retry while the first still boots never starts a second session)."""
         try:
             self._table.update_item(
                 Key=_key(run_id, agent_id), UpdateExpression='SET #hold = :until',
@@ -289,12 +305,12 @@ class SessionStore:
             raise
 
     def launch_under_way(self, run_id: str, agent_id: str, now: int) -> bool:
-        """Another launch of the agent holds its row (its MicroVM still starting) and has written no session yet."""
+        """Another launch of the agent holds its row (its session still starting) and has written no session yet."""
         item = consistent_item(self._table, _key(run_id, agent_id))
         return item is not None and 'seq' not in item and int(item.get(LAUNCH_HOLD, 0)) >= now
 
     def release_launch(self, run_id: str, agent_id: str) -> None:
-        """Let go of a launch that started no session (its MicroVM failed to start): a retry may launch at once. The
+        """Let go of a launch that started no session (its session failed to start): a retry may launch at once. The
         hold is run out (0), never removed: the row stays a launch hold, which no reader takes for an agent (the
         report builder's facts skip it), rather than a key-only row read as an agent with no role."""
         try:
@@ -324,12 +340,13 @@ class SessionStore:
         return claimed
 
     def _metered(self, session: AgentSession) -> tuple[AgentSession, Decimal | None, dict[str, Usage]]:
-        """``_priced``, and what the write adds to the spend ledger: the MicroVM seconds not counted before (with
+        """``_priced``, and what the write adds to the spend ledger: the session seconds not counted before (with
         their price, if any) and, per model, the tokens not ledgered before. The session then records both as
         counted, in the same write. Past the session's first ``MAX_SESSION_MODELS`` models by name, its others' tokens are
-        ledgered under ``-``: the names come from inside the MicroVM, and no session may open rows without end."""
+        ledgered under ``-``: the names come from inside the session, and no session may open rows without end."""
         priced, cost = self._priced(session)
         unpriced = priced.priced_seconds - session.priced_seconds   # (the seconds _priced just counted, once)
+        held = priced.priced_held_seconds - session.priced_held_seconds
         # (token_deltas names a reported 'microvm' as REPORTED_MICROVM: its own names say the same)
         # The first models by name (a map read back from DynamoDB keeps no order): deterministic on every write.
         own = {REPORTED_MICROVM if model == MICROVM else model for model in sorted(priced.tokens)[:MAX_SESSION_MODELS]}
@@ -337,7 +354,7 @@ class SessionStore:
         for model, used in token_deltas(priced.tokens, priced.ledgered_tokens).items():
             name = model if model in own else OTHER_MODELS
             usage[name] = usage.get(name, Usage()) + used
-        if unpriced > 0:
+        if unpriced > 0 or held > 0:
             # (a harness's model of that name is ledgered as spend.REPORTED_MICROVM: this row is the runtime's own)
             usage[MICROVM] = Usage(usd=cost or Decimal(0), microvm_seconds=unpriced)
         if usage:
@@ -355,13 +372,18 @@ class SessionStore:
         return Where(run_id=run_id, agent_id='', flow=known[0], repo=known[1])
 
     def _priced(self, session: AgentSession) -> tuple[AgentSession, Decimal | None]:
-        """The session with its MicroVM seconds counted as priced, and the cost of the ones not priced before (None:
-        none, or no price: those seconds stay unpriced, so a price set later applies from then on only)."""
-        unpriced = session.microvm_seconds - session.priced_seconds
-        if unpriced <= 0:
+        """The session with its running and held seconds counted as priced (and the vCPU- and GB-seconds they count
+        as), and the cost of the ones not priced before (None: none, or no rate: those seconds stay unpriced, so a
+        rate set later applies from then on only)."""
+        running = max(session.microvm_seconds - session.priced_seconds, 0)
+        held = max(session.held_seconds - session.priced_held_seconds, 0)
+        if running <= 0 and held <= 0:
             return session, None
-        priced = replace(session, priced_seconds=session.microvm_seconds)
-        return priced, (self._usd_per_second * unpriced if self._usd_per_second > 0 else None)
+        cost = self.pricing.cost(session.role, running=running, held=held)
+        priced = replace(session, priced_seconds=session.microvm_seconds, priced_held_seconds=session.held_seconds,
+                         vcpu_seconds=session.vcpu_seconds + cost.vcpu_seconds,
+                         gb_seconds=session.gb_seconds + cost.gb_seconds)
+        return priced, (cost.usd if cost.usd > 0 else None)
 
     @staticmethod
     def _update(session: AgentSession, condition: str, values: dict[str, Any],
@@ -412,7 +434,7 @@ class SessionStore:
         same session row, or another agent's priced write of the flow's month total (FLOW#, every agent of the flow
         adds to it), which a plain update would not have been refused by. Each such conflict is tried again after a
         short, jittered pause, ``CONFLICT_TRIES`` in all: the moment passes in milliseconds, and a move that loses it
-        for good (a StaleSession) may cost a new MicroVM its start.
+        for good (a StaleSession) may cost a new session its start.
 
         The request token: botocore gives each call one of its own and resends it on its own retries; a retry here is
         a new call, so the write names its token itself. After ``TransactionInProgressException`` (an earlier try of
@@ -461,8 +483,8 @@ class SessionStore:
         return sessions, holds
 
     def any_live_or_moving(self, run_id: str, now: int) -> bool:
-        """An agent of the run is live, or one is being moved (a Resume may be starting a MicroVM for it)."""
-        return any(session.status in LIVE_STATUSES or (session.claimed_until or 0) >= now
+        """An agent of the run is live, or one is being moved (a Resume may be starting a session for it)."""
+        return any(session.status in LIVE_STATUSES or session.stop_pending or (session.claimed_until or 0) >= now
                    for session in self.of_run(run_id))
 
     def watched(self) -> Iterator[tuple[str, list[AgentSession]]]:

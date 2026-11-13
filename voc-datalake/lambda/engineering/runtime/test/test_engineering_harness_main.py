@@ -133,7 +133,7 @@ def _vm_directory(root: Path, cache: Path, commit: str) -> RunnerClient:
     for part in ('work', 'home', 'secrets'):
         (root / part).mkdir(parents=True)
     runner = Runner(str(root / 'work'), sandbox=False, secrets_dir=str(root / 'secrets'), agent_home=str(root / 'home'))
-    server = serve('127.0.0.1', 0, runner)
+    server = serve('127.0.0.1', 0, runner, 'agent')
     threading.Thread(target=server.serve_forever, daemon=True).start()
     client = RunnerClient(f'http://127.0.0.1:{server.server_address[1]}', sleep=lambda _s: time.sleep(0.02))
     for command in checkout_commands(commit, [], source=f'file://{cache}'):

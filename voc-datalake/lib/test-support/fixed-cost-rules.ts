@@ -51,6 +51,9 @@ const FIXED_COST_TYPES: readonly (readonly [string, string])[] = [
   ['AWS::Neptune::', 'a Neptune cluster resource (hourly)'],
   ['AWS::GlobalAccelerator::', 'a Global Accelerator (hourly)'],
   ['AWS::DAX::', 'a DynamoDB Accelerator (DAX) cluster (hourly)'],
+  // AgentCore Runtime is pay per session (each session's CPU and memory while it lives): only capacity reserved
+  // ahead of use is a fixed cost.
+  ['AWS::BedrockAgentCore::CapacityProvider', 'an AgentCore capacity provider (capacity reserved ahead of use)'],
   ['AWS::Route53::HostedZone', 'a hosted zone created by the app (monthly; import an existing zone by id instead)'],
   // Alerting's own alarms are made at run time, once an administrator turns it on (docs/deployment.md), never by the app.
   ['AWS::CloudWatch::Alarm', 'a CloudWatch alarm (monthly per alarm)'],
@@ -76,6 +79,12 @@ const BILLED_ENDPOINTS: ReadonlyMap<unknown, string> = new Map([
 ]);
 const interfaceEndpoint: Rule = (type, properties) => (
   type === 'AWS::EC2::VPCEndpoint' ? BILLED_ENDPOINTS.get(properties.VpcEndpointType) : undefined
+);
+
+// A runtime on a capacity provider runs on reserved capacity; one without (the engineering agents') bills per session.
+const agentCoreCapacity: Rule = (type, properties) => (
+  type === 'AWS::BedrockAgentCore::Runtime' && properties.CapacityProviderConfiguration !== undefined
+    ? 'an AgentCore runtime on a capacity provider (capacity reserved ahead of use)' : undefined
 );
 
 const snapStart: Rule = (type, properties) => (
@@ -129,7 +138,7 @@ const cloudFrontDedicatedIp: Rule = (type, properties) => (
 );
 
 const RULES: readonly Rule[] = [
-  byType, interfaceEndpoint, snapStart, provisionedConcurrency, dynamoProvisioned, kinesisProvisioned, apiGatewayCache, cloudFrontDedicatedIp,
+  byType, interfaceEndpoint, agentCoreCapacity, snapStart, provisionedConcurrency, dynamoProvisioned, kinesisProvisioned, apiGatewayCache, cloudFrontDedicatedIp,
 ];
 
 /** One fixed-cost finding: where, and the message the gate prints. */

@@ -41,3 +41,7 @@ chmod 2755 /work
 # names a directory under it.
 chown code:work /opt/voc/cache
 chmod 2775 /opt/voc/cache
+# No setuid or setgid file anywhere in the image: a command dropped to `unit` or `code` (setpriv --no-new-privs, an
+# empty bounding set) has nothing to regain root through. Root's own tools (mount-s3, setpriv, unshare) need none: the
+# runner runs them as root. The two directories above keep their setgid bit (a directory, not a file).
+find / -xdev -type f -perm /6000 -exec chmod ug-s {} +

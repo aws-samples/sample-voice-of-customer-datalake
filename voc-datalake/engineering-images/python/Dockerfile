@@ -1,8 +1,9 @@
 # Engineering agent image: Python toolchain (docs/autonomous-engineering.md → Runtime).
 # Build from voc-datalake/:  docker build -f engineering-images/python/Dockerfile \
 #   --build-arg MOUNTPOINT_VERSION=<x.y.z> --build-arg MOUNTPOINT_SHA256=<sha256 of that release's .deb> .
-# The MicroVM image is made from this with the ready and validate hooks beside it.
-FROM public.ecr.aws/docker/library/python:3.14-slim
+# AgentCore Runtime (platform version V2) runs arm64 images: build for linux/arm64 and push to the stack's
+# repository for the language (docs/deployment.md), which an AgentCore runtime then runs.
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.14-slim
 
 ARG MOUNTPOINT_VERSION
 ARG MOUNTPOINT_SHA256

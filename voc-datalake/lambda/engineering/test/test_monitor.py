@@ -1,5 +1,5 @@
 """The run monitor: the overview of a run (its agents as the supervisor's session rows hold them, their tokens and
-MicroVM time, the totals), and a person's signals (checked against the attempt they saw, applied by the supervisor,
+session time, the totals), and a person's signals (checked against the attempt they saw, applied by the supervisor,
 recorded in the conversation) and answers."""
 from __future__ import annotations
 

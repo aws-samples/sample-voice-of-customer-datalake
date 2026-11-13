@@ -679,7 +679,7 @@
     "noBudget": "No budget",
     "overBudget": "over budget",
     "hardCap": "Hard cap at each workflow’s monthly budget",
-    "hardCapHint": "Off by default. On: a run started from a workflow with a budget gets a cost cap of what is left of the workflow’s month, and does not start when nothing is left. Each run’s cap is set when it starts, so runs of one workflow at the same time may together pass its budget (MicroVM time only, for now). Nothing in this sample starts a run from a workflow yet, and MicroVM time is unpriced unless the deployment sets a price, so for now nothing is capped.",
+    "hardCapHint": "Off by default. On: a run started from a workflow with a budget gets a cost cap of what is left of the workflow’s month, and does not start when nothing is left. Each run’s cap is set when it starts, so runs of one workflow at the same time may together pass its budget (MicroVM time only, for now). Session time is priced at the deployment’s AgentCore rates; model tokens are counted, not yet priced.",
     "hardCapFailed": "The hard cap could not be saved. Try again.",
     "hardCapSaving": "Saving…",
     "hardCapUnread": "The hard cap’s setting could not be loaded.",

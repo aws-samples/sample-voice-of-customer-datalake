@@ -19,7 +19,7 @@ class StatusReport:
         self._directory = os.path.join(home, '.voc')
         self.step = ''
         self.recent_tools: deque[str] = deque(maxlen=MAX_RECENT)
-        #: ``{model_id: {'in': n, 'out': n}}``, cumulated over this MicroVM's life.
+        #: ``{model_id: {'in': n, 'out': n}}``, cumulated over this session's life.
         self.tokens: dict[str, dict[str, int]] = {}
 
     def add_tokens(self, model_id: str, tokens_in: int, tokens_out: int) -> None:

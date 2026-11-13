@@ -8,25 +8,28 @@
  *   the Agents API (POST /agents/engineering/runs) ────────▶ voc-engineering-start {action: start_run} (only that)
  *   a run's start / its end ──────────────▶ voc-engineering-runtime {action: start_run / end_run} (and the rule)
  *
- * One MicroVM per agent. Its agent user gets a 15-minute session of its agent role from a launcher (the supervisor's
+ * One AgentCore Runtime session (its own microVM) per agent, on its language's runtime (engineering-agentcore.ts: the
+ * images' repositories, the runtimes, their network and their execution role). Its agent user gets a 15-minute session
+ * of its agent role from a launcher (the supervisor's
  * role, or the delivery function's, whose wake renews a session: the only principals the agent roles trust and the
  * only ones that may tag their sessions): ONE fixed role per agent role, narrowed by the session's tags (ws, run,
  * agent, connection). It calls the board's and the broker's function URLs and puts events on the bus only with its
  * own source (its policy and the bus's both deny any other); it reads no queue (there are none: the router invokes
  * voc-engineering-delivery, which records its run's messages in the run's inbox and wakes it).
- * No MicroVM holds a host token (the connector's broker does). The supervisor's role: the run and session rows and
+ * No session holds a host token (the connector's broker does). The supervisor's role: the run and session rows and
  * the registry, the spend ledger's ADDs and a flow's month total (GetItem), the budget alerts' own partition, the
- * checkpoints it reads, its own rule, the MicroVM operations and the launcher's AssumeRole. The delivery's role: the
- * runs' rows only (no registry, no delete), the spend ledger's ADDs, the checkpoints, resuming, continuing and
- * ending a MicroVM, the launcher's AssumeRole and its failure records; no rule. No IAM write: a stop cuts a run's sessions by
+ * checkpoints it reads, its own rule, the sessions' calls on this deployment's runtimes (invoke, command, stop) and
+ * the launcher's AssumeRole. The delivery's role: the runs' rows only (no registry, no delete), the spend ledger's
+ * ADDs, the checkpoints, waking, continuing and ending a session (invoke, stop: no command), the launcher's AssumeRole
+ * and its failure records; no rule. No IAM write: a stop cuts a run's sessions by
  * not renewing them.
  *
  * Deployed only with `-c engineeringAgents=true`: the default synth has none of it, so no fixed cost and nothing for
  * fixed-cost-guard.test.ts to see. Pay per use with the flag on too: the rule runs only while a run is active,
  * and a tick it could not deliver goes to the bus's voc-engineering-dlq (the stack's key; alerting watches it). The
  * supervisor's errors alarm is a fixed monthly cost, so it is a second opt-in
- * (`-c engineeringSupervisorAlarm=true`). The MicroVM IAM actions and ARN shapes follow the service's description and
- * are not yet checked against its reference (see the doc).
+ * (`-c engineeringSupervisorAlarm=true`). The AgentCore IAM actions and ARN shapes follow the service's developer
+ * guide and are not yet checked by a real call (see the doc).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -45,6 +48,9 @@ import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
 import { ENGINEERING_CACHE_PREFIX } from './core-buckets';
+import {
+  EngineeringAgentCore, buildMemoryMiB, buildRoles, grantSessions, maxSessions, sessionRates,
+} from './engineering-agentcore';
 import { grantBudgetWork, grantSpendLedger, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
@@ -55,21 +61,6 @@ import { createWorkerFunction, grantInvokeByName, workerRole } from '../utils/wo
 
 /** A fixed monthly cost, so an opt-in of its own (lib/test-support/fixed-cost-rules.ts OPT_IN_FIXED_COSTS). */
 export const SUPERVISOR_ALARM_FLAG = 'engineeringSupervisorAlarm';
-/** `-c engineeringImageArns='{"python":"arn:…",…}'`: the MicroVM image per language; `{}` (no launch) by default. */
-const IMAGE_ARNS_CONTEXT = 'engineeringImageArns';
-/**
- * `-c engineeringMicrovmUsdPerSecond=<decimal>`: the price of a MicroVM second, priced into each agent's `cost_usd` and
- * so into a run's cost cap (lambda/engineering/runtime/caps.py microvm_price); unset: `0`, MicroVM time not priced.
- */
-const MICROVM_PRICE_CONTEXT = 'engineeringMicrovmUsdPerSecond';
-/** caps.py MAX_USD_PER_SECOND: a price a few orders of magnitude off fails the synth. */
-const MAX_USD_PER_SECOND = 0.01;
-/**
- * The languages with an image (engineering-images/, lambda/engineering/runtime/egress.py REGISTRY_HOSTS; a Python
- * test keeps the two equal).
- */
-const IMAGE_LANGUAGES = ['java', 'node', 'python', 'rust'];
-const ARN_RE = /^arn:aws(?:-[a-z]+)*:[a-z0-9-]+:[a-z0-9-]*:\d{12}:\S+$/;
 /**
  * The session's own S3 keys, one template each: its connection's cache in the raw bucket (checkout.py), its run's
  * keys in the workspace bucket (voc-eng-workspace, lambda/engineering/workspace/layout.py; checkpoints.py).
@@ -112,11 +103,6 @@ export function benchmarkCaseIds(dir: string = BENCHMARK_CASES_DIR): string[] {
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b, 'en'));
 }
-/** Every MicroVM operation lambda/engineering/runtime/aws.py calls. */
-const MICROVM_ACTIONS = [
-  'lambda:RunMicrovm', 'lambda:SuspendMicrovm', 'lambda:ResumeMicrovm', 'lambda:TerminateMicrovm',
-  'lambda:CreateMicrovmAuthToken',
-];
 /**
  * The agent roles of lambda/engineering/runtime/interface.py ROLES, which is the broker's connectors/identity.py
  * AGENT_ROLES (one execution role each); a Python test keeps this list and ROLES equal.
@@ -182,48 +168,6 @@ type WiredProps = EngineeringRuntimeProps & {
   peers: EngineeringPeers, engineeringTable: dynamodb.ITable, workspaceBucket: s3.IBucket,
 };
 
-/**
- * `-c engineeringImageArns`: a JSON object (or its text, from the CLI) from languages of IMAGE_LANGUAGES to ARNs,
- * `{}` when absent. Anything else fails the synth, so a typo never deploys a runtime that launches the wrong image.
- */
-export function imageArns(scope: Construct): Record<string, string> {
-  const raw: unknown = scope.node.tryGetContext(IMAGE_ARNS_CONTEXT);
-  if (raw === undefined || raw === null) return {};
-  const usage = `Use -c ${IMAGE_ARNS_CONTEXT}='{"python":"arn:aws:…"}' (languages: ${IMAGE_LANGUAGES.join(', ')}).`;
-  let value: unknown = raw;
-  if (typeof raw === 'string') {
-    try {
-      value = JSON.parse(raw);
-    } catch {
-      throw new Error(`${IMAGE_ARNS_CONTEXT} is not JSON. ${usage}`);
-    }
-  }
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${IMAGE_ARNS_CONTEXT} must be a JSON object. ${usage}`);
-  }
-  const entries = Object.entries(value);
-  const bad = entries.filter(([language, arn]) => !IMAGE_LANGUAGES.includes(language)
-    || typeof arn !== 'string' || !ARN_RE.test(arn));
-  if (bad.length > 0) {
-    throw new Error(`${IMAGE_ARNS_CONTEXT}: not a language with an image, or not an ARN: ${bad.map(([language]) => language).join(', ')}. ${usage}`);
-  }
-  return Object.fromEntries(entries.map(([language, arn]) => [language, String(arn)]));
-}
-
-/** `-c engineeringMicrovmUsdPerSecond`, as the decimal text the runtime reads; `0` when absent. */
-function microvmPrice(scope: Construct): string {
-  const raw: unknown = scope.node.tryGetContext(MICROVM_PRICE_CONTEXT);
-  if (raw === undefined || raw === null || raw === '') return '0';
-  const text = String(raw).trim();
-  const price = Number(text);
-  // At most 12 digits after the point, as caps.py PRICE_DIGITS: the two parsers agree, and the runtime's sums stay exact.
-  if (!/^\d+(\.\d{1,12})?$/.test(text) || !Number.isFinite(price) || price > MAX_USD_PER_SECOND) {
-    throw new Error(`${MICROVM_PRICE_CONTEXT} is a decimal amount of 0 to ${MAX_USD_PER_SECOND} USD per MicroVM second, `
-      + 'with at most 12 digits after the point.');
-  }
-  return text;
-}
-
 /** A boolean context flag of the runtime's own, strictly parsed (a typo fails the synth, not the opposite). */
 function flag(scope: Construct, name: string): boolean {
   return booleanContextFlag(scope.node.tryGetContext(name), name, false, `Use -c ${name}=true or false.`);
@@ -244,20 +188,16 @@ class EngineeringRuntime extends Construct {
     for (const [id, role] of [['Supervisor', supervisorRole], ['Delivery', deliveryRole]] as const) {
       this.grantSupervisorVoice(props, id, role);
     }
-    const environment = this.environment(props, agentRoles, ruleName);
+    const sessions = new EngineeringAgentCore(this, 'AgentCore', { uniqueName: props.uniqueName });
+    // The supervisor runs commands in a session; the delivery wakes and continues sessions, never a command.
+    grantSessions(supervisorRole, sessions.runtimeArns, true);
+    grantSessions(deliveryRole, sessions.runtimeArns, false);
+    const environment = this.environment(props, agentRoles, ruleName, sessions);
     const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName, environment);
     createEngineeringStart(this, { ...props, ruleName, environment, runtime: fn });
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
     this.createDelivery(props, deliveryRole, agentRoles, environment);
     if (flag(this, SUPERVISOR_ALARM_FLAG)) this.createAlarms(fn);
-  }
-
-  /** The MicroVMs of this account and region (created per agent session: no name is known at deploy time). */
-  private microvmArns(): string[] {
-    const stack = cdk.Stack.of(this);
-    return ['microvm', 'microvm-image'].map((resource) => stack.formatArn({
-      service: 'lambda', resource, resourceName: '*', arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-    }));
   }
 
   /** Read only, the agents' checkpoints in the workspace bucket: a continuation restores from the latest one. */
@@ -292,7 +232,9 @@ class EngineeringRuntime extends Construct {
   }
 
   /** The supervisor's and the delivery function's environment (one code; the delivery takes a subset). */
-  private environment(props: WiredProps, agentRoles: Map<string, iam.Role>, ruleName: string): Record<string, string> {
+  private environment(
+    props: WiredProps, agentRoles: Map<string, iam.Role>, ruleName: string, sessions: EngineeringAgentCore,
+  ): Record<string, string> {
     const stack = cdk.Stack.of(this);
     return {
       ENGINEERING_TABLE: props.engineeringTable.tableName,
@@ -305,14 +247,19 @@ class EngineeringRuntime extends Construct {
       SUPERVISOR_RULE_NAME: ruleName,
       ENGINEERING_AGENT_ROLE_ARNS: stack.toJsonString(Object.fromEntries(
         [...agentRoles.entries()].map(([agentRole, agentIam]) => [agentRole, agentIam.roleArn]))),
-      // Image ARN per language, from `-c engineeringImageArns` once the images are built (docs/deployment.md);
-      // a language without one is refused at launch (aws.py AwsMicroVmRuntime.run).
-      ENGINEERING_IMAGE_ARNS: JSON.stringify(imageArns(this)),
+      // The AgentCore runtimes per language and size, once its image is pushed and named (`-c engineeringImages`) and
+      // the sessions have a network (docs/deployment.md); a language without one is refused at launch.
+      ENGINEERING_AGENT_RUNTIMES: stack.toJsonString(sessions.runtimes),
+      // The roles on the build runtimes (`-c engineeringBuildRoles`) and their resource configuration (0: none).
+      ENGINEERING_BUILD_ROLES: JSON.stringify(buildRoles(this, AGENT_ROLES)),
+      ENGINEERING_BUILD_MEMORY_MIB: String(buildMemoryMiB(this)),
+      // How many agent sessions this deployment runs at once (`-c engineeringMaxSessions`, the account's 5,000).
+      ENGINEERING_MAX_SESSIONS: String(maxSessions(this)),
       ENGINEERING_EXTRA_EGRESS: '[]',
       // The supervisor's settable clocks (lambda/engineering/runtime/caps.py SETTABLE); {} keeps the defaults.
       ENGINEERING_TIMINGS: '{}',
-      // The price of a MicroVM second (`-c engineeringMicrovmUsdPerSecond`; 0: not priced).
-      ENGINEERING_MICROVM_USD_PER_SECOND: microvmPrice(this),
+      // AgentCore's rates, each session's vCPU and memory priced into its cost (`-c engineeringSessionRates`).
+      ENGINEERING_SESSION_RATES: JSON.stringify(sessionRates(this)),
       // The benchmark's case ids, for the coach the run's retrospective asks (learning/loop.py).
       ENGINEERING_BENCHMARK_CASES: JSON.stringify(benchmarkCaseIds()),
     };
@@ -323,9 +270,9 @@ class EngineeringRuntime extends Construct {
    * a message for an agent, the conductor or a role of a run goes into that run's inbox (its rows in voc-engineering)
    * and its addressees are woken (lambda/engineering/runtime/delivery.py, through Supervisor.wake). The supervisor's
    * code, but a role of its own with only what a wake needs: the runs' partitions (never the registry, no delete),
-   * resuming a MicroVM and handing it a fresh agent session (the agent roles trust it as a launcher, with the same
-   * four session tags), continuing a held agent in a new MicroVM from its checkpoint, and its failure records. No
-   * rule switch. An invocation fails while an addressee is busy or its wake failed: Lambda retries it twice, then
+   * waking a held session and handing it a fresh agent session (the agent roles trust it as a launcher, with the same
+   * four session tags), continuing a held agent in a new session from its checkpoint (its AgentCore grants:
+   * engineering-agentcore.ts grantSessions, no command), and its failure records. No rule switch. An invocation fails while an addressee is busy or its wake failed: Lambda retries it twice, then
    * records it in voc-engineering-dlq.
    */
   private createDelivery(
@@ -343,17 +290,10 @@ class EngineeringRuntime extends Construct {
     grantSpendLedger(role, engineeringTable);
     const checkpoints = this.grantCheckpointReads(role, workspaceBucket);
     role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb', 'sqs']));
-    // Waking (resume, a fresh session over the MicroVM's auth token) and continuing (a new MicroVM, the old one ended).
-    const microvms = this.microvmArns();
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'WakeMicrovms',
-      actions: ['lambda:ResumeMicrovm', 'lambda:CreateMicrovmAuthToken', 'lambda:RunMicrovm', 'lambda:TerminateMicrovm'],
-      resources: microvms,
-    }));
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
-      reason: 'Read-only on the agents\' checkpoint objects of every run (a continuation restores from the latest), and the MicroVMs of this account and region, which are created per agent session and have no name known at deploy time',
-      findings: [checkpoints, ...microvms].map(resourceFinding),
+      reason: 'Read-only on the agents\' checkpoint objects of every run: a continuation restores from the latest',
+      findings: [resourceFinding(checkpoints)],
     }]);
     this.grantLaunch(role, agentRoles);
     role.addToPrincipalPolicy(new iam.PolicyStatement({
@@ -365,7 +305,7 @@ class EngineeringRuntime extends Construct {
       handler: 'engineering/runtime/handler.delivery_handler',
       role,
       layer: props.layer,
-      // A wake can start a MicroVM (a continuation); no model call.
+      // A wake can start a session (a continuation); no model call.
       timeout: cdk.Duration.minutes(2),
       memorySize: 512,
       serviceName: 'voc-engineering-delivery',
@@ -375,6 +315,8 @@ class EngineeringRuntime extends Construct {
       environment: Object.fromEntries(Object.entries(environment)
         .filter(([name]) => ![
           'ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_BENCHMARK_CASES', 'ENGINEERING_SETTINGS_TABLE',
+          // (nor the session ceiling: it launches nobody, so it is never refused for room)
+          'ENGINEERING_MAX_SESSIONS',
         ].includes(name))),
       // The inbox row is written once (a conditional put), so a retry only wakes again.
       retryAttempts: 2,
@@ -499,12 +441,11 @@ class EngineeringRuntime extends Construct {
     // The key, only through S3 (checkpoint reads) and DynamoDB (the run and session rows): never a direct KMS call.
     // (Its rule's undelivered ticks reach the DLQ through EventBridge, not this role.)
     role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb']));
-    const microvms = this.microvmArns();
-    role.addToPrincipalPolicy(new iam.PolicyStatement({ actions: MICROVM_ACTIONS, resources: microvms }));
+    // (Its AgentCore calls, on this deployment's runtimes only: engineering-agentcore.ts grantSessions.)
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
-      reason: 'Read-only on the agents\' checkpoint objects of every run (it picks the one a continuation restores from), and the MicroVMs of this account and region, which are created per agent session and have no name known at deploy time',
-      findings: [checkpoints, ...microvms].map(resourceFinding),
+      reason: 'Read-only on the agents\' checkpoint objects of every run: it picks the one a continuation restores from',
+      findings: [resourceFinding(checkpoints)],
     }]);
     // The launcher: a 15-minute session of an agent role, with its tags (launcher.py). No IAM write anywhere: a
     // stop cuts a run's sessions by not renewing them.

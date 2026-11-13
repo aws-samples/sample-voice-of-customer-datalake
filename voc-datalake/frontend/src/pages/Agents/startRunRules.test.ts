@@ -32,7 +32,7 @@ describe('the start rules: form ⇄ server', () => {
   })
 
   it('offer exactly the languages with an image', () => {
-    const match = /const IMAGE_LANGUAGES = \[([^\]]*)\]/.exec(read('lib/stacks/engineering-runtime.ts'))
+    const match = /const IMAGE_LANGUAGES = \[([^\]]*)\]/.exec(read('lib/stacks/engineering-agentcore.ts'))
     const stack = [...(match?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1])
     expect(stack).toStrictEqual([...RUN_LANGUAGES])
   })

@@ -3,7 +3,7 @@
 - ``META``: the run's goal, repository, flow, status and times (the run's start and end write them), and its flow's
   monthly budget with the highest level its flow's month passed (the supervisor's flag).
 - ``AGENT#<agent>``: each agent's role, skill version and model (CHANGE 3: every report names the versions that made
-  it) and its metering, which the runtime and the brokers add to (MicroVM-seconds, tokens, the cost they priced).
+  it) and its metering, which the runtime and the brokers add to (session-seconds, tokens, the cost they priced).
 - ``MSG#``: the conversation, counted (the events of the run).
 
 A missing attribute reads as empty or zero: a report of a run still under way says what is known so far.

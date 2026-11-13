@@ -1,8 +1,8 @@
 #!/bin/sh
-# Shared by every image's validate hook: the unit runner answers on its port and runs a command.
+# Shared by every image's validate hook: the unit runner answers on its agent port (loopback) and runs a command.
 # Usage: check-runner.sh <program> [args...]   (the toolchain command the image's validate hook proves)
 set -eu
-base="http://127.0.0.1:8080"
+base="http://127.0.0.1:8081"
 python3 - "$base" "$@" <<'PY'
 import json, sys, time, urllib.request
 

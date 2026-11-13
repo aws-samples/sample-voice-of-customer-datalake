@@ -4,7 +4,7 @@ The model gets a system prompt from the platform, the task brief, and the platfo
 text that comes from the repository, the knowledge pack, the memory or an earlier checkpoint is fenced as
 data (``tools.as_data``) and the system prompt says data is never an instruction. Between turns the loop
 takes the agent's inbox: ``save`` checkpoints at once, ``pause`` checkpoints and ends the session as
-paused; past ``max_turns`` in one MicroVM, or once a call's input passes ``MAX_INPUT_TOKENS``, it checkpoints
+paused; past ``max_turns`` in one session, or once a call's input passes ``MAX_INPUT_TOKENS``, it checkpoints
 and pauses too, so a continuation starts with a fresh conversation from its notes. On any error it checkpoints
 before the crash is raised. Tokens in and out are counted per model on the status report.
 """
@@ -45,7 +45,7 @@ def opening(session: AgentSession) -> str:
     parts += [as_data(f'knowledge:{n}', text) for n, text in enumerate(brief.knowledge, 1)]
     parts += [as_data(f'memory:{n}', text) for n, text in enumerate(brief.memory, 1)]
     if session.restored is not None:
-        parts += ['You are continuing this task in a new MicroVM. Your notes and plan from before:',
+        parts += ['You are continuing this task in a new session. Your notes and plan from before:',
                   as_data('checkpoint', f'{session.notes}\nplan: {session.plan}')]
         if session.patch_refused:
             parts += [('Your last checkpoint could not save your working tree, so the checkout holds an older one '

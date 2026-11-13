@@ -21,7 +21,7 @@ while a budget stays spent). A change that loses a race with another write of ME
 ``WS#<ws>#RUNS`` holds one row per run the supervisor still watches (``RUN#<run>``), written in the same
 transaction as the run's ``META`` (the table has no index, so this is how the supervisor lists them). A run's end
 does not remove it: the run stays listed until none of its agents is live (``release``), so the supervisor ends
-every MicroVM of an ended run, even when the end's caller died halfway. Whether any run is listed is what
+every session of an ended run, even when the end's caller died halfway. Whether any run is listed is what
 switches the supervisor's schedule.
 """
 from __future__ import annotations
@@ -112,7 +112,7 @@ class Run:
     #: The run's repository connection and its base commit (the board launches the run's agents on them).
     connection: str = ''
     commit: str = ''
-    #: The repository's toolchain (an ``egress.REGISTRY_HOSTS`` language): the coordinator's MicroVM image.
+    #: The repository's toolchain (an ``egress.REGISTRY_HOSTS`` language): the coordinator's session image.
     language: str = ''
     #: The run's workflow and repository, as its start recorded them (the spend ledger's grouping).
     flow: str = ''
@@ -136,7 +136,7 @@ def hard_capped(caps: RunCaps, *, budget_usd: float, flow: str, table: Any, now:
     """The administrators' hard cap on a start (settings.py): the run's cost cap is what is left of its flow's month
     (its budget less the flow's month total), or the cap it was given if smaller; ``RuntimeRefused`` with nothing left,
     before anything is written. Set once, for this run: runs of the flow at once may together pass its budget.
-    MicroVM time only until tokens are priced."""
+    session time only until tokens are priced."""
     # (the start's own checks first: a budget off its rule, or a flow that cannot key one, is refused for that)
     if budget_of({'monthly_usd': budget_usd})[1]:
         raise RuntimeRefused(BUDGET_RULE)
@@ -393,7 +393,7 @@ class TableRunControl:
         return self._run(run_id).started_at
 
     def stop_requested(self, run_id: str) -> bool:
-        """The run ended (done, failed, or a person's stop): every MicroVM of it is ended, none gets a new session."""
+        """The run ended (done, failed, or a person's stop): every session of it is ended, none gets a new session."""
         return self._run(run_id).status in ENDED
 
     def needs_human(self, run_id: str, reason: str) -> None:

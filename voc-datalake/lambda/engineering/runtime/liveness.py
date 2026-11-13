@@ -2,7 +2,7 @@
 
 The harness tells the supervisor how a session ended by its exit code: 0 the task is done, 75 (the
 sysexits "temporary failure" code) it paused after saving its checkpoint (a pause the supervisor asked for, a person's
-pause, or one the agent chose before a step longer than its MicroVM has left), anything else a crash.
+pause, or one the agent chose before a step longer than its session has left), anything else a crash.
 While the harness runs, ``judge`` reads the session's age and the task's lease (heartbeat and progress).
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ from engineering.runtime.caps import Timings
 from engineering.runtime.ports import Lease
 from engineering.runtime.sessions import AgentSession
 
-#: The harness's exit code for "paused: my checkpoint is saved, continue me in a new MicroVM".
+#: The harness's exit code for "paused: my checkpoint is saved, continue me in a new session".
 PAUSED_EXIT_CODE: Final = 75
 
 Verdict = Literal['ok', 'clear_ask', 'ask_state', 'pause', 'stalled', 'crashed']
@@ -32,7 +32,7 @@ def judge(session: AgentSession, lease: Lease | None, now: int, timings: Timings
     """The verdict on a session whose harness is still running."""
     age = now - session.started_at
     if age >= timings.hard_stop:
-        # Even on an open wait: a MicroVM that has not paused by its hard stop is ended.
+        # Even on an open wait: a session that has not paused by its hard stop is ended.
         return 'crashed'
     if lease is not None and lease.waiting:
         # On an open wait: outside every other clock (the supervisor suspends it, or holds it for a long wait).

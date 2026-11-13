@@ -69,7 +69,7 @@ class TaskSummary:
 class Planner(Protocol):
     """The run coordinator's view of its run: ``tasks`` on the board, ``post`` a task (its id), ``launch`` one agent
     for a task (its id). The run's connection and commit are the board's to take from the verified caller's run,
-    never anything the MicroVM sends."""
+    never anything the session sends."""
 
     def tasks(self, *, run_id: str) -> list[TaskSummary]: ...
 

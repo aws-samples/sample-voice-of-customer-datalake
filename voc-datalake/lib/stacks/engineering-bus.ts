@@ -15,7 +15,7 @@
  * - One fixed rule sends every event of this account on the bus to the inbox router (`engineering/bus/router.py`),
  *   never a rule per run. The router checks voc-msg/1 and the sender, writes the run's conversation and pushes a
  *   posted task, and a message for an agent or the conductor, to the delivery function with its conversation seq
- *   (`{message, seq}`). There are no queues per role or per agent: a suspended MicroVM cannot poll, so every message
+ *   (`{message, seq}`). There are no queues per role or per agent: a held session cannot poll, so every message
  *   is pushed per run; the delivery function records each notice as an `INBOX#` row and wakes the addressee, and an
  *   agent reads its notices through the board API's `inbox` op.
  * - The board API (`engineering/board/api.py`) behind a function URL with IAM authentication and no resource-based
@@ -64,7 +64,7 @@ import {
   ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
 } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
-import { imageArns } from './engineering-runtime';
+import { runtimeLanguages } from './engineering-agentcore';
 
 /** The report builder's base name: its future callers (the broker, the supervisor) address it by this name. */
 export const ENGINEERING_REPORTS_FUNCTION_BASE_NAME = 'voc-engineering-reports';
@@ -316,7 +316,7 @@ export class EngineeringBus extends Construct {
       handler: 'engineering/board/api.handler',
       role,
       layer: props.layer,
-      // The board waits for the runtime's launch (its MicroVM's start and the session row) without retrying it.
+      // The board waits for the runtime's launch (its session's start and the session row) without retrying it.
       timeout: cdk.Duration.seconds(BOARD_TIMEOUT_SECONDS),
       memorySize: 256,
       environment: {
@@ -325,9 +325,9 @@ export class EngineeringBus extends Construct {
         ENGINEERING_BUS_NAME: this.bus.eventBusName,
         ENGINEERING_RUNTIME_FUNCTION: runtime,
         ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
-        // The languages this deployment has a MicroVM image for (-c engineeringImageArns): the board refuses a
-        // launch in another before it numbers an agent.
-        ENGINEERING_IMAGE_LANGUAGES: Object.keys(imageArns(this)).sort((a, b) => a.localeCompare(b)).join(','),
+        // The languages this deployment has an agent runtime for (-c engineeringImages, with a network): the board
+        // refuses a launch in another before it numbers an agent.
+        ENGINEERING_IMAGE_LANGUAGES: runtimeLanguages(this).join(','),
       },
       serviceName: 'voc-engineering-board',
     });

@@ -9,7 +9,7 @@ What it reads (``records.RunRecord``, built by ``records.RunRecordReader`` from 
 - the quality gate's records (``_gate/…/record.json`` named on the final-go tasks): a NO-GO (the verdict, or the
   final go's) is a failure of the task the gate judged (the final-go task's parent), and the gate's rounds are
   review rounds of that task's attempt;
-- the agents' session rows (``AGENT#``): each agent's role and skill version, its MicroVM seconds and cost, its
+- the agents' session rows (``AGENT#``): each agent's role and skill version, its session seconds and cost, its
   crashes and the last failure the supervisor recorded (the run monitor's inspection data);
 - the run's ``META``: its connection, status and times.
 
@@ -24,7 +24,7 @@ What it gives:
   per role and failure kind (the coach proposes once per run, role and kind: ``SkillStore``'s ``RUN#`` row), at most
   ``MAX_COACHED``, each with its evidence bounded and redacted (``evidence``);
 - ``scorecards``: a line per role and skill version: tasks done, failed and needing a person (by the agent of each
-  task's last attempt), re-posts and review rounds (by the agent of the attempt), attempts, and the cost and MicroVM
+  task's last attempt), re-posts and review rounds (by the agent of the attempt), attempts, and the cost and session
   seconds of that version's agents.
 
 A person's own attempt (a task taken by ``human:…``) is nobody's skill: it is left out of both. An agent's attempt a

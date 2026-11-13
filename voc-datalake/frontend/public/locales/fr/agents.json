@@ -739,7 +739,7 @@
     "noBudget": "Aucun budget",
     "overBudget": "budget dépassé",
     "hardCap": "Plafond strict au budget mensuel de chaque workflow",
-    "hardCapHint": "Désactivé par défaut. Activé : une exécution lancée depuis un workflow doté d’un budget reçoit un plafond de coût égal à ce qui reste du mois du workflow, et ne démarre pas s’il ne reste rien. Le plafond de chaque exécution est fixé à son démarrage : plusieurs exécutions simultanées d’un workflow peuvent ensemble dépasser son budget (pour l’instant, temps MicroVM seulement). Pour l’instant, rien dans cet exemple ne lance d’exécution depuis un workflow, et le temps MicroVM n’a pas de prix sauf si le déploiement en fixe un : rien n’est donc encore plafonné.",
+    "hardCapHint": "Désactivé par défaut. Activé : une exécution lancée depuis un workflow doté d’un budget reçoit un plafond de coût égal à ce qui reste du mois du workflow, et ne démarre pas s’il ne reste rien. Le plafond de chaque exécution est fixé à son démarrage : plusieurs exécutions simultanées d’un workflow peuvent ensemble dépasser son budget (pour l’instant, temps MicroVM seulement). Le temps de session est valorisé aux tarifs AgentCore du déploiement ; les jetons du modèle sont comptés, pas encore valorisés.",
     "hardCapFailed": "Impossible d’enregistrer le plafond strict. Réessayez.",
     "hardCapSaving": "Enregistrement…",
     "hardCapUnread": "Impossible de charger le réglage du plafond strict.",

@@ -1,7 +1,7 @@
 """An agent's checkout: a sparse, blob-less clone of the repository at one commit, from the cache.
 
 The connector's broker (trusted code, the only holder of the host credential) keeps a partial clone of
-each repository in the cache, ``engineering/cache/<repo>/repo.git`` in the run bucket. Each MicroVM's
+each repository in the cache, ``engineering/cache/<repo>/repo.git`` in the run bucket. Each session's
 entry point mounts ``engineering/cache/<repo>/`` read-only at ``/mnt/voc-cache`` (Mountpoint for Amazon
 S3: no appends or random writes, so nothing is ever written through it), and the agent's first commands
 clone from there: ``--filter=blob:none`` and a sparse checkout of only the task's paths, so a monorepo

@@ -36,7 +36,7 @@ FROM_KINDS = {'api': frozenset({'human'}), 'board': frozenset({'system'}),
               'webhook': frozenset({'system'}), 'conductor': frozenset({'conductor'}), 'agent': frozenset({'agent'})}
 _TALK = frozenset({'agent', 'conductor'})
 #: Per type family (or exact type), the kinds of source that may send it. A person (the API) talks only by
-#: answering; the supervisor signals agents too (the pause before a MicroVM's time is up).
+#: answering; the supervisor signals agents too (the pause before a session's time is up).
 ALLOWED = {
     # The board's changes, and a person's board actions (board.api.PersonBoard), which the API publishes as the
     # signed-in person: its source proves from.kind human, never another kind (FROM_KINDS).

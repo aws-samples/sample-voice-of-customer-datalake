@@ -311,7 +311,7 @@ def test_a_flows_month_past_80_percent_is_alerted_once_and_every_run_of_it_is_fl
     assert (alert.flow, alert.month, alert.levels, alert.flag, alert.spent_usd, alert.budget_usd) == (
         'wf_fix', '2026-11', (80,), 80, 8.0, 10.0)
     assert alert.summary() == ('Workflow wf_fix has spent $8.00 of its $10.00 monthly budget for 2026-11 (80%, past '
-                               '80%). MicroVM time only: model tokens are not priced yet.')
+                               '80%). Session time only: model tokens are not priced yet.')
     # The other run of the flow says nothing while it is claimed, and is not flagged past it (it tries again);
     # once said, nothing more, and it is flagged.
     assert control.budget_alert(OTHER, NOV) is None

@@ -1,4 +1,4 @@
-"""The harness: how an agent runs inside its MicroVM (docs/autonomous-engineering.md → Runtime → The harness).
+"""The harness: how an agent runs inside its session (docs/autonomous-engineering.md → Runtime → The harness).
 
 One interface (``interface.Adapter``) with two adapters, chosen per agent in its skill: a plain Bedrock
 Converse loop (``converse_loop``) and a coding-agent CLI in its headless mode (``cli``), which reaches the

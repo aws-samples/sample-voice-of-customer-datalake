@@ -753,7 +753,7 @@ def test_a_launch_still_booting_or_of_a_run_not_active_keeps_its_record(run: Boa
     assert run.store.task(WS, RUN, task_id).launched_agent == 'fixer-2'
 
 
-@pytest.mark.parametrize('error_type', ['KeyError', 'MicroVmCallFailed'])
+@pytest.mark.parametrize('error_type', ['KeyError', 'SessionCallFailed'])
 def test_the_runtime_failing_is_unavailable(run: Board, error_type: str) -> None:
     run.api.launcher = _runtime_error(error_type)
     assert call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='python', paths=[])[0] == 503

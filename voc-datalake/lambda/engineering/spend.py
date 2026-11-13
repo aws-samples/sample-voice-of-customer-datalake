@@ -2,7 +2,7 @@
 
 One partition per workspace and month, ``WS#<ws>#SPEND#<yyyy-mm>``; one row per day, workflow, run, agent and model,
 ``DAY#<dd>#WF#<flow>#RUN#<run>#AGENT#<agent>#MODEL#<model>``, whose numbers only grow by ADD: ``usd`` (what was
-priced: today the MicroVM's seconds, under the model ``microvm``), ``tokens_in``/``tokens_out`` per model and
+priced: today the session's seconds, under the model ``microvm``), ``tokens_in``/``tokens_out`` per model and
 ``microvm_seconds``. Its ``repo`` names the run's repository, for grouping by it.
 
 Every row is written in the SAME transaction as the metering it mirrors (``ledger_updates``: the session store's priced
@@ -11,7 +11,7 @@ session's condition refuses adds nothing here either, and a retried one adds onc
 
 The rows are cost records (D5): never deleted, no TTL; anything that ever removes one is to go through the AUDIT# guard (not built: nothing removes one).
 
-Rows are booked to the day (UTC) of the write that measured them, which is when the supervisor counted the MicroVM time
+Rows are booked to the day (UTC) of the write that measured them, which is when the supervisor counted the session time
 or the harness's report reached it: the ledger starts when this is deployed (a session's earlier tokens are not booked).
 
 The administrators' reads (``month_spend``, ``GET /agents/engineering/spend``) are one Query of one month partition's
@@ -43,12 +43,12 @@ from engineering.connectors.identity import WORKSPACE
 from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 
-#: The pseudo model MicroVM time is priced under (a run's tokens are under their own models).
+#: The pseudo model session time is priced under (a run's tokens are under their own models).
 MICROVM: Final = 'microvm'
 #: The most ledger rows one write adds (its transaction also holds the session's row and its flow's month total;
 #: DynamoDB takes 100 items).
 MAX_MODEL_ROWS: Final = 32
-#: What a harness's model named like the MicroVM row is ledgered as, so its tokens never read as MicroVM time.
+#: What a harness's model named like the session row is ledgered as, so its tokens never read as session time.
 REPORTED_MICROVM: Final = 'microvm-reported'
 #: The most rows one month's read takes (each a day, workflow, run, agent and model): far above a month of normal use.
 MAX_ROWS: Final = 20_000
@@ -60,7 +60,7 @@ MONTH: Final = re.compile(r'(20[0-9]{2})-(0[1-9]|1[0-2])\Z')
 #: stays under DynamoDB's 1,024 bytes whatever its inputs.
 _PART: Final = re.compile(r'[A-Za-z0-9._:/@+=-]{1,128}\Z')
 #: The most models one session ledgers under their own names (the first by name): any others go on the '-' row,
-#: so no session can open rows without end (the report's names come from inside the MicroVM). A model that sorts
+#: so no session can open rows without end (the report's names come from inside the session). A model that sorts
 #: earlier and is first reported later moves a later one onto '-' from then on (the totals stay right).
 MAX_SESSION_MODELS: Final = 8
 #: The row of a session's models past the cap (and of a key part that cleans to nothing).
@@ -84,7 +84,7 @@ def _part(value: str) -> str:
 
 @dataclass(frozen=True)
 class Usage:
-    """What one write adds for one model: dollars priced, tokens in and out, MicroVM seconds."""
+    """What one write adds for one model: dollars priced, tokens in and out, session seconds."""
     usd: Decimal = Decimal(0)
     tokens_in: int = 0
     tokens_out: int = 0
@@ -131,7 +131,7 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
     """The ledger's ADDs for ``usage`` (per model), as TransactWriteItems ``Update`` entries to go in the metering's
     own transaction (no row for a model that adds nothing). Plain values, as the boto3 resource's client takes.
 
-    The model names come from inside the MicroVM (its harness's report): names that clean to the same key part are
+    The model names come from inside the session (its harness's report): names that clean to the same key part are
     summed into ONE entry, so no report can put two operations on one row and fail the session's write with it."""
     day = at.astimezone(UTC).strftime('%d')
     by_model: dict[str, Usage] = {}
@@ -141,7 +141,7 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
         part = _part(model)
         by_model[part] = by_model.get(part, Usage()) + used
     if len(by_model) > MAX_MODEL_ROWS:
-        # A transaction holds at most 100 items: past the cap, the smallest go on one '-' row (MicroVM time stays its
+        # A transaction holds at most 100 items: past the cap, the smallest go on one '-' row (session time stays its
         # own, then the models with the most tokens in this write: per-model rows past the cap are best effort).
         keep = sorted(by_model, key=lambda part: (part != MICROVM, -by_model[part].tokens, part))[:MAX_MODEL_ROWS - 1]
         rest = sum((used for part, used in by_model.items() if part not in keep), Usage())
@@ -165,7 +165,7 @@ def ledger_updates(table: str, at: datetime, where: Where, usage: Mapping[str, U
                 ':model': model, ':at': at.astimezone(UTC).isoformat(), ':by': WRITER, ':seq': where.seq},
         }})
     dollars = sum((used.usd for used in by_model.values()), Decimal(0))
-    # (only a write that adds dollars: a tokens-only one, or unpriced MicroVM time, leaves the hot item alone)
+    # (only a write that adds dollars: a tokens-only one, or unpriced session time, leaves the hot item alone)
     if updates and dollars > 0 and keyable(where.flow):
         # (dollars only: what the alerts and the hard cap read; the month's tokens and time are the DAY# rows')
         updates.append({'Update': {
@@ -184,7 +184,7 @@ def flow_total_key(month: str, flow: str) -> dict[str, str]:
 
 
 def flow_month_usd(table: Any, month: str, flow: str) -> Decimal:
-    """What ``flow``'s runs spent in ``month`` (priced: MicroVM time until tokens are), from its month total: one
+    """What ``flow``'s runs spent in ``month`` (priced: session time until tokens are), from its month total: one
     GetItem."""
     # (consistent: read right after this tick's own writes, so a level they passed is seen in this tick)
     item = table.get_item(Key=flow_total_key(month, flow), ConsistentRead=True).get('Item') or {}
@@ -289,7 +289,7 @@ def token_deltas(now: Mapping[str, Mapping[str, int]], ledgered: Mapping[str, Ma
         delta = Usage(tokens_in=max(int(counts.get('in', 0)) - int(before.get('in', 0)), 0),
                       tokens_out=max(int(counts.get('out', 0)) - int(before.get('out', 0)), 0))
         if delta:
-            name = REPORTED_MICROVM if model == MICROVM else model   # (the MicroVM row is the runtime's own)
+            name = REPORTED_MICROVM if model == MICROVM else model   # (the session row is the runtime's own)
             deltas[name] = deltas.get(name, Usage()) + delta
     return deltas
 
@@ -303,7 +303,7 @@ class MonthSpend:
     truncated: bool = False
 
     def view(self) -> dict[str, Any]:
-        # Biggest first: dollars, then tokens, then MicroVM time (tokens are not priced yet), then the key.
+        # Biggest first: dollars, then tokens, then session time (tokens are not priced yet), then the key.
         ordered = sorted(self.groups.items(), key=lambda pair: (
             -pair[1].usd, -pair[1].tokens, -pair[1].microvm_seconds, pair[0]))
         return {'month': self.month, 'by': self.by, 'total': self.total.view(), 'truncated': self.truncated,

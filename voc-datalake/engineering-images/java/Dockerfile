@@ -2,7 +2,8 @@
 # Build from voc-datalake/:  docker build -f engineering-images/java/Dockerfile \
 #   --build-arg MOUNTPOINT_VERSION=<x.y.z> --build-arg MOUNTPOINT_SHA256=<sha256 of that release's .deb> .
 # Maven is installed; a Gradle repository brings its own wrapper (./gradlew).
-FROM public.ecr.aws/docker/library/eclipse-temurin:21-jdk
+# AgentCore Runtime (platform version V2) runs arm64 images: built for linux/arm64 (docs/deployment.md).
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/eclipse-temurin:21-jdk
 
 ARG MOUNTPOINT_VERSION
 ARG MOUNTPOINT_SHA256
@@ -20,6 +21,9 @@ COPY lambda/engineering/runtime/harness/*.py /opt/voc/engineering/runtime/harnes
 COPY engineering-images/common/harness.py /opt/voc/harness.py
 COPY engineering-images/common/entrypoint.sh /opt/voc/entrypoint.sh
 COPY engineering-images/common/check-runner.sh engineering-images/java/ready.sh engineering-images/java/validate.sh /opt/voc/hooks/
+# Maven reads no HTTPS_PROXY: the dependency step's settings point it at its own egress proxy (the firewall holds it
+# there either way).
+COPY engineering-images/java/maven-settings.xml /home/code/.m2/settings.xml
 
 # No Gradle daemon: it talks to its client over loopback, which the code firewall rejects in the dependency step
 # (entrypoint.sh). The runner passes it to repository code (unit_runner.TOOLCHAIN_ENV).

@@ -5,7 +5,7 @@ task, so none of its role is idle): its row is there for the role's agents to re
 signal's record, run health, an outcome) stays in the conversation, where the supervisor, the conductor and the run
 view read it.
 
-There are no queues, per role or per agent: a suspended MicroVM runs no code and cannot poll, so every message is
+There are no queues, per role or per agent: a suspended session runs no code and cannot poll, so every message is
 pushed, per run; an agent reads its notices through the board API's ``inbox`` op.
 """
 from __future__ import annotations

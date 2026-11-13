@@ -8,7 +8,7 @@ when, what), in the same transaction, so the setting and its history never drift
 With the hard cap on, a run's first start with its flow's monthly budget gets a cost cap of what is left of the flow's
 month (``runtime/runs.py hard_capped``: the budget less the flow's month total), the smaller of that and any cap it was
 given, and is refused before anything is written when nothing is left. The cap is set once, per run, at its start:
-runs of one flow at once may together pass its budget. It counts MicroVM time only until the model broker prices
+runs of one flow at once may together pass its budget. It counts session time only until the model broker prices
 tokens. Off (the default), nothing changes.
 """
 from __future__ import annotations

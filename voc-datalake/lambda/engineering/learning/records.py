@@ -4,7 +4,7 @@ final-go tasks named in the workspace bucket. Nothing else, and never a listing.
 - ``META`` (one GetItem): the connection, status and times;
 - ``TASK#`` and ``TASKLOG#`` (the board store's reads: one key range each, at most the run's ``max_tasks`` tasks
   and their moves), as the reports read them;
-- ``AGENT#`` (one key range): each agent's role, skill version, MicroVM seconds, cost, crashes and the
+- ``AGENT#`` (one key range): each agent's role, skill version, session seconds, cost, crashes and the
   supervisor's last word on its failure (a launch's hold with no session is not an agent);
 - the ``_gate/…/record.json`` objects the final-go tasks recorded as result keys, at most ``MAX_GATE_RECORDS`` (the
   latest attempts first), each checked against the gate's own schema (``GateRecord.from_dict``); one that cannot be

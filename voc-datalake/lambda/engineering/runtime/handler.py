@@ -7,12 +7,12 @@
   (``runs.RunStore.start``), the supervisor's rule switched on, and, for a run with its connection, commit and
   language, its coordinator launched on that task (``coordinator-1``, on the coordinator's skill's harness). A run
   started without its connection or commit can launch no agent and read no knowledge (the board answers 409); one
-  without its language gets no coordinator. A language this deployment has no MicroVM image for, or a coordinator
+  without its language gets no coordinator. A language this deployment has no agent runtime for, or a coordinator
   with no skill, is refused before anything is written. A retry of a run that is live switches the rule on again,
   keeps the first start's caps and launches the coordinator only if the run is active and no session of it exists
   yet.
 - ``{"action": "end_run", "run_id", "status", "actor"?}``: the run ended (``done``, ``failed`` or ``stopped``), every
-  MicroVM of it ended (one busy with another move at the next tick, which sees the run ended), then settled. A
+  session of it ended (one busy with another move at the next tick, which sees the run ended), then settled. A
   retry of an ended run does the rest again and keeps the first end's status.
 - ``{"action": "retrospective", "run_id", "failure"?}``: the learning loop (``learning/loop.py``). Without
   ``failure``: the ended run's scorecards written, and each failure it takes to the coach (at most three) handed on
@@ -26,7 +26,7 @@
   logged, never failing the end or the tick); with no run listed the rule is switched off, and the list re-read
   after that switch (a run that started meanwhile turns it back on).
 - ``{"action": "launch", ...}``: the run coordinator starting one agent of an active run on one task: the
-  MicroVM from the agent's image, with its egress allowlist, and the session row (the first tick hands it its
+  session from the agent's image, with its egress allowlist, and the session row (the first tick hands it its
   role session).
 - ``{"action": "signal", "run_id", "agent_id"?, "signal", "attempt"?, "actor"?}``: the run monitor's Save, Pause, Resume,
   Shut down and Stop now (``Supervisor.signal_detailed``): each agent's status, and whether the signal took effect
@@ -66,14 +66,14 @@ from typing import TYPE_CHECKING, Any, Final, TypeGuard
 
 from aws_lambda_powertools.metrics import MetricUnit
 
-from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError
+from engineering.board.store import COORDINATE_TASK, COORDINATOR, MAX_AGENTS, BoardError
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.delivery import deliver
 from engineering.runtime.harness.skills import harness_argv, skill_for, skill_label
-from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused, check_run_id
+from engineering.runtime.interface import AgentRuntime, AgentSpec, RuntimeRefused, check_run_id
 from engineering.runtime.launcher import Launcher
 from engineering.runtime.runs import (
     ENDED,
@@ -86,7 +86,13 @@ from engineering.runtime.runs import (
     TableRunControl,
     hard_capped,
 )
-from engineering.runtime.sessions import LIVE_STATUSES, AgentSession, LaunchUnderWay, SessionStore, StaleSession
+from engineering.runtime.sessions import (
+    LIVE_STATUSES,
+    AgentSession,
+    LaunchUnderWay,
+    SessionStore,
+    StaleSession,
+)
 from engineering.runtime.supervisor import SessionBusy, Supervisor
 from engineering.settings import read_hard_cap
 from shared.invocation_cost import measure_invocation_cost
@@ -113,11 +119,31 @@ def _sts_client() -> Any:
     return boto3.client('sts')
 
 
-def _runtime() -> MicroVmRuntime:
-    """Lambda MicroVMs, always: the local fake (no sandbox) is for tests, which put it in place themselves."""
-    from engineering.runtime.aws import AwsMicroVmRuntime
-    from shared.aws import get_lambda_client
-    return AwsMicroVmRuntime(get_lambda_client(), json.loads(os.environ.get('ENGINEERING_IMAGE_ARNS', '{}')))
+@cache
+def _agentcore_client() -> Any:
+    import boto3
+    return boto3.client('bedrock-agentcore')
+
+
+def _build_roles() -> frozenset[str]:
+    """The roles that build and test the repository (``ENGINEERING_BUILD_ROLES``): the build size's, when the
+    deployment gives one."""
+    return frozenset(json.loads(os.environ.get('ENGINEERING_BUILD_ROLES', '[]')))
+
+
+def _runtime() -> AgentRuntime:
+    """AgentCore Runtime, always: the local fake (no sandbox) is for tests, which put it in place themselves."""
+    from engineering.runtime.agentcore import AgentCoreRuntime, runtimes_from
+    return AgentCoreRuntime(_agentcore_client(), runtimes_from(os.environ.get('ENGINEERING_AGENT_RUNTIMES')),
+                            region=os.environ.get('AWS_REGION', 'us-east-1'), build_roles=_build_roles())
+
+
+def _pricing() -> caps.SessionPricing:
+    """Each session's vCPU and memory at the deployment's AgentCore rates (``ENGINEERING_SESSION_RATES``), at its
+    role's size (``ENGINEERING_BUILD_ROLES``, ``ENGINEERING_BUILD_MEMORY_MIB``)."""
+    return caps.SessionPricing(rates=caps.session_rates(os.environ.get('ENGINEERING_SESSION_RATES')),
+                               build_roles=_build_roles(),
+                               build_size=caps.build_size(os.environ.get('ENGINEERING_BUILD_MEMORY_MIB')))
 
 
 def _supervisor() -> Supervisor:
@@ -131,8 +157,7 @@ def _supervisor() -> Supervisor:
         runs = _runs()
         _supervisor_cache = Supervisor(
             runtime=_runtime(),
-            sessions=SessionStore(get_dynamodb_resource().Table(table), runs,
-                                  caps.microvm_price(os.environ.get('ENGINEERING_MICROVM_USD_PER_SECOND'))),
+            sessions=SessionStore(get_dynamodb_resource().Table(table), runs, _pricing()),
             board=board, bus=bus, control=TableRunControl(runs, clock),
             launcher=Launcher(_sts_client(), json.loads(os.environ['ENGINEERING_AGENT_ROLE_ARNS'])),
             checkpoints=CheckpointReader(get_s3_client(), workspace),
@@ -187,7 +212,7 @@ def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
         with contextlib.suppress(RunNotActive):  # it was not at a decision point
             _runs().resume(run_id, now=int(clock()), actor=str(event.get('actor') or ''))
         # A run whose coordinator kept crashing waited for this Resume: it gets a new one. One under way is logged
-        # (it may still start). A launch refused (its record cleared, as the board's are) or a MicroVM that will not
+        # (it may still start). A launch refused (its record cleared, as the board's are) or a session that will not
         # start is logged and sends the run back to a person, as a start does: never active with nobody planning it.
         try:
             _ensure_coordinator(run_id, str(event.get('actor') or ''))
@@ -270,14 +295,29 @@ def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]
 
 
 def _image_languages() -> frozenset[str]:
-    """The languages this deployment has a MicroVM image for (``ENGINEERING_IMAGE_ARNS``, the runtime's own)."""
-    return frozenset(json.loads(os.environ.get('ENGINEERING_IMAGE_ARNS', '{}')))
+    """The languages this deployment has an agent runtime for (``ENGINEERING_AGENT_RUNTIMES``, the runtime's own)."""
+    return frozenset(json.loads(os.environ.get('ENGINEERING_AGENT_RUNTIMES', '{}')))
+
+
+def _max_sessions() -> int:
+    return caps.max_sessions(os.environ.get('ENGINEERING_MAX_SESSIONS'))
+
+
+def _run_fits(run_caps: RunCaps) -> None:
+    """Refuse, before anything is written, a run that cannot fit: more agents at once than the deployment's sessions
+    (its coordinator and one agent per task, at most the board's ``MAX_AGENTS``), or clocks that would let an agent
+    outlive its session's 8 hours without a continuation (``caps.Timings``)."""
+    caps.timings(json.loads(os.environ.get('ENGINEERING_TIMINGS', '{}')))
+    agents, sessions = min(run_caps.max_tasks + 1, MAX_AGENTS), _max_sessions()
+    if agents > sessions:
+        raise RuntimeRefused(f'this run may have {agents} agents at once, more than the {sessions} agent sessions '
+                             'this deployment runs: lower its task cap')
 
 
 def _coordinator_launchable(language: str) -> None:
     """What the coordinator's launch would refuse, refused before a coordinator is numbered (the board's launch op
     checks the same before it numbers an agent: ``BoardApi._check_launchable``): the coordinator role with no skill,
-    a language this deployment has no MicroVM image for."""
+    a language this deployment has no agent runtime for."""
     if skill_for(COORDINATOR) is None:
         raise RuntimeRefused('no coordinator can be launched yet: the role has no skill')
     images = _image_languages()
@@ -288,7 +328,7 @@ def _coordinator_launchable(language: str) -> None:
 
 def _ensure_coordinator(run_id: str, actor: str) -> None:
     """Make sure an active run with its connection, commit and language has a coordinator: the one its coordinate
-    task records, started when it has no session yet (the run's start, ``coordinator-1``; a start whose MicroVM
+    task records, started when it has no session yet (the run's start, ``coordinator-1``; a start whose session
     failed), or a new one in its place when its session failed: it kept crashing, which sent the run to a person
     (``BoardLeases.coordinator_to_start``). Nothing for a run whose coordinator is live or held (a Resume continues
     a held one itself), nor one a person shut down or stopped. A refusal of the board's (the run's agent cap, a
@@ -333,7 +373,7 @@ def _ensure_coordinator(run_id: str, actor: str) -> None:
                 'attempt': attempt, 'language': run.language, 'paths': [], 'commit': run.commit,
                 'connection': run.connection})
     except SessionBusy:
-        # Another start's or Resume's launch of it is under way (or one killed while its MicroVM booted, until its
+        # Another start's or Resume's launch of it is under way (or one killed while its session booted, until its
         # hold runs out): it keeps its record, and the caller asks again (the run is written).
         raise
     except (RuntimeRefused, StaleSession) as refused:
@@ -349,7 +389,7 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
     cannot be launched (``_coordinator_launchable``), with or without its connection and commit (a run without them
     never gets a coordinator, but no run records a language this deployment cannot run); a start with all three
     numbers it ``coordinator-1``. A start
-    whose coordinator then fails to launch (its MicroVM did not start, or the runtime refused it) sends the run to a
+    whose coordinator then fails to launch (its session did not start, or the runtime refused it) sends the run to a
     person (``needs_human`` ``coordinator``), whose Resume launches it, and raises the failure; so does a rule that
     could not be switched on. ``launch=False`` (voc-engineering-start) writes the run and switches the rule only: its
     coordinator is launched by the ``launch_coordinator`` action that start hands on."""
@@ -360,6 +400,8 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
     language = str(event.get('language', ''))
     budget_usd, flow = _optional_number(event, 'budget_usd', float), str(event.get('flow', ''))
     first = runs.get(run_id) is None
+    if first:   # (a run that cannot fit is refused before anything is written)
+        _run_fits(caps)
     if language and first:   # (any first start naming a language: no run records one it cannot run)
         _coordinator_launchable(language)
     if first and budget_usd is not None and _hard_cap_on():
@@ -384,7 +426,7 @@ def start_run(event: Mapping[str, Any], *, launch: bool = True) -> dict[str, Any
     except SessionBusy:
         raise   # (another start's launch of it is under way: ask again)
     except Exception:
-        # The rule could not be switched on, its MicroVM did not start, or the runtime refused it: the run goes to a
+        # The rule could not be switched on, its session did not start, or the runtime refused it: the run goes to a
         # person (the coordinator's decision point, the run monitor's Resume prompt), never left active with no
         # coordinator and no session.
         _to_person(run_id, str(event.get('actor') or ''))
@@ -421,7 +463,7 @@ def launch_coordinator(event: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def end_run(event: Mapping[str, Any]) -> dict[str, Any]:
-    """End a run and every MicroVM of it, then settle (which starts its retrospective once none of its agents is
+    """End a run and every session of it, then settle (which starts its retrospective once none of its agents is
     live: here, or at the tick that ends the last busy one; best effort, never failing the end)."""
     run_id, status, runs = str(event.get('run_id', '')), str(event.get('status', '')), _runs()
     try:
@@ -550,7 +592,7 @@ def _answer(session: AgentSession) -> dict[str, Any]:
 
 def launch(event: Mapping[str, Any]) -> dict[str, Any]:
     """Start one agent of a run on one task, once: a repeat for the same task and attempt answers the session the
-    first wrote, and is refused (``SessionBusy``) while the first is still starting its MicroVM; an agent with a
+    first wrote, and is refused (``SessionBusy``) while the first is still starting its session; an agent with a
     session for another task or attempt is refused (``StaleSession``). A repeat is answered, and one while the first
     still starts refused as busy, before any other check (the run's state, the skill, the egress): any other
     refusal so means that no session and no launch of the agent exist, which the board relies on to clear its
@@ -587,7 +629,9 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
     existing = _launched(supervisor.sessions, spec)
     if existing is not None:
         return existing
-    try:   # held before the MicroVM starts: a repeated launch of this agent never starts a second one
+    # (no room for a new session is the service's own answer, at the start itself, atomic: ``SessionsFull``, a
+    # refusal in its words; no count of this deployment's sessions is read here)
+    try:   # held before the session starts: a repeated launch of this agent never starts a second one
         supervisor.sessions.hold_launch(spec.run_id, spec.agent_id, int(clock()))
     except LaunchUnderWay:
         existing = _launched(supervisor.sessions, spec)
@@ -607,10 +651,10 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
             started_at=int(clock()), last_tick_at=int(clock())),
             labels)
     except Exception:
-        # No session row, no MicroVM: one that nothing supervises would run until its idle policy.
+        # No session row, no session: one that nothing supervises would run until its idle timeout.
         try:
             supervisor.runtime.terminate(vm)
-        finally:   # (the hold is let go even when ending the MicroVM fails: its idle policy ends it then)
+        finally:   # (the hold is let go even when ending the session fails: its idle timeout ends it then)
             supervisor.sessions.release_launch(spec.run_id, spec.agent_id)
         raise
     return _answer(session)
@@ -673,7 +717,7 @@ def start_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
 
     It answers as soon as the run is written (its refusals, all before the write, are raised as they are): it writes
     the run and switches the rule on (``start_run`` with ``launch=False``), then hands the coordinator's launch on to
-    voc-engineering-runtime (``launch_coordinator``, asynchronously: a MicroVM's start does not fit behind API
+    voc-engineering-runtime (``launch_coordinator``, asynchronously: a session's start does not fit behind API
     Gateway's 29 s). Any failure once the run exists is ``StartFailed``, naming it; the run is sent to a person first
     (the hand-on failed: still active), so it is never left active with nobody to launch its coordinator."""
     if event.get('action') != START_ACTION:

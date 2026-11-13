@@ -56,7 +56,7 @@ class Board(Protocol):
     """``lease``: the task's lease (an open task's has no holder, only its attempt), or None for no task. ``repost``:
     free the task at the ``attempt`` the supervisor judged and post it again at the next one, for an agent to start
     afresh (a newer attempt is left alone). ``refresh``: the holder's lease runs its full time again (before a
-    continuation's MicroVM starts, and when its harness does); False when the task is not the holder's at that
+    continuation's session starts, and when its harness does); False when the task is not the holder's at that
     attempt any more."""
 
     def lease(self, run_id: str, task_id: str) -> Lease | None: ...
@@ -91,7 +91,7 @@ class BudgetAlert:
         # (the share is the spend's own, not the level's: a tick that jumps levels says how far it is)
         share = int(self.spent_usd * 100 / self.budget_usd) if self.budget_usd else 0
         return (f'Workflow {self.flow} has spent ${self.spent_usd:,.2f} of its ${self.budget_usd:,.2f} monthly budget '
-                f'for {self.month} ({share}%, past {self.levels[-1]}%). MicroVM time only: model tokens are not '
+                f'for {self.month} ({share}%, past {self.levels[-1]}%). Session time only: model tokens are not '
                 f'priced yet.')
 
 

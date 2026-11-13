@@ -1,4 +1,4 @@
-"""The harness's way to run anything: the MicroVM's own runner (``unit_runner``), never a shell of its own.
+"""The harness's way to run anything: the session's own runner (``unit_runner``), never a shell of its own.
 
 A repository command (a build, a test, a gate tool) goes to the runner as repository code, so it runs as
 ``code``, boxed in its own namespaces, without network (the dependency step alone has the registries,
@@ -15,7 +15,8 @@ from typing import Any, Final
 
 from engineering.runtime.checkout import CHECKOUT_DIR as CHECKOUT
 
-RUNNER_URL: Final = 'http://127.0.0.1:8080'
+#: The runner's agent API on loopback (unit_runner.AGENT_PORT): the one runner port the agent user may reach.
+RUNNER_URL: Final = 'http://127.0.0.1:8081'
 ENV: Final = '/usr/bin/env'
 POLL_SECONDS: Final = 1.0
 #: While a command runs, ``on_wait`` is called every this many polls (about a minute).
@@ -23,7 +24,7 @@ POLLS_PER_WAIT: Final = 60
 
 
 class RunnerClient:
-    """``run`` a command in the agent's MicroVM through its runner and wait for its result."""
+    """``run`` a command in the agent's session through its runner and wait for its result."""
 
     def __init__(self, base: str = RUNNER_URL, *, sleep: Callable[[float], None] = time.sleep,
                  opener: Callable[[urllib.request.Request], Any] | None = None) -> None:
@@ -57,6 +58,6 @@ class RunnerClient:
 
 
 def _open_json(request: urllib.request.Request) -> Any:
-    # The runner on the MicroVM's own loopback (a constant URL, never one from the model or the repository).
+    # The runner on the session's own loopback (a constant URL, never one from the model or the repository).
     with urllib.request.urlopen(request, timeout=30) as answer:
         return json.loads(answer.read())

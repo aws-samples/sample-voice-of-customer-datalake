@@ -1,6 +1,8 @@
 """The local fake and the runner: commands in the agent's directory, scrubbed output, the sandbox argv."""
+import base64
 import json
 import os
+import socket
 import stat
 import sys
 import threading
@@ -8,23 +10,36 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import pytest
 
-from engineering.runtime.aws import https_json
-from engineering.runtime.interface import AgentSpec, Command, ExecResult, MicroVm, RuntimeRefused
-from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
-from engineering.runtime.tokens import MAX_TOKEN_SECONDS
+from engineering.runtime import egress, unit_runner
+from engineering.runtime.interface import AgentSpec, Command, ExecResult, RuntimeRefused, RuntimeSession
+from engineering.runtime.test.local_runtime import LocalAgentRuntime
 from engineering.runtime.unit_runner import (
+    CODE_PROXY_ENV,
     MASK,
+    PROXY_ENV,
+    SESSION_LAPSE_GRACE,
+    Api,
     CommandJob,
+    EgressProxy,
     Runner,
+    client,
     command_env,
     main,
     sandboxed_argv,
     scrub_text,
     serve,
 )
+
+
+def https_json(request: urllib.request.Request) -> dict:
+    """One call of the runner's loopback API (never a proxy), its JSON answer."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=20) as answer:
+        return json.loads(answer.read())
 
 SPEC = AgentSpec(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='python',
                  egress=('pypi.org',), connection='repo-1')
@@ -34,7 +49,7 @@ def _py(code: str, timeout: int = 30) -> Command:
     return Command(argv=(sys.executable, '-c', code), timeout_seconds=timeout)
 
 
-def _wait(runtime: LocalMicroVmRuntime, vm: MicroVm, exec_id: str) -> ExecResult:
+def _wait(runtime: LocalAgentRuntime, vm: RuntimeSession, exec_id: str) -> ExecResult:
     for _ in range(200):
         result = runtime.poll_exec(vm, exec_id)
         if result is not None:
@@ -44,7 +59,7 @@ def _wait(runtime: LocalMicroVmRuntime, vm: MicroVm, exec_id: str) -> ExecResult
 
 
 def test_a_command_runs_in_the_agents_own_directory_and_reports_its_tails():
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
     code = "import os, sys; open('made.txt', 'w').write('x'); print(os.getcwd()); sys.exit(3)"
     result = _wait(runtime, vm, runtime.start_exec(vm, _py(code)))
@@ -54,7 +69,7 @@ def test_a_command_runs_in_the_agents_own_directory_and_reports_its_tails():
 
 
 def test_credentials_in_tool_output_are_masked():
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
     leak = "print('key AKIA' + 'ABCDEFGHIJKLMNOP' + ' and GITHUB_TOKEN=ghp_' + 'a' * 36)"
     result = _wait(runtime, vm, runtime.start_exec(vm, _py(leak)))
@@ -107,8 +122,15 @@ def test_the_agents_own_commands_run_as_unit_never_as_root_and_root_runs_tools_b
                                                                            network=False)[:1]))
 
 
+@pytest.mark.parametrize('repository_code', [True, False], ids=['repository-code', 'agent'])
+def test_no_command_gains_a_privilege_through_a_setuid_file_or_a_capability(repository_code: bool):
+    argv = sandboxed_argv(['make'], repository_code=repository_code, network=False)
+    drop = argv[argv.index('/usr/bin/setpriv'):]
+    assert {'--no-new-privs', '--bounding-set=-all', '--inh-caps=-all', '--clear-groups'} <= set(drop)
+
+
 def test_a_command_over_its_timeout_is_killed():
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
     result = _wait(runtime, vm, runtime.start_exec(vm, _py('import time; time.sleep(30)', timeout=1)))
     assert result.timed_out
@@ -116,7 +138,7 @@ def test_a_command_over_its_timeout_is_killed():
 
 
 def test_a_suspended_vm_runs_nothing_until_resumed():
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
     runtime.suspend(vm)
     with pytest.raises(RuntimeRefused, match='suspended'):
@@ -126,36 +148,327 @@ def test_a_suspended_vm_runs_nothing_until_resumed():
 
 
 def test_resume_refuses_a_running_vm():
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     with pytest.raises(RuntimeRefused, match='not suspended'):
         runtime.resume(runtime.run(SPEC))
 
 
 def test_terminate_kills_its_commands_removes_the_directory_and_is_idempotent():
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
     runtime.start_exec(vm, _py('import time; time.sleep(30)', timeout=60))
     runtime.terminate(vm)
     runtime.terminate(vm)
     assert not os.path.exists(vm.endpoint)
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        runtime.mint_token(vm)
+    assert runtime.state_of(vm) == 'terminated'
 
 
 def test_unknown_vm_exec_and_a_missing_program_are_refused():
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
     with pytest.raises(RuntimeRefused, match='unknown exec'):
         runtime.poll_exec(vm, 'nope')
     with pytest.raises(RuntimeRefused, match='could not start'):
         runtime.start_exec(vm, Command(argv=('/nonexistent/voc-tool',), timeout_seconds=5))
     with pytest.raises(RuntimeRefused, match='unknown MicroVM'):
-        runtime.suspend(MicroVm(vm_id='other', agent_id='fixer-1', endpoint='nowhere'))
+        runtime.suspend(RuntimeSession(vm_id='other', agent_id='fixer-1', endpoint='nowhere'))
 
 
-def test_a_minted_token_lasts_sixty_minutes():
-    runtime = LocalMicroVmRuntime(clock=lambda: 1000.0)
-    assert runtime.mint_token(runtime.run(SPEC)).expires_at == 1000.0 + MAX_TOKEN_SECONDS
+def test_a_session_starts_with_its_agents_ids_and_refuses_to_be_started_for_another(tmp_path):
+    runner = _runner(tmp_path)
+    assert runner.begin({'environment': SPEC.environment(), 'egress': ['pypi.org']}) == {'started': True}
+    # A retried start is answered as before; one for another agent is refused.
+    assert runner.begin({'environment': SPEC.environment(), 'egress': ['pypi.org']}) == {'started': True}
+    with pytest.raises(ValueError, match='another agent'):
+        runner.begin({'environment': {**SPEC.environment(), 'VOC_AGENT_ID': 'fixer-2'}, 'egress': []})
+    # Nothing in the session (the agent's own call on loopback included) ever widens its egress.
+    with pytest.raises(ValueError, match='another egress allowlist'):
+        runner.begin({'environment': SPEC.environment(), 'egress': ['pypi.org', 'example.org']})
+    show = [sys.executable, '-c', "import os; print(os.environ.get('VOC_AGENT_ID'))"]
+    assert _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10, 'repository_code': False}))[
+        'stdout_tail'].strip() == 'fixer-1'
+
+
+@pytest.mark.parametrize('body', [
+    {'environment': {'PATH': '/usr/bin'}, 'egress': []},
+    {'environment': {'VOC_RUN_ID': 'x; rm -rf /'}, 'egress': []},
+    {'environment': {}, 'egress': ['https://pypi.org/']},
+    {'environment': {}, 'egress': 'pypi.org'},
+], ids=['not-an-id', 'not-plain', 'not-a-host', 'not-a-list'])
+def test_a_start_names_only_the_agents_ids_and_plain_hosts(tmp_path, body: dict):
+    with pytest.raises(ValueError, match=r'start|egress'):
+        _runner(tmp_path).begin(body)
+
+
+#: A python agent's allowlist, both users together (egress.egress_allowlist's shape), and its two parts.
+BOTH = ('bedrock-runtime.us-east-1.amazonaws.com', 'voc-raw-test.s3.us-east-1.amazonaws.com',
+        'abc123def.lambda-url.us-east-1.on.aws', 'pypi.org', 'files.pythonhosted.org', 'mirror.example.org')
+
+
+def _proxies() -> tuple[EgressProxy, EgressProxy]:
+    return EgressProxy(port=0), EgressProxy(port=0)
+
+
+def _close(*proxies: EgressProxy) -> None:
+    for proxy in proxies:
+        proxy.server.server_close()
+
+
+def test_the_image_starts_no_agent_without_the_egress_firewall_and_both_proxies(tmp_path):
+    agent_hosts, code_hosts = egress.split(BOTH)
+    start = {'environment': SPEC.environment(), 'egress': list(agent_hosts), 'code_egress': list(code_hosts)}
+    agent, code = _proxies()
+    try:
+        pairs: list[tuple[EgressProxy | None, EgressProxy | None]] = [(None, None), (agent, None), (None, code)]
+        for own, step in pairs:
+            with pytest.raises(ValueError, match='egress allowlist'):
+                Runner(str(tmp_path), sandbox=True, secrets_dir=str(tmp_path), agent_home=str(tmp_path),
+                       egress_firewall=True, proxy=own, code_proxy=step).begin(start)
+        runner = Runner(str(tmp_path), sandbox=True, secrets_dir=str(tmp_path), agent_home=str(tmp_path),
+                        egress_firewall=True, proxy=agent, code_proxy=code)
+        assert runner.begin(start) == {'started': True}
+    finally:
+        _close(agent, code)
+
+
+def _connect(proxy: EgressProxy, host: str) -> bool:
+    return proxy.target(f'CONNECT {host}:443 HTTP/1.1\r\n\r\n'.encode()) is not None
+
+
+def test_the_agent_never_reaches_a_registry_and_repository_code_never_bedrock_a_bucket_or_the_board(tmp_path):
+    agent_hosts, code_hosts = egress.split(BOTH)
+    assert (agent_hosts, code_hosts) == (
+        ('abc123def.lambda-url.us-east-1.on.aws', 'bedrock-runtime.us-east-1.amazonaws.com',
+         'voc-raw-test.s3.us-east-1.amazonaws.com'),
+        ('files.pythonhosted.org', 'mirror.example.org', 'pypi.org'))
+    agent, code = _proxies()
+    try:
+        runner = Runner(str(tmp_path), sandbox=False, secrets_dir=str(tmp_path), agent_home=str(tmp_path),
+                        proxy=agent, code_proxy=code)
+        runner.begin({'environment': SPEC.environment(), 'egress': list(agent_hosts), 'code_egress': list(code_hosts)})
+        # The agent's proxy: its AWS hosts and the board, no registry; the dependency step's: the reverse.
+        assert [_connect(agent, host) for host in BOTH] == [True, True, True, False, False, False]
+        assert [_connect(code, host) for host in BOTH] == [False, False, False, True, True, True]
+    finally:
+        _close(agent, code)
+
+
+def test_the_agent_and_the_dependency_step_are_each_pointed_at_their_own_proxy_and_other_code_at_none(tmp_path):
+    agent, code = _proxies()
+    try:
+        runner = Runner(str(tmp_path), sandbox=False, secrets_dir=str(tmp_path / 's'), agent_home=str(tmp_path),
+                        proxy=agent, code_proxy=code)
+        (tmp_path / 's').mkdir()
+        show = [sys.executable, '-c', "import os; print(os.environ.get('HTTPS_PROXY'))"]
+        own = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10, 'repository_code': False}))
+        step = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10, 'network': True}))
+        other = _wait_runner(runner, runner.start({'argv': show, 'timeout_seconds': 10}))
+        assert [own['stdout_tail'].strip(), step['stdout_tail'].strip(), other['stdout_tail'].strip()] == [
+            PROXY_ENV['HTTPS_PROXY'], CODE_PROXY_ENV['HTTPS_PROXY'], 'None']
+        assert PROXY_ENV['HTTPS_PROXY'] != CODE_PROXY_ENV['HTTPS_PROXY']
+    finally:
+        _close(agent, code)
+
+
+@pytest.mark.parametrize(('address', 'reachable'), [
+    ('169.254.169.254', False), ('169.254.170.2', False), ('fe80::1', False), ('fe80::1%eth0', False),
+    ('127.0.0.1', False), ('::1', False), ('::', False),
+    ('10.0.12.34', True), ('52.94.1.1', True), ('2600:1f18::1', True),
+], ids=['metadata', 'container-credentials', 'link-local-v6', 'scoped-link-local-v6', 'loopback', 'loopback-v6',
+        'unspecified', 'a-vpc-endpoint', 'public', 'public-v6'])
+def test_a_tunnel_never_reaches_a_link_local_or_loopback_address_whatever_name_resolved_to_it(
+        address: str, reachable: bool):
+    assert unit_runner.outside(address) is reachable
+
+
+def test_a_name_that_resolves_only_to_link_local_addresses_is_refused_before_any_connection():
+    def resolve(_host: str, port: int, **_kwargs: object) -> list[tuple]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('169.254.169.254', port)),
+                (socket.AF_INET6, socket.SOCK_STREAM, 6, '', ('fe80::1', port, 0, 2))]
+
+    with pytest.raises(OSError, match='no address a tunnel may reach'):
+        unit_runner._connect_outside(('pypi.org', 443), 1, resolve)
+
+
+def test_a_hold_longer_than_the_role_session_kills_nothing_and_its_lapse_counts_from_the_wake(
+        tmp_path, monkeypatch: pytest.MonkeyPatch):
+    # In the image's mode (sandbox on), as its watchdog runs it: a 25-minute hold of a 15-minute session.
+    monkeypatch.setattr(unit_runner, '_unit_ids', lambda: (os.getuid(), os.getgid()))
+    runner = Runner(str(tmp_path), sandbox=True, secrets_dir=str(tmp_path), agent_home=str(tmp_path))
+    expires = datetime(2026, 11, 12, 12, 15, tzinfo=UTC).timestamp()
+    runner.keep_session({'Version': 1, 'AccessKeyId': 'ASIAFAKE', 'SecretAccessKey': 'fake', 'SessionToken': 'fake',
+                         'Expiration': '2026-11-12T12:15:00+00:00'})
+    # (from the agent's first session on: what the watchdog would end)
+    killed: list[float] = []
+    monkeypatch.setattr(runner, 'kill_all', lambda: killed.append(1.0))
+    runner.hold()
+    for minute in (5, 10, 20, 25):
+        assert runner.end_if_lapsed(expires + minute * 60) is False
+    woken = expires + 25 * 60
+    runner.wake(now=woken)
+    # The supervisor hands a fresh session right after the wake: until the grace is out, nothing is ended.
+    assert runner.end_if_lapsed(woken + SESSION_LAPSE_GRACE - 1) is False
+    assert killed == []
+    # Never renewed after the wake: ended then.
+    assert runner.end_if_lapsed(woken + SESSION_LAPSE_GRACE) is True
+
+
+def test_every_command_ends_once_the_role_session_lapses_unrenewed(tmp_path):
+    runner = _runner(tmp_path)
+    assert runner.end_if_lapsed(10 ** 10) is False   # (no session yet: nothing to lapse)
+    runner.keep_session({'Version': 1, 'AccessKeyId': 'ASIAFAKE', 'SecretAccessKey': 'fake', 'SessionToken': 'fake',
+                         'Expiration': '2026-11-12T12:15:00+00:00'})
+    exec_id = runner.start({'argv': [sys.executable, '-c', 'import time; time.sleep(30)'], 'timeout_seconds': 60,
+                            'repository_code': False})
+    expires = datetime(2026, 11, 12, 12, 15, tzinfo=UTC).timestamp()
+    assert runner.end_if_lapsed(expires + SESSION_LAPSE_GRACE - 1) is False
+    assert runner.poll(exec_id) is None
+    assert runner.end_if_lapsed(expires + SESSION_LAPSE_GRACE) is True
+    assert runner.poll(exec_id) is not None
+
+
+@pytest.mark.parametrize(('request_line', 'allowed'), [
+    (b'CONNECT pypi.org:443 HTTP/1.1', True), (b'CONNECT PyPI.org:443 HTTP/1.1', True),
+    (b'CONNECT pypi.org:80 HTTP/1.1', False), (b'CONNECT example.org:443 HTTP/1.1', False),
+    (b'GET http://pypi.org/ HTTP/1.1', False), (b'CONNECT 10.0.0.1:443 HTTP/1.1', False),
+    (b'CONNECT evil.pypi.org:443 HTTP/1.1', False), (b'CONNECT pypi.org:443', False),
+], ids=['allowed', 'any-case', 'other-port', 'other-host', 'not-connect', 'an-address', 'a-subdomain', 'no-version'])
+def test_the_proxy_lets_a_tunnel_through_only_to_an_allowlisted_host_on_443(request_line: bytes, allowed: bool):
+    proxy = EgressProxy(port=0)
+    try:
+        assert proxy.target(request_line + b'\r\n\r\n') is None
+        proxy.allow(['pypi.org'])
+        assert (proxy.target(request_line + b'\r\n\r\n') is not None) is allowed
+    finally:
+        proxy.server.server_close()
+
+
+def _echo_server() -> tuple[socket.socket, int]:
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen()
+
+    def echo() -> None:
+        connection, _ = listener.accept()
+        with connection:
+            while data := connection.recv(1024):
+                connection.sendall(data.upper())
+
+    threading.Thread(target=echo, daemon=True).start()
+    return listener, listener.getsockname()[1]
+
+
+def _through(proxy: EgressProxy, request: bytes) -> bytes:
+    with socket.create_connection(('127.0.0.1', proxy.server.server_address[1]), timeout=5) as connection:
+        connection.sendall(request)
+        answer = b''
+        while b'\r\n\r\n' not in answer:
+            chunk = connection.recv(1024)
+            if not chunk:
+                break
+            answer += chunk
+        if answer.startswith(b'HTTP/1.1 200'):
+            connection.sendall(b'hello')
+            answer += connection.recv(1024)
+        return answer
+
+
+def test_the_proxy_relays_an_allowed_tunnel_and_refuses_any_other():
+    listener, port = _echo_server()
+    reached: list[tuple[str, int]] = []
+
+    def connect(address: tuple[str, int], timeout: float) -> socket.socket:
+        reached.append(address)
+        return socket.create_connection(('127.0.0.1', port), timeout)
+
+    proxy = EgressProxy(port=0, connect=connect)
+    proxy.allow(['registry.npmjs.org'])
+    proxy.serve()
+    try:
+        refused = _through(proxy, b'CONNECT example.org:443 HTTP/1.1\r\nHost: example.org\r\n\r\n')
+        assert (refused.startswith(b'HTTP/1.1 403'), reached) == (True, [])
+        relayed = _through(proxy, b'CONNECT registry.npmjs.org:443 HTTP/1.1\r\n\r\n')
+        assert relayed == b'HTTP/1.1 200 Connection Established\r\n\r\nHELLO'
+        assert reached == [('registry.npmjs.org', 443)]
+    finally:
+        proxy.server.shutdown()
+        proxy.server.server_close()
+        listener.close()
+
+
+def test_a_held_agent_uses_no_cpu_until_it_is_woken_and_the_session_says_so_on_ping(tmp_path):
+    runner = _runner(tmp_path)
+    assert runner.ping()['status'] == 'Healthy'
+    counter = tmp_path / 'count'
+    code = (f'import time\nn = 0\nwhile True:\n    n += 1\n    open({str(counter)!r}, "w").write(str(n))\n'
+            '    time.sleep(0.02)')
+    exec_id = runner.start({'argv': [sys.executable, '-c', code], 'timeout_seconds': 30, 'repository_code': False})
+    for _ in range(100):
+        if counter.exists() and counter.read_text():
+            break
+        time.sleep(0.05)
+    assert runner.ping()['status'] == 'HealthyBusy'
+    runner.hold()
+    time.sleep(0.2)
+    held = counter.read_text()
+    time.sleep(0.3)
+    assert (counter.read_text(), runner.ping()['status']) == (held, 'Healthy')
+    runner.wake()
+    for _ in range(100):
+        if counter.read_text() != held:
+            break
+        time.sleep(0.05)
+    assert (counter.read_text() != held, runner.ping()['status']) == (True, 'HealthyBusy')
+    runner.kill_all()
+    assert runner.poll(exec_id) is not None
+
+
+def test_the_runner_answers_agentcores_ping_and_invocations(tmp_path):
+    server, base = _serving(tmp_path, 'service')
+    try:
+        assert https_json(urllib.request.Request(f'{base}/ping'))['status'] == 'Healthy'
+
+        def invoke(body: dict) -> dict:
+            return https_json(urllib.request.Request(f'{base}/invocations', data=json.dumps(body).encode(),
+                                                     method='POST', headers={'Content-Type': 'application/json'}))
+
+        assert invoke({'op': 'start', 'environment': SPEC.environment(), 'egress': ['pypi.org']}) == {'started': True}
+        assert invoke({'op': 'status'}) == {'step': '', 'recent_tools': [], 'tokens': {}}
+        assert invoke({'op': 'hold'}) == {'held': True}
+        assert invoke({'op': 'wake'}) == {'held': False}
+        session = {'Version': 1, 'AccessKeyId': 'ASIAFAKE', 'SecretAccessKey': 'fake', 'SessionToken': 'fake',
+                   'Expiration': '2026-11-12T12:15:00+00:00'}
+        assert invoke({'op': 'session', 'session': session}) == {'kept': True}
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            invoke({'op': 'reboot'})
+        assert refused.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_command_apis_client_starts_a_command_and_reads_it_back_through_the_runner(tmp_path):
+    server, _ = _serving(tmp_path)
+    port = server.server_address[1]
+    try:
+        def encoded(body: dict) -> str:
+            return base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
+
+        started = client('start', encoded(_py('print(42)').to_body()), port)
+        answer: dict = {'state': 'running'}
+        for _ in range(200):
+            answer = client('poll', encoded({'exec_id': started['exec_id']}), port)
+            if answer['state'] == 'done':
+                break
+            time.sleep(0.05)
+        assert (answer['exit_code'], answer['stdout_tail'].strip()) == (0, '42')
+        with pytest.raises(ValueError, match='argv'):
+            client('start', encoded({'argv': 'echo'}), port)
+        with pytest.raises(ValueError, match='client start'):
+            client('poll', encoded({'exec_id': '../status'}), port)
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_commands_see_only_the_passed_environment_and_only_repository_code_the_toolchain_homes():
@@ -207,8 +520,8 @@ def _runner(tmp_path, *, sandbox: bool = False, hardlink_guard: bool = False) ->
                   agent_home=str(tmp_path / 'home'), hardlink_guard=hardlink_guard)
 
 
-def _serving(tmp_path):
-    server = serve('127.0.0.1', 0, _runner(tmp_path))
+def _serving(tmp_path, api: Api = 'agent'):
+    server = serve('127.0.0.1', 0, _runner(tmp_path), api)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f'http://127.0.0.1:{server.server_address[1]}'
 
@@ -388,12 +701,20 @@ def test_the_runner_serves_exec_over_http(tmp_path):
         server.server_close()
 
 
-@pytest.mark.parametrize(('method', 'path', 'body', 'status'), [
-    ('GET', '/exec/unknown', None, 404), ('GET', '/other', None, 404),
-    ('POST', '/exec', b'{"argv": "echo"}', 400), ('POST', '/elsewhere', b'{}', 400),
-], ids=['unknown-id', 'unknown-path', 'bad-body', 'bad-path'])
-def test_the_runner_refuses_what_it_does_not_serve(tmp_path, method, path, body, status):
-    server, base = _serving(tmp_path)
+@pytest.mark.parametrize(('api', 'method', 'path', 'body', 'status'), [
+    ('agent', 'GET', '/exec/unknown', None, 404), ('agent', 'GET', '/other', None, 404),
+    ('agent', 'POST', '/exec', b'{"argv": "echo"}', 400), ('agent', 'POST', '/elsewhere', b'{}', 400),
+    # The agent's port serves none of the service's: no session, start, hold or wake, no ping.
+    ('agent', 'POST', '/invocations', b'{"op": "wake"}', 400), ('agent', 'POST', '/session', b'{}', 400),
+    ('agent', 'GET', '/ping', None, 404),
+    # The service's port runs no command and reads no status.
+    ('service', 'POST', '/exec', b'{"argv": ["true"], "timeout_seconds": 5}', 400),
+    ('service', 'GET', '/status', None, 404), ('service', 'GET', '/exec/abc', None, 404),
+    ('service', 'POST', '/session', b'{}', 400),
+], ids=['unknown-id', 'unknown-path', 'bad-body', 'bad-path', 'agent-no-invocations', 'agent-no-session',
+        'agent-no-ping', 'service-no-exec', 'service-no-status', 'service-no-poll', 'service-no-session'])
+def test_each_face_of_the_runner_refuses_what_it_does_not_serve(tmp_path, api, method, path, body, status):
+    server, base = _serving(tmp_path, api)
     try:
         with pytest.raises(urllib.error.HTTPError) as refused:
             https_json(urllib.request.Request(f'{base}{path}', data=body, method=method))

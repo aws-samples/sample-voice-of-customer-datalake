@@ -1,9 +1,9 @@
 """The harness's board and inbox: its ``ports.Board`` and ``ports.Inbox`` on the board API's function URL.
 
-Inside the MicroVM, as the agent's own session (the launcher's role session, ``credential_process``): every call is
+Inside the session, as the agent's own session (the launcher's role session, ``credential_process``): every call is
 an IAM-signed POST (SigV4, service ``lambda``) to the board's function URL, whose host the runtime adds to the
 agent's egress by name (``VOC_BOARD_URL``). The board takes the caller's run, role and agent from that session, so
-nothing the MicroVM sends can name another's. The brief is the task as the board answers its holder's claim (a
+nothing the session sends can name another's. The brief is the task as the board answers its holder's claim (a
 fresh start's; a continuation's is in its checkpoint); the lease's epoch, the task's attempt, goes with every
 heartbeat, progress report and move. The inbox is read after a cursor (the run's
 write-order numbers, ``board/inbox.py``) and each notice kept once by its event id: two deliveries may commit their
@@ -30,7 +30,7 @@ MAX_PAGES: Final = 4
 TIMEOUT_SECONDS: Final = 30
 #: A launch's wait: above the board function's own limit (120 s, engineering-bus.ts; it waits up to 100 s for the
 #: runtime), so the board's answer always arrives first. A retry after a lost answer is safe: the runtime answers the
-#: session it has, or refuses (409) while the first launch still starts the MicroVM.
+#: session it has, or refuses (409) while the first launch still starts the session.
 LAUNCH_TIMEOUT_SECONDS: Final = 125
 MAX_ANSWER_BYTES: Final = 1024 * 1024
 #: The inbox types the harness acts on itself; any other is shown to the model as data (its type is its kind).
@@ -265,7 +265,7 @@ class InboxHttp:
 @dataclass
 class BoardPlanner:
     """``ports.Planner`` on the board API (the coordinator's ops: the board refuses anyone else): the run's tasks,
-    posting one, launching its agent on the run's connection and commit (the board's, never the MicroVM's)."""
+    posting one, launching its agent on the run's connection and commit (the board's, never the session's)."""
 
     transport: Transport
     run_id: str

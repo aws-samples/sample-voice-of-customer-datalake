@@ -14,8 +14,8 @@ from engineering.runtime.checkout import (
     checkout_commands,
     repo_git,
 )
-from engineering.runtime.interface import AgentSpec, Command, ExecResult, MicroVm, RuntimeRefused
-from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
+from engineering.runtime.interface import AgentSpec, Command, ExecResult, RuntimeRefused, RuntimeSession
+from engineering.runtime.test.local_runtime import LocalAgentRuntime
 
 COMMIT = 'b' * 40
 SPEC = AgentSpec(run_id='01JD3R4NZXQ7Y2W8K4M6P9T0AB', agent_id='fixer-1', role='fixer', task_id='task-1', language='python', egress=(),
@@ -31,11 +31,11 @@ os.symlink("../docs/guide.md", "origin/src/dangling")
 '''
 
 
-def _run(runtime: LocalMicroVmRuntime, vm: MicroVm, *argv: str) -> ExecResult:
+def _run(runtime: LocalAgentRuntime, vm: RuntimeSession, *argv: str) -> ExecResult:
     return _run_command(runtime, vm, Command(argv=argv, timeout_seconds=60))
 
 
-def _run_command(runtime: LocalMicroVmRuntime, vm: MicroVm, command: Command) -> ExecResult:
+def _run_command(runtime: LocalAgentRuntime, vm: RuntimeSession, command: Command) -> ExecResult:
     exec_id = runtime.start_exec(vm, command)
     for _ in range(400):
         result = runtime.poll_exec(vm, exec_id)
@@ -46,7 +46,7 @@ def _run_command(runtime: LocalMicroVmRuntime, vm: MicroVm, command: Command) ->
     raise AssertionError('the command did not finish')
 
 
-def _cached_repository(runtime: LocalMicroVmRuntime, vm: MicroVm) -> str:
+def _cached_repository(runtime: LocalAgentRuntime, vm: RuntimeSession) -> str:
     """A repository with one commit and its bare clone (the cache) in the MicroVM's directory; the commit."""
     git = ('git', '-c', 'user.name=Example', '-c', 'user.email=dev@example.org', '-c', 'init.defaultBranch=main')
     _run(runtime, vm, sys.executable, '-c', SETUP)
@@ -58,7 +58,7 @@ def _cached_repository(runtime: LocalMicroVmRuntime, vm: MicroVm) -> str:
 
 
 def test_only_the_tasks_paths_are_checked_out_at_the_commit():
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
     commit = _cached_repository(runtime, vm)
     parent_mode = os.stat(vm.endpoint).st_mode
@@ -76,7 +76,7 @@ def test_only_the_tasks_paths_are_checked_out_at_the_commit():
 
 
 def test_a_repository_planted_in_the_working_tree_is_never_the_agents(tmp_path):
-    runtime = LocalMicroVmRuntime()
+    runtime = LocalAgentRuntime()
     vm = runtime.run(SPEC)
     commit = _cached_repository(runtime, vm)
     for command in checkout_commands(commit, [], source=f'file://{vm.endpoint}/cache.git'):

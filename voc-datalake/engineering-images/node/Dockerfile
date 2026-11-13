@@ -1,7 +1,8 @@
 # Engineering agent image: Node.js toolchain (docs/autonomous-engineering.md → Runtime).
 # Build from voc-datalake/:  docker build -f engineering-images/node/Dockerfile \
 #   --build-arg MOUNTPOINT_VERSION=<x.y.z> --build-arg MOUNTPOINT_SHA256=<sha256 of that release's .deb> .
-FROM public.ecr.aws/docker/library/node:24-bookworm-slim
+# AgentCore Runtime (platform version V2) runs arm64 images: built for linux/arm64 (docs/deployment.md).
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/node:24-bookworm-slim
 
 ARG MOUNTPOINT_VERSION
 ARG MOUNTPOINT_SHA256

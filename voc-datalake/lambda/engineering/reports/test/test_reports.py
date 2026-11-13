@@ -122,7 +122,7 @@ def test_a_report_says_the_runs_flow_budget_and_its_flag(run: Run) -> None:
     answer = run.reports.build(RUN, 'goal', RUN)
     report = json.loads(stored(run, answer['key']))
     assert report['cost']['budget'] == {'monthly_usd': 50.0, 'alert_percent': 100, 'alert_month': '2026-11'}
-    assert ('- Flow budget: $50.00 a month; its month passed 100% of it (`2026-11`) (MicroVM time only until tokens '
+    assert ('- Flow budget: $50.00 a month; its month passed 100% of it (`2026-11`) (session time only until tokens '
             'are priced)') in stored(run, answer['markdown_key'])
     # A pull request's report is its description in the target repository: the budget stays out of it.
     pr = run.reports.build(RUN, 'pr', '42', 'a' * 40)

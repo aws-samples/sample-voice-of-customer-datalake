@@ -16,7 +16,7 @@ from engineering.runtime.ports import Budget, BudgetAlert, Lease
 from engineering.runtime.runs import RunCaps, RunStore
 from engineering.runtime.sessions import AgentSession, SessionStore
 from engineering.runtime.supervisor import Supervisor
-from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
+from engineering.runtime.test.local_runtime import LocalAgentRuntime
 
 BUCKET = 'voc-raw-test'
 #: voc-eng-workspace's stand-in, where the handler's wiring writes and reads the agents' keys.
@@ -152,7 +152,7 @@ def aws() -> Iterator[tuple[Any, Any]]:
 @dataclass
 class World:
     supervisor: Supervisor
-    runtime: LocalMicroVmRuntime
+    runtime: LocalAgentRuntime
     store: SessionStore
     board: FakeBoard
     bus: FakeBus
@@ -189,7 +189,7 @@ def world(aws: tuple[Any, Any]) -> World:
     s3, table = aws
     runs = RunStore(table)
     runs.start(RUN, caps=RunCaps(max_tasks=50), now=0)
-    runtime, store, sts = LocalMicroVmRuntime(), SessionStore(table, runs), FakeSts()
+    runtime, store, sts = LocalAgentRuntime(), SessionStore(table, runs), FakeSts()
     board, bus, control = FakeBoard(), FakeBus(), FakeControl()
     supervisor = Supervisor(runtime=runtime, sessions=store, board=board, bus=bus, control=control,
                             launcher=Launcher(sts, ROLE_ARNS), checkpoints=CheckpointReader(s3, BUCKET),

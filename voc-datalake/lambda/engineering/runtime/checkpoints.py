@@ -9,8 +9,8 @@ and ``patch`` (the S3 key of its working tree as a patch, under its own ``_patch
 or credential.
 
 Before a continuation, the supervisor reads the agent's newest checkpoint and refuses one that is
-over 256 KB, is not that shape, or holds an ``AuthToken`` or a key that names a secret: the new
-MicroVM then restores from the newest checkpoint that passes, or starts the task afresh.
+over 256 KB, is not that shape, or holds a role session or a key that names a secret: the new
+session then restores from the newest checkpoint that passes, or starts the task afresh.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ REQUIRED_KEYS: Final = frozenset({'position'})
 
 
 def assert_storable(value: object, path: str = 'checkpoint') -> None:
-    """Refuse a value with a key that names a secret, at any depth (an ``AuthToken`` refuses serialising itself)."""
+    """Refuse a value with a key that names a secret, at any depth (a ``RoleSession`` refuses serialising itself)."""
     if isinstance(value, Mapping):
         for key, item in value.items():
             if any(part in str(key).lower() for part in SECRET_KEY_PARTS):

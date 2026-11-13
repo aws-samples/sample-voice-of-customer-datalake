@@ -3,7 +3,8 @@
 #   --build-arg MOUNTPOINT_VERSION=<x.y.z> --build-arg MOUNTPOINT_SHA256=<sha256 of that release's .deb> .
 # The toolchain's own directories stay root's: `code` never owns a directory on anyone's PATH. A repository's
 # rust-toolchain.toml installs into the rustup home under /opt/voc/cache, which `code` owns and no PATH names.
-FROM public.ecr.aws/docker/library/rust:1-slim-bookworm
+# AgentCore Runtime (platform version V2) runs arm64 images: built for linux/arm64 (docs/deployment.md).
+FROM --platform=linux/arm64 public.ecr.aws/docker/library/rust:1-slim-bookworm
 
 ARG MOUNTPOINT_VERSION
 ARG MOUNTPOINT_SHA256

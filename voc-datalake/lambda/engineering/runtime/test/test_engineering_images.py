@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from engineering.runtime import unit_runner
+from engineering.runtime import caps, unit_runner
 from engineering.runtime.egress import REGISTRY_HOSTS
-from engineering.runtime.interface import ROLES
+from engineering.runtime.harness import runner_client
+from engineering.runtime.interface import ROLES, SESSION_LIFE_SECONDS
 
 IMAGES = Path(__file__).resolve().parents[4] / 'engineering-images'
 
@@ -122,6 +123,15 @@ def test_each_image_installs_the_shared_base_and_starts_through_the_shared_entry
 
 
 @pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
+def test_each_image_is_built_for_arm64_and_serves_agentcores_port(language):
+    # AgentCore Runtime (platform version V2) runs arm64 images that answer /ping and /invocations on port 8080.
+    dockerfile = (IMAGES / language / 'Dockerfile').read_text()
+    assert [line for line in dockerfile.splitlines() if line.startswith('FROM ')] == [
+        line for line in dockerfile.splitlines() if line.startswith('FROM --platform=linux/arm64 ')]
+    assert 'EXPOSE 8080' in dockerfile
+
+
+@pytest.mark.parametrize('language', sorted(REGISTRY_HOSTS))
 def test_each_ready_hook_names_only_its_own_registries(language):
     ready = (IMAGES / language / 'ready.sh').read_text()
     others = {host for other, hosts in REGISTRY_HOSTS.items() if other != language for host in hosts}
@@ -131,13 +141,28 @@ def test_each_ready_hook_names_only_its_own_registries(language):
 def test_the_entry_point_turns_the_sandbox_on_and_mounts_nothing_before_a_session():
     entrypoint = (IMAGES / 'common' / 'entrypoint.sh').read_text()
     assert '--secrets-dir /run/voc --sandbox $firewall' in entrypoint
-    assert "firewall='--code-firewall'" in entrypoint
+    assert "firewall='--code-firewall --egress-firewall'" in entrypoint
+    # The service's port, and the two egress proxies on loopback: the agent's and the dependency step's.
+    assert '--port 8080 --agent-port 8081 --proxy-port 3128' in entrypoint
+    assert '--code-proxy-port 3129 --workdir /work' in entrypoint
     for tables in ('iptables', 'ip6tables'):
-        # First in OUTPUT: no earlier ACCEPT lets `code` past them.
-        assert f'{tables} -I OUTPUT 1 -p udp --dport 53 -m owner --uid-owner code -j ACCEPT' in entrypoint
-        assert f'{tables} -I OUTPUT 3 -o lo -m owner --uid-owner code -j REJECT' in entrypoint
-        assert f'{tables} -I OUTPUT 4 -p tcp --dport 8080 -m owner --uid-owner code -j REJECT' in entrypoint
+        # First in OUTPUT: no earlier ACCEPT lets `code` or `unit` past them. Repository code reaches only its own
+        # proxy; the agent only the runner and its own proxy; neither a name lookup, a link-local address, the other's
+        # proxy nor anything else.
+        assert f'{tables} -I OUTPUT 1 -o lo -p tcp --dport 3129 -m owner --uid-owner code -j ACCEPT' in entrypoint
+        assert '--dport 3128 -m owner --uid-owner code' not in entrypoint
+        assert '--dport 3129 -m owner --uid-owner unit' not in entrypoint
+        assert f'{tables} -I OUTPUT 2 -m owner --uid-owner code -j REJECT' in entrypoint
+        # The agent reaches the runner's agent API (8081) only: never 8080, the service's (session, start, hold, wake).
+        assert f'{tables} -I OUTPUT 3 -o lo -p tcp --dport 8081 -m owner --uid-owner unit -j ACCEPT' in entrypoint
+        assert '--dport 8080 -m owner --uid-owner unit' not in entrypoint
+        assert f'{tables} -I OUTPUT 4 -o lo -p tcp --dport 3128 -m owner --uid-owner unit -j ACCEPT' in entrypoint
+        assert f'{tables} -I OUTPUT 5 -m owner --uid-owner unit -j REJECT' in entrypoint
     assert ' -A OUTPUT' not in entrypoint
+    assert '--dport 53' not in entrypoint
+    assert (unit_runner.AGENT_PORT, unit_runner.PROXY_PORT, unit_runner.CODE_PROXY_PORT) == (8081, 3128, 3129)
+    assert f'http://127.0.0.1:{unit_runner.AGENT_PORT}' == runner_client.RUNNER_URL
+    assert f'127.0.0.1:{unit_runner.AGENT_PORT}' in (IMAGES / 'common' / 'check-runner.sh').read_text()
     # The hard-link guard is said only when the session's file system is its own or protected links are on.
     assert "guard='--hardlink-guard'" in entrypoint
     assert '--sandbox $firewall $guard' in entrypoint
@@ -177,11 +202,47 @@ def test_the_stack_has_an_execution_role_for_exactly_the_runtimes_agent_roles():
     assert set(re.findall(r"'([a-z-]+)'", listed.group(1))) == set(ROLES)
 
 
-def test_the_stack_takes_an_image_arn_for_exactly_the_languages_with_an_image():
-    stack = (IMAGES.parent / 'lib' / 'stacks' / 'engineering-runtime.ts').read_text()
+def test_the_stack_takes_an_image_for_exactly_the_languages_with_an_image():
+    stack = (IMAGES.parent / 'lib' / 'stacks' / 'engineering-agentcore.ts').read_text()
     listed = re.search(r'const IMAGE_LANGUAGES = \[(.*?)\];', stack, re.DOTALL)
     assert listed is not None
     assert set(re.findall(r"'([a-z]+)'", listed.group(1))) == set(REGISTRY_HOSTS)
+
+
+def test_the_stack_and_the_runtime_agree_on_the_rates_the_idle_timeout_and_the_session_life():
+    stack = (IMAGES.parent / 'lib' / 'stacks' / 'engineering-agentcore.ts').read_text()
+    rates = re.search(r'DEFAULT_RATES: Readonly<Record<string, string>> = \{(.*?)\};', stack, re.DOTALL)
+    assert rates is not None
+    assert dict(re.findall(r"(\w+): '([0-9.]+)'", rates.group(1))) == caps.DEFAULT_RATES
+    assert f'IDLE_TIMEOUT_SECONDS = {caps.IDLE_TIMEOUT_SECONDS}' in stack
+    assert 'MAX_LIFETIME_SECONDS = 8 * 3600' in stack
+    assert SESSION_LIFE_SECONDS == 8 * 3600
+    assert f'BUILD_MEMORY_MIB = {sorted(caps.BUILD_SIZES)[0]}' in stack
+    assert f'SESSION_QUOTA = {caps.DEFAULT_MAX_SESSIONS}' in stack
+    assert f'MIN_MAX_SESSIONS = {caps.MIN_MAX_SESSIONS}' in stack
+
+
+def test_the_fewest_sessions_a_deployment_may_set_fit_one_run_the_agents_api_starts():
+    api = (RUNTIME.parent.parent / 'api' / 'agents_handler.py').read_text()
+    cap = re.search(r'^RUN_TASK_CAP = (\d+)$', api, re.MULTILINE)
+    assert cap is not None
+    assert int(cap.group(1)) + 1 == caps.MIN_MAX_SESSIONS   # (its tasks and its coordinator)
+
+
+def test_each_toolchain_is_pointed_at_the_dependency_steps_own_proxy():
+    # Maven reads no HTTPS_PROXY: the Java image gives `code` settings that name the dependency step's proxy.
+    dockerfile = (IMAGES / 'java' / 'Dockerfile').read_text()
+    settings = (IMAGES / 'java' / 'maven-settings.xml').read_text()
+    assert 'COPY engineering-images/java/maven-settings.xml /home/code/.m2/settings.xml' in dockerfile
+    assert ('<host>127.0.0.1</host>' in settings, f'<port>{unit_runner.CODE_PROXY_PORT}</port>' in settings) == (
+        True, True)
+    # Node's fetch reads the proxy variables only when asked; pip, npm and cargo read them.
+    assert unit_runner.CODE_PROXY_ENV['NODE_USE_ENV_PROXY'] == '1'
+
+
+def test_the_base_strips_every_setuid_and_setgid_bit_so_no_command_regains_root():
+    base = (IMAGES / 'common' / 'install-base.sh').read_text()
+    assert 'find / -xdev -type f -perm /6000 -exec chmod ug-s {} +' in base
 
 
 def test_the_base_keeps_the_agents_home_from_repository_code():

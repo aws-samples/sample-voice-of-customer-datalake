@@ -115,7 +115,7 @@ const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
  * - Memory workers: scanner, memory-extract queue + extractor, retention (memory-workers.ts)
  * - Autonomous-agent runtime: heartbeat, conductor, persona panel, voc-agent-run (agent-runtime.ts)
  * - Only with -c engineeringAgents=true: the engineering agents' connector broker (engineering-broker.ts), and their
- *   bus, inbox router, board API and report builder (engineering-bus.ts), and their MicroVM runtime: the supervisor,
+ *   bus, inbox router, board API and report builder (engineering-bus.ts), and their AgentCore runtime: the supervisor,
  *   its rule and the agent roles (engineering-runtime.ts)
  */
 export class VocProcessingStack extends VocStack {
@@ -378,7 +378,8 @@ export class VocProcessingStack extends VocStack {
         addPublisher: (statementId, role, source) => bus.addPublisher(statementId, role, source),
       };
     }
-    // The engineering agents' MicroVM runtime: only with `-c engineeringAgents=true` (engineering-runtime.ts): its
+    // The engineering agents' runtime (one AgentCore session per agent): only with `-c engineeringAgents=true`
+    // (engineering-runtime.ts, engineering-agentcore.ts): its
     // agent roles call the board and the broker and publish on the bus; its supervisor rule's undelivered ticks go to
     // the bus's dead-letter queue.
     addEngineeringRuntime(this, {

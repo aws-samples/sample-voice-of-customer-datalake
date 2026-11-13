@@ -1,6 +1,6 @@
 """The supervisor's board and bus: its ``ports.Board`` and ``ports.Bus`` on the board's store and the engineering bus.
 
-Trusted code in the runtime's two functions (voc-engineering-runtime, voc-engineering-delivery), never in a MicroVM.
+Trusted code in the runtime's two functions (voc-engineering-runtime, voc-engineering-delivery), never in a session.
 The board is read and re-posted through its own store (``engineering/board``: the supervisor's role holds the runs'
 partitions); every event goes out as voc-msg/1 with the supervisor's source, ``voc.engineering/supervisor``, which
 the bus's policy pins to these two roles (lib/stacks/engineering-bus.ts ``addPublisher``) and the router lets send
@@ -62,7 +62,7 @@ class BoardLeases:
             return Lease(task_id=task.task_id, agent_id='', renewed_at=0, last_progress_at=0, attempt=task.attempt)
         if not task.lease_agent and task.state in FINAL:
             # Ended with no holder (a person's block clears it, of a task under way or one still open for a booting
-            # agent): ended all the same, never a lost lease (a crash, which would be continued in a new MicroVM).
+            # agent): ended all the same, never a lost lease (a crash, which would be continued in a new session).
             return Lease(task_id=task.task_id, agent_id='', renewed_at=0, last_progress_at=0, attempt=task.attempt,
                          final_state=task.state)
         if not task.lease_agent:
@@ -112,11 +112,11 @@ class BoardLeases:
         before it numbers an agent, so a refused Resume uses up none of the run's agent numbers.
 
         The coordinate task's coordinator is its holder, or the one recorded as launched at its attempt (the run's
-        start records ``coordinator-1``). One with no session yet (a fresh start, or a start whose MicroVM failed) is
+        start records ``coordinator-1``). One with no session yet (a fresh start, or a start whose session failed) is
         started as it is. One whose session failed (it kept crashing, so the run went to a person) is replaced: the
         task re-posted at its attempt, a new ``coordinator-<n>`` recorded at the next (``launch_coordinator``, which
         the board then checks every coordinator op against, so the old one is refused from the re-post on; its
-        MicroVM ended with its session). A retry finds the new one recorded, with no session or a live one."""
+        session ended with its session). A retry finds the new one recorded, with no session or a live one."""
         try:
             task = self.store.task(WORKSPACE, run_id, COORDINATE_TASK)
         except BoardError as error:

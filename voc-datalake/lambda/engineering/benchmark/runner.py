@@ -18,7 +18,7 @@ it exits 0.
 This is not a sandbox: the check's network and file system are open, and at the timeout its process group is
 killed, which a child that left the group (``setsid``) escapes. The benchmark assumes an honest candidate: the
 code under test can still patch the framework that tests it. The sample's own cases run here; a connection's
-cases will run in the runtime's MicroVMs.
+cases will run in the runtime's sessions.
 
 A review passes when every expected finding is reported (its file, a line in its range, its rule) and the
 findings that match none stay within the case's ``max_false_positives``.

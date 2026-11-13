@@ -92,7 +92,7 @@ def test_a_bad_month_or_grouping_is_refused(table: Any, month: str, by: str, mat
 
 
 def test_model_names_that_clean_to_one_key_are_one_entry_never_two_operations_on_a_row(table: Any):
-    # (from the harness's report, inside the MicroVM: two such entries would fail the whole transaction)
+    # (from the harness's report, inside the session: two such entries would fail the whole transaction)
     usage = {'a#1': Usage(tokens_in=5), 'a b': Usage(tokens_in=7), '': Usage(tokens_out=1)}
     (entry,) = _rows(ledger_updates(TABLE, AT, Where('RUN1', 'fixer-2', 'wf'), usage))
     assert entry['Update']['ExpressionAttributeValues'][':in'] == 12
@@ -151,7 +151,7 @@ def test_a_run_with_no_flow_or_no_dollars_added_has_no_total():
         return [u for u in ledger_updates(TABLE, AT, where, usage) if u['Update']['Key']['sk'].startswith('FLOW#')]
 
     assert totals(Where('RUN1', 'fixer-2'), {MICROVM: Usage(usd=Decimal(1))}) == []
-    # (tokens only, or MicroVM time unpriced: the flow's hot item is left alone)
+    # (tokens only, or session time unpriced: the flow's hot item is left alone)
     assert totals(Where('RUN1', 'fixer-2', 'wf'), {'model-a': Usage(tokens_in=9), MICROVM: Usage(microvm_seconds=60)}) == []
     assert ledger_updates(TABLE, AT, Where('RUN1', 'fixer-2', 'wf'), {'idle': Usage()}) == []
 

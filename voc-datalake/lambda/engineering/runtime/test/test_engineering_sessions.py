@@ -1,4 +1,5 @@
 """Session rows: the board's AGENT# rows, listed through the active runs, conditional moves, never another's attributes."""
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -6,8 +7,16 @@ from typing import Any
 
 import pytest
 
-from engineering.runtime.caps import microvm_price
-from engineering.runtime.interface import MicroVm, RuntimeRefused
+from engineering.runtime.caps import (
+    BUILD_SIZES,
+    DEFAULT_RATES,
+    UNPRICED,
+    SessionPricing,
+    SessionRates,
+    build_size,
+    session_rates,
+)
+from engineering.runtime.interface import RuntimeRefused, RuntimeSession
 from engineering.runtime.runs import RunCaps, RunNotActive, RunStore
 from engineering.runtime.sessions import AgentSession, SessionStore, StaleSession
 from engineering.runtime.test.conftest import RUN
@@ -17,6 +26,14 @@ SESSION = AgentSession(run_id=RUN, agent_id='fixer-1', role='fixer', task_id='ta
                        harness=('python3', '-m', 'harness'), vm_id='vm-1', endpoint='https://vm-1.example.org',
                        started_at=1000)
 KEY = {'pk': f'WS#default#RUN#{RUN}', 'sk': 'AGENT#fixer-1'}
+
+
+def _per_second(usd: Decimal) -> SessionPricing:
+    """Rates that make a running standard session (2 vCPU, 8 GB) cost ``usd`` a second: its vCPUs only."""
+    return SessionPricing(rates=SessionRates(usd * 1800, Decimal(0), Decimal(0), Decimal(0)))
+
+
+PER_SECOND = _per_second(Decimal('0.0001'))
 
 
 def _store(table: Any) -> tuple[SessionStore, RunStore]:
@@ -78,7 +95,7 @@ def test_the_store_never_writes_over_what_others_add_to_the_row(aws):
 def test_microvm_seconds_are_priced_once_into_cost_usd_beside_the_brokers(aws):
     runs = RunStore(aws[1])
     runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)
-    store = SessionStore(aws[1], runs, usd_per_second=Decimal('0.0001'))
+    store = SessionStore(aws[1], runs, PER_SECOND)
     created = store.create(SESSION)
     aws[1].update_item(Key=KEY, UpdateExpression='ADD cost_usd :cost', ExpressionAttributeValues={':cost': 2})
     moved = store.save(replace(created, microvm_seconds=600))
@@ -104,7 +121,7 @@ def test_each_metered_write_adds_its_seconds_cost_and_new_tokens_to_the_spend_le
     runs = RunStore(aws[1])
     runs.start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_hunt', repo='example/app')
     at = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
-    store = SessionStore(aws[1], runs, usd_per_second=Decimal('0.0001'), clock=lambda: at)
+    store = SessionStore(aws[1], runs, PER_SECOND, clock=lambda: at)
     created = store.create(SESSION)
     moved = store.save(replace(created, microvm_seconds=600, tokens={'model-a': {'in': 10, 'out': 4}}))
     # The same again adds nothing; more of both adds only the difference.
@@ -132,7 +149,7 @@ def test_each_metered_write_adds_its_seconds_cost_and_new_tokens_to_the_spend_le
 def _ledgering(aws: Any, price: Decimal = Decimal(0)) -> tuple[SessionStore, AgentSession]:
     runs = RunStore(aws[1])
     runs.start(RUN, caps=RunCaps(max_tasks=10), now=0, flow='wf_hunt', repo='example/app')
-    store = SessionStore(aws[1], runs, usd_per_second=price, clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
+    store = SessionStore(aws[1], runs, _per_second(price), clock=lambda: datetime(2026, 11, 13, tzinfo=UTC))
     return store, store.create(SESSION)
 
 
@@ -335,20 +352,77 @@ def test_without_a_price_microvm_time_adds_nothing_and_a_later_price_applies_fro
     row = aws[1].get_item(Key=KEY)['Item']
     assert ('cost_usd' in row, row['priced_seconds']) == (False, 600)
     # A price set later prices the time after it only, never the 600 seconds used before.
-    SessionStore(aws[1], runs, usd_per_second=Decimal('0.0001')).save(replace(moved, microvm_seconds=700))
+    SessionStore(aws[1], runs, PER_SECOND).save(replace(moved, microvm_seconds=700))
     assert aws[1].get_item(Key=KEY)['Item']['cost_usd'] == Decimal('0.01')
 
 
-@pytest.mark.parametrize(('raw', 'price'), [(None, Decimal(0)), ('', Decimal(0)), ('0', Decimal(0)),
-                                            (' 0.0000166 ', Decimal('0.0000166'))])
-def test_the_deployments_price_of_a_microvm_second(raw: str | None, price: Decimal):
-    assert microvm_price(raw) == price
+def test_the_deployments_rates_default_to_agentcores_published_ones_and_a_zero_rate_prices_nothing():
+    assert session_rates(None) == session_rates('') == SessionRates() == session_rates(json.dumps(DEFAULT_RATES))
+    assert (SessionRates().vcpu_hour, SessionRates().gb_hour) == (Decimal('0.1276'), Decimal('0.0169'))
+    unpriced = session_rates(json.dumps(dict.fromkeys(DEFAULT_RATES, '0')))
+    assert unpriced == UNPRICED
+    assert SessionPricing(rates=unpriced).cost('fixer', running=600, held=60).usd == 0
 
 
-@pytest.mark.parametrize('raw', ['free', '-0.1', 'NaN', 'Infinity', '1', '0.0100000000000000001'])
-def test_a_price_that_is_not_one_is_refused(raw: str):
-    with pytest.raises(RuntimeRefused, match='ENGINEERING_MICROVM_USD_PER_SECOND'):
-        microvm_price(raw)
+@pytest.mark.parametrize('raw', ['free', '[]', json.dumps({'vcpuHour': '0.1'}),
+                                 json.dumps({**DEFAULT_RATES, 'diskHour': '1'}),
+                                 json.dumps({**DEFAULT_RATES, 'vcpuHour': '-0.1'}),
+                                 json.dumps({**DEFAULT_RATES, 'gbHour': 'NaN'}),
+                                 json.dumps({**DEFAULT_RATES, 'gbHour': '11'}),
+                                 json.dumps({**DEFAULT_RATES, 'gbHour': True}),
+                                 json.dumps({**DEFAULT_RATES, 'gbHour': '0.0000000000001'})],
+                         ids=['not-json', 'not-object', 'missing', 'unknown', 'negative', 'nan', 'too-high', 'bool',
+                              'too-many-digits'])
+def test_rates_that_are_not_four_amounts_are_refused(raw: str):
+    with pytest.raises(RuntimeRefused, match='ENGINEERING_SESSION_RATES'):
+        session_rates(raw)
+
+
+def test_a_session_counts_every_vcpu_while_it_runs_and_only_its_memory_while_it_is_held():
+    pricing = SessionPricing()
+    running = pricing.cost('fixer', running=3600, held=0)
+    held = pricing.cost('fixer', running=0, held=3600)
+    # 2 vCPU and 8 GB at the consumption rates; held, its memory only (a held agent uses no CPU).
+    assert (running.usd, running.vcpu_seconds, running.gb_seconds) == (
+        Decimal('0.2552') + Decimal('0.1352'), 7200, 28800)
+    assert (held.usd, held.vcpu_seconds, held.gb_seconds) == (Decimal('0.1352'), 0, 28800)
+
+
+def test_the_roles_that_build_and_test_count_their_baseline_at_the_committed_rates_and_their_burst_at_consumption():
+    pricing = SessionPricing(build_roles=frozenset({'gate-runner'}), build_size=build_size('8192'))
+    hour = pricing.cost('gate-runner', running=3600, held=0)
+    # 2 vCPU and 8 GB committed, bursting to 8 vCPU and 32 GB.
+    assert (hour.vcpu_seconds, hour.gb_seconds) == (8 * 3600, 32 * 3600)
+    assert hour.usd == Decimal('0.1994') + Decimal('0.1056') + 6 * Decimal('0.1276') + 24 * Decimal('0.0169')
+    # Held: the committed baseline (CPU and memory) and the memory it may burst to.
+    assert pricing.cost('gate-runner', running=0, held=3600).usd == (
+        Decimal('0.1994') + Decimal('0.1056') + 24 * Decimal('0.0169'))
+    assert pricing.size('fixer') == SessionPricing().size('fixer')
+    assert SessionPricing(build_roles=frozenset({'gate-runner'})).size('gate-runner') == pricing.size('fixer')
+
+
+@pytest.mark.parametrize(('raw', 'size'), [(None, None), ('0', None), ('8192', BUILD_SIZES[8192])])
+def test_the_build_size_is_none_or_the_8192_resource_configuration(raw: str | None, size: object):
+    assert build_size(raw) == size
+
+
+@pytest.mark.parametrize('raw', ['4096', '16384', 'big', '-1'])
+def test_a_build_size_below_the_floor_or_unknown_is_refused(raw: str):
+    with pytest.raises(RuntimeRefused, match='ENGINEERING_BUILD_MEMORY_MIB'):
+        build_size(raw)
+
+
+def test_held_seconds_are_priced_once_and_their_vcpu_and_gb_seconds_recorded(aws):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=10), now=0)
+    store = SessionStore(aws[1], runs, SessionPricing())
+    created = store.create(SESSION)
+    moved = store.save(replace(created, microvm_seconds=3600, held_seconds=3600))
+    moved = store.save(moved)
+    row = aws[1].get_item(Key=KEY)['Item']
+    assert row['cost_usd'] == Decimal('0.2552') + 2 * Decimal('0.1352')
+    assert (row['vcpu_seconds'], row['gb_seconds'], row['priced_held_seconds']) == (7200, 57600, 3600)
+    assert (moved.vcpu_seconds, moved.gb_seconds) == (7200, 57600)
 
 
 def test_an_attribute_the_session_no_longer_has_is_removed(aws):
@@ -389,7 +463,7 @@ def test_a_write_from_a_stale_read_is_refused(aws):
 
 def test_a_continuation_boots_again_in_the_new_microvm_from_its_checkpoint():
     later = replace(SESSION, status='working', boot_index=3, exec_id='e', asked_at=5, pause_requested_at=6)
-    continued = later.on(MicroVm('vm-2', 'fixer-1', 'https://vm-2.example.org'), 2000, 'ckpt-key')
+    continued = later.on(RuntimeSession('vm-2', 'fixer-1', 'https://vm-2.example.org'), 2000, 'ckpt-key')
     assert (continued.vm_id, continued.started_at, continued.status, continued.continuation) == ('vm-2', 2000,
                                                                                                 'booting', 1)
     assert (continued.boot_index, continued.exec_id, continued.asked_at, continued.restore_key) == (0, None, None,

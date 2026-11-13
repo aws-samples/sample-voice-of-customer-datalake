@@ -163,7 +163,7 @@ def test_the_runner_client_runs_a_command_from_the_checkout_through_the_real_run
     (tmp_path / 'repo').mkdir()
     runner = Runner(str(tmp_path), sandbox=False, secrets_dir=str(tmp_path / 'secrets'),
                     agent_home=str(tmp_path / 'home'))
-    server = serve('127.0.0.1', 0, runner)
+    server = serve('127.0.0.1', 0, runner, 'agent')
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         client = RunnerClient(f'http://127.0.0.1:{server.server_address[1]}', sleep=lambda _s: time.sleep(0.02))

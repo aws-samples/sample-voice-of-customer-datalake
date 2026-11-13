@@ -1,13 +1,13 @@
-"""The launcher: the only code that gives an agent's MicroVM AWS credentials.
+"""The launcher: the only code that gives an agent's session AWS credentials.
 
-It runs outside every MicroVM (in voc-engineering-runtime and voc-engineering-delivery). For each agent it assumes that agent role's ONE
+It runs outside every session (in voc-engineering-runtime and voc-engineering-delivery). For each agent it assumes that agent role's ONE
 fixed execution role (never a role per run), with session tags naming the workspace, the run, the agent and the
 connection (``ws``, ``run``, ``agent``, ``connection``: the roles' IAM conditions read them) and the session name
 ``<run ULID>.<agent index>`` (the broker and the board's API read identity from it: connectors/identity.py). Sessions last 15 minutes; the supervisor renews them each tick (and a
 wake, in voc-engineering-delivery) through the launcher, which refuses the agents of a stopped run, so a stop cuts that run's sessions within 15
-minutes although the roles are shared, and its MicroVMs are ended at once anyway.
+minutes although the roles are shared, and its sessions are ended at once anyway.
 
-A ``RoleSession`` is never stored: no readable ``repr``, refuses pickling; only the MicroVM's runner gets it.
+A ``RoleSession`` is never stored: no readable ``repr``, refuses pickling; only the session's runner gets it.
 """
 from __future__ import annotations
 

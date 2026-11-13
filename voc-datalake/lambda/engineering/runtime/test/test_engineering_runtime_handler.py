@@ -2,6 +2,7 @@
 import json
 import sys
 from dataclasses import replace
+from decimal import Decimal
 from typing import Any
 
 import boto3
@@ -12,15 +13,15 @@ from engineering.bus.test.messages import message
 from engineering.connectors.identity import WORKSPACE
 from engineering.runtime import handler
 from engineering.runtime import supervisor as supervisor_module
-from engineering.runtime.aws import AwsMicroVmRuntime
+from engineering.runtime.agentcore import AgentCoreRuntime
 from engineering.runtime.board_bus import SupervisorBus
 from engineering.runtime.harness.skills import COORDINATOR, harness_argv
-from engineering.runtime.interface import AgentSpec, MicroVm, RuntimeRefused
+from engineering.runtime.interface import AgentSpec, RuntimeRefused, RuntimeSession, SessionsFull
 from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, StartReadFailed, meta_key, run_pk
 from engineering.runtime.sessions import LAUNCH_HOLD_SECONDS, StaleSession
 from engineering.runtime.supervisor import SessionBusy
 from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE, WORKSPACE_BUCKET
-from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
+from engineering.runtime.test.local_runtime import LocalAgentRuntime
 from shared import aws as shared_aws
 
 SCHEDULE = 'voc-engineering-supervisor'
@@ -35,20 +36,20 @@ LAUNCH = {'action': 'launch', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id'
 BUS = 'voc-engineering'
 #: The board API's function URL the agents are handed.
 BOARD_URL = 'https://abc123def.lambda-url.us-east-1.on.aws/'
-#: The deployment's MicroVM images (the local fake runs every language; the handler's checks read these).
-IMAGE_ARNS = {'python': 'arn:aws:lambda:us-east-1:123456789012:microvm-image/python',
-              'java': 'arn:aws:lambda:us-east-1:123456789012:microvm-image/java'}
+#: The deployment's agent runtimes (the local fake runs every language; the handler's checks read these).
+IMAGE_ARNS = {'python': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_python-a1b2c3'},
+              'java': {'standard': 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/voc_eng_java-d4e5f6'}}
 
 @pytest.fixture
 def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     assert aws is not None  # moto's S3 and voc-engineering are up for the handler's own clients
-    monkeypatch.setattr(handler, '_runtime', LocalMicroVmRuntime)
+    monkeypatch.setattr(handler, '_runtime', LocalAgentRuntime)
     # (the hard cap's row lives in voc-agents; here the same moto table holds it)
     for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
                         'ENGINEERING_SETTINGS_TABLE': TABLE,
                         'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
                         'ENGINEERING_BUS_NAME': BUS, 'ENGINEERING_BOARD_URL': BOARD_URL,
-                        'ENGINEERING_IMAGE_ARNS': json.dumps(IMAGE_ARNS),
+                        'ENGINEERING_AGENT_RUNTIMES': json.dumps(IMAGE_ARNS),
                         'ENGINEERING_BENCHMARK_CASES': json.dumps(['slug-cut-bug']),
                         'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_REGION': 'us-east-1'}.items():
         monkeypatch.setenv(name, value)
@@ -69,14 +70,14 @@ def _state(events: Any) -> str:
     return events.describe_rule(Name=SCHEDULE)['State']
 
 
-def _recording(monkeypatch: pytest.MonkeyPatch) -> tuple[LocalMicroVmRuntime, list[MicroVm]]:
+def _recording(monkeypatch: pytest.MonkeyPatch) -> tuple[LocalAgentRuntime, list[RuntimeSession]]:
     """The wired runtime, and every MicroVM it starts from now on."""
     runtime = handler._supervisor().runtime
-    assert isinstance(runtime, LocalMicroVmRuntime)
-    started: list[MicroVm] = []
+    assert isinstance(runtime, LocalAgentRuntime)
+    started: list[RuntimeSession] = []
     original = runtime.run
 
-    def run(spec: AgentSpec) -> MicroVm:
+    def run(spec: AgentSpec) -> RuntimeSession:
         started.append(original(spec))
         return started[-1]
 
@@ -132,8 +133,7 @@ def test_a_launch_racing_the_runs_end_is_refused_by_the_session_write_and_ends_i
     monkeypatch.setattr(RunStore, 'get', lambda _self, run_id: Run(run_id, 'active', 0, RunCaps(max_tasks=1)))
     with pytest.raises(RunNotActive, match='no agent is launched'):
         handler.lambda_handler(LAUNCH, None)
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        runtime.mint_token(started[0])
+    assert runtime.state_of(started[0]) == 'terminated'
     assert handler._supervisor().sessions.get(RUN, 'fixer-1') is None
 
 
@@ -199,7 +199,7 @@ def test_a_microvm_that_fails_to_start_lets_go_of_the_launch_so_a_retry_starts_a
     runtime = handler._supervisor().runtime
     original, tries = runtime.run, []
 
-    def fails_once(spec: AgentSpec) -> MicroVm:
+    def fails_once(spec: AgentSpec) -> RuntimeSession:
         tries.append(spec)
         if len(tries) == 1:
             raise RuntimeRefused('no capacity')
@@ -237,7 +237,6 @@ def test_a_start_copies_the_flows_monthly_budget_onto_the_run(wired: Any):
 def _flow_spent(usd: str) -> None:
     """wf_cap's runs spent ``usd`` this month (a priced write, as the session store makes it)."""
     from datetime import UTC, datetime
-    from decimal import Decimal
 
     from engineering.spend import MICROVM, Usage, Where, ledger_updates
     table = _runs().table
@@ -363,9 +362,8 @@ def test_a_runs_end_ends_every_microvm_of_it_before_it_stops_being_watched(wired
     answer = handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'stopped'}, None)
     assert answer['agents'] == {'fixer-1': 'stopped'}
     runtime = handler._supervisor().runtime
-    assert isinstance(runtime, LocalMicroVmRuntime)
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        runtime.mint_token(vm.vm)
+    assert isinstance(runtime, LocalAgentRuntime)
+    assert runtime.state_of(vm.vm) == 'terminated'
     assert (_runs().listed(), _state(wired)) == ([], 'DISABLED')
 
 
@@ -558,7 +556,7 @@ def test_a_launch_whose_session_write_and_terminate_both_fail_still_lets_go_of_i
     def no_session(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError('the session write failed')
 
-    def no_terminate(_vm: MicroVm) -> None:
+    def no_terminate(_vm: RuntimeSession) -> None:
         raise RuntimeError('the terminate failed')
 
     with monkeypatch.context() as patch:
@@ -570,7 +568,7 @@ def test_a_launch_whose_session_write_and_terminate_both_fail_still_lets_go_of_i
     assert handler.lambda_handler(LAUNCH, None)['status'] == 'booting'
 
 
-def _service_down(_spec: AgentSpec) -> MicroVm:
+def _service_down(_spec: AgentSpec) -> RuntimeSession:
     """The MicroVM service failing a start: a failure, not a refusal, so a launch keeps its recorded agent."""
     raise RuntimeError('the MicroVM service is unavailable')
 
@@ -593,7 +591,7 @@ def test_a_coordinator_launch_the_runtime_refuses_clears_its_record_so_a_retry_n
     assert wired is not None
     runtime = handler._supervisor().runtime
 
-    def refused(_spec: AgentSpec) -> MicroVm:
+    def refused(_spec: AgentSpec) -> RuntimeSession:
         raise RuntimeRefused('no MicroVM image is configured for this language')
 
     with monkeypatch.context() as patch:
@@ -622,7 +620,7 @@ def test_a_refused_coordinator_launch_whose_record_cannot_be_cleared_still_raise
     assert wired is not None
     runtime = handler._supervisor().runtime
 
-    def refused(_spec: AgentSpec) -> MicroVm:
+    def refused(_spec: AgentSpec) -> RuntimeSession:
         raise RuntimeRefused('no MicroVM image is configured for this language')
 
     def moved(*_args: Any, **_kwargs: Any) -> None:
@@ -641,7 +639,7 @@ def _unlaunchable(monkeypatch: pytest.MonkeyPatch, missing: str) -> str:
     if missing == 'skill':
         monkeypatch.setattr(handler, 'skill_for', lambda _role: None)
         return 'no coordinator can be launched'
-    monkeypatch.setenv('ENGINEERING_IMAGE_ARNS', json.dumps({'java': IMAGE_ARNS['java']}))
+    monkeypatch.setenv('ENGINEERING_AGENT_RUNTIMES', json.dumps({'java': IMAGE_ARNS['java']}))
     return 'no python image'
 
 
@@ -934,9 +932,58 @@ def test_an_unknown_action_is_refused():
         handler.lambda_handler({'action': 'merge'}, None)
 
 
-def test_the_deployed_handler_always_uses_lambda_microvms(monkeypatch: pytest.MonkeyPatch):
+def test_the_deployed_handler_always_uses_agentcore_runtime(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv('AWS_DEFAULT_REGION', 'us-east-1')
-    assert isinstance(handler._runtime(), AwsMicroVmRuntime)
+    monkeypatch.setenv('ENGINEERING_AGENT_RUNTIMES', json.dumps(IMAGE_ARNS))
+    handler._agentcore_client.cache_clear()
+    runtime = handler._runtime()
+    assert isinstance(runtime, AgentCoreRuntime)
+    spec = AgentSpec(run_id=RUN, agent_id='gate-runner-2', role='gate-runner', task_id='task-1', language='java',
+                     egress=(), connection='conn-1')
+    assert runtime.runtime_arn(spec) == IMAGE_ARNS['java']['standard']
+
+
+def test_the_deployed_handler_prices_sessions_at_the_deployments_rates_and_sizes(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv('ENGINEERING_SESSION_RATES', json.dumps(
+        {'vcpuHour': '0.36', 'gbHour': '0.036', 'baselineVcpuHour': '0.18', 'baselineGbHour': '0.018'}))
+    monkeypatch.setenv('ENGINEERING_BUILD_ROLES', json.dumps(['gate-runner']))
+    monkeypatch.setenv('ENGINEERING_BUILD_MEMORY_MIB', '8192')
+    pricing = handler._pricing()
+    # A standard hour: 2 vCPU and 8 GB; the build role's hour: its 2 vCPU and 8 GB baseline, and the burst to 8 and 32.
+    assert pricing.cost('fixer', running=3600, held=0).usd == Decimal('0.72') + Decimal('0.288')
+    assert pricing.cost('gate-runner', running=3600, held=0).usd == (
+        Decimal('2.16') + Decimal('0.864') + Decimal('0.36') + Decimal('0.144'))
+
+
+@pytest.mark.parametrize(('max_tasks', 'limit', 'refused'), [(150, '150', True), (149, '150', False)],
+                         ids=['one-too-many', 'fits'])
+def test_a_run_with_more_agents_at_once_than_the_deployments_sessions_is_refused_before_anything_is_written(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, max_tasks: int, limit: str, refused: bool):
+    assert wired is not None
+    monkeypatch.setenv('ENGINEERING_MAX_SESSIONS', limit)
+    start = {'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': max_tasks}
+    if refused:
+        with pytest.raises(RuntimeRefused, match='lower its task cap'):
+            handler.lambda_handler(start, None)
+        assert _runs().get(OTHER_RUN) is None
+    else:
+        assert handler.lambda_handler(start, None)['status'] == 'active'
+
+
+def test_a_launch_the_service_has_no_room_for_is_refused_in_its_words_and_may_launch_again(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    runtime = handler._supervisor().runtime
+
+    def full(_spec: AgentSpec) -> RuntimeSession:
+        raise SessionsFull('AgentCore has no room for a new session now')
+
+    monkeypatch.setattr(runtime, 'run', full)
+    with pytest.raises(SessionsFull, match='no room'):
+        handler.lambda_handler(LAUNCH, None)
+    # No session, and its launch let go: a retry once there is room launches at once.
+    assert handler._supervisor().sessions.get(RUN, 'fixer-1') is None
+    assert not handler._supervisor().sessions.launch_under_way(RUN, 'fixer-1', int(handler.clock()))
 
 
 def test_a_signal_reaches_the_supervisor_and_an_unknown_one_is_refused(wired: Any):
@@ -1178,7 +1225,7 @@ def test_a_handed_on_launch_that_fails_sends_the_run_to_a_person_and_never_raise
     _handing_on_launches(monkeypatch)
     handler.start_handler(COORDINATED, None)
 
-    def refused(_spec: AgentSpec) -> MicroVm:
+    def refused(_spec: AgentSpec) -> RuntimeSession:
         raise RuntimeRefused('the MicroVM service answered no MicrovmId')
 
     monkeypatch.setattr(handler._supervisor().runtime, 'run', refused if failure == 'refused' else failure)

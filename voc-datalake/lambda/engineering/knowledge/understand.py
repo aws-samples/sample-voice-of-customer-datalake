@@ -1,6 +1,6 @@
 """One package through the Understand flow: map its shards, then reduce their notes into a draft version.
 
-This is what the mapper agent runs in its MicroVM (the agent and the flow that starts it land in phase 4; nothing
+This is what the mapper agent runs in its session (the agent and the flow that starts it land in phase 4; nothing
 invokes this yet). One call maps at most ``max_shards`` shards, the run's budget: each shard's notes are written to
 the run's workspace once, as ``voc-note/1`` lines under the agent's own key for the shard
 (``ws/<ws>/runs/<run>/<agent>/commits/<sha>/<package>/attempt-<n>/<shard>.jsonl``), and the shards already mapped

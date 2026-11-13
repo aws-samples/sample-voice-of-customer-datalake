@@ -9,7 +9,7 @@ The three levels share one shape and differ in what they cover:
 - ``goal`` (subject: the run id): the whole run.
 
 A report reads only the keys the board recorded on the run's tasks (never a listing of the workspace), names the
-agents and skill versions that made it, and carries the run's metering (events, MicroVM-seconds, tokens, the cost the
+agents and skill versions that made it, and carries the run's metering (events, session-seconds, tokens, the cost the
 brokers priced) and time. It holds code findings, not customer text: the finding reader has already redacted them.
 """
 from __future__ import annotations

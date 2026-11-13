@@ -1,8 +1,9 @@
-"""The ``MicroVmRuntime`` interface: one MicroVM per agent of a run, and nothing more.
+"""The ``AgentRuntime`` interface: one session (its own microVM) per agent of a run, and nothing more.
 
-Two implementations: ``aws.AwsMicroVmRuntime`` (Lambda MicroVMs, through boto3; not yet run against
-AWS) and the tests' ``test.local_runtime.LocalMicroVmRuntime`` (a temporary directory and subprocesses). The supervisor (``supervisor.py``) only ever talks to this interface, so every flow is proven
-on the local fake without an AWS account.
+Two implementations: ``agentcore.AgentCoreRuntime`` (Amazon Bedrock AgentCore Runtime, platform version V2, through
+boto3; not yet run against AWS) and the tests' ``test.local_runtime.LocalAgentRuntime`` (a temporary directory and
+subprocesses). The supervisor (``supervisor.py``) only ever talks to this interface, so every flow is proven on the
+local fake without an AWS account.
 
 A command is an argv tuple, never a shell string: nothing a repository holds is ever handed to a
 shell by the runtime.
@@ -15,9 +16,11 @@ from typing import Any, Final, Protocol
 
 # The agents of the catalog, as the broker's and the board's identity spells them (one list, shipped in the images).
 from engineering.connectors.identity import AGENT_ROLES as ROLES
-from engineering.runtime.tokens import AuthToken
 
 MAX_ID_LENGTH: Final = 63
+#: An AgentCore session lives at most 8 hours (its runtime's ``maxLifetime``): no agent and no command outlives it
+#: without a continuation (the supervisor's, at 7 h 30 by default: ``caps.Timings.pause_after``).
+SESSION_LIFE_SECONDS: Final = 8 * 60 * 60
 #: A task or connection id: it becomes S3 keys, DynamoDB sort keys and session tags.
 _ID_RE: Final = re.compile(rf'^[A-Za-z0-9-]{{1,{MAX_ID_LENGTH}}}\Z')
 #: A run id is a ULID (Crockford base32, upper case), as the broker and the board read it from the session name.
@@ -39,7 +42,12 @@ CODE_ROLES: Final = frozenset({'hunter', 'fixer', 'builder', 'gate-runner'})
 
 
 class RuntimeRefused(ValueError):
-    """The runtime refused a request (a bad id, an empty command, a MicroVM in the wrong state)."""
+    """The runtime refused a request (a bad id, an empty command, a session in the wrong state)."""
+
+
+class SessionsFull(RuntimeRefused):
+    """No room for a new session now (the service's quota of active sessions, or its throttle): nothing started;
+    try again once one ends."""
 
 
 def check_id(kind: str, value: str) -> str:
@@ -70,7 +78,7 @@ MAX_ATTEMPT: Final = 9999
 
 @dataclass(frozen=True)
 class AgentSpec:
-    """What one MicroVM is started for: one agent of one run, on one task."""
+    """What one session is started for: one agent of one run, on one task."""
 
     run_id: str
     agent_id: str
@@ -78,7 +86,7 @@ class AgentSpec:
     task_id: str
     #: The language toolchain image (one of ``egress.REGISTRY_HOSTS``).
     language: str
-    #: Hosts the MicroVM may reach (``egress.egress_allowlist``).
+    #: Hosts the session may reach (``egress.egress_allowlist``; its runner's egress proxy holds it to them).
     egress: tuple[str, ...]
     #: The repository connection: its cache is ``engineering/cache/<connection>/``, mounted read-only.
     connection: str
@@ -119,7 +127,7 @@ class AgentSpec:
 
 @dataclass(frozen=True)
 class CacheMount:
-    """The connection's cache prefix, mounted read-only at ``/mnt/voc-cache`` once the MicroVM has a session."""
+    """The connection's cache prefix, mounted read-only at ``/mnt/voc-cache`` once the agent has its role session."""
 
     bucket: str
     connection: str
@@ -140,12 +148,14 @@ class AgentStatus:
 
 
 @dataclass(frozen=True)
-class MicroVm:
-    """A started MicroVM: its id, the agent it serves and where its runner answers."""
+class RuntimeSession:
+    """A started agent session (an AgentCore Runtime session, its own microVM): its id, the agent it serves and the
+    runtime it runs on."""
 
+    #: The runtime session id (``runtimeSessionId``), or the local fake's own id.
     vm_id: str
     agent_id: str
-    #: The runner's HTTPS base URL (AWS), or the working directory (the local fake).
+    #: The ARN of the AgentCore runtime the session runs on (AWS), or the working directory (the local fake).
     endpoint: str
 
 
@@ -165,59 +175,56 @@ class ExecResult:
 
 
 class HandedSession(Protocol):
-    """What the runtime hands a MicroVM's runner: the launcher's role session. Declared, not imported, so the two
+    """What the runtime hands a session's runner: the launcher's role session. Declared, not imported, so the two
     modules don't import each other."""
 
     def process_credentials(self) -> dict[str, Any]: ...
 
 
-class MicroVmRuntime(Protocol):
-    """Run, suspend, resume, terminate a MicroVM; run commands in it; mint its auth token."""
+class AgentRuntime(Protocol):
+    """Start, hold, wake and end an agent's session; run commands in it; hand it its role session; read its status."""
 
-    def run(self, spec: AgentSpec) -> MicroVm:
-        """Start a MicroVM for ``spec`` (its image, egress allowlist and idle policy)."""
+    def run(self, spec: AgentSpec) -> RuntimeSession:
+        """Start a session for ``spec`` (its language's runtime, its egress allowlist, its ids)."""
         ...
 
-    def suspend(self, vm: MicroVm) -> None:
-        """Suspend ``vm`` with its state, until it is resumed (an agent waiting for a message)."""
+    def suspend(self, vm: RuntimeSession) -> None:
+        """Hold ``vm``'s agent where it is, using no CPU, until it is resumed (an agent waiting for a message)."""
         ...
 
-    def resume(self, vm: MicroVm) -> None:
-        """Resume a suspended ``vm`` where it stopped."""
+    def resume(self, vm: RuntimeSession) -> None:
+        """Resume a held ``vm`` where it stopped."""
         ...
 
-    def terminate(self, vm: MicroVm) -> None:
-        """End ``vm`` for good. Terminating an already terminated MicroVM is not an error."""
+    def terminate(self, vm: RuntimeSession) -> None:
+        """End ``vm`` for good. Ending an already ended session is not an error."""
         ...
 
-    def start_exec(self, vm: MicroVm, command: Command) -> str:
+    def start_exec(self, vm: RuntimeSession, command: Command) -> str:
         """Start ``command`` in the agent's checkout and return its exec id (the command runs on)."""
         ...
 
-    def poll_exec(self, vm: MicroVm, exec_id: str) -> ExecResult | None:
+    def poll_exec(self, vm: RuntimeSession, exec_id: str) -> ExecResult | None:
         """The result of exec ``exec_id``, or None while it still runs."""
         ...
 
-    def mint_token(self, vm: MicroVm) -> AuthToken:
-        """A fresh auth token for ``vm``'s endpoint (at most 60 minutes; held in memory only)."""
+    def hand_session(self, vm: RuntimeSession, session: HandedSession, mount: CacheMount | None) -> None:
+        """Give the session's agent user the launcher's role session (and mount the cache, the first time)."""
         ...
 
-    def hand_session(self, vm: MicroVm, session: HandedSession, mount: CacheMount | None) -> None:
-        """Give the MicroVM's agent user the launcher's role session (and mount the cache, the first time)."""
-        ...
-
-    def status(self, vm: MicroVm) -> AgentStatus:
+    def status(self, vm: RuntimeSession) -> AgentStatus:
         """The harness's own report: its step, its recent tool calls, its tokens per model."""
         ...
 
 
 @dataclass(frozen=True)
 class Command:
-    """One command for an agent's MicroVM.
+    """One command for an agent's session.
 
     ``repository_code`` commands (a build, a test, a gate tool) run as the image's ``code`` user, with no
     credential in their environment, and without network unless ``network`` is set (the dependency step,
-    which reaches only the registries of the egress allowlist).
+    which reaches only the registries of the egress allowlist). No command outlives its session: one whose timeout
+    is past the session's 8 hours is refused (split it, or let the agent continue in a new session).
     """
 
     argv: tuple[str, ...]
@@ -230,8 +237,11 @@ class Command:
             raise RuntimeRefused('a command is a non-empty argv of non-empty strings')
         if self.timeout_seconds < 1:
             raise RuntimeRefused('a command needs a timeout of at least one second')
+        if self.timeout_seconds > SESSION_LIFE_SECONDS:
+            raise RuntimeRefused(f'a command cannot run longer than a session lives ({SESSION_LIFE_SECONDS // 3600} '
+                                 'hours): split it into shorter steps, or let the agent continue in a new session')
 
     def to_body(self) -> dict[str, object]:
-        """The runner's ``POST /exec`` body."""
+        """The runner's ``exec`` body."""
         return {'argv': list(self.argv), 'timeout_seconds': self.timeout_seconds,
                 'repository_code': self.repository_code, 'network': self.network}

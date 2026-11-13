@@ -147,7 +147,7 @@ class Tool:
 
 @dataclass(frozen=True)
 class Needs:
-    """What packs need from the gate runner's MicroVM.
+    """What packs need from the gate runner's session.
 
     ``tools``: the versions the gate records; ``network``: the registries the setup steps reach (the dependency
     step's egress allowlist); ``image``: the toolchain versions the pack's image installs (toolchain → version).
@@ -388,7 +388,7 @@ def load_packs(directory: Path) -> tuple[Pack, ...]:
 
 
 def default_packs_dir() -> Path:
-    """voc-datalake/engineering-gates, next to this package (the MicroVM image keeps the same layout)."""
+    """voc-datalake/engineering-gates, next to this package (the session image keeps the same layout)."""
     return Path(__file__).resolve().parents[3] / 'engineering-gates'
 
 

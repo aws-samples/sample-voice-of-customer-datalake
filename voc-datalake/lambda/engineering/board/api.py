@@ -237,7 +237,7 @@ CLEARS_LAUNCH = frozenset({'RuntimeRefused', 'StaleSession'})
 #: A run whose start recorded no repository connection or commit: only a new run's start can, so never a retry.
 NO_START_RECORD = ('this run was started without a repository connection or commit: start a new run with both to '
                    'launch agents or read knowledge')
-#: How long the board waits for the runtime's launch (its MicroVM's start and the session row), below the board
+#: How long the board waits for the runtime's launch (its session's start and the session row), below the board
 #: function's own limit (engineering-bus.ts: 120 s), and never retried by the client: a retry is the coordinator's,
 #: which the runtime answers with the session it has or refuses while the first launch is still under way.
 LAUNCH_READ_TIMEOUT_SECONDS = 100
@@ -330,7 +330,7 @@ class BoardApi:
                  images: frozenset[str] = frozenset(REGISTRY_HOSTS)) -> None:
         """``launcher`` and ``knowledge``: the coordinator's launch and the knowledge reads (None: refused);
         ``skill``: a role's skill (runtime/harness/skills.py), which the runtime launches it with; ``images``: the
-        languages this deployment has a MicroVM image for (``ENGINEERING_IMAGE_LANGUAGES``)."""
+        languages this deployment has an agent runtime for (``ENGINEERING_IMAGE_LANGUAGES``)."""
         self.store = store
         self.publisher = publisher
         self.inbox = inbox
@@ -389,7 +389,7 @@ class BoardApi:
     def _check_launchable(self, role: str, language: str) -> None:
         """What the runtime would refuse, refused before an agent is numbered, so a coordinator that keeps asking uses
         up none of the run's agent numbers: a role with no skill (the runtime launches a role only with its skill), a
-        language this deployment has no MicroVM image for."""
+        language this deployment has no agent runtime for."""
         if self.skill(role) is None:
             raise BoardError('conflict', f'no {role} agent can be launched yet: the role has no skill')
         if language not in self.images:

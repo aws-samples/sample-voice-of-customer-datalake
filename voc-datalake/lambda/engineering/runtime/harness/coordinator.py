@@ -2,7 +2,7 @@
 
 The coordinator plans; it changes no code. What it posts and launches goes through the board (``ports.Planner``),
 which checks the caller's identity and role as for every agent, and runs on the caller's run's connection and
-commit, which the board takes from that run: neither the model nor anything in the MicroVM names them. Everything the board or the knowledge pack returns is fenced
+commit, which the board takes from that run: neither the model nor anything in the session names them. Everything the board or the knowledge pack returns is fenced
 as data (``tools.as_data``): a task's title or a pack's text is never an instruction.
 """
 from __future__ import annotations

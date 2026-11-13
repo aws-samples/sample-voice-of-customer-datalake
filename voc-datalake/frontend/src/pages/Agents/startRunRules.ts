@@ -1,7 +1,7 @@
 /**
  * @fileoverview The rules of a run's start, as the server checks them (`lambda/api/agents_handler.py`
  * `_start_body`; held to it by this module's lockstep test): a connection's short id, a full commit id of 40
- * hexadecimal characters, a language with a MicroVM image, and a goal on one line of at most {@link MAX_RUN_GOAL}
+ * hexadecimal characters, a language with an agent image, and a goal on one line of at most {@link MAX_RUN_GOAL}
  * characters. The form says what is wrong before anything is sent; the server checks again.
  *
  * @module pages/Agents/startRunRules
@@ -9,7 +9,7 @@
 import { ApiError, AuthError, ConfigError, serverReason } from '../../lib/errors'
 import type { StartRunRequest } from '../../api/engineeringRunsApi'
 
-/** The languages with a MicroVM image (engineering-images/, `runtime/egress.py` REGISTRY_HOSTS). */
+/** The languages with an agent image (engineering-images/, `runtime/egress.py` REGISTRY_HOSTS). */
 export const RUN_LANGUAGES = ['java', 'node', 'python', 'rust'] as const
 export type RunLanguage = (typeof RUN_LANGUAGES)[number]
 /** The longest goal (agents_handler.py MAX_RUN_GOAL): longer is refused, never cut. */

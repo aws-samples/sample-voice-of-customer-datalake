@@ -1,4 +1,4 @@
-"""Auth tokens are never stored; egress is an allowlist of plain hosts, and no MicroVM reaches the host."""
+"""A role session is never stored; egress is an allowlist of plain hosts, and no session reaches the host."""
 import json
 import pickle
 
@@ -6,52 +6,33 @@ import pytest
 
 from engineering.connectors.identity import ROLE_PLACEHOLDER, Caller, caller_from_event
 from engineering.runtime import egress
-from engineering.runtime.interface import ROLES, AgentSpec, CacheMount, Command, RuntimeRefused, agent_index
-from engineering.runtime.launcher import session_name
-from engineering.runtime.tokens import (
-    MAX_TOKEN_SECONDS,
-    REFRESH_MARGIN_SECONDS,
-    AuthToken,
-    TokenNotStorable,
-    TokenSource,
-    bounded_expiry,
+from engineering.runtime.interface import (
+    ROLES,
+    SESSION_LIFE_SECONDS,
+    AgentSpec,
+    CacheMount,
+    Command,
+    RuntimeRefused,
+    agent_index,
 )
+from engineering.runtime.launcher import RoleSession, session_name
+from engineering.runtime.tokens import TokenNotStorable
 
 
-def test_a_token_hides_its_value_and_cannot_be_pickled_or_dumped():
-    token = AuthToken(value='fake-token-value', expires_at=1000.0)
-    assert 'fake-token-value' not in repr(token)
+def test_a_role_session_hides_its_secret_and_cannot_be_pickled_or_dumped():
+    session = RoleSession(access_key_id='ASIAFAKE', secret_access_key='fake-secret-value', session_token='fake',
+                          expires_at=1000.0)
+    assert 'fake-secret-value' not in repr(session)
     with pytest.raises(TokenNotStorable):
-        pickle.dumps(token)
+        pickle.dumps(session)
     with pytest.raises(TypeError):
-        json.dumps({'t': token})
+        json.dumps({'s': session})
 
 
-def test_a_token_source_cannot_be_pickled():
-    with pytest.raises(TokenNotStorable):
-        pickle.dumps(TokenSource(lambda: AuthToken('x', 0.0)))
-
-
-def test_expiry_is_cut_to_sixty_minutes():
-    assert bounded_expiry(100.0, 100.0 + 3 * MAX_TOKEN_SECONDS) == 100.0 + MAX_TOKEN_SECONDS
-    assert bounded_expiry(100.0, 200.0) == 200.0
-
-
-def test_the_source_mints_once_then_again_only_near_expiry():
-    now = [0.0]
-    minted: list[int] = []
-
-    def mint() -> AuthToken:
-        minted.append(1)
-        return AuthToken(value=f'fake-{len(minted)}', expires_at=now[0] + MAX_TOKEN_SECONDS)
-
-    source = TokenSource(mint, clock=lambda: now[0])
-    first = source.current()
-    now[0] = MAX_TOKEN_SECONDS - REFRESH_MARGIN_SECONDS - 1
-    assert source.current() is first
-    now[0] = MAX_TOKEN_SECONDS - REFRESH_MARGIN_SECONDS + 1
-    assert source.current().value == 'fake-2'
-    assert len(minted) == 2
+def test_no_command_outlives_its_session_without_a_continuation():
+    assert Command(argv=('run',), timeout_seconds=SESSION_LIFE_SECONDS).timeout_seconds == 8 * 3600
+    with pytest.raises(RuntimeRefused, match='split it'):
+        Command(argv=('run',), timeout_seconds=SESSION_LIFE_SECONDS + 1)
 
 
 def test_an_agent_reaches_the_workspace_buckets_own_endpoint_too():
@@ -88,6 +69,22 @@ def test_no_allowlist_holds_a_repository_host():
 def test_anything_but_a_plain_dns_name_is_refused(host):
     with pytest.raises(RuntimeRefused):
         egress.check_host(host)
+
+
+@pytest.mark.parametrize('extra', ['bedrock-runtime.us-east-1.amazonaws.com', 'some-bucket.s3.us-east-1.amazonaws.com',
+                                   'abc123.lambda-url.us-east-1.on.aws'],
+                         ids=['bedrock', 'a-bucket', 'a-function-url'])
+def test_an_extra_host_shaped_like_the_agents_own_is_refused(extra: str):
+    # The split parts hosts by shape: such a host would land on the agent's proxy, not the dependency step's.
+    with pytest.raises(RuntimeRefused, match='dependency step only'):
+        egress.egress_allowlist(role='fixer', language='python', region='us-east-1', bucket='voc-raw-test',
+                                extra_hosts=[extra])
+
+
+def test_a_registry_mirror_is_an_extra_host_of_the_dependency_step_only():
+    hosts = egress.egress_allowlist(role='fixer', language='python', region='us-east-1', bucket='voc-raw-test',
+                                    extra_hosts=['pypi-mirror.example.org'])
+    assert egress.split(hosts)[1] == ('files.pythonhosted.org', 'pypi-mirror.example.org', 'pypi.org')
 
 
 @pytest.mark.parametrize(('language', 'region', 'bucket', 'extras'), [

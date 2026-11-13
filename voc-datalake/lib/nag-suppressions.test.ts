@@ -235,7 +235,9 @@ describe('cdk-nag acknowledgements', () => {
       // prefix), its IAM5.
       // 90 -> 92: the engineering broker's reads of the agents' submitted patches and of the gate records (two
       // prefixes), their IAM5.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 92, used: 92 });
+      // 92 -> 88: the Lambda MicroVM grants are gone (the MicroVMs and their images, on the supervisor's and the
+      // delivery's roles); AgentCore's are on this deployment's runtimes only, and none exist in either shape.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 88, used: 88 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

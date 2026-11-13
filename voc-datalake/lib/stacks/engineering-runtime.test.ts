@@ -1,69 +1,15 @@
-import * as cdk from 'aws-cdk-lib';
-import { Match, Template } from 'aws-cdk-lib/assertions';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as events from 'aws-cdk-lib/aws-events';
-import type * as iam from 'aws-cdk-lib/aws-iam';
-import * as kms from 'aws-cdk-lib/aws-kms';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as sqs from 'aws-cdk-lib/aws-sqs';
+import { Match, type Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { policiesWithStatement } from '../test-support/engineering-template';
-import { fixtureBucket } from '../test-support/fixture-resources';
+import {
+  ACCOUNT, EnvSchema, count, policyText, runtimeStack, supervisorEnv,
+} from '../test-support/engineering-runtime-fixture';
 import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
-import { type EngineeringPeers, addEngineeringRuntime, benchmarkCaseIds } from './engineering-runtime';
-
-const ACCOUNT = 'arn:aws:lambda:us-east-1:111111111111';
-
-/** The bus's and the broker's parts the runtime takes, as references, and the sources pinned on the bus. */
-function fakePeers(stack: cdk.Stack, kmsKey: kms.IKey, pins: Map<string, string>): EngineeringPeers {
-  return {
-    // A queue on the stack's key, as voc-engineering-dlq is.
-    deadLetterQueue: new sqs.Queue(stack, 'EngineeringDLQ', { encryption: sqs.QueueEncryption.KMS, encryptionMasterKey: kmsKey }),
-    bus: events.EventBus.fromEventBusArn(stack, 'Bus', 'arn:aws:events:us-east-1:111111111111:event-bus/voc-engineering'),
-    addPublisher: (statementId: string, _role: iam.IRole, source: string) => {
-      pins.set(statementId, source);
-    },
-    board: lambda.Function.fromFunctionArn(stack, 'Board', `${ACCOUNT}:function:voc-engineering-board`),
-    boardUrl: 'https://abc123.lambda-url.us-east-1.on.aws/',
-    broker: lambda.Function.fromFunctionArn(stack, 'Broker', `${ACCOUNT}:function:voc-engineering-broker`),
-  };
-}
-
-interface RuntimeStack { template: Template; added: boolean; pins: Map<string, string> }
-
-/** A stack with only the runtime's dependencies, under `context`; `withPeers: false` leaves out the bus and broker. */
-function runtimeStack(context: Record<string, unknown>, withPeers = true): RuntimeStack {
-  const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], ...context } });
-  const stack = new cdk.Stack(app, 'EngineeringTest', { env: { account: '111111111111', region: 'us-east-1' } });
-  const kmsKey = new kms.Key(stack, 'Key');
-  const pins = new Map<string, string>();
-  const added = addEngineeringRuntime(stack, {
-    uniqueName: (baseName) => baseName,
-    layer: lambda.LayerVersion.fromLayerVersionArn(stack, 'Layer', 'arn:aws:lambda:us-east-1:111111111111:layer:deps:1'),
-    kmsKey,
-    engineeringTable: new dynamodb.Table(stack, 'Engineering', {
-      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-    }),
-    agentsTable: new dynamodb.Table(stack, 'Agents', {
-      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-    }),
-    rawDataBucket: fixtureBucket(stack, 'Raw'),
-    workspaceBucket: fixtureBucket(stack, 'Workspace'),
-    peers: withPeers ? fakePeers(stack, kmsKey, pins) : undefined,
-  });
-  return { template: Template.fromStack(stack), added, pins };
-}
-
-/** How many resources of `type` match `properties`. */
-function count(template: Template, type: string, properties?: Record<string, unknown>): number {
-  return Object.keys(template.findResources(type, properties ? { Properties: properties } : undefined)).length;
-}
+import { benchmarkCaseIds } from './engineering-runtime';
 
 const StatementsSchema = z.array(z.looseObject({
   Sid: z.string().optional(),
@@ -71,22 +17,6 @@ const StatementsSchema = z.array(z.looseObject({
   Condition: z.looseObject({ StringLike: z.looseObject({ 's3:prefix': z.array(z.string()).optional() }).optional() })
     .optional(),
 }));
-const EnvSchema = z.object({ Variables: z.record(z.string(), z.unknown()) });
-
-/** The supervisor function's environment variables. */
-function supervisorEnv(template: Template): Record<string, unknown> {
-  const [fn] = Object.values(template.findResources('AWS::Lambda::Function', {
-    Properties: { FunctionName: 'voc-engineering-runtime' },
-  }));
-  return EnvSchema.parse(fn?.Properties?.Environment).Variables;
-}
-
-/** The inline policies attached to the role whose logical id contains `roleId`, as searchable text. */
-function policyText(template: Template, roleId: string): string {
-  return JSON.stringify(template.findResources('AWS::IAM::Policy', {
-    Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(roleId) }]) },
-  }));
-}
 
 /** How many of the fixer agent role's policies hold every one of `statements`. */
 function fixerPoliciesWith(template: Template, statements: unknown[]): number {
@@ -179,7 +109,7 @@ describe('with -c engineeringAgents=true', () => {
     // What a start reads (the hard cap's table, the rule it switches on, the images, the launcher's roles); no
     // benchmark cases: it runs no retrospective.
     const env = Object.keys(EnvSchema.parse(start?.Properties?.Environment).Variables);
-    expect(['ENGINEERING_SETTINGS_TABLE', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_IMAGE_ARNS', 'ENGINEERING_AGENT_ROLE_ARNS',
+    expect(['ENGINEERING_SETTINGS_TABLE', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_AGENT_RUNTIMES', 'ENGINEERING_AGENT_ROLE_ARNS',
       'ENGINEERING_RUNTIME_FUNCTION', 'ENGINEERING_BENCHMARK_CASES'].map((name) => env.includes(name)))
       .toStrictEqual([true, true, true, true, true, false]);
     expect(count(template, 'AWS::Lambda::EventInvokeConfig', {
@@ -195,9 +125,9 @@ describe('with -c engineeringAgents=true', () => {
     expect(policyText(template, 'EngineeringStartRole')).toMatch(/lambda:InvokeFunction[^\]]*function:/);
   });
 
-  it('gives the start function only what a start needs: no MicroVM, no agent role, no bus, no delete, no rule off', () => {
+  it('gives the start function only what a start needs: no session, no agent role, no bus, no delete, no rule off', () => {
     const start = policyText(template, 'EngineeringStartRole');
-    expect(start).not.toMatch(/Microvm|sts:|events:(PutEvents|DisableRule)|DeleteItem|dynamodb:Query|s3:|sqs:|bedrock:/);
+    expect(start).not.toMatch(/bedrock-agentcore|sts:|events:(PutEvents|DisableRule)|DeleteItem|dynamodb:Query|s3:|sqs:|bedrock:/);
     const actions = new Set(start.match(/"(dynamodb|events|lambda|kms):[A-Za-z]+"/g)
       ?.filter((name) => !/LeadingKeys|ViaService/.test(name)));
     expect([...actions].sort((a, b) => a.localeCompare(b, 'en'))).toStrictEqual([
@@ -209,35 +139,9 @@ describe('with -c engineeringAgents=true', () => {
     expect(policyText(template, 'EngineeringAgentFixerRole')).not.toMatch(/EngineeringStartRole/);
   });
 
-  it('prices MicroVM time only once a price is set (-c engineeringMicrovmUsdPerSecond), and refuses a bad one', () => {
-    expect(supervisorEnv(template).ENGINEERING_MICROVM_USD_PER_SECOND).toBe('0');
-    const priced = runtimeStack({ engineeringAgents: 'true', engineeringMicrovmUsdPerSecond: '0.0000166' }).template;
-    expect(supervisorEnv(priced).ENGINEERING_MICROVM_USD_PER_SECOND).toBe('0.0000166');
-    for (const bad of ['free', '-1', '1', '1e-5', '0.0100000000000000001']) {
-      expect(() => runtimeStack({ engineeringAgents: 'true', engineeringMicrovmUsdPerSecond: bad }))
-        .toThrow(/engineeringMicrovmUsdPerSecond/);
-    }
-  });
-
-  it('configures no MicroVM image by default, so every launch is refused until one is set', () => {
-    expect(supervisorEnv(template).ENGINEERING_IMAGE_ARNS).toBe('{}');
-  });
-
-  it('takes the image ARNs from -c engineeringImageArns (a JSON object, or its text from the CLI)', () => {
-    const arns = { python: 'arn:aws:lambda:us-east-1:111111111111:microvm-image/python:3', rust: 'arn:aws:lambda:us-east-1:111111111111:microvm-image/rust:1' };
-    for (const value of [arns, JSON.stringify(arns)]) {
-      const env = supervisorEnv(runtimeStack({ engineeringAgents: 'true', engineeringImageArns: value }).template);
-      expect(JSON.parse(String(env.ENGINEERING_IMAGE_ARNS))).toStrictEqual(arns);
-    }
-  });
-
-  it.each([
-    ['not JSON', '{python:'],
-    ['not an object', '["arn:aws:lambda:us-east-1:111111111111:microvm-image/python:3"]'],
-    ['an unknown language', { go: 'arn:aws:lambda:us-east-1:111111111111:microvm-image/go:1' }],
-    ['not an ARN', { python: 'python:3.14' }],
-  ])('refuses image ARNs that are %s', (_case, value) => {
-    expect(() => runtimeStack({ engineeringAgents: 'true', engineeringImageArns: value })).toThrow(/engineeringImageArns/);
+  it('configures no agent runtime by default, so every launch is refused until an image is named', () => {
+    expect(supervisorEnv(template).ENGINEERING_AGENT_RUNTIMES).toBe('{}');
+    expect(count(template, 'AWS::BedrockAgentCore::Runtime')).toBe(0);
   });
 
   it('adds no alarm unless asked (an alarm is a fixed cost)', () => {
@@ -407,7 +311,8 @@ describe('with -c engineeringAgents=true', () => {
     expect(supervisor).toContain(':rule/voc-engineering-supervisor');
     // The checkpoints it reads are the agents' in the workspace bucket's layout; the raw bucket only for the cache.
     expect(supervisor).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
-    expect(supervisor).toContain('lambda:RunMicrovm');
+    // No AgentCore grant without a runtime (engineering-agentcore.test.ts has them).
+    expect(supervisor).not.toMatch(/bedrock-agentcore|Microvm/);
     expect(supervisor).not.toMatch(/s3:DeleteObject|s3:PutObject|dynamodb:\*|s3:\*|iam:|gsi1|engineering\/runs\//);
     template.hasResourceProperties('AWS::Lambda::Function', {
       FunctionName: 'voc-engineering-runtime',
@@ -415,7 +320,7 @@ describe('with -c engineeringAgents=true', () => {
     });
   });
 
-  it('gives the delivery only what a wake needs: the runs\' rows, its MicroVM calls, the checkpoints, the launch, its DLQ', () => {
+  it('gives the delivery only what a wake needs: the runs\' rows, the checkpoints, the launch, its DLQ (no runtime yet)', () => {
     const policies = template.findResources('AWS::IAM::Policy', {
       Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringDeliveryRole') }]) },
     });
@@ -426,7 +331,6 @@ describe('with -c engineeringAgents=true', () => {
       'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem',
       'events:PutEvents',
       'kms:Decrypt', 'kms:GenerateDataKey',
-      'lambda:CreateMicrovmAuthToken', 'lambda:ResumeMicrovm', 'lambda:RunMicrovm', 'lambda:TerminateMicrovm',
       's3:GetObject', 's3:ListBucket',
       'sqs:SendMessage',
       'sts:AssumeRole', 'sts:TagSession',
@@ -444,7 +348,7 @@ describe('with -c engineeringAgents=true', () => {
       }),
     });
     const delivery = policyText(template, 'EngineeringDeliveryRole');
-    expect(delivery).not.toMatch(/WS#\*#RUNS|events:Put(Rule|Targets)|events:(Enable|Disable)|s3:PutObject|dynamodb:DeleteItem|SuspendMicrovm|iam:/);
+    expect(delivery).not.toMatch(/WS#\*#RUNS|events:Put(Rule|Targets)|events:(Enable|Disable)|s3:PutObject|dynamodb:DeleteItem|InvokeAgentRuntimeCommand|iam:/);
     // Its one bus action, only as the supervisor (a wake's continuation is reported to the run).
     expect(delivery.match(/"events:[A-Z]\w*"/g)).toStrictEqual(['"events:PutEvents"']);
     expect(delivery).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
@@ -486,12 +390,12 @@ describe('with -c engineeringAgents=true', () => {
     const env = Object.keys(EnvSchema.parse(fn?.Properties?.Environment).Variables);
     expect(env).toStrictEqual(expect.arrayContaining(['ENGINEERING_AGENT_ROLE_ARNS', 'ENGINEERING_BOARD_URL',
       'ENGINEERING_BUS_NAME',
-      'ENGINEERING_IMAGE_ARNS',
-      'ENGINEERING_MICROVM_USD_PER_SECOND', 'ENGINEERING_TABLE', 'ENGINEERING_TIMINGS', 'ENGINEERING_WORKSPACE_BUCKET',
+      'ENGINEERING_AGENT_RUNTIMES',
+      'ENGINEERING_SESSION_RATES', 'ENGINEERING_TABLE', 'ENGINEERING_TIMINGS', 'ENGINEERING_WORKSPACE_BUCKET',
       'RAW_DATA_BUCKET']));
     // Nor the benchmark's cases, nor the hard cap's table (only a start reads it).
     expect(env.filter((name) => ['SUPERVISOR_RULE_NAME', 'ENGINEERING_EXTRA_EGRESS', 'ENGINEERING_BENCHMARK_CASES',
-      'ENGINEERING_SETTINGS_TABLE'].includes(name))).toStrictEqual([]);
+      'ENGINEERING_SETTINGS_TABLE', 'ENGINEERING_MAX_SESSIONS'].includes(name))).toStrictEqual([]);
   });
 
   describe('the learning loop (a run\'s retrospective, lambda/engineering/learning/)', () => {

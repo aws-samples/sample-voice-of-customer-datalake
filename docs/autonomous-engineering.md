@@ -10,7 +10,7 @@ understand issues, hunt and fix bugs, build features, review pull requests. Ever
 the same quality gate a careful team uses: deterministic checks for the repository's languages, review rounds by
 reviewer agents (three by default), then a final go. The flows stop at the pull request: **a person always merges**.
 
-The agents work like a team: each in its own sandbox (a Lambda MicroVM), talking through one event bus, picking
+The agents work like a team: each in its own sandbox (an Amazon Bedrock AgentCore Runtime session, its own microVM), talking through one event bus, picking
 tasks from a shared board, writing their findings to a shared workspace, reporting per commit, per pull request and
 per goal, and getting better from run to run (versioned skills, a coach, memory, a benchmark that gates every
 change to an agent).
@@ -26,7 +26,7 @@ budgets, the run journal) and on [memory](memory.md).
 4. [The agent catalog](#the-agent-catalog)
 5. [How the agents work together](#how-the-agents-work-together)
 6. [The quality gate](#the-quality-gate)
-7. [Runtime: one MicroVM per agent](#runtime-one-microvm-per-agent)
+7. [Runtime: one AgentCore session per agent](#runtime-one-agentcore-session-per-agent)
 8. [Reports](#reports)
 9. [Getting better: skills, the coach, the learning loop, memory](#getting-better-skills-the-coach-the-learning-loop-memory)
 10. [Models](#models)
@@ -73,8 +73,11 @@ stack). Designed for them from day one.
   dependency step's code firewall rejects; a build that asks for a JVM other than the client's
   (`org.gradle.jvmargs`, which many repositories set, `org.gradle.java.home`, daemon JVM criteria) still forks a
   single-use daemon, and worker processes talk over loopback too, which is rejected as well (unverified in a
-  MicroVM: such a repository's dependency step may fail; making loopback usable there is a design change to the
-  firewall). No MicroVM that runs repository code writes to the cache.
+  session: such a repository's dependency step may fail; making loopback usable there is a design change to the
+  firewall). The dependency step reaches only its own egress proxy (its language's registries and the deployment's
+  extra hosts), never the agent's (Bedrock, the buckets, the board), and the agent never reaches a registry
+  ([Runtime](#runtime-one-agentcore-session-per-agent): two allowlists, two proxies). No session that runs repository
+  code writes to the cache.
 
 ## Repository connectors
 
@@ -173,7 +176,7 @@ durable audit row of each write (D4) is still planned (the broker writes no tabl
 | GitLab | a project access token, role Developer, scope `api` (no narrower scope covers merge requests and comments; it includes the repository read and write scopes), with an expiry; the connection page shows when it expires and takes its replacement | the same, through the API | Maintainer or Owner role; group tokens |
 
 **The broker.** One Lambda, the connector's broker, is the only code that holds a host credential: no agent's
-MicroVM ever holds one. Agents ask it for typed operations, and each role may invoke only the operations it needs;
+session ever holds one. Agents ask it for typed operations, and each role may invoke only the operations it needs;
 the broker is reached only through a Lambda function URL with IAM authentication (as is the board's API, below), whose
 request carries the caller's assumed-role ARN, and it takes the caller's role,
 run and agent from the caller's assumed-role identity (the role is the agent role; the session name, which the
@@ -230,7 +233,7 @@ prefixed once multi-workspace lands; a prefixed deployment puts its prefix on th
 `ssm:GetParameter` on that path only, `kms:Decrypt` on the stack's key only through SSM and only for those
 parameters), decrypted, kept in memory five minutes at most; a missing or malformed one answers 503 and is logged by
 connection id and error code only. They are never put in a model's context, an event, a log line, a checkpoint or a
-MicroVM. Stopping a run turns the broker off for that run at once: every further operation is refused before any
+session. Stopping a run turns the broker off for that run at once: every further operation is refused before any
 token is used. Tokens are not revoked early: each is minted for one repository and one operation's permissions, held
 only by the broker, and expires within the hour.
 
@@ -413,19 +416,19 @@ What exists:
   written in the same transaction, so the board's launches number from 2). A new coordinator for it is recorded only
   by the run's trusted code (`BoardStore.launch_coordinator`: the task open at the attempt given, the next
   `coordinator-<n>`, a retry reusing it), never by a board op: a person's Resume of a run whose coordinator is gone
-  re-posts the task at the attempt it was at and then calls it ([Runtime](#runtime-one-microvm-per-agent)). A
+  re-posts the task at the attempt it was at and then calls it ([Runtime](#runtime-one-agentcore-session-per-agent)). A
   coordinator acts only while it is the run's: every board op of the coordinator role checks the caller is the
   coordinate task's recorded coordinator at the task's attempt, so a replaced coordinator's session is refused (403)
   by the board from the re-post on, its claim included; a run whose start wrote no coordinate task has only its
   start's coordinator, so there the role is the check. The board alone checks it: the connectors broker and the
   bus source (`voc.engineering/conductor/<ws>/<run>`) still take the role. The runtime replaces only a coordinator
-  whose session failed, whose MicroVM the supervisor ended with it; if that end failed (it is logged), the old
-  MicroVM can still reach the broker and speak from its bus source until its idle policy ends it, and only the
+  whose session failed, whose session the supervisor ended with it; if that end failed (it is logged), the old
+  session can still reach the broker and speak from its bus source until its idle timeout ends it, and only the
   board refuses it. The coordinate task's re-post
   publishes no `task.posted` (no role reads one for it). A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
-  its role, language and paths, the role one with a skill, the language one this deployment has a MicroVM image
-  for (`-c engineeringImageArns`) and the paths by the checkout's own rule, all checked before an agent is
+  its role, language and paths, the role one with a skill, the language one this deployment has an agent runtime
+  for (`-c engineeringImages`, with `-c engineeringAgentNetwork`) and the paths by the checkout's own rule, all checked before an agent is
   numbered; the board invokes the runtime's `launch` action only (its code holds it to
   that: its role's grant is the whole function's), with the run's commit and
   connection from its META, numbers the agent `<role>-<n>` from the run's counter, at most 999, and records it on the
@@ -439,8 +442,8 @@ What exists:
   and no launch of the agent exist, and a repeat of a launch whose session got through gets that session (200);
   anything else 503. A launch is started once: the board waits for the runtime's answer up to 100 s, within its own 120 s limit,
   and its client never retries the call itself; the runtime holds the agent's row (`launching_until`, one
-  conditional write) before it starts the MicroVM, so a repeat for the same task and attempt answers the session the
-  first one wrote, and one while the first still starts its MicroVM is refused as busy (409), never a second MicroVM.
+  conditional write) before it starts the session, so a repeat for the same task and attempt answers the session the
+  first one wrote, and one while the first still starts its session is refused as busy (409), never a second session.
   The board never chooses the agent's argv: the runtime derives it from the role's skill, so a launch of a role
   with no skill yet is refused (409). An agent reads
   the approved knowledge pack (`knowledge` `{task_id, package}`, as data) of one of its task's paths (the spec's
@@ -463,7 +466,7 @@ What exists:
   encrypted with the stack's key, versioned, access-logged, kept under `-c protectData`), where nothing expires
   until a retention that writes its `AUDIT#delete` row exists (*planned*; "The workspace" further down this
   section). The runtime's agents write their checkpoints and patches there, each under its own keys
-  ([Runtime](#runtime-one-microvm-per-agent)); their findings are to follow.
+  ([Runtime](#runtime-one-agentcore-session-per-agent)); their findings are to follow.
 - **The reads** (`views.py`, `rows.py`): the Agents API's `GET /agents/engineering/<run_id>/board`, `…/conversation`,
   `…/reports` and `…/reports/<level>/<subject>`, on only with `-c engineeringAgents=true` (anywhere else they answer
   404), and read by administrators only, acting for themselves, until a connection can be shared ([Repository connectors](#repository-connectors), "Who can read
@@ -474,14 +477,14 @@ What exists:
   could not hand the router, the router's and the delivery function's invocations that failed every retry, the report
   builder's failed builds and
   the runtime's undelivered supervisor ticks; alerting watches it like the platform's other failure queues.
-- **The agents' access**: the [runtime](#runtime-one-microvm-per-agent)'s agent roles call the board's and the
+- **The agents' access**: the [runtime](#runtime-one-agentcore-session-per-agent)'s agent roles call the board's and the
   broker's function URLs, and put events on the bus only with their own source; the bus's policy admits the board's
   role, the runtime's two (the supervisor's and the delivery function's) and every agent role, and nothing else, and
   denies each of them every source but its own (the board `voc.engineering/board`, the runtime's two
   `voc.engineering/supervisor`, an agent its own, a run's coach `voc.engineering/coach/<ws>/<run>`).
 
 Not built yet: the rest of the harness's side (its broker interface still refuses every call:
-[Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); the skills of the roles other than the coordinator
+[Runtime](#runtime-one-agentcore-session-per-agent), "Not aligned yet"); the skills of the roles other than the coordinator
 (the board's launch of such a role is refused, 409); the agents' findings in the workspace (the runtime writes their
 checkpoints and patches there). The rest of this section is the
 design; where the built message types and queues differ from it, the code (`bus/schema.py`, `bus/routing.py`) is what
@@ -504,12 +507,12 @@ the S3 keys of its payload (the claim-check pattern), never findings, diffs or l
 customer text (feedback ids only).
 
 **Nobody can speak for someone else.** There is one fixed execution role per agent role (never a role per run). The
-runtime's launcher, trusted code outside any MicroVM, assumes that role for each agent with its connection, run and
+runtime's launcher, trusted code outside any session, assumes that role for each agent with its connection, run and
 agent ids both as session tags (for the IAM conditions below) and in the session name (for the broker and the board's
 API, which see the caller's identity but not its tags; the name holds a 26-character run id and a short agent index,
 inside the 64 characters a session name allows, pinned by a test) (the roles' trust policy allows tagging only to the launcher, and no agent role may assume
-a role), and hands the MicroVM that session. Sessions are short (15 minutes) and renewed only by the launcher, which
-refuses a stopped run's agents, so stopping one run cuts its sessions without touching another run's. How a MicroVM
+a role), and hands the session that session. Sessions are short (15 minutes) and renewed only by the launcher, which
+refuses a stopped run's agents, so stopping one run cuts its sessions without touching another run's. How a session
 receives a session is among the facts verified before the
 runtime is turned on. The conditions use the tags: an explicit deny on the bus refuses an event whose source is not the
 session's own, and S3 accepts its reads only under its connection's cache and its run's workspace and its writes
@@ -537,7 +540,7 @@ connection is shared with to manage, not only to view.
 
 **Inboxes and roles.** One fixed rule sends every event to the inbox router (a Lambda, `bus/router.py`), which
 writes it to the run's conversation and then routes it (`bus/routing.py`). There is no SQS queue per role or per
-agent: a suspended MicroVM runs no code and cannot poll, so every message is pushed, per run. A posted task, and a
+agent: a suspended session runs no code and cannot poll, so every message is pushed, per run. A posted task, and a
 message addressed to an agent or to the run's conductor, go to the delivery function (`voc-engineering-delivery`, the
 runtime's), invoked asynchronously with the message and its conversation seq (`{message, seq}`; a redelivery carries
 the seq the message was first written under). It records each notice once in the run's own partition, as an
@@ -691,7 +694,7 @@ an MCP token never acts as an administrator (TENETS.md's tenet 4 gap).
 
 **The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
 live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,
-its heartbeat's age, its MicroVM's state and age, its recent tool calls and, when it looks stuck, why (no progress for
+its heartbeat's age, its session's state and age, its recent tool calls and, when it looks stuck, why (no progress for
 N minutes, the same step repeated). A person can message the run coordinator or an agent as a participant, and send
 signals: Save (checkpoint now), Pause, Resume, Shut down (checkpoint, then stop) and Stop now. Stop now is the
 [Stop](#trust-and-safety) of the run view, enforced by the supervisor, the launcher and the broker without the
@@ -700,7 +703,7 @@ Messages and signals
 are API calls with the signed-in user, allowed only to whoever may make a `decision`, published as `message` and
 `signal` events that the router accepts only from the API's own source; an agent reads a person's message as DATA,
 like everything else, and its work still goes through the gate. Cost and tokens show live per agent, per run and per
-flow (model tokens in and out per model, MicroVM seconds, events), against the run's budget.
+flow (model tokens in and out per model, session seconds, events), against the run's budget.
 
 The commits are made before the gate, so the gate reviews exactly the tree that is pushed.
 
@@ -722,11 +725,11 @@ Feature flow, and the commit reviewer flags one that does.
 flow, from the flow's page in the web app (**Start a run**, where `features.engineering` is on) or with
 `POST /agents/engineering/runs` `{workflow_id, connection, commit, language, goal}` (no MCP tool: admin work,
 TENETS.md's tenet 4 row). The Agents API checks each field (a saved `voc-workflow/2` flow; a connection's short id; a
-full commit id of 40 hexadecimal characters; a language with a MicroVM image; a goal on one line of at most 500
+full commit id of 40 hexadecimal characters; a language with a session image; a goal on one line of at most 500
 characters, credential-shaped text redacted; nothing else, so the request sets neither the budget, the caps, the
 repository nor the actor), mints the run's ULID, and invokes the start function, voc-engineering-start (the runtime's
 code with a role of its own, holding only what a start needs: the run's rows and the registry, a flow's month
-total and the hard cap's row, its rule switched on, and the runtime invoked for the launch; no MicroVM, agent role,
+total and the hard cap's row, its rule switched on, and the runtime invoked for the launch; no session, agent role,
 bus or delete. It is entered at `start_handler`, which takes `start_run` and refuses every other action
 before anything is read), with the stored flow's monthly budget, a task cap of 100, the deployment's cost cap
 (`-c engineeringRunCapUsd`, 50 USD by default, so a run's cost cap always bounds it, TENETS.md tenet 7; with the hard
@@ -737,7 +740,7 @@ broker's dial reads, and its first `RUNLOG#` row, who and when (D4). The API's r
 and never voc-engineering-runtime, so it can start a run and never tick, launch, signal or end one
 (`lib/stacks/api-engineering-reads.test.ts`, `runtime/test/test_engineering_runtime_handler.py`). The start function
 writes the run and switches the supervisor's rule on, then hands the coordinator's launch on to voc-engineering-runtime
-(`launch_coordinator`, invoked asynchronously: a MicroVM's start takes longer than API Gateway's 29 s, and the
+(`launch_coordinator`, invoked asynchronously: a session's start takes longer than API Gateway's 29 s, and the
 runtime has 5 minutes); the API answers 202 with the run's id as soon as the run is written, and the web app opens the
 run monitor on it. `launch_coordinator` never raises: a launch under way elsewhere is left to it, and any other failure
 sends the run to a person (the coordinator's decision point), whose Resume launches it. If that invocation itself
@@ -769,7 +772,7 @@ for it. A pull request from a fork is only ever reviewed (comments), never fixed
 ## The quality gate
 
 *Partly built*: the packs and the step, run as a CLI (`python -m engineering.quality_gate plan|check|gate`) that the
-gate runner's MicroVM is to run; nothing deploys it yet (the [runtime](#runtime-one-microvm-per-agent)'s images do
+gate runner's session is to run; nothing deploys it yet (the [runtime](#runtime-one-agentcore-session-per-agent)'s images do
 not ship it; the workflow's Quality gate step is validated server side, with a `packs` pin the CLI keeps, and the
 editor has the step with its settings panel, [above](#how-the-agents-work-together)). What exists:
 
@@ -798,7 +801,7 @@ editor has the step with its settings panel, [above](#how-the-agents-work-togeth
 The design:
 
 1. **Deterministic gate.** The language packs detected for the affected packages (Rust + TypeScript, Python +
-   TypeScript, Java to start) run in the gate runner's MicroVM: format, lint, types, tests, the repository's own scripts
+   TypeScript, Java to start) run in the gate runner's session: format, lint, types, tests, the repository's own scripts
    first when it has them. A pack is a manifest (detection rules, commands, what counts as a failure) plus its
    scripts; adding a language is adding a pack.
 2. **Review rounds**, up to N (default 3, at most 5): PR reviewer agents, in parallel, read the change with the
@@ -817,30 +820,51 @@ The **gate record** (the tree's hash, the rounds, each finding and its outcome, 
 anything) is part of the commit and PR reports and goes into the pull request's description. It holds summaries, never
 raw tool output.
 
-## Runtime: one MicroVM per agent
+## Runtime: one AgentCore session per agent
 
 *Partly built, not yet run against AWS* (voc-datalake/lambda/engineering/runtime, the images in
-voc-datalake/engineering-images, the stack in voc-datalake/lib/stacks/engineering-runtime.ts; deployed only with
-`-c engineeringAgents=true`; the harness inside each MicroVM is built too: it reaches the board and its inbox
-through the board API, and the broker through an interface that refuses until it is wired, below; the supervisor's
-own board and bus are wired).
+voc-datalake/engineering-images, the stacks in voc-datalake/lib/stacks/engineering-runtime.ts and
+engineering-agentcore.ts; deployed only with `-c engineeringAgents=true`; the harness inside each session is built
+too: it reaches the board and its inbox through the board API, and the broker through an interface that refuses until
+it is wired, below; the supervisor's own board and bus are wired).
 
-**What is checked, and what is not yet** (read-only, AWS CLI 2.36, 2026-11-12). The service is `aws lambda-microvms`
-(run, suspend, resume and terminate a MicroVM, create a MicroVM image, auth tokens, lists). Its managed base image is
-`al2023-1` (versions 1 to 3) in us-east-1 and us-west-2. A MicroVM lives at most 8 hours (fixed); up to 16 vCPU and
-32 GB; images are single-size; auth tokens last at most 60 minutes; a MicroVM cannot suspend itself; its idle policy
-sets the idle and suspended times and auto-resume; its egress goes through network connectors (VPC egress connectors
-restrict it); on resume, random generators are reseeded and secrets rotated. Quotas: 5 starts a second (burst 5), 5
-resumes, 2 suspends and 10 terminations a second, 10 image builds at once, 2,048 MB of ARM MicroVM memory per account
-by default (adjustable). Price (us-east-1, on demand): ARM $0.0000276944 a vCPU-second and $0.0000036667 a GB-second,
-so a 2 vCPU / 4 GB ARM MicroVM is about $0.25 an hour and $2 for its 8 hours. The runtime starts each agent's
-at 4 vCPU / 8 GB (`runtime/aws.py`): about $0.50 an hour, $4 for 8 hours, and above the default 2,048 MB memory
-quota, which a deployment raises before its first run to 8,192 MB times the agents it expects at once, the
-coordinator included ([deployment.md](deployment.md)). Not yet checked, because no MicroVM has
-run yet (the first run, in a test account, waits for the owner): the exact request and answer field names the runtime
-uses (`runtime/aws.py`), how a MicroVM receives a role session, how the egress allowlist is enforced, and whether
-Mountpoint, `unshare`, `setpriv` and `iptables` run inside one. Until that run, the flag stays off, and this section
-is corrected to what it shows.
+**Amazon Bedrock AgentCore Runtime, platform version V2** (owner decision, 2026-11-13; in place of Lambda MicroVMs,
+whose path is removed). Checked that day in the developer guide (the runtime's limits and how it works) and the test
+account's service quotas (service code `bedrock-agentcore`): each session is its own microVM, 2 vCPU and 8 GB by
+default, billed per second for the CPU actually used (nothing while it waits on the model or a tool) and its memory
+(idle memory reclaimed after 120 seconds); the V2 consumption rates are $0.1276 a vCPU-hour and $0.0169 a GB-hour, a
+committed baseline $0.0997 and $0.0132. A resource configuration (`resourceConfigurations: [{minimumMemoryInMiB:
+8192}]`) commits a baseline of 8 GB and 2 vCPU that bursts to 32 GB and 8 vCPU with a 32 GB disk (4096: 4 GB and 1
+vCPU, bursting to 16 GB and 4 vCPU with a 16 GB disk). A session lasts at most 8 hours (`maxLifetime`) and ends after
+15 minutes idle by default (`idleRuntimeSessionTimeout`, up to 8 hours). There is no account memory quota: 5,000 active
+sessions per account in us-east-1 and us-west-2. Images are up to 10 GB (V2), in ECR; the container answers `/ping` and
+`/invocations` on port 8080; `InvokeAgentRuntimeCommand` runs a command in a session (1 to 3,600 seconds, 300 by
+default); the network is PUBLIC or VPC. Why: no account memory quota to raise before a run (the MicroVMs' 2,048 MB
+default held two agents), pay for use (CPU only while an agent computes, where a MicroVM billed every second it was up),
+and the same isolation (a microVM per agent, no credential in it but its own short role session).
+
+**What is checked, and what is not yet.** The operations and request fields are botocore's model of
+`bedrock-agentcore` (1.44: `InvokeAgentRuntime`, `InvokeAgentRuntimeCommand`, `StopRuntimeSession`; a test reads the
+model) and of `bedrock-agentcore-control` (its `CreateAgentRuntime` has `resourceConfigurations` and
+`platformVersion`), and the stack's resource is the pinned aws-cdk-lib's `AWS::BedrockAgentCore::Runtime`, whose L1
+has no `ResourceConfigurations` yet (set as a property override). Not yet checked, because no session has run yet (the
+first run, in a test account, waits for the owner): the answers' shapes (the runner's JSON in an invocation's
+`response`; the command's event stream), whether the CloudFormation resource takes `ResourceConfigurations`, the IAM
+action and ARN names (`bedrock-agentcore:InvokeAgentRuntime`, `…:InvokeAgentRuntimeCommand`,
+`…:StopRuntimeSession` on the runtime and its `runtime-endpoint/DEFAULT`), whether the Lambda runtime's own boto3
+knows the command API (else the layer pins one), whether a session's container may run `iptables`, `unshare`,
+`setpriv` and Mountpoint as it needs, how the runtime's execution role is offered inside a session (the firewall
+keeps both users off every link-local address), that the runtime's `/ping` keeps a session busy while its
+runner says so, whether AgentCore logs or traces an invocation's payload (the `session` invocation carries the agent
+role's short STS keys: if it does, the runner is to fetch the session by a reference instead, which the launcher's
+design allows but is not built), and the billing behind `caps.py` BUILD_SIZES (that a resource configuration's
+baseline is billed for its session's whole life at the committed rates, and only the burst above it at the
+consumption rates), whether each toolchain's dependency step honours its proxy (pip, npm and cargo read
+`HTTPS_PROXY`; Node's own fetch only with `NODE_USE_ENV_PROXY=1`, which the runner sets; Maven reads no variable, so
+the Java image gives `code` a `~/.m2/settings.xml` naming the proxy; Gradle reads the JVM's `https.proxyHost`, which
+`JAVA_TOOL_OPTIONS` sets; a toolchain that ignores all of them reaches nothing, since the firewall holds it either
+way), and whether a quota or throttle answer to a start (`ServiceQuotaExceededException`, `ThrottlingException`)
+guarantees no session was made (the runtime does not stop one then; on any other failed start it does). Until that run the flag stays off, and this section is corrected to what it shows.
 
 The runtime names its agents as the [broker](#repository-connectors) and the
 [bus and board](#how-the-agents-work-together) read them: its roles are `connectors/identity.py`'s AGENT_ROLES (one
@@ -865,7 +889,7 @@ to it from its tags; `from.kind` `coach`) among them. Not aligned yet (the runti
   so a continuation, which starts from those notes, reads again from the board what is not in them and never acts
   on a pause twice; at worst the model sees a message twice. The lease's epoch is the task's attempt (the board's
   claim sets it so), so the harness, a continuation and the CLI's tool server renew, report and move on it without
-  claiming: the supervisor refreshes a continuation's lease before its MicroVM starts and again when its harness
+  claiming: the supervisor refreshes a continuation's lease before its session starts and again when its harness
   starts (it may have run out on a long hold, a Resume long after a Pause, or over the boot's minutes), for the same
   holder at the same attempt only, else the session ends
   (the board store's `refresh`); each checkpoint saves
@@ -879,22 +903,109 @@ to it from its tags; `from.kind` `coach`) among them. Not aligned yet (the runti
   board's (a 4xx) is a result the coordinator's model reads, never a crash. Its broker interface
   still refuses every call.
 
-Each agent of a run runs in its own Lambda MicroVM, from its language's image, with its own sparse checkout from the
-cache. The idle policy suspends a MicroVM after 5 minutes without a request and ends one suspended for an hour; the
-supervisor ends a finished agent's MicroVM at once. An agent on an open wait (its question, a review it asked for, a
-human decision point) keeps its task and is outside every clock: the supervisor suspends its MicroVM, wakes it to
-deliver a run monitor's signal or when the wait closes, and for a wait still open after 45 minutes (or once the
-MicroVM nears its 8-hour limit) asks it to checkpoint and pause, holds it without a MicroVM (`waiting`), and
-continues it in a new one once the wait closes.
+Each agent of a run runs in its own AgentCore Runtime session (its own microVM; below, an agent's session or its
+microVM), from its language's image, with its own sparse checkout from the cache (`runtime/agentcore.py`):
 
-- **No host token in any MicroVM.** Nothing in a MicroVM reaches the repository host: the
+- **One session per agent.** `InvokeAgentRuntime` on the agent's language's runtime, with a `runtimeSessionId` of its
+  own (`voc-<run>-<agent>-<nonce>`: every continuation gets a new one), starts it; that first invocation is the
+  runner's `start` (the agent's ids and its two egress allowlists, once: the same start again changes nothing, any
+  other is refused, so nothing in the session ever widens its egress). The runner's other ops are invocations of the
+  same session: the role session (`session`), the harness's report (`status`, what the supervisor's status reads map
+  to), and `hold` and `wake`. `StopRuntimeSession` ends it (one already gone is not an error). A start that fails in
+  any way but the service's no-room answer (the runner's refusal, its firewall's included; an error; a broken answer)
+  stops the session at once and refuses the launch.
+- **Two faces of the runner.** Port 8080 is the AgentCore service's only (`/ping`, `/invocations`: the role session,
+  start, hold, wake); the agent's harness has its own API on loopback port 8081 (`/exec`, `/exec/<id>`, `/status`),
+  the one runner port the firewall lets `unit` reach, so the agent can never hand itself a session, start itself
+  again or wake itself. The command API's client (root's) uses 8081 too. A hold keeps every command where it is, and
+  the runner's role-session watchdog counts no lapse while held: the lapse counts from the wake, which the supervisor
+  follows with a fresh role session (a hold lasts up to 45 minutes, a role session 15).
+- **Commands through the runtime's command API.** The supervisor's commands (the checkout, then the harness's start)
+  go through `InvokeAgentRuntimeCommand`: each call (60 seconds, under the API's 3,600) runs the runner's own client
+  (`/usr/bin/python3 -I /opt/voc/unit_runner.py client start|poll <base64>`: one shell string with nothing in it anyone
+  wrote), which starts the command as a job of the runner or reads it back. So a build or a test run longer than an
+  hour is split into one call that starts it and calls that read it, never cut at the API's bound; a command longer
+  than its session's 8 hours is refused, saying to split it or continue in a new session. The repository's own builds
+  and tests run inside the session, through the same runner (the harness's tools; a repository command at most an
+  hour, as before).
+- **Sizes.** Every agent runs at AgentCore's default consumption size, 2 vCPU and 8 GB (the owner's floor). The roles
+  that build and test the repository (`-c engineeringBuildRoles`, the gate runner by default) run on their language's
+  build runtime, whose resource configuration (`-c engineeringBuildMemoryMiB`, 8192; 0: none) commits 2 vCPU and 8 GB
+  and bursts to 8 vCPU and 32 GB with a 32 GB disk. 4096 is not offered: its 1 vCPU and 4 GB baseline is below the
+  floor.
+- **Idle and lifetime.** Every runtime ends a session after an hour with no work (`idleRuntimeSessionTimeout` 3,600)
+  and at 8 hours (`maxLifetime` 28,800). The runner answers `/ping` `HealthyBusy` while a command of the agent runs and
+  is not held, so an agent waiting on the model, a build or a tool is never ended for idleness; only a held one is
+  idle, and the supervisor checkpoints a wait still open after 45 minutes and holds it without a session before the
+  hour. Continuation before the 8 hours stays the supervisor's (below).
+- **Refused up front.** A run whose agents at once (its coordinator and one per task, at most the board's 999) are
+  more than the deployment's sessions (`-c engineeringMaxSessions`, the account's 5,000 by default) is refused before
+  anything is written, saying to lower its task cap; so is a start under clocks that would let an agent outlive its
+  session without a continuation. When the service has no room for a new session (its quota of active sessions, or
+  its throttle: `ServiceQuotaExceededException`, `ThrottlingException` on the start), a launch is refused in those
+  words (`SessionsFull`) and a continuation is held without a session (`waiting`, never counted as a crash) and
+  continued again every tick until there is room, for at most 30 ticks in a row, then held for a person (`paused`,
+  their Resume continues it): the service's own answer, atomic, with no count of sessions read.
+- **A stop that fails.** A session whose stop fails keeps its row's end with `stop_pending`: every tick stops it
+  again and counts its time meanwhile (its runner may still say busy), and the run stays watched until it is gone. Its
+  runner also ends every command once the agent's role session lapses unrenewed (a minute past its 15 minutes), so a
+  session its supervisor lost runs nothing, and its idle timeout then ends it. No command runs with a privilege to
+  regain: `setpriv --no-new-privs --bounding-set=-all`, and the image keeps no setuid or setgid file.
+
+The supervisor ends a finished agent's session at once. An agent on an open wait (its question, a review it asked
+for, a human decision point) keeps its task and is outside every clock: the supervisor holds its session (the runner
+stops every command of the agent where it is: no CPU is used, and none billed), wakes it to deliver a run monitor's
+signal or when the wait closes, and for a wait still open after 45 minutes (or once the session nears its 8-hour
+limit) asks it to checkpoint and pause, holds it without a session (`waiting`), and continues it in a new one once the
+wait closes.
+
+- **The session's network: two allowlists, two proxies.** Network mode VPC, in the deployment's own subnets
+  (`-c engineeringAgentNetwork`), behind a security group of the stack's that lets nothing in and only TCP 443 out.
+  An agent's allowlist (`runtime/egress.py`) is parted in two (`egress.split`), each held by a proxy of its own in the
+  runner (root's, on loopback; an HTTPS `CONNECT` only, to a host of its own list, on port 443; it never reads what
+  goes through):
+  - the agent's own (user `unit`, port 3128): Bedrock in its region, its two buckets' own S3 endpoints and the board's
+    function URL. Never a registry.
+  - the dependency step's (user `code`, port 3129, the one repository-code command with network): its language's
+    package registries and the deployment's extra hosts. Never Bedrock, a bucket or the board.
+
+  The entry point's egress firewall sends each user to its own proxy only: `unit` reaches the runner and port 3128,
+  `code` port 3129, and neither reaches any other address or port, a link-local address or a name server. Each
+  proxy resolves its host itself and refuses a link-local (169.254.0.0/16, fe80::/10), loopback or unspecified
+  address, whatever name resolved to it (a VPC endpoint's private address is allowed). An extra host shaped like one
+  of the agent's own (a Bedrock runtime or S3 bucket endpoint, a function URL; other AWS hostnames are not judged) is refused at the launch: the two lists are parted by
+  shape, so a registry mirror cannot sit on an S3 bucket's endpoint. Each user's
+  commands are pointed at its own proxy (`HTTPS_PROXY`, and the JVM's proxy settings); every other repository command
+  runs in a network namespace of its own, with only its own loopback. Without every rule in place, or without either
+  proxy, the runner starts no agent.
+
+  **The recommended network** (the deployer's, outside the stacks; [deployment.md](deployment.md) has its rough
+  cost): private subnets with an S3 gateway endpoint (free) and a Bedrock runtime interface endpoint
+  (`com.amazonaws.<region>.bedrock-runtime`, private DNS on) whose endpoint policy allows `bedrock:InvokeModel*` and
+  `bedrock:Converse*` only for principals of this account (`aws:PrincipalAccount`), so the agent's Bedrock traffic
+  never leaves the VPC and cannot be spent on another account; and a NAT gateway, which the package registries and the
+  board's function URL need (a function URL has no VPC endpoint), ideally behind an egress firewall that admits only
+  the registries, the extra hosts and the board's host. The stack makes none of it (TENETS.md tenet 7).
+- **The sessions' execution role.** One for every runtime: it pulls the images from the stack's repositories and
+  writes the runtimes' logs, nothing else. Everything else a session does is done with the agent role's 15-minute
+  session the launcher hands its agent user (below), whose grants are, all scoped by its session tags: read its
+  connection's cache and its run's workspace keys, write its own keys (create-only), call the board's and the
+  broker's function URLs, put events on the bus with its own source only, and call the allowlisted Bedrock models.
+  *For the owner's sign-off*: that agent role, not the execution role, is what a session can reach in AWS.
+- **One runtime path, two runtimes per language.** "One runtime" is one runtime path (AgentCore, the MicroVMs' path
+  removed), not one AgentCore runtime: a resource configuration is set per runtime, so each language with an image has
+  a standard runtime and, unless `-c engineeringBuildMemoryMiB=0`, a build runtime for the roles that build and test.
+
+- **No host token in any session.** Nothing in a session reaches the repository host: the
   [broker](#repository-connectors) holds the credential, fills the cache and makes every host write. An agent's egress
   allowlist is, in its region, Bedrock and its two buckets' own S3 endpoints (the raw bucket's for the cache, the
   workspace bucket's for its keys; never the regional one, which reaches every bucket), the board's function URL by its own host (`<id>.lambda-url.<region>.on.aws`, never a generic Lambda endpoint; the
   broker's too once the harness calls it), and, for the agents that run
-  repository code, its language's package registries (plus at most 10 configured hosts, a registry mirror for example).
-- **Credentials from a launcher, never in the image.** A MicroVM starts with no AWS credential. The launcher (the
-  supervisor's own code, outside every MicroVM) assumes the agent role's ONE fixed execution role (one per agent role,
+  repository code, its language's package registries (plus at most 10 configured hosts, a registry mirror for example),
+  which only its dependency step reaches (the second proxy, above).
+- **Credentials from a launcher, never in the image.** A session starts with no AWS credential of the run's (its runtime's execution role pulls its image and writes its
+  logs, nothing else). The launcher (the
+  supervisor's own code, outside every session) assumes the agent role's ONE fixed execution role (one per agent role,
   never one per run; its IAM name `voc-eng-<role>` with the stack's naming, the roles spelled as the broker spells
   them, `commit-reviewer`, `gate-runner`) with session tags naming the workspace, the run, the agent and the
   connection (`ws`, `run`, `agent`, `connection`), and the session name `<run>.<agent index>` (a ULID run id and an
@@ -905,7 +1016,7 @@ continues it in a new one once the wait closes.
   directory only root writes (so nothing planted there can redirect root's writes), readable by the agent user only
   and named to the agent's own commands, never to repository code. The supervisor renews it each tick it has under
   6 minutes left (or a wake renews it), and the launcher refuses a stopped run's agents, so a stop cuts that run's sessions within
-  15 minutes although the roles are shared (its MicroVMs are ended at once anyway). The agent roles trust only the
+  15 minutes although the roles are shared (its sessions are ended at once anyway). The agent roles trust only the
   two launchers' roles (the supervisor's and the delivery function's, whose wake renews a session), which alone may
   tag their sessions; they may assume no role themselves.
 - **Repository code in a box of its own.** The runner (each image's entry point) starts as root only to drop every
@@ -949,9 +1060,9 @@ continues it in a new one once the wait closes.
   put events on the bus only with its own source
   (`voc.engineering/agent/<role>/<ws>/<run>/<agent>`, the run coordinator's `voc.engineering/conductor/<ws>/<run>`;
   an explicit deny in its own policy and another in the bus's, which admits only the board's role and the agent
-  roles with a voice), calls the allowlisted models, and deletes nothing. No MicroVM
-  auth token is ever put in an event, a log, a row or a checkpoint: it is minted when needed (at most 60 minutes),
-  refreshed 5 minutes before it lapses, held in memory only, and refuses to be serialised.
+  roles with a voice), calls the allowlisted models, and deletes nothing. The supervisor's calls into a session
+  are signed with its own role (SigV4), never a token of the session's: there is no session token to put in an event,
+  a log, a row or a checkpoint, and the agent's role session has no readable form and refuses to be serialised.
 - **The run coordinator.** It plans; it changes no code. It runs in the harness's Converse loop on its skill
   record (`runtime/harness/skills.py`): a versioned record of its instructions, worked examples, tool policy, the
   model it was written for and the harness that runs it, in the shape the skills store keeps (a change is a new
@@ -961,7 +1072,7 @@ continues it in a new one once the wait closes.
   skill yet the argv its launch names. Its tools are
   exactly its skill's tool policy: read the board, post a task for one role with instructions a person could follow,
   launch one agent for a task (on its run's connection and commit, which the board takes from the verified caller's
-  run: neither the model nor anything in the MicroVM names them), read the knowledge pack on a topic (only through
+  run: neither the model nor anything in the session names them), read the knowledge pack on a topic (only through
   the pack's agent reader: its run's connection's latest approved version), read the checkout, and report
   progress, save a checkpoint and finish. It has no tool that writes files or runs repository code (a skill's tool
   policy is bounded by its role: code tools only for a role that runs code, the planner's only for the
@@ -977,28 +1088,29 @@ continues it in a new one once the wait closes.
   redelivery write nothing; a message without its seq is refused), and
   wakes the run's live addressees (a posted task, addressed to a role, wakes nobody: an agent is launched for its
   task, so none of the role is idle, and one held on its wait keeps its one wake for the message it waits for): a
-  working agent's MicroVM suspended for an open wait is resumed with a fresh
+  working agent's session suspended for an open wait is resumed with a fresh
   session and kept awake 10 minutes (`wake_grace`, which a later message does not extend) so its harness reads the
-  message and closes the wait, an agent held without a MicroVM is continued in a new one (once per wait), and a
+  message and closes the wait, an agent held without a session is continued in a new one (once per wait), and a
   booting or pausing one reads its inbox once it runs. The wait's 45-minute hold counts from the wait's start,
-  awake or not, so messages cannot keep a MicroVM running; only the one continuation a message makes per wait gets
+  awake or not, so messages cannot keep a session running; only the one continuation a message makes per wait gets
   one grace before the hold applies again, to read the message, starting when its harness starts (a slow checkout
   does not eat it) and moved by no later message; a continuation after it (a crash, its own pause) gets none. (The wait's start is when a tick first saw it open: a
   wait closed and reopened between two ticks counts as one, held sooner; the board's lease carrying its wait's
   own start would end that.) Nobody is woken in a run that ended, is past its 30 days
-  or spent its budget: the message waits in the inbox. No queue: a suspended MicroVM cannot poll, so delivery is a
+  or spent its budget: the message waits in the inbox. No queue: a suspended session cannot poll, so delivery is a
   push. An addressee another move holds, or whose wake failed, fails the invocation; Lambda retries it twice (the
   row already there, only the wake repeats), then it goes to `voc-engineering-dlq`, and that agent is reached only
   when its wait's hold or a later message wakes it. Nothing deletes an inbox row; the board's `inbox` op reads the
   caller's run's rows after an `inbox_seq` cursor, and the harness keeps each message once by its event id. Its role is its
   own, with only what a wake needs: Get, Put, Update and Query on the runs' partitions (`WS#*#RUN#*`: the inbox
-  rows, META and the agents' session rows; never the registry of active runs, and no delete), resuming a MicroVM
-  and minting its auth token, running a new one and ending the old one (a continuation), reading the agents'
+  rows, META and the agents' session rows; never the registry of active runs, and no delete), waking a held session
+  (`InvokeAgentRuntime`), starting a new one and ending the old one (a continuation: `StopRuntimeSession`; no command
+  call), on this deployment's runtimes only, reading the agents'
   checkpoints, the key only through DynamoDB, S3 and SQS, its failure records in `voc-engineering-dlq`, putting
   events on the bus as the supervisor only (a continuation is reported to the run), and the launcher's AssumeRole
   of the agent roles, which trust it as they trust the supervisor (with all four session tags), since a wake hands
-  the MicroVM a fresh agent session. It cannot switch the supervisor's rule, suspend a MicroVM or touch the
-  registry.
+  the session a fresh agent session. It cannot switch the supervisor's rule, run a command in a session or touch
+  the registry.
 - **The run's start and end.** The runtime's `start_run` (reached from the Agents API's
   `POST /agents/engineering/runs` through voc-engineering-start, the same code entered where only `start_run` runs:
   [How a flow starts](#how-the-agents-work-together)) writes the run's `META` row in voc-engineering
@@ -1011,23 +1123,23 @@ continues it in a new one once the wait closes.
   first agent (META's `agent_count` starts at 1, so the board numbers the agents it launches from 2), on the
   coordinator's skill's harness; a retried start of an active run launches it only if no session of it exists yet, so a start whose
   launch failed launches it on its retry. The coordinator's launch follows the board's launch rules: a first start
-  whose coordinator could not be launched (the role with no skill, a language this deployment has no MicroVM image
-  for, `-c engineeringImageArns`) is refused before anything is written, and a Resume that would number a new
+  whose coordinator could not be launched (the role with no skill, a language this deployment has no agent runtime
+  for, `-c engineeringImages`) is refused before anything is written, and a Resume that would number a new
   coordinator checks the same before it re-posts or numbers anything; the runtime's `launch` answers a repeat
   from its session and refuses one while another launch of the coordinator still starts before any other check
   (a start that meets one is refused as busy, `SessionBusy`, the run written and the record kept, so it asks
-  again; a Resume logs it and still answers; a Resume whose new coordinator is refused or whose MicroVM fails to start
+  again; a Resume logs it and still answers; a Resume whose new coordinator is refused or whose session fails to start
   logs it and sends the run back to a person, as a start does); a refusal that means no session and no
   launch of it exist (a bad request, or its session there for another task or attempt) clears the coordinator
   recorded on the `coordinate` task with a `launch_refused` history row, so the next start or Resume numbers a new
   one (a start raises the refusal, a Resume logs it, since the Resume itself was applied), while a failure of the
-  MicroVM service keeps the record. A start whose coordinator then does not launch (refused, or its MicroVM did not
+  session service keeps the record. A start whose coordinator then does not launch (refused, or its session did not
   start) sends the run to a person (the `coordinator` decision point, the run monitor's Resume prompt) and raises
   the failure, so a run is never left active with no coordinator and no session; that person's Resume launches it.
   A coordinator a person shut down or stopped is never replaced: the run stays active, with no coordinator, until a
   person ends it or resumes that agent (the run monitor shows the coordinator's own status in its Agents panel, and
   says nothing more about it yet); `end_run` sets its status
-  (`done`, `failed` or `stopped`) and end time, ends every MicroVM of it, and the run stops being listed once none
+  (`done`, `failed` or `stopped`) and end time, ends every session of it, and the run stops being listed once none
   of its agents is live (one busy with another move is ended by the next tick, which sees the run ended), then hands
   the run's retrospective on to an invocation of its own (best effort: the learning loop,
   [below](#getting-better-skills-the-coach-the-learning-loop-memory)). A retried
@@ -1043,9 +1155,9 @@ continues it in a new one once the wait closes.
   sent the run to a person): the task re-posted at its attempt
   (the store's re-post alone: no `task.posted`, since only the coordinator recorded next claims it), a new
   `coordinator-<n>` recorded at the next attempt by `BoardStore.launch_coordinator` with the person as its actor,
-  and its MicroVM started. The board refuses the old one every coordinator op from the re-post on; its MicroVM was
+  and its session started. The board refuses the old one every coordinator op from the re-post on; its session was
   ended with its session, and if that end failed (logged), it can still reach the broker and its bus source until
-  its idle policy ends it: only the board refuses it. If sending the run to a person fails after the session was
+  its idle timeout ends it: only the board refuses it. If sending the run to a person fails after the session was
   ended as failed, each later tick asks again while the run is active and that failed coordinator is still the
   coordinate task's (from the sessions the tick reads anyway, and that task's one row). Every change of the
   run's status (its start, its end, a decision point, a Resume) records who made it and when (D4): a row of its
@@ -1056,36 +1168,38 @@ continues it in a new one once the wait closes.
   so a person's Resume is theirs; the Agents API's start (`POST /agents/engineering/runs`, through
   voc-engineering-start) sends the signed-in person's, so a run started there names who started it; no caller of
   `end_run` sends one yet, so an end is `unattributed` until one does. A decision point asked for again, for the same reason (the supervisor asks on every
-  tick while a budget stays spent), changes nothing and writes no row. An agent's tokens are those of every MicroVM
+  tick while a budget stays spent), changes nothing and writes no row. An agent's tokens are those of every session
   it ran in, not only the current one's.
 - **Sessions.** One row per agent of a run, the board's own `AGENT#<agent>` row in the run's partition: ids, times,
-  the MicroVM's id and endpoint, the boot step, the continuation count, the checkpoint it restored from, the run
-  monitor's inspection data, the live cost counters and what the reports read (role, model, skill version, MicroVM
+  the session's id and its runtime's ARN (`vm_id`, `endpoint`), the boot step, the continuation count, the checkpoint it restored from, the run
+  monitor's inspection data, the live cost counters and what the reports read (role, model, skill version, session
   seconds, tokens in and out). The row is created once and then only its own attributes are updated, so what the
-  brokers add to it (the cost they priced) is never written over; the runtime adds its own beside it, the MicroVM
-  seconds it has not priced yet at the deployment's price (`-c engineeringMicrovmUsdPerSecond`; unpriced by default),
-  in the same conditional write that moves the session, so a second is priced once and a run's cost cap counts it. The supervisor finds the live sessions through the
+  brokers add to it (the cost they priced) is never written over; the runtime adds its own beside it, the session
+  seconds it has not priced yet (running, `microvm_seconds`, and held for an open wait, `held_seconds`), at its role's
+  size and the deployment's AgentCore rates (`-c engineeringSessionRates`, AgentCore's published V2 rates by default:
+  [Cost](#cost)), with the vCPU- and GB-seconds they count as (`vcpu_seconds`, `gb_seconds`), in the same conditional
+  write that moves the session, so a second is priced once and a run's cost cap counts it. The supervisor finds the live sessions through the
   listed runs (the table has no index). Every write is conditional on the row's sequence number, and every move first claims the row for at most
   5 minutes (a claim nobody else can take while it holds), so a tick and a run monitor's signal never move one agent
-  at once; a continuation that loses its write ends the MicroVM it just started.
+  at once; a continuation that loses its write ends the session it just started.
 - **No fixed task cap: activity decides.** An agent runs as long as it makes progress (its lease's last progress on
   the board) and its heartbeat renews its lease. For a running agent, no progress for 10 minutes (2 to 60, per deployment)
   and the supervisor asks it for its state (a `question`); no progress within 3 minutes and it is stopped and its
   task re-posted from its checkpoint (`timed_out`); the run coordinator, which is not a task on the board, is
   restarted like a crash instead. An agent on an open wait keeps its task and is outside the rule.
-  A lease not renewed for 3 minutes is a crash; so are a MicroVM whose calls fail three ticks in a row (gone, or
+  A lease not renewed for 3 minutes is a crash; so are a session whose calls fail three ticks in a row (gone, or
   never came up; a failing board, bus or launcher counts for nothing) and a boot (checkout and harness start) over
   30 minutes. The board counts re-posts: a task that
   times out twice is split or goes to a person. Model tokens and cost stay hard caps set by a person: past one, the
   run goes to a human decision point, every agent is checkpointed and held (`paused`, resumable once the cap is
   raised; raising a run's cap is not built yet, so today a person can only end the run from that decision point; until
-  then it stays listed and the supervisor keeps ticking), and no new MicroVM starts.
+  then it stays listed and the supervisor keeps ticking), and no new session starts.
 - **The supervisor.** voc-engineering-runtime, invoked every minute by an EventBridge rule created disabled (TENETS.md
   tenet 7: schedules run on EventBridge rules). `start_run` turns it on; once no run is listed (after an `end_run`
   or a tick), it is turned off and the list re-read, and turned back on if a run started meanwhile. Each tick it renews sessions, boots new agents (the checkout, then the harness), judges each
   running agent as above, ends finished ones, continues paused and crashed ones, restarts a run coordinator that
   stopped answering or crashed, honours a run's end and a stop (a person's, an agent's kill switch, and the 30-day
-  stop, which opens a human decision point offering only "stop"): every MicroVM of the run ended at once, without waiting for the agents.
+  stop, which opens a human decision point offering only "stop"): every session of the run ended at once, without waiting for the agents.
   It reads each task's lease from the board's store (`runtime/board_bus.py`: the holder, its heartbeat, its last
   progress, whether it waits, the task's attempt, and whether the task has ended, which its harness is then to
   exit on: never judged a crash) and re-posts a stalled or crashed agent's task through the board (`repost_task`:
@@ -1114,23 +1228,23 @@ continues it in a new one once the wait closes.
   held by a Pause, a Shut down or a spent budget that stops answering or crashes while it pauses is held as asked,
   never continued or re-posted. An agent another move is working on answers `busy`: nothing was
   done, and the caller sends the signal again. The answer says, per agent, whether the signal took effect
-  (`applied`: false when busy, when its move failed, a refused port or a MicroVM call, when there was nothing to
+  (`applied`: false when busy, when its move failed, a refused port or a session call, when there was nothing to
   do in the agent's state, answered with its status, a final one meaning nothing to send again, or `stale`: given
   the `attempt` of the task the caller saw, with its `agent_id`, an agent on another attempt is left alone; a Stop
   now is never stale). For each agent the row carries its current step and recent tool calls (the
-  harness's own report, bounded and scrubbed), its last progress, heartbeat age, MicroVM state and age, why it looks
-  stuck, the last failed command's exit code and output tails, its MicroVM seconds (only while a MicroVM is up and
+  harness's own report, bounded and scrubbed), its last progress, heartbeat age, session state and age, why it looks
+  stuck, the last failed command's exit code and output tails, its session seconds (only while a session is up and
   not suspended) and its tokens per model.
-- **Continuation past the 8 hours.** At 7 h 30 of a MicroVM's life by default (1 h to 7 h 40, per deployment) the supervisor
+- **Continuation past the 8 hours.** At 7 h 30 of a session's life by default (1 h to 7 h 40, per deployment) the supervisor
   sends a `pause`; the agent finishes its step, saves its checkpoint and exits its harness with code 75, its
-  acknowledgement (it may also say `pause.ack` on the bus); the supervisor ends that MicroVM and starts a continuation
+  acknowledgement (it may also say `pause.ack` on the bus); the supervisor ends that session and starts a continuation
   in a new one, as the same agent and task, from the newest valid checkpoint, and emits `continued` (the continuation
   number, after a pause or a crash, the checkpoint). An agent pausing itself the same way, before a step longer
-  than its MicroVM has left, is *planned* (the harness has no such tool yet). One that has not paused by 7 h 50 is treated as a crash, on an open wait too; one asked to pause for a long wait
-  whose checkpoint does not come within 3 minutes is held as waiting, without its MicroVM, from its last checkpoint. A crash (an exit other than 0
-  and 75, a lapsed lease, a running agent's new MicroVM that will not start) is continued twice in a row at most,
+  than its session has left, is *planned* (the harness has no such tool yet). One that has not paused by 7 h 50 is treated as a crash, on an open wait too; one asked to pause for a long wait
+  whose checkpoint does not come within 3 minutes is held as waiting, without its session, from its last checkpoint. A crash (an exit other than 0
+  and 75, a lapsed lease, a running agent's new session that will not start) is continued twice in a row at most,
   then the task is re-posted (the run coordinator: the run goes to a person). Any number of continuations
-  otherwise; an agent held without a MicroVM whose new one will not start is tried again at its next wake, tick or
+  otherwise; an agent held without a session whose new one will not start is tried again at its next wake, tick or
   Resume.
 - **Checkpoints.** An agent saves each checkpoint as a new object, in the workspace's layout under its task's commit
   and attempt (which its launch names),
@@ -1144,7 +1258,7 @@ continues it in a new one once the wait closes.
   masks them again on receipt.
 - **The harness** (voc-datalake/lambda/engineering/runtime/harness; `/usr/bin/python3 -I /opt/voc/harness.py run
   --adapter converse|cli --model <id>` as the agent user, from root-owned `/opt/voc`, outside the checkout). Inside
-  each MicroVM the agent runs through one harness interface with two adapters, chosen per agent in its skill: a plain
+  each session the agent runs through one harness interface with two adapters, chosen per agent in its skill: a plain
   Bedrock Converse loop for small agents, or a coding-agent CLI in its headless mode. Whatever the adapter, it gets
   only the task's brief, its knowledge-pack and memory slices and the platform's tools: read, list and write files
   of the checkout (walked one directory at a time, never through a link, never into `.git`, never a file with two
@@ -1156,7 +1270,7 @@ continues it in a new one once the wait closes.
   run no repository code get none of the code tools. It renews its task's lease once a minute. Everything from the
   repository, the knowledge pack, the memory or a checkpoint reaches the model fenced as data, which its
   instructions say is never an instruction. Between turns it reads its inbox: `save` checkpoints at once, `pause`
-  checkpoints and exits 75; the Converse loop also checkpoints and pauses after 150 turns in one MicroVM or once a
+  checkpoints and exits 75; the Converse loop also checkpoints and pauses after 150 turns in one session or once a
   call's input passes 120,000 tokens (a fresh conversation from its notes). On any error either adapter saves a
   checkpoint before the crash is raised. A checkpoint carries the agent's
   working tree as a patch under its own keys, which the continuation applies to its fresh checkout and opens to
@@ -1176,16 +1290,21 @@ continues it in a new one once the wait closes.
   nothing newer than Python 3.11 (their system `python3`; a test checks every shipped module). No image installs
   a CLI yet: the CLI adapter refuses one that is missing or not the pinned version. **Converse only for now** (owner
   decision): every skill runs on the Converse loop (the coordinator's does, `harness: converse`); the CLI adapter
-  stays built and tested, and a CLI version is pinned and installed in the images only after the first MicroVM run.
+  stays built and tested, and a CLI version is pinned and installed in the images only after the first session run.
 - **Images.** python, node, rust and java, each a Dockerfile in this repository on one shared base (git, util-linux,
   iproute2, iptables, Python for the runner, Mountpoint for Amazon S3, the two users) and one entry point, with ready
   hooks that warm the toolchain caches (only from that language's registries) and validate hooks that prove the
   toolchain and the runner; the hooks run as root before any repository code, from `/`. Mountpoint is pinned: an image is built with `MOUNTPOINT_VERSION` and the `.deb`'s
-  `MOUNTPOINT_SHA256`, and the build fails without them or on a mismatch. The stack builds no image: the
-  supervisor launches only the images named by `-c engineeringImageArns` (a JSON object from these four languages
-  to image ARNs, checked at synth; `{}` by default, so every launch is refused until it is set). Building and
-  registering the images, and removing old versions, are *planned*.
-- **Behind an interface.** The runtime is an interface with the AWS implementation and a local fake (a temporary
+  `MOUNTPOINT_SHA256`, and the build fails without them or on a mismatch. Every image is built for linux/arm64
+  (AgentCore Runtime V2; Mountpoint's `.deb` is the arm64 one) and answers AgentCore's `/ping` and `/invocations` on
+  port 8080. The stack builds no image: it makes one ECR repository per language (scanned on push, tags immutable;
+  only untagged images expire, past the newest 10, so a runtime pinned to a tag or a tagged image's digest never
+  loses its image), and an AgentCore runtime for a language only once `-c engineeringImages` names an image
+  pushed there (a JSON object from these four languages to a tag or a `sha256:` digest, checked at synth; `{}` by
+  default, so every launch is refused until it is set) and `-c engineeringAgentNetwork` names the sessions' VPC and
+  subnets. Building and pushing the images is *planned* (docs/deployment.md says how, by hand).
+- **Behind an interface.** The runtime is an interface with the AgentCore implementation (tested against a fake
+  bedrock-agentcore client) and a local fake (a temporary
   directory and the same runner, which does not sandbox; it lives with the tests, so the deployed runtime cannot
   pick it); the supervisor's tests drive every path above on the fake,
   and the board, the bus and the run's controls through small interfaces with fakes; the deployed runtime wires
@@ -1197,7 +1316,7 @@ continues it in a new one once the wait closes.
 deployed only with `-c engineeringAgents=true`), the administrators' reads through REST
 ([above](#how-the-agents-work-together); no MCP tool while the reads are admin-only) and the run monitor's Reports
 panel in the web app (each report's versions as Markdown, [docs/autonomous-agents.md](autonomous-agents.md)). A report (voc-report/1) is built from what the run recorded: its `META`,
-each agent's metering (`AGENT#`: skill version, model, MicroVM-seconds, tokens, metered cost), the conversation's
+each agent's metering (`AGENT#`: skill version, model, session-seconds, tokens, metered cost), the conversation's
 count, the board's tasks and their history, and only the workspace objects their result keys name (never a listing).
 The PR report takes the quality gate's record only from an ended final-go task under the PR's head commit, checked
 against the gate's own shapes before its Markdown goes into the description. Every version is new (an atomic
@@ -1365,7 +1484,7 @@ What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineering
   the limit is not delivered again, and a duplicate delivery finds its step's create-only claim and does nothing.
 - **The record** (`learning/records.py`), what the platform records today and nothing else, never a listing: the
   run's `META` (its connection, status and times), the board's tasks and their history (`TASK#`, `TASKLOG#`), the
-  agents' session rows (`AGENT#`: role, skill version, MicroVM seconds, cost, crashes and the supervisor's last word
+  agents' session rows (`AGENT#`: role, skill version, session seconds, cost, crashes and the supervisor's last word
   on a failure), and the quality gate's records the final-go tasks named (at most 20, the latest attempts first, each
   checked against `voc-gate-record/1`; one unread or off it is left out and logged; a key naming another run or
   workspace is never read). People's reactions on the host
@@ -1404,7 +1523,7 @@ What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineering
 - **The scorecards** (`learning/scorecard.py`): one create-only row per skill version per run,
   `WS#<ws>#SCORE#<connection>#<role>#<version>` / `RUN#<run>` (`voc-scorecard/1`: tasks done, failed and needing a
   person by the agent of each task's last attempt, re-posts and review rounds by the agent of the attempt, attempts,
-  the cost and MicroVM seconds of the version's agents, the run's status and times, who wrote it and when: D1, D4);
+  the cost and session seconds of the version's agents, the run's status and times, who wrote it and when: D1, D4);
   never a counter updated in place, and a retried retrospective leaves a written row as it is. The reader,
   `version_card`, sums a version's latest runs (at most 200, newest first) with one bounded Query of its partition,
   never a whole-table read, with its pass rate (done over the tasks it ended); `compare` reads up to 10 versions, one
@@ -1550,7 +1669,7 @@ ARN, in the change that first uses it.
 - **Repository text is data, never instructions.** READMEs, code, issues, PR comments, the knowledge pack, memories,
   other agents' messages and customer feedback (which anyone can send through the public forms) reach a model inside
   DATA blocks. That lowers the risk of a planted instruction; it does
-  not remove it, so what keeps the repository safe is what the agents cannot do: no host token in any MicroVM, each
+  not remove it, so what keeps the repository safe is what the agents cannot do: no host token in any session, each
   role limited to its broker operations, no forged messages, the agent process limited to the platform's own
   endpoints, the connector's refusals, the host's branch rules, a person merging. A test plants instructions in a fixture
   repository and in fixture feedback and checks that none of them gets past those limits.
@@ -1558,8 +1677,8 @@ ARN, in the change that first uses it.
   more reason output is scrubbed. Every action is an event in the run's conversation with its actor
   (`agent:{agent_id}` and the skill version), time and reason (D4).
 - **Stop.** A person's **Stop** on the run view (an API call, journalled as a `stop` event) does not wait for the
-  agents: the supervisor ends the run's MicroVMs at once, the launcher stops renewing their short role sessions (which
-  lapse within 15 minutes, and serve no ended MicroVM meanwhile), and the broker refuses the run's operations. Enabled only stops new runs.
+  agents: the supervisor ends the run's sessions at once, the launcher stops renewing their short role sessions (which
+  lapse within 15 minutes, and serve no ended session meanwhile), and the broker refuses the run's operations. Enabled only stops new runs.
 
 ## Evaluation
 
@@ -1619,16 +1738,21 @@ on a model, through the harness) as candidates; the results published here; and 
 from its failures, kept with that connection. The benchmark assumes an honest candidate: a check's isolation is
 the runner's (a clean environment, a throwaway directory, a timeout, the paths a patch may change), not a
 sandbox's, and the code under test can still patch the framework that tests it. The shipped cases are the
-sample's own; a connection's cases will run in the runtime's MicroVMs.
+sample's own; a connection's cases will run in the runtime's sessions.
 
 ## Cost
 
 Nothing runs, and nothing is billed, until an administrator connects a repository and starts a run.
-Then, per use: model tokens (Bedrock), MicroVM time while an agent works (suspended while it waits), EventBridge per
+Then, per use: model tokens (Bedrock), each agent's AgentCore session while it lives (per second: the CPU it uses,
+none while it waits on the model or a tool or is held for an open wait, and its memory), the images stored in ECR,
+EventBridge per
 event, SQS for the one dead-letter queue (no task queues), DynamoDB on demand, S3 for the workspace, caches and packs, the supervisor's invocations while a run is
 active. The connection's credential is a standard SecureString parameter, with no monthly charge. No NAT gateway and
-no other fixed cost by default. Each run's MicroVM seconds and model tokens are measured on its agents' session rows
-(MicroVM time priced, tokens counted) and kept by month in the spend ledger below, which Agents → Spend shows;
+no other fixed cost by default: no session runs between runs, and a build runtime's committed baseline is billed only
+while its session lives. The sessions' network is the deployment's own (`-c engineeringAgentNetwork`): its way out (a
+NAT gateway and an egress firewall, or interface endpoints) is a fixed cost of that network's, outside this stack
+([deployment.md](deployment.md)). Each run's session seconds and model tokens are measured on its agents' session
+rows (session time priced, tokens counted) and kept by month in the spend ledger below, which Agents → Spend shows;
 *planned*: the run monitor's cost line, and the model broker's pricing of tokens. A run's end adds its retrospective:
 one more invocation of voc-engineering-runtime (DynamoDB reads of the run's own rows, a few create-only writes), plus
 one per failure it takes to the coach (at most three), each one Converse call (the prompt is at most the
@@ -1636,28 +1760,39 @@ one per failure it takes to the coach (at most three), each one Converse call (t
 seconds), made once per failure. The coach's Converse calls are not on a session row, so the spend ledger does not
 count them yet.
 
+**What a session counts as** (`voc-datalake/lambda/engineering/runtime/caps.py` SessionPricing, built). The run's
+cost cap counts each session's CPU and memory at the deployment's AgentCore rates (`-c engineeringSessionRates`:
+`vcpuHour`, `gbHour`, `baselineVcpuHour`, `baselineGbHour` in USD, AgentCore's published V2 rates by default: $0.1276,
+$0.0169, $0.0997 and $0.0132; a rate of 0 leaves that part unpriced). The supervisor cannot see what the service
+bills, so it counts an upper bound of it: every vCPU of the session's size while its agent runs, none while it is held,
+its memory while it lives, and a build runtime's committed baseline (2 vCPU and 8 GB at the baseline rates) for its
+whole life, its burst to 8 vCPU and 32 GB counted as used. A standard session (2 vCPU, 8 GB) counts as about $0.39 an
+hour running ($3.12 for 8 hours) and $0.14 an hour held; a build session as about $1.48 an hour running. The bill is
+lower: AgentCore charges only the CPU actually used, nothing while the agent waits on the model. Reading the
+service's own usage per session in place of the bound is *planned*.
+
 **The spend ledger** (`voc-datalake/lambda/engineering/spend.py`, built). What the runs use is kept by day, workflow, run, agent and
 model: one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per
 `DAY#<dd>#WF#<flow>#RUN#<run>#AGENT#<agent>#MODEL#<model>`, whose numbers only grow by ADD (`usd`, `tokens_in`,
 `tokens_out`, `microvm_seconds`), with the run's repository on the row for grouping. Each row is written in the same
-transaction as the session write whose metering it mirrors (the session store's priced writes: MicroVM seconds, priced
-at `ENGINEERING_MICROVM_USD_PER_SECOND`, under the model `microvm`; each model's new tokens), so the ledger and the
+transaction as the session write whose metering it mirrors (the session store's priced writes: session seconds, priced
+at the deployment's AgentCore rates, under the model `microvm`; each model's new tokens), so the ledger and the
 sessions never drift and a retried write adds once. A row is booked to the day (UTC) of the write that measured it
-(when the supervisor counted the MicroVM time, or the harness's report reached it), and the ledger starts when it is
+(when the supervisor counted the session time, or the harness's report reached it), and the ledger starts when it is
 deployed: a session's earlier tokens are not booked. Model tokens are counted, not yet priced: their dollars join the
-same rows when the model broker meters them. The model names come from the harness's report, inside the MicroVM: names
+same rows when the model broker meters them. The model names come from the harness's report, inside the session: names
 that clean to the same key part (ASCII, at most 128 bytes, so a sort key always fits) are summed into one row, a
 session ledgers only 8 models by name, the first in name order (any others on its `-` row, so no session opens rows
 without end; a model that sorts earlier and is first reported later moves a later one onto `-` from then on, the
 totals unchanged),
 one write adds at most 32 rows (a transaction holds 100 items), and a reported model named `microvm` is ledgered as
-`microvm-reported`, so no report can fail the session's write, flood the month or pass for MicroVM time. The writers' roles
+`microvm-reported`, so no report can fail the session's write, flood the month or pass for session time. The writers' roles
 may update the month partitions only (`WS#default#SPEND#20??-??`: UpdateItem, never a delete; IAM cannot limit an
 update to ADDs, the code only ADDs to the counters, and refuses anything below zero); the supervisor alone also reads a
 flow's month total there (GetItem); the Agents API reads them.
 `GET /agents/engineering/spend?month=&by=&workflow=` (administrators) answers a month grouped by workflow,
 repository, run, agent, model or day. The web app's **Spend** tab (Agents → Spend, `?tab=spend`: administrators,
-while the engineering agents are on) reads it: the month's cost, tokens and MicroVM time, then each group, biggest
+while the engineering agents are on) reads it: the month's cost, tokens and session time, then each group, biggest
 first; the month (the last 24 in its picker, any older one by its address), the grouping and a workflow are view
 options in the address; a workflow's row narrows the view to its runs, and a run's or an agent's opens its run
 monitor. Grouped by workflow, this month is set against each flow's monthly budget as it is now (the library's
@@ -1685,9 +1820,9 @@ in a month's last minutes is said in the next month's first; a new budget has al
 supervisor ticks) is flagged with
 the highest level said that month (`budget_alert`, `budget_alert_month` on META, only ever upward: never past a level
 another run holds unsaid, which its later ticks try again); a tick that
-jumps several levels claims each and says how far the month is. It is MicroVM time only until the model broker
-prices tokens, so a deployment that leaves MicroVM time unpriced (`-c engineeringMicrovmUsdPerSecond`, 0 by
-default) spends no dollars and never alerts; and the alerts stop nothing.
+jumps several levels claims each and says how far the month is. It is session time only until the model broker
+prices tokens, so a deployment that sets every AgentCore rate to 0 (`-c engineeringSessionRates`) spends no dollars
+and never alerts; and the alerts stop nothing.
 
 **The hard cap** (`voc-datalake/lambda/engineering/settings.py`, built; off by default). An administrator may turn
 it on (Agents → Spend; `PUT /agents/engineering/settings {hard_cap}`): then a run's first start with its flow's
@@ -1697,7 +1832,7 @@ nothing left is refused before anything is written, saying the flow, the month a
 cap then holds it (the supervisor sends it to a person once it is spent). The cap is set once, per run, at its start:
 runs of one flow at once may together pass its budget, each capped at what was left when it started. A retry of a
 live run is not capped again; a setting that cannot be read refuses a budgeted first start, saying so (retry),
-even when the cap is off, since the start cannot tell; off, nothing else changes. It counts MicroVM time only until the model broker prices tokens. The start route reads the flow's
+even when the cap is off, since the start cannot tell; off, nothing else changes. It counts session time only until the model broker prices tokens. The start route reads the flow's
 budget from the stored workflow and names it to the runtime (`budget_usd`, `flow`), so a run started there is capped
 whenever its flow has a budget; a start of the runtime's own that leaves it out is not capped. The start route also
 sends the deployment's run cap (`-c engineeringRunCapUsd`, 50 USD by default) as the run's `max_cost_usd`, so the hard
@@ -1714,7 +1849,7 @@ flow budget and its flag: the highest level this run saw its flow's month pass (
 Agents → Spend, grouped by workflow, sets this month against each flow's budget as it is now (a past month ran
 under the budgets its runs kept, which the alerts measured, so it shows none). The total is read consistently, right after
 the tick's own writes. The ledger is a dated view of what the sessions measured: each agent's own
-totals (its `cost_usd`, MicroVM seconds and tokens per model) stay on its session row, the record each run's caps and
+totals (its `cost_usd`, session seconds and tokens per model) stay on its session row, the record each run's caps and
 the run monitor read, and every ledger row only ever grows with the session write that measured it, naming its
 writer (`updated_by`), when (`updated_at`) and that session write's version (`session_seq`, D4). The rows are cost
 records, kept under D5 like customer data: they are never deleted and carry no TTL (no writer has a delete grant on
@@ -1725,7 +1860,7 @@ agents that stop moving.
 
 Load: the month partition is a hot key per workspace, written with each priced session write, which the supervisor
 makes about once a minute per live agent (its tick) plus its other moves: with 50 live agents, about 2 ledger rows a
-second (MicroVM and model); at 2× (100 agents) 4, at 10× (500 agents) about 20 a second. Those writes are now one
+second (session and model); at 2× (100 agents) 4, at 10× (500 agents) about 20 a second. Those writes are now one
 transaction with the session row, which DynamoDB bills at 2 write units per KB per item (about twice the plain update
 it replaces), and a partition takes about 500 transactional writes a second: 20 is far under it, so no sharding. The read is one Query of one month partition (eventually consistent), grouped
 server-side by the route, never a whole-table read, and stops at 20,000 rows (`MAX_ROWS`; a month past it is answered
@@ -1738,7 +1873,7 @@ of pauses at most), then leaves the move to the next tick. A try whose answer wa
 is tried again with its own request token, so it is answered as it ended (as landed when it landed; still under way
 after the last try, the next tick's read says which). A ledger row the table refuses refuses the whole write, so the
 session never moves without its ledger rows. Nothing in the ledger is lost (the seconds are priced again then),
-but a continuation whose save after its MicroVM started loses all four ends that MicroVM and boots again on the
+but a continuation whose save after its session started loses all four ends that session and boots again on the
 next tick. At 10× on one flow conflicts become common; past it, the total is to leave the transaction (it is derived
 from the DAY# rows). Its reads, per live run with a budget per tick: one GetItem of its META and one of the month
 total (two in a month's first 7 minutes: the month before too)
@@ -1757,7 +1892,7 @@ and the phase that ships them names them in that row.
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors); no connection can be stored yet, so every operation still answers 503, and with one every push and pull request would still be refused until the CI attestation is recorded); planned: the connection page, the attestation's record, GitLab, sparse clones and the checkout cache; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
-| 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
+| 2 | the runtime (one AgentCore Runtime session per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one session per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-agentcore-session-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; a run's start from a saved flow (6.25.00: `POST /agents/engineering/runs` and the flow page's Start a run, [How a flow starts](#how-the-agents-work-together)), whose steps nothing follows yet; the agents planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor (with a flow's monthly budget), Agents → Spend (the spend ledger by workflow, repository, run, agent, model or day, this month's share of each flow's budget, and the administrators' hard cap switch, [above](#cost)), and the run monitor (the flow with its agents' steps lit, the run's flow budget and its alert flag, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's run tools planned |
