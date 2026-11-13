@@ -10,6 +10,10 @@ message is retried by SQS and lands in the DLQ; it is never stored in
 ``voc-feedback``, where another brand's review would pollute our own numbers.
 A key missing from a cached list is looked up once more against a fresh read
 before it is refused, so a brand added a moment ago is not dead-lettered.
+
+Each workspace's list is its own (``scope``; shared/radar_keys.py), cached apart from the
+deployment's and from every other workspace's. The processor passes no scope yet (the
+phase-2 cut-over wires it).
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from typing import Any, Final
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.radar_brands import effective_brands, load_brand_list
+from shared.ws_repo import WorkspaceScope
 
 __all__ = ['BrandLabels']
 
@@ -36,33 +41,40 @@ class RadarBrandListUnavailableError(Exception):
 
 
 class BrandLabels:
-    """``key -> label`` of the effective brands, the brand list read at most every ``CACHE_SECONDS``."""
+    """``key -> label`` of the effective brands, each workspace's brand list (and the deployment's) read at most
+    every ``CACHE_SECONDS``."""
 
     def __init__(self, ttl: float = CACHE_SECONDS, clock: Callable[[], float] = time.monotonic) -> None:
         self._ttl = ttl
         self._clock = clock
-        self._listed: list[dict[str, Any]] | None = None
-        self._read_at = 0.0
+        # The workspace id (None: the deployment's) -> (its brand list, when it was read).
+        self._listed: dict[str | None, tuple[list[dict[str, Any]], float]] = {}
 
-    def _brand_list(self, table: Any, *, fresh: bool) -> list[dict[str, Any]]:
+    def _brand_list(self, table: Any, scope: WorkspaceScope | None, *, fresh: bool) -> list[dict[str, Any]]:
         now = self._clock()
-        if fresh or self._listed is None or now - self._read_at >= self._ttl:
+        ws = None if scope is None else scope.ws
+        cached = self._listed.get(ws)
+        if fresh or cached is None or now - cached[1] >= self._ttl:
             try:
-                self._listed = load_brand_list(table)
+                listed = load_brand_list(table, scope)
             except (ClientError, BotoCoreError, ValueError) as exc:
-                self._listed = None
+                self._listed.pop(ws, None)
                 raise RadarBrandListUnavailableError('The Radar brand list could not be read') from exc
-            self._read_at = now
-        return self._listed
+            cached = self._listed[ws] = (listed, now)
+        return cached[0]
 
-    def _labels(self, table: Any, profiles: Iterable[Mapping[str, Any]], *, fresh: bool) -> dict[str, str]:
-        return {brand.key: brand.label for brand in effective_brands(self._brand_list(table, fresh=fresh), profiles)}
+    def _labels(self, table: Any, profiles: Iterable[Mapping[str, Any]], scope: WorkspaceScope | None, *,
+                fresh: bool) -> dict[str, str]:
+        listed = self._brand_list(table, scope, fresh=fresh)
+        return {brand.key: brand.label for brand in effective_brands(listed, profiles)}
 
-    def label(self, table: Any, profiles: list[Mapping[str, Any]], key: str) -> str:
-        """The label of brand ``key``; ``UnknownRadarBrandError`` / ``RadarBrandListUnavailableError`` otherwise."""
-        labels = self._labels(table, profiles, fresh=False)
+    def label(self, table: Any, profiles: list[Mapping[str, Any]], key: str,
+              scope: WorkspaceScope | None = None) -> str:
+        """The label of brand ``key`` in ``scope``'s workspace (the deployment's without one; ``profiles`` must be
+        the same workspace's); ``UnknownRadarBrandError`` / ``RadarBrandListUnavailableError`` otherwise."""
+        labels = self._labels(table, profiles, scope, fresh=False)
         if key not in labels:
-            labels = self._labels(table, profiles, fresh=True)
+            labels = self._labels(table, profiles, scope, fresh=True)
         if key not in labels:
             raise UnknownRadarBrandError(f'No Radar brand has the key {key!r}')
         return labels[key]

@@ -358,7 +358,15 @@ classify it, the PII rule and retention of its source and the restricted sources
 administrator edits. They move together, in the phase-2 cut-over: the processor and the ingestion paths pass the
 scope of the feedback they handle, the feedback routes pass theirs to `scope_for_event`, and then the six routes
 resolve the workspace (its admins write, `require_settings_admin`). A new workspace starts with none of the three
-(nothing is copied, owner decision 18). The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
+(nothing is copied, owner decision 18). Radar's configuration can be read per workspace the same way (Unreleased,
+decision 13): `lambda/shared/radar_keys.py` keys a workspace's scan settings and brand list at
+`WS#{ws}#SETTINGS#radar` (`config`, `brands`; the deployment's `SETTINGS#radar` without one), and `load_settings` (`shared/radar_settings.py`),
+`load_brand_list` (`shared/radar_brands.py`), the brief's `effective_brands` (`briefing/radar_cards.py`, with that
+workspace's source profiles) and the processor's brand labels (`shared/radar_routing.py` `BrandLabels`, cached per
+workspace, a failed read forgetting only that workspace's copy) take an optional scope and read through `ws_table`.
+No caller passes one: the Radar routes, the scan job (its last scan, `RADARSCAN`) and the processor's routing
+stay the deployment's and move together at the cut-over, with Radar's reviews, counters and releases; its data
+version (`SETTINGS#radar` / `version`) moves with the cached reads' version counters. The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
 whose case says why, the deployment's answer with no row of either workspace touched instead of the 400; for the
 brand's `PUT`, 403 to a caller outside the deployment's `admins`). The
 deployment kinds' writes need the deployment's `admins` and a live platform admin (since 6.18.00): `PUT /settings/appearance` and the three alert writes
@@ -381,7 +389,7 @@ platform admin (Control plane); on an older deployment, add the people who manag
 | `resolved_problems` | workspace | the problems a team marked resolved (moved; a request with no workspace keeps the deployment's row, as before) |
 | `email_intake` | workspace | the team's inbox caps (its address is `{slug}@`, [Public and non-user entry points](#public-and-non-user-entry-points)) |
 | `fallback_owner` | workspace | the member an agent's new project falls back to |
-| `radar` (voc-radar: config, brands, version) | workspace | decision 13 |
+| `radar` (voc-radar: config, brands, version) | workspace | decision 13; read per workspace through `lambda/shared/radar_keys.py`, edited as the deployment's until the cut-over |
 | `model` | workspace, over a deployment default | the team's model picks (per surface, and the global pick); the default pinned at deploy is `model_default` (below) and the allowlist stays deployment-wide (decision 6) |
 | `participants` (voc-participants, pk `SETTINGS`: engagement, board audience) | workspace | the team's engagement settings |
 | `appearance` | deployment | one logo and colour scheme (decision 7): a platform admin's setting, not a workspace admin's |

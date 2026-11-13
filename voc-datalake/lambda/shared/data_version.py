@@ -41,11 +41,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.earliest_date import EARLIEST_DATE_KEY, METRIC_META_PK, earliest_date_from_item
 from shared.logging import logger
+from shared.radar_keys import radar_settings_key
 from shared.timestamps import now_iso
 
 DATA_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': 'data_version'}
 CONFIG_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': 'config_version'}
-RADAR_VERSION_KEY: Final = {'pk': 'SETTINGS#radar', 'sk': 'version'}
+RADAR_VERSION_KEY: Final = radar_settings_key('version')
 VERSION_ATTRIBUTE: Final = 'v'
 
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)

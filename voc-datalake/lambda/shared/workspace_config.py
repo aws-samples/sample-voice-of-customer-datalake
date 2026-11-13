@@ -21,7 +21,7 @@ from typing import Any
 from shared.workspace_settings import settings_key
 from shared.ws_repo import WorkspaceScope, ws_table
 
-__all__ = ['get_config_item']
+__all__ = ['get_config_item', 'get_scoped_item']
 
 
 def _config_key(kind: str, deployment_key: Mapping[str, str], scope: WorkspaceScope | None) -> dict[str, str]:
@@ -32,11 +32,18 @@ def _config_key(kind: str, deployment_key: Mapping[str, str], scope: WorkspaceSc
 def get_config_item(table: Any, kind: str, deployment_key: Mapping[str, str], scope: WorkspaceScope | None,
                     *, consistent: bool = True) -> dict[str, Any]:
     """The stored row of ``kind`` (``{}`` when absent). A DynamoDB error propagates."""
-    key = _config_key(kind, deployment_key, scope)
     # A strong read asks for it; an eventual one passes no option (DynamoDB's default).
     options = {'ConsistentRead': True} if consistent else {}
+    return get_scoped_item(table, _config_key(kind, deployment_key, scope), scope, **options)
+
+
+def get_scoped_item(table: Any, key: Mapping[str, str], scope: WorkspaceScope | None,
+                    **options: Any) -> dict[str, Any]:
+    """The stored row at ``key`` (``{}`` when absent): through the workspace's view of ``table`` when ``scope`` is
+    given (a key outside it raises ``OutOfScopeError`` before DynamoDB), else on the table itself. A DynamoDB error
+    propagates."""
     if scope is None:
-        response = table.get_item(Key=key, **options)
+        response = table.get_item(Key=dict(key), **options)
     else:
         response = ws_table(scope, table).get_item(key, **options)
     item = response.get('Item') if isinstance(response, Mapping) else None
