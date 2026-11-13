@@ -136,8 +136,9 @@ class TestTablesAndScope:
 
     def test_the_category_scope_is_resolved_for_the_caller_against_aggregates(self, world):
         world.call('GET', '/memory', claims=USER)
-        [(caller, aggregates)] = [c.args for c in world.scope.call_args_list]
-        assert (caller.subject, aggregates) == ('sub-user', world.aggregates)
+        # Without a workspace, against the deployment's categories (the third argument: no workspace).
+        [(caller, aggregates, workspace)] = [c.args for c in world.scope.call_args_list]
+        assert (caller.subject, aggregates, workspace) == ('sub-user', world.aggregates, None)
 
     def test_the_real_clock_is_utc_now(self):
         before = datetime.now(UTC)

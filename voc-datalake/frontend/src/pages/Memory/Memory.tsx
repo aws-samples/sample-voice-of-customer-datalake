@@ -3,15 +3,16 @@
  *
  * Tabs:
  * - **Company**: shared knowledge (product, customers, strategy…), visible to
- *   everyone. Anyone may +1; curators (admins and memory reviewers) edit,
- *   forget, restore and merge.
+ *   everyone. Anyone may +1; curators edit, forget, restore and merge.
  * - **Personal**: the caller's own memories — private to them.
  * - **Needs review** (curators): proposed items and conflicts, side by side,
  *   with supporter counts and a suggested resolution.
- * - **Imports** (curators): paste a page to learn from.
+ * - **Imports** (curators, outside a workspace only): paste a page to learn from.
  *
- * Curator status is not a client claim: an admin is one, and anyone else is one
- * exactly when `GET /memory/review` answers (the server's own gate).
+ * Curators: outside a workspace, the admins and the memory reviewers (an admin is one, and anyone else is one
+ * exactly when `GET /memory/review` answers, the server's own gate); inside a workspace, its admins only (the role
+ * the server applies there; the deployment's admins and the reviewer flag grant nothing), and Imports is hidden
+ * there until page imports work in a workspace.
  *
  * `?tab=personal|review|imports` deep-links a tab; a curator tab asked for by a
  * non-curator shows Company.
@@ -31,6 +32,9 @@ import { memoryApi, memoryKeys } from '../../api/memoryApi'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
 import Notice from '../../components/Notice/Notice'
 import { formatCount } from '../../utils/numberFormat'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
+import type { CurrentWorkspace } from '../../workspace/currentWorkspace'
+import { useServerRole } from '../../workspace/useMyWorkspaces'
 import MemoryList from './MemoryList'
 import MemoryReview from './MemoryReview'
 import MemoryImports from './MemoryImports'
@@ -70,14 +74,23 @@ const NOT_A_CURATOR = 403
 
 /** Admins curate; anyone else does when the review route lets them in.
  *
+ * Inside a workspace only its admins curate (lambda/api/memory_handler.py): the role the server applies there
+ * (`useServerRole`: a member admin, or a platform admin who entered), never the deployment's `admins` group, and the
+ * review queue is not even asked for anyone else.
+ *
  * A 403 is the server's gate saying "not a curator" — expected, and silent. Any
  * other failure (a 5xx, a network fault) is NOT an answer: it is surfaced, or the
  * page reads as an empty memory while the queue is in fact unreadable. */
-function useCanCurate(enabled: boolean) {
+function useCanCurate(enabled: boolean, workspace: CurrentWorkspace | null) {
   const isAdmin = useIsAdmin()
-  const review = useQuery({ queryKey: memoryKeys.review(), queryFn: memoryApi.review, enabled, retry: false })
+  const role = useServerRole(workspace)
+  const workspaceAdmin = role === 'admin'
+  const review = useQuery({
+    queryKey: memoryKeys.review(), queryFn: memoryApi.review, retry: false,
+    enabled: enabled && (workspace === null || workspaceAdmin),
+  })
   return {
-    canCurate: isAdmin || review.isSuccess,
+    canCurate: workspace === null ? isAdmin || review.isSuccess : workspaceAdmin,
     reviewCount: review.data?.length,
     reviewFailed: review.isError && apiErrorStatus(review.error) !== NOT_A_CURATOR,
     retryReview: () => void review.refetch(),
@@ -96,13 +109,16 @@ export default function Memory() {
   const { t, i18n } = useTranslation('memory')
   const { config } = useConfigStore()
   const configured = Boolean(config.apiEndpoint)
-  const { canCurate, reviewCount, reviewFailed, retryReview } = useCanCurate(configured)
+  const workspace = useCurrentWorkspace()
+  const { canCurate, reviewCount, reviewFailed, retryReview } = useCanCurate(configured, workspace)
   const [tab, setTab] = useMemoryTab()
 
+  // Imports stay the deployment's for now: hidden inside a workspace (its imports are not keyed by workspace yet).
   const tabs: TabDef[] = [
     { id: 'company', icon: Building2 },
     { id: 'personal', icon: User },
-    ...(canCurate ? [{ id: 'review', icon: Scale, count: reviewCount } satisfies TabDef, { id: 'imports', icon: ClipboardPaste } satisfies TabDef] : []),
+    ...(canCurate ? [{ id: 'review', icon: Scale, count: reviewCount } satisfies TabDef] : []),
+    ...(canCurate && workspace === null ? [{ id: 'imports', icon: ClipboardPaste } satisfies TabDef] : []),
   ]
   const active = tabs.some((d) => d.id === tab) ? tab : 'company'
 

@@ -61,7 +61,7 @@ const WORKSPACE_RESOLVER_ATTRIBUTES = ['pk', 'sk', 'role', 'status', 'name', 'sl
  *  projections, {@link WORKSPACE_RESOLVER_ATTRIBUTES}), for a Lambda that resolves without a platform admin's entry
  *  (lambda/shared/request_workspace.py `elevate=False`): no audit row to write, so no PutItem. Returns the Lambda's
  *  `WORKSPACES_TABLE`. */
-export function grantWorkspaceMembershipReads(workspacesTable: dynamodb.ITable, role: iam.Role): Record<string, string> {
+export function grantWorkspaceMembershipReads(workspacesTable: dynamodb.ITable, role: iam.IRole): Record<string, string> {
   grantWorkspaceAttributeRead(role, workspacesTable, WORKSPACE_RESOLVER_ATTRIBUTES);
   return { WORKSPACES_TABLE: workspacesTable.tableName };
 }
@@ -89,9 +89,9 @@ export const PLUGIN_ROW_PARTITIONS = ['PLUGIN#*'] as const;
  * MEMBER_READ_ATTRIBUTES and META_READ_ATTRIBUTES).
  */
 export function grantWorkspaceAttributeRead(
-  role: iam.Role, workspacesTable: dynamodb.ITable, attributes: readonly string[], partitions: readonly string[] = ['WS#*'],
+  role: iam.IRole, workspacesTable: dynamodb.ITable, attributes: readonly string[], partitions: readonly string[] = ['WS#*'],
 ): void {
-  role.addToPolicy(new iam.PolicyStatement({
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem'], resources: [workspacesTable.tableArn],
     conditions: {
       ...leadingKeys([...partitions]),

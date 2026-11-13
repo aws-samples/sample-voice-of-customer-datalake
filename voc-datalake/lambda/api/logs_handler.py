@@ -42,7 +42,7 @@ from shared.ops_alerts_service import (
 )
 from shared.platform_admin import require_platform_admin
 from shared.platform_admin_gate import require_live_platform_admin
-from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
+from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE, log_partition
 from shared.request_body import json_object_body
 from shared.scraper_run_errors import ERROR_TYPE_SHAPE, MAX_RETURNED_ERRORS, redacted_scraper_errors
 from shared.system_environment import environment as system_environment
@@ -53,6 +53,7 @@ from shared.system_request_log import lookup as lookup_request_lines
 from shared.system_request_log import parse_lookup
 from shared.tables import get_aggregates_table
 from shared.warm_init import warm_at_init
+from shared.ws_repo import WorkspaceScope, scraper_run_pk, ws_table
 
 # None when AGGREGATES_TABLE is unset; each route answers ConfigurationError then.
 aggregates_table = get_aggregates_table()
@@ -73,6 +74,35 @@ SUMMARY_COUNT_CAP = 1000
 # own TLS connection after an idle gap: 8 workers cost ~80 ms of CPU, 2 workers ~37 ms (6.04.03 measurement; the
 # function was 84 % CPU at one vCPU), and in the region 16 reads still take well under 100 ms on 2.
 LOG_READ_WORKERS = 2
+
+
+def _partition_page(workspace: WorkspaceScope | None, pk: str, *, since: str | None = None,
+                    **options: Any) -> dict:
+    """One page of partition ``pk`` (sort keys from ``since``): the same query as before on the table without a
+    workspace; through the workspace's view of it inside one (it builds the key condition, and refuses a partition
+    outside the workspace before DynamoDB).
+
+    The routes pass no workspace yet: since 7.14.00 a workspace's own ingestion runs, and its messages and scraper
+    runs log in it (shared/processing_logs.py, shared/ws_repo.py ``scraper_run_pk``), but ``GET /logs/*`` still reads
+    only the deployment's trail, so a workspace's processing logs are written and not yet shown. The routes resolve
+    the workspace with the logs cut-over (docs/multi-workspace.md; TENETS.md, D8's gap)."""
+    if aggregates_table is None:
+        raise ConfigurationError('Aggregates table not configured')
+    if workspace is None:
+        condition = Key('pk').eq(pk) if since is None else Key('pk').eq(pk) & Key('sk').gte(since)
+        return aggregates_table.query(KeyConditionExpression=condition, **options)
+    if since is None:
+        return ws_table(workspace, aggregates_table).query('pk', pk, **options)
+    return ws_table(workspace, aggregates_table).query(
+        'pk', pk, sort_condition='#log_sk >= :since', ExpressionAttributeNames={'#log_sk': 'sk'},
+        ExpressionAttributeValues={':since': since}, **options)
+
+
+def _scraper_runs(scraper_id: str, limit: int, workspace: WorkspaceScope | None = None) -> list[dict]:
+    """The newest ``limit`` runs of a web scraper (Key format matches scrapers_handler: ``SCRAPER_RUN#{scraper_id}``;
+    a workspace's: shared/ws_repo.py)."""
+    pk = f"SCRAPER_RUN#{scraper_id}" if workspace is None else scraper_run_pk(workspace, scraper_id)
+    return _partition_page(workspace, pk, ScanIndexForward=False, Limit=limit).get('Items', [])
 
 
 def _days_param(params: dict) -> int:
@@ -162,15 +192,8 @@ def get_scraper_logs(scraper_id: str):
     try:
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
-        # Key format matches scrapers_handler: SCRAPER_RUN#{scraper_id}
-        response = aggregates_table.query(
-            KeyConditionExpression=Key('pk').eq(f"SCRAPER_RUN#{scraper_id}"),
-            ScanIndexForward=False,
-            Limit=limit,
-        )
-
         logs = []
-        for item in response.get('Items', []):
+        for item in _scraper_runs(scraper_id, limit):
             # Filter by lookback window — items older than `cutoff` are skipped.
             # (`cutoff` was previously computed but never applied, making the
             # `days` query param a no-op.) Runs missing `started_at` are kept.
@@ -288,19 +311,19 @@ def _validation_log_keys(source: str):
     if aggregates_table is None:
         raise ConfigurationError('Aggregates table not configured')
     query = {
-        'KeyConditionExpression': Key('pk').eq(f"LOGS#validation#{source}"),
+        'KeyConditionExpression': Key('pk').eq(log_partition('validation', source)),
         'ProjectionExpression': 'pk, sk',
     }
     yield from iter_query(aggregates_table, query)
 
 
-def _log_partition_condition(log_type: str, source: str, days: int) -> Any:
-    """``LOGS#{log_type}#{source}`` rows written within the last ``days`` days."""
-    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    return Key('pk').eq(f"LOGS#{log_type}#{source}") & Key('sk').gte(cutoff)
+def _log_cutoff(days: int) -> str:
+    """The sort key from which a log row was written within the last ``days`` days."""
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
 
-def _count_logs_for_source(log_type: str, source: str, days: int, limit: int) -> int:
+def _count_logs_for_source(log_type: str, source: str, days: int, limit: int,
+                           workspace: WorkspaceScope | None = None) -> int:
     """How many rows ``_query_logs_for_source`` would return, without reading them back.
 
     ``Select=COUNT`` with the same key condition and ``Limit`` (no filter, one page),
@@ -308,28 +331,17 @@ def _count_logs_for_source(log_type: str, source: str, days: int, limit: int) ->
     ``len()`` of it, and parsing and redacting up to ``limit`` rows per partition to
     count them was most of the route's CPU during an incident.
     """
-    if aggregates_table is None:
-        raise ConfigurationError('Aggregates table not configured')
-    response = aggregates_table.query(
-        KeyConditionExpression=_log_partition_condition(log_type, source, days),
-        ScanIndexForward=False,
-        Limit=limit,
-        Select='COUNT',
-    )
+    response = _partition_page(workspace, log_partition(log_type, source, workspace), since=_log_cutoff(days),
+                               ScanIndexForward=False, Limit=limit, Select='COUNT')
     count = response.get('Count', 0)
     return count if isinstance(count, int) else 0
 
 
-def _query_logs_for_source(log_type: str, source: str, days: int, limit: int) -> list:
-    """Query logs for a specific source and type."""
-    if aggregates_table is None:
-        raise ConfigurationError('Aggregates table not configured')
-
-    response = aggregates_table.query(
-        KeyConditionExpression=_log_partition_condition(log_type, source, days),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
+def _query_logs_for_source(log_type: str, source: str, days: int, limit: int,
+                           workspace: WorkspaceScope | None = None) -> list:
+    """Query logs for a specific source and type (the workspace's with one)."""
+    response = _partition_page(workspace, log_partition(log_type, source, workspace), since=_log_cutoff(days),
+                               ScanIndexForward=False, Limit=limit)
 
     logs = []
     for item in response.get('Items', []):

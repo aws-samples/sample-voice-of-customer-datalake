@@ -157,6 +157,23 @@ describe('ChatStream (AI assistant) delegation', () => {
     expect(JSON.stringify(chat.properties.Environment.Variables.CONVERSATIONS_TABLE)).toMatch(/Conversations/);
   });
 
+  // A conversation inside a workspace is the caller's there, only when they are a member: both its writers resolve
+  // membership without a platform admin's entry (session/workspace-member.ts; api/chat_handler.py, elevate=False).
+  // The read is 7.14.00's attribute-limited one: the resolver's attributes, and refused when it names none.
+  it.each(['ChatStreamApi', 'ChatApi'])('%s reads only membership rows of voc-workspaces and writes nothing there', (prefix) => {
+    const fn = byLogicalPrefix(functions(), prefix);
+    const onWorkspaces = chatGrants(fn).filter((statement) => JSON.stringify(statement.Resource).includes('Workspaces'));
+    expect(onWorkspaces.map((statement) => ({ actions: actionsOf(statement), condition: statement.Condition }))).toStrictEqual([
+      { actions: ['dynamodb:GetItem'], condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'role', 'status', 'name', 'slug'] },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+        Null: { 'dynamodb:Attributes': 'false' },
+      } },
+    ]);
+    expect(JSON.stringify(fn.properties.Environment.Variables.WORKSPACES_TABLE)).toMatch(/Workspaces/);
+  });
+
   it('keeps the ChatStream role policy well under the inline IAM quota', () => {
     const chat = byLogicalPrefix(functions(), 'ChatStreamApi');
     const chars = JSON.stringify({ Statement: chatStatements(chat) }).length;

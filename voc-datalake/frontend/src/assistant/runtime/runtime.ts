@@ -19,7 +19,9 @@ import { chatScopeFor } from '../store/chatScopeStore'
 import { allInterruptsResolved } from '../thread/reducer'
 import { buildResume } from '../thread/resume'
 import { toWireMessages } from '../thread/wire'
-import { cancelServerRun, getSession, saveSession } from '../sessions/sessionsApi'
+import { cancelServerRun, getSession, isNotSavedHere, saveSession } from '../sessions/sessionsApi'
+import { clearUnsaved, markUnsaved } from '../sessions/unsavedThreads'
+import { currentWorkspace } from '../../workspace/currentWorkspace'
 import { threadFromSession, toSaveBody } from '../sessions/serialize'
 import { isValidSessionId } from '../sessions/schema'
 import { onAssistantSignOut, slotOf, useAssistantUiStore, useThreadStore } from '../store/assistantStore'
@@ -99,7 +101,10 @@ async function saveThreadNow(threadId: string, page: PageContext | null, adoptOn
     if (threadId === activeId()) rememberInView()
     if (refreshList) useThreadStore.getState().noteSaved()
   } catch (error) {
-    if (adoptOnConflict && apiErrorStatus(error) === HTTP_CONFLICT) void adoptServerSession(threadId)
+    // Inside a workspace that keeps no conversations for this caller (a platform admin who entered without being a
+    // member): settled, shown as unsaved, never retried; the assistant still answers.
+    if (currentWorkspace() !== null && isNotSavedHere(error)) markUnsaved(threadId)
+    else if (adoptOnConflict && apiErrorStatus(error) === HTTP_CONFLICT) void adoptServerSession(threadId)
     // Otherwise saving is best-effort; the next finished run retries with the full thread.
   }
 }
@@ -378,4 +383,5 @@ onAssistantSignOut(() => {
   for (const controller of inFlight.values()) controller.abort()
   inFlight.clear()
   inFlightRunIds.clear()
+  clearUnsaved()
 })

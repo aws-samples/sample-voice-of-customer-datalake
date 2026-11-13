@@ -34,6 +34,11 @@ export function useCurrentWorkspace(): CurrentWorkspace | null {
   return useWorkspaceStore((state) => state.workspace)
 }
 
+/** The current workspace outside React (an API client or a runtime deciding what an answer means), or null. */
+export function currentWorkspace(): CurrentWorkspace | null {
+  return useWorkspaceStore.getState().workspace
+}
+
 /** Enter a workspace (the gate) or leave every workspace (`null`). */
 export function setCurrentWorkspace(workspace: CurrentWorkspace | null): void {
   useWorkspaceStore.setState({ workspace })

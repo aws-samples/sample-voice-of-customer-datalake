@@ -15,6 +15,14 @@ Who may do what:
 * **Delegated** principals (MCP tokens, ``agent:`` principals) may read
   (``retrieve``, ``conflict-check``) company memory only and write nothing.
 
+Inside a workspace (``X-Workspace-Id``; docs/multi-workspace.md, "Request flow": memory) every route acts on that
+workspace's memories (shared/memory_store.py, its partitions), resolved first, before anything else, for any member
+(shared/request_workspace.py; fresh for a write, from the warm cache for a read and for the assistant's
+``POST /memory/retrieve``, its ``used`` marks included): its **admins** curate (the deployment's ``admins`` group and the
+``memory_reviewer`` flag grant nothing there), a **viewer** reads only, and page imports are refused (409) until the
+extractor writes in a workspace. A request that names no workspace keeps the deployment's memories and rules, as
+before.
+
 ``POST /memory/retrieve`` and ``GET /memory/conflict-check`` are internal: the
 stream assistant and the agents runtime call them with the end user's claims.
 Statements are screened (``memory_policy.clean_statement``) on every write;
@@ -55,10 +63,13 @@ from shared.memory_store import IMPORT_PREFIX
 from shared.project_access import Caller
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
+from shared.request_workspace import request_workspace, require_workspace_writer
 from shared.scope_names import HiddenNames, hidden_names_for
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
+from shared.workspace import WorkspaceContext
+from shared.ws_repo import WorkspaceScope, scope_of
 
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
@@ -82,6 +93,40 @@ _REFUSAL_MESSAGES = {
 }
 
 app = create_api_resolver()
+#: A request whose workspace could not be resolved (a DynamoDB fault).
+FAILED_WORKSPACE = 'Failed to open the memory'
+#: The POST routes that only read (the assistant's recall on every run): resolved from the warm cache, as a GET is.
+READ_ONLY_POSTS = frozenset({'/memory/retrieve'})
+
+
+def workspace_middleware(app, next_middleware):
+    """Every route acts in the workspace the request names: resolved first, before any read or write (the caller's
+    membership; fresh for a write, so a removed member writes nothing there), kept for the route in the request's
+    context. None for a request that names none: the deployment's memories, as before."""
+    event = app.current_event.raw_event
+    reads = app.current_event.http_method == 'GET' or app.current_event.path in READ_ONLY_POSTS
+    context = request_workspace(event, FAILED_WORKSPACE, fresh=not reads)
+    app.append_context(workspace=context)
+    return next_middleware(app)
+
+
+app.use(middlewares=[workspace_middleware])
+
+
+def _workspace_context() -> WorkspaceContext | None:
+    context = app.context.get('workspace')
+    return context if isinstance(context, WorkspaceContext) else None
+
+
+def _workspace() -> WorkspaceScope | None:
+    context = _workspace_context()
+    return None if context is None else scope_of(context)
+
+
+def _in_workspace() -> dict[str, Any]:
+    """``workspace=`` for a store call inside a workspace, nothing outside one (the calls as they always were)."""
+    workspace = _workspace()
+    return {} if workspace is None else {'workspace': workspace}
 
 
 # ── Tables + caller ──────────────────────────────────────────────────────────
@@ -106,9 +151,10 @@ def _caller() -> Caller:
 
 def _category_scope(caller: Caller) -> CategoryScope:
     """The feedback categories ``caller`` may see — company memories about any
-    other category are hidden, like the reviews they were learned from.
+    other category are hidden, like the reviews they were learned from. Inside a workspace, against that
+    workspace's categories and restricted sources (never the deployment's: D8).
     Fails closed (ServiceError) when access cannot be verified."""
-    return scope_for_caller(caller, get_aggregates_table())
+    return scope_for_caller(caller, get_aggregates_table(), _workspace())
 
 
 def _reader(caller: Caller) -> tuple[CategoryScope, HiddenNames | None]:
@@ -116,7 +162,7 @@ def _reader(caller: Caller) -> tuple[CategoryScope, HiddenNames | None]:
     read (a memory naming one is withheld even without category tags — owner rule 2026-10-21).
     The config read is strong and fails closed (500)."""
     scope = _category_scope(caller)
-    return scope, hidden_names_for(scope, get_aggregates_table())
+    return scope, hidden_names_for(scope, get_aggregates_table(), _workspace())
 
 
 def _visible(rows: list[dict], reader: tuple[CategoryScope, HiddenNames | None]) -> list[dict]:
@@ -134,10 +180,23 @@ def _person(caller: Caller) -> Caller:
     return caller
 
 
+def _writer(caller: Caller) -> Caller:
+    """``_person``, and inside a workspace one who writes there (an editor or an admin; a viewer reads only)."""
+    _person(caller)
+    context = _workspace_context()
+    if context is not None:
+        require_workspace_writer(context)
+    return caller
+
+
 def is_curator(caller: Caller) -> bool:
-    """Admin, or a user flagged ``memory_reviewer``. A failed flag read is "no"."""
+    """Admin, or a user flagged ``memory_reviewer``; inside a workspace, its admins only. A failed flag read is
+    "no"."""
     if caller.delegated or not caller.subject:
         return False
+    context = _workspace_context()
+    if context is not None:
+        return context.role == 'admin'
     if caller.is_admin:
         return True
     aggregates = get_aggregates_table()
@@ -150,9 +209,13 @@ def is_curator(caller: Caller) -> bool:
         return False
 
 
+def _curators() -> str:
+    return "the workspace's admins" if _workspace_context() is not None else 'admins and memory reviewers'
+
+
 def _require_curator(caller: Caller) -> None:
     if not is_curator(caller):
-        raise AuthorizationError('Only admins and memory reviewers can do this')
+        raise AuthorizationError(f'Only {_curators()} can do this')
 
 
 def _body() -> dict:
@@ -197,12 +260,13 @@ def _categories(value: object) -> list[str]:
 
 
 def _categories_config() -> list[dict]:
-    """The configured categories (strong read); [] when unreadable — tagging never blocks a write."""
+    """The configured categories (strong read) of the request's workspace (the deployment's without one); [] when
+    unreadable — tagging never blocks a write."""
     aggregates = get_aggregates_table()
     if aggregates is None:
         return []
     try:
-        return read_categories_config(aggregates)
+        return read_categories_config(aggregates, _workspace())
     except ServiceError:
         return []
 
@@ -233,15 +297,16 @@ def _retention(body: dict, kind: str, today) -> tuple[str, str | None]:
 def _memory_or_404(memory_id: str, caller: Caller) -> dict:
     """The memory ``caller`` may read, by id; 404 when it is missing OR hidden by the caller's category
     access (WA SEC08-BP04, BE-3): the same rule as the listing, so an id is no way around it."""
-    item = store.locate(get_memory_table(), memory_id, caller.subject or None)
+    item = store.locate(get_memory_table(), memory_id, caller.subject or None, **_in_workspace())
     if item is None or not _visible([item], _reader(caller)):
         raise NotFoundError(MEMORY_NOT_FOUND)
     return item
 
 
 def _require_can_edit(item: Mapping[str, Any], caller: Caller) -> None:
-    """Company → curator; personal → its owner (``locate`` only finds the caller's own)."""
-    _person(caller)
+    """Company → curator; personal → its owner (``locate`` only finds the caller's own); a writer of the workspace
+    inside one."""
+    _writer(caller)
     if item.get('scope') == policy.SCOPE_COMPANY:
         _require_curator(caller)
 
@@ -265,15 +330,17 @@ def list_memories():
     if scope == policy.SCOPE_COMPANY:
         if status == policy.STATUS_ARCHIVED and not is_curator(caller):
             # Archived includes forgotten (tombstoned) statements: curators only.
-            raise AuthorizationError('Only admins and memory reviewers can see archived company memories')
+            raise AuthorizationError(f'Only {_curators()} can see archived company memories')
         start = store.decode_page_token(params.get('cursor'), store.COMPANY_PAGE_KEYS)
-        rows, last = store.list_company(table, str(status), kind=kind, q=q, limit=limit, start_key=start)
+        rows, last = store.list_company(table, str(status), kind=kind, q=q, limit=limit, start_key=start,
+                                        **_in_workspace())
         visible = _visible(rows, _reader(caller))
         return {'items': [store.public_view(r) for r in visible], 'next_cursor': store.encode_page_token(last)}
     person = _person(caller)
     offset_token = store.decode_page_token(params.get('cursor'), frozenset({'o'}))
     offset = validate_int((offset_token or {}).get('o'), default=0, min_val=0, max_val=1_000_000)
-    rows = _visible(store.list_personal(table, person.subject, str(status), kind=kind, q=q), _reader(person))
+    rows = _visible(store.list_personal(table, person.subject, str(status), kind=kind, q=q, **_in_workspace()),
+                    _reader(person))
     page = rows[offset:offset + limit]
     more = offset + limit < len(rows)
     return {'items': [store.public_view(r) for r in page],
@@ -284,7 +351,7 @@ def list_memories():
 @app.post('/memory')
 @tracer.capture_method
 def add_memory():
-    caller = _person(_caller())
+    caller = _writer(_caller())
     body = _body()
     now = _now()
     scope = _choice(body.get('scope'), policy.SCOPES, 'scope')
@@ -301,6 +368,7 @@ def add_memory():
         supporter=store.supporter_hash(caller.subject),
         owner_sub=caller.subject if scope == policy.SCOPE_PERSONAL else None,
         retention=retention, expires_at=expires_at, categories=_tags(statement, _categories(body.get('categories'))),
+        **_in_workspace(),
     )
     item, deduplicated = store.write_explicit(get_memory_table(), candidate, status=status,
                                               aggregates_table=get_aggregates_table(), now=now)
@@ -335,21 +403,23 @@ def update_memory(memory_id: str):
         if statement != item.get('statement'):
             item = store.reembed(table, item, statement, aggregates_table=get_aggregates_table(), now=now)
             item = _retag(table, item, statement, now)
-    store.append_event(table, memory_id, 'edited', actor=store.supporter_hash(caller.subject), now=now)
+    store.append_event(table, memory_id, 'edited', actor=store.supporter_hash(caller.subject), now=now,
+                       **_in_workspace())
     return _view(item)
 
 
 @app.post('/memory/<memory_id>/confirm')
 @tracer.capture_method
 def confirm_memory(memory_id: str):
-    caller = _person(_caller())
+    caller = _writer(_caller())
     item = _memory_or_404(memory_id, caller)
     if item.get('tombstoned') or item.get('status') == policy.STATUS_ARCHIVED:
         raise ConflictError('An archived memory cannot be confirmed; restore it first')
     table = get_memory_table()
     now = _now()
     counted = store.reinforce(table, item, store.supporter_hash(caller.subject), None, now=now)
-    store.append_event(table, memory_id, 'confirmed', actor=store.supporter_hash(caller.subject), now=now)
+    store.append_event(table, memory_id, 'confirmed', actor=store.supporter_hash(caller.subject), now=now,
+                       **_in_workspace())
     return {**_view(store.get_item(table, store.item_key(item)) or item), 'counted': counted}
 
 
@@ -363,7 +433,8 @@ def forget_memory(memory_id: str):
     now = _now()
     item = store.set_fields(table, item, {'status': policy.STATUS_ARCHIVED, 'tombstoned': True,
                                           'archived_reason': 'forgotten', 'archived_at': now_iso(now)}, now=now)
-    store.append_event(table, memory_id, 'forgotten', actor=store.supporter_hash(caller.subject), now=now)
+    store.append_event(table, memory_id, 'forgotten', actor=store.supporter_hash(caller.subject), now=now,
+                       **_in_workspace())
     return _view(item)
 
 
@@ -381,7 +452,8 @@ def restore_memory(memory_id: str):
         'status': policy.STATUS_ACTIVE, 'tombstoned': False, 'archived_reason': None,
         'last_reinforced_at': now_iso(now), 'gsi1sk': now_iso(now),
     }, now=now)
-    store.append_event(table, memory_id, 'restored', actor=store.supporter_hash(caller.subject), now=now)
+    store.append_event(table, memory_id, 'restored', actor=store.supporter_hash(caller.subject), now=now,
+                       **_in_workspace())
     return _view(item)
 
 
@@ -439,9 +511,10 @@ def review_queue():
     items: list[dict] = []
     if is_curator(caller):
         for status in (policy.STATUS_CONFLICT, policy.STATUS_PROPOSED):
-            items += store.query_status(table, policy.SCOPE_COMPANY, status, attributes=store.LIST_ATTRIBUTES)
+            items += store.query_status(table, policy.SCOPE_COMPANY, status, attributes=store.LIST_ATTRIBUTES,
+                                        **_in_workspace())
     for status in (policy.STATUS_CONFLICT, policy.STATUS_PROPOSED):
-        items += store.list_personal(table, caller.subject, status, kind=None, q=None)
+        items += store.list_personal(table, caller.subject, status, kind=None, q=None, **_in_workspace())
     # A restricted memory reviewer curates only what they may read.
     reader = _reader(caller)
     items = _visible(items, reader)[:MAX_REVIEW_ITEMS]
@@ -460,7 +533,7 @@ def _retire(table, losers: list[dict], winner_id: str, actor: str, now: datetime
                                         'archived_reason': 'superseded', 'superseded_by': winner_id,
                                         'conflicts_with': []}, now=now)
         store.append_event(table, str(loser.get('memory_id')), 'superseded', actor=actor,
-                           detail={'by': winner_id}, now=now)
+                           detail={'by': winner_id}, now=now, **_in_workspace())
 
 
 def _resolve_keep(table, item: dict, linked: list[dict], winner_id: str, actor: str, now: datetime) -> dict:
@@ -505,7 +578,7 @@ def resolve_review(memory_id: str):
                                       categories=_tags(merged_statement))
     else:
         raise ValidationError('action is required')
-    store.append_event(table, memory_id, f'resolved_{action}', actor=actor, now=now)
+    store.append_event(table, memory_id, f'resolved_{action}', actor=actor, now=now, **_in_workspace())
     return _view(result)
 
 
@@ -530,6 +603,8 @@ def _validated_import(body: dict) -> tuple[str, str | None, str]:
 def create_import():
     caller = _caller()
     _require_curator(caller)
+    if _workspace() is not None:
+        raise ConflictError('Importing pages inside a workspace arrives with its extraction; import outside it')
     if not RAW_DATA_BUCKET or not MEMORY_QUEUE_URL:
         raise ConfigurationError('Memory imports are not configured')
     title, url, content = _validated_import(_body())
@@ -571,7 +646,7 @@ def create_import():
 @tracer.capture_method
 def get_import(import_id: str):
     _require_curator(_caller())
-    record = store.get_import(get_memory_table(), import_id)
+    record = store.get_import(get_memory_table(), import_id, **_in_workspace())
     if record is None:
         raise NotFoundError(IMPORT_NOT_FOUND)
     return {'import': store.public_import(record)}
@@ -604,7 +679,8 @@ def retrieve_memories():
     include_personal = bool(caller.subject) and not caller.agent_id
     scope, hidden = _reader(caller)
     rows = store.retrieve(get_memory_table(), query, caller_sub=caller.subject or None,
-                          include_personal=include_personal, k=k, scope=scope, hidden=hidden, now=_now())
+                          include_personal=include_personal, k=k, scope=scope, hidden=hidden, now=_now(),
+                          **_in_workspace())
     return {'items': [store.summary_view(r) for r in rows]}
 
 
@@ -625,7 +701,7 @@ def conflict_check():
     scope, hidden = _reader(caller)
     related = store.related_live(get_memory_table(), statement,
                                  caller_sub=None if caller.delegated else (caller.subject or None),
-                                 scope=scope, hidden=hidden)
+                                 scope=scope, hidden=hidden, **_in_workspace())
     labels = store.judge_relations([(statement, str(row.get('statement') or '')) for row, _ in related],
                                    service_tier=None)
     # judge_relations returns exactly one label per pair (it pads), so strict holds.

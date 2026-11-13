@@ -34,6 +34,7 @@ from typing import Any, Final
 from shared.category_access import FALLBACK_CATEGORY, CategoryScope, admits
 from shared.category_gate import read_categories_config
 from shared.display_labels import category_label, mapping_entries, subcategory_label
+from shared.ws_repo import WorkspaceScope
 
 __all__ = [
     'HIDE_ALL',
@@ -128,15 +129,17 @@ def hidden_names(scope: CategoryScope | None, categories_config: object) -> Hidd
     return HiddenNames(_pattern(hidden - visible))
 
 
-def hidden_names_for(scope: CategoryScope | None, aggregates_table: Any) -> HiddenNames | None:
-    """``hidden_names`` against the stored categories config, read strongly.
+def hidden_names_for(scope: CategoryScope | None, aggregates_table: Any,
+                     workspace: WorkspaceScope | None = None) -> HiddenNames | None:
+    """``hidden_names`` against the stored categories config of ``workspace`` (the deployment's without one), read
+    strongly.
 
     Raises ``ServiceError`` when the config cannot be read (callers fail closed: a route
     answers 500, prompt grounding uses ``HIDE_ALL``). No read for an unrestricted scope.
     """
     if scope is None or scope.categories_all:
         return None
-    return hidden_names(scope, read_categories_config(aggregates_table))
+    return hidden_names(scope, read_categories_config(aggregates_table, workspace))
 
 
 def named_category_ids(text: object, categories_config: object) -> list[str]:

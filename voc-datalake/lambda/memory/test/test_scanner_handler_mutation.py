@@ -66,7 +66,7 @@ class TestTheConstantsAreTheContract:
         assert scanner.REENQUEUE_AFTER_MINUTES == 120
         assert scanner.SAFETY_MARGIN_MS == 20_000
         assert scanner.SQS_BATCH == 10
-        assert scanner.USER_PK_PREFIX == 'USER#'
+        assert scanner.USER_PARTITION_PREFIX == 'USER#'
         assert scanner.CONVERSATION_SK_PREFIX == 'CONV#'
         assert scanner.DIRECT_KINDS == ('agent_run', 'project_chat')
         assert scanner.MAX_DIRECT_TEXT_CHARS == 60_000

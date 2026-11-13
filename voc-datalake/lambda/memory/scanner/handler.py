@@ -39,7 +39,7 @@ from boto3.dynamodb.conditions import Key
 from shared import memory_policy as policy
 from shared import memory_store as store
 from shared.aws import get_dynamodb_resource, get_sqs_client
-from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX
+from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX, USER_PARTITION_PREFIX
 from shared.indexes import CONVERSATIONS_BY_KIND_INDEX
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
@@ -58,7 +58,6 @@ LOOKBACK_DAYS: Final = 7
 REENQUEUE_AFTER_MINUTES: Final = 120
 SAFETY_MARGIN_MS: Final = 20_000
 SQS_BATCH: Final = 10
-USER_PK_PREFIX: Final = 'USER#'
 DIRECT_KINDS: Final = ('agent_run', 'project_chat')
 # SQS caps a message at 256 KiB; 60k characters of UTF-8 stays under it even
 # when every character takes three bytes, with room for the envelope.
@@ -105,14 +104,16 @@ def idle_sessions(table, now: datetime, time_left_ms) -> list[dict]:
 def _session_from_row(row: Mapping[str, Any]) -> dict | None:
     pk, sk = row.get('pk'), row.get('sk')
     if not (isinstance(pk, str) and isinstance(sk, str)
-            and pk.startswith(USER_PK_PREFIX) and sk.startswith(CONVERSATION_SK_PREFIX)):
+            # A person's own conversations only: a workspace's (``WS#{ws}#USER#{sub}``, shared/conversations.py) are
+            # not mined for memories until memory moves under its workspace (the kind index holds both).
+            and pk.startswith(USER_PARTITION_PREFIX) and sk.startswith(CONVERSATION_SK_PREFIX)):
         return None
     try:
         count = int(row.get('message_count') or 0)
     except (TypeError, ValueError):
         count = 0
     return {
-        'owner_sub': pk[len(USER_PK_PREFIX):],
+        'owner_sub': pk[len(USER_PARTITION_PREFIX):],
         'session_id': sk[len(CONVERSATION_SK_PREFIX):],
         'message_count': count,
         'updated_at': str(row.get('updated_at') or ''),

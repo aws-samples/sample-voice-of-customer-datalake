@@ -18,7 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -180,6 +180,18 @@ describe('memory workers (VocProcessingStack)', () => {
     expect(allActions(s).filter((a) => a.startsWith('dynamodb:'))).toStrictEqual(
       expect.not.arrayContaining(['dynamodb:DeleteItem', 'dynamodb:BatchWriteItem']),
     );
+  });
+
+  it("retention: reads voc-workspaces' WORKSPACES listing only, to sweep each workspace", () => {
+    const onWorkspaces = statementsOfRole(template, 'MemoryWorkersMemoryRetentionRole')
+      .filter((statement) => statement.resource.includes('Workspaces'));
+    expect(onWorkspaces.map((statement) => statement.actions)).toStrictEqual([['dynamodb:Query']]);
+    template.hasResourceProperties('AWS::IAM::Policy', Match.objectLike({
+      PolicyDocument: { Statement: Match.arrayWith([Match.objectLike({
+        Action: 'dynamodb:Query',
+        Condition: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': ['WORKSPACES'] } },
+      })]) },
+    }));
   });
 });
 

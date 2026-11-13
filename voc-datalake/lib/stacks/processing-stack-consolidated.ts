@@ -317,6 +317,7 @@ export class VocProcessingStack extends VocStack {
       conversationsTable: props.conversationsTable,
       aggregatesTable,
       rawDataBucket,
+      workspacesTable: props.workspacesTable,
     });
     this.memoryExtractQueue = memoryWorkers.extractQueue;
     grantRealtimePublish(props.realtime, 'jobs', [memoryWorkers.extractor]);

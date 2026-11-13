@@ -5,7 +5,9 @@ resolver, or a function of its own module that does, before it can return or wri
 the whole of lambda/: a function "reaches the resolver" when it calls shared/workspace.py ``resolve_workspace``, or a
 function that does, in any module (shared/ included), followed through the module's own functions, ``from … import
 … as …``, ``import … as …``, relative imports, dotted module attributes and bare decorators. A route is any
-``@<router>.<verb>('/path')`` decorator, at any depth (async functions and methods too). Every route it finds, and
+``@<router>.<verb>('/path')`` decorator, at any depth (async functions and methods too); every route of a module
+reaches the resolver when the module's first ``app.use(middlewares=[…])`` middleware does (it runs first, for every
+route). Every route it finds, and
 every route served under ``/me/workspaces/current``, must be workspace-scoped, so a helper in another module cannot
 hide a resolution from the suite's tables.
 """
@@ -90,6 +92,30 @@ def _routes(fn: _Function) -> list[str]:
             and isinstance(path := decorator.args[0].value, str) and path.startswith('/')]
 
 
+def first_app_middleware(tree: ast.Module) -> str | None:
+    """The name of the first middleware of the first module-level ``app.use(middlewares=[...])``: the one that runs
+    first."""
+    for stmt in tree.body:
+        call = stmt.value if isinstance(stmt, ast.Expr) else None
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == 'use'
+                and isinstance(call.func.value, ast.Name) and call.func.value.id == 'app'):
+            continue
+        for keyword in call.keywords:
+            if keyword.arg == 'middlewares' and isinstance(keyword.value, ast.List | ast.Tuple) and keyword.value.elts:
+                first = keyword.value.elts[0]
+                return first.id if isinstance(first, ast.Name) else None
+        return None
+    return None
+
+
+def _first_middleware(module_name: str, module: _Module) -> FunctionKey | None:
+    """The function of the module's first middleware (``first_app_middleware``), resolved through its imports."""
+    name = first_app_middleware(module.tree)
+    if name is None:
+        return None
+    return (module_name, name) if name in module.functions else module.names.get(name)
+
+
 def routes_reaching_the_resolver(lambda_dir: Path) -> set[tuple[str, str]]:
     """(file name, ``"METHOD /path"``) of every route in ``lambda_dir`` whose function reaches the resolver through
     any module, or that is served under /me/workspaces/current."""
@@ -106,9 +132,10 @@ def routes_reaching_the_resolver(lambda_dir: Path) -> set[tuple[str, str]]:
         resolvers |= more
     # Routes are read from every function at any depth (async ones and methods too); one that is not a module
     # function reaches the resolver when it calls one itself.
+    module_wide = {name for name, module in modules.items() if _first_middleware(name, module) in resolvers}
     return {(module.file.name, route)
             for name, module in modules.items()
             for fn in ast.walk(module.tree) if isinstance(fn, _Function)
             for route in _routes(fn)
-            if (name, fn.name) in resolvers or _callees(name, module, fn) & resolvers
+            if name in module_wide or (name, fn.name) in resolvers or _callees(name, module, fn) & resolvers
             or route.split(maxsplit=1)[1].startswith(SCOPED_PREFIX)}

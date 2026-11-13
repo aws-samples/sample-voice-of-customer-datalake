@@ -28,6 +28,34 @@ export async function listSessions(): Promise<SessionSummary[]> {
 }
 
 /**
+ * The caller's conversations from before workspaces (`USER#{sub}`, the deployment's partition): sent without
+ * `X-Workspace-Id` (the `'deployment'` request scope), so inside a workspace they stay readable. Read only: they
+ * are not opened as threads, so nothing written inside a workspace ever lands there.
+ */
+export async function listDeploymentSessions(): Promise<SessionSummary[]> {
+  return normalizeSessionList(await fetchApi<unknown>('/chat/conversations/_list?kind=assistant', { method: 'GET' }, 'deployment'))
+}
+
+/** One conversation from before workspaces (see {@link listDeploymentSessions}); `null` when it is gone. */
+export async function getDeploymentSession(id: string): Promise<SessionRecord | null> {
+  try {
+    return normalizeSessionRecord(await fetchApi<unknown>(sessionPath(id), { method: 'GET' }, 'deployment'))
+  } catch (error) {
+    if (apiErrorStatus(error) === NOT_FOUND) return null
+    throw error
+  }
+}
+
+/**
+ * Whether a chat route's refusal says this workspace keeps no conversations for the caller: 404, which a platform
+ * admin who entered without being a member gets on every chat route while the assistant still answers (the stream
+ * Lambda saves nothing for them). Settled, never retried.
+ */
+export function isNotSavedHere(error: unknown): boolean {
+  return apiErrorStatus(error) === NOT_FOUND
+}
+
+/**
  * One stored session, or `null` when it does not exist. The route answers a
  * conversation that was deleted (in this tab, another tab or another browser)
  * with 404: that is a settled answer, not a failure, so it resolves to `null`

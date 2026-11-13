@@ -13,11 +13,12 @@ from shared.category_access import UNRESTRICTED, CategoryScope
 from shared.metric_keys import SENTIMENT_PREFIX
 from shared.radar_all import all_brands_view
 from shared.radar_brands import RadarBrand
-from shared.radar_reads import SortRange, partition_query, scoped_key, scoped_pk
+from shared.radar_reads import SortRange, partition_query, scoped_key
 from shared.radar_releases import count_releases, list_releases, release_pk
 from shared.radar_reviews import decode_cursor, encode_cursor, list_reviews, reviews_page, stored_review
 from shared.radar_store import counter_pk, daily_rows, marker_key, radar_item, store_item, sum_counter
 from shared.radar_views import compare, counted_totals, themes
+from shared.scoped_keys import scoped_pk
 from shared.test.radar_fixtures import radar_pk_sk_table
 from shared.ws_repo import OutOfScopeError, WorkspaceScope
 

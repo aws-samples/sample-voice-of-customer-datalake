@@ -50,9 +50,10 @@ from shared.memory_store import cosine, decode_embedding, encode_embedding
 from shared.radar_brand_citations import BrandMatch, brand_citations, on_domains
 from shared.radar_citations import clean_citations, page_key
 from shared.radar_listing_pages import HUB_MIN_RECORDS, hub_pages, index_titles, is_listing_page
-from shared.radar_reads import SortRange, partition_query, scoped_pk
+from shared.radar_reads import SortRange, partition_query
 from shared.radar_release_merge import OFFICIAL, collapse, feature_key, padded_titles, same_name
 from shared.radar_store import query_all
+from shared.scoped_keys import scoped_pk
 from shared.ws_repo import WorkspaceScope
 
 __all__ = [

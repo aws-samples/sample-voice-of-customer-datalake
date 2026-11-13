@@ -15,7 +15,7 @@ import { FEEDBACK_FORM_API_FUNCTION_BASE_NAME, USERS_API_FUNCTION_BASE_NAME } fr
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { appVersion } from '../utils/connector-version';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
-import { grantRequestWorkspace } from '../utils/workspace-resolution-grants';
+import { grantRequestWorkspace, grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } from './core-buckets';
 import type { ApiStackContext } from './api-context';
 import { OPS_ALERTS_NAG_REASON, opsAlertsWiring } from './dlq-alarms';
@@ -345,6 +345,9 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   // The caller's own conversations: save (Put), rename (Update), DELETE /chat/conversations/{id} (Delete). No batch.
   grantReadAndWrites(conversationsTable, chatRole, ['PutItem', 'UpdateItem', 'DeleteItem']);
   kmsKey.grantEncryptDecrypt(chatRole);
+  // Inside a workspace the caller's conversations are theirs there: the routes resolve the caller's own membership
+  // (no platform-admin entry, as the stream Lambda: no Cognito look-up and no audit row, so only the membership reads).
+  const chatWorkspaceEnv = grantWorkspaceMembershipReads(ctx.props.workspacesTable, chatRole);
 
   const chatLambda = new lambda.Function(stack, 'ChatApi', {
     functionName: ctx.uniqueName('voc-chat-api'),
@@ -355,7 +358,13 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     role: chatRole,
     timeout: cdk.Duration.seconds(30),
     memorySize: 1024, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
-    environment: { CONVERSATIONS_TABLE: conversationsTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-chat-api', LOG_LEVEL: 'INFO' },
+    environment: {
+      CONVERSATIONS_TABLE: conversationsTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-chat-api', LOG_LEVEL: 'INFO',
+      // Named for the shared resolution module's live check, which these routes never run (elevate=False): no
+      // Cognito grant goes with it, so a later call that did elevate would be refused, not silently elevated.
+      USER_POOL_ID: userPool.userPoolId,
+      ...chatWorkspaceEnv,
+    },
     layers: [apiLayer],
     logGroup: ctx.logGroup('ChatApiLogs', ctx.uniqueName('voc-chat-api')),
   });

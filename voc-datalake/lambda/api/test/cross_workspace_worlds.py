@@ -21,6 +21,7 @@ import json
 from collections.abc import Callable, Generator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlencode
@@ -93,6 +94,9 @@ class RouteCase:
     #: Without a workspace the route is the deployment's ``admins`` group's (as before): check 3 expects 403 for a
     #: caller outside it.
     deployment_admins_without_a_workspace: bool = False
+    #: Without a workspace the route answers this instead of ``ok_status`` (a route that does inside a workspace what
+    #: it cannot yet, and says so, while the deployment's keeps working): check 3 expects it.
+    status_without_a_workspace: int | None = None
 
 
 def table_snapshot() -> dict[str, list[str]]:
@@ -101,7 +105,8 @@ def table_snapshot() -> dict[str, list[str]]:
     snapshot = {}
     for name in client.list_tables()['TableNames']:
         pages = client.get_paginator('scan').paginate(TableName=name, ConsistentRead=True)
-        snapshot[name] = sorted(json.dumps(item, sort_keys=True) for page in pages for item in page['Items'])
+        # ``default=repr``: a binary attribute (a memory's embedding) as its bytes' repr, the same every time.
+        snapshot[name] = sorted(json.dumps(item, sort_keys=True, default=repr) for page in pages for item in page['Items'])
     return snapshot
 
 
@@ -326,10 +331,103 @@ _CURSOR_IDS = {'A': {'cursor': _members_cursor(WS_A, 'sub-ada')},
 _A_ROLE = 'a workspace role (admin, editor or viewer), the same words in every workspace'
 
 #: handler file -> the world its routes run in.
+# ── voc-chat-api (lambda/api/chat_handler.py): the caller's conversations inside a workspace ──
+
+#: Each caller's conversation in each partition: the deployment's (no workspace), A's and B's. A conversation id is
+#: the caller's own name for it, so the deployment's partition holds one under A's id too (check 3 reads it).
+_CONVERSATION_IDS = {'A': {'conversation_id': 'conv_a'}, 'B': {'conversation_id': 'conv_b'},
+                     UNKNOWN: {'conversation_id': 'conv_unknown'}}
+
+
+def _conversation(pk: str, conversation_id: str, title: str) -> dict:
+    return {'pk': pk, 'sk': f'CONV#{conversation_id}', 'conversation_id': conversation_id, 'kind': 'assistant',
+            'title': title, 'messages_json': '[]', 'page_json': '{}', 'pending_json': '[]', 'message_count': 0,
+            'created_at': '2026-11-01T00:00:00+00:00', 'updated_at': '2026-11-01T00:00:00+00:00', 'revision': 1}
+
+
+@contextmanager
+def chat_world(lambda_context: Any) -> Generator[World]:
+    import chat_handler
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        conversations = pk_sk_table('conversations')
+        stack.enter_context(patch.object(chat_handler, 'conversations_table', conversations))
+        conversations.put_item(Item=_conversation('USER#sub-ada', 'conv_a', 'Before workspaces'))
+        conversations.put_item(Item=_conversation(f'WS#{WS_A}#USER#sub-ada', 'conv_a', f'{A_MARK} returns'))
+        conversations.put_item(Item=_conversation(f'WS#{WS_B}#USER#sub-{B_MARK}-bea', 'conv_b', f'{B_MARK} chains'))
+        yield World(call=_caller(chat_handler, lambda_context), doubles={'cognito': cognito})
+
+
+# ── voc-memory-api (lambda/api/memory_handler.py): a workspace's memories ──
+
+#: The memories each route acts on, in A, in B and in neither, by the state the route needs; the deployment's
+#: partitions hold the same ids (check 3 reads them there), with nothing of A's in them.
+_MEMORY_STATES = {'memory_id': 'active', 'other_id': 'active', 'archived_id': 'archived', 'review_id': 'proposed'}
+_MEMORY_IDS = {
+    'A': {name: f'mem_a{n}' for n, name in enumerate(_MEMORY_STATES)},
+    'B': {name: f'mem_b{n}' for n, name in enumerate(_MEMORY_STATES)},
+    UNKNOWN: {name: f'mem_u{n}' for n, name in enumerate(_MEMORY_STATES)},
+}
+_IMPORT_IDS = {'A': {'import_id': 'imp_a'}, 'B': {'import_id': 'imp_b'}, UNKNOWN: {'import_id': 'imp_unknown'}}
+
+
+@contextmanager
+def memory_world(lambda_context: Any) -> Generator[World]:
+    import memory_handler
+    from shared import memory_categories
+    from shared import memory_store as store
+    from shared.indexes import MEMORY_BY_STATUS_INDEX
+    from shared.test.memory_fixtures import _as_detailed, fake_vector, relations_reply
+    from shared.ws_repo import WorkspaceScope
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        memory = pk_sk_table('memory', gsi1_index=MEMORY_BY_STATUS_INDEX)
+        pk_sk_table('aggregates')
+        stack.enter_context(patch.dict('os.environ', {store.MEMORY_TABLE_ENV: 'memory'}))
+        stack.enter_context(patch.object(memory_handler, 'AGGREGATES_TABLE', 'aggregates'))
+        bucket = boto3.client('s3', region_name='us-east-1')
+        bucket.create_bucket(Bucket='raw')
+        queue = boto3.client('sqs', region_name='us-east-1').create_queue(QueueName='memory-extract')['QueueUrl']
+        stack.enter_context(patch.object(memory_handler, 'RAW_DATA_BUCKET', 'raw'))
+        stack.enter_context(patch.object(memory_handler, 'MEMORY_QUEUE_URL', queue))
+        stack.enter_context(patch.object(store, 'embed_text', side_effect=fake_vector))
+        stack.enter_context(patch.object(store, 'converse_detailed',
+                                         side_effect=_as_detailed(MagicMock(return_value=relations_reply([])))))
+        stack.enter_context(patch.object(memory_categories, 'converse_detailed', side_effect=_as_detailed(
+            MagicMock(return_value=json.dumps({'categories': []})))))
+        store._table_cache.clear()
+        store.clear_pool_cache()
+        stack.callback(store._table_cache.clear)
+        stack.callback(store.clear_pool_cache)
+        now = datetime(2026, 11, 13, tzinfo=UTC)
+        for workspace, ids, mark in ((None, _MEMORY_IDS['A'], 'before workspaces'),
+                                     (WorkspaceScope(WS_A), _MEMORY_IDS['A'], A_MARK),
+                                     (WorkspaceScope(WS_B), _MEMORY_IDS['B'], B_MARK)):
+            for name, memory_id in ids.items():
+                statement = f'{mark} buyers ask about {name.replace("_", " ")} refunds'
+                found = store.Candidate(statement=statement, kind='product', scope='company', confidence=1.0,
+                                        source_kind='user_explicit', source={'type': 'session', 'ref': 'manual'},
+                                        supporter='h-seed', workspace=workspace)
+                memory.put_item(Item=store.build_item(found, memory_id=memory_id, status=_MEMORY_STATES[name],
+                                                      vector=fake_vector(statement), aligned_ids=[], now=now))
+        for workspace, import_id, mark in ((None, 'imp_a', 'before workspaces'), (WorkspaceScope(WS_A), 'imp_a', A_MARK),
+                                           (WorkspaceScope(WS_B), 'imp_b', B_MARK)):
+            memory.put_item(Item={**store.import_key(import_id, workspace), 'import_id': import_id, 'title': mark,
+                                  'status': 'done'})
+        yield World(call=_caller(memory_handler, lambda_context), doubles={'cognito': cognito})
+
+
+_A_STATEMENT = 'Buyers want clearer refund timelines'
+
+
 WORLDS: dict[str, Callable[[Any], Any]] = {
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
     'mcp_tokens_handler.py': tokens_world,
+    'chat_handler.py': chat_world,
+    'memory_handler.py': memory_world,
     'mcp_oauth_consent_routes.py': tokens_world,
 }
 
@@ -376,6 +474,73 @@ CASES: dict[tuple[str, str], RouteCase] = {
         literals={_AUTHORIZE_QUERY: "a sign-in request of the deployment's web client, the same in every workspace",
                   'read': 'a token scope, the same everywhere'},
         without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'GET /chat/conversations/<conversation_id>'): RouteCase(
+        ids=_CONVERSATION_IDS, without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'DELETE /chat/conversations/<conversation_id>'): RouteCase(
+        # A delete of a conversation the caller has none of deletes nothing and answers success, as before.
+        ids=_CONVERSATION_IDS, refused_status=200, without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'PUT /chat/conversations/<conversation_id>/title'): RouteCase(
+        ids=_CONVERSATION_IDS, body={'title': 'Renamed'},
+        literals={'Renamed': 'a title the person typed, not a row of a workspace'}, without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'POST /chat/conversations/<conversation_id>'): RouteCase(
+        no_ids="a conversation id is the caller's own name for it in their own partition (the save creates it), "
+               'the workspace is the header: check 1',
+        shared={'conversation_id': 'conv_new'}, body={'title': 'Trip notes', 'messages': []},
+        literals={'conv_new': "the caller's own name for a new conversation, in their own partition",
+                  'Trip notes': 'a title the person typed, not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE),
+    ('chat_handler.py', 'POST /chat/conversations/<conversation_id>/cancel'): RouteCase(
+        no_ids="the Stop marker lands in the caller's own partition under the id they name, the workspace is the "
+               'header: check 1',
+        shared={'conversation_id': 'conv_a'}, body={'runId': 'run_1'},
+        literals={'conv_a': "the caller's own conversation, in their own partition",
+                  'run_1': 'the id of a run the stream Lambda started for the caller'},
+        without_a_workspace=_AS_BEFORE),
+    **{('memory_handler.py', route): RouteCase(
+        no_ids="the header is its only id: check 1 (each workspace's memories are its own)",
+        query=query, literals=literals, without_a_workspace=_AS_BEFORE)
+       for route, query, literals in (
+           ('GET /memory', None, {}),
+           ('GET /memory/review', None, {}),
+           ('GET /memory/conflict-check', {'statement': _A_STATEMENT},
+            {_A_STATEMENT: 'a statement the person typed, not a row of a workspace'}))},
+    ('memory_handler.py', 'POST /memory/retrieve'): RouteCase(
+        no_ids="the query is text, the header is its only id: check 1 (each workspace's memories are its own)",
+        body={'query': 'refunds'}, literals={'refunds': 'a question the person asked'},
+        without_a_workspace=_AS_BEFORE),
+    ('memory_handler.py', 'POST /memory'): RouteCase(
+        no_ids='the memory is new, the workspace is the header: check 1',
+        body={'scope': 'company', 'statement': _A_STATEMENT},
+        literals={'company': 'a memory scope, the same everywhere',
+                  _A_STATEMENT: 'a statement the person typed, not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE),
+    ('memory_handler.py', 'POST /memory/<memory_id>/confirm'): RouteCase(
+        ids={side: {'memory_id': ids['memory_id']} for side, ids in _MEMORY_IDS.items()},
+        without_a_workspace=_AS_BEFORE),
+    **{('memory_handler.py', route): RouteCase(
+        ids={side: {'memory_id': ids[name]} for side, ids in _MEMORY_IDS.items()}, body=body, literals=literals,
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True)
+       for route, name, body, literals in (
+           ('PUT /memory/<memory_id>', 'memory_id', {'kind': 'product'}, {'product': 'a memory kind, the same everywhere'}),
+           ('POST /memory/<memory_id>/forget', 'memory_id', None, {}),
+           ('POST /memory/<memory_id>/restore', 'archived_id', None, {}),
+           ('POST /memory/review/<memory_id>/resolve', 'review_id', {'action': 'keep_both'},
+            {'keep_both': 'a review action, the same everywhere'}))},
+    ('memory_handler.py', 'POST /memory/merge'): RouteCase(
+        ids={side: {'memory_id': ids['memory_id'], 'other_id': ids['other_id']} for side, ids in _MEMORY_IDS.items()},
+        body={'ids': ['{memory_id}', '{other_id}'], 'statement': _A_STATEMENT},
+        literals={_A_STATEMENT: 'a statement the person typed, not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('memory_handler.py', 'POST /memory/imports'): RouteCase(
+        no_ids='the page is new, the workspace is the header: check 1 (refused inside a workspace until its '
+               'extraction writes there)',
+        body={'title': 'Returns policy', 'content': 'Buyers may return within thirty days.'},
+        literals={'Returns policy': 'a page title the curator typed',
+                  'Buyers may return within thirty days.': 'a page the curator pasted'},
+        ok_status=409, status_without_a_workspace=202, without_a_workspace=_AS_BEFORE,
+        deployment_admins_without_a_workspace=True),
+    ('memory_handler.py', 'GET /memory/imports/<import_id>'): RouteCase(
+        ids=_IMPORT_IDS, without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     ('settings_handler.py', 'GET /settings/brand'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own brand)',
         without_a_workspace=_AS_BEFORE),

@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.15.00] - 2026-11-13
+
+Multi-workspace: the voc-multiplayer-c track's assistant, logs and memory slices merged. Inside a workspace, the assistant's conversations and Memory are that workspace's own ([docs/multi-workspace.md](docs/multi-workspace.md), [docs/memory.md](docs/memory.md)).
+
+### Changed
+
+- Inside a workspace, the assistant's conversations are your own there: the history, saves, renames, deletes and Stop act on the conversations you had in that workspace, and the assistant checks you are a member before it saves anything. A platform admin who is not a member still gets answers there, but nothing of the conversation is kept until they add themselves as a member; the web app says so, marks the conversation unsaved and does not retry. Your conversations from before workspaces are offered below the history, read only ("Conversations from before workspaces"). Workspace conversations do not feed memories yet. Outside a workspace nothing changes.
+- Inside a workspace, Memory is the workspace's own: what you add, confirm, edit, forget, restore, merge and review, and what the assistant and MCP clients recall, are that workspace's memories. Its admins curate them (a member of the deployment's `admins` group or a memory reviewer has no extra rights there, while a platform admin who enters acts as its admin, as everywhere in a workspace; the web app shows the review tab to the workspace's admins only), and its viewers read them. Memory retention expires and fades them as it does outside workspaces. Importing pages inside a workspace is not available yet (the Imports tab is hidden there), a workspace's assistant conversations do not feed memories yet, and a workspace's memories are still linked to the deployment's company objectives (company context moves per workspace in a later release). Outside a workspace nothing changes.
+- IAM: the chat API and the chat stream roles may get `WS#*` rows of `voc-workspaces`, held to the attributes the workspace resolver reads and refused when a read names none; the memory API attaches the stack's workspace-resolution policy and may call Cognito `AdminListGroupsForUser` and `AdminGetUser` (a platform admin's entry, checked live); the memory retention role may Query the `WORKSPACES` listing partition only.
+
+### Added
+
+- Internal: the logs' readers (validation, processing, the summary and a scraper's runs) can read a workspace's own trail (`lambda/shared/processing_logs.py`). Nothing changes yet: the logs pages read the deployment's trail for everyone.
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the API and processing stacks change (the roles and environments above); no table, index or cross-stack reference changes.
+- Nothing is migrated: inside a workspace, Memory and the assistant's history start empty. The deployment's memories and conversations from before workspaces are kept, still apply outside any workspace, and stay readable without the `X-Workspace-Id` header (in the web app, the conversations under "Conversations from before workspaces").
+- IAM: review the grants above if you restrict IAM changes.
+
 ## [7.14.00] - 2026-11-13
 
 Multi-workspace, phase 2's data path is done: a workspace's own ingestion runs. The hold that kept every workspace from ingesting is lifted, now that a workspace's feedback is processed, counted, read, erased and replayed in it (7.00.00 to 7.13.00). A workspace's admins enable its plugins; an enabled plugin runs in the workspace on its schedule and through Run now; a workspace's feedback forms and webhooks take feedback into it (docs/multi-workspace.md, the 7.14.00 row and Phases).

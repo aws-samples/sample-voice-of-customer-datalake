@@ -36,7 +36,8 @@ from botocore.exceptions import ClientError
 from shared import dynamo_paging
 from shared.aws import is_conditional_check_failure
 from shared.feedback import DATE_BASIS_REVIEW, basis_date
-from shared.radar_reads import SortRange, partition_query, scoped_pk
+from shared.radar_reads import SortRange, partition_query
+from shared.scoped_keys import scoped_pk
 from shared.ws_repo import WorkspaceScope
 
 __all__ = [

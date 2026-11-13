@@ -4,8 +4,8 @@ Stores the AI assistant's conversation sessions. The assistant itself streams at
 POST /chat/stream (the TypeScript stream Lambda); the legacy non-streaming
 POST /chat route this module once served is gone.
 
-Two record shapes share ``voc-conversations`` (``pk USER#{sub}``,
-``sk CONV#{id}``), both strictly scoped to the caller's Cognito subject:
+Two record shapes share ``voc-conversations`` (``pk USER#{sub}``, or ``WS#{ws}#USER#{sub}`` inside a workspace the
+caller is a member of, ``sk CONV#{id}``), both strictly scoped to the caller's Cognito subject:
 
 - **assistant** sessions of the unified AI assistant (``kind: 'assistant'``):
   ``messages`` / ``page`` / ``pendingInterrupts`` are stored as JSON strings
@@ -48,6 +48,8 @@ import json
 import os
 import sys
 import time
+from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -61,14 +63,20 @@ from botocore.exceptions import ClientError
 
 from shared.api import api_handler, create_api_resolver, get_caller_subject
 from shared.aws import get_dynamodb_resource
-from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX
+from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX, conversation_partition
 from shared.delete_audit import actor_from_event, record_delete
 from shared.dynamo_paging import iter_query
 from shared.exceptions import ConfigurationError, ConflictError, PayloadTooLargeError, ValidationError
+from shared.exceptions import NotFoundError as WorkspaceNotFoundError
+from shared.ingest_tables import table_view
 from shared.logging import logger, tracer
+from shared.project_access import is_synthetic_subject
 from shared.request_body import json_body_value, validated_text
+from shared.request_workspace import request_workspace
 from shared.row_ids import LONG_OPAQUE_ID_RE, OPAQUE_ID_RE
 from shared.timestamps import now_iso
+from shared.workspace import NOT_FOUND as WORKSPACE_NOT_FOUND
+from shared.ws_repo import WorkspaceScope, scope_of, ws_table
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -153,8 +161,42 @@ def _conversations_store():
     return conversations_table
 
 
-def _caller_pk() -> str:
-    return f"USER#{get_caller_subject(app.current_event.raw_event)}"
+#: A request whose workspace could not be resolved (a DynamoDB fault).
+FAILED_WORKSPACE = 'Failed to open the conversations'
+
+
+@dataclass(frozen=True)
+class _Caller:
+    """Whose conversations a request reaches: the verified caller's own partition, inside the workspace the
+    request names when it names one (shared/conversations.py ``conversation_partition``)."""
+
+    pk: str
+    workspace: WorkspaceScope | None
+
+    def table(self) -> Any:
+        """The conversations table as this caller reaches it: the workspace's view (shared/ws_repo.py
+        ``ws_table``: a key outside it is refused before DynamoDB), or the table itself."""
+        return table_view(self.workspace, _conversations_store())
+
+
+def _caller(*, fresh: bool = False) -> _Caller:
+    """The caller's partition: ``USER#{sub}`` for a request that names no workspace (as before), else theirs inside
+    the workspace, which they must be a member of (shared/request_workspace.py, without a platform admin's elevation:
+    the stream Lambda, which writes the same rows, checks membership alone; ``fresh`` for a write, so a removed member
+    writes nothing there). A non-member, a malformed id, a workspace being deleted or a credential's or agent's
+    subject gets the one 404."""
+    event = app.current_event.raw_event
+    sub = get_caller_subject(event)
+    context = request_workspace(event, FAILED_WORKSPACE, fresh=fresh, elevate=False)
+    if context is not None and is_synthetic_subject(sub):
+        # A credential or an agent has no conversations of its own inside a workspace (as the stream Lambda refuses).
+        raise WorkspaceNotFoundError(WORKSPACE_NOT_FOUND)
+    workspace = None if context is None else scope_of(context)
+    return _Caller(pk=conversation_partition(sub, workspace), workspace=workspace)
+
+
+def _conversation_key(caller: _Caller, conversation_id: str) -> dict[str, str]:
+    return {'pk': caller.pk, 'sk': f'{CONVERSATION_SK_PREFIX}{conversation_id}'}
 
 
 def _is_iso_timestamp(value: object) -> bool:
@@ -241,10 +283,10 @@ def _require_fits(item: dict) -> None:
         )
 
 
-def _existing_state(caller_pk: str, conversation_id: str) -> dict:
+def _existing_state(caller: _Caller, conversation_id: str) -> dict:
     """The stored item's created_at and server-owned run fields ({} when absent)."""
-    response = _conversations_store().get_item(
-        Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'},
+    response = caller.table().get_item(
+        _conversation_key(caller, conversation_id),
         ProjectionExpression='#created, #updated, #rid, #rs, #rev, #ct, #kind',
         ExpressionAttributeNames={
             '#created': 'created_at', '#updated': 'updated_at',
@@ -305,19 +347,19 @@ def _raise_conflict_if_revised(error: ClientError) -> None:
         raise ConflictError('The conversation has a newer saved revision; reload it first') from error
 
 
-def _put_unless_revised(item: dict, existing: dict) -> None:
+def _put_unless_revised(caller: _Caller, item: dict, existing: dict) -> None:
     """Put, conditional on the revision read still being the stored one."""
     try:
-        _conversations_store().put_item(Item=item, **_unrevised_condition(existing))
+        caller.table().put_item(item, **_unrevised_condition(existing))
     except ClientError as error:
         _raise_conflict_if_revised(error)
         raise
 
 
-def _save_assistant_conversation(caller_pk: str, proxy: str, body: dict) -> dict:
+def _save_assistant_conversation(caller: _Caller, proxy: str, body: dict) -> dict:
     fields = _validated_assistant_body(proxy, body)
     now = now_iso()
-    existing = _existing_state(caller_pk, fields['id'])
+    existing = _existing_state(caller, fields['id'])
     _require_no_newer_server_revision(existing, fields['base_revision'])
     stored_created = existing.get('created_at')
     created_at = (
@@ -328,8 +370,7 @@ def _save_assistant_conversation(caller_pk: str, proxy: str, body: dict) -> dict
     # first-message title, so the stored rename wins and is carried over.
     custom_title = _custom_title_of(existing)
     item = {
-        'pk': caller_pk,
-        'sk': f"CONV#{fields['id']}",
+        **_conversation_key(caller, fields['id']),
         'conversation_id': fields['id'],
         'kind': ASSISTANT_KIND,
         'title': custom_title or fields['title'],
@@ -343,7 +384,7 @@ def _save_assistant_conversation(caller_pk: str, proxy: str, body: dict) -> dict
         **{field: existing[field] for field in _RUN_FIELDS if field in existing},
     }
     _require_fits(item)
-    _put_unless_revised(item, existing)
+    _put_unless_revised(caller, item, existing)
     return {'success': True, 'id': fields['id'], 'updatedAt': now, 'revision': _revision_of(existing)}
 
 
@@ -421,23 +462,34 @@ def _conversation_summary(item: dict) -> dict:
     }
 
 
-def _list_conversations(caller_pk: str, kind: str | None) -> dict:
+def _list_conversations(caller: _Caller, kind: str | None) -> dict:
     """Every conversation of the caller (paginated Query), newest first.
 
     Sorted by ``updatedAt`` rather than by key: the sort key is the id, which
     says nothing about recency.
     """
     # The CONV# keys only: the partition also holds the RUNCANCEL# markers of stopped runs.
-    query_kwargs = {
-        'KeyConditionExpression': Key('pk').eq(caller_pk) & Key('sk').begins_with(CONVERSATION_SK_PREFIX),
-        'ProjectionExpression': _LIST_PROJECTION,
-        'ExpressionAttributeNames': _LIST_PROJECTION_NAMES,
-    }
-    summaries = [_conversation_summary(item) for item in iter_query(_conversations_store(), query_kwargs)]
+    summaries = [_conversation_summary(item) for item in _stored_conversations(caller)]
     if kind:
         summaries = [summary for summary in summaries if summary['kind'] == kind]
     summaries.sort(key=lambda summary: summary.get('updatedAt') or '', reverse=True)
     return {'conversations': summaries[:LIST_LIMIT]}
+
+
+def _stored_conversations(caller: _Caller) -> Iterator[dict]:
+    """Every ``CONV#`` row of the caller's partition, every page: the same query as before without a workspace,
+    through the workspace's view of the table inside one (it builds the key condition itself)."""
+    if caller.workspace is None:
+        yield from iter_query(_conversations_store(), {
+            'KeyConditionExpression': Key('pk').eq(caller.pk) & Key('sk').begins_with(CONVERSATION_SK_PREFIX),
+            'ProjectionExpression': _LIST_PROJECTION,
+            'ExpressionAttributeNames': _LIST_PROJECTION_NAMES,
+        })
+        return
+    yield from ws_table(caller.workspace, _conversations_store()).iter_query(
+        'pk', caller.pk, sort_condition='begins_with(#conv_sk, :conv)', ProjectionExpression=_LIST_PROJECTION,
+        ExpressionAttributeNames={**_LIST_PROJECTION_NAMES, '#conv_sk': 'sk'},
+        ExpressionAttributeValues={':conv': CONVERSATION_SK_PREFIX})
 
 
 # The routes name the segment `<conversation_id>`, not API Gateway's `{proxy+}`:
@@ -454,7 +506,7 @@ def get_conversations(conversation_id: str = ""):
     # is allowed to ask must not depend on whether the resource happens to be
     # configured. Reversing these two lines hands a 200 to a caller with no
     # subject claim whenever the table is unset.
-    caller_pk = _caller_pk()
+    caller = _caller()
     if not conversations_table:
         # Deliberately softer than the write paths, which raise ConfigurationError:
         # a deployment without the conversations table has no history to show, and
@@ -466,7 +518,7 @@ def get_conversations(conversation_id: str = ""):
 
     if requested:
         _require_valid_conversation_id(requested)
-        response = conversations_table.get_item(Key={'pk': caller_pk, 'sk': f'CONV#{requested}'})
+        response = caller.table().get_item(_conversation_key(caller, requested))
         item = response.get('Item')
         if not item:
             raise NotFoundError(CONVERSATION_NOT_FOUND)
@@ -476,14 +528,14 @@ def get_conversations(conversation_id: str = ""):
     kind = params.get('kind')
     if kind is not None and kind not in (ASSISTANT_KIND, LEGACY_KIND):
         raise ValidationError(f"kind must be '{ASSISTANT_KIND}' or '{LEGACY_KIND}'")
-    return _list_conversations(caller_pk, kind)
+    return _list_conversations(caller, kind)
 
 
 @app.post("/chat/conversations/<conversation_id>")
 @tracer.capture_method
 def save_conversation(conversation_id: str = ""):
     """Save a chat conversation (assistant session when ``kind`` is set)."""
-    caller_pk = _caller_pk()
+    caller = _caller(fresh=True)
     if not conversations_table:
         raise ConfigurationError('Conversations not configured')
     body = json_body_value(app)
@@ -492,11 +544,11 @@ def save_conversation(conversation_id: str = ""):
     if 'kind' in body:
         if body.get('kind') != ASSISTANT_KIND:
             raise ValidationError(f"kind must be '{ASSISTANT_KIND}'")
-        return _save_assistant_conversation(caller_pk, conversation_id, body)
-    return _save_legacy_conversation(caller_pk, conversation_id, body)
+        return _save_assistant_conversation(caller, conversation_id, body)
+    return _save_legacy_conversation(caller, conversation_id, body)
 
 
-def _save_legacy_conversation(caller_pk: str, path_id: str, body: dict) -> dict:
+def _save_legacy_conversation(caller: _Caller, path_id: str, body: dict) -> dict:
     """The pre-assistant save, in its old item shape.
 
     Its id is held to the same pattern as an assistant save (or GET/DELETE could
@@ -511,8 +563,7 @@ def _save_legacy_conversation(caller_pk: str, path_id: str, body: dict) -> dict:
         conversation_id = _body_id_matching_path(body.get('id', path_id), path_id)
 
     item = {
-        'pk': caller_pk,
-        'sk': f'CONV#{conversation_id}',
+        **_conversation_key(caller, conversation_id),
         'conversation_id': conversation_id,
         'title': body.get('title', 'New Conversation'),
         'messages': body.get('messages', []),
@@ -522,22 +573,24 @@ def _save_legacy_conversation(caller_pk: str, path_id: str, body: dict) -> dict:
     }
     _require_fits(item)
 
-    _conversations_store().put_item(Item=item)
+    caller.table().put_item(item)
     return {'success': True, 'id': conversation_id}
 
 
 @app.delete("/chat/conversations/<conversation_id>")
 @tracer.capture_method
 def delete_conversation(conversation_id: str):
-    """Delete a chat conversation; a delete that removed one is recorded (``shared.delete_audit``)."""
-    caller_pk = _caller_pk()
+    """Delete a chat conversation; a delete that removed one is recorded (``shared.delete_audit``, in the
+    deployment's audit partition, naming the workspace the conversation was in)."""
+    caller = _caller(fresh=True)
     if not conversations_table:
         raise ConfigurationError('Conversations table not configured')
     _require_valid_conversation_id(conversation_id)
-    response = conversations_table.delete_item(
-        Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'}, ReturnValues='ALL_OLD')
+    response = caller.table().delete_item(_conversation_key(caller, conversation_id), ReturnValues='ALL_OLD')
     if response.get('Attributes'):
-        record_delete(conversations_table, kind='conversation', target={'conversation_id': conversation_id},
+        target = {'conversation_id': conversation_id,
+                  **({} if caller.workspace is None else {'workspace': caller.workspace.ws})}
+        record_delete(conversations_table, kind='conversation', target=target,
                       actor=actor_from_event(app.current_event.raw_event))
     return {'success': True}
 
@@ -564,20 +617,20 @@ def rename_conversation(conversation_id: str):
     (that run would write its own title over it), and conditional on the
     revision read, so a server write landing in between wins.
     """
-    caller_pk = _caller_pk()
+    caller = _caller(fresh=True)
     if not conversations_table:
         raise ConfigurationError('Conversations not configured')
     _require_valid_conversation_id(conversation_id)
     title = _validated_rename_title(json_body_value(app))
-    existing = _existing_state(caller_pk, conversation_id)
+    existing = _existing_state(caller, conversation_id)
     if existing.get('kind') != ASSISTANT_KIND:
         raise NotFoundError(CONVERSATION_NOT_FOUND)
     if _run_is_live(existing):
         raise ConflictError('A reply is still being generated for this conversation')
     condition = _unrevised_condition(existing)
     try:
-        conversations_table.update_item(
-            Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'},
+        caller.table().update_item(
+            _conversation_key(caller, conversation_id),
             UpdateExpression='SET #title = :title, #ct = :title',
             ConditionExpression=f"attribute_exists(pk) AND {condition['ConditionExpression']}",
             ExpressionAttributeNames={**condition['ExpressionAttributeNames'], '#title': 'title', '#ct': CUSTOM_TITLE_FIELD},
@@ -599,7 +652,7 @@ def cancel_run(conversation_id: str):
     calls) and saves its partial answer as ``stopped``. Idempotent, and harmless when the run
     already ended: nothing reads the marker then, and it expires.
     """
-    caller_pk = _caller_pk()
+    caller = _caller(fresh=True)
     if not conversations_table:
         raise ConfigurationError('Conversations not configured')
     _require_valid_conversation_id(conversation_id)
@@ -607,8 +660,8 @@ def cancel_run(conversation_id: str):
     run_id = body.get('runId') if isinstance(body, dict) else None
     if not isinstance(run_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(run_id):
         raise ValidationError('runId must be a run id')
-    conversations_table.put_item(Item={
-        'pk': caller_pk,
+    caller.table().put_item({
+        'pk': caller.pk,
         'sk': f'{CANCEL_SK_PREFIX}{conversation_id}',
         'run_id': run_id,
         'requested_at': now_iso(),

@@ -12,7 +12,10 @@ import { normalizeSessionList, normalizeSessionRecord, isValidSessionId } from '
 import {
   MAX_RETRY_TOOL_CHARS, MAX_STORED_TOOL_CHARS, MAX_TITLE_CHARS, dropOldestTurns, sessionTitle, threadFromSession, toSaveBody,
 } from './serialize'
-import { deleteSession, getSession, listSessions, renameSession, saveSession } from './sessionsApi'
+import {
+  deleteSession, getDeploymentSession, getSession, isNotSavedHere, listDeploymentSessions, listSessions, renameSession,
+  saveSession,
+} from './sessionsApi'
 import { createThreadState } from '../thread/reducer'
 import type { Message } from '@ag-ui/core'
 import type { SaveSessionBody } from './serialize'
@@ -178,6 +181,25 @@ describe('sessions API', () => {
     fetchMock.mockRejectedValueOnce(new ApiError(404, 'Conversation not found'))
     await expect(getSession('gone')).resolves.toBeNull()
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/chat/conversations/gone')
+  })
+
+  it('reads the conversations from before workspaces without the workspace header (the deployment scope)', async () => {
+    fetchMock.mockResolvedValueOnce({ conversations: [{ id: 'old', title: 'Old', kind: 'assistant', updatedAt: '2026-01-01' }] })
+    expect((await listDeploymentSessions()).map((s) => s.id)).toStrictEqual(['old'])
+    expect(fetchMock).toHaveBeenLastCalledWith('/chat/conversations/_list?kind=assistant', { method: 'GET' }, 'deployment')
+    fetchMock.mockResolvedValueOnce({ id: 'old', messages: [] })
+    expect((await getDeploymentSession('old'))?.id).toBe('old')
+    expect(fetchMock).toHaveBeenLastCalledWith('/chat/conversations/old', { method: 'GET' }, 'deployment')
+  })
+
+  it('answers null for a deployment conversation that is gone, and rejects any other failure', async () => {
+    fetchMock.mockRejectedValueOnce(new ApiError(404)).mockRejectedValueOnce(new ApiError(500))
+    await expect(getDeploymentSession('gone')).resolves.toBeNull()
+    await expect(getDeploymentSession('t1')).rejects.toThrow('API Error: 500')
+  })
+
+  it('reads only a 404 as "this workspace keeps no conversations for the caller"', () => {
+    expect([new ApiError(404), new ApiError(403), new Error('boom')].map(isNotSavedHere)).toStrictEqual([true, false, false])
   })
 
   it('still rejects a read that failed for any other reason (kept for the next load)', async () => {

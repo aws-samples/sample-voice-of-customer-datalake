@@ -58,7 +58,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from cross_workspace_closure import routes_reaching_the_resolver
+from cross_workspace_closure import first_app_middleware, routes_reaching_the_resolver
 from cross_workspace_pending import PHASE_2, PHASE_3
 from cross_workspace_worlds import (
     A_MARK,
@@ -260,27 +260,12 @@ def resolving_functions(tree: ast.Module) -> tuple[set[str], set[str]]:
     return resolving, writing
 
 
-def _first_app_middleware(tree: ast.Module) -> str | None:
-    """The first middleware of the first module-level ``app.use(middlewares=[...])``: the one that runs first."""
-    for stmt in tree.body:
-        call = stmt.value if isinstance(stmt, ast.Expr) else None
-        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == 'use'
-                and isinstance(call.func.value, ast.Name) and call.func.value.id == 'app'):
-            continue
-        for keyword in call.keywords:
-            if keyword.arg == 'middlewares' and isinstance(keyword.value, ast.List | ast.Tuple) and keyword.value.elts:
-                first = keyword.value.elts[0]
-                return first.id if isinstance(first, ast.Name) else None
-        return None
-    return None
-
-
 def routes_resolving_the_workspace(source: str) -> dict[str, bool]:
     """Every route of ``source`` -> whether it resolves the workspace first: in its body, or in the module's first
     ``app.use`` middleware."""
     tree = ast.parse(source)
     resolving, writing = resolving_functions(tree)
-    module_wide = _first_app_middleware(tree) in resolving
+    module_wide = first_app_middleware(tree) in resolving
     return {key: module_wide or _resolves_in(fn.body, resolving, writing)
             for fn in _module_functions(tree).values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
 
@@ -336,6 +321,24 @@ def test_every_route_that_reaches_the_resolver_through_any_module_is_workspace_s
     assert sorted(reaching - WORKSPACE_SCOPED) == [], (
         'These routes reach resolve_workspace (through helpers in any module) but are not workspace-scoped')
     assert sorted(WORKSPACE_SCOPED - reaching) == [], 'These workspace-scoped routes reach no resolver'
+
+
+def test_the_scan_follows_a_module_wide_middleware_that_resolves(tmp_path):
+    files = {
+        'shared/workspace.py': 'def resolve_workspace(table, event, cache):\n    return None\n',
+        'api/notes_handler.py': ('from shared.workspace import resolve_workspace\n\n'
+                                 'def in_workspace(app, next_middleware):\n    resolve_workspace(1, app, 2)\n'
+                                 '    return next_middleware(app)\n\n'
+                                 'app.use(middlewares=[in_workspace])\n\n'
+                                 "@app.get('/notes')\ndef notes():\n    return {}\n"),
+        'api/other_handler.py': ('def log(app, next_middleware):\n    return next_middleware(app)\n\n'
+                                 'app.use(middlewares=[log])\n\n'
+                                 "@app.get('/other')\ndef other():\n    return {}\n"),
+    }
+    for name, source in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(source, encoding='utf-8')
+    assert routes_reaching_the_resolver(tmp_path) == {('notes_handler.py', 'GET /notes')}
 
 
 def test_the_scan_follows_resolvers_across_modules_aliases_and_routers(tmp_path):
@@ -609,7 +612,8 @@ def check_missing_header(world: World, case: RouteCase, route: str, caller: dict
     before = _workspace_rows()
     status, body = _send(world, case, route, ws=None, ids=case.ids.get('A', {}), caller=caller)
     in_admins = 'admins' in get_caller_groups({'requestContext': {'authorizer': {'claims': caller}}})
-    expected = 403 if case.deployment_admins_without_a_workspace and not in_admins else case.ok_status
+    normal = case.ok_status if case.status_without_a_workspace is None else case.status_without_a_workspace
+    expected = 403 if case.deployment_admins_without_a_workspace and not in_admins else normal
     assert status == expected, f'{route} without a workspace: {status} {body}'
     assert _workspace_rows() == before, f'{route} without a workspace changed a workspace row'
     assert not _holds_b(body), f'{route} answered with B data without a workspace: {body}'

@@ -34,8 +34,8 @@ function stoppableStore(): SessionStore & { puts: Put[]; stopNow: () => void; ch
       puts.push({ item });
       return Promise.resolve('written');
     },
-    cancelRequested: (callerSub, threadId, runId) => {
-      checks.push([callerSub, threadId, runId]);
+    cancelRequested: (owner, threadId, runId) => {
+      checks.push([owner.sub, threadId, runId]);
       return Promise.resolve(state.stopped);
     },
   };
@@ -104,15 +104,15 @@ describe('the Stop marker read', () => {
   it('reads RUNCANCEL#<thread> in the caller partition and matches the run id', async () => {
     const send = vi.fn((command: unknown) => Promise.resolve(command instanceof GetCommand ? { Item: { run_id: 'run-1' } } : {}));
     const store = createDynamoSessionStore({ send }, 'conversations');
-    await expect(store.cancelRequested('sub-1', 'thread-1', 'run-1')).resolves.toBe(true);
-    await expect(store.cancelRequested('sub-1', 'thread-1', 'run-2')).resolves.toBe(false);
+    await expect(store.cancelRequested({ sub: 'sub-1' }, 'thread-1', 'run-1')).resolves.toBe(true);
+    await expect(store.cancelRequested({ sub: 'sub-1' }, 'thread-1', 'run-2')).resolves.toBe(false);
     const command = send.mock.calls.at(0)?.[0];
     expect(command instanceof GetCommand ? command.input.Key : null).toStrictEqual({ pk: 'USER#sub-1', sk: 'RUNCANCEL#thread-1' });
   });
 
   it('answers no stop when there is no marker', async () => {
     const store = createDynamoSessionStore({ send: () => Promise.resolve({}) }, 'conversations');
-    await expect(store.cancelRequested('sub-1', 'thread-1', 'run-1')).resolves.toBe(false);
+    await expect(store.cancelRequested({ sub: 'sub-1' }, 'thread-1', 'run-1')).resolves.toBe(false);
   });
 });
 
