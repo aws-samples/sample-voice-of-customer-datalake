@@ -30,6 +30,8 @@
     "workflow": "ワークフロー",
     "engineering": "エンジニアリング",
     "engineeringRun": "エンジニアリング実行",
+    "templates": "テンプレート",
+    "template": "テンプレート",
     "radar": "レーダー",
     "featureRequests": "フィードバックボード",
     "participants": "参加者",

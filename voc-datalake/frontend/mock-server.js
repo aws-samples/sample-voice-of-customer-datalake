@@ -2,6 +2,7 @@
 // Run with: node mock-server.js
 
 import http from 'http';
+import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { handleConnectRoutes } from './mock-connect.js';
 import { handleOAuthRoutes } from './mock-oauth.js';
@@ -2952,6 +2953,10 @@ function handleMemoryContextRoutes(req, res, url, send) {
 // completes after its last step, so the run timeline can be watched live.
 const MOCK_AGENTS_ADMIN = process.env.MOCK_AGENTS_NON_ADMIN !== '1';
 const AGENTS_FORBIDDEN = [403, { success: false, error: 'Admin access required' }];
+// The default engineering flows: the file the agents API lists (lambda/shared/engineering_templates.py).
+const ENGINEERING_TEMPLATES = JSON.parse(
+  readFileSync(new URL('../lambda/shared/engineering_flow_templates.json', import.meta.url), 'utf8'),
+).templates;
 const AGENT_NOT_FOUND = [404, { success: false, error: 'Agent not found' }];
 const RUN_NOT_FOUND = [404, { success: false, error: 'Run not found' }];
 const WORKFLOW_NOT_FOUND = [404, { success: false, error: 'Workflow not found' }];
@@ -3549,6 +3554,11 @@ function routeWorkflows(req, url, body) {
     stored.sort((a, b) => currentRevision(a).definition.name.toLowerCase().localeCompare(currentRevision(b).definition.name.toLowerCase()));
     const items = [builtin, ...stored].map((entry) => workflowView(entry, { withDefinition: false }));
     return [200, { items, count: items.length }];
+  }
+  if (req.method === 'GET' && workflowId === 'templates' && !action) {
+    // GET /workflows/templates (agents_handler.list_workflow_templates): administrators only.
+    if (!MOCK_AGENTS_ADMIN) return AGENTS_FORBIDDEN;
+    return [200, { items: ENGINEERING_TEMPLATES, count: ENGINEERING_TEMPLATES.length }];
   }
   if (req.method === 'POST' && workflowId === 'validate' && !action) {
     const errors = validateWorkflowDefinition(body?.definition);

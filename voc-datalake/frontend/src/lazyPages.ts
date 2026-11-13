@@ -28,6 +28,7 @@ export const Company = lazy(() => import('./pages/Company/Company'))
 export const Agents = lazy(() => import('./pages/Agents/Agents'))
 export const AgentDetail = lazy(() => import('./pages/Agents/AgentDetail'))
 export const WorkflowPage = lazy(() => import('./pages/Agents/WorkflowPage'))
+export const WorkflowTemplatePage = lazy(() => import('./pages/Agents/WorkflowTemplatePage'))
 // An engineering run's monitor, by its run id (docs/autonomous-agents.md "An engineering run").
 export const EngineeringRun = lazy(() => import('./pages/Agents/EngineeringRun'))
 export const Account = lazy(() => import('./pages/Account/Account'))

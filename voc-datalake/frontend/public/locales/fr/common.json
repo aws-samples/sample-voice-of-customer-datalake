@@ -30,6 +30,8 @@
     "workflow": "Workflow",
     "engineering": "Ingénierie",
     "engineeringRun": "Exécution d’ingénierie",
+    "templates": "Modèles",
+    "template": "Modèle",
     "radar": "Radar",
     "featureRequests": "Tableaux de retours",
     "participants": "Participants",

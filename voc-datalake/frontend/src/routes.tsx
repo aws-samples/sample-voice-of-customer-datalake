@@ -31,7 +31,7 @@ import {
   Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
   Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
   DataExplorer, Vote, Memory, Company, Agents, AgentDetail,
-  WorkflowPage, EngineeringRun, Account, Connect, OAuthConsent, Radar, Participants,
+  WorkflowPage, WorkflowTemplatePage, EngineeringRun, Account, Connect, OAuthConsent, Radar, Participants,
   FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
 } from './lazyPages'
 
@@ -140,6 +140,8 @@ export const routes: RouteObject[] = [
       { path: 'agents/workflows', element: <MovedRouteRedirect to="/agents?tab=workflows" />, errorElement: <RouteErrorBoundary /> },
       // A library workflow on its own, outside any agent (Workflow library → Open / New workflow).
       { path: 'agents/workflows/:workflowId', ...page(<WorkflowPage />) },
+      // A default engineering flow's unsaved copy (Workflow library → Start from a template), saved as a new workflow.
+      { path: 'agents/workflows/templates/:templateId', ...page(<WorkflowTemplatePage />) },
       // An engineering run's monitor (reached by its run id: no list of runs yet).
       { path: 'agents/engineering/:runId', ...page(<EngineeringRun />) },
       { path: 'connect', ...page(<Connect />) },

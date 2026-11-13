@@ -72,7 +72,10 @@
     "newEngineeringFlow": "Nowy przepływ inżynieryjny",
     "createEngineeringTitle": "Nowy przepływ inżynieryjny",
     "createEngineeringHint": "Przepływ inżynieryjny uruchamia autonomicznych agentów inżynieryjnych na repozytorium i kończy się pull requestem do przejrzenia przez ludzi. Zaczyna się jako Start → Koniec: dodaj kroki Inżynieria z palety.",
-    "engineeringKind": "Inżynieria"
+    "engineeringKind": "Inżynieria",
+    "fromTemplate": "Zacznij od szablonu",
+    "templatesTitle": "Zacznij od szablonu",
+    "templatesHint": "Sześć domyślnych przepływów inżynieryjnych na początek. Wybranie jednego otwiera kopię w edytorze: nic nie zostanie zapisane, dopóki jej nie zapiszesz."
   },
   "fields": {
     "name": "Nazwa",
@@ -835,6 +838,40 @@
       "failed": "Nieudane",
       "stopped": "Zatrzymany",
       "reposted": "Opublikowane ponownie"
+    }
+  },
+  "templatePage": {
+    "title": "Nowy przepływ inżynieryjny z szablonu",
+    "subtitle": "Kopia domyślnego przepływu. Zmień, co trzeba, a potem kliknij Zapisz, aby dodać go do biblioteki przepływów.",
+    "notFound": "Ten szablon nie jest tu dostępny: szablony są oferowane tylko tam, gdzie wdrożono moduł agentów inżynieryjnych.",
+    "adminOnly": "Tylko administratorzy tworzą przepływy inżynieryjne z szablonu. Poproś administratora albo wróć do biblioteki przepływów.",
+    "loadFailed": "Nie udało się wczytać szablonu.",
+    "backToLibrary": "Wróć do biblioteki przepływów"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "Poznaj repozytorium",
+      "description": "Przegląda repozytorium pakiet po pakiecie i przygotowuje projekt pakietu wiedzy, zasad i przewodnika recenzji do zatwierdzenia przez administratora."
+    },
+    "issueTriage": {
+      "name": "Selekcja zgłoszeń",
+      "description": "Czyta zgłoszenie, klasyfikuje je jako błąd, funkcję lub dochodzenie, odtwarza je lub lokalizuje i proponuje w zgłoszeniu kolejny krok."
+    },
+    "bugHunt": {
+      "name": "Wyszukiwanie i naprawa błędów",
+      "description": "Szuka błędów we wskazanych pakietach, naprawia i recenzuje każdy z nich, przechodzi bramkę jakości i zatrzymuje się na wersji roboczej pull requesta."
+    },
+    "feature": {
+      "name": "Funkcja ze zgłoszenia lub PRD",
+      "description": "Tworzy funkcję ze zgłoszenia lub PRD: rozumie je, planuje, buduje, zatwierdza i recenzuje, przechodzi bramkę jakości i zatrzymuje się na wersji roboczej pull requesta."
+    },
+    "prReview": {
+      "name": "Recenzja PR",
+      "description": "Recenzuje pull request w jednym przebiegu, jego strony równolegle, według zasad i przewodnika recenzji repozytorium, i zostawia komentarze."
+    },
+    "selfImprovement": {
+      "name": "Samodoskonalenie",
+      "description": "Coach czyta wcześniejsze przebiegi, proponuje nowe wersje umiejętności i je testuje; administrator akceptuje lub odrzuca każdą z nich."
     }
   }
 }

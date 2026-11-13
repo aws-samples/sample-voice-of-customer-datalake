@@ -15,7 +15,8 @@ Permissions:
 - any signed-in user reads the agents whose WHOLE scope their category access
   covers (``shared.category_gate``); any other agent, and its runs, answers 404;
 - workflows hold no customer data, so every signed-in user may read and
-  validate them;
+  validate them; the default engineering flows (``GET /workflows/templates``) are listed for
+  administrators only, where the engineering agents are on (404 elsewhere), as the library offers them;
 - an engineering run's monitor, board, conversation and reports (``/agents/engineering/<run_id>``
   and its ``/*``, lambda/engineering/views.py and monitor.py) are read by administrators only,
   acting for themselves (403 for anyone else, an MCP credential included), and so are its signals
@@ -53,6 +54,7 @@ from shared import (
     agent_run_decisions,
     agent_run_resume,
     agent_seed,
+    engineering_templates,
     plans_store,
     project_access,
     workflow_methodology,
@@ -524,6 +526,24 @@ def validate_workflow():
             response['valid'] = False
             response['errors'] = [{'message': KEEPS_ITS_KIND}]
     return response
+
+
+ENGINEERING_TEMPLATES_NOT_FOUND = 'Engineering flow templates not found'
+
+
+@app.get('/workflows/templates')
+@tracer.capture_method
+def list_workflow_templates():
+    """The default engineering flows (``shared.engineering_templates``), each with its definition, for an
+    administrator where the engineering module is deployed (404 elsewhere, like the engineering runs' routes; 403 for
+    anyone else). Read only: "create from template" is ``POST /workflows`` with the template's definition, so a copy
+    gets the create's own validation, 409 and, from the assistant, its approval card. Registered before
+    ``/workflows/<workflow_id>``, which would otherwise take the path."""
+    if not engineering_agents_on():
+        raise NotFoundError(ENGINEERING_TEMPLATES_NOT_FOUND)
+    require_admin_caller(_caller())
+    items = engineering_templates.list_templates()
+    return {'items': items, 'count': len(items)}
 
 
 @app.get('/workflows/<workflow_id>')

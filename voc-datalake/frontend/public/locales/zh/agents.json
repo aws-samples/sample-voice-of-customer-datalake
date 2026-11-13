@@ -70,7 +70,10 @@
     "newEngineeringFlow": "新建工程流程",
     "createEngineeringTitle": "新建工程流程",
     "createEngineeringHint": "工程流程让自主工程智能体在一个仓库上工作，并以供人审阅的拉取请求结束。它从“开始 → 结束”起步：从面板添加“工程”步骤。",
-    "engineeringKind": "工程"
+    "engineeringKind": "工程",
+    "fromTemplate": "从模板开始",
+    "templatesTitle": "从模板开始",
+    "templatesHint": "六个可作为起点的默认工程流程。选择一个会在编辑器中打开副本：在你保存之前不会保存任何内容。"
   },
   "fields": {
     "name": "名称",
@@ -802,6 +805,40 @@
       "failed": "失败",
       "stopped": "已停止",
       "reposted": "已重新发布"
+    }
+  },
+  "templatePage": {
+    "title": "从模板新建工程流程",
+    "subtitle": "默认流程的副本。按需修改，然后点击保存，将其添加到工作流库。",
+    "notFound": "此处无法使用该模板：只有部署了工程智能体模块的环境才提供模板。",
+    "adminOnly": "只有管理员可以从模板创建工程流程。请联系管理员，或返回工作流库。",
+    "loadFailed": "无法加载该模板。",
+    "backToLibrary": "返回工作流库"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "了解代码仓库",
+      "description": "逐个包梳理代码仓库，起草其知识包、原则和评审指南，供管理员批准。"
+    },
+    "issueTriage": {
+      "name": "问题分诊",
+      "description": "阅读一个问题，将其归类为缺陷、功能或调查，复现或定位它，并在问题上提出下一步。"
+    },
+    "bugHunt": {
+      "name": "查找并修复缺陷",
+      "description": "在指定的包中查找缺陷，逐一修复并评审，通过质量门禁，停在一个草稿拉取请求。"
+    },
+    "feature": {
+      "name": "基于问题或 PRD 的功能",
+      "description": "基于问题或 PRD 构建功能：理解、规划、构建、提交并评审，通过质量门禁，停在一个草稿拉取请求。"
+    },
+    "prReview": {
+      "name": "PR 评审",
+      "description": "依据代码仓库的原则和评审指南，一次性并行评审拉取请求的各页，并留下评审意见。"
+    },
+    "selfImprovement": {
+      "name": "自我改进",
+      "description": "教练阅读过往运行，提出新的技能版本并进行基准测试；由管理员逐一接受或拒绝。"
     }
   }
 }

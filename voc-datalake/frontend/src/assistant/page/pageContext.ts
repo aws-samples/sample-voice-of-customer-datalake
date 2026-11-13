@@ -52,6 +52,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'agents/:id', kind: 'agent', param: { name: 'id', field: 'agentId' } },
   // One library workflow: the agents pack (workflow tools), no agent in context.
   { route: 'agents/workflows/:workflowId', kind: 'agents', label: 'workflow' },
+  // A default engineering flow's unsaved copy: the same pack, nothing stored yet.
+  { route: 'agents/workflows/templates/:templateId', kind: 'agents', label: 'workflow' },
   // An engineering run's monitor: the agents pack, the run on screen (get_engineering_run's default), no agent.
   { route: 'agents/engineering/:runId', kind: 'agents',
     param: { name: 'runId', field: 'engineeringRunId', shape: ENGINEERING_RUN_ID } },

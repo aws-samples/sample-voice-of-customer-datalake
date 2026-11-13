@@ -4,7 +4,8 @@
  * Rename (a new revision with only the name changed), New workflow (a dialog
  * asks for the name and an optional description; only its submit creates the
  * Start → End workflow, which then opens; New engineering flow only where the deployment has the engineering
- * agents module, `features.engineering`), and Archive for the ones no active agent runs. The
+ * agents module, `features.engineering`, and beside it Start from a template: the six default engineering flows,
+ * each opening the editor on an unsaved copy), and Archive for the ones no active agent runs. The
  * built-in template can be neither renamed nor archived.
  *
  * Archiving is soft (`DELETE /workflows/{id}`): the workflow leaves the library
@@ -17,7 +18,7 @@
 import { useId, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, FolderOpen, Loader2, Pencil, Plus, Workflow } from 'lucide-react'
+import { Archive, FolderOpen, LayoutTemplate, Loader2, Pencil, Plus, Workflow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
@@ -31,6 +32,7 @@ import {
 } from '../../api/workflowsApi'
 import { isEngineeringAvailable } from '../../runtimeConfig'
 import { workflowPath } from './workflowPaths'
+import { WorkflowTemplateDialog } from './WorkflowTemplateDialog'
 import type { WorkflowSummary } from '../../api/workflowsApi'
 
 type WorkflowKind = WorkflowSummary['kind']
@@ -125,6 +127,7 @@ export function WorkflowLibrary() {
   const titleId = useId()
   const create = useNewWorkflow()
   const [creating, setCreating] = useState<WorkflowKind | null>(null)
+  const [choosingTemplate, setChoosingTemplate] = useState(false)
   const archive = useMutation({
     mutationFn: (id: string) => workflowsApi.archive(id),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: workflowsKeys.all() }) },
@@ -153,9 +156,14 @@ export function WorkflowLibrary() {
           <Plus size={14} aria-hidden="true" /> {t('library.newWorkflow')}
         </button>
         {isEngineeringAvailable() && (
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { create.reset(); setCreating('engineering') }}>
-            <Plus size={14} aria-hidden="true" /> {t('library.newEngineeringFlow')}
-          </button>
+          <>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => { create.reset(); setCreating('engineering') }}>
+              <Plus size={14} aria-hidden="true" /> {t('library.newEngineeringFlow')}
+            </button>
+            <button type="button" className="btn btn-secondary btn-sm" aria-haspopup="dialog" onClick={() => setChoosingTemplate(true)}>
+              <LayoutTemplate size={14} aria-hidden="true" /> {t('library.fromTemplate')}
+            </button>
+          </>
         )}
       </div>
       {isLoading && <div className="skeleton h-16" />}
@@ -178,6 +186,7 @@ export function WorkflowLibrary() {
           onSave={(name) => rename.mutate({ id: renaming.workflow_id, name })} onClose={() => setRenaming(null)} />
       )}
       {creating !== null && <CreateDialog kind={creating} create={create} onClose={() => setCreating(null)} />}
+      {choosingTemplate && <WorkflowTemplateDialog onClose={() => setChoosingTemplate(false)} />}
       <ConfirmModal
         isOpen={pending !== null}
         title={t('library.archiveTitle')}

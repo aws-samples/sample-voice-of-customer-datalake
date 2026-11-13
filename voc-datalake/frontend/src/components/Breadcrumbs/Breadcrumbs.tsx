@@ -48,8 +48,9 @@ function recordIds(pathSegments: readonly string[]): { projectId?: string; agent
   const [first, second, third] = pathSegments
   if (first === 'projects') return { projectId: second }
   if (first === 'feature-requests') return { boardRef: second }
-  // An engineering run (`/agents/engineering/:runId`) has no name to show: its generic label stays.
-  if (first !== 'agents' || second === 'engineering') return {}
+  // An engineering run (`/agents/engineering/:runId`) has no name to show, nor a template's unsaved copy
+  // (`/agents/workflows/templates/:templateId`, nothing stored): their generic labels stay.
+  if (first !== 'agents' || second === 'engineering' || third === 'templates') return {}
   return second === 'workflows' ? { workflowId: third } : { agentId: second }
 }
 

@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.21.00] - 2026-11-13
+
+Autonomous engineering agents: the six default engineering flows as templates. Administrators start one from the workflow library where the engineering module is deployed; nothing runs a flow yet. Off by default (`-c engineeringAgents=true`), no fixed cost.
+
+### Added
+
+- The six default engineering flows (`voc-datalake/lambda/shared/engineering_flow_templates.json`, `voc-workflow-templates/1`): Understand the repository, Issue triage, Bug hunt and fix, Feature from an issue or a PRD, PR review and Self-improvement, each a `voc-workflow/2` definition with a stable template id, a name and a one-line description, following the steps and stops of docs/autonomous-engineering.md's "Default flows". None merges; the two that push code (Bug hunt and fix, Feature) end at a stop at PR after the quality gate, whose NO-GO goes to a person; the others end at the review comments, the proposal on the issue or an administrator's approval or acceptance. One file, read by the server (`shared/engineering_templates.py`) and imported by the web app (`frontend/src/api/engineeringTemplates.ts`); `shared/test/test_engineering_templates.py` validates every one with the server's validator (and that it is kept as written), and `engineeringTemplates.test.ts` with the editor's port of the rules.
+- `GET /workflows/templates` (the Agents API): the six, each with its definition, for an administrator acting for themselves (403 for anyone else, a delegated credential included) where the engineering module is deployed (404 elsewhere, as the engineering runs' routes). Read only: creating from a template is `POST /workflows` with its definition, so it gets that route's validation, its 409 where the module is off and, from the assistant, its approval card. No new write path.
+- The workflow library's **Start from a template** (beside New engineering flow, only with `features.engineering`): a dialog listing the six, each with its description; choosing one opens `/agents/workflows/templates/<template_id>`, the editor on an unsaved copy of the server's definition (`GET /workflows/templates`), named and described in the person's language. Nothing is stored until **Save**, which creates it and opens it on its own page; Save as, Reset to template and History are not offered on a copy that is not stored yet. A person who is not an administrator is told the templates are for administrators (the server's 403 says the same); an unknown template, or a deployment without the module, says the template is not available; both link back to the library; any other failed read says so, with Try again. The leave-page prompt's Save is the toolbar's own (its checks, its outcome on the status line). Its copy is in all nine languages; the step titles stay in English.
+
+### Changed
+
+- The workflow editor (`WorkflowEditor`, `useWorkflowEditor`) takes an `unsaved` definition: no read, the copy is the draft, the unsaved-changes guard's Save creates it.
+- The dev mock server answers `GET /workflows/templates` from the same file (`frontend/mock-server.js`, `mock-coverage.json`).
+- The Vite dev server's allow list (`frontend/streamSource.ts` `streamFsAllow`) takes that one Lambda file, so `npm run dev` serves it (`src/build/streamFsAllow.test.ts`).
+- The workflow editor offers Reset to template only on an agents workflow: the template is one, and an engineering flow keeps its kind.
+- docs/autonomous-engineering.md marks the six default flows as built, with their paths, and its phase table's rows 4 and 5 say so; docs/autonomous-agents.md describes the route and the library's Start from a template. Still planned there: the templates over MCP (tenet 4 gap) and where the dial stops each template (tenet 3). The assistant's `create_workflow` still takes a whole definition (a template id there is planned).
+
+### Upgrade notes
+
+- Lambda code only (asset hash): no grant or stored row changes. The Agents API answers one more read route under the existing `/workflows/{proxy+}`.
+
 ## [6.20.00] - 2026-11-13
 
 Autonomous engineering agents: the learning loop. A run's end starts its retrospective, which reads what the run recorded, takes at most three of its failures to the coach, drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes a scorecard row per skill version. Off by default (`-c engineeringAgents=true`), no fixed cost.

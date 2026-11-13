@@ -562,7 +562,8 @@ text: no engineering agent reads review text at all (the hunter gets ids, counts
 the customer-text check that guards host writes also runs in the publish helper and on workspace and memory writes,
 so an erasure (D5) has nothing to chase there.
 
-**Default flows.** Six flows ship ready to run, each a template in the workflow editor that a team can change:
+**Default flows.** Six default engineering flows to start from, each a template in the workflow editor that a team can
+change (nothing runs a flow yet):
 
 | Flow | Steps | Stops at |
 |---|---|---|
@@ -572,6 +573,31 @@ so an erasure (D5) has nothing to chase there.
 | Feature | understand (issue or PRD) → plan → build → commit → commit review → quality gate → PR | the draft pull request |
 | PR review | read the PR → reviewers in parallel, one pass, against the repository's tenets and review guide → comments | the review comments |
 | Self-improvement | the coach's loop over past runs → skill-version proposals → benchmark | an administrator's acceptance |
+
+*Built as templates*: the six are `voc-workflow/2` definitions in one file that the server and the web app both
+read, `voc-datalake/lambda/shared/engineering_flow_templates.json` (template ids `understand-repository`,
+`issue-triage`, `bug-hunt-and-fix`, `feature`, `pr-review`, `self-improvement`; `shared/engineering_templates.py`),
+each validated by the server's own rules and kept as written (`shared/test/test_engineering_templates.py`, which also
+holds that none can merge and that the two pushing flows, Bug hunt and fix and Feature, end only at a stop at PR or a
+human decision point) and by the editor's port of them (`frontend/src/api/engineeringTemplates.test.ts`). As
+templates: Understand is a map over packages, a mapper, a reduce, an understander drafting the pack, tenets and
+review guide and a repository memory write, ending at an administrator's approval; Issue triage recalls the
+repository, then an understander classifies, a hunter reproduces or locates and an understander proposes on the
+issue; Bug hunt and fix is a hunter and a board (the hunter posts; the understander, fixer, committer and commit
+reviewer claim) before the quality gate, whose GO goes to the PR author and a stop at PR and whose NO-GO to a person;
+Feature is an understander and a coordinator's plan before a board (the builder, committer and commit reviewer claim)
+and the same gate and ends; PR review recalls the tenets and review guide, maps the pull request's pages to PR
+reviewers in parallel, reduces and comments; Self-improvement recalls the roles' lessons and runs the coach's
+self-improvement step, ending at an administrator's acceptance. The Agents API lists them for administrators where
+the module is deployed (`GET /workflows/templates`, 404 elsewhere); the library's **Start from a template** lists them from the file and opens
+an unsaved copy of the server's definition in the editor, and Save is the library's own `POST /workflows` (its validation, its 409 where the module
+is off): no write path of their own ([docs/autonomous-agents.md](autonomous-agents.md)). The step titles are in
+English in every language (the template's name and description are translated). Nothing runs them yet: the
+engineering runtime does not start a run from a flow. *Planned*: the templates over MCP (their route is for
+administrators, and an MCP token never acts as one: TENETS.md's tenet 4 gap, as for a run's reads), and marking in
+each template where the dial stops it (tenet 3: human-driven stops at the proposal or plan, AI-assisted waits for a
+person's go after the plan); today a template does not say, and the dial is to be enforced by the runtime, not the
+template.
 
 **New steps in the workflow editor**, each with its settings, a palette entry and validation rules, like the existing
 steps and loops: Agent (a role from the catalog, with its skill version, model and budget), Map (fan-out over shards,
@@ -590,14 +616,16 @@ engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-age
 settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
 builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
 shared fixture); its library offers New engineering flow only where the module is deployed (`config.json`
-`features.engineering`). *Planned*: the six default flows as templates.
+`features.engineering`), and offers the six default flows as templates beside it (above).
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
 you can fix") makes the AI assistant draft it behind an approval card, like its other writes: its workflow tools
 (`validate_workflow`, `create_workflow`, `update_workflow`) take a `voc-workflow/2` definition with the engineering
 steps, the agents API's `POST /workflows/validate` judges its rules, and a new one is created only where the
 deployment has the engineering module (the API's 409; the web app's card checks `features.engineering` first, as the
-library's New engineering flow and the editor's Save as do). "What is agent X doing" is the assistant's
+library's New engineering flow and the editor's Save as do). `create_workflow` takes a whole definition, not a
+template id: taking one is *planned* (its schema, the plan contract and the approval card's preview change together),
+and meanwhile the assistant drafts from the flows above as from any description. "What is agent X doing" is the assistant's
 `get_engineering_run` (administrators; read only; the run on screen by default): the run monitor's own routes, read
 with the administrator's sign-in, the agents' words passed to the model as data. *Planned*: "refresh the knowledge
 pack" and "pull the latest from the repository" from the assistant (an administrator's action through a model, so an
@@ -1514,5 +1542,5 @@ and the phase that ships them names them in that row.
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (the broker reads no run record and there is no GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
-| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
-| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), and the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)); the templates, live cost, skill histories and the assistant's run tools planned |
+| 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents planned, and no run started from a flow yet |
+| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's run tools planned |

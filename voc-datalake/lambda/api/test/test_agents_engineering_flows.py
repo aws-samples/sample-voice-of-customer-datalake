@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from agents_handler_fixtures import USER
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
 from agents_handler_fixtures import create as _create
@@ -13,6 +14,10 @@ from agents_handler_fixtures import create as _create
 from shared import workflow_schema
 from shared.test.agents_fixtures import agent_body
 from shared.test.test_workflow_engineering import bug_fix
+
+#: An MCP credential an administrator minted: delegated (``voc:acting_subject``), so never an administrator.
+DELEGATED_ADMIN = {'sub': 'mcp:tok_1', 'cognito:username': 'alice', 'voc:acting_subject': 'admin-sub',
+                   'cognito:groups': 'admins'}
 
 
 @pytest.fixture(autouse=True)
@@ -104,3 +109,30 @@ def test_a_new_engineering_flow_needs_the_module_and_a_saved_one_keeps_working(l
         # An agents workflow is created as before.
         assert _call(lambda_context, 'POST', '/workflows',
                      body={'definition': workflow_schema.default_template()})[0] == 201
+
+
+def test_the_default_flows_are_listed_for_an_administrator_where_the_module_is(lambda_context: Any,
+                                                                                monkeypatch: pytest.MonkeyPatch) -> None:
+    with _api():
+        status, body = _call(lambda_context, 'GET', '/workflows/templates')
+        assert (status, body['count']) == (200, 6), body
+        assert [item['template_id'] for item in body['items']][:2] == ['understand-repository', 'issue-triage']
+        assert all(item['definition']['schema'] == workflow_schema.SCHEMA_V2 for item in body['items'])
+        assert _call(lambda_context, 'GET', '/workflows/templates', claims=USER)[0] == 403
+        # A delegated (MCP) credential an administrator minted is never an administrator here.
+        assert _call(lambda_context, 'GET', '/workflows/templates', claims=DELEGATED_ADMIN)[0] == 403
+        monkeypatch.setenv('ENGINEERING_AGENTS', 'off')
+        assert _call(lambda_context, 'GET', '/workflows/templates')[0] == 404
+
+
+def test_create_from_a_template_is_the_librarys_own_create(lambda_context: Any,
+                                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    """No write path of its own: the template's definition goes to POST /workflows, validated, 409 where it is off."""
+    with _api():
+        definition = _call(lambda_context, 'GET', '/workflows/templates')[1]['items'][2]['definition']
+        status, body = _call(lambda_context, 'POST', '/workflows', body={'definition': definition})
+        assert (status, body['workflow']['name'], body['workflow']['kind']) == (201, 'Bug hunt and fix', 'engineering')
+        broken = {**definition, 'nodes': definition['nodes'][:-1]}
+        assert _call(lambda_context, 'POST', '/workflows', body={'definition': broken})[0] == 400
+        monkeypatch.setenv('ENGINEERING_AGENTS', 'off')
+        assert _call(lambda_context, 'POST', '/workflows', body={'definition': definition})[0] == 409

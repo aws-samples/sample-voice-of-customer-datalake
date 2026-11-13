@@ -30,6 +30,8 @@
     "workflow": "Workflow",
     "engineering": "Engineering",
     "engineeringRun": "Engineering-Lauf",
+    "templates": "Vorlagen",
+    "template": "Vorlage",
     "radar": "Radar",
     "featureRequests": "Feedback-Boards",
     "participants": "Teilnehmende",

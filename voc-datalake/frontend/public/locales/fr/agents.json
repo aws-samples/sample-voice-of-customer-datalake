@@ -71,7 +71,10 @@
     "newEngineeringFlow": "Nouveau flux d'ingénierie",
     "createEngineeringTitle": "Nouveau flux d'ingénierie",
     "createEngineeringHint": "Un flux d'ingénierie fait travailler des agents d'ingénierie autonomes sur un dépôt et se termine par une pull request que des personnes relisent. Il commence par Début → Fin : ajoutez les étapes Ingénierie depuis la palette.",
-    "engineeringKind": "Ingénierie"
+    "engineeringKind": "Ingénierie",
+    "fromTemplate": "Partir d’un modèle",
+    "templatesTitle": "Partir d’un modèle",
+    "templatesHint": "Six flux d’ingénierie par défaut pour démarrer. En choisir un ouvre une copie dans l’éditeur : rien n’est enregistré tant que vous ne l’enregistrez pas."
   },
   "fields": {
     "name": "Nom",
@@ -808,6 +811,40 @@
       "failed": "Échoué",
       "stopped": "Arrêté",
       "reposted": "Republié"
+    }
+  },
+  "templatePage": {
+    "title": "Nouveau flux d’ingénierie à partir d’un modèle",
+    "subtitle": "Une copie d’un flux par défaut. Modifiez ce qu’il faut, puis Enregistrer pour l’ajouter à la bibliothèque de workflows.",
+    "notFound": "Ce modèle n’est pas disponible ici : les modèles ne sont proposés que là où le module des agents d’ingénierie est déployé.",
+    "adminOnly": "Seuls les administrateurs créent des flux d’ingénierie à partir d’un modèle. Demandez à un administrateur ou revenez à la bibliothèque de workflows.",
+    "loadFailed": "Le modèle n’a pas pu être chargé.",
+    "backToLibrary": "Retour à la bibliothèque de workflows"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "Comprendre le dépôt",
+      "description": "Parcourt le dépôt paquet par paquet et rédige son pack de connaissances, ses principes et son guide de revue pour qu’un administrateur les approuve."
+    },
+    "issueTriage": {
+      "name": "Tri des tickets",
+      "description": "Lit un ticket, le classe comme bogue, fonctionnalité ou investigation, le reproduit ou le localise et propose l’étape suivante sur le ticket."
+    },
+    "bugHunt": {
+      "name": "Chasse et correction de bogues",
+      "description": "Cherche les bogues dans les paquets indiqués, corrige et revoit chacun, passe le contrôle qualité et s’arrête sur une pull request en brouillon."
+    },
+    "feature": {
+      "name": "Fonctionnalité à partir d’un ticket ou d’un PRD",
+      "description": "Construit une fonctionnalité à partir d’un ticket ou d’un PRD : la comprend, planifie, construit, valide et revoit, passe le contrôle qualité et s’arrête sur une pull request en brouillon."
+    },
+    "prReview": {
+      "name": "Revue de PR",
+      "description": "Revoit une pull request en une passe, ses pages en parallèle, selon les principes et le guide de revue du dépôt, et laisse des commentaires de revue."
+    },
+    "selfImprovement": {
+      "name": "Auto-amélioration",
+      "description": "Le coach lit les exécutions passées, propose de nouvelles versions de compétences et les évalue ; un administrateur accepte ou refuse chacune."
     }
   }
 }

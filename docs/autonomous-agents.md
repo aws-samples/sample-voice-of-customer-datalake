@@ -142,6 +142,18 @@ workflow tools (`validate_workflow`, then `create_workflow` or `update_workflow`
 web app's card for a new one checks the module too, before the server does (one already saved is changed anywhere,
 as in the editor).
 
+**The default engineering flows.** Six templates ship in one file that the server and the web app both read,
+`voc-datalake/lambda/shared/engineering_flow_templates.json` (`shared/engineering_templates.py`; every one validated by
+the server's own rules in `shared/test/test_engineering_templates.py`): Understand the repository, Issue triage, Bug
+hunt and fix, Feature from an issue or a PRD, PR review and Self-improvement ([docs/autonomous-engineering.md](autonomous-engineering.md#how-the-agents-work-together)).
+`GET /workflows/templates` lists them, each with its `template_id`, `name`, `description` and `definition`, for an
+administrator (403 for anyone else, a delegated credential included) where the module is on (404 elsewhere). A
+template is never stored and there is no "create from template" route: a copy is created by `POST /workflows` with
+its definition, so it gets that route's validation and its 409 where the module is off. In the library, beside
+**New engineering flow**, **Start from a template** lists the six with their descriptions; choosing one opens the
+editor on an unsaved copy of the server's definition (`/agents/workflows/templates/<template_id>`, read with
+`GET /workflows/templates`, named and described in the person's language), with no Save as, Reset or History until **Save** creates it and opens it on its own page.
+
 ### An engineering run: monitor, board, conversation, reports
 
 Where the engineering agents are on (`ENGINEERING_AGENTS=on`, with their table and workspace bucket), the Agents API

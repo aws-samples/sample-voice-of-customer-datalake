@@ -61,6 +61,8 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   'agents': { labelKey: 'common:breadcrumbs.agents' },
   // `/agents/workflows/:id` — the library is the Workflows tab of /agents, so the crumb links there.
   'workflows': { labelKey: 'common:breadcrumbs.workflows', path: '/agents?tab=workflows' },
+  // `/agents/workflows/templates/:templateId` — the templates are offered in the library, so the crumb links there.
+  'templates': { labelKey: 'common:breadcrumbs.templates', path: '/agents?tab=workflows' },
   // `/agents/engineering/:runId` — no list of engineering runs yet, so the crumb goes back to the agents.
   'engineering': { labelKey: 'common:breadcrumbs.engineering', path: '/agents' },
   'connect': { labelKey: 'common:breadcrumbs.connect' },
@@ -94,6 +96,7 @@ export const RECORD_CRUMBS: Readonly<Partial<Record<string, CrumbLabel>>> = {
   'feedback': { labelKey: 'common:breadcrumbs.feedbackItem' },
   'agents': { labelKey: 'common:breadcrumbs.agent' },
   'workflows': { labelKey: 'common:breadcrumbs.workflow' },
+  'templates': { labelKey: 'common:breadcrumbs.template' },
   'engineering': { labelKey: 'common:breadcrumbs.engineeringRun' },
   // `/feature-requests/:slug` — one feedback board, named once its page loaded it.
   'feature-requests': { labelKey: 'common:breadcrumbs.board' },

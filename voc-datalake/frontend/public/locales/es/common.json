@@ -30,6 +30,8 @@
     "workflow": "Flujo de trabajo",
     "engineering": "Ingeniería",
     "engineeringRun": "Ejecución de ingeniería",
+    "templates": "Plantillas",
+    "template": "Plantilla",
     "radar": "Radar",
     "featureRequests": "Tableros de feedback",
     "participants": "Participantes",

@@ -1,0 +1,822 @@
+{
+ "schema": "voc-workflow-templates/1",
+ "note": "The default engineering flows (docs/autonomous-engineering.md \"Default flows\"). Read by shared/engineering_templates.py (GET /workflows/templates) and by the web app (frontend/src/api/engineeringTemplates.ts); shared/test/test_engineering_templates.py validates every one with the server's rules.",
+ "templates": [
+  {
+   "template_id": "understand-repository",
+   "name": "Understand the repository",
+   "description": "Maps the repository package by package and drafts its knowledge pack, tenets and review guide for an administrator's approval.",
+   "definition": {
+    "schema": "voc-workflow/2",
+    "name": "Understand the repository",
+    "description": "Maps the repository package by package and drafts its knowledge pack, tenets and review guide for an administrator's approval.",
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "position": {
+       "x": 0,
+       "y": 0
+      },
+      "data": {
+       "title": "Start",
+       "params": {}
+      }
+     },
+     {
+      "id": "map",
+      "type": "map",
+      "position": {
+       "x": 0,
+       "y": 120
+      },
+      "data": {
+       "title": "Map the packages",
+       "params": {
+        "shard_by": "packages",
+        "shard_cap": 200
+       }
+      }
+     },
+     {
+      "id": "mapper",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 240
+      },
+      "data": {
+       "title": "Read each package",
+       "params": {
+        "role": "mapper"
+       }
+      }
+     },
+     {
+      "id": "reduce",
+      "type": "reduce",
+      "position": {
+       "x": 0,
+       "y": 360
+      },
+      "data": {
+       "title": "Bring the shards together",
+       "params": {}
+      }
+     },
+     {
+      "id": "understander",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 480
+      },
+      "data": {
+       "title": "Draft the knowledge pack, tenets and review guide",
+       "params": {
+        "role": "understander"
+       }
+      }
+     },
+     {
+      "id": "memory",
+      "type": "memory",
+      "position": {
+       "x": 0,
+       "y": 600
+      },
+      "data": {
+       "title": "Remember the repository",
+       "params": {
+        "mode": "write",
+        "scope": "repo"
+       }
+      }
+     },
+     {
+      "id": "approval",
+      "type": "end",
+      "position": {
+       "x": 0,
+       "y": 720
+      },
+      "data": {
+       "title": "An administrator approves",
+       "params": {
+        "status": "needs_human"
+       }
+      }
+     }
+    ],
+    "edges": [
+     {
+      "id": "start-map",
+      "source": "start",
+      "target": "map"
+     },
+     {
+      "id": "map-mapper",
+      "source": "map",
+      "target": "mapper"
+     },
+     {
+      "id": "mapper-reduce",
+      "source": "mapper",
+      "target": "reduce"
+     },
+     {
+      "id": "reduce-understander",
+      "source": "reduce",
+      "target": "understander"
+     },
+     {
+      "id": "understander-memory",
+      "source": "understander",
+      "target": "memory"
+     },
+     {
+      "id": "memory-approval",
+      "source": "memory",
+      "target": "approval"
+     }
+    ],
+    "loops": []
+   }
+  },
+  {
+   "template_id": "issue-triage",
+   "name": "Issue triage",
+   "description": "Reads an issue, classifies it as a bug, a feature or an investigation, reproduces or locates it and proposes the next step on the issue.",
+   "definition": {
+    "schema": "voc-workflow/2",
+    "name": "Issue triage",
+    "description": "Reads an issue, classifies it as a bug, a feature or an investigation, reproduces or locates it and proposes the next step on the issue.",
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "position": {
+       "x": 0,
+       "y": 0
+      },
+      "data": {
+       "title": "Start",
+       "params": {}
+      }
+     },
+     {
+      "id": "memory",
+      "type": "memory",
+      "position": {
+       "x": 0,
+       "y": 120
+      },
+      "data": {
+       "title": "Recall the repository",
+       "params": {
+        "mode": "read",
+        "scope": "repo",
+        "limit": 10
+       }
+      }
+     },
+     {
+      "id": "classify",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 240
+      },
+      "data": {
+       "title": "Understand and classify",
+       "params": {
+        "role": "understander"
+       },
+       "instructions": "Classify the issue as a bug, a feature or an investigation, and say why."
+      }
+     },
+     {
+      "id": "locate",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 360
+      },
+      "data": {
+       "title": "Reproduce or locate",
+       "params": {
+        "role": "hunter"
+       }
+      }
+     },
+     {
+      "id": "propose",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 480
+      },
+      "data": {
+       "title": "Propose the next step",
+       "params": {
+        "role": "understander"
+       },
+       "instructions": "Write the proposal on the issue: what it is, where it lives and what to do next."
+      }
+     },
+     {
+      "id": "end",
+      "type": "end",
+      "position": {
+       "x": 0,
+       "y": 600
+      },
+      "data": {
+       "title": "The proposal on the issue",
+       "params": {
+        "status": "completed"
+       }
+      }
+     }
+    ],
+    "edges": [
+     {
+      "id": "start-memory",
+      "source": "start",
+      "target": "memory"
+     },
+     {
+      "id": "memory-classify",
+      "source": "memory",
+      "target": "classify"
+     },
+     {
+      "id": "classify-locate",
+      "source": "classify",
+      "target": "locate"
+     },
+     {
+      "id": "locate-propose",
+      "source": "locate",
+      "target": "propose"
+     },
+     {
+      "id": "propose-end",
+      "source": "propose",
+      "target": "end"
+     }
+    ],
+    "loops": []
+   }
+  },
+  {
+   "template_id": "bug-hunt-and-fix",
+   "name": "Bug hunt and fix",
+   "description": "Hunts bugs in the packages it is given, fixes and reviews each one, runs the quality gate and stops at a draft pull request.",
+   "definition": {
+    "schema": "voc-workflow/2",
+    "name": "Bug hunt and fix",
+    "description": "Hunts bugs in the packages it is given, fixes and reviews each one, runs the quality gate and stops at a draft pull request.",
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "position": {
+       "x": 0,
+       "y": 0
+      },
+      "data": {
+       "title": "Start",
+       "params": {}
+      }
+     },
+     {
+      "id": "hunt",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 120
+      },
+      "data": {
+       "title": "Hunt bugs",
+       "params": {
+        "role": "hunter"
+       }
+      }
+     },
+     {
+      "id": "board",
+      "type": "board",
+      "position": {
+       "x": 0,
+       "y": 240
+      },
+      "data": {
+       "title": "Understand, fix, commit and review each bug",
+       "params": {
+        "posters": [
+         "hunter"
+        ],
+        "claimers": [
+         "understander",
+         "fixer",
+         "committer",
+         "commit-reviewer"
+        ],
+        "until": "drained"
+       }
+      }
+     },
+     {
+      "id": "gate",
+      "type": "quality_gate",
+      "position": {
+       "x": 0,
+       "y": 360
+      },
+      "data": {
+       "title": "Quality gate",
+       "params": {
+        "max_rounds": 3,
+        "packs": "auto"
+       }
+      }
+     },
+     {
+      "id": "pr_author",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 480
+      },
+      "data": {
+       "title": "Open the draft pull request",
+       "params": {
+        "role": "pr-author"
+       },
+       "instructions": "Open a draft pull request for each fix: the bug it fixes (how it showed and where), what was changed to fix it and the feedback ids it cites. Never merge."
+      }
+     },
+     {
+      "id": "pr",
+      "type": "stop_at_pr",
+      "position": {
+       "x": 0,
+       "y": 600
+      },
+      "data": {
+       "title": "Draft pull request",
+       "params": {}
+      }
+     },
+     {
+      "id": "human",
+      "type": "end",
+      "position": {
+       "x": 280,
+       "y": 480
+      },
+      "data": {
+       "title": "A person decides",
+       "params": {
+        "status": "needs_human"
+       }
+      }
+     }
+    ],
+    "edges": [
+     {
+      "id": "start-hunt",
+      "source": "start",
+      "target": "hunt"
+     },
+     {
+      "id": "hunt-board",
+      "source": "hunt",
+      "target": "board"
+     },
+     {
+      "id": "board-gate",
+      "source": "board",
+      "target": "gate"
+     },
+     {
+      "id": "gate-pr_author",
+      "source": "gate",
+      "target": "pr_author",
+      "label": "pass"
+     },
+     {
+      "id": "pr_author-pr",
+      "source": "pr_author",
+      "target": "pr"
+     },
+     {
+      "id": "gate-human",
+      "source": "gate",
+      "target": "human",
+      "label": "fail"
+     }
+    ],
+    "loops": []
+   }
+  },
+  {
+   "template_id": "feature",
+   "name": "Feature from an issue or a PRD",
+   "description": "Builds a feature from an issue or a PRD: understands it, plans, builds, commits and reviews, runs the quality gate and stops at a draft pull request.",
+   "definition": {
+    "schema": "voc-workflow/2",
+    "name": "Feature from an issue or a PRD",
+    "description": "Builds a feature from an issue or a PRD: understands it, plans, builds, commits and reviews, runs the quality gate and stops at a draft pull request.",
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "position": {
+       "x": 0,
+       "y": 0
+      },
+      "data": {
+       "title": "Start",
+       "params": {}
+      }
+     },
+     {
+      "id": "understand",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 120
+      },
+      "data": {
+       "title": "Understand the issue or PRD",
+       "params": {
+        "role": "understander"
+       }
+      }
+     },
+     {
+      "id": "plan",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 240
+      },
+      "data": {
+       "title": "Plan the work",
+       "params": {
+        "role": "coordinator"
+       }
+      }
+     },
+     {
+      "id": "board",
+      "type": "board",
+      "position": {
+       "x": 0,
+       "y": 360
+      },
+      "data": {
+       "title": "Build, commit and review each task",
+       "params": {
+        "posters": [
+         "coordinator"
+        ],
+        "claimers": [
+         "builder",
+         "committer",
+         "commit-reviewer"
+        ],
+        "until": "drained"
+       }
+      }
+     },
+     {
+      "id": "gate",
+      "type": "quality_gate",
+      "position": {
+       "x": 0,
+       "y": 480
+      },
+      "data": {
+       "title": "Quality gate",
+       "params": {
+        "max_rounds": 3,
+        "packs": "auto"
+       }
+      }
+     },
+     {
+      "id": "pr_author",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 600
+      },
+      "data": {
+       "title": "Open the draft pull request",
+       "params": {
+        "role": "pr-author"
+       },
+       "instructions": "Open a draft pull request with what was built, what it was built from (the issue or the PRD), the methodology steps it went without and the feedback ids it cites. Never merge."
+      }
+     },
+     {
+      "id": "pr",
+      "type": "stop_at_pr",
+      "position": {
+       "x": 0,
+       "y": 720
+      },
+      "data": {
+       "title": "Draft pull request",
+       "params": {}
+      }
+     },
+     {
+      "id": "human",
+      "type": "end",
+      "position": {
+       "x": 280,
+       "y": 600
+      },
+      "data": {
+       "title": "A person decides",
+       "params": {
+        "status": "needs_human"
+       }
+      }
+     }
+    ],
+    "edges": [
+     {
+      "id": "start-understand",
+      "source": "start",
+      "target": "understand"
+     },
+     {
+      "id": "understand-plan",
+      "source": "understand",
+      "target": "plan"
+     },
+     {
+      "id": "plan-board",
+      "source": "plan",
+      "target": "board"
+     },
+     {
+      "id": "board-gate",
+      "source": "board",
+      "target": "gate"
+     },
+     {
+      "id": "gate-pr_author",
+      "source": "gate",
+      "target": "pr_author",
+      "label": "pass"
+     },
+     {
+      "id": "pr_author-pr",
+      "source": "pr_author",
+      "target": "pr"
+     },
+     {
+      "id": "gate-human",
+      "source": "gate",
+      "target": "human",
+      "label": "fail"
+     }
+    ],
+    "loops": []
+   }
+  },
+  {
+   "template_id": "pr-review",
+   "name": "PR review",
+   "description": "Reviews a pull request in one pass, its pages in parallel, against the repository's tenets and review guide, and leaves review comments.",
+   "definition": {
+    "schema": "voc-workflow/2",
+    "name": "PR review",
+    "description": "Reviews a pull request in one pass, its pages in parallel, against the repository's tenets and review guide, and leaves review comments.",
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "position": {
+       "x": 0,
+       "y": 0
+      },
+      "data": {
+       "title": "Start",
+       "params": {}
+      }
+     },
+     {
+      "id": "memory",
+      "type": "memory",
+      "position": {
+       "x": 0,
+       "y": 120
+      },
+      "data": {
+       "title": "Recall the tenets and review guide",
+       "params": {
+        "mode": "read",
+        "scope": "repo",
+        "limit": 10
+       }
+      }
+     },
+     {
+      "id": "map",
+      "type": "map",
+      "position": {
+       "x": 0,
+       "y": 240
+      },
+      "data": {
+       "title": "Split the pull request",
+       "params": {
+        "shard_by": "pr_pages",
+        "shard_cap": 50
+       }
+      }
+     },
+     {
+      "id": "review",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 360
+      },
+      "data": {
+       "title": "Review each page",
+       "params": {
+        "role": "pr-reviewer"
+       }
+      }
+     },
+     {
+      "id": "reduce",
+      "type": "reduce",
+      "position": {
+       "x": 0,
+       "y": 480
+      },
+      "data": {
+       "title": "Bring the reviews together",
+       "params": {}
+      }
+     },
+     {
+      "id": "comment",
+      "type": "agent",
+      "position": {
+       "x": 0,
+       "y": 600
+      },
+      "data": {
+       "title": "Leave the review comments",
+       "params": {
+        "role": "pr-reviewer"
+       },
+       "instructions": "Comment on the pull request only: never approve, push to or merge it."
+      }
+     },
+     {
+      "id": "end",
+      "type": "end",
+      "position": {
+       "x": 0,
+       "y": 720
+      },
+      "data": {
+       "title": "The review comments",
+       "params": {
+        "status": "completed"
+       }
+      }
+     }
+    ],
+    "edges": [
+     {
+      "id": "start-memory",
+      "source": "start",
+      "target": "memory"
+     },
+     {
+      "id": "memory-map",
+      "source": "memory",
+      "target": "map"
+     },
+     {
+      "id": "map-review",
+      "source": "map",
+      "target": "review"
+     },
+     {
+      "id": "review-reduce",
+      "source": "review",
+      "target": "reduce"
+     },
+     {
+      "id": "reduce-comment",
+      "source": "reduce",
+      "target": "comment"
+     },
+     {
+      "id": "comment-end",
+      "source": "comment",
+      "target": "end"
+     }
+    ],
+    "loops": []
+   }
+  },
+  {
+   "template_id": "self-improvement",
+   "name": "Self-improvement",
+   "description": "The coach reads past runs, proposes new skill versions and benchmarks them; an administrator accepts or declines each one.",
+   "definition": {
+    "schema": "voc-workflow/2",
+    "name": "Self-improvement",
+    "description": "The coach reads past runs, proposes new skill versions and benchmarks them; an administrator accepts or declines each one.",
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "position": {
+       "x": 0,
+       "y": 0
+      },
+      "data": {
+       "title": "Start",
+       "params": {}
+      }
+     },
+     {
+      "id": "memory",
+      "type": "memory",
+      "position": {
+       "x": 0,
+       "y": 120
+      },
+      "data": {
+       "title": "Recall the lessons of past runs",
+       "params": {
+        "mode": "read",
+        "scope": "role",
+        "limit": 20
+       }
+      }
+     },
+     {
+      "id": "coach",
+      "type": "self_improvement",
+      "position": {
+       "x": 0,
+       "y": 240
+      },
+      "data": {
+       "title": "Propose and benchmark skill versions",
+       "params": {}
+      }
+     },
+     {
+      "id": "acceptance",
+      "type": "end",
+      "position": {
+       "x": 0,
+       "y": 360
+      },
+      "data": {
+       "title": "An administrator accepts",
+       "params": {
+        "status": "needs_human"
+       }
+      }
+     }
+    ],
+    "edges": [
+     {
+      "id": "start-memory",
+      "source": "start",
+      "target": "memory"
+     },
+     {
+      "id": "memory-coach",
+      "source": "memory",
+      "target": "coach"
+     },
+     {
+      "id": "coach-acceptance",
+      "source": "coach",
+      "target": "acceptance"
+     }
+    ],
+    "loops": []
+   }
+  }
+ ]
+}

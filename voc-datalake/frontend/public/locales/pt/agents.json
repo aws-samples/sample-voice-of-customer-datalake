@@ -71,7 +71,10 @@
     "newEngineeringFlow": "Novo fluxo de engenharia",
     "createEngineeringTitle": "Novo fluxo de engenharia",
     "createEngineeringHint": "Um fluxo de engenharia põe agentes de engenharia autónomos a trabalhar num repositório e termina num pull request para pessoas reverem. Começa como Início → Fim: adicione os passos de Engenharia a partir da paleta.",
-    "engineeringKind": "Engenharia"
+    "engineeringKind": "Engenharia",
+    "fromTemplate": "Começar com um modelo",
+    "templatesTitle": "Começar com um modelo",
+    "templatesHint": "Seis fluxos de engenharia padrão para começar. Escolher um abre uma cópia no editor: nada é salvo até que você salve."
   },
   "fields": {
     "name": "Nome",
@@ -808,6 +811,40 @@
       "failed": "Falhou",
       "stopped": "Parado",
       "reposted": "Publicado de novo"
+    }
+  },
+  "templatePage": {
+    "title": "Novo fluxo de engenharia a partir de um modelo",
+    "subtitle": "Uma cópia de um fluxo padrão. Altere o que precisar e clique em Salvar para adicioná-lo à biblioteca de fluxos.",
+    "notFound": "Este modelo não está disponível aqui: os modelos só são oferecidos onde o módulo de agentes de engenharia está implantado.",
+    "adminOnly": "Somente administradores criam fluxos de engenharia a partir de um modelo. Peça a um administrador ou volte para a biblioteca de fluxos.",
+    "loadFailed": "Não foi possível carregar o modelo.",
+    "backToLibrary": "Voltar para a biblioteca de fluxos"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "Entender o repositório",
+      "description": "Percorre o repositório pacote por pacote e redige o pacote de conhecimento, os princípios e o guia de revisão para aprovação de um administrador."
+    },
+    "issueTriage": {
+      "name": "Triagem de issues",
+      "description": "Lê uma issue, classifica-a como bug, funcionalidade ou investigação, reproduz ou localiza o problema e propõe o próximo passo na issue."
+    },
+    "bugHunt": {
+      "name": "Caçar e corrigir bugs",
+      "description": "Procura bugs nos pacotes indicados, corrige e revisa cada um, passa pelo portão de qualidade e para em uma pull request em rascunho."
+    },
+    "feature": {
+      "name": "Funcionalidade a partir de uma issue ou PRD",
+      "description": "Cria uma funcionalidade a partir de uma issue ou PRD: entende, planeja, constrói, faz commit e revisa, passa pelo portão de qualidade e para em uma pull request em rascunho."
+    },
+    "prReview": {
+      "name": "Revisão de PR",
+      "description": "Revisa uma pull request em uma passada, com as páginas em paralelo, segundo os princípios e o guia de revisão do repositório, e deixa comentários de revisão."
+    },
+    "selfImprovement": {
+      "name": "Autoaperfeiçoamento",
+      "description": "O coach lê execuções anteriores, propõe novas versões de habilidades e as avalia; um administrador aceita ou recusa cada uma."
     }
   }
 }

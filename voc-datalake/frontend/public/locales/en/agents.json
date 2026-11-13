@@ -70,7 +70,10 @@
     "newEngineeringFlow": "New engineering flow",
     "createEngineeringTitle": "New engineering flow",
     "createEngineeringHint": "An engineering flow runs autonomous engineering agents on a repository and ends on a pull request for people to review. It starts as Start → End: add the Engineering steps from the palette.",
-    "engineeringKind": "Engineering"
+    "engineeringKind": "Engineering",
+    "fromTemplate": "Start from a template",
+    "templatesTitle": "Start from a template",
+    "templatesHint": "Six default engineering flows to start from. Choosing one opens a copy in the editor: nothing is saved until you save it."
   },
   "fields": {
     "name": "Name",
@@ -748,6 +751,40 @@
       "failed": "Failed",
       "stopped": "Stopped",
       "reposted": "Posted again"
+    }
+  },
+  "templatePage": {
+    "title": "New engineering flow from a template",
+    "subtitle": "A copy of a default flow. Change what you need, then Save to add it to the workflow library.",
+    "notFound": "This template isn't available here: templates are offered only where the engineering agents module is deployed.",
+    "adminOnly": "Only administrators start engineering flows from a template. Ask an administrator, or go back to the workflow library.",
+    "loadFailed": "The template couldn't be loaded.",
+    "backToLibrary": "Back to the workflow library"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "Understand the repository",
+      "description": "Maps the repository package by package and drafts its knowledge pack, tenets and review guide for an administrator's approval."
+    },
+    "issueTriage": {
+      "name": "Issue triage",
+      "description": "Reads an issue, classifies it as a bug, a feature or an investigation, reproduces or locates it and proposes the next step on the issue."
+    },
+    "bugHunt": {
+      "name": "Bug hunt and fix",
+      "description": "Hunts bugs in the packages it is given, fixes and reviews each one, runs the quality gate and stops at a draft pull request."
+    },
+    "feature": {
+      "name": "Feature from an issue or a PRD",
+      "description": "Builds a feature from an issue or a PRD: understands it, plans, builds, commits and reviews, runs the quality gate and stops at a draft pull request."
+    },
+    "prReview": {
+      "name": "PR review",
+      "description": "Reviews a pull request in one pass, its pages in parallel, against the repository's tenets and review guide, and leaves review comments."
+    },
+    "selfImprovement": {
+      "name": "Self-improvement",
+      "description": "The coach reads past runs, proposes new skill versions and benchmarks them; an administrator accepts or declines each one."
     }
   }
 }

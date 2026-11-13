@@ -26,6 +26,7 @@ const PARAM_PAGES: Record<string, string> = {
   'projects/:id': 'pages/ProjectDetail/ProjectDetail.tsx',
   'agents/:id': 'pages/Agents/AgentDetail.tsx',
   'agents/workflows/:workflowId': 'pages/Agents/WorkflowPage.tsx',
+  'agents/workflows/templates/:templateId': 'pages/Agents/WorkflowTemplatePage.tsx',
   'agents/engineering/:runId': 'pages/Agents/EngineeringRun.tsx',
   'feature-requests/:slug': 'pages/FeatureRequests/BoardPage.tsx',
 }

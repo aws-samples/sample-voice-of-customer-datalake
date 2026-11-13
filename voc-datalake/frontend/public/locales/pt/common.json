@@ -30,6 +30,8 @@
     "workflow": "Fluxo",
     "engineering": "Engenharia",
     "engineeringRun": "Execução de engenharia",
+    "templates": "Modelos",
+    "template": "Modelo",
     "radar": "Radar",
     "featureRequests": "Quadros de feedback",
     "participants": "Participantes",

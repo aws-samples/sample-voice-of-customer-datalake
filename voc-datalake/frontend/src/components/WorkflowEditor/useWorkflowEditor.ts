@@ -4,13 +4,20 @@
  * and the library writes — Save (new revision with `expected_revision`, 409 →
  * conflict), Save as, Import, Reset to template.
  *
+ * With `unsaved` (a default engineering flow's copy, `api/engineeringTemplates.ts`) there is no stored workflow:
+ * nothing is read, the copy is the draft and is unsaved until {@link saveOrCreate} makes it a new workflow (the
+ * library's own `POST /workflows`, with its validation and its 409 where the engineering module is off).
+ *
  * @module components/WorkflowEditor/useWorkflowEditor
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
-import { DEFAULT_WORKFLOW_ID, normalizeDefinition, seedWorkflowDetail, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
+import {
+  DEFAULT_WORKFLOW_ID, isEngineeringFlow, normalizeDefinition, seedWorkflowDetail, workflowsApi, workflowsKeys,
+} from '../../api/workflowsApi'
 import { diffDefinitions } from './diff'
+import type { WorkflowDiff } from './diff'
 import { validateLocally } from './graphRules'
 import type {
   WorkflowDefinition, WorkflowIssue, WorkflowMethodologyWarning, WorkflowRevision, WorkflowView,
@@ -63,7 +70,7 @@ function useServerValidation(draft: WorkflowDefinition | null, workflowId: strin
     if (draft === null || !enabled) return noCleanup
     const controller = new AbortController()
     const timer = setTimeout(() => {
-      workflowsApi.validate(draft, workflowId === DEFAULT_WORKFLOW_ID ? undefined : workflowId)
+      workflowsApi.validate(draft, workflowId === DEFAULT_WORKFLOW_ID || workflowId === '' ? undefined : workflowId)
         .then((result) => {
           if (!controller.signal.aborted) setServer({ errors: result.errors, warnings: result.warnings })
         })
@@ -77,14 +84,34 @@ function useServerValidation(draft: WorkflowDefinition | null, workflowId: strin
   return server
 }
 
-export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
+/**
+ * Where an unsaved copy starts: what the editor shows in place of a stored workflow (no id, no revision, nothing saved
+ * to compare with) and its first draft; nothing for a stored workflow, whose draft comes with its read.
+ */
+function unsavedStart(definition: WorkflowDefinition | undefined): { view?: WorkflowView; draft: WorkflowDefinition | null } {
+  if (definition === undefined) return { draft: null }
+  const view: WorkflowView = {
+    workflow_id: '', slug: '', name: definition.name, description: definition.description ?? '', revision: 0,
+    derived_from: null, builtin: false, updated_at: null, updated_by_username: null, status: 'active',
+    kind: isEngineeringFlow(definition) ? 'engineering' : 'agents', definition: null,
+  }
+  return { view, draft: definition }
+}
+
+/** An unsaved copy is always unsaved; a stored workflow is when the draft differs from it. */
+const isDirty = (unsaved: boolean, diff: WorkflowDiff | null): boolean => unsaved || (diff !== null && !diff.unchanged)
+
+export function useWorkflowEditor(workflowId: string, canEdit: boolean, unsaved?: WorkflowDefinition) {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: workflowsKeys.detail(workflowId),
     queryFn: () => workflowsApi.get(workflowId),
+    enabled: unsaved === undefined,
   })
-  const workflow = query.data?.workflow
-  const [draft, setDraft] = useState<WorkflowDefinition | null>(null)
+  const [start] = useState(() => unsavedStart(unsaved))
+  const unsavedWorkflow = start.view
+  const workflow = unsavedWorkflow ?? query.data?.workflow
+  const [draft, setDraft] = useState<WorkflowDefinition | null>(start.draft)
   const [conflict, setConflict] = useState(false)
   // A fresh load (first fetch, reload after a conflict, ANOTHER workflow) resets the draft:
   // keyed by id AND revision, since a Save-as copy starts at revision 1 like most originals.
@@ -103,7 +130,7 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
     () => (draft === null || workflow === undefined ? null : diffDefinitions(workflow.definition, draft)),
     [draft, workflow],
   )
-  const dirty = diff !== null && !diff.unchanged
+  const dirty = isDirty(unsavedWorkflow !== undefined, diff)
   const builtin = workflow?.builtin === true
 
   const refresh = useCallback(async () => {
@@ -152,6 +179,22 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
     },
   })
 
+  /**
+   * Save, as the toolbar and the leave-page prompt both do it: a stored workflow's new revision ({@link save}), or an
+   * unsaved copy created as a new workflow under its own name, after the same checks (an editor, a draft the local
+   * rules pass) and with the same outcomes; `created` is the new workflow.
+   */
+  const saveOrCreate = useCallback(async (): Promise<{ outcome: SaveOutcome; created?: WorkflowView }> => {
+    if (unsavedWorkflow === undefined) return { outcome: await save() }
+    if (draft === null || !canEdit) return { outcome: 'failed' }
+    if (validateLocally(draft).length > 0) return { outcome: 'invalid' }
+    try {
+      return { outcome: 'saved', created: await saveAsMutation.mutateAsync(draft.name) }
+    } catch (error) {
+      return { outcome: apiErrorStatus(error) === 400 ? 'invalid' : 'failed' }
+    }
+  }, [canEdit, draft, save, saveAsMutation, unsavedWorkflow])
+
   /** Discard the draft and load the newest revision (after a conflict). */
   const reloadLatest = useCallback(async () => {
     setConflict(false)
@@ -167,6 +210,7 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
     return true
   }, [])
 
+  /** The built-in agents template as the draft, keeping the name (the toolbar offers it on an agents workflow only). */
   const resetToTemplate = useCallback(async () => {
     const { workflow: template } = await queryClient.query({
       queryKey: workflowsKeys.detail(DEFAULT_WORKFLOW_ID),
@@ -177,13 +221,14 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
 
   /** The file Export downloads: the server's (with lineage) when clean, else the draft. */
   const exportJson = useCallback(async (): Promise<unknown> => {
+    if (unsavedWorkflow !== undefined) return draft
     if (!dirty && !builtin) return workflowsApi.exportDefinition(workflowId)
     return { ...draft, exported_from: { workflow_id: workflowId, revision: workflow?.revision ?? 1, unsaved_changes: dirty } }
-  }, [builtin, dirty, draft, workflow?.revision, workflowId])
+  }, [builtin, dirty, draft, unsavedWorkflow, workflow?.revision, workflowId])
 
   return {
     query, workflow, revisions: savedRevisions(query.data), draft, setDraft, issues, methodologyWarnings, localIssues, diff, dirty,
-    builtin, conflict,
+    builtin, conflict, unsaved: unsavedWorkflow !== undefined, saveOrCreate,
     save, saving: saveMutation.isPending,
     saveAs: saveAsMutation.mutateAsync, savingAs: saveAsMutation.isPending,
     reloadLatest, importJson, resetToTemplate, exportJson,

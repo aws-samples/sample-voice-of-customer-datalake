@@ -6,7 +6,9 @@
  *
  * `dedupe: ['zod']`: a stream module's `import 'zod'` would otherwise resolve from the stream's own
  * node_modules and bundle a second zod (+86 KB, +24 KB gzip). Both packages pin the same zod version.
- * `fsAllow`: the dev server serves only allowed folders, and the stream sources are outside the SPA root.
+ * `fsAllow`: the dev server serves only allowed folders, and the stream sources are outside the SPA root; so is the one
+ * Lambda file the SPA imports, the default engineering flows (`lambda/shared/engineering_flow_templates.json`, read by
+ * `src/api/engineeringTemplates.ts`), allowed alone, not its folder.
  * What the shared modules may import is enforced on the stream side (its eslint `browser-safe` block).
  */
 import { fileURLToPath } from 'node:url'
@@ -18,4 +20,6 @@ export const streamResolve = {
   dedupe: ['zod'],
 }
 
-export const streamFsAllow = ['.', STREAM_SRC]
+const ENGINEERING_TEMPLATES_FILE = fileURLToPath(new URL('../lambda/shared/engineering_flow_templates.json', import.meta.url))
+
+export const streamFsAllow = ['.', STREAM_SRC, ENGINEERING_TEMPLATES_FILE]

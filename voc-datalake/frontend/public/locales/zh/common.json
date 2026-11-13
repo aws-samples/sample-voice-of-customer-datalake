@@ -30,6 +30,8 @@
     "workflow": "工作流",
     "engineering": "工程",
     "engineeringRun": "工程运行",
+    "templates": "模板",
+    "template": "模板",
     "radar": "雷达",
     "featureRequests": "反馈看板",
     "participants": "参与者",

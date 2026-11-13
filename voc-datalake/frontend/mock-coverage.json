@@ -680,6 +680,16 @@
     ]
   },
   {
+    "file": "api/engineeringTemplates.ts",
+    "method": "GET",
+    "call": "'/workflows/templates'",
+    "probes": [
+      {
+        "path": "/workflows/templates"
+      }
+    ]
+  },
+  {
     "file": "api/participantsApi.ts",
     "method": "GET",
     "call": "'/participants/settings'",

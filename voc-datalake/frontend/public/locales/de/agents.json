@@ -70,7 +70,10 @@
     "newEngineeringFlow": "Neuer Engineering-Ablauf",
     "createEngineeringTitle": "Neuer Engineering-Ablauf",
     "createEngineeringHint": "Ein Engineering-Ablauf lässt autonome Engineering-Agenten an einem Repository arbeiten und endet mit einem Pull Request, den Menschen prüfen. Er beginnt als Start → Ende: Fügen Sie die Engineering-Schritte aus der Palette hinzu.",
-    "engineeringKind": "Engineering"
+    "engineeringKind": "Engineering",
+    "fromTemplate": "Mit einer Vorlage beginnen",
+    "templatesTitle": "Mit einer Vorlage beginnen",
+    "templatesHint": "Sechs Standard-Engineering-Abläufe als Ausgangspunkt. Eine Auswahl öffnet eine Kopie im Editor: Gespeichert wird erst, wenn Sie speichern."
   },
   "fields": {
     "name": "Name",
@@ -802,6 +805,40 @@
       "failed": "Fehlgeschlagen",
       "stopped": "Gestoppt",
       "reposted": "Neu eingestellt"
+    }
+  },
+  "templatePage": {
+    "title": "Neuer Engineering-Ablauf aus einer Vorlage",
+    "subtitle": "Eine Kopie eines Standardablaufs. Ändern Sie, was nötig ist, und fügen Sie ihn mit Speichern der Workflow-Bibliothek hinzu.",
+    "notFound": "Diese Vorlage ist hier nicht verfügbar: Vorlagen gibt es nur dort, wo das Modul der Engineering-Agenten bereitgestellt ist.",
+    "adminOnly": "Nur Administratorinnen und Administratoren erstellen Engineering-Abläufe aus einer Vorlage. Wenden Sie sich an sie oder kehren Sie zur Workflow-Bibliothek zurück.",
+    "loadFailed": "Die Vorlage konnte nicht geladen werden.",
+    "backToLibrary": "Zurück zur Workflow-Bibliothek"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "Das Repository verstehen",
+      "description": "Erfasst das Repository Paket für Paket und entwirft sein Wissenspaket, seine Grundsätze und seinen Review-Leitfaden zur Freigabe durch eine Administratorin oder einen Administrator."
+    },
+    "issueTriage": {
+      "name": "Issue-Triage",
+      "description": "Liest ein Issue, ordnet es als Fehler, Funktion oder Untersuchung ein, reproduziert oder lokalisiert es und schlägt im Issue den nächsten Schritt vor."
+    },
+    "bugHunt": {
+      "name": "Fehler suchen und beheben",
+      "description": "Sucht Fehler in den angegebenen Paketen, behebt und prüft jeden, durchläuft das Qualitätstor und endet bei einem Pull-Request-Entwurf."
+    },
+    "feature": {
+      "name": "Funktion aus einem Issue oder PRD",
+      "description": "Baut eine Funktion aus einem Issue oder PRD: versteht sie, plant, baut, committet und prüft, durchläuft das Qualitätstor und endet bei einem Pull-Request-Entwurf."
+    },
+    "prReview": {
+      "name": "PR-Review",
+      "description": "Prüft einen Pull Request in einem Durchgang, seine Seiten parallel, anhand der Grundsätze und des Review-Leitfadens des Repositorys, und hinterlässt Review-Kommentare."
+    },
+    "selfImprovement": {
+      "name": "Selbstverbesserung",
+      "description": "Der Coach liest frühere Läufe, schlägt neue Skill-Versionen vor und misst sie; eine Administratorin oder ein Administrator nimmt jede an oder lehnt sie ab."
     }
   }
 }

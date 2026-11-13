@@ -71,7 +71,10 @@
     "newEngineeringFlow": "Nuevo flujo de ingeniería",
     "createEngineeringTitle": "Nuevo flujo de ingeniería",
     "createEngineeringHint": "Un flujo de ingeniería ejecuta agentes de ingeniería autónomos sobre un repositorio y termina en un pull request para que lo revisen personas. Empieza como Inicio → Fin: añade los pasos de Ingeniería desde la paleta.",
-    "engineeringKind": "Ingeniería"
+    "engineeringKind": "Ingeniería",
+    "fromTemplate": "Empezar con una plantilla",
+    "templatesTitle": "Empezar con una plantilla",
+    "templatesHint": "Seis flujos de ingeniería predeterminados para empezar. Al elegir uno se abre una copia en el editor: no se guarda nada hasta que la guardes."
   },
   "fields": {
     "name": "Nombre",
@@ -808,6 +811,40 @@
       "failed": "Fallido",
       "stopped": "Detenido",
       "reposted": "Publicado de nuevo"
+    }
+  },
+  "templatePage": {
+    "title": "Nuevo flujo de ingeniería a partir de una plantilla",
+    "subtitle": "Una copia de un flujo predeterminado. Cambia lo que necesites y pulsa Guardar para añadirlo a la biblioteca de flujos.",
+    "notFound": "Esta plantilla no está disponible aquí: las plantillas solo se ofrecen donde está desplegado el módulo de agentes de ingeniería.",
+    "adminOnly": "Solo los administradores crean flujos de ingeniería a partir de una plantilla. Pídeselo a un administrador o vuelve a la biblioteca de flujos.",
+    "loadFailed": "No se pudo cargar la plantilla.",
+    "backToLibrary": "Volver a la biblioteca de flujos"
+  },
+  "templates": {
+    "understandRepository": {
+      "name": "Comprender el repositorio",
+      "description": "Recorre el repositorio paquete a paquete y redacta su paquete de conocimiento, sus principios y su guía de revisión para que un administrador los apruebe."
+    },
+    "issueTriage": {
+      "name": "Clasificación de incidencias",
+      "description": "Lee una incidencia, la clasifica como error, funcionalidad o investigación, la reproduce o la localiza y propone el siguiente paso en la incidencia."
+    },
+    "bugHunt": {
+      "name": "Buscar y corregir errores",
+      "description": "Busca errores en los paquetes indicados, corrige y revisa cada uno, pasa la puerta de calidad y se detiene en una pull request en borrador."
+    },
+    "feature": {
+      "name": "Funcionalidad a partir de una incidencia o un PRD",
+      "description": "Crea una funcionalidad a partir de una incidencia o un PRD: la comprende, planifica, construye, confirma y revisa, pasa la puerta de calidad y se detiene en una pull request en borrador."
+    },
+    "prReview": {
+      "name": "Revisión de PR",
+      "description": "Revisa una pull request en una sola pasada, sus páginas en paralelo, según los principios y la guía de revisión del repositorio, y deja comentarios de revisión."
+    },
+    "selfImprovement": {
+      "name": "Automejora",
+      "description": "El coach lee ejecuciones anteriores, propone nuevas versiones de habilidades y las evalúa; un administrador acepta o rechaza cada una."
     }
   }
 }
