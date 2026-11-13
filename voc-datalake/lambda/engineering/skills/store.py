@@ -15,8 +15,10 @@ skill every connection's agents fall back to) and the agent role::
   from that base and the summary line, why (the run, the failure, a person's comment), the benchmark before and
   after when measured, and who proposed it. The coach (an agent) writes only the version of the connection its run
   is for (``Actor.connection``, from the run's record), from that run's failure, once per run and failure kind (the
-  ``RUN#`` row, created in the same transaction), and never one that changes the tool policy, the model or the
-  harness (``model.PERSON_ONLY_FIELDS``). The shared skill's versions are a person's; a run and its failure belong
+  ``RUN#`` row, created in the same transaction), naming the benchmark case it expects to gain on (the row's
+  ``expected_case``) and how it was made (``made_with_model``, the model that answered, an allowed one, and
+  ``made_with_prompt``, the coach's prompt version: D4), and never one that changes the tool policy, the model or the harness
+  (``model.PERSON_ONLY_FIELDS``). The shared skill's versions are a person's; a run and its failure belong
   to a connection's version. A version row stays under ``MAX_ITEM_BYTES``, checked before it is written.
 - **Promote**: an administrator writes a new shared version from what a connection's version taught. It is refused
   when it adds an instruction line or example text of at least ``MIN_COPIED_TEXT`` characters (case and spacing
@@ -31,9 +33,11 @@ skill every connection's agents fall back to) and the agent role::
   or mis-recorded benchmark makes that version final: it is never accepted, and the coach cannot propose again for
   the same run and failure kind (its ``RUN#`` row); a new proposal comes from a new failure (another run), or an
   administrator writes the fix as their own version, which needs no benchmark. The failure's case is the one the
-  administrator who records the benchmark names; nothing ties it to the version's own failure yet (that comes with
-  the coach: its proposal stores the expected case id, and this check compares them). The row with it stays under
-  ``MAX_ITEM_BYTES`` too, checked before it is written.
+  administrator who records the benchmark names, and for a version the coach proposed it must be the case the
+  proposal said it would gain on (its ``expected_case``, written with the row and never changed): a benchmark
+  naming another case, or none, is refused, before the write and as its condition. A person's version is recorded
+  as before, whatever case it names. The row with it stays under ``MAX_ITEM_BYTES`` too, checked before it is
+  written.
 - **Accept / reject**: an administrator only. Accepting moves the scope's ``current_version`` to the version in one
   transaction with its status, who and when, and its log row; it is refused when the base is no longer current
   (the scope, or for a connection with no version of its own the shared skill, moved meanwhile), checked before and
@@ -68,9 +72,20 @@ from engineering.rows import get_row, transact_or_refuse
 from engineering.rows import number_value as _number
 from engineering.rows import text_value as _text
 from engineering.skills.diff import Event, SkillDiff, diff, from_json, summary, to_json
-from engineering.skills.model import Benchmark, BenchmarkRun, Reason, Skill, SkillContent, SkillError
+from engineering.skills.model import (
+    CASE_ID,
+    Benchmark,
+    BenchmarkRun,
+    MadeWith,
+    Reason,
+    Skill,
+    SkillContent,
+    SkillError,
+    normalised,
+)
 from engineering.workspace.layout import CONNECTION
 from shared.ids import is_key_collision
+from shared.model_config import ALLOWED_MODEL_IDS
 
 PROPOSED, ACCEPTED, REJECTED = 'proposed', 'accepted', 'rejected'
 #: The log events beside the statuses: a rollback's new version, a promoted version's source, a recorded benchmark.
@@ -154,6 +169,11 @@ class RecordedBenchmark:
         return cls(run, at=data['at'], by=data['by'], by_kind=data['by_kind'])
 
 
+def _made_with(model: Any, prompt: Any) -> MadeWith | None:
+    found = _text(model), _text(prompt)
+    return MadeWith(*found) if any(found) else None
+
+
 def _recorded(value: Any) -> RecordedBenchmark | None:
     text = _text(value)
     if not text:
@@ -189,6 +209,11 @@ class SkillVersion:
     restores: int = 0
     #: Its benchmark gate, once recorded (``SkillStore.record_benchmark``): authoritative from then on.
     benchmark_run: RecordedBenchmark | None = None
+    #: The benchmark case the proposal expects to gain on (the coach's; ``''``: none named), written with the row.
+    expected_case: str = ''
+    #: How the coach's proposal was made (the model that answered, the prompt's version), written with the row;
+    #: None for a person's version.
+    made_with: MadeWith | None = None
 
     @property
     def trusted_rates(self) -> Benchmark:
@@ -230,7 +255,9 @@ class SkillVersion:
                    proposed_by_kind=_text(item.get('proposed_by_kind')), created_at=_text(item.get('created_at')),
                    accepted_by=_text(item.get('accepted_by')), accepted_at=_text(item.get('accepted_at')),
                    rejected_by=_text(item.get('rejected_by')), rejected_at=_text(item.get('rejected_at')),
-                   restores=_number(item.get('restores')), benchmark_run=recorded)
+                   restores=_number(item.get('restores')), benchmark_run=recorded,
+                   expected_case=_text(item.get('expected_case')),
+                   made_with=_made_with(item.get('made_with_model'), item.get('made_with_prompt')))
 
 
 @dataclass(frozen=True)
@@ -263,6 +290,14 @@ class Change:
     announcement: Announcement | None
 
 
+@dataclass(frozen=True)
+class Proposed:
+    """A new version proposed, and its ``skill.proposed`` announcement: a proposal always has one."""
+
+    version: SkillVersion
+    announcement: Announcement
+
+
 def _pk(ws: str, connection: str, role: str) -> str:
     if not WS.fullmatch(ws):
         raise SkillError('not a workspace id')
@@ -278,15 +313,11 @@ def _admin(actor: Actor, what: str) -> None:
         raise SkillForbidden(f'only an administrator {what} a skill version')
 
 
-def _normalised(text: str) -> str:
-    return ' '.join(text.split()).casefold()
-
-
 def _own_text(change: SkillDiff) -> set[str]:
     """What a diff adds, normalised, without the lines too short to be anybody's own."""
     texts = [line for op, line in change.instructions if op == '+']
     texts += [part for op, example in change.examples if op == '+' for part in (example.situation, example.action)]
-    return {norm for norm in map(_normalised, texts) if len(norm) >= MIN_COPIED_TEXT}
+    return {norm for norm in map(normalised, texts) if len(norm) >= MIN_COPIED_TEXT}
 
 
 def _unmeasured(found: SkillVersion) -> str:
@@ -294,6 +325,39 @@ def _unmeasured(found: SkillVersion) -> str:
     if found.benchmark_run is None:
         return 'has no recorded benchmark'
     return 'names no failure case' if found.benchmark_run.run.passed else 'failed its benchmark'
+
+
+def _expected_case(case: str) -> str:
+    if case and not CASE_ID.match(case):
+        raise SkillError('an expected case is a benchmark case id: lower case letters, digits and hyphens')
+    return case
+
+
+def _coach_made(expected_case: str, made_with: MadeWith | None) -> None:
+    """The coach's proposal names the case it expects to gain on, and how it was made (D4): with an allowed model."""
+    if not expected_case:
+        raise SkillError("the coach's version names the benchmark case it expects to gain on")
+    if made_with is None:
+        raise SkillError("the coach's version records the model that answered and the prompt it was asked with")
+    if made_with.model not in ALLOWED_MODEL_IDS:
+        raise SkillError("the coach's version was made with one of the deployment's allowed models")
+
+
+def _made_attributes(expected_case: str, made_with: MadeWith | None) -> dict[str, Any]:
+    """A proposal's own attributes on its version row, written with the row and never updated (``''``: none)."""
+    return {'expected_case': {'S': expected_case},
+            'made_with_model': {'S': made_with.model if made_with else ''},
+            'made_with_prompt': {'S': made_with.prompt if made_with else ''}}
+
+
+def _case_mismatch(found: SkillVersion, run: BenchmarkRun) -> str:
+    """Why ``run`` is not a benchmark of the coach's version ``found`` ('' when it is): it names the case the
+    proposal said it would gain on."""
+    if found.proposed_by_kind != 'agent' or run.failure_case == found.expected_case:
+        return ''
+    expected = found.expected_case or 'no case (it was proposed before versions named one)'
+    return (f"version {found.version} is the coach's, proposed to gain on {expected}: its benchmark names that "
+            f"failure's case, not {run.failure_case or 'none'}")
 
 
 def _found(item: dict[str, Any] | None) -> dict[str, Any]:
@@ -379,7 +443,9 @@ class SkillStore:
         return int(counted['Attributes']['versions']['N'])
 
     def _item(self, ws: str, connection: str, skill: Skill, *, status: str, base: SkillRef | None, reason: Reason,
-              benchmark: Benchmark, change: SkillDiff, line: str, by: Actor, restores: int = 0) -> dict[str, Any]:
+              benchmark: Benchmark, change: SkillDiff, line: str, by: Actor, restores: int = 0,
+              made: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """The version row; ``made``: a proposal's own attributes (``_made_attributes``), written with it only."""
         item: dict[str, Any] = {
             **self._key(ws, connection, skill.name, f'VER#{skill.version:06d}'),
             'role': {'S': skill.name}, 'connection': {'S': connection}, 'version': {'N': str(skill.version)},
@@ -390,7 +456,7 @@ class SkillStore:
             'reason_run': {'S': reason.run_id}, 'reason_failure': {'S': reason.failure},
             'reason_comment': {'S': reason.comment}, 'proposed_by': {'S': by.id},
             'proposed_by_kind': {'S': by.kind}, 'created_at': {'S': self.now().isoformat()},
-            'restores': {'N': str(restores)}}
+            'restores': {'N': str(restores)}, **(made or _made_attributes('', None))}
         for name, rate in (('benchmark_before', benchmark.before), ('benchmark_after', benchmark.after)):
             if rate is not None:
                 item[name] = {'N': repr(rate)}
@@ -411,11 +477,16 @@ class SkillStore:
         return found.skill.content
 
     def propose_version(self, ws: str, connection: str, role: str, content: SkillContent, *, proposer: Actor,
-                        reason: Reason, base: SkillRef | None, benchmark: Benchmark | None = None) -> Change:
+                        reason: Reason, base: SkillRef | None, benchmark: Benchmark | None = None,
+                        expected_case: str = '', made_with: MadeWith | None = None) -> Proposed:
         """``content`` as the scope's next version, proposed. ``base``: the version it was written on, as
-        ``resolved`` named it then (None for the first one); accepting it needs that one still current."""
+        ``resolved`` named it then (None for the first one); accepting it needs that one still current.
+        ``expected_case``: the benchmark case it should gain on, which the coach's proposal names (its recorded
+        benchmark must name the same one). ``made_with``: the model that answered and the prompt's version, which
+        the coach's proposal records too (D4)."""
         return self._propose(ws, connection, role, content, proposer=proposer, reason=reason, base=base,
-                             benchmark=benchmark or Benchmark())
+                             benchmark=benchmark or Benchmark(), expected_case=_expected_case(expected_case),
+                             made_with=made_with)
 
     def _coach_guard(self, ws: str, connection: str, role: str, proposer: Actor, reason: Reason) -> dict[str, Any]:
         """The coach's checks; its ``RUN#<run>#<failure>`` row, the one proposal for that run's failure."""
@@ -425,14 +496,22 @@ class SkillStore:
             raise SkillForbidden("the coach writes only the skill of the connection its run is for")
         if not (reason.run_id and reason.failure):
             raise SkillError("the coach's version names the run and the failure it came from")
-        guard = self._key(ws, connection, role, f'RUN#{reason.run_id}#{reason.failure}')
-        if get_row(self.client, self.table, guard) is not None:
+        if self.coach_proposed(ws, connection, role, reason):
             raise SkillConflict(f"the coach has proposed a version for this run's {reason.failure} already")
-        return {**guard, 'by': {'S': proposer.id}}
+        return {**self._run_key(ws, connection, role, reason), 'by': {'S': proposer.id}}
+
+    def _run_key(self, ws: str, connection: str, role: str, reason: Reason) -> dict[str, Any]:
+        return self._key(ws, connection, role, f'RUN#{reason.run_id}#{reason.failure}')
+
+    def coach_proposed(self, ws: str, connection: str, role: str, reason: Reason) -> bool:
+        """Whether the coach has proposed a version for ``reason``'s run and failure kind already (its ``RUN#``
+        row): what the coach reads before it spends a model call. The proposal's transaction holds it again."""
+        return get_row(self.client, self.table, self._run_key(ws, connection, role, reason)) is not None
 
     def _propose(self, ws: str, connection: str, role: str, content: SkillContent, *, proposer: Actor,
                  reason: Reason, base: SkillRef | None, benchmark: Benchmark,
-                 promoted_from: SkillRef | None = None) -> Change:
+                 promoted_from: SkillRef | None = None, expected_case: str = '',
+                 made_with: MadeWith | None = None) -> Proposed:
         _pk(ws, connection, role)
         guard = self._coach_guard(ws, connection, role, proposer, reason) if proposer.kind == 'agent' else None
         if not connection and reason.from_a_run:
@@ -443,17 +522,20 @@ class SkillStore:
         if proposer.kind == 'agent' and changed:
             raise SkillForbidden(f'only a person changes {", ".join(changed)}: the coach proposes instructions '
                                  'and examples only')
+        if proposer.kind == 'agent':
+            _coach_made(expected_case, made_with)
+        made = _made_attributes(expected_case, made_with)
         Skill(role, 1, content)   # refused before a version number is spent
         change = diff(base_content, content)
         line = summary(role, 'proposed', _label(base, connection) if base else '', 'v?', change, scope=connection)
         self._item(ws, connection, Skill(role, 999_999, content), status=PROPOSED, base=base, reason=reason,
-                   benchmark=benchmark, change=change, line=line, by=proposer)   # the size, before a number
+                   benchmark=benchmark, change=change, line=line, by=proposer, made=made)   # the size, before a number
         version = self._next_version(ws, connection, role)
         skill = Skill(role, version, content)
         line = summary(role, 'proposed', _label(base, connection) if base else '',
                        _label(SkillRef(connection, version), connection), change, scope=connection)
         item = self._item(ws, connection, skill, status=PROPOSED, base=base, reason=reason, benchmark=benchmark,
-                          change=change, line=line, by=proposer)
+                          change=change, line=line, by=proposer, made=made)
         puts = [_put(item, self.table)]
         if guard is not None:
             puts.append(_put({**guard, 'version': {'N': str(version)}}, self.table))
@@ -472,10 +554,10 @@ class SkillStore:
                                     'already') from exc
             raise
         row = SkillVersion.from_item(item)
-        return Change(row, self._announce(ws, 'proposed', row, base))
+        return Proposed(row, self._announce(ws, 'proposed', row, base))
 
     def promote_version(self, ws: str, role: str, source: SkillRef, content: SkillContent, *, by: Actor,
-                        reason: Reason, base: SkillRef | None) -> Change:
+                        reason: Reason, base: SkillRef | None) -> Proposed:
         """An administrator's new shared version, written from ``source`` (a connection's accepted version):
         refused when it adds an instruction line or example text of ``MIN_COPIED_TEXT`` characters or more (case
         and spacing aside) that ``source`` adds to the shared skill too. ``base``: the shared version it is
@@ -511,7 +593,8 @@ class SkillStore:
                          by: Actor) -> SkillVersion:
         """Record ``run``, a proposed version's benchmark gate, on its row: once (create-only), with the
         administrator who ran it and when. ``benchmark_gate`` beside it is what acceptance's condition reads: the
-        gate passed with a gain on a named failure's case (``BenchmarkRun.gained``)."""
+        gate passed with a gain on a named failure's case (``BenchmarkRun.gained``). For the coach's version, the
+        failure's case ``run`` names must be the version's ``expected_case``."""
         _admin(by, 'records the benchmark of')
         key = self._key(ws, connection, role, f'VER#{version:06d}')
         item = _found(get_row(self.client, self.table, key))
@@ -520,6 +603,9 @@ class SkillStore:
             raise SkillConflict(f"version {version}'s benchmark is recorded already: a version is measured once")
         if found.status != PROPOSED:
             raise SkillConflict(f'version {version} is {found.status}: only a proposed version is benchmarked')
+        mismatch = _case_mismatch(found, run)
+        if mismatch:
+            raise SkillError(mismatch)
         at = self.now().isoformat()
         value = {'S': RecordedBenchmark(run, at=at, by=by.id, by_kind=by.kind).stored_json()}
         gate = {'BOOL': run.gained}
@@ -527,13 +613,19 @@ class SkillStore:
         if size > MAX_ITEM_BYTES:
             raise SkillError(f'the version row with its benchmark would be {size} bytes, over its '
                              f'{MAX_ITEM_BYTES}-byte cap: record fewer cases or shorter reasons')
+        update: dict[str, Any] = {
+            'TableName': self.table, 'Key': key, 'UpdateExpression': 'SET benchmark_run = :run, benchmark_gate = :gate',
+            'ConditionExpression': '#s = :proposed AND attribute_not_exists(benchmark_run)',
+            'ExpressionAttributeNames': {'#s': 'status'},
+            'ExpressionAttributeValues': {':run': value, ':gate': gate, ':proposed': {'S': PROPOSED}}}
+        if found.proposed_by_kind == 'agent':
+            # The case the row holds, as the pre-check read it: a version written before rows named one has none.
+            expected = 'expected_case = :case' if found.expected_case else 'attribute_not_exists(expected_case)'
+            update['ConditionExpression'] += f' AND {expected}'
+            if found.expected_case:
+                update['ExpressionAttributeValues'][':case'] = {'S': found.expected_case}
         self._transact([
-            {'Update': {'TableName': self.table, 'Key': key,
-                        'UpdateExpression': 'SET benchmark_run = :run, benchmark_gate = :gate',
-                        'ConditionExpression': '#s = :proposed AND attribute_not_exists(benchmark_run)',
-                        'ExpressionAttributeNames': {'#s': 'status'},
-                        'ExpressionAttributeValues': {':run': value, ':gate': gate,
-                                                      ':proposed': {'S': PROPOSED}}}},
+            {'Update': update},
             self._log(ws, connection, role, version, BENCHMARKED, by, at),
         ], f"version {version}'s benchmark was recorded, or the version changed, meanwhile: read it again")
         return self.version(ws, connection, role, version)

@@ -71,6 +71,11 @@ class SkillError(ValueError):
     kind = 'invalid'
 
 
+def normalised(text: str) -> str:
+    """``text`` with its spacing collapsed and its case folded: how two skill texts are compared as the same."""
+    return ' '.join(text.split()).casefold()
+
+
 def _bounded(text: object, what: str, limit: int) -> str:
     if not isinstance(text, str) or not text.strip() or len(text) > limit or '\x00' in text:
         raise SkillError(f'{what} is text of 1-{limit} characters')
@@ -196,6 +201,26 @@ class Reason:
     @property
     def from_a_run(self) -> bool:
         return bool(self.run_id or self.failure)
+
+
+#: A prompt's version, as the coach names its own: ``<name>/<number>``.
+PROMPT_VERSION: Final = re.compile(r'[a-z][a-z0-9-]{0,62}/[1-9][0-9]{0,5}\Z')
+MAX_MODEL_ID: Final = 200
+
+
+@dataclass(frozen=True)
+class MadeWith:
+    """How an agent's proposal was made (D4): the model that actually answered (after any capacity fallback) and
+    the version of the prompt it was asked with. A new proposal's model is one of the deployment's allowed models
+    (``SkillStore`` checks it when it writes one); a stored one is read back as written, since the allowlist moves."""
+
+    model: str
+    prompt: str
+
+    def __post_init__(self) -> None:
+        _bounded(self.model, 'the model a proposal was made with', MAX_MODEL_ID)
+        if not PROMPT_VERSION.match(self.prompt):
+            raise SkillError('the prompt a proposal was made with is named <name>/<number>')
 
 
 def _rate(value: object) -> float | None:

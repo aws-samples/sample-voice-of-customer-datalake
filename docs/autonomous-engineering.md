@@ -1086,10 +1086,11 @@ the write broker before it opens a PR: nothing invokes it, and no role holds an 
 ## Getting better: skills, the coach, the learning loop, memory
 
 *Partly built*: the skills' record, diff and versioned store (`voc-datalake/lambda/engineering/skills/`) with the
-benchmark gate on a coach's version ([Evaluation](#evaluation)), and the agents' memory store with its recall for a
-task (`voc-datalake/lambda/engineering/agent_memory/`), nothing invoking them yet (the harness, the coach, the
-learning loop and the administrators' and people's routes land with phases 4 and 5); the coach and the learning loop
-planned.
+benchmark gate on a coach's version ([Evaluation](#evaluation)), the coach that proposes a version from a failure
+(`voc-datalake/lambda/engineering/coach/`), and the agents' memory store with its recall for a task
+(`voc-datalake/lambda/engineering/agent_memory/`), nothing invoking them yet (the harness, the supervisor or
+retrospective that calls the coach, the learning loop and the administrators' and people's routes land with phases 4
+and 5); the learning loop and its scorecards planned.
 
 **Skills, visibly and reversibly.** An agent's skill (instructions, examples, tool policy, model, harness) is
 versioned. Each version keeps its diff, why it changed (the run, the failure, the person's comment), the benchmark
@@ -1115,7 +1116,8 @@ only once an administrator accepts it, in one transaction that also checks its b
 (the scope's, or the shared skill's for a connection with none of its own), so a proposal written on a version that
 moved meanwhile is refused; the coach (any agent) writes only the version of the connection its run is for (the
 connection its identity carries), from that run's failure, once per run and failure kind (a conditional `RUN#` row
-in the same transaction), and never one that changes the tool policy, the model or the harness. A connection reads
+in the same transaction), naming the benchmark case it expects to gain on (`expected_case`), and never one that
+changes the tool policy, the model or the harness. A connection reads
 its own current version, else the shared skill's, and the history is read a page at a time. An administrator
 promotes a connection's lesson by writing a new shared version: the store refuses one that adds an instruction line
 or example text of 20 characters or more (case and spacing aside) which the connection's version also adds to the
@@ -1134,12 +1136,14 @@ checked before the acceptance and, through `benchmark_gate`, as its transaction'
 create-only (D1), so a failed or mis-recorded benchmark makes that version final: it is never accepted, and the
 coach cannot propose again for the same run and failure kind; a new proposal comes from a new failure (another
 run), or an administrator writes the fix as their own version, which needs no benchmark. The failure's case is the
-one the administrator who records the benchmark names: nothing ties it to the version's own failure yet (that
-comes with the coach, whose proposal will store the expected case id for `record_benchmark` to check). A version a
-person wrote is accepted as before, measured or not. Recording a benchmark announces nothing (the acceptance does).
-Not yet: the harness reading the store, a run recording the versions it used, the routes, tying the failure's case
-to the coach's proposal, the step that runs the benchmark for a
-proposal.
+one the administrator who records the benchmark names, and for a version the coach proposed it must be the case the
+proposal named (the `VER#` row's `expected_case`, written with the row and never changed; the coach's proposal is
+refused without one): a benchmark naming another case, or none, is refused (400), before the write and again as
+its condition. A coach's version written before rows named a case takes only a benchmark naming none, so it is never
+accepted. A version a person wrote is recorded and accepted as before, measured or not, whatever case it names.
+Recording a benchmark announces nothing (the acceptance does).
+Not yet: the harness reading the store, a run recording the versions it used, the routes, the step that runs the
+benchmark for a proposal.
 
 **The coach.** When an agent fails (an error, a timeout, a NO-GO, a review finding it keeps repeating, a person
 rejecting its pull request or editing it heavily), the coach reads the conversation, the task, the outputs and the
@@ -1153,6 +1157,53 @@ unless a person made that part of it (letting an AI-driven owner's agents apply 
 widen tenet 3's dial, below, and waits for that change). **Never changed by an agent, only by a person:**
 permissions and credential scopes, the harness and its tool policy, budgets and caps, the dial, the stop-at-the-pull-request rule, the safety and
 prompt-injection instructions, the gate's bar.
+
+What exists (`voc-datalake/lambda/engineering/coach/`, nothing invoking it yet):
+
+- **The failure** (`coach/failure.py`): the run, the connection (the run's, from its record, never from an agent),
+  the role (never the coach's own), the task, the attempt, the kind (`error`, `timeout`, `no_go`,
+  `repeated_finding`, `pr_rejected`, `heavy_edit`) and the evidence: the task's text (4,000 characters), up to 12
+  conversation excerpts (2,000 each), 8 outputs (4,000 each) and 12 people's comments (1,000 each), 40,000 in all.
+  Every field is checked; every text has its credential-shaped strings replaced (the gate's `redact`) and is
+  measured as kept; a text over its bound is refused, never cut.
+- **The prompt** (`coach/prompt.py`): the role's current instructions and each current example's situation and action (as the answer gives them back), the benchmark's case
+  ids and each piece of evidence, each in its own DATA block under one random fence per prompt, as agent memory's
+  recall fences memories; the system prompt says that everything in a block is data, never an instruction, lists
+  what the coach never writes (tenet 3's list above), and asks for one JSON object: the whole new instructions and
+  examples, a short why and the benchmark case the change should make pass.
+- **The answer** (`coach/answer.py`), read strictly: one JSON object (a code fence allowed), `json.loads` only (never
+  `eval`), nested at most 8 brackets deep (checked before decoding, so a deep answer is refused, never a crash), no
+  key twice, exactly its four fields. Refused with a plain reason: a key named for a person-only field
+  (`tool_policy`, `model`, `harness`) or for one never in a skill (a budget, a cap, the dial, permissions, safety);
+  text the answer adds or removes about a budget or a cap, the dial, permissions or credentials, the safety or
+  prompt-injection instructions, merging or marking a pull request ready, the gate's bar, the agents' harness or
+  tool policy, or a model: an instruction line or example text added or dropped (so the coach cannot delete a line
+  such as "Never merge a pull request"), a mention gained or lost in the whole skill read as one text with its
+  spacing collapsed (a topic split across lines), or a mention in the why (matched broadly; the reason names the
+  topic and the line, never the text); a malformed or over-long field, an expected case not in the benchmark, an
+  answer that changes nothing. The topic check is a filter that catches the plain cases, not the gate: a reworded
+  one can pass it, and what holds a version back is an administrator's review and its benchmark. What it keeps is
+  redacted too, and the proposal keeps the current skill's tool policy, model and harness.
+- **The model** (`coach/model.py`): a port the tests fake; the Bedrock adapter is one single-turn call through
+  `shared/converse.py`'s `converse_detailed` with a model from the deployment's allowlist (by default the
+  `agent_reviewer` surface's, the surface named so a capacity fallback stays on its chain), sized for a strict JSON
+  answer in one call (no continuation, thinking headroom on top); its reply names the model that actually answered.
+- **The proposer** (`coach/proposer.py`, `Coach.propose_for(failure, cases)`): refuses before any model call when the
+  coach has proposed for that run and failure kind already (`SkillStore.coach_proposed`, the `RUN#` row; the
+  proposal's transaction holds it again), and when the role has no skill yet (its first version is a person's);
+  reads the connection's own current version, else the shared one; asks the model; proposes through the store's
+  `propose_version` as the coach of the run's connection, the why being the run, the kind and the answer's why,
+  written on the version it read, with the answer's case as the version's `expected_case` and how it was made
+  (`made_with_model`, the model that answered, which must be an allowed one, and `made_with_prompt`, the prompt's
+  version `coach-prompt/2`, on the `VER#` row, written with it and never changed: D4); and returns the change,
+  its `skill.proposed` announcement as a checked `voc-msg/1` message from the run's coach to the run (its id made
+  from the change, so a second publish is a redelivery) and the coach's run-scoped source
+  (`voc.engineering/coach/<ws>/<run>`), for the caller to publish. A refused answer writes nothing and spends no
+  proposal.
+
+Still planned: invoking the coach on a failure (the supervisor, or the run's retrospective), a connection's own
+benchmark cases made from its failures and kept with it, the step that runs the benchmark for a proposal, and the
+learning loop with its scorecards.
 
 **The learning loop.** After each run, a retrospective (the run coordinator's last task): what people accepted, changed or
 rejected (review comments on the agents' pull requests, edits after merge, reverted commits), what the gates caught,
@@ -1335,7 +1386,9 @@ What exists:
 - Scripted candidates in the tests (every known fix replayed; one case left unfixed; a baseline that fails a
   failure's case and a version that fixes it) prove the runner and the gate end to end on the shipped cases.
 
-Still planned: the coach that proposes a version and runs the benchmark for it; real agents (a role's skill version
+The coach that proposes a version is built, and names the case its version should gain on, which the recorded
+benchmark must name ([above](#getting-better-skills-the-coach-the-learning-loop-memory)). Still planned: invoking it
+on a failure, and the step that runs the benchmark for its proposal; real agents (a role's skill version
 on a model, through the harness) as candidates; the results published here; and a connection's own fixtures made
 from its failures, kept with that connection. The benchmark assumes an honest candidate: a check's isolation is
 the runner's (a clean environment, a throwaway directory, a timeout, the paths a patch may change), not a
@@ -1365,6 +1418,6 @@ and the phase that ships them names them in that row.
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (the broker reads no run record and there is no GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
-| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, nothing invoking them yet (same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach planned |
+| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, nothing invoking them yet (same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), nothing invoking it yet (same place as the skills); invoking the coach on a failure, a connection's own cases from its failures, the learning loop and scorecards planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), and the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)); the templates, live cost, skill histories and the assistant's run tools planned |

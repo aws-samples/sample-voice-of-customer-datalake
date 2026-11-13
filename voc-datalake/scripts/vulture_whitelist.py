@@ -14,6 +14,8 @@ from engineering.agent_memory.recall import Recall
 from engineering.agent_memory.store import AgentMemoryStore
 from engineering.benchmark.cases import load_suite
 from engineering.benchmark.runner import Scorecard, run_suite
+from engineering.coach.model import BedrockCoachModel
+from engineering.coach.proposer import Coach
 from engineering.knowledge.store import PackVersion
 from engineering.knowledge.understand import understand_package
 from engineering.skills.store import Change, SkillStore, SkillVersion, VersionPage
@@ -55,6 +57,12 @@ Scorecard.total_cost_usd
 SkillStore.record_benchmark
 # The pass rates a version's readers (the skill history, phase 5) show: the recorded benchmark's, else the claim.
 SkillVersion.trusted_rates
+
+# The coach (engineering/coach/): its proposer and the Bedrock adapter it asks, invoked on an agent's failure by the
+# supervisor or the run's retrospective, neither wired yet (docs/autonomous-engineering.md, "The coach"); its tests
+# drive them on moto with a recorded model and a faked converse until then.
+Coach.propose_for
+BedrockCoachModel.__name__
 
 # The agents' memory store, written by the agents' learning (the learning loop, phase 5), read by the harness's
 # recall for a task (phase 4's agents) and approved, edited, forgotten and restored through the people's and the
