@@ -136,6 +136,11 @@ def test_a_repeated_launch_answers_the_session_the_first_wrote_and_starts_no_sec
     session = handler._supervisor().sessions.get(RUN, 'fixer-1')
     assert session is not None
     assert session.seq == 1   # (the first launch's row, untouched)
+    # Answered before any other check: once the run has stopped, a retry of a launch that got through is still told
+    # its session, never refused (the board would read a refusal as nothing started).
+    handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'stopped'}, None)
+    assert handler.lambda_handler(LAUNCH, None)['agent_id'] == 'fixer-1'
+    assert started == []
 
 
 def test_an_agent_with_a_session_for_another_task_or_attempt_is_refused_before_any_microvm(
@@ -159,6 +164,9 @@ def test_a_launch_while_another_still_starts_the_agents_microvm_is_busy_and_star
     _, started = _recording(monkeypatch)
     with pytest.raises(SessionBusy, match='under way'):
         handler.lambda_handler(LAUNCH, None)
+    # Busy before any other check: a retry the skill or egress would refuse is busy too (never "nothing started").
+    with pytest.raises(SessionBusy, match='under way'):
+        handler.lambda_handler({**LAUNCH, 'harness': None, 'language': 'cobol'}, None)
     assert (started, sessions.get(RUN, 'fixer-1')) == ([], None)
     # A hold past its time (a launch killed at the function's limit) lets the next launch through.
     now = handler.clock()

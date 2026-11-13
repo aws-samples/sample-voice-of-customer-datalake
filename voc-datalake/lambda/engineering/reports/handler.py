@@ -26,6 +26,8 @@ from shared.logging import logger
 from shared.timestamps import now_iso
 
 _PR = re.compile(r'[1-9][0-9]{0,9}\Z')
+UNREAD_GATE = ('the gate record this run recorded last could not be read or is off the schema: no pull request '
+               'report without it (check the workspace bucket\'s key and policy, or run the final go again)')
 USAGE = 'run_id, and level commit (subject: its full sha) | pr (subject: its number, head: its full sha) | goal'
 
 
@@ -43,6 +45,10 @@ class Reports:
             return {'status': 'refused', 'reason': 'no such run'}
         inputs = gather(facts, self.board.tasks(WORKSPACE, run_id), self.workspace.read_text, head=head,
                         history=self.board.history(WORKSPACE, run_id))
+        if level == 'pr' and inputs.unread_gate:
+            # Its Markdown is the pull request's description: never one that drops the gate record vouching for it.
+            logger.error('reports: the gate record the run recorded last could not be read', extra={'run_id': run_id})
+            return {'status': 'refused', 'reason': UNREAD_GATE}
         at = now_iso()
 
         def document(version: int) -> tuple[dict[str, Any], str]:

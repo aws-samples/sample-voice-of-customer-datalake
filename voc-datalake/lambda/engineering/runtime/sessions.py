@@ -247,6 +247,11 @@ class SessionStore:
                 raise LaunchUnderWay(f'{run_id}/{agent_id} has a session or a launch under way') from error
             raise
 
+    def launch_under_way(self, run_id: str, agent_id: str, now: int) -> bool:
+        """Another launch of the agent holds its row (its MicroVM still starting) and has written no session yet."""
+        item = consistent_item(self._table, _key(run_id, agent_id))
+        return item is not None and 'seq' not in item and int(item.get(LAUNCH_HOLD, 0)) >= now
+
     def release_launch(self, run_id: str, agent_id: str) -> None:
         """Let go of a launch that started no session (its MicroVM failed to start): a retry may launch at once."""
         try:

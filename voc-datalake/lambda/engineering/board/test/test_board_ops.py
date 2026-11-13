@@ -104,7 +104,8 @@ def _board(client: Any, knowledge: Any) -> Board:
     _start(client, store)
     launcher = Launcher()
     api = BoardApi(store, EventBridgePublisher(Bus(), 'voc-engineering', 'voc.engineering/board'),
-                   Inbox(client, TABLE), launcher=launcher, knowledge=knowledge)
+                   Inbox(client, TABLE), launcher=launcher, knowledge=knowledge,
+                   skill=lambda role: f'{role}-skill')   # (the roles' skills, as phase 3 writes them)
     return Board(client, store, api, launcher, knowledge)
 
 
@@ -241,6 +242,12 @@ def test_a_retried_launch_keeps_the_language_it_was_launched_with(run: Board) ->
     call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
     call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='rust', paths=[])
     assert [request['language'] for request in run.launcher.requests] == ['python', 'python']
+    # Its checks test what it sends: a retry naming another language or a bad path still gets through, and so does
+    # one after a redeploy dropped the image or the skill it was launched with.
+    run.api.images, run.api.skill = frozenset(), lambda _role: None
+    status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='cobol',
+                        paths=['../x'])
+    assert (status, body['agent_id'], run.launcher.requests[-1]['language']) == (200, 'fixer-1', 'python')
 
 
 def test_a_launch_on_a_task_no_longer_open_never_reaches_the_runtime(run: Board) -> None:
@@ -330,6 +337,75 @@ def test_each_runtime_refusal_is_a_conflict_with_its_message(run: Board, error_t
     run.api.launcher = _runtime_error(error_type)
     status, body = call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='python', paths=[])
     assert (status, body['error']) == (409, f'{error_type}: no')
+
+
+def test_a_language_with_no_image_in_this_deployment_is_refused_before_an_agent_is_numbered(run: Board) -> None:
+    run.api.images = frozenset({'node'})
+    task_id = fixer_task(run)
+    for _ in range(3):
+        status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
+        assert (status, body['error']) == (409, "no python image in this deployment: launch in one of ['node']")
+    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='node', paths=[])[1][
+        'agent_id'] == 'fixer-1'
+    run.api.images = frozenset()
+    assert call(run, COORDINATOR, op='launch', task_id=fixer_task(run, ['y']), role='fixer', language='node',
+                paths=[])[1]['error'].endswith('none yet')
+
+
+def test_a_role_with_no_skill_is_refused_before_an_agent_is_numbered(run: Board) -> None:
+    run.api.skill = lambda _role: None
+    task_id = fixer_task(run)
+    for _ in range(3):
+        status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
+        assert (status, body['error']) == (409, 'no fixer agent can be launched yet: the role has no skill')
+    run.api.skill = lambda _role: 'fixer-skill'
+    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])[1][
+        'agent_id'] == 'fixer-1'   # (no number used by the refusals)
+
+
+@pytest.mark.parametrize('error_type', ['RuntimeRefused', 'StaleSession'])
+def test_a_launch_the_runtime_refused_is_forgotten_so_the_next_launches_a_new_agent(run: Board, error_type: str) -> None:
+    task_id = fixer_task(run)
+    launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'paths': []}
+    run.api.launcher = _runtime_error(error_type)   # (no image for that language; another task's session)
+    assert call(run, COORDINATOR, **launch, language='rust')[0] == 409
+    assert run.store.task(WS, RUN, task_id).launched_agent == ''
+    last = run.store.history(WS, RUN)[task_id][-1]
+    assert (last.op, last.actor, last.reason) == ('launch_refused', 'coordinator-0', f'fixer-1: {error_type}: no')
+    run.api.launcher = Launcher()
+    status, body = call(run, COORDINATOR, **launch, language='python')
+    assert (status, body['agent_id'], run.api.launcher.requests[-1]['language']) == (200, 'fixer-2', 'python')
+
+
+def test_a_retry_the_runtime_refuses_after_a_lost_answer_is_cleared_so_the_task_is_never_stuck(run: Board) -> None:
+    """The runtime answers a repeat, and a launch still booting, before it refuses anything else (handler.py)."""
+    first = {'op': 'launch', 'task_id': fixer_task(run), 'role': 'fixer', 'language': 'python', 'paths': []}
+    run.api.launcher = LambdaLauncher(LambdaClient({}, 'Unhandled'), 'f')
+    statuses = [call(run, COORDINATOR, **first)[0]]
+    run.api.launcher = _runtime_error('RuntimeRefused')   # (a redeploy changed the skill meanwhile)
+    statuses.append(call(run, COORDINATOR, **first)[0])
+    assert (statuses, run.store.task(WS, RUN, first['task_id']).launched_agent) == ([503, 409], '')
+
+
+def test_a_refused_launch_that_cannot_be_cleared_still_answers_the_runtimes_refusal(
+        run: Board, monkeypatch: pytest.MonkeyPatch) -> None:
+    def moved(*_: Any, **__: Any) -> None:
+        raise BoardError('conflict', 'the task is no longer open at this attempt')
+
+    monkeypatch.setattr(run.store, 'clear_launch', moved)
+    run.api.launcher = _runtime_error('RuntimeRefused')
+    status, body = call(run, COORDINATOR, op='launch', task_id=fixer_task(run), role='fixer', language='python',
+                        paths=[])
+    assert (status, body['error']) == (409, 'RuntimeRefused: no')
+
+
+@pytest.mark.parametrize('error_type', ['SessionBusy', 'RunNotActive', 'RunStopped', 'RunExists'])
+def test_a_launch_still_booting_or_of_a_run_not_active_keeps_its_record(run: Board, error_type: str) -> None:
+    """A busy one is the first launch booting; a run not active may hold the first launch's agent still running."""
+    task_id = fixer_task(run)
+    run.api.launcher = _runtime_error(error_type)
+    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])[0] == 409
+    assert run.store.task(WS, RUN, task_id).launched_agent == 'fixer-1'
 
 
 @pytest.mark.parametrize('error_type', ['KeyError', 'MicroVmCallFailed'])

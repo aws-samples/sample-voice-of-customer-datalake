@@ -12,9 +12,11 @@ is approved; the paths are the task spec's, the ones its agent was launched on, 
 also has ``tasks`` (its run's tasks) and ``launch`` (``{task_id, role, language, paths}``: an agent for an open task,
 through ``voc-engineering-runtime``'s ``launch`` action only, with the run's commit and connection from its META;
 recorded on the task with its attempt and paths, so a retried launch launches the same agent and a repost's new
-attempt a new one; the runtime's refusals answer 409, a session already there for the recorded agent 200). The board
-never chooses the agent's argv: the runtime derives it from the role's skill, so a launch of a role with no skill yet
-is refused (409). The coordinator claims the run's ``coordinate`` task, which only the run's start writes
+attempt a new one; the runtime's refusals answer 409, and a first launch's bad request or another task's session clears
+the record with a ``launch_refused`` history row (``CLEARS_LAUNCH``) so the next launch numbers a new agent; a session
+already there for the recorded agent answers 200). The board never chooses the agent's argv: the runtime derives it
+from the role's skill, so a launch of a role with no skill yet, or in a language this deployment has no image for, is
+refused (409) before an agent is numbered. The coordinator claims the run's ``coordinate`` task, which only the run's start writes
 (``BoardStore.coordinate_items``, in the start's transaction with META, which records the run's ``commit`` and
 ``connection``; a run started without them answers 409 to ``launch`` and ``knowledge``, since no retry can succeed).
 ``knowledge`` takes the caller's ``task_id`` and reads that one task's row: the caller must hold its live lease.
@@ -34,7 +36,7 @@ from __future__ import annotations
 import base64
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -52,6 +54,7 @@ from engineering.knowledge.workspaces import ROOT
 from engineering.quality_gate.text import redact
 from engineering.runtime.checkout import check_sparse_path
 from engineering.runtime.egress import REGISTRY_HOSTS
+from engineering.runtime.harness.skills import skill_for
 from engineering.runtime.interface import MAX_TASK_PATHS, RuntimeRefused
 from engineering.workspace.layout import LayoutError
 from shared.logging import logger
@@ -156,6 +159,11 @@ MAX_PATHS = MAX_TASK_PATHS
 #: task or attempt (``StaleSession``: agents are numbered once per attempt, so never this launch's; the runtime
 #: answers a repeat of the same launch with its session). The coordinator reads the message: 409.
 REFUSALS = frozenset({'RuntimeRefused', 'RunNotActive', 'RunExists', 'RunStopped', 'SessionBusy', 'StaleSession'})
+#: The refusals after which no session of this launch exists (the runtime answers a repeat with its session before
+#: any check: runtime/handler.py ``_repeated``): a bad request (no image for the language, no skill for the role,
+#: another attempt) or the agent's session there for another task. The recorded launch is cleared. A busy session
+#: is the first launch still booting, and a run not active or stopped launches nothing again: those keep it.
+CLEARS_LAUNCH = frozenset({'RuntimeRefused', 'StaleSession'})
 #: A run whose start recorded no repository connection or commit: only a new run's start can, so never a retry.
 NO_START_RECORD = ('this run was started without a repository connection or commit: start a new run with both to '
                    'launch agents or read knowledge')
@@ -199,13 +207,21 @@ class LambdaLauncher:
             error = payload.get('errorType')
             if error in REFUSALS:
                 logger.warning('board: the runtime refused a launch', extra={'error_type': error})
-                raise BoardError('conflict', str(payload.get('errorMessage', 'the runtime refused it'))[:MAX_TITLE])
+                raise LaunchRefused(str(error), str(payload.get('errorMessage', 'the runtime refused it'))[:MAX_TITLE])
             raise LaunchFailed
         return payload
 
 
 class LaunchFailed(RuntimeError):
     """The runtime could not be asked, or failed: the coordinator retries (the task keeps its launched agent)."""
+
+
+class LaunchRefused(BoardError):
+    """The runtime refused the launch (one of ``REFUSALS``, named by ``error_type``): a 409 with its message."""
+
+    def __init__(self, error_type: str, message: str) -> None:
+        super().__init__('conflict', message)
+        self.error_type = error_type
 
 
 def _paths(body: Mapping[str, Any]) -> list[str]:
@@ -233,13 +249,19 @@ class Outcome:
 
 class BoardApi:
     def __init__(self, store: BoardStore, publisher: EventBridgePublisher, inbox: Inbox, *,
-                 launcher: Launcher | None = None, knowledge: Knowledge | None = None) -> None:
-        """``launcher`` and ``knowledge``: the coordinator's launch and the knowledge reads (None: refused)."""
+                 launcher: Launcher | None = None, knowledge: Knowledge | None = None,
+                 skill: Callable[[str], object | None] = skill_for,
+                 images: frozenset[str] = frozenset(REGISTRY_HOSTS)) -> None:
+        """``launcher`` and ``knowledge``: the coordinator's launch and the knowledge reads (None: refused);
+        ``skill``: a role's skill (runtime/harness/skills.py), which the runtime launches it with; ``images``: the
+        languages this deployment has a MicroVM image for (``ENGINEERING_IMAGE_LANGUAGES``)."""
         self.store = store
         self.publisher = publisher
         self.inbox = inbox
         self.launcher = launcher
         self.knowledge = knowledge
+        self.skill = skill
+        self.images = images
 
     def _meta(self, run_id: str) -> Mapping[str, Any]:
         meta = self.store.meta(WORKSPACE, run_id)
@@ -259,11 +281,13 @@ class BoardApi:
             raise BoardError('forbidden', 'only the run\'s coordinator launches agents')
         if self.launcher is None:
             raise LaunchFailed
-        role, language, paths = _text(body, 'role'), _text(body, 'language'), _paths(body)
+        role, (language, paths, recorded) = _text(body, 'role'), self._launch_settings(caller, body)
         if role not in ROLES or language not in REGISTRY_HOSTS:
             # The runtime's own image languages: one it would refuse is refused before an agent is numbered on it,
             # since a retry at the attempt keeps the language it was launched with.
             raise BoardError('invalid', f'"role" is a role that claims tasks, "language" one of {sorted(REGISTRY_HOSTS)}')
+        if not recorded:   # (a retry is never refused for a skill or an image a redeploy changed meanwhile)
+            self._check_launchable(role, language)
         meta = self._meta(caller.run_id)
         commit, connection = meta.get('commit', {}).get('S', ''), meta.get('connection', {}).get('S', '')
         if not (commit and connection):
@@ -273,11 +297,46 @@ class BoardApi:
         task = self.store.launch(WORKSPACE, caller.run_id, _text(body, 'task_id'), role=role,
                                  actor=agent_id(caller), paths=paths, language=language)
         # A retry (the same agent at the same attempt) gets what the first launch's session answers.
-        answer = self.launcher.launch({
-            'run_id': caller.run_id, 'agent_id': task.launched_agent, 'role': role, 'task_id': task.task_id,
-            'attempt': task.attempt, 'language': task.launched_language or language,
-            'paths': list(task.launched_paths), 'commit': commit, 'connection': connection})
+        try:
+            answer = self.launcher.launch({
+                'run_id': caller.run_id, 'agent_id': task.launched_agent, 'role': role, 'task_id': task.task_id,
+                'attempt': task.attempt, 'language': task.launched_language or language,
+                'paths': list(task.launched_paths), 'commit': commit, 'connection': connection})
+        except LaunchRefused as refused:
+            # The runtime answers a repeat with its session, and one while the first still starts as busy, before any
+            # other check: these refusals so mean no session and no launch of the agent exist, even on a retry.
+            if refused.error_type in CLEARS_LAUNCH:
+                self._clear_launch(caller, task, refused)
+            raise
         return {'agent_id': task.launched_agent, 'status': str(answer.get('status', ''))}
+
+    def _check_launchable(self, role: str, language: str) -> None:
+        """What the runtime would refuse, refused before an agent is numbered, so a coordinator that keeps asking uses
+        up none of the run's agent numbers: a role with no skill (the runtime launches a role only with its skill), a
+        language this deployment has no MicroVM image for."""
+        if self.skill(role) is None:
+            raise BoardError('conflict', f'no {role} agent can be launched yet: the role has no skill')
+        if language not in self.images:
+            raise BoardError('conflict', f'no {language} image in this deployment: launch in one of '
+                                         f'{sorted(self.images) or "none yet"}')
+
+    def _launch_settings(self, caller: Caller, body: Mapping[str, Any]) -> tuple[str, list[str], bool]:
+        """The language and paths the launch will send, which its checks test, and whether it is a retry of a launch
+        recorded at the task's attempt (which sends the recorded ones, whatever this request names, so a launch that
+        got through is never refused on a retry); else the request's."""
+        current = self.store.task(WORKSPACE, caller.run_id, _text(body, 'task_id'))
+        if current.launched_agent and current.launched_attempt == current.attempt:
+            return current.launched_language or _text(body, 'language'), list(current.launched_paths), True
+        return _text(body, 'language'), _paths(body), False
+
+    def _clear_launch(self, caller: Caller, task: Task, refused: LaunchRefused) -> None:
+        """Forget a launch the runtime refused, so the coordinator's next one, with other settings, can get through.
+        A failure here is logged, never answered: the coordinator reads the runtime's refusal, which says what to
+        change."""
+        try:
+            self.store.clear_launch(WORKSPACE, caller.run_id, task, actor=agent_id(caller), reason=str(refused))
+        except (BoardError, ClientError, BotoCoreError):
+            logger.exception('board: a refused launch could not be cleared', extra={'task_id': task.task_id})
 
     def _callers_task(self, caller: Caller, task_id: str) -> Task:
         """The task the caller names (one read of its row), when the caller holds its live lease: a task that has
@@ -432,7 +491,8 @@ def _from_environment() -> BoardApi:
                     Inbox(client, table),
                     launcher=LambdaLauncher(boto3.client('lambda', config=launch_client_config()), runtime) if runtime
                     else None,
-                    knowledge=knowledge)
+                    knowledge=knowledge,
+                    images=frozenset(filter(None, os.environ.get('ENGINEERING_IMAGE_LANGUAGES', '').split(','))))
 
 
 def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:

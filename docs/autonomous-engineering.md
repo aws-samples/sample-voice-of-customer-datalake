@@ -344,14 +344,19 @@ What exists:
   never posted, and claimed only by the run's coordinator, which renews and reports progress on it like
   any agent. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
-  its role, language and paths, the language one of the images' and the paths by the checkout's own rule, both
-  checked before an agent is numbered; the board invokes the runtime's `launch` action only (its code holds it to
+  its role, language and paths, the role one with a skill, the language one this deployment has a MicroVM image
+  for (`-c engineeringImageArns`) and the paths by the checkout's own rule, all checked before an agent is
+  numbered; the board invokes the runtime's `launch` action only (its code holds it to
   that: its role's grant is the whole function's), with the run's commit and
   connection from its META, numbers the agent `<role>-<n>` from the run's counter, at most 999, and records it on the
   task with the attempt and paths it was launched at and a history row, so a retried launch at that attempt launches
   the same agent, and a re-posted task, at its new attempt, a new one; a task no longer open is refused before the
   runtime is asked). The runtime's refusals (a bad request, a run not active or stopped, a session busy, the agent's
-  session there for another task or attempt) answer 409 with their message; a repeat of a launch whose session got
+  session there for another task or attempt) answer 409 with their message; a bad request or another task's session clears the
+  task's recorded launch (the runtime answers a repeat with its session, and one while the first still starts as
+  busy, before any other check, so such a refusal means no session and no launch of the agent exist) with a `launch_refused` history row, so the next launch numbers a new
+  agent with the settings it gives then (a busy session, or a run not active, keeps it); the runtime answers a
+  repeat before any other check, so a repeat of a launch whose session got
   through gets that session (200); anything else 503. A launch is started once: the board waits for the runtime's answer up to 100 s, within its own 120 s limit,
   and its client never retries the call itself; the runtime holds the agent's row (`launching_until`, one
   conditional write) before it starts the MicroVM, so a repeat for the same task and attempt answers the session the
@@ -947,7 +952,9 @@ the write broker before it opens a PR: nothing invokes it, and no role holds an 
 - **Commit report**: what the commit changes and why (its task), the gate packs' results, each review round's
   findings and what was done about each, the final verdict, cost and time.
 - **PR report**: the commits' reports rolled up, the PR review, the test evidence, the risks and what a person should
-  look at, the gate record (it goes in the PR description).
+  look at, the gate record (it goes in the PR description). Built: a PR report whose winning gate record (the last
+  final-go task to end, then its latest attempt) cannot be read or is off the schema is refused, never published
+  without it or with an older one in its place.
 - **Goal report**: the run's objective ("find and fix the top bugs in the payments package", "build feature X from
   its PRD"), the board's outcome (done, failed, needing a person), the pull requests opened and their state, what is
   left, total cost and time, what the agents learned (proposed knowledge-pack edits, for a person to accept) and what

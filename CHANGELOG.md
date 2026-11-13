@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.15.01] - 2026-11-13
+
+Autonomous engineering agents: fixes from 6.15.00's review, to launches and PR reports. Off by default.
+
+### Fixed
+
+- A launch the runtime refuses as a bad request (no image for the language in this deployment, no skill for the role, another attempt) or because the agent's session is another task's no longer keeps the task's recorded launch: the board clears it with a `launch_refused` history row naming the coordinator and the refusal, so the coordinator's next launch numbers a new agent with the language and paths it gives then (a clear that fails is logged; the coordinator still reads the runtime's refusal). A launch still booting (`SessionBusy`) and a run not active or stopped keep the record.
+- The runtime answers a repeated launch (the same agent, task and attempt) with its session, and one while the first still starts as busy, before any other check: a launch that got through is never refused on a retry, even once the run has stopped, and any other refusal means no session and no launch of the agent exist.
+- A PR report whose winning gate record (the last final-go task to end, then its latest attempt) cannot be read or is off the schema is refused (logged as an error) instead of published without it or with an older attempt's: the report's Markdown is the pull request's description. A later attempt's good record wins over an unread older one. Commit and goal reports are unchanged.
+- The board refuses (409) a launch of a role that has no skill yet, or in a language this deployment has no MicroVM image for (`ENGINEERING_IMAGE_LANGUAGES`, from `-c engineeringImageArns`), before it numbers an agent, so a coordinator that keeps asking uses up none of the run's 999 agent numbers.
+- A MicroVM the service started but answered without a usable endpoint is terminated at once; if that terminate fails it is logged, and the MicroVM's idle policy ends it.
+
 ## [6.15.00] - 2026-11-12
 
 Autonomous engineering agents: the supervisor and the harness run on the board and the bus, the board gains the coordinator's ops, and New engineering flow shows only where the module is deployed. Merged from the voc-autonomous-b and voc-autonomous-c branches. Off by default.

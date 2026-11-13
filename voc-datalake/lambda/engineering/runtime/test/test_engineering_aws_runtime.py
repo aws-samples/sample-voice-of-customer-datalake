@@ -102,8 +102,21 @@ def test_a_session_is_handed_to_the_runner_with_the_cache_mount_and_the_status_i
                                     {'MicrovmId': 'm', 'Endpoint': 'https://x.example.org/?a=1'}, {'MicrovmId': 'm'}],
                          ids=['no-id', 'plain-http', 'query', 'no-endpoint'])
 def test_run_refuses_an_answer_without_an_id_or_an_https_endpoint(answer):
+    client = FakeClient(answer)
     with pytest.raises(RuntimeRefused):
-        _runtime(FakeClient(answer)).run(SPEC)
+        _runtime(client).run(SPEC)
+    # A MicroVM that started (it has an id) is ended at once, never left running unsupervised.
+    ended = [args['MicrovmId'] for call, args in client.calls if call == 'terminate']
+    assert ended == ([answer['MicrovmId']] if 'MicrovmId' in answer else [])
+
+
+def test_a_terminate_that_fails_after_an_unusable_answer_still_raises_the_refusal():
+    class Failing(FakeClient):
+        def terminate_microvm(self, **_: Any) -> dict[str, Any]:
+            raise RuntimeError('the service is unavailable')
+
+    with pytest.raises(RuntimeRefused, match='plain https'):
+        _runtime(Failing({'MicrovmId': 'm', 'Endpoint': 'http://x'})).run(SPEC)
 
 
 def test_run_refuses_a_language_without_an_image():

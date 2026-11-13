@@ -162,7 +162,7 @@ type WiredProps = EngineeringRuntimeProps & {
  * `-c engineeringImageArns`: a JSON object (or its text, from the CLI) from languages of IMAGE_LANGUAGES to ARNs,
  * `{}` when absent. Anything else fails the synth, so a typo never deploys a runtime that launches the wrong image.
  */
-function imageArns(scope: Construct): Record<string, string> {
+export function imageArns(scope: Construct): Record<string, string> {
   const raw: unknown = scope.node.tryGetContext(IMAGE_ARNS_CONTEXT);
   if (raw === undefined || raw === null) return {};
   const usage = `Use -c ${IMAGE_ARNS_CONTEXT}='{"python":"arn:aws:…"}' (languages: ${IMAGE_LANGUAGES.join(', ')}).`;

@@ -60,6 +60,7 @@ import {
   ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
 } from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
+import { imageArns } from './engineering-runtime';
 
 /** The report builder's base name: its future callers (the broker, the supervisor) address it by this name. */
 export const ENGINEERING_REPORTS_FUNCTION_BASE_NAME = 'voc-engineering-reports';
@@ -317,6 +318,9 @@ export class EngineeringBus extends Construct {
         ENGINEERING_BUS_NAME: this.bus.eventBusName,
         ENGINEERING_RUNTIME_FUNCTION: runtime,
         ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
+        // The languages this deployment has a MicroVM image for (-c engineeringImageArns): the board refuses a
+        // launch in another before it numbers an agent.
+        ENGINEERING_IMAGE_LANGUAGES: Object.keys(imageArns(this)).sort((a, b) => a.localeCompare(b)).join(','),
       },
       serviceName: 'voc-engineering-board',
     });

@@ -18,7 +18,7 @@ from engineering.quality_gate.test.test_record import _record
 from engineering.reports import handler as handler_module
 from engineering.reports.build import gather
 from engineering.reports.facts import FactsReader
-from engineering.reports.handler import Reports, handler
+from engineering.reports.handler import UNREAD_GATE, Reports, handler
 from engineering.reports.store import ReportError
 from engineering.rows import LAUNCH_HOLD
 from engineering.workspace.store import WorkspaceStore
@@ -161,12 +161,19 @@ def test_a_report_of_no_run_or_a_bad_request_is_refused(run: Run, monkeypatch: p
     assert handler({'run_id': RUN, 'level': 'pr', 'subject': '42', 'head': SHA}, None)['version'] == 1
 
 
-def test_a_gate_record_off_the_schema_or_not_from_final_go_is_left_out(run: Run) -> None:
+def test_a_pr_report_is_refused_when_a_recorded_gate_record_cannot_be_read(run: Run) -> None:
+    """Workspace objects never expire, so a recorded one unread is a denial: the PR description never drops it."""
+    gate_key = f'ws/default/runs/{RUN}/final-go-2/commits/{SHA}/_gate/attempt-1/record.json'
+    run.s3.delete_object(Bucket=BUCKET, Key=gate_key)   # (the test's stand-in for a key or policy denial)
+    assert run.reports.build(RUN, 'pr', '42', SHA) == {'status': 'refused', 'reason': UNREAD_GATE}
+    assert run.reports.build(RUN, 'commit', SHA)['status'] == 'published'   # (a commit report reads no gate record)
+
+
+def test_a_final_go_gate_record_off_the_schema_refuses_the_pr_report(run: Run) -> None:
+    """Never a description without it, nor one where an older attempt's record stands in for a newer one."""
     run.s3.put_object(Bucket=BUCKET, Key=f'ws/default/runs/{RUN}/final-go-2/commits/{SHA}/_gate/attempt-1/record.json',
                       Body=b'{"schema": "voc-gate-record/1", "verdict": 3}')
-    report = json.loads(stored(run, run.reports.build(RUN, 'pr', '7', SHA)['key']))
-    assert report['gate'] is None
-    assert '## Quality gate' not in stored(run, f'ws/default/reports/{RUN}/pr/7/v0001.md')
+    assert run.reports.build(RUN, 'pr', '7', SHA) == {'status': 'refused', 'reason': UNREAD_GATE}
 
 
 def _gate_task(role: str, state: str, attempt: int, agent: str = 'final-go-2', ended: str = '',
@@ -212,6 +219,14 @@ def test_the_gate_record_comes_from_an_ended_final_go_task_and_its_latest_attemp
     # A stopped gate counts too; who accepted the change comes from the run's decision, never the agent's record.
     texts[_gate_task('final-go', 'needs_human', 1).result_keys[0]] = record('STOPPED', 'an owner')
     assert gate_of(_gate_task('final-go', 'needs_human', 1)) == 'STOPPED'
+    # Only the winning record counts: an unread older attempt does not block a report a later good one vouches for;
+    # an unread latest one does, and no older record stands in for it.
+    gone = _gate_task('final-go', 'done', 3)
+    texts[_gate_task('final-go', 'done', 4).result_keys[0]] = record('GO')
+    later = gather(run_facts, (_gate_task('final-go', 'done', 4), gone), read, head=SHA)
+    assert (later.gate is not None, later.unread_gate) == (True, False)
+    latest = gather(run_facts, (_gate_task('final-go', 'done', 2), gone), read, head=SHA)
+    assert (latest.gate, latest.unread_gate) == (None, True)
 
 
 def test_the_handler_builds_its_clients_from_the_environment(run: Run, monkeypatch: pytest.MonkeyPatch) -> None:

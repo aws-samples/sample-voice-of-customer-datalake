@@ -235,20 +235,46 @@ def _launched(sessions: SessionStore, spec: AgentSpec) -> dict[str, Any] | None:
         return None
     if (session.task_id, session.task_attempt) != (spec.task_id, spec.attempt):
         raise StaleSession(f'session {spec.run_id}/{spec.agent_id} exists for another task or attempt')
+    return _answer(session)
+
+
+def _repeated(supervisor: Supervisor, event: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The answer a launch of this agent, task and attempt already got (its session), else None."""
+    run_id, task_id = str(event.get('run_id', '')), str(event.get('task_id', ''))
+    session = supervisor.sessions.get(run_id, str(event.get('agent_id', '')))
+    if session is None or session.task_id != task_id:
+        return None
+    given = _optional_number(event, 'attempt', int)
+    attempt = _attempt(supervisor, run_id, task_id, None) if given is None else given
+    return _answer(session) if session.task_attempt == attempt else None
+
+
+def _answer(session: AgentSession) -> dict[str, Any]:
     return {'run_id': session.run_id, 'agent_id': session.agent_id, 'status': session.status}
 
 
 def launch(event: Mapping[str, Any]) -> dict[str, Any]:
     """Start one agent of a run on one task, once: a repeat for the same task and attempt answers the session the
     first wrote, and is refused (``SessionBusy``) while the first is still starting its MicroVM; an agent with a
-    session for another task or attempt is refused (``StaleSession``)."""
+    session for another task or attempt is refused (``StaleSession``). A repeat is answered, and one while the first
+    still starts refused as busy, before any other check (the run's state, the skill, the egress): any other
+    refusal so means that no session and no launch of the agent exist, which the board relies on to clear its
+    record."""
+    supervisor = _supervisor()
+    repeat = _repeated(supervisor, event)
+    if repeat is not None:
+        return repeat
+    # Busy before any other check too: a retry refused for its skill or image while the first launch still boots
+    # would tell the board nothing started, and the board would clear the record and number another agent.
+    if supervisor.sessions.launch_under_way(str(event.get('run_id', '')), str(event.get('agent_id', '')),
+                                            int(clock())):
+        raise SessionBusy(f'a launch of {event.get("agent_id", "")} is under way: ask again in a few minutes')
     harness, labels = _harness(event)
     paths = event.get('paths', [])
     if not _strings(paths):
         raise RuntimeRefused('paths must be a list of repository paths')
     commit = str(event.get('commit', ''))
     checkout_commands(commit, paths)  # refuses a bad commit or path before anything starts
-    supervisor = _supervisor()
     run = _runs().get(str(event.get('run_id', '')))
     if run is None or run.status != 'active':
         raise RunNotActive('agents are launched only for an active run')
@@ -290,7 +316,7 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
         supervisor.runtime.terminate(vm)
         supervisor.sessions.release_launch(spec.run_id, spec.agent_id)
         raise
-    return {'run_id': session.run_id, 'agent_id': session.agent_id, 'status': session.status}
+    return _answer(session)
 
 
 @metrics.log_metrics
