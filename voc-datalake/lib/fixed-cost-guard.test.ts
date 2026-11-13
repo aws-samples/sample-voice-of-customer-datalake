@@ -22,16 +22,18 @@
  * COUNTED_FIXED_COSTS (same file) holds the default synth to its per-resource monthly costs: exactly one
  * customer-managed KMS key (the accepted baseline) and the known Secrets Manager baseline, which may only shrink.
  *
- * RUNTIME_FIXED_COSTS (same file) names the counted resources the app creates at RUN time, which no template holds:
- * the only grant of `kms:CreateKey` or `secretsmanager:CreateSecret` in the app is the workspaces API's on
- * `voc/ws/*`, one credentials secret per workspace (docs/multi-workspace.md, decision 8: about $0.40 a month each).
+ * runtimeFixedCostFindings (same file) holds the app to creating no counted resource at RUN time, which no template
+ * would show: no role may hold `kms:CreateKey` or `secretsmanager:CreateSecret`. Since decision 19
+ * (docs/multi-workspace.md) a workspace's credentials are SSM Parameter Store SecureStrings, standard tier, with no
+ * monthly fee; the one runtime create there was, a Secrets Manager secret per workspace (about $0.40 a month each),
+ * is gone.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
 import {
-  countedFixedCostFindings, FIXED_COST_REMEDY, fixedCostFindings, OPT_IN_FIXED_COSTS, RUNTIME_FIXED_COSTS,
-  runtimeFixedCostFindings, type FixedCostFinding,
+  countedFixedCostFindings, FIXED_COST_REMEDY, fixedCostFindings, OPT_IN_FIXED_COSTS, runtimeFixedCostFindings,
+  type FixedCostFinding,
 } from './test-support/fixed-cost-rules';
 import { cleanupAssemblyDirs, synthApp, type SynthResult } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
@@ -60,37 +62,34 @@ describe.each(SHAPES)('the %s synth', (_shape, result) => {
     expect(countedFixedCostFindings(templates)).toStrictEqual([]);
   });
 
-  it('creates a key or secret at run time only as RUNTIME_FIXED_COSTS names it: the per-workspace secrets', () => {
+  it('creates no key and no secret at run time (decision 19: a workspace\'s credentials are SSM parameters)', () => {
     const templates = result.stackNames.map((stack) => ({ stack, template: result.template(stack) }));
     expect(runtimeFixedCostFindings(templates)).toStrictEqual([]);
   });
 });
 
-describe('RUNTIME_FIXED_COSTS', () => {
-  it('is exactly the workspaces API\'s CreateSecret on voc/ws/* (decision 8, one secret per workspace)', () => {
-    expect(RUNTIME_FIXED_COSTS.map(({ action, role, resourceSuffix }) => [action, role, resourceSuffix]))
-      .toStrictEqual([['secretsmanager:CreateSecret', 'WorkspacesLambdaRole', ':secret:voc/ws/*']]);
-  });
+describe('runtimeFixedCostFindings', () => {
+  const policy = (id: string, Action: unknown, Resource: unknown, Effect = 'Allow') => [{ stack: 'S', template: {
+    Resources: { [id]: { Type: 'AWS::IAM::Policy', Properties: { PolicyDocument: { Statement: [{ Effect, Action, Resource }] } } } },
+  } }];
 
-  it('finds an unlisted runtime create, and an entry whose grant is gone', () => {
-    const policy = (id: string, Action: string, Resource: unknown) => ({ [id]: { Type: 'AWS::IAM::Policy', Properties: {
-      PolicyDocument: { Statement: [{ Effect: 'Allow', Action, Resource }] } } } });
-    const other = [{ stack: 'S', template: { Resources: policy('OtherRoleDefaultPolicyAAAA', 'secretsmanager:*', '*') } }];
-    expect(runtimeFixedCostFindings(other)).toStrictEqual([
-      expect.stringMatching(/^S\/OtherRoleDefaultPolicyAAAA may secretsmanager:CreateSecret on "\*"/),
-      expect.stringMatching(/^RUNTIME_FIXED_COSTS lists one credentials secret per workspace/),
+  it('finds any runtime create of a key or a secret, on whatever role and resource, the former per-workspace one too', () => {
+    expect(runtimeFixedCostFindings(policy('OtherRoleDefaultPolicyAAAA', 'secretsmanager:*', '*'))).toStrictEqual([
+      expect.stringMatching(/^S\/OtherRoleDefaultPolicyAAAA may secretsmanager:CreateSecret on "\*" — .*decision 19/),
     ]);
-    const wider = [{ stack: 'S', template: { Resources: policy('WorkspacesLambdaRoleDefaultPolicyAAAA',
-      'secretsmanager:CreateSecret', 'arn:aws:secretsmanager:us-east-1:1:secret:*') } }];
-    expect(runtimeFixedCostFindings(wider)).toHaveLength(2);
+    expect(runtimeFixedCostFindings(policy('WorkspacesLambdaRoleDefaultPolicyAAAA', 'secretsmanager:CreateSecret',
+      'arn:aws:secretsmanager:us-east-1:1:secret:voc/ws/*'))).toHaveLength(1);
+    expect(runtimeFixedCostFindings(policy('KeyMakerDefaultPolicyAAAA', ['kms:CreateKey'], '*'))).toStrictEqual([
+      expect.stringMatching(/^S\/KeyMakerDefaultPolicyAAAA may kms:CreateKey on "\*"/),
+    ]);
+    expect(runtimeFixedCostFindings(policy('AnyDefaultPolicyAAAA', '*', '*'))).toHaveLength(2);
   });
 
-  it('accepts the same grant in a -c deploymentPrefix deployment, and nothing else under that prefix', () => {
-    const policy = (Resource: string) => [{ stack: 'S', template: { Resources: { WorkspacesLambdaRoleDefaultPolicyAAAA: {
-      Type: 'AWS::IAM::Policy', Properties: { PolicyDocument: { Statement: [
-        { Effect: 'Allow', Action: 'secretsmanager:CreateSecret', Resource }] } } } } } }];
-    expect(runtimeFixedCostFindings(policy('arn:aws:secretsmanager:us-east-1:1:secret:b-voc/ws/*'))).toStrictEqual([]);
-    expect(runtimeFixedCostFindings(policy('arn:aws:secretsmanager:us-east-1:1:secret:b-other/*'))).toHaveLength(2);
+  it('ignores a Deny and every other action', () => {
+    expect(runtimeFixedCostFindings(policy('GuardDefaultPolicyAAAA', 'secretsmanager:CreateSecret', '*', 'Deny')))
+      .toStrictEqual([]);
+    expect(runtimeFixedCostFindings(policy('ReaderDefaultPolicyAAAA', ['ssm:PutParameter', 'kms:Encrypt'], '*')))
+      .toStrictEqual([]);
   });
 });
 

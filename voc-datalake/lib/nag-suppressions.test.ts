@@ -227,15 +227,18 @@ describe('cdk-nag acknowledgements', () => {
       const used = new Set(shapes.flatMap((shape) => [...shape.used]));
       // The exact number of acknowledged findings, so a change that adds or removes an acknowledgement says so
       // in its diff (and a recorder that misses some fails). Update it with the acknowledgement.
-      // 77: the plugin ingestors' raw writes under ws/{one id}/raw/* and their read of the voc/ws/* credentials secrets.
+      // 77: the plugin ingestors' raw writes under ws/{one id}/raw/*.
       // 78: the processor's write-once Silver versions under ws/{one id}/silver/* (its ws/{one id}/raw/* puts share
       // the ingestors' finding).
-      // 79: the integrations and scrapers APIs' Get and Put of the voc/ws/* credentials secrets (one finding, both
-      // roles: lib/utils/workspace-secrets.ts grantWorkspaceSecretsReadWrite).
-      // 80: the feedback-form API's write-once copy of a workspace form's submission, ws/{one id}/raw/feedback_form/*.
-      // 81: the GitHub webhook's archive of a workspace's delivery, ws/{one id}/raw/github_issues/* (its read of the
-      // voc/ws/* secrets shares the ingestors' finding).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 81, used: 81 });
+      // Decision 19 (79): the voc/ws/* credentials secrets' findings (the ingestors', the webhook's, the operator
+      // APIs' and the workspaces API's, by stack) are gone, and one comes: the
+      // integrations and scrapers APIs' Get and Put of every plugin's credentials parameter of one workspace id,
+      // voc/ws/{one id}/credentials/* (both roles: lib/utils/workspace-secrets.ts grantWorkspaceParametersReadWrite).
+      // An ingestor's or the webhook's read names its own plugins' parameters, with no wildcard to acknowledge.
+      // Also counted: the feedback-form API's write-once copy of a workspace form's submission,
+      // ws/{one id}/raw/feedback_form/*, and the GitHub webhook's archive of a workspace's delivery,
+      // ws/{one id}/raw/github_issues/*.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 79, used: 79 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

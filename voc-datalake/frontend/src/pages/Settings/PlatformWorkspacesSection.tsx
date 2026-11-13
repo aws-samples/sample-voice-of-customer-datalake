@@ -2,8 +2,8 @@
  * @fileoverview The platform console: Administration → Privacy & access → Workspaces, for platform admins only
  * (docs/multi-workspace.md → Control plane; the section is hidden from everyone else, and the API answers them 403).
  *
- * - Every workspace of the deployment by name, a page at a time: name, slug, status and whether its credentials
- *   secret exists (`pending` until it does).
+ * - Every workspace of the deployment by name, a page at a time: name, slug and status (no credentials badge since
+ *   decision 19: a workspace's credentials need no secret, docs/multi-workspace.md → Credentials).
  * - Create one (name and slug): the caller becomes its admin. A slug another workspace has is refused (409).
  * - Enter one: a full page load to `/w/{slug}/`. A platform admin who is not a member enters as admin, which the
  *   server checks live and audits; the console records the workspace for the gate first (`platformEntry.ts`),
@@ -12,7 +12,6 @@
  * @module pages/Settings/PlatformWorkspacesSection
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { Building2, Info, LogIn } from 'lucide-react'
 import CursorPagesList from '../../components/CursorPagesList/CursorPagesList'
@@ -23,7 +22,7 @@ import { apiErrorStatus, HTTP_FORBIDDEN } from '../../api/apiErrorStatus'
 import { useCursorPages } from '../../hooks/useCursorPages'
 import { myWorkspacesKey } from '../../api/workspacesApi'
 import { platformWorkspacesApi, platformWorkspacesKey } from '../../api/platformWorkspacesApi'
-import type { PlatformWorkspace, SecretStatus } from '../../api/platformWorkspacesApi'
+import type { PlatformWorkspace } from '../../api/platformWorkspacesApi'
 import RefusalAlert from '../../workspace/RefusalAlert'
 import { rememberPlatformEntry } from '../../workspace/platformEntry'
 import type { PlatformEntry } from '../../workspace/platformEntry'
@@ -53,14 +52,6 @@ function EnterButton({ workspace, label, className }: Readonly<{ workspace: Plat
   )
 }
 
-/** Whether the workspace's credentials secret exists; a pending one says why in its title. */
-function SecretBadge({ status }: Readonly<{ status: SecretStatus }>) {
-  const { t } = useTranslation()
-  const ready = status === 'ready'
-  const label = ready ? t('workspaces.platform.secretReady') : t('workspaces.platform.secretPending')
-  return <span className={clsx('badge', ready ? 'badge-ok' : 'badge-warn')} title={ready ? undefined : t('workspaces.platform.secretPendingHint')}>{label}</span>
-}
-
 function WorkspaceRow({ workspace }: Readonly<{ workspace: PlatformWorkspace }>) {
   const { t } = useTranslation()
   const status = workspace.status === 'active' || workspace.status === 'deleting'
@@ -74,7 +65,6 @@ function WorkspaceRow({ workspace }: Readonly<{ workspace: PlatformWorkspace }>)
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {status === '' ? null : <span className="badge badge-muted">{status}</span>}
-        <SecretBadge status={workspace.secret_status} />
         <EnterButton workspace={workspace} label={t('workspaces.platform.enter')} className="btn btn-secondary btn-sm gap-1.5" />
       </div>
     </li>
@@ -89,7 +79,7 @@ export default function PlatformWorkspacesSection() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { query, rows: workspaces } = useCursorPages<PlatformWorkspace>(platformWorkspacesKey(), platformWorkspacesApi.list)
-  const [created, showCreated] = useExpiringValue<{ name: string; slug: string; id: string; pending: boolean }>(15000)
+  const [created, showCreated] = useExpiringValue<{ name: string; slug: string; id: string }>(15000)
   const create = useMutation({
     mutationFn: ({ name, slug }: { name: string; slug: string }) => platformWorkspacesApi.create(name, slug),
     // The new workspace is in the console's list and in the caller's own (they are its admin). The caller's own
@@ -117,16 +107,12 @@ export default function PlatformWorkspacesSection() {
       <CreateWorkspaceForm
         busy={create.isPending}
         onCreate={(name, slug) => create.mutateAsync({ name, slug })}
-        onCreated={(workspace) => showCreated({ ...workspace, pending: workspace.secret_status === 'pending' })}
+        onCreated={showCreated}
       />
       <RefusalAlert error={create.error} refusals={PLATFORM_REFUSALS} />
       {created === null ? null : (
         <div role="status" className="flex flex-col gap-2 rounded-lg bg-ok-subtle p-3 text-sm text-ok sm:flex-row sm:items-center">
-          <span className="flex-1">
-            {created.pending
-              ? t('workspaces.platform.createdPending', { name: created.name })
-              : t('workspaces.platform.created', { name: created.name })}
-          </span>
+          <span className="flex-1">{t('workspaces.platform.created', { name: created.name })}</span>
           <EnterButton workspace={created} label={t('workspaces.platform.enterWho', { name: created.name })}
             className="btn btn-secondary btn-sm gap-1.5 self-start" />
         </div>

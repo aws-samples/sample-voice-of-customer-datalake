@@ -207,12 +207,8 @@
       "slugInvalid": "Verwenden Sie 3 bis 40 Kleinbuchstaben, Ziffern und Bindestriche, ohne Bindestrich am Anfang oder Ende, und nicht admin, api, app, platform oder www.",
       "create": "Arbeitsbereich anlegen",
       "created": "{{name}} wurde angelegt. Sie sind dort Admin.",
-      "createdPending": "{{name}} wurde angelegt. Sie sind dort Admin. Das Geheimnis für die Zugangsdaten konnte noch nicht angelegt werden; bisher verwendet es nichts, und ein Betriebsteam kann es anlegen.",
       "enter": "Betreten",
       "enterWho": "{{name}} betreten",
-      "secretReady": "Geheimnis bereit",
-      "secretPending": "Geheimnis ausstehend",
-      "secretPendingHint": "Das Geheimnis für die Zugangsdaten des Arbeitsbereichs konnte nicht angelegt werden. Noch verwendet es nichts; ein Betriebsteam kann es anlegen.",
       "status": {
         "active": "Aktiv",
         "deleting": "Wird gelöscht"

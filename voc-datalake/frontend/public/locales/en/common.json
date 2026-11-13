@@ -207,12 +207,8 @@
       "slugInvalid": "Use 3 to 40 lowercase letters, digits and hyphens, not starting or ending with a hyphen, and not admin, api, app, platform or www.",
       "create": "Create workspace",
       "created": "Created {{name}}. You are its admin.",
-      "createdPending": "Created {{name}}. You are its admin. Its credentials secret could not be created yet; nothing uses it so far, and an operator can create it.",
       "enter": "Enter",
       "enterWho": "Enter {{name}}",
-      "secretReady": "Secret ready",
-      "secretPending": "Secret pending",
-      "secretPendingHint": "The workspace's credentials secret could not be created. Nothing uses it yet; an operator can create it.",
       "status": {
         "active": "Active",
         "deleting": "Being deleted"

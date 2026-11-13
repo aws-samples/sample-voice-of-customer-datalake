@@ -1,6 +1,6 @@
 {
   "name": "voc-datalake",
-  "version": "7.11.0",
+  "version": "7.12.0",
   "description": "Voice of the Customer Data Lake - AWS CDK Infrastructure",
   "scripts": {
     "build": "tsc",

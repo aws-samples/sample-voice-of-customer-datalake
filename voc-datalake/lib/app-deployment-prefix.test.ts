@@ -272,14 +272,18 @@ describe('a prefixed deployment', () => {
     expect(new Set(declared)).toStrictEqual(new Set(ruleNames));
   });
 
-  it('hands each ingestor this deployment\'s workspace secrets, and names no other copy\'s', () => {
-    // A run in a workspace reads `<prefix>-voc/ws/{ws}/credentials` (docs/multi-workspace.md, decision 8). Unprefixed,
-    // one copy's ingestors would read the other copy's workspaces' credentials.
+  it('hands each ingestor this deployment\'s workspace parameters, and names no other copy\'s', () => {
+    // A run in a workspace reads `/<prefix>-voc/ws/{ws}/credentials/{plugin}` (docs/multi-workspace.md, decision 19). Unprefixed, one copy's ingestors would read the other copy's
+    // workspaces' credentials.
     const inventory = nameInventory(prefixed.template(`${PREFIX}-VocIngestionStack`));
-    const declared = inventory.environmentNames.filter((entry) => entry.startsWith('WORKSPACE_SECRET_PREFIX = '));
-    expect(new Set(declared)).toStrictEqual(new Set([`WORKSPACE_SECRET_PREFIX = ${PREFIX}-voc/ws`]));
-    const named = inventory.policyResources.filter((resource) => resource.includes(':secretsmanager:') && resource.includes('voc/ws'));
-    expect(named).toStrictEqual([`arn:aws:secretsmanager:${SYNTH_REGION}:${SYNTH_ACCOUNT}:secret:${PREFIX}-voc/ws/*`]);
+    const declared = inventory.environmentNames.filter((entry) => entry.startsWith('WORKSPACE_PARAMETER_PREFIX = '));
+    expect(new Set(declared)).toStrictEqual(new Set([`WORKSPACE_PARAMETER_PREFIX = /${PREFIX}-voc/ws`]));
+    const parameters = inventory.policyResources.filter((resource) => resource.includes(':parameter/'));
+    expect(parameters.length).toBeGreaterThan(0);
+    const thisCopy = `arn:aws:ssm:${SYNTH_REGION}:${SYNTH_ACCOUNT}:parameter/${PREFIX}-voc/ws/ws_${'?'.repeat(26)}/`;
+    expect(parameters.filter((resource) => !resource.startsWith(thisCopy))).toStrictEqual([]);
+    expect(inventory.policyResources.filter((resource) => resource.includes(':secretsmanager:') && resource.includes('voc/ws')))
+      .toStrictEqual([]);
   });
 
   it('lets a scheduled ingestor invoke only functions of this deployment that it creates (the tick\'s fan-out)', () => {

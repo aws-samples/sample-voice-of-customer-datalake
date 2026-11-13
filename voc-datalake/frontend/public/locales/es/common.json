@@ -210,12 +210,8 @@
       "slugInvalid": "Usa de 3 a 40 letras minúsculas, dígitos y guiones, sin guion al principio ni al final, y que no sea admin, api, app, platform ni www.",
       "create": "Crear espacio de trabajo",
       "created": "Se creó {{name}}. Eres su administrador.",
-      "createdPending": "Se creó {{name}}. Eres su administrador. Su secreto de credenciales aún no se pudo crear; por ahora nada lo usa y un operador puede crearlo.",
       "enter": "Entrar",
       "enterWho": "Entrar en {{name}}",
-      "secretReady": "Secreto listo",
-      "secretPending": "Secreto pendiente",
-      "secretPendingHint": "No se pudo crear el secreto de credenciales del espacio de trabajo. Nada lo usa todavía; un operador puede crearlo.",
       "status": {
         "active": "Activo",
         "deleting": "Eliminándose"

@@ -1,7 +1,7 @@
 """The shared pieces of the operator routes' two paths (docs/multi-workspace.md): shared/workspace_request.py
-(``ResolvedRoutes``: its middleware, admin gate, context, secret and Radar refusal; ``workspace_payload``,
-``deployment_only``), shared/workspace_plugin_store.py (the secret a request reads and writes), shared/run_rows.py
-(the run partitions) and shared/plugin_circuit.py (the breaker's TRIPPED row per path).
+(``ResolvedRoutes``: its middleware, admin gate, context, stored credentials and Radar refusal;
+``workspace_payload``, ``deployment_only``), shared/run_rows.py (the run partitions) and shared/plugin_circuit.py
+(the breaker's TRIPPED row per path). The stores themselves: shared/test/test_workspace_plugin_store.py.
 """
 from __future__ import annotations
 
@@ -11,19 +11,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
 
 from shared import plugin_circuit, workspace_plugin_settings
 from shared.exceptions import AuthorizationError, ConfigurationError, ConflictError, ValidationError
 from shared.run_rows import latest_run, scraper_run_partition, source_run_partition
 from shared.workspace import WorkspaceContext
 from shared.workspace_plugin_settings import INGESTION_NOT_YET
-from shared.workspace_plugin_store import (
-    CREDENTIALS_MISSING,
-    CREDENTIALS_NOT_READY,
-    credentials_secret_id,
-    read_secret_json,
-)
+from shared.workspace_plugin_store import SharedSecretStore, StoreClients, WorkspaceStore
 from shared.workspace_request import (
     DEPLOYMENT_ONLY,
     RADAR_NOT_IN_WORKSPACES,
@@ -40,9 +34,9 @@ OTHER = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
 SCOPE = scope_from_key(f'WS#{WS}#SOURCE#web')
 
 
-def _context(role: str = 'admin', ws: str = WS, status: str = 'ready') -> WorkspaceContext:
-    """A resolved membership; ``status`` is its workspace META's ``secret_status``."""
-    return WorkspaceContext(ws=ws, role=role, name='Team', slug='team', platform_admin=False, secret_status=status)
+def _context(role: str = 'admin', ws: str = WS) -> WorkspaceContext:
+    """A resolved membership."""
+    return WorkspaceContext(ws=ws, role=role, name='Team', slug='team', platform_admin=False)
 
 
 def _event(groups: str = 'users', header: str | None = None) -> dict:
@@ -64,11 +58,19 @@ class _Resolver:
         self.context.update(values)
 
 
-def _routes(context: WorkspaceContext | None, groups: str = 'users') -> ResolvedRoutes:
+SHARED_ARN = 'arn:shared'
+
+
+def _clients(arn: str = SHARED_ARN) -> StoreClients:
+    return StoreClients(arn, MagicMock(), MagicMock(), MagicMock())
+
+
+def _routes(context: WorkspaceContext | None, groups: str = 'users', clients: StoreClients | None = None,
+            ) -> ResolvedRoutes:
     """The routes' view of a request the middleware already resolved to ``context``."""
     resolver = _Resolver('GET', groups)
     resolver.context[WORKSPACE_CONTEXT_KEY] = context
-    return ResolvedRoutes(resolver, MagicMock())
+    return ResolvedRoutes(resolver, MagicMock(), clients=None if clients is None else lambda: clients)
 
 
 class TestTheTwoPathAdminGate:
@@ -163,18 +165,43 @@ class TestResolvedRoutes:
         with pytest.raises(AuthorizationError):  # a viewer: the workspace's admin role decides
             routes.require_request_admin()
 
-    def test_no_configured_secret_is_none_for_a_read(self, monkeypatch):
-        monkeypatch.delenv('WORKSPACE_SECRET_PREFIX', raising=False)
+    def test_nothing_configured_is_none_for_a_read(self, monkeypatch):
+        monkeypatch.delenv('WORKSPACE_PARAMETER_PREFIX', raising=False)
 
-        assert _routes(_context()).secret_id_or_none('arn:shared') is None
-        assert _routes(None).secret_id_or_none('') is None
-        assert _routes(None).secret_id_or_none('arn:shared') == 'arn:shared'
+        assert _routes(_context(), clients=_clients()).credentials_or_none('webscraper') is None
+        assert _routes(None, clients=_clients('')).credentials_or_none('webscraper') is None
+        assert _routes(None).credentials_or_none('webscraper') is None  # a module that names no clients
+        shared = _routes(None, clients=_clients()).credentials_or_none('webscraper')
+        assert isinstance(shared, SharedSecretStore)
+        assert shared.secret_id == 'arn:shared'
 
-    def test_a_pending_workspace_is_not_none_but_a_409_for_a_read_too(self, monkeypatch):
-        monkeypatch.setenv('WORKSPACE_SECRET_PREFIX', 'voc/ws')
+    def test_a_workspace_opens_its_own_settings_of_the_routes_plugins(self, monkeypatch):
+        monkeypatch.setenv('WORKSPACE_PARAMETER_PREFIX', '/voc/ws')
+        monkeypatch.setenv('AGGREGATES_TABLE', 'aggregates')
 
-        with pytest.raises(ConflictError, match=re.escape(CREDENTIALS_NOT_READY)):
-            _routes(_context(status='pending')).secret_id_or_none('arn:shared')
+        with patch('shared.workspace_plugin_store.get_dynamodb_resource'):
+            store = _routes(_context(), clients=_clients()).credentials('webscraper')
+
+        assert isinstance(store, WorkspaceStore)
+        assert (store.ws, store.plugins) == (WS, ('webscraper',))
+
+    def test_the_modules_clients_are_read_at_each_call(self):
+        """A module's own names (and its tests' stand-ins) are the ones used: the factory runs per request."""
+        made: list[StoreClients] = []
+
+        def clients() -> StoreClients:
+            made.append(_clients())
+            return made[-1]
+
+        resolver = _Resolver('GET')
+        resolver.context[WORKSPACE_CONTEXT_KEY] = None
+        routes = ResolvedRoutes(resolver, MagicMock(), clients=clients)
+        routes.credentials('webscraper')
+        routes.credentials('webscraper')
+
+        assert len(made) == 2
+        with pytest.raises(ConfigurationError):
+            ResolvedRoutes(resolver, MagicMock()).credentials('webscraper')
 
 
 class TestNoRadarBrandInAWorkspace:
@@ -186,66 +213,6 @@ class TestNoRadarBrandInAWorkspace:
     @pytest.mark.parametrize(('context', 'brand'), [(None, 'rival'), (_context(), ''), (_context(), None)])
     def test_none_or_deployment_wide_is_fine(self, context, brand):
         assert _routes(context).refuse_radar_brand(brand) is None  # returns: no 400 raised
-
-
-class TestTheCredentialsSecret:
-    def test_deployment_wide_the_shared_one(self):
-        assert credentials_secret_id(None, 'arn:shared') == 'arn:shared'
-        with pytest.raises(ConfigurationError):
-            credentials_secret_id(None, '')
-
-    def test_in_a_workspace_its_own_from_the_resolved_id(self, monkeypatch):
-        monkeypatch.setenv('WORKSPACE_SECRET_PREFIX', 'stg-voc/ws')
-
-        assert credentials_secret_id(_context(), 'arn:shared') == f'stg-voc/ws/{WS}/credentials'
-        with pytest.raises(TypeError):
-            credentials_secret_id(SimpleNamespace(ws=OTHER), 'arn:shared')  # type: ignore[arg-type]
-
-    @pytest.mark.parametrize('status', ['pending', ''])
-    def test_a_workspace_whose_meta_is_not_ready_is_refused_whatever_exists(self, monkeypatch, status):
-        monkeypatch.setenv('WORKSPACE_SECRET_PREFIX', 'voc/ws')
-
-        with pytest.raises(ConflictError) as refused:
-            credentials_secret_id(_context(status=status), 'arn:shared')
-        assert str(refused.value) == (f'{CREDENTIALS_NOT_READY}: an operator must create voc/ws/{WS}/credentials and mark '
-                                      'the workspace ready (see the recovery steps in docs/multi-workspace.md, '
-                                      'Credentials).')
-
-    def test_a_workspace_without_the_prefix_is_not_served_the_shared_secret(self, monkeypatch):
-        monkeypatch.delenv('WORKSPACE_SECRET_PREFIX', raising=False)
-
-        with pytest.raises(ConfigurationError):
-            credentials_secret_id(_context(), 'arn:shared')
-
-    def test_a_missing_workspace_secret_is_missing(self):
-        client = MagicMock()
-        client.get_secret_value.side_effect = ClientError(
-            {'Error': {'Code': 'ResourceNotFoundException', 'Message': 'x'}}, 'GetSecretValue')
-
-        with pytest.raises(ConflictError, match=re.escape(f'{CREDENTIALS_MISSING}: voc/ws/x/credentials does not exist')):
-            read_secret_json(client, 'voc/ws/x/credentials', _context())
-        with pytest.raises(ClientError):  # the shared secret missing is the deployment's fault, raised as it was
-            read_secret_json(client, 'arn:shared', None)
-
-    def test_another_fault_raises_as_boto3_raised_it(self):
-        client = MagicMock()
-        client.get_secret_value.side_effect = ClientError({'Error': {'Code': 'AccessDeniedException'}}, 'Get')
-
-        with pytest.raises(ClientError):
-            read_secret_json(client, 'voc/ws/x/credentials', _context())
-
-    def test_it_reads_the_json_object(self):
-        client = MagicMock()
-        client.get_secret_value.return_value = {'SecretString': '{"a_b": "c"}'}
-
-        assert read_secret_json(client, 's', None) == {'a_b': 'c'}
-
-    def test_a_secret_that_is_not_a_json_object_is_malformed(self):
-        client = MagicMock()
-        client.get_secret_value.return_value = {'SecretString': '["a"]'}
-
-        with pytest.raises(ValueError, match='not a JSON object'):
-            read_secret_json(client, 's', _context())
 
 
 class TestRunRows:

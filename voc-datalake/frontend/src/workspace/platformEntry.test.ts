@@ -18,7 +18,7 @@ describe('platformEntry', () => {
 
   it('keeps one record per slug and only the fields it needs', () => {
     rememberPlatformEntry({ ...FIELD, id: 'ws_01JCOLDD0000000000000000O1' })
-    const listed = { ...FIELD, name: 'Acme Outfitters Field Team', status: 'active', secret_status: 'ready' }
+    const listed = { ...FIELD, name: 'Acme Outfitters Field Team', status: 'active' }
     rememberPlatformEntry(listed)
     expect(JSON.parse(window.sessionStorage.getItem('voc-platform-entries') ?? '[]')).toStrictEqual([FIELD])
   })

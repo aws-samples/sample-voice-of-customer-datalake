@@ -24,6 +24,7 @@ import { itemAt } from '../test-support/guards';
 import { capitalize } from '../plugin-loader';
 import { synthIngestionStacks, synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
+import { byCodeUnit } from '../utils/compare';
 
 
 const BucketSchema = z.object({
@@ -374,37 +375,91 @@ describe('VocIngestionStack scheduled tick fan-out grants', () => {
 });
 
 // ── Both runs' credentials and bronze layers (docs/multi-workspace.md) ───
-// A run in a workspace reads `voc/ws/{ws}/credentials` for the workspace its event names and writes under
-// ws/{ws}/raw/; a deployment-wide run (an event naming none) reads the shared secret and writes under raw/, as before.
+// A run in a workspace reads its own plugin's `voc/ws/{ws}/credentials/{plugin}` (decision 19) for the workspace its
+// event names and writes under ws/{ws}/raw/; a deployment-wide run (an event naming none) reads the shared secret and
+// writes under raw/, as before.
 describe('VocIngestionStack ingestor secrets and raw writes', () => {
+  const PLUGINS = ['webscraper', 'app_reviews_ios', 's3_import'];
   let template: Template;
   beforeAll(() => {
-    template = synthIngestionTemplate(['webscraper', 'app_reviews_ios', 's3_import']);
+    template = synthIngestionTemplate(PLUGINS);
   });
 
   const ingestorFunctions = () => Object.entries(template.findResources('AWS::Lambda::Function'))
     .filter(([id]) => id.startsWith('Ingestor'))
     .map(([, resource]) => IngestorFunctionSchema.parse(resource).Properties);
 
-  it('names the workspace secrets prefix and the shared secret on every ingestor', () => {
+  /** Each ingestor role and the plugins whose functions run as it (the shared role may serve several). */
+  const pluginsByRole = (): Map<string, string[]> => {
+    const functions = Object.entries(template.findResources('AWS::Lambda::Function'));
+    const byRole = new Map<string, string[]>();
+    for (const plugin of PLUGINS) {
+      const found = functions.find(([id]) => id.startsWith(`Ingestor${capitalize(plugin)}`));
+      expect(found, `no ingestor for ${plugin}`).toBeDefined();
+      const role = IngestorFunctionSchema.parse(found?.[1]).Properties.Role['Fn::GetAtt'][0];
+      byRole.set(role, [...(byRole.get(role) ?? []), plugin]);
+    }
+    return byRole;
+  };
+  const parameterArn = (plugin: string) =>
+    `arn:aws:ssm:${SYNTH_REGION}:${SYNTH_ACCOUNT}:parameter/voc/ws/${ONE_WORKSPACE}/credentials/${plugin}`;
+  const rendered = (resource: unknown): string[] => [resource].flat().map((r) => (typeof r === 'string' ? r : JSON.stringify(r)));
+  const KeyThroughSsmSchema = z.object({
+    StringEquals: z.object({ 'kms:ViaService': z.string() }).strict(),
+    StringLike: z.object({ 'kms:EncryptionContext:PARAMETER_ARN': z.union([z.string(), z.array(z.string())]) }).strict(),
+  }).strict();
+
+  it('names the workspace parameter prefix and the shared secret on every ingestor', () => {
     const functions = ingestorFunctions();
     expect(functions).toHaveLength(3);
     for (const fn of functions) {
-      expect(fn.Environment.Variables['WORKSPACE_SECRET_PREFIX']).toBe('voc/ws');
+      expect(fn.Environment.Variables['WORKSPACE_PARAMETER_PREFIX']).toBe('/voc/ws');
+      expect(fn.Environment.Variables).not.toHaveProperty('WORKSPACE_SECRET_PREFIX');
       expect(fn.Environment.Variables['SECRETS_ARN']).toStrictEqual({ Ref: expect.stringMatching(/^VocApiSecrets/) });
     }
   });
 
-  it('lets every ingestor role read the voc/ws/* secrets and the shared secret, and write no secret', () => {
+  /** What `role` may read in SSM and decrypt through it: the parameter ARNs and the key conditions' ARNs and services. */
+  const ssmReachOf = (role: string) => {
+    const decrypts = grantsOf(template, 'kms:Decrypt')
+      .filter((grant) => grant.roles.includes(role) && JSON.stringify(grant.condition ?? {}).includes('kms:ViaService'))
+      .map((grant) => KeyThroughSsmSchema.parse(grant.condition));
+    return {
+      reads: grantsOf(template, 'ssm:GetParameter').filter((grant) => grant.roles.includes(role))
+        .flatMap((grant) => rendered(grant.resource)).sort(byCodeUnit),
+      decrypts: decrypts.flatMap((condition) => [condition.StringLike['kms:EncryptionContext:PARAMETER_ARN']].flat())
+        .sort(byCodeUnit),
+      services: [...new Set(decrypts.map((condition) => condition.StringEquals['kms:ViaService']))],
+    };
+  };
+
+  it("lets each ingestor role read only its own plugins' credentials parameters, of one workspace id", () => {
+    const byRole = pluginsByRole();
+    expect([...byRole.values()].flat().sort(byCodeUnit)).toStrictEqual([...PLUGINS].sort(byCodeUnit));
+    // Per role: GetParameter and kms:Decrypt (through SSM only) on exactly its plugins' names.
+    expect(new Map([...byRole].map(([role]) => [role, ssmReachOf(role)]))).toStrictEqual(new Map([...byRole]
+      .map(([role, plugins]) => {
+        const arns = plugins.map((plugin) => parameterArn(plugin)).sort(byCodeUnit);
+        return [role, { reads: arns, decrypts: arns, services: [`ssm.${SYNTH_REGION}.amazonaws.com`] }];
+      })));
+  });
+
+  it('gives no ingestor role a write, a listing or a delete of a parameter', () => {
+    const roleIds = new Set(pluginsByRole().keys());
+    const touching = ['ssm:PutParameter', 'ssm:GetParametersByPath', 'ssm:DeleteParameter', 'kms:Encrypt']
+      .flatMap((action) => grantsOf(template, action))
+      .filter((grant) => grant.roles.some((role) => roleIds.has(role)) && JSON.stringify(grant).includes(':parameter/'));
+    expect(touching).toStrictEqual([]);
+  });
+
+  it('lets every ingestor role read the shared secret and no workspace secret, and write no secret', () => {
     const roleIds = new Set(ingestorFunctions().map((fn) => fn.Role['Fn::GetAtt'][0]));
     const reads = grantsOf(template, 'secretsmanager:GetSecretValue')
       .filter((grant) => grant.roles.some((role) => roleIds.has(role)))
       .map((grant) => JSON.stringify(grant.resource));
-    const workspaceSecrets = `arn:aws:secretsmanager:${SYNTH_REGION}:${SYNTH_ACCOUNT}:secret:voc/ws/*`;
-    expect(reads.filter((resource) => resource.includes(workspaceSecrets))).toHaveLength(roleIds.size);
     expect(reads.filter((resource) => resource.includes('VocApiSecrets'))).toHaveLength(roleIds.size);
-    expect(reads.filter((resource) => !resource.includes(workspaceSecrets) && !resource.includes('VocApiSecrets')))
-      .toStrictEqual([]);
+    expect(reads.filter((resource) => !resource.includes('VocApiSecrets'))).toStrictEqual([]);
+    expect(reads.some((resource) => resource.includes('voc/ws'))).toBe(false);
     for (const action of ['secretsmanager:PutSecretValue', 'secretsmanager:CreateSecret']) {
       expect(grantsOf(template, action).filter((grant) => grant.roles.some((role) => roleIds.has(role)))).toStrictEqual([]);
     }

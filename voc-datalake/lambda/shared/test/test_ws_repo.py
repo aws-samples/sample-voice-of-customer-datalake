@@ -7,12 +7,15 @@ import pytest
 from moto import mock_aws
 
 from shared import feedback_partitions as partitions
+from shared.batch_get import BATCH_GET_ATTEMPTS
 from shared.test.moto_tables import create_pk_sk_table
 from shared.workspace import WorkspaceContext
 from shared.ws_repo import (
+    MAX_TRANSACT_ITEMS,
     PARTITION_ATTRIBUTES,
     WATERMARK_PARTITION,
     OutOfScopeError,
+    UnprocessedKeysError,
     WorkspaceScope,
     category_pk,
     channel_pk,
@@ -489,3 +492,259 @@ class TestTheLayerForTheIngestors:
 
         with pytest.raises(OutOfScopeError, match='gsi1pk'):
             repo.put_item({'pk': A.key('SOURCE', 'web'), 'sk': 'FEEDBACK#1', 'source': 'x', 'gsi1pk': 'DATE#2026'})
+
+
+def _key(scope: WorkspaceScope, feedback_id: str) -> dict[str, str]:
+    return feedback_key(scope, 'web', feedback_id)
+
+
+def _put(scope: WorkspaceScope, feedback_id: str, **attributes: object) -> dict:
+    return {'Put': {'Item': {**_key(scope, feedback_id), **attributes}}}
+
+
+def _backing() -> MagicMock:
+    """A table double whose name the view fills in as ``TableName``."""
+    backing = MagicMock()
+    backing.name = 'voc-feedback'
+    return backing
+
+
+def _calls_but_the_writers_creation(backing: MagicMock) -> list[str]:
+    return [name for name, _args, _kwargs in backing.mock_calls if name != 'batch_writer']
+
+
+#: Transactions with an entry outside the scope: each is refused whole, before anything is sent.
+_TRANSACTIONS_OUT_OF_SCOPE = [
+    [_put(B, 'f1')],
+    [_put(A, 'f1', gsi1pk=date_pk(B, '2026-01-15'))],
+    [_put(A, 'f1', gsi4pk='FEEDBACK#f1')],
+    [_put(A, 'f1', gsi5pk=channel_pk(B, 'email'))],
+    [{'Update': {'Key': _key(A, 'f1'), 'UpdateExpression': 'SET gsi4pk = :f',
+                 'ExpressionAttributeValues': {':f': feedback_id_pk(B, 'f1')}}}],
+    [{'Update': {'Key': _key(A, 'f1'), 'UpdateExpression': 'SET #c = :c', 'ExpressionAttributeNames': {'#c': 'gsi5pk'},
+                 'ExpressionAttributeValues': {':c': 'CHANNEL#email'}}}],
+    [{'Update': {'Key': _key(A, 'f1'), 'UpdateExpression': 'REMOVE gsi4pk'}}],
+    [{'Update': {'Key': _key(B, 'f1'), 'UpdateExpression': 'SET a = :a', 'ExpressionAttributeValues': {':a': 1}}}],
+    [{'Update': {'Key': _key(A, 'f1')}}],
+    [{'Delete': {'Key': _key(B, 'f1')}}],
+    [{'Delete': {'Key': {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}}}],
+    [{'ConditionCheck': {'Key': _key(B, 'f1'), 'ConditionExpression': 'attribute_exists(pk)'}}],
+    [{'Put': {'Item': _key(A, 'f1'), 'TableName': 'voc-aggregates'}}],
+    # Mixed: two entries in the scope, one outside it.
+    [_put(A, 'f1'), {'Delete': {'Key': _key(A, 'f2')}}, _put(B, 'f3')],
+]
+
+
+class TestTheMultiItemCalls:
+    """``transact_write_items``, ``batch_get_item`` and ``batch_writer``: one table, every entry checked as the
+    single-item calls check it, the table named by the view."""
+
+    def test_a_transaction_writes_in_the_scope(self, table):
+        repo = ws_table(A, table)
+        for feedback_id, text in (('f1', 'old'), ('f3', 'gone'), ('f4', 'kept')):
+            table.put_item(Item={**_key(A, feedback_id), 'text': text})
+
+        repo.transact_write_items([
+            _put(A, 'f2', text='new', gsi4pk=feedback_id_pk(A, 'f2'), gsi5pk=channel_pk(A, 'email')),
+            {'Update': {'Key': _key(A, 'f1'), 'UpdateExpression': 'SET #t = :t, gsi2pk = :g',
+                        'ExpressionAttributeNames': {'#t': 'text'},
+                        'ExpressionAttributeValues': {':t': 'edited', ':g': category_pk(A, 'pricing')}}},
+            {'Delete': {'Key': _key(A, 'f3')}},
+            {'ConditionCheck': {'Key': _key(A, 'f4'), 'ConditionExpression': 'attribute_exists(pk)'}},
+        ])
+
+        edited = repo.get_item(_key(A, 'f1'))['Item']
+        assert (edited['text'], edited['gsi2pk']) == ('edited', category_pk(A, 'pricing'))
+        added = repo.get_item(_key(A, 'f2'))['Item']
+        assert (added['text'], added['gsi4pk'], added['gsi5pk']) == (
+            'new', feedback_id_pk(A, 'f2'), channel_pk(A, 'email'))
+        assert 'Item' not in repo.get_item(_key(A, 'f3'))
+        assert repo.get_item(_key(A, 'f4'))['Item']['text'] == 'kept'
+
+    def test_the_batch_writer_and_batch_get_span_more_than_one_request(self, table):
+        repo = ws_table(A, table)
+        with repo.batch_writer() as writer:
+            for number in range(130):
+                writer.put_item(Item={**_key(A, f'f{number}'), 'n': number, 'text': 'x'})
+
+        found = repo.batch_get_item([_key(A, f'f{number}') for number in range(130)] + [_key(A, 'missing')],
+                                    ProjectionExpression='sk, #n', ExpressionAttributeNames={'#n': 'n'},
+                                    ConsistentRead=True)
+
+        assert sorted(row['n'] for row in found) == list(range(130))
+        assert all(set(row) == {'sk', 'n'} for row in found)
+
+    def test_a_mixed_transaction_writes_nothing(self, table):
+        with pytest.raises(OutOfScopeError):
+            ws_table(A, table).transact_write_items([_put(A, 'f1'), _put(B, 'f1')])
+        assert table.scan()['Items'] == []
+
+    @pytest.mark.parametrize('items', [
+        [{'Put': {'Item': _key(A, 'f1'), 'Expected': {'pk': {'Exists': False}}}}],
+        [{'Update': {'Key': _key(A, 'f1'), 'UpdateExpression': 'SET a = :a', 'ExpressionAttributeValues': {':a': 1},
+                     'AttributeUpdates': {'gsi1pk': {'Value': 'DATE#x', 'Action': 'PUT'}}}}],
+        [{'Delete': {'Key': _key(A, 'f1'), 'ReturnValues': 'ALL_OLD'}}],
+        [{'ConditionCheck': {'Key': _key(A, 'f1'), 'ConditionExpression': 'attribute_exists(pk)',
+                             'ConditionalOperator': 'OR'}}],
+    ])
+    def test_a_transaction_entry_takes_only_its_listed_fields(self, items):
+        """The single-item calls' allow-lists hold per entry too: a legacy parameter, or any other the layer does not
+        check, refuses the whole transaction before it is sent."""
+        backing = _backing()
+        with pytest.raises(OutOfScopeError, match='does not take'):
+            ws_table(A, backing).transact_write_items(items)
+        assert backing.mock_calls == []
+
+    @pytest.mark.parametrize('items', _TRANSACTIONS_OUT_OF_SCOPE)
+    def test_a_transaction_with_an_entry_outside_the_scope_is_refused_whole(self, items):
+        backing = _backing()
+        with pytest.raises(OutOfScopeError):
+            ws_table(A, backing).transact_write_items(items)
+        assert backing.mock_calls == []
+
+    @pytest.mark.parametrize('call', [
+        lambda repo: repo.transact_write_items([_put(A, 'f1')], TableName='voc-aggregates'),
+        lambda repo: repo.batch_get_item([_key(A, 'f1'), _key(B, 'f1')]),
+        lambda repo: repo.batch_get_item([{'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}]),
+        lambda repo: repo.batch_get_item([{'sk': 'FEEDBACK#f1'}]),
+        lambda repo: repo.batch_get_item([_key(A, 'f1')], TableName='voc-feedback'),
+        lambda repo: repo.batch_get_item([_key(A, 'f1')], RequestItems={'voc-aggregates': {'Keys': [_key(A, 'f1')]}}),
+        lambda repo: repo.batch_writer().put_item(Item=_key(B, 'f1')),
+        lambda repo: repo.batch_writer().put_item(Item={**_key(A, 'f1'), 'gsi4pk': feedback_id_pk(B, 'f1')}),
+        lambda repo: repo.batch_writer().put_item(Item={**_key(A, 'f1'), 'gsi5pk': 'CHANNEL#email'}),
+        lambda repo: repo.batch_writer().delete_item(Key=_key(A, 'f1')),
+    ])
+    def test_every_call_refuses_anything_outside_the_scope_before_dynamodb(self, call):
+        backing = _backing()
+        with pytest.raises(OutOfScopeError):
+            call(ws_table(A, backing))
+        assert _calls_but_the_writers_creation(backing) == []
+
+    @pytest.mark.parametrize('call', [
+        lambda repo: repo.transact_write_items([_put(A, f'f{n}') for n in range(MAX_TRANSACT_ITEMS + 1)]),
+        lambda repo: repo.transact_write_items([]),
+        lambda repo: repo.transact_write_items([{'Put': {'Item': _key(A, 'f1')}, 'Delete': {'Key': _key(A, 'f2')}}]),
+        lambda repo: repo.transact_write_items([{'Get': {'Key': _key(A, 'f1')}}]),
+        lambda repo: repo.transact_write_items([{'Delete': {}}]),
+        lambda repo: repo.transact_write_items([{'ConditionCheck': {'Key': _key(A, 'f1')}}]),
+        lambda repo: repo.transact_write_items([_put(A, 'f1')], ReturnValues='ALL_OLD'),
+        lambda repo: repo.batch_get_item([_key(A, 'f1')], Limit=1),
+        # One item named twice: DynamoDB refuses it, the view first.
+        lambda repo: repo.batch_get_item([_key(A, 'f1'), _key(A, 'f2'), _key(A, 'f1')]),
+        lambda repo: repo.transact_write_items([_put(A, 'f1'), {'Delete': {'Key': _key(A, 'f1')}}]),
+        lambda repo: repo.transact_write_items([
+            {'ConditionCheck': {'Key': _key(A, 'f1'), 'ConditionExpression': 'attribute_exists(pk)'}},
+            {'Update': {'Key': _key(A, 'f1'), 'UpdateExpression': 'SET a = :a', 'ExpressionAttributeValues': {':a': 1}}},
+        ]),
+    ])
+    def test_a_malformed_call_is_refused_before_dynamodb(self, call):
+        backing = _backing()
+        with pytest.raises(ValueError, match=r'takes|entry|does not take|names one item twice') as refused:
+            call(ws_table(A, backing))
+        assert not isinstance(refused.value, OutOfScopeError)
+        assert backing.mock_calls == []
+
+    def test_a_transaction_names_the_views_table_and_passes_its_options_on(self):
+        backing = _backing()
+        item = {**_key(A, 'f1'), 'gsi4pk': feedback_id_pk(A, 'f1')}
+
+        ws_table(A, backing).transact_write_items(
+            [{'Put': {'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}}],
+            ClientRequestToken='request-1', ReturnConsumedCapacity='TOTAL')
+
+        backing.meta.client.transact_write_items.assert_called_once_with(
+            TransactItems=[{'Put': {'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)',
+                                    'TableName': 'voc-feedback'}}],
+            ClientRequestToken='request-1', ReturnConsumedCapacity='TOTAL')
+
+    def test_a_batch_get_sends_at_most_100_keys_a_request(self):
+        backing = _backing()
+        backing.meta.client.batch_get_item.return_value = {'Responses': {'voc-feedback': []}}
+
+        ws_table(A, backing).batch_get_item([_key(A, f'f{n}') for n in range(250)], ConsistentRead=True)
+
+        sent = [request.kwargs['RequestItems']['voc-feedback']
+                for request in backing.meta.client.batch_get_item.call_args_list]
+        assert [len(request['Keys']) for request in sent] == [100, 100, 50]
+        assert all(request['ConsistentRead'] is True for request in sent)
+
+    def test_unprocessed_keys_are_asked_for_again(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr('shared.batch_get.time.sleep', sleeps.append)
+        monkeypatch.setattr('shared.batch_get.random.uniform', lambda _low, high: high)
+        backing = _backing()
+        # DynamoDB hands back the unprocessed keys with the request's own options.
+        unprocessed = {'voc-feedback': {'ProjectionExpression': 'sk', 'ConsistentRead': True, 'Keys': [_key(A, 'f2')]}}
+        backing.meta.client.batch_get_item.side_effect = [
+            {'Responses': {'voc-feedback': [{'sk': 'FEEDBACK#f1'}]}, 'UnprocessedKeys': unprocessed},
+            {'Responses': {'voc-feedback': [{'sk': 'FEEDBACK#f2'}]}, 'UnprocessedKeys': {}},
+        ]
+
+        found = ws_table(A, backing).batch_get_item([_key(A, 'f1'), _key(A, 'f2')], ProjectionExpression='sk')
+
+        assert found == [{'sk': 'FEEDBACK#f1'}, {'sk': 'FEEDBACK#f2'}]
+        assert backing.meta.client.batch_get_item.call_args.kwargs == {'RequestItems': unprocessed}
+        assert sleeps == [0.1]
+
+    def test_keys_still_unprocessed_after_the_bound_fail_the_read(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr('shared.batch_get.time.sleep', sleeps.append)
+        backing = _backing()
+        left = [_key(A, 'f2'), _key(A, 'f3')]
+        backing.meta.client.batch_get_item.return_value = {
+            'Responses': {}, 'UnprocessedKeys': {'voc-feedback': {'Keys': left}}}
+
+        refusal = f'left keys unprocessed after {BATCH_GET_ATTEMPTS} calls'
+        with pytest.raises(UnprocessedKeysError, match=refusal):
+            ws_table(A, backing).batch_get_item([_key(A, 'f1'), *left])
+
+        # Every call counts, the first (3 keys, 2 left) included.
+        assert backing.meta.client.batch_get_item.call_count == BATCH_GET_ATTEMPTS
+        assert len(sleeps) == BATCH_GET_ATTEMPTS - 1
+
+    def test_a_batch_get_may_be_eventually_consistent(self):
+        backing = _backing()
+        backing.meta.client.batch_get_item.return_value = {'Responses': {'voc-feedback': []}}
+
+        ws_table(A, backing).batch_get_item([_key(A, 'f1')], ConsistentRead=False)
+
+        assert backing.meta.client.batch_get_item.call_args.kwargs['RequestItems']['voc-feedback'][
+            'ConsistentRead'] is False
+
+    def test_a_duplicate_is_named(self):
+        backing = _backing()
+        with pytest.raises(ValueError, match=r"names one item twice: pk 'WS#.*#SOURCE#web', sk 'FEEDBACK#f1'"):
+            ws_table(A, backing).batch_get_item([_key(A, 'f1'), _key(A, 'f1')])
+        assert backing.mock_calls == []
+
+    def test_the_batch_writer_hands_checked_puts_to_the_tables_writer(self):
+        backing = _backing()
+        with ws_table(A, backing).batch_writer() as writer:
+            writer.put_item(Item=_key(A, 'f1'))
+
+        backing.batch_writer.assert_called_once_with()
+        real = backing.batch_writer.return_value
+        real.put_item.assert_called_once_with(Item=_key(A, 'f1'))
+        real.__exit__.assert_called_once()
+
+    def test_the_batch_writer_refuses_a_delete(self):
+        backing = _backing()
+        with (pytest.raises(OutOfScopeError, match='batch delete is not part of the workspace layer yet'),
+              ws_table(A, backing).batch_writer() as writer):
+            writer.delete_item(Key=_key(A, 'f1'))
+        assert backing.batch_writer.return_value.delete_item.call_count == 0
+
+    def test_a_refused_put_still_flushes_the_puts_before_it(self, table):
+        """Documented on ``WorkspaceBatchWriter``: the refusal ends the block, boto3's ``__exit__`` flushes what was
+        buffered before it, and the refused item is never sent."""
+        repo = ws_table(A, table)
+
+        def write() -> None:
+            with repo.batch_writer() as writer:
+                writer.put_item(Item={**_key(A, 'f1'), 'text': 'kept'})
+                writer.put_item(Item=_key(B, 'f2'))
+
+        with pytest.raises(OutOfScopeError):
+            write()
+
+        assert [row['sk'] for row in table.scan()['Items']] == ['FEEDBACK#f1']

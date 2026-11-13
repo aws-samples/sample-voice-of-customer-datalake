@@ -1,4 +1,4 @@
-"""The platform console's workspaces: create and list (docs/multi-workspace.md, "Control plane" and "Credentials").
+"""The platform console's workspaces: create and list (docs/multi-workspace.md, "Control plane").
 
 Platform admins only; the routes (``POST /platform/workspaces``, ``GET /platform/workspaces``) live in
 lambda/api/workspaces_handler.py, which checks the caller live first (shared/platform_admin.py).
@@ -6,7 +6,7 @@ lambda/api/workspaces_handler.py, which checks the caller live first (shared/pla
 Creating a workspace is ONE DynamoDB transaction (all or nothing), every put conditional on a new key:
 
     SLUG#{slug}     / META              workspace_id, created_at: the slug guard (taken: 409, nothing written)
-    WS#{ws}         / META              name, slug, status active, created_by, created_at, secret_status pending
+    WS#{ws}         / META              name, slug, status active, created_by, created_at, secret_status ready
     WS#{ws}         / MEMBER#{sub}      role admin, invited_by (the creator), joined_at
     USER#{sub}      / WS#{ws}           name, slug, role admin: the creator's "my workspaces" row
     WORKSPACES      / {name}#{ws}       workspace_id, name, slug, status, created_at, secret_status: the listing row
@@ -18,14 +18,12 @@ The listing partition ``WORKSPACES`` is sorted by the name (case-folded) and the
 Query, never a Scan. It is a single partition read only by platform admins and written once per created
 workspace, far under a partition's limits. A later rename or status change moves or updates the listing row too.
 
-The credentials secret ``{prefix}/{ws}/credentials`` (prefix ``voc/ws``, ``<deployment prefix>-voc/ws`` in a
-prefixed deployment) is created AFTER the transaction, encrypted with the deployment's customer-managed key, with
-``{}`` as its first value and the tag ``workspace_id``. Its name is built only from the id generated here, never
-from the request. A secret that already exists under that name is kept when it carries this workspace's tag.
-Until the secret is there the workspace's ``META`` says ``secret_status: pending``; the create flips it to
-``ready`` once the secret exists. A secret that could not be made leaves ``pending`` (and the answer says so):
-the workspace is not rolled back, because its audit row stays (D4) and deleting a workspace is an open tenet
-question (D5).
+Nothing else is made for a new workspace (decision 19): its plugin credentials are SSM Parameter Store
+SecureStrings, one per plugin, created by the first save in the workspace (shared/workspace_credentials.py),
+so no secret is created here and the create cannot leave a workspace without one. ``secret_status`` is written
+``ready`` on ``META`` and the listing row, and the create answers it, only because the platform API's answer and
+list carry it since 6.09.00 (``GET /platform/workspaces``): nothing in the app gates on it any more, and the field
+goes when the platform routes drop it.
 """
 from __future__ import annotations
 
@@ -46,7 +44,6 @@ from shared.logging import logger
 from shared.request_body import reject_unknown_fields, validated_text
 from shared.timestamps import now_iso
 from shared.workspace import ACTIVE, audit_key, audit_sort_key, is_workspace_id, text_fields, ws_key
-from shared.workspace_ids import credentials_secret_name
 
 NAME_MAX_CHARS: Final = 80
 #: 3 to 40 of a-z, 0-9 and '-', neither first nor last a '-'.
@@ -55,11 +52,8 @@ _SLUG: Final = re.compile(r'[a-z0-9][a-z0-9-]{1,38}[a-z0-9]')
 RESERVED_SLUGS: Final = frozenset({'admin', 'api', 'app', 'platform', 'www'})
 LISTING_PK: Final = 'WORKSPACES'
 WORKSPACE_CREATED: Final = 'workspace_created'
-#: The values of META's ``secret_status``: the credentials secret is not there yet, or is.
-CREDENTIALS_PENDING: Final = 'pending'
+#: META's ``secret_status``, always ``ready`` since decision 19 (the module docstring): kept for the platform API.
 CREDENTIALS_READY: Final = 'ready'
-#: The tag key that names the workspace on its credentials secret.
-WORKSPACE_TAG_KEY: Final = 'workspace_id'
 SLUG_TAKEN: Final = 'That slug is taken: choose another'
 #: Crockford base32: 0-9 and A-Z without I, L, O and U.
 _CROCKFORD: Final = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
@@ -74,10 +68,6 @@ class NewWorkspace:
 
     name: str
     slug: str
-
-
-class CredentialsSecretError(Exception):
-    """A secret by the workspace's name exists but is not this workspace's (no ``workspace_id`` tag for it)."""
 
 
 def parse_new_workspace(body: Mapping[str, Any]) -> NewWorkspace:
@@ -115,11 +105,11 @@ def _creation_items(table_name: str, new: NewWorkspace, ws: str, creator: str, a
     return [_put(table_name, item) for item in (
         {'pk': f'SLUG#{new.slug}', 'sk': 'META', 'workspace_id': ws, 'created_at': at},
         {'pk': ws_key(ws), 'sk': 'META', **base, 'status': ACTIVE, 'created_by': creator, 'created_at': at,
-         'secret_status': CREDENTIALS_PENDING},
+         'secret_status': CREDENTIALS_READY},
         {'pk': ws_key(ws), 'sk': f'MEMBER#{creator}', 'role': 'admin', 'invited_by': creator, 'joined_at': at},
         {'pk': f'USER#{creator}', 'sk': f'WS#{ws}', **base, 'role': 'admin'},
         {'pk': LISTING_PK, 'sk': _listing_sort_key(new.name, ws), 'workspace_id': ws, **base, 'status': ACTIVE,
-         'created_at': at, 'secret_status': CREDENTIALS_PENDING},
+         'created_at': at, 'secret_status': CREDENTIALS_READY},
         {'pk': audit_key(ws), 'sk': audit_sort_key(at), 'kind': WORKSPACE_CREATED, 'actor': creator, 'at': at,
          'slug': new.slug},
     )]
@@ -139,42 +129,6 @@ def create_workspace(table: Any, new: NewWorkspace, creator: str) -> str:
         raise
     logger.info('Workspace created', extra={'workspace_id': ws})
     return ws
-
-
-def ensure_credentials_secret(client: Any, *, prefix: str, ws: str, kms_key_arn: str) -> None:
-    """Create the workspace's secret (``{}``, the customer-managed key, the ``workspace_id`` tag), or keep the one that
-    is already there for this workspace. ``CredentialsSecretError`` when that one is not this workspace's; every
-    Secrets Manager error propagates."""
-    name = credentials_secret_name(prefix, ws)
-    try:
-        client.create_secret(Name=name, KmsKeyId=kms_key_arn, SecretString='{}',
-                             Description='Plugin credentials of one workspace (docs/multi-workspace.md)',
-                             Tags=[{'Key': WORKSPACE_TAG_KEY, 'Value': ws}])
-    except ClientError as exc:
-        if exc.response.get('Error', {}).get('Code') != 'ResourceExistsException':
-            raise
-        # A retried create whose first attempt landed: keep it, if it is this workspace's.
-        tags = client.describe_secret(SecretId=name).get('Tags', [])
-        if {'Key': WORKSPACE_TAG_KEY, 'Value': ws} not in tags:
-            raise CredentialsSecretError(name) from exc
-
-
-def mark_secret_ready(table: Any, ws: str, name: str) -> None:
-    """``secret_status: ready`` on the workspace's ``META`` and its listing row together (one transaction, each only
-    while it exists and is ``pending``), so the platform list shows which workspaces still lack their secret."""
-    def ready(key: dict[str, str]) -> dict[str, Any]:
-        return {'Update': {
-            'TableName': table.name, 'Key': key, 'UpdateExpression': 'SET secret_status = :ready',
-            'ConditionExpression': 'attribute_exists(pk) AND secret_status = :pending',
-            'ExpressionAttributeValues': {':ready': CREDENTIALS_READY, ':pending': CREDENTIALS_PENDING},
-        }}
-
-    # The token makes an SDK retry of a mark that landed (its answer lost) succeed, instead of failing its own
-    # `pending` condition and reporting a false `pending` (35 characters, under DynamoDB's 36).
-    table.meta.client.transact_write_items(TransactItems=[
-        ready({'pk': ws_key(ws), 'sk': 'META'}),
-        ready({'pk': LISTING_PK, 'sk': _listing_sort_key(name, ws)}),
-    ], ClientRequestToken=f'{ws}-ready')
 
 
 def list_workspaces(table: Any, *, limit: int, cursor: str | None) -> tuple[list[dict[str, str]], str | None]:

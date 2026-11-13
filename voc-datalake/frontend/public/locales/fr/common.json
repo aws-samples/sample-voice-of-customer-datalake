@@ -210,12 +210,8 @@
       "slugInvalid": "Utilisez de 3 à 40 lettres minuscules, chiffres et tirets, sans tiret au début ni à la fin, et ni admin, api, app, platform ou www.",
       "create": "Créer l’espace de travail",
       "created": "{{name}} a été créé. Vous en êtes l’administrateur.",
-      "createdPending": "{{name}} a été créé. Vous en êtes l’administrateur. Son secret d’identifiants n’a pas encore pu être créé ; rien ne l’utilise pour l’instant, et un opérateur peut le créer.",
       "enter": "Entrer",
       "enterWho": "Entrer dans {{name}}",
-      "secretReady": "Secret prêt",
-      "secretPending": "Secret en attente",
-      "secretPendingHint": "Le secret d’identifiants de l’espace de travail n’a pas pu être créé. Rien ne l’utilise encore ; un opérateur peut le créer.",
       "status": {
         "active": "Actif",
         "deleting": "Suppression en cours"

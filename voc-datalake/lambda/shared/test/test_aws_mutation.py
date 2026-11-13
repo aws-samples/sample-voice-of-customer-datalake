@@ -35,6 +35,8 @@ _FACTORY_SENTINELS = [
     ('get_s3_client', '_s3_client', 'client', 's3'),
     ('get_sqs_client', '_sqs_client', 'client', 'sqs'),
     ('get_secrets_client', '_secrets_client', 'client', 'secretsmanager'),
+    ('get_ssm_client', '_ssm_client', 'client', 'ssm'),
+    ('get_ssm_run_client', '_ssm_run_client', 'client', 'ssm'),
     ('get_bedrock_client', '_bedrock_client', 'client', 'bedrock-runtime'),
     ('get_lambda_client', '_lambda_client', 'client', 'lambda'),
     # The plugin circuit breaker's DisableRule (its deployment-wide runs) goes through this one.
@@ -94,13 +96,15 @@ class TestEveryClientFactoryBuildsOnceFromAColdStart:
         constructor: MagicMock = getattr(boto3_mock, boto_method)
         assert constructor.call_count == 0
 
-    def test_only_dynamodb_s3_and_bedrock_pass_a_config(self):
+    def test_only_dynamodb_s3_ssm_and_bedrock_pass_a_config(self):
         fresh = _fresh_module()
         with patch.object(fresh, 'boto3') as boto3_mock:
             fresh.get_dynamodb_resource()
             fresh.get_s3_client()
             fresh.get_sqs_client()
             fresh.get_secrets_client()
+            fresh.get_ssm_client()
+            fresh.get_ssm_run_client()
             fresh.get_bedrock_client()
             fresh.get_lambda_client()
 
@@ -112,9 +116,39 @@ class TestEveryClientFactoryBuildsOnceFromAColdStart:
             's3': ['config'],
             'sqs': [],
             'secretsmanager': [],
+            'ssm': ['config'],
             'bedrock-runtime': ['config'],
             'lambda': [],
         }
+
+    def test_a_request_serving_lambdas_ssm_client_answers_within_api_gateways_29_seconds(self):
+        """The integrations and scrapers APIs and the webhooks: 2 attempts (standard mode), 2 s to connect, 4 s to read.
+        The budget is the ROUTE's: PUT /integrations/{source}/credentials makes two SSM calls in a row (a read, then a
+        write), so two calls' worst case, each attempt timing out on both and standard mode's largest backoff between
+        attempts, stays under API Gateway's 29 s."""
+        fresh = _fresh_module()
+        with patch.object(fresh, 'boto3') as boto3_mock:
+            fresh.get_ssm_client()
+
+        config = boto3_mock.client.call_args.kwargs['config']
+        assert (config.retries, config.connect_timeout, config.read_timeout) == (
+            {'mode': 'standard', 'max_attempts': 2}, 2, 4)
+        attempts = config.retries['max_attempts']
+        # botocore's standard mode (retries/standard.py ExponentialBackoff): before retry n (1-based) it sleeps at most
+        # min(1 s * 2 ** (n - 1), 20 s) on a throttle (1 s the throttling base scale; other errors 50 ms).
+        max_backoff = sum(min(2 ** (retry - 1), 20) for retry in range(1, attempts))
+        calls_per_route = 2
+        per_call = attempts * (config.connect_timeout + config.read_timeout) + max_backoff
+        assert (calls_per_route * per_call, calls_per_route * per_call < 29) == (26, True)
+
+    def test_an_ingestor_runs_ssm_client_retries_adaptively(self):
+        """A run shares SSM's per-account throughput with every other run: throttling backs off, up to 10 times."""
+        fresh = _fresh_module()
+        with patch.object(fresh, 'boto3') as boto3_mock:
+            fresh.get_ssm_run_client()
+
+        config = boto3_mock.client.call_args.kwargs['config']
+        assert config.retries == {'mode': 'adaptive', 'max_attempts': 10}
 
 
 class TestTheS3ClientSignsWithSigV4:

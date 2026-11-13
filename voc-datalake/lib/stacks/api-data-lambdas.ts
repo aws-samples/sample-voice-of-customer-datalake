@@ -27,7 +27,7 @@ import type { ApiStackContext } from './api-context';
 import {
   AGGREGATES_VERSION_PARTITION, grantCacheVersionBump, grantWorkspaceCacheVersionBump,
 } from '../utils/cache-version-grants';
-import { WORKSPACE_SECRET_BASE_PREFIX, grantWorkspaceSecretsReadWrite } from '../utils/workspace-secrets';
+import { WORKSPACE_PARAMETER_BASE_PATH, grantWorkspaceParametersReadWrite } from '../utils/workspace-secrets';
 import { CIRCUIT_ROW_PARTITIONS } from './ingestion-roles';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
@@ -177,10 +177,12 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   }));
   // A request's X-Workspace-Id (docs/multi-workspace.md; lambda/shared/workspace_request.py): its membership read,
   // a platform admin's entry audited and live-checked (lib/utils/workspace-resolution-grants.ts), and the
-  // workspace's own credentials secret read and written (credentials, app connectors).
+  // workspace's own parameters read and written (credentials, app connectors; decision 19). The deployment key,
+  // unconditioned, for the shared secret it reads and writes (encrypted with it).
   const integrationsWorkspaceEnv = grantRequestWorkspace(workspacesTable, integrationsRole, userPool);
-  const workspaceSecretsEnv = grantWorkspaceSecretsReadWrite(
-    stack, integrationsRole, ctx.prefixed(WORKSPACE_SECRET_BASE_PREFIX), kmsKey);
+  kmsKey.grantEncryptDecrypt(integrationsRole);
+  const workspaceSecretsEnv = grantWorkspaceParametersReadWrite(
+    stack, integrationsRole, ctx.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey);
   // The enable/disable routes and GET /sources/status toggle and describe a
   // per-plugin schedule rule: grant exactly the rules VocIngestionStack creates
   // (every enabled plugin whose ingestor declares a schedule), by their resolved
@@ -247,16 +249,18 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // Scrapers API
   const scrapersRole = ctx.role('ScrapersLambdaRole');
   // SCRAPER_RUN#<id> run rows, deployment-wide and a workspace's WS#{ws}#SCRAPER_RUN#<id> (PutItem); no update, no delete.
-  // The deployment key's encrypt and decrypt come with grantWorkspaceSecretsReadWrite below.
+  // The deployment key's encrypt and decrypt, unconditioned: the shared secret and the tables it reaches.
   grantReadAndWrites(aggregatesTable, scrapersRole, ['PutItem']);
   scrapersRole.addToPolicy(new iam.PolicyStatement({
     actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
     resources: [secretsArn],
   }));
-  // X-Workspace-Id as the integrations API resolves it; the workspace's own secret holds its scraper configs.
+  kmsKey.grantEncryptDecrypt(scrapersRole);
+  // X-Workspace-Id as the integrations API resolves it; a workspace's scraper configs are its WS#{ws}#PLUGIN_CONFIG
+  // row in voc-aggregates (the PutItem above), its credentials its own parameters.
   const scrapersWorkspaceEnv = grantRequestWorkspace(workspacesTable, scrapersRole, userPool);
-  const scrapersWorkspaceSecretsEnv = grantWorkspaceSecretsReadWrite(
-    stack, scrapersRole, ctx.prefixed(WORKSPACE_SECRET_BASE_PREFIX), kmsKey);
+  const scrapersWorkspaceSecretsEnv = grantWorkspaceParametersReadWrite(
+    stack, scrapersRole, ctx.prefixed(WORKSPACE_PARAMETER_BASE_PATH), kmsKey);
   // POST /scrapers/{id}/run invokes the webscraper ingestor by its exact name
   // (the same string handed down as WEBSCRAPER_FUNCTION_NAME).
   const webscraperFunctionName = ctx.uniqueName('voc-ingestor-webscraper');

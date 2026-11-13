@@ -2,10 +2,10 @@
  * The workspaces API, `voc-workspaces-api` (lib/stacks/api-workspaces-lambda.ts, docs/multi-workspace.md):
  * GET, POST, PUT and DELETE /me/{proxy+} and GET + POST /platform/{proxy+} behind the Cognito authorizer, a role of
  * its own with exactly the actions its code uses: on the voc-workspaces table Query, GetItem, PutItem in the
- * partitions a create, an add and an audit write, UpdateItem on `WS#*` and `WORKSPACES` (attribute `secret_status`
- * only) and on `WS#*` and `USER#*` (attribute `role` only), DeleteItem on `WS#*` and `USER#*` (a member's removal),
- * ConditionCheckItem on `WS#*`; the live platform-admin check's two Cognito reads plus ListUsers and AdminCreateUser
- * (adding a member); and the per-workspace credentials secrets' create, describe and tag on `voc/ws/*` only.
+ * partitions a create, an add and an audit write, UpdateItem on `WS#*` and `USER#*` (attribute `role` only),
+ * DeleteItem on `WS#*` and `USER#*` (a member's removal), ConditionCheckItem on `WS#*`; the live platform-admin
+ * check's two Cognito reads plus ListUsers and AdminCreateUser (adding a member). No Secrets Manager and no SSM grant
+ * (decision 19: a workspace's credentials parameters are made by their first save, not by its creation).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -26,12 +26,13 @@ const withPrefix = (prefix: string) => statements().filter((s) => s.actions.some
 const environment = () => serviceEnvironment(apiTemplate(), 'voc-workspaces-api');
 
 describe('the voc-workspaces-api Lambda', () => {
-  it('is told the voc-workspaces table, the user pool, the key and the secret prefix', () => {
+  it('is told the voc-workspaces table and the user pool, and no secret or parameter prefix or key', () => {
     const env = environment();
     expect(JSON.stringify(env.WORKSPACES_TABLE)).toMatch(/Workspaces/);
     expect(JSON.stringify(env.USER_POOL_ID)).toMatch(/UserPool/);
-    expect(JSON.stringify(env.KMS_KEY_ARN)).toMatch(/Key/);
-    expect(env.WORKSPACE_SECRET_PREFIX).toBe('voc/ws');
+    for (const name of ['KMS_KEY_ARN', 'WORKSPACE_SECRET_PREFIX', 'WORKSPACE_PARAMETER_PREFIX', 'WORKSPACE_PARAMETER_KEY_ARN']) {
+      expect(env).not.toHaveProperty(name);
+    }
   });
 
   it('names the plugins the deployment offers (cdk.context.json): the ceiling of a workspace\'s plugins', () => {
@@ -64,9 +65,7 @@ describe('the voc-workspaces-api Lambda', () => {
       { actions: ['dynamodb:UpdateItem'], condition: {
         'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USER#*', 'WS#*'] },
         'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'role', 'sk'] } } },
-      { actions: ['dynamodb:UpdateItem'], condition: {
-        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WORKSPACES', 'WS#*'] },
-        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'secret_status', 'sk'] } } },
+      // No `secret_status` update any more: a new workspace's META and listing row are written whole at creation.
     ]);
   });
 
@@ -74,9 +73,9 @@ describe('the voc-workspaces-api Lambda', () => {
   // name the table alone. voc-workspaces has no index.
   it('names the workspaces table and no other table', () => {
     const resources = withPrefix('dynamodb:').map((s) => s.resource);
-    expect(resources).toHaveLength(6);
+    expect(resources).toHaveLength(5);
     expect(resources.join('\n').match(/ExportsOutputFnGetAtt[A-Za-z]+/g)?.sort(byCodeUnit))
-      .toStrictEqual(Array<string>(7).fill('ExportsOutputFnGetAttWorkspaces'));
+      .toStrictEqual(Array<string>(6).fill('ExportsOutputFnGetAttWorkspaces'));
   });
 
   it('reads the caller\'s groups and account, finds and creates accounts, on the user pool only', () => {
@@ -88,20 +87,15 @@ describe('the voc-workspaces-api Lambda', () => {
     expect(cognito[0]?.condition).toBeUndefined();
   });
 
-  it('creates (with the customer-managed key only), describes and tags the voc/ws/* secrets, nothing else', () => {
-    const shape = withPrefix('secretsmanager:').map((s) => ({
-      actions: [...s.actions].sort(byCodeUnit), resource: s.resource, condition: JSON.stringify(s.condition ?? null),
-    })).sort((a, b) => byCodeUnit(a.actions.join(), b.actions.join()));
-    expect(shape.map((s) => s.actions)).toStrictEqual([
-      ['secretsmanager:CreateSecret'], ['secretsmanager:DescribeSecret', 'secretsmanager:TagResource']]);
-    for (const statement of shape) expect(statement.resource).toMatch(/:secret:voc\/ws\/\*"/);
-    expect(shape.map((s) => s.condition)).toStrictEqual([
-      expect.stringMatching(/^\{"StringEquals":\{"secretsmanager:KmsKeyArn":.*Key.*\}\}$/), 'null']);
+  it('creates, reads or tags no secret and no parameter (decision 19)', () => {
+    expect(withPrefix('secretsmanager:')).toStrictEqual([]);
+    expect(withPrefix('ssm:')).toStrictEqual([]);
+    expect(JSON.stringify(statements())).not.toMatch(/voc\/ws/);
   });
 
-  it('holds only DynamoDB, Cognito, Secrets Manager, KMS for the table and the secrets, and its log and trace writes', () => {
+  it('holds only DynamoDB, Cognito, KMS for the table, and its log and trace writes', () => {
     const services = new Set(statements().flatMap((s) => s.actions).map((action) => action.split(':')[0]));
-    expect([...services].filter((service) => !['dynamodb', 'cognito-idp', 'secretsmanager', 'kms', 'logs', 'xray']
+    expect([...services].filter((service) => !['dynamodb', 'cognito-idp', 'kms', 'logs', 'xray']
       .includes(service ?? ''))).toStrictEqual([]);
   });
 });

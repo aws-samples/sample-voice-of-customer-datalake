@@ -1,6 +1,7 @@
 /**
  * The platform console's client: `GET` and `POST /platform/workspaces` as workspaces_handler.py answers them, and
- * the lenient read (an unknown secret status is pending, a slug that could not be a base path is left out).
+ * the lenient read (a slug that could not be a base path is left out; the answers' `secret_status`, always `ready`
+ * since decision 19, is not read).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PLATFORM_ACME as ACME } from '../test/workspaceFixtures'
@@ -19,9 +20,9 @@ function listOf(body: unknown) {
 }
 
 describe('platformWorkspacesApi.list', () => {
-  it('keeps the readable rows, an unknown secret status read as pending', async () => {
-    await expect(listOf({ workspaces: [ACME, { ...ACME, slug: 'acme-two', secret_status: 'maybe' }], next_cursor: 'n' })).resolves.toStrictEqual({
-      rows: [ACME, { ...ACME, slug: 'acme-two', secret_status: 'pending' }],
+  it('keeps the readable rows, without the secret status the server still sends', async () => {
+    await expect(listOf({ workspaces: [{ ...ACME, secret_status: 'ready' }, { ...ACME, slug: 'acme-two' }], next_cursor: 'n' })).resolves.toStrictEqual({
+      rows: [ACME, { ...ACME, slug: 'acme-two' }],
       nextCursor: 'n',
     })
   })
@@ -38,10 +39,10 @@ describe('platformWorkspacesApi.list', () => {
 })
 
 describe('platformWorkspacesApi.create', () => {
-  it('creates one with its name and slug, and reads the secret status', async () => {
-    routeFetchApi({ 'POST /platform/workspaces': () => ({ workspace: { id: ACME.id, name: ACME.name, slug: 'acme', role: 'admin', secret_status: 'pending' } }) })
+  it('creates one with its name and slug', async () => {
+    routeFetchApi({ 'POST /platform/workspaces': () => ({ workspace: { id: ACME.id, name: ACME.name, slug: 'acme', role: 'admin', secret_status: 'ready' } }) })
     await expect(platformWorkspacesApi.create('Acme Outfitters', 'acme')).resolves.toStrictEqual({
-      id: ACME.id, name: 'Acme Outfitters', slug: 'acme', secret_status: 'pending',
+      id: ACME.id, name: 'Acme Outfitters', slug: 'acme',
     })
     expect(fetchApi).toHaveBeenCalledWith('/platform/workspaces', { method: 'POST', body: '{"name":"Acme Outfitters","slug":"acme"}' })
   })

@@ -34,6 +34,7 @@ and files named here are the planned ones unless the table lists them.
 | 7.09.00 | The voc-multiplayer-b track's erasure-in-a-workspace slice and its follow-ups merged. Phase 2's erasure in one workspace (TENETS.md D5; docs/source-policies.md, "Workspace items"): an erasure by `author`, `source_id` or `csv_row_id`, which the deployment's erasure keeps to the deployment's items, now reaches ONE named workspace's items. **Route**: `POST /settings/erasure` and `GET /settings/erasure` (lambda/api/settings_handler.py, those two routes only; every other settings route stays deployment-wide and reads no header) resolve `X-Workspace-Id` first, afresh from the table (`lambda/shared/erasure_scope.py` `require_erasure_admin` over `RequestWorkspace`: 400 for an empty header, the one 404 for a malformed id, an unknown or `deleting` workspace and a non-member, the deployment's `admins` included), then gate: without the header the deployment's `admins`, exactly as before; with it the caller's admin role there (`require_workspace_admin`). A platform admin is never elevated on these routes (`no_platform_admin_entry`: they act with their own membership's role, so no entry audit row is written and no live check runs; a platform admin who must erase in a workspace makes themselves a member admin there first, audited by the platform console): an erasure is a legal step the workspace's own data controller takes, so it acts with a membership the workspace's admins can see, never through an elevated entry; moving the erasure routes to a domain Lambda of their own lifts that. In a workspace a whole-source erasure (`field: source`) is refused (400, before the source list or the lock is read); an unknown or missing field gets the deployment path's own "field must be one of" answer. Any other field writes the job row in the workspace's OWN partition, `WS#{ws}#JOB#erasure` / `er_…` in voc-aggregates (`lambda/shared/erasure_jobs.py`, the key from the layer's `erasure_job_pk`, written through `ws_table`), with `workspace_id` set by `scoped_job_row` over `workspace_payload` (shared/workspace_routing.py: a `workspace_id` in the body or on the row is dropped; only a `WorkspaceContext` names one); the invoke event carries the value and, through `workspace_payload` too, the workspace, so the worker reads the row from that partition. One erasure per workspace runs at a time: its lock row `WS#{ws}#JOB#erasure` / `LOCK`, a conditional put (no row, a released one, or one taken more than an hour ago, the source lock's rule; shared/source_erasure.py `put_free_lock`), 409 "An erasure is already running in this workspace" for a second start; the worker renews it at each hand-over and releases it (UpdateItem `released_at`, never a delete) when the job completes or fails, and a failed put or invoke frees it at once. So no workspace's volume reaches the deployment's jobs or another workspace's: `GET` in a workspace is one bounded Query of its own partition (the newest 20) and no source; without the header the deployment's `JOB#erasure` exactly as before (`listed_jobs`); the job view shows `workspace_id`. A workspace's job on a source never holds up the deployment's whole-source erasure of it because its row lives in its own partition, which the deployment's live-job check (`blocking_job`, a Query of `JOB#erasure`) never reads; that check also leaves out any row that names a workspace (defence in depth). **Job**: a workspace job's id and partition are on the run from the start of each invocation, so every failure (a claim fault, too many hand-overs) marks the workspace's row failed and frees its lock; the deployment's job keeps its order (its id on the run only after a successful claim, so a claim fault fails no row). `voc-retention` reads the job row from the partition its event names (`message_scope`: a `workspace_id` that names no workspace is refused before any read; an event naming a workspace whose partition holds no such job finds nothing) and checks that the row names the same workspace (`_named_workspace` over `scope_from_message`): another or no workspace on the row, or one on a whole-source job, fails the job (`Run failed (ValueError)`) before anything is read. The scan filter is then `sk` `FEEDBACK#…` and `pk` beginning `WS#{ws}#` and the field's match (`shared/retention.py` `erase_filter`'s `scope`, any of `WORKSPACE_ERASE_FIELDS`, the source filter as before); every matched row's partition is checked against the workspace before the page's tombstones (any other row fails the job, nothing on that page tombstoned or deleted: the run stops before that page's tombstones); each item is tombstoned (`AUDIT#tombstone#<source>` / `{ws}#{feedback_id}`, with `workspace_id`) and then deleted with its Silver versions and raw versions under `ws/{ws}/`, as an email erasure's workspace item is. Such a run walks the item scan only (no Radar, boards, memberships, prefix sweep or lineage: none is keyed by workspace). An erasure by email in a workspace stays in that workspace too: its admin answers for its data only, while the deployment's erasure by email still reaches every workspace. The job and audit rows carry `workspace_id`; `deleted_workspace_items` counts the items; the run bumps the workspace's own data_version (`WS#{ws}#METRIC#meta`), not the deployment's. **IAM**: voc-retention unchanged (it already scans and deletes `WS#` items and their `ws/{ws}/` objects, and its GetItem, PutItem, UpdateItem and Query on voc-aggregates reach the workspace's job partition, lock and meta row); the settings role's PutItem and UpdateItem on voc-aggregates reach them too, and it reads the membership through the stack's one workspace-resolution policy, which it holds since 6.18.00 (`lib/utils/workspace-resolution-grants.ts`: GetItem, and PutItem on `AUDIT#WS#*`), and the role itself also holds the live platform-admin check's Cognito reads (`lib/stacks/api-data-lambdas.ts`); `grantWorkspaceAttributeRead` (GetItem on `WS#*` held to the attributes its caller names, with `dynamodb:Select` `SPECIFIC_ATTRIBUTES`) is used for the webhooks' `META` read only, with `WEBHOOK_META_ATTRIBUTES` (`pk`, `sk`, `status`, `secret_status`, `lib/stacks/api-stack.ts`). The resolver (`lambda/shared/workspace.py` `_item`) now projects exactly those, for every API that uses it (`MEMBER_READ_ATTRIBUTES`, `META_READ_ATTRIBUTES`): a member's email is never read; IAM cannot tell a `MEMBER#` row's `name` from the `META`'s, so the projection is what keeps a member's name out. The settings function's environment is unchanged (it has had `WORKSPACES_TABLE` since 6.18.00; a test now pins it). **Guards**: the route-gate inventory (`lambda/api/test/test_route_admin_gates.py`) gains `WORKSPACE_PARTIAL` (a module that resolves the header on listed routes only: each resolves and gates in its first statement, no other route names the resolver, the resolver is built members-only) and the erasure gate's two branches; `GET /settings/erasure` joins `ADMIN_ONLY_READS`. Scale: a workspace's erasure scans the whole voc-feedback table, as every erasure does today (one workspace's items span many `WS#{ws}#SOURCE#…` partitions and no index serves "every item of one workspace"; S1: no new hot key, a workspace's job reads the same pages and deletes fewer); one live erasure per workspace bounds that cost to one whole-table Scan per workspace at a time. A per-workspace index is a later optimisation. A workspace job's finish writes its row only while it is unfinished (`queued` or `running`, the row there): a duplicate invoke of a completed job that meets a claim fault leaves it completed, tells nobody, writes no audit row, counts nothing and answers `already_finished`, and frees only a lock its own job still holds; the deployment's job finishes unconditionally, as before. Not yet: the dev mock's erasure routes ignore `X-Workspace-Id` (the next web-app slice); a workspace's own whole-source erasure (its counters, its own lock, `ws/{ws}/raw/<source>/`); a platform admin's elevated entry on these routes. **In this merge**: the settings role reads the membership through the stack's one workspace-resolution policy, which it holds since 6.18.00 (the slice's attribute-limited grant is kept for the webhooks' `META` read only); the job row and the invoke event name the workspace through `workspace_payload` with `ingestion=False`, so the ingestion hold never stops an erasure; inside a workspace, Administration's erasure panel sends `X-Workspace-Id` for an erasure by author, source id, CSV row or email and lists the workspace's jobs, and the whole-source panel sends its start and its list without it (the deployment's); inside a workspace the form and the confirm dialog say the erasure reaches that workspace's reviews only, an email included. A delegated caller (an MCP token, an agent or a plan step) cannot start an erasure in a workspace (`require_erasure_admin` with `write`, 403), as `require_settings_admin` refuses one for the workspace's admin settings. Follow-ups: a workspace's S3 import reads only `ws/{ws}/` keys (`ws_repo.s3_prefix`); the processor's refusal of a malformed `workspace_id` logs no summary of the record; a workspace erasure job's finish is conditional, so a repeated invocation never turns a completed job into failed |
 | 7.10.00 | The voc-multiplayer-c track's MCP and Radar slices merged. **MCP credentials in a workspace** ([Request flow](#request-flow); [MCP](mcp.md)): a personal token minted, or an OAuth sign-in approved, with `X-Workspace-Id` is pinned to that workspace on its row (`workspace`, `lambda/shared/mcp_workspace_pin.py`, resolved fresh with the person's own membership, `request_workspace(..., elevate=False)`: a platform admin who is not a member gets 403 "add yourself as a member first"; anyone else not a member the one 404), and every call the global endpoint delegates sends it as `X-Workspace-Id` from the row, never from the MCP request (`lambda/shared/mcp_delegate.py` `build_proxy_event`); a blank stored value goes out as `unusable`, the one 404, never deployment-wide. The resolver (`lambda/shared/workspace.py`) decides a delegated caller (`mcp:`, `agent:`) by its person's `MEMBER#` row (`member_subject`, the one 404 when it acts for nobody or for another credential), with 7.09.00's projections (`MEMBER_READ_ATTRIBUTES`, `META_READ_ATTRIBUTES`: `member_subject` reads only the claims), caps an `admin` at `editor` after the membership cache the person and their credential share, and (in this merge) never makes it a platform admin's candidate whatever its claims carry: no live check and no entry audit row in its person's name. The token and sign-in lists name each one's `workspace_id`; the web app shows it on Connect's token and sign-in lists, and the token form and the consent page say which workspace a new token or sign-in will act in and show the 403's "add yourself as a member first" (nine languages). IAM: the MCP tokens role gets GetItem on `voc-workspaces` `WS#*` only, held to the resolver's projections (`grantWorkspaceMembershipReads` over `grantWorkspaceAttributeRead`, in this merge), and no Cognito. **Radar's readers** take an optional workspace (decision 13): the scan settings and brand list at `WS#{ws}#SETTINGS#radar` (`lambda/shared/radar_keys.py`), and the views over `WS#{ws}#RADAR#…`, `RADARID#`, `RELEASE#` and the workspace's own `METRIC#` counters (`lambda/shared/radar_reads.py`, `lambda/shared/ingest_tables.py` `table_view` over `ws_table`); the keyed reads go through `lambda/shared/workspace_config.py` `get_scoped_item`, now shared beside 7.08.00's `put_config_item`; no caller passes one yet: Radar moves with its reviews at the cut-over. Existing tokens and sign-ins stay deployment-wide |
 | 7.11.00 | The voc-multiplayer-c track's project-keys slice merged (no behaviour change; phase 3's groundwork). Every key of a project's rows (`PROJECT#{id}`, its documents' and personas' `gsi1pk`, `TYPE#PROJECT`, where a document is listed and a document row's four keys) is built in `lambda/shared/project_keys.py` (the product-doc extractor, a stdlib-only bundle, still spells its own), across 30 production modules, so the move gives each builder a scope in one place. The raw-access guard (`lambda/shared/test/test_ws_raw_access.py`) counts `get_projects_table`, `get_jobs_table` and the `PROJECT#` / `TYPE#PROJECT` prefixes too, each new row phase 3; in this merge its allowlist is the union of both sides (the read APIs' slice's counts for the metrics API, the project getters' for the projects modules), and every count matches the merged tree, which adds no project key outside `project_keys.py` since 7.08.00. **Open**: the documents' version counters, `DOCUMENT_VERSIONS#PROJECT#{id}` (`lambda/shared/document_versions.py` `version_partition_key`), are a project partition still built there, and the guard does not count the `DOCUMENT_VERSIONS#` prefix; it moves into `project_keys.py` before phase 3. No route, stored data or stack changes |
+| 7.12.00 | The voc-multiplayer-b track's credentials-store and multi-item slices merged. Decision 19 (it supersedes what the ingestion, operator-routes and public-routes rows above say of a workspace's secret, its `secret_status` gate and their IAM): a workspace's credentials move from one Secrets Manager secret per workspace to SSM Parameter Store SecureStrings, standard tier (free, at most 4 KB each), under the customer-managed key, one per plugin namespace: `/voc/ws/{ws}/credentials/{plugin}` (the plugin's keys, its webhook secret among them); `/<prefix>-voc/ws/…` in a prefixed deployment. A plugin's config list (its scrapers or connectors, no secret in any field) is a voc-aggregates row, `WS#{ws}#PLUGIN_CONFIG` / `{plugin}` (`lambda/shared/plugin_configs.py`, through the workspace layer; the deployment's own list limits) ([Credentials](#credentials)). Names from `lambda/shared/workspace_ids.py` (`credentials_parameter_name`), reads and writes in `lambda/shared/workspace_credentials.py` (an ingestor run: 10 adaptive attempts; an API or webhook request: 2 standard attempts with 2 s / 4 s timeouts). The integrations and scrapers APIs read and write them through `lambda/shared/workspace_plugin_store.py` (`credentials_store`; credentials over 4096 bytes are a 400, nothing written; `ParameterNotFound` is nothing saved); a run reads its own plugin's parameter (one GetParameter) and row, fresh each run (`plugins/_shared/base_ingestor.py`); a webhook delivery its plugin's credentials parameter, 60 s per workspace and plugin in the warm container (`plugins/_shared/base_webhook.py`). The workspace create makes no secret any more: `secret_status` is written `ready` at creation and no longer reflects a secret, the pending state, the `ready` mark, the operators' 409s, the webhook routing's and the resolver's `secret_status` reads are gone. IAM (`lib/utils/workspace-secrets.ts`): each ingestor role reads only its own plugins' credentials parameters (several on the shared role), the webhook role only its webhook plugins', the integrations and scrapers roles read and write every plugin's, each on one workspace id segment, with `kms:Decrypt` (and for the writers `kms:Encrypt`) only through SSM for those names; every `voc/ws/*` Secrets Manager grant is gone, and the workspaces API holds no secret or parameter grant. A workspace has no fixed cost any more; the fixed-cost guard now refuses any runtime create of a key or secret. Fresh deployments only (decision 21; [Upgrading](#upgrading)). The platform console's `secret_status` badge goes too (the web app no longer reads the field; the API still writes `ready`, the field goes later). **Multi-item calls.** The repository layer's multi-item calls, for phase 3 (projects per workspace) and phase 4 (the export and hard-delete jobs), each on the one table of a `ws_table` view (a caller never names a table: a `TableName` or `RequestItems` is refused): `WorkspaceTable.transact_write_items(items, **kwargs)` (1 to 100 `Put`, `Update`, `Delete` or `ConditionCheck` entries in plain Python values; each item checked as `put_item` checks it, each key as `get_item`, each `Update` as `check_update`, so a gsi4/gsi5 or any other partition set outside the workspace is refused too; one entry out of scope refuses the whole transaction before it is sent, so nothing is written; `ClientRequestToken`, `ReturnConsumedCapacity` and `ReturnItemCollectionMetrics` passed on), `batch_get_item(keys, **kwargs)` (every key checked; sent by `shared/batch_get.py` `batch_get_all`: requests of up to 100 keys, strongly consistent unless `ConsistentRead=False`, `ProjectionExpression` and `ExpressionAttributeNames` passed on, `UnprocessedKeys` retried, 5 calls in all, then `UnprocessedKeysError`; the items found, in any order) and `batch_writer()` (boto3's batch writer, each `put_item(Item=…)` checked before it is buffered; a refused put ends the block, and the puts buffered before it are still flushed on the way out, so all-or-nothing writes use `transact_write_items`; `delete_item` refused until phase 4's hard delete adds a checked one). A transaction or a batch get naming one item twice is refused, naming the item. A `TransactGetItems` comes with its first caller. They go through the table's own client (`table.meta.client`, which takes and returns Python values as `put_item` does) with the view's `TableName`; every refusal (`OutOfScopeError`, or a `ValueError` for a malformed call) comes before any call. `batch_get_all`, which every caller of it shares, now backs off with full jitter (a random wait up to 0.1, 0.2, 0.4 and 0.8 s; still at most 5 calls a chunk, every call counted, about 1.5 s a chunk, inside API Gateway's 29 s) and lets `read_options` set `ConsistentRead` (default still strongly consistent). The raw-access guard (`lambda/shared/test/test_ws_raw_access.py`) now counts DynamoDB's multi-item calls in two kinds, `transact` (`transact_write_items`, `transact_get_items`) and `batch` (`batch_get_item`, `batch_write_item`, `batch_writer`), outside the layer's own view (the exact rules are in the guard's docstring); the 33 modules that held such calls have them in their allowlist rows, each with its module's phase. Nothing calls the new methods yet |
 
 Today one deployment is one tenant ([TENETS.md](../TENETS.md), tenet 6 gap: "One deployment is one tenant"). Every
 signed-in person sees the same feedback, settings, projects and agents, and the Cognito `admins` group administers
@@ -56,7 +57,7 @@ every row and object, so a team only ever sees its own data.
 | 5 | Creating workspaces | Only platform admins |
 | 6 | Configuration | Everything per workspace: brand config, categories, dimensions, sources, models, plugins, menu, Radar |
 | 7 | Branding | One logo and colour scheme for the whole deployment; no per-workspace chrome |
-| 8 | Credentials | One Secrets Manager secret per workspace, encrypted with the customer-managed KMS key |
+| 8 | Credentials | Per workspace, encrypted with the customer-managed KMS key. Decision 19 (7.12.00) replaced "one Secrets Manager secret per workspace" with one SSM Parameter Store SecureString per plugin namespace, standard tier (free, at most 4 KB each): see [Credentials](#credentials) |
 | 9 | Cost | Cost reported per workspace |
 | 10 | Quotas | None for now; workspaces share Bedrock capacity (a busy workspace can slow the others) |
 | 11 | Delete | Hard delete of a whole workspace, after offering an export (how it meets D5 is [settled](#tenet-questions-settled-owner-2026-11-12): the controller's own request, D5) |
@@ -67,9 +68,9 @@ every row and object, so a team only ever sees its own data.
 | 16 | Repository | Superseded: a branch of this sample, keeping its version line and CHANGELOG rule |
 | 17 | Workspace delete | The data controller's own request: stated basis, the slug typed, an audit row, a tombstone per deleted item, the export offered first ([settled](#tenet-questions-settled-owner-2026-11-12)) |
 | 18 | Imports and erasure | An erasure in the source does not reach an importer's copy: each workspace is its own boundary (TENETS.md, D8) |
-| 19 | Per-workspace credentials | An SSM SecureString parameter, not a Secrets Manager secret (tenet 7) |
+| 19 | Credentials store (owner, 2026-11-12) | A workspace's credentials are SSM Parameter Store SecureStrings, standard tier, under the customer-managed KMS key, one per plugin namespace (`/voc/ws/{ws}/credentials/{plugin}`), not a Secrets Manager secret per workspace; it replaces decision 8's store ([Credentials](#credentials)). The deployment's shared secret is unchanged |
 | 20 | Workspace audit rows | Their partition key starts with `AUDIT#` (`AUDIT#WS#{ws}`) |
-| 21 | The 7.00.00 index re-key | Fresh deployments only, with its upgrade note |
+| 21 | Rollout (owner, 2026-11-12) | Fresh deployments only, each with its upgrade note: the 7.00.00 index re-key, and decision 19's store (an existing deployment's per-workspace `voc/ws/*` secrets are not migrated, [Upgrading](#upgrading)) |
 
 ## Upgrading
 
@@ -86,6 +87,12 @@ re-keys gsi4 and gsi5 (7.00.00, the processor's slice above) in place, and nothi
   backfills every `FEEDBACK#` item with `gsi4pk = FEEDBACK#{feedback_id}` and, where `source_channel` is not empty,
   `gsi5pk = CHANNEL#{source_channel}` (a paged Scan and conditional updates) before relying on either index. Until
   the backfill ends, reads by id and by channel miss the items not yet updated.
+- Credentials (decision 19, since 7.12.00): a workspace's credentials live in SSM Parameter Store
+  (`/voc/ws/{ws}/credentials/{plugin}`) and their config lists in voc-aggregates rows (`WS#{ws}#PLUGIN_CONFIG`), and nothing reads the Secrets Manager
+  secrets `voc/ws/{ws}/credentials` that 6.09.00 created per workspace. They are not migrated: this release is for a
+  fresh deployment (decision 21). An existing deployment that takes it anyway must save each workspace's
+  credentials, app connectors and scrapers again in that workspace, then delete the old `voc/ws/*` secrets by hand
+  (each still bills about $0.40 a month until deleted). The deployment's shared secret (`SECRETS_ARN`) is unchanged.
 
 ## Model
 
@@ -108,7 +115,7 @@ gets no stack of its own.
 
 | PK | SK | Holds |
 |---|---|---|
-| `WS#{ws}` | `META` | name, slug, status (`active` or `deleting`), created_by, created_at, secret_status (`pending` until the credentials secret exists, then `ready`) |
+| `WS#{ws}` | `META` | name, slug, status (`active` or `deleting`), created_by, created_at, secret_status (`ready` from creation since decision 19; it no longer reflects a secret: see Credentials) |
 | `WS#{ws}` | `MEMBER#{sub}` | role (`admin`, `editor` or `viewer`), invited_by, joined_at; since 6.10.00 a member added through the members routes also carries the email and name Cognito had then (removed by an erasure by email since 6.11.00) |
 | `USER#{sub}` | `WS#{ws}` | the inverse row behind "my workspaces" (name, slug, role), written, changed and deleted in the same transaction as `MEMBER#` |
 | `WS#{ws}` | `INVITE#{id}` | planned, not written: email, role, invited_by, expires_at, and `ttl` (the table's TTL attribute). Since 6.10.00 an add is immediate for a new email too (Invites), so nothing has an invite to accept; the row stays reserved, the only one allowed `ttl`, for a later invite that waits for acceptance |
@@ -489,52 +496,99 @@ scope (the caches keep one entry per workspace).
 
 ## Credentials
 
-- One Secrets Manager secret per workspace, `voc/ws/{ws}/credentials` (`<prefix>-voc/ws/{ws}/credentials` in a
-  deployment with `-c deploymentPrefix`), encrypted with the customer-managed key. It will hold every plugin
-  credential, scraper API credential and webhook secret of that workspace. The plugin ingestors read it (since 7.00.00:
-  a run in a workspace reads that workspace's, keys still filtered by plugin namespace; a deployment-wide run still
-  reads the shared secret). Since 7.04.00 (the operator routes' slice): the integrations and scrapers APIs write and read
-  it for a request sent with that workspace's `X-Workspace-Id` (plugin credentials, app connectors, scraper
-  configs); without the header they still use the deployment's shared secret.
-- The create-workspace flow creates it, not CDK (since 6.09.00, `lambda/shared/platform_workspaces.py`): after the
-  transaction that writes the workspace, with `{}` as its first value and the tag `workspace_id`. A secret already
-  there under that name for this workspace is kept; one without this workspace's tag is not used. The workspace's
-  `META` says `secret_status: pending` until the secret exists, then `ready`; when the secret cannot be made, it
-  stays `pending`, the create answers `secret_status: 'pending'` and the failure is logged. The workspace is not
-  rolled back: its audit row stays (D4) and deleting a workspace is phase 4's delete job (settled below). Nothing retries
-  a pending secret yet. To recover one, an operator first checks whether `voc/ws/{ws}/credentials` exists (the
-  secret may have been made and only the `ready` mark failed): if it does, with the `workspace_id` tag, they set
-  `secret_status` to `ready` on BOTH rows that carry it, `WS#{ws}` / `META` and the listing row `WORKSPACES` /
-  `{name, case-folded}#{ws}` (the platform list reads the second); if not, they create it under that name, under the
-  deployment's key, with the tag and `{}`, and then set `ready` on both rows. The workspace delete job (phase 4) will delete it,
-  with no recovery window.
-- IAM: the workspaces API's role (`voc-datalake/lib/stacks/api-workspaces-lambda.ts`) may `CreateSecret` (only with
-  the customer-managed key, `secretsmanager:KmsKeyArn`), `DescribeSecret` and `TagResource` on `voc/ws/*`, and no
-  other secret. The name is built only from the workspace id the server generates, never from a request field
-  (`voc-datalake/lambda/api/test/test_workspaces_platform_routes.py` pins that). The plugin ingestor roles
-  (`voc-datalake/lib/stacks/ingestion-roles.ts`, since 7.00.00) hold `secretsmanager:GetSecretValue` on `voc/ws/*` (a
-  run in a workspace, the name built from its verified workspace, `lambda/shared/workspace_ids.py`
-  `credentials_secret_name`; IAM lets every ingestor role read every workspace's secret, so only that code keeps a run
-  to its own workspace's credentials: decision 1's soft isolation) beside the shared secret their deployment-wide runs read until phase 2's last slice. The integrations and scrapers
-  roles hold `GetSecretValue` and `PutSecretValue` on `voc/ws/*` (since 7.04.00, `lib/utils/workspace-secrets.ts`), the
-  name built from the request's resolved workspace only (`lambda/shared/workspace_plugin_store.py`), and the
-  customer-managed key's encrypt and decrypt the secrets need; no Create,
-  Delete, Describe or Tag. The webhook role holds `GetSecretValue` on `voc/ws/*` (since 7.06.00, the public routes'
-  slice): a delivery to `/webhooks/{plugin}/{ws}` reads the webhook secret of the workspace its stored `META` routes
-  it to (`plugins/_shared/base_webhook.py`), the name built from that workspace only.
-- **Cost**: about $0.40 per workspace per month. This is the one fixed cost the design adds, accepted by decision 8
-  as the price of per-workspace credential isolation. The fixed-cost guard
-  (`voc-datalake/lib/fixed-cost-guard.test.ts`) counts the CDK-created secrets in the templates; these are made at
-  run time, so its `RUNTIME_FIXED_COSTS` (`voc-datalake/lib/test-support/fixed-cost-rules.ts`) names them as a
-  counted, accepted cost, one per workspace, and fails on any other grant of `secretsmanager:CreateSecret` or
-  `kms:CreateKey` in the app. The cost is reported per workspace (below) when cost metering lands (phase 4).
+Decision 19 (since 7.12.00; it replaces decision 8's "one Secrets Manager secret per workspace"): a workspace's
+credentials are SSM Parameter Store SecureStrings, standard tier (no monthly fee, at most 4 KB each), encrypted with
+the deployment's customer-managed key, one per plugin namespace, so no parameter grows with the number of plugins.
+A plugin's config list is not a credential and is not in SSM: it is a row of voc-aggregates.
+
+- **Layout.** The prefix is `/voc/ws` (`/<prefix>-voc/ws` with `-c deploymentPrefix`, the convention of the Radar
+  Exa key in [radar.md](radar.md)):
+
+  | Where | Holds |
+  |---|---|
+  | SSM `/voc/ws/{ws}/credentials/{plugin}` (`lambda/shared/workspace_ids.py`, `lambda/shared/workspace_credentials.py`) | the plugin's keys as one JSON object, bare (`{"api_key": "…", "app_name": "…"}`): every `<plugin>_<key>` the shared secret holds for that plugin but `configs`, its webhook secret (`webhook_secret`) included; at most 4096 bytes (UTF-8) |
+  | voc-aggregates `WS#{ws}#PLUGIN_CONFIG` / `{plugin}` (`lambda/shared/plugin_configs.py`, through the workspace layer) | the plugin's `configs` list as stored (its JSON array text): the webscraper's scrapers (`webscraper_configs` in the shared secret), an app plugin's connectors or review pages (`app_reviews_ios_configs`, `app_reviews_android_configs`, `web_reviews_configs`); the deployment's own limits (a scraper 8 KiB, the scrapers 48 KiB in all, any list at most the shared secret's 64 KiB), far under the 400 KB item |
+
+  Why the lists are rows: no field of any list holds a secret. A scraper holds URLs, selectors, pagination, a
+  schedule and labels, and the webscraper builds its own request headers (no header, cookie, token or auth field
+  is read from a config); an app connector holds an app id or package name, a display name, a schedule and a Radar
+  brand; a review page a public https URL. Every member already reads them whole (`GET /scrapers`,
+  `GET /integrations/{source}/apps`). A config that ever needs a credential keeps it under its own key, in the
+  plugin's credentials parameter, never in the list.
+
+  The routes still see `<plugin>_<key>` keys (`lambda/shared/workspace_plugin_store.py` maps them), so their merge is
+  the one they did on the secret: read, change the plugin's keys, write back; only what changed is written (the
+  parameter with `PutParameter`, `Type=SecureString`, the customer-managed key, `Overwrite`, `Tier=Standard`; the
+  row with one PutItem). A value over its limit is refused with a 400 that says what to shorten, before anything is
+  written.
+- **Integrity of the rows.** Any role that may write voc-aggregates could write a config row, so a run trusts no
+  row: the web_reviews ingestor re-validates every target on every run (`shared/web_review_targets.py`
+  `validated_target`, each page through `checked_url`), and the webscraper fetches every URL through
+  `shared/http_utils.py` `fetch_public_url` (the URL policy on each request and each redirect). The app-review
+  ingestors take no URL from a row: an app id or package name only reaches the store's own fixed host
+  (`apps.apple.com`, `play.google.com`) through its client. Their id format is not re-checked at run time; with
+  a fixed host that is a malformed request to the store at worst, not a reach to another host (a gap kept as is).
+- **Nothing is made with a workspace.** A parameter or row exists once something is saved in it; one that does not
+  exist (`ParameterNotFound`, no item) reads as nothing saved: an empty list or no keys on the routes,
+  `WorkspaceCredentialsNotSet` for a run (not counted by the breaker), a webhook delivery refused like a bad
+  signature. The 409s a workspace answered while its secret was pending, the pending state and its recovery steps
+  are gone.
+- **`secret_status`.** The create still writes `secret_status: ready` on `META` and the listing row and answers
+  it, but nothing reads it: it no longer reflects a secret, nothing is created asynchronously, nothing gates on
+  it, the resolver does not read it, and since 7.12.00 the platform console shows no badge for it. The field
+  itself goes later.
+- **Readers.** A run in a workspace reads its own plugin's credentials parameter (one GetParameter) and its config
+  row (one strongly consistent GetItem), fresh on every run (`plugins/_shared/base_ingestor.py`); a delivery to `/webhooks/{plugin}/{ws}` reads the plugin's credentials
+  parameter of the workspace its stored `META` routes it to, kept 60 s per workspace and plugin in the warm container (a missing or
+  empty value kept too, a failed read not, at most 256 names: `plugins/_shared/base_webhook.py`); the integrations and
+  scrapers APIs read and write the request's resolved workspace's parameter and row of the route's plugin
+  (`GET /integrations/status` reads every plugin's: one GetParametersByPath, one Query of the config partition). A
+  deployment-wide run, delivery or request still uses the deployment's shared secret (`SECRETS_ARN`), unchanged.
+- **IAM** (`voc-datalake/lib/utils/workspace-secrets.ts`), each grant on exactly one workspace id segment (`ws_`
+  and 26 `?`, as the DynamoDB `LeadingKeys` conditions use it): an ingestor role may `ssm:GetParameter` only
+  `…/credentials/{plugin}` of the plugins it runs (`voc-datalake/lib/stacks/ingestion-roles.ts`), the webhook role
+  only `…/credentials/{plugin}` of its webhook plugins (`voc-datalake/lib/stacks/api-stack.ts`), each with a
+  `kms:Decrypt` statement conditioned on SSM (`kms:ViaService`) and those names
+  (`kms:EncryptionContext:PARAMETER_ARN`), which is no second layer: the same roles hold the key unconditioned
+  (below). The integrations and scrapers roles may `ssm:GetParameter` and
+  `ssm:PutParameter` on `…/credentials/*` and `ssm:GetParametersByPath` on that path, with `kms:Decrypt` and
+  `kms:Encrypt` through SSM for those names; no delete. A standard SecureString is encrypted by SSM calling KMS
+  directly, so no `kms:GenerateDataKey` is granted. The config rows need no new grant: every ingestor role already
+  reads voc-aggregates and writes its run rows there, and the integrations and scrapers roles already read it and
+  PutItem their run rows (table-wide grants that cover `WS#{ws}#PLUGIN_CONFIG`; narrowing them is a separate change).
+  Where IAM separates plugins and where it does not: a plugin with a role of its own (a schedule, Bedrock, the
+  browser, job notices) reads only its own credentials parameter; the plugins that share `IngestionLambdaRole`
+  may each read the others' (the shared role names all their parameters), so between them, as in the shared
+  secret, the name the code builds from the plugin's own identity is the boundary. IAM never separates workspaces
+  (any one id): only the code, which builds each name from the verified scope, the resolved membership or the
+  routed `META`, keeps a run, a request or a delivery to its own workspace (decision 1's soft isolation). The
+  workspaces API holds no Secrets Manager or SSM grant at all. These roles also hold the deployment key
+  unconditioned for their other resources (queues, tables, the shared secret), so the SSM-only key statements
+  state the parameters' reach rather than narrow it.
+- **Service limits** (per account and region, shared by every deployment there, prefixed copies included, and by
+  anything else that uses Parameter Store; [deployment.md](deployment.md#ssm-parameter-store-limits-a-workspaces-credentials)):
+  GetParameter's default throughput is about 40 transactions a second (a quota that can be raised: the paid
+  higher-throughput setting); a run makes one GetParameter, a webhook delivery at most one per workspace and plugin
+  every 60 s in a warm container. A run's SSM client retries a throttle adaptively, up to 10 attempts
+  (`lambda/shared/aws.py` `get_ssm_run_client`); the APIs' and the webhooks' (`get_ssm_client`) make 2 attempts
+  (standard mode) with 2 s connect and 4 s read timeouts, so the route with the most SSM calls,
+  `PUT /integrations/{source}/credentials` (a read then a write), takes at most 2 × (2 × 6 s + 1 s of backoff) = 26 s
+  and answers within API Gateway's 29 s. At most 10,000 standard parameters: one per plugin with saved
+  credentials in each workspace, across every deployment in the account and region.
+- **Cost**: none per workspace. Standard-tier
+  parameters are free at the standard throughput (the higher-throughput setting, if raised, bills per call). The fixed-cost guard
+  (`voc-datalake/lib/fixed-cost-guard.test.ts`, `runtimeFixedCostFindings` in
+  `voc-datalake/lib/test-support/fixed-cost-rules.ts`) now refuses every grant of `secretsmanager:CreateSecret` or
+  `kms:CreateKey` in the app. The workspace delete job (phase 4) will delete a workspace's parameters by path and
+  its config rows with its partitions.
 
 ## Cost per workspace
 
 - Every Bedrock call logs `workspace_id`, the model and its input and output tokens (`shared/converse.py` and the
   stream Lambda's model client already centralise those calls). A daily rollup writes `WS#{ws}#COST` rows by date,
   and the platform console shows cost per workspace per day and month (tokens × list price, labelled an estimate).
-- Also counted: reviews ingested, scraper and browser sessions, Comprehend and Translate characters, the secret.
+- Also counted: reviews ingested, scraper and browser sessions, Comprehend and Translate characters. (A workspace's
+  credentials parameters cost nothing a month: decision 19.)
 
 ## Export and delete
 
@@ -549,7 +603,7 @@ controller's own request, with its stated basis and a tombstone per deleted item
 3. The admin confirms by typing the slug. The workspace's status becomes `deleting`: every request is refused and its
    schedules stop.
 4. The delete job (self re-invoking and checkpointed, like `voc-retention`) deletes every `WS#{ws}#` partition of
-   every table, every `ws/{ws}/` object with all its versions, the workspace secret, its MCP tokens, memberships, slug,
+   every table, every `ws/{ws}/` object with all its versions, its credentials parameters (by path), its MCP tokens, memberships, slug,
    its enabled plugins (the `PLUGIN#{plugin}` / `WS#{ws}` rows of `voc-workspaces`: keyed by the plugin, so a sweep
    of the `WS#{ws}#` partitions does not reach them) and the share grants it gave or used. Copies other workspaces already imported stay theirs (TENETS.md, D8,
    settled above). One audit row stays in a platform partition (name, who, when, counts), with no customer data.
@@ -570,13 +624,13 @@ The two points D5 left open are decided, and TENETS.md says so (since 7.05.00):
   anything is copied: "it will be copied to <workspace>, which then owns its copy". `imported_from` stays as lineage
   (D4), not as a path for the source's changes.
 
-Also decided: per-workspace credentials move to an SSM SecureString parameter (decision 19, tenet 7; a coming
-release), workspace audit rows keep a partition key starting `AUDIT#` (decision 20, as built: `AUDIT#WS#{ws}`), and
-the 7.00.00 index re-key is for fresh deployments only (decision 21, its Upgrade notes).
+Also decided: per-workspace credentials are SSM SecureString parameters (decision 19, tenet 7; since 7.12.00),
+workspace audit rows keep a partition key starting `AUDIT#` (decision 20, as built: `AUDIT#WS#{ws}`), and the
+7.00.00 index re-key and decision 19's store are for fresh deployments only (decision 21, their Upgrade notes).
 
-Also held to the tenets as built: the per-workspace secret is a fixed cost per workspace until decision 19 lands
-(decision 8 accepted it; decision 19 moves it to a free SSM SecureString parameter), and since 6.09.00 the fixed-cost guard names it
-(`RUNTIME_FIXED_COSTS`, Credentials above); and `voc-workspaces` holds primary data (members, audit) beside
+Also held to the tenets as built: the per-workspace secret of 6.09.00, a fixed cost per workspace, is gone with
+decision 19 (Credentials above: one free standard-tier SSM parameter per plugin namespace), and the fixed-cost guard
+now refuses any runtime create of a key or a secret (`runtimeFixedCostFindings`); and `voc-workspaces` holds primary data (members, audit) beside
 invites, so 6.09.00, the first change that writes workspaces and members, pins that only `INVITE#` rows carry `ttl`
 (no writer of the table names the attribute, `lambda/shared/workspace_members.py` included since 6.10.00:
 `voc-datalake/lambda/shared/test/test_platform_workspaces.py`). The
@@ -586,8 +640,8 @@ remove one and only its named writers can put one: `voc-workspaces-api`, and sin
 `AUDIT#WS#*` (a deleted user's membership removals); every other role that comes to write the table
 (`voc-retention`, since 6.11.00) is denied putting an `AUDIT#` row. That role's PutItem is scoped (`dynamodb:LeadingKeys`) to the partitions a
 creation, an add and an audit write (`AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`), every put conditional
-on a new key, and its UpdateItem to `WS#*` and `WORKSPACES` for `secret_status` (of `META` and the listing row) and
-to `WS#*` and `USER#*` for `role` (a member's role change, since 6.10.00). Its one DeleteItem (since 6.10.00) is a
+on a new key, and its UpdateItem (until decision 19 also `secret_status` of `META` and the listing row, now written
+whole at creation) to `WS#*` and `USER#*` for `role` (a member's role change, since 6.10.00). Its one DeleteItem (since 6.10.00) is a
 member's removal, scoped to `WS#*` and `USER#*`: membership rows are access configuration, not customer data (D5
 covers feedback and raw items), each removal is audited first, and `voc-datalake/lib/customer-data-deletes.test.ts`
 names the grant with that reason. IAM pins the partition key only, so the grant also reaches a workspace's `META`;
@@ -599,7 +653,7 @@ audit writer names it in the guard.
 
 1. **Control plane**: the `voc-workspaces` table, the `platform-admins` group, `/me/workspaces`, the picker, `/w/{slug}`
    routing, the workspace middleware and repository layer, invites, the platform console (list and create
-   workspaces, enter one, members; built in 6.13.00 with the members page), per-workspace secret creation.
+   workspaces, enter one, members; built in 6.13.00 with the members page); a workspace's credentials store (decision 19, 7.12.00).
 2. **Data path**: ingestion → S3 → SQS → processor → feedback → aggregator → metrics and feedback read APIs, all keyed
    by workspace; the scheduled tick's fan-out; per-workspace credentials; the public routes (forms, webhooks, email,
    voting). Built so far (7.00.00 to 7.04.00): the repository layer, ingestion and the processor in a workspace,

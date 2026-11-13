@@ -302,7 +302,9 @@ class TestTheIntegrationStatus:
         assert route('GET', '/integrations/status') == (
             500, {'success': False, 'error': 'Failed to retrieve integration status'},
         )
-        logger.exception.assert_called_once_with(f'Failed to get integration status: {error}')
+        # The error type only: an AWS error's text names the resource, the account and the role.
+        logger.warning.assert_called_once_with('Failed to get integration status',
+                                                 extra={'error_type': 'ClientError'})
 
 
 class TestAnUnconfiguredSecretIsNamed:
@@ -339,7 +341,8 @@ class TestReadingCredentials:
         assert route('GET', '/integrations/webscraper/credentials', query_params={'keys': 'configs'}) == (
             500, {'success': False, 'error': 'Failed to retrieve credentials'},
         )
-        logger.exception.assert_called_once_with(f'Failed to get credentials for webscraper: {error}')
+        logger.warning.assert_called_once_with('Failed to get credentials for webscraper',
+                                                 extra={'error_type': type(error).__name__})
 
 
 @pytest.mark.usefixtures('secrets')
@@ -388,7 +391,8 @@ class TestWritingCredentials:
         assert route('PUT', '/integrations/webscraper/credentials', body={'api_key': 'x'}) == (
             500, {'success': False, 'error': 'Failed to update credentials'},
         )
-        logger.exception.assert_called_once_with(f'Failed to update credentials: {error}')
+        logger.warning.assert_called_once_with('Failed to update credentials',
+                                                 extra={'error_type': type(error).__name__})
 
 
 # ============================================
@@ -421,7 +425,8 @@ class TestAppConfigs:
         error = aws_error('denied')
         secrets.get_secret_value.side_effect = error
         assert route('GET', '/integrations/app_reviews_ios/apps') == (200, {'apps': []})
-        logger.warning.assert_called_once_with(f'Could not read app configs for app_reviews_ios: {error}')
+        logger.warning.assert_called_once_with('Could not read app configs for app_reviews_ios',
+                                               extra={'error_type': type(error).__name__})
 
     def test_saving_without_an_app_is_refused(self, route, put):
         assert route('POST', '/integrations/app_reviews_ios/apps', body={'other': 1}) == (
@@ -464,7 +469,8 @@ class TestAppConfigs:
         assert route('POST', '/integrations/app_reviews_ios/apps', body={'app': {'id': 'a', 'app_name': 'A'}}) == (
             500, {'success': False, 'error': 'Failed to save app configuration'},
         )
-        logger.exception.assert_called_once_with(f'Failed to save app config for app_reviews_ios: {error}')
+        logger.warning.assert_called_once_with('Failed to save app config for app_reviews_ios',
+                                                 extra={'error_type': type(error).__name__})
 
     @pytest.mark.usefixtures('secrets')
     def test_a_failed_delete_is_a_500_logged_with_the_cause(self, route, put, logger):
@@ -473,7 +479,8 @@ class TestAppConfigs:
         assert route('DELETE', '/integrations/app_reviews_ios/apps/a1') == (
             500, {'success': False, 'error': 'Failed to delete app configuration'},
         )
-        logger.exception.assert_called_once_with(f'Failed to delete app config for app_reviews_ios: {error}')
+        logger.warning.assert_called_once_with('Failed to delete app config for app_reviews_ios',
+                                                 extra={'error_type': type(error).__name__})
 
 
 # ============================================

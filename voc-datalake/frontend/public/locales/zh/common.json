@@ -207,12 +207,8 @@
       "slugInvalid": "请使用 3 到 40 个小写字母、数字和连字符，不能以连字符开头或结尾，也不能是 admin、api、app、platform 或 www。",
       "create": "创建工作区",
       "created": "已创建 {{name}}。你是其管理员。",
-      "createdPending": "已创建 {{name}}。你是其管理员。其凭据密钥尚未能创建；目前没有任何功能使用它，运维人员可以创建它。",
       "enter": "进入",
       "enterWho": "进入 {{name}}",
-      "secretReady": "密钥已就绪",
-      "secretPending": "密钥待创建",
-      "secretPendingHint": "无法创建工作区的凭据密钥。目前没有任何功能使用它；运维人员可以创建它。",
       "status": {
         "active": "活动",
         "deleting": "正在删除"

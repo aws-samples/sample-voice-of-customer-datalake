@@ -200,12 +200,8 @@
       "slugInvalid": "Użyj od 3 do 40 małych liter, cyfr i łączników, bez łącznika na początku ani na końcu, i nie admin, api, app, platform ani www.",
       "create": "Utwórz obszar roboczy",
       "created": "Utworzono {{name}}. Masz w nim rolę administratora.",
-      "createdPending": "Utworzono {{name}}. Masz w nim rolę administratora. Sekretu z poświadczeniami nie udało się jeszcze utworzyć; na razie nic go nie używa, a operator może go utworzyć.",
       "enter": "Wejdź",
       "enterWho": "Wejdź do {{name}}",
-      "secretReady": "Sekret gotowy",
-      "secretPending": "Sekret oczekuje",
-      "secretPendingHint": "Nie udało się utworzyć sekretu z poświadczeniami obszaru roboczego. Nic go jeszcze nie używa; operator może go utworzyć.",
       "status": {
         "active": "Aktywny",
         "deleting": "W trakcie usuwania"

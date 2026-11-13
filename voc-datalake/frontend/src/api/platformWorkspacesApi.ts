@@ -3,8 +3,8 @@
  * lambda/api/workspaces_handler.py, lambda/shared/platform_workspaces.py, docs/multi-workspace.md → Control plane).
  *
  * The list holds every workspace of the deployment by name, a page at a time; a row this build cannot read is left
- * out. Creating one makes the caller its admin and answers whether its credentials secret was made
- * (`secret_status`: `pending` when it could not be, the workspace stays).
+ * out. Creating one makes the caller its admin. The answers still carry `secret_status` (always `ready` since decision
+ * 19, docs/multi-workspace.md → Credentials: a workspace's credentials need no secret); the console reads nothing of it.
  *
  * @module api/platformWorkspacesApi
  */
@@ -18,20 +18,15 @@ import type { CursorPage } from './cursorPage'
 /** `NAME_MAX_CHARS` in lambda/shared/platform_workspaces.py. */
 export const WORKSPACE_NAME_MAX = 80
 
-const SecretStatusSchema = z.enum(['pending', 'ready'])
-export type SecretStatus = z.infer<typeof SecretStatusSchema>
-
 // A slug that could not be a base path could never be entered, so it is not listed.
 const PlatformWorkspaceSchema = WorkspaceIdentitySchema.extend({
   status: z.string().catch(''),
   created_at: z.string().catch(''),
-  // An unknown value reads as pending: nothing claims a secret the answer did not confirm.
-  secret_status: SecretStatusSchema.catch('pending'),
 })
 export type PlatformWorkspace = z.infer<typeof PlatformWorkspaceSchema>
 
 const CreatedSchema = z.object({
-  workspace: PlatformWorkspaceSchema.pick({ id: true, name: true, slug: true, secret_status: true }),
+  workspace: PlatformWorkspaceSchema.pick({ id: true, name: true, slug: true }),
 })
 export type CreatedWorkspace = z.infer<typeof CreatedSchema>['workspace']
 

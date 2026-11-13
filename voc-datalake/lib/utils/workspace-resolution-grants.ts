@@ -53,8 +53,9 @@ function resolutionPolicy(scope: iam.Role, workspacesTable: dynamodb.ITable): ia
 }
 
 /** Every attribute the resolver projects (lambda/shared/workspace.py, since 7.09.00): MEMBER_READ_ATTRIBUTES of a
- *  `MEMBER#` row and META_READ_ATTRIBUTES of a `META`, so never a member's email. */
-const WORKSPACE_RESOLVER_ATTRIBUTES = ['pk', 'sk', 'role', 'status', 'name', 'slug', 'secret_status'] as const;
+ *  `MEMBER#` row and META_READ_ATTRIBUTES of a `META`, so never a member's email (no `secret_status` since 7.12.00:
+ *  a workspace's credentials need no secret, decision 19). */
+const WORKSPACE_RESOLVER_ATTRIBUTES = ['pk', 'sk', 'role', 'status', 'name', 'slug'] as const;
 
 /** Only the membership reads (GetItem on `WS#*`: the caller's `MEMBER#` row and `META`, held to the resolver's
  *  projections, {@link WORKSPACE_RESOLVER_ATTRIBUTES}), for a Lambda that resolves without a platform admin's entry

@@ -43,7 +43,7 @@ import { createDesignCapture } from './design-capture';
 import { PROCESSING_QUEUE_VISIBILITY_TIMEOUT } from './processor-timing';
 import { DESIGN_CAPTURE_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailConfig } from '../utils/inbound-email';
-import { WORKSPACE_SECRET_BASE_PREFIX, WORKSPACE_SECRET_PREFIX_ENV, workspaceSecretsArn } from '../utils/workspace-secrets';
+import { WORKSPACE_PARAMETER_BASE_PATH, workspaceParameterEnv } from '../utils/workspace-secrets';
 
 /**
  * S3-import staging bucket retention. Noncurrent versions are recoverable for a
@@ -149,10 +149,10 @@ export class VocIngestionStack extends VocStack {
 
     // The deployment's shared API-credentials secret, aggregated from all plugins: the integrations API writes it,
     // the webhooks and an ingestor's deployment-wide run read it; a run in a workspace reads that workspace's own
-    // secret instead (docs/multi-workspace.md).
+    // parameters of its plugin instead (docs/multi-workspace.md, decision 19).
     const apiSecrets = this.createApiSecrets(allPlugins);
-    // The per-workspace credentials secrets' name prefix (the workspaces API creates them under it).
-    const workspaceSecretPrefix = this.prefixed(WORKSPACE_SECRET_BASE_PREFIX);
+    // The workspaces' parameters' base path (`voc/ws`, `<prefix>-voc/ws`): their first save in a workspace makes them.
+    const workspaceParameterBasePath = this.prefixed(WORKSPACE_PARAMETER_BASE_PATH);
 
     // DLQ and Processing Queue
     const dlq = this.createDLQ(kmsKey);
@@ -162,11 +162,11 @@ export class VocIngestionStack extends VocStack {
     this.ingestorRoles = new IngestorRoles(this, {
       watermarksTable, aggregatesTable, workspacesTable, idempotencyTable, processingQueue: this.processingQueue,
       rawDataBucket, kmsKey,
-      apiSecrets, workspaceSecretsArn: workspaceSecretsArn(this, workspaceSecretPrefix),
+      apiSecrets, workspaceParameterBasePath,
     });
 
     // Common environment variables
-    const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, workspaceSecretPrefix, config);
+    const commonEnv = this.buildCommonEnv(watermarksTable, rawDataBucket, apiSecrets, workspaceParameterBasePath, config);
     this.scheduledTickEnv = { WORKSPACES_TABLE: workspacesTable.tableName, IDEMPOTENCY_TABLE: idempotencyTable.tableName };
 
     // Lambda Layer for common dependencies
@@ -368,7 +368,7 @@ export class VocIngestionStack extends VocStack {
     watermarksTable: dynamodb.Table,
     rawDataBucket: s3.Bucket,
     apiSecrets: secretsmanager.Secret,
-    workspaceSecretPrefix: string,
+    workspaceParameterBasePath: string,
     config: VocIngestionStackProps['config']
   ): Record<string, string> {
     return {
@@ -377,8 +377,9 @@ export class VocIngestionStack extends VocStack {
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       // A deployment-wide run (an event that names no workspace) reads the shared secret, as before.
       SECRETS_ARN: apiSecrets.secretArn,
-      // Each run reads `{prefix}/{ws}/credentials` for the workspace its event names (plugins/_shared/base_ingestor.py).
-      [WORKSPACE_SECRET_PREFIX_ENV]: workspaceSecretPrefix,
+      // A run in a workspace reads `{prefix}/{ws}/credentials/{plugin}` for the workspace its event names
+      // (plugins/_shared/base_ingestor.py); the same environment its role's read grant names.
+      ...workspaceParameterEnv(workspaceParameterBasePath),
       BRAND_NAME: config.brandName,
       POWERTOOLS_SERVICE_NAME: 'voc-ingestion',
       LOG_LEVEL: 'INFO',

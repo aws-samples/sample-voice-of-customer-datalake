@@ -12,7 +12,7 @@ authenticated here, BEFORE anything is parsed or enqueued:
 
 ``POST /webhooks/github_issues/{ws}`` is a workspace's own endpoint
 (``_shared/base_webhook.py``): the secret, the repos and the labels come from
-that workspace's secret, and a workspace that routes nowhere or has no
+that workspace's credentials parameter of this plugin (decision 19), and a workspace that routes nowhere or has no
 ``webhook_secret`` gets the bad signature's 401, after the body checks.
 
 A verified delivery is mapped by the same ``_shared/github_mapping.py`` the

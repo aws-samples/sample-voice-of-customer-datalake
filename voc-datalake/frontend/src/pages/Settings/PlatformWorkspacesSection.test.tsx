@@ -1,5 +1,5 @@
 /**
- * The platform console: every workspace (name, slug, status, secret), create with the server's slug rule checked
+ * The platform console: every workspace (name, slug, status; no credentials badge), create with the server's slug rule checked
  * first and a taken slug said in words, Enter as a full page load that records the workspace for the gate, and a
  * 403 said as such.
  */
@@ -22,14 +22,14 @@ import { myWorkspacesKey } from '../../api/workspacesApi'
 import PlatformWorkspacesSection from './PlatformWorkspacesSection'
 import { workspaceDraftProblems } from './workspaceDraft'
 
-const JUNIPER = { ...ACME, id: 'ws_01JCJNPR0000000000000000J1', name: 'Juniper Trail Co.', slug: 'juniper', secret_status: 'pending' }
+const JUNIPER = { ...ACME, id: 'ws_01JCJNPR0000000000000000J1', name: 'Juniper Trail Co.', slug: 'juniper' }
 
 function renderSection(routes: Record<string, RouteHandler> = {}, client = createTestQueryClient()) {
   routeFetchApi({ 'GET /platform/workspaces': () => ({ workspaces: [ACME, JUNIPER], next_cursor: null }), ...routes })
   return render(<QueryClientProvider client={client}><PlatformWorkspacesSection /></QueryClientProvider>)
 }
 
-const FIELD = { id: 'ws_01JCFLDT0000000000000000F1', name: 'Field', slug: 'field', role: 'admin', secret_status: 'ready' }
+const FIELD = { id: 'ws_01JCFLDT0000000000000000F1', name: 'Field', slug: 'field', role: 'admin' }
 
 /** Whether the caller's own list is marked to be read again after creating a workspace, given what it held. */
 async function ownListReReadAfterCreate(mine: unknown[]): Promise<boolean> {
@@ -58,11 +58,10 @@ beforeEach(() => {
 })
 
 describe('PlatformWorkspacesSection list', () => {
-  it('lists every workspace with its address, status and secret', async () => {
-    renderSection()
+  it('lists every workspace with its address and status, and no credentials badge', async () => {
+    renderSection({ 'GET /platform/workspaces': () => ({ workspaces: [{ ...ACME, secret_status: 'ready' }, JUNIPER], next_cursor: null }) })
     expect(await screen.findByText('/w/acme/')).toBeInTheDocument()
-    expect(within(listItem('Acme Outfitters')).getByText('Secret ready')).toBeInTheDocument()
-    expect(within(listItem('Juniper Trail Co.')).getByText('Secret pending')).toBeInTheDocument()
+    expect(within(listItem('Acme Outfitters')).queryByText(/secret/i)).not.toBeInTheDocument()
     expect(within(listItem('Juniper Trail Co.')).getByText('Active')).toBeInTheDocument()
   })
 
@@ -112,18 +111,12 @@ describe('PlatformWorkspacesSection create', () => {
   })
 
   it('creates a workspace and offers to enter it', async () => {
-    const created = vi.fn<RouteHandler>(() => ({ workspace: { id: 'ws_01JCFLDT0000000000000000F1', name: 'Acme Outfitters Field Team', slug: 'acme-field', role: 'admin', secret_status: 'ready' } }))
+    const created = vi.fn<RouteHandler>(() => ({ workspace: { id: 'ws_01JCFLDT0000000000000000F1', name: 'Acme Outfitters Field Team', slug: 'acme-field', role: 'admin' } }))
     renderSection({ 'POST /platform/workspaces': created })
     await create('  Acme Outfitters Field Team ', ' acme-field ')
     expect(await screen.findByRole('status')).toHaveTextContent('Created Acme Outfitters Field Team. You are its admin.')
     expect(created).toHaveBeenCalledWith({ name: 'Acme Outfitters Field Team', slug: 'acme-field' })
     expect(screen.getByRole('button', { name: 'Enter Acme Outfitters Field Team' })).toBeInTheDocument()
-  })
-
-  it('says when the credentials secret is still pending', async () => {
-    renderSection({ 'POST /platform/workspaces': () => ({ workspace: { id: 'ws_01JCFLDT0000000000000000F1', name: 'Field', slug: 'field', role: 'admin', secret_status: 'pending' } }) })
-    await create('Field', 'field')
-    expect(await screen.findByRole('status')).toHaveTextContent('Its credentials secret could not be created yet')
   })
 
   it('checks the slug by the server\'s rule before sending', async () => {

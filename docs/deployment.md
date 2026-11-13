@@ -808,11 +808,10 @@ synth and the all-features synth each hold exactly one customer-managed KMS key 
 key-policy statement for a service principal) and the known baseline of three Secrets Manager secrets, which a later
 release moves to SSM Parameter Store. Both shapes share ONE baseline on purpose, so no context-gated feature may add a
 key or a secret either. A count above its baseline fails; a count below it fails too, until the baseline is lowered.
-Keys and secrets made at RUN time are not in any template, so the gate also holds every grant of
-`kms:CreateKey` or `secretsmanager:CreateSecret` in the app to `RUNTIME_FIXED_COSTS` (same file): today only the
-workspaces API's, on `voc/ws/*`, which creates one credentials secret per workspace a platform admin creates
-(about $0.40 a month per workspace, accepted by decision 8 of [multi-workspace.md](multi-workspace.md#credentials)).
-A deployment with no workspace pays nothing for it.
+Keys and secrets made at RUN time are not in any template, so the gate also refuses every grant of
+`kms:CreateKey` or `secretsmanager:CreateSecret` in the app (`runtimeFixedCostFindings`, same file). A workspace's
+credentials are SSM Parameter Store SecureStrings, standard tier, with no monthly fee (decision 19 of
+[multi-workspace.md](multi-workspace.md#credentials)), so a workspace adds no fixed cost.
 
 ### Lambda sizing and post-deploy capacity check
 
@@ -857,6 +856,24 @@ VocApiStack deploy. Either raise the quota first, or deploy with `-c mcpReserved
 number; the quota must then be at least `n` + 100) or `-c mcpReservedConcurrency=0` (no reservation: the
 endpoint shares the unreserved pool). Anything else fails the synth. See
 [mcp.md → Alarms and concurrency](mcp.md#alarms-and-concurrency).
+
+### SSM Parameter Store limits (a workspace's credentials)
+
+A workspace's plugin credentials are standard-tier SSM SecureStrings, one per plugin namespace
+([multi-workspace.md → Credentials](multi-workspace.md#credentials)). Two account-and-region limits apply, shared
+by every deployment in the account and region (prefixed copies included) and by anything else there that uses
+Parameter Store:
+
+- **Throughput.** GetParameter and GetParametersByPath default to about 40 transactions a second per account and
+  region (the standard throughput). Each ingestor run in a workspace makes one GetParameter; a webhook delivery at
+  most one per workspace and plugin every 60 s in a warm container; the operator routes one or two per request.
+  An ingestor's SSM client retries a throttle adaptively (up to 10 attempts, `shared/aws.py` `get_ssm_run_client`);
+  the APIs' and the webhooks' (`get_ssm_client`) make 2 attempts (standard mode) with 2 s connect and 4 s read
+  timeouts, so a credentials save (a read then a write) answers within API Gateway's 29 s even when throttled. A
+  deployment whose scheduled fan-out or webhook traffic needs more raises it with the higher-throughput setting
+  (`ssm update-service-setting`, `/ssm/parameter-store/high-throughput-enabled`), which is billed per API call.
+- **Count.** At most 10,000 standard parameters per account and region: one per plugin with saved credentials in
+  each workspace, across every deployment there.
 
 ### What a Python Lambda bundle contains
 

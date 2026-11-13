@@ -368,5 +368,8 @@ The same manifest can declare other infrastructure. Each is described in
 - Set a timeout on every outbound request.
 - For a webhook, verify the signature with a constant-time compare before parsing the body.
 - Review a third-party plugin's code before you enable it: every ingestor role can read the whole
-  shared secret and every workspace's credentials secret, and the `<id>_` namespace only protects against mistakes
+  shared secret, where the `<id>_` namespace only protects against mistakes. In a workspace a role reads the
+  credentials parameter of each plugin it runs in every workspace (`/voc/ws/{ws}/credentials/{plugin}`, decision 19
+  of [multi-workspace.md](multi-workspace.md#credentials)); a plugin on the shared role can reach the other shared
+  plugins' parameters, and only the name the code builds keeps a run to its own plugin and workspace
   ([Plugin Architecture → Secrets](plugin-architecture.md#secrets)).

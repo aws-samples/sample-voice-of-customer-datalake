@@ -3,12 +3,16 @@
 Issued on the RESOURCE's client (``table.meta.client``), which takes and returns
 native Python values rather than ``{'S': ...}`` wire types.
 
-Fails closed: when keys are still unprocessed after ``BATCH_GET_ATTEMPTS`` the
-caller's ``failure`` exception is raised. A read that quietly returned fewer rows
-would make a live token, or a project the caller can see, vanish without an error.
+Fails closed: when keys are still unprocessed after ``BATCH_GET_ATTEMPTS`` calls
+for one chunk (every call counts, whether or not it made progress), the caller's
+``failure`` is raised. A read that quietly returned fewer rows would make a live
+token, or a project the caller can see, vanish without an error. The bound keeps
+a chunk to 5 calls and at most 1.5 s of backoff, well inside API Gateway's 29 s
+for the REST routes that read through it.
 """
 from __future__ import annotations
 
+import random
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
@@ -21,14 +25,20 @@ BATCH_GET_ATTEMPTS: Final = 5
 BATCH_GET_BACKOFF_SECONDS: Final = 0.05
 
 
+def _backoff(attempt: int) -> None:
+    # AWS's guidance for UnprocessedKeys: back off before re-asking, with full jitter so concurrent readers spread
+    # out (a random wait up to 0.1, 0.2, 0.4 and 0.8 s before the second to the fifth call).
+    time.sleep(random.uniform(0, BATCH_GET_BACKOFF_SECONDS * 2 ** attempt))  # noqa: S311 — jitter needs no cryptographic randomness
+
+
 def _chunk(table: Any, keys: Sequence[Mapping[str, Any]], read_options: Mapping[str, Any],
            failure: Exception) -> list[dict]:
-    request: dict[str, Any] = {table.name: {**read_options, 'Keys': list(keys), 'ConsistentRead': True}}
+    # Strongly consistent unless the caller's read_options say otherwise.
+    request: dict[str, Any] = {table.name: {'ConsistentRead': True, **read_options, 'Keys': list(keys)}}
     rows: list[dict] = []
     for attempt in range(BATCH_GET_ATTEMPTS):
         if attempt:
-            # AWS's guidance for UnprocessedKeys: back off before re-asking.
-            time.sleep(BATCH_GET_BACKOFF_SECONDS * 2 ** attempt)
+            _backoff(attempt)
         response = table.meta.client.batch_get_item(RequestItems=request)
         rows.extend(item for item in (response.get('Responses') or {}).get(table.name, [])
                     if isinstance(item, dict))
@@ -42,9 +52,10 @@ def _chunk(table: Any, keys: Sequence[Mapping[str, Any]], read_options: Mapping[
 
 def batch_get_all(table: Any, keys: Sequence[Mapping[str, Any]], *, failure: Exception,
                   read_options: Mapping[str, Any] | None = None) -> list[dict]:
-    """Every row found for ``keys`` (strongly consistent; missing keys are simply absent).
+    """Every row found for ``keys`` (missing keys are simply absent).
 
-    ``read_options`` adds e.g. ``ProjectionExpression``/``ExpressionAttributeNames``.
+    ``read_options`` adds e.g. ``ProjectionExpression``/``ExpressionAttributeNames``; reads are strongly consistent
+    unless it sets ``ConsistentRead`` to False.
     """
     rows: list[dict] = []
     for start in range(0, len(keys), BATCH_GET_MAX_KEYS):

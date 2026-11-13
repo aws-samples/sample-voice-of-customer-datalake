@@ -17,6 +17,30 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.12.00] - 2026-11-13
+
+Multi-workspace, phase 2: the voc-multiplayer-b track's credentials-store and multi-item slices merged. A workspace's credentials are SSM Parameter Store SecureString parameters, one per plugin, instead of one Secrets Manager secret per workspace (decision 19), so a workspace adds no monthly cost; the repository layer gains scoped multi-item calls for phases 3 and 4 ([docs/multi-workspace.md](docs/multi-workspace.md#credentials)). Per-workspace ingestion stays held (D3).
+
+### Added
+
+- Internal: the repository layer (`lambda/shared/ws_repo.py`) gains scoped multi-item calls on a workspace view: `transact_write_items` (1 to 100 Put, Update, Delete or ConditionCheck entries, each checked, each taking only its own listed fields; one out of scope refuses the whole transaction before it is sent), `batch_get_item` (every key checked; strongly consistent unless `ConsistentRead=False`) and a Put-only `batch_writer()`. A key named twice is refused. A caller never names a table. Nothing calls them yet.
+
+### Changed
+
+- A workspace's plugin credentials are SSM Parameter Store SecureString parameters under the customer-managed key, one per plugin, `/voc/ws/{ws}/credentials/{plugin}` (`/<prefix>-voc/ws/…` in a prefixed deployment), standard tier (no monthly fee; at most 4 KB each, a larger save is refused with 400), instead of one Secrets Manager secret per workspace. The deployment's shared credentials secret is unchanged.
+- A workspace's scraper and connector lists hold no secret and are a voc-aggregates row (`WS#{ws}#PLUGIN_CONFIG`), with the deployment's size limits; the list routes open to members read them without touching SSM.
+- Creating a workspace makes no secret. `secret_status` is still written `ready`, but it no longer reflects a secret and nothing reads it: the operator routes' 409s on a pending secret are gone, resolving `X-Workspace-Id` no longer reads it, and the platform console (Administration → Privacy & access → Workspaces) no longer shows the secret's pending or ready badge, nor the "secret could not be created" note after a create, in all nine languages.
+- IAM: an ingestor role reads only its own plugins' parameters and the webhook role only its webhook plugins'; the integrations and scrapers roles get and put a workspace's parameters; every `voc/ws/*` Secrets Manager grant is removed (the workspaces API holds no Secrets Manager or SSM grant), and no role may create a key or a secret at run time. The data-path APIs that resolve a workspace (metrics, feedback edits, integrations, scrapers, the feedback forms' signed-in routes) reach it through the API stack's one workspace-resolution managed policy.
+- SSM calls retry adaptively in an ingestor run (10 attempts) and briefly in the API and webhook routes (2 attempts, 2 s / 4 s timeouts), so a route answers within API Gateway's 29 s.
+- A webhook delivery to a workspace still verifies its signature, now with that workspace's credentials parameter, before the ingestion hold answers.
+- `shared/batch_get.py` `batch_get_all` backs off with full jitter (still at most 5 calls, about 1.5 s a chunk) and lets the caller set `ConsistentRead` (still strongly consistent by default).
+- Internal: the raw-access guard counts DynamoDB's multi-item calls (`transact`, `batch`), except on the layer's own view.
+
+### Upgrade notes
+
+- Fresh deployments only (decision 21): an existing deployment's per-workspace `voc/ws/*` secrets are not migrated, and after this release nothing reads them. An existing deployment that takes it anyway deploys as usual (`npm run deploy:all` from the repo root: the API and ingestion stacks' roles and the web app change; no table, index or cross-stack reference changes), then, in each workspace, saves its plugin credentials, app connectors and scrapers again (Administration inside that workspace), and then deletes the old `voc/ws/*` secrets by hand (each bills until deleted). A deployment-wide run, delivery or request keeps using the shared secret, so a deployment with no workspace has nothing to do.
+- SSM's default GetParameter throughput (about 40 a second per account and region; a paid higher-throughput setting raises it) and the 10,000 standard parameters per account and region are documented in [docs/deployment.md](docs/deployment.md#ssm-parameter-store-limits-a-workspaces-credentials).
+
 ## [7.11.00] - 2026-11-13
 
 Multi-workspace, groundwork for phase 3: the voc-multiplayer-c track's project-keys slice merged. Nothing changes for anyone ([docs/multi-workspace.md](docs/multi-workspace.md#per-workspace-configuration)).

@@ -207,12 +207,8 @@
       "slugInvalid": "小文字、数字、ハイフンを 3～40 文字で使ってください。先頭と末尾にハイフンは使えず、admin、api、app、platform、www は使えません。",
       "create": "ワークスペースを作成",
       "created": "{{name}} を作成しました。あなたが管理者です。",
-      "createdPending": "{{name}} を作成しました。あなたが管理者です。認証情報のシークレットはまだ作成できていません。現時点で使うものはなく、運用担当者が作成できます。",
       "enter": "入る",
       "enterWho": "{{name}} に入る",
-      "secretReady": "シークレット作成済み",
-      "secretPending": "シークレット保留中",
-      "secretPendingHint": "ワークスペースの認証情報のシークレットを作成できませんでした。まだ使うものはなく、運用担当者が作成できます。",
       "status": {
         "active": "有効",
         "deleting": "削除中"

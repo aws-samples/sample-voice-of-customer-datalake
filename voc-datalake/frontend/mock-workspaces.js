@@ -5,8 +5,9 @@
 //   POST /me/workspaces/current/members          {email, role} → 201 {member: {…, account: 'existing'|'created'}}
 //   PUT  /me/workspaces/current/members/{sub}    {role} → {member: {sub, role}}
 //   DELETE /me/workspaces/current/members/{sub}  → {removed: sub} (the caller's own sub: leave)
-//   GET  /platform/workspaces                    → {workspaces: [{id, name, slug, status, created_at, secret_status}], next_cursor}
-//   POST /platform/workspaces                    {name, slug} → 201 {workspace: {id, name, slug, role: 'admin', secret_status}}
+//   GET  /platform/workspaces                    → {workspaces: [{id, name, slug, status, created_at}], next_cursor}
+//   POST /platform/workspaces                    {name, slug} → 201 {workspace: {id, name, slug, role: 'admin'}}
+//   (the server's answers also carry `secret_status`, always 'ready' since decision 19, which the app does not read)
 // The workspace routes answer 400 without X-Workspace-Id and one 404 for any workspace the caller cannot enter
 // (never "exists"); the writes refuse as workspace_members.py does (403 for a non-admin, 409 for the last admin, a
 // person already a member or an email spelt as another account's, 404 for a non-member). The /platform routes
@@ -18,7 +19,7 @@
 // sets the state afresh each time:
 //   curl -X PUT localhost:3001/__mock/workspaces -d '{"enabled":true}'   (false: none again), then reload.
 // With it on, the caller (admin-demo, a platform admin) is the admin of "Acme Outfitters" (acme, with a viewer)
-// and an editor of "Juniper Trail Co." (juniper, whose admin is editor-demo; its secret is pending). Unlike the
+// and an editor of "Juniper Trail Co." (juniper, whose admin is editor-demo). Unlike the
 // server, which also lifts a platform admin who is a member below admin to admin, the mock lifts only a
 // non-member (entering from the platform console), so the caller's own role shows in juniper.
 // `{"enabled":true,"member":"acme"}`: the same two workspaces, but the caller is a member of acme only and these
@@ -63,7 +64,7 @@ function fixtures(callerSub, subOf) {
   const member = (sub, role, email, name, invitedBy, days) => ({ sub, role, email, name, invited_by: invitedBy, joined_at: daysAgo(days) });
   return [
     {
-      id: ACME_ID, name: 'Acme Outfitters', slug: 'acme', status: 'active', created_at: daysAgo(30), secret_status: 'ready',
+      id: ACME_ID, name: 'Acme Outfitters', slug: 'acme', status: 'active', created_at: daysAgo(30),
       members: [
         // The creator's row holds no email or name: the server fills them from Cognito, as the mock does below.
         member(callerSub, 'admin', '', '', '', 30),
@@ -71,7 +72,7 @@ function fixtures(callerSub, subOf) {
       ],
     },
     {
-      id: JUNIPER_ID, name: 'Juniper Trail Co.', slug: 'juniper', status: 'active', created_at: daysAgo(20), secret_status: 'pending',
+      id: JUNIPER_ID, name: 'Juniper Trail Co.', slug: 'juniper', status: 'active', created_at: daysAgo(20),
       members: [
         member(subOf('editor-demo'), 'admin', 'editor@example.com', 'Eddie Editor', '', 20),
         member(callerSub, 'editor', 'admin@example.com', 'Ada Admin', subOf('editor-demo'), 8),
@@ -220,8 +221,8 @@ function createWorkspace(body, send, shared) {
   const id = `ws_01JCNEW${String(state.created).padStart(19, '0')}`;
   const createdAt = new Date().toISOString();
   const creator = { sub: shared.mockCaller.sub, role: 'admin', email: '', name: '', invited_by: '', joined_at: createdAt };
-  state.workspaces.push({ id, name, slug, status: 'active', created_at: createdAt, secret_status: 'ready', members: [creator] });
-  return send(201, { workspace: { id, name, slug, role: 'admin', secret_status: 'ready' } });
+  state.workspaces.push({ id, name, slug, status: 'active', created_at: createdAt, members: [creator] });
+  return send(201, { workspace: { id, name, slug, role: 'admin' } });
 }
 
 /** `GET` and `POST /platform/workspaces`, platform admins only; true when the request was taken. */
@@ -231,7 +232,7 @@ function handlePlatform(req, res, url, send, shared) {
     if (!isPlatformAdmin(shared)) return send(403, { success: false, error: NOT_PLATFORM_ADMIN });
     if (req.method === 'POST') return createWorkspace(body, send, shared);
     const rows = [...state.workspaces].sort(byName)
-      .map(({ id, name, slug, status, created_at, secret_status }) => ({ id, name, slug, status, created_at, secret_status }));
+      .map(({ id, name, slug, status, created_at }) => ({ id, name, slug, status, created_at }));
     const found = page(rows, url);
     if (found === null) return send(400, { success: false, error: 'limit or cursor is not valid' });
     return send(200, { workspaces: found.rows, next_cursor: found.next });

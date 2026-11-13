@@ -41,7 +41,7 @@ from http.client import HTTPMessage
 from io import BytesIO
 from types import ModuleType, SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from boto3.dynamodb.conditions import Key
@@ -290,7 +290,9 @@ class TestListScrapers:
         error = aws_error('denied', 'GetSecretValue', 'AccessDeniedException')
         store.client.get_secret_value.side_effect = error
         assert self._list(api_gateway_event, lambda_context) == (200, {'scrapers': []})
-        logger.warning.assert_called_once_with(f'Could not read scraper configs: {error}')
+        # The error type only: an AWS error's text names the resource, the account and the role.
+        logger.warning.assert_called_once_with('Could not read scraper configs', extra={'error_type': 'ClientError'})
+        assert str(error) not in str(logger.warning.call_args)
 
     def test_a_secret_that_is_not_json_is_an_empty_list_and_one_warning(
         self, store, logger, api_gateway_event, lambda_context
@@ -298,7 +300,7 @@ class TestListScrapers:
         store.client.get_secret_value.return_value = {'SecretString': 'not json'}
         assert self._list(api_gateway_event, lambda_context) == (200, {'scrapers': []})
         assert logger.warning.call_count == 1
-        assert logger.warning.call_args.args[0].startswith('Could not read scraper configs: Expecting value')
+        assert logger.warning.call_args == call('Could not read scraper configs', extra={'error_type': 'JSONDecodeError'})
 
 
 # ============================================
@@ -503,7 +505,8 @@ class TestTheSaveRouteFailures:
         error = aws_error('throttled', 'PutSecretValue', 'ThrottlingException')
         store.put.side_effect = error
         assert save({'id': 'a'}) == (500, {'success': False, 'error': 'Failed to save scraper configuration'})
-        logger.exception.assert_called_once_with(f'Failed to save scraper: {error}')
+        logger.warning.assert_called_once_with('Failed to save scraper',
+                                                 extra={'error_type': type(error).__name__})
 
     @pytest.mark.parametrize(('body', 'message'), [
         pytest.param(None, 'No scraper config provided', id='no body'),
@@ -564,7 +567,8 @@ class TestDeleteScraper:
         assert self._delete(api_gateway_event, lambda_context) == (
             500, {'success': False, 'error': 'Failed to delete scraper configuration'},
         )
-        logger.exception.assert_called_once_with(f'Failed to delete scraper: {error}')
+        logger.warning.assert_called_once_with('Failed to delete scraper',
+                                                 extra={'error_type': type(error).__name__})
 
 
 # ============================================

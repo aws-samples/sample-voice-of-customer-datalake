@@ -24,11 +24,12 @@ sys.path.insert(0, plugins_dir)
 os.environ.setdefault('WATERMARKS_TABLE', 'test-watermarks')
 os.environ.setdefault('PROCESSING_QUEUE_URL', 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue')
 os.environ.setdefault('RAW_DATA_BUCKET', '')
-# The webhooks' shared secret (base_webhook.py); the ingestors read their workspace's own secret,
-# `{WORKSPACE_SECRET_PREFIX}/{ws}/credentials`. (WORKSPACES_TABLE, the scheduled tick's, is not set here: the
-# users and workspaces APIs read it too in the same session; the tick's tests patch base_ingestor's.)
+# The deployment-wide runs' and webhooks' shared secret; a run or a delivery in a workspace reads its own plugin's
+# parameter, `{WORKSPACE_PARAMETER_PREFIX}/{ws}/credentials/{plugin}`, and config row (decision 19).
+# (WORKSPACES_TABLE, the scheduled tick's, is not set here: the users and workspaces APIs read it too in the same
+# session; the tick's tests patch base_ingestor's.)
 os.environ.setdefault('SECRETS_ARN', 'arn:aws:secretsmanager:us-east-1:123456789:secret:test')
-os.environ.setdefault('WORKSPACE_SECRET_PREFIX', 'voc/ws')
+os.environ.setdefault('WORKSPACE_PARAMETER_PREFIX', '/voc/ws')
 os.environ.setdefault('BRAND_NAME', 'TestBrand')
 os.environ.setdefault('SOURCE_PLATFORM', 'test_source')
 os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
@@ -143,6 +144,38 @@ def ingestion_on(monkeypatch):
     """The plugins' webhook and ingestor tests that run in a workspace once the hold is lifted take this; the
     others keep the shipped flag (off), which refuses every workspace delivery."""
     monkeypatch.setattr('shared.workspace_plugin_settings.PER_WORKSPACE_INGESTION', True)
+
+
+@pytest.fixture(autouse=True)
+def workspace_parameters_through_get_secret(monkeypatch):
+    """A run in a workspace reads its plugin's own credentials parameter and config row (decision 19,
+    `_shared/base_ingestor.py` `read_workspace_values`); the plugin tests feed every run's credentials and configs
+    through ONE double, the patched `_shared.base_ingestor.get_secret`, as `scoped_secret(...)` payloads. So here a
+    workspace run's read asks that same double for its credentials parameter's NAME
+    (`/voc/ws/{ws}/credentials/{plugin}`: what a test asserts it was called with) and keeps only the plugin's own
+    `<plugin>_` keys, bare (its `configs` among them, as the real read merges its row in): another plugin's keys in
+    the payload are not there, and nothing of the plugin's is "nothing saved". A payload that is not an object is a
+    parameter that is not a JSON object (MalformedCredentials). The real read, over an SSM double and a table, is
+    tested in `_shared/test/test_base_ingestor_workspace_parameters.py`."""
+    from _shared import base_ingestor
+    from shared.workspace_credentials import MalformedCredentials
+    from shared.workspace_ids import credentials_parameter_name
+    from shared.ws_repo import WorkspaceScope
+
+    def an_object(payload: object) -> dict:
+        # A test's double may return anything, whatever get_secret's annotation says.
+        if not isinstance(payload, dict):
+            raise MalformedCredentials('a credentials parameter is not a JSON object')
+        return payload
+
+    def read(scope: WorkspaceScope, plugin: str, _configs_table: object) -> dict:
+        name = credentials_parameter_name(base_ingestor.WORKSPACE_PARAMETER_PREFIX, scope.ws, plugin)
+        payload = an_object(base_ingestor.get_secret(name))
+        prefix = f'{plugin}_'
+        return {key[len(prefix):]: value for key, value in payload.items()
+                if isinstance(key, str) and key.startswith(prefix) and len(key) > len(prefix)}
+
+    monkeypatch.setattr(base_ingestor, 'read_workspace_values', read)
 
 
 @pytest.fixture(autouse=True)

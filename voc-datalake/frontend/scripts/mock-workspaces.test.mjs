@@ -115,10 +115,9 @@ describe('mock workspaces', () => {
 
     it('lists every workspace for a platform admin and creates one, the caller its admin; a taken slug is 409', async () => {
       const [created, body] = await call('POST', '/platform/workspaces', { name: 'Acme Outfitters Field Team', slug: 'acme-field' })
-      assert.deepEqual([created, body.workspace.slug, body.workspace.role, body.workspace.secret_status], [201, 'acme-field', 'admin', 'ready'])
+      assert.deepEqual([created, body.workspace.slug, body.workspace.role], [201, 'acme-field', 'admin'])
       const [, list] = await call('GET', '/platform/workspaces')
-      assert.deepEqual(list.workspaces.map(({ slug, secret_status }) => [slug, secret_status]),
-        [['acme', 'ready'], ['acme-field', 'ready'], ['juniper', 'pending']])
+      assert.deepEqual(list.workspaces.map(({ slug }) => slug), ['acme', 'acme-field', 'juniper'])
       assert.deepEqual((await mine())['acme-field']?.role, 'admin')
       assert.deepEqual(await call('POST', '/platform/workspaces', { name: 'Again', slug: 'acme-field' }), [409, { success: false, error: 'That slug is taken: choose another' }])
     })
