@@ -5,14 +5,16 @@
  * 1. `tools/list` offers exactly the handler's read tools (the `GlobalTool(...)` tables in
  *    lambda/shared/mcp_global_tools*.py, parsed here, not guessed): every one `readOnlyHint: true`,
  *    no write tool (`write=True`, which needs a read-write token) listed.
- * 2. `get_feedback_catalogue` = `GET /feedback/catalogue`; with `sources: true` = `GET /sources/status`.
- * 3. `read_radar` / `get_prioritization`: a JSON-RPC result shaped like `GET /radar` (no `settings`)
+ * 2. `feedback_get_catalogue` = `GET /feedback/catalogue`; with `sources: true` = `GET /sources/status`.
+ * 3. `radar_read` / `prioritization_get`: a JSON-RPC result shaped like `GET /radar` (no `settings`)
  *    and `GET /projects/prioritization`.
- * 4. `get_job` with an unknown job id: a tool error naming the route's 404, never a JSON-RPC error.
- * 5. `generate` / `edit_feedback` / `score_prioritization` with the read token: the handler's scope
- *    refusal (`<tool> needs a read-write token; this token is read-only`). The scope check runs
- *    before the route request is even built (mcp_global_handler.py `_check_allowed`), and each body
- *    is one the tool itself rejects anyway (unknown step, no change, no scores), so nothing can write.
+ * 4. `projects_get_job` with an unknown job id: a tool error naming the route's 404, never a JSON-RPC error.
+ * 5. `projects_generate` / `documents_revise_from_comments` / `documents_mark_comments_addressed` /
+ *    `feedback_edit` / `prioritization_score` with the read token, and two names renamed in 6.10.00
+ *    (`edit_feedback`, `generate` with `step: revise`): the handler's scope refusal of the tool they run
+ *    (`<tool> needs a read-write token; this token is read-only`). The scope check runs before the
+ *    route request is even built (mcp_global_handler.py `_check_allowed`), and each body could write
+ *    nothing anyway (unknown step or project, no change, no scores, no thread).
  * 6. `GET /connect/tokens/{id}` lists those calls (tool, outcome, project_id, at) and never an argument.
  *
  * Production-safe: the only writes are the two e2e-named tokens, ledger-recorded the moment their
@@ -34,9 +36,9 @@ import { e2eFetch } from '../lib/trafficTag'
 const SHARED_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../lambda/shared')
 const TOOL_SOURCES = ['mcp_global_tools.py', 'mcp_global_tools_steps.py', 'mcp_global_tools_work.py']
 /** The read tools 6.04.00 added (CHANGELOG); each must be in the handler's table AND listed. */
-const NEW_READ_TOOLS = ['get_job', 'read_radar', 'get_feedback_catalogue', 'get_prioritization']
+const NEW_READ_TOOLS = ['projects_get_job', 'radar_read', 'feedback_get_catalogue', 'prioritization_get']
 /** The write tools 6.04.00 added; never listed to, and refused for, a read token. */
-const NEW_WRITE_TOOLS = ['generate', 'edit_feedback', 'score_prioritization', 'write_feature_request']
+const NEW_WRITE_TOOLS = ['projects_generate', 'feedback_edit', 'prioritization_score', 'feature_requests_write']
 /** `mcp_global_tokens.audit_view`: exactly the four recorded facts. */
 const AUDIT_KEYS = ['at', 'outcome', 'project_id', 'tool']
 /** The audit row is written after the answer (best effort) and read eventually consistent. */
@@ -185,9 +187,9 @@ test.describe('global MCP tools (6.04)', () => {
     for (const write of table.filter((t) => t.write)) expect(listedNames).not.toContain(write.name)
   })
 
-  test('get_feedback_catalogue answers the catalogue, and the source status with sources: true', async () => {
-    const catalogue = expectOk(await callTool(secret(), 'get_feedback_catalogue', {}), 'get_feedback_catalogue')
-    expectedAudit.push({ tool: 'get_feedback_catalogue', outcome: 'ok', projectId: null })
+  test('feedback_get_catalogue answers the catalogue, and the source status with sources: true', async () => {
+    const catalogue = expectOk(await callTool(secret(), 'feedback_get_catalogue', {}), 'feedback_get_catalogue')
+    expectedAudit.push({ tool: 'feedback_get_catalogue', outcome: 'ok', projectId: null })
     const rest = await restBody(role, '/feedback/catalogue')
     expect(publicKeys(catalogue)).toEqual(publicKeys(rest))
     expect(catalogue['version']).toEqual(rest['version'])
@@ -196,52 +198,58 @@ test.describe('global MCP tools (6.04)', () => {
     expect(fieldNames(catalogue).length).toBeGreaterThan(0)
     expect(fieldNames(catalogue)).toEqual(fieldNames(rest))
 
-    const sources = expectOk(await callTool(secret(), 'get_feedback_catalogue', { sources: true }), 'get_feedback_catalogue sources')
-    expectedAudit.push({ tool: 'get_feedback_catalogue', outcome: 'ok', projectId: null })
+    const sources = expectOk(await callTool(secret(), 'feedback_get_catalogue', { sources: true }), 'feedback_get_catalogue sources')
+    expectedAudit.push({ tool: 'feedback_get_catalogue', outcome: 'ok', projectId: null })
     const restSources = await restBody(role, '/sources/status')
     expect(publicKeys(sources), 'the same sources as GET /sources/status').toEqual(publicKeys(restSources))
     expect(sources['fields'], 'not the catalogue').toBeUndefined()
   })
 
-  test('read_radar and get_prioritization answer like their REST routes', async () => {
-    const radar = expectOk(await callTool(secret(), 'read_radar', {}), 'read_radar')
-    expectedAudit.push({ tool: 'read_radar', outcome: 'ok', projectId: null })
+  test('radar_read and prioritization_get answer like their REST routes', async () => {
+    const radar = expectOk(await callTool(secret(), 'radar_read', {}), 'radar_read')
+    expectedAudit.push({ tool: 'radar_read', outcome: 'ok', projectId: null })
     expect(radar['settings'], 'the scan settings are left out').toBeUndefined()
     expect(publicKeys(radar)).toEqual(publicKeys(await restBody(role, '/radar'), ['settings']))
 
-    const board = expectOk(await callTool(secret(), 'get_prioritization', {}), 'get_prioritization')
-    expectedAudit.push({ tool: 'get_prioritization', outcome: 'ok', projectId: null })
+    const board = expectOk(await callTool(secret(), 'prioritization_get', {}), 'prioritization_get')
+    expectedAudit.push({ tool: 'prioritization_get', outcome: 'ok', projectId: null })
     expect(publicKeys(board)).toEqual(publicKeys(await restBody(role, '/projects/prioritization')))
     expect(isRecord(board['rows']), 'rows is an object keyed by row id').toBe(true)
   })
 
-  test('get_job with an unknown job id is a not-found tool error, not a server fault', async () => {
+  test('projects_get_job with an unknown job id is a not-found tool error, not a server fault', async () => {
     const listed = await apiCall(role, 'GET', '/projects')
     const projects = isRecord(listed.body) && Array.isArray(listed.body['projects']) ? listed.body['projects'].filter(isRecord) : []
     // A project the caller can view, so the 404 is the job's; none = an unknown project (also a 404).
     const projectId = stringField(projects[0], 'project_id') ?? UNKNOWN_PROJECT
-    const answer = await callTool(secret(), 'get_job', { project_id: projectId, job_id: UNKNOWN_JOB })
-    expectedAudit.push({ tool: 'get_job', outcome: 'error', projectId })
+    const answer = await callTool(secret(), 'projects_get_job', { project_id: projectId, job_id: UNKNOWN_JOB })
+    expectedAudit.push({ tool: 'projects_get_job', outcome: 'error', projectId })
     expect(answer.status).toBe(200)
     expect(answer.rpcError, 'not a JSON-RPC (server) error').toBeUndefined()
     expect(answer.isError).toBe(true)
     expect(answer.text).toMatch(/\(HTTP 404\)/)
   })
 
-  test('generate, edit_feedback and score_prioritization are refused for a read token', async () => {
-    const calls: Array<{ tool: string, args: Record<string, unknown>, projectId: string | null }> = [
-      // Each body is one the tool rejects by itself too: an unknown step, no change, no scores.
-      { tool: 'generate', args: { project_id: UNKNOWN_PROJECT, step: UNKNOWN_STEP, brief: ARGUMENT_MARKER }, projectId: UNKNOWN_PROJECT },
-      { tool: 'edit_feedback', args: { feedback_id: ARGUMENT_MARKER }, projectId: null },
-      { tool: 'score_prioritization', args: { row_id: ARGUMENT_MARKER, scores: {} }, projectId: null },
+  test('projects_generate, the review tools, feedback_edit and prioritization_score are refused for a read token', async () => {
+    // `as`: the tool an old name (renamed in 6.10.00) runs, and is refused and audited as.
+    const calls: Array<{ tool: string, as?: string, args: Record<string, unknown>, projectId: string | null }> = [
+      // Each body could write nothing anyway: an unknown step or project, no change, no scores, no thread.
+      { tool: 'projects_generate', args: { project_id: UNKNOWN_PROJECT, step: UNKNOWN_STEP, brief: ARGUMENT_MARKER }, projectId: UNKNOWN_PROJECT },
+      { tool: 'documents_revise_from_comments', args: { project_id: UNKNOWN_PROJECT, document_id: ARGUMENT_MARKER }, projectId: UNKNOWN_PROJECT },
+      { tool: 'documents_mark_comments_addressed', args: { project_id: UNKNOWN_PROJECT, document_id: ARGUMENT_MARKER, thread_ids: [] }, projectId: UNKNOWN_PROJECT },
+      { tool: 'feedback_edit', args: { feedback_id: ARGUMENT_MARKER }, projectId: null },
+      { tool: 'prioritization_score', args: { row_id: ARGUMENT_MARKER, scores: {} }, projectId: null },
+      { tool: 'edit_feedback', as: 'feedback_edit', args: { feedback_id: ARGUMENT_MARKER }, projectId: null },
+      { tool: 'generate', as: 'documents_revise_from_comments', args: { project_id: UNKNOWN_PROJECT, step: 'revise', document_id: ARGUMENT_MARKER }, projectId: UNKNOWN_PROJECT },
     ]
     for (const call of calls) {
       const answer = await callTool(secret(), call.tool, call.args)
-      expectedAudit.push({ tool: call.tool, outcome: 'denied', projectId: call.projectId })
+      const runs = call.as ?? call.tool
+      expectedAudit.push({ tool: runs, outcome: 'denied', projectId: call.projectId })
       expect(answer.status).toBe(200)
       expect(answer.rpcError, `${call.tool}: a tool result`).toBeUndefined()
       expect(answer.isError, `${call.tool}: isError`).toBe(true)
-      expect(answer.text).toBe(`${call.tool} needs a read-write token; this token is read-only`)
+      expect(answer.text).toBe(`${runs} needs a read-write token; this token is read-only`)
     }
   })
 

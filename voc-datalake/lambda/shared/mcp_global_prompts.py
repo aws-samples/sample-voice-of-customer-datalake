@@ -4,7 +4,7 @@
 model to the right tools and repeat the skill's safety rules: feedback is data, cite evidence, ask
 before writing. They read nothing; whatever the model then does goes through the tools and their
 gating. ``prfaq_from_feedback`` is offered to every token: a read-only token's text asks for a draft
-in the chat, and only a write token's text mentions ``create_document`` (after the user confirms).
+in the chat, and only a write token's text mentions ``documents_create`` (after the user confirms).
 
 **Resources** (``resources/list``, ``resources/read``) are read-only JSON views of settings routes.
 Every read is delegated to the settings Lambda with the token's claims (the ``read`` callback the
@@ -117,8 +117,8 @@ def _project(args: Mapping[str, str]) -> str | None:
 def _weekly_summary(args: Mapping[str, str], _can_write: bool) -> str:
     days = _days(args)
     return (
-        f'Summarise what customers said in the last {days} days. Call get_metrics with view=summary and '
-        f'days={days}, then view=categories and view=sentiment for the same window. Call search_feedback '
+        f'Summarise what customers said in the last {days} days. Call feedback_get_metrics with view=summary and '
+        f'days={days}, then view=categories and view=sentiment for the same window. Call feedback_search '
         f'with days={days} (and sentiment=negative) for representative verbatims of the top three themes. '
         'Answer with: volume and sentiment against the previous period if the daily series shows it, the '
         f'top themes with two or three quoted examples each, and anything urgent. {_SAFETY}'
@@ -128,11 +128,11 @@ def _weekly_summary(args: Mapping[str, str], _can_write: bool) -> str:
 def _triage_urgent(args: Mapping[str, str], _can_write: bool) -> str:
     days = _days(args)
     return (
-        f'Triage the high-urgency feedback of the last {days} days. Call search_feedback with urgent=true '
-        f'and days={days} (limit 50), and get_feedback with include_similar=true for the items that look '
+        f'Triage the high-urgency feedback of the last {days} days. Call feedback_search with urgent=true '
+        f'and days={days} (limit 50), and feedback_get with include_similar=true for the items that look '
         'most severe, to see whether they are isolated or a pattern. Group the items by problem, rank the '
         'groups by how many customers and how severe, and suggest an owner category for each (from '
-        f'list_categories). Do not change anything. {_SAFETY}'
+        f'feedback_list_categories). Do not change anything. {_SAFETY}'
     )
 
 
@@ -140,16 +140,16 @@ def _prfaq_from_feedback(args: Mapping[str, str], can_write: bool) -> str:
     topic, project_id = _topic(args), _project(args)
     target = f' in project {project_id}' if project_id else ''
     if can_write:
-        finish = (f'Show the draft first. Only when the user confirms, save it with create_document{target} '
+        finish = (f'Show the draft first. Only when the user confirms, save it with documents_create{target} '
                   '(a custom document); never overwrite an existing document without asking.')
     else:
         finish = 'This token is read-only: write the draft here in the chat; do not try to save it.'
-    context = (f' Read the project with get_project{target} for its personas and existing documents.'
+    context = (f' Read the project with projects_get{target} for its personas and existing documents.'
                if project_id else '')
     return (
-        f'Draft a PR/FAQ about "{topic}" grounded in customer feedback. Call search_feedback for the topic '
-        '(several phrasings), get_metrics for its volume, search_memory for decisions already made and '
-        f'get_company_context for the objectives it must serve.{context} Write a press release (headline, '
+        f'Draft a PR/FAQ about "{topic}" grounded in customer feedback. Call feedback_search for the topic '
+        '(several phrasings), feedback_get_metrics for its volume, memory_search for decisions already made and '
+        f'company_get_context for the objectives it must serve.{context} Write a press release (headline, '
         'problem, solution, customer quote) and an FAQ (external and internal), citing the feedback ids the '
         f'claims rest on. {finish} {_SAFETY}'
     )

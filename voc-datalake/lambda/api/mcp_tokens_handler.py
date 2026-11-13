@@ -228,7 +228,7 @@ def list_tokens():
     return {
         'tokens': tokens,
         'endpoint_path': GLOBAL_ENDPOINT_PATH,
-        # Only an admin's write token is offered run_agent (agent runs are admin-only).
+        # Only an admin's write token is offered agents_run (agent runs are admin-only).
         'can_mint_agent_runner': caller.is_admin,
         'limits': {
             'default_expiry_days': gt.DEFAULT_EXPIRY_DAYS,
@@ -266,7 +266,7 @@ def mint_token():
         'scope': scope,
         'created_by': caller.subject,
         # Cognito usernames are immutable, so the MCP Lambda can re-check the
-        # minter's admin membership per run_agent call with one AdminListGroupsForUser.
+        # minter's admin membership per agents_run call with one AdminListGroupsForUser.
         'created_by_username': caller.username,
         'minted_by_admin': caller.is_admin,
         'created_at': now.isoformat(),

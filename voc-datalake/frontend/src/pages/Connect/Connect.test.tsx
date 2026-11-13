@@ -180,14 +180,14 @@ describe('Connect', () => {
     const user = userEvent.setup()
     tokenDetail.mockResolvedValue({
       token: ACTIVE, next_cursor: undefined,
-      events: [{ tool: 'create_document', at: '2026-10-02T09:00:00+00:00', project_id: 'proj_1', outcome: 'denied' }],
+      events: [{ tool: 'documents_create', at: '2026-10-02T09:00:00+00:00', project_id: 'proj_1', outcome: 'denied' }],
     })
     renderConnect()
 
     await user.click(await screen.findByRole('button', { name: 'Show activity of Kiro laptop' }))
 
     const table = await screen.findByRole('table', { name: 'Tool calls' })
-    expect(within(table).getByText('create_document')).toBeInTheDocument()
+    expect(within(table).getByText('documents_create')).toBeInTheDocument()
     expect(within(table).getByText('proj_1')).toBeInTheDocument()
     expect(within(table).getByText('Denied')).toBeInTheDocument()
     expect(tokenDetail).toHaveBeenCalledWith('tok_0123456789abcdef')

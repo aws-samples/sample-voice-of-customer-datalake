@@ -1,4 +1,4 @@
-"""A global MCP token scores AS its minter (docs/mcp.md → score_prioritization).
+"""A global MCP token scores AS its minter (docs/mcp.md → prioritization_score).
 
 The ballot of a delegated ``mcp:<token>`` caller is keyed on the minter (``voc:acting_subject``, set
 only by the MCP Lambda's IAM invoke), so it is the minter's own ballot: the minter reads it back in the

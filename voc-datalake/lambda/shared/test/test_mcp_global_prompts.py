@@ -85,12 +85,12 @@ class TestPrompts:
         text = _prompt_text('prfaq_from_feedback', {'topic': 'Lost bags'})
         assert '"Lost bags"' in text
         assert 'read-only' in text
-        assert 'create_document' not in text
+        assert 'documents_create' not in text
 
     def test_a_write_token_saves_only_after_confirmation(self):
         text = _prompt_text('prfaq_from_feedback', {'topic': 'Lost bags', 'project_id': 'proj_1'}, scope='write')
-        assert 'Only when the user confirms, save it with create_document in project proj_1' in text
-        assert 'get_project in project proj_1' in text
+        assert 'Only when the user confirms, save it with documents_create in project proj_1' in text
+        assert 'projects_get in project proj_1' in text
 
     @pytest.mark.parametrize(('arguments', 'message'), [
         ({}, 'topic is required'),

@@ -1,4 +1,4 @@
-"""Follow-up reads of the global MCP handler (``_with_follow_ups``): ``get_feedback include_similar``.
+"""Follow-up reads of the global MCP handler (``_with_follow_ups``): ``feedback_get include_similar``.
 
 The main read decides the call: its refusal is the tool error and no follow-up runs. A follow-up is
 best effort: a refused or failed one is reported as ``similar_error`` beside the main result, never
@@ -16,7 +16,7 @@ import mcp_global_handler as h
 from shared.mcp_delegate import DelegationUnavailable, DomainResult
 from shared.mcp_global_tools import TOOLS_BY_NAME
 
-GET_FEEDBACK = TOOLS_BY_NAME['get_feedback']
+GET_FEEDBACK = TOOLS_BY_NAME['feedback_get']
 ROW = {'token_id': 'tok_1', 'scope': 'read', 'created_by': 'alice-sub', 'created_by_username': 'alice'}
 ITEM = {'feedback_id': 'f_1', 'pk': 'SOURCE#web', 'original_text': 'Bag lost'}
 SIMILAR = {'items': [{'feedback_id': 'f_2', 'original_text': 'Bag late', 'sk': 'FEEDBACK#f_2'}]}

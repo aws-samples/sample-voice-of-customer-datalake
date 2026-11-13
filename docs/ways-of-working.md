@@ -66,13 +66,13 @@ The UI only follows the mode. The Projects API enforces it in `lambda/shared/ai_
 Gated routes (PR/FAQ / PRD only):
 
 - `POST /projects/{id}/document` (generate; agent nodes `write_prfaq`, `write_prd` and
-  `revise_document` go through it, and so does MCP `generate` with `step` `prfaq` / `prd`);
+  `revise_document` go through it, and so does MCP `projects_generate` with `step` `prfaq` / `prd`);
 - `POST /projects/{id}/decisions/{doc}/pursue` (seeds a PR/FAQ);
 - `POST /projects/{id}/documents/merge` with `output_type` `prfaq` / `prd`;
 - `POST /projects/{id}/prfaq-autofill` and `POST /projects/{id}/documents/suggest-brief`;
 - `PUT /projects/{id}/documents/{doc}` and `.../versions/{v}/restore`, for autonomous callers only:
   a person's own edit is their text and stays allowed in every mode. This covers MCP
-  `update_document` and plan `update_document` steps;
+  `documents_update` and plan `update_document` steps;
 - `POST /projects/{id}/documents` with `document_type` `prfaq` / `prd` for autonomous callers
   (a person writing by hand is always allowed).
 
@@ -82,7 +82,8 @@ A refused agent step fails with a plain sentence in the run log. A refused MCP c
 ## Revise from comments
 
 [Revise from comments](document-review.md#revise-from-comments) on a PR/FAQ or PRD is never refused for
-the way of working: it does as much as the mode allows, and the outcome is decided when the pass starts.
+the way of working: it does as much as the mode allows, and the outcome is decided when the pass starts
+(an MCP token starts it with `documents_revise_from_comments`).
 The route asks the gate above itself (the same check, the owner rule included): if the gate would
 refuse the write, the pass recommends; if it would allow it, the caller's own mode, as the gate read
 it (one read), picks `applied` (AI-driven) or `proposal`.

@@ -666,7 +666,7 @@ fails the import.
 ### Global MCP + Connect tokens (`mcp_global_handler.py` / `voc-mcp-global-api`, `mcp_tokens_handler.py` / `voc-mcp-tokens-api`) — see docs/mcp.md
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/mcp/global` | global MCP token | JSON-RPC MCP server for the whole app (throttled 20 rps / 40); acts as the minting user — their project + category access, never admin, ≤ editor; tools incl. `generate` (personas, research, PR/FAQ, PRD, prototype; the methodology block), `get_job`, `read_radar`, `edit_feedback`, `get_feedback_catalogue` (+ `sources: true`: source status), `get_prioritization`, `score_prioritization` (the minter's own ballot; not for a pinned token), `write_feature_request` (post / +1 on a board); no import, source-switch, axes or board-status tool: those routes are admin-only (docs/mcp.md → Tools) |
+| POST | `/mcp/global` | global MCP token | JSON-RPC MCP server for the whole app (throttled 20 rps / 40); acts as the minting user — their project + category access, never admin, ≤ editor; tools named by area (`feedback_`, `projects_`, `documents_`, …; the names before 6.10.00 still answer, unlisted) incl. `projects_generate` (personas, research, PR/FAQ, PRD, prototype; the methodology block), `projects_get_job`, `documents_revise_from_comments` / `documents_mark_comments_addressed`, `radar_read`, `feedback_edit`, `feedback_get_catalogue` (+ `sources: true`: source status), `prioritization_get`, `prioritization_score` (the minter's own ballot; not for a pinned token), `feature_requests_write` (post / +1 on a board); no import, source-switch, axes or board-status tool: those routes are admin-only (docs/mcp.md → Tools) |
 | GET/POST | `/connect/tokens` | Cognito | List my tokens / mint one (`read` or `write` scope, expiry 1–90 days, optional project pin) |
 | GET | `/connect/tokens/{token_id}` | Cognito | One token and its audit log (tool, time, project, outcome — never arguments) |
 | DELETE | `/connect/tokens/{token_id}` | Cognito | Revoke (soft; the row is kept) |
@@ -674,7 +674,7 @@ fails the import.
 > Global tokens live in their own `MCPGTOKEN` partition. The per-project MCP server (`POST /mcp`,
 > `/projects/{id}/api-tokens`) and `GET /projects/{id}/autoseed` were retired in 3.00.00; a leftover per-project
 > (`MCPTOKEN`) token is a 401 at `/mcp/global`. The minter is re-checked in Cognito on every call, so a disabled or demoted user's
-> tokens stop working at once. `run_agent` needs a write token minted by an admin, and admin membership is re-checked
+> tokens stop working at once. `agents_run` needs a write token minted by an admin, and admin membership is re-checked
 > per call. The skill is a static file at `/voc-mcp-skill.md`, and the Connect page fills in the endpoint.
 
 ### Data Explorer (data_explorer_handler.py)

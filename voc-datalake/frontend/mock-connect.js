@@ -1,7 +1,7 @@
 // Connect page mocks (docs/mcp.md): personal tokens for the global MCP
 // endpoint, in the lambda/api/mcp_tokens_handler.py wire shapes. Stateful for the
 // life of the mock process. The mock caller is an admin, so a write token is
-// offered run_agent; start with MOCK_AGENTS_NON_ADMIN=1 to see the non-admin form.
+// offered agents_run; start with MOCK_AGENTS_NON_ADMIN=1 to see the non-admin form.
 // Wired into mock-server.js by handleParameterizedExtras.
 
 import { randomBytes } from 'node:crypto';
@@ -25,9 +25,9 @@ const tokens = [
 ];
 const audits = new Map([
   ['tok_0a1b2c3d4e5f6a7b', [
-    { tool: 'search_feedback', at: isoIn(-1), project_id: null, outcome: 'ok' },
-    { tool: 'create_document', at: isoIn(-1.1), project_id: 'proj_1', outcome: 'ok' },
-    { tool: 'run_agent', at: isoIn(-2), project_id: null, outcome: 'denied' },
+    { tool: 'feedback_search', at: isoIn(-1), project_id: null, outcome: 'ok' },
+    { tool: 'documents_create', at: isoIn(-1.1), project_id: 'proj_1', outcome: 'ok' },
+    { tool: 'agents_run', at: isoIn(-2), project_id: null, outcome: 'denied' },
   ]],
 ]);
 

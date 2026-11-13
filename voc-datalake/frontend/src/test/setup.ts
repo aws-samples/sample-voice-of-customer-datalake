@@ -136,6 +136,8 @@ class IntersectionObserverStub {
   readonly rootMargin = ''
   readonly scrollMargin = ''
   readonly thresholds: readonly number[] = []
+  // The real constructor takes the callback and the options; accepting them keeps call sites honest.
+  constructor(_callback?: IntersectionObserverCallback, _options?: IntersectionObserverInit) {}
   observe = vi.fn()
   unobserve = vi.fn()
   disconnect = vi.fn()

@@ -160,7 +160,7 @@ def mark_document_comments_addressed(project_id: str, document_id: str):
     applied pass, on the restored version).
 
     The canvas calls it after a "Revise from comments" proposal is saved; so does MCP's
-    ``generate`` step ``revise`` with ``mark_addressed``. Each call is appended to the threads'
+    ``documents_mark_comments_addressed``. Each call is appended to the threads'
     ``addressed_history`` (D1). Ids not in the series are skipped; none found is 404.
     """
     thread_ids, addressed = comments.validate_addressed(json_object_body(app))

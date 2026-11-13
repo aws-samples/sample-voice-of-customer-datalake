@@ -168,7 +168,8 @@ MODULE_FLOORS: dict[str, int] = {
     # per-project mint route. The global server's suites joined it.
     # The /mcp/global token authorizer (the global function's `_authorize`).
     'test_global_mcp_authorizer': 7,
-    'test_global_mcp_e2e': 22,
+    # 22 -> 26 (6.10.00): the review tools with a pinned token, the names renamed in 6.10.00.
+    'test_global_mcp_e2e': 26,
     'test_global_mcp_protocol': 14,
     # 9 -> 5 (b6dbc8fc): the four memory-recall cases for a credential moved to
     # test_memory_handler_mutation.py, which pins the same rule more tightly.
@@ -178,23 +179,31 @@ MODULE_FLOORS: dict[str, int] = {
     # Mutation-hardening suites (one per module or slice).
     # 171 -> 194: the 2026-07-28 era (server/discover, mirrored headers, results);
     # test_mcp_protocol unit-tests shared/mcp_protocol.py on its own.
-    'test_mcp_global_handler_mutation': 194,
+    # 194 -> 197 (6.10.00): a renamed tool name over the 2026-07-28 era; an old name counted and logged.
+    'test_mcp_global_handler_mutation': 197,
     # 17 -> 23 (5.63.00): Mcp-Name on prompts/get and resources/read.
     'test_mcp_protocol': 23,
     'test_mcp_delegate_mutation': 68,
-    'test_mcp_global_tokens_mutation': 147,
-    # 121 -> 137 (5.63.00): get_metrics github/entities views, the urgent filter.
-    'test_mcp_global_tools_mutation': 137,
-    'test_mcp_global_tools_budget': 1,
+    # 147 -> 139: the floor outlived its tests. 5.47.04 moved `_parsed_time` to shared.timestamps.parse_iso
+    # (its 8 cases left with it; they run in lambda/shared/test/test_timestamps.py, outside this gate's globs);
+    # the module has run 139 since, on main too.
+    'test_mcp_global_tokens_mutation': 139,
+    # 121 -> 137 (5.63.00): feedback_get_metrics github/entities views, the urgent filter.
+    # -> 200 (6.10.00): the rename table (RENAMED, resolve_tool), the two review tools' declarations, and
+    # docs/mcp.md's and the skill's tables naming exactly the listed tools.
+    'test_mcp_global_tools_mutation': 200,
+    # 1 -> 2 (6.10.00): every name starts with its area, the list grouped by area.
+    'test_mcp_global_tools_budget': 2,
     # 5.63.00: the tools' new reach (urgent, github/entities, include_similar), their
     # follow-up reads, the prompts/resources catalogue, and the endpoint's alarms.
     'test_mcp_global_tools_reach': 16,
     'test_mcp_global_follow_ups': 6,
-    # 6.01.00: search_feature_requests (the feedback boards' search) and its board-route claims.
+    # 6.01.00: feature_requests_search (the feedback boards' search) and its board-route claims.
     'test_mcp_global_board_tools': 28,
-    # 6.04.00: generate / get_job (the methodology block), read_radar and edit_feedback.
-    'test_mcp_global_tools_steps': 20,
-    # 6.04.00: get_feedback_catalogue (+ sources), get_prioritization, score_prioritization, write_feature_request.
+    # 6.04.00: projects_generate / projects_get_job (the methodology block), radar_read and feedback_edit.
+    # 20 -> 46 (6.10.00): documents_revise_from_comments, documents_mark_comments_addressed, the old generate revise.
+    'test_mcp_global_tools_steps': 46,
+    # 6.04.00: feedback_get_catalogue (+ sources), prioritization_get, prioritization_score, feature_requests_write.
     'test_mcp_global_work_tools': 36,
     # 6.04.00: a feature request or +1 over MCP is recorded under the person (the minter).
     'test_mcp_feature_request_person': 3,

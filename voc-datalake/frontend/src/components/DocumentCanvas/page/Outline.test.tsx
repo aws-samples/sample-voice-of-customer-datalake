@@ -19,8 +19,10 @@ class DrivenObserver implements IntersectionObserver {
   readonly thresholds: readonly number[] = []
   private readonly targets: Element[] = []
   private readonly callback: IntersectionObserverCallback
-  constructor(callback: IntersectionObserverCallback) {
+  readonly options: IntersectionObserverInit | undefined
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
     this.callback = callback
+    this.options = options
     DrivenObserver.live.push(this)
   }
   observe(target: Element) { this.targets.push(target) }
@@ -94,6 +96,11 @@ describe('Outline', () => {
     emit({ overview: false, goals: true })
     expect(link('Goals')).toHaveAttribute('aria-current', 'location')
     expect(link('Overview')).not.toHaveAttribute('aria-current')
+  })
+
+  it('watches every heading against the top part of the viewport', () => {
+    render(<Outline items={ITEMS} onNavigate={vi.fn()} />)
+    expect(DrivenObserver.live.map((observer) => observer.options)).toStrictEqual([{ rootMargin: '0px 0px -70% 0px' }])
   })
 
   it('keeps the last heading read marked once every heading in view has scrolled past', () => {

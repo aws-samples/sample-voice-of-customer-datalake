@@ -1,4 +1,4 @@
-"""The global MCP server's methodology, Radar and feedback-edit tools (tenet 4; docs/mcp.md → Tools).
+"""The global MCP server's methodology, review, Radar and feedback-edit tools (tenet 4; docs/mcp.md → Tools).
 
 Each tool calls ONE existing route as the token's minter, like every tool in
 ``shared/mcp_global_tools.py`` (never admin, capped at editor). Nothing here
@@ -7,11 +7,16 @@ check on PR/FAQ / PRD writing (``shared/ai_writing.py``: an MCP token is an
 autonomous caller) and the project and category access answer exactly as they
 do for the web app.
 
-* ``generate`` starts one methodology step (personas, research, PR/FAQ, PRD,
-  prototype) and answers the job id with the route's ``methodology`` block; MCP
-  has no push, so ``get_job`` reads the job until it ends.
-* ``read_radar`` reads other brands' reviews (docs/radar.md).
-* ``edit_feedback`` corrects one review's category, or its dimensions and tags.
+* ``projects_generate`` starts one methodology step (personas, research, PR/FAQ,
+  PRD, prototype) and answers the job id with the route's ``methodology`` block;
+  MCP has no push, so ``projects_get_job`` reads the job until it ends.
+* ``documents_revise_from_comments`` starts "Revise from comments" on a PR/FAQ or
+  PRD (an assist job, read with ``projects_get_job``), and
+  ``documents_mark_comments_addressed`` marks or clears its threads
+  (docs/document-review.md). Before 6.10.00 both were ``generate`` with
+  ``step: revise``; ``legacy_revise`` maps such a call to them.
+* ``radar_read`` reads other brands' reviews (docs/radar.md).
+* ``feedback_edit`` corrects one review's category, or its dimensions and tags.
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from typing import Any, Final
 
 from shared.api import MAX_PERSONAS_PER_GENERATION
 from shared.dimension_config import MAX_TAG_CHARS, MAX_TAGS
+from shared.document_comments import MAX_ADDRESSED_THREADS
 from shared.mcp_global_kit import (
     DOMAIN_FEEDBACK_EDIT,
     DOMAIN_PROJECTS,
@@ -48,9 +54,11 @@ MAX_LABEL_CHARS: Final = 128
 _JOB_FIELDS: Final = ('job_id', 'status', 'progress', 'current_step', 'job_type', 'created_at', 'updated_at',
                       'completed_at', 'error', 'result')
 _START_FIELDS: Final = ('job_id', 'status', 'message', 'methodology')
-#: Not a methodology step of its own: the review loop on a PR/FAQ or PRD (docs/document-review.md).
-STEP_REVISE: Final = 'revise'
-GENERATE_STEPS: Final = (*STEPS, STEP_REVISE)
+_REVISE_FIELDS: Final = ('job_id', 'status', 'message')
+TOOL_REVISE: Final = 'documents_revise_from_comments'
+TOOL_MARK_ADDRESSED: Final = 'documents_mark_comments_addressed'
+#: The step the old ``generate`` tool took for "Revise from comments" (accepted through 6.10.00).
+LEGACY_REVISE_STEP: Final = 'revise'
 
 
 def _step_request(step: str, project: str, title: str | None, brief: str | None,
@@ -73,42 +81,62 @@ def _step_request(step: str, project: str, title: str | None, brief: str | None,
 
 def _generate(args: Mapping[str, Any], project: str | None) -> RouteRequest:
     step = args.get('step')
-    if step == STEP_REVISE:
-        return _revise(args, project)
     if step not in STEPS:
-        raise InvalidToolArgument(f'step must be one of: {", ".join(GENERATE_STEPS)}')
+        raise InvalidToolArgument(f'step must be one of: {", ".join(STEPS)}')
     title = text_arg(args, 'title', max_length=MAX_TITLE_CHARS)
     brief = text_arg(args, 'brief', max_length=MAX_BRIEF_CHARS)
     return _step_request(str(step), require_project(project), title, brief, args)
 
 
+def _passed_threads(args: Mapping[str, Any]) -> dict[str, Any]:
+    """``thread_ids`` as given: the route checks them, and its 400 is the tool's error."""
+    return {} if args.get('thread_ids') is None else {'thread_ids': args['thread_ids']}
+
+
 def _revise(args: Mapping[str, Any], project: str | None) -> RouteRequest:
-    """``revise``: start a pass (POST …/revise-from-comments), or with ``mark_addressed`` mark (true) or
-    clear (false) the threads by the version ``document_id`` names (POST …/comments/addressed).
+    """Start a pass (POST …/revise-from-comments).
 
     The route decides the pass's outcome: an MCP token is an autonomous caller, so it gets
     recommendations unless its minter (and the project's owner) work AI-driven, when the server
-    applies the revision as a new version and marks the threads itself. ``thread_ids`` and
-    ``mark_addressed`` go to the route as given: it checks them, and its 400 is the tool's error.
+    applies the revision as a new version and marks the threads itself.
     """
     d = id_arg(args, 'document_id')
     p = require_project(project)
-    passed = {} if args.get('thread_ids') is None else {'thread_ids': args['thread_ids']}
-    if args.get('mark_addressed') is None:
-        return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/documents/{d}/revise-from-comments', body=passed)
-    body = {**passed, 'addressed': args['mark_addressed']}
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/documents/{d}/revise-from-comments',
+                        body=_passed_threads(args))
+
+
+def _mark_addressed(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    """Mark (``addressed`` true, the default) or clear (false) the threads by the version ``document_id``
+    names (POST …/comments/addressed); ``addressed`` goes to the route as given, like ``thread_ids``."""
+    d = id_arg(args, 'document_id')
+    p = require_project(project)
+    body = {**_passed_threads(args), 'addressed': args.get('addressed', True)}
     return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{p}/documents/{d}/comments/addressed', body=body)
 
 
-def _started(payload: object, args: Mapping[str, Any]) -> object:
-    """The start answer: the job and the route's methodology block (absent for personas and revise).
+def legacy_revise(args: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The tool and arguments an old ``generate`` call with ``step: revise`` now is.
 
-    ``revise`` with ``mark_addressed`` answers the threads as marked or cleared.
+    Without ``mark_addressed``: a pass (``documents_revise_from_comments``); with it, the threads marked
+    (true) or cleared (false) (``documents_mark_comments_addressed`` with ``addressed``).
     """
-    if args.get('step') == STEP_REVISE and args.get('mark_addressed') is not None:
-        return stripped(payload, args)
+    kept = {key: value for key, value in args.items() if key not in ('step', 'mark_addressed')}
+    if args.get('mark_addressed') is None:
+        return TOOL_REVISE, kept
+    return TOOL_MARK_ADDRESSED, {**kept, 'addressed': args['mark_addressed']}
+
+
+def _started(payload: object, args: Mapping[str, Any]) -> object:
+    """The start answer: the step, the job and the route's methodology block (absent for personas)."""
     answer = payload if isinstance(payload, Mapping) else {}
     return {'step': args.get('step'), **{key: answer[key] for key in _START_FIELDS if key in answer}}
+
+
+def _revise_started(payload: object, _args: Mapping[str, Any]) -> dict:
+    """The pass's job: read its result with ``projects_get_job``."""
+    answer = payload if isinstance(payload, Mapping) else {}
+    return {key: answer[key] for key in _REVISE_FIELDS if key in answer}
 
 
 def _get_job(args: Mapping[str, Any], project: str | None) -> RouteRequest:
@@ -168,34 +196,60 @@ def _edit_feedback(args: Mapping[str, Any], _project: str | None) -> RouteReques
 
 
 _TEXT = {'type': 'string', 'maxLength': MAX_LABEL_CHARS}
+_THREAD_IDS = {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': MAX_ADDRESSED_THREADS}
 
 STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
-        'generate', 'Start a methodology step',
-        'Start personas, research, prfaq, prd or prototype in a project (write token); `brief` = the idea or '
-        'question. Answers job_id and `methodology` (skipped steps); poll get_job. `revise`: a PR/FAQ or PRD '
-        '(`document_id`) from its answered comments; `mark_addressed` true/false marks/clears `thread_ids` '
-        'by that version.',
-        schema({'project_id': PROJECT_ID_SCHEMA, 'step': {'type': 'string', 'enum': list(GENERATE_STEPS)},
+        'projects_generate', 'Start a methodology step',
+        'Start one methodology step in a research project (write token): `step` personas (adds `count` personas, '
+        'never replaces), research (`brief` = the research question), prfaq or prd (`brief` = the feature idea; '
+        'drafts a PR/FAQ or PRD from customer feedback), prototype (from the newest PRD or PR/FAQ). Answers a '
+        'job_id and a `methodology` block (skipped upstream steps, warnings: tell the user); follow the job with '
+        'projects_get_job. A PR/FAQ or PRD is refused unless the user and the project owner work AI-driven; a '
+        'prototype without a PRD or PR/FAQ is refused. Confirm with the user first.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'step': {'type': 'string', 'enum': list(STEPS)},
                 'title': {'type': 'string', 'maxLength': MAX_TITLE_CHARS},
                 'brief': {'type': 'string', 'maxLength': MAX_BRIEF_CHARS},
-                'count': {'type': 'integer', 'minimum': 1, 'maximum': MAX_PERSONAS_PER_GENERATION},
-                'document_id': ID_SCHEMA, 'thread_ids': {'type': 'array'},
-                'mark_addressed': {'type': 'boolean'}}, ('step',)),
+                'count': {'type': 'integer', 'minimum': 1, 'maximum': MAX_PERSONAS_PER_GENERATION}}, ('step',)),
         _generate, _started, write=True, project_scoped=True),
     GlobalTool(
-        'get_job', 'Get a job', "A project job's status and result (with its methodology block), by job_id.",
+        'projects_get_job', 'Get a project job',
+        "Read a project job's status, progress and result by `job_id`: a methodology step started by "
+        'projects_generate or a pass started by documents_revise_from_comments. Poll until `status` is completed '
+        '(the result names the document and carries its methodology block, or the revision outcome) or failed.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'job_id': ID_SCHEMA}, ('job_id',)),
         _get_job, _job, project_scoped=True),
     GlobalTool(
-        'read_radar', 'Read Radar',
-        "Other brands' reviews (not in our metrics): no `brand` = brands and totals, else its reviews.",
+        'documents_revise_from_comments', 'Revise from comments',
+        'Start "Revise from comments" on a PR/FAQ or PRD (write token): the AI reads the answered review comment '
+        'threads (resolved or replied to, not yet addressed) and the evidence, and suggests changes. '
+        '`document_id`; optional `thread_ids` (up to 50) instead of every waiting thread. Answers a job_id: read '
+        'the result with projects_get_job: `recommendations` (nothing written), or `applied` (a new version '
+        'written and its threads marked addressed) when the user and the project owner work AI-driven.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'thread_ids': _THREAD_IDS},
+               ('document_id',)),
+        _revise, _revise_started, write=True, project_scoped=True),
+    GlobalTool(
+        'documents_mark_comments_addressed', 'Mark comments addressed',
+        'Mark review comment threads of a PR/FAQ or PRD as addressed by the version `document_id` names, after '
+        'saving a version that answers them, or clear that mark with `addressed: false` (write token). '
+        '`thread_ids`: 1 to 50 comment ids. Answers the threads.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'thread_ids': _THREAD_IDS,
+                'addressed': {'type': 'boolean', 'default': True}}, ('document_id', 'thread_ids')),
+        _mark_addressed, stripped, write=True, project_scoped=True),
+    GlobalTool(
+        'radar_read', 'Read Radar',
+        "Read Radar: competitors' and other brands' public reviews, kept apart from your own customer feedback "
+        '(never count, chart or cite them as your customers). No `brand`: the tracked brands and their review '
+        'totals; a `brand` key: its reviews (`days` default 90, `limit` up to 50).',
         schema({'brand': ID_SCHEMA, 'days': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RADAR_DAYS},
                 'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RADAR_LIMIT}}),
         _read_radar, _radar),
     GlobalTool(
-        'edit_feedback', 'Correct a feedback item',
-        "Set one item's category (+ subcategory), or its dimensions / tags (write token).",
+        'feedback_edit', 'Correct a feedback item',
+        "Correct one feedback item's classification by `feedback_id` (write token): set its `category` (+ "
+        'optional `subcategory`, names from feedback_list_categories), or its `dimensions` (key to value, null '
+        'clears) and `tags`; not both in one call. Confirm with the user first.',
         schema({'feedback_id': ID_SCHEMA, 'category': _TEXT, 'subcategory': _TEXT,
                 'dimensions': {'type': 'object', 'additionalProperties': {'type': ['string', 'null']}},
                 'tags': {'type': 'array', 'maxItems': MAX_TAGS, 'items': {'type': 'string'}}}, ('feedback_id',)),

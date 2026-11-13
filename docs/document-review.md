@@ -48,7 +48,7 @@ Once threads are answered (resolved, or open with a reply), **Revise from commen
 edit the project) reads them and the document's evidence and suggests changes to the parts the threads
 are about. By default it takes every thread of the series that is resolved or replied to, not yet
 **addressed**, and either on the whole document or whose quote is found in this version; the canvas, an
-API caller or MCP may name up to 50 threads instead. It is one model call on the `documents` surface
+API caller or MCP (`documents_revise_from_comments`) may name up to 50 threads instead. It is one model call on the `documents` surface
 (as persona review), an assist job: `POST …/revise-from-comments` answers 202 and the page polls the job.
 
 What it reads: this version's Markdown (at most 60,000 characters; a longer document is refused), each
@@ -96,7 +96,8 @@ applied pass writes carries both as `llm_metadata: {model, prompt_version}` (the
 persona records), so History can say which model and which prompt wrote it (tenet D4).
 
 A thread answered by a version shows **Addressed in vN** (`addressed: {version, at, by_kind: user | ai}`,
-null when none). `POST …/comments/addressed` on that version's path marks it (`addressed: true`, the
+null when none). `POST …/comments/addressed` on that version's path (over MCP:
+`documents_mark_comments_addressed`) marks it (`addressed: true`, the
 default) or clears it (`addressed: false`, the canvas's Undo of an applied pass, on the restored
 version). Each call is one append to the thread's history, never written over or trimmed (D1); the
 current mark is the newest entry when it is a mark. A thread's history holds at most 100 marks and

@@ -24,8 +24,8 @@ inside one request; a second tab that loaded the document earlier used to save
 straight over the first tab's edit (it became a version, but silently). An edit may
 carry ``expected_revision`` — the revision it loaded (unmanaged: ``revision``, unset
 = 1; managed: the ``version`` of the series head it edited) — and is refused with a
-409 when the document moved on since. Absent, there is no check: the assistant's and
-MCP's ``update_document`` send none, exactly as before.
+409 when the document moved on since. Absent, there is no check: the assistant's
+``update_document`` and MCP's ``documents_update`` send none, exactly as before.
 """
 from __future__ import annotations
 

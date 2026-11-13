@@ -5,7 +5,7 @@ a personal token row — same partition (``MCPGTOKEN``), same ``TOKEN#{id}`` sor
 ``created_by`` / ``created_by_username`` / ``minted_by_admin`` / ``scope`` / ``project_id`` /
 ``expires_at`` / ``revoked_at`` fields — so an OAuth caller goes through the SAME code as a token from
 there on: ``synthetic_claims`` (never admin, ≤ editor), the per-minute rate limit, the per-call audit
-partition, the ``run_agent`` admin re-check and the per-request ``AdminGetUser``. What differs:
+partition, the ``agents_run`` admin re-check and the per-request ``AdminGetUser``. What differs:
 
 * the id is ``oag_<40 hex>``, derived from the Cognito sub and the client id (one keyed read per
   request, no index); the token routes only address ``tok_`` ids, and a grant row has no

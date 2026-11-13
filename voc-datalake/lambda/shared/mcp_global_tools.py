@@ -11,7 +11,7 @@ What this module adds on top of the route is only what a bearer credential needs
 * strict argument validation, so caller text never becomes a path segment
   (``is_path_id``) or an unbounded body;
 * ``write`` / ``admin_only`` / ``project_scoped`` flags the handler gates on
-  (token scope, the admin-minted check for ``run_agent``, the project pin);
+  (token scope, the admin-minted check for ``agents_run``, the project pin);
 * output projections that drop storage keys and signed URLs — a credential
   pasted into a third-party client must not carry pre-signed CDN links out.
 
@@ -54,7 +54,7 @@ from shared.mcp_global_kit import (
     stripped,
     text_arg,
 )
-from shared.mcp_global_tools_steps import STEP_TOOLS
+from shared.mcp_global_tools_steps import LEGACY_REVISE_STEP, STEP_TOOLS, legacy_revise
 from shared.mcp_global_tools_work import WORK_TOOLS
 
 DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
@@ -86,14 +86,14 @@ METRIC_VIEWS: Final[tuple[str, ...]] = ('summary', 'sentiment', 'categories', 's
                                          'github', 'entities')
 # The views a route other than `/metrics/{view}` serves: the filter values with their counts.
 _VIEW_PATHS: Final[dict[str, str]] = {'entities': '/feedback/entities'}
-# `get_feedback include_similar`: at most this many neighbours, each with a bounded text.
+# `feedback_get include_similar`: at most this many neighbours, each with a bounded text.
 MAX_SIMILAR: Final = 5
 MAX_SIMILAR_TEXT_CHARS: Final = 500
 _SIMILAR_FIELDS: Final[tuple[str, ...]] = ('feedback_id', 'source_platform', 'source_created_at', 'category',
                                            'sentiment_label', 'urgency', 'rating', 'title', 'problem_summary')
 # Post-query filters every feedback/metrics route takes (docs/dimensions.md); `dims` is serialised.
 ITEM_FILTERS: Final[tuple[str, ...]] = ('channel', 'tag')
-# `search_feature_requests` (GET /feature-requests/search): the slim item, a page of at most 50, a window of
+# `feature_requests_search` (GET /feature-requests/search): the slim item, a page of at most 50, a window of
 # at most 3650 days (0 = all time), board / category / status as comma lists.
 FEATURE_REQUEST_FIELDS: Final[tuple[str, ...]] = ('request_id', 'board_id', 'title', 'description', 'status',
                                                   'supporters', 'category', 'sentiment', 'problem_summary',
@@ -284,7 +284,7 @@ def _get_metrics(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     if view == 'dimensions':
         key = text_arg(args, 'key', max_length=MAX_FILTER_LENGTH, required=True)
         if not DIMENSION_KEY_RE.match(key or ''):
-            raise InvalidToolArgument('key must be a dimension key (from list_dimensions)')
+            raise InvalidToolArgument('key must be a dimension key (from feedback_list_dimensions)')
         query['key'] = key
     return RouteRequest(DOMAIN_METRICS, 'GET', _VIEW_PATHS.get(view, f'/metrics/{view}'), query=query)
 
@@ -374,72 +374,98 @@ def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 
 
 # ── Catalogue ───────────────────────────────────────────────────────────────
-TOOLS: Final[tuple[GlobalTool, ...]] = (
+# Every name starts with its area (AREAS), so a client that lists or searches tools finds an area's tools
+# together; each description says what the tool does, its nouns and verbs, when to use it and its key
+# arguments (the whole list's budget: test_mcp_global_tools_budget.py).
+AREAS: Final[tuple[str, ...]] = ('feedback', 'memory', 'company', 'projects', 'documents', 'agents',
+                                 'feature_requests', 'radar', 'prioritization')
+
+_CATALOGUE: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
-        'search_feedback', 'Search feedback',
-        'Search (`query`, 2+ characters) or list the newest customer feedback you can see; `urgent: true` keeps '
-        'high urgency only. Ground claims about customers here.',
+        'feedback_search', 'Search customer feedback',
+        'Search customer feedback (reviews, app-store ratings, survey and form answers, support messages) by '
+        'text, or list the newest items. Use it for what customers say and for the evidence behind every claim '
+        'about customers. `query` (2+ characters) searches the text; without it the filters list the newest '
+        'items. Filters: `days` (0 = all time), `category`, `sentiment` (positive, negative, neutral, mixed), '
+        '`source`, `channel`, `tag`, `dims` (from feedback_list_dimensions), `urgent: true` (high urgency only), '
+        '`limit`. Each item has its feedback_id: cite it.',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH}, 'days': _DAYS, 'limit': _LIMIT,
                  'category': _FILTER, 'sentiment': _FILTER, 'source': _FILTER, 'urgent': BOOL_SCHEMA, **_ITEM_FILTERS}),
         _search_feedback, stripped),
     GlobalTool(
-        'get_feedback', 'Get one feedback item',
-        f'One feedback item by `feedback_id`; `include_similar: true` adds up to {MAX_SIMILAR} similar items.',
+        'feedback_get', 'Get one feedback item',
+        'Read one customer feedback item (review) in full by `feedback_id`: text, source, date, rating, '
+        'sentiment, category, urgency, persona, dimensions and tags. `include_similar: true` adds up to '
+        f'{MAX_SIMILAR} similar items (short text), to see whether a problem is isolated or a pattern.',
         schema({'feedback_id': ID_SCHEMA, 'include_similar': BOOL_SCHEMA}, ('feedback_id',)), _get_feedback, stripped,
         follow_ups=_similar_follow_up),
     GlobalTool(
-        'get_metrics', 'Get feedback metrics',
-        'Metrics over a window. `view`: summary, sentiment, categories, sources, personas, dimensions (+ `key`), '
-        'github (issues per release and label) or entities (filter values with counts).',
+        'feedback_get_metrics', 'Get feedback metrics',
+        'Count and trend customer feedback over `days` (0 = all time): `view` summary (volume, sentiment, daily '
+        'series), sentiment, categories, sources, personas, dimensions (counts per value of one dimension `key`), '
+        'github (issues per release and label) or entities (the filter values in use with counts). Filters: '
+        '`source`, `channel`, `tag`, `dims`. Prefer it to counting search results.',
         schema({'view': {'type': 'string', 'enum': list(METRIC_VIEWS), 'default': 'summary'}, 'days': _DAYS,
                  'key': _FILTER, 'source': _FILTER, **_ITEM_FILTERS}),
         _get_metrics),
     GlobalTool(
-        'list_categories', 'List categories',
-        'Categories you can see, with subcategories.',
+        'feedback_list_categories', 'List feedback categories',
+        'List the feedback category taxonomy you can see: categories with their descriptions and subcategories. '
+        'Use the exact names as `category` in feedback_search and feedback_edit.',
         schema({}), _list_categories),
     GlobalTool(
-        'list_dimensions', 'List dimensions',
-        'Dimensions (key, label, values) for `dims`.',
+        'feedback_list_dimensions', 'List feedback dimensions',
+        'List the feedback dimensions (key, label, allowed values; for example product, module, user type). Use '
+        'the exact keys and values in `dims` filters and as the `key` of feedback_get_metrics view=dimensions.',
         schema({}), _list_dimensions),
     GlobalTool(
-        'search_memory', 'Search memory',
-        'Semantic search over company and personal memory (decisions, facts, preferences) you can see.',
+        'memory_search', 'Search memory',
+        'Semantic search over the company and personal memory you can see: decisions, facts, preferences and '
+        'lessons the team recorded. Use it before proposing something, to respect what was already decided. '
+        '`query` (required), `k` results (default 8).',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': MAX_MEMORY_K, 'default': DEFAULT_MEMORY_K}}, ('query',)),
         _search_memory),
     GlobalTool(
-        'get_company_context', 'Get company context',
-        'The company vision and objectives.',
+        'company_get_context', 'Get company context',
+        'Read the company context: its vision and strategic objectives (goals). Use it to align a proposal, '
+        'PR/FAQ, PRD or prioritization with what the company is trying to achieve.',
         schema({}), _company_context),
     GlobalTool(
-        'list_projects', 'List projects',
-        'Projects you can see.',
+        'projects_list', 'List projects',
+        'List the research projects you can see, with their ids and names. Start here to find the `project_id` '
+        'the projects_ and documents_ tools take.',
         schema({}), _list_projects, _project_list),
     GlobalTool(
-        'get_project', 'Get a project',
-        'A project: its personas and documents (bodies via get_document).',
+        'projects_get', 'Get a project',
+        'Read one research project: its details, personas (name, tagline) and documents (ids, types, titles, '
+        'versions; no bodies: read one with documents_get).',
         schema({'project_id': PROJECT_ID_SCHEMA}), _get_project, _project_overview, project_scoped=True),
     GlobalTool(
-        'get_document', 'Get a document',
-        'One project document in full, by `document_id`.',
+        'documents_get', 'Get a document',
+        'Read one project document in full by `document_id`: a PR/FAQ, PRD, research report or custom markdown '
+        'document, with its type, title, version and content.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
         _get_document, _one_document, project_scoped=True),
     GlobalTool(
-        'list_agents', 'List agents',
-        'Agents you can see, with their status.',
+        'agents_list', 'List agents',
+        'List the autonomous agents you can see, with their status. Use it to find the `agent_id` the agents_ '
+        'tools take.',
         schema({}), _list_agents, stripped),
     GlobalTool(
-        'get_agent_run', 'Get agent runs',
-        "An agent's run by `run_id`, or its newest runs.",
+        'agents_get_run', 'Get agent runs',
+        "Follow an autonomous agent's run: `agent_id` with `run_id` (from agents_run) for its status, current "
+        'step, project and error; without `run_id`, the agent\'s newest runs (`limit`).',
         schema({'agent_id': ID_SCHEMA, 'run_id': ID_SCHEMA,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RUNS_LIMIT,
                            'default': DEFAULT_RUNS_LIMIT}}, ('agent_id',)),
         _get_agent_run, stripped),
     GlobalTool(
-        'search_feature_requests', 'Search board requests',
-        'Search feedback-board requests you can see (NOT reviews: never in feedback metrics); cite as '
-        '[FR:<request_id>]. `board`, `category`, `status`: comma lists. `boards: true` lists the boards.',
+        'feature_requests_search', 'Search feature requests',
+        'Search the feature requests and ideas people posted on feedback boards, with their +1 count '
+        '(`supporters`). They are NOT customer reviews: never add them to feedback counts or metrics; cite each '
+        'as [FR:<request_id>]. `query`; `board`, `category`, `status` (comma lists); `days` (0 = all time); '
+        '`limit`. `boards: true` lists the boards instead.',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'board': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH,
                            'description': 'Board id or slug.'},
@@ -452,27 +478,93 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
                  'boards': BOOL_SCHEMA}),
         _search_feature_requests, _feature_requests, board_route=True),
     GlobalTool(
-        'create_document', 'Create a document',
-        'Create a custom markdown document in a project you can edit (write token). Cite feedback ids for claims.',
+        'documents_create', 'Create a document',
+        'Create a custom markdown document (notes, analysis, report) in a project you can edit (write token): '
+        '`title` and `content`. Cite the feedback ids its claims rest on. Confirm with the user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('title', 'content')),
         _create_document, stripped, write=True, project_scoped=True),
     GlobalTool(
-        'update_document', 'Update a document',
-        "Replace a document's title and/or content (write token). PRD / PR/FAQ titles keep their series; "
-        'not prototypes.',
+        'documents_update', 'Update a document',
+        "Edit a project document: replace its `title` and/or `content` by `document_id` (write token); each "
+        'save is a new version, never an overwrite. A PRD or PR/FAQ keeps its series title and is refused unless '
+        'the user and the project owner work AI-driven; prototypes cannot be edited. Confirm with the user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
                  'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('document_id',)),
         _update_document, stripped, write=True, project_scoped=True),
     GlobalTool(
-        'run_agent', 'Run an agent',
-        'Run an agent now (write token minted by a current admin). Confirm first: it spends model budget.',
+        'agents_run', 'Run an agent',
+        'Start an autonomous agent run now by `agent_id` (write token minted by a current administrator). It '
+        'spends model budget: confirm with the user first; follow the run with agents_get_run.',
         schema({'agent_id': ID_SCHEMA}, ('agent_id',)), _run_agent, stripped, write=True, admin_only=True),
-    # Methodology steps, their jobs, Radar and feedback edits (shared/mcp_global_tools_steps.py).
+    # Methodology steps, their jobs, Revise from comments, Radar and feedback edits (mcp_global_tools_steps.py).
     *STEP_TOOLS,
     # The feedback catalogue and sources, Prioritization and board writes (shared/mcp_global_tools_work.py).
     *WORK_TOOLS,
 )
 
+
+def area_of(name: str) -> str | None:
+    """The area a tool name starts with (``feedback_search`` → ``feedback``), or None."""
+    return next((area for area in AREAS if name.startswith(f'{area}_')), None)
+
+
+def _area_rank(tool: GlobalTool) -> int:
+    area = area_of(tool.name)
+    return AREAS.index(area) if area is not None else len(AREAS)
+
+
+#: tools/list's order: by area (AREAS), and within an area in catalogue order.
+TOOLS: Final[tuple[GlobalTool, ...]] = tuple(sorted(_CATALOGUE, key=_area_rank))
 TOOLS_BY_NAME: Final[dict[str, GlobalTool]] = {tool.name: tool for tool in TOOLS}
+
+# ── Renamed in 6.10.00 ──────────────────────────────────────────────────────
+#: Each name before 6.10.00 → its tool now. ``tools/call`` still accepts them for this release, never
+#: listed; 6.11.00 removes them (docs/mcp.md → Renamed in 6.10.00).
+RENAMED: Final[dict[str, str]] = {
+    'search_feedback': 'feedback_search',
+    'get_feedback': 'feedback_get',
+    'get_metrics': 'feedback_get_metrics',
+    'list_categories': 'feedback_list_categories',
+    'list_dimensions': 'feedback_list_dimensions',
+    'get_feedback_catalogue': 'feedback_get_catalogue',
+    'edit_feedback': 'feedback_edit',
+    'search_memory': 'memory_search',
+    'get_company_context': 'company_get_context',
+    'list_projects': 'projects_list',
+    'get_project': 'projects_get',
+    'generate': 'projects_generate',
+    'get_job': 'projects_get_job',
+    'get_document': 'documents_get',
+    'create_document': 'documents_create',
+    'update_document': 'documents_update',
+    'list_agents': 'agents_list',
+    'get_agent_run': 'agents_get_run',
+    'run_agent': 'agents_run',
+    'search_feature_requests': 'feature_requests_search',
+    'write_feature_request': 'feature_requests_write',
+    'read_radar': 'radar_read',
+    'get_prioritization': 'prioritization_get',
+    'score_prioritization': 'prioritization_score',
+}
+
+
+def resolve_tool(name: object, arguments: object) -> tuple[GlobalTool, object] | None:
+    """The tool a ``tools/call`` of ``name`` runs and the arguments it gets, or None for an unknown name.
+
+    A listed name runs as is; a name of ``RENAMED`` runs its tool with the same arguments, except the old
+    ``generate`` with ``step: revise`` ("Revise from comments"), which is now its own two tools
+    (``legacy_revise``). Arguments that are not an object pass unchanged (the handler refuses them).
+    """
+    if not isinstance(name, str):
+        return None
+    tool = TOOLS_BY_NAME.get(name)
+    if tool is not None:
+        return tool, arguments
+    current = RENAMED.get(name)
+    if current is None:
+        return None
+    if name == 'generate' and isinstance(arguments, Mapping) and arguments.get('step') == LEGACY_REVISE_STEP:
+        current, arguments = legacy_revise(arguments)
+    return TOOLS_BY_NAME[current], arguments

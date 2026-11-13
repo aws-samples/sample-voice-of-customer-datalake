@@ -253,13 +253,13 @@ class TestTokenViewShape:
 
 class TestAuditItemRecordsExactlyFourFacts:
     def test_whole_row_for_a_pinned_call(self):
-        item = gt.audit_item('tok_1', tool='get_project', project_id='proj_1', outcome='ok', now=NOW)
+        item = gt.audit_item('tok_1', tool='projects_get', project_id='proj_1', outcome='ok', now=NOW)
         suffix = item.pop('sk')
         assert re.fullmatch(r'2026-01-15T12:00:00\+00:00#[0-9a-f]{8}', suffix)
         assert item == {
             'pk': 'MCPAUDIT#tok_1',
             'token_id': 'tok_1',
-            'tool': 'get_project',
+            'tool': 'projects_get',
             'at': '2026-01-15T12:00:00+00:00',
             'outcome': 'ok',
             'project_id': 'proj_1',
@@ -299,9 +299,9 @@ class TestAuditItemRecordsExactlyFourFacts:
 class TestAuditViewShowsExactlyFourFacts:
     def test_full_row_maps_field_for_field(self):
         row = {'pk': 'MCPAUDIT#tok_1', 'sk': 'x', 'token_id': 'tok_1', 'ttl': 1,
-               'tool': 'get_project', 'at': '2026-01-15T12:00:00+00:00', 'project_id': 'proj_1', 'outcome': 'denied'}
+               'tool': 'projects_get', 'at': '2026-01-15T12:00:00+00:00', 'project_id': 'proj_1', 'outcome': 'denied'}
         assert gt.audit_view(row) == {
-            'tool': 'get_project', 'at': '2026-01-15T12:00:00+00:00', 'project_id': 'proj_1', 'outcome': 'denied',
+            'tool': 'projects_get', 'at': '2026-01-15T12:00:00+00:00', 'project_id': 'proj_1', 'outcome': 'denied',
         }
 
     def test_empty_row_reads_as_a_failed_unnamed_call(self):

@@ -20,7 +20,7 @@ project access is the minter's capped at editor and category access is the
 minter's — never admin. On top of that the token narrows, never widens:
 
 * ``scope`` — ``read`` (read tools only) or ``write`` (read + document writes +,
-  for an admin-minted token, ``run_agent``);
+  for an admin-minted token, ``agents_run``);
 * ``project_id`` — optional pin: project tools are confined to that project;
 * ``expires_at`` — always set (default 30 days, at most 90); there is no
   non-expiring global token.
@@ -203,7 +203,7 @@ def token_view(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         'last_used_at': row.get('last_used_at'),
         'revoked_at': row.get('revoked_at'),
         'status': token_status(row, now),
-        # Whether run_agent CAN be offered (still re-checked against Cognito per call).
+        # Whether agents_run CAN be offered (still re-checked against Cognito per call).
         'can_run_agents': bool(row.get('minted_by_admin')) and scope_allows_write(row.get('scope')),
     }
 

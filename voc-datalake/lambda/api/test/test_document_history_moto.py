@@ -235,7 +235,7 @@ class TestASecondTabsStaleSaveIsAConflictNotAnOverwrite:
         assert [v['content'] for v in _versions(v1['document_id'])] == ['# racing tab', '# v1 text']
 
     def test_without_expected_revision_there_is_no_check(self, table):
-        """The assistant's and MCP's update_document send no revision: unchanged behaviour."""
+        """The assistant's and MCP's ``documents_update`` send no revision: unchanged behaviour."""
         _custom_doc(table)
         _edit('doc_1', {'content': 'tab A'})
 

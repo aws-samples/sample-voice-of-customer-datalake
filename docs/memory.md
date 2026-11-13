@@ -158,7 +158,7 @@ Two policies, one helper each side (`lambda/shared/grounding.py`; the generators
 | Persona generation | SHARED | company, kinds `product` and `customer` only | yes | direct read, on the analysis step only |
 | Agent steps (`voc-agent-nodes`) | SHARED (agent principal) | company | yes | `POST /memory/retrieve` as the `agent:` principal (company scope only) |
 | Assistant (`/chat/stream`) | PRIVATE | company + the caller's personal | yes, + the caller's own objectives (auto-injected, ≤ 2 KB) | `POST /memory/retrieve` as the caller |
-| MCP (`/mcp/global`) | PRIVATE | company + the minter's personal | via tools | `search_memory` |
+| MCP (`/mcp/global`) | PRIVATE | company + the minter's personal | via tools | `memory_search` |
 
 **No memory at all:** the persona panel (agent `persona_review`) and persona chat — they role-play customers, and
 internal facts would turn a customer critique into an insider's; feedback enrichment (processor, category

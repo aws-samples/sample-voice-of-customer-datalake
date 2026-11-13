@@ -125,6 +125,24 @@ describe('serialize: the touched blocks alone decide as the whole text does', ()
     expect(mayStayOpen(source)).toBe(open)
   })
 
+  // The parser's end markers, not a browser's: `--!>` ends a comment in a browser but not in Markdown, and a comment's
+  // `-->` or an instruction's `?>` may overlap its opener. Each case is checked against the parser itself.
+  it.each<[source: string, open: boolean]>([
+    ['<!-- note --!>', true],
+    ['<!-- note --!> and later -->', false],
+    ['<!-- neither end', true],
+    ['<!-->', false],
+    ['<!--->', false],
+    ['<!---->', false],
+    ['<?>', false],
+    ['<![CDATA[ x ]>', true],
+    ['<![CDATA[ x ]]>', false],
+    ['<Script>\nlet a\n</SCRIPT>', false],
+  ])('mayStayOpen(%j) is %s, as the parser reads it', (source, open) => {
+    expect(mayStayOpen(source)).toBe(open)
+    expect(parseMarkdown(`${source}\n\nnext`).children).toHaveLength(open ? 1 : 2)
+  })
+
   it('keeps an escape whose unescaped reading defines a target (a definition in the touched block)', () => {
     const tree: Root = { type: 'root', children: [{ type: 'paragraph', children: [{ type: 'text', value: '[a]: b' }] }, { type: 'paragraph', children: [{ type: 'text', value: 'see [a]' }] }] }
 

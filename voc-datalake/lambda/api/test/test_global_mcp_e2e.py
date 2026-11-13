@@ -14,27 +14,29 @@ The cases the spec names:
   (b) a write token creates (and updates) a document;
   (c) a revoked or an expired token is refused — at the handshake too;
   (d) a project-scoped token is refused outside its project;
-  (e) a non-admin token is refused ``run_agent`` (and an admin's works, until demoted).
+  (e) a non-admin token is refused ``agents_run`` (and an admin's works, until demoted).
 
 Live testing with Cowork / Copilot / Amazon Quick / Kiro needs a deployment
 (docs/mcp.md); this is the strongest check possible without one.
 """
 from __future__ import annotations
 
-from unittest.mock import patch
+from collections.abc import Generator
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 from global_mcp_world import ALPHA, ALPHA_DOC, BETA, GAMMA, global_mcp_world, tool_payload
 
 from shared import mcp_global_tokens as gt
 
-READ_TOOLS = {'search_feedback', 'get_feedback', 'get_metrics', 'list_categories', 'list_dimensions',
-              'search_memory',
-              'get_company_context', 'list_projects', 'get_project', 'get_document', 'list_agents',
-              'get_agent_run', 'search_feature_requests', 'get_job', 'read_radar', 'get_feedback_catalogue',
-              'get_prioritization'}
-WRITE_TOOLS = {'create_document', 'update_document', 'generate', 'edit_feedback', 'score_prioritization',
-               'write_feature_request'}
+READ_TOOLS = {'feedback_search', 'feedback_get', 'feedback_get_metrics', 'feedback_list_categories',
+              'feedback_list_dimensions', 'feedback_get_catalogue', 'memory_search', 'company_get_context',
+              'projects_list', 'projects_get', 'projects_get_job', 'documents_get', 'agents_list', 'agents_get_run',
+              'feature_requests_search', 'radar_read', 'prioritization_get'}
+WRITE_TOOLS = {'documents_create', 'documents_update', 'documents_revise_from_comments',
+               'documents_mark_comments_addressed', 'projects_generate', 'feedback_edit', 'prioritization_score',
+               'feature_requests_write'}
 
 
 @pytest.fixture
@@ -58,12 +60,12 @@ class TestReadOnlyToken:
 
         assert set(client.tool_names()) == READ_TOOLS
 
-        is_error, listed = tool_payload(client.call('list_projects'))
+        is_error, listed = tool_payload(client.call('projects_list'))
         # Alice owns alpha and can see the public gamma; bob's private beta is invisible.
         assert not is_error
         assert sorted(p['project_id'] for p in listed['projects']) == [ALPHA, GAMMA]
 
-        is_error, document = tool_payload(client.call('get_document', {'project_id': ALPHA, 'document_id': ALPHA_DOC}))
+        is_error, document = tool_payload(client.call('documents_get', {'project_id': ALPHA, 'document_id': ALPHA_DOC}))
         assert not is_error
         assert document['document']['content'] == 'Customers want faster refunds.'
         assert 'pk' not in document['document']
@@ -72,7 +74,7 @@ class TestReadOnlyToken:
     def test_a_project_the_minter_cannot_see_is_not_found(self, world):
         client = _connected(world, world.mint('alice', scope='read'))
 
-        is_error, message = tool_payload(client.call('get_project', {'project_id': BETA}))
+        is_error, message = tool_payload(client.call('projects_get', {'project_id': BETA}))
 
         assert is_error
         assert 'HTTP 404' in message
@@ -82,7 +84,7 @@ class TestReadOnlyToken:
         client = _connected(world, minted)
         calls_before = len(world.lambdas.calls)
 
-        is_error, message = tool_payload(client.call('create_document', {
+        is_error, message = tool_payload(client.call('documents_create', {
             'project_id': ALPHA, 'title': 'Nope', 'content': 'x'}))
 
         assert is_error
@@ -90,11 +92,11 @@ class TestReadOnlyToken:
         assert len(world.lambdas.calls) == calls_before
         latest = world.audit('alice', minted['token_id'])[0]
         assert {k: latest[k] for k in ('tool', 'project_id', 'outcome')} == {
-            'tool': 'create_document', 'project_id': ALPHA, 'outcome': gt.OUTCOME_DENIED}
+            'tool': 'documents_create', 'project_id': ALPHA, 'outcome': gt.OUTCOME_DENIED}
 
     def test_the_delegated_call_acts_as_the_minter_never_as_admin(self, world):
         client = _connected(world, world.mint('root', scope='read'))
-        client.call('list_projects')
+        client.call('projects_list')
 
         _, event = world.lambdas.calls[-1]
         claims = event['requestContext']['authorizer']['claims']
@@ -110,9 +112,9 @@ class TestWriteToken:
         minted = world.mint('alice', scope='write')
         client = _connected(world, minted)
         assert set(client.tool_names()) >= WRITE_TOOLS
-        assert 'run_agent' not in client.tool_names()
+        assert 'agents_run' not in client.tool_names()
 
-        is_error, created = tool_payload(client.call('create_document', {
+        is_error, created = tool_payload(client.call('documents_create', {
             'project_id': ALPHA, 'title': 'Refund plan', 'content': '# Plan\nRefund in 3 days.'}))
         assert not is_error, created
         document_id = created['document']['document_id']
@@ -121,7 +123,7 @@ class TestWriteToken:
         assert stored['title'] == 'Refund plan'
         assert stored['document_type'] == 'custom'
 
-        is_error, _ = tool_payload(client.call('update_document', {
+        is_error, _ = tool_payload(client.call('documents_update', {
             'project_id': ALPHA, 'document_id': document_id, 'content': 'Refund in 2 days.'}))
         assert not is_error
         stored = world.projects.get_item(Key={'pk': f'PROJECT#{ALPHA}', 'sk': f'DOC#{document_id}'})['Item']
@@ -129,14 +131,14 @@ class TestWriteToken:
 
         events = world.audit('alice', minted['token_id'])
         assert [(e['tool'], e['outcome'], e['project_id']) for e in events[:2]] == [
-            ('update_document', 'ok', ALPHA), ('create_document', 'ok', ALPHA)]
+            ('documents_update', 'ok', ALPHA), ('documents_create', 'ok', ALPHA)]
         # Never the arguments or the content.
         assert all(set(e) == {'tool', 'at', 'project_id', 'outcome'} for e in events)
 
     def test_cannot_write_where_the_minter_may_not(self, world):
         client = _connected(world, world.mint('alice', scope='write'))
 
-        is_error, message = tool_payload(client.call('create_document', {
+        is_error, message = tool_payload(client.call('documents_create', {
             'project_id': BETA, 'title': 'Sneaky', 'content': 'x'}))
 
         assert is_error
@@ -155,7 +157,7 @@ class TestDeadTokens:
         assert revoked['token']['status'] == gt.STATUS_REVOKED
 
         assert client.request('tools/list').status == 401
-        assert client.call('list_projects').status == 401
+        assert client.call('projects_list').status == 401
         # A fresh session cannot even complete the handshake.
         assert world.client(minted).connect().status == 401
 
@@ -187,13 +189,13 @@ class TestProjectScopedToken:
         minted = world.mint('alice', scope='write', project_id=ALPHA)
         client = _connected(world, minted)
 
-        is_error, listed = tool_payload(client.call('list_projects'))
+        is_error, listed = tool_payload(client.call('projects_list'))
         assert not is_error
         assert [p['project_id'] for p in listed['projects']] == [ALPHA]
 
         # Gamma is public — alice herself could read it, but this token cannot.
         calls_before = len(world.lambdas.calls)
-        is_error, message = tool_payload(client.call('get_project', {'project_id': GAMMA}))
+        is_error, message = tool_payload(client.call('projects_get', {'project_id': GAMMA}))
         assert is_error
         assert f'scoped to project {ALPHA}' in message
         assert len(world.lambdas.calls) == calls_before
@@ -202,14 +204,16 @@ class TestProjectScopedToken:
     def test_defaults_project_tools_to_its_project(self, world):
         client = _connected(world, world.mint('alice', scope='write', project_id=ALPHA))
 
-        is_error, created = tool_payload(client.call('create_document', {'title': 'Pinned', 'content': 'Hi'}))
+        is_error, created = tool_payload(client.call('documents_create', {'title': 'Pinned', 'content': 'Hi'}))
 
         assert not is_error
         assert world.projects.get_item(
             Key={'pk': f'PROJECT#{ALPHA}', 'sk': f"DOC#{created['document']['document_id']}"},
         ).get('Item')
 
-    def test_marks_comments_addressed_through_generate_revise_in_its_project_only(self, world):
+    @staticmethod
+    def _prd_with_a_thread(world) -> str:
+        """A PRD in alpha with one comment thread on the whole document; answers the thread's id."""
         from shared import document_comments, document_series
 
         prd = {'pk': f'PROJECT#{ALPHA}', 'sk': 'PRD#prd_a1', 'document_id': 'prd_a1', 'document_type': 'prd',
@@ -220,25 +224,101 @@ class TestProjectScopedToken:
                                                author=document_comments.user_author('s', 'Ann'), text='Faster?',
                                                anchor=None)
         document_comments.put_thread(world.projects, thread)
-        client = _connected(world, world.mint('alice', scope='write', project_id=ALPHA))
-        args = {'step': 'revise', 'document_id': 'prd_a1', 'thread_ids': [thread['comment_id']],
-                'mark_addressed': True}
+        return thread['comment_id']
+
+    @staticmethod
+    @contextmanager
+    def _assist_job_started() -> Generator[MagicMock]:
+        """The pass's job start (an async worker invoke) as a mock answering ``job_r``; the world has no
+        aggregates table, so the caller's category scope (captured into the job's config) is a fixed one."""
+        with patch('projects_handler.assist_jobs.start', return_value={'success': True, 'job_id': 'job_r'}) as start, \
+                patch('projects_handler._caller_category_scope', return_value={}):
+            yield start
+
+    def test_marks_comments_addressed_in_its_project_only(self, world):
+        thread_id = self._prd_with_a_thread(world)
+        minted = world.mint('alice', scope='write', project_id=ALPHA)
+        client = _connected(world, minted)
+        assert {'documents_revise_from_comments', 'documents_mark_comments_addressed'} <= set(client.tool_names())
+        args = {'document_id': 'prd_a1', 'thread_ids': [thread_id]}
 
         with patch('shared.document_review_routes.get_projects_table', return_value=world.projects):
-            is_error, marked = tool_payload(client.call('generate', args))
+            is_error, marked = tool_payload(client.call('documents_mark_comments_addressed', args))
             assert not is_error, marked
             assert marked['threads'][0]['addressed'] == {
                 'version': 1, 'at': marked['threads'][0]['addressed']['at'], 'by_kind': 'ai'}
-            is_error, cleared = tool_payload(client.call('generate', {**args, 'mark_addressed': False}))
+            is_error, cleared = tool_payload(client.call('documents_mark_comments_addressed',
+                                                         {**args, 'addressed': False}))
             assert not is_error, cleared
             assert cleared['threads'][0]['addressed'] is None
             # The tool passes thread_ids through: the route's 400 is the tool's error.
-            is_error, refused = tool_payload(client.call('generate', {**args, 'thread_ids': ['not a comment id']}))
+            is_error, refused = tool_payload(client.call('documents_mark_comments_addressed',
+                                                         {**args, 'thread_ids': ['not a comment id']}))
             assert is_error
             assert 'thread_ids must be a list of 1 to 50 comment ids' in refused
-        is_error, message = tool_payload(client.call('generate', {**args, 'project_id': GAMMA}))
+        is_error, message = tool_payload(client.call('documents_mark_comments_addressed',
+                                                     {**args, 'project_id': GAMMA}))
         assert is_error
         assert f'scoped to project {ALPHA}' in message
+        assert world.audit('alice', minted['token_id'])[0]['tool'] == 'documents_mark_comments_addressed'
+
+    def test_starts_revise_from_comments_in_its_project_only(self, world):
+        thread_id = self._prd_with_a_thread(world)
+        minted = world.mint('alice', scope='write', project_id=ALPHA)
+        client = _connected(world, minted)
+
+        with self._assist_job_started() as start:
+            is_error, started = tool_payload(client.call('documents_revise_from_comments',
+                                                         {'document_id': 'prd_a1', 'thread_ids': [thread_id]}))
+            assert not is_error, started
+            assert started['job_id'] == 'job_r'
+            config = start.call_args.args[2]
+            assert (config['project_id'], config['document_id']) == (ALPHA, 'prd_a1')
+            assert config['body_json'] == f'{{"thread_ids": ["{thread_id}"]}}'
+            is_error, message = tool_payload(client.call('documents_revise_from_comments',
+                                                         {'document_id': 'prd_a1', 'project_id': GAMMA}))
+            assert is_error
+            assert f'scoped to project {ALPHA}' in message
+            assert start.call_count == 1
+        events = world.audit('alice', minted['token_id'])
+        assert [(e['tool'], e['outcome']) for e in events[:2]] == [
+            ('documents_revise_from_comments', gt.OUTCOME_DENIED), ('documents_revise_from_comments', gt.OUTCOME_OK)]
+
+    def test_a_read_token_is_refused_both_review_tools(self, world):
+        self._prd_with_a_thread(world)
+        client = _connected(world, world.mint('alice', scope='read', project_id=ALPHA))
+        assert not {'documents_revise_from_comments', 'documents_mark_comments_addressed'} & set(client.tool_names())
+        calls_before = len(world.lambdas.calls)
+        for name in ('documents_revise_from_comments', 'documents_mark_comments_addressed'):
+            is_error, message = tool_payload(client.call(name, {'document_id': 'prd_a1', 'thread_ids': ['x']}))
+            assert is_error
+            assert 'read-only' in message
+        assert len(world.lambdas.calls) == calls_before
+
+    def test_the_names_before_6_10_still_work_unlisted_and_are_audited_under_the_new_names(self, world):
+        thread_id = self._prd_with_a_thread(world)
+        minted = world.mint('alice', scope='write', project_id=ALPHA)
+        client = _connected(world, minted)
+        listed = set(client.tool_names())
+        assert not {'list_projects', 'generate', 'get_document', 'create_document'} & listed
+
+        is_error, projects = tool_payload(client.call('list_projects'))
+        assert not is_error
+        assert [p['project_id'] for p in projects['projects']] == [ALPHA]
+        # The old `generate` + `step: revise` + `mark_addressed` is documents_mark_comments_addressed.
+        with patch('shared.document_review_routes.get_projects_table', return_value=world.projects):
+            is_error, marked = tool_payload(client.call('generate', {
+                'step': 'revise', 'document_id': 'prd_a1', 'thread_ids': [thread_id], 'mark_addressed': True}))
+        assert not is_error, marked
+        assert marked['threads'][0]['addressed']['version'] == 1
+        # The old `generate` without `mark_addressed` starts a pass.
+        with self._assist_job_started():
+            is_error, started = tool_payload(client.call('generate', {
+                'step': 'revise', 'document_id': 'prd_a1', 'thread_ids': [thread_id]}))
+        assert (is_error, started['job_id']) == (False, 'job_r')
+        events = world.audit('alice', minted['token_id'])
+        assert [e['tool'] for e in events[:3]] == [
+            'documents_revise_from_comments', 'documents_mark_comments_addressed', 'projects_list']
 
     def test_cannot_be_minted_for_a_project_the_minter_cannot_see(self, world):
         status, body = world.tokens_api('alice', 'POST', '/connect/tokens',
@@ -249,9 +329,9 @@ class TestProjectScopedToken:
 class TestRunAgent:
     def test_a_non_admin_token_is_refused(self, world):
         client = _connected(world, world.mint('alice', scope='write'))
-        assert 'run_agent' not in client.tool_names()
+        assert 'agents_run' not in client.tool_names()
 
-        is_error, message = tool_payload(client.call('run_agent', {'agent_id': world.agent_id}))
+        is_error, message = tool_payload(client.call('agents_run', {'agent_id': world.agent_id}))
 
         assert is_error
         assert 'administrator' in message
@@ -260,9 +340,9 @@ class TestRunAgent:
     def test_an_admin_minted_write_token_starts_a_run(self, world):
         minted = world.mint('root', scope='write')
         client = _connected(world, minted)
-        assert 'run_agent' in client.tool_names()
+        assert 'agents_run' in client.tool_names()
 
-        is_error, started = tool_payload(client.call('run_agent', {'agent_id': world.agent_id}))
+        is_error, started = tool_payload(client.call('agents_run', {'agent_id': world.agent_id}))
 
         assert not is_error, started
         assert started['run']['agent_id'] == world.agent_id
@@ -272,7 +352,7 @@ class TestRunAgent:
     def test_an_admin_read_token_is_refused(self, world):
         client = _connected(world, world.mint('root', scope='read'))
 
-        is_error, message = tool_payload(client.call('run_agent', {'agent_id': world.agent_id}))
+        is_error, message = tool_payload(client.call('agents_run', {'agent_id': world.agent_id}))
 
         assert is_error
         assert 'read-only' in message
@@ -281,7 +361,7 @@ class TestRunAgent:
         client = _connected(world, world.mint('root', scope='write'))
         world.cognito.demote('root')
 
-        is_error, message = tool_payload(client.call('run_agent', {'agent_id': world.agent_id}))
+        is_error, message = tool_payload(client.call('agents_run', {'agent_id': world.agent_id}))
 
         assert is_error
         assert 'still an administrator' in message
@@ -289,11 +369,11 @@ class TestRunAgent:
 
 
 class TestAgentRuns:
-    """`get_agent_run` follows a run `run_agent` started, with a READ token of anyone who sees the agent."""
+    """`agents_get_run` follows a run `agents_run` started, with a READ token of anyone who sees the agent."""
 
     def _started_run(self, world) -> str:
         client = _connected(world, world.mint('root', scope='write'))
-        is_error, started = tool_payload(client.call('run_agent', {'agent_id': world.agent_id}))
+        is_error, started = tool_payload(client.call('agents_run', {'agent_id': world.agent_id}))
         assert not is_error, started
         return started['run']['run_id']
 
@@ -301,7 +381,7 @@ class TestAgentRuns:
         run_id = self._started_run(world)
         client = _connected(world, world.mint('alice', scope='read'))
 
-        is_error, body = tool_payload(client.call('get_agent_run', {'agent_id': world.agent_id, 'run_id': run_id}))
+        is_error, body = tool_payload(client.call('agents_get_run', {'agent_id': world.agent_id, 'run_id': run_id}))
 
         assert not is_error, body
         assert (body['run']['run_id'], body['run']['agent_id']) == (run_id, world.agent_id)
@@ -310,7 +390,7 @@ class TestAgentRuns:
         run_id = self._started_run(world)
         client = _connected(world, world.mint('alice', scope='read'))
 
-        is_error, body = tool_payload(client.call('get_agent_run', {'agent_id': world.agent_id}))
+        is_error, body = tool_payload(client.call('agents_get_run', {'agent_id': world.agent_id}))
 
         assert not is_error, body
         assert [run['run_id'] for run in body['items']] == [run_id]
@@ -318,7 +398,7 @@ class TestAgentRuns:
     def test_an_unknown_run_is_a_tool_error_the_model_can_act_on(self, world):
         client = _connected(world, world.mint('alice', scope='read'))
 
-        is_error, message = tool_payload(client.call('get_agent_run', {'agent_id': world.agent_id,
+        is_error, message = tool_payload(client.call('agents_get_run', {'agent_id': world.agent_id,
                                                                        'run_id': 'run_missing'}))
 
         assert is_error

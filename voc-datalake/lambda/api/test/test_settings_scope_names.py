@@ -1,7 +1,7 @@
 """Settings reads that carry category names obey the caller's category scope (owner rule 2026-10-21).
 
 ``GET /settings/company-context`` (the assistant's company brief, ``get_company_context``, MCP's
-``get_company_context`` and the Company page) drops vision paragraphs and objectives that name a
+``company_get_context`` and the Company page) drops vision paragraphs and objectives that name a
 hidden category; ``GET /settings/resolved-problems`` (the assistant's ``get_resolved_problems`` and
 Problem Analysis) drops keys under a hidden category; ``GET /settings/design-system`` (the Design
 system page, the assistant's ``get_design_system`` and the build dialog) drops guideline paragraphs,

@@ -112,7 +112,7 @@ plus subcategory names, matched case-insensitively on word boundaries; details i
 
 | Where | What a restricted user gets |
 |---|---|
-| `GET /settings/categories`, the assistant's `list_categories`, MCP `list_categories` | Only their categories |
+| `GET /settings/categories`, the assistant's `list_categories`, MCP `feedback_list_categories` | Only their categories |
 | Memory: `GET /memory`, `POST /memory/retrieve` (assistant recall, `search_memory`, MCP, plan and agent steps), conflict check, review queue | No memory tagged with, or naming, another category |
 | `GET /settings/company-context` (Company page, the assistant's company brief and `get_company_context`, MCP) | Without the vision paragraphs and objectives that name another category |
 | `GET /settings/resolved-problems` (Problem Analysis, the assistant's `get_resolved_problems`) | Only problems under their categories |

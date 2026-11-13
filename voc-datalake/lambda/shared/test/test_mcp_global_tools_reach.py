@@ -1,10 +1,10 @@
 """More of the app through the existing global MCP tools (shared/mcp_global_tools.py, docs/mcp.md → Tools).
 
-* ``search_feedback urgent=true`` forwards ``urgent=1`` (shared/item_filters.py) to whichever route the
+* ``feedback_search urgent=true`` forwards ``urgent=1`` (shared/item_filters.py) to whichever route the
   query picks, with every other filter kept;
-* ``get_metrics view=github`` reads ``/metrics/github`` and ``view=entities`` reads ``/feedback/entities``
+* ``feedback_get_metrics view=github`` reads ``/metrics/github`` and ``view=entities`` reads ``/feedback/entities``
   (the filter values in use), both with the usual filters;
-* ``get_feedback include_similar=true`` asks for ONE follow-up read of ``/feedback/{id}/similar``, bounded
+* ``feedback_get include_similar=true`` asks for ONE follow-up read of ``/feedback/{id}/similar``, bounded
   to ``MAX_SIMILAR`` slim rows whose text is cut at ``MAX_SIMILAR_TEXT_CHARS``.
 """
 from __future__ import annotations
@@ -13,9 +13,9 @@ import pytest
 
 from shared import mcp_global_tools as tools
 
-FEEDBACK = tools.TOOLS_BY_NAME['search_feedback']
-GET_FEEDBACK = tools.TOOLS_BY_NAME['get_feedback']
-METRICS = tools.TOOLS_BY_NAME['get_metrics']
+FEEDBACK = tools.TOOLS_BY_NAME['feedback_search']
+GET_FEEDBACK = tools.TOOLS_BY_NAME['feedback_get']
+METRICS = tools.TOOLS_BY_NAME['feedback_get_metrics']
 
 
 class TestUrgentFeedback:

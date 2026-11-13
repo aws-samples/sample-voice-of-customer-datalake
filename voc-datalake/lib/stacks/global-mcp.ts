@@ -168,7 +168,7 @@ export class GlobalMcp extends Construct {
     const role = this.role('GlobalEndpointRole');
     role.addToPolicy(leadingKeys(projectsTable, ['GetItem', 'UpdateItem'], 'StringEquals', GLOBAL_TOKEN_PARTITION));
     role.addToPolicy(leadingKeys(jobsTable, ['PutItem'], 'StringLike', `${AUDIT_PARTITION_PREFIX}*`));
-    // Per-request minter check (enabled, same sub) and the per-run_agent admin re-check.
+    // Per-request minter check (enabled, same sub) and the per-agents_run admin re-check.
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser'],
       resources: [userPool.userPoolArn],

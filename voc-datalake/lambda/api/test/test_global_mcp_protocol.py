@@ -39,20 +39,20 @@ class TestToolCalls:
     def test_a_path_unsafe_id_is_a_tool_error_with_no_domain_call(self, world, bad_id):
         client = world.client(world.mint('alice', scope='read'))
         before = len(world.lambdas.calls)
-        is_error, _ = tool_payload(client.call('get_document', {'project_id': ALPHA, 'document_id': bad_id}))
+        is_error, _ = tool_payload(client.call('documents_get', {'project_id': ALPHA, 'document_id': bad_id}))
         assert is_error
         assert len(world.lambdas.calls) == before
 
     def test_a_domain_fault_is_an_internal_error_and_audited_as_failed(self, world):
         minted = world.mint('alice', scope='read')
         with patch.object(handler, 'call_domain', side_effect=DelegationUnavailable('boom')):
-            reply = world.client(minted).call('list_projects')
+            reply = world.client(minted).call('projects_list')
         assert reply.body['error']['code'] == -32603
         assert world.audit('alice', minted['token_id'])[0]['outcome'] == gt.OUTCOME_FAILED
 
     def test_a_missing_project_id_is_a_tool_error(self, world):
         client = world.client(world.mint('alice', scope='read'))
-        is_error, message = tool_payload(client.call('get_project'))
+        is_error, message = tool_payload(client.call('projects_get'))
         assert is_error
         assert 'project_id is required' in message
 

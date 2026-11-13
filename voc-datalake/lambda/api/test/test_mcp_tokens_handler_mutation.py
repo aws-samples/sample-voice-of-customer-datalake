@@ -73,7 +73,7 @@ def _row(world: World, token_id: str) -> dict:
     return world.projects.get_item(Key={'pk': gt.GLOBAL_TOKEN_PK, 'sk': gt.token_sk(token_id)})['Item']
 
 
-def _audit(world: World, token_id: str, at: datetime, tool: str = 'list_projects') -> dict:
+def _audit(world: World, token_id: str, at: datetime, tool: str = 'projects_list') -> dict:
     item = gt.audit_item(token_id, tool=tool, project_id=None, outcome=gt.OUTCOME_OK, now=at)
     world.jobs.put_item(Item=item)
     return item

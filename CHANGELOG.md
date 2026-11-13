@@ -17,6 +17,34 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.10.00] - 2026-11-13
+
+The MCP tools are easier for a model to find: names start with their area, descriptions say what each tool is for, and Revise from comments has its own tools.
+
+### Added
+
+- MCP `documents_revise_from_comments` (start Revise from comments on a PR/FAQ or PRD; read the result with `projects_get_job`) and `documents_mark_comments_addressed` (mark or clear threads as addressed by a version). Same routes, write scope and project pin as before.
+
+### Changed
+
+- Every MCP tool is renamed to start with its area (`feedback_`, `memory_`, `company_`, `projects_`, `documents_`, `agents_`, `feature_requests_`, `radar_`, `prioritization_`), and `tools/list` is grouped by area. Each description says what the tool does, its main nouns and verbs, when to use it and its key arguments. The server instructions, prompts, skill, docs and Connect page use the new names; `docs/mcp.md` and the skill are tested to name exactly the listed tools.
+- The `tools/list` budget goes from 4,000 to 10,000 estimated tokens (about 6,000 today); clients cache the list.
+- `projects_generate` (formerly `generate`) no longer lists `step: revise`.
+- `docs/mcp.md` notes that VoC's own assistant adds tool search (model-side tool search, or a `find_tools` returning tool references) once it passes about 15 tools a page; it has 100 tools today, 21 to 40 a page, so that is the next step.
+- The MCP test floors (`scripts/mcp_gate.py`) rise with the new tests; `test_mcp_global_tokens_mutation`'s floor is re-based from 147 to 139, the count it has had since 5.47.04 moved eight of its cases (still tested) to `shared.timestamps`.
+
+### Deprecated
+
+- The MCP tool names before 6.10.00 and `generate` with `step: revise`. 6.11.00 removes them: move clients, skills and saved prompts to the new names (docs/mcp.md, "Renamed in 6.10.00").
+
+### Fixed
+
+- The canvas's check whether a stored HTML block may stay open finds each block type's end the way the Markdown parser does (string searches, no regex), so `<!-->`, `<!--->` and `<?>` count as closed; a comment ended only by `--!>` stays open, as the parser reads it. CodeQL (now run locally in strict mode) reports nothing.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`) and the frontend. The names before 6.10.00 still work on `tools/call` for this release (not listed, audited under the new name), and so does `generate` with `step: revise`.
+
 ## [6.09.00] - 2026-11-12
 
 A version written by Revise from comments records which model and prompt wrote it, and the follow-ups of 6.08.00.

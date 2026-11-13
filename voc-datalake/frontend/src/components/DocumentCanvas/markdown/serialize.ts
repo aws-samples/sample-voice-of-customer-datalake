@@ -117,12 +117,20 @@ const OPENING_FENCE = /^ {0,3}(`{3,}|~{3,})/
 /** CommonMark's HTML blocks 1-5, which end only at their own end marker (6 and 7 end at a blank line). */
 const OPENING_HTML = /^ {0,3}<(?:(script|pre|style|textarea)(?=[\s>]|$)|(!--)|(\?)|(!\[CDATA\[)|(![a-z]))/i
 
-function htmlEnd(match: RegExpExecArray): RegExp {
-  const [, tag, comment, instruction, cdata] = match
-  if (tag !== undefined) return new RegExp(`</${tag}>`, 'i')
-  if (comment !== undefined) return /-->/
-  if (instruction !== undefined) return /\?>/
-  return cdata === undefined ? />/ : /\]\]>/
+/**
+ * Whether an HTML block that opened with `match` holds the end marker the Markdown parser (micromark, CommonMark's
+ * end conditions) closes it at. These are the parser's markers, not a browser's: a browser also ends a comment at
+ * `--!>`, but the parser does not, so a comment ended only by `--!>` still swallows what follows and counts as open.
+ * A comment's `-->` and an instruction's `?>` may share characters with the opener (`<!-->`, `<!--->` and `<?>` are
+ * closed), so their search starts inside it; the others start after it.
+ */
+function holdsHtmlEnd(source: string, match: RegExpExecArray): boolean {
+  const [opener, tag, comment, instruction, cdata] = match
+  const after = opener.length
+  if (tag !== undefined) return source.slice(after).toLowerCase().includes(`</${tag.toLowerCase()}>`)
+  if (comment !== undefined) return source.includes('-->', after - 2)
+  if (instruction !== undefined) return source.includes('?>', after - 1)
+  return source.includes(cdata === undefined ? '>' : ']]>', after)
 }
 
 /**
@@ -139,7 +147,7 @@ export function mayStayOpen(source: string): boolean {
     return lines.length < 2 || !closing.test(lines.at(-1) ?? '')
   }
   const html = OPENING_HTML.exec(source)
-  return html !== null && !htmlEnd(html).test(source.slice(html[0].length))
+  return html !== null && !holdsHtmlEnd(source, html)
 }
 
 /**

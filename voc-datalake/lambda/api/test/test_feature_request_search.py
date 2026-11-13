@@ -206,7 +206,7 @@ def test_search_is_not_read_as_a_request_id(lambda_context):
 # End to end: the MCP handler builds the delegated call and claims (board_route_claims), build_proxy_event
 # turns them into the engagement function's event, and the real search route answers it.
 
-MCP_SEARCH = TOOLS_BY_NAME['search_feature_requests']
+MCP_SEARCH = TOOLS_BY_NAME['feature_requests_search']
 MCP_ROW = {'token_id': 'gmt_tok1', 'scope': 'read', 'created_by': 'admin-sub', 'created_by_username': 'ada'}
 
 
