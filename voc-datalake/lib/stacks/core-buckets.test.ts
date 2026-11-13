@@ -16,6 +16,7 @@ import {
   WORKSPACE_ID_PATTERN,
   WORKSPACE_RAW_LAYER_PREFIX,
   WORKSPACE_SILVER_HISTORY_PREFIX,
+  WORKSPACE_MEMORY_IMPORTS_PREFIX,
 } from './core-buckets';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt } from '../test-support/guards';
@@ -190,6 +191,7 @@ describe('raw bucket prefixes in lib/stacks', () => {
   const constants = new Map<string, string>([
     ['WORKSPACE_RAW_LAYER_PREFIX', WORKSPACE_RAW_LAYER_PREFIX],
     ['WORKSPACE_SILVER_HISTORY_PREFIX', WORKSPACE_SILVER_HISTORY_PREFIX],
+    ['WORKSPACE_MEMORY_IMPORTS_PREFIX', WORKSPACE_MEMORY_IMPORTS_PREFIX],
   ]);
   for (const source of sources) {
     for (const match of source.matchAll(/const ([A-Z][A-Z0-9_]*) = '([^']*)'/g)) {

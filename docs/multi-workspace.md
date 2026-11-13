@@ -178,9 +178,8 @@ platform admin who is not a member the assistant still answers there (each domai
 live-checked), but nothing of the conversation is kept, the stream Lambda reading and writing no session row and the
 chat routes (list, open, save, rename, delete, Stop) answering the one 404, until they add themselves as a member;
 with no Stop watch, such a run cannot be stopped and runs to its end (at most the stream Lambda's 15 minutes). Both roles read only `WS#*` rows of voc-workspaces. A deleted conversation's
-`AUDIT#delete` row stays in the deployment's audit partition and names the workspace. The memory workers still mine
-only `USER#` partitions, so a workspace's conversations give no memories until memory moves (the conversations'
-kind index, which only the memory scanner reads, holds both). Nothing is migrated: the conversations saved before
+`AUDIT#delete` row stays in the deployment's audit partition and names the workspace. The memory workers mine a
+workspace's conversations into that workspace's memories (Unreleased; below). Nothing is migrated: the conversations saved before
 stay the caller's outside workspaces, at `USER#{sub}`, and the web app no longer shows them to anyone who has a
 workspace (the gate always enters one, so every call carries the header): they are kept, and readable through an API
 call that names no workspace, but the assistant's history inside a workspace starts empty. A deployment upgrading
@@ -202,13 +201,20 @@ first (`lambda/api/memory_handler.py`, its first middleware; fresh for a write, 
 the assistant's `POST /memory/retrieve`, its `used` marks included) and reads and writes that workspace's
 memories, the stream assistant's recall and the MCP `search_memory` tool included (both send the header); inside one
 its admins curate (the deployment's `admins` group and the `memory_reviewer` flag grant nothing there), a viewer
-reads only, and page imports answer 409 until the extraction writes in a workspace. Without the header, the
+reads only, and a page import is the workspace's (its record, its page under `ws/{ws}/memory-imports/`, its queue
+message naming the workspace). Without the header, the
 deployment's memories and rules, as before. Nothing is migrated: the memories kept before stay the deployment's, and
 the web app no longer shows them to anyone who has a workspace (the gate always enters one): they are kept and
 readable through a call that names no workspace, but memory inside a workspace starts empty, and the assistant
 recalls only that workspace's (an upgrade note for the release, as for the conversations). Memory retention sweeps each active workspace's memories too (`lambda/memory/retention/handler.py`, after the
-deployment's, the workspaces from the platform's listing). Not yet: the scanner and the extractor (a workspace's
-conversations still give no memories) and page imports in a workspace; the next slice moves them. Plan steps carry it too (since
+deployment's, the workspaces from the platform's listing). The memory workers (Unreleased) extract in a
+workspace: the scanner queues a workspace conversation's session with its workspace (`workspace_id`, from the
+conversation's `WS#{ws}#USER#{sub}` key; its cursor in that workspace) while that workspace is active, and the extractor reads the workspace the
+message names (`ws_repo.message_scope`: one that is not a workspace id is dropped), the conversation and the imported
+page only there, and writes the memories there, only while that workspace is active (`lambda/shared/workspace.py`
+`is_active`: a workspace being deleted gets no write, not even a cursor) and the conversation's owner still writes
+there (`stored_role`: a viewer's and a removed member's sessions give nothing);
+agent runs and project chats, which carry no workspace yet, drop a message that names one ([memory](memory.md)). Plan steps carry it too (since
 6.18.00): the approval's `X-Workspace-Id` is kept on the plan (one that is not a workspace id is the one 404) and each step names it to the
 domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). And the global
 MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`), and an

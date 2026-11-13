@@ -46,6 +46,7 @@ from shared.platform_admin_gate import confirm_live_platform_admin
 from shared.tables import cached_table
 from shared.workspace import (
     WORKSPACE_HEADER,
+    WRITER_ROLES,
     MembershipCache,
     WorkspaceContext,
     require_workspace_admin,
@@ -54,8 +55,6 @@ from shared.workspace import (
 
 __all__ = ['request_workspace', 'require_settings_admin', 'require_workspace_writer']
 
-#: The roles that write in a workspace (an editor's and an admin's; a viewer reads).
-WRITER_ROLES: Final = frozenset({'editor', 'admin'})
 #: This warm container's resolved memberships (30 s, shared/workspace.py).
 _MEMBERSHIPS: Final = MembershipCache()
 

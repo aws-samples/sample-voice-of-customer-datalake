@@ -230,7 +230,8 @@ describe('cdk-nag acknowledgements', () => {
       // 77: the plugin ingestors' raw writes under ws/{one id}/raw/* and their read of the voc/ws/* credentials secrets.
       // 78: the processor's write-once Silver versions under ws/{one id}/silver/* (its ws/{one id}/raw/* puts share
       // the ingestors' finding).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 78, used: 78 });
+      // 79: a workspace's page imports under ws/{one id}/memory-imports/* (the memory API's and the extractor's).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 79, used: 79 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

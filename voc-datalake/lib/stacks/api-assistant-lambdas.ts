@@ -17,6 +17,7 @@ import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction
 import { appVersion } from '../utils/connector-version';
 import { grantWorkspaceMembershipReads, grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
 import type { ApiStackContext } from './api-context';
+import { WORKSPACE_MEMORY_IMPORTS_PREFIX } from './core-buckets';
 import { createS3ImportLambda } from './api-s3-import-lambda';
 
 /**
@@ -79,6 +80,9 @@ export function createAssistantLambdas(
   memoryRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [memoryExtractQueueArn] }));
   rawDataBucket.grantRead(memoryRole, 'memory-imports/*');
   rawDataBucket.grantPut(memoryRole, 'memory-imports/*');
+  // A workspace's page imports: put under its own ws/{one id}/memory-imports/ (lambda/shared/memory_store.py); only
+  // the extractor reads them.
+  rawDataBucket.grantPut(memoryRole, `${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`);
   // 'memory' surface (review suggestions, screening) + the fixed embedder (in-Region, exact ARN).
   grantClaudeModels(memoryRole, 'invoke');
   grantEmbeddingModel(memoryRole, stack.region);

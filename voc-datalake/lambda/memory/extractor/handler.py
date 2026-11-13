@@ -9,14 +9,19 @@ record here, so a fallback is never silent.
 
 Message kinds (JSON body):
 
-* ``{"kind": "session", "session_id", "owner_sub"}`` — from the scanner: an
-  assistant session in ``voc-conversations`` idle > 30 min with messages past
-  its cursor. Only the new messages are read.
+* ``{"kind": "session", "session_id", "owner_sub", "workspace_id"?}`` — from the
+  scanner: an assistant session in ``voc-conversations`` idle > 30 min with
+  messages past its cursor. Only the new messages are read.
 * ``{"kind": "project_chat" | "agent_run", "ref", "text", "owner_sub"?, "agent_id"?}``
-  — forwarded by the scanner from direct enqueues.
-* ``{"kind": "import", "import_id", "chunk"}`` — one chunk of a pasted page
-  (≤ 200k chars, chunked deterministically); the next chunk is re-enqueued, so no
-  single invocation carries a whole page.
+  — forwarded by the scanner from direct enqueues; one that names a workspace is
+  dropped (they carry none yet).
+* ``{"kind": "import", "import_id", "chunk", "notify"?, "workspace_id"?}`` — one
+  chunk of a pasted page (≤ 200k chars, chunked deterministically); the next
+  chunk is re-enqueued, so no single invocation carries a whole page.
+
+``workspace_id`` (shared/memory_store.py ``session_message``, ``import_message``):
+the workspace the conversation or the import is in; everything is read and
+written there. One that is not a workspace id drops the message.
 
 Everything the model reads is a DATA block in the USER message; the system
 prompt holds only our rules. Every candidate is then screened again in code
@@ -45,19 +50,24 @@ from shared import memory_store as store
 from shared.api import get_raw_categories_config
 from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client
 from shared.category_access import WILDCARD, access_key
-from shared.conversations import ASSISTANT_KIND
+from shared.conversations import ASSISTANT_KIND, conversation_partition
+from shared.ingest_tables import table_view
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics, tracer
 from shared.memory_categories import category_guide, category_ids, config_entries
-from shared.memory_store import IMPORT_PREFIX, KIND_AGENT_RUN
+from shared.memory_store import KIND_AGENT_RUN
 from shared.prompt_safety import neutralise_tags
 from shared.timestamps import now_iso
+from shared.workspace import WRITER_ROLES, is_active, stored_role
+from shared.ws_repo import WorkspaceScope, message_scope
 
 CONVERSATIONS_TABLE = os.environ.get('CONVERSATIONS_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
 RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
 # The CDK names the variable MEMORY_EXTRACT_QUEUE_URL (lib/stacks/memory-workers.ts).
 MEMORY_QUEUE_URL = os.environ.get('MEMORY_EXTRACT_QUEUE_URL', '')
+# voc-workspaces: whether a workspace is active and a session's owner still writes there (shared/workspace.py).
+WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
 
 MAX_MESSAGE_CHARS: Final = 4_000
 MAX_TRANSCRIPT_CHARS: Final = 40_000
@@ -119,6 +129,10 @@ def get_conversations_table():
     return _table(CONVERSATIONS_TABLE)
 
 
+def get_workspaces_table():
+    return _table(WORKSPACES_TABLE)
+
+
 def get_aggregates_table():
     return _table(AGGREGATES_TABLE)
 
@@ -148,6 +162,7 @@ class ExtractionSource:
     owner_sub: str | None = None    # personal memories go to this owner
     allow_personal: bool = False
     restricted: bool = False        # category-restricted source: general, unquoted
+    workspace: WorkspaceScope | None = None  # the workspace the memories are learned in (None: the deployment's)
 
 
 def candidates_from_reply(
@@ -189,6 +204,7 @@ def _candidate(
         owner_sub=origin.owner_sub if scope == policy.SCOPE_PERSONAL else None,
         retention=retention, expires_at=expires_at,
         categories=category_ids(entry.get('categories'), categories, cleaned.statement),
+        **store.workspace_kwargs(origin.workspace),
     )
 
 
@@ -276,11 +292,13 @@ def is_restricted(owner_sub: str) -> bool:
     return not (isinstance(categories, list) and WILDCARD in categories)
 
 
-def _load_messages(owner_sub: str, session_id: str) -> list[Any] | None:
+def _load_messages(owner_sub: str, session_id: str, workspace: WorkspaceScope | None = None) -> list[Any] | None:
     table = get_conversations_table()
     if table is None:
         raise RuntimeError('CONVERSATIONS_TABLE is not configured')
-    item = table.get_item(Key={'pk': f'USER#{owner_sub}', 'sk': f'CONV#{session_id}'}).get('Item')
+    # The owner's own conversation, inside the workspace the message names (shared/conversations.py).
+    key = {'pk': conversation_partition(owner_sub, workspace), 'sk': f'CONV#{session_id}'}
+    item = table_view(workspace, table).get_item(key).get('Item')
     if not isinstance(item, dict) or item.get('kind') != ASSISTANT_KIND:
         return None
     raw = item.get('messages_json') or '[]'
@@ -294,18 +312,33 @@ def _load_messages(owner_sub: str, session_id: str) -> list[Any] | None:
     return messages if isinstance(messages, list) else None
 
 
-def process_session(message: Mapping[str, Any], now: datetime) -> None:
+def process_session(message: Mapping[str, Any], now: datetime, workspace: WorkspaceScope | None = None) -> None:
     session_id, owner_sub = message.get('session_id'), message.get('owner_sub')
     if not (isinstance(session_id, str) and session_id and isinstance(owner_sub, str) and owner_sub):
         logger.warning('Session message without ids; skipping')
         return
     memory_table = store.get_memory_table()
-    messages = _load_messages(owner_sub, session_id)
+    in_workspace = store.workspace_kwargs(workspace)
+    if workspace is not None and not is_active(_workspaces_table(), workspace.ws):
+        # Being deleted: nothing is written there again, not even a cursor (its rows are being swept).
+        logger.info('A workspace session whose workspace is no longer active; dropped')
+        return
+    messages = _load_messages(owner_sub, session_id, workspace)
+    if (messages is not None and workspace is not None
+            and stored_role(_workspaces_table(), workspace.ws, owner_sub) not in WRITER_ROLES):
+        # Removed since, or a viewer (who adds no memories there either, api/memory_handler.py): nothing is learned
+        # from the conversation, and its cursor is advanced so it is not queued again.
+        logger.info('A workspace session whose owner no longer writes there; not extracted')
+        store.save_cursor(memory_table, session_id, {'owner_sub': owner_sub, 'extracted_count': len(messages),
+                                                     'extracted_at': now_iso(now)},
+                          now=now, **in_workspace)
+        return
     if messages is None:
         store.save_cursor(memory_table, session_id,
-                          {'owner_sub': owner_sub, 'missing': True, 'extracted_at': now_iso(now)}, now=now)
+                          {'owner_sub': owner_sub, 'missing': True, 'extracted_at': now_iso(now)}, now=now,
+                          **in_workspace)
         return
-    cursor = store.get_cursors(memory_table, [session_id]).get(session_id) or {}
+    cursor = store.get_cursors(memory_table, [session_id], **in_workspace).get(session_id) or {}
     done = int(cursor.get('extracted_count') or 0)
     # A cursor past the end means the thread was trimmed client-side: start over on what is there.
     fresh = messages[done:] if done <= len(messages) else messages
@@ -316,14 +349,27 @@ def process_session(message: Mapping[str, Any], now: datetime) -> None:
             block='transcript', source_kind=policy.SOURCE_EXTRACTED,
             source={'type': 'session', 'ref': session_id, 'at': now_iso(now)},
             supporter=store.supporter_hash(owner_sub), owner_sub=owner_sub, allow_personal=True,
-            restricted=is_restricted(owner_sub),
+            restricted=is_restricted(owner_sub), workspace=workspace,
         ), now)
         fields.update(last_outcome=outcome.to_dict(), **_tier_fields(reply))
-    store.save_cursor(memory_table, session_id, fields, now=now)
+    store.save_cursor(memory_table, session_id, fields, now=now, **in_workspace)
+
+
+def _workspaces_table() -> Any:
+    table = get_workspaces_table()
+    if table is None:
+        raise RuntimeError('WORKSPACES_TABLE is not configured')
+    return table
+
 
 
 # ── Project chats + agent runs ───────────────────────────────────────────────
-def process_text_source(message: Mapping[str, Any], now: datetime) -> None:
+def process_text_source(message: Mapping[str, Any], now: datetime, workspace: WorkspaceScope | None = None) -> None:
+    if workspace is not None:
+        # Agent runs and project chats carry no workspace yet: one that names a workspace is never written as the
+        # deployment's knowledge instead.
+        logger.warning('A text-source memory message names a workspace; dropping it until agents run in workspaces')
+        return
     kind = message.get('kind')
     ref, text = message.get('ref'), message.get('text')
     if not (isinstance(ref, str) and ref and isinstance(text, str) and text.strip()):
@@ -345,12 +391,9 @@ def process_text_source(message: Mapping[str, Any], now: datetime) -> None:
 
 
 # ── Imports ──────────────────────────────────────────────────────────────────
-def import_object_key(import_id: str) -> str:
-    return f'{IMPORT_PREFIX}{import_id}.json'
-
-
-def _read_import_content(import_id: str) -> str:
-    body = get_s3_client().get_object(Bucket=RAW_DATA_BUCKET, Key=import_object_key(import_id))['Body'].read()
+def _read_import_content(import_id: str, workspace: WorkspaceScope | None = None) -> str:
+    key = store.import_object_key(import_id, workspace)
+    body = get_s3_client().get_object(Bucket=RAW_DATA_BUCKET, Key=key)['Body'].read()
     payload = json.loads(body)
     content = payload.get('content') if isinstance(payload, dict) else None
     return content if isinstance(content, str) else ''
@@ -362,34 +405,40 @@ def _enqueue(payload: Mapping[str, Any]) -> None:
     get_sqs_client().send_message(QueueUrl=MEMORY_QUEUE_URL, MessageBody=json.dumps(payload))
 
 
-def process_import(message: Mapping[str, Any], now: datetime) -> None:
+def process_import(message: Mapping[str, Any], now: datetime, workspace: WorkspaceScope | None = None) -> None:
     import_id, chunk = message.get('import_id'), message.get('chunk', 0)
     memory_table = store.get_memory_table()
-    record = store.get_import(memory_table, import_id) if isinstance(import_id, str) else None
+    in_workspace = store.workspace_kwargs(workspace)
+    record = store.get_import(memory_table, import_id, **in_workspace) if isinstance(import_id, str) else None
     if record is None or not isinstance(import_id, str) or isinstance(chunk, bool) or not isinstance(chunk, int) or chunk < 0:
         logger.warning('Import message for an unknown import; skipping')
         return
     if int(record.get('chunks_done') or 0) > chunk or record.get('status') in ('completed', 'failed'):
         return  # a re-delivered chunk: already counted
-    chunks = policy.chunk_text(_read_import_content(import_id))
+    if workspace is not None and not is_active(_workspaces_table(), workspace.ws):
+        # Being deleted: no chunk writes there again, and none is queued (its rows are being swept).
+        logger.info('A workspace import whose workspace is no longer active; stopped')
+        return
+    chunks = policy.chunk_text(_read_import_content(import_id, workspace))
     if chunk >= len(chunks):
         store.add_import_counts(memory_table, import_id, {}, {'status': 'completed', 'chunks_total': len(chunks)},
-                                now=now)
+                                now=now, **in_workspace)
         _notify_import_end(message, import_id)
         return
     outcome, reply = extract_and_write(chunks[chunk], ExtractionSource(
         block='document', source_kind=policy.SOURCE_IMPORT,
         source={'type': 'import', 'ref': import_id, 'at': now_iso(now)},
         supporter=str(record.get('created_by_hash') or store.supporter_hash(f'import:{import_id}')),
+        workspace=workspace,
     ), now)
     last = chunk + 1 >= len(chunks)
     store.add_import_counts(memory_table, import_id, outcome.to_dict(), {
         'status': 'completed' if last else 'processing', 'chunks_total': len(chunks),
         'chunks_done': chunk + 1, **_tier_fields(reply),
-    }, now=now)
+    }, now=now, **in_workspace)
     if not last:
-        _enqueue({'kind': KIND_IMPORT, 'import_id': import_id, 'chunk': chunk + 1,
-                  **({'notify': message['notify']} if isinstance(message.get('notify'), str) else {})})
+        notify = message['notify'] if isinstance(message.get('notify'), str) else None
+        _enqueue(store.import_message(import_id, chunk + 1, notify, workspace))
         return
     _notify_import_end(message, import_id)
 
@@ -425,7 +474,14 @@ def record_handler(record: SQSRecord) -> None:
     if route is None:
         logger.warning('Memory message of unknown kind; dropping')
         return
-    route(message, datetime.now(UTC))
+    # The workspace the message names (shared/ws_repo.py): one that is there but not a workspace id is refused,
+    # never processed as the deployment's.
+    refused, workspace = message_scope(message)
+    if refused:
+        logger.warning('Memory message names no valid workspace; dropping')
+        metrics.add_metric(name='MemoryMessagesRefused', unit=MetricUnit.Count, value=1)
+        return
+    route(message, datetime.now(UTC), workspace)
 
 
 @instrumented_handler

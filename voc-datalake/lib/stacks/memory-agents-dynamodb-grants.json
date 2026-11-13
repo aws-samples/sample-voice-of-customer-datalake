@@ -36,6 +36,7 @@
       "grants": {
         "Memory": [
           "dynamodb:BatchGetItem",
+          "dynamodb:GetItem",
           "dynamodb:UpdateItem"
         ],
         "Conversations": [

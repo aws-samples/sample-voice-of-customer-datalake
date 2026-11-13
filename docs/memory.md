@@ -131,7 +131,23 @@ company objective`, top 8 (company + the caller's personal), updating `last_used
 
 A workspace's memories are the same rows inside its partitions: `WS#{ws}#MEM#company`, `WS#{ws}#MEM#user#{sub}`
 (`gsi1pk=WS#{ws}#MEMSTATUS#{scope}#{status}`), `WS#{ws}#MEMEVT#{memory_id}`, `WS#{ws}#MEMCURSOR` and
-`WS#{ws}#MEMIMPORT` (`lambda/shared/memory_store.py`; [multi-workspace](multi-workspace.md)).
+`WS#{ws}#MEMIMPORT` (`lambda/shared/memory_store.py`; [multi-workspace](multi-workspace.md)); a workspace's imported
+page is under `ws/{ws}/memory-imports/` in the raw bucket.
+
+**Extraction inside a workspace.** The scanner also finds the sessions of a workspace's conversations
+(`WS#{ws}#USER#{sub}`, one index for both) and queues each with its workspace (`workspace_id`, from the
+conversation's key) and its cursor in `WS#{ws}#MEMCURSOR`, only while that workspace is active (one strongly
+consistent read per workspace a run sees; one whose read fails waits for the next run, logged and counted as
+`MemoryScanWorkspacesSkipped`, and never stops the deployment's scan); a key that starts `WS#` but names no workspace is never mined. The extractor reads the workspace a message names (a message naming something that is not a workspace id is
+dropped and counted, `MemoryMessagesRefused`, never processed as the deployment's), reads the conversation only in
+that workspace and writes what it learns there. Nothing is written in a workspace that is no longer active (being
+deleted: `lambda/shared/workspace.py` `is_active`, read strongly consistent), not even a cursor, and an import's
+chunks stop there. It learns from a session only while its owner still writes there (an editor or an admin,
+`stored_role`): a removed member's and a viewer's (who adds no memories there through the API either) sessions give
+nothing, and their cursor is advanced so they are not queued again. A page imported inside a workspace is kept,
+queued and extracted there, each chunk's message naming the workspace. Agent runs and project
+chats carry no workspace yet: a message of theirs that names one is dropped. The extractor's category rules and
+categories are the deployment's, as for the API.
 
 Index: `gsi1-by-memory-status` (`gsi1pk`/`gsi1sk`). Embeddings are Titan Text Embeddings V2 (1024 floats,
 compressed binary); the model is fixed (`EMBEDDING_MODEL_ID` in `lib/utils/model-allowlist.ts`), not a picker
@@ -198,9 +214,9 @@ or company context text, so internal facts (codenames, targets) never become web
 
 | Lambda | Stack | Trigger | Grants (exact) |
 |---|---|---|---|
-| `voc-memory-api` | Api | API Gateway `/memory`, `/memory/{proxy+}` | memory Get/BatchGet/Put/Update/Query; the stack's workspace-resolution managed policy and Cognito `AdminListGroupsForUser`/`AdminGetUser` (a workspace's members, a platform admin's live-checked entry); aggregates Get/Query; raw `memory-imports/*` read+put; SendMessage memory-extract; Bedrock allowlist + Titan V2 |
-| `voc-memory-extractor` | Processing | SQS `voc-memory-extract` (batch 5, partial failures) | memory Get/Put/Update/Query; conversations Get; agents Get/Query; aggregates Get; raw `memory-imports/*` read; Bedrock allowlist + Titan V2 |
-| `voc-memory-scanner` | Processing | EventBridge `rate(15 minutes)` | conversations Query on the `gsi1-by-kind-updated-at` index only (no Scan, no base-table read); memory BatchGet/Update (cursors); SendMessage memory-extract |
+| `voc-memory-api` | Api | API Gateway `/memory`, `/memory/{proxy+}` | memory Get/Put/Update/Query; the stack's workspace-resolution managed policy and Cognito `AdminListGroupsForUser`/`AdminGetUser` (a workspace's members, a platform admin's live-checked entry); aggregates Get; raw `memory-imports/*` read+put and `ws/{one id}/memory-imports/*` put; SendMessage memory-extract; Bedrock allowlist + Titan V2 |
+| `voc-memory-extractor` | Processing | SQS `voc-memory-extract` (batch 5, partial failures) | memory BatchGet/Get/Put/Update/Query; conversations Get; aggregates Get; voc-workspaces Get of `WS#*` rows only (a workspace session's owner still writes there); raw `memory-imports/*` and `ws/{one id}/memory-imports/*` read; SendMessage memory-extract (an import's next chunk); Bedrock allowlist + Titan V2 |
+| `voc-memory-scanner` | Processing | EventBridge `rate(15 minutes)` | conversations Query on the `gsi1-by-kind-updated-at` index only (no Scan, no base-table read); memory BatchGet/Get/Update (cursors; a workspace's read one Get each); voc-workspaces Get of `WS#*` rows only (a workspace still active); SendMessage memory-extract |
 | `voc-memory-retention` | Processing | EventBridge `cron(15 3 * * ? *)` | memory Query/Get/Update/Put; voc-workspaces Query of the `WORKSPACES` listing only (each workspace's memories) |
 
 The queue's visibility timeout is 6× the extractor timeout (30 min); 3 receives then the DLQ (14 days).

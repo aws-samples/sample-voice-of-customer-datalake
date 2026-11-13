@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import boto3
-from cross_workspace_worlds import A_MARK, ADA_MEMBER_ONLY, B_MARK, WS_A, memory_world
+from cross_workspace_worlds import A_MARK, ADA, ADA_MEMBER_ONLY, B_MARK, WS_A, memory_world
 
 VIEWER = {'sub': 'sub-vic', 'cognito:username': 'vic', 'cognito:groups': 'users'}
 #: In the deployment's admins group, but only a viewer of workspace A.
@@ -51,14 +51,54 @@ def test_the_workspaces_admins_curate_and_the_deployments_admins_group_grants_no
         assert 'mem_a0' in {item['memory_id'] for item in body['items']}
 
 
-def test_page_imports_wait_for_their_extraction_inside_a_workspace(lambda_context):
+def test_a_page_imported_inside_a_workspace_is_kept_and_queued_there(lambda_context):
+    """Its record in the workspace's partition, its page under ``ws/{ws}/``, its queue message naming the workspace."""
+    import json
+
     with memory_world(lambda_context) as world:
-        before = _pks()
         status, body = world.call('POST', '/memory/imports', ws=WS_A, caller=ADA_MEMBER_ONLY,
                                   body={'title': 'Returns policy', 'content': 'Buyers may return within thirty days.'})
-        assert status == 409
-        assert 'workspace' in body['error']
-        assert _pks() == before
+        assert status == 202
+        import_id = body['import']['import_id']
+        assert f'WS#{WS_A}#MEMIMPORT' in _pks()
+        s3 = boto3.client('s3', region_name='us-east-1')
+        keys = [item.get('Key') for item in s3.list_objects_v2(Bucket='raw').get('Contents', [])]
+        assert keys == [f'ws/{WS_A}/memory-imports/{import_id}.json']
+        sqs = boto3.client('sqs', region_name='us-east-1')
+        url = sqs.get_queue_url(QueueName='memory-extract')['QueueUrl']
+        sent = [json.loads(m.get('Body', '')) for m in sqs.receive_message(QueueUrl=url, MaxNumberOfMessages=10).get('Messages', [])]
+        assert sent == [{'kind': 'import', 'import_id': import_id, 'chunk': 0, 'notify': 'sub-ada',
+                         'workspace_id': WS_A}]
+        status, body = world.call('GET', f'/memory/imports/{import_id}', ws=WS_A, caller=ADA_MEMBER_ONLY)
+        assert (status, body['import']['status']) == (200, 'queued')
+        assert world.call('GET', f'/memory/imports/{import_id}', ws=None, caller=ADA)[0] == 404
+
+
+def test_a_workspace_import_whose_queue_fails_is_marked_failed_there(lambda_context):
+    from unittest.mock import patch
+
+    import memory_handler
+
+    with memory_world(lambda_context) as world:
+        before = _imports()
+        failing = patch.object(memory_handler, 'get_sqs_client', return_value=_FailingQueue())
+        with failing:
+            status, _ = world.call('POST', '/memory/imports', ws=WS_A, caller=ADA_MEMBER_ONLY,
+                                   body={'title': 'Returns policy', 'content': 'Buyers may return within thirty days.'})
+        assert status == 500
+        added = _imports() - before
+        assert [(pk, state) for pk, _sk, state in added] == [(f'WS#{WS_A}#MEMIMPORT', 'failed')]
+
+
+def _imports() -> set[tuple[str, str, str]]:
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table('memory')
+    return {(str(row['pk']), str(row['sk']), str(row.get('status'))) for row in table.scan(ConsistentRead=True)['Items']
+            if str(row['pk']).endswith('MEMIMPORT')}
+
+
+class _FailingQueue:
+    def send_message(self, **_kwargs):
+        raise RuntimeError('down')
 
 
 def test_a_write_resolves_fresh_and_a_read_from_the_warm_cache(lambda_context):

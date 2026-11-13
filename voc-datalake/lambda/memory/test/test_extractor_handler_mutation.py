@@ -99,7 +99,7 @@ class TestTheConstantsAreTheContract:
         assert extractor.MAX_TRANSCRIPT_CHARS == 40_000
         assert extractor.MAX_CANDIDATES_PER_CALL == 12
         assert extractor.EXTRACTION_MAX_TOKENS == 3_000
-        assert extractor.IMPORT_PREFIX == 'memory-imports/'
+        assert extractor.store.IMPORT_PREFIX == 'memory-imports/'
         assert extractor.TRANSCRIPT_ROLES == ('user', 'assistant')
         assert (extractor.KIND_SESSION, extractor.KIND_PROJECT_CHAT, extractor.KIND_AGENT_RUN,
                 extractor.KIND_IMPORT) == ('session', 'project_chat', 'agent_run', 'import')
@@ -461,7 +461,7 @@ class TestProcessSession:
     def session(self, monkeypatch, seams) -> SimpleNamespace:
         """A loadable thread, an empty cursor store and `save_cursor`/`is_restricted` as mocks."""
         state = SimpleNamespace(messages=TWO_TURNS, cursor={}, save=MagicMock(), seams=seams)
-        monkeypatch.setattr(extractor, '_load_messages', lambda _owner, _sid: state.messages)
+        monkeypatch.setattr(extractor, '_load_messages', lambda _owner, _sid, _workspace=None: state.messages)
         monkeypatch.setattr(store, 'get_cursors', lambda _table, ids: {ids[0]: state.cursor} if state.cursor else {})
         monkeypatch.setattr(store, 'save_cursor', state.save)
         monkeypatch.setattr(extractor, 'is_restricted', lambda _owner: False)
@@ -614,9 +614,6 @@ class TestADirectTextSourceGetsItsOrigin:
 # ============================================
 
 class TestImportStorage:
-    def test_the_object_key_is_under_the_imports_prefix(self):
-        assert extractor.import_object_key('imp_abc') == 'memory-imports/imp_abc.json'
-
     def _s3(self, monkeypatch, body: bytes) -> MagicMock:
         s3 = MagicMock()
         s3.get_object.return_value = {'Body': MagicMock(read=MagicMock(return_value=body))}
@@ -666,7 +663,7 @@ class TestProcessImport:
         monkeypatch.setattr(store, 'add_import_counts', state.counts)
         monkeypatch.setattr(extractor, '_enqueue', state.enqueue)
         monkeypatch.setattr(extractor, '_read_import_content',
-                            lambda import_id: state.reads.append(import_id) or '\n\n'.join(state.chunks))
+                            lambda import_id, _workspace=None: state.reads.append(import_id) or '\n\n'.join(state.chunks))
         return state
 
     @staticmethod
@@ -789,7 +786,7 @@ class TestRecordHandlerRoutesByKind:
             extractor.record_handler(self._record('{"kind": "session", "session_id": "c"}'))
         warning.assert_not_called()
         [(args, kwargs)] = route.call_args_list
-        assert (args[0], kwargs) == ({'kind': 'session', 'session_id': 'c'}, {})
+        assert (args[0], args[2], kwargs) == ({'kind': 'session', 'session_id': 'c'}, None, {})
         assert before <= args[1] <= datetime.now(UTC)
         assert args[1].tzinfo is UTC
 
