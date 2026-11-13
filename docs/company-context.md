@@ -79,6 +79,11 @@ sanitised `.svg` beside it), and a website reference's copied icons (everything 
 `company-context/design/icons_<ref id>/`, listed once), are deleted with the archive and their keys
 (`preview_key`, `svg_preview_key`, `icons`) dropped from the row (one idempotent `DeleteObjects`; an S3 failure answers
 503 with the reference already archived, and repeating the DELETE removes it). The logo picker also takes an
+PNG, JPEG or WebP over 1 MB is **made smaller, never refused for its size** (up to 25 MB): the browser decodes it and
+re-encodes it at most 1024 px on its longest side under 1 MB, PNG first, then WebP (`pages/Company/logoImage.ts`, the
+ladder of `pages/ProjectDetail/resizeImage.ts`; never JPEG, which would put a white box behind a transparent logo); one
+within 1 MB is uploaded as it is. A file that cannot get under 1 MB, or cannot be decoded, is explained and nothing is
+uploaded. The
 SVG (≤ 1 MB): the browser draws it to a PNG (longest side 1024 px, transparent background) and uploads only that PNG, so
 the API still never receives an SVG. The SVG is loaded into an `<img>` from a `data:image/svg+xml` URL, never a
 `blob:` one: the site's CSP allows `img-src 'self' data:` only, so a blob URL is blocked (before 6.06.00 every SVG
@@ -262,6 +267,14 @@ replaced, new appended, ≤ 30); the guidelines gain a `## From <reference title
 guidelines (or take them as they are when there are none yet). `changes`
 counts `{added, replaced}` per token group and for `components`, plus `guidelines_added`. The admin reviews it in the editor and saves with the usual
 `PUT /settings/design-system`. 409 when the reference has no extracted design yet or is archived.
+
+**An oversized logo on a website.** A website reference's raster logo (PNG, JPEG or WebP) over 2 MB is no longer
+refused: while the page is read, the managed browser draws it in a fresh blank tab at up to 1,024 px on its longest
+side and keeps that PNG as the reference's logo preview (marked rendered, like a drawn SVG logo), so "Use this logo"
+copies the smaller PNG (`lambda/design_capture/raster_logo.py`). The address passes the same URL policy before the
+browser opens it; if drawing fails, the reference simply has no logo preview. A reference read before 6.06.00, or a
+GitHub repository's logo over 2 MB, still answers "Use this logo" with a 400 that says what to do: upload it as the
+company logo (the browser makes it smaller) or refresh a website reference.
 
 **Use this logo.** `POST …/references/{id}/logo` downloads the candidate server-side with the SSRF guard on the
 URL and on every redirect hop (`shared/http_utils.fetch_public_url`: sockets pinned to the vetted address, no

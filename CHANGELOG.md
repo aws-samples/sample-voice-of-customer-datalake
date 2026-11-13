@@ -19,11 +19,14 @@ the platform package version.
 
 ## [6.06.00] - 2026-11-13
 
-Prototypes show the company logo uploaded in the design system, and an SVG logo can be uploaded again.
+Prototypes show the company logo uploaded in the design system, an SVG logo can be uploaded again, and a large logo is made smaller instead of refused.
 
 ### Added
 
 - A prototype now shows the company logo from Company → Design system (`/company?tab=design`) wherever it shows the company's logo, instead of a logo the model draws. The model writes a placeholder and the build puts the uploaded logo in its place as an inline image, so the prototype stays one offline file. It follows the build dialog's **Design system** box. A logo over 1 MB is left out and the prototype gets a drawn wordmark, as before. A revision uses the logo uploaded when it is built: when there is none any more (or the box is unticked), the model is told to draw a wordmark instead, and a leftover logo spot shows the brand or project name as text, never an empty image. Other inline images in a prototype are never mistaken for the logo. See [docs/company-context.md → How the AI uses them](docs/company-context.md#how-the-ai-uses-them).
+
+- Company → Design system → **Upload logo** makes a large PNG, JPEG or WebP logo smaller in the browser instead of refusing it (up to 25 MB, was refused over 5 MB): at most 1,024 px on its longest side and under 1 MB, PNG first, then WebP so transparency is kept. A logo within 1 MB is uploaded as it is. See [docs/company-context.md](docs/company-context.md).
+- A website design reference whose logo is a PNG, JPEG or WebP over 2 MB gets a logo preview again: the managed browser that reads the page draws it at up to 1,024 px and keeps that PNG, so **Use this logo** works (it was refused with "The logo is larger than 2 MB"). A GitHub repository's logo over 2 MB, or a reference read before this release, still cannot be used directly, and the message now says what to do: upload it as the company logo, or refresh a website reference.
 
 ### Fixed
 

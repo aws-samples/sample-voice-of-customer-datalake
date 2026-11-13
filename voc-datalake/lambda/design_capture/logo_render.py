@@ -162,8 +162,9 @@ class _RenderTab:
             logger.info('Logo render tab not closed')
 
 
-def render_svg_logo(cdp: Cdp, url: str) -> bytes | None:
-    """The PNG of the SVG logo at ``url`` as the browser draws it, or None (logged with a short reason).
+def render_svg_logo(cdp: Cdp, url: str, *, what: str = 'SVG logo') -> bytes | None:
+    """The PNG of the image (an SVG logo, or a raster one too large to keep) at ``url`` as the browser draws
+    it, or None (logged as ``what`` with a short reason).
 
     Never raises: the logo must never fail the capture.
     """
@@ -172,13 +173,13 @@ def render_svg_logo(cdp: Cdp, url: str) -> bytes | None:
         tab = _RenderTab(cdp)
         png = tab.render(url)
     except RenderRefused as exc:
-        logger.info('SVG logo not rendered', extra={'reason': str(exc)})
+        logger.info(f'{what} not rendered', extra={'reason': str(exc)})
         return None
     except Exception as exc:  # noqa: BLE001 - a CDP error, a timeout or a closed socket: no logo, never no capture
-        logger.info('SVG logo not rendered', extra={'reason': f'cdp_{type(exc).__name__}'})
+        logger.info(f'{what} not rendered', extra={'reason': f'cdp_{type(exc).__name__}'})
         return None
     finally:
         if tab is not None:
             tab.close()
-    logger.info('SVG logo rendered', extra={'bytes': len(png)})
+    logger.info(f'{what} rendered', extra={'bytes': len(png)})
     return png
