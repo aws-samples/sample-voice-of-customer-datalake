@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync, readFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { buildPrompt, capDiff, chooseRunner, KINDS, onPath, parseVerdict, runnerCommand, SECRET_PATHS } from './lib.mjs'
+import { buildPrompt, capDiff, chooseRunner, KINDS, KIRO_READ_SETTINGS, onPath, parseVerdict, runnerCommand, SECRET_PATHS } from './lib.mjs'
 import { isCi, kindFromArgs } from './review.mjs'
 
 const ROOT = join(import.meta.dirname, '..', '..')
@@ -297,8 +297,34 @@ test('both Kiro review agents can read only inside the repository, and trust not
     assert.deepEqual(config.toolsSettings, {
       fs_read: { allowedPaths: ['./**'], deniedPaths: SECRET_PATHS.map((glob) => `**/${glob}`) },
     }, agent)
+    // kiro-cli V3 reads ONLY `permissions` (it ignores toolsSettings): the same allow + deny, one rule each.
+    assert.deepEqual(config.permissions, KIRO_READ_SETTINGS.permissions, agent)
+    assert.equal(config.kiroUpgrade, undefined, `${agent}: no machine-specific kiroUpgrade marker is committed`)
     assert.equal(config.prompt, `file://./prompts/${agent}.md`)
   }
+})
+
+test('every Kiro agent in the repository that may read files is denied the secret-shaped paths', () => {
+  // Under kiro-cli V3 a deny always wins over an allow, so this one rule keeps .env, keys and credentials out of
+  // every agent (the hook reviewers allowed fs_read with no path limit and denied nothing before 7.00.01).
+  const deny = KIRO_READ_SETTINGS.permissions.rules.find((rule) => rule.effect === 'deny')
+  const dir = join(ROOT, '.kiro/agents')
+  const agents = readdirSync(dir).filter((name) => name.endsWith('.json'))
+  assert.ok(agents.length >= 6, 'the agents folder was read')
+  for (const name of agents) {
+    const rules = JSON.parse(readFileSync(join(dir, name), 'utf8')).permissions?.rules ?? []
+    if (!rules.some((rule) => rule.capability === 'fs_read' && rule.effect === 'allow')) continue
+    assert.ok(rules.some((rule) => rule.capability === 'fs_read' && rule.effect === 'deny'
+      && deny.match.every((glob) => rule.match?.includes(glob))), `${name} reads files but does not deny every secret path`)
+  }
+})
+
+test('the V3 deny list names .env and .env.* outright, as files and as directories', () => {
+  // kiro.dev does not say whether `*` matches an empty name, so `**/*.env` alone may not cover a plain `.env`.
+  const denied = KIRO_READ_SETTINGS.permissions.rules.find((rule) => rule.effect === 'deny').match
+  for (const glob of ['**/.env', '**/.env/**', '**/.env.*', '**/.env.*/**']) assert.ok(denied.includes(glob), glob)
+  const allows = KIRO_READ_SETTINGS.permissions.rules.filter((rule) => rule.effect === 'allow')
+  assert.deepEqual(allows, [{ capability: 'fs_read', match: ['./**'], effect: 'allow' }])
 })
 
 test('a timeout stops the agent, is a skip, and is not cached', () => {
