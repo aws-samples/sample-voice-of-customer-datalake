@@ -19,6 +19,11 @@ export const METRICS_API_FUNCTION_BASE_NAME = 'voc-metrics-api';
  */
 export const RETENTION_FUNCTION_BASE_NAME = 'voc-retention';
 /**
+ * A workspace's export job (VocProcessingStack, lib/stacks/workspace-export-worker.ts). The workspaces API in
+ * VocApiStack starts it by async invoke of this name (EXPORT_FUNCTION).
+ */
+export const WORKSPACE_EXPORT_FUNCTION_BASE_NAME = 'voc-workspace-export';
+/**
  * The Radar release scan (VocProcessingStack, docs/radar.md). The Radar API in VocApiStack
  * starts "Scan now" by async invoke of this name (RADAR_SCAN_FUNCTION).
  */

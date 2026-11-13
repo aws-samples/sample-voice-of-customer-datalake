@@ -250,6 +250,33 @@
       "disableWho": "Désactiver {{name}} pour cet espace de travail",
       "retry": "Réessayer"
     },
+    "export": {
+      "title": "Export",
+      "description": "Téléchargez une copie de ce que contient cet espace de travail : ses retours, sa configuration, ses membres et son historique d’audit, sous forme de fichiers JSON dans un zip. Un export terminé peut être téléchargé pendant 7 jours.",
+      "readOnly": "Seuls les administrateurs de cet espace de travail peuvent l’exporter.",
+      "start": "Lancer un export",
+      "starting": "Lancement…",
+      "loading": "Chargement de l’export…",
+      "loadFailed": "Le statut de l’export n’a pas pu être chargé.",
+      "none": "Aucun export pour l’instant.",
+      "runningNote": "L’export est en préparation. Cette section se met à jour d’elle-même ; vous pouvez quitter la page et revenir.",
+      "completedNote": "Prêt depuis le {{date}}. Vous pouvez le télécharger jusqu’au {{until}}.",
+      "expiredNote": "Ses 7 jours sont écoulés. Lancez un nouvel export pour en télécharger un.",
+      "erasedNote": "Un effacement a atteint cet espace de travail, cet export a donc été supprimé. Lancez un nouvel export.",
+      "failedNote": "L’export s’est arrêté avant la fin. Relancez-le.",
+      "download": "Télécharger",
+      "downloading": "Préparation du lien…",
+      "linkNote": "Chaque lien de téléchargement fonctionne 15 minutes.",
+      "retry": "Réessayer",
+      "status": {
+        "queued": "En file d’attente",
+        "running": "En cours",
+        "completed": "Prêt",
+        "failed": "Échec",
+        "expired": "Expiré",
+        "erased": "Supprimé par un effacement"
+      }
+    },
     "config": {
       "categoriesTitle": "Catégories",
       "categoriesDescription": "Les catégories propres à cet espace de travail classent ses retours. Un nouvel espace de travail n’en a aucune : ses retours sont classés avec les catégories par défaut intégrées jusqu’à ce que ses administrateurs en ajoutent. Rien n’est copié des catégories du déploiement.",
@@ -289,7 +316,10 @@
       "notDeploymentAdmin": "Seuls les administrateurs du déploiement peuvent modifier la marque par défaut.",
       "notBrandAdmin": "Seuls les administrateurs de cet espace de travail peuvent modifier sa marque.",
       "generic": "Cela n’a pas fonctionné. Réessayez.",
-      "genericWithReason": "Cela n’a pas fonctionné : {{reason}}"
+      "genericWithReason": "Cela n’a pas fonctionné : {{reason}}",
+      "exportRunning": "Un export de cet espace de travail est déjà en cours. Attendez qu’il se termine.",
+      "exportErasureRunning": "Un effacement est en cours dans cet espace de travail. Lancez l’export quand il sera terminé.",
+      "exportNotDownloadable": "Cet export ne peut plus être téléchargé. Lancez un nouvel export."
     }
   },
   "timeRange": {

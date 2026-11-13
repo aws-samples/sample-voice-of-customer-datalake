@@ -253,7 +253,31 @@ How it works:
   the row from the partition its invoke event names and fails the job (`Run failed (ValueError)`, nothing
   deleted) when the row names another workspace, none, or one on a whole-source job; it checks every matched
   row's partition before any tombstone; the job and audit rows carry `workspace_id` and count the items in
-  `deleted_workspace_items`, and the workspace's own data_version moves. A job that already finished keeps its
+  `deleted_workspace_items`, and the workspace's own data_version moves. **A workspace's exports** are a derived
+  copy (its feedback and members in a zip under `ws/{ws}/exports/`, docs/multi-workspace.md "Export and
+  delete"): the moment any erasure (the deployment's by email, or one in the workspace, which does it at its start)
+  first meets a workspace, before it deletes the item or changes the membership row (the export's `members/` holds
+  the email), it takes the workspace's export lock (a start answers 409) and marks every queued, running or
+  completed export of that workspace `erased` (no download link is signed for it again; one under way reads "The
+  workspace's data was erased during the export"). Its `exports` phase, after the item scan and the memberships
+  and before the lineage pass, marks them again (an export started since), aborts its open
+  export upload, deletes every version of every object under `ws/{ws}/exports/`, then sweeps once more
+  (`lambda/jobs/retention/exports.py`), counted in `deleted_export_objects`. An export invocation that was mid-write
+  finds its row erased at its next hand-over, or right before it completes the zip (it re-checks the row then: an
+  erasure that marks it after that check comes before its sweep's abort and delete), aborts its upload and deletes
+  the work objects it wrote, and never completes; until then
+  (at most one 15-minute invocation) it may write after the sweep, and a work object it deletes keeps a noncurrent
+  version until the export lifecycle rule removes it a day later (a gap TENETS.md D5 names). Two more gaps it names:
+  a large CompleteMultipartUpload still running while both sweeps finish can leave its zip until its 10-day expiry
+  (no link is signed for it: its row reads erased), and an export invocation the timeout or memory kills inside that
+  window leaves its parts until the 7-day abort of incomplete uploads and its work objects until their 10-day
+  expiry. The erasure holds the workspace's export lock from its first mark until after its last sweep, so no
+  export starts meanwhile (a start answers 409, "An erasure is running in this workspace"): each hand-over renews
+  it and marks any export that slipped in, so it never goes stale while the run is under way. A run that fails
+  before its exports phase leaves the lock to go stale (an hour). An erasure in one workspace closes, and its
+  exports phase then deletes, that workspace's exports even when it matches nothing there (the close comes before
+  the scan). A daily
+  retention window does not run it: a window's deleted items stay in an export until it expires (10 days). A job that already finished keeps its
   outcome: a repeated invocation that fails never turns a completed workspace job into failed. A **whole-source erasure** in a
   workspace is refused (400) before anything is read (an unknown field gets the usual "field must be one of"
   answer): the sources it may name, its lock and its sweep of `raw/<source>/` are the deployment's (a
@@ -395,6 +419,7 @@ workspace artifacts. Copies derived from a review before it was erased stay wher
 | Whole-file CSV / JSON uploads that also hold rows that were not erased | `raw/csv_upload/…`, `raw/json_upload/…` in the raw bucket | Listed on the job as `files_needing_review` (Administration shows the keys). Remove the person's rows by hand (download, edit, delete every version with an admin role, re-upload if needed), or avoid it by giving the source a retention period or a non-`allow` policy |
 | An S3 import's original file | `raw/s3_import/…`, a workspace's `ws/<ws>/raw/s3_import/…` | No row links an item to its file: the job lists the folder as `files_needing_review` when it deleted an import's item and the folder holds a file. Find the file by its `original-key` S3 metadata, remove the person's rows by hand (every version, admin role) |
 | Archives named before 3.06.00 for ids that were not filename-safe | `raw/<source>/…` | See the archive naming note above |
+| A workspace export holding items a daily retention window deleted (an erasure deletes the workspace's exports at once) | `ws/<ws>/exports/…` | It expires by its tag 10 days after it was written; to remove it sooner, delete every version under that export's folder with an admin role |
 | The person's account in the user pool (email, name) | Cognito, the deployment's directory (not the lake) | Delete the user (`DELETE /users/{username}`, Administration → Users), which also removes their workspace memberships; while the account exists, a workspace's members list shows its email from Cognito |
 | An old value kept only in a Silver version (an `author` or email a CSV correction or an edit replaced) | `silver/<source>/<feedback_id>/` | A field erasure matches items as they are stored now, so it reaches every kept version of an item that still holds the value, but not a version whose item has moved on. Erase by the item's current value as well, or delete every version under that item's folder with an admin role |
 

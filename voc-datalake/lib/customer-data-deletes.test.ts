@@ -141,6 +141,9 @@ const RAW_BUCKET_PREFIXES: Readonly<Record<string, readonly string[]>> = {
   // A tenant workspace's bronze and Silver history (docs/multi-workspace.md): its copies of customer data.
   'ws/*/raw/': ['ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/raw/webscraper/2026/01/01/abc/0123456789abcdef.json'],
   'ws/*/silver/': ['ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/silver/webscraper/abc/20260101T000000000000Z-0a0b0c0d.json'],
+  // A workspace's export (docs/multi-workspace.md "Export and delete"): a derived copy of its feedback and members.
+  'ws/*/exports/': ['ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/exports/ex_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/workspace-export.zip',
+    'ws/ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/exports/ex_01JC3Q8ZK6V7W9X2Y4A5B6C7D8/work/cd-0'],
   'avatars/': ['avatars/persona_1_abc.png'],
   'prototypes/': ['prototypes/proj_1/doc_1.html'],
   'projects/*/product_docs/': ['projects/proj_1/product_docs/raw/doc.pdf', 'projects/proj_1/product_docs/extracted/doc.txt'],
@@ -159,6 +162,12 @@ const RAW_BUCKET_DELETERS: Readonly<Record<string, Readonly<Record<string, strin
   // whole-source erasure never deletes there, in code: lambda/shared/retention.py `reaches_workspaces`).
   'ws/*/raw/': { [RETENTION_ROLE]: 'an erasure by email or a retention window reaches every raw version of a workspace\'s matching item' },
   'ws/*/silver/': { [RETENTION_ROLE]: 'an erasure by email or a retention window reaches every kept version of a workspace\'s matching item' },
+  // D5: an export is a derived copy. The export job deletes only its own work objects (never a zip), when its row says
+  // it may not go on (an erasure marked it erased): the rest expires by its tag.
+  'ws/*/exports/': {
+    [RETENTION_ROLE]: 'an erasure that reached a workspace deletes every version of its exports',
+    'VocProcessingStack/WorkspaceExportWorkerExportRole': 'an export that may not go on deletes the work objects it wrote',
+  },
   'avatars/': {
     [PROJECTS_API]: 'project / persona deletes and superseded avatars',
     [PERSONA_GENERATOR]: 'the avatars of the personas a replace removes',
@@ -296,12 +305,12 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     expect(prefixDeleters(prefix)).toStrictEqual(Object.keys(allowed).sort(byCodeUnit));
   });
 
-  it('voc-retention deletes only under raw/ and silver/ and each workspace\'s raw/ and silver/, never bucket-wide', () => {
+  it('voc-retention deletes only under raw/ and silver/ and each workspace\'s raw/, silver/ and exports/, never bucket-wide', () => {
     const rawDeletes = grants.filter((g) => g.role === RETENTION_ROLE && g.actions.some((a) => S3_DELETE.test(a)));
     // One workspace id per pattern (`ws_` + 26 `?`): `ws/*/raw/*` would also reach `ws/{ws}/silver/raw/…`.
     const ws = `ws/ws_${'?'.repeat(26)}`;
     expect(rawDeletes.flatMap(rawBucketGlobs).sort(byCodeUnit)).toStrictEqual(
-      ['raw/*', 'silver/*', `${ws}/raw/*`, `${ws}/silver/*`].sort(byCodeUnit));
+      ['raw/*', 'silver/*', `${ws}/raw/*`, `${ws}/silver/*`, `${ws}/exports/*`].sort(byCodeUnit));
   });
 
   it('voc-retention reaches the feedback boards to de-identify and re-key (reads, UpdateItem, Put/Delete under FR#*)', () => {

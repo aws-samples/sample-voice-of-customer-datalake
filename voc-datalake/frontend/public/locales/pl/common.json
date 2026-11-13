@@ -240,6 +240,33 @@
       "disableWho": "Wyłącz {{name}} dla tego obszaru roboczego",
       "retry": "Spróbuj ponownie"
     },
+    "export": {
+      "title": "Eksport",
+      "description": "Pobierz kopię tego, co zawiera ten obszar roboczy: opinie, konfigurację, członków i historię audytu, jako pliki JSON w jednym archiwum zip. Ukończony eksport można pobierać przez 7 dni.",
+      "readOnly": "Tylko administratorzy tego obszaru roboczego mogą go wyeksportować.",
+      "start": "Rozpocznij eksport",
+      "starting": "Rozpoczynanie…",
+      "loading": "Wczytywanie eksportu…",
+      "loadFailed": "Nie udało się wczytać stanu eksportu.",
+      "none": "Brak eksportu.",
+      "runningNote": "Eksport jest przygotowywany. Ta sekcja odświeża się sama; możesz opuścić stronę i wrócić później.",
+      "completedNote": "Gotowy od {{date}}. Możesz go pobrać do {{until}}.",
+      "expiredNote": "Minęło 7 dni. Rozpocznij nowy eksport, aby go pobrać.",
+      "erasedNote": "Usunięcie danych objęło ten obszar roboczy, więc ten eksport został usunięty. Rozpocznij nowy eksport.",
+      "failedNote": "Eksport zatrzymał się przed końcem. Rozpocznij go ponownie.",
+      "download": "Pobierz",
+      "downloading": "Przygotowywanie linku…",
+      "linkNote": "Każdy link do pobrania działa przez 15 minut.",
+      "retry": "Spróbuj ponownie",
+      "status": {
+        "queued": "W kolejce",
+        "running": "W toku",
+        "completed": "Gotowy",
+        "failed": "Nieudany",
+        "expired": "Wygasł",
+        "erased": "Usunięty przez usunięcie danych"
+      }
+    },
     "config": {
       "categoriesTitle": "Kategorie",
       "categoriesDescription": "Własne kategorie tego obszaru roboczego klasyfikują jego opinie. Nowy obszar roboczy nie ma żadnych: jego opinie są klasyfikowane według wbudowanych kategorii domyślnych, dopóki jego administratorzy nie dodadzą własnych. Nic nie jest kopiowane z kategorii wdrożenia.",
@@ -279,7 +306,10 @@
       "notDeploymentAdmin": "Tylko administratorzy wdrożenia mogą zmieniać domyślną markę.",
       "notBrandAdmin": "Tylko administratorzy tego obszaru roboczego mogą zmieniać jego markę.",
       "generic": "Nie udało się. Spróbuj ponownie.",
-      "genericWithReason": "Nie udało się: {{reason}}"
+      "genericWithReason": "Nie udało się: {{reason}}",
+      "exportRunning": "Eksport tego obszaru roboczego już trwa. Poczekaj, aż się zakończy.",
+      "exportErasureRunning": "W tym obszarze roboczym trwa usuwanie danych. Rozpocznij eksport, gdy się zakończy.",
+      "exportNotDownloadable": "Tego eksportu nie można już pobrać. Rozpocznij nowy eksport."
     }
   },
   "timeRange": {

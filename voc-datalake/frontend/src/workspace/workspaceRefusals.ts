@@ -80,6 +80,15 @@ export const PLUGIN_REFUSALS: readonly Refusal[] = [
   { status: 404, messageKey: 'common:workspaces.errors.workspaceGone' },
 ]
 
+/** The refusals of the export's start and link (`POST /me/workspaces/current/export[/link]`, workspaces_handler.py). */
+export const EXPORT_REFUSALS: readonly Refusal[] = [
+  { status: 409, reason: 'An export of this workspace is already running: wait for it to finish, then start another', messageKey: 'common:workspaces.errors.exportRunning' },
+  { status: 409, reason: 'An erasure is running in this workspace: start the export when it ends', messageKey: 'common:workspaces.errors.exportErasureRunning' },
+  { status: 409, reason: 'No export can be downloaded: the newest is not completed, or its 7 days are over. Start a new export', messageKey: 'common:workspaces.errors.exportNotDownloadable' },
+  { status: 403, messageKey: 'common:workspaces.errors.notWorkspaceAdmin' },
+  { status: 404, messageKey: 'common:workspaces.errors.workspaceGone' },
+]
+
 /** The refusals of `PUT /settings/brand` inside a workspace (`require_settings_admin`, request_workspace.py). */
 export const BRAND_REFUSALS: readonly Refusal[] = [
   { status: 403, messageKey: 'common:workspaces.errors.notBrandAdmin' },

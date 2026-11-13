@@ -1,7 +1,7 @@
 /**
  * Every server reason the refusal tables (workspaceRefusals.ts) match on, against the value the API assigns or
  * raises, read as TEXT from lambda/shared/workspace_members.py, workspace_plugin_settings.py, platform_workspaces.py,
- * user_admin_guard.py and lambda/api/users_handler.py: a module constant (`NAME: Final = '…'`, adjacent string literals joined as Python
+ * user_admin_guard.py, lambda/api/users_handler.py and workspaces_handler.py: a module constant (`NAME: Final = '…'`, adjacent string literals joined as Python
  * joins them) or a literal `raise ValidationError('…')`. Only code counts: a reason left in a comment, or changed on
  * one side only, fails here (the page would fall back to the generic message).
  */
@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  BRAND_REFUSALS, DEPLOYMENT_BRAND_REFUSALS, MEMBER_REFUSALS, PLATFORM_ADMIN_REFUSALS, PLATFORM_REFUSALS, PLUGIN_REFUSALS,
+  BRAND_REFUSALS, DEPLOYMENT_BRAND_REFUSALS, EXPORT_REFUSALS, MEMBER_REFUSALS, PLATFORM_ADMIN_REFUSALS, PLATFORM_REFUSALS, PLUGIN_REFUSALS,
   PLUGIN_NOT_ENABLED,
 } from './workspaceRefusals'
 
@@ -53,6 +53,9 @@ const SERVER_REASONS: readonly (readonly [string, string | null])[] = [
   ['workspace_plugin_settings PLUGIN_NOT_FOUND', constant('shared/workspace_plugin_settings.py', 'PLUGIN_NOT_FOUND')],
   ['platform_workspaces SLUG_TAKEN', constant('shared/platform_workspaces.py', 'SLUG_TAKEN')],
   ['user_admin_guard LAST_PLATFORM_ADMIN_MESSAGE', constant('shared/user_admin_guard.py', 'LAST_PLATFORM_ADMIN_MESSAGE')],
+  ['workspaces_handler EXPORT_ALREADY_RUNNING', constant('api/workspaces_handler.py', 'EXPORT_ALREADY_RUNNING')],
+  ['workspaces_handler EXPORT_ERASURE_RUNNING', constant('api/workspaces_handler.py', 'EXPORT_ERASURE_RUNNING')],
+  ['workspaces_handler EXPORT_NOT_DOWNLOADABLE', constant('api/workspaces_handler.py', 'EXPORT_NOT_DOWNLOADABLE')],
   ['users_handler grant to a non-administrator', raised('api/users_handler.py', 'ValidationError', 'Only an administrator can be a platform admin')],
 ]
 
@@ -61,7 +64,7 @@ const SERVER_REASONS: readonly (readonly [string, string | null])[] = [
 const tableReasons = [...new Set([
   ...[
     ...MEMBER_REFUSALS, ...PLUGIN_REFUSALS, ...BRAND_REFUSALS, ...DEPLOYMENT_BRAND_REFUSALS, ...PLATFORM_REFUSALS,
-    ...PLATFORM_ADMIN_REFUSALS,
+    ...PLATFORM_ADMIN_REFUSALS, ...EXPORT_REFUSALS,
   ].flatMap((row) => (row.reason === undefined ? [] : [row.reason])),
   PLUGIN_NOT_ENABLED,
 ])]

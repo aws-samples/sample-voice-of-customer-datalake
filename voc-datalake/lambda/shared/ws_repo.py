@@ -12,7 +12,7 @@ only ever reads and writes its own rows and objects. This module is the one plac
   shared/workspace_routing.py). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
-  ``source_run_pk``, ``scraper_run_pk``, ``erasure_job_pk``, ``reprocess_job_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; the
+  ``source_run_pk``, ``scraper_run_pk``, ``erasure_job_pk``, ``reprocess_job_pk``, ``export_job_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; ``plugin_config_history_key`` a list it replaced; the
   credentials parameters' names are shared/workspace_ids.py ``credentials_parameter_name``).
 * ``ws_table``: a table that refuses any key, item, update, query or scan outside the scope's partitions (every index
   partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
@@ -24,6 +24,13 @@ only ever reads and writes its own rows and objects. This module is the one plac
   ``QueryFilter``, ``ConditionalOperator`` and ``AttributesToGet``, or any other is refused before DynamoDB. A
   table's scope, key and handle are fixed once built (``__slots__``, read-only properties);
   shared/test/test_ws_raw_access.py counts any use of the private handle, ``_unscoped_table``, outside this layer.
+* ``control_query``: one read-only Query page of the workspace's two control-plane partitions in voc-workspaces,
+  ``WS#{ws}`` (``META`` and the ``MEMBER#`` rows) and ``AUDIT#WS#{ws}``, which the layer builds itself (they are not
+  ``WS#{ws}#…`` keys, so ``ws_table`` refuses them). The export job's reader (phase 4).
+* ``ExportObjects``: the workspace's export objects, ``ws/{ws}/exports/…`` only (``exports_prefix``): the multipart
+  upload of an export's zip, its work objects (each tagged ``voc-export=true``, which the raw bucket's lifecycle
+  expires and its policy refuses anywhere else) and a presigned download of the zip. Any key outside the prefix is
+  refused before any call reaches S3.
 
 shared/test/test_ws_raw_access.py counts, per module outside this layer, the raw table and bucket calls and the
 unscoped data-path keys, against an allowlist of the modules not moved yet that must match exactly.
@@ -39,9 +46,13 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#FAILURES#{plugin}          pk WS#{ws}#CIRCUIT#{plugin} (the plugins' breaker)
                     pk WS#{ws}#JOB#erasure (a workspace's erasure jobs and their lock)
                     pk WS#{ws}#JOB#category_reprocess (a workspace's category reprocess jobs and their lock)
+                    pk WS#{ws}#JOB#export (a workspace's export jobs and their lock, shared/export_jobs.py)
                     pk WS#{ws}#PLUGIN_CONFIG  sk {plugin} (a plugin's config list, shared/plugin_configs.py)
+                    pk WS#{ws}#PLUGIN_CONFIG#HISTORY  sk {plugin}#{iso}#{random} (a replaced list, kept, no ttl)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
-    raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...
+    voc-workspaces  pk WS#{ws} (META, MEMBER#{sub}), pk AUDIT#WS#{ws}: read by ``control_query`` only
+    raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...,
+                    ws/{ws}/exports/{export id}/… (``ExportObjects``)
     SSM parameters  {prefix}/{ws}/credentials/{plugin} (prefix /voc/ws, /<deployment prefix>-voc/ws in a prefixed
                     deployment; decision 19)
 """
@@ -53,6 +64,7 @@ from dataclasses import dataclass
 from typing import Any, Final, NoReturn, Protocol, Self
 
 from boto3.dynamodb.conditions import Attr, ConditionBase
+from botocore.exceptions import ClientError
 
 from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all
 from shared.dynamo_paging import iter_query
@@ -63,13 +75,17 @@ __all__ = [
     'PARTITION_ATTRIBUTES',
     'WORKSPACE_FIELD',
     'WORKSPACE_KEY_PREFIX',
+    'ExportObjects',
     'OutOfScopeError',
     'WorkspaceScope',
     'WorkspaceTable',
     'category_pk',
     'channel_pk',
+    'control_query',
     'date_pk',
     'erasure_job_pk',
+    'export_job_pk',
+    'exports_prefix',
     'feedback_id_pk',
     'feedback_key',
     'is_workspace_key',
@@ -78,6 +94,8 @@ __all__ = [
     'metric_type',
     'partition_query',
     'partition_scope',
+    'plugin_config_history_key',
+    'plugin_config_history_pk',
     'plugin_config_key',
     'plugin_config_pk',
     'reprocess_job_pk',
@@ -336,6 +354,11 @@ def reprocess_job_pk(scope: WorkspaceScope) -> str:
     return scope.key('JOB', 'category_reprocess')
 
 
+def export_job_pk(scope: WorkspaceScope) -> str:
+    """A workspace's export jobs and their lock (voc-aggregates, shared/export_jobs.py): ``WS#{ws}#JOB#export``."""
+    return scope.key('JOB', 'export')
+
+
 def plugin_config_pk(scope: WorkspaceScope) -> str:
     """The partition of every plugin's config list of the workspace in voc-aggregates: ``WS#{ws}#PLUGIN_CONFIG``."""
     return scope.key('PLUGIN_CONFIG')
@@ -347,6 +370,21 @@ def plugin_config_key(scope: WorkspaceScope, plugin: str) -> dict[str, str]:
     if not plugin:
         raise ValueError('a plugin config key needs a plugin id')
     return {'pk': plugin_config_pk(scope), 'sk': plugin}
+
+
+def plugin_config_history_pk(scope: WorkspaceScope) -> str:
+    """The partition of every replaced config list of the workspace in voc-aggregates (kept forever, no ttl):
+    ``WS#{ws}#PLUGIN_CONFIG#HISTORY``."""
+    return scope.key('PLUGIN_CONFIG', 'HISTORY')
+
+
+def plugin_config_history_key(scope: WorkspaceScope, plugin: str, superseded_at: str, token: str) -> dict[str, str]:
+    """One superseded list of ``plugin`` (shared/plugin_configs.py ``save_configs``): ``WS#{ws}#PLUGIN_CONFIG#HISTORY``
+    / ``{plugin}#{superseded_at}#{token}`` (an ISO time and a random token, so a plugin's history sorts by time and
+    two saves never share a key). Refuses (ValueError) an empty part."""
+    if not (plugin and superseded_at and token):
+        raise ValueError('a plugin config history key needs a plugin id, a time and a token')
+    return {'pk': plugin_config_history_pk(scope), 'sk': f'{plugin}#{superseded_at}#{token}'}
 
 
 def watermark_key(scope: WorkspaceScope, plugin: str, key: str) -> str:
@@ -365,6 +403,165 @@ def s3_key(scope: WorkspaceScope, *parts: str) -> str:
 def s3_prefix(scope: WorkspaceScope) -> str:
     """``ws/{ws}/``: every object key of the workspace (``s3_key``) starts with it, and no other workspace's does."""
     return f'ws/{scope.ws}/'
+
+
+#: The control-plane partitions of voc-workspaces ``control_query`` reads: the workspace's own ``WS#{ws}`` (its
+#: ``META`` and ``MEMBER#`` rows) and its audit trail ``AUDIT#WS#{ws}``.
+CONTROL_PARTITIONS: Final = ('meta', 'audit')
+
+
+def control_partition(scope: WorkspaceScope, which: str) -> str:
+    """``WS#{ws}`` (``which`` ``'meta'``) or ``AUDIT#WS#{ws}`` (``'audit'``); ValueError for anything else."""
+    if which == 'meta':
+        return ws_key(scope.ws)
+    if which == 'audit':
+        return f'AUDIT#{ws_key(scope.ws)}'
+    raise ValueError(f'a control partition is one of {", ".join(CONTROL_PARTITIONS)}')
+
+
+#: What a control-plane Query may pass on: no index (voc-workspaces has none to reach), no key condition (the layer
+#: builds it) and no table.
+_CONTROL_QUERY_REFUSED: Final = ('IndexName', 'KeyConditionExpression', *_TABLE_FIELDS)
+
+
+def control_query(scope: WorkspaceScope, table: Any, which: str, *, sort_condition: str | None = None,
+                  **kwargs: Any) -> dict:
+    """One page of a Query of the workspace's control partition ``which`` (``control_partition``) in voc-workspaces.
+
+    Read-only by construction (it only ever calls ``query``). The key condition is built here (``pk = :p``, then
+    ``AND {sort_condition}``, whose names and values go in ``kwargs`` as ``WorkspaceTable.query`` takes them); a
+    cursor (``ExclusiveStartKey``) must name that same partition. ``OutOfScopeError`` before any call otherwise.
+    """
+    partition = control_partition(scope, which)
+    refused = [field for field in _CONTROL_QUERY_REFUSED if field in kwargs]
+    if refused:
+        raise OutOfScopeError(f'a control-plane query does not take {", ".join(refused)}')
+    start = kwargs.get('ExclusiveStartKey')
+    if start is not None and (not isinstance(start, Mapping) or start.get('pk') != partition):
+        raise OutOfScopeError('a cursor outside the workspace')
+    return table.query(**partition_query('pk', partition, sort_condition, kwargs))
+
+
+#: The folder of a workspace's exports (``ws/{ws}/exports/``) and the tag every object there carries: the raw
+#: bucket's lifecycle rule expires an object with that tag (lib/stacks/core-buckets.ts), and its policy refuses the
+#: tag on any key outside a workspace's exports, so it never reaches ``raw/`` or ``silver/``.
+EXPORTS_FOLDER: Final = 'exports'
+EXPORT_TAG_KEY: Final = 'voc-export'
+EXPORT_TAGGING: Final = f'{EXPORT_TAG_KEY}=true'
+#: S3's code for an upload that is no longer open (aborted, or completed).
+_NO_SUCH_UPLOAD: Final = 'NoSuchUpload'
+#: A work object's key under the exports: ``{export id}/work/{name}`` (the only objects the export job may delete).
+EXPORTS_WORK_SEGMENTS: Final = ('{export id}', 'work', '{name}')
+#: S3 lists at most this many parts a page (ListParts).
+_LIST_PARTS_PAGE: Final = 1000
+
+
+def exports_prefix(scope: WorkspaceScope) -> str:
+    """``ws/{ws}/exports/``: every export object of the workspace starts with it."""
+    return f'{s3_prefix(scope)}{EXPORTS_FOLDER}/'
+
+
+class ExportObjects:
+    """The workspace's export objects in one bucket, through one S3 client: every key under ``exports_prefix`` with
+    no empty, ``.`` or ``..`` segment, checked before the call (``OutOfScopeError``). Every object it creates
+    carries ``EXPORT_TAGGING``."""
+
+    def __init__(self, scope: WorkspaceScope, s3: Any, bucket: str) -> None:
+        if not bucket:
+            raise ValueError('an export needs its bucket')
+        self.scope = scope
+        self._s3 = s3
+        self._bucket = bucket
+
+    def key(self, *parts: str) -> str:
+        """``ws/{ws}/exports/a/b`` (``s3_key``'s segment rules)."""
+        return s3_key(self.scope, EXPORTS_FOLDER, *parts)
+
+    def _checked(self, key: object) -> str:
+        prefix = exports_prefix(self.scope)
+        if not isinstance(key, str) or not key.startswith(prefix):
+            raise OutOfScopeError("a key outside the workspace's exports")
+        if any(segment in ('', '.', '..') for segment in key[len(prefix):].split('/')):
+            raise OutOfScopeError("a key outside the workspace's exports")
+        return key
+
+    def start_upload(self, key: str, content_type: str) -> str:
+        """A new multipart upload of ``key`` (tagged); its upload id."""
+        response = self._s3.create_multipart_upload(Bucket=self._bucket, Key=self._checked(key),
+                                                    ContentType=content_type, Tagging=EXPORT_TAGGING)
+        return str(response['UploadId'])
+
+    def upload_part(self, key: str, upload_id: str, number: int, body: bytes) -> str:
+        """Part ``number`` of the upload; its ETag."""
+        response = self._s3.upload_part(Bucket=self._bucket, Key=self._checked(key), UploadId=upload_id,
+                                        PartNumber=number, Body=body)
+        return str(response['ETag'])
+
+    def list_parts(self, key: str, upload_id: str) -> list[dict[str, Any]]:
+        """Every uploaded part ``{PartNumber, ETag}``, in order, across ListParts' pages."""
+        checked = self._checked(key)
+        parts: list[dict[str, Any]] = []
+        request: dict[str, Any] = {'Bucket': self._bucket, 'Key': checked, 'UploadId': upload_id,
+                                   'MaxParts': _LIST_PARTS_PAGE}
+        while True:
+            response = self._s3.list_parts(**request)
+            parts.extend({'PartNumber': int(part['PartNumber']), 'ETag': str(part['ETag'])}
+                         for part in response.get('Parts') or [])
+            if not response.get('IsTruncated'):
+                return sorted(parts, key=lambda part: part['PartNumber'])
+            request['PartNumberMarker'] = response['NextPartNumberMarker']
+
+    def complete_multipart_upload(self, key: str, upload_id: str, parts: Sequence[Mapping[str, Any]]) -> None:
+        self._s3.complete_multipart_upload(Bucket=self._bucket, Key=self._checked(key), UploadId=upload_id,
+                                           MultipartUpload={'Parts': [dict(part) for part in parts]})
+
+    def open_uploads(self) -> list[tuple[str, str]]:
+        """Every multipart upload still open under the workspace's exports, ``(key, upload id)``, across
+        ListMultipartUploads' pages (an erasure aborts them: voc-retention)."""
+        request: dict[str, Any] = {'Bucket': self._bucket, 'Prefix': exports_prefix(self.scope)}
+        found: list[tuple[str, str]] = []
+        while True:
+            response = self._s3.list_multipart_uploads(**request)
+            found.extend((self._checked(upload['Key']), str(upload['UploadId']))
+                         for upload in response.get('Uploads') or [])
+            if not response.get('IsTruncated'):
+                return found
+            request.update(KeyMarker=response['NextKeyMarker'], UploadIdMarker=response['NextUploadIdMarker'])
+
+    def abort_multipart_upload(self, key: str, upload_id: str) -> None:
+        """Abort an upload; one already gone (``NoSuchUpload``: aborted or completed since it was listed) is done.
+        A completed one is a zip, which the caller's version delete removes (voc-retention lists after aborting)."""
+        try:
+            self._s3.abort_multipart_upload(Bucket=self._bucket, Key=self._checked(key), UploadId=upload_id)
+        except ClientError as error:
+            if error.response.get('Error', {}).get('Code') != _NO_SUCH_UPLOAD:
+                raise
+
+    def put_work_object(self, key: str, body: bytes) -> None:
+        """A work object of a running export (a zip tail, central-directory records), tagged like the zip."""
+        self._s3.put_object(Bucket=self._bucket, Key=self._checked(key), Body=body, Tagging=EXPORT_TAGGING)
+
+    def delete_work_object(self, key: str) -> None:
+        """Delete a work object (``{export id}/work/{name}``) of an export that may not go on: never the zip, nothing
+        else (the export job's role holds DeleteObject on ``ws/{one id}/exports/*/work/*`` only)."""
+        checked = self._checked(key)
+        segments = checked[len(exports_prefix(self.scope)):].split('/')
+        if len(segments) != len(EXPORTS_WORK_SEGMENTS) or segments[1] != EXPORTS_WORK_SEGMENTS[1]:
+            raise OutOfScopeError("not a work object of the workspace's exports")
+        self._s3.delete_object(Bucket=self._bucket, Key=checked)
+
+    def read_object(self, key: str) -> bytes:
+        """The bytes of an export object (a work object the job saved)."""
+        return bytes(self._s3.get_object(Bucket=self._bucket, Key=self._checked(key))['Body'].read())
+
+    def presigned_download(self, key: str, filename: str, expires_in: int) -> str:
+        """A presigned GET of ``key`` for ``expires_in`` seconds, downloaded as ``filename`` (an attachment)."""
+        if not filename or any(char in filename for char in '"\\/\r\n'):
+            raise ValueError('a download name is a plain file name')
+        return str(self._s3.generate_presigned_url(
+            'get_object', ExpiresIn=expires_in,
+            Params={'Bucket': self._bucket, 'Key': self._checked(key),
+                    'ResponseContentDisposition': f'attachment; filename="{filename}"'}))
 
 
 def partition_query(partition_attribute: str, partition: str, sort_condition: str | None,

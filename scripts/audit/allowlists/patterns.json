@@ -17,6 +17,7 @@
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/briefing/signals.py", "scope": "_day_items", "reason": "returns (items, more_exist): the 'more' flag needs the cursor; Limit shrinks per page"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/jobs/category_reprocess/handler.py", "scope": "_reprocess_pages", "reason": "checkpointed cursor: the worker re-invokes itself before its timeout and resumes from it"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/jobs/retention/handler.py", "scope": "_walk", "reason": "checkpointed cursor across self re-invocations (time budget)"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/jobs/workspace_export/entities.py", "scope": "_last_key", "reason": "checkpointed cursor: the export job reads one page at a time and hands over between rows before its timeout, resuming from the row's key in its next invocation"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/memory/scanner/handler.py", "scope": "idle_sessions", "reason": "a Scan (not a Query) with a time-budget stop"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/research/research_step_handler.py", "scope": "_project_items", "reason": "page cap MAX_PROJECT_ITEM_PAGES with a logged warning past it"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/agents_store.py", "scope": "list_runs", "reason": "one page plus an encoded client cursor"},

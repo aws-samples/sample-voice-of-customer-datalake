@@ -48,6 +48,24 @@ only while the acting admin is still admin (a check in its transaction: 403 when
 its AUDIT#WS#{ws} row first, and drops the changed member's cached membership in this container (other containers
 serve it for up to 30 s, to reads only).
 
+The export of the workspace X-Workspace-Id names (shared/export_jobs.py; the job: lambda/jobs/workspace_export/),
+for its admins only (403 for an editor or a viewer, the one 404 for a non-member; a platform admin enters as admin,
+live-checked and audited), the role read from the table on the start and the link (the status GET, a read, uses
+the warm 30 s cache, as the other reads do: a platform admin's polling writes no entry row per poll):
+    POST /me/workspaces/current/export   -> 202 {export: {id, status: 'queued', created_at}}: takes the workspace's
+                                         one export lock (409 while another export is live), writes an
+                                         export_requested audit row and the queued job row, then invokes
+                                         voc-workspace-export asynchronously with the resolved workspace.
+    GET /me/workspaces/current/export    {export: {id, status, created_at, started_at?, completed_at?, expires_at?,
+                                         erased_at?, phase?, counts?, size_bytes?, error?} | null}: the newest
+                                         export's status only (no link, no write). status is queued, running,
+                                         completed, failed, cancelled or erased; `expired` past its 7 days; `failed`
+                                         ("The export stopped before it finished") when it has not moved for an hour.
+    POST /me/workspaces/current/export/link -> {link: {id, url, expires_in, expires_at}}: a fresh 15-minute
+                                         presigned download of the newest export, only while it is completed and
+                                         inside its 7 days (409 otherwise), recorded first in an export_link_issued
+                                         audit row.
+
 The /platform routes are for platform admins only: an administrator (``require_admin``), the token's
 ``platform-admins`` group (``require_platform_admin``), then the live check (shared/platform_admin_gate.py
 ``require_live_platform_admin``, in the pool ``USER_POOL_ID`` names: the live Cognito membership and an enabled
@@ -59,16 +77,26 @@ A DynamoDB or Cognito fault answers a fixed 500, never the AWS error text, which
 
 import json
 import os
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Final
 
 from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.api import api_handler, create_api_resolver, get_caller_subject, is_admin, require_admin
-from shared.aws import get_cognito_idp_client, get_dynamodb_resource
+from shared.aws import get_cognito_idp_client, get_dynamodb_resource, get_s3_client, invoke_lambda_async
 from shared.enabled_sources import enabled_plugin_ids
-from shared.exceptions import ConfigurationError, ServiceError, ValidationError
+from shared.exceptions import ConfigurationError, ConflictError, ServiceError, ValidationError
+from shared.export_jobs import (
+    ErasureHoldsExports,
+    ExportRunning,
+    LinkUnavailable,
+    export_status,
+    issue_link,
+    start_export,
+)
 from shared.import_runs import parse_limit
+from shared.ingest_tables import ingest_table
 from shared.logging import logger
 from shared.platform_admin import require_platform_admin
 from shared.platform_admin_gate import confirm_live_platform_admin, require_live_platform_admin
@@ -102,9 +130,15 @@ from shared.workspace_plugin_settings import (
     set_plugin_enabled,
     workspace_plugins,
 )
+from shared.ws_repo import ExportObjects, WorkspaceTable, scope_of
 
 WORKSPACES_TABLE = os.environ.get('WORKSPACES_TABLE', '')
 USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
+# A workspace's export (shared/export_jobs.py): its job rows (voc-aggregates), its zip (the raw data bucket's
+# ws/{ws}/exports/) and the job that writes it.
+AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
+RAW_DATA_BUCKET = os.environ.get('RAW_DATA_BUCKET', '')
+EXPORT_FUNCTION = os.environ.get('EXPORT_FUNCTION', '')
 # The fixed answers of a fault (#263: never the AWS text).
 FAILED_LIST = 'Failed to list your workspaces'
 FAILED_CURRENT = WORKSPACE_FAULT
@@ -116,6 +150,13 @@ FAILED_CHANGE_ROLE = "Failed to change the member's role"
 FAILED_REMOVE_MEMBER = 'Failed to remove the member'
 FAILED_PLUGINS = "Failed to list the workspace's plugins"
 FAILED_CHANGE_PLUGIN = 'Failed to change the plugin'
+FAILED_START_EXPORT = 'Failed to start the export'
+FAILED_EXPORT_STATUS = 'Failed to read the export'
+FAILED_EXPORT_LINK = 'Failed to sign the download link'
+EXPORT_NOT_DOWNLOADABLE: Final = ('No export can be downloaded: the newest is not completed, or its 7 days are '
+                                  'over. Start a new export')
+EXPORT_ALREADY_RUNNING: Final = 'An export of this workspace is already running: wait for it to finish, then start another'
+EXPORT_ERASURE_RUNNING: Final = 'An erasure is running in this workspace: start the export when it ends'
 
 app = create_api_resolver()
 # The warm container's resolved memberships (30 s, shared/workspace.py).
@@ -273,6 +314,72 @@ def change_workspace_plugin(plugin_id: str) -> dict:
         logger.exception('Error changing a workspace plugin')
         raise ServiceError(FAILED_CHANGE_PLUGIN) from exc
     return {'plugin': entry}
+
+
+def _export_jobs(context: WorkspaceContext) -> WorkspaceTable:
+    """The workspace's view of voc-aggregates (its export jobs and lock), or 500 when it is not configured."""
+    if not AGGREGATES_TABLE:
+        raise ConfigurationError('Aggregates table not configured')
+    return ingest_table(scope_of(context), get_dynamodb_resource(), AGGREGATES_TABLE)
+
+
+def _start_export_job(payload: dict) -> None:
+    """The export job's async invoke (``payload`` built by shared/export_jobs.py ``start_export``)."""
+    invoke_lambda_async(EXPORT_FUNCTION, payload)
+
+
+@app.post('/me/workspaces/current/export')
+def start_workspace_export():  # a Response: the resolver validates a return annotation, so none here
+    event = app.current_event.raw_event
+    context = _workspace(event, FAILED_START_EXPORT, fresh=True)
+    require_workspace_admin(context)
+    if not EXPORT_FUNCTION:
+        # Before the lock: a deployment that cannot start the job never holds a workspace's export for an hour.
+        raise ConfigurationError('Export function not configured')
+    try:
+        export = start_export(_export_jobs(context), get_workspaces_table(), context, get_caller_subject(event),
+                              _start_export_job, datetime.now(UTC))
+    except ErasureHoldsExports as exc:
+        raise ConflictError(EXPORT_ERASURE_RUNNING) from exc
+    except ExportRunning as exc:
+        raise ConflictError(EXPORT_ALREADY_RUNNING) from exc
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error starting a workspace export')
+        raise ServiceError(FAILED_START_EXPORT) from exc
+    return Response(status_code=202, content_type=content_types.APPLICATION_JSON, body=json.dumps({'export': export}))
+
+
+@app.get('/me/workspaces/current/export')
+def workspace_export_status() -> dict:
+    event = app.current_event.raw_event
+    context = _workspace(event, FAILED_EXPORT_STATUS)
+    require_workspace_admin(context)
+    try:
+        export = export_status(_export_jobs(context), datetime.now(UTC))
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error reading a workspace export')
+        raise ServiceError(FAILED_EXPORT_STATUS) from exc
+    return {'export': export}
+
+
+@app.post('/me/workspaces/current/export/link')
+def workspace_export_link() -> dict:
+    event = app.current_event.raw_event
+    # Fresh: a link is issued only to a caller who is an admin now, never from a 30 s old role.
+    context = _workspace(event, FAILED_EXPORT_LINK, fresh=True)
+    require_workspace_admin(context)
+    if not RAW_DATA_BUCKET:
+        raise ConfigurationError('Raw data bucket not configured')
+    try:
+        link = issue_link(_export_jobs(context), get_workspaces_table(),
+                          ExportObjects(scope_of(context), get_s3_client(), RAW_DATA_BUCKET), context,
+                          get_caller_subject(event), datetime.now(UTC))
+    except LinkUnavailable as exc:
+        raise ConflictError(EXPORT_NOT_DOWNLOADABLE) from exc
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error signing a workspace export link')
+        raise ServiceError(FAILED_EXPORT_LINK) from exc
+    return {'link': link}
 
 
 @app.post('/platform/workspaces')

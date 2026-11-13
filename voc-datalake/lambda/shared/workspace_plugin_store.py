@@ -31,14 +31,14 @@ from shared.exceptions import ConfigurationError
 from shared.ingest_tables import ingest_table
 from shared.plugin_configs import (
     CONFIGS_KEY,
-    checked_configs,
+    ConfigRow,
     read_all_configs,
     read_configs,
     read_plugin_values,
     save_configs,
 )
 from shared.workspace import WorkspaceContext
-from shared.workspace_credentials import read_workspace, save_credentials
+from shared.workspace_credentials import checked_credentials, read_workspace, save_credentials
 from shared.ws_repo import WorkspaceTable, scope_of
 
 __all__ = ['CredentialsStore', 'StoreClients', 'credentials_store']
@@ -110,17 +110,25 @@ def _split(values: dict) -> tuple[dict, object]:
 
 
 class WorkspaceStore:
-    """One workspace's settings of ``plugins`` (every plugin saved there when ``plugins`` is empty: read only)."""
+    """One workspace's settings of ``plugins`` (every plugin saved there when ``plugins`` is empty: read only).
 
-    def __init__(self, ssm: Any, table: WorkspaceTable, *, prefix: str, plugins: Sequence[str], key_id: str) -> None:
+    ``actor`` returns the caller's sub (the request's authorizer claim, ``ResolvedRoutes.credentials``): a changed
+    list is stamped with it and its history row names it (shared/plugin_configs.py ``save_configs``); asked only when
+    a list is saved, so a read needs none."""
+
+    def __init__(self, ssm: Any, table: WorkspaceTable, *, prefix: str, plugins: Sequence[str], key_id: str,
+                 actor: Callable[[], str] | None = None) -> None:
         self._ssm = ssm
         self._table = table
         self._prefix = prefix
         self.ws = table.scope.ws
         self.plugins = tuple(plugins)
         self._key_id = key_id
+        self._actor = actor
         # None until ``read`` ran: ``write`` compares with what was read, so it refuses before that.
         self._stored: dict[str, dict] | None = None
+        #: Each plugin's config row as ``read`` found it (None: no list): what a save replaces, and its condition.
+        self._rows: dict[str, ConfigRow | None] = {}
 
     def _read_every(self) -> dict[str, dict]:
         stored = read_workspace(self._ssm, self._prefix, self.ws)
@@ -129,8 +137,9 @@ class WorkspaceStore:
         return stored
 
     def read(self) -> dict:
-        """The plugins' keys as ``<plugin>_<key>`` (what the shared secret would hold for them)."""
-        self._stored = ({plugin: read_plugin_values(self._ssm, self._prefix, self._table, plugin)
+        """The plugins' keys as ``<plugin>_<key>`` (what the shared secret would hold for them); each config row
+        kept as read."""
+        self._stored = ({plugin: read_plugin_values(self._ssm, self._prefix, self._table, plugin, self._rows)
                          for plugin in self.plugins} if self.plugins else self._read_every())
         return _prefixed(self._stored)
 
@@ -144,7 +153,13 @@ class WorkspaceStore:
         """Save each of the store's plugins' namespace of ``secrets`` (the object ``read`` returned, edited): its
         credentials parameter when they changed, its configs row when the list changed. A key outside those namespaces
         is never written anywhere. Refused (``RuntimeError``, nothing written) unless ``read`` ran on this store first:
-        without what was read, every parameter and list would be rewritten blind (``read_lists`` does not count)."""
+        without what was read, every parameter and list would be rewritten blind (``read_lists`` does not count). A
+        changed list replaces the row as ``read`` found it (a plugin not read: no list), so a save made since then is
+        a 409 (``ConflictError``), not an overwrite. Per plugin, both sizes are checked first and the list is saved
+        before the credentials, so that 409 or a 400 writes nothing of the plugin (a store of several plugins keeps
+        what it already wrote of the plugins before it). A fault writing the credentials after the list saved (an SSM
+        service fault: nothing else can fail there, the sizes being checked) leaves the saved list in place and the
+        route answers 500."""
         if not self.plugins:
             raise TypeError('a store opened for every plugin is read only')
         if self._stored is None:
@@ -157,15 +172,16 @@ class WorkspaceStore:
                       if key.startswith(prefix) and len(key) > len(prefix)}
             stored, stored_configs = _split(self._stored.get(plugin, {}))
             credentials, configs = _split(values)
-            # A list no longer in the object is left as stored: no route removes one. The list is checked before
-            # anything is written, so a list too large leaves the credentials unwritten too.
-            changed_list = configs is not None and configs != stored_configs
-            if changed_list:
-                checked_configs(plugin, configs)
+            # A list no longer in the object is left as stored: no route removes one. Both values are checked before
+            # anything is written, and the list is saved first: a value too large, or a 409 on the list, writes
+            # nothing of this plugin.
+            if credentials != stored:
+                checked_credentials(plugin, credentials)
+            if configs is not None and configs != stored_configs:
+                save_configs(self._table, plugin, configs, replaced=self._rows.get(plugin),
+                             updated_by=self._actor() if self._actor is not None else '')
             save_credentials(self._ssm, self._prefix, self.ws, plugin, stored=stored, values=credentials,
                              key_id=self._key_id)
-            if changed_list:
-                save_configs(self._table, plugin, configs)
 
 
 def _required_env(name: str) -> str:
@@ -175,11 +191,13 @@ def _required_env(name: str) -> str:
     return value
 
 
-def credentials_store(context: object, clients: StoreClients, plugins: Sequence[str] = ()) -> CredentialsStore:
+def credentials_store(context: object, clients: StoreClients, plugins: Sequence[str] = (), *,
+                      actor: Callable[[], str] | None = None) -> CredentialsStore:
     """The store this request reads and writes: the shared secret deployment-wide (``context`` None), else the
     resolved workspace's settings of ``plugins`` (each a plugin id the route already validated; none: every plugin,
     read only). ``ConfigurationError`` when what it needs is not set. ``context`` is ``WorkspaceContext | None``
-    (typed ``object`` so the check below is also a type guard): anything else is a ``TypeError``, never a name."""
+    (typed ``object`` so the check below is also a type guard): anything else is a ``TypeError``, never a name.
+    ``actor``: the caller's sub, from the request's authorizer (``WorkspaceStore``), never from a body."""
     if context is None:
         if not clients.shared_secret:
             raise ConfigurationError(_NOT_CONFIGURED)
@@ -191,4 +209,4 @@ def credentials_store(context: object, clients: StoreClients, plugins: Sequence[
     # The config lists are rows of voc-aggregates, the table the operator APIs and the ingestors are all handed.
     table = ingest_table(scope_of(context), get_dynamodb_resource(), _required_env('AGGREGATES_TABLE'))
     return WorkspaceStore(clients.ssm_client, table, prefix=prefix, plugins=plugins,
-                          key_id=os.environ.get(_KEY_ENV, ''))
+                          key_id=os.environ.get(_KEY_ENV, ''), actor=actor)

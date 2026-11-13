@@ -29,7 +29,7 @@ from shared.logging import logger, metrics
 from shared.plugin_identity import is_valid_plugin_identifier
 from shared.workspace_ids import credentials_parameter_name, credentials_path
 
-__all__ = ['MalformedCredentials', 'read_credentials', 'read_workspace', 'save_credentials']
+__all__ = ['MalformedCredentials', 'checked_credentials', 'read_credentials', 'read_workspace', 'save_credentials']
 
 #: The standard tier's limit on one parameter's value, in bytes.
 _MAX_BYTES: Final = 4096
@@ -105,10 +105,17 @@ def save_credentials(client: Any, prefix: str, ws: str, plugin: str, *, stored: 
     if dict(values) == dict(stored):
         return
     name = credentials_parameter_name(prefix, ws, plugin)
+    value = checked_credentials(plugin, values)
+    client.put_parameter(Name=name, Value=value, Type='SecureString', KeyId=key_id, Overwrite=True, Tier='Standard')
+
+
+def checked_credentials(plugin: str, values: Mapping[str, Any]) -> str:
+    """``values`` as the parameter's JSON text when it fits in 4096 bytes (UTF-8), else a ``ValidationError`` (400):
+    the check a caller makes before writing anything else of the same save."""
     value = json.dumps(dict(values), ensure_ascii=False)
     size = len(value.encode('utf-8'))
     if size > _MAX_BYTES:
         raise ValidationError(
             f"The {plugin} credentials of this workspace would take {size} bytes, over the {_MAX_BYTES}-byte limit "
             "of one stored value. Shorten or remove some values and retry.")
-    client.put_parameter(Name=name, Value=value, Type='SecureString', KeyId=key_id, Overwrite=True, Tier='Standard')
+    return value

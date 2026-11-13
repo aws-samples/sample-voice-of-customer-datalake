@@ -250,6 +250,33 @@
       "disableWho": "Desactivar {{name}} para este espacio de trabajo",
       "retry": "Reintentar"
     },
+    "export": {
+      "title": "Exportación",
+      "description": "Descarga una copia de lo que contiene este espacio de trabajo: sus comentarios, configuración, miembros e historial de auditoría, como archivos JSON en un zip. Una exportación completada se puede descargar durante 7 días.",
+      "readOnly": "Solo los administradores de este espacio de trabajo pueden exportarlo.",
+      "start": "Iniciar una exportación",
+      "starting": "Iniciando…",
+      "loading": "Cargando la exportación…",
+      "loadFailed": "No se pudo cargar el estado de la exportación.",
+      "none": "Aún no hay ninguna exportación.",
+      "runningNote": "La exportación se está preparando. Esta sección se actualiza sola; puedes salir de la página y volver.",
+      "completedNote": "Lista desde {{date}}. Puedes descargarla hasta {{until}}.",
+      "expiredNote": "Sus 7 días han terminado. Inicia una nueva exportación para descargar una.",
+      "erasedNote": "Una eliminación llegó a este espacio de trabajo, así que esta exportación se borró. Inicia una nueva exportación.",
+      "failedNote": "La exportación se detuvo antes de terminar. Iníciala de nuevo.",
+      "download": "Descargar",
+      "downloading": "Preparando el enlace…",
+      "linkNote": "Cada enlace de descarga funciona durante 15 minutos.",
+      "retry": "Reintentar",
+      "status": {
+        "queued": "En cola",
+        "running": "En curso",
+        "completed": "Lista",
+        "failed": "Fallida",
+        "expired": "Caducada",
+        "erased": "Borrada por una eliminación"
+      }
+    },
     "config": {
       "categoriesTitle": "Categorías",
       "categoriesDescription": "Las categorías propias de este espacio de trabajo clasifican sus comentarios. Un espacio de trabajo nuevo no tiene ninguna: sus comentarios se clasifican con las categorías predeterminadas integradas hasta que sus administradores añadan algunas. No se copia nada de las categorías de la implementación.",
@@ -289,7 +316,10 @@
       "notDeploymentAdmin": "Solo los administradores de la implementación pueden cambiar la marca predeterminada.",
       "notBrandAdmin": "Solo los administradores de este espacio de trabajo pueden cambiar su marca.",
       "generic": "No funcionó. Inténtalo de nuevo.",
-      "genericWithReason": "No funcionó: {{reason}}"
+      "genericWithReason": "No funcionó: {{reason}}",
+      "exportRunning": "Ya hay una exportación de este espacio de trabajo en curso. Espera a que termine.",
+      "exportErasureRunning": "Hay una eliminación en curso en este espacio de trabajo. Inicia la exportación cuando termine.",
+      "exportNotDownloadable": "Esta exportación ya no se puede descargar. Inicia una nueva exportación."
     }
   },
   "timeRange": {

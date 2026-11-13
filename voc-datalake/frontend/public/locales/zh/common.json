@@ -247,6 +247,33 @@
       "disableWho": "为此工作区关闭 {{name}}",
       "retry": "重试"
     },
+    "export": {
+      "title": "导出",
+      "description": "下载此工作区所含内容的副本：反馈、配置、成员和审计记录，以 JSON 文件打包在一个 zip 中。已完成的导出可在 7 天内下载。",
+      "readOnly": "只有此工作区的管理员可以导出它。",
+      "start": "开始导出",
+      "starting": "正在开始…",
+      "loading": "正在加载导出…",
+      "loadFailed": "无法加载导出状态。",
+      "none": "还没有导出。",
+      "runningNote": "正在准备导出。此部分会自动更新；你可以离开页面稍后再回来。",
+      "completedNote": "自 {{date}} 起已就绪。你可以在 {{until}} 之前下载。",
+      "expiredNote": "7 天已过。请开始新的导出以便下载。",
+      "erasedNote": "一次删除操作涉及此工作区，因此该导出已被删除。请开始新的导出。",
+      "failedNote": "导出在完成前停止了。请重新开始。",
+      "download": "下载",
+      "downloading": "正在准备链接…",
+      "linkNote": "每个下载链接的有效期为 15 分钟。",
+      "retry": "重试",
+      "status": {
+        "queued": "排队中",
+        "running": "进行中",
+        "completed": "已就绪",
+        "failed": "失败",
+        "expired": "已过期",
+        "erased": "已因删除操作移除"
+      }
+    },
     "config": {
       "categoriesTitle": "类别",
       "categoriesDescription": "此工作区自己的类别用于对其反馈进行分类。新工作区没有类别：在其管理员添加之前，其反馈按内置默认类别分类。不会从部署的类别复制任何内容。",
@@ -286,7 +313,10 @@
       "notDeploymentAdmin": "只有部署的管理员可以更改默认品牌。",
       "notBrandAdmin": "只有此工作区的管理员可以更改其品牌。",
       "generic": "操作未成功。请重试。",
-      "genericWithReason": "操作未成功：{{reason}}"
+      "genericWithReason": "操作未成功：{{reason}}",
+      "exportRunning": "此工作区的导出已在进行中。请等待其完成。",
+      "exportErasureRunning": "此工作区正在进行删除操作。请在其结束后再开始导出。",
+      "exportNotDownloadable": "此导出已无法下载。请开始新的导出。"
     }
   },
   "timeRange": {

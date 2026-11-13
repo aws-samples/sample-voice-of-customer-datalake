@@ -24,6 +24,8 @@ const PUBLISHERS: Record<string, [string, RealtimeNamespace]> = {
   'voc-research-step': ['ResearchLambdaRole', 'jobs'],
   'voc-category-reprocess': ['CategoryReprocessRole', 'jobs'],
   'voc-retention': ['RetentionWorkerRetentionRole', 'jobs'],
+  // A workspace export's end reaches its starter (lambda/jobs/workspace_export/handler.py).
+  'voc-workspace-export': ['WorkspaceExportWorkerExportRole', 'jobs'],
   'voc-memory-extractor': ['MemoryWorkersMemoryExtractorRole', 'jobs'],
   'voc-briefing': ['BriefingWorkerBriefingRole', 'jobs'],
 };

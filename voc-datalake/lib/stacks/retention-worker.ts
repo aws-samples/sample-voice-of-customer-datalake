@@ -19,7 +19,10 @@
  *   - raw bucket: DeleteObject + DeleteObjectVersion on `raw/*`, `silver/*` and each workspace's
  *     `ws/{ws}/raw/*` and `ws/{ws}/silver/*` (an erasure by email or a retention window reaches a workspace's copies; the workspace
  *     segment is one id, `WORKSPACE_ID_PATTERN`), and ListBucketVersions restricted to those prefixes — no read, no
- *     put. The
+ *     put. Also each workspace's `ws/{ws}/exports/*` (its export zips and work objects, a derived copy that an
+ *     erasure reaching the workspace deletes with every version), with AbortMultipartUpload there and
+ *     ListBucketMultipartUploads on the bucket (that action takes no prefix condition: upload keys and ids only, no
+ *     data; the code lists one workspace's exports) so its open export upload is aborted too. The
  *     whole-file uploads (`raw/csv_upload/`, `raw/json_upload/`) are under it: a
  *     whole-source erasure deletes the source's own uploaded files (every row of one
  *     is filed under the one source its upload named, shared/retention.py);
@@ -53,7 +56,8 @@ import { Construct } from 'constructs';
 
 import { grantCacheVersionBump, RADAR_VERSION_PARTITION } from '../utils/cache-version-grants';
 import {
-  RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
+  RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_EXPORTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX,
+  WORKSPACE_SILVER_HISTORY_PREFIX,
 } from './core-buckets';
 import { RETENTION_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
@@ -79,7 +83,7 @@ const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
  * request about the deployment's own source, never deletes there (in code).
  */
 const DELETE_PREFIXES = [RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_RAW_LAYER_PREFIX,
-  WORKSPACE_SILVER_HISTORY_PREFIX] as const;
+  WORKSPACE_SILVER_HISTORY_PREFIX, WORKSPACE_EXPORTS_PREFIX] as const;
 export interface RetentionWorkerProps {
   uniqueName: (baseName: string) => string;
   layer: lambda.ILayerVersion;
@@ -162,6 +166,22 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
     actions: ['s3:ListBucketVersions'],
     resources: [rawDataBucket.bucketArn],
     conditions: { StringLike: { 's3:prefix': DELETE_PREFIXES.map((prefix) => `${prefix}*`) } },
+  }));
+  // A workspace's export is a derived copy (TENETS.md D5): an erasure that reaches the workspace aborts its open
+  // export upload too (lambda/jobs/retention/exports.py), listed under its exports and aborted there only.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'AbortWorkspaceExportUploads',
+    actions: ['s3:AbortMultipartUpload'],
+    resources: [rawDataBucket.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`)],
+  }));
+  // ListBucketMultipartUploads takes no `s3:prefix` condition (the Service Authorization Reference lists that key for
+  // ListBucket and ListBucketVersions only), so it is granted on the bucket unconditioned: it reaches the keys and
+  // upload ids of the bucket's open uploads, no object data. The code lists one workspace's exports prefix only
+  // (lambda/shared/ws_repo.py `ExportObjects.open_uploads`), and the abort is held to `ws/{one id}/exports/*` above.
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'ListWorkspaceExportUploads',
+    actions: ['s3:ListBucketMultipartUploads'],
+    resources: [rawDataBucket.bucketArn],
   }));
   // Self hand-over before the 15-minute ceiling, by name (a GetAtt on the
   // function from its own role's policy would be a CloudFormation cycle).

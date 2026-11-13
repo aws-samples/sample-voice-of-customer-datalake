@@ -247,6 +247,33 @@
       "disableWho": "{{name}} für diesen Arbeitsbereich ausschalten",
       "retry": "Erneut versuchen"
     },
+    "export": {
+      "title": "Export",
+      "description": "Laden Sie eine Kopie dessen herunter, was dieser Arbeitsbereich enthält: Feedback, Konfiguration, Mitglieder und Prüfverlauf als JSON-Dateien in einer ZIP-Datei. Ein abgeschlossener Export kann 7 Tage lang heruntergeladen werden.",
+      "readOnly": "Nur die Administratoren dieses Arbeitsbereichs können ihn exportieren.",
+      "start": "Export starten",
+      "starting": "Wird gestartet…",
+      "loading": "Export wird geladen…",
+      "loadFailed": "Der Status des Exports konnte nicht geladen werden.",
+      "none": "Noch kein Export.",
+      "runningNote": "Der Export wird vorbereitet. Dieser Bereich aktualisiert sich selbst; Sie können die Seite verlassen und später zurückkehren.",
+      "completedNote": "Bereit seit {{date}}. Sie können ihn bis {{until}} herunterladen.",
+      "expiredNote": "Die 7 Tage sind vorbei. Starten Sie einen neuen Export, um einen herunterzuladen.",
+      "erasedNote": "Eine Löschung hat diesen Arbeitsbereich erreicht, daher wurde dieser Export gelöscht. Starten Sie einen neuen Export.",
+      "failedNote": "Der Export wurde vor dem Ende abgebrochen. Starten Sie ihn erneut.",
+      "download": "Herunterladen",
+      "downloading": "Link wird vorbereitet…",
+      "linkNote": "Jeder Download-Link ist 15 Minuten gültig.",
+      "retry": "Erneut versuchen",
+      "status": {
+        "queued": "In der Warteschlange",
+        "running": "Läuft",
+        "completed": "Bereit",
+        "failed": "Fehlgeschlagen",
+        "expired": "Abgelaufen",
+        "erased": "Durch eine Löschung entfernt"
+      }
+    },
     "config": {
       "categoriesTitle": "Kategorien",
       "categoriesDescription": "Die eigenen Kategorien dieses Arbeitsbereichs ordnen sein Feedback ein. Ein neuer Arbeitsbereich hat keine: Sein Feedback wird mit den integrierten Standardkategorien eingeordnet, bis seine Admins eigene anlegen. Von den Kategorien der Bereitstellung wird nichts übernommen.",
@@ -286,7 +313,10 @@
       "notDeploymentAdmin": "Nur die Administration der Bereitstellung kann die Standardmarke ändern.",
       "notBrandAdmin": "Nur die Admins dieses Arbeitsbereichs können seine Marke ändern.",
       "generic": "Das hat nicht funktioniert. Versuchen Sie es erneut.",
-      "genericWithReason": "Das hat nicht funktioniert: {{reason}}"
+      "genericWithReason": "Das hat nicht funktioniert: {{reason}}",
+      "exportRunning": "Ein Export dieses Arbeitsbereichs läuft bereits. Warten Sie, bis er fertig ist.",
+      "exportErasureRunning": "In diesem Arbeitsbereich läuft eine Löschung. Starten Sie den Export, wenn sie beendet ist.",
+      "exportNotDownloadable": "Dieser Export kann nicht mehr heruntergeladen werden. Starten Sie einen neuen Export."
     }
   },
   "timeRange": {

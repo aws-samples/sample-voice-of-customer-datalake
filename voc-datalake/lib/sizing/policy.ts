@@ -381,6 +381,9 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   'voc-memory-retention': 512,
   // Per-source retention / erasure: I/O-bound paged deletes, no model calls (unmeasured, new in KVD).
   'voc-retention': 512,
+  // A workspace's export (phase 4, docs/multi-workspace.md): DEFLATE of every row is CPU-bound, and a 64 MB part is
+  // buffered before it goes up; one vCPU, the Python cap (the design's 2048 MB would buy RAM, not speed; unmeasured, new).
+  'voc-workspace-export': 1769,
   'voc-agent-nodes': 1024,
   'voc-agent-persona-panel': 1024,
   // Plan mode: one step of an approved assistant plan (Node, built from lambda/stream; the same

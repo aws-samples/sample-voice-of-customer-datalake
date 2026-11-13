@@ -3055,6 +3055,38 @@
     ]
   },
   {
+    "file": "api/workspaceExportApi.ts",
+    "method": "GET",
+    "call": "'/me/workspaces/current/export'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/export"
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceExportApi.ts",
+    "method": "POST",
+    "call": "'/me/workspaces/current/export'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/export",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/workspaceExportApi.ts",
+    "method": "POST",
+    "call": "'/me/workspaces/current/export/link'",
+    "probes": [
+      {
+        "path": "/me/workspaces/current/export/link",
+        "body": {}
+      }
+    ]
+  },
+  {
     "file": "api/workspacePluginsApi.ts",
     "method": "GET",
     "call": "'/me/workspaces/current/plugins'",

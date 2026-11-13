@@ -11,6 +11,8 @@
  *   workspace's `X-Workspace-Id`, for its admins (`WorkspaceConfigCards`); its other members see who changes them.
  *   Since 7.13.00 the categories card also holds the workspace's own "Reprocess existing feedback" (and the
  *   dimensions card its "Classify review types"): the workspace's own reprocess job, replaying its reviews only.
+ * - The workspace's export (since 7.17.00, WorkspaceExportCard.tsx): its admins start one, follow it and download
+ *   it for 7 days; its other members are told who can.
  *
  * The deployment's own sections of Administration stay there, for the deployment's `admins`: this page holds only
  * what the server keys by workspace. The server decides every save; the page only hides what the caller's role
@@ -41,6 +43,7 @@ import { useServerRole } from '../../workspace/useMyWorkspaces'
 import { BRAND_REFUSALS } from '../../workspace/workspaceRefusals'
 import BrandEditorCard from '../Settings/BrandEditorCard'
 import { useBrandForm } from '../Settings/useSettingsSync'
+import WorkspaceExportCard from './WorkspaceExportCard'
 import WorkspacePluginsCard from './WorkspacePluginsCard'
 
 export default function WorkspaceSettings() {
@@ -60,6 +63,7 @@ function WorkspaceSettingsFor({ workspace }: Readonly<{ workspace: CurrentWorksp
       <WorkspaceBrandCard isAdmin={isAdmin} />
       <WorkspacePluginsCard workspaceId={workspace.id} isAdmin={isAdmin} />
       <WorkspaceConfigCards isAdmin={isAdmin} />
+      <WorkspaceExportCard workspaceId={workspace.id} isAdmin={isAdmin} />
     </div>
   )
 }

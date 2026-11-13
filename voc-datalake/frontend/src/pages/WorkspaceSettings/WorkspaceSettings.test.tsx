@@ -46,6 +46,7 @@ function renderPage(workspace: CurrentWorkspace | null, routes: Record<string, R
     'GET /settings/dimensions': () => ({ dimensions: [], updated_at: null }),
     'GET /settings/sources': () => ({ sources: [{ id: 'webscraper', label: 'Trail reviews', pii: 'redact', retention_days: null, restricted: false, dimension_defaults: {}, tags: [] }] }),
     'GET /scrapers': () => ({ scrapers: [] }),
+    'GET /me/workspaces/current/export': () => ({ export: null }),
     ...routes,
   })
   act(() => setCurrentWorkspace(workspace))

@@ -250,6 +250,33 @@
       "disableWho": "Desativar {{name}} para este espaço de trabalho",
       "retry": "Tentar novamente"
     },
+    "export": {
+      "title": "Exportação",
+      "description": "Transfira uma cópia do que este espaço de trabalho contém: o feedback, a configuração, os membros e o histórico de auditoria, como ficheiros JSON num zip. Uma exportação concluída pode ser transferida durante 7 dias.",
+      "readOnly": "Só os administradores deste espaço de trabalho o podem exportar.",
+      "start": "Iniciar uma exportação",
+      "starting": "A iniciar…",
+      "loading": "A carregar a exportação…",
+      "loadFailed": "Não foi possível carregar o estado da exportação.",
+      "none": "Ainda não há exportações.",
+      "runningNote": "A exportação está a ser preparada. Esta secção atualiza-se sozinha; pode sair da página e voltar.",
+      "completedNote": "Pronta desde {{date}}. Pode transferi-la até {{until}}.",
+      "expiredNote": "Os 7 dias terminaram. Inicie uma nova exportação para transferir uma.",
+      "erasedNote": "Uma eliminação chegou a este espaço de trabalho, por isso esta exportação foi apagada. Inicie uma nova exportação.",
+      "failedNote": "A exportação parou antes de terminar. Inicie-a de novo.",
+      "download": "Transferir",
+      "downloading": "A preparar a ligação…",
+      "linkNote": "Cada ligação de transferência funciona durante 15 minutos.",
+      "retry": "Tentar novamente",
+      "status": {
+        "queued": "Em fila",
+        "running": "Em curso",
+        "completed": "Pronta",
+        "failed": "Falhou",
+        "expired": "Expirada",
+        "erased": "Apagada por uma eliminação"
+      }
+    },
     "config": {
       "categoriesTitle": "Categorias",
       "categoriesDescription": "As categorias próprias deste espaço de trabalho classificam seus feedbacks. Um espaço de trabalho novo não tem nenhuma: seus feedbacks são classificados com as categorias padrão integradas até que seus administradores adicionem algumas. Nada é copiado das categorias da implantação.",
@@ -289,7 +316,10 @@
       "notDeploymentAdmin": "Somente os administradores da implantação podem alterar a marca padrão.",
       "notBrandAdmin": "Somente os administradores deste espaço de trabalho podem alterar a marca dele.",
       "generic": "Não funcionou. Tente novamente.",
-      "genericWithReason": "Não funcionou: {{reason}}"
+      "genericWithReason": "Não funcionou: {{reason}}",
+      "exportRunning": "Já está em curso uma exportação deste espaço de trabalho. Aguarde que termine.",
+      "exportErasureRunning": "Está em curso uma eliminação neste espaço de trabalho. Inicie a exportação quando terminar.",
+      "exportNotDownloadable": "Esta exportação já não pode ser transferida. Inicie uma nova exportação."
     }
   },
   "timeRange": {

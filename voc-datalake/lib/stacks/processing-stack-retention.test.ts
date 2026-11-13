@@ -96,18 +96,29 @@ describe('voc-retention worker', () => {
     expect(worker().Environment.Variables).toHaveProperty('WORKSPACES_TABLE');
   });
 
-  it('deletes objects and versions under raw/*, silver/* and each workspace\'s raw and silver only, and lists versions of those prefixes only', () => {
+  it('deletes objects and versions under raw/*, silver/* and each workspace\'s raw, silver and exports only, and lists versions of those prefixes only', () => {
     const s3 = statements().filter((s) => s.effect === 'Allow' && s.actions.some((a) => a.startsWith('s3:')));
     expect(s3.map((s) => [...s.actions].sort(byCodeUnit).join(','))).toStrictEqual([
       's3:DeleteObject,s3:DeleteObjectVersion',
       's3:ListBucketVersions',
+      's3:AbortMultipartUpload',
+      's3:ListBucketMultipartUploads',
     ]);
     const objectPaths = [...itemAt(s3, 0).resource.matchAll(/"\/([^"]*)"/g)].flatMap((match) => match[1] ?? []);
     // One workspace id per pattern (`ws_` + 26 `?`): IAM's `*` would also match `/`.
     const ws = `ws/ws_${'?'.repeat(26)}`;
-    expect(objectPaths).toStrictEqual(['raw/*', 'silver/*', `${ws}/raw/*`, `${ws}/silver/*`]);
+    expect(objectPaths).toStrictEqual(['raw/*', 'silver/*', `${ws}/raw/*`, `${ws}/silver/*`, `${ws}/exports/*`]);
     expect(JSON.stringify(template.toJSON())).toContain(
-      `"s3:prefix":["raw/*","silver/*","${ws}/raw/*","${ws}/silver/*"]`);
+      `"s3:prefix":["raw/*","silver/*","${ws}/raw/*","${ws}/silver/*","${ws}/exports/*"]`);
+  });
+
+  it('aborts open multipart uploads under each workspace\'s exports only, and lists the bucket\'s upload keys (no data)', () => {
+    const s3 = statements().filter((s) => s.effect === 'Allow'
+      && s.actions.some((a) => a === 's3:AbortMultipartUpload' || a === 's3:ListBucketMultipartUploads'));
+    const ws = `ws/ws_${'?'.repeat(26)}`;
+    // ListBucketMultipartUploads takes no s3:prefix condition: the bucket itself, unconditioned (retention-worker.ts).
+    expect(s3.map((s) => [...s.resource.matchAll(/"\/([^"]*)"/g)].flatMap((match) => match[1] ?? [])))
+      .toStrictEqual([[`${ws}/exports/*`], []]);
   });
 
   it('carries one Deny of its own: no delete of a workspace\'s S3 import originals (listed for review, never deleted)', () => {

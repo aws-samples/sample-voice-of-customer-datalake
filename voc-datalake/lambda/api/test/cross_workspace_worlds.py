@@ -21,7 +21,7 @@ import json
 from collections.abc import Callable, Generator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlencode
@@ -178,8 +178,34 @@ def workspaces_world(lambda_context: Any) -> Generator[World]:
         # B enabled the plugin (shared/workspace_plugin_settings.py): A's member must not see or change it.
         table.put_item(Item={'pk': f'PLUGIN#{PLUGIN}', 'sk': f'WS#{WS_B}', 'enabled_by': f'sub-{B_MARK}-bea',
                              'enabled_at': '2026-11-12T00:00:00Z'})
+        # The export routes (shared/export_jobs.py): each workspace's completed export in voc-aggregates, so a link
+        # signed in A could only name A's; B's id carries B's mark.
+        export_invoke = _export_world(stack, workspaces_handler)
 
-        yield World(call=_caller(workspaces_handler, lambda_context, workspaces=table), doubles={'cognito': cognito})
+        yield World(call=_caller(workspaces_handler, lambda_context, workspaces=table),
+                    doubles={'cognito': cognito, 'export_invoke': export_invoke})
+
+
+def _export_world(stack: ExitStack, workspaces_handler: Any) -> MagicMock:
+    """voc-aggregates with a completed export in A and in B, the raw bucket's double and the job's invoke."""
+    from shared.test.export_s3_double import ExportS3
+
+    aggregates = pk_sk_table('aggregates')
+    completed = datetime.now(UTC)
+    for ws, export_id in ((WS_A, 'ex_01JCACME0000000000000000A1'), (WS_B, f'ex_{B_MARK}')):
+        aggregates.put_item(Item={'pk': f'WS#{ws}#JOB#export', 'sk': export_id, 'export_id': export_id,
+                                  'status': 'completed', 'created_at': completed.isoformat(),
+                                  'completed_at': completed.isoformat(),
+                                  'expires_at': (completed + timedelta(days=7)).isoformat(), 'size_bytes': 10})
+    export_invoke = MagicMock()
+    stack.enter_context(patch.object(workspaces_handler, 'get_dynamodb_resource',
+                                     return_value=boto3.resource('dynamodb', region_name='us-east-1')))
+    stack.enter_context(patch.object(workspaces_handler, 'get_s3_client', return_value=ExportS3('raw-bucket')))
+    stack.enter_context(patch.object(workspaces_handler, 'AGGREGATES_TABLE', 'aggregates'))
+    stack.enter_context(patch.object(workspaces_handler, 'RAW_DATA_BUCKET', 'raw-bucket'))
+    stack.enter_context(patch.object(workspaces_handler, 'EXPORT_FUNCTION', 'voc-workspace-export'))
+    stack.enter_context(patch.object(workspaces_handler, 'invoke_lambda_async', export_invoke))
+    return export_invoke
 
 
 # ── voc-settings-api (lambda/api/settings_handler.py): the routes that act in a workspace ──
@@ -451,6 +477,13 @@ CASES: dict[tuple[str, str], RouteCase] = {
         # Enabling (since 7.14.00, shared/workspace_plugin_settings.py): A's enable writes A's row only; B's enabled
         # row must stay B's.
         body={'enabled': True}),
+    # The export (shared/export_jobs.py): A and B each hold a completed export; A's routes reach A's job rows only.
+    ('workspaces_handler.py', 'POST /me/workspaces/current/export'): RouteCase(
+        no_ids='the export is new, the workspace is the header: check 1', ok_status=202),
+    ('workspaces_handler.py', 'GET /me/workspaces/current/export'): RouteCase(
+        no_ids="the header is its only id: check 1 (B's completed export; A reads only its own)"),
+    ('workspaces_handler.py', 'POST /me/workspaces/current/export/link'): RouteCase(
+        no_ids="the header is its only id: check 1 (a link signed in A names A's export, never B's)"),
     ('settings_handler.py', 'GET /settings/resolved-problems'): RouteCase(
         no_ids='the header is its only id: check 1 (B resolved a problem; A lists only its own)',
         without_a_workspace=_AS_BEFORE),

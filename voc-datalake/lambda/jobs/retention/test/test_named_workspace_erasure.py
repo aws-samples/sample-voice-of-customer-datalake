@@ -141,11 +141,32 @@ class TestAnErasureInOneWorkspace:
         assert 'member_rows_deidentified' not in result
 
     @pytest.mark.usefixtures('aws')
-    def test_a_named_workspace_walks_the_item_scan_only(self, worker_context):
+    def test_a_named_workspace_walks_the_item_scan_and_its_exports_only(self, worker_context):
         run = {'mode': 'erase', 'field': 'email', 'workspace_id': WS}
         walk = handler.Walk(handler._tables(), worker_context, {}, run,
                             lambda store: retention.erase_filter('email', 'x', None, store), None)
-        assert handler._phases(walk) == [handler.PHASE_ITEMS]
+        assert handler._phases(walk) == [handler.PHASE_ITEMS, handler.PHASE_EXPORTS]
+
+    def test_its_workspaces_exports_close_at_the_start_before_any_item_is_read(self, aws, worker_context):
+        """A job of one workspace marks its exports erased (and holds the export lock) before the item scan: no
+        link meanwhile; the exports phase then sweeps them and frees the lock."""
+        put_workspace_feedback(aws, WS, '12345', 'tickets', author=JANE)
+        export = {'pk': f'WS#{WS}#JOB#export', 'sk': 'ex_01JC3Q8ZK6V7W9X2Y4A5B6C7D1'}
+        aws['aggregates'].put_item(Item={**export, 'export_id': export['sk'], 'status': 'completed',
+                                         'workspace_id': WS})
+        seen: list[str] = []
+        real_scan = handler._walk_store
+
+        def scan_after_the_close(walk: Any, phase: str, cursor: Any) -> Any:
+            seen.append(aws['aggregates'].get_item(Key=export)['Item']['status'])
+            return real_scan(walk, phase, cursor)
+
+        with patch.object(handler, '_walk_store', scan_after_the_close):
+            result = handler.handle_event(_job(aws, 'author', JANE, source='tickets'), worker_context)
+        assert result['status'] == 'completed'
+        assert seen == ['erased']
+        lock = aws['aggregates'].get_item(Key={'pk': f'WS#{WS}#JOB#export', 'sk': 'LOCK'})['Item']
+        assert 'released_at' in lock
 
     def test_a_radar_review_of_the_same_author_is_left(self, aws, worker_context):
         review = {'pk': 'RADAR#rival#ITEMS#2026-01', 'sk': 'REVIEW#r1', 'feedback_id': 'r1', 'radar_brand': 'rival',

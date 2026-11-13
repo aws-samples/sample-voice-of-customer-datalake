@@ -32,6 +32,8 @@ const members = (id) => inWorkspace(id, 'GET', '/me/workspaces/current/members')
 const member = (sub) => `/me/workspaces/current/members/${sub}`
 const PLUGINS = '/me/workspaces/current/plugins'
 const BRAND = '/settings/brand'
+const EXPORT = '/me/workspaces/current/export'
+const NOT_DOWNLOADABLE = 'No export can be downloaded: the newest is not completed, or its 7 days are over. Start a new export'
 const EMPTY_BRAND = { brand_name: '', brand_handles: [], hashtags: [], urls_to_track: [] }
 
 /** The mock's workspaces by slug, as `GET /me/workspaces` lists them. */
@@ -163,6 +165,26 @@ describe('mock workspaces', () => {
       assert.deepEqual(await inWorkspace(juniper.id, 'PUT', BRAND, saved), [403, { success: false, error: 'Workspace admin access required' }])
       // The deployment's brand, without the header, is not the workspace's.
       assert.notEqual((await inWorkspace(undefined, 'GET', BRAND))[1].brand_name, saved.brand_name)
+    })
+
+    it('exports a workspace for its admins: start, a status that moves on, a link once completed (mock-workspace-export.js)', async () => {
+      const { acme, juniper } = await mine()
+      assert.deepEqual(await inWorkspace(acme.id, 'GET', EXPORT), [200, { export: null }])
+      assert.deepEqual(await inWorkspace(acme.id, 'POST', `${EXPORT}/link`, {}), [409, { success: false, error: NOT_DOWNLOADABLE }])
+      const [started, { export: queued }] = await inWorkspace(acme.id, 'POST', EXPORT, {})
+      assert.deepEqual([started, queued.status], [202, 'queued'])
+      assert.match((await inWorkspace(acme.id, 'POST', EXPORT, {}))[1].error, /already running/)
+      const seen = []
+      for (let read = 0; read < 3; read += 1) seen.push((await inWorkspace(acme.id, 'GET', EXPORT))[1].export.status)
+      assert.deepEqual(seen, ['queued', 'running', 'completed'])
+      const [linked, { link }] = await inWorkspace(acme.id, 'POST', `${EXPORT}/link`, {})
+      assert.deepEqual([linked, link.id, link.expires_in], [200, queued.id, 900])
+      // An editor of juniper is refused every route; no header is the resolver's 400.
+      for (const [method, path] of [['GET', EXPORT], ['POST', EXPORT], ['POST', `${EXPORT}/link`]]) {
+        assert.deepEqual(await inWorkspace(juniper.id, method, path, method === 'POST' ? {} : undefined),
+          [403, { success: false, error: 'Workspace admin access required' }])
+      }
+      assert.equal((await inWorkspace(undefined, 'GET', EXPORT))[0], 400)
     })
 
     it('lets a platform admin who is not a member enter as admin', async () => {

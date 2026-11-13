@@ -10,7 +10,9 @@
 ``DeploymentTable`` has ``WorkspaceTable``'s call shape (a key or item positional, the rest as boto3 keywords, and
 ``query`` building the key condition), so one ingestor body serves both paths. The one place either path opens a
 table by name is here (``ingest_table``; shared/test/test_ws_raw_access.py counts it), voc-workspaces included
-(the control plane: a ``DeploymentTable`` whose ``table`` the tick's fan-out pages itself).
+(the control plane: a ``DeploymentTable`` whose ``table`` the tick's fan-out pages itself). A workspace's export
+(the workspaces API's export routes and the export job, phase 4) opens its views of voc-feedback and voc-aggregates
+here too, always with a scope.
 """
 from __future__ import annotations
 

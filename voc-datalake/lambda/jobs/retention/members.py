@@ -32,12 +32,15 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
+from jobs.retention import exports
 from jobs.retention.boards import ERASE_FIELD, remove_fields
 from jobs.retention.copies import tombstone_record
 from jobs.retention.runs import MODE_ERASE
 from shared.retention import MEMBER_COUNTER
 from shared.timestamps import now_iso
+from shared.workspace_ids import is_workspace_id
 from shared.workspace_members import MEMBER_PREFIX as _MEMBER_SK_PREFIX
+from shared.ws_repo import WORKSPACE_FIELD, scope_from_message
 
 #: The tables key of voc-workspaces in ``Walk.tables``, and the tombstones' source.
 STORE_MEMBERS: Final = 'workspace_members'
@@ -114,5 +117,10 @@ class MemberEraser:
             self._aggregates.put_item(Item=tombstone(self._run, row, now))
 
     def erase(self, row: Mapping[str, Any]) -> None:
+        # The workspace's exports hold the member's email in members/: closed before the row changes, cleared by
+        # the `exports` phase.
+        ws = str(row['pk']).removeprefix(_WORKSPACE_PK_PREFIX)
+        if is_workspace_id(ws):
+            exports.note_workspace(self._run, scope_from_message({WORKSPACE_FIELD: ws}), self._aggregates)
         if deidentify(self._table, row):
             self._run[MEMBER_COUNTER] = int(self._run.get(MEMBER_COUNTER) or 0) + 1

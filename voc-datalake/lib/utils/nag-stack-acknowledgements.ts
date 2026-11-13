@@ -14,7 +14,7 @@ import type { VocCoreStack } from '../stacks/core-stack';
 import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
 import {
-  WORKSPACE_MEMORY_IMPORTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
+  WORKSPACE_EXPORTS_PREFIX, WORKSPACE_MEMORY_IMPORTS_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
 } from '../stacks/core-buckets';
 import { acknowledgeNag } from './nag-ack';
 import {
@@ -49,6 +49,11 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       raw.arnForObjects('raw/*'), raw.arnForObjects('silver/*'),
       raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}*`), raw.arnForObjects(`${WORKSPACE_SILVER_HISTORY_PREFIX}*`),
       raw.arnForObjects(`${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`),
+      // ws/{one id}/exports/*: a workspace's export, written by voc-workspace-export, and deleted with every version
+      // by voc-retention when an erasure reaches that workspace (a derived copy, TENETS.md D5).
+      raw.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`),
+      // ws/{one id}/exports/*/work/*: the work objects an export that may not go on deletes (its own only).
+      raw.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*/work/*`),
     ]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),
   ]);
@@ -66,6 +71,9 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       raw.arnForObjects(`${WORKSPACE_RAW_LAYER_PREFIX}github_issues/*`),
       // ws/{one id}/memory-imports/*: the memory API keeps a workspace's imported page (and the extractor reads it).
       raw.arnForObjects(`${WORKSPACE_MEMORY_IMPORTS_PREFIX}*`),
+      // ws/{one id}/exports/*: a workspace's export, signed for download by the workspaces API
+      // (lib/stacks/api-workspace-export.ts; each object's name is the job's, never a caller's).
+      raw.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`),
       ingestion.s3ImportBucket.arnForObjects('*'),
       core.websiteBucket.arnForObjects('*'),
     ]),

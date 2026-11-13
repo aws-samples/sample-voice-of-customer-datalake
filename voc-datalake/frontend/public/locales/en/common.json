@@ -247,6 +247,33 @@
       "disableWho": "Disable {{name}} for this workspace",
       "retry": "Try again"
     },
+    "export": {
+      "title": "Export",
+      "description": "Download a copy of what this workspace holds: its feedback, configuration, members and audit history, as JSON files in one zip. A completed export can be downloaded for 7 days.",
+      "readOnly": "Only this workspace's admins can export it.",
+      "start": "Start an export",
+      "starting": "Starting…",
+      "loading": "Loading the export…",
+      "loadFailed": "The export's status could not be loaded.",
+      "none": "No export yet.",
+      "runningNote": "The export is being prepared. This section updates by itself; you can leave the page and come back.",
+      "completedNote": "Ready since {{date}}. You can download it until {{until}}.",
+      "expiredNote": "Its 7 days are over. Start a new export to download one.",
+      "erasedNote": "An erasure reached this workspace, so this export was deleted. Start a new export.",
+      "failedNote": "The export stopped before it finished. Start it again.",
+      "download": "Download",
+      "downloading": "Preparing the link…",
+      "linkNote": "Each download link works for 15 minutes.",
+      "retry": "Try again",
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "completed": "Ready",
+        "failed": "Failed",
+        "expired": "Expired",
+        "erased": "Deleted by an erasure"
+      }
+    },
     "config": {
       "categoriesTitle": "Categories",
       "categoriesDescription": "This workspace's own categories classify its feedback. A new workspace has none: its feedback is classified with the built-in default categories until its admins add some. Nothing is copied from the deployment's categories.",
@@ -286,7 +313,10 @@
       "notDeploymentAdmin": "Only the deployment's administrators can change the default brand.",
       "notBrandAdmin": "Only this workspace's admins can change its brand.",
       "generic": "That did not work. Try again.",
-      "genericWithReason": "That did not work: {{reason}}"
+      "genericWithReason": "That did not work: {{reason}}",
+      "exportRunning": "An export of this workspace is already running. Wait for it to finish.",
+      "exportErasureRunning": "An erasure is running in this workspace. Start the export when it ends.",
+      "exportNotDownloadable": "This export can no longer be downloaded. Start a new export."
     }
   },
   "timeRange": {

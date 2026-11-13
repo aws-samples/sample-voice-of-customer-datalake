@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "afd9d1941b938134989c679d78558d5573f4f24fb8bc92b71f4e1a64c953789a",
+      "templateSha256": "637c63e4551470fd702e233293debbc58302d4873b53608c1922968b03cb07d6",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -107,6 +107,7 @@
           "arn:aws:lambda:us-east-1:111111111111:function:voc-retention-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-scrapers-assist-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-settings-assist-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-workspace-export-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>:*",
           "arn:aws:logs:us-east-1:111111111111:log-group:/aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>",
@@ -137,6 +138,7 @@
           "COGNITO_DOMAIN_URL = https://voc-<AWS::AccountId>-<AWS::Region>.auth.us-east-1.amazoncognito.com",
           "DESIGN_CAPTURE_FUNCTION = voc-design-capture-<AWS::AccountId>-<AWS::Region>",
           "ENGAGEMENT_FUNCTION = voc-engagement-api-<AWS::AccountId>-<AWS::Region>",
+          "EXPORT_FUNCTION = voc-workspace-export-<AWS::AccountId>-<AWS::Region>",
           "MANUAL_IMPORT_PROCESSOR_FUNCTION = voc-manual-import-processor-<AWS::AccountId>-<AWS::Region>",
           "OPS_ALERTS_AGGREGATOR_FUNCTION = voc-aggregation-processor-<AWS::AccountId>-<AWS::Region>",
           "OPS_ALERTS_ALARM_PREFIX = voc-alerts-<AWS::AccountId>-<AWS::Region>",
@@ -185,7 +187,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "1da790bd98ec5cc05c3984e4ee86257cfccca0c496541f8a26c675c5f4b98a80",
+      "templateSha256": "8c5dd6493a92f4493b1bf37a9cc31caebdbf6ffa915f755e6b9ff888a210f5f0",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -351,7 +353,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "d4e215563f60fbbd6111234c1cb1a72858c951d2f62fd1701c064db7afb13364",
+      "templateSha256": "ee7ba3f117c5944f1ffdbbfa81c0765ccb3877967a0eade65816d3541ef688ef",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -375,6 +377,7 @@
           "AWS::Lambda::Function FunctionName = voc-radar-scan-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-research-step-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-retention-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Lambda::Function FunctionName = voc-workspace-export-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-agent-conductor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-agent-heartbeat-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-agent-nodes-<AWS::AccountId>-<AWS::Region>",
@@ -390,6 +393,7 @@
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-radar-scan-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-research-step-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-retention-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-workspace-export-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-agent-run-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-research-workflow-<AWS::AccountId>-<AWS::Region>",
           "AWS::SNS::Topic TopicName = voc-briefing-<AWS::AccountId>-<AWS::Region>",
@@ -420,6 +424,7 @@
           "arn:aws:lambda:us-east-1:111111111111:function:voc-retention-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-settings-api-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-workspace-export-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:ssm:us-east-1:111111111111:parameter/voc/radar/exa-api-key"
         ],
         "environmentNames": [
@@ -443,6 +448,7 @@
           "POWERTOOLS_SERVICE_NAME = voc-radar-scan",
           "POWERTOOLS_SERVICE_NAME = voc-research-step",
           "POWERTOOLS_SERVICE_NAME = voc-retention",
+          "POWERTOOLS_SERVICE_NAME = voc-workspace-export",
           "PROJECTS_FUNCTION = voc-projects-api-<AWS::AccountId>-<AWS::Region>",
           "RADAR_EXA_PARAMETER = /voc/radar/exa-api-key",
           "SCRAPERS_FUNCTION = voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",

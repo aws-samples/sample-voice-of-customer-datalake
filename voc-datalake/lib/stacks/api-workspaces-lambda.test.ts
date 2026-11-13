@@ -24,6 +24,8 @@ beforeAll(() => {
 
 const statements = () => policyStatementsOf(apiTemplate(), 'WorkspacesLambdaRole');
 const withPrefix = (prefix: string) => statements().filter((s) => s.actions.some((action) => action.startsWith(prefix)));
+// The export routes' grants on voc-aggregates (its export jobs only) are pinned in api-workspace-export.test.ts.
+const onWorkspaces = () => withPrefix('dynamodb:').filter((s) => /ExportsOutputFnGetAttWorkspaces/.test(s.resource));
 const environment = () => serviceEnvironment(apiTemplate(), 'voc-workspaces-api');
 
 describe('the voc-workspaces-api Lambda', () => {
@@ -52,7 +54,7 @@ describe('the voc-workspaces-api Lambda', () => {
   });
 
   it('reads without a key condition; puts, updates, deletes and checks only in their partitions and attributes', () => {
-    const shape = withPrefix('dynamodb:').map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))
+    const shape = onWorkspaces().map((s) => ({ actions: [...s.actions].sort(byCodeUnit), condition: s.condition }))
       .sort((a, b) => byCodeUnit(a.actions.join() + JSON.stringify(a.condition), b.actions.join() + JSON.stringify(b.condition)));
     expect(shape).toStrictEqual([
       { actions: ['dynamodb:ConditionCheckItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } } },
@@ -73,8 +75,10 @@ describe('the voc-workspaces-api Lambda', () => {
 
   // The fixture's tables all carry an index (api-stack-fixture.ts), so CDK names it in the read grant; the writes
   // name the table alone. voc-workspaces has no index.
-  it('names the workspaces table and no other table', () => {
-    const resources = withPrefix('dynamodb:').map((s) => s.resource);
+  it('names the workspaces table, and otherwise only voc-aggregates for the export routes', () => {
+    const others = withPrefix('dynamodb:').filter((s) => !/ExportsOutputFnGetAttWorkspaces/.test(s.resource));
+    expect(others.length > 0 && others.every((s) => /ExportsOutputFnGetAttAggregates/.test(s.resource))).toBe(true);
+    const resources = onWorkspaces().map((s) => s.resource);
     expect(resources).toHaveLength(5);
     expect(resources.join('\n').match(/ExportsOutputFnGetAtt[A-Za-z]+/g)?.sort(byCodeUnit))
       .toStrictEqual(Array<string>(6).fill('ExportsOutputFnGetAttWorkspaces'));
@@ -95,9 +99,9 @@ describe('the voc-workspaces-api Lambda', () => {
     expect(JSON.stringify(statements())).not.toMatch(/voc\/ws/);
   });
 
-  it('holds only DynamoDB, Cognito, KMS for the table, and its log and trace writes', () => {
+  it('holds only DynamoDB, Cognito, KMS, its log and trace writes, and the export routes\' S3 read and invoke', () => {
     const services = new Set(statements().flatMap((s) => s.actions).map((action) => action.split(':')[0]));
-    expect([...services].filter((service) => !['dynamodb', 'cognito-idp', 'kms', 'logs', 'xray']
+    expect([...services].filter((service) => !['dynamodb', 'cognito-idp', 'kms', 'logs', 'xray', 's3', 'lambda']
       .includes(service ?? ''))).toStrictEqual([]);
   });
 });

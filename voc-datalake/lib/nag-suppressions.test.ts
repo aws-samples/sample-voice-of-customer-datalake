@@ -239,7 +239,11 @@ describe('cdk-nag acknowledgements', () => {
       // ws/{one id}/raw/feedback_form/*, and the GitHub webhook's archive of a workspace's delivery,
       // ws/{one id}/raw/github_issues/*.
       // 80: a workspace's page imports under ws/{one id}/memory-imports/* (the memory API's and the extractor's).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 80, used: 80 });
+      // 81: a workspace's export, ws/{one id}/exports/* (the export job's writes, the workspaces API's signed read;
+      // lib/stacks/api-workspace-export.ts).
+      // 82: an export's own work objects, ws/{one id}/exports/*/work/*, which an export that may not go on deletes
+      // (lib/stacks/workspace-export-worker.ts).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 82, used: 82 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

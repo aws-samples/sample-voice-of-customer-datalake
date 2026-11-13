@@ -524,6 +524,50 @@ class TestScraperConfigsInAWorkspace:
         assert status == 200
         assert json.loads(world.stored(WS_A)['webscraper_configs']) == []
 
+    def test_a_save_is_stamped_with_the_caller_and_keeps_the_list_it_replaced(self, world, lambda_context):
+        """``updated_by`` is the caller's sub from the authorizer, never a body field."""
+        status, _ = _scrapers(lambda_context, 'POST', '/scrapers', claims=ADMIN_A, ws=WS_A,
+                              body={'scraper': dict(SCRAPER), 'updated_by': 'sub-forged'})
+        assert status == 200
+        first = world.row(f'WS#{WS_A}#PLUGIN_CONFIG', 'webscraper')
+        assert first is not None
+        assert first['updated_by'] == ADMIN_A['sub']
+
+        status, _ = _scrapers(lambda_context, 'POST', '/scrapers', claims=ADMIN_A, ws=WS_A,
+                              body={'scraper': {**SCRAPER, 'id': 'site-2'}, 'updated_by': 'sub-forged',
+                                    'superseded_by_sub': 'sub-forged'})
+        assert status == 200
+
+        items = world.aggregates.scan()['Items']
+        [history] = [item for item in items if item['pk'] == f'WS#{WS_A}#PLUGIN_CONFIG#HISTORY']
+        assert (history['configs'], history['updated_by'], history['superseded_by_sub']) == (
+            first['configs'], ADMIN_A['sub'], ADMIN_A['sub'])
+        authors = {item[name] for item in items for name in ('updated_by', 'superseded_by_sub') if name in item}
+        assert authors == {ADMIN_A['sub']}
+
+    def test_a_save_that_races_another_is_a_409(self, world, lambda_context):
+        """Another save lands between this one's read and its write: 409, and the other save stays as it was."""
+        _scrapers(lambda_context, 'POST', '/scrapers', claims=ADMIN_A, ws=WS_A, body={'scraper': dict(SCRAPER)})
+        upsert = scrapers_handler._upserted_configs
+
+        def racing(configs, scraper):
+            # Another admin's save of a different list, made after this request read the row.
+            world.aggregates.update_item(Key={'pk': f'WS#{WS_A}#PLUGIN_CONFIG', 'sk': 'webscraper'},
+                                         UpdateExpression='SET configs = :c',
+                                         ExpressionAttributeValues={':c': json.dumps([{**SCRAPER, 'id': 'site-3'}])})
+            return upsert(configs, scraper)
+
+        with patch.object(scrapers_handler, '_upserted_configs', side_effect=racing):
+            status, body = _scrapers(lambda_context, 'POST', '/scrapers', claims=ADMIN_A, ws=WS_A,
+                                     body={'scraper': {**SCRAPER, 'id': 'site-2'}})
+
+        assert status == 409, body
+        assert 'changed by someone else' in body['error']
+        row = world.row(f'WS#{WS_A}#PLUGIN_CONFIG', 'webscraper')
+        assert row is not None
+        assert [c['id'] for c in json.loads(row['configs'])] == ['site-3']
+        assert f'WS#{WS_A}#PLUGIN_CONFIG#HISTORY' not in world.partitions()
+
     @pytest.mark.parametrize(('claims', 'expected'), [(EDITOR_A, 403), (ADMIN_B, 404)])
     def test_only_the_workspaces_admins_save(self, world, lambda_context, claims, expected):
         status, _ = _scrapers(lambda_context, 'POST', '/scrapers', claims=claims, ws=WS_A,

@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.17.00] - 2026-11-13
+
+Multi-workspace, phase 4a: the voc-multiplayer-b track's export and config-history slices merged. A workspace's admins export the workspace from Workspace settings and download it for 7 days, and a workspace's plugin config lists keep their history ([docs/multi-workspace.md](docs/multi-workspace.md#export-and-delete)). The export does not yet hold the workspace's memory or its members' conversations (per workspace since 7.16.00 and 7.15.00): the manifest lists them as not exported, an open gap.
+
+### Added
+
+- A workspace admin (or a platform admin entering, audited) exports the workspace: `POST /me/workspaces/current/export` queues one export per workspace (409 while one runs, or while an erasure runs in the workspace), `GET` shows its status, and `POST /me/workspaces/current/export/link` gives a fresh 15-minute download link, audited, while the export is completed and within 7 days. The requester gets a job notice; no email is sent.
+- The export job (`voc-workspace-export`, in VocProcessingStack) writes JSONL per entity and a manifest into one streaming ZIP64 under `ws/{ws}/exports/`, one S3 multipart upload resumed across invocations; it reads only through the workspace layer, by Query, never exports credentials, value hashes or email hashes, lists what is not per workspace yet or not exported, and checks its counts against the daily counters. It exports the feedback, the plugin config lists and their history, the feedback forms, the import runs, the erasure jobs, the workspace, its members and its audit rows. Raw objects, memory and conversations come in a later release.
+- Workspace settings gains an Export section for the workspace's admins: Start an export, its status (refreshed while it is being made, and no longer once it is done or failed), Download (a fresh 15-minute link for each press), the 7-day window and each refusal said in words, in all nine languages. The dev mock serves the three routes.
+- Export objects carry a `voc-export` tag and expire after 10 days; a bucket Deny keeps the tag, and copies of an export, out of every other prefix.
+
+### Changed
+
+- D5: an erasure that reaches a workspace (its items or a member's row) closes that workspace's exports at once (marked erased, no link signed), keeps their lock through its hand-overs, aborts any open upload and deletes every version under `ws/{ws}/exports/`, swept twice; the remaining windows (and retention windows, which do not clear exports) are written down as D5 gaps.
+- A workspace's scraper, app-connector and review-page lists keep their history: each save that changes a list keeps the replaced list as a history row in the workspace (`WS#{ws}#PLUGIN_CONFIG#HISTORY`, kept forever, with who replaced it and when), and stamps the current list with who saved it (from the sign-in, never the request) and when; both are written in one transaction, so a concurrent save answers 409 instead of losing an entry. The list is saved before the plugin's credentials. A save still refuses to write anything unless the workspace's settings were read first (7.12.00).
+
+### Upgrade notes
+
+- Deploy as usual (`npm run deploy:all` from the repo root): the processing stack gains the `voc-workspace-export` function and its role, the core stack's raw data bucket gains the export lifecycle rule (objects tagged `voc-export=true` under `ws/*/exports/` expire after 10 days) and the bucket policy's Denies on that tag elsewhere, the API stack's workspaces role gains its export grants, and `voc-retention` gains the exports phase. No table, index or cross-stack reference changes, and nothing is migrated.
+- The account's Lambda concurrency quota must be at least 130 in the deployment's region: the export job reserves 10 concurrent executions, beside the reservations the stacks already make ([docs/deployment.md](docs/deployment.md)). Raise it in Service Quotas before deploying if it is lower: the deploy fails otherwise.
+- IAM: the export job reads only a workspace's own partitions (`dynamodb:Query` and `GetItem` by `dynamodb:LeadingKeys`; Query only on the control-plane partitions of `voc-workspaces`), writes and lists only under `ws/{one id}/exports/*` and deletes only its own work objects; the workspaces API may put, update and query `WS#{one id}#JOB#export` in voc-aggregates, read `ws/{one id}/exports/*` (to sign the link) and invoke the job by name; `voc-retention` may delete every version and abort an upload under `ws/{one id}/exports/*`, and list the bucket's open uploads (`ListBucketMultipartUploads` takes no prefix condition). The integrations and scrapers roles' table grants already cover the history rows.
+
 ## [7.16.00] - 2026-11-13
 
 Multi-workspace: the voc-multiplayer-c track's memory-extraction slice merged. Inside a workspace, Memory learns from that workspace's conversations and imported pages ([docs/memory.md](docs/memory.md), [docs/multi-workspace.md](docs/multi-workspace.md)).
