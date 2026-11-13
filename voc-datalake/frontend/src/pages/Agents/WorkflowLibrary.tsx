@@ -25,9 +25,9 @@ import { starterDefinition } from '../../components/WorkflowEditor/model'
 import { NameDialog } from '../../components/NameDialog/NameDialog'
 import { failedReads } from '../../utils/failedReads'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
-import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
+import { WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import {
-  API_WORKFLOW_LIMITS, WORKFLOW_SCHEMA_V2, seedWorkflowDetail, workflowsApi, workflowsKeys,
+  API_WORKFLOW_LIMITS, seedWorkflowDetail, workflowsApi, workflowsKeys,
 } from '../../api/workflowsApi'
 import { isEngineeringAvailable } from '../../runtimeConfig'
 import { workflowPath } from './workflowPaths'

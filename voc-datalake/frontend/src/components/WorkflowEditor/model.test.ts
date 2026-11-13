@@ -11,7 +11,7 @@ import {
 import { clampRounds, loopIssues } from './loopFields'
 import { emptyDefinition } from './model-fixtures'
 import { validateLocally } from './graphRules'
-import { WORKFLOW_ALL_NODE_TYPES } from '../../api/workflowsApi'
+import { WORKFLOW_ALL_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import { at } from '@test/defined'
 

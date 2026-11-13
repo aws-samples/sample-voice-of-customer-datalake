@@ -136,7 +136,10 @@ opt-in engineering module is on. The library has **New workflow** (an agents wor
 on (`config.json` `features.engineering`), **New engineering flow**; an engineering flow's palette shows **Engineering** (with Start and
 End), its settings panels set each step's settings (no step role and no loops: its board does the repeating), and its
 graph rules are mirrored as you edit (`WorkflowEditor/engineeringRules.ts`, held to the
-server by the shared fixture `frontend/src/test/engineeringFlows.json`).
+server by the shared fixture `frontend/src/test/engineeringFlows.json`). The AI assistant drafts one too, with its
+workflow tools (`validate_workflow`, then `create_workflow` or `update_workflow` behind an approval card), and the
+web app creates a new one that way only where the module is on, like the button (one already saved is changed
+anywhere, as in the editor).
 
 ### An engineering run: monitor, board, conversation, reports
 

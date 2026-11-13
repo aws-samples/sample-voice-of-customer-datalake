@@ -9,7 +9,7 @@
 import { useTranslation } from 'react-i18next'
 import { NodeTypeIcon } from './NodeTypeIcon'
 import { NODE_CATALOGUE, PALETTE_MIME, paletteGroupsFor } from './model'
-import { WORKFLOW_ALL_NODE_TYPES } from '../../api/workflowsApi'
+import { WORKFLOW_ALL_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
 import type { DragEvent } from 'react'
 import type { WorkflowNodeType, WorkflowSchema } from '../../api/workflowsApi'
 

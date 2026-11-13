@@ -22,7 +22,8 @@
 import { del, post, put } from './requestKit'
 import { z } from 'zod'
 import {
-  WORKFLOW_EDGE_LABELS, WORKFLOW_LOOP_UNTIL, WORKFLOW_NODE_ROLES, WORKFLOW_NODE_TYPES, WORKFLOW_SCHEMA_VERSION,
+  WORKFLOW_ALL_NODE_TYPES, WORKFLOW_EDGE_LABELS, WORKFLOW_LOOP_UNTIL, WORKFLOW_NODE_ROLES, WORKFLOW_SCHEMA_V2,
+  WORKFLOW_SCHEMA_VERSION,
 } from '@stream/assistant/tools/agent-limits'
 import { isRecord } from '../lib/typeGuards'
 import { fetchApi } from './client'
@@ -31,17 +32,7 @@ import type { QueryClient } from '@tanstack/react-query'
 
 export const DEFAULT_WORKFLOW_ID = 'wf_default'
 
-/**
- * An engineering flow (`voc-workflow/2`, `lambda/shared/workflow_engineering.py`): `start`, `end` and these steps,
- * never an agents step. The agents' workflows stay `voc-workflow/1` (the assistant drafts only those).
- */
-export const WORKFLOW_SCHEMA_V2 = 'voc-workflow/2'
 const WORKFLOW_SCHEMAS = [WORKFLOW_SCHEMA_VERSION, WORKFLOW_SCHEMA_V2] as const
-export const ENGINEERING_NODE_TYPES = [
-  'agent', 'map', 'reduce', 'board', 'quality_gate', 'learning_loop', 'self_improvement', 'memory', 'stop_at_pr',
-] as const
-/** Every step either kind of workflow may hold (which kind holds which is a graph rule). */
-export const WORKFLOW_ALL_NODE_TYPES = [...WORKFLOW_NODE_TYPES, ...ENGINEERING_NODE_TYPES] as const
 
 /** A step of either kind of workflow (an agents workflow's, or an engineering flow's). */
 export type WorkflowNodeType = (typeof WORKFLOW_ALL_NODE_TYPES)[number]
@@ -91,7 +82,7 @@ const jsonLength = (value: unknown) => JSON.stringify(value).length
 
 /**
  * A strict definition schema for the given limits and element-id rule, of the given kinds (both by default: the
- * editor's; the assistant's approval boundary takes agents workflows only).
+ * editor's; the assistant's approval boundary takes agents workflows, and engineering flows where the module is deployed).
  */
 export function buildWorkflowDefinitionSchema(
   limits: WorkflowLimits, elementId: z.ZodType<string>,

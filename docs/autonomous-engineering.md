@@ -539,9 +539,13 @@ shared fixture); its library offers New engineering flow only where the module i
 `features.engineering`). *Planned*: the six default flows as templates.
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
-you can fix") makes the AI assistant draft it in the editor behind an approval card, like its other writes; "refresh
-the knowledge pack", "pull the latest from the repository" and "what is agent X doing" work from the assistant too,
-through the same REST routes and MCP tools as everything else (tenet 4).
+you can fix") makes the AI assistant draft it behind an approval card, like its other writes: its workflow tools
+(`validate_workflow`, `create_workflow`, `update_workflow`) take a `voc-workflow/2` definition with the engineering
+steps, the agents API's `POST /workflows/validate` judges its rules, and the web app creates a new one only where the
+deployment has the engineering module (`features.engineering`, as the library's New engineering flow). *Planned*:
+"refresh the knowledge pack", "pull the latest from the repository" and "what is agent X doing" from the assistant
+too, through the same REST routes as everything else (an engineering run's reads are administrators-only, so no MCP
+tool while an MCP token never acts as an administrator: TENETS.md's tenet 4 gap).
 
 **The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
 live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,

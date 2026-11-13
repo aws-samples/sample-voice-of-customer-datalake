@@ -20,12 +20,9 @@ import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
-// The deployment's engineering module (config.json `features.engineering`).
-const engineering = vi.hoisted(() => ({ available: true }))
-vi.mock('../../runtimeConfig', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../../runtimeConfig')>(),
-  isEngineeringAvailable: () => engineering.available,
-}))
+vi.mock('../../runtimeConfig', (importOriginal) =>
+  import('@test/engineeringModule').then((m) => m.runtimeConfigModule(importOriginal)))
+const { engineeringModule: engineering } = await import('@test/engineeringModule')
 
 const { WorkflowLibrary } = await import('./WorkflowLibrary')
 const { default: WorkflowPage } = await import('./WorkflowPage')
