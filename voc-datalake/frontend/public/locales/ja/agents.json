@@ -18,7 +18,8 @@
   "views": {
     "label": "エージェントページのセクション",
     "agents": "エージェント",
-    "workflows": "ワークフロー"
+    "workflows": "ワークフロー",
+    "spend": "費用"
   },
   "list": {
     "title": "自律エージェント",
@@ -344,6 +345,10 @@
       "until": "終了条件",
       "maxRounds": "最大ラウンド数",
       "description": "説明",
+      "monthlyBudget": "月間予算（米ドル）",
+      "monthlyBudgetHint": "このフローの実行が 1 か月（UTC の暦月）に使える金額です。フローと一緒に保存されますが、まだ停止や通知は行いません。",
+      "monthlyBudgetInvalid": "ドルとセント（小数点以下 2 桁まで）で 0.01 ドルから {{largest}} までの金額を入力するか、予算なしの場合は空欄にしてください。",
+      "monthlyBudgetNone": "予算なし",
       "arrowTarget": "接続先ステップ",
       "arrowTargetNone": "ステップを選択…",
       "joinLoop": "ループ"
@@ -669,6 +674,33 @@
         "help": "これ以上何も実行されません。作成された成果物はプロジェクトに残ります。"
       }
     }
+  },
+  "spend": {
+    "hint": "エンジニアリングエージェントが使った費用（費用台帳より）：各セッションの費用、トークン、MicroVM 時間を、実行環境が計測したとおりに表示します。現時点の費用は MicroVM 時間のみで、モデルのトークンは数えていますがまだ課金額に含まれません。月は UTC です。",
+    "month": "月",
+    "groupBy": "グループ化",
+    "by": {
+      "workflow": "ワークフロー",
+      "repo": "リポジトリ",
+      "run": "実行",
+      "agent": "エージェント",
+      "model": "モデル",
+      "day": "日"
+    },
+    "cost": "費用",
+    "tokensIn": "入力トークン",
+    "tokensOut": "出力トークン",
+    "microvm": "MicroVM 時間",
+    "none": "記録なし",
+    "otherModels": "その他のモデル",
+    "workflowRuns": "{{name}}：実行を表示",
+    "inRun": "実行 {{run}}",
+    "onlyWorkflow": "ワークフロー：{{name}}",
+    "allWorkflows": "すべてのワークフローを表示",
+    "tableCaption": "{{month}}の費用（グループ：{{by}}）",
+    "loadFailed": "費用を読み込めませんでした。",
+    "truncated": "この月の行数は 1 回の読み取りの上限を超えています。表示の数値は下限です。",
+    "empty": "{{month}}の費用はありません。"
   },
   "engineeringRun": {
     "untitled": "エンジニアリング実行",

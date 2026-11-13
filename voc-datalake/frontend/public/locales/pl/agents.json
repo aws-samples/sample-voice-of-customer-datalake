@@ -20,7 +20,8 @@
   "views": {
     "label": "Sekcje strony agentów",
     "agents": "Agenci",
-    "workflows": "Przepływy pracy"
+    "workflows": "Przepływy pracy",
+    "spend": "Wydatki"
   },
   "list": {
     "title": "Agenci autonomiczni",
@@ -307,6 +308,10 @@
       "until": "Do momentu",
       "maxRounds": "Maksymalna liczba rund",
       "description": "Opis",
+      "monthlyBudget": "Miesięczny budżet (dolary amerykańskie)",
+      "monthlyBudgetHint": "Ile mogą wydać uruchomienia tego przepływu w miesiącu kalendarzowym (UTC). Zapisywany z przepływem: na razie niczego nie zatrzymuje ani nie wysyła alertów.",
+      "monthlyBudgetInvalid": "Wpisz kwotę w dolarach i centach od 0,01 USD do {{largest}} albo zostaw puste pole, jeśli bez budżetu.",
+      "monthlyBudgetNone": "Brak budżetu",
       "arrowTarget": "Do kroku",
       "arrowTargetNone": "Wybierz krok…",
       "joinLoop": "Pętla"
@@ -702,6 +707,33 @@
     "reviewRun": "Przejrzyj przebieg",
     "verdicts_few": "{{count, number}} opinie person",
     "verdicts_many": "{{count, number}} opinii person"
+  },
+  "spend": {
+    "hint": "Ile wydały agenty inżynieryjne, według rejestru wydatków: koszt, tokeny i czas MicroVM każdej sesji, tak jak zmierzyło je środowisko uruchomieniowe. Na razie koszt to czas MicroVM: tokeny modelu są liczone, ale jeszcze nie wyceniane. Miesiące w UTC.",
+    "month": "Miesiąc",
+    "groupBy": "Grupuj według",
+    "by": {
+      "workflow": "Przepływ pracy",
+      "repo": "Repozytorium",
+      "run": "Uruchomienie",
+      "agent": "Agent",
+      "model": "Model",
+      "day": "Dzień"
+    },
+    "cost": "Koszt",
+    "tokensIn": "Tokeny wejściowe",
+    "tokensOut": "Tokeny wyjściowe",
+    "microvm": "Czas MicroVM",
+    "none": "Nie zapisano",
+    "otherModels": "Inne modele",
+    "workflowRuns": "{{name}}: pokaż uruchomienia",
+    "inRun": "w uruchomieniu {{run}}",
+    "onlyWorkflow": "Przepływ pracy: {{name}}",
+    "allWorkflows": "Pokaż wszystkie przepływy pracy",
+    "tableCaption": "Wydatki – {{month}}, grupowane według: {{by}}",
+    "loadFailed": "Nie udało się wczytać wydatków.",
+    "truncated": "Ten miesiąc ma więcej wierszy, niż obejmuje jeden odczyt: pokazane liczby to dolna granica.",
+    "empty": "Brak wydatków – {{month}}."
   },
   "engineeringRun": {
     "untitled": "Przebieg inżynieryjny",

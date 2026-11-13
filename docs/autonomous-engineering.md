@@ -522,14 +522,15 @@ the write holds the holder it read), and an
 agent's signal to a task a person holds is refused (no agent works on it). Blocking it ends it as needing a person,
 with their reason (the only way a person sends a task there: a move to it is refused, so the why is always kept).
 A person re-prioritises a task another person holds without `over`: a priority ends no hold, so nothing is taken
-from them. Never the coordinate task. *The Agents API's grant (a known gap, tenet 6):* its role writes a person's
-actions itself, with PutItem and UpdateItem bounded by IAM only to the run's partition (`dynamodb:LeadingKeys`), so
-it could write any item of a run (META's every attribute, the tasks, their SPEC# markers and TASKLOG# rows, the
-RUNLOG# rows, the agents' AGENT# session rows, the conversation's MSG# and the INBOX# rows), and only its code keeps
-it to the board store's conditional writes (the task row, its SPEC# marker, its TASKLOG# row, META's `task_count`).
-`dynamodb:Attributes` cannot narrow it per row (its names are the request's, not a row's, and a PutItem of allowed
-names still replaces a whole row). *Planned*: the Agents API asks the board function to make a person's change,
-whose role already writes those rows, and its own write grant goes.
+from them. Never the coordinate task. The Agents API makes none of these writes itself: after its own checks (an
+administrator acting for themselves, an open run, the bus named) it invokes the board's function directly
+(`voc-datalake/lambda/engineering/board/api.py` `person_request`, `{person: {op, run_id, subject, body, task_id?,
+action?}}`), whose role already writes the board's rows; the board writes the change and hands back the events it
+made, which the API publishes from its own source as the person (the bus takes a person's `task.*` only from there).
+The API's role reads the table (GetItem, Query) and writes none of it, closing the gap where IAM, bounded only by the
+run's partition, let it write any item of a run. The agent roles may invoke the board only through its function URL
+(`lambda:InvokedViaFunctionUrl`), so a direct invoke, the only way into the person path, is the API's; a function
+URL's event is always an agent's, whatever its body says.
 
 **The conversation.** Every event is also written to the run's conversation (DynamoDB, append-only, D1), which the run
 view shows live as a chat between the agents beside the board. The person is a participant: their decisions, answers
@@ -1517,15 +1518,61 @@ sample's own; a connection's cases will run in the runtime's MicroVMs.
 
 ## Cost
 
-*Planned.* Nothing runs, and nothing is billed, until an administrator connects a repository and enables an agent.
+Nothing runs, and nothing is billed, until an administrator connects a repository and starts a run.
 Then, per use: model tokens (Bedrock), MicroVM time while an agent works (suspended while it waits), EventBridge per
 event, SQS for the one dead-letter queue (no task queues), DynamoDB on demand, S3 for the workspace, caches and packs, the supervisor's invocations while a run is
 active. The connection's credential is a standard SecureString parameter, with no monthly charge. No NAT gateway and
-no other fixed cost by default. The cost of each run (events, MicroVM seconds, model tokens) is measured and shown on
-the run. A run's end adds its retrospective: one more invocation of voc-engineering-runtime (DynamoDB reads of the
-run's own rows, a few create-only writes), plus one per failure it takes to the coach (at most three), each one
-Converse call (the prompt is at most the 40,000-character evidence plus the role's skill; the answer at most 8,000
-tokens, thinking included; at most 200 seconds), made once per failure.
+no other fixed cost by default. Each run's MicroVM seconds and model tokens are measured on its agents' session rows
+(MicroVM time priced, tokens counted) and kept by month in the spend ledger below, which Agents → Spend shows;
+*planned*: the run monitor's cost line, and the model broker's pricing of tokens. A run's end adds its retrospective:
+one more invocation of voc-engineering-runtime (DynamoDB reads of the run's own rows, a few create-only writes), plus
+one per failure it takes to the coach (at most three), each one Converse call (the prompt is at most the
+40,000-character evidence plus the role's skill; the answer at most 8,000 tokens, thinking included; at most 200
+seconds), made once per failure. The coach's Converse calls are not on a session row, so the spend ledger does not
+count them yet.
+
+**The spend ledger** (`voc-datalake/lambda/engineering/spend.py`, built). What the runs use is kept by day, workflow, run, agent and
+model: one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per
+`DAY#<dd>#WF#<flow>#RUN#<run>#AGENT#<agent>#MODEL#<model>`, whose numbers only grow by ADD (`usd`, `tokens_in`,
+`tokens_out`, `microvm_seconds`), with the run's repository on the row for grouping. Each row is written in the same
+transaction as the session write whose metering it mirrors (the session store's priced writes: MicroVM seconds, priced
+at `ENGINEERING_MICROVM_USD_PER_SECOND`, under the model `microvm`; each model's new tokens), so the ledger and the
+sessions never drift and a retried write adds once. A row is booked to the day (UTC) of the write that measured it
+(when the supervisor counted the MicroVM time, or the harness's report reached it), and the ledger starts when it is
+deployed: a session's earlier tokens are not booked. Model tokens are counted, not yet priced: their dollars join the
+same rows when the model broker meters them. The model names come from the harness's report, inside the MicroVM: names
+that clean to the same key part (ASCII, at most 128 bytes, so a sort key always fits) are summed into one row, a
+session ledgers only 8 models by name, the first in name order (any others on its `-` row, so no session opens rows
+without end; a model that sorts earlier and is first reported later moves a later one onto `-` from then on, the
+totals unchanged),
+one write adds at most 32 rows (a transaction holds 100 items), and a reported model named `microvm` is ledgered as
+`microvm-reported`, so no report can fail the session's write, flood the month or pass for MicroVM time. The writers' roles
+may update the month partitions only (`WS#default#SPEND#20??-??`: UpdateItem, never a read or a delete; IAM cannot
+limit an update to ADDs, the code only ADDs to the counters); the Agents API reads them.
+`GET /agents/engineering/spend?month=&by=&workflow=` (administrators) answers a month grouped by workflow,
+repository, run, agent, model or day. The web app's **Spend** tab (Agents → Spend, `?tab=spend`: administrators,
+while the engineering agents are on) reads it: the month's cost, tokens and MicroVM time, then each group, biggest
+first; the month (the last 24 in its picker, any older one by its address), the grouping and a workflow are view
+options in the address; a workflow's row narrows the view to its runs, and a run's or an agent's opens its run
+monitor. Each engineering flow may set a monthly budget (`budget: {monthly_usd}`, docs/autonomous-agents.md
+"Engineering flows"), recorded with the flow; *planned*: measuring it against this ledger, alerts as a flow's month passes 80%, 100% and each
+further 50% of it, and the administrators' opt-in hard cap. The ledger is a dated view of what the sessions measured: each agent's own
+totals (its `cost_usd`, MicroVM seconds and tokens per model) stay on its session row, the record each run's caps and
+the run monitor read, and every ledger row only ever grows with the session write that measured it, naming its
+writer (`updated_by`), when (`updated_at`) and that session write's version (`session_seq`, D4). The rows are cost
+records, kept under D5 like customer data: they are never deleted and carry no TTL (no writer has a delete grant on
+them), and anything that ever removes one is to go through the AUDIT# guard. Because the two
+are one transaction, a ledger row the table refuses also stops that session's move: the supervisor logs "could not
+move" and tries again on the next tick, so a refused ledger (a grant that does not match the workspace) shows as
+agents that stop moving.
+
+Load: the month partition is a hot key per workspace, written with each priced session write, which the supervisor
+makes about once a minute per live agent (its tick) plus its other moves: with 50 live agents, about 2 ledger rows a
+second (MicroVM and model); at 2× (100 agents) 4, at 10× (500 agents) about 20 a second. Those writes are now one
+transaction with the session row, which DynamoDB bills at 2 write units per KB per item (about twice the plain update
+it replaces), and a partition takes about 500 transactional writes a second: 20 is far under it, so no sharding. The read is one Query of one month partition (eventually consistent), grouped
+server-side by the route, never a whole-table read, and stops at 20,000 rows (`MAX_ROWS`; a month past it is answered
+as far as it read and marked `truncated`): a month of 50 agents on 10 workflows stays in the low thousands of rows.
 
 ## Phases and status
 
@@ -1543,4 +1590,4 @@ and the phase that ships them names them in that row.
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents planned, and no run started from a flow yet |
-| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's run tools planned |
+| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor (with a flow's monthly budget), Agents → Spend (the spend ledger by workflow, repository, run, agent, model or day), and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)), and the six templates in the library (Start from a template: an unsaved copy in the editor, saved through the library's own create; same place); live cost, skill histories, a template id in the assistant's `create_workflow` and the assistant's run tools planned |

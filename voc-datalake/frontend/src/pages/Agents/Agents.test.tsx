@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
@@ -20,7 +20,11 @@ vi.mock('../../store/authStore', async (importOriginal) => ({
   ...(await import('@test/fetchApiRoutes')).authStoreModule(),
 }))
 
+vi.mock('../../runtimeConfig', (importOriginal) =>
+  import('@test/engineeringModule').then((m) => m.runtimeConfigModule(importOriginal)))
+
 const { default: Agents } = await import('./Agents')
+const { engineeringModule } = await import('@test/engineeringModule')
 const { LIST_POLL_MS } = await import('./useAgents')
 
 const agent = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
@@ -34,11 +38,17 @@ const agent = (id: string, name: string, extra: Record<string, unknown> = {}) =>
 const NO_PLANS: Record<string, RouteHandler> = { 'GET /agents/plans?limit=20': () => ({ plans: [] }) }
 const route = (routes: Record<string, RouteHandler>) => routeFetchApi({ ...NO_PLANS, ...routes }, { missStatus: 500 })
 
+/** The address, for the view options a tab keeps or drops. */
+function Where() {
+  const location = useLocation()
+  return <p data-testid="where">{location.search}</p>
+}
+
 function renderList(entry = '/agents') {
   return renderWithQueryClient(
     <TestRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/agents" element={<Agents />} />
+        <Route path="/agents" element={<><Agents /><Where /></>} />
         <Route path="/agents/:id" element={<p>Agent detail page</p>} />
       </Routes>
     </TestRouter>,
@@ -55,6 +65,7 @@ function rowOf(name: HTMLElement): HTMLAnchorElement {
 beforeEach(() => {
   resetFetchApi()
   adminFlag.isAdmin = true
+  engineeringModule.available = false
 })
 
 afterEach(() => { vi.useRealTimers() })
@@ -339,5 +350,40 @@ describe('Agents list — Rename and Delete', () => {
     await screen.findByText('Scout')
     expect(screen.queryByRole('button', { name: 'Rename Scout' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete Scout' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Agents list — the Spend tab', () => {
+  const spendCalls = () => fetchApi.mock.calls.map(([path]) => path).filter((path) => path.startsWith('/agents/engineering/spend'))
+  const SPEND = 'GET /agents/engineering/spend?month=2026-10&by=run&workflow=wf_fix'
+  const month = () => ({ month: '2026-10', total: { usd: 0, tokens_in: 0, tokens_out: 0, microvm_seconds: 0 }, groups: [] })
+
+  it('an admin has it while the engineering agents are on, and leaving it leaves its options behind', async () => {
+    engineeringModule.available = true
+    const user = userEvent.setup()
+    route({ 'GET /agents': () => ({ items: [] }), 'GET /workflows': () => ({ items: [] }), [SPEND]: month })
+    renderList('/agents?tab=spend&month=2026-10&by=run&workflow=wf_fix')
+    expect(await screen.findByRole('tab', { name: 'Spend', selected: true })).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Agents' }))
+    expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\?tab=agents$/)
+  })
+
+  it('without the engineering agents there is none, and ?tab=spend shows the agents', async () => {
+    route({ 'GET /agents': () => ({ items: [] }) })
+    renderList('/agents?tab=spend')
+    expect(await screen.findByRole('tab', { name: 'Agents', selected: true })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Spend' })).not.toBeInTheDocument()
+    expect(spendCalls()).toStrictEqual([])
+  })
+
+  it('a non-admin has no tabs and never reads the spend', async () => {
+    engineeringModule.available = true
+    adminFlag.isAdmin = false
+    route({ 'GET /agents': () => ({ items: [] }) })
+    renderList('/agents?tab=spend')
+    expect(await screen.findByText('No autonomous agents yet')).toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(spendCalls()).toStrictEqual([])
   })
 })

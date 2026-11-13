@@ -19,7 +19,8 @@
   "views": {
     "label": "Seções da página de agentes",
     "agents": "Agentes",
-    "workflows": "Fluxos"
+    "workflows": "Fluxos",
+    "spend": "Gastos"
   },
   "list": {
     "title": "Agentes autônomos",
@@ -348,6 +349,10 @@
       "until": "Até",
       "maxRounds": "Máximo de rodadas",
       "description": "Descrição",
+      "monthlyBudget": "Orçamento mensal (dólares americanos)",
+      "monthlyBudgetHint": "O que as execuções deste fluxo podem gastar num mês civil (UTC). Fica guardado com o fluxo: ainda nada é parado nem alertado.",
+      "monthlyBudgetInvalid": "Introduza um valor em dólares e cêntimos de US$ 0,01 a {{largest}}, ou deixe vazio para não ter orçamento.",
+      "monthlyBudgetNone": "Sem orçamento",
       "arrowTarget": "Para a etapa",
       "arrowTargetNone": "Escolha uma etapa…",
       "joinLoop": "Loop"
@@ -675,6 +680,33 @@
         "help": "Nada mais é executado. O que a execução produziu fica no projeto."
       }
     }
+  },
+  "spend": {
+    "hint": "O que os agentes de engenharia gastaram, segundo o registro de gastos: o custo, os tokens e o tempo de MicroVM de cada sessão, como o ambiente de execução os mediu. Por enquanto, o custo é o tempo de MicroVM: os tokens do modelo são contados, mas ainda não têm preço. Os meses estão em UTC.",
+    "month": "Mês",
+    "groupBy": "Agrupar por",
+    "by": {
+      "workflow": "Fluxo",
+      "repo": "Repositório",
+      "run": "Execução",
+      "agent": "Agente",
+      "model": "Modelo",
+      "day": "Dia"
+    },
+    "cost": "Custo",
+    "tokensIn": "Tokens de entrada",
+    "tokensOut": "Tokens de saída",
+    "microvm": "Tempo de MicroVM",
+    "none": "Não registrado",
+    "otherModels": "Outros modelos",
+    "workflowRuns": "{{name}}: ver suas execuções",
+    "inRun": "na execução {{run}}",
+    "onlyWorkflow": "Fluxo: {{name}}",
+    "allWorkflows": "Ver todos os fluxos",
+    "tableCaption": "Gastos em {{month}}, agrupados por: {{by}}",
+    "loadFailed": "Não foi possível carregar os gastos.",
+    "truncated": "Este mês tem mais linhas do que uma leitura traz: os valores mostrados são um mínimo.",
+    "empty": "Nada foi gasto em {{month}}."
   },
   "engineeringRun": {
     "untitled": "Execução de engenharia",

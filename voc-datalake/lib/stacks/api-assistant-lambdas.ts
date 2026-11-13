@@ -10,14 +10,17 @@ import * as path from 'path';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { grantClaudeModels, grantClaudeModelsToFunction } from '../utils/claude-model-grant';
 import { grantEmbeddingModel } from '../utils/memory-recall-grant';
-import { AGENTS_API_FUNCTION_BASE_NAME, MEMORY_API_FUNCTION_BASE_NAME } from '../utils/function-names';
+import {
+  AGENTS_API_FUNCTION_BASE_NAME, ENGINEERING_BOARD_FUNCTION_BASE_NAME, MEMORY_API_FUNCTION_BASE_NAME,
+} from '../utils/function-names';
 import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
 import { appVersion } from '../utils/connector-version';
 import type { ApiStackContext } from './api-context';
 import { createS3ImportLambda } from './api-s3-import-lambda';
-import { ENGINEERING_RUN_PARTITIONS, ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
+import { ENGINEERING_WORKSPACE_REPORTS_KEYS } from './core-buckets';
+import { grantInvokeByName } from '../utils/worker-lambda';
 import { engineeringAgentsEnabled } from './engineering-broker';
 
 /**
@@ -55,8 +58,9 @@ export interface AssistantLambdas {
 
 /**
  * With `-c engineeringAgents=true`, the agents API's reads of an engineering run (`/agents/engineering/<run_id>/…`,
- * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows), PutItem and UpdateItem for a
- * person's board actions (never DeleteItem), and GetObject on the workspace
+ * lambda/engineering/views.py): GetItem and Query on voc-engineering (a run's rows, and the spend ledger's month
+ * partitions for `GET /agents/engineering/spend`), never a write; `lambda:InvokeFunction` on the board's function
+ * for a person's board actions (its own role writes them), and GetObject on the workspace
  * bucket's reports only; its key comes with the role's grant on the stack's key. No ListBucket (it would list every
  * run object's key): S3 answers a report version that was counted but never written with 403, which views.py reads as
  * missing (404), since the role may read every report key. Returns the env that turns the routes on (shared/engineering_agents.py),
@@ -69,23 +73,12 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table and voc-eng-workspace bucket');
   }
   engineeringTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query');
-  // PutItem and UpdateItem: a person's board actions (engineering/board/api.py PersonBoard), each the board store's
-  // conditional write in one transaction with its history row (a TransactWriteItems is authorised by its items'
-  // own actions: there is no IAM action of its own). Only in a run's partition (`WS#<ws>#RUN#<run>`), never the
-  // skills', the knowledge packs' or any other; never DeleteItem. Within that partition IAM cannot narrow it
-  // further, so this role can Put or Update EVERY item of a run: its META (any attribute, not only `task_count`),
-  // its TASK# and SPEC# rows, its TASKLOG# rows (a Put overwrites one: create-only is the board store's own
-  // condition, not IAM's), its AGENT# session rows, its RUNLOG#, MSG# and INBOX# rows. `dynamodb:Attributes` does not
-  // close that: it lists names for the whole request, not per row, so the task row's `role` and `task_id` would
-  // stay writable on a session row, and a PutItem of allowed names still replaces a whole row. What keeps it to a
-  // person's board actions is the code: the Agents API's only writes are the board store's conditional ones
-  // (engineering/board/store.py). The follow-up is to route a person's actions through the board function
-  // (docs/autonomous-engineering.md, "The board"), whose role already writes these rows, and drop this grant.
-  role.addToPolicy(new iam.PolicyStatement({
-    actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'], resources: [engineeringTable.tableArn],
-    // The one workspace named (no `*` that could span a `#`), and a run's id, a ULID: exactly 26 characters.
-    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [ENGINEERING_RUN_PARTITIONS] } },
-  }));
+  // A person's board actions go through the board's function (engineering/board/api.py person_request), invoked
+  // directly: its own role writes the change, and hands the events back for this role to publish as the person. This
+  // role writes no row of the table. The agent roles may invoke the board only through its function URL
+  // (`lambda:InvokedViaFunctionUrl`), so a direct invoke is this role's (VocProcessingStack deploys the function first;
+  // reached by its deterministic name, as the plan-step runner reaches this stack's functions).
+  grantInvokeByName(cdk.Stack.of(role), role, [ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME)], 'BoardPersonActions');
   const reports = engineeringWorkspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_REPORTS_KEYS);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [reports] }));
   acknowledgeNag(role, [{
@@ -97,6 +90,7 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
     ENGINEERING_AGENTS: 'on',
     ENGINEERING_TABLE: engineeringTable.tableName,
     ENGINEERING_WORKSPACE_BUCKET: engineeringWorkspaceBucket.bucketName,
+    ENGINEERING_BOARD_FUNCTION: ctx.uniqueName(ENGINEERING_BOARD_FUNCTION_BASE_NAME),
   };
 }
 

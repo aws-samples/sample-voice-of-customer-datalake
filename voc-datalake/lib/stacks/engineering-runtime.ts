@@ -43,6 +43,7 @@ import { Construct } from 'constructs';
 
 import { capitalize } from '../plugin-loader';
 import { ENGINEERING_CACHE_PREFIX } from './core-buckets';
+import { grantSpendLedger, viaServices } from './engineering-runtime-grants';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { engineeringAgentsEnabled } from './engineering-broker';
@@ -121,15 +122,6 @@ const AGENT_ROLES = [
   'builder', 'coach', 'commit-reviewer', 'committer', 'coordinator', 'final-go', 'fixer', 'gate-runner', 'hunter',
   'mapper', 'pr-author', 'pr-reviewer', 'understander',
 ];
-/** `actions` on `key`, only when one of `services` (in this region) calls KMS for the role. */
-function viaServices(key: kms.IKey, actions: string[], services: string[]): iam.PolicyStatement {
-  const region = cdk.Stack.of(key).region;
-  return new iam.PolicyStatement({
-    actions,
-    resources: [key.keyArn],
-    conditions: { StringEquals: { 'kms:ViaService': services.map((service) => `${service}.${region}.amazonaws.com`) } },
-  });
-}
 
 /**
  * The only bus source a session of `agentRole` may put events with (lambda/engineering/bus/senders.py): an agent's
@@ -340,6 +332,7 @@ class EngineeringRuntime extends Construct {
       resources: [engineeringTable.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS] } },
     }));
+    grantSpendLedger(role, engineeringTable);
     const checkpoints = this.grantCheckpointReads(role, workspaceBucket);
     role.addToPrincipalPolicy(viaServices(kmsKey, ['kms:Decrypt', 'kms:GenerateDataKey'], ['s3', 'dynamodb', 'sqs']));
     // Waking (resume, a fresh session over the MicroVM's auth token) and continuing (a new MicroVM, the old one ended).
@@ -481,6 +474,7 @@ class EngineeringRuntime extends Construct {
       resources: [engineeringTable.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [RUN_PARTITIONS, RUN_REGISTRY] } },
     }));
+    grantSpendLedger(role, engineeringTable);
     // Its one delete: an ended run's row in the registry of active runs; never a run's own rows.
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['dynamodb:DeleteItem'],

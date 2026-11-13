@@ -18,7 +18,8 @@
   "views": {
     "label": "智能体页面分区",
     "agents": "智能体",
-    "workflows": "工作流"
+    "workflows": "工作流",
+    "spend": "费用"
   },
   "list": {
     "title": "自主智能体",
@@ -344,6 +345,10 @@
       "until": "直到",
       "maxRounds": "最大轮数",
       "description": "描述",
+      "monthlyBudget": "月度预算（美元）",
+      "monthlyBudgetHint": "此流程的运行在一个自然月（UTC）内可花费的金额。随流程保存：目前不会停止运行，也不会发出提醒。",
+      "monthlyBudgetInvalid": "请输入以美元和美分计（最多两位小数）、介于 0.01 美元到 {{largest}} 之间的金额，或留空表示无预算。",
+      "monthlyBudgetNone": "无预算",
       "arrowTarget": "指向步骤",
       "arrowTargetNone": "选择一个步骤…",
       "joinLoop": "循环"
@@ -669,6 +674,33 @@
         "help": "不再运行任何步骤。运行产生的内容保留在项目中。"
       }
     }
+  },
+  "spend": {
+    "hint": "工程智能体的花费（来自费用台账）：每个会话的费用、令牌和 MicroVM 时间，以运行时的计量为准。目前费用只包含 MicroVM 时间：模型令牌已计数，但尚未计价。月份按 UTC 计算。",
+    "month": "月份",
+    "groupBy": "分组依据",
+    "by": {
+      "workflow": "工作流",
+      "repo": "代码库",
+      "run": "运行",
+      "agent": "智能体",
+      "model": "模型",
+      "day": "日期"
+    },
+    "cost": "费用",
+    "tokensIn": "输入令牌",
+    "tokensOut": "输出令牌",
+    "microvm": "MicroVM 时间",
+    "none": "未记录",
+    "otherModels": "其他模型",
+    "workflowRuns": "{{name}}：查看其运行",
+    "inRun": "运行 {{run}}",
+    "onlyWorkflow": "工作流：{{name}}",
+    "allWorkflows": "显示所有工作流",
+    "tableCaption": "{{month}}的费用，分组依据：{{by}}",
+    "loadFailed": "无法加载费用。",
+    "truncated": "本月的行数超过一次读取的上限：显示的数字为下限。",
+    "empty": "{{month}}没有费用。"
   },
   "engineeringRun": {
     "untitled": "工程运行",

@@ -148,6 +148,9 @@
     },
     "workflow": {
       "unchanged": "La définition proposée est identique à la définition actuelle.",
+      "budgetSet": "Budget mensuel fixé à {{now}}",
+      "budgetChanged": "Budget mensuel : {{was}} → {{now}}",
+      "budgetRemoved": "Budget mensuel supprimé (il était de {{was}})",
       "meta": "Modifié : {{fields}}",
       "addedSteps": "Étapes ajoutées",
       "removedSteps": "Étapes supprimées",

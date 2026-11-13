@@ -29,6 +29,12 @@ export const RADAR_SCAN_FUNCTION_BASE_NAME = 'voc-radar-scan';
  * (DESIGN_CAPTURE_FUNCTION).
  */
 export const DESIGN_CAPTURE_FUNCTION_BASE_NAME = 'voc-design-capture';
+/**
+ * The engineering board's function (VocProcessingStack, lib/stacks/engineering-bus.ts; with
+ * `-c engineeringAgents=true`). The Agents API in VocApiStack invokes it directly for a person's board actions
+ * (ENGINEERING_BOARD_FUNCTION): the board's own role writes the change, the API's role writes no board row.
+ */
+export const ENGINEERING_BOARD_FUNCTION_BASE_NAME = 'voc-engineering-board';
 /** The Radar API (VocApiStack): /radar, /radar/{proxy+}; the assistant's `get_radar` reads it. */
 export const RADAR_API_FUNCTION_BASE_NAME = 'voc-radar-api';
 /**

@@ -142,6 +142,9 @@
     },
     "workflow": {
       "unchanged": "提议的定义与当前定义相同。",
+      "budgetSet": "月度预算设为 {{now}}",
+      "budgetChanged": "月度预算：{{was}} → {{now}}",
+      "budgetRemoved": "已删除月度预算（原为 {{was}}）",
       "meta": "已更改：{{fields}}",
       "addedSteps": "新增步骤",
       "removedSteps": "移除的步骤",

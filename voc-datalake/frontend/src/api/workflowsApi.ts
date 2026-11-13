@@ -22,8 +22,8 @@
 import { del, post, put } from './requestKit'
 import { z } from 'zod'
 import {
-  WORKFLOW_ALL_NODE_TYPES, WORKFLOW_EDGE_LABELS, WORKFLOW_LOOP_UNTIL, WORKFLOW_NODE_ROLES, WORKFLOW_SCHEMA_V2,
-  WORKFLOW_SCHEMA_VERSION,
+  MONTHLY_BUDGET_RULE, WORKFLOW_ALL_NODE_TYPES, WORKFLOW_EDGE_LABELS, WORKFLOW_LOOP_UNTIL, WORKFLOW_NODE_ROLES,
+  WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION, isMonthlyBudgetUsd,
 } from '@stream/assistant/tools/agent-limits'
 import { isRecord } from '../lib/typeGuards'
 import { fetchApi } from './client'
@@ -119,7 +119,11 @@ export function buildWorkflowDefinitionSchema(
     nodes: z.array(node).min(1).max(limits.maxNodes),
     edges: z.array(edge).max(limits.maxEdges),
     loops: z.array(loop).max(limits.maxLoops),
+    // An engineering flow's monthly budget (workflow_engineering.py budget_of): kept only when set.
+    budget: z.strictObject({ monthly_usd: z.number().refine(isMonthlyBudgetUsd, MONTHLY_BUDGET_RULE) }).optional(),
   }).refine((definition) => jsonLength(definition) <= limits.maxDefinitionJsonChars, 'the definition is too large')
+    .refine((definition) => definition.budget === undefined || definition.schema === WORKFLOW_SCHEMA_V2,
+      { message: 'only an engineering flow has a budget', path: ['budget'] })
 }
 
 /** The editor's mirror of the server's definition shape. */
@@ -176,6 +180,9 @@ const LenientDefinitionSchema = z.object({
   nodes: lenientList(guard(LenientNodeSchema)),
   edges: lenientList(guard(LenientEdgeSchema)),
   loops: lenientList(guard(LenientLoopSchema)),
+  // An engineering flow's monthly budget: kept, so a save from the editor never drops it (an unreadable one reads as
+  // none, and the server refuses a save of one that breaks its rule).
+  budget: z.object({ monthly_usd: z.number() }).optional().catch(undefined),
 })
 
 /** A stored/exported definition as the editor's model (unknown keys dropped), or null. */
@@ -202,6 +209,8 @@ export function normalizeDefinition(raw: unknown): WorkflowDefinition | null {
       id: e.id, source: e.source, target: e.target, ...(e.label === undefined ? {} : { label: e.label }),
     })),
     loops: d.loops.map((l) => ({ node_ids: l.node_ids, until: l.until, max_rounds: l.max_rounds })),
+    // (an agents workflow has none: one on an imported file would be an error the editor has no field to clear)
+    ...(d.budget === undefined || d.schema !== WORKFLOW_SCHEMA_V2 ? {} : { budget: { monthly_usd: d.budget.monthly_usd } }),
   }
 }
 

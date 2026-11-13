@@ -18,7 +18,8 @@
   "views": {
     "label": "Agents page sections",
     "agents": "Agents",
-    "workflows": "Workflows"
+    "workflows": "Workflows",
+    "spend": "Spend"
   },
   "list": {
     "title": "Autonomous agents",
@@ -373,6 +374,10 @@
       "until": "Until",
       "maxRounds": "Maximum rounds",
       "description": "Description",
+      "monthlyBudget": "Monthly budget (US dollars)",
+      "monthlyBudgetHint": "What this flow’s runs may spend in a calendar month (UTC). Recorded with the flow: nothing is stopped or alerted on yet.",
+      "monthlyBudgetInvalid": "Enter an amount in dollars and cents from $0.01 to {{largest}}, or leave it empty for none.",
+      "monthlyBudgetNone": "No budget",
       "arrowTarget": "To step",
       "arrowTargetNone": "Choose a step…",
       "joinLoop": "Loop"
@@ -615,6 +620,33 @@
         "help": "Nothing more runs. What the run produced stays in the project."
       }
     }
+  },
+  "spend": {
+    "hint": "What the engineering agents spent, from the spend ledger: each session’s cost, tokens and MicroVM time, as the runtime measured them. The cost is MicroVM time so far: model tokens are counted, not yet priced. Months are in UTC.",
+    "month": "Month",
+    "groupBy": "Group by",
+    "by": {
+      "workflow": "Workflow",
+      "repo": "Repository",
+      "run": "Run",
+      "agent": "Agent",
+      "model": "Model",
+      "day": "Day"
+    },
+    "cost": "Cost",
+    "tokensIn": "Input tokens",
+    "tokensOut": "Output tokens",
+    "microvm": "MicroVM time",
+    "none": "Not recorded",
+    "otherModels": "Other models",
+    "workflowRuns": "{{name}}: show its runs",
+    "inRun": "in run {{run}}",
+    "onlyWorkflow": "Workflow: {{name}}",
+    "allWorkflows": "Show every workflow",
+    "tableCaption": "Spend in {{month}}, grouped by: {{by}}",
+    "loadFailed": "The spend could not be loaded.",
+    "truncated": "This month has more ledger rows than one read takes: the figures shown are a lower bound.",
+    "empty": "Nothing was spent in {{month}}."
   },
   "engineeringRun": {
     "untitled": "Engineering run",

@@ -22,21 +22,21 @@ Permissions:
   acting for themselves (403 for anyone else, an MCP credential included), and so are its signals
   and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision) and a
   person's board actions (``POST …/board/tasks``, ``…/board/tasks/<task_id>/<action>``:
-  engineering/board/api.py PersonBoard); while the engineering agents are off every caller gets 404.
+  engineering/board/api.py PersonBoard), and the runs' spend by month (``GET /agents/engineering/spend``,
+  engineering/spend.py); while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
-their table and workspace bucket, and PutItem and UpdateItem in a run's partition of the table (for a person's
-board actions, never a delete). IAM bounds that by partition only: the role may write every item of a run (META,
-TASK#, SPEC#, TASKLOG#, RUNLOG#, the AGENT# session rows, MSG#, INBOX#), and only this code keeps it to the board
-store's conditional writes of the task, its SPEC# marker, its TASKLOG# row and META's ``task_count``
-(lib/stacks/api-assistant-lambdas.ts says why ``dynamodb:Attributes`` cannot; routing those actions through the
-board function is the follow-up); it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
+their table and workspace bucket (never a write: GetItem and Query) and ``lambda:InvokeFunction`` on the board's
+function (``ENGINEERING_BOARD_FUNCTION``), which makes a person's board actions with its own role and hands the
+events back for this role to publish as the person (engineering/board/api.py person_request); it is to add
+``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
 answer 503). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)
-are in the engineering table, read with the Query its stack already grants.
+are in the engineering table, read with the Query its stack already grants, and so are the spend ledger's month
+partitions (``WS#<ws>#SPEND#<yyyy-mm>``).
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ import json
 import os
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -988,6 +989,34 @@ def get_engineering_report(run_id: str, level: str, subject: str):
     return {'report': report.document, 'markdown': report.markdown}
 
 
+@app.get('/agents/engineering/spend')
+@tracer.capture_method
+def get_engineering_spend():
+    """``?month=YYYY-MM&by=workflow|repo|run|agent|model|day&workflow=`` → the month's spend, grouped
+    (engineering/spend.py, the spend ledger): one Query of the month's ledger partition, never a whole-table read;
+    administrators only, 404 while the module is off. ``month`` defaults to this one (UTC)."""
+    table = os.environ.get('ENGINEERING_TABLE', '')
+    if not (engineering_agents_on() and table):
+        raise NotFoundError('The engineering agents are not on in this deployment')
+    require_admin_caller(_caller())
+    from engineering.spend import check_query, month_of, month_spend
+
+    flow = _query('workflow') or ''
+    if len(flow) > 500 or '#' in flow:   # (a run's flow is recorded up to 500 characters)
+        raise ValidationError('workflow is a workflow id')
+    month, by = _query('month') or month_of(datetime.now(UTC)), _query('by') or 'workflow'
+    try:   # (the caller's month and grouping, checked before the read: only these are a 400)
+        check_query(month, by)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    try:
+        spend = month_spend(get_dynamodb_resource().Table(table), month, by, flow=flow)
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('engineering: the spend ledger could not be read')
+        raise ServiceUnavailableError('the spend could not be read: retry') from exc
+    return spend.view()
+
+
 @app.get('/agents/engineering/<run_id>')
 @tracer.capture_method
 def get_engineering_run(run_id: str):
@@ -1026,34 +1055,89 @@ def message_engineering_run(run_id: str):
 _BOARD_ERRORS = {**_MONITOR_ERRORS, 'forbidden': AuthorizationError, 'cap': TooManyRequestsError}
 
 
-def _person_board_action(run_id: str, act: Any) -> dict:
+def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
+    """A person's board action (``request``: ``{op: post}`` or ``{op: act, task_id, action}``) through the board
+    function, whose own role writes the change (this role writes no board row: engineering/board/api.py
+    person_request); the events it hands back are published here, from the API's source, as the person."""
     monitor, caller = _acting_monitor(run_id)
-    from engineering.board.api import PersonBoard
-    from engineering.board.store import BoardStore
-    from engineering.bus.publish import PublishError, new_event_id
-    from engineering.bus.schema import MessageError
+    from engineering.bus.publish import PublishError
+    from engineering.bus.schema import parse
     from engineering.rows import Refused
 
+    board = os.environ.get('ENGINEERING_BOARD_FUNCTION', '')
     try:
         monitor.open_run(run_id)   # (an ended run takes no more work, as with a signal)
-        people = PersonBoard(BoardStore(monitor.client, monitor.table, new_id=new_event_id), monitor.bus())
-        return act(people, json_object_body(app), caller.subject)
-    except Refused as refused:   # (the board's and the monitor's refusals: the same kinds)
+        publisher = monitor.bus()  # (no bus, no change: its event could not be sent)
+        if not board:
+            raise ServiceUnavailableError('the board cannot be reached from here: the deployment names no board function')
+        person = {**request, 'run_id': run_id, 'subject': caller.subject, 'body': json_object_body(app)}
+        answer = _invoke_board(board, {'person': person})
+        if answer.get('status') != 'ok':
+            kind = str(answer.get('kind'))
+            raise _BOARD_ERRORS.get(kind, ServiceUnavailableError)(str(answer.get('message') or 'the board refused it'))
+        result = answer.get('answer')
+        if not isinstance(result, dict):   # (the board's fault, as an event that is not the person's: nothing sent)
+            logger.error('engineering: the board answered ok with no answer')
+            raise ServiceUnavailableError('the board could not be reached: retry')
+        for message in _persons_events(answer.get('events'), parse, run_id, caller.subject, request):
+            publisher.publish(message)
+    except Refused as refused:   # (the monitor's refusals: the same kinds)
         raise _BOARD_ERRORS[refused.kind](str(refused)) from refused
     except (ClientError, BotoCoreError) as exc:
         logger.exception('engineering: the board could not be reached')
         raise ServiceUnavailableError('the board could not be reached: retry') from exc
-    except MessageError as exc:
-        raise ValidationError('the board changed but its event could not be built: shorten the text') from exc
     except PublishError as exc:
         raise ServiceUnavailableError('the board changed but its event was not published: retry') from exc
+    return result
+
+
+def _persons_events(raw: Any, parse: Any, run_id: str, subject: str, request: dict[str, str]) -> list[Any]:
+    """The events the board handed back, each checked to be this person's board action before it goes out under the
+    API's source (which the bus lets send more than ``task.*``): at most one, a ``task.*`` of this run (and of this
+    task, for an action on one) from ``human:<subject>``. Anything else, an event that is not voc-msg/1 too, is the
+    board's fault (docs/autonomous-agents.md): 503, nothing sent."""
+    from engineering.bus.schema import MessageError, Party
+
+    events = raw if isinstance(raw, list) else []
+    expected = Party('human', subject)
+    try:
+        messages = [parse(event) for event in events]
+        persons = len(messages) <= 1 and all(
+            message.type.startswith('task.') and message.sender == expected and message.run_id == run_id
+            and ('task_id' not in request or message.task_id == request['task_id']) for message in messages)
+    except MessageError:
+        messages, persons = [], False
+    if not persons:
+        logger.error('engineering: the board handed back an event that is not the person\'s action',
+                     extra={'events': len(events), 'types': [message.type for message in messages]})
+        raise ServiceUnavailableError('the board could not be reached: retry')
+    return messages
+
+
+def _invoke_board(function: str, payload: dict) -> dict:
+    """The board function's answer to a direct invoke (``ClientError`` when the call fails; a function error is a
+    503: the board's own fault, retried by the person)."""
+    from shared.aws import get_lambda_client
+
+    response = get_lambda_client().invoke(FunctionName=function, Payload=json.dumps(payload).encode())
+    raw = response['Payload'].read()
+    if response.get('FunctionError'):
+        logger.error('engineering: the board function failed', extra={'error': raw[:500]})
+        raise ServiceUnavailableError('the board could not be reached: retry')
+    try:
+        answer = json.loads(raw)
+    except ValueError as exc:   # (not JSON: the board's own fault, as a function error is)
+        raise ServiceUnavailableError('the board could not be reached: retry') from exc
+    if not isinstance(answer, dict):
+        raise ServiceUnavailableError('the board could not be reached: retry')
+    return answer
 
 
 @app.post('/agents/engineering/<run_id>/board/tasks')
 @tracer.capture_method
 def post_engineering_task(run_id: str):
     """``{role, title, spec, priority?, parent_task?}`` → ``{task, duplicate}``: a person posts a task (admin)."""
-    return _person_board_action(run_id, lambda people, body, subject: people.post(run_id, body, subject))
+    return _person_board_action(run_id, {'op': 'post'})
 
 
 @app.post('/agents/engineering/<run_id>/board/tasks/<task_id>/<action>')
@@ -1061,8 +1145,7 @@ def post_engineering_task(run_id: str):
 def act_on_engineering_task(run_id: str, task_id: str, action: str):
     """``priority {priority}`` | ``block {reason, over?}`` | ``take {over?}`` | ``move {to}`` | ``release {}`` →
     ``{task}`` (admin)."""
-    return _person_board_action(run_id, lambda people, body, subject: people.act(run_id, task_id, action, body,
-                                                                                 subject))
+    return _person_board_action(run_id, {'op': 'act', 'task_id': task_id, 'action': action})
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

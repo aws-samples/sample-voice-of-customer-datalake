@@ -2,14 +2,15 @@
  * @fileoverview Autonomous agents — the list: each agent's state, scope, last
  * run and spend; admins create agents here (created DISABLED, like the
  * assistant's `create_agent`). Admins also get a Workflows tab (`?tab=workflows`,
- * where `/agents/workflows` lands): the workflow library.
+ * where `/agents/workflows` lands): the workflow library; and, when the engineering
+ * agents are on, a Spend tab (`?tab=spend`): what they spent, from the spend ledger.
  *
  * @module pages/Agents/Agents
  */
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Bot, Hand, Plus, Workflow } from 'lucide-react'
+import { Bot, CircleDollarSign, Hand, Plus, Workflow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconTabs } from '../../components/IconTabs/IconTabs'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
@@ -18,9 +19,11 @@ import { failedReads } from '../../utils/failedReads'
 import { API_AGENT_LIMITS } from '../../api/agentsApi'
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { useIsAdmin } from '../../store/authStore'
+import { isEngineeringAvailable } from '../../runtimeConfig'
 import { RunStatusBadge, ScopeSummary } from './AgentBadges'
 import { useAgentList, useCreateAgent } from './useAgents'
 import { WorkflowLibrary } from './WorkflowLibrary'
+import { EngineeringSpend } from './EngineeringSpend'
 import { AgentRowActions } from './AgentRowActions'
 import { PlansList } from './PlansList'
 import { prefetch } from '../../lib/prefetch'
@@ -87,13 +90,17 @@ function AgentRow({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean 
   )
 }
 
-const VIEWS = ['agents', 'workflows'] as const
+const VIEWS = ['agents', 'workflows', 'spend'] as const
 type AgentsView = (typeof VIEWS)[number]
-const VIEW_ICONS: Readonly<Record<AgentsView, LucideIcon>> = { agents: Bot, workflows: Workflow }
+const VIEW_ICONS: Readonly<Record<AgentsView, LucideIcon>> = { agents: Bot, workflows: Workflow, spend: CircleDollarSign }
 
-/** `?tab=` picks the view (`/agents/workflows` lands on the library); only admins have the library. */
+/** The views an admin has: Spend only while the engineering agents are on (its read answers 404 otherwise). */
+const adminViews = (): readonly AgentsView[] => (isEngineeringAvailable() ? VIEWS : VIEWS.filter((id) => id !== 'spend'))
+
+/** `?tab=` picks the view (`/agents/workflows` lands on the library); only admins have the library and the spend. */
 function parseView(value: string | null, isAdmin: boolean): AgentsView {
-  return isAdmin && value === 'workflows' ? 'workflows' : 'agents'
+  const view = adminViews().find((id) => id === value)
+  return isAdmin && view !== undefined ? view : 'agents'
 }
 
 function ViewTabs({ view, onChange }: Readonly<{ view: AgentsView; onChange: (view: AgentsView) => void }>) {
@@ -104,7 +111,7 @@ function ViewTabs({ view, onChange }: Readonly<{ view: AgentsView; onChange: (vi
     if (id === 'workflows') void prefetch(queryClient, { queryKey: workflowsKeys.list(), queryFn: workflowsApi.list, staleTime: 30_000 })
   }
   return (
-    <IconTabs tabs={VIEWS} active={view} icons={VIEW_ICONS} label={t('views.label')} labelOf={(id) => t(`views.${id}`)}
+    <IconTabs tabs={adminViews()} active={view} icons={VIEW_ICONS} label={t('views.label')} labelOf={(id) => t(`views.${id}`)}
       onSelect={onChange} onWarm={warm} />
   )
 }
@@ -139,10 +146,8 @@ export default function Agents() {
   const [searchParams, setSearchParams] = useSearchParams()
   const view = parseView(searchParams.get('tab'), isAdmin)
   const [creating, setCreating] = useState(false)
-  const setView = (next: AgentsView) => setSearchParams((params) => {
-    params.set('tab', next)
-    return params
-  }, { replace: true })
+  // A new view starts from its own options: the Spend tab's month, grouping and workflow go with it.
+  const setView = (next: AgentsView) => setSearchParams({ tab: next }, { replace: true })
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-wrap items-start gap-3">
@@ -158,7 +163,9 @@ export default function Agents() {
       </div>
       {isAdmin && <ViewTabs view={view} onChange={setView} />}
       <div role={isAdmin ? 'tabpanel' : undefined} aria-label={isAdmin ? t(`views.${view}`) : undefined} className="space-y-4 sm:space-y-6">
-        {view === 'agents' ? <AgentList isAdmin={isAdmin} /> : <WorkflowLibrary />}
+        {view === 'agents' && <AgentList isAdmin={isAdmin} />}
+        {view === 'workflows' && <WorkflowLibrary />}
+        {view === 'spend' && <EngineeringSpend />}
       </div>
       {creating && <CreateAgentDialog onClose={() => setCreating(false)} />}
     </div>

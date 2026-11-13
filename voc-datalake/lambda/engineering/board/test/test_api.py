@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 from engineering.board import api as api_module
 from engineering.board.api import BoardApi, handler
 from engineering.board.inbox import Inbox
+from engineering.board.store import BoardStore
 from engineering.board.test.table import RUN, TABLE, board, engineering_table
 from engineering.board.test.test_inbox import notice
 from engineering.bus.publish import EventBridgePublisher, PublishError
@@ -253,6 +254,54 @@ def test_the_handler_takes_the_caller_from_iam_only(bus: Bus, monkeypatch: pytes
         assert built is not None
         assert built.images == frozenset({'node', 'python'})   # (the deployment's image languages)
     assert bus.types() == ['task.posted', 'task.posted']
+
+
+def test_a_direct_invoke_is_a_persons_action_and_hands_its_events_back(bus: Bus,
+                                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('AGENT_ROLE_NAME_PATTERN', PATTERN)
+    monkeypatch.setenv('ENGINEERING_TABLE', TABLE)
+    monkeypatch.setenv('ENGINEERING_BUS_NAME', 'voc-engineering')
+    context = MagicMock(invoked_function_arn=f'arn:aws:lambda:us-east-1:{ACCOUNT}:function:voc-board')
+    person = {'op': 'post', 'run_id': RUN, 'subject': 'admin-sub',
+              'body': {'role': 'hunter', 'title': 'Look at the export', 'spec': {'area': 'export'}}}
+    with engineering_table() as client, \
+            patch('shared.aws.get_dynamodb_client', return_value=client), \
+            patch('shared.aws.get_eventbridge_client', return_value=bus), \
+            patch.object(api_module, '_api', None):
+        answer = handler({'person': person}, context)
+        assert (answer['status'], answer['answer']['task']['posted_by'], answer['answer']['duplicate']) == (
+            'ok', 'human:admin-sub', False)
+        # The board publishes nothing itself: the event is handed back for the API to publish as the person.
+        (event,) = answer['events']
+        assert (bus.types(), parse(event).sender.kind, parse(event).type) == ([], 'human', 'task.posted')
+        # A function URL's event is an agent's, whatever it carries: even with `person` beside its request context, an
+        # agent's call goes down the agent path (its own op), never the person path.
+        arn = f'arn:aws:sts::{ACCOUNT}:assumed-role/voc-eng-coordinator-123456789012-us-east-1/{RUN}.0'
+        urled = handler({**lambda_event(arn, {'op': 'post', 'role': 'fixer', 'title': 'Fix', 'spec': SPEC}),
+                         'person': person}, context)
+        assert (urled['statusCode'], json.loads(urled['body'])['agent']) == (200, 'coordinator-0')
+
+
+@pytest.mark.parametrize(('person', 'kind'), [
+    ({'op': 'post', 'run_id': 'not-a-run', 'subject': 'admin-sub', 'body': {}}, 'invalid'),
+    ({'op': 'post', 'run_id': RUN, 'subject': 'a#b', 'body': {}}, 'invalid'),
+    ({'op': 'drop', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}}, 'invalid'),
+    ({'op': 'act', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}}, 'invalid'),
+    ({'op': 'act', 'run_id': RUN, 'subject': 'admin-sub', 'task_id': 'task-9', 'action': 'take', 'body': {}},
+     'not_found'),
+])
+def test_a_persons_request_that_is_not_one_is_refused_and_writes_nothing(person: dict[str, Any], kind: str) -> None:
+    with engineering_table() as client:
+        answer = api_module.person_request(BoardStore(client, TABLE, new_id=lambda: 'task-1'), person)
+    assert (answer['status'], answer['kind']) == ('refused', kind)
+
+
+def test_a_table_that_refuses_a_persons_action_is_unavailable() -> None:
+    failing = MagicMock()
+    failing.get_item.side_effect = ClientError({'Error': {'Code': 'InternalServerError', 'Message': 'x'}}, 'GetItem')
+    answer = api_module.person_request(BoardStore(failing, TABLE, new_id=lambda: 'task-1'), {
+        'op': 'act', 'run_id': RUN, 'subject': 'admin-sub', 'task_id': 'task-1', 'action': 'take', 'body': {}})
+    assert (answer['status'], answer['kind']) == ('refused', 'unavailable')
 
 
 def test_the_handler_flushes_its_metrics(monkeypatch: pytest.MonkeyPatch) -> None:

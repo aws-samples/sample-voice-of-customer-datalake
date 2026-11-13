@@ -142,6 +142,9 @@
     },
     "workflow": {
       "unchanged": "提案された定義は現在のものと同じです。",
+      "budgetSet": "月間予算を {{now}} に設定",
+      "budgetChanged": "月間予算：{{was}} → {{now}}",
+      "budgetRemoved": "月間予算を削除（以前は {{was}}）",
       "meta": "変更: {{fields}}",
       "addedSteps": "追加されたステップ",
       "removedSteps": "削除されたステップ",

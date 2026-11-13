@@ -17,6 +17,35 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.22.00] - 2026-11-13
+
+Autonomous engineering agents: the spend ledger and its Agents → Spend tab, a flow's monthly budget (recorded only), and a person's board actions made by the board's own function, so the Agents API writes no board row. No fixed cost.
+
+### Added
+
+- The spend ledger (`voc-datalake/lambda/engineering/spend.py`): one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per day, workflow, run, agent and model, whose counters (`usd`, `tokens_in`, `tokens_out`, `microvm_seconds`) only grow by ADD, written in the same transaction as each priced session write (MicroVM seconds, priced at `engineeringMicrovmUsdPerSecond`, under the model `microvm`; each model's new tokens), so the ledger and the sessions never drift and a retried write adds once. Model tokens are counted, not yet priced. The rows are never deleted and carry no TTL.
+- `GET /agents/engineering/spend?month=YYYY-MM&by=workflow|repo|run|agent|model|day&workflow=` (the Agents API, administrators acting for themselves, 404 while the engineering agents are off, no MCP tool): a month's totals and its groups, biggest first, from one Query of the month's ledger partition (never a whole-table read), `truncated` past 20,000 rows; 400 for a bad month, grouping or workflow, 503 when the table refuses the read.
+- **Agents → Spend** (`?tab=spend&month=&by=&workflow=`), for administrators while the engineering agents are on: a month's cost, tokens and MicroVM time, by workflow, repository, run, agent, model or day; a workflow's row narrows the view to its runs, and a run's or an agent's opens its run monitor. In the nine locales and the dev mock.
+- An engineering flow's monthly budget (`budget: {monthly_usd}` in `voc-workflow/2`, 0.01 to 100,000 dollars, to the cent; refused on an agents workflow), checked by the server, the web app's and the stream's schemas; the editor's **Monthly budget** field under the flow's description (text the browser cannot read as a number is said to be wrong and holds the save, never dropping a stored budget); the assistant's create and update cards state it in dollars. Recorded only for now: nothing measures or enforces it yet.
+
+### Changed
+
+- A person's board actions are written by the board function's own role (`engineering/board/api.py` `person_request`, a direct invoke by name, `ENGINEERING_BOARD_FUNCTION`); the Agents API checks the person and the run, invokes it and publishes the person's event from its own source, and only an event that is this person's action (one `task.*` of this run, and of this task, from `human:<subject>`). This closes the Agents API write grant documented in 6.18.00 (its PutItem and UpdateItem on a run's whole partition).
+- A priced session write is one transaction with its ledger rows.
+- docs/autonomous-engineering.md (the board, Cost: the spend ledger and its load, the phase table's row 5), docs/autonomous-agents.md (the budget, the spend route, the board actions through the board function) and docs/deployment.md say so; TENETS.md's tenet 4 row names the spend read and the Spend tab, tenet 6's Agents API gap is gone and tenet 7 says the spend prices MicroVM time only.
+
+### Fixed
+
+- An event a person's board action could not be built into answered 400 "shorten the text" after the change was written (6.18.00): an error building it is now the board function's own error, answered 503 (retry), and an event it hands back that is not voc-msg/1, or an answer of ok with no answer, is the board's fault, answered 503 (retry), with nothing sent.
+
+### Upgrade notes
+
+- The Agents API role (with `-c engineeringAgents=true` only) loses `dynamodb:PutItem` and `dynamodb:UpdateItem` on voc-engineering (it keeps GetItem and Query) and gains `lambda:InvokeFunction` on the board function by name, and gets `ENGINEERING_BOARD_FUNCTION`. VocProcessingStack deploys the board function before VocApiStack, as before.
+- The supervisor's and the delivery's roles gain `dynamodb:UpdateItem` on the ledger's month partitions only (`WS#default#SPEND#20??-??`), never a read or a delete. A priced session write is now a transaction with its ledger rows: about twice its write cost.
+- The ledger starts when this release is deployed: sessions' earlier MicroVM time and tokens are not booked. No stored row is changed; a flow saved without a budget reads and saves as before.
+
+Merged from the voc-autonomous-c branch. Off by default.
+
 ## [6.21.00] - 2026-11-13
 
 Autonomous engineering agents: the six default engineering flows as templates. Administrators start one from the workflow library where the engineering module is deployed; nothing runs a flow yet. Off by default (`-c engineeringAgents=true`), no fixed cost.

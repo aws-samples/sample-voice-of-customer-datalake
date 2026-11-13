@@ -26,6 +26,16 @@ export const WORKFLOW_SCHEMA_V2 = 'voc-workflow/2';
 export const ENGINEERING_NODE_TYPES = [
   'agent', 'map', 'reduce', 'board', 'quality_gate', 'learning_loop', 'self_improvement', 'memory', 'stop_at_pr',
 ] as const;
+/** The largest monthly budget an engineering flow takes, in dollars (`MAX_MONTHLY_BUDGET_USD` in
+ * workflow_engineering.py; the SPA's workflowsApi.lockstep.test.ts holds the two together). */
+export const ENGINEERING_MAX_MONTHLY_BUDGET_USD = 100_000;
+/** An engineering flow's `budget.monthly_usd` as the server takes it (`budget_of` in workflow_engineering.py): dollars
+ * and cents, 0.01 up to the largest; more decimals are refused, never rounded, so the amount approved is the one kept. */
+export const isMonthlyBudgetUsd = (amount: number): boolean =>
+  Number.isFinite(amount) && Math.round(amount * 100) / 100 === amount
+  && amount >= 0.01 && amount <= ENGINEERING_MAX_MONTHLY_BUDGET_USD;
+export const MONTHLY_BUDGET_RULE = 'budget is {monthly_usd}: what its runs may spend in a month, in dollars and cents '
+  + `from 0.01 to ${ENGINEERING_MAX_MONTHLY_BUDGET_USD.toLocaleString('en-US')}`;
 /** Every step either kind of workflow may hold (which kind holds which is the agents Lambda's graph rule). */
 export const WORKFLOW_ALL_NODE_TYPES = [...WORKFLOW_NODE_TYPES, ...ENGINEERING_NODE_TYPES] as const;
 export const WORKFLOW_NODE_ROLES = ['orchestrator', 'worker', 'reviewer', 'persona'] as const;

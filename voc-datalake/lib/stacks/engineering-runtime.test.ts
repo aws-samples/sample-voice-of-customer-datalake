@@ -402,6 +402,22 @@ describe('with -c engineeringAgents=true', () => {
     expect(delivery).toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_checkpoints/);
   });
 
+  it.each(['EngineeringSupervisorRole', 'EngineeringDeliveryRole'])(
+    'lets %s update the spend ledger\'s month partitions only (the same transaction as a priced session write)', (role) => {
+      const policies = template.findResources('AWS::IAM::Policy', {
+        Properties: {
+          Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(role) }]),
+          PolicyDocument: Match.objectLike({
+            Statement: Match.arrayWith([Match.objectLike({
+              Sid: 'SpendLedger', Action: 'dynamodb:UpdateItem',
+              Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#default#SPEND#20??-??'] } },
+            })]),
+          }),
+        },
+      });
+      expect(Object.keys(policies)).toHaveLength(1);
+    });
+
   it('runs the delivery without what only the supervisor uses (its rule\'s name, the extra egress of a launch)', () => {
     const [fn] = Object.values(template.findResources('AWS::Lambda::Function', {
       Properties: { FunctionName: 'voc-engineering-delivery' },

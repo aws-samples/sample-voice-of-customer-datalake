@@ -77,10 +77,10 @@ export const ENGINEERING_WORKSPACE = 'default';
 export const ENGINEERING_WORKSPACE_REPORTS_KEYS = `ws/${ENGINEERING_WORKSPACE}/reports/*`;
 export const ENGINEERING_WORKSPACE_RUNS_KEYS = `ws/${ENGINEERING_WORKSPACE}/runs/*`;
 /**
- * A run's partitions in the engineering table (`WS#<ws>#RUN#<run>`, engineering/board/store.py run_pk), as an IAM
- * `dynamodb:LeadingKeys` pattern: the workspace spelled out (as above), and a run id is a ULID, exactly 26 characters.
+ * The spend ledger's month partitions (`WS#<ws>#SPEND#<yyyy-mm>`, engineering/spend.py), as a `dynamodb:LeadingKeys`
+ * pattern: the metering writers ADD to them in the same transaction as each priced session write.
  */
-export const ENGINEERING_RUN_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#RUN#${'?'.repeat(26)}`;
+export const ENGINEERING_SPEND_PARTITIONS = `WS#${ENGINEERING_WORKSPACE}#SPEND#20??-??`;
 /**
  * SPA bucket: each deploy's `s3 sync --delete` turns the previous build's assets
  * noncurrent. 30 days keeps a month of deploys restorable for a rollback; the

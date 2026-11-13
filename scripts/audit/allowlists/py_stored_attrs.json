@@ -1,5 +1,6 @@
 {
   "entries": [
+    {"key": "lambda/engineering/spend.py::session_seq", "reason": "Lineage on a spend ledger row (TENETS D4: which version): the version of the session write whose ADD it was last, so an operator can trace the row back to the session row it mirrors; the reads sum the counters only."},
     {"key": "lambda/api/manual_import_handler.py::imported_at", "reason": "Not a DynamoDB attribute: a field of the confirmed-import ARCHIVE object written to S3 (raw/manual_import/...), kept for whoever reads the raw data lake."},
     {"key": "lambda/api/memory_handler.py::superseded_by", "reason": "Audit trail on an archived, tombstoned memory: which memory won the merge (the memory event journal records the same); read by an operator in the table."},
     {"key": "lambda/email_intake/state.py::seen_at", "reason": "Dedupe marker row in voc-watermarks: only its existence (and ttl) is checked; the timestamp is for an operator reading the table."},

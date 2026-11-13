@@ -100,6 +100,9 @@ class Run:
     commit: str = ''
     #: The repository's toolchain (an ``egress.REGISTRY_HOSTS`` language): the coordinator's MicroVM image.
     language: str = ''
+    #: The run's workflow and repository, as its start recorded them (the spend ledger's grouping).
+    flow: str = ''
+    repo: str = ''
 
 
 class RunExists(RuntimeRefused):
@@ -124,7 +127,7 @@ def _actor(actor: str) -> str:
     return ''.join(char for char in actor if char.isprintable())[:MAX_ACTOR] or UNATTRIBUTED
 
 
-def _conflict(error: ClientError) -> bool:
+def transaction_conflict(error: ClientError) -> bool:
     """The transaction lost a race with another write of one of its items (worth one more try)."""
     reasons = error.response.get('CancellationReasons') or []
     return any(reason.get('Code') == 'TransactionConflict' for reason in reasons)
@@ -201,7 +204,7 @@ class RunStore:
             except ClientError as error:
                 if is_key_collision(error, put_index=0):
                     raise RunNotActive(f'run {run_id} is not active') from error
-                if not _conflict(error) or tries == STATUS_TRIES:
+                if not transaction_conflict(error) or tries == STATUS_TRIES:
                     raise
             else:
                 return
@@ -254,7 +257,8 @@ class RunStore:
                        max_cost_usd=float(cost) if cost is not None else None)
         return Run(run_id=run_id, status=str(item['status']), started_at=int(item['started_epoch']), caps=caps,
                    connection=str(item.get('connection', '')), commit=str(item.get('commit', '')),
-                   language=str(item.get('language', '')))
+                   language=str(item.get('language', '')), flow=str(item.get('flow', '')),
+                   repo=str(item.get('repo', '')))
 
     def listed(self) -> list[str]:
         """The runs the supervisor watches (live, or ended with a live agent), oldest first (a ULID sorts by time)."""

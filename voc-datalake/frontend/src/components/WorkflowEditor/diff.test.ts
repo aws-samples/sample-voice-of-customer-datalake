@@ -81,6 +81,15 @@ describe('diffDefinitions', () => {
     expect(diff.unchanged).toBe(false)
   })
 
+  it('reports a monthly budget set, changed or removed', () => {
+    const flow = { ...base(), schema: 'voc-workflow/2' as const }
+    const budgeted = { ...flow, budget: { monthly_usd: 50 } }
+    expect(diffDefinitions(flow, budgeted).metaChanged).toStrictEqual(['budget'])
+    expect(diffDefinitions(budgeted, { ...flow, budget: { monthly_usd: 80 } }).metaChanged).toStrictEqual(['budget'])
+    expect(diffDefinitions(budgeted, flow).metaChanged).toStrictEqual(['budget'])
+    expect(diffDefinitions(budgeted, { ...budgeted }).unchanged).toBe(true)
+  })
+
   it('treats a missing "before" as everything added', () => {
     const diff = diffDefinitions(null, base())
     expect(diff.nodes.added).toStrictEqual(['end', 'prd', 'start'])

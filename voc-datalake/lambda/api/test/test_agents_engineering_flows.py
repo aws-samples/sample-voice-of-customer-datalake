@@ -136,3 +136,30 @@ def test_create_from_a_template_is_the_librarys_own_create(lambda_context: Any,
         assert _call(lambda_context, 'POST', '/workflows', body={'definition': broken})[0] == 400
         monkeypatch.setenv('ENGINEERING_AGENTS', 'off')
         assert _call(lambda_context, 'POST', '/workflows', body={'definition': definition})[0] == 409
+
+
+def test_a_flow_keeps_its_monthly_budget_and_only_a_signed_in_admin_changes_it(lambda_context: Any) -> None:
+    with _api():
+        workflow_id = _save_engineering_flow(lambda_context)
+        budgeted = {**bug_fix(), 'budget': {'monthly_usd': 49.99}}
+        status, body = _call(lambda_context, 'POST', '/workflows/validate',
+                             body={'definition': budgeted, 'workflow_id': workflow_id})
+        assert (status, body['valid'], body['diff']['meta_changed']) == (200, True, ['budget'])
+        status, body = _call(lambda_context, 'PUT', f'/workflows/{workflow_id}', claims=DELEGATED_ADMIN,
+                             body={'definition': budgeted, 'expected_revision': 1})
+        assert status == 403
+        status, body = _call(lambda_context, 'PUT', f'/workflows/{workflow_id}',
+                             body={'definition': budgeted, 'expected_revision': 1})
+        assert status == 200, body
+        assert _call(lambda_context, 'GET', f'/workflows/{workflow_id}')[1]['workflow']['definition']['budget'] \
+            == {'monthly_usd': 49.99}
+
+
+def test_a_budget_off_its_rule_or_on_an_agents_workflow_is_refused(lambda_context: Any) -> None:
+    with _api():
+        status, body = _call(lambda_context, 'POST', '/workflows',
+                             body={'definition': {**bug_fix(), 'budget': {'monthly_usd': 0}}})
+        assert (status, body['errors'][0]['message'].startswith('budget is {monthly_usd}')) == (400, True)
+        status, body = _call(lambda_context, 'POST', '/workflows',
+                             body={'definition': {**workflow_schema.default_template(), 'budget': {'monthly_usd': 5}}})
+        assert (status, body['errors']) == (400, [{'message': 'only an engineering flow has a budget'}])
