@@ -166,8 +166,17 @@ inside a workspace, Request flow step 2) goes on every domain call as its `X-Wor
 and each domain Lambda answers it exactly as it answers the caller's own request (membership, the 400 and the one
 404). So a route that moves into its workspace keeps working for the assistant. Plan steps carry it too (since
 6.18.00): the approval's `X-Workspace-Id` is kept on the plan (one that is not a workspace id is the one 404) and each step names it to the
-domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). Not yet carried:
-the global MCP tools (a token will pin its workspace).
+domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). And the global
+MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`, resolved
+fresh by `lambda/shared/request_workspace.py`, with the minter's own membership: a platform admin who is not a member
+gets 403, "add yourself as a member first", since the token's calls carry no group) pins it on its row (`workspace`, `lambda/shared/mcp_global_tokens.py`
+`token_workspace`), and every call the endpoint delegates sends it as `X-Workspace-Id` (`lambda/shared/mcp_delegate.py`
+`build_proxy_event`), from the row, never from the MCP request; a token minted with no workspace sends none, as
+before. A delegated credential has no membership of its own: `lambda/shared/workspace.py` resolves the person it
+acts for (`member_subject`: the minter; an agent's owner too, once agent runs carry a workspace), so removing the minter from the workspace stops
+the token there (the one 404), and it acts at most as an `editor` (an admin's credential administers nothing, as for
+projects). The token list, detail and revoke stay the person's own, across the workspaces their tokens name. A token
+from an OAuth sign-in is still the deployment's (its consent route moves with phase 3's OAuth slice).
 
 ## Roles
 
@@ -307,7 +316,7 @@ an editor or an admin marks one resolved or not (403 for a viewer). A request th
 one) is the deployment as before: the deployment-wide row `SETTINGS#resolved_problems`, which every signed-in user
 reads and marks, as today. That is what the web app sends with no workspace (since 6.12.00 the web app
 opens "as before, with no header" on an address without a slug or for a person with no workspace), what a deployment from before workspaces
-gets (decision 12: no migration), and what an MCP token that pins no workspace sends; it never reaches a
+gets (decision 12: no migration), and what an MCP token minted with no workspace sends; it never reaches a
 workspace's row. So nothing changes for those, and a workspace starts with no marks of its own: the deployment's
 marks are not copied into it (a mark expires anyway, and setting it again is one click). This mode goes when every
 deployment runs inside a workspace (a first workspace made at bootstrap, at the phase 2 cut-over; agreed with the

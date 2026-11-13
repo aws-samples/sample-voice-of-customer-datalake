@@ -728,9 +728,18 @@ class TestRunTool:
         rig.call_domain.assert_called_once_with(
             DomainCall(function_name='projects-fn', method=request.method, path=request.path,
                        query=request.query, body=request.body),
-            claims=h._claims_for(h.ToolCall(GET_PROJECT, {}, None), _row()))
+            claims=h._claims_for(h.ToolCall(GET_PROJECT, {}, None), _row()), workspace=None)
         expected = {'shaped': {'projects': []}, 'args': {'project_id': 'proj_a'}}
         assert (content['structuredContent'], outcome) == (expected, 'ok')
+
+    def test_a_token_minted_in_a_workspace_calls_the_route_in_it(self, rig: Rig, monkeypatch: pytest.MonkeyPatch):
+        """The workspace comes from the token row (where the mint resolved it), never from the MCP request."""
+        ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+        monkeypatch.setenv('PROJECTS_FUNCTION', 'projects-fn')
+        row = _row(**{gt.WORKSPACE_ATTRIBUTE: ws})
+        h._run_tool(h.ToolCall(self._shaping(), {'project_id': 'proj_a', 'workspace_id': 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'},
+                               'proj_a'), row)
+        assert rig.call_domain.call_args.kwargs['workspace'] == ws
 
     def test_an_unset_function_env_is_the_empty_name(self, rig: Rig, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv('PROJECTS_FUNCTION', raising=False)
@@ -996,3 +1005,24 @@ class TestModernHeaderValidation:
                          headers=_modern_headers('tools/list', version='2099-01-01'))
         _assert_unsupported_version(response, '2099-01-01')
         rig.projects.get_item.assert_not_called()
+
+
+
+class TestEveryDelegatedReadCarriesTheTokensWorkspace:
+    """A follow-up read and a prompts/resources read go in the workspace the token was minted in, like a tool."""
+
+    WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+
+    def test_a_follow_up_read(self, rig: Rig, monkeypatch: pytest.MonkeyPatch):
+        from shared.mcp_global_tools import TOOLS_BY_NAME
+
+        monkeypatch.setenv('METRICS_FUNCTION', 'metrics-fn')
+        call = h.ToolCall(TOOLS_BY_NAME['get_feedback'], {'feedback_id': 'f1', 'include_similar': True}, None)
+        h._with_follow_ups({'feedback': {}}, call, _row(**{gt.WORKSPACE_ATTRIBUTE: self.WS}))
+        assert [c.kwargs['workspace'] for c in rig.call_domain.call_args_list] == [self.WS]
+
+    def test_a_resource_read(self, rig: Rig, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv('SETTINGS_FUNCTION', 'settings-fn')
+        rig.call_domain.return_value = DomainResult(200, {'categories': []})
+        h._catalogue(1, {'uri': 'voc://categories'}, _row(**{gt.WORKSPACE_ATTRIBUTE: self.WS}), method='resources/read')
+        assert rig.call_domain.call_args.kwargs['workspace'] == self.WS

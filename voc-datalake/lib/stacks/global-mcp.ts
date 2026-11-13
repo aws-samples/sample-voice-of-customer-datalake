@@ -23,8 +23,9 @@
  *    aggregates, memory or agents table grant — data comes through the
  *    domain functions, which apply their own rules.
  *  - tokens role: Query/GetItem/BatchGetItem/PutItem/UpdateItem on MCPGTOKEN, GetItem on
- *    PROJECT#… (the pin's view check), Query on MCPAUDIT#…; no Cognito, no
- *    invoke.
+ *    PROJECT#… (the pin's view check), Query on MCPAUDIT#…; GetItem on voc-workspaces' WS#… (a
+ *    mint inside a workspace resolves the minter's own membership, never a platform admin's
+ *    entry: lib/utils/workspace-resolution-grants.ts); no Cognito, no invoke.
  *
  * Throttling: `/mcp/global/POST` is a stage method setting (20 rps / 40), set
  * by the owning stack (api-gateway.ts) — see GLOBAL_MCP_METHOD_THROTTLE.
@@ -45,6 +46,7 @@ import { nonNegativeIntegerContext } from '../utils/context-flag';
 import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
 import { snapStartFunctionProps, snapStartInvokeTarget } from '../utils/snapstart';
 import { workerRole } from '../utils/worker-lambda';
+import { grantWorkspaceMembershipReads } from '../utils/workspace-resolution-grants';
 
 /** Must equal GLOBAL_TOKEN_PK / AUDIT_PK_PREFIX in lambda/shared/mcp_global_tokens.py (pinned by a test). */
 const GLOBAL_TOKEN_PARTITION = 'MCPGTOKEN';
@@ -109,6 +111,8 @@ export interface GlobalMcpProps {
   jobsTable: dynamodb.ITable;
   kmsKey: kms.IKey;
   userPool: cognito.IUserPool;
+  /** voc-workspaces: a token minted inside a workspace pins it (lambda/shared/request_workspace.py). */
+  workspacesTable: dynamodb.ITable;
   domainFunctions: GlobalMcpDomainFunctions;
 }
 
@@ -192,8 +196,11 @@ export class GlobalMcp extends Construct {
   }
 
   private createTokensFunction(): lambda.Function {
-    const { projectsTable, jobsTable, kmsKey } = this.props;
+    const { projectsTable, jobsTable, kmsKey, userPool, workspacesTable } = this.props;
     const role = this.role('TokensApiRole');
+    // A token minted inside a workspace pins it: the mint resolves the caller's own membership there (no
+    // platform-admin entry: no Cognito look-up and no audit row, so only the membership reads).
+    const workspaceResolutionEnv = grantWorkspaceMembershipReads(workspacesTable, role);
     // BatchGetItem: "my tokens" reads the token rows its creator pointers name
     // (same partition). The mint's TransactWriteItems is authorised as PutItem.
     role.addToPolicy(leadingKeys(projectsTable, ['Query', 'GetItem', 'BatchGetItem', 'PutItem', 'UpdateItem'],
@@ -205,6 +212,10 @@ export class GlobalMcp extends Construct {
     return this.pythonFunction('McpTokensApi', 'voc-mcp-tokens-api', 'mcp_tokens_handler.py', role, {
       PROJECTS_TABLE: projectsTable.tableName,
       JOBS_TABLE: jobsTable.tableName,
+      // Named for the shared resolution module's live check, which the mint never runs (elevate=False): no Cognito
+      // grant goes with it, so a later call that did elevate would be refused, not silently elevated.
+      USER_POOL_ID: userPool.userPoolId,
+      ...workspaceResolutionEnv,
     }, 1024, snapStartFunctionProps(this)); // 1024: CPU-bound (98 % p95 at 512 MB, docs/lambda-sizing.md); SnapStart (opt-in): GET /connect/tokens cold start
   }
 

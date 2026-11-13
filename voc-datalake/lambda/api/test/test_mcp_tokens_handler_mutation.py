@@ -466,9 +466,11 @@ class TestWhatAMintWrites:
             'revoked_at': None,
             'status': 'active',
             'can_run_agents': False,
+            'workspace_id': None,
         }
         info.assert_called_once_with('Minted global MCP token',
-                                     extra={'token_id': minted['token_id'], 'scope': 'write', 'pinned': True})
+                                     extra={'token_id': minted['token_id'], 'scope': 'write', 'pinned': True,
+                                            'in_workspace': False})
 
     def test_an_admin_row_records_it_and_an_unpinned_mint_logs_pinned_false(self, world):
         with handler_info(h.logger) as info:
@@ -477,7 +479,8 @@ class TestWhatAMintWrites:
         assert row['minted_by_admin'] is True
         assert row['created_by_username'] == 'root'
         info.assert_called_once_with('Minted global MCP token',
-                                     extra={'token_id': minted['token_id'], 'scope': 'read', 'pinned': False})
+                                     extra={'token_id': minted['token_id'], 'scope': 'read', 'pinned': False,
+                                            'in_workspace': False})
 
     def test_the_token_and_its_pointer_are_one_transaction_of_fresh_keys(self, lambda_context):
         table = MagicMock()
@@ -729,3 +732,43 @@ class TestTokenDetail:
         assert status == 200
         assert jobs.query.call_args.kwargs['ExclusiveStartKey'] == cursor
         assert body == {'token': gt.token_view(_stored_row(), T0), 'events': [], 'next_cursor': None}
+
+
+
+def test_a_token_minted_inside_a_workspace_records_it(world, monkeypatch):
+    """The mint request's resolved workspace (shared/request_workspace.py) goes on the row; its view names it."""
+    from shared.workspace import WorkspaceContext
+
+    ws = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
+    context = WorkspaceContext(ws=ws, role='editor', name='Acme Outfitters', slug='acme', platform_admin=False)
+    asked: list[dict] = []
+
+    def resolved(_event, _public_error, **options):
+        asked.append(options)
+        return context
+
+    monkeypatch.setattr(h, 'request_workspace', resolved)
+    minted = world.mint('alice', scope='read')
+    assert _row(world, minted['token_id'])[gt.WORKSPACE_ATTRIBUTE] == ws
+    assert minted['workspace_id'] == ws
+    # From the table (a removed member cannot mint there) and never as a platform admin's entry.
+    assert asked == [{'fresh': True, 'elevate': False}]
+
+
+@pytest.mark.parametrize(('groups', 'status', 'error'), [
+    ('platform-admins', 403, h.NOT_A_MEMBER),
+    ('admins', 404, 'Workspace not found'),
+    ('users', 404, 'Workspace not found'),
+], ids=['platform-admin', 'deployment-admin', 'anyone-else'])
+def test_a_non_member_cannot_mint_a_token_for_the_workspace(world, monkeypatch, groups, status, error):
+    """A platform admin may enter the workspace, but a token's calls carry no group: only a member's would work."""
+    from shared.exceptions import NotFoundError
+
+    def not_a_member(_event, _public_error, **_options):
+        raise NotFoundError('Workspace not found')
+
+    monkeypatch.setattr(h, 'request_workspace', not_a_member)
+    claims = {**world.claims('alice'), 'cognito:groups': groups}
+    event = rest_event('POST', '/connect/tokens', claims=claims, body={'name': 'x', 'scope': 'read'})
+    response = h.lambda_handler(event, world.context)
+    assert (response['statusCode'], json.loads(response['body'])['error']) == (status, error)

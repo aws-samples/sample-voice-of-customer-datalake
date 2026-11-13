@@ -137,3 +137,14 @@ def test_a_settings_admin_is_the_workspace_s_admin_or_without_one_the_deployment
             rw.require_settings_admin(event, context)
     else:
         rw.require_settings_admin(event, context)
+
+
+
+def test_without_elevation_a_platform_admin_who_is_not_a_member_gets_the_one_404(table):
+    """``elevate=False``: no live check, no entry, no audit row; only the caller's own membership."""
+    pat = _event(sub='sub-pat', groups='[admins, platform-admins]')
+    with patch('shared.platform_admin_gate.get_cognito_idp_client') as cognito, pytest.raises(NotFoundError):
+        rw.request_workspace(pat, 'Failed', elevate=False)
+    cognito.assert_not_called()
+    rows = table.query(KeyConditionExpression='pk = :pk', ExpressionAttributeValues={':pk': f'AUDIT#WS#{WS}'})
+    assert rows['Items'] == []

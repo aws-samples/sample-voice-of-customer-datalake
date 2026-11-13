@@ -200,6 +200,13 @@ describe('MCP token API IAM', () => {
     });
   });
 
+  it('reads only membership rows of voc-workspaces, and writes nothing there', () => {
+    const workspaces = onTable(statements(), 'Workspaces');
+    expect(workspaces.map((s) => ({ actions: s.actions, condition: s.condition }))).toStrictEqual([
+      { actions: ['dynamodb:GetItem'], condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*'] } } },
+    ]);
+  });
+
   it('queries the audit partitions and puts/consumes only OAuth relay rows; no other delete, Cognito or invoke', () => {
     const all = statements();
     const jobs = onTable(all, 'Jobs');

@@ -108,6 +108,10 @@ COGNITO_READ_PREFIXES = ('admin_get_', 'admin_list_')
 WORKSPACE_SCOPED: frozenset[tuple[str, str]] = frozenset(CASES)
 
 BY_DESIGN: dict[tuple[str, str], str] = {
+    **dict.fromkeys(
+        [('mcp_tokens_handler.py', route) for route in (
+            'GET /connect/tokens', 'GET /connect/tokens/<token_id>', 'DELETE /connect/tokens/<token_id>')],
+        "the caller's own MCP tokens, whichever workspace each was minted in (each names it): a person's credentials"),
     ('workspaces_handler.py', 'GET /me/workspaces'): (
         "the caller's own workspaces: one Query of their USER#{sub} partition, before any workspace is chosen"),
     **dict.fromkeys(

@@ -187,26 +187,33 @@ _AS_BEFORE = 'the deployment as before: its own row, no workspace\'s (shared/req
 PROBLEM_KEY = 'technical_support:response_time:slow replies'
 
 
+def _domain_resolution(stack: ExitStack) -> MagicMock:
+    """Moto and the domain APIs' shared resolution (shared/request_workspace.py) over the two seeded workspaces, for a
+    world entered in ``stack``; the Cognito double of the live check (nobody is elevated)."""
+    from shared import platform_admin_gate, request_workspace
+    from shared.workspace import MembershipCache
+
+    cognito = live_cognito(groups=('users',), sub='sub-ada')
+    stack.enter_context(mock_aws())
+    stack.enter_context(patch.dict('os.environ', {'WORKSPACES_TABLE': 'workspaces', 'USER_POOL_ID': 'us-east-1_pool'}))
+    stack.enter_context(patch.object(request_workspace, '_MEMBERSHIPS', MembershipCache()))
+    stack.enter_context(patch.object(platform_admin_gate, 'get_cognito_idp_client', return_value=cognito))
+    workspaces = pk_sk_table('workspaces')
+    stack.enter_context(patch.object(request_workspace, 'cached_table', return_value=workspaces))
+    _seed_workspace(workspaces, WS_A, 'Acme Outfitters', 'acme', {'sub-ada': 'admin', 'sub-vic': 'viewer'})
+    _seed_workspace(workspaces, WS_B, f'{B_MARK.title()} Bikes', B_MARK, {f'sub-{B_MARK}-bea': 'admin'})
+    return cognito
+
+
 @contextmanager
 def settings_world(lambda_context: Any) -> Generator[World]:
     import settings_handler
-    from shared import platform_admin_gate, request_workspace
-    from shared.workspace import MembershipCache
     from shared.workspace_settings import settings_key
 
-    cognito = live_cognito(groups=('users',), sub='sub-ada')
     with ExitStack() as stack:
-        stack.enter_context(mock_aws())
-        stack.enter_context(patch.dict('os.environ', {'WORKSPACES_TABLE': 'workspaces',
-                                                      'USER_POOL_ID': 'us-east-1_pool'}))
-        stack.enter_context(patch.object(request_workspace, '_MEMBERSHIPS', MembershipCache()))
-        stack.enter_context(patch.object(platform_admin_gate, 'get_cognito_idp_client', return_value=cognito))
-        workspaces = pk_sk_table('workspaces')
+        cognito = _domain_resolution(stack)
         aggregates = pk_sk_table('aggregates')
-        stack.enter_context(patch.object(request_workspace, 'cached_table', return_value=workspaces))
         stack.enter_context(patch.object(settings_handler, 'aggregates_table', aggregates))
-        _seed_workspace(workspaces, WS_A, 'Acme Outfitters', 'acme', {'sub-ada': 'admin', 'sub-vic': 'viewer'})
-        _seed_workspace(workspaces, WS_B, f'{B_MARK.title()} Bikes', B_MARK, {f'sub-{B_MARK}-bea': 'admin'})
         # Each workspace's brand, and the deployment's (for a request that names no workspace).
         aggregates.put_item(Item={**settings_handler.BRAND_KEY, 'brand_name': 'Before Workspaces'})
         aggregates.put_item(Item={**settings_key(WS_A, settings_handler.BRAND_KIND), 'brand_name': f'{A_MARK} Outfitters'})
@@ -222,6 +229,23 @@ def settings_world(lambda_context: Any) -> Generator[World]:
             f'technical_support:response_time:{B_MARK} chain slips': {'resolved_at': '2099-01-01T00:00:00+00:00'}}})
 
         yield World(call=_caller(settings_handler, lambda_context), doubles={'cognito': cognito})
+
+
+# ── voc-mcp-tokens-api (lambda/api/mcp_tokens_handler.py): a token minted inside a workspace ──
+
+@contextmanager
+def tokens_world(lambda_context: Any) -> Generator[World]:
+    import mcp_tokens_handler
+    from shared.indexes import PROJECTS_BY_TYPE_INDEX
+
+    with ExitStack() as stack:
+        cognito = _domain_resolution(stack)
+        projects = pk_sk_table('projects', gsi1_index=PROJECTS_BY_TYPE_INDEX)
+        jobs = pk_sk_table('jobs')
+        stack.enter_context(patch.object(mcp_tokens_handler, 'get_projects_table', return_value=projects))
+        stack.enter_context(patch.object(mcp_tokens_handler, 'get_jobs_table', return_value=jobs))
+        stack.enter_context(patch.dict(mcp_tokens_handler._index_state, {'complete': False}))
+        yield World(call=_caller(mcp_tokens_handler, lambda_context), doubles={'cognito': cognito})
 
 
 _MEMBER_IDS = {'A': {'sub': 'sub-vic'}, 'B': {'sub': f'sub-{B_MARK}-bo'}, UNKNOWN: {'sub': 'sub-nobody'}}
@@ -245,6 +269,7 @@ _A_ROLE = 'a workspace role (admin, editor or viewer), the same words in every w
 WORLDS: dict[str, Callable[[Any], Any]] = {
     'workspaces_handler.py': workspaces_world,
     'settings_handler.py': settings_world,
+    'mcp_tokens_handler.py': tokens_world,
 }
 
 #: (handler file, "METHOD /path") -> how to call it: exactly the workspace-scoped routes.
@@ -277,6 +302,11 @@ CASES: dict[tuple[str, str], RouteCase] = {
         no_ids='the problem key is text the user wrote, the workspace is the header: check 1',
         body={'key': PROBLEM_KEY, 'resolved': True},
         literals={PROBLEM_KEY: 'a problem key (category:subcategory:problem text), not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE),
+    ('mcp_tokens_handler.py', 'POST /connect/tokens'): RouteCase(
+        no_ids='the token is new, the workspace is the header: check 1 (minted inside it, the token acts there)',
+        body={'name': 'laptop', 'scope': 'read'}, ok_status=200,
+        literals={'laptop': 'a name the person typed for their token', 'read': 'a token scope, the same everywhere'},
         without_a_workspace=_AS_BEFORE),
     ('settings_handler.py', 'GET /settings/brand'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own brand)',

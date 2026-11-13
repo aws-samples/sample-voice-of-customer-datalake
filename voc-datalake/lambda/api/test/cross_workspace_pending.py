@@ -222,12 +222,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /connect/oauth/consent',
     }),
     # A token is minted inside a workspace and pins it.
-    'mcp_tokens_handler.py': frozenset({
-        'DELETE /connect/tokens/<token_id>',
-        'GET /connect/tokens',
-        'GET /connect/tokens/<token_id>',
-        'POST /connect/tokens',
-    }),
     'memory_handler.py': frozenset({
         'GET /memory',
         'GET /memory/conflict-check',

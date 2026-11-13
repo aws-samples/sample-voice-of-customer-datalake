@@ -214,9 +214,9 @@ def _mcp_search(ctx: Any, arguments: dict) -> tuple[str, str, list[dict]]:
     """The tool's outcome, its answer as text, and the claims of every delegated call."""
     seen: list[dict] = []
 
-    def call_domain(call: DomainCall, *, claims: dict) -> DomainResult:
+    def call_domain(call: DomainCall, *, claims: dict, workspace: str | None = None) -> DomainResult:
         seen.append(dict(claims))
-        response = resolver.resolve(build_proxy_event(call, claims), ctx)
+        response = resolver.resolve(build_proxy_event(call, claims, workspace), ctx)
         return DomainResult(response['statusCode'], json.loads(response['body']))
 
     minter = mcp.MinterIdentity(email='ada@example.com', name='Ada')

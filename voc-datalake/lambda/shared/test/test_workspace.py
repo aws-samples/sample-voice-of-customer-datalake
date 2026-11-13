@@ -472,3 +472,49 @@ def test_a_workspace_admin_passes_the_gate(role, platform_admin):
 def test_everyone_below_admin_gets_403(role):
     with pytest.raises(AuthorizationError, match='Workspace admin access required'):
         require_workspace_admin(WorkspaceContext(ws=WS, role=role, name='', slug='', platform_admin=False))
+
+
+
+# ── A delegated credential or an agent: the person it acts for ─────────────────
+
+def test_a_credential_acts_with_its_person_s_membership(table):
+    """An MCP token minted by ana: ana's MEMBER# row decides."""
+    claims = {'sub': 'mcp:tok_1', 'voc:acting_subject': 'sub-ana', 'cognito:groups': ''}
+    assert _resolve(table, _ws_event(claims), MembershipCache()).role == 'editor'
+
+
+def test_a_credential_whose_person_is_not_a_member_gets_the_one_404(table):
+    claims = {'sub': 'mcp:tok_1', 'voc:acting_subject': 'sub-nobody', 'cognito:groups': ''}
+    with pytest.raises(NotFoundError):
+        _resolve(table, _ws_event(claims), MembershipCache())
+
+
+@pytest.mark.parametrize('claims', [
+    {'sub': 'mcp:tok_1', 'cognito:groups': ''},
+    {'sub': 'mcp:tok_1', 'voc:acting_subject': 'mcp:tok_2', 'cognito:groups': ''},
+], ids=['acting-for-nobody', 'acting-for-a-credential'])
+def test_a_credential_acting_for_no_person_gets_the_one_404(table, claims):
+    with pytest.raises(NotFoundError):
+        _resolve(table, _ws_event(claims), MembershipCache())
+
+
+def test_an_admin_s_credential_acts_at_most_as_an_editor(table):
+    """As for projects: a credential writes what its person may, but administers nothing."""
+    table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-adi', 'role': 'admin'})
+    human = {'sub': 'sub-adi', 'cognito:groups': 'users'}
+    token = {'sub': 'mcp:tok_1', 'voc:acting_subject': 'sub-adi', 'cognito:groups': ''}
+    assert _resolve(table, _ws_event(human), MembershipCache()).role == 'admin'
+    assert _resolve(table, _ws_event(token), MembershipCache()).role == 'editor'
+
+
+
+@pytest.mark.parametrize('first', ['person', 'credential'])
+def test_the_person_and_their_credential_share_the_cache_but_not_the_role(table, first):
+    """Whichever fills the cache first, the person acts as admin and their credential as editor."""
+    table.put_item(Item={'pk': f'WS#{WS}', 'sk': 'MEMBER#sub-adi', 'role': 'admin'})
+    human = _ws_event({'sub': 'sub-adi', 'cognito:groups': 'users'})
+    token = _ws_event({'sub': 'mcp:tok_1', 'voc:acting_subject': 'sub-adi', 'cognito:groups': ''})
+    cache = MembershipCache()
+    order = (human, token) if first == 'person' else (token, human)
+    roles = {id(event): _resolve(table, event, cache).role for event in order}
+    assert (roles[id(human)], roles[id(token)]) == ('admin', 'editor')
