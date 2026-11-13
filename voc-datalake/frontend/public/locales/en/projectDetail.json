@@ -47,6 +47,19 @@
       "visualsUsed_other": "{{count, number}} visuals used"
     },
     "newDocument": "New Document",
+    "sections": {
+      "label": "Document sections",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "Prototypes",
+      "documents": "Documents",
+      "toggle_one": "{{name}}, {{count, number}} document",
+      "toggle_other": "{{name}}, {{count, number}} documents",
+      "new": "New",
+      "newPrd": "New PRD",
+      "newPrfaq": "New PR/FAQ",
+      "newPrototype": "New prototype"
+    },
     "noDocuments": "No documents",
     "ordinal": "{{ordinal}} of {{total, number}}",
     "versions": {

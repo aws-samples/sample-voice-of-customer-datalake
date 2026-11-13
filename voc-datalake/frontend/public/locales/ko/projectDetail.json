@@ -47,6 +47,19 @@
       "visualsUsed_other": "비주얼 {{count, number}}개 사용"
     },
     "newDocument": "새 문서",
+    "sections": {
+      "label": "문서 섹션",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "프로토타입",
+      "documents": "문서",
+      "toggle_one": "{{name}}, 문서 {{count, number}}개",
+      "toggle_other": "{{name}}, 문서 {{count, number}}개",
+      "new": "새로 만들기",
+      "newPrd": "새 PRD",
+      "newPrfaq": "새 PR/FAQ",
+      "newPrototype": "새 프로토타입"
+    },
     "noDocuments": "문서 없음",
     "ordinal": "{{total, number}}개 중 {{ordinal}}번째",
     "versions": {

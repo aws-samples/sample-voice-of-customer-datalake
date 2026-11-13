@@ -47,6 +47,19 @@
       "visualsUsed_other": "ビジュアル{{count, number}}件を使用"
     },
     "newDocument": "新規ドキュメント",
+    "sections": {
+      "label": "ドキュメントのセクション",
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "プロトタイプ",
+      "documents": "ドキュメント",
+      "toggle_one": "{{name}}、ドキュメント{{count, number}}件",
+      "toggle_other": "{{name}}、ドキュメント{{count, number}}件",
+      "new": "新規",
+      "newPrd": "新規PRD",
+      "newPrfaq": "新規PR/FAQ",
+      "newPrototype": "新規プロトタイプ"
+    },
     "noDocuments": "ドキュメントなし",
     "ordinal": "{{total, number}} 件中 {{ordinal}} 件目",
     "versions": {

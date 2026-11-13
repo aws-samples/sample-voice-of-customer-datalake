@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  atLimit, documentLabel, documentMentionOptions, findTrigger, insertToken, mentionsForSend, personaMentionOptions, tokenOf,
+  atLimit, documentLabel, documentMentionOptions, findTrigger, insertToken, mentionsForSend, personaMentionOptions,
+  sectionStartingAt, tokenOf,
 } from './mentionModel'
 import { defined } from '@test/defined'
 import type { DocumentSource, MentionOption, MentionPick, PersonaSource } from './mentionModel'
@@ -52,8 +53,45 @@ describe('options', () => {
     expect(personaMentionOptions(PERSONAS, '', [dana], 'Every persona').map((o) => o.label)).toStrictEqual(['Value Victor'])
   })
 
-  it('lists text documents newest first with their version, never prototypes', () => {
-    expect(documentMentionOptions(DOCUMENTS, '', []).map((o) => o.label)).toStrictEqual(['Delivery updates (v2)', 'Interview notes', 'Delivery updates (v1)'])
+  it('lists text documents in their sections, newest first within each, with their version, never prototypes', () => {
+    expect(documentMentionOptions(DOCUMENTS, '', []).map((o) => o.label)).toStrictEqual(['Delivery updates (v2)', 'Delivery updates (v1)', 'Interview notes'])
+  })
+
+  it('groups by section in order (PRD, PR/FAQ, Documents), the read’s section first, an unknown type in Documents', () => {
+    const documents: DocumentSource[] = [
+      { document_id: 'notes', document_type: 'custom', title: 'Notes', created_at: '2026-05-01T00:00:00Z' },
+      { document_id: 'faq', document_type: 'prfaq', title: 'FAQ', created_at: '2026-04-01T00:00:00Z' },
+      { document_id: 'later', document_type: 'roadmap', title: 'Later', created_at: '2026-03-01T00:00:00Z' },
+      { document_id: 'prd', document_type: 'prd', title: 'PRD', created_at: '2026-02-01T00:00:00Z' },
+      { document_id: 'filed', document_type: 'research', section: 'prd', title: 'Filed', created_at: '2026-01-01T00:00:00Z' },
+    ]
+    const options = documentMentionOptions(documents, '', [])
+    expect(options.map((o) => (o.kind === 'document' ? `${o.section}:${o.documentId}` : o.key)))
+      .toStrictEqual(['prd:prd', 'prd:filed', 'prfaq:faq', 'documents:notes', 'documents:later'])
+    expect(options.map((_o, index) => sectionStartingAt(options, index))).toStrictEqual(['prd', null, 'prfaq', 'documents', null])
+  })
+
+  it('offers the newest eight before grouping them, so a section never pushes newer documents out', () => {
+    const documents: DocumentSource[] = Array.from({ length: 9 }, (_, n) => ({
+      document_id: `d${String(n)}`, document_type: n === 0 ? 'prd' : 'custom', title: `Doc ${String(n)}`,
+      created_at: `2026-01-0${String(n + 1)}T00:00:00Z`,
+    }))
+    expect(documentMentionOptions(documents, '', []).map((o) => o.label))
+      .toStrictEqual(['Doc 8', 'Doc 7', 'Doc 6', 'Doc 5', 'Doc 4', 'Doc 3', 'Doc 2', 'Doc 1'])
+  })
+
+  it('orders each section by last edit, as the Documents tab does: updated_at before created_at, ties by id', () => {
+    const documents: DocumentSource[] = [
+      { document_id: 'made-late', document_type: 'custom', title: 'Made late', created_at: '2026-03-01T00:00:00Z' },
+      { document_id: 'edited', document_type: 'custom', title: 'Edited', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-04-01T00:00:00Z' },
+      { document_id: 'tie-b', document_type: 'custom', title: 'Tie B', created_at: '2026-02-01T00:00:00Z' },
+      { document_id: 'tie-a', document_type: 'custom', title: 'Tie A', created_at: '2026-01-15T00:00:00Z', updated_at: '2026-02-01T00:00:00Z' },
+    ]
+    expect(documentMentionOptions(documents, '', []).map((o) => o.label)).toStrictEqual(['Edited', 'Made late', 'Tie A', 'Tie B'])
+  })
+
+  it('starts no section on a persona option', () => {
+    expect(sectionStartingAt(personaMentionOptions(PERSONAS, '', [], 'Every persona'), 0)).toBeNull()
   })
 
   it('stops offering once a message has reached a limit', () => {

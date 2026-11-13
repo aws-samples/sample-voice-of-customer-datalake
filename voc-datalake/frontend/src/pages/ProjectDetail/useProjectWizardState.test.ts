@@ -89,4 +89,18 @@ describe('useProjectWizardState', () => {
       expect(result.current.researchConfig.useWebSearch).toBe(true)
     })
   })
+
+  describe('openDocWizard (the Documents tab\'s New of a PRD or PR/FAQ section)', () => {
+    it.each(['prd', 'prfaq'] as const)('opens the document wizard with only %s chosen and the rest of the form fresh', (docType) => {
+      const { result } = renderHook(() => useProjectWizardState())
+      act(() => result.current.setDocConfig({ ...result.current.docConfig, title: 'Left over', docTypes: ['prd', 'prfaq'] }))
+
+      act(() => result.current.openDocWizard(docType))
+
+      expect(result.current.activeWizard).toBe('doc')
+      expect(result.current.docConfig).toStrictEqual({
+        docTypes: [docType], title: '', featureIdea: '', customerQuestions: ['', '', '', '', ''],
+      })
+    })
+  })
 })

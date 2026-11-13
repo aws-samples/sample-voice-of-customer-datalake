@@ -20,7 +20,9 @@ Prioritization rows (they reference the deployment's own people and data).
 """
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterable, Iterator
+from pathlib import Path
 from typing import Any
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -41,6 +43,9 @@ CONTAINER_ATTRIBUTE = 'kind'
 # Credential-shaped rows are never exported, wherever they sit.
 CREDENTIAL_ATTRIBUTES = frozenset({'token_hash', 'secret_hash'})
 CREDENTIAL_SK_PREFIXES = ('TOKEN#', 'MCPTOKEN', 'APITOKEN')
+# The document rows of a project's partition: `shared/deleted_sources.py` DOCUMENT_SORT_KEY_PREFIXES, which the
+# project read lists (that module needs the Lambda layer's packages; the test keeps the two the same).
+DOCUMENT_SORT_KEY_PREFIXES = ('PRD#', 'PRFAQ#', 'RESEARCH#', 'DOC#', 'PRODUCT_REPORT#', 'PROTOTYPE#')
 
 
 class ExportError(Exception):
@@ -155,6 +160,26 @@ def _meta(table: Any, project_id: str) -> dict[str, Any]:
     return meta
 
 
+def document_section_counts(project_id: str, rows: list[dict[str, Any]]) -> dict[str, int]:
+    """The manifest's documents per section (docs/prototype-builder.md, part 4), every section, zeros included.
+
+    The documents are the rows the project read lists (`DOCUMENT_SORT_KEY_PREFIXES` in the project's own
+    partition); the section table is `lambda/shared/document_sections.py`, standard library only. A legacy row
+    with no `document_type` counts in its sort key's section, as the project read lists it.
+    """
+    lambda_dir = str(Path(__file__).resolve().parents[2] / 'lambda')
+    if lambda_dir not in sys.path:
+        sys.path.insert(0, lambda_dir)
+    from shared.document_sections import SECTION_ORDER, row_section
+
+    pk = f'PROJECT#{project_id}'
+    counts: dict[str, int] = dict.fromkeys(SECTION_ORDER, 0)
+    for row in rows:
+        if row.get('pk') == pk and str(row.get('sk', '')).startswith(DOCUMENT_SORT_KEY_PREFIXES):
+            counts[row_section(row)] += 1
+    return counts
+
+
 def member_summary(meta: dict[str, Any]) -> list[dict[str, Any]]:
     stored = meta.get('members')
     members: dict[str, Any] = stored if isinstance(stored, dict) else {}
@@ -197,4 +222,5 @@ class Exporter:
             'owner_email': meta.get('owner_email'), 'members': member_summary(meta),
             'rows': len(kept) + len(aggregate_rows), 'objects': objects,
             'skipped_credentials': len(project_rows) - len(kept),
+            'document_sections': document_section_counts(project_id, kept),
         }

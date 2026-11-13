@@ -8,6 +8,7 @@
  */
 import { z } from 'zod'
 import { deletedSourcesOrUndefined } from './deletedSources'
+import { DOCUMENT_SECTIONS } from './documentSections'
 import { optionalErasedEvidenceSchema } from './erasedEvidence'
 import { parseEach } from './lenientFields'
 import { optionalMethodologyBlock, optionalProjectMethodology } from './methodologySchema'
@@ -170,6 +171,8 @@ function withLegacyManagedDocumentType(raw: unknown): unknown {
 const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.looseObject({
   document_id: z.string().min(1),
   document_type: z.string().trim().min(1),
+  // The read's list section; one this bundle does not know is dropped, so `sectionOf` falls back to the table.
+  section: z.enum(DOCUMENT_SECTIONS).optional().catch(undefined),
   title: z.string().catch(''),
   base_title: optionalString,
   version: z.number().int().positive().optional().catch(undefined),

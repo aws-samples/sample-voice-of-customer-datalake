@@ -132,8 +132,9 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         False, False, False),
     'projects_get': (
         'Get a project',
-        ('Read one research project: its details, personas (name, tagline) and documents (ids, types, titles, '
-         'versions; no bodies: read one with documents_get).'),
+        ('Read one research project: its details, personas (name, tagline) and documents in sections prd, prfaq, '
+         'prototypes, documents, last edit first in each (ids, types, titles, versions; no bodies: read one with '
+         'documents_get).'),
         _object({'project_id': ID}),
         False, False, True),
     'projects_generate': (
@@ -621,13 +622,55 @@ class TestProjections:
         assert _shape('projects_get', payload) == {
             'project': {'project_id': 'p1', 'name': 'N'},
             'personas': [{'persona_id': 'pe1', 'name': 'Pat', 'tagline': 'Busy'}],
-            'documents': [{'document_id': 'd1', 'document_type': 'prd', 'title': 'T', 'base_title': 'B',
-                           'version': 2, 'created_at': 'c', 'updated_at': 'u'},
-                          {'document_id': 'd2', 'version': 0}],
+            'document_sections': [
+                {'section': 'prd', 'documents': [{'document_id': 'd1', 'document_type': 'prd', 'title': 'T',
+                                                  'base_title': 'B', 'version': 2, 'created_at': 'c',
+                                                  'updated_at': 'u'}]},
+                {'section': 'prfaq', 'documents': []},
+                {'section': 'prototypes', 'documents': []},
+                {'section': 'documents', 'documents': [{'document_id': 'd2', 'version': 0}]},
+            ],
         }
 
+    def test_project_overview_groups_documents_last_edit_first_in_each_section(self):
+        """The project page's order within a section: updated_at, else created_at, ties by document_id."""
+        payload = {'documents': [
+            {'document_id': 'made-late', 'document_type': 'prd', 'created_at': '2026-03-01'},
+            {'document_id': 'edited', 'document_type': 'prd', 'created_at': '2026-01-01', 'updated_at': '2026-04-01'},
+            {'document_id': 'tie-b', 'document_type': 'prd', 'created_at': '2026-02-01'},
+            {'document_id': 'tie-a', 'document_type': 'prd', 'created_at': '2026-01-15', 'updated_at': '2026-02-01'},
+            {'document_id': 'notes', 'document_type': 'custom', 'created_at': '2026-05-01'},
+        ]}
+        sections = _shape('projects_get', payload)['document_sections']
+        assert [[d['document_id'] for d in s['documents']] for s in sections] == [
+            ['edited', 'made-late', 'tie-a', 'tie-b'], [], [], ['notes']]
+
+    def test_project_overview_puts_a_legacy_row_with_no_type_in_its_sort_keys_section(self):
+        """A managed row awaiting the metadata backfill, as `GET /projects/{id}` files it."""
+        payload = {'documents': [{'document_id': 'j', 'sk': 'PRD#j'}, {'document_id': 'k', 'sk': 'PROTOTYPE#k'},
+                                 {'document_id': 'l', 'sk': 'PRFAQ#l'}, {'document_id': 'm', 'sk': 'DOC#m'}]}
+        sections = _shape('projects_get', payload)['document_sections']
+        assert [(s['section'], [d['document_id'] for d in s['documents']]) for s in sections] == [
+            ('prd', ['j']), ('prfaq', ['l']), ('prototypes', ['k']), ('documents', ['m'])]
+
+    def test_project_overview_groups_documents_in_section_order(self):
+        """Part 4 (docs/prototype-builder.md): prd, prfaq, prototypes, documents; an unknown type in Documents."""
+        types = ['custom', 'prototype', 'prd', 'decision', 'future_kind', 'prototype', 'research', 'product_report',
+                 'prd', 7]
+        payload = {'documents': [{'document_id': f'd{i}', 'document_type': t} for i, t in enumerate(types)]}
+        sections = _shape('projects_get', payload)['document_sections']
+        assert [(s['section'], [d['document_id'] for d in s['documents']]) for s in sections] == [
+            ('prd', ['d2', 'd8']),
+            ('prfaq', []),
+            ('prototypes', ['d1', 'd5']),
+            ('documents', ['d0', 'd3', 'd4', 'd6', 'd7', 'd9']),
+        ]
+        assert 'documents' not in _shape('projects_get', payload)  # the grouping replaces the flat list
+
     def test_project_overview_of_an_unreadable_body_is_empty(self):
-        assert _shape('projects_get', ['x']) == {'project': {}, 'personas': [], 'documents': []}
+        assert _shape('projects_get', ['x']) == {
+            'project': {}, 'personas': [],
+            'document_sections': [{'section': s, 'documents': []} for s in ('prd', 'prfaq', 'prototypes', 'documents')]}
 
     def test_one_document_is_found_by_id_and_stripped(self):
         payload = {'documents': ['junk', {'document_id': 'd1', 'title': 'one'},

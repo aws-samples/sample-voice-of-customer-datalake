@@ -36,6 +36,19 @@ Repeat `--project` for several projects, or pass `--all` for every live project 
 projects and verification fixtures are skipped). `--out` must be a new or empty directory. A
 project that does not exist or is deleted stops the export before anything is written.
 
+The bundle's `manifest.json` lists one summary per project: its id, name, owner and members,
+`rows`, `objects`, `skipped_credentials`, and `document_sections`, the number of documents in
+each section of the project's documents list ([prototype-builder.md → Part 4](prototype-builder.md#part-4-documents-in-sections)),
+always all four keys, zeros included:
+
+```json
+"document_sections": {"prd": 1, "prfaq": 1, "prototypes": 2, "documents": 3}
+```
+
+The counts are worked out from each document's type on export and are only a summary: the
+rows themselves are exported as stored, nothing is added to them, and the import does not read
+the counts, so a bundle written before them imports the same way.
+
 ## Import
 
 Preview first. `--dry-run` resolves every owner and member and prints the rows and objects it

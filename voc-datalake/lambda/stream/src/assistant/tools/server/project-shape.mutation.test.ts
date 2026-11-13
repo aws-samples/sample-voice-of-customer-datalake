@@ -57,12 +57,18 @@ describe('summarizeProject', () => {
       personas: ['junk'],
       documents: [{ document_id: 'x', sk: 'PROTOTYPE#x', content: '<html>' }, { document_id: 'd2', content: 7 }],
     });
-    expect(Object.keys(summary)).toStrictEqual(['access', 'project', 'personas', 'documents']);
+    expect(Object.keys(summary)).toStrictEqual(['access', 'project', 'personas', 'document_sections']);
     expect(summary).toStrictEqual({
       access: { role: 'viewer', can_edit: false, can_manage: false },
       project: { project_id: 'proj_1' },
       personas: [],
-      documents: [{ document_id: 'x', prototype: true }, { document_id: 'd2', content_chars: 0 }],
+      // The sort-key-only prototype is a Prototype; a row with neither type nor key is a Document.
+      document_sections: [
+        { section: 'prd', documents: [] },
+        { section: 'prfaq', documents: [] },
+        { section: 'prototypes', documents: [{ document_id: 'x', prototype: true }] },
+        { section: 'documents', documents: [{ document_id: 'd2', content_chars: 0 }] },
+      ],
     });
   });
 });

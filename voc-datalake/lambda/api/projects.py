@@ -54,6 +54,7 @@ from shared.document_history import (
     saves_nothing,
 )
 from shared.document_revision import ProposalSave, verify_saved_proposal
+from shared.document_sections import row_section
 from shared.document_versions import (
     VERSIONED_DOCUMENT_TYPES,
     get_versioned_document_by_allocation,
@@ -922,6 +923,9 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
     # Normalize copies for this response only. GET must remain read-only and
     # latency-bounded; durable legacy assignment happens on managed mutations.
     documents = normalize_document_versions(documents)
+    # The list's section (docs/prototype-builder.md, part 4): computed on read, never stored; a legacy row
+    # with no document_type is in its sort key's section.
+    documents = [{**document, 'section': row_section(document)} for document in documents]
 
     # "Copy to Kiro" reads the prompt from here, so the constant is not duplicated
     # in the frontend bundle. COMPUTED, never stored: keep it out of every update

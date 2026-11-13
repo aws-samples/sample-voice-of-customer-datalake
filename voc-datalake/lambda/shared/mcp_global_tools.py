@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
+from shared.document_sections import SECTION_ORDER, newest_edit_first, row_section
 from shared.mcp_global_kit import (
     BOOL_SCHEMA,
     DOMAIN_AGENTS,
@@ -161,13 +162,26 @@ def _document_summary(document: Mapping[str, Any]) -> dict:
             if document.get(key) is not None}
 
 
+def _document_sections(payload: object) -> list[dict]:
+    """The read's documents in the four sections, in SECTION_ORDER (an empty one kept), last edit first inside each.
+
+    A legacy row with no ``document_type`` is in its sort key's section (``row_section``).
+    """
+    grouped: dict[str, list[Mapping[str, Any]]] = {section: [] for section in SECTION_ORDER}
+    for document in rows_at(payload, 'documents'):
+        if isinstance(document, Mapping):
+            grouped[row_section(document)].append(document)
+    return [{'section': section, 'documents': [_document_summary(row) for row in newest_edit_first(rows)]}
+            for section, rows in grouped.items()]
+
+
 def _project_overview(payload: object, _args: Mapping[str, Any]) -> dict:
     project = payload.get('project') if isinstance(payload, Mapping) else None
     return {
         'project': public(project),
         'personas': [{'persona_id': p.get('persona_id'), 'name': p.get('name'), 'tagline': p.get('tagline')}
                      for p in rows_at(payload, 'personas') if isinstance(p, Mapping)],
-        'documents': [_document_summary(d) for d in rows_at(payload, 'documents') if isinstance(d, Mapping)],
+        'document_sections': _document_sections(payload),
     }
 
 
@@ -513,8 +527,9 @@ _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
         schema({}), _list_projects, _project_list),
     GlobalTool(
         'projects_get', 'Get a project',
-        'Read one research project: its details, personas (name, tagline) and documents (ids, types, titles, '
-        'versions; no bodies: read one with documents_get).',
+        'Read one research project: its details, personas (name, tagline) and documents in sections prd, prfaq, '
+        'prototypes, documents, last edit first in each (ids, types, titles, versions; no bodies: read one with '
+        'documents_get).',
         schema({'project_id': PROJECT_ID_SCHEMA}), _get_project, _project_overview, project_scoped=True),
     GlobalTool(
         'documents_get', 'Get a document',

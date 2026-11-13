@@ -286,6 +286,12 @@
       "persona": "페르소나",
       "document": "문서"
     },
+    "sections": {
+      "prd": "PRD",
+      "prfaq": "PR/FAQ",
+      "prototypes": "프로토타입",
+      "documents": "문서"
+    },
     "limit": {
       "persona": "메시지당 페르소나는 최대 {{max, number}}개입니다.",
       "document": "메시지당 문서는 최대 {{max, number}}개입니다."

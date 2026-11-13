@@ -19,6 +19,7 @@ import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { expectNoSeriousAxe, expectNoSidewaysScrolling } from '../lib/a11y'
 import { apiCall, stringField } from '../lib/api'
+import { revealDocumentRow } from '../lib/canvas'
 import { dialogNamed } from '../lib/dialogs'
 import { MOCK, RUN_PREFIX } from '../lib/env'
 import { isRecord } from '../lib/guards'
@@ -52,7 +53,8 @@ async function atWidth(page: Page, width: number): Promise<void> {
 /** Opens the series' newest version (v2) on the Documents tab; returns its Feedback button. */
 async function openPrototype(page: Page): Promise<Locator> {
   await page.goto(site(`/projects/${PROJECT}?tab=documents`), { waitUntil: 'domcontentloaded' })
-  await page.getByRole('button', { name: `${TITLE} (v2)` }).first().click()
+  // Below 1280 px the list holds one section: the Prototypes section is opened first.
+  await (await revealDocumentRow(page, `${TITLE} (v2)`)).click()
   const feedback = page.getByRole('button', { name: 'Feedback', exact: true })
   await expect(feedback).toBeVisible({ timeout: 20_000 })
   return feedback

@@ -30,7 +30,7 @@ describe('every core tool tells the model what it does', () => {
     ['list_categories', 'The feedback categories the signed-in user can see: name (the id used in filters and in set_feedback_category), description, the product it belongs to, and its subcategories. Read this before proposing a category change or filtering by category.'],
     ['list_dimensions', 'The feedback dimensions an admin configured (e.g. product, module, user type): key, label, description, parent dimension and allowed values. Read this before filtering with `dims` or reading get_metrics(metric="dimensions").'],
     ['list_projects', 'List the research projects the user can see (id, name, description, status, persona/document counts).'],
-    ['get_project', 'Overview of one project (defaults to the project open on the current page): the signed-in user\u2019s access (role, can_edit, can_manage), metadata, its personas (id, name, tagline) and its documents (id, title, type, size). Does not return document text — use get_documents for that.'],
+    ['get_project', 'Overview of one project (defaults to the project open on the current page): the signed-in user\u2019s access (role, can_edit, can_manage), metadata, its personas (id, name, tagline) and its documents (id, title, type, size) in document_sections, in order: prd, prfaq, prototypes, documents (everything else). Does not return document text — use get_documents for that.'],
     ['suggest_navigation', 'Offer the user a link chip to another page of the app (e.g. "/projects/<id>", "/feedback/<id>", "/problems"). Only app routes are accepted. The user decides whether to follow it.'],
   ])('%s', (name, description) => {
     expect(specOf(name).description).toBe(description);

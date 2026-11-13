@@ -8,6 +8,7 @@ import { defaultContextConfig, type ContextConfig } from '../../components/DataS
 import type {
   PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
 } from './types'
+import type { DocType } from '../../api/types'
 
 type WizardType = 'persona' | 'research' | 'doc' | 'merge' | null
 
@@ -78,6 +79,15 @@ export function useProjectWizardState() {
     setActiveWizard('research')
   }, [])
 
+  /**
+   * The document wizard with one type chosen: the Documents tab's "New" of its PRD or PR/FAQ section. The wizard is
+   * the Overview card's own, so the person's way of working applies unchanged (Human-driven: "Start writing").
+   */
+  const openDocWizard = useCallback((docType: DocType) => {
+    setDocConfig({ ...DEFAULT_DOC_CONFIG, docTypes: [docType] })
+    setActiveWizard('doc')
+  }, [])
+
   const openMergeWizard = useCallback(() => {
     setContextConfig({
       ...defaultContextConfig,
@@ -109,6 +119,7 @@ export function useProjectWizardState() {
     setGenerating,
     resetWizard,
     openResearchWizard,
+    openDocWizard,
     openMergeWizard,
   }
 }

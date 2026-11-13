@@ -58,10 +58,31 @@ export const documentRow = (page: Page, title: string): Locator =>
 
 export const documentsPath = (projectId: string): string => `/projects/${encodeURIComponent(projectId)}?tab=documents`
 
+/**
+ * Below 1280 px the list is a strip holding one section (PRD, PR/FAQ, Prototypes, Documents) under this row of section
+ * buttons (projectDetail.json documents.sections.label); from 1280 px every section is open and the row is hidden.
+ */
+export const documentSectionButtons = (page: Page): Locator => page.getByRole('group', { name: 'Document sections', exact: true })
+
+/** The list row of `title`, once on screen: below 1280 px its section is opened first, from the row of section buttons. */
+export async function revealDocumentRow(page: Page, title: string): Promise<Locator> {
+  const row = documentRow(page, title)
+  const picker = documentSectionButtons(page)
+  await expect(row.or(picker).first()).toBeVisible({ timeout: 20_000 })
+  const shown = (): Promise<boolean> => row.waitFor({ state: 'visible', timeout: 1500 }).then(() => true, () => false)
+  if (await row.isVisible()) return row
+  const sections = picker.getByRole('button')
+  for (let index = 0; index < await sections.count(); index += 1) {
+    await sections.nth(index).click()
+    if (await shown()) return row
+  }
+  throw new Error(`no section of the document list holds "${title}"`)
+}
+
 /** Opens the Documents tab of `projectId`, selects `title` and waits for its canvas. */
 export async function openDocument(page: Page, projectId: string, title: string): Promise<Locator> {
   await page.goto(site(documentsPath(projectId)), { waitUntil: 'domcontentloaded' })
-  await documentRow(page, title).click()
+  await (await revealDocumentRow(page, title)).click()
   const canvas = canvasOf(page, title)
   await expect(canvas).toBeVisible({ timeout: 20_000 })
   return canvas

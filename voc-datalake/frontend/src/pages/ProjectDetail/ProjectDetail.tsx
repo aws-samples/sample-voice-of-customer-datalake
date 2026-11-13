@@ -324,6 +324,7 @@ export default function ProjectDetail() {
         onSelectDoc={selectDoc}
         onDeleteDoc={() => docSelection.selectedDoc && confirm.openDocumentConfirm(docSelection.selectedDoc.document_id)}
         onCreateDoc={docModal.openCreateModal}
+        onWriteDocument={wizard.openDocWizard}
         onJobStarted={handleJobStarted}
       />
 

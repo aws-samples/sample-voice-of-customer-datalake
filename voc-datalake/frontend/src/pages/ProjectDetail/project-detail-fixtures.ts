@@ -73,6 +73,7 @@ export function documentsTabStubs() {
   return {
     onDeleteDoc: vi.fn(),
     onCreateDoc: vi.fn(),
+    onWriteDocument: vi.fn(),
     isDeleting: false,
   }
 }

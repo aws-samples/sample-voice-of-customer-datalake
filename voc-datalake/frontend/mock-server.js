@@ -1989,6 +1989,11 @@ const seriesVersion = (fields) => ({
   updated_at: fields.created_at, ...(fields.version > 1 ? { edit_kind: 'edit' } : {}),
 });
 
+/** The read's `section` of a document type (docs/prototype-builder.md "Part 4"); unknown types are Documents. */
+const MOCK_SECTION_OF_TYPE = { prd: 'prd', prfaq: 'prfaq', prototype: 'prototypes' };
+const mockDocumentSection = (documentType) => (Object.hasOwn(MOCK_SECTION_OF_TYPE, documentType)
+  ? MOCK_SECTION_OF_TYPE[documentType] : 'documents');
+
 // Project detail fixtures for /projects/:id — shape mirrors ProjectDetail
 // ({ project, personas, documents }) so the Project Detail page works
 // against the mock in local dev. Timestamps are frozen at server start on
@@ -3948,6 +3953,8 @@ const server = http.createServer((req, res) => {
     if (detail && projectAccess(projectId).can_view) {
       sendJson(res, 200, {
         ...detail, project: decorateProject(detail.project, { withMembers: true }), methodology: projectMethodology(detail),
+        // Each document's list section, computed on read and never stored (lambda/shared/document_sections.py).
+        documents: detail.documents.map((document) => ({ ...document, section: mockDocumentSection(document.document_type) })),
       });
     } else {
       sendJson(res, 404, { error: 'Project not found' });

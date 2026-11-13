@@ -12,6 +12,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { apiCall, listOf, stringField } from '../lib/api'
+import { revealDocumentRow } from '../lib/canvas'
 import { MOCK } from '../lib/env'
 import { isRecord } from '../lib/guards'
 import { overflowsHorizontally, widthMetrics } from '../lib/mode'
@@ -62,7 +63,8 @@ async function titles(base: string): Promise<string[]> {
 async function openDocument(page: Page, title: string): Promise<Locator> {
   await page.goto(site(`/projects/${PROJECT}?tab=documents`), { waitUntil: 'domcontentloaded' })
   await settle(page, 800)
-  await page.getByRole('button', { name: title }).first().click()
+  // Below 1280 px the list holds one section: the Prototypes section is opened first.
+  await (await revealDocumentRow(page, title)).click()
   await expect(page.getByRole('heading', { name: title, level: 2 })).toBeVisible()
   return page.getByRole('region', { name: BANNER })
 }

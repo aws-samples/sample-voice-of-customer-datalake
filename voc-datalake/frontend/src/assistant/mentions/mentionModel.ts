@@ -8,6 +8,7 @@
  * @module assistant/mentions/mentionModel
  */
 import { MENTION_ALL_PERSONAS, MENTION_LIMITS } from '@stream/assistant/contract'
+import { DOCUMENT_SECTIONS, byNewestEdit, sectionOf, type DocumentSectionId } from '../../api/documentSections'
 import type { Mentions } from '@stream/assistant/contract'
 
 export type MentionKind = 'persona' | 'document'
@@ -21,15 +22,19 @@ export interface PersonaSource {
 export interface DocumentSource {
   document_id: string
   document_type: string
+  /** The project read's list section (api/documentSections.ts); absent = from the type. */
+  section?: string
   title: string
   version?: number
   created_at?: string
+  /** The last edit: newest first reads it before `created_at` (the Documents tab's own order). */
+  updated_at?: string
 }
 
 export type MentionOption =
   | { kind: 'all'; key: string; label: string }
   | { kind: 'persona'; key: string; label: string; personaId: string }
-  | { kind: 'document'; key: string; label: string; documentId: string; version?: number }
+  | { kind: 'document'; key: string; label: string; documentId: string; version?: number; section: DocumentSectionId }
 
 /** A pick made in the menu, with the token it put in the text. */
 export type MentionPick = MentionOption & { token: string }
@@ -108,19 +113,34 @@ export function personaMentionOptions(personas: readonly PersonaSource[], query:
   return [...all, ...each].slice(0, MAX_OPTIONS)
 }
 
-/** Newest first; prototypes are left out (their HTML is not text a persona can read). */
+type DocumentOption = Extract<MentionOption, { kind: 'document' }>
+
+/**
+ * The most recently edited matching documents (at most MAX_OPTIONS), listed in the project's sections in order
+ * (PRD, PR/FAQ, Documents), last edit first within each (`byNewestEdit`, the Documents tab's order); prototypes are left out (their HTML is not text a persona can read).
+ */
 export function documentMentionOptions(documents: readonly DocumentSource[], query: string, picks: readonly MentionPick[]): MentionOption[] {
   const taken = pickedKeys(picks)
-  return documents
+  const newest = documents
     .filter((document) => !NON_TEXT_DOCUMENT_TYPES.has(document.document_type))
-    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-    .map((document): MentionOption => ({
+    .sort(byNewestEdit)
+    .map((document): DocumentOption => ({
       kind: 'document', key: `document:${document.document_id}`, label: documentLabel(document),
-      documentId: document.document_id,
+      documentId: document.document_id, section: sectionOf(document),
       ...(document.version === undefined ? {} : { version: document.version }),
     }))
     .filter((option) => !taken.has(option.key) && matches(option.label, query))
     .slice(0, MAX_OPTIONS)
+  // A stable sort: the same documents as newest-first would offer, grouped, each group still newest first.
+  return newest.sort((a, b) => DOCUMENT_SECTIONS.indexOf(a.section) - DOCUMENT_SECTIONS.indexOf(b.section))
+}
+
+/** The section heading option `index` starts, or null when it continues the one above (or is not a document). */
+export function sectionStartingAt(options: readonly MentionOption[], index: number): DocumentSectionId | null {
+  const option = options[index]
+  if (option?.kind !== 'document') return null
+  const previous = options[index - 1]
+  return previous?.kind === 'document' && previous.section === option.section ? null : option.section
 }
 
 /** The token an option puts in the text. */
