@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.00.01] - 2026-11-13
+
+The repository's Kiro review agents can never read secret files under kiro-cli V3.
+
+### Fixed
+
+- The Kiro agents in `.kiro/agents/` keep `.env`, key and credential files out of reach under kiro-cli V3, which enforces only an agent's `permissions.rules` (it ignores `toolsSettings`). The two AI review agents behind the `tenets: AI review` / `commit: AI review` gate steps had no V3 rules in the repository (kiro-cli generated its own on each machine), and the four hook agents (first-principles, quality and security review, test generator) allowed reads with no path limit and denied nothing. Every agent that reads files now carries one deny rule built from the review's secret-path list (`SECRET_PATHS` in `scripts/ai-review/lib.mjs`, now also naming `.env` and `.env.*` outright), and a test fails for any agent that reads files without it. The review agents read the repository only, as before.
+
+### Upgrade notes
+
+- Nothing to deploy: tooling only. A developer whose kiro-cli already upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`); the files no longer carry a machine-specific `kiroUpgrade` marker.
+
 ## [7.00.00] - 2026-11-13
 
 Prototypes show the company logo uploaded in the design system, an SVG logo can be uploaded again, and a large logo is made smaller instead of refused.
