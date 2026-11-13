@@ -12,6 +12,7 @@ from shared.company_logo import (
     LOGO_MARKER,
     LOGO_PLACEHOLDER,
     MAX_INLINE_LOGO_BYTES,
+    MAX_LOGO_USES,
     company_logo_data_url,
     has_logo_placeholder,
     inline_logo,
@@ -143,6 +144,14 @@ class TestPlaceholder:
     def test_without_a_logo_a_placeholder_outside_an_img_becomes_a_blank_image(self):
         assert inline_logo(f'.hero{{background:url({LOGO_PLACEHOLDER})}}', None, 'Example Air') == (
             f'.hero{{background:url({BLANK_IMAGE})}}')
+
+    # Review (PR #556): the "at most two places" rule is the model's; the cap is ours.
+    def test_only_the_first_two_placeholders_get_the_image_and_the_rest_the_wordmark(self):
+        html = ''.join(f'<img src="{LOGO_PLACEHOLDER}">' for _ in range(5))
+        out = inline_logo(html, 'data:image/png;base64,AAAA', 'Example Air')
+        assert out.count('data:image/png;base64,AAAA') == MAX_LOGO_USES == 2
+        assert out.count('class="company-wordmark"') == 3
+        assert LOGO_PLACEHOLDER not in out
 
     def test_html_without_a_placeholder_is_unchanged(self):
         assert inline_logo('<h1>Demo</h1>', 'data:image/png;base64,AAAA', 'Example Air') == '<h1>Demo</h1>'

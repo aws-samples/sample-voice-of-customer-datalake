@@ -117,6 +117,7 @@ export interface DocumentDerivation {
   company_context_included?: boolean
   /** Prototypes: the design system was read (true) or the build was told not to (false). */
   design_system_included?: boolean
+  company_logo_included?: boolean
 }
 
 /** A derivation resolved for display: sources plus the non-document inputs. */

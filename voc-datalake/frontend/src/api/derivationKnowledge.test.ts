@@ -6,14 +6,14 @@
 import { describe, expect, it } from 'vitest'
 import { derivationKnowledge } from './derivationKnowledge'
 
-const NONE = { memory_ids: [], web_search_count: 0, company_context_included: false, design_system_included: null }
+const NONE = { memory_ids: [], web_search_count: 0, company_context_included: false, design_system_included: null, company_logo_included: null }
 
 describe('derivationKnowledge', () => {
   it('reads the recorded keys', () => {
     const doc = { derivation: { memory_ids: ['mem_1', 'mem_2'], web_search_count: 3, company_context_included: true } }
     expect(derivationKnowledge(doc)).toStrictEqual({
       memory_ids: ['mem_1', 'mem_2'], web_search_count: 3, company_context_included: true,
-      design_system_included: null,
+      design_system_included: null, company_logo_included: null,
     })
   })
 
@@ -30,6 +30,7 @@ describe('derivationKnowledge', () => {
     const doc = { derivation: { memory_ids: ['mem_1', '', 7, null], web_search_count: '2', company_context_included: 'yes' } }
     expect(derivationKnowledge(doc)).toStrictEqual({
       memory_ids: ['mem_1'], web_search_count: 2, company_context_included: false, design_system_included: null,
+      company_logo_included: null,
     })
   })
 
@@ -39,10 +40,17 @@ describe('derivationKnowledge', () => {
     expect(derivationKnowledge({ derivation: { design_system_included: stored } }).design_system_included).toBe(read)
   })
 
+  it.each([
+    [true, true], [false, false], [null, null], ['yes', null],
+  ])('a prototype\'s company_logo_included %s reads as %s', (stored, read) => {
+    expect(derivationKnowledge({ derivation: { company_logo_included: stored } }).company_logo_included).toBe(read)
+  })
+
   it('keeps the recorded keys when web_search_count is absent (it is written only when > 0)', () => {
     const doc = { derivation: { memory_ids: ['mem_1'], company_context_included: true } }
     expect(derivationKnowledge(doc)).toStrictEqual({
       memory_ids: ['mem_1'], web_search_count: 0, company_context_included: true, design_system_included: null,
+      company_logo_included: null,
     })
   })
 

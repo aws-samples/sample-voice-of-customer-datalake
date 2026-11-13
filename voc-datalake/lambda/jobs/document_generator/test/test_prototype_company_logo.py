@@ -15,6 +15,7 @@ from jobs.document_generator.test.prototype_table_fixtures import (
     PRD_NEW,
     prompt_sent,
     run_prototype_build,
+    saved_item,
     wire_projects_table,
 )
 from shared.company_logo import LOGO_INSTRUCTION, LOGO_MARKER, LOGO_PLACEHOLDER, LOGO_REMOVED_INSTRUCTION
@@ -27,10 +28,12 @@ def _stored_html(mock_s3) -> str:
     return mock_s3.put_object.call_args.kwargs['Body'].decode('utf-8')
 
 
-def _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, *, logo, html=MODEL_HTML, **config):
+def _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, *, logo, html=MODEL_HTML,
+           included=None, **config):
     wire_projects_table(mock_dynamodb, prd_pages=[{'Items': [PRD_NEW]}], prfaq_pages=[{'Items': []}])
     mock_converse.return_value = html
-    with patch.object(handler, '_company_logo', return_value=logo) as company_logo:
+    answer = handler.BuildLogo(logo, True) if logo else handler.BuildLogo(None, included)
+    with patch.object(handler, '_company_logo', return_value=answer) as company_logo:
         run_prototype_build(sample_job_event, lambda_context, **config)
     return prompt_sent(mock_converse), company_logo
 
@@ -79,11 +82,21 @@ class TestPrototypeLogo:
         company_logo.assert_called_once_with(expected)
 
 
+@pytest.mark.usefixtures('mock_jobs_table', 'mock_s3')
+class TestDerivationRecordsTheLogo:
+    @pytest.mark.parametrize(('logo', 'included', 'recorded'), [(LOGO, True, True), (None, False, False), (None, None, 'absent')])
+    def test_company_logo_included(self, logo, included, recorded, mock_dynamodb, mock_converse,
+                                   sample_job_event, lambda_context):
+        _build(mock_dynamodb, mock_converse, sample_job_event, lambda_context, logo=logo, included=included)
+        derivation = saved_item(mock_dynamodb)[handler.DERIVATION_FIELD]
+        assert derivation.get('company_logo_included', 'absent') == recorded
+
+
 class TestCompanyLogoRead:
     def test_off_reads_nothing(self, monkeypatch):
         monkeypatch.setenv('AGGREGATES_TABLE', 'agg')
         with patch.object(handler, 'get_dynamodb_resource') as dynamodb:
-            assert handler._company_logo(False) is None
+            assert handler._company_logo(False) == handler.BuildLogo()
         dynamodb.assert_not_called()
 
     def test_reads_the_design_system_row_and_the_bucket(self, monkeypatch):
@@ -95,7 +108,7 @@ class TestCompanyLogoRead:
                 patch.object(handler, '_s3', return_value=s3), \
                 patch.object(handler, 'company_logo_data_url', return_value=LOGO) as data_url:
             dynamodb.return_value.Table.return_value = table
-            assert handler._company_logo(True) == LOGO
+            assert handler._company_logo(True) == handler.BuildLogo(LOGO, True)
         table.get_item.assert_called_once_with(Key={'pk': 'SETTINGS#design_system', 'sk': 'config'})
         assert data_url.call_args.args == (table.get_item.return_value['Item'], s3, handler.SCRATCH_BUCKET)
 
@@ -105,11 +118,24 @@ class TestCompanyLogoRead:
         table.get_item.side_effect = RuntimeError('throttled')
         with patch.object(handler, 'get_dynamodb_resource') as dynamodb:
             dynamodb.return_value.Table.return_value = table
-            assert handler._company_logo(True) is None
+            assert handler._company_logo(True) == handler.BuildLogo()
 
     def test_no_aggregates_table_is_no_logo(self, monkeypatch):
         monkeypatch.delenv('AGGREGATES_TABLE', raising=False)
-        assert handler._company_logo(True) is None
+        assert handler._company_logo(True) == handler.BuildLogo()
+
+    @pytest.mark.parametrize(('row', 'data_url', 'expected'), [
+        ({'logo_s3_key': 'company-context/design/logo_aaaaaaaaaaaa.png'}, None, (None, False)),  # uploaded, left out
+        ({}, None, (None, None)),                                                                # none uploaded
+    ])
+    def test_a_logo_left_out_is_recorded_and_no_logo_is_not(self, monkeypatch, row, data_url, expected):
+        monkeypatch.setenv('AGGREGATES_TABLE', 'agg')
+        table = MagicMock()
+        table.get_item.return_value = {'Item': row}
+        with patch.object(handler, 'get_dynamodb_resource') as dynamodb, patch.object(handler, '_s3'), \
+                patch.object(handler, 'company_logo_data_url', return_value=data_url):
+            dynamodb.return_value.Table.return_value = table
+            assert handler._company_logo(True) == handler.BuildLogo(*expected)
 
 
 class TestRevisionPriorHtml:

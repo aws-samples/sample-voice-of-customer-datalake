@@ -415,6 +415,7 @@ class TestGeneratePrototype:
                      ('r1', H.ROLE_REFERENCE), ('r2', H.ROLE_REFERENCE)],
             selected_document_count=4, product_context_included=True, visual_document_ids=['v1'],
             design_system_included=True,
+            company_logo_included=None,
         )
         build['persist_versioned_document'].assert_called_once_with(
             build.table, PROJECT, 'prototype', 'Prototype: Acme App', JOB, build.item_fields,
@@ -447,6 +448,7 @@ class TestGeneratePrototype:
             sources=[('', H.ROLE_PROTOTYPE_PRD), ('f1', H.ROLE_PROTOTYPE_PRFAQ)],
             selected_document_count=1, product_context_included=False, visual_document_ids=[],
             design_system_included=None,
+            company_logo_included=None,
         )
         assert build.item_fields['source_prd_id'] is None
         assert 'revised_from_id' not in build.item_fields

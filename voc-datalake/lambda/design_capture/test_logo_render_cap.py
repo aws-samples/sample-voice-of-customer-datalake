@@ -31,6 +31,21 @@ def test_a_png_over_the_cap_at_every_size_is_no_logo():
     assert _render(BIG, BIG, BIG) == (None, [1024, 768, 512])
 
 
+# Review (PR #556): a 1024 px PNG over 2 MB is refused inside the render (png_check), and must be retried smaller.
+def test_a_render_the_png_check_refused_as_too_large_is_drawn_again_smaller():
+    assert _render(logo_render.TOO_LARGE, SMALL) == (SMALL, [1024, 768])
+    assert _render(logo_render.TOO_LARGE, logo_render.TOO_LARGE, logo_render.TOO_LARGE) == (None, [1024, 768, 512])
+
+
+def test_render_once_answers_too_large_for_a_size_refusal_and_none_for_any_other():
+    for reason, expected in (('too_large', logo_render.TOO_LARGE), ('blank', None)):
+        tab = MagicMock()
+        tab.render.side_effect = logo_render.RenderRefused(reason)
+        with patch.object(logo_render, '_RenderTab', return_value=tab):
+            assert logo_render._render_once(MagicMock(), 'https://www.example.com/logo.png', 'Logo', 1024) is expected
+        tab.close.assert_called_once()
+
+
 def test_a_failed_render_is_not_retried():
     assert _render(None) == (None, [1024])
 

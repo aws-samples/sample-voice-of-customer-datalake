@@ -41,7 +41,12 @@ prompt:
   prototype back with exactly that image turned into the placeholder again (no other inline image), so the base
   HTML budget is spent on markup. When a revision has no logo to use, the prompt asks for a drawn wordmark, and a
   placeholder `<img>` the model still writes becomes the brand (or project) name as text. The prompt asks for the logo in at
-  most two places (the header and a splash or sign-in screen): each use carries the image in the file again. The document generator
+  most two places (the header and a splash or sign-in screen), and the build enforces it: only the first two
+  placeholders get the image (each use carries it in the file again), any further one becomes the wordmark text.
+  The derivation records it beside `design_system_included`: `company_logo_included` is `true` when the uploaded
+  logo was inlined, `false` when one is uploaded but was left out (over 1 MB, written before the cap, or
+  unreadable), absent when there is none or the design system was not read; the "Built from" footer says
+  "Company logo" or "Company logo left out (over 1 MB or unreadable)". The document generator
   role reads the uploaded logos only, `company-context/design/logo_????????????.*` (not the references' previews)
   (`s3:GetObject`, VocCoreStack's `CompanyLogoReadPolicy` managed policy, attached in VocApiStack).
 - **Category scope applies to the design system too.** Like the vision and objectives, guideline paragraphs,
@@ -311,8 +316,8 @@ Infrastructure: `voc-design-capture` runs as its own role — the managed-browse
 `aws.browser.v1`, the stream connect on `*`), `bedrock:InvokeModel` on the model allowlist, aggregates `GetItem`
 on the `SETTINGS#design_system` and `SETTINGS#model` partitions and `UpdateItem` on `SETTINGS#design_system` only
 (`dynamodb:LeadingKeys`), KMS for the table and bucket, `s3:PutObject` on
-`company-context/design/logo_preview_*` (the logo preview: a downloaded raster candidate or the PNG the
-browser rendered from an SVG logo, and its sanitised SVG) and `company-context/design/icons_*` (the copied icons)
+`company-context/design/logo_preview_*` (the logo preview: a downloaded raster candidate, or the PNG the
+browser rendered from an SVG logo or from a raster logo over 2 MB, and the SVG's sanitised copy) and `company-context/design/icons_*` (the copied icons)
 only; env `RAW_DATA_BUCKET`; no read, no delete, no
 secrets. Its second action, `design_logo_render` (a GitHub reference's SVG logo), uses the same grants. It is never retried (a retry opens another billed
 session). The settings role may invoke it (`DESIGN_CAPTURE_FUNCTION`, by name: VocIngestionStack deploys before
