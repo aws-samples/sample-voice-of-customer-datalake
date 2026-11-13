@@ -27,8 +27,12 @@ Permissions:
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
 (read: category access rows + categories config), ``states:StartExecution`` and
 ``states:StopExecution`` on ``voc-agent-run`` only; with the engineering agents on, their stack adds reads of
-their table and workspace bucket, and PutItem and UpdateItem in a run's partition of the table (a person's board
-actions, never a delete); it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
+their table and workspace bucket, and PutItem and UpdateItem in a run's partition of the table (for a person's
+board actions, never a delete). IAM bounds that by partition only: the role may write every item of a run (META,
+TASK#, SPEC#, TASKLOG#, RUNLOG#, the AGENT# session rows, MSG#, INBOX#), and only this code keeps it to the board
+store's conditional writes of the task, its SPEC# marker, its TASKLOG# row and META's ``task_count``
+(lib/stacks/api-assistant-lambdas.ts says why ``dynamodb:Attributes`` cannot; routing those actions through the
+board function is the follow-up); it is to add ``lambda:InvokeFunction`` on ``voc-engineering-runtime`` (the run
 monitor's signals) and ``events:PutEvents`` on the engineering bus with the source ``voc.engineering/api``, with
 their names, and the bus's resource policy is to let this role put that source (until then the monitor's actions
 answer 503). Nothing while the module is off. The supervisor's session rows (``WS#<ws>#RUN#<run>`` / ``AGENT#``)

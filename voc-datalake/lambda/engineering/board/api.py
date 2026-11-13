@@ -33,8 +33,9 @@ retried progress report is a new report (its time is part of it).
 The supervisor re-posts a task whose lease ran out with ``repost_task`` (through its ``Board.repost`` port,
 engineering/runtime/board_bus.py): the store's ``repost``, then the task published again as
 ``task.posted`` to its role, so the delivery function records it for the role's agents to read (it wakes
-nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away. The coordinate task is
-written only: no role reads a ``task.posted`` for it.
+nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away, and published only while
+its own re-post is the task's last change (a retry after a lost event publishes the same event again; a task open
+at the next attempt by a person's release was published by that person). The coordinate task is written only: no role reads a ``task.posted`` for it.
 """
 from __future__ import annotations
 
@@ -203,13 +204,18 @@ def repost_task(store: BoardStore, publisher: EventBridgePublisher, ws: str, run
     by the supervisor (``publisher`` carries its own source, ``voc.engineering/supervisor``, which may send
     ``task.posted``: bus/senders.py), so each service role publishes as one source.
 
-    A retry after a lost event finds the task already open at the next attempt, and publishes it again (the same
-    change, so the same event: a redelivery). A task that moved on (a newer claim) is refused: ``BoardError``.
+    Published when this call wrote the re-post, or when the store finds it landed already and the task's last change
+    is still the supervisor's own re-post at that attempt (``updated_by`` supervisor, ``updated_op`` repost): a retry
+    after a lost event, which publishes the same event again (its id comes from the change: a redelivery). A task
+    open at the next attempt by another's change (a person's release, which published its own ``task.posted`` as
+    that person) publishes nothing, so the supervisor never sends another sender's change as its own. A task that
+    moved on (a newer claim) is refused: ``BoardError``.
 
     The coordinate task is re-posted with no ``task.posted``: no role's agents read one for it (only the coordinator
     recorded on it claims it, ``BoardStore.launch_coordinator``), and the bus has no queue role ``coordinator``."""
-    task = store.repost(ws, run_id, task_id, reason=reason, attempt=attempt)
-    if task.task_id != COORDINATE_TASK:
+    reposted = store.repost_change(ws, run_id, task_id, reason=reason, attempt=attempt)
+    task = reposted.task
+    if reposted.own and task.task_id != COORDINATE_TASK:
         publisher.publish(replace(_event(task, run_id), sender=Party('supervisor', 'supervisor')))
     return task
 
@@ -461,10 +467,13 @@ class BoardApi:
         role = _post_role(body)
         if role not in POSTERS.get(caller.role, frozenset()):
             raise BoardError('forbidden', f'a {caller.role} does not post {role} tasks')
-        posted = _post(self.store, caller.run_id, body, role=role, actor=agent_id(caller))
+        actor = agent_id(caller)
+        posted = _post(self.store, caller.run_id, body, role=role, actor=actor)
         # An equivalent task still open may be a retry whose first event was lost: publish it again (same id), while
-        # the post is still its last change (after a person's priority, say, it would be a new event, not a retry).
-        return Outcome(posted.task, publish=posted.created or _post_is_last(posted.task),
+        # the post is still its last change (after a person's priority, say, it would be a new event, not a retry)
+        # and it was this caller's (another's post, a person's above all, is never published as this agent's).
+        return Outcome(posted.task,
+                       publish=posted.created or (posted.task.posted_by == actor and _post_is_last(posted.task)),
                        duplicate=not posted.created)
 
     def operate(self, caller: Caller, body: Mapping[str, Any]) -> Outcome:

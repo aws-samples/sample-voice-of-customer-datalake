@@ -62,6 +62,14 @@ describe('the engineering run reads', () => {
     expect(objects.map((statement) => statement.resource)).toStrictEqual([expect.stringMatching(/"\/ws\/default\/reports\/\*"/)]);
   });
 
+  it('grant the writes on the engineering table alone: no index, no other table, no wildcard', () => {
+    // What the run's partition allows is the whole of it (the comment in api-assistant-lambdas.ts names it).
+    const writes = engineeringStatements(on()).filter((statement) => statement.actions.includes('dynamodb:PutItem'));
+    const resources = writes.map((statement) => JSON.stringify(statement.resource));
+    expect(resources).toStrictEqual([expect.stringMatching(/Fn::ImportValue.*Engineering\w*Arn/)]);
+    expect(resources).toStrictEqual([expect.not.stringMatching(/index|\*|\[/)]);
+  });
+
   it('give the MCP endpoint nothing: the reads are admin-only and an MCP token is never an admin, so no tool', () => {
     const env = serviceEnvironment(on(), GLOBAL_MCP_SERVICE_NAME);
     expect(Object.keys(env).filter((name) => name.startsWith('ENGINEERING_'))).toStrictEqual([]);

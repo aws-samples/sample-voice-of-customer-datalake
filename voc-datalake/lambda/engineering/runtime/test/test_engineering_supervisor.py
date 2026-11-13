@@ -635,6 +635,19 @@ def test_shut_down_or_pause_on_an_agent_still_booting_takes_effect_at_once(world
         world.runtime.mint_token(booting.vm)
 
 
+def test_a_booting_agent_whose_open_task_a_person_blocked_is_ended_on_the_next_tick(world: World):
+    # Blocked before its claim: the board reads it ended with no holder (board_bus.BoardLeases.lease). The session
+    # ends at once, its MicroVM with it, never left to boot and then be refused its claim.
+    booting = world.launch(code=SLEEP)
+    assert booting.harness_at is None
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'] = Lease(
+        task_id='task-1', agent_id='', renewed_at=0, last_progress_at=0, attempt=1, final_state='needs_human')
+    world.supervisor.tick(1000)
+    ended = world.session('fixer-1')
+    assert (ended.status, ended.continuation, world.board.reposted) == ('failed', 0, [])
+    _assert_terminated(world, ended)
+
+
 def test_one_run_failing_does_not_keep_the_supervisor_from_the_others(world: World, monkeypatch: pytest.MonkeyPatch):
     world.launch(code='pass')
     world.runs.start('01JD3R4NZXQ7Y2W8K4M6P9T0CD', caps=RunCaps(max_tasks=5), now=0)
@@ -845,7 +858,8 @@ def test_a_session_whose_own_repost_landed_posts_it_again_and_ends_never_continu
     world.launch(code=SLEEP)
     _until(world, 1000, lambda s: s.status == 'working')
     key = '01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1'
-    # Its re-post was written (open at the next attempt) but its publish failed: the session stayed live.
+    # Its re-post was written (open at the next attempt) but its publish failed: the session stayed live. The board
+    # decides whether that re-post is still the supervisor's own to publish again (test_engineering_board_bus.py).
     world.board.leases[key] = Lease(task_id='task-1', agent_id='', renewed_at=0, last_progress_at=0, attempt=2)
     world.supervisor.tick(1060)
     ended = world.session('fixer-1')

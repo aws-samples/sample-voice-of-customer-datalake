@@ -1,0 +1,15 @@
+{
+  "schema": "voc-bench/1",
+  "id": "slug-cut-bug",
+  "kind": "bug",
+  "title": "A slug exactly max_length long loses its last word",
+  "task": "slugify('Quarterly report', max_length=16) returns 'quarterly' instead of 'quarterly-report', which is exactly 16 characters. A slug may be as long as max_length. Fix slugs.py so the test suite passes (python3 -m unittest); do not change the tests.",
+  "fixture": "repo",
+  "check": {
+    "argv": ["python3", "-m", "unittest"],
+    "cwd": "",
+    "timeout_seconds": 60,
+    "protected": ["test_slugs.py"],
+    "allows": ["slugs.py"]
+  }
+}

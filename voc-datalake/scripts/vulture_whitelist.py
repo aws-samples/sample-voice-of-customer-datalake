@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from engineering.agent_memory.recall import Recall
 from engineering.agent_memory.store import AgentMemoryStore
+from engineering.benchmark.cases import load_suite
+from engineering.benchmark.runner import Scorecard, run_suite
 from engineering.knowledge.store import PackVersion
 from engineering.knowledge.understand import understand_package
 from engineering.skills.store import Change, SkillStore, SkillVersion, VersionPage
@@ -42,6 +44,17 @@ SkillVersion.rejected_by
 SkillVersion.rejected_at
 Change.announcement
 VersionPage.next_after
+
+# The benchmark (engineering/benchmark/): a suite loaded and a candidate scored on it, and the gate's verdict recorded
+# on the version (SkillStore.record_benchmark), by the benchmark step the coach's proposals go through, which lands
+# with the coach (phase 3) and its administrators' routes (phase 5); the benchmark's tests drive them on the shipped
+# cases until then. Scorecard.total_cost_usd: a candidate's cost on the suite, for the scorecards (phase 5).
+load_suite.__name__
+run_suite.__name__
+Scorecard.total_cost_usd
+SkillStore.record_benchmark
+# The pass rates a version's readers (the skill history, phase 5) show: the recorded benchmark's, else the claim.
+SkillVersion.trusted_rates
 
 # The agents' memory store, written by the agents' learning (the learning loop, phase 5), read by the harness's
 # recall for a task (phase 4's agents) and approved, edited, forgotten and restored through the people's and the

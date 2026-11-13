@@ -103,6 +103,33 @@ def test_a_repost_frees_the_task_at_its_next_attempt_and_posts_it_as_the_supervi
     assert judge(detail, entry['Source']).allowed
 
 
+def test_its_own_repost_retried_publishes_the_same_event_again(board: Any):
+    """The re-post landed, its event perhaps not (a failed publish): the retry finds the task's last change is the
+    supervisor's own re-post at that attempt and publishes the same event again (a redelivery)."""
+    store, leases, events = board
+    task_id = _posted(store)
+    store.claim(WORKSPACE, RUN, task_id, role='fixer', agent='fixer-1')
+    leases.repost(RUN, task_id, 'stalled', attempt=1)
+    leases.repost(RUN, task_id, 'stalled', attempt=1)   # (the supervisor's _end_superseded, next tick)
+    first, again = events.details()
+    assert (first['type'], first['event_id']) == ('task.posted', again['event_id'])
+
+
+def test_a_repost_after_a_persons_release_publishes_nothing(board: Any):
+    """A person's release (published as that person by the Agents API): the task is open at the next attempt
+    already, its last change theirs, so the supervisor sends nothing as its own."""
+    store, leases, events = board
+    task_id = _posted(store)
+    store.claim(WORKSPACE, RUN, task_id, role='fixer', agent='fixer-1')
+    store.take(WORKSPACE, RUN, task_id, actor='human:admin-sub')
+    store.release(WORKSPACE, RUN, task_id, actor='human:admin-sub')
+    leases.repost(RUN, task_id, 'stalled', attempt=1)
+    task = store.task(WORKSPACE, RUN, task_id)
+    assert (task.state, task.attempt, task.updated_by, events.entries) == ('open', 2, 'human:admin-sub', [])
+    leases.repost(RUN, task_id, 'stalled', attempt=2)   # (never claimed at 2, nobody launched: left open)
+    assert events.entries == []
+
+
 def test_a_repost_of_an_attempt_that_has_moved_on_is_refused_and_one_that_has_ended_is_left(board: Any):
     store, leases, events = board
     task_id = _posted(store)

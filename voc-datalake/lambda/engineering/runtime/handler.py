@@ -300,8 +300,10 @@ def _ensure_coordinator(run_id: str, actor: str) -> None:
 def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
     """Start a run with its caps, its repository ``connection`` and ``commit`` (the board's ``launch`` and
     ``knowledge`` read them from META) and its ``language``, and launch its coordinator; the supervisor's rule is on
-    from then. A first start of a run that is to get a coordinator is refused, before anything is written, when the
-    coordinator cannot be launched (``_coordinator_launchable``): its start numbers it ``coordinator-1``. A start
+    from then. A first start that names a ``language`` is refused, before anything is written, when the coordinator
+    cannot be launched (``_coordinator_launchable``), with or without its connection and commit (a run without them
+    never gets a coordinator, but no run records a language this deployment cannot run); a start with all three
+    numbers it ``coordinator-1``. A start
     whose coordinator then fails to launch (its MicroVM did not start, or the runtime refused it) sends the run to a
     person (``needs_human`` ``coordinator``), whose Resume launches it, and raises the failure."""
     caps = RunCaps(max_tasks=_optional_number(event, 'max_tasks', int) or 0,
@@ -309,7 +311,7 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
                    max_cost_usd=_optional_number(event, 'max_cost_usd', float))
     run_id, runs, status = str(event.get('run_id', '')), _runs(), 'active'
     language = str(event.get('language', ''))
-    if language and runs.get(run_id) is None:   # (any first start naming a language: its run may launch it later)
+    if language and runs.get(run_id) is None:   # (any first start naming a language: no run records one it cannot run)
         _coordinator_launchable(language)
     try:
         runs.start(run_id, caps=caps, now=int(clock()), goal=str(event.get('goal', '')),

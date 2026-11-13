@@ -39,6 +39,7 @@ from engineering.test.run_fixture import LambdaClient
 WS = 'default'
 COORDINATOR = Caller('coordinator', RUN, 1)   # (coordinator-1: the run's start launches it)
 FIXER = Caller('fixer', RUN, 1)
+LAUNCHED = Caller('fixer', RUN, 2)   # (fixer-2: the run's first launch, numbered after coordinator-1)
 AT = '2026-11-12T09:00:00+00:00'
 
 
@@ -265,6 +266,68 @@ def test_the_holder_claiming_again_reads_its_task_and_epoch_until_it_ends(run: B
     assert call(run, FIXER, op='claim', task_id=task_id)[0] == 409   # (an ended task)
 
 
+# --- the claim and the launch recorded on the task --------------------------------------------------------------
+
+def _launch(run: Board, task_id: str) -> str:
+    status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
+    assert status == 200
+    return body['agent_id']
+
+
+def test_a_task_launched_at_its_attempt_is_claimed_by_that_agent_alone(run: Board) -> None:
+    task_id = fixer_task(run)
+    assert _launch(run, task_id) == 'fixer-2'
+    status, body = call(run, FIXER, op='claim', task_id=task_id)
+    assert (status, 'launched for another agent' in body['error']) == (409, True)
+    first = call(run, LAUNCHED, op='claim', task_id=task_id)
+    again = call(run, LAUNCHED, op='claim', task_id=task_id)   # (a retry after a lost answer: the same lease)
+    assert (first[0], again[0], again[1]['task']['lease']) == (200, 200, first[1]['task']['lease'])
+
+
+def test_a_task_with_no_launch_at_its_attempt_is_any_agents_of_its_role(run: Board) -> None:
+    task_id = fixer_task(run)
+    assert call(run, FIXER, op='claim', task_id=task_id)[0] == 200   # (nothing launched for it)
+
+
+def test_an_agent_launched_for_an_older_attempt_never_claims_the_task_again(run: Board) -> None:
+    """Re-posted after its launched agent died before its claim: that agent's late claim at the next attempt is
+    refused, whether or not the next attempt has a launch yet; another agent claims it while none is recorded."""
+    task_id = fixer_task(run)
+    _launch(run, task_id)
+    run.store.repost(WS, RUN, task_id, reason='crashed before its claim', attempt=1)
+    status, body = call(run, LAUNCHED, op='claim', task_id=task_id)
+    assert (status, 'moved on past the attempt' in body['error']) == (409, True)
+    with pytest.raises(BoardError, match='moved on past the attempt'):
+        run.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-2')
+    assert _launch(run, task_id) == 'fixer-3'
+    assert call(run, LAUNCHED, op='claim', task_id=task_id)[0] == 409
+    assert call(run, FIXER, op='claim', task_id=task_id)[0] == 409   # (fixer-3's now)
+    assert call(run, Caller('fixer', RUN, 3), op='claim', task_id=task_id)[0] == 200
+
+
+def test_the_agent_launched_before_a_person_took_and_gave_back_the_task_claims_it_no_more(run: Board) -> None:
+    task_id = fixer_task(run)
+    _launch(run, task_id)
+    run.store.take(WS, RUN, task_id, actor=PERSON)
+    run.store.release(WS, RUN, task_id, actor=PERSON)   # (open again at attempt 2, the launch still attempt 1's)
+    assert call(run, LAUNCHED, op='claim', task_id=task_id)[0] == 409
+    assert run.store.task(WS, RUN, task_id).lease_agent == ''
+
+
+def test_the_claims_launch_rule_holds_in_the_write_itself(run: Board, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A launch landing between the claim's read and its write: the write's own condition refuses another agent."""
+    task_id = fixer_task(run)
+    before = run.store.task(WS, RUN, task_id)   # (read before the launch: nothing recorded)
+    _launch(run, task_id)
+    real, reads = run.store.task, count()
+    monkeypatch.setattr(run.store, 'task', lambda *args: before if next(reads) == 0 else real(*args))
+    with pytest.raises(BoardError, match='not open'):
+        run.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-1')
+    monkeypatch.undo()
+    assert run.store.task(WS, RUN, task_id).lease_agent == ''
+    assert run.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-2').lease_agent == 'fixer-2'
+
+
 # --- tasks ------------------------------------------------------------------------------------------------------
 
 def test_only_the_coordinator_lists_its_runs_tasks(run: Board) -> None:
@@ -408,14 +471,15 @@ def test_a_person_releases_a_task_they_took_open_again_at_the_next_attempt(run: 
     assert (status, body['task']['lease']['epoch']) == (200, 2)
 
 
-def test_a_claim_or_repost_clears_the_op(run: Board) -> None:
+def test_a_claim_clears_the_op_and_a_repost_names_its_own(run: Board) -> None:
     task_id = fixer_task(run)
     run.store.reprioritise(WS, RUN, task_id, priority=4, actor=PERSON)
     call(run, FIXER, op='claim', task_id=task_id)
     assert run.store.task(WS, RUN, task_id).updated_op == ''
     call(run, FIXER, op='move', task_id=task_id, epoch=1, to='in_progress')
     run.store.repost(WS, RUN, task_id, reason='the agent stalled', attempt=1)
-    assert run.store.task(WS, RUN, task_id).updated_op == ''
+    task = run.store.task(WS, RUN, task_id)   # (the move's op gone: the re-post is the last change, and says so)
+    assert (task.updated_by, task.updated_op) == ('supervisor', 'repost')
 
 
 def test_a_block_of_another_persons_hold_is_refused_unless_asked(run: Board) -> None:
@@ -482,7 +546,7 @@ def test_a_reposted_task_gets_a_new_agent_at_its_new_attempt(run: Board) -> None
     task_id = fixer_task(run)
     launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'python', 'paths': []}
     assert call(run, COORDINATOR, **launch)[1]['agent_id'] == 'fixer-2'
-    call(run, FIXER, op='claim', task_id=task_id)
+    assert call(run, LAUNCHED, op='claim', task_id=task_id)[0] == 200
     run.store.repost(WS, RUN, task_id, reason='the lease ran out', attempt=1)
     status, body = call(run, COORDINATOR, **launch)
     assert (status, body['agent_id']) == (200, 'fixer-3')
@@ -535,8 +599,8 @@ def test_a_launch_on_a_task_no_longer_open_never_reaches_the_runtime(run: Board)
     task_id = fixer_task(run)
     launch = {'op': 'launch', 'task_id': task_id, 'role': 'fixer', 'language': 'python', 'paths': []}
     call(run, COORDINATOR, **launch)
-    call(run, FIXER, op='claim', task_id=task_id)
-    assert call(run, FIXER, op='move', task_id=task_id, epoch=1, to='in_progress')[0] == 200
+    call(run, LAUNCHED, op='claim', task_id=task_id)
+    assert call(run, LAUNCHED, op='move', task_id=task_id, epoch=1, to='in_progress')[0] == 200
     assert call(run, COORDINATOR, **launch)[0] == 409   # (an agent recorded, but the task is in progress)
     assert len(run.launcher.requests) == 1
 
@@ -750,11 +814,11 @@ def test_knowledge_needs_the_callers_live_lease_on_the_task_it_names(run: Board)
 def test_an_agent_reads_the_packs_of_the_paths_it_was_launched_on(run: Board) -> None:
     task_id = fixer_task(run, ['services/billing'])
     call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=['crates/ledger', 'bad'])
-    call(run, FIXER, op='claim', task_id=task_id)
-    assert call(run, FIXER, op='knowledge', task_id=task_id, package='crates/ledger')[1] == {
+    call(run, LAUNCHED, op='claim', task_id=task_id)
+    assert call(run, LAUNCHED, op='knowledge', task_id=task_id, package='crates/ledger')[1] == {
         'version': 3, 'text': '<<DATA crates/ledger>>'}
-    assert call(run, FIXER, op='knowledge', task_id=task_id, package='services/billing')[0] == 200
-    status, body = call(run, FIXER, op='knowledge', task_id=task_id, package='bad')   # (the store refuses it: 400)
+    assert call(run, LAUNCHED, op='knowledge', task_id=task_id, package='services/billing')[0] == 200
+    status, body = call(run, LAUNCHED, op='knowledge', task_id=task_id, package='bad')   # (the store refuses it: 400)
     assert (status, 'not a valid package' in body['error']) == (400, True)
 
 

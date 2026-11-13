@@ -1,9 +1,9 @@
 # Autonomous engineering agents
 
-> **Status: design.** This page describes the planned design of autonomous engineering agents. Every section is
-> marked *Planned* until its code is in the repository; the present tense below describes the intended behaviour,
-> not something that runs today. Nothing here is deployed by default, and nothing here costs anything until an
-> administrator connects a repository and enables an agent (TENETS.md tenet 7).
+> **Status: partly built, not yet run against AWS.** Each section says what of it is built (with its code's
+> place) and what is *Planned*; the present tense in a planned part describes the intended behaviour, not something
+> that runs today. Nothing here is deployed by default (`-c engineeringAgents=true` adds it), and nothing here costs
+> anything until an administrator connects a repository and starts a run (TENETS.md tenet 7).
 
 Connect a GitHub or GitLab repository and let agents learn how the team works, then work the way the team works:
 understand issues, hunt and fix bugs, build features, review pull requests. Every change an agent makes goes through
@@ -80,9 +80,11 @@ stack). Designed for them from day one.
 
 *Partly built*: the broker's caller identity, operations per role and write rules, the GitHub client and the
 credential reader (`voc-datalake/lambda/engineering/connectors/`), deployed only with `-c engineeringAgents=true`.
-Planned: the run records and the board's GO ledger (phase 2's board), the bundle reader, the connection page that
-stores a credential, the checkout cache by commit sha, sparse clones, and the GitLab client. Until the run records
-land, the broker finds no run, so every permitted, well-formed operation still answers 503 and nothing reaches GitHub.
+Planned: the broker reading the run records (the runtime writes each run's META, with its connection, commit and
+language, since 6.11.00; the broker is built with `runs=UNCONNECTED`), the board's GO ledger, the bundle reader, the
+connection page that stores a credential, the checkout cache by commit sha, sparse clones, and the GitLab client.
+Until the broker reads them, it finds no run, so every permitted, well-formed operation still answers 503 and
+nothing reaches GitHub.
 
 **What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
 a nine-minute App JWT (RS256, the App's private key from the connection's parameter, below) for an installation token for the connection's one repository and
@@ -111,7 +113,7 @@ transport, with no redirect followed; a token is sent only in the `Authorization
 line. The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
 Each write the host accepts gets an operational log line with the operation, the caller, the connection and what was
 written (issue or pull request number, branch, tree hash, commit count), never a body, a bundle or a token; the
-durable audit row (D4) comes with the run records.
+durable audit row (D4) comes with the broker reading the run records.
 
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
@@ -337,11 +339,18 @@ What exists:
   answered while it is under way; once it has ended (done, failed, needs a human), the same work can be posted
   again, and the dedupe marker moves to the new task. A claim leases an open task of the caller's role for 5
   minutes; the holder claiming again, on a task that has not ended, reads it as it is (a continuation reads its
-  brief so, with its lease's epoch, which is always the task's attempt). Renew, progress and move need the lease and
+  brief so, with its lease's epoch, which is always the task's attempt). A task with a launch recorded at its attempt
+  is claimed only by that launch's agent, and an agent launched for an older attempt (the task re-posted or given
+  back since) never claims it again, in the write's own condition too (409); a task with no launch at its attempt is
+  any agent's of its role. Renew, progress and move need the lease and
   its epoch, on a task that has not ended. Before it continues an agent (a pause resumed, a slow boot), the supervisor
   refreshes its lease (`BoardStore.refresh`), even one that ran out, for that agent at that epoch. The supervisor
   re-posts a task at the attempt it judged (`repost_task`): open again at the next attempt,
-  its lease cleared, published again as `task.posted` to its role, its reason in the history row. The run's
+  its lease cleared, published again as `task.posted` to its role, its reason in the history row. A re-post
+  stamps `updated_op` `repost`; a retry that finds it landed publishes the same event again only while the task's
+  last change is still the supervisor's own re-post at that attempt, and a task open at the next attempt by a
+  person's release (which the API published as that person) publishes nothing, so the supervisor never sends
+  another sender's change as its own. The run's
   `coordinate` task (role `coordinator`) is written only by the run's start (`coordinate_items`, in the start's
   transaction with META, which records the run's `commit` and `connection` that `launch` and `knowledge` read; a run
   started without its commit or connection answers 409 to `launch` and `knowledge`, with that reason: only a new
@@ -512,7 +521,15 @@ for it (from the task's spec: a new attempt starts with no checkpoint). A task a
 the write holds the holder it read), and an
 agent's signal to a task a person holds is refused (no agent works on it). Blocking it ends it as needing a person,
 with their reason (the only way a person sends a task there: a move to it is refused, so the why is always kept).
-Never the coordinate task.
+A person re-prioritises a task another person holds without `over`: a priority ends no hold, so nothing is taken
+from them. Never the coordinate task. *The Agents API's grant (a known gap, tenet 6):* its role writes a person's
+actions itself, with PutItem and UpdateItem bounded by IAM only to the run's partition (`dynamodb:LeadingKeys`), so
+it could write any item of a run (META's every attribute, the tasks, their SPEC# markers and TASKLOG# rows, the
+RUNLOG# rows, the agents' AGENT# session rows, the conversation's MSG# and the INBOX# rows), and only its code keeps
+it to the board store's conditional writes (the task row, its SPEC# marker, its TASKLOG# row, META's `task_count`).
+`dynamodb:Attributes` cannot narrow it per row (its names are the request's, not a row's, and a PutItem of allowed
+names still replaces a whole row). *Planned*: the Agents API asks the board function to make a person's change,
+whose role already writes those rows, and its own write grant goes.
 
 **The conversation.** Every event is also written to the run's conversation (DynamoDB, append-only, D1), which the run
 view shows live as a chat between the agents beside the board. The person is a participant: their decisions, answers
@@ -678,11 +695,24 @@ raw tool output.
 voc-datalake/engineering-images, the stack in voc-datalake/lib/stacks/engineering-runtime.ts; deployed only with
 `-c engineeringAgents=true`; the harness inside each MicroVM is built too: it reaches the board and its inbox
 through the board API, and the broker through an interface that refuses until it is wired, below; the supervisor's
-own board and bus are wired). The service's
-limits, prices, quotas and regions, its API's operation and field names, how a MicroVM receives a role session, how
-its egress allowlist is enforced and whether Mountpoint, `unshare`, `setpriv` and `iptables` run inside one are not
-yet checked against the AWS documentation; until they are, the flag stays off, and this section is corrected to what
-is verified.
+own board and bus are wired).
+
+**What is checked, and what is not yet** (read-only, AWS CLI 2.36, 2026-11-12). The service is `aws lambda-microvms`
+(run, suspend, resume and terminate a MicroVM, create a MicroVM image, auth tokens, lists). Its managed base image is
+`al2023-1` (versions 1 to 3) in us-east-1 and us-west-2. A MicroVM lives at most 8 hours (fixed); up to 16 vCPU and
+32 GB; images are single-size; auth tokens last at most 60 minutes; a MicroVM cannot suspend itself; its idle policy
+sets the idle and suspended times and auto-resume; its egress goes through network connectors (VPC egress connectors
+restrict it); on resume, random generators are reseeded and secrets rotated. Quotas: 5 starts a second (burst 5), 5
+resumes, 2 suspends and 10 terminations a second, 10 image builds at once, 2,048 MB of ARM MicroVM memory per account
+by default (adjustable). Price (us-east-1, on demand): ARM $0.0000276944 a vCPU-second and $0.0000036667 a GB-second,
+so a 2 vCPU / 4 GB ARM MicroVM is about $0.25 an hour and $2 for its 8 hours. The runtime starts each agent's
+at 4 vCPU / 8 GB (`runtime/aws.py`): about $0.50 an hour, $4 for 8 hours, and above the default 2,048 MB memory
+quota, which a deployment raises before its first run to 8,192 MB times the agents it expects at once, the
+coordinator included ([deployment.md](deployment.md)). Not yet checked, because no MicroVM has
+run yet (the first run, in a test account, waits for the owner): the exact request and answer field names the runtime
+uses (`runtime/aws.py`), how a MicroVM receives a role session, how the egress allowlist is enforced, and whether
+Mountpoint, `unshare`, `setpriv` and `iptables` run inside one. Until that run, the flag stays off, and this section
+is corrected to what it shows.
 
 The runtime names its agents as the [broker](#repository-connectors) and the
 [bus and board](#how-the-agents-work-together) read them: its roles are `connectors/identity.py`'s AGENT_ROLES (one
@@ -929,7 +959,11 @@ continues it in a new one once the wait closes.
   open again at its next attempt, guarded by the attempt the supervisor judged so a newer claim is never undone,
   `task.posted` published as the supervisor, which the router admits). A session whose task another agent holds
   now, or that is at another attempt (re-posted, claimed or not), is ended, never continued, on every path (a
-  tick, a wake, a person's Resume); its own re-post that landed is posted again only to republish its event. It speaks on the bus as `voc.engineering/supervisor`: `signal.pause`,
+  tick, a wake, a person's Resume); a task open at the next attempt is asked to re-post again, which publishes
+  its event again only while its own re-post is the task's last change (one whose publish failed is so delivered
+  on the next tick), and nothing after a person gave it back, so the supervisor never sends another sender's
+  change as its own. A task ended with no holder (a person's block) reads as
+  ended, never as a lost lease. It speaks on the bus as `voc.engineering/supervisor`: `signal.pause`,
   `signal.save` and `signal.check_in` (no progress: "what is your state?") to an agent; `run.health` (counts by
   status, tokens, cost; no inbox backlog, since the inbox has no read state) and an agent's fate,
   `run.agent_continued`, `run.agent_timed_out` and `run.agent_failed`, to the run; its figures in the summary. One agent's failing call is logged and never
@@ -1007,7 +1041,9 @@ continues it in a new one once the wait closes.
   out. It holds no host credential. It reports its status (step, recent tool calls, tokens
   per model) to the runner; a CLI agent's tokens are not counted yet (*planned*: the CLI's own usage report). The images ship it with boto3 pinned (`BOTO3_VERSION`), and everything they run needs
   nothing newer than Python 3.11 (their system `python3`; a test checks every shipped module). No image installs
-  a CLI yet: the CLI adapter refuses one that is missing or not the pinned version.
+  a CLI yet: the CLI adapter refuses one that is missing or not the pinned version. **Converse only for now** (owner
+  decision): every skill runs on the Converse loop (the coordinator's does, `harness: converse`); the CLI adapter
+  stays built and tested, and a CLI version is pinned and installed in the images only after the first MicroVM run.
 - **Images.** python, node, rust and java, each a Dockerfile in this repository on one shared base (git, util-linux,
   iproute2, iptables, Python for the runner, Mountpoint for Amazon S3, the two users) and one entry point, with ready
   hooks that warm the toolchain caches (only from that language's registries) and validate hooks that prove the
@@ -1049,10 +1085,11 @@ the write broker before it opens a PR: nothing invokes it, and no role holds an 
 
 ## Getting better: skills, the coach, the learning loop, memory
 
-*Partly built*: the skills' record, diff and versioned store (`voc-datalake/lambda/engineering/skills/`) and the
-agents' memory store with its recall for a task (`voc-datalake/lambda/engineering/agent_memory/`), nothing invoking
-them yet (the harness, the coach, the learning loop and the administrators' and people's routes land with phases 4
-and 5); the coach and the learning loop planned.
+*Partly built*: the skills' record, diff and versioned store (`voc-datalake/lambda/engineering/skills/`) with the
+benchmark gate on a coach's version ([Evaluation](#evaluation)), and the agents' memory store with its recall for a
+task (`voc-datalake/lambda/engineering/agent_memory/`), nothing invoking them yet (the harness, the coach, the
+learning loop and the administrators' and people's routes land with phases 4 and 5); the coach and the learning loop
+planned.
 
 **Skills, visibly and reversibly.** An agent's skill (instructions, examples, tool policy, model, harness) is
 versioned. Each version keeps its diff, why it changed (the run, the failure, the person's comment), the benchmark
@@ -1070,8 +1107,9 @@ the agents' images, so the store writes exactly what the harness reads), the
 diff of two versions and its one-line summary, made by rule from the diff and never by a model (`skills/diff.py`),
 and the store (`skills/store.py`), in the `voc-engineering` table: rows `WS#<ws>#SKILL#<connection>#<role>` (the
 connection empty for the shared skill) with a `HEAD` row (the version counter and the current version), one
-`VER#<version>` row per version (its record, its base, its diff and summary, why, the benchmark pass rates when
-measured, who proposed it, its status; at most 256 KB, checked before it is written) and a create-only `LOG#` row
+`VER#<version>` row per version (its record, its base, its diff and summary, why, the benchmark pass rates the
+proposer gave, which are only their claim (once a benchmark is recorded on the version, its rates are the ones
+readers trust: `SkillVersion.trusted_rates`), who proposed it, its status; at most 256 KB, checked before it is written) and a create-only `LOG#` row
 per acceptance, rejection and rollback, and for a promoted version's source. A proposal is used
 only once an administrator accepts it, in one transaction that also checks its base is still the current version
 (the scope's, or the shared skill's for a connection with none of its own), so a proposal written on a version that
@@ -1085,9 +1123,23 @@ shared skill, and the administrator carries the rest of keeping the connection's
 kept only in that version's `promoted_from` log row, which only an administrator reads; the shared version every
 connection reads does not name it. A rollback is an administrator's new version that restores an earlier accepted
 one of the same scope. Each proposal, acceptance and rollback returns its announcement
-(`skill.proposed`, `skill.accepted`, `skill.rolled_back`, the bus's types today) for the caller to publish. Not yet:
-the harness reading the store, a run recording the versions it used,
-the routes, the benchmark gate on acceptance.
+(`skill.proposed`, `skill.accepted`, `skill.rolled_back`, the bus's types today) for the caller to publish.
+**The benchmark gate on acceptance**: an administrator records a proposed version's benchmark (`record_benchmark`:
+the pass rates before and after, the cases, the verdict and its reasons, the failure's case, with who ran it and
+when) on its `VER#` row, once: written only where the row has none, with `benchmark_gate` (passed with a gain on a
+named failure's case) beside it, in one transaction with a create-only `LOG#<version>#benchmarked` row, and refused
+when it would take the row over its 256 KB; neither an agent nor any other person records one. A version an agent
+(the coach) proposed is accepted only once its recorded benchmark passed with a gain on a named failure's case,
+checked before the acceptance and, through `benchmark_gate`, as its transaction's condition. The record is
+create-only (D1), so a failed or mis-recorded benchmark makes that version final: it is never accepted, and the
+coach cannot propose again for the same run and failure kind; a new proposal comes from a new failure (another
+run), or an administrator writes the fix as their own version, which needs no benchmark. The failure's case is the
+one the administrator who records the benchmark names: nothing ties it to the version's own failure yet (that
+comes with the coach, whose proposal will store the expected case id for `record_benchmark` to check). A version a
+person wrote is accepted as before, measured or not. Recording a benchmark announces nothing (the acceptance does).
+Not yet: the harness reading the store, a run recording the versions it used, the routes, tying the failure's case
+to the coach's proposal, the step that runs the benchmark for a
+proposal.
 
 **The coach.** When an agent fails (an error, a timeout, a NO-GO, a review finding it keeps repeating, a person
 rejecting its pull request or editing it heavily), the coach reads the conversation, the task, the outputs and the
@@ -1212,11 +1264,13 @@ ARN, in the change that first uses it.
 
 - Writes to the host only through the broker, only to the agent's own branches and pull requests and as comments;
   people merge.
-- **Draft pull requests in every mode.** A person marks one ready and merges it. Tenet 3's dial today covers PR/FAQs
-  and PRDs only ([ways-of-working.md](ways-of-working.md)), so these flows do not read it. Letting the dial decide how
-  far a flow goes (Human-driven: proposals only; AI-assisted: draft pull requests; AI-driven: ready pull requests) and
-  whether a passing skill version applies itself would widen tenet 3; it is proposed as a TENETS.md change of its own,
-  for the owner to agree, and lands only with it.
+- **Draft pull requests in every mode; the dial decides how far a flow goes** ([TENETS.md](../TENETS.md) tenet 3,
+  agreed by the owner). Human-driven: the agents find and propose (findings, plans, proposed changes for a person to
+  make) and push no branch. AI-assisted: they write the change on their own branches and open a draft pull request,
+  each step past the plan waiting for a person's go. AI-driven: the flow runs end to end to a draft pull request. A
+  person marks a pull request ready and merges it; an agent never merges, never marks one ready and never changes the
+  dial. Whether a passing skill version may apply itself in AI-driven mode is not part of this and still waits for
+  the owner.
 - **Repository text is data, never instructions.** READMEs, code, issues, PR comments, the knowledge pack, memories,
   other agents' messages and customer feedback (which anyone can send through the public forms) reach a model inside
   DATA blocks. That lowers the risk of a planted instruction; it does
@@ -1233,17 +1287,64 @@ ARN, in the change that first uses it.
 
 ## Evaluation
 
-*Planned* (voc-datalake/lambda/engineering/benchmark).
+*Partly built*: the harness, its fixtures and the benchmark gate for skill versions
+(`voc-datalake/lambda/engineering/benchmark/`, the cases in `voc-datalake/engineering-benchmark/`), with nothing
+invoking them yet.
 
-A benchmark of small fixture repositories (written for this sample, MIT, in the test fixtures; a monorepo among them):
+A benchmark of small fixture repositories (written for this sample, MIT, shipped in
+`voc-datalake/engineering-benchmark/`; a monorepo among them):
 known bugs with their fixes, pull requests with known review findings, features with acceptance tests. Each agent is
 scored per model and per skill version on pass rate, cost and time; the results decide the model table above and every
 skill version the coach proposes. The results on the sample's own fixtures are published on this page; a
 connection's own fixtures stay with it.
 
+What exists:
+
+- **Cases** (`benchmark/cases.py`): a `voc-bench/1` record per case directory (`case.json`: its id, which is the
+  directory's name; its kind, `bug`, `review` or `feature`; a title; the task an agent is given; its fixture, a
+  directory beside it; its check). A bug's or a feature's check is an argv (`python3` or `node` first), a directory of
+  the repository to run it in, a timeout of at most 600 s, the paths a patch may not touch (the check's own tests,
+  the packages a case leaves alone) and, optionally, the only paths it may change (every shipped case names them),
+  both compared case aside; a review's is the findings it expects (a file, a line range, a short rule id)
+  and how many others it may report. The loader checks every field, bounds the record (64 KB), every text, the
+  fixture (400 files, 2 MB, 256 KB a file) and a suite (100 cases), and refuses a path that is not a plain relative
+  one (`..`, absolute, `.git`), any link in the case and anything in a fixture but files and directories. Four cases
+  ship in `voc-datalake/engineering-benchmark/` ([README](../voc-datalake/engineering-benchmark/README.md)): a Python
+  bug with a failing unittest, a Node feature with acceptance tests (`node --test`, no dependencies), a review with
+  three known findings, and a monorepo (a Python and a Node package) whose bug is in one package and whose other
+  package is protected. Their checks need only `python3` and `node`, and no network.
+- **The runner** (`benchmark/runner.py`): a candidate (`solve(case_view) -> Attempt`: a unified diff for a bug or a
+  feature, findings for a review, its input and output tokens, cost and seconds) gets its own copy of the fixture
+  and nothing else of the case. A patch over 256 KB, or naming a path outside the repository, in `.git`, protected
+  or outside the paths the case allows, or making a link, a submodule or a binary, is refused before git reads it;
+  the rest is checked with `git apply --check` and applied to a fresh copy made a git repository (its git directory
+  beside the tree, hooks and every config but the runner's off), and the tree is walked again. The check runs
+  without a shell, its tool by absolute path (Python isolated, `-I -P`, so a patch's `unittest.py` shadows nothing),
+  with no credentials and no proxy in its environment (built from nothing: its tools' directories on PATH, a
+  throwaway HOME), its process group killed at the timeout (a child that called `setsid` escapes it); it passes when
+  it exits 0, and its scrubbed output's end is the reason it failed. It is not a sandbox: the check's network and
+  file system are open. A review passes when every expected finding is matched within its line
+  range with its rule and the other findings stay within the case's bound. Each case gives a result (passed, why,
+  tokens, cost, seconds) and a candidate's run a scorecard (pass rate, results, total cost and time).
+- **The gate** (`benchmark/gate.py`): `decide(baseline, candidate, failure_case)` refuses two scorecards that did
+  not run the same cases, and passes only when none that passed in the baseline fails in the candidate and, when a
+  failure's case is named, the candidate passes it and the baseline did not; each reason is a sentence naming its
+  case (past 12 regressions the rest share one line, so a verdict always fits its record). The verdict carries the
+  failure's case it checked, and the record made from it takes it from there, so a
+  record never claims a gain the gate did not check. Its verdict is recorded on the version by the skills store, whose acceptance of a coach's version needs it ([above](#getting-better-skills-the-coach-the-learning-loop-memory)).
+- Scripted candidates in the tests (every known fix replayed; one case left unfixed; a baseline that fails a
+  failure's case and a version that fixes it) prove the runner and the gate end to end on the shipped cases.
+
+Still planned: the coach that proposes a version and runs the benchmark for it; real agents (a role's skill version
+on a model, through the harness) as candidates; the results published here; and a connection's own fixtures made
+from its failures, kept with that connection. The benchmark assumes an honest candidate: a check's isolation is
+the runner's (a clean environment, a throwaway directory, a timeout, the paths a patch may change), not a
+sandbox's, and the code under test can still patch the framework that tests it. The shipped cases are the
+sample's own; a connection's cases will run in the runtime's MicroVMs.
+
 ## Cost
 
-Nothing runs, and nothing is billed, until an administrator connects a repository and enables an agent.
+Nothing runs, and nothing is billed, until an administrator connects a repository and starts a run.
 Then, per use: model tokens (Bedrock), MicroVM time while an agent works (suspended while it waits), EventBridge per
 event, SQS for the one dead-letter queue (no task queues), DynamoDB on demand, S3 for the workspace, caches and packs, the supervisor's invocations while a run is
 active. The connection's credential is a standard SecureString parameter, with no monthly charge. No NAT gateway and
@@ -1251,7 +1352,7 @@ no other fixed cost by default. Each run's MicroVM seconds and model tokens are 
 (MicroVM time priced, tokens counted) and kept by month in the spend ledger below; *planned*: the run monitor's cost
 line and the Spend tab that show it, and the model broker's pricing of tokens.
 
-**The spend ledger** (`lambda/engineering/spend.py`, built). What the runs use is kept by day, workflow, run, agent and
+**The spend ledger** (`voc-datalake/lambda/engineering/spend.py`, built). What the runs use is kept by day, workflow, run, agent and
 model: one partition per workspace and month, `WS#<ws>#SPEND#<yyyy-mm>`, one row per
 `DAY#<dd>#WF#<flow>#RUN#<run>#AGENT#<agent>#MODEL#<model>`, whose numbers only grow by ADD (`usd`, `tokens_in`,
 `tokens_out`, `microvm_seconds`), with the run's repository on the row for grouping. Each row is written in the same
@@ -1299,9 +1400,9 @@ and the phase that ships them names them in that row.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness and fixtures planned |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (no run records or GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
+| 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (the broker reads no run record and there is no GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
-| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, nothing invoking them yet (same place); the coach and the benchmark gate planned |
+| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, nothing invoking them yet (same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), and the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)); the templates, live cost, skill histories and the assistant's run tools planned |

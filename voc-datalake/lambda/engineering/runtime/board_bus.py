@@ -84,8 +84,10 @@ class BoardLeases:
 
     def repost(self, run_id: str, task_id: str, reason: str, *, attempt: int) -> None:
         """Free the task at ``attempt`` and post it again at the next one (``task.posted``, published as the
-        supervisor); a task that has ended meanwhile is left as it is, one still open at ``attempt`` (never claimed) is
-        re-posted only if an agent was launched for it, and a newer attempt is refused by the board."""
+        supervisor, only when this call wrote the re-post: one already open at the next attempt, a retry's or a
+        person's release, publishes nothing); a task that has ended meanwhile is left as it is, one still open at
+        ``attempt`` (never claimed) is re-posted only if an agent was launched for it, and a newer attempt is refused
+        by the board."""
         task = self.store.task(WORKSPACE, run_id, task_id)
         if task.state in FINAL:
             return

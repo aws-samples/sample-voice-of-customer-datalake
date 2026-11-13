@@ -110,6 +110,16 @@ def test_an_equal_post_after_a_persons_change_is_answered_and_publishes_nothing(
     assert (status, body['duplicate'], bus.types()) == (200, True, ['task.posted'])
 
 
+@pytest.mark.parametrize('poster', ['human:admin-1', 'hunter-3'])
+def test_an_agents_equal_post_never_publishes_anothers_post_as_its_own(api: BoardApi, bus: Bus, poster: str) -> None:
+    # A person's post (or another agent's), still its task's last change: the coordinator's equal post is answered
+    # with it, and nothing goes out as the board's on the coordinator's behalf.
+    posted = api.store.post(WORKSPACE, RUN, role='fixer', title='Fix it', spec={'issue': 7}, parent_task='',
+                            priority=0, actor=poster)
+    status, body = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7})
+    assert (status, body['duplicate'], body['task']['task_id'], bus.entries) == (200, True, posted.task.task_id, [])
+
+
 def test_a_retried_claim_or_move_redelivers_its_event(api: BoardApi, bus: Bus) -> None:
     task_id = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec=SPEC)[1]['task']['task_id']
     for body in ({'op': 'claim'}, {'op': 'move', 'epoch': 1, 'to': 'in_progress'}):

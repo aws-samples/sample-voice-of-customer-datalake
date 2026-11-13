@@ -1,0 +1,16 @@
+{
+  "schema": "voc-bench/1",
+  "id": "pagination-review",
+  "kind": "review",
+  "title": "Review the export's paging and retry wait",
+  "task": "Review export_pages.py, which a pull request adds, for correctness. Report each problem as a finding: the file, the line it is on, and one rule id: off-by-one (a count or an index one too many or too few), unit-mismatch (a value in one unit used where another is expected) or other. Report only real problems.",
+  "fixture": "repo",
+  "check": {
+    "findings": [
+      {"file": "export_pages.py", "lines": [10, 10], "rule": "off-by-one"},
+      {"file": "export_pages.py", "lines": [15, 16], "rule": "off-by-one"},
+      {"file": "export_pages.py", "lines": [24, 26], "rule": "unit-mismatch"}
+    ],
+    "max_false_positives": 1
+  }
+}

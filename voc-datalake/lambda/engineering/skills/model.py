@@ -26,7 +26,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
-from engineering.bus.schema import ULID
+from engineering.bus.schema import ULID, WS
 from engineering.connectors.identity import AGENT_ROLES
 from engineering.runtime.harness.skills import (
     HARNESSES,
@@ -216,3 +216,73 @@ class Benchmark:
     def __post_init__(self) -> None:
         object.__setattr__(self, 'before', _rate(self.before))
         object.__setattr__(self, 'after', _rate(self.after))
+
+
+#: A benchmark case's id (``voc-bench/1``, engineering/benchmark/cases.py): lower case letters, digits and hyphens,
+#: at most 63, the same shape as a workspace id.
+CASE_ID: Final = WS
+#: The cases one recorded benchmark names at most, and its reasons (one per case, and the gate's own lines).
+MAX_BENCHMARK_CASES: Final = 100
+MAX_BENCHMARK_REASONS: Final = MAX_BENCHMARK_CASES + 2
+MAX_REASON: Final = 400
+#: A recorded benchmark as stored (UTF-8 JSON), so the worst version row with one stays under the store's cap.
+MAX_BENCHMARK_BYTES: Final = 40 * 1024
+
+
+@dataclass(frozen=True)
+class BenchmarkRun:
+    """A version's benchmark gate, as recorded on it: the pass rates of its base (``before``) and of the version
+    (``after``) on the same cases, the gate's verdict and its reasons, and the failure's case it had to gain on
+    (``''``: none was named)."""
+
+    before: float
+    after: float
+    cases: tuple[str, ...]
+    passed: bool
+    reasons: tuple[str, ...]
+    failure_case: str = ''
+
+    def __post_init__(self) -> None:
+        before, after = _rate(self.before), _rate(self.after)
+        if before is None or after is None:
+            raise SkillError('a recorded benchmark has both pass rates')
+        object.__setattr__(self, 'before', before)
+        object.__setattr__(self, 'after', after)
+        cases = self.cases
+        if not 0 < len(cases) <= MAX_BENCHMARK_CASES or len(set(cases)) != len(cases):
+            raise SkillError(f'a recorded benchmark names 1-{MAX_BENCHMARK_CASES} cases, each once')
+        if not all(CASE_ID.match(case) for case in cases):
+            raise SkillError('a case id is lower case letters, digits and hyphens')
+        if self.failure_case and self.failure_case not in cases:
+            raise SkillError("the failure's case is one of the benchmark's cases")
+        if not 0 < len(self.reasons) <= MAX_BENCHMARK_REASONS:
+            raise SkillError(f'a recorded benchmark says why in 1-{MAX_BENCHMARK_REASONS} reasons')
+        for reason in self.reasons:
+            _bounded(reason, "a benchmark's reason", MAX_REASON)
+        if len(self.stored_json().encode('utf-8')) > MAX_BENCHMARK_BYTES:
+            raise SkillError(f'a recorded benchmark is at most {MAX_BENCHMARK_BYTES} bytes')
+
+    @property
+    def gained(self) -> bool:
+        """The gate passed with a gain on a named failure's case: what accepting a coach's version needs."""
+        return self.passed and bool(self.failure_case)
+
+    def stored_json(self, **extra: str) -> str:
+        """The record as the store writes it, with ``extra`` fields (when and who): sorted keys, non-ASCII text as
+        itself (UTF-8 in the row, which is what DynamoDB counts), so the bound is measured as the row is stored."""
+        return json.dumps({**self.to_json(), **extra}, sort_keys=True, ensure_ascii=False)
+
+    def to_json(self) -> dict[str, Any]:
+        return {'before': self.before, 'after': self.after, 'cases': list(self.cases), 'passed': self.passed,
+                'reasons': list(self.reasons), 'failure_case': self.failure_case}
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> BenchmarkRun:
+        if set(data) != {'before', 'after', 'cases', 'passed', 'reasons', 'failure_case'}:
+            raise SkillError('a recorded benchmark has exactly its fields')
+        cases, reasons, passed = data['cases'], data['reasons'], data['passed']
+        texts = [*cases, *reasons, data['failure_case']] if isinstance(cases, list) and isinstance(reasons, list) else [0]
+        if not all(isinstance(text, str) for text in texts) or not isinstance(passed, bool):
+            raise SkillError("a recorded benchmark's cases and reasons are lists of text, its verdict true or false")
+        return cls(before=data['before'], after=data['after'], cases=tuple(cases), passed=passed,
+                   reasons=tuple(reasons), failure_case=data['failure_case'])

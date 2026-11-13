@@ -1,0 +1,23 @@
+diff --git a/src/duration.js b/src/duration.js
+--- a/src/duration.js
++++ b/src/duration.js
+@@ -1,5 +1,5 @@
+ /**
+- * A short label for a number of seconds: 45 is "45s", 125 is "2m 5s".
++ * A short label for a number of seconds: 45 is "45s", 125 is "2m 5s", 3725 is "1h 2m 5s".
+  * @param {number} seconds a whole number from 0
+  * @returns {string}
+  */
+@@ -7,7 +7,11 @@
+   if (!Number.isInteger(seconds) || seconds < 0) {
+     throw new RangeError('seconds is a whole number from 0');
+   }
+-  const minutes = Math.floor(seconds / 60);
++  const hours = Math.floor(seconds / 3600);
++  const minutes = Math.floor((seconds % 3600) / 60);
+   const rest = seconds % 60;
++  if (hours) {
++    return `${hours}h ${minutes}m ${rest}s`;
++  }
+   return minutes ? `${minutes}m ${rest}s` : `${rest}s`;
+ }

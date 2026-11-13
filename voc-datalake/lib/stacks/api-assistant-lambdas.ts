@@ -72,8 +72,16 @@ function engineeringReads(ctx: ApiStackContext, role: iam.Role): Record<string, 
   engineeringTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query');
   // PutItem and UpdateItem: a person's board actions (engineering/board/api.py PersonBoard), each the board store's
   // conditional write in one transaction with its history row (a TransactWriteItems is authorised by its items'
-  // own actions: there is no IAM action of its own). Only in a run's partition (`WS#<ws>#RUN#<run>`: its META, tasks,
-  // SPEC# markers and TASKLOG# rows), never the skills', the knowledge packs' or any other; never DeleteItem.
+  // own actions: there is no IAM action of its own). Only in a run's partition (`WS#<ws>#RUN#<run>`), never the
+  // skills', the knowledge packs' or any other; never DeleteItem. Within that partition IAM cannot narrow it
+  // further, so this role can Put or Update EVERY item of a run: its META (any attribute, not only `task_count`),
+  // its TASK# and SPEC# rows, its TASKLOG# rows (a Put overwrites one: create-only is the board store's own
+  // condition, not IAM's), its AGENT# session rows, its RUNLOG#, MSG# and INBOX# rows. `dynamodb:Attributes` does not
+  // close that: it lists names for the whole request, not per row, so the task row's `role` and `task_id` would
+  // stay writable on a session row, and a PutItem of allowed names still replaces a whole row. What keeps it to a
+  // person's board actions is the code: the Agents API's only writes are the board store's conditional ones
+  // (engineering/board/store.py). The follow-up is to route a person's actions through the board function
+  // (docs/autonomous-engineering.md, "The board"), whose role already writes these rows, and drop this grant.
   role.addToPolicy(new iam.PolicyStatement({
     actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'], resources: [engineeringTable.tableArn],
     // The one workspace named (no `*` that could span a `#`), and a run's id, a ULID: exactly 26 characters.
