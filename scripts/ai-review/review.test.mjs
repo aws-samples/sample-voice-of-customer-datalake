@@ -299,7 +299,6 @@ test('both Kiro review agents can read only inside the repository, and trust not
     }, agent)
     // kiro-cli V3 reads ONLY `permissions` (it ignores toolsSettings): the same allow + deny, one rule each.
     assert.deepEqual(config.permissions, KIRO_READ_SETTINGS.permissions, agent)
-    assert.equal(config.kiroUpgrade, undefined, `${agent}: no machine-specific kiroUpgrade marker is committed`)
     assert.equal(config.prompt, `file://./prompts/${agent}.md`)
   }
 })
@@ -312,8 +311,16 @@ test('every Kiro agent in the repository that may read files is denied the secre
   const agents = readdirSync(dir).filter((name) => name.endsWith('.json'))
   assert.ok(agents.length >= 6, 'the agents folder was read')
   for (const name of agents) {
-    const rules = JSON.parse(readFileSync(join(dir, name), 'utf8')).permissions?.rules ?? []
-    if (!rules.some((rule) => rule.capability === 'fs_read' && rule.effect === 'allow')) continue
+    const config = JSON.parse(readFileSync(join(dir, name), 'utf8'))
+    // A machine-specific upgrade marker invites kiro-cli to regenerate the file (and drop the deny): never committed.
+    assert.equal(config.kiroUpgrade, undefined, `${name}: no kiroUpgrade marker is committed`)
+    // Decided from what the agent CAN do (its tools), not from its rules: an agent that lists `read` with no V3 rule
+    // at all is exactly the gap this guards (V3 ignores toolsSettings).
+    const tools = [...(config.tools ?? []), ...(config.allowedTools ?? [])]
+    const rules = config.permissions?.rules ?? []
+    const reads = tools.some((tool) => ['read', 'fs_read', '*', '@builtin'].includes(tool))
+      || rules.some((rule) => rule.capability === 'fs_read' && rule.effect === 'allow')
+    if (!reads) continue
     assert.ok(rules.some((rule) => rule.capability === 'fs_read' && rule.effect === 'deny'
       && deny.match.every((glob) => rule.match?.includes(glob))), `${name} reads files but does not deny every secret path`)
   }
