@@ -47,6 +47,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'document-canvas-a11y',
   // The canvas on 60,000- and 200,000-character documents (creates them; mock only, as the canvas spec).
   'document-canvas-perf',
+  // The prototype Feedback view (builds two prototype versions; mock only).
+  'prototype-feedback',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

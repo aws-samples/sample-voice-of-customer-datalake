@@ -15,7 +15,7 @@ from boto3.dynamodb.types import Binary
 
 from agents import store as runtime_store
 from shared import agents_store, briefing_store, memory_store, prototype_pins
-from shared.dynamo_values import plain
+from shared.dynamo_values import as_text, plain
 
 
 class TestTheSharedRule:
@@ -103,3 +103,14 @@ class TestBriefingStore:
     def test_card_facts_keep_their_shape(self):
         facts = {'company': Decimal('3'), 'personal': Decimal('0'), 'top': ('a', 'b'), 'share': Decimal('0.4')}
         assert plain(facts) == {'company': 3, 'personal': 0, 'top': ['a', 'b'], 'share': 0.4}
+
+
+@pytest.mark.parametrize(('item', 'expected'), [
+    ({'title': 'Faster refunds'}, 'Faster refunds'),
+    ({'title': ''}, ''),
+    ({}, ''),
+    ({'title': 3}, ''),
+    ({'title': None}, ''),
+], ids=['text', 'empty', 'missing', 'number', 'none'])
+def test_as_text_is_a_string_attribute_or_empty(item, expected):
+    assert as_text(item, 'title') == expected

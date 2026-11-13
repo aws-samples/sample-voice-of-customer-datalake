@@ -367,6 +367,9 @@ def test_project_route(path, expected):
         ('POST', ('members',), 'manage'),
         ('PUT', ('members', 's1'), 'manage'),
         ('DELETE', ('members', 's1'), 'view'),
+        ('GET', ('prototypes', 'd1', 'feedback'), 'edit'),
+        ('GET', ('prototypes', 'd1', 'pins'), 'view'),
+        ('GET', ('prototypes', 'd1', 'feedback', 'x'), 'view'),
         ('patch', ('anything',), 'edit'),
     ],
 )

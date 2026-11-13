@@ -2566,6 +2566,16 @@
     ]
   },
   {
+    "file": "api/prototypeFeedbackSchema.ts",
+    "method": "GET",
+    "call": "feedbackPath(projectId, documentId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/feedback"
+      }
+    ]
+  },
+  {
     "file": "api/reprocessApi.ts",
     "method": "POST",
     "call": "`${BASE}/${encodeURIComponent(jobId)}/cancel`",

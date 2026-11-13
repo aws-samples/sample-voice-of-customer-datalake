@@ -20,7 +20,8 @@
     "scripts/mock-edit-stamp.test.mjs",
     "scripts/mock-reprocess.test.mjs",
     "scripts/mock-methodology.test.mjs",
-    "scripts/mock-document-revise.test.mjs"
+    "scripts/mock-document-revise.test.mjs",
+    "scripts/mock-prototype-feedback.test.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx,css}!",

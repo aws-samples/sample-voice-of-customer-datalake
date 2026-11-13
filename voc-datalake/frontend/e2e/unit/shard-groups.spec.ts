@@ -22,6 +22,7 @@ const NOT_GROUPED: Readonly<Record<string, string>> = {
   'tests/document-canvas.spec.ts': 'dev mock only (its viewer step needs the mock read-only project)',
   'tests/document-canvas-a11y.spec.ts': 'dev mock only (its viewer step needs the mock read-only project)',
   'tests/document-canvas-perf.spec.ts': 'dev mock only (writes two long documents; mock only, as the canvas spec)',
+  'tests/prototype-feedback.spec.ts': 'dev mock only (builds two prototype versions, an LLM job on a deployment)',
   'tests/cleanup.spec.ts': 'the shared teardown, run by every group',
 }
 

@@ -9,12 +9,13 @@ import { post } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 
-const PIN_STATUSES = ['open', 'addressed', 'resolved'] as const
+/** A pin's statuses, in the order a pin moves through them (prototype_pins.STATUSES). */
+export const PIN_STATUSES = ['open', 'addressed', 'resolved'] as const
 
 const pct = z.number().catch(0)
 const EMPTY_BBOX = { x: 0, y: 0, w: 0, h: 0 }
 
-const PinReplySchema = z.object({
+export const PinReplySchema = z.object({
   by: z.string().catch(''),
   name: z.string().catch(''),
   text: z.string().catch(''),
@@ -83,3 +84,7 @@ export const prototypePinsApi = {
 
 export const prototypePinsQueryKey = (projectId: string, documentId: string) =>
   ['prototype-pins', projectId, documentId] as const
+
+/** Under the pins root, so a reply or a status change on a pin refreshes the feedback view too. */
+export const prototypeFeedbackQueryKey = (projectId: string, documentId: string) =>
+  [...prototypePinsQueryKey(projectId, documentId), 'feedback'] as const

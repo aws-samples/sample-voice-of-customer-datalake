@@ -168,6 +168,13 @@ outcome (Close on its heading's line). The stale-save banner at 1440 and 360 in 
 browser's Event Timing and Long Tasks: no main-thread task over 200 ms (the slowest keystroke is reported but held to no bar:
 a loaded machine stretches keystrokes, and no keystroke number told the old code from the new; the numbers go to `$E2E_OUT/canvas-perf-<size>.json`).
 
+`prototype-feedback.spec.ts` (the prototype Feedback view, docs/prototype-builder.md Part 3; checks in `lib/a11y.ts`) runs
+ONLY there too: it builds two versions of one prototype in `proj_1` (`e2e-<run id>-feedback prototype …`; the mock seeds
+each version with the same pins, so every item folds two testers), opens v2's Feedback at 1440 and 360 with reduced
+motion: the anonymity note, a folded item ("2 testers said this", v1, v2), its checkbox ("1 selected, 2 pins", the
+count `aria-live`), Select all in this group, and Escape back to Feedback; each state passes axe with no serious or
+critical finding and scrolls nothing sideways. On a deployment it would build prototypes (an LLM job).
+
 ## QA track s1 (`E2E_TRACK=s1` only)
 
 `tests/s1-a-data.spec.ts` and `tests/s1-b-assistant.spec.ts` skip unless `E2E_TRACK=s1`, because they write feedback that cannot be deleted:

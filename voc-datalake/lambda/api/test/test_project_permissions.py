@@ -285,6 +285,11 @@ class TestGateRefusalsReachTheExceptionHandlers:
         assert call(VIEWER, 'PUT', '/projects/p1', body={'name': 'x'}) == (403, CANNOT_EDIT)
 
     @pytest.mark.usefixtures('private_project')
+    def test_viewer_cannot_read_a_prototypes_feedback(self, call):
+        # A GET, so a viewer's by default: listed at edit in _ROUTE_OVERRIDES (it quotes what testers typed).
+        assert call(VIEWER, 'GET', '/projects/p1/prototypes/prototype_1/feedback') == (403, CANNOT_EDIT)
+
+    @pytest.mark.usefixtures('private_project')
     def test_editor_cannot_manage(self, call):
         assert call(EDITOR, 'DELETE', '/projects/p1') == (403, CANNOT_MANAGE)
 

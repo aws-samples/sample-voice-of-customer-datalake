@@ -444,6 +444,8 @@ _ROUTE_OVERRIDES: Final = (
     ('POST', ('documents', '*', 'comments', '*', 'resolve'), LEVEL_VIEW),
     ('POST', ('documents', '*', 'comments', '*', 'reopen'), LEVEL_VIEW),
     ('DELETE', ('documents', '*', 'comments', '*'), LEVEL_VIEW),
+    # A prototype series' feedback quotes what testers typed: read at edit, as its pins are.
+    ('GET', ('prototypes', '*', 'feedback'), LEVEL_EDIT),
 )
 
 

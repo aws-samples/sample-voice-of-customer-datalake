@@ -56,6 +56,7 @@ from shared.mcp_global_kit import (
 )
 from shared.mcp_global_tools_steps import LEGACY_REVISE_STEP, STEP_TOOLS, legacy_revise
 from shared.mcp_global_tools_work import WORK_TOOLS
+from shared.prototype_pins import STATUSES as PIN_STATUSES
 
 DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_METRICS: 'METRICS_FUNCTION',
@@ -104,6 +105,20 @@ DEFAULT_FEATURE_REQUEST_LIMIT: Final = 25
 MAX_FEATURE_REQUEST_DAYS: Final = 3650
 MAX_FEATURE_REQUEST_FILTER_LENGTH: Final = 500
 MAX_FEATURE_REQUEST_TEXT_CHARS: Final = 1000
+# `documents_list_prototype_feedback` (GET /projects/{id}/prototypes/{doc}/feedback, shared/prototype_feedback.py):
+# the answer field by field; the last fields of a pin and of an item (its text, its replies) are never sent for a
+# flagged one, so instruction-shaped tester text does not reach a model through the tool; nor does an anchor field
+# the route names in an item's `unsafe_fields`, or a group's route unless its `route_unsafe` is exactly False.
+_FEEDBACK_FIELDS: Final[tuple[str, ...]] = ('document_id', 'versions_read', 'partial', 'cut',
+                                            'older_versions_unread', 'pin_count')
+_FEEDBACK_ITEM_FIELDS: Final[tuple[str, ...]] = ('item_id', 'pin_ids', 'count', 'first_at', 'text')
+_FEEDBACK_PIN_FIELDS: Final[tuple[str, ...]] = ('pin_id', 'document_id', 'version', 'status', 'created_at',
+                                                'addressed_by', 'text', 'replies')
+# A pin's replies as the assistant's tool gives them: the newest five, each capped; the comment capped too.
+_FEEDBACK_REPLIES: Final = 5
+_FEEDBACK_TEXT_CHARS: Final = 600
+_FEEDBACK_REPLY_CHARS: Final = 300
+_FEEDBACK_PLACE_CHARS: Final = 200
 
 # ── Argument readers ────────────────────────────────────────────────────────
 def _dims_arg(args: Mapping[str, Any]) -> str | None:
@@ -162,6 +177,56 @@ def _one_document(payload: object, args: Mapping[str, Any]) -> dict:
         if isinstance(document, Mapping) and document.get('document_id') == wanted:
             return {'document': public(document)}
     raise InvalidToolArgument(f'document {wanted} is not in this project')
+
+
+def _feedback_pin(pin: Mapping[str, Any]) -> dict:
+    """One pin of the feedback answer; a flagged one (or one not marked unflagged) without text and replies."""
+    flagged = pin.get('flagged') is not False
+    view = {key: pin.get(key) for key in _FEEDBACK_PIN_FIELDS[:-2]}
+    if not flagged:
+        replies = [r for r in rows_at(pin, 'replies') if isinstance(r, Mapping)][-_FEEDBACK_REPLIES:]
+        view |= {'text': _clipped(pin.get('text'), _FEEDBACK_TEXT_CHARS),
+                 'replies': [{'name': r.get('name'), 'text': _clipped(r.get('text'), _FEEDBACK_REPLY_CHARS), 'at': r.get('at')}
+                             for r in replies]}
+    return {**view, 'flagged': flagged}
+
+
+def _clipped(value: object, limit: int) -> object:
+    """A text field within ``limit`` characters (as the assistant's tool caps it); anything else as it is."""
+    return value if not isinstance(value, str) or len(value) <= limit else value[:limit - 1] + '…'
+
+
+def _feedback_item(item: Mapping[str, Any]) -> dict:
+    """One item; a flagged one (instruction-shaped text) keeps only its ids, place and pins' status."""
+    flagged = item.get('flagged') is not False
+    keys = _FEEDBACK_ITEM_FIELDS[:-1] if flagged else _FEEDBACK_ITEM_FIELDS
+    anchor = item.get('anchor')
+    # Never a field the route judged unsafe for a model (an unmarked item: none of its text), nor a flagged item's
+    # element text: as the assistant's tool gives it.
+    raw_unsafe = item.get('unsafe_fields')
+    unsafe = set(raw_unsafe) if isinstance(raw_unsafe, list) else {'route', 'selector', 'text_snippet'}
+    anchor_keys = [key for key in ('route', 'selector', 'text_snippet')
+                   if key not in unsafe and not (flagged and key == 'text_snippet')]
+    view = {key: item.get(key) for key in keys}
+    if 'text' in view:
+        view['text'] = _clipped(view['text'], _FEEDBACK_TEXT_CHARS)
+    return {
+        **view, 'flagged': flagged,
+        'anchor': {key: _clipped(anchor.get(key), _FEEDBACK_PLACE_CHARS) for key in anchor_keys}
+        if isinstance(anchor, Mapping) else {},
+        'pins': [_feedback_pin(p) for p in rows_at(item, 'pins') if isinstance(p, Mapping)],
+    }
+
+
+def _prototype_feedback(payload: object, _args: Mapping[str, Any]) -> dict:
+    """The route's answer, field by field, with no text or reply of a flagged item or pin."""
+    answer = payload if isinstance(payload, Mapping) else {}
+    return {
+        **{key: answer.get(key) for key in _FEEDBACK_FIELDS},
+        'groups': [{'route': '' if group.get('route_unsafe') is not False else group.get('route'),
+                    'items': [_feedback_item(i) for i in rows_at(group, 'items') if isinstance(i, Mapping)]}
+                   for group in rows_at(answer, 'groups') if isinstance(group, Mapping)],
+    }
 
 
 def _project_list(payload: object, _args: Mapping[str, Any]) -> dict:
@@ -320,6 +385,16 @@ def _get_document(args: Mapping[str, Any], project: str | None) -> RouteRequest:
     return _get_project(args, project)
 
 
+def _list_prototype_feedback(args: Mapping[str, Any], project: str | None) -> RouteRequest:
+    document_id = id_arg(args, 'document_id')
+    status = args.get('status')
+    if status is not None and status not in PIN_STATUSES:
+        raise InvalidToolArgument(f'status must be one of: {", ".join(PIN_STATUSES)}')
+    return RouteRequest(DOMAIN_PROJECTS, 'GET',
+                        f'/projects/{require_project(project)}/prototypes/{document_id}/feedback',
+                        query={'status': status})
+
+
 def _create_document(args: Mapping[str, Any], project: str | None) -> RouteRequest:
     body = {
         'document_type': 'custom',
@@ -447,6 +522,14 @@ _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
         'document, with its type, title, version and content.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
         _get_document, _one_document, project_scoped=True),
+    GlobalTool(
+        'documents_list_prototype_feedback', 'List prototype feedback',
+        "Read the testers' pins on every version of a prototype `document_id`, grouped by screen and folded "
+        '("3 testers said this"), with their replies, status, version and pin ids; optional `status`. '
+        '`partial` names the versions not fully read. A flagged item has no text.',
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
+                'status': {'type': 'string', 'enum': list(PIN_STATUSES)}}, ('document_id',)),
+        _list_prototype_feedback, _prototype_feedback, project_scoped=True),
     GlobalTool(
         'agents_list', 'List agents',
         'List the autonomous agents you can see, with their status. Use it to find the `agent_id` the agents_ '
