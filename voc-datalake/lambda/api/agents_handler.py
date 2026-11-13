@@ -1035,7 +1035,8 @@ def post_engineering_task(run_id: str):
 @app.post('/agents/engineering/<run_id>/board/tasks/<task_id>/<action>')
 @tracer.capture_method
 def act_on_engineering_task(run_id: str, task_id: str, action: str):
-    """``priority {priority}`` | ``block {reason, over?}`` | ``take {over?}`` | ``move {to}`` → ``{task}`` (admin)."""
+    """``priority {priority}`` | ``block {reason, over?}`` | ``take {over?}`` | ``move {to}`` | ``release {}`` →
+    ``{task}`` (admin)."""
     return _person_board_action(run_id, lambda people, body, subject: people.act(run_id, task_id, action, body,
                                                                                  subject))
 

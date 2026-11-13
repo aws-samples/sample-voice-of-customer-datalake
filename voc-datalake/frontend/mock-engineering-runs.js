@@ -360,6 +360,19 @@ const ACTIONS = {
     task.priority = body.priority;
     return changed(task, task.state, 'priority', `priority ${body.priority}`);
   },
+  release(task) {
+    // As the store: their own release again is answered as it is; only the holder gives a task back.
+    const last = task.history.at(-1);
+    if (task.state === 'open' && last?.op === 'release' && last.by === PERSON) return [200, { task }];
+    if (task.lease?.agent !== PERSON) return [403, { message: 'only a task you hold is given back by you: read the board again' }];
+    const at = new Date().toISOString();
+    Object.assign(task, { state: 'open', attempt: task.attempt + 1, lease: null, updated_by: PERSON, updated_at: at });
+    task.history.push({ state: 'open', at, by: PERSON, op: 'release', attempt: task.attempt, result_keys: 0, reason: 'released by a person' });
+    // Open for its role again, as a re-post: the role is told (task.posted), as the person.
+    say({ kind: 'human', id: 'sub-admin-demo' }, { kind: 'role', id: task.role }, 'task.posted',
+      `${task.title} (open, by ${PERSON})`, { threadId: task.task_id, taskId: task.task_id, at });
+    return [200, { task }];
+  },
   move(task, body) {
     if (body.to === 'needs_human') return [400, { message: 'a task needs a person by block, with a reason: not by a move' }];
     if (task.lease?.agent !== PERSON) return [403, { message: 'only a task you took is moved by you: take it first' }];
@@ -378,7 +391,7 @@ function actOnTask(taskId, action, body) {
   if (!task) return [404, { message: 'no such task' }];
   if (taskId === 'coordinate') return [403, { message: "the coordinate task is the run coordinator's" }];
   if (FINAL.has(task.state)) return [409, { message: 'the task has ended' }];
-  if (!Object.hasOwn(ACTIONS, action)) return [400, { message: 'the action is one of block, move, priority, take' }];
+  if (!Object.hasOwn(ACTIONS, action)) return [400, { message: 'the action is one of block, move, priority, release, take' }];
   return ACTIONS[action](task, body);
 }
 

@@ -1,7 +1,7 @@
 /**
  * @fileoverview An admin's board controls on the run monitor (`…/board/tasks…`, engineering/board/api.py PersonBoard):
  * post a task for a role, and on a task that has not ended take it, block it with a reason, change its priority, and
- * move on a task they hold. Ending another person's hold (taking it over, or blocking it) asks first and is sent with
+ * move on a task they hold, or give it back to the agents. Ending another person's hold (taking it over, or blocking it) asks first and is sent with
  * `over`. A task goes to "needs a person" only by Block, which says why (no bare move there). The coordinate task is
  * the run coordinator's: it has no controls (signal the run instead). Each action's refusal says why (a task that
  * moved on since the page read it: reload).
@@ -70,7 +70,10 @@ export function PostTaskForm({ runId }: Readonly<{ runId: string }>) {
   )
 }
 
-/** Take (or Take over, from another person), or the moves of a task the admin holds (none to "needs a person"). */
+/**
+ * Take (or Take over, from another person); or, on a task the admin holds, its moves (none to "needs a person") and
+ * Give back to the agents (open again at its next attempt, for the run coordinator to launch an agent on).
+ */
 function HolderButtons({ task, mine, anothers, busy, act, askOver }: Readonly<{
   task: EngineeringTask; mine: boolean; anothers: boolean; busy: boolean
   act: (request: BoardAction) => void; askOver: (request: BoardAction) => void
@@ -92,6 +95,9 @@ function HolderButtons({ task, mine, anothers, busy, act, askOver }: Readonly<{
           {t('engineeringRun.board.moveTo', { state: t(`engineeringRun.states.${to}`, { defaultValue: to }) })}
         </button>
       ))}
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => act({ action: 'release' })}>
+        {t('engineeringRun.board.release')}
+      </button>
     </>
   )
 }

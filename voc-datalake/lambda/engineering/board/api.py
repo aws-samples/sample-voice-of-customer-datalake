@@ -542,7 +542,8 @@ class BoardApi:
 
 @dataclass(frozen=True)
 class PersonBoard:
-    """A person's board actions (plan v3 4.3): post, re-prioritise, block or take a task, and move a task they took.
+    """A person's board actions (plan v3 4.3): post, re-prioritise, block or take a task, and move a task they took or
+    give it back (release).
 
     The Agents API's routes (``/agents/engineering/<run_id>/board/tasks…``) call it for an administrator acting for
     themselves, never a delegated credential, like the run monitor's signals. Each change is the board store's own
@@ -568,7 +569,8 @@ class PersonBoard:
 
     def act(self, run_id: str, task_id: str, action: str, body: Mapping[str, Any], subject: str) -> dict[str, Any]:
         """``priority {priority}``, ``block {reason, over?}``, ``take {over?}`` (``over``: end another person's hold) or
-        ``move {to}`` (only a task they took, at its attempt) on a task that has not ended. Published to the run
+        ``move {to}`` (only a task they took, at its attempt) or ``release`` (a task they took, open again at its
+        next attempt: published to its role, as a re-post) on a task that has not ended. Published to the run
         (``_person_event``) when the task's last change is theirs and this action (``updated_op``): this one, or
         their own earlier try of it (the same event again); a change already there by someone else, or a no-op
         after another change of theirs (a priority it already has after their take), is answered and publishes
@@ -592,12 +594,17 @@ class PersonBoard:
                 raise BoardError('forbidden', 'only a task you took is moved by you: take it first')
             task = self.store.move(WORKSPACE, run_id, task_id, agent=actor, epoch=held.attempt,
                                    to_state=to_state, result_keys=())
+        elif action == 'release':
+            task = self.store.release(WORKSPACE, run_id, task_id, actor=actor)
         else:
-            raise BoardError('invalid', 'the action is one of block, move, priority, take')
+            raise BoardError('invalid', 'the action is one of block, move, priority, release, take')
         # Only a change of theirs is published: this one, or their earlier try of it (the same op and time, so the
         # same event id). A no-op answered as it is (a priority it already has, say) writes nothing and says nothing.
         if (task.updated_by, task.updated_op) == (actor, action):
-            self.publisher.publish(_person_event(task, run_id, subject, action))
+            # A release is open for its role again, as a re-post: the role is told (task.posted), as the person.
+            event = (replace(_event(task, run_id), sender=Party('human', subject)) if action == 'release'
+                     else _person_event(task, run_id, subject, action))
+            self.publisher.publish(event)
         return {'task': task.view()}
 
 

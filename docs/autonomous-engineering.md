@@ -507,7 +507,8 @@ store's own conditional write, with a history row naming `human:<subject>`, publ
 from the API's own source with `from.kind` human (the only `task.*` the bus takes from the API). Taking a task makes
 the person its holder with no expiry (`lease_agent` `human:<subject>`, the lease's epoch its attempt): its agent can
 move it no more, and the supervisor, which judges agents' sessions, leaves it alone; the person moves it on like any
-holder. A task another person holds is taken or blocked from them only when asked (`over`: the monitor asks first;
+holder, or releases it: open again at its next attempt, as a re-post, until the run coordinator launches an agent of its role
+for it (from the task's spec: a new attempt starts with no checkpoint). A task another person holds is taken or blocked from them only when asked (`over`: the monitor asks first;
 the write holds the holder it read), and an
 agent's signal to a task a person holds is refused (no agent works on it). Blocking it ends it as needing a person,
 with their reason (the only way a person sends a task there: a move to it is refused, so the why is always kept).

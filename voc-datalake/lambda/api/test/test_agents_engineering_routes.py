@@ -333,12 +333,17 @@ def test_another_persons_hold_is_ended_only_when_over_asks(lambda_context: Any, 
         'voc.engineering/api', {'kind': 'human', 'id': 'admin-sub'})
 
 
+def _taken(lambda_context: Any, engineering: EngineeringRun) -> str:
+    """The run's task, taken by the signed-in admin."""
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{engineering.task_id}/take', body={})[0] == 200
+    return engineering.task_id
+
+
 def test_a_no_op_publishes_nothing_and_a_retry_publishes_the_same_event(lambda_context: Any,
                                                                          run: tuple[Any, EngineeringRun],
                                                                          actions: Actions) -> None:
     _, engineering = run
-    task = engineering.task_id
-    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/take', body={})[0] == 200
+    task = _taken(lambda_context, engineering)
     current = _board_task(engineering, task)['priority']
     # The priority it already has, after their take: answered (200), nothing written, nothing said.
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/priority', body={'priority': int(current)})[0] == 200
@@ -347,6 +352,22 @@ def test_a_no_op_publishes_nothing_and_a_retry_publishes_the_same_event(lambda_c
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/take', body={})[0] == 200
     first, again = (json.loads(entry['Detail'])['event_id'] for entry in actions.bus.entries)
     assert first == again
+
+
+def test_a_person_releases_a_task_they_took_and_its_role_is_told(lambda_context: Any,
+                                                                 run: tuple[Any, EngineeringRun],
+                                                                 actions: Actions) -> None:
+    _, engineering = run
+    path = f'{BASE}/board/tasks/{engineering.task_id}/release'
+    assert _call(lambda_context, 'POST', path, body={})[0] == 403   # (not theirs)
+    task = _taken(lambda_context, engineering)
+    status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/release', body={})
+    assert (status, body['task']['state'], body['task']['attempt'], body['task']['lease']) == (200, 'open', 2, None)
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/release', body={})[0] == 200   # (a retry)
+    claimed, posted, again = (json.loads(entry['Detail']) for entry in actions.bus.entries)
+    assert (claimed['type'], posted['type'], posted['to'], posted['from']) == (
+        'task.claimed', 'task.posted', {'kind': 'role', 'id': 'fixer'}, {'kind': 'human', 'id': 'admin-sub'})
+    assert again['event_id'] == posted['event_id']
 
 
 def test_an_equal_post_after_a_later_change_is_answered_and_publishes_nothing(lambda_context: Any,

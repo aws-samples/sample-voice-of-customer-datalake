@@ -770,7 +770,8 @@
       "takeOverMessage": "Une autre personne la détient ({{holder}}) : elle devient la vôtre et ses actions sont refusées.",
       "duplicate": "Une tâche identique est déjà sur le tableau : rien de nouveau n’a été publié.",
       "blockOverTitle": "Bloquer cette tâche ?",
-      "blockOverMessage": "Une autre personne la détient ({{holder}}) : la bloquer met fin à sa prise en charge."
+      "blockOverMessage": "Une autre personne la détient ({{holder}}) : la bloquer met fin à sa prise en charge.",
+      "release": "Rendre aux agents"
     },
     "panels": "Les agents, le tableau, la conversation et les rapports de l’exécution",
     "reports": {

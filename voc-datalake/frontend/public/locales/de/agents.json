@@ -764,7 +764,8 @@
       "takeOverMessage": "Eine andere Person hält sie ({{holder}}): Sie gehört dann Ihnen, ihre Schritte werden abgelehnt.",
       "duplicate": "Eine gleiche Aufgabe ist schon auf dem Board: Es wurde nichts Neues eingestellt.",
       "blockOverTitle": "Diese Aufgabe blockieren?",
-      "blockOverMessage": "Eine andere Person hält sie ({{holder}}): Das Blockieren beendet ihre Übernahme."
+      "blockOverMessage": "Eine andere Person hält sie ({{holder}}): Das Blockieren beendet ihre Übernahme.",
+      "release": "An die Agenten zurückgeben"
     },
     "panels": "Agenten, Board, Unterhaltung und Berichte des Laufs",
     "reports": {

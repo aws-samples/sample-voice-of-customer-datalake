@@ -710,7 +710,8 @@
       "takeOverMessage": "Another person holds it ({{holder}}): it becomes yours, and their moves are refused.",
       "duplicate": "An equal task is already on the board: nothing new was posted.",
       "blockOverTitle": "Block this task?",
-      "blockOverMessage": "Another person holds it ({{holder}}): blocking it ends their hold."
+      "blockOverMessage": "Another person holds it ({{holder}}): blocking it ends their hold.",
+      "release": "Give back to the agents"
     },
     "panels": "The run’s agents, board, conversation and reports",
     "reports": {

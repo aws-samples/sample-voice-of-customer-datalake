@@ -363,6 +363,13 @@ describe('an admin acts on the board', () => {
     await waitFor(() => expect(move).toHaveBeenCalledWith({ to: 'in_progress' }))
   })
 
+  it('gives a task the admin holds back to the agents', async () => {
+    const release = vi.fn((_b: unknown) => ({}))
+    const group = await openBoard({ [`GET ${BASE}/board`]: held('human:admin-sub'), [`POST ${BASE}/board/tasks/task-2/release`]: release })
+    await userEvent.click(within(group).getByRole('button', { name: 'Give back to the agents' }))
+    await waitFor(() => expect(release).toHaveBeenCalledWith({}))
+  })
+
   it('asks before taking over another person\'s task, and sends it as a take over', async () => {
     const take = vi.fn((_b: unknown) => ({}))
     const group = await openBoard({ [`GET ${BASE}/board`]: held('human:other-sub'), [`POST ${BASE}/board/tasks/task-2/take`]: take })

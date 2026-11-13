@@ -46,6 +46,7 @@ export type BoardAction =
   | { action: 'block'; reason: string; over?: boolean }
   | { action: 'priority'; priority: number }
   | { action: 'move'; to: string }
+  | { action: 'release' }
 /** A person's new task: `spec` says what to do (`{instructions}`). */
 export interface NewTask {
   role: string

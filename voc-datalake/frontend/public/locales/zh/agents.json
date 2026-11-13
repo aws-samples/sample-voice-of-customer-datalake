@@ -764,7 +764,8 @@
       "takeOverMessage": "另一人正在处理 ({{holder}}):接管后归您,对方的操作会被拒绝。",
       "duplicate": "看板上已有相同的任务:没有发布新任务。",
       "blockOverTitle": "阻止此任务?",
-      "blockOverMessage": "另一人正在处理 ({{holder}}):阻止后对方的处理随之结束。"
+      "blockOverMessage": "另一人正在处理 ({{holder}}):阻止后对方的处理随之结束。",
+      "release": "交还给代理"
     },
     "panels": "运行的代理、看板、对话和报告",
     "reports": {

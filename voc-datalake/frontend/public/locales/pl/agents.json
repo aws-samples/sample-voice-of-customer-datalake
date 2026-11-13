@@ -797,7 +797,8 @@
       "takeOverMessage": "Trzyma je inna osoba ({{holder}}): stanie się Twoje, a jej ruchy będą odrzucane.",
       "duplicate": "Takie samo zadanie jest już na tablicy: nic nowego nie opublikowano.",
       "blockOverTitle": "Zablokować to zadanie?",
-      "blockOverMessage": "Trzyma je inna osoba ({{holder}}): zablokowanie kończy jej przydział."
+      "blockOverMessage": "Trzyma je inna osoba ({{holder}}): zablokowanie kończy jej przydział.",
+      "release": "Oddaj agentom"
     },
     "panels": "Agenci, tablica, rozmowa i raporty przebiegu",
     "reports": {

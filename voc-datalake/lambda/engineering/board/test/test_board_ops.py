@@ -386,6 +386,28 @@ def test_the_row_says_the_op_of_a_persons_change_or_a_move_and_a_no_op_leaves_it
     assert run.store.reprioritise(WS, RUN, task_id, priority=5, actor=PERSON).updated_op == 'priority'
 
 
+def test_a_person_releases_a_task_they_took_open_again_at_the_next_attempt(run: Board) -> None:
+    task_id = fixer_task(run)
+    call(run, FIXER, op='claim', task_id=task_id)
+    with pytest.raises(BoardError, match='only a task you hold'):
+        run.store.release(WS, RUN, task_id, actor=PERSON)   # (the fixer's, not theirs)
+    run.store.take(WS, RUN, task_id, actor=PERSON)
+    released = run.store.release(WS, RUN, task_id, actor=PERSON)
+    assert (released.state, released.attempt, released.lease_agent, released.updated_op) == ('open', 2, '', 'release')
+    last = run.store.history(WS, RUN)[task_id][-1]
+    assert (last.op, last.actor, last.state, last.attempt) == ('release', PERSON, 'open', 2)   # (as a re-post's)
+    assert run.store.release(WS, RUN, task_id, actor=PERSON).updated_at == released.updated_at   # (a retry: as it is)
+    with pytest.raises(BoardError, match='only a task you hold'):
+        run.store.release(WS, RUN, task_id, actor='human:admin-2')
+    # Still open for its role: an equal post is answered with it, nothing posted twice.
+    again = run.store.post(WS, RUN, role='fixer', title='Again', spec={'issue': 1}, parent_task='',
+                           priority=1, actor='coordinator-1')
+    assert (again.created, again.task.task_id) == (False, task_id)
+    # Its role claims it anew, at the new attempt (its epoch).
+    status, body = call(run, FIXER, op='claim', task_id=task_id)
+    assert (status, body['task']['lease']['epoch']) == (200, 2)
+
+
 def test_a_claim_or_repost_clears_the_op(run: Board) -> None:
     task_id = fixer_task(run)
     run.store.reprioritise(WS, RUN, task_id, priority=4, actor=PERSON)
@@ -442,6 +464,18 @@ def test_the_coordinator_launches_an_agent_for_an_open_task_once(run: Board) -> 
     other = fixer_task(run, ['x'])
     assert call(run, COORDINATOR, op='launch', task_id=other, role='fixer', language='node', paths=[])[1][
         'agent_id'] == 'fixer-3'
+
+
+def test_a_task_a_person_gave_back_is_launched_for_anew(run: Board) -> None:
+    # The release moves the attempt on: the coordinator's next launch numbers a new agent, never reusing the one
+    # launched at the attempt the person took over.
+    task_id = fixer_task(run)
+    assert call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python',
+                paths=[])[1]['agent_id'] == 'fixer-2'
+    run.store.take(WS, RUN, task_id, actor=PERSON)
+    run.store.release(WS, RUN, task_id, actor=PERSON)
+    status, body = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
+    assert (status, body['agent_id'], run.launcher.requests[-1]['attempt']) == (200, 'fixer-3', 2)
 
 
 def test_a_reposted_task_gets_a_new_agent_at_its_new_attempt(run: Board) -> None:

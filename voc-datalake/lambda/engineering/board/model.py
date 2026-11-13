@@ -100,9 +100,10 @@ class Task:
     posted_by: str = ''
     updated_by: str = ''
     updated_at: str = ''
-    #: The op of the last change ``updated_by`` records, when it was a person's take, block or priority or a move (''
-    #: after a post, a claim or a re-post, which clear it; a launch records neither): what tells a person's change from
-    #: a no-op answered as it is (only the change, or a retry of it while it is still the last, is published).
+    #: The op of the last change ``updated_by`` records, when it was a person's take, block, priority or release, or a
+    #: move ('' after a post, a claim or a re-post, which clear it; a launch records neither): what tells a person's
+    #: change from a no-op answered as it is (only the change, or a retry of it while it is still the last, is
+    #: published).
     updated_op: str = ''
     #: The holder's last progress report (``progress``): when (epoch seconds), its step, and whether it is waiting
     #: on an open question, review or decision (the supervisor leaves a waiting task alone).

@@ -770,7 +770,8 @@
       "takeOverMessage": "Outra pessoa a tem ({{holder}}): passa a ser sua e as ações dela são recusadas.",
       "duplicate": "Já existe uma tarefa igual no quadro: nada de novo foi publicado.",
       "blockOverTitle": "Bloquear esta tarefa?",
-      "blockOverMessage": "Outra pessoa a tem ({{holder}}): bloqueá-la encerra a atribuição dela."
+      "blockOverMessage": "Outra pessoa a tem ({{holder}}): bloqueá-la encerra a atribuição dela.",
+      "release": "Devolver aos agentes"
     },
     "panels": "Os agentes, o quadro, a conversa e os relatórios da execução",
     "reports": {
