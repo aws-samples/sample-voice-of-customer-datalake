@@ -145,6 +145,12 @@ def _person_event(task: Task, run_id: str, subject: str, action: str) -> Message
                    at=at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ'))
 
 
+def _post_is_last(task: Task) -> bool:
+    """The task is open and its post is still its last change (no later op, its poster the last to write it): an
+    equal post now is a retry of that post, so its event again (the same id, from the post's own time)."""
+    return task.state == OPEN and not task.updated_op and task.updated_by == task.posted_by
+
+
 def _post_role(body: Mapping[str, Any]) -> str:
     """A post's role: one that claims tasks, never the coordinator's (its task is the run start's)."""
     role = _text(body, 'role')
@@ -456,8 +462,10 @@ class BoardApi:
         if role not in POSTERS.get(caller.role, frozenset()):
             raise BoardError('forbidden', f'a {caller.role} does not post {role} tasks')
         posted = _post(self.store, caller.run_id, body, role=role, actor=agent_id(caller))
-        # An equivalent task still open may be a retry whose first event was lost: publish it again (same id).
-        return Outcome(posted.task, publish=posted.created or posted.task.state == OPEN, duplicate=not posted.created)
+        # An equivalent task still open may be a retry whose first event was lost: publish it again (same id), while
+        # the post is still its last change (after a person's priority, say, it would be a new event, not a retry).
+        return Outcome(posted.task, publish=posted.created or _post_is_last(posted.task),
+                       duplicate=not posted.created)
 
     def operate(self, caller: Caller, body: Mapping[str, Any]) -> Outcome:
         op = body.get('op')
@@ -526,7 +534,7 @@ class BoardApi:
             except MessageError:
                 logger.exception('board: an event did not pass the schema', extra={'task_id': task.task_id})
                 return _answer(400, {'error': 'the board changed but its event could not be built: shorten the text'})
-            except (PublishError, ClientError, BotoCoreError):
+            except PublishError:   # (refused, or the bus's call failed: EventBridgePublisher.publish)
                 logger.exception('board: the bus refused an event', extra={'task_id': task.task_id})
                 return _answer(503, {'error': 'the board changed but its event was not published: retry'})
         return _answer(200, {'task': task.view(), 'agent': agent_id(caller), 'duplicate': outcome.duplicate})
@@ -549,20 +557,22 @@ class PersonBoard:
     def post(self, run_id: str, body: Mapping[str, Any], subject: str) -> dict[str, Any]:
         """``{role, title, spec, priority?, parent_task?}``: any role that claims tasks, within the run's caps (the
         same dedupe as an agent's post: an equal task still under way is answered, ``duplicate``). Published to its
-        role like any post: when it is new, or their own post retried while it is still open (the same event again);
+        role like any post: when it is new, or their own post retried while it is still its last change (the same event again);
         never someone else's equal task, whose event is theirs."""
         actor = PERSON_PREFIX + subject
         posted = _post(self.store, run_id, body, role=_post_role(body), actor=actor)
         task = posted.task
-        if posted.created or (task.state == OPEN and task.posted_by == actor):
+        if posted.created or (task.posted_by == actor and _post_is_last(task)):
             self.publisher.publish(replace(_event(task, run_id), sender=Party('human', subject)))
         return {'task': task.view(), 'duplicate': not posted.created}
 
     def act(self, run_id: str, task_id: str, action: str, body: Mapping[str, Any], subject: str) -> dict[str, Any]:
         """``priority {priority}``, ``block {reason, over?}``, ``take {over?}`` (``over``: end another person's hold) or
-        ``move {to}`` (only a task they took, at its attempt) on a task that has not ended. Published to the run (``_person_event``) when the task's last change
-        is theirs: this one, or their own earlier try of it (the same event again); a change already there by someone
-        else is answered and publishes nothing."""
+        ``move {to}`` (only a task they took, at its attempt) on a task that has not ended. Published to the run
+        (``_person_event``) when the task's last change is theirs and this action (``updated_op``): this one, or
+        their own earlier try of it (the same event again); a change already there by someone else, or a no-op
+        after another change of theirs (a priority it already has after their take), is answered and publishes
+        nothing."""
         actor = PERSON_PREFIX + subject
         if action == 'priority':
             if 'priority' not in body:
@@ -584,7 +594,9 @@ class PersonBoard:
                                    to_state=to_state, result_keys=())
         else:
             raise BoardError('invalid', 'the action is one of block, move, priority, take')
-        if task.updated_by == actor:
+        # Only a change of theirs is published: this one, or their earlier try of it (the same op and time, so the
+        # same event id). A no-op answered as it is (a priority it already has, say) writes nothing and says nothing.
+        if (task.updated_by, task.updated_op) == (actor, action):
             self.publisher.publish(_person_event(task, run_id, subject, action))
         return {'task': task.view()}
 

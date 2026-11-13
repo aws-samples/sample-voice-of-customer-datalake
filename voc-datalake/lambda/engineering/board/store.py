@@ -23,7 +23,13 @@
   move and writes no history row.
 - ``repost`` (the supervisor's, for an expired lease): the task is ``open`` again at ``attempt + 1``, its lease
   cleared, with a history row naming the supervisor and its reason; on its own row, not through ``post``, so the
-  ``SPEC#`` dedupe does not stand in its way, and the next claim's lease takes the new attempt as its epoch.
+  ``SPEC#`` dedupe does not stand in its way, and the next claim's lease takes the new attempt as its epoch. Never a
+  task a person holds.
+- A person's ``reprioritise``, ``block`` and ``take`` (the Agents API's, as ``human:<subject>``; never the coordinate
+  task): each conditional on the state and attempt read (a take or block also on the holder read: another person's
+  hold is ended only with ``over``), with a history row. A take holds the task with no expiry; a block ends it as
+  needing a person and clears the holder. Each, and every ``move``, stamps ``updated_op`` (a post, claim or repost
+  clears it): what tells their change, or its retry, from a no-op answered as it is (only a change is published).
 - A task keeps at most ``MAX_RESULT_KEYS`` result keys, which every board event about it carries. A repeated claim
   or move that already took effect answers the task as it is (callers retry after a lost answer).
 - History (D1, D4): the ``TASK#`` row is the task now; each post, claim and move also writes, in the same
@@ -257,7 +263,7 @@ class BoardStore:
         own = ' AND launched_agent = :agent AND launched_attempt = attempt' if role == COORDINATOR else ''
         return self._write(ws, run_id, task_id, _Write(
             set_expr='SET #state = :claimed, lease_agent = :agent, lease_epoch = attempt, lease_expires = :expires, '
-                     'updated_by = :agent, updated_at = :at',
+                     'updated_by = :agent, updated_at = :at REMOVE updated_op',   # (only a person's write or a move says)
             condition=f'#state = :open AND #role = :role AND attempt = :attempt{own}',
             names={'#state': 'state', '#role': 'role'},
             values={':claimed': {'S': CLAIMED}, ':open': {'S': OPEN}, ':role': {'S': role}, ':agent': {'S': agent},
@@ -450,7 +456,7 @@ class BoardStore:
         return self._write(ws, run_id, task_id, _Write(
             # The last attempt's progress goes with its lease: the next holder starts with none, never stalled.
             set_expr='SET #state = :open, attempt = attempt + :one, waiting = :no, updated_by = :actor, '
-                     'updated_at = :at REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
+                     'updated_at = :at REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step, updated_op',
             # Never a task a person took (their lease, held in the write too: a take between the read and this).
             condition=(f'attempt = :attempt AND (NOT #state IN (:open, {", ".join(ended)}) '
                        'OR (#state = :open AND launched_attempt = :attempt)) '
@@ -492,10 +498,11 @@ class BoardStore:
         held = ('' if not pin_holder else
                 ' AND lease_agent = :held_was' if current.lease_agent else ' AND attribute_not_exists(lease_agent)')
         return self._write(ws, run_id, current.task_id, _Write(
-            set_expr=f'SET {set_expr}, updated_by = :actor, updated_at = :at' + (f' REMOVE {remove}' if remove else ''),
+            set_expr=(f'SET {set_expr}, updated_by = :actor, updated_at = :at, updated_op = :op'
+                      + (f' REMOVE {remove}' if remove else '')),
             condition=f'#state = :was AND attempt = :attempt{held}', names={'#state': 'state'},
             values={**values, **holder, ':was': {'S': current.state}, ':actor': {'S': actor}, ':at': {'S': at},
-                    ':attempt': {'N': str(current.attempt)}},
+                    ':attempt': {'N': str(current.attempt)}, ':op': {'S': op}},
             already=done, refusal='the task has ended or moved on since it was read: read the board again'),
             Move(current.task_id, to_state or current.state, actor, at, current.attempt, op,
                  reason=reason).item(ws, run_id))
@@ -580,9 +587,9 @@ class BoardStore:
         from_names = {f':from{index}': {'S': state} for index, state in enumerate(sources)}
         add = ' ADD result_keys :keys' if own else ''
         return self._write(ws, run_id, task_id, _Write(
-            set_expr='SET #state = :to, updated_by = :agent, updated_at = :at' + add,
+            set_expr='SET #state = :to, updated_by = :agent, updated_at = :at, updated_op = :op' + add,
             condition=f'{holder} AND #state IN ({", ".join(from_names)}){room}', names={'#state': 'state'},
-            values={**values, **from_names, **keys, ':to': {'S': to_state}, ':at': {'S': at}},
+            values={**values, **from_names, **keys, ':to': {'S': to_state}, ':at': {'S': at}, ':op': {'S': 'move'}},
             # A retry that took effect: the same move, its keys already kept (a move adding keys is not a retry).
             already=lambda t: (t.state == to_state and t.lease_agent == agent and t.lease_epoch == epoch
                                and set(own) <= set(t.result_keys)),

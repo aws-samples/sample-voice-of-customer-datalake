@@ -19,6 +19,7 @@ import pytest
 from agents_handler_fixtures import ADMIN, USER
 from agents_handler_fixtures import api as _api
 from agents_handler_fixtures import call as _call
+from botocore.exceptions import ClientError
 
 from engineering.runtime.runs import RunStore
 from engineering.runtime.sessions import SessionStore
@@ -129,8 +130,11 @@ class Bus:
     def __init__(self) -> None:
         self.entries: list[dict[str, Any]] = []
         self.failed = False
+        self.unreachable = False   # (the call itself fails: a ClientError, not a refused entry)
 
     def put_events(self, Entries: list[dict[str, Any]]) -> dict[str, Any]:  # (boto3's keyword)
+        if self.unreachable:
+            raise ClientError({'Error': {'Code': 'ServiceUnavailable', 'Message': 'down'}}, 'PutEvents')
         if self.failed:
             return {'FailedEntryCount': 1, 'Entries': [{'ErrorCode': 'InternalFailure'}]}
         self.entries.extend(Entries)
@@ -327,6 +331,54 @@ def test_another_persons_hold_is_ended_only_when_over_asks(lambda_context: Any, 
     entry = actions.bus.entries[-1]
     assert (entry['Source'], json.loads(entry['Detail'])['from']) == (
         'voc.engineering/api', {'kind': 'human', 'id': 'admin-sub'})
+
+
+def test_a_no_op_publishes_nothing_and_a_retry_publishes_the_same_event(lambda_context: Any,
+                                                                         run: tuple[Any, EngineeringRun],
+                                                                         actions: Actions) -> None:
+    _, engineering = run
+    task = engineering.task_id
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/take', body={})[0] == 200
+    current = _board_task(engineering, task)['priority']
+    # The priority it already has, after their take: answered (200), nothing written, nothing said.
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/priority', body={'priority': int(current)})[0] == 200
+    assert [entry['DetailType'] for entry in actions.bus.entries] == ['task.claimed']
+    # Their take again: the same change, so the same event (a redelivery the conversation keeps once).
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/take', body={})[0] == 200
+    first, again = (json.loads(entry['Detail'])['event_id'] for entry in actions.bus.entries)
+    assert first == again
+
+
+def test_an_equal_post_after_a_later_change_is_answered_and_publishes_nothing(lambda_context: Any,
+                                                                             actions: Actions) -> None:
+    post = {'role': 'hunter', 'title': 'Look at the export', 'spec': {'area': 'export'}}
+    task = _call(lambda_context, 'POST', f'{BASE}/board/tasks', body=post)[1]['task']['task_id']
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks', body=post)[0] == 200   # (a retry: the same event)
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{task}/priority', body={'priority': 3})[0] == 200
+    status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks', body=post)
+    assert (status, body['duplicate']) == (200, True)
+    details = [json.loads(entry['Detail']) for entry in actions.bus.entries]
+    assert [detail['type'] for detail in details] == ['task.posted', 'task.posted', 'task.progress']
+    assert details[0]['event_id'] == details[1]['event_id']
+
+
+def test_a_bus_that_cannot_be_reached_after_the_write_says_the_board_changed(lambda_context: Any,
+                                                                             run: tuple[Any, EngineeringRun],
+                                                                             actions: Actions) -> None:
+    _, engineering = run
+    actions.bus.unreachable = True
+    status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks/{engineering.task_id}/take', body={})
+    assert (status, 'the board changed but its event was not published' in json.dumps(body)) == (503, True)
+    assert _board_task(engineering, engineering.task_id)['lease_agent'] == 'human:admin-sub'
+    post = {'role': 'hunter', 'title': 'Look at the export', 'spec': {'area': 'export'}}
+    status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks', body=post)
+    assert (status, 'the board changed but its event was not published' in json.dumps(body)) == (503, True)
+    # The bus back: each retried once, each published once (the take's event and the post's).
+    actions.bus.unreachable = False
+    assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{engineering.task_id}/take', body={})[0] == 200
+    status, body = _call(lambda_context, 'POST', f'{BASE}/board/tasks', body=post)
+    assert (status, body['duplicate']) == (200, True)
+    assert [entry['DetailType'] for entry in actions.bus.entries] == ['task.claimed', 'task.posted']
 
 
 def test_a_person_re_prioritises_an_open_task_and_its_role_is_not_told_again(lambda_context: Any,

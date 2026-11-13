@@ -373,6 +373,29 @@ def test_a_take_or_block_racing_a_take_is_refused_by_the_holder_it_read(
     assert (after.lease_agent, after.state) == (PERSON, 'claimed')
 
 
+def test_the_row_says_the_op_of_a_persons_change_or_a_move_and_a_no_op_leaves_it(run: Board) -> None:
+    task_id = fixer_task(run)
+    assert run.store.task(WS, RUN, task_id).updated_op == ''   # (a post says none)
+    taken = run.store.take(WS, RUN, task_id, actor=PERSON)
+    assert taken.updated_op == 'take'
+    same = run.store.reprioritise(WS, RUN, task_id, priority=taken.priority, actor=PERSON)   # (a no-op: done)
+    assert (same.updated_op, same.updated_at) == ('take', taken.updated_at)
+    moved = run.store.move(WS, RUN, task_id, agent=PERSON, epoch=taken.attempt, to_state='in_progress',
+                           result_keys=())
+    assert moved.updated_op == 'move'
+    assert run.store.reprioritise(WS, RUN, task_id, priority=5, actor=PERSON).updated_op == 'priority'
+
+
+def test_a_claim_or_repost_clears_the_op(run: Board) -> None:
+    task_id = fixer_task(run)
+    run.store.reprioritise(WS, RUN, task_id, priority=4, actor=PERSON)
+    call(run, FIXER, op='claim', task_id=task_id)
+    assert run.store.task(WS, RUN, task_id).updated_op == ''
+    call(run, FIXER, op='move', task_id=task_id, epoch=1, to='in_progress')
+    run.store.repost(WS, RUN, task_id, reason='the agent stalled', attempt=1)
+    assert run.store.task(WS, RUN, task_id).updated_op == ''
+
+
 def test_a_block_of_another_persons_hold_is_refused_unless_asked(run: Board) -> None:
     task_id = fixer_task(run)
     run.store.take(WS, RUN, task_id, actor=PERSON)

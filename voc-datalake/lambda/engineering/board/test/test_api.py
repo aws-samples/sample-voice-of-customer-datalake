@@ -17,7 +17,7 @@ from engineering.board.test.table import RUN, TABLE, board, engineering_table
 from engineering.board.test.test_inbox import notice
 from engineering.bus.publish import EventBridgePublisher, PublishError
 from engineering.bus.schema import MessageError, parse
-from engineering.connectors.identity import Caller
+from engineering.connectors.identity import WORKSPACE, Caller
 
 ACCOUNT = '123456789012'
 PATTERN = 'voc-eng-{role}-123456789012-us-east-1'
@@ -99,6 +99,15 @@ def test_a_duplicate_post_redelivers_the_same_event_while_the_task_is_open(api: 
     child = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7},
                  parent_task=first['task']['task_id'])[1]
     assert (child['duplicate'], child['task']['depth']) == (False, 1)
+
+
+def test_an_equal_post_after_a_persons_change_is_answered_and_publishes_nothing(api: BoardApi, bus: Bus) -> None:
+    # Its post is no longer its last change: a new task.posted would be a new event (from the change's time), not a
+    # retry of the post's.
+    task_id = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7})[1]['task']['task_id']
+    api.store.reprioritise(WORKSPACE, RUN, task_id, priority=4, actor='human:admin-1')
+    status, body = call(api, COORDINATOR, op='post', role='fixer', title='Fix it', spec={'issue': 7})
+    assert (status, body['duplicate'], bus.types()) == (200, True, ['task.posted'])
 
 
 def test_a_retried_claim_or_move_redelivers_its_event(api: BoardApi, bus: Bus) -> None:
@@ -199,6 +208,11 @@ def test_the_publisher_checks_before_sending_and_raises_on_a_failed_entry() -> N
     with pytest.raises(PublishError, match='InternalFailure'):
         EventBridgePublisher(refusing, 'voc-engineering', 'voc.engineering/board').publish(
             api_module._event(task, RUN))
+    # The call itself failing is a failed publish too: the caller's record is written, the message is not.
+    client.put_events.side_effect = ClientError({'Error': {'Code': 'ServiceUnavailable', 'Message': 'x'}},
+                                                'PutEvents')
+    with pytest.raises(PublishError, match='could not be reached'):
+        publisher.publish(api_module._event(task, RUN))
 
 
 def lambda_event(arn: str, body: dict[str, Any]) -> dict[str, Any]:
