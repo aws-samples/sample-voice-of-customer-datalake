@@ -37,9 +37,12 @@ export const KINDS = Object.freeze({
  * deny rule for each (CLAUDE_DENY_RULES) and no Grep (a search would print matching lines of a denied file).
  * The globs match file names at any depth, a top-level `.env` included (verified live); a secret under a
  * secret-shaped DIRECTORY with an ordinary file name (`secrets/config.json`) is not caught, so keep those gitignored.
+ * `.env` and `.env.*` are listed on their own although `*.env` / `*.env.*` already cover them for git and kiro-cli 2.x:
+ * kiro-cli V3 enforces only the agents' `permissions.rules` (it ignores `toolsSettings`), and its docs leave open whether
+ * `*` matches an empty name, while their own "deny reads to secrets" example spells `**\/.env` and `**\/.env.*` out.
  */
 export const SECRET_PATHS = Object.freeze([
-  '*.env', '*.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*id_rsa*', '*id_ed25519*',
+  '.env', '.env.*', '*.env', '*.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*id_rsa*', '*id_ed25519*',
   '*credentials*', '*.secret*', '*.npmrc', '*.netrc',
 ])
 
@@ -99,6 +102,22 @@ export function chooseRunner({ mode, ci, has }) {
 export const CLAUDE_READ_RULES = 'Read(./**),Glob(./**)'
 /** Claude Code's deny rules (deny wins over allow): no read of a secret-shaped path. */
 export const CLAUDE_DENY_RULES = SECRET_PATHS.map((glob) => `Read(./**/${glob})`).join(',')
+
+/**
+ * The Kiro review agents' read rules, both formats (pinned against .kiro/agents/{tenets,commit}-reviewer.json by
+ * review.test.mjs). kiro-cli 2.x reads `toolsSettings`; V3 reads only `permissions.rules`, where a deny always wins
+ * over an allow whatever the order (kiro.dev/docs/permissions), so one allow and one deny say it all. Each secret glob
+ * is denied as a file and as a directory (`/**`), the shape kiro-cli's own upgrade gives `deniedPaths`.
+ */
+export const KIRO_READ_SETTINGS = Object.freeze({
+  toolsSettings: { fs_read: { allowedPaths: ['./**'], deniedPaths: SECRET_PATHS.map((glob) => `**/${glob}`) } },
+  permissions: {
+    rules: [
+      { capability: 'fs_read', match: ['./**'], effect: 'allow' },
+      { capability: 'fs_read', match: SECRET_PATHS.flatMap((glob) => [`**/${glob}`, `**/${glob}/**`]), effect: 'deny' },
+    ],
+  },
+})
 
 /**
  * The command for a runner. The prompt goes on stdin (no argument-size limit). Both are read-only AND limited to the
