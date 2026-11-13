@@ -79,7 +79,7 @@ describe('the engineering bus', () => {
       on.findResources('AWS::Lambda::Function')[functionId(on, base)]?.Properties?.Environment?.Variables)
       .POWERTOOLS_SERVICE_NAME;
     expect([service('voc-engineering-board'), service(ENGINEERING_REPORTS_FUNCTION_BASE_NAME)])
-      .toStrictEqual(ENGINEERING_WORKSPACE_READER_SERVICES.slice(1));
+      .toStrictEqual(ENGINEERING_WORKSPACE_READER_SERVICES.slice(1, 3));
   });
 
   it('is absent by default: no bus, rule, router, board, queue or function URL', () => {

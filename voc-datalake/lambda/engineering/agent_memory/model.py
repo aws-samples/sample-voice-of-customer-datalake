@@ -109,17 +109,22 @@ class Scope:
 @dataclass(frozen=True)
 class Provenance:
     """Where a memory or a confirmation came from: exactly one of a run (its ULID), a review comment on the
-    connection's own host (checked against its ``CitationRules`` by the store), or a person (their user id)."""
+    connection's own host (checked against its ``CitationRules`` by the store), or a person (their user id).
+    ``task_id``: for a run, the board task it was learned from (the run's retrospective names it), kept with the
+    version; it never makes another source (a run confirms a memory once, whatever its task)."""
 
     run_id: str = ''
     comment_url: str = ''
     person: str = ''
+    task_id: str = ''
 
     def __post_init__(self) -> None:
         if sum(map(bool, (self.run_id, self.comment_url, self.person))) != 1:
             raise AgentMemoryError('a provenance is one run, one review comment or one person')
         if self.run_id and not ULID.fullmatch(self.run_id):
             raise AgentMemoryError('a run id is a ULID')
+        if self.task_id and (not self.run_id or not ID.fullmatch(self.task_id)):
+            raise AgentMemoryError("a provenance's task is a board task id of its run")
         if self.comment_url and not _HTTPS.fullmatch(self.comment_url):
             raise AgentMemoryError("a comment's provenance is its https URL, with no query string")
         if self.person and not ID.fullmatch(self.person):

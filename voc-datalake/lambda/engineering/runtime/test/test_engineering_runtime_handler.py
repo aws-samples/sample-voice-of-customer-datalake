@@ -46,11 +46,13 @@ def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
                         'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
                         'ENGINEERING_BUS_NAME': BUS, 'ENGINEERING_BOARD_URL': BOARD_URL,
                         'ENGINEERING_IMAGE_ARNS': json.dumps(IMAGE_ARNS),
+                        'ENGINEERING_BENCHMARK_CASES': json.dumps(['slug-cut-bug']),
                         'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_REGION': 'us-east-1'}.items():
         monkeypatch.setenv(name, value)
-    for client in ('_dynamodb_resource', '_s3_client', '_lambda_client', '_eventbridge_client'):
+    for client in ('_dynamodb_resource', '_dynamodb_client', '_s3_client', '_lambda_client', '_eventbridge_client'):
         monkeypatch.setattr(shared_aws, client, None)
     monkeypatch.setattr(handler, '_supervisor_cache', None)
+    monkeypatch.setattr(handler, '_learning_cache', None)
     handler._sts_client.cache_clear()
     events = boto3.client('events', region_name='us-east-1')
     events.put_rule(Name=SCHEDULE, ScheduleExpression='rate(1 minute)', State='DISABLED')
@@ -248,14 +250,21 @@ def test_a_runs_end_ends_every_microvm_of_it_before_it_stops_being_watched(wired
     assert (_runs().listed(), _state(wired)) == ([], 'DISABLED')
 
 
-def test_an_agent_busy_at_the_runs_end_is_ended_by_the_next_tick_then_the_run_is_released(
-        wired: Any, monkeypatch: pytest.MonkeyPatch):
+def _busy_agent() -> int:
+    """The run's launched fixer-1, held by another move for 10 minutes from now (returned)."""
     handler.lambda_handler(LAUNCH, None)
     sessions = handler._supervisor().sessions
     session = sessions.get(RUN, 'fixer-1')
     assert session is not None
     now = int(handler.clock())
     sessions.claim(session, now, 600)
+    return now
+
+
+def test_an_agent_busy_at_the_runs_end_is_ended_by_the_next_tick_then_the_run_is_released(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    now = _busy_agent()
+    sessions = handler._supervisor().sessions
     answer = handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'done'}, None)
     # Another move holds it: the run stays watched, and the rule on.
     assert (answer['agents'], _runs().listed(), _state(wired)) == ({'fixer-1': 'busy'}, [RUN], 'ENABLED')
@@ -880,3 +889,108 @@ def test_a_launch_naming_another_attempt_than_the_boards_is_refused(wired: Any):
     with pytest.raises(RuntimeRefused, match='at attempt 2, not 1'):
         handler.lambda_handler({**LAUNCH, 'attempt': 1}, None)
     assert handler._supervisor().sessions.get(RUN, 'fixer-1') is None
+
+
+# ── the learning loop's hand-on (learning/loop.py) ──────────────────────────────────────────────────────────────────
+class _Context:
+    """Lambda's context, as far as the handler reads it."""
+
+    function_name = 'voc-engineering-runtime'
+
+
+def _handing_on(monkeypatch: pytest.MonkeyPatch, fails: bool = False) -> list[tuple[str, dict[str, Any]]]:
+    """Every asynchronous invocation the handler makes from now on (raising when ``fails``)."""
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def invoke(name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append((name, payload))
+        if fails:
+            raise RuntimeError('Lambda could not be reached')
+        return {'StatusCode': 202}
+
+    monkeypatch.setattr(shared_aws, 'invoke_lambda_async', invoke)
+    return calls
+
+
+def test_a_runs_end_hands_its_retrospective_on_to_an_invocation_of_its_own(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    calls = _handing_on(monkeypatch)
+    answer = handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'done'}, _Context())
+    assert answer == {'run_id': RUN, 'status': 'done', 'agents': {}}
+    assert calls == [('voc-engineering-runtime', {'action': 'retrospective', 'run_id': RUN})]
+
+
+def test_a_runs_retrospective_waits_for_its_last_busy_agent_to_end(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    """Its record moves until then (the agent's session is priced as it ends), so it starts at the tick that ends it."""
+    assert wired is not None
+    now = _busy_agent()
+    calls = _handing_on(monkeypatch)
+    handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'done'}, _Context())
+    assert calls == []
+    monkeypatch.setattr(handler, 'clock', lambda: now + 1200)
+    handler.lambda_handler({'action': 'tick'}, _Context())
+    assert calls == [('voc-engineering-runtime', {'action': 'retrospective', 'run_id': RUN})]
+    handler.lambda_handler({'action': 'tick'}, _Context())   # (released: never started twice by the ticks)
+    assert len(calls) == 1
+
+
+def test_a_retrospective_that_cannot_be_started_never_fails_the_end(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    calls = _handing_on(monkeypatch, fails=True)
+    answer = handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'stopped'}, _Context())
+    assert (answer['status'], len(calls), _runs().listed()) == ('stopped', 1, [])
+
+
+def test_with_no_function_to_hand_on_to_the_retrospective_runs_in_place(wired: Any):
+    """A local run: the end's own invocation reads the ended run (here one with no connection: left alone)."""
+    assert wired is not None
+    handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'done'}, None)
+    assert handler.lambda_handler({'action': 'retrospective', 'run_id': RUN}, None) == {
+        'run_id': RUN, 'scorecards': 0, 'failures': 0, 'to_coach': [],
+        'skipped': 'the run has no connection (it launched no agent)'}
+
+
+class _Loop:
+    """The learning loop's two steps, answered as a run with two failures to coach would."""
+
+    @staticmethod
+    def retrospective(_ws: str, run_id: str) -> Any:
+        from engineering.learning.loop import Summary
+        return Summary(run_id, 2, 0, 3, ('t-1#1#failed', 't-2#1#no_go'))
+
+    @staticmethod
+    def learn_from(_ws: str, _run_id: str, key: str) -> Any:
+        from engineering.learning.loop import Learned
+        return Learned(key, proposed_version=4, coach='proposed', memory_id='amem_1', lesson='drafted')
+
+
+def test_the_retrospective_hands_each_failure_it_takes_to_the_coach_on(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    monkeypatch.setattr(handler, '_learning', _Loop)
+    calls = _handing_on(monkeypatch)
+    answer = handler.lambda_handler({'action': 'retrospective', 'run_id': RUN}, _Context())
+    assert (answer['scorecards'], answer['to_coach']) == (2, ['t-1#1#failed', 't-2#1#no_go'])
+    assert [payload for _, payload in calls] == [
+        {'action': 'retrospective', 'run_id': RUN, 'failure': 't-1#1#failed'},
+        {'action': 'retrospective', 'run_id': RUN, 'failure': 't-2#1#no_go'}]
+    one = handler.lambda_handler({'action': 'retrospective', 'run_id': RUN, 'failure': 't-1#1#failed'}, _Context())
+    assert (one['proposed_version'], one['memory_id'], one['lesson']) == (4, 'amem_1', 'drafted')
+
+
+@pytest.mark.parametrize('event', [
+    {'action': 'retrospective', 'run_id': 'not-a-run'},
+    {'action': 'retrospective', 'run_id': RUN, 'failure': 'x'},
+])
+def test_a_retrospective_that_fails_is_logged_and_answered_never_raised(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, event: dict[str, Any]):
+    assert wired is not None
+    monkeypatch.delenv('ENGINEERING_BENCHMARK_CASES')   # (the loop cannot be built)
+    assert handler.lambda_handler(event, None) == {'run_id': event['run_id'], 'status': 'failed'}
+
+
+def test_the_loop_is_built_once_from_the_environment(wired: Any):
+    assert wired is not None
+    loop = handler._learning()
+    assert (loop.cases, handler._learning()) == (('slug-cut-bug',), loop)
+    assert loop.coach().store is not None

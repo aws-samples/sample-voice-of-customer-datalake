@@ -10,9 +10,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { fixtureBucket } from '../test-support/fixture-resources';
+import { ENGINEERING_WORKSPACE_READER_SERVICES } from './dlq-alarms';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
-import { type EngineeringPeers, addEngineeringRuntime } from './engineering-runtime';
+import { type EngineeringPeers, addEngineeringRuntime, benchmarkCaseIds } from './engineering-runtime';
 
 const ACCOUNT = 'arn:aws:lambda:us-east-1:111111111111';
 
@@ -413,5 +414,80 @@ describe('with -c engineeringAgents=true', () => {
       'RAW_DATA_BUCKET']));
     expect(env).not.toContain('SUPERVISOR_RULE_NAME');
     expect(env).not.toContain('ENGINEERING_EXTRA_EGRESS');
+    expect(env).not.toContain('ENGINEERING_BENCHMARK_CASES');
+  });
+
+  describe('the learning loop (a run\'s retrospective, lambda/engineering/learning/)', () => {
+    /** The supervisor role's statement with `sid`. */
+    function statement(sid: string): Record<string, unknown> | undefined {
+      const policies = template.findResources('AWS::IAM::Policy', {
+        Properties: { Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp('EngineeringSupervisorRole') }]) },
+      });
+      return Object.values(policies)
+        .flatMap((policy) => StatementsSchema.parse(policy.Properties?.PolicyDocument?.Statement))
+        .find((found) => found.Sid === sid);
+    }
+
+    it.each([
+      ['LearningCoachSkills', ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'], 'WS#*#SKILL#*'],
+      ['LearningRoleLessons', ['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
+        'WS#*#AMEM#ROLE#*'],
+      ['LearningScorecards', 'dynamodb:PutItem', 'WS#*#SCORE#*'],
+    ])('grants the runtime %s on those partitions only, never a delete', (sid, actions, partition) => {
+      expect(statement(sid)).toMatchObject({
+        Effect: 'Allow', Action: actions,
+        Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [partition] } },
+      });
+    });
+
+    it('never lets the runtime touch a person\'s memories, a knowledge pack or delete a learning row', () => {
+      const supervisor = policyText(template, 'EngineeringSupervisorRole');
+      expect(supervisor).not.toMatch(/AMEM#PERSON|AMEM#REPO|AMEM#\*|#KNOW|WS#\*"/);
+      expect(supervisor.match(/dynamodb:DeleteItem/g)).toHaveLength(1);   // (the registry's, above)
+    });
+
+    it('reads only the gate records in the workspace bucket, never listing or writing them', () => {
+      const gate = statement('LearningReadsGateRecords');
+      expect(gate).toMatchObject({ Effect: 'Allow', Action: 's3:GetObject' });
+      expect(JSON.stringify(gate?.Resource))
+        .toMatch(/"Workspace\w*","Arn"\]\},"\/ws\/\*\/runs\/\*\/\*\/commits\/\*\/_gate\/attempt-\*\/record\.json"/);
+    });
+
+    it('never retries an asynchronous invocation of the runtime (each learning step is claimed once)', () => {
+      const [fn] = Object.keys(template.findResources('AWS::Lambda::Function', {
+        Properties: { FunctionName: 'voc-engineering-runtime' },
+      }));
+      expect(count(template, 'AWS::Lambda::EventInvokeConfig', {
+        FunctionName: { Ref: fn }, MaximumRetryAttempts: 0,
+      })).toBe(1);
+    });
+
+    it('hands the retrospective on to the runtime function itself, by name, and to nothing else', () => {
+      const invoke = statement('LearningHandsOnToItself');
+      expect(invoke).toMatchObject({ Effect: 'Allow', Action: 'lambda:InvokeFunction' });
+      expect(JSON.stringify(invoke?.Resource)).toMatch(/:function:voc-engineering-runtime"\]\]\}$/);
+      expect(policyText(template, 'EngineeringSupervisorRole').match(/lambda:InvokeFunction"/g)).toHaveLength(1);
+    });
+
+    it('lets the runtime call the allowlisted Claude models (the coach), and the delivery none', () => {
+      const attachedTo = (role: string): number => count(template, 'AWS::IAM::ManagedPolicy', {
+        Roles: Match.arrayWith([{ Ref: Match.stringLikeRegexp(role) }]),
+        PolicyDocument: Match.objectLike({ Statement: Match.arrayWith([Match.objectLike({
+          Sid: 'ClaudeProfiles', Action: 'bedrock:InvokeModel',
+        })]) }),
+      });
+      expect(attachedTo('EngineeringSupervisorRole')).toBeGreaterThan(0);
+      expect(attachedTo('EngineeringDeliveryRole')).toBe(0);
+    });
+
+    it('runs under a service the denied-reads alarm sums (it reads the gate records as missing when denied)', () => {
+      expect(supervisorEnv(template).POWERTOOLS_SERVICE_NAME).toBe(ENGINEERING_WORKSPACE_READER_SERVICES[3]);
+    });
+
+    it('names the benchmark\'s shipped cases for the coach', () => {
+      expect(benchmarkCaseIds()).toStrictEqual(
+        ['duration-hours-feature', 'monorepo-units-bug', 'pagination-review', 'slug-cut-bug']);
+      expect(supervisorEnv(template).ENGINEERING_BENCHMARK_CASES).toBe(JSON.stringify(benchmarkCaseIds()));
+    });
   });
 });

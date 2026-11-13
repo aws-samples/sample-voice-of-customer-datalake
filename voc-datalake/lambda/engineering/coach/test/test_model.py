@@ -1,39 +1,75 @@
-"""The coach's model port: the Bedrock adapter's one call through the sample's Converse path, an allowed model."""
+"""The coach's model port: one Bedrock Converse call on an allowed model, bounded in time and tokens."""
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from botocore.exceptions import ClientError, ReadTimeoutError
 
 from engineering.coach.failure import CoachError
-from engineering.coach.model import COACH_MODEL, MAX_ANSWER_TOKENS, BedrockCoachModel, CoachReply
+from engineering.coach.model import (
+    ATTEMPTS,
+    COACH_MODEL,
+    CONNECT_TIMEOUT_SECONDS,
+    MAX_ANSWER_TOKENS,
+    READ_TIMEOUT_SECONDS,
+    BedrockCoachModel,
+    CoachReply,
+    bounded_client,
+)
 from shared.model_config import ALLOWED_MODEL_IDS
 
 
-def test_bedrock_goes_through_the_samples_converse_path_in_one_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    converse = pytest.importorskip('shared.converse')
-    fake = MagicMock(return_value=converse.ConverseResult(text='{"answer": true}', model_id=COACH_MODEL,
-                                                          requested_model_id=COACH_MODEL))
-    monkeypatch.setattr(converse, 'converse_detailed', fake)
-    model = BedrockCoachModel()
+def replying(answer: dict[str, Any]) -> MagicMock:
+    client = MagicMock()
+    client.converse.return_value = answer
+    return client
+
+
+def test_one_converse_call_on_the_allowed_model_capped_in_tokens() -> None:
+    client = replying({'output': {'message': {'content': [{'text': '{"answer": '}, {'reasoningContent': {}},
+                                                          {'text': 'true}'}]}}, 'stopReason': 'end_turn'})
+    model = BedrockCoachModel(client=lambda: client)
     assert model.model_id == COACH_MODEL in ALLOWED_MODEL_IDS
     assert model('rules', 'evidence') == CoachReply('{"answer": true}', COACH_MODEL)
-    fake.assert_called_once_with(prompt='evidence', system_prompt='rules', model_id=COACH_MODEL,
-                                 surface='agent_reviewer', max_tokens=converse.with_thinking_headroom(MAX_ANSWER_TOKENS),
-                                 max_continuations=0, step_name='engineering.coach')
-    # Room for an adaptive-thinking model's thinking on top of the answer.
-    assert fake.call_args.kwargs['max_tokens'] > MAX_ANSWER_TOKENS
+    client.converse.assert_called_once_with(
+        modelId=COACH_MODEL, system=[{'text': 'rules'}], messages=[{'role': 'user', 'content': [{'text': 'evidence'}]}],
+        inferenceConfig={'maxTokens': MAX_ANSWER_TOKENS})
 
 
-def test_the_reply_names_the_model_that_answered_after_a_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize('error', [
+    ReadTimeoutError(endpoint_url='https://bedrock-runtime.us-east-1.amazonaws.com'),
+    ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'slow down'}}, 'Converse'),
+    ClientError({'Error': {'Code': 'ServiceUnavailableException', 'Message': 'try later'}}, 'Converse'),
+    ConnectionResetError('the connection dropped'),
+])
+def test_the_call_is_made_once_whatever_fails(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
+    """A second attempt of up to 210 s would not fit the invocation's 5 minutes: nothing is tried again."""
     converse = pytest.importorskip('shared.converse')
-    fallback = 'global.anthropic.claude-sonnet-5-5'
-    served = converse.ConverseResult(text='{}', model_id=fallback, requested_model_id=COACH_MODEL)
-    monkeypatch.setattr(converse, 'converse_detailed', MagicMock(return_value=served))
-    assert BedrockCoachModel()('rules', 'evidence') == CoachReply('{}', fallback)
-    # A result that names no model: the one asked for.
-    monkeypatch.setattr(converse, 'converse_detailed', MagicMock(return_value=converse.ConverseResult(text='{}')))
-    assert BedrockCoachModel()('rules', 'evidence').model_id == COACH_MODEL
+    monkeypatch.setattr(converse.time, 'sleep', lambda _seconds: None)
+    failing = MagicMock()
+    failing.converse.side_effect = [error, {'output': {'message': {'content': [{'text': '{}'}]}}}]
+    with pytest.raises(Exception):  # noqa: B017, PT011 (the error itself, or the sample's throttling error)
+        BedrockCoachModel(client=lambda: failing)('rules', 'evidence')
+    assert failing.converse.call_count == ATTEMPTS == 1
+
+
+def test_a_reply_cut_at_the_cap_is_refused() -> None:
+    client = replying({'output': {'message': {'content': [{'text': '{"instructions": "half'}]}},
+                       'stopReason': 'max_tokens'})
+    with pytest.raises(CoachError, match='ran past'):
+        BedrockCoachModel(client=lambda: client)('rules', 'evidence')
+
+
+def test_the_client_ends_the_call_well_inside_the_runtimes_limit_and_never_retries(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('AWS_DEFAULT_REGION', 'us-east-1')
+    config = bounded_client().meta.config
+    assert (config.read_timeout, config.connect_timeout, config.retries['total_max_attempts']) == (
+        READ_TIMEOUT_SECONDS, CONNECT_TIMEOUT_SECONDS, 1)
+    # voc-engineering-runtime's limit is 5 minutes: the call, connect included, ends well before it.
+    assert READ_TIMEOUT_SECONDS + CONNECT_TIMEOUT_SECONDS <= 5 * 60 - 60
 
 
 def test_only_an_allowed_model_is_used() -> None:

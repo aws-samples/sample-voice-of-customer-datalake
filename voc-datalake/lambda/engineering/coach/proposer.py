@@ -19,7 +19,7 @@
    run-scoped source (``voc.engineering/coach/<ws>/<run>``, bus/senders.py) for the caller to publish: the coach
    publishes nothing itself, as the store does not.
 
-Nothing calls it yet: invoking it on a failure (the supervisor, or the run's retrospective) is planned.
+The run's retrospective calls it on the run's failures (``learning/loop.py``, at most three per run).
 """
 from __future__ import annotations
 

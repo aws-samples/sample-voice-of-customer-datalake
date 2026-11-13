@@ -12,10 +12,17 @@
 - ``{"action": "end_run", "run_id", "status", "actor"?}``: the run ended (``done``, ``failed`` or ``stopped``), every
   MicroVM of it ended (one busy with another move at the next tick, which sees the run ended), then settled. A
   retry of an ended run does the rest again and keeps the first end's status.
+- ``{"action": "retrospective", "run_id", "failure"?}``: the learning loop (``learning/loop.py``). Without
+  ``failure``: the ended run's scorecards written, and each failure it takes to the coach (at most three) handed on
+  as an invocation of its own with its key; with it: that failure to the coach (one Converse call at most, ever)
+  and a lesson draft to agent memory. Run apart from the end because a coach's call takes up to minutes: the end
+  stays as fast as before, and each failure gets the function's whole time limit. Never raises.
 - ``{"action": "tick"}``: the supervisor's EventBridge rule, every minute while any run is listed
   (``supervisor.Supervisor.tick``), then settled; records the heartbeat metrics.
-- Settling: an ended run without a live agent is no longer listed (``RunStore.release``); with no run listed the
-  rule is switched off, and the list re-read after that switch (a run that started meanwhile turns it back on).
+- Settling: an ended run without a live agent is no longer listed (``RunStore.release``), its retrospective handed
+  on first (an asynchronous ``retrospective`` invocation of this function: its record no longer moves; best effort,
+  logged, never failing the end or the tick); with no run listed the rule is switched off, and the list re-read
+  after that switch (a run that started meanwhile turns it back on).
 - ``{"action": "launch", ...}``: the run coordinator starting one agent of an active run on one task: the
   MicroVM from the agent's image, with its egress allowlist, and the session row (the first tick hands it its
   role session).
@@ -51,12 +58,13 @@ from typing import TYPE_CHECKING, Any, Final, TypeGuard
 from aws_lambda_powertools.metrics import MetricUnit
 
 from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError
+from engineering.connectors.identity import WORKSPACE
 from engineering.runtime import caps, egress
 from engineering.runtime.checkout import checkout_commands
 from engineering.runtime.checkpoints import CheckpointReader
 from engineering.runtime.delivery import deliver
 from engineering.runtime.harness.skills import harness_argv, skill_for, skill_label
-from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused
+from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused, check_run_id
 from engineering.runtime.launcher import Launcher
 from engineering.runtime.runs import (
     ENDED,
@@ -73,11 +81,17 @@ from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
 
 if TYPE_CHECKING:
+    from engineering.learning.loop import LearningLoop
     from engineering.runtime.board_bus import SessionState
 
 MAX_HARNESS_ARGS: Final = 32
+#: A failure's key as the retrospective names it (``<task>#<attempt>#<how>``), at most.
+MAX_FAILURE_KEY: Final = 300
 
 _supervisor_cache: Supervisor | None = None
+_learning_cache: LearningLoop | None = None
+#: This invocation's function (its Lambda context's name), where the learning steps are handed on; '' with none.
+_function_name = ''
 clock: Callable[[], float] = time.time
 
 
@@ -189,6 +203,11 @@ def _settle() -> None:
         if run is None:
             logger.error('engineering runtime: a listed run has no META row', extra={'run_id': run_id})
         if (run is None or run.status in ENDED) and not sessions.any_live_or_moving(run_id, int(clock())):
+            if run is not None:
+                # Every agent of it has ended, its sessions priced: its record no longer moves, so the run's
+                # retrospective starts now (before the release, so a release that fails starts it again on the next
+                # tick; the learning loop's writes are create-only, a second start writes nothing new).
+                _hand_on({'action': 'retrospective', 'run_id': run_id})
             runs.release(run_id)
     if not runs.listed():
         _switch(False)
@@ -339,7 +358,8 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def end_run(event: Mapping[str, Any]) -> dict[str, Any]:
-    """End a run and every MicroVM of it, then settle."""
+    """End a run and every MicroVM of it, then settle (which starts its retrospective once none of its agents is
+    live: here, or at the tick that ends the last busy one; best effort, never failing the end)."""
     run_id, status, runs = str(event.get('run_id', '')), str(event.get('status', '')), _runs()
     try:
         runs.end(run_id, status, now=int(clock()), actor=str(event.get('actor') or ''))
@@ -351,6 +371,87 @@ def end_run(event: Mapping[str, Any]) -> dict[str, Any]:
     agents = _supervisor().signal(run_id, None, 'stop_now', int(clock()))
     _settle()
     return {'run_id': run_id, 'status': status, 'agents': agents}
+
+
+def _hand_on(event: dict[str, Any]) -> None:
+    """``event`` to this function again, asynchronously (``_function_name``: the invocation's own): the
+    retrospective and each failure it takes to the coach run in invocations of their own, so a model call never
+    holds up a run's end or another failure. Best effort: logged, never raised. With no function name (a local
+    run, the tests) it runs here and now."""
+    try:
+        if not _function_name:
+            retrospective(event)
+            return
+        from shared.aws import invoke_lambda_async
+        invoke_lambda_async(_function_name, event)
+    except Exception:
+        logger.exception('engineering runtime: the learning step was not started',
+                         extra={'run_id': event.get('run_id'), 'failure': event.get('failure')})
+
+
+def _learning() -> LearningLoop:
+    """The learning loop on this function's clients (built once per container)."""
+    global _learning_cache
+    if _learning_cache is None:
+        from engineering.agent_memory.store import AgentMemoryStore
+        from engineering.coach.model import BedrockCoachModel
+        from engineering.coach.proposer import Coach
+        from engineering.learning.loop import LearningLoop
+        from engineering.learning.records import RunRecordReader
+        from engineering.learning.scorecard import ScorecardStore
+        from engineering.skills.store import SkillStore
+        from engineering.workspace.store import WorkspaceStore
+        from shared.aws import get_dynamodb_client, get_s3_client
+        client, table = get_dynamodb_client(), os.environ['ENGINEERING_TABLE']
+        skills = SkillStore(client, table)
+        # No ListBucket: a gate record never written answers 403, read as missing (and counted).
+        workspace = WorkspaceStore(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET'], denied_is_missing=True)
+        cases = json.loads(os.environ['ENGINEERING_BENCHMARK_CASES'])
+        _learning_cache = LearningLoop(
+            reader=RunRecordReader(client, table, workspace), scorecards=ScorecardStore(client, table),
+            # A role's lessons only: no person memory is learned here, so no user is looked up.
+            memory=AgentMemoryStore(client, table, is_user=lambda _user: False),
+            coach=lambda: Coach(skills, BedrockCoachModel()),
+            cases=tuple(str(case) for case in cases) if isinstance(cases, list) else ())
+    return _learning_cache
+
+
+def retrospective(event: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``retrospective`` action: ``{"run_id"}`` (the run's end hands it on) writes the ended run's scorecards and
+    hands each failure it takes to the coach on as ``{"run_id", "failure": <key>}``, which takes that one to the
+    coach and to memory (``learning/loop.py``). Best effort: whatever fails is logged and answered, never raised (an
+    asynchronous invocation that raised would be retried, and a retry would spend nothing new but time)."""
+    run_id, failure = str(event.get('run_id', '')), event.get('failure')
+    try:
+        check_run_id(run_id)
+        return _retrospect(run_id) if failure is None else _learn_from(run_id, str(failure)[:MAX_FAILURE_KEY])
+    except Exception:
+        logger.exception('engineering retrospective failed', extra={'run_id': run_id, 'failure': failure})
+        return {'run_id': run_id, 'status': 'failed'}
+
+
+def _retrospect(run_id: str) -> dict[str, Any]:
+    summary = _learning().retrospective(WORKSPACE, run_id)
+    for key in summary.to_coach:
+        _hand_on({'action': 'retrospective', 'run_id': run_id, 'failure': key})
+    logger.info('engineering retrospective', extra={
+        'run_id': run_id, 'scorecards': summary.scorecards_written, 'kept': summary.scorecards_kept,
+        'failures': summary.failure_count, 'coached': len(summary.to_coach), 'skipped': summary.skipped})
+    return {'run_id': run_id, 'scorecards': summary.scorecards_written, 'failures': summary.failure_count,
+            'to_coach': list(summary.to_coach), 'skipped': summary.skipped}
+
+
+def _learn_from(run_id: str, failure: str) -> dict[str, Any]:
+    learned = _learning().learn_from(WORKSPACE, run_id, failure)
+    # The coach's skill.proposed message is the coach's to publish, and this role speaks only as the supervisor: it
+    # is logged (its id), and the proposal is in the skills store's history.
+    logger.info('engineering retrospective: a failure learned from', extra={
+        'run_id': run_id, 'failure': learned.key, 'coach': learned.coach, 'version': learned.proposed_version,
+        'lesson': learned.lesson, 'skipped': learned.skipped,
+        'announcement': (learned.announcement or {}).get('message', {}).get('event_id', '')})
+    return {'run_id': run_id, 'failure': learned.key, 'proposed_version': learned.proposed_version,
+            'coach': learned.coach, 'memory_id': learned.memory_id, 'lesson': learned.lesson,
+            'skipped': learned.skipped}
 
 
 def _strings(value: object) -> TypeGuard[list[str]]:
@@ -465,12 +566,16 @@ def delivery_handler(event: Mapping[str, Any], context: object) -> dict[str, Any
 
 ACTIONS: Final[dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]]] = {
     'start_run': start_run, 'end_run': end_run, 'tick': tick, 'launch': launch, 'signal': signal_action,
+    'retrospective': retrospective,
 }
 
 
 @metrics.log_metrics
 @measure_invocation_cost
-def lambda_handler(event: Mapping[str, Any], context: object) -> dict[str, Any]:
+def lambda_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
+    """``context``: Lambda's (None in the tests): its function name is where the learning steps are handed on."""
+    global _function_name
+    _function_name = str(context.function_name) if context is not None else ''
     action = ACTIONS.get(str(event.get('action')))
     if action is None:
         raise RuntimeRefused(f'unknown action {event.get("action")!r}')

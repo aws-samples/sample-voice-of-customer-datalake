@@ -55,11 +55,14 @@ export const ENGINEERING_DLQ_BASE_NAME = 'voc-engineering-dlq';
 
 /**
  * The Powertools service names of the engineering workspace's readers that take a denied read as missing (each counts
- * it as `EngineeringWorkspaceDeniedReads`): the agents API, the board API and the report builder (engineering-bus.ts).
- * A test pins each to a function's POWERTOOLS_SERVICE_NAME with `-c engineeringAgents=true`. Like the MCP alarms'
- * service, they are the same in every deployment (docs/deployment.md, "CloudWatch metrics co-mingle").
+ * it as `EngineeringWorkspaceDeniedReads`): the agents API, the board API and the report builder (engineering-bus.ts),
+ * and the runtime, whose run retrospective reads the gate records (engineering-runtime.ts). A test pins each to a
+ * function's POWERTOOLS_SERVICE_NAME with `-c engineeringAgents=true`. Like the MCP alarms' service, they are the
+ * same in every deployment (docs/deployment.md, "CloudWatch metrics co-mingle").
  */
-export const ENGINEERING_WORKSPACE_READER_SERVICES = ['voc-agents-api', 'voc-engineering-board', 'voc-engineering-reports'] as const;
+export const ENGINEERING_WORKSPACE_READER_SERVICES = [
+  'voc-agents-api', 'voc-engineering-board', 'voc-engineering-reports', 'voc-engineering-runtime',
+] as const;
 
 /** Base physical names of the processing Lambdas whose errors alerting watches. */
 export const FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME = 'voc-feedback-processor';

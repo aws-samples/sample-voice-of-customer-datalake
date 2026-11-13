@@ -8,7 +8,8 @@ person are read, and counted, apart from another's::
     WS#<ws>#AMEM#REPO#<connection>          / MEM#<connection>#<id>   the memory: its status, latest and approved
     WS#<ws>#AMEM#ROLE#<connection>#<role>   / MEM#<connection>#<id>   version, the approved statement, its
     WS#<ws>#AMEM#PERSON#<user>              / MEM#<connection>#<id>   confirmations, a revision (the lock)
-                                            / VER#<id>#<version:06d>  a version (create-only): statement, provenance,
+                                            / VER#<id>#<version:06d>  a version (create-only): statement, provenance
+                                                                      (a run's with its task, when named),
                                                                       confidence, review date, author, approver
                                             / LOG#<id>#<revision:06d> approved, forgotten or restored: who and when
                                                                       (create-only)
@@ -165,7 +166,7 @@ class MemoryVersion:
     @classmethod
     def from_item(cls, item: Mapping[str, Any]) -> MemoryVersion:
         provenance = Provenance(_text(item.get('prov_run')), _text(item.get('prov_comment')),
-                                _text(item.get('prov_person')))
+                                _text(item.get('prov_person')), _text(item.get('prov_task')))
         return cls(**_plain_fields(cls, item), provenance=provenance,
                    feedback_ids=tuple(json.loads(_text(item.get('feedback_ids')) or '[]')))
 
@@ -371,7 +372,7 @@ class AgentMemoryStore:
             'version': {'N': str(version)}, 'status': {'S': APPROVED if approved else DRAFT},
             'statement': {'S': statement}, 'confidence': {'N': repr(confidence)}, 'review_by': {'S': review_by},
             'prov_run': {'S': provenance.run_id}, 'prov_comment': {'S': provenance.comment_url},
-            'prov_person': {'S': provenance.person}, 'feedback_ids': {'S': json.dumps(list(feedback_ids))},
+            'prov_person': {'S': provenance.person}, 'prov_task': {'S': provenance.task_id}, 'feedback_ids': {'S': json.dumps(list(feedback_ids))},
             'author': {'S': by.id}, 'author_kind': {'S': by.kind}, 'base_version': {'N': str(base_version)},
             'created_at': {'S': at}}
         if approved:

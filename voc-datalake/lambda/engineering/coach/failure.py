@@ -1,6 +1,6 @@
 """A failure the coach learns from: which run, connection, role, task and attempt failed, how, and its evidence.
 
-The caller (the supervisor or the run's retrospective, neither wired yet) builds the record from the run's own
+The caller (the run's retrospective, ``learning/loop.py``) builds the record from the run's own
 rows, never from what an agent says about itself: the connection is the run's, so the coach's proposal can be held
 to it. The evidence is what the coach reads: the task an agent was given, excerpts of its conversation, its
 outputs (a check's log, a gate's findings) and people's comments (a review, a rejection). All of it is text anyone

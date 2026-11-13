@@ -14,10 +14,9 @@ from engineering.agent_memory.recall import Recall
 from engineering.agent_memory.store import AgentMemoryStore
 from engineering.benchmark.cases import load_suite
 from engineering.benchmark.runner import Scorecard, run_suite
-from engineering.coach.model import BedrockCoachModel
-from engineering.coach.proposer import Coach
 from engineering.knowledge.store import PackVersion
 from engineering.knowledge.understand import understand_package
+from engineering.learning.scorecard import ScorecardStore, VersionCard
 from engineering.skills.store import Change, SkillStore, SkillVersion, VersionPage
 
 # The Understand flow's entry, run by the mapper agent in its MicroVM; the agent lands in phase 4
@@ -30,10 +29,10 @@ PackVersion.author_kind
 PackVersion.approved_by
 PackVersion.approved_at
 
-# The skills store, read by the harness and the coach, whose entry points land with phase 4's agents and phase 5's
-# routes; its tests drive it until then. SkillVersion's D4 record of who proposed, accepted or rejected a version,
-# the announcement each change returns for the bus, and the history's page cursor.
-SkillStore.propose_version
+# The skills store, whose proposal the coach writes (the learning loop, wired), and whose acceptance, rejection,
+# rollback, promotion and history are the administrators' routes (phase 5); its tests drive them until then.
+# SkillVersion's D4 record of who proposed, accepted or rejected a version, the announcement each change returns for
+# the bus, and the history's page cursor.
 SkillStore.accept_version
 SkillStore.reject_version
 SkillStore.promote_version
@@ -58,18 +57,22 @@ SkillStore.record_benchmark
 # The pass rates a version's readers (the skill history, phase 5) show: the recorded benchmark's, else the claim.
 SkillVersion.trusted_rates
 
-# The coach (engineering/coach/): its proposer and the Bedrock adapter it asks, invoked on an agent's failure by the
-# supervisor or the run's retrospective, neither wired yet (docs/autonomous-engineering.md, "The coach"); its tests
-# drive them on moto with a recorded model and a faked converse until then.
-Coach.propose_for
-BedrockCoachModel.__name__
+# The scorecards' reader (engineering/learning/scorecard.py): a skill version's card over its latest runs and a
+# comparison of versions, for the scorecard screens and their administrators' routes (phase 5); the run's
+# retrospective only writes rows. Its tests drive it on moto until then.
+ScorecardStore.version_card
+ScorecardStore.compare
+VersionCard.pass_rate
+VersionCard.latest_run
+VersionCard.more
+VersionCard.latest_written_by
+VersionCard.latest_written_at
 
-# The agents' memory store, written by the agents' learning (the learning loop, phase 5), read by the harness's
-# recall for a task (phase 4's agents) and approved, edited, forgotten and restored through the people's and the
-# administrators' routes (phase 5), and erased by the platform's erasure of a person (not wired yet); its tests drive
-# it until then. Recall.left_out: how many applicable memories the bounds left out, for the run journal.
+# The agents' memory store, written by the learning loop's lesson drafts (wired), read by the harness's recall for a
+# task (phase 4's agents) and approved, edited, forgotten and restored through the people's and the administrators'
+# routes (phase 5), and erased by the platform's erasure of a person (not wired yet); its tests drive it until then.
+# Recall.left_out: how many applicable memories the bounds left out, for the run journal.
 AgentMemoryStore.erase_person_memories
-AgentMemoryStore.learn_agent_memory
 AgentMemoryStore.write_agent_memory
 AgentMemoryStore.confirm_agent_memory
 AgentMemoryStore.approve_agent_memory

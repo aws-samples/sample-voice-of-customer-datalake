@@ -26,6 +26,9 @@
  * (`-c engineeringSupervisorAlarm=true`). The MicroVM IAM actions and ARN shapes follow the service's description and
  * are not yet checked against its reference (see the doc).
  */
+import * as fs from 'fs';
+import * as path from 'path';
+
 import * as cdk from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -44,7 +47,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { booleanContextFlag } from '../utils/context-flag';
 import { engineeringAgentsEnabled } from './engineering-broker';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
-import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
+import { createWorkerFunction, grantInvokeByName, workerRole } from '../utils/worker-lambda';
 
 /** A fixed monthly cost, so an opt-in of its own (lib/test-support/fixed-cost-rules.ts OPT_IN_FIXED_COSTS). */
 export const SUPERVISOR_ALARM_FLAG = 'engineeringSupervisorAlarm';
@@ -81,6 +84,30 @@ const SESSION_TAGS = ['ws', 'run', 'agent', 'connection'];
  */
 const RUN_PARTITIONS = 'WS#*#RUN#*';
 const RUN_REGISTRY = 'WS#*#RUNS';
+/**
+ * The learning loop's keys (lambda/engineering/learning/): the skills' partitions, which the coach reads and proposes
+ * a version in (skills/store.py: `WS#<ws>#SKILL#<connection>#<role>`), the roles' lessons in agent memory, where it
+ * drafts one (agent_memory/model.py: `WS#<ws>#AMEM#ROLE#<connection>#<role>`), and the scorecards, one create-only
+ * row per version per run (learning/scorecard.py: `WS#<ws>#SCORE#<connection>#<role>#<version>`).
+ */
+const SKILL_PARTITIONS = 'WS#*#SKILL#*';
+const ROLE_MEMORY_PARTITIONS = 'WS#*#AMEM#ROLE#*';
+const SCORECARD_PARTITIONS = 'WS#*#SCORE#*';
+/** The quality gate's records, which a retrospective reads only where a final-go task named them (records.py). */
+const GATE_RECORD_KEYS = 'ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json';
+/**
+ * The benchmark's case directories (voc-datalake/engineering-benchmark/cases, lambda/engineering/benchmark/cases.py),
+ * read at synth: the coach names one of them as the case its version should gain on.
+ */
+const BENCHMARK_CASES_DIR = path.join(__dirname, '../../engineering-benchmark/cases');
+
+/** The benchmark's case ids (its case directories' names), sorted. */
+export function benchmarkCaseIds(dir: string = BENCHMARK_CASES_DIR): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b, 'en'));
+}
 /** Every MicroVM operation lambda/engineering/runtime/aws.py calls. */
 const MICROVM_ACTIONS = [
   'lambda:RunMicrovm', 'lambda:SuspendMicrovm', 'lambda:ResumeMicrovm', 'lambda:TerminateMicrovm',
@@ -286,6 +313,8 @@ class EngineeringRuntime extends Construct {
       ENGINEERING_TIMINGS: '{}',
       // The price of a MicroVM second (`-c engineeringMicrovmUsdPerSecond`; 0: not priced).
       ENGINEERING_MICROVM_USD_PER_SECOND: microvmPrice(this),
+      // The benchmark's case ids, for the coach the run's retrospective asks (learning/loop.py).
+      ENGINEERING_BENCHMARK_CASES: JSON.stringify(benchmarkCaseIds()),
     };
   }
 
@@ -339,10 +368,11 @@ class EngineeringRuntime extends Construct {
       timeout: cdk.Duration.minutes(2),
       memorySize: 512,
       serviceName: 'voc-engineering-delivery',
-      // It never takes the launch action (a continuation reuses the session's stored egress) and switches no rule:
-      // neither the extra egress nor the rule's name.
+      // It never takes the launch action (a continuation reuses the session's stored egress), switches no rule and
+      // runs no retrospective: neither the extra egress, the rule's name nor the benchmark's cases.
       environment: Object.fromEntries(Object.entries(environment)
-        .filter(([name]) => !['ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME'].includes(name))),
+        .filter(([name]) => !['ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME', 'ENGINEERING_BENCHMARK_CASES']
+          .includes(name))),
       // The inbox row is written once (a conditional put), so a retry only wakes again.
       retryAttempts: 2,
       // Not destinations.SqsDestination, whose grant adds every key action: the send above and the key's use
@@ -477,9 +507,11 @@ class EngineeringRuntime extends Construct {
       actions: ['events:EnableRule', 'events:DisableRule'],
       resources: [stack.formatArn({ service: 'events', resource: 'rule', resourceName: ruleName })],
     }));
+    const functionName = uniqueName('voc-engineering-runtime');
+    this.grantLearning(props, role, functionName);
     return createWorkerFunction(this, 'EngineeringSupervisor', {
       tree: 'engineering',
-      functionName: uniqueName('voc-engineering-runtime'),
+      functionName,
       handler: 'engineering/runtime/handler.lambda_handler',
       role,
       layer: props.layer,
@@ -487,7 +519,49 @@ class EngineeringRuntime extends Construct {
       memorySize: 512,
       serviceName: 'voc-engineering-runtime',
       environment,
+      // No asynchronous retry: its asynchronous callers are its own rule (the next tick is a minute away) and its
+      // own hand-on of a retrospective, whose every step is claimed by a create-only row and never raises; a retry
+      // of an invocation cut off at its limit would only repeat what the claim already stops.
+      retryAttempts: 0,
     });
+  }
+
+  /**
+   * The learning loop's grants on the runtime's role (lambda/engineering/learning/loop.py, the `retrospective`
+   * action a run's end hands on): the run's own rows it already reads and writes (its board, agents and gate-record
+   * keys; its `LEARN#` claims, create-only), plus only what the loop adds:
+   * - the gate records the final-go tasks named, read only (`GetObject`, no listing);
+   * - the skills' partitions: the coach's reads (`GetItem`) and its proposal (`UpdateItem` of the version counter,
+   *   `PutItem` of the create-only version and its `RUN#` guard); never a delete;
+   * - the roles' lessons in agent memory: the scope's bounded read (`Query`, `GetItem`) and the draft or its
+   *   confirmation (`PutItem`, `UpdateItem` of the memory's count); never a person's memories, never a delete;
+   * - the scorecards: `PutItem` only (each row is create-only; nothing here reads them back);
+   * - Converse on the allowlisted Claude models (one call per failure, at most three per run);
+   * - an asynchronous invoke of this function itself, by name (a reference to it would be a cycle), so the
+   *   retrospective and each failure run in invocations of their own.
+   */
+  private grantLearning(props: WiredProps, role: iam.Role, functionName: string): void {
+    const { engineeringTable, workspaceBucket } = props;
+    const gateRecords = workspaceBucket.arnForObjects(GATE_RECORD_KEYS);
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'LearningReadsGateRecords', actions: ['s3:GetObject'], resources: [gateRecords],
+    }));
+    acknowledgeNag(role, [{
+      id: 'AwsSolutions-IAM5',
+      reason: 'Read-only on the quality gate\'s record objects of every run: a retrospective reads only the keys its run\'s final-go tasks recorded',
+      findings: [resourceFinding(gateRecords)],
+    }]);
+    const keyed = (sid: string, actions: string[], partitions: string[]): iam.PolicyStatement => new iam.PolicyStatement({
+      sid, actions, resources: [engineeringTable.tableArn],
+      conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': partitions } },
+    });
+    role.addToPrincipalPolicy(keyed('LearningCoachSkills',
+      ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'], [SKILL_PARTITIONS]));
+    role.addToPrincipalPolicy(keyed('LearningRoleLessons',
+      ['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:UpdateItem'], [ROLE_MEMORY_PARTITIONS]));
+    role.addToPrincipalPolicy(keyed('LearningScorecards', ['dynamodb:PutItem'], [SCORECARD_PARTITIONS]));
+    grantClaudeModels(role, 'invoke');
+    grantInvokeByName(cdk.Stack.of(this), role, [functionName], 'LearningHandsOnToItself');
   }
 
   /**

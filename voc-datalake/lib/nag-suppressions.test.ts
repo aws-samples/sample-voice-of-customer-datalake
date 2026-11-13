@@ -231,7 +231,9 @@ describe('cdk-nag acknowledgements', () => {
       // 84 -> 89: the engineering delivery function's own role (the agents' checkpoints, the MicroVMs and their
       // images: 3), the engineering DLQ, no longer a role queue's redrive target (no role queues), so its SQS3, and the
       // board's read of the knowledge packs' objects (one prefix), its IAM5.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 89, used: 89 });
+      // 89 -> 90: the engineering runtime's read of the quality gate's records for a run's retrospective (one
+      // prefix), its IAM5.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 90, used: 90 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

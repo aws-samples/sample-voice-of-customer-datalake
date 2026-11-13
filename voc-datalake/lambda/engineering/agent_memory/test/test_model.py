@@ -73,9 +73,14 @@ def test_a_provenance_is_exactly_one_source() -> None:
     assert Provenance(comment_url=url).source == f'comment:{url}'
     for bad in ({}, {'run_id': RUN, 'person': 'p-1'}, {'run_id': 'run-1'},
                 {'comment_url': 'http://github.com/example-org/harbor/pull/3'},
-                {'comment_url': 'https://github.com/example-org/harbor/pull/3?x=1'}, {'person': 'a b'}):
+                {'comment_url': 'https://github.com/example-org/harbor/pull/3?x=1'}, {'person': 'a b'},
+                {'person': 'p-1', 'task_id': 't-1'}, {'run_id': RUN, 'task_id': 'a task'}):
         with pytest.raises(AgentMemoryError):
             Provenance(**bad)
+
+
+def test_a_runs_provenance_may_name_its_task_which_is_no_other_source() -> None:
+    assert Provenance(run_id=RUN, task_id='t-slug').source == Provenance(run_id=RUN).source
 
 
 def test_credentials_and_personal_data_are_replaced_in_a_statement() -> None:

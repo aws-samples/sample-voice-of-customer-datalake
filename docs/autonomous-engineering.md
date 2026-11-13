@@ -898,7 +898,9 @@ continues it in a new one once the wait closes.
   person ends it or resumes that agent (the run monitor shows the coordinator's own status in its Agents panel, and
   says nothing more about it yet); `end_run` sets its status
   (`done`, `failed` or `stopped`) and end time, ends every MicroVM of it, and the run stops being listed once none
-  of its agents is live (one busy with another move is ended by the next tick, which sees the run ended). A retried
+  of its agents is live (one busy with another move is ended by the next tick, which sees the run ended), then hands
+  the run's retrospective on to an invocation of its own (best effort: the learning loop,
+  [below](#getting-better-skills-the-coach-the-learning-loop-memory)). A retried
   start or end does what the first one left undone. After that first write only the run's own attributes are ever
   updated, never the board's, the router's or the inbox's counters. A run's agents are launched only while it is active, checked
   in the same write as the agent's row, so a run that ends meanwhile gets no agent nothing supervises. The
@@ -1087,10 +1089,12 @@ the write broker before it opens a PR: nothing invokes it, and no role holds an 
 
 *Partly built*: the skills' record, diff and versioned store (`voc-datalake/lambda/engineering/skills/`) with the
 benchmark gate on a coach's version ([Evaluation](#evaluation)), the coach that proposes a version from a failure
-(`voc-datalake/lambda/engineering/coach/`), and the agents' memory store with its recall for a task
-(`voc-datalake/lambda/engineering/agent_memory/`), nothing invoking them yet (the harness, the supervisor or
-retrospective that calls the coach, the learning loop and the administrators' and people's routes land with phases 4
-and 5); the learning loop and its scorecards planned.
+(`voc-datalake/lambda/engineering/coach/`), the agents' memory store with its recall for a task
+(`voc-datalake/lambda/engineering/agent_memory/`), and the learning loop with its scorecards
+(`voc-datalake/lambda/engineering/learning/`), which a run's end starts: it takes the run's failures to the coach,
+drafts lessons in memory and writes a scorecard row per skill version. Still to come: the harness reading the
+skills store and the recall, people's reactions on the host as an input, and the administrators' and people's
+routes and screens (phases 4 and 5).
 
 **Skills, visibly and reversibly.** An agent's skill (instructions, examples, tool policy, model, harness) is
 versioned. Each version keeps its diff, why it changed (the run, the failure, the person's comment), the benchmark
@@ -1158,7 +1162,7 @@ widen tenet 3's dial, below, and waits for that change). **Never changed by an a
 permissions and credential scopes, the harness and its tool policy, budgets and caps, the dial, the stop-at-the-pull-request rule, the safety and
 prompt-injection instructions, the gate's bar.
 
-What exists (`voc-datalake/lambda/engineering/coach/`, nothing invoking it yet):
+What exists (`voc-datalake/lambda/engineering/coach/`, invoked by the learning loop on a run's failures, below):
 
 - **The failure** (`coach/failure.py`): the run, the connection (the run's, from its record, never from an agent),
   the role (never the coach's own), the task, the attempt, the kind (`error`, `timeout`, `no_go`,
@@ -1184,10 +1188,14 @@ What exists (`voc-datalake/lambda/engineering/coach/`, nothing invoking it yet):
   answer that changes nothing. The topic check is a filter that catches the plain cases, not the gate: a reworded
   one can pass it, and what holds a version back is an administrator's review and its benchmark. What it keeps is
   redacted too, and the proposal keeps the current skill's tool policy, model and harness.
-- **The model** (`coach/model.py`): a port the tests fake; the Bedrock adapter is one single-turn call through
-  `shared/converse.py`'s `converse_detailed` with a model from the deployment's allowlist (by default the
-  `agent_reviewer` surface's, the surface named so a capacity fallback stays on its chain), sized for a strict JSON
-  answer in one call (no continuation, thinking headroom on top); its reply names the model that actually answered.
+- **The model** (`coach/model.py`): a port the tests fake; the Bedrock adapter is one single-turn Converse call
+  with a model from the deployment's allowlist (by default the `agent_reviewer` surface's default), bounded to end
+  well inside voc-engineering-runtime's 5-minute limit: its own Bedrock client with a 200-second read timeout (a
+  Converse call answers once its reply is whole, so the read bounds the call), a 10-second connect timeout and one
+  botocore attempt, made once through `bedrock_call_with_retry` with one attempt (nothing is tried again, a
+  throttle or a dropped connection included: a second attempt would not fit the limit), one model (no capacity fallback chain) and no continuation, and an output cap of 8,000
+  tokens, thinking included, for a strict JSON answer in one call; a reply cut at the cap is refused. Its reply
+  names the model that answered.
 - **The proposer** (`coach/proposer.py`, `Coach.propose_for(failure, cases)`): refuses before any model call when the
   coach has proposed for that run and failure kind already (`SkillStore.coach_proposed`, the `RUN#` row; the
   proposal's transaction holds it again), and when the role has no skill yet (its first version is a person's);
@@ -1201,14 +1209,95 @@ What exists (`voc-datalake/lambda/engineering/coach/`, nothing invoking it yet):
   (`voc.engineering/coach/<ws>/<run>`), for the caller to publish. A refused answer writes nothing and spends no
   proposal.
 
-Still planned: invoking the coach on a failure (the supervisor, or the run's retrospective), a connection's own
-benchmark cases made from its failures and kept with it, the step that runs the benchmark for a proposal, and the
-learning loop with its scorecards.
+Still planned: a connection's own benchmark cases made from its failures and kept with it, the step that runs the
+benchmark for a proposal, and publishing the coach's `skill.proposed` announcement on the bus (the runtime's role
+speaks only as the supervisor; the announcement is logged by its id, and the proposal is in the skills store's
+history).
 
-**The learning loop.** After each run, a retrospective (the run coordinator's last task): what people accepted, changed or
-rejected (review comments on the agents' pull requests, edits after merge, reverted commits), what the gates caught,
-what timed out. Lessons go to memory and to the coach. A scorecard per agent version (pass rate, human edits needed,
-review rounds needed, time, cost) shows how each version does over time.
+**The learning loop.** After each run, a retrospective: what people accepted, changed or rejected (review comments on
+the agents' pull requests, edits after merge, reverted commits), what the gates caught, what timed out. Lessons go to
+memory and to the coach. A scorecard per agent version (pass rate, human edits needed, review rounds needed, time,
+cost) shows how each version does over time.
+
+What exists (`voc-datalake/lambda/engineering/learning/`, behind `-c engineeringAgents=true`):
+
+- **The start** (`runtime/handler.py`): once an ended run has no live or moving agent (at its `end_run`, or at the
+  tick that ends its last busy agent, when the run stops being listed), so that its record no longer moves and its
+  sessions are priced, the runtime hands a `retrospective` action to an asynchronous invocation of
+  voc-engineering-runtime itself; a failure to start it is logged and never fails the end or the tick. It runs
+  apart because a coach's call can take minutes: the end stays as fast as before, and each failure the
+  retrospective takes to the coach is handed on to an invocation of its own, with the function's whole time limit
+  (5 minutes; the coach's call is bounded to end well before it, above, and a call that runs past its read timeout
+  or fails is recorded on the failure's `LEARNED#` row as `timed_out` or `failed`, with the rule's lesson kept,
+  and never made again). An invocation that fails is logged and answered, never raised, and Lambda never retries an
+  asynchronous invocation of voc-engineering-runtime (`retryAttempts: 0`, pinned in its test): even one cut off at
+  the limit is not delivered again, and a duplicate delivery finds its step's create-only claim and does nothing.
+- **The record** (`learning/records.py`), what the platform records today and nothing else, never a listing: the
+  run's `META` (its connection, status and times), the board's tasks and their history (`TASK#`, `TASKLOG#`), the
+  agents' session rows (`AGENT#`: role, skill version, MicroVM seconds, cost, crashes and the supervisor's last word
+  on a failure), and the quality gate's records the final-go tasks named (at most 20, the latest attempts first, each
+  checked against `voc-gate-record/1`; one unread or off it is left out and logged; a key naming another run or
+  workspace is never read). People's reactions on the host
+  are not readable yet (the broker reads no host data): they come in through a port, `HostReactions`, which answers
+  nothing today and whose reactions become the comments of a failure's evidence once it does.
+- **The retrospective** (`learning/retrospective.py`, pure): each task's attempts, who held each (its claim, else
+  its launch; a person's own attempt is nobody's skill and is left out, and an agent's attempt a person took over
+  ends, for the agent, at the take: handed over, no failure and no tally), how each ended (a supervisor's re-post as
+  `crashed` is a crash, any other of the supervisor's a time-out; a re-post by anyone else, such as a person's Resume
+  replacing a coordinator, a crash when the agent's session failed, else no failure, as a person's release is; the
+  task's state for its last attempt) and its review rounds (its `in_review` moves, plus the gate's rounds on the task the gate judged, the
+  final-go task's parent). The failures: one per attempt that ended failed, timed out, crashed or got a NO-GO (the
+  verdict or the final go's), most severe first (NO-GO, failed, crashed, timed out, then the task's priority); a
+  NO-GO of a final-go task with no parent is counted apart. To the coach: the first per role and failure kind (the
+  coach's own guard is once per run, role and kind), at most 3, never the coach's own. Each failure's evidence (the
+  task, how the attempt ended and its moves, the agent's last failure, the gate's verdict and reasons) is cut to fit
+  (2,000 characters a piece) and its credential-shaped strings replaced, then checked again by the coach's `Evidence`.
+- **The loop** (`learning/loop.py`): the retrospective of an ended run with a connection (others are left alone)
+  writes the scorecards and records the failures it takes to the coach once, in a create-only `RETRO#coach` row of
+  the run's partition (a later retrospective of the run reads it back, so the bound of three per run holds whatever
+  runs twice). Each of those failures, by its key (`<task>#<attempt>#<how>`, one that row names, else refused), is
+  claimed first by a create-only `LEARN#<key>` row (who: the retrospective; when), so a duplicate delivery or a
+  second start finds it and writes and asks nothing; then it gets one lesson draft, with no model call, at the failed
+  role's scope for the run's connection (`learn_agent_memory`, as the run's coach, always a draft for an
+  administrator to approve, its provenance the run and the task: a version's `prov_task`): a line made by rule for
+  the way the attempt failed, with no model or task text, so the same lesson from another run confirms it; then the
+  coach (`Coach.propose_for`, with the deployment's benchmark case ids, the shipped cases' directories named at
+  synth in `ENGINEERING_BENCHMARK_CASES`; a role with no skill yet, the guard spent or a refused answer is an
+  outcome, logged; a call past its read timeout or failing is `timed_out` or `failed`), one Converse call per
+  failure, ever. The coach's why is not drafted as a memory: the proposed version's reason holds it, and
+  model-written drafts must not fill a role's scope (200 live memories) ahead of an administrator's own. A memory
+  the store refuses or cannot write is an outcome too. What came of it is a create-only `LEARNED#<key>` row beside
+  the claim. So a run drafts at most three lessons, one per failure taken to the coach. The lessons pass memory's
+  hygiene but no cited-review check: an engineering run cites no customer reviews (its record holds none; no route
+  attaches feedback to a run yet), so `review_texts` is empty.
+- **The scorecards** (`learning/scorecard.py`): one create-only row per skill version per run,
+  `WS#<ws>#SCORE#<connection>#<role>#<version>` / `RUN#<run>` (`voc-scorecard/1`: tasks done, failed and needing a
+  person by the agent of each task's last attempt, re-posts and review rounds by the agent of the attempt, attempts,
+  the cost and MicroVM seconds of the version's agents, the run's status and times, who wrote it and when: D1, D4);
+  never a counter updated in place, and a retried retrospective leaves a written row as it is. The reader,
+  `version_card`, sums a version's latest runs (at most 200, newest first) with one bounded Query of its partition,
+  never a whole-table read, with its pass rate (done over the tasks it ended); `compare` reads up to 10 versions, one
+  Query each. A connection's scorecards are its own partitions.
+- **The grants** (`lib/stacks/engineering-runtime.ts`, `grantLearning`, pinned in its test): on the runtime's role,
+  besides the run's partitions it already reads and writes, `s3:GetObject` on the gate records only
+  (`ws/*/runs/*/*/commits/*/_gate/attempt-*/record.json`), `GetItem`, `PutItem` and `UpdateItem` on the skills'
+  partitions, `GetItem`, `Query`, `PutItem` and `UpdateItem` on the roles' lessons (never a person's memories),
+  `PutItem` on the scorecards, Converse (`bedrock:InvokeModel`) on the allowlisted Claude models, and
+  `lambda:InvokeFunction` on itself by name; never a delete. IAM bounds the DynamoDB grants by partition only
+  (`dynamodb:LeadingKeys`), not by attribute: `dynamodb:Attributes` is not used, since whether it covers the
+  attributes a condition expression names (the memory's `status`, the counters' own) and the transactions' writes
+  could not be checked against the service here, and a condition that refused the code's own writes would break
+  the loop. So the role can put or update any item of a skills partition (its `HEAD` row's `current_version`
+  included) and of a role's lessons partition (a memory's status, approved version and statement included); only
+  the code keeps it to its own writes: the version counter's `ADD versions`, a proposed version and its `RUN#`
+  guard, each create-only, and a lesson's create-only draft rows and its confirmations' `ADD confirmations`. The
+  scorecards' `PutItem` carries no condition in IAM either: the role could write over a scorecard row, and only
+  the code's `attribute_not_exists` keeps each one create-only.
+
+Still planned: people's reactions on the host as the port's real source (review comments, edits after merge,
+reverts: with the broker's host reads), and with them the scorecards' human edits; the scorecard screens and the
+administrators' routes that read `version_card`; "what the agents learned" and "what improved since the last run" in
+the goal report; the conversation's excerpts in a failure's evidence.
 
 **Agent memory.** The [memory](memory.md) layer gains an agents part, with three scopes: per repository (confirmed
 conventions, reviewer preferences, recurring bugs and their fixes, flaky tests, what the gates usually catch), per
@@ -1281,7 +1370,9 @@ administrator (`erase_person_memories`, with the legal basis, which holds no per
 them in another scope is de-identified (their id as author, provenance, approver, log actor or confirmer becomes
 one random `erased-…` id for this erasure; a confirmation row is re-keyed, since its key hashes its source), then
 every row of their partition is deleted. Only an erasure reads a partition whole, and a re-run finishes a failed
-one. Not yet: the retrospective that learns memories, the harness reading the recall, the routes, a retention pass
+one. The learning loop drafts a role's lessons ([above](#getting-better-skills-the-coach-the-learning-loop-memory));
+a run's provenance may name the board task it was learned from (`task_id`, the version's `prov_task`), which never
+counts as another source. Not yet: the harness reading the recall, the routes, a retention pass
 for memories past their review date, and the call from the platform's erasure of a person (today
 `POST /settings/erasure` erases feedback, `DELETE /participants/people/{id}` participants, and `DELETE
 /users/{username}` removes a sign-in but none of its data; whatever comes to erase a signed-in user's data must
@@ -1387,8 +1478,9 @@ What exists:
   failure's case and a version that fixes it) prove the runner and the gate end to end on the shipped cases.
 
 The coach that proposes a version is built, and names the case its version should gain on, which the recorded
-benchmark must name ([above](#getting-better-skills-the-coach-the-learning-loop-memory)). Still planned: invoking it
-on a failure, and the step that runs the benchmark for its proposal; real agents (a role's skill version
+benchmark must name; the learning loop invokes it on a run's failures
+([above](#getting-better-skills-the-coach-the-learning-loop-memory)). Still planned: the step that runs the
+benchmark for its proposal; real agents (a role's skill version
 on a model, through the harness) as candidates; the results published here; and a connection's own fixtures made
 from its failures, kept with that connection. The benchmark assumes an honest candidate: a check's isolation is
 the runner's (a clean environment, a throwaway directory, a timeout, the paths a patch may change), not a
@@ -1402,7 +1494,10 @@ Then, per use: model tokens (Bedrock), MicroVM time while an agent works (suspen
 event, SQS for the one dead-letter queue (no task queues), DynamoDB on demand, S3 for the workspace, caches and packs, the supervisor's invocations while a run is
 active. The connection's credential is a standard SecureString parameter, with no monthly charge. No NAT gateway and
 no other fixed cost by default. The cost of each run (events, MicroVM seconds, model tokens) is measured and shown on
-the run.
+the run. A run's end adds its retrospective: one more invocation of voc-engineering-runtime (DynamoDB reads of the
+run's own rows, a few create-only writes), plus one per failure it takes to the coach (at most three), each one
+Converse call (the prompt is at most the 40,000-character evidence plus the role's skill; the answer at most 8,000
+tokens, thinking included; at most 200 seconds), made once per failure.
 
 ## Phases and status
 
@@ -1418,6 +1513,6 @@ and the phase that ships them names them in that row.
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
 | 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (the broker reads no run record and there is no GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
-| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, nothing invoking them yet (same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), nothing invoking it yet (same place as the skills); invoking the coach on a failure, a connection's own cases from its failures, the learning loop and scorecards planned |
+| 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
 | 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), and the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)); the templates, live cost, skill histories and the assistant's run tools planned |
