@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.06.00] - 2026-11-13
+## [7.00.00] - 2026-11-13
 
 Prototypes show the company logo uploaded in the design system, an SVG logo can be uploaded again, and a large logo is made smaller instead of refused.
 
@@ -35,7 +35,7 @@ Prototypes show the company logo uploaded in the design system, an SVG logo can 
 
 ### Upgrade notes
 
-- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on the uploaded logos only, `company-context/design/logo_????????????.*` in the raw data bucket, so not the design references' logo previews), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). An API client that uploads its own company logo must send at most 1 MB (it was 5 MB). Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
+- Deploy the stacks (`npm run deploy:infra`, which deploys `VocCoreStack` before `VocApiStack`) and the frontend (`npm run deploy:frontend`). `VocCoreStack` gains one managed policy, `CompanyLogoReadPolicy` (`s3:GetObject` on the uploaded logos only, `company-context/design/logo_????????????.*` in the raw data bucket, so not the design references' logo previews), and `VocApiStack` attaches it to the document generator job role (`voc-job-document-generator`). **Breaking (the reason for the major version):** an API or MCP client that uploads its own company logo (`POST /settings/design-system/logo`) must send at most 1 MB (it was 5 MB), and **Use this logo** refuses a candidate over 1 MB (it was 2 MB); both answer 400 with what to do. The web app is not affected: it makes a larger image smaller before it uploads. Nothing else changes. Prototypes built before this release keep the logo they were built with; build or revise one to get the uploaded logo.
 
 ## [6.05.00] - 2026-11-11
 
