@@ -4,7 +4,7 @@
  * The overview, the board and the conversation are polled every {@link ENGINEERING_POLL_MS} while the run has not
  * ended. Polling is the fallback the plan names (v3 4.10): the push over the sample's AppSync Events channels is a
  * later item. The conversation is read from where the last page left off (`after = next_after`), and each page is
- * merged into what is known by seq, so the window the server re-reads at the tail keeps each message once.
+ * merged into what is known by seq, so the window the server re-reads on every page keeps each message once.
  *
  * @module pages/Agents/useEngineeringRun
  */

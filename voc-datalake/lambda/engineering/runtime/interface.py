@@ -26,6 +26,12 @@ _RUN_RE: Final = re.compile(r'^[0-9A-HJKMNP-TV-Z]{26}\Z')
 _AGENT_RE: Final = re.compile(r'^(?P<role>[a-z]+(?:-[a-z]+)*)-(?P<index>0|[1-9][0-9]{0,2})\Z')
 #: IAM's limit on a session name, ``<run>.<agent index>`` (launcher.session_name): never cut, so never shared.
 MAX_SESSION_NAME: Final = 64
+#: A Lambda function URL's own host, ``<url-id>.lambda-url.<region>.on.aws``: the board's, as the runtime puts it on
+#: an agent's egress (egress.py) and the harness signs its calls to it (harness/board_client.py).
+FUNCTION_URL_RE: Final = re.compile(r'^[a-z0-9]{1,64}\.lambda-url\.[a-z0-9-]+\.on\.aws\Z')
+#: The most repository paths a board task, and so its agent's launch, names (board/api.py checks it; the
+#: coordinator's tools offer no more): below the checkout's own limit (checkout.MAX_SPARSE_PATHS).
+MAX_TASK_PATHS: Final = 50
 
 #: The roles that run repository code; the writers (committer, pr-author, pr-reviewer) reach the host through
 #: the broker only.
@@ -83,6 +89,8 @@ class AgentSpec:
     attempt: int = 1
     #: The workspace bucket (voc-eng-workspace): the agent's checkpoints, patches and findings.
     workspace_bucket: str = ''
+    #: The board API's function URL: the harness's board and inbox (its host is on the agent's egress).
+    board_url: str = ''
 
     def __post_init__(self) -> None:
         if self.role not in ROLES:
@@ -104,6 +112,8 @@ class AgentSpec:
             env['VOC_WORKSPACE_BUCKET'] = self.workspace_bucket
         if self.restore_key:
             env['VOC_RESTORE_KEY'] = self.restore_key
+        if self.board_url:
+            env['VOC_BOARD_URL'] = self.board_url
         return env
 
 

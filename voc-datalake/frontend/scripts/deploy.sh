@@ -78,6 +78,8 @@ WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="We
 EMAIL_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EmailAvailable") | .OutputValue // "false"')
 # "true" when the app user pool allows passkeys (5.65.00); an older stack has no output.
 PASSKEY_AVAILABLE=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="PasskeyAvailable") | .OutputValue // "false"')
+# "true" only on a deployment with -c engineeringAgents=true (VocApiStack's EngineeringAvailable).
+ENGINEERING_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EngineeringAvailable") | .OutputValue // "false"')
 BOARD_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolId") | .OutputValue // empty')
 BOARD_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolClientId") | .OutputValue // empty')
 BOARD_SIGN_IN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardSignInMode") | .OutputValue // "email_otp"')
@@ -116,6 +118,7 @@ echo "  Cognito Client: $COGNITO_CLIENT_ID"
 echo "  Cognito Region: $COGNITO_REGION"
 echo "  Identity Pool: $IDENTITY_POOL_ID"
 echo "  Email: $EMAIL_AVAILABLE"
+echo "  Engineering: $ENGINEERING_AVAILABLE"
 echo "  Board Pool: ${BOARD_USER_POOL_ID:-none}"
 echo "  Realtime: ${REALTIME_DNS:-none}"
 
@@ -143,6 +146,7 @@ jq -n \
   --argjson webSearch "$([ "$WEB_SEARCH_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson email "$([ "$EMAIL_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson passkey "$([ "$PASSKEY_AVAILABLE" = "true" ] && echo true || echo false)" \
+  --argjson engineering "$([ "$ENGINEERING_AVAILABLE" = "true" ] && echo true || echo false)" \
   --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
   --arg boardClientId "$BOARD_CLIENT_ID" \
   --arg boardSignIn "$BOARD_SIGN_IN" \
@@ -160,7 +164,8 @@ jq -n \
     features: {
       webSearch: $webSearch,
       email: $email,
-      passkey: $passkey
+      passkey: $passkey,
+      engineering: $engineering
     }
   } + (if $boardUserPoolId != "" and $boardClientId != "" then {
     board: {

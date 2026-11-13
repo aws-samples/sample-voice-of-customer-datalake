@@ -144,12 +144,19 @@ class ClaudeCli:
 
     def _watched(self, session: AgentSession, process: subprocess.Popen[str], files: SessionFiles) -> Ending:
         turn, seen = 0, None
+        #: The batches posted to the tool server and not yet taken by it: file name -> their event ids.
+        posted: dict[str, list[str]] = {}
         while process.poll() is None:
+            # A batch the tool server took reached the model (its next tool call's answer carries it). Listed before
+            # the notes are synced, seen after: a batch counts only for notes the model saved after having it.
+            taken = [name for name in posted if not files.waiting(name)]
             seen = _sync(session, files, seen, turn)
+            for name in taken:
+                session.saw(posted.pop(name))
             if files.read('crashed') is not None:
                 self._end(process)
                 break
-            others, pause = session.take_messages()
+            others, pause = session.take_messages(shows=False)
             if pause:
                 # Ended first, so nothing it writes after the checkpoint is lost; a git command its tool server
                 # started may still be finishing in the runner, which the checkpoint's own git waits for.
@@ -158,7 +165,8 @@ class ClaudeCli:
                 session.checkpoint(turn=turn)
                 return 'paused'
             if others:
-                files.post([{'kind': message.kind, 'summary': message.summary} for message in others])
+                name = files.post([{'kind': message.kind, 'summary': message.summary} for message in others])
+                posted[name] = [message.event_id for message in others]
             turn += 1
             self._sleep(INBOX_POLL_SECONDS)
         _sync(session, files, seen, turn)
@@ -169,7 +177,9 @@ class ClaudeCli:
             why = (f'a platform tool failed: {crashed.get("error", "")}' if crashed is not None
                    else f'the CLI ended with exit code {process.returncode}')
             raise RuntimeError(f'{why} before the task was finished')
-        # Finished, or ended cleanly without saying so (as the Converse loop's two answers without a tool): done.
+        # Finished (its tool server's finish moved the task to done), or ended cleanly without saying so (as the
+        # Converse loop's two answers without a tool: main.py sends that task to a person).
+        session.finished_elsewhere = files.read('finished') is not None
         return 'done'
 
 

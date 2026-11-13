@@ -17,6 +17,29 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.15.00] - 2026-11-12
+
+Autonomous engineering agents: the supervisor and the harness run on the board and the bus, the board gains the coordinator's ops, and New engineering flow shows only where the module is deployed. Merged from the voc-autonomous-b and voc-autonomous-c branches. Off by default.
+
+### Added
+
+- The board for the coordinator and the harness: the run's `coordinate` task (written by the run's start with META's commit and connection, claimable only by the run's coordinator); the ops `launch` (coordinator only: it numbers the agent `<role>-<n>` and invokes only the runtime's `launch` action, once per task attempt: a repeat returns the session the first wrote, one still booting is busy; an image language and the checkout's path rule are checked before an agent is numbered; a refusal, or a run started without a connection or commit, answers 409), `tasks` and `knowledge` (`{task_id, package}`: a package of a task whose lease the caller holds, or the root, read through the pack's agent reader); the store's lease `refresh` for the supervisor, and `repost_task` at the attempt the supervisor judged.
+- The harness's board client (`runtime/harness/board_client.py`): a SigV4 POST to the board's function URL (`VOC_BOARD_URL`) as the agent's own session; the coordinator's planner and knowledge reader go through it.
+- The supervisor's board and bus (`runtime/board_bus.py`): leases, refresh and re-post through the board's store, and events as voc-msg/1 from the supervisor's own source.
+- Who speaks on the bus: the gate runner (its gate results only), a run's coach (from a run-scoped source), the supervisor (`signal.*`, `run.agent_*`, and `task.posted` for a re-post), and the API's skill announcements as the signed-in person.
+- `features.engineering` in the web app's `config.json`, from VocApiStack's `EngineeringAvailable` output: the workflow library offers New engineering flow only where the engineering module is deployed (engineering flows already saved still list, open and save).
+
+### Changed
+
+- A fresh agent's claim gets its time; a CLI message counts as done only once the model's notes are saved; a session that ends without its finish goes to a person (needs_human), never done.
+- The voc-skill/1 record keeps one home (`runtime/harness/skills.py`), and a launch takes its argv from the role's skill.
+- The bus policy admits the board's, the supervisor's and the delivery function's roles and the agent roles, each pinned to its own source.
+- The report builder reads a denied object as missing and logs it; the workspace store retries a `ConditionalRequestConflict` and logs a read cut at 4 MB.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: the board Lambda (timeout 120 s, above a launch's boot) may invoke `voc-engineering-runtime` (IAM grants the function; the board's code sends it only the `launch` action, through its op), reads the knowledge packs and gets `ENGINEERING_RUNTIME_FUNCTION`; the agents get `VOC_BOARD_URL`. `npm run deploy:frontend` reads `EngineeringAvailable` (a missing output means false). Without the flag nothing changes.
+
 ## [6.14.00] - 2026-11-12
 
 Autonomous engineering agents, phase 3: the agents' memory, slice 1, scoped per repository, per role and per person, every learned memory a draft until it is approved, recalled for a task as fenced data. Nothing invokes it yet.

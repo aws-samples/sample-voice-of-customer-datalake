@@ -5,7 +5,15 @@
   twice) and the ``TASK#`` row; the depth below its parent is capped. A marker whose task has ended (done, failed,
   needs a human) is moved to the new task, conditionally on the task it named, so the same work can be posted again
   once the first ended (nothing is deleted, D5).
-- ``claim``: only an ``open`` task of the caller's role; the lease's epoch is the task's attempt.
+- ``claim``: only an ``open`` task of the caller's role; the lease's epoch is the task's attempt. A claim by the
+  agent that already holds the lease, on a task that has not ended, answers the task as it is (a continuation in a
+  new MicroVM reads its brief by claiming again).
+- ``coordinate_items``: the run's ``coordinate`` task (role ``coordinator``), which only the run's start writes,
+  in its own transaction (trusted code, never an agent's post): the coordinator claims it, renews and reports
+  progress on it like any agent, so the supervisor judges it by its lease too.
+- ``launch``: the coordinator's launch of an agent for an open task, recorded once on the task
+  (``launched_agent``, its id ``<role>-<n>`` from the run's ``agent_count``) with a history row; a retried launch
+  reuses the agent it recorded.
 - ``renew`` (the heartbeat), ``progress`` and ``move``: only the lease holder with the lease's epoch, before the
   lease runs out, on a task that has not ended, so an agent whose lease was lost cannot act on the task again.
   ``progress`` sets ``progress_at``, a short ``step`` and ``waiting`` (an open question, review or decision): the
@@ -29,6 +37,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
 from engineering.board.model import CLAIMED, FINAL, MOVES, OPEN, Move, Task, task_key
@@ -46,6 +55,11 @@ MAX_RESULT_KEYS = 16
 MAX_KEY_LENGTH = 512
 #: A progress step or a re-post's reason: a line, not a log.
 MAX_LINE = 200
+#: The run's coordinate task (one per run, the coordinator's): its id and its role.
+COORDINATE_TASK = 'coordinate'
+COORDINATOR = 'coordinator'
+#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 1.
+MAX_AGENTS = 999
 
 
 class BoardError(Refused):
@@ -69,6 +83,7 @@ def _result_key(key: str, ws: str, run_id: str, agent: str, epoch: int) -> bool:
     parsed = parse_agent_key(key) if len(key) <= MAX_KEY_LENGTH else None
     return parsed is not None and (parsed.ws, parsed.run_id, parsed.agent, parsed.attempt) == (ws, run_id, agent,
                                                                                                 epoch)
+
 
 
 @dataclass(frozen=True)
@@ -105,12 +120,18 @@ class BoardStore:
             raise BoardError('not_found', 'no such task')
         return Task.from_item(item)
 
+    def meta(self, ws: str, run_id: str) -> dict[str, Any] | None:
+        """The run's META row (its caps, its commit and connection), or None for an unknown run."""
+        return self._get({'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': 'META'}})
+
     def tasks(self, ws: str, run_id: str) -> list[Task]:
         """Every task of the run (at most its ``max_tasks``), in id order."""
         return [Task.from_item(item) for item in run_rows(self.client, self.table, ws, run_id, 'TASK#')]
 
     def post(self, ws: str, run_id: str, *, role: str, title: str, spec: Mapping[str, Any], parent_task: str,
              priority: int, actor: str) -> Posted:
+        if role == COORDINATOR:
+            raise BoardError('forbidden', "the coordinate task is the run start's, never posted")
         if not spec:
             raise BoardError('invalid', 'a task has a spec: what to do, which tells it apart from the run\'s others')
         if len(json.dumps(spec)) > MAX_SPEC_BYTES:
@@ -232,8 +253,69 @@ class BoardStore:
             values={':claimed': {'S': CLAIMED}, ':open': {'S': OPEN}, ':role': {'S': role}, ':agent': {'S': agent},
                     ':attempt': {'N': str(current.attempt)},
                     ':expires': {'N': str(int(now.timestamp()) + LEASE_S)}, ':at': {'S': at}},
-            already=lambda t: t.state == CLAIMED and t.lease_agent == agent, refusal='the task is not open'),
+            # The holder claiming again (a continuation with no saved brief): its lease, at the task's attempt.
+            already=lambda t: (t.lease_agent == agent and t.lease_epoch == t.attempt and t.state not in FINAL
+                               and t.state != OPEN),
+            refusal='the task is not open'),
             Move(task_id, CLAIMED, agent, at, current.attempt, 'claim').item(ws, run_id))
+
+    def coordinate_items(self, ws: str, run_id: str, *, at: str) -> list[dict[str, Any]]:
+        """The run's coordinate task and its history row, as plain Python items (numbers as ``Decimal``) for the run's
+        start transaction to put, each ``attribute_not_exists``: ``RunStore.start`` writes through the resource
+        table's ``meta.client.transact_write_items``, which serializes them itself. Open, attempt 1, for the
+        coordinator alone."""
+        task: dict[str, Any] = {**task_key(ws, run_id, COORDINATE_TASK), 'task_id': {'S': COORDINATE_TASK},
+                'role': {'S': COORDINATOR}, 'state': {'S': OPEN}, 'title': {'S': 'Coordinate the run'},
+                'spec': {'S': json.dumps({'coordinate': True}, sort_keys=True)},
+                'spec_hash': {'S': spec_hash(COORDINATOR, '', {'coordinate': True})}, 'depth': {'N': '0'},
+                'priority': {'N': '0'}, 'attempt': {'N': '1'}, 'posted_by': {'S': 'run-start'},
+                'updated_by': {'S': 'run-start'}, 'updated_at': {'S': at}}
+        plain = TypeDeserializer()
+        return [{name: plain.deserialize(value) for name, value in item.items()}
+                for item in (task, Move(COORDINATE_TASK, OPEN, 'run-start', at, 1, 'start').item(ws, run_id))]
+
+    def _next_agent(self, ws: str, run_id: str, role: str) -> str:
+        """``<role>-<n>``: the run's next agent number (an atomic ``ADD`` on its META), 1 to ``MAX_AGENTS``."""
+        try:
+            answer = self.client.update_item(
+                TableName=self.table, Key={'pk': {'S': run_pk(ws, run_id)}, 'sk': {'S': 'META'}},
+                UpdateExpression='ADD agent_count :one',
+                ConditionExpression='attribute_exists(pk) AND (attribute_not_exists(agent_count) OR agent_count < :max)',
+                ExpressionAttributeValues={':one': {'N': '1'}, ':max': {'N': str(MAX_AGENTS)}},
+                ReturnValues='UPDATED_NEW')
+        except ClientError as exc:
+            if not is_conditional_check_failure(exc):
+                raise
+            raise BoardError('cap', f'a run launches at most {MAX_AGENTS} agents') from exc
+        return f'{role}-{int(answer["Attributes"]["agent_count"]["N"])}'
+
+    def launch(self, ws: str, run_id: str, task_id: str, *, role: str, actor: str,
+               paths: Sequence[str] = (), language: str = '') -> Task:
+        """Record the coordinator's launch of an agent for an open task of ``role``, at the task's attempt, with the
+        ``paths`` and ``language`` it is launched with. A retry at the same attempt finds the agent recorded and
+        reuses it (with its recorded paths and language); after a repost (a new attempt) the task gets a new ``<role>-<n>``."""
+        current = self.task(ws, run_id, task_id)
+        if current.role != role or current.role == COORDINATOR:
+            raise BoardError('invalid', f'the task is a {current.role} task, not a {role} one to launch')
+        if current.state != OPEN:
+            raise BoardError('conflict', 'only an open task gets an agent launched for it')
+        if current.launched_agent and current.launched_attempt == current.attempt:
+            return current   # (a retried launch: the same agent again)
+        agent = self._next_agent(ws, run_id, role)
+        at = self.now().isoformat()
+        attempt = current.attempt
+        return self._write(ws, run_id, task_id, _Write(
+            set_expr=('SET launched_agent = :agent, launched_attempt = :attempt, launched_paths = :paths, '
+                      'launched_language = :language'),
+            condition='#state = :open AND attempt = :attempt AND '
+                      '(attribute_not_exists(launched_attempt) OR launched_attempt <> :attempt)',
+            names={'#state': 'state'},
+            values={':agent': {'S': agent}, ':open': {'S': OPEN}, ':attempt': {'N': str(attempt)},
+                    ':paths': {'L': [{'S': path} for path in paths]}, ':language': {'S': language}},
+            # A launch racing this one recorded its agent at this attempt first: that one is the task's.
+            already=lambda t: t.state == OPEN and bool(t.launched_agent) and t.launched_attempt == attempt,
+            refusal='the task is no longer open at this attempt'),
+            Move(task_id, OPEN, actor, at, attempt, 'launch', reason=f'launched {agent}').item(ws, run_id))
 
     def _holder(self, agent: str, epoch: int, now: datetime) -> tuple[str, dict[str, Any]]:
         """The lease holder, with the lease's epoch, before the lease runs out (the supervisor re-posts it then), or
@@ -258,6 +340,21 @@ class BoardStore:
             values={**values, ':expires': {'N': str(int(now.timestamp()) + LEASE_S)}},
             already=lambda _task: False, refusal='the lease is not yours, has run out, or the task has ended'))
 
+    def refresh(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int) -> Task:
+        """The supervisor's renewal of a holder's lease before it continues the agent (a person's pause resumed, a
+        slow continuation's boot): the lease runs ``LEASE_S`` more seconds even if it ran out meanwhile, for that
+        agent at that epoch, on a task that is neither open nor ended. A heartbeat, so no history row; a task that
+        moved on (re-posted, ended) refuses it, and the supervisor ends the session."""
+        now = self.now()
+        ended = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
+        return self._update(ws, run_id, task_id, _Write(
+            set_expr='SET lease_expires = :expires',
+            condition=f'lease_agent = :agent AND lease_epoch = :epoch AND NOT #state IN (:open, {", ".join(ended)})',
+            names={'#state': 'state'},
+            values={**ended, ':agent': {'S': agent}, ':epoch': {'N': str(epoch)}, ':open': {'S': OPEN},
+                    ':expires': {'N': str(int(now.timestamp()) + LEASE_S)}},
+            already=lambda _task: False, refusal='the task moved on: its lease is not this agent\'s at this epoch'))
+
     def progress(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, step: str,
                  waiting: bool) -> Task:
         """The holder's progress report: when, its step (a line, credential shapes redacted), whether it waits."""
@@ -273,12 +370,25 @@ class BoardStore:
                     ':waiting': {'BOOL': waiting}},
             already=lambda _task: False, refusal='the lease is not yours, has run out, or the task has ended'))
 
-    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str) -> Task:
-        """The supervisor's re-post of a task whose lease ran out: ``open`` again at the next attempt, the lease
-        cleared, its reason in the history row. Only from the attempt read, so two re-posts never both apply."""
+    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None) -> Task:
+        """The supervisor's re-post of the task at the ``attempt`` it judged (crashed, stalled, its lease run out):
+        ``open`` again at the next attempt, the lease cleared, its reason in the history row. Only at that attempt,
+        so a retried re-post never revokes the claim a new agent made meanwhile (a later attempt), and two re-posts
+        never both apply. Pass it: without it (a caller from before it, ``None``) the attempt read now is taken,
+        which cannot tell a retry from a newer claim. An open task is re-posted only when an agent was launched for
+        it at this attempt and never claimed it (it died or stalled first): the next attempt gets a new agent."""
         current = self.task(ws, run_id, task_id)
-        if current.state == OPEN or current.state in FINAL:
+        unclaimed = current.state == OPEN and bool(current.launched_agent) and current.launched_attempt == current.attempt
+        if attempt is None:
+            if current.state == OPEN and current.attempt > 1 and not unclaimed:
+                return current   # (a re-post landed already: its retry publishes the same event again)
+            attempt = current.attempt
+        if current.state == OPEN and current.attempt == attempt + 1:
+            return current   # (this re-post landed already: a retry after a lost answer)
+        if (current.state == OPEN and not unclaimed) or current.state in FINAL:
             raise BoardError('conflict', f'a {current.state} task is not re-posted')
+        if current.attempt != attempt:
+            raise BoardError('conflict', f'the task is at attempt {current.attempt}, not the {attempt} judged')
         at = self.now().isoformat()
         why = redact(reason.strip())[:MAX_LINE]
         ended = {f':final{index}': {'S': state} for index, state in enumerate(sorted(FINAL))}
@@ -286,14 +396,15 @@ class BoardStore:
             # The last attempt's progress goes with its lease: the next holder starts with none, never stalled.
             set_expr='SET #state = :open, attempt = attempt + :one, waiting = :no, updated_by = :actor, '
                      'updated_at = :at REMOVE lease_agent, lease_epoch, lease_expires, progress_at, step',
-            condition=f'attempt = :attempt AND NOT #state IN (:open, {", ".join(ended)})',
+            condition=(f'attempt = :attempt AND (NOT #state IN (:open, {", ".join(ended)}) '
+                       'OR (#state = :open AND launched_attempt = :attempt))'),
             names={'#state': 'state'},
             values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False},
-                    ':actor': {'S': 'supervisor'}, ':at': {'S': at}, ':attempt': {'N': str(current.attempt)}},
+                    ':actor': {'S': 'supervisor'}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
             # Another re-post of the same attempt landed between the read and the write.
-            already=lambda t: t.state == OPEN and t.attempt == current.attempt + 1,
+            already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
             refusal='the task moved on since it was read'),
-            Move(task_id, OPEN, 'supervisor', at, current.attempt + 1, 'repost', reason=why).item(ws, run_id))
+            Move(task_id, OPEN, 'supervisor', at, attempt + 1, 'repost', reason=why).item(ws, run_id))
 
     def move(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, to_state: str,
              result_keys: Sequence[object]) -> Task:

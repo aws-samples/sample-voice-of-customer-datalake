@@ -17,6 +17,7 @@ from engineering.board.store import LEASE_S, MAX_LINE, BoardError, BoardStore
 from engineering.board.test.table import RUN, TABLE, engineering_table
 from engineering.bus.publish import EventBridgePublisher
 from engineering.bus.schema import parse
+from engineering.bus.senders import judge
 from engineering.connectors.identity import Caller
 from engineering.quality_gate.text import redact
 from engineering.rows import run_pk
@@ -129,7 +130,7 @@ def test_an_expired_task_is_open_again_at_the_next_attempt_with_its_reason_kept(
     task_id = claimed(board)
     board.store.progress(WS, RUN, task_id, agent='fixer-1', epoch=1, step='Waiting', waiting=True)
     board.tick(LEASE_S + 1)
-    task = board.store.repost(WS, RUN, task_id, reason=' lease ran out after 5 minutes ')
+    task = board.store.repost(WS, RUN, task_id, reason=' lease ran out after 5 minutes ', attempt=1)
     assert (task.state, task.attempt, task.lease_agent, task.view()['lease'], task.waiting) == (
         'open', 2, '', None, False)
     last = board.store.history(WS, RUN)[task_id][-1]
@@ -142,30 +143,56 @@ def test_an_expired_task_is_open_again_at_the_next_attempt_with_its_reason_kept(
 
 def test_an_open_or_ended_task_is_not_reposted(board: Board) -> None:
     task_id = post(board.store)
-    assert kind(lambda: board.store.repost(WS, RUN, task_id, reason='x')) == 'conflict'
+    assert kind(lambda: board.store.repost(WS, RUN, task_id, reason='x', attempt=1)) == 'conflict'
     board.tick(1)
     board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-1')
     board.finish(task_id, 'needs_human')
-    assert kind(lambda: board.store.repost(WS, RUN, task_id, reason='x')) == 'conflict'
+    assert kind(lambda: board.store.repost(WS, RUN, task_id, reason='x', attempt=1)) == 'conflict'
 
 
 def test_a_second_repost_of_the_same_attempt_changes_nothing(board: Board, monkeypatch: pytest.MonkeyPatch) -> None:
     task_id = claimed(board)
+    board.tick(LEASE_S + 1)
     stale = board.store.task(WS, RUN, task_id)
-    first = board.store.repost(WS, RUN, task_id, reason='expired')
+    first = board.store.repost(WS, RUN, task_id, reason='expired', attempt=1)
     board.tick(1)
     # A second supervisor tick read the task before the first re-post landed: it answers the task as it is.
     real, reads = board.store.task, count()
     monkeypatch.setattr(board.store, 'task', lambda *args: stale if next(reads) == 0 else real(*args))
-    second = board.store.repost(WS, RUN, task_id, reason='expired')
+    second = board.store.repost(WS, RUN, task_id, reason='expired', attempt=1)
     monkeypatch.undo()
     assert (second, first.attempt, len(board.store.history(WS, RUN)[task_id])) == (
         board.store.task(WS, RUN, task_id), 2, 3)
 
 
+def test_a_stalled_task_is_reposted_at_its_attempt_and_a_retry_never_takes_a_newer_claim(board: Board) -> None:
+    """The supervisor re-posts a stalled agent's task while its lease is still live (it renews but makes no
+    progress); a retry of that re-post, after a new agent claimed the next attempt, must not take the claim away."""
+    task_id = claimed(board)
+    board.store.repost(WS, RUN, task_id, reason='no progress for 10 minutes', attempt=1)
+    assert board.store.repost(WS, RUN, task_id, reason='again', attempt=1).attempt == 2   # (landed already)
+    board.tick(1)
+    board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-2')
+    assert kind(lambda: board.store.repost(WS, RUN, task_id, reason='late retry', attempt=1)) == 'conflict'
+    assert board.store.task(WS, RUN, task_id).lease_agent == 'fixer-2'
+
+
+def test_a_repost_without_the_attempt_takes_the_attempt_read(board: Board) -> None:
+    """A caller from before the attempt (the runtime's port until it passes one) still re-posts, and its retry
+    after a lost event publishes the same event again."""
+    bus = Bus()
+    publisher = EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/supervisor')
+    task_id = claimed(board)
+    assert repost_task(board.store, publisher, WS, RUN, task_id, 'expired').attempt == 2
+    assert repost_task(board.store, publisher, WS, RUN, task_id, 'expired').attempt == 2   # (the retry)
+    first, again = bus.messages()
+    assert first.event_id == again.event_id
+
+
 def test_a_reason_is_a_bounded_line_with_nothing_secret(board: Board) -> None:
     task_id = claimed(board)
-    task = board.store.repost(WS, RUN, task_id, reason='token AKIA' + 'ABCDEFGHIJKLMNOP ' + 'x' * 400)
+    board.tick(LEASE_S + 1)
+    task = board.store.repost(WS, RUN, task_id, reason='token AKIA' + 'ABCDEFGHIJKLMNOP ' + 'x' * 400, attempt=1)
     reason = board.store.history(WS, RUN)[task.task_id][-1].reason
     assert (len(reason) <= MAX_LINE, 'AKIA' in reason) == (True, False)
 
@@ -302,6 +329,18 @@ def test_a_title_and_a_step_never_join_into_a_secret_shape(board: Board) -> None
         200, f'progress: api_token: {step}', True)
 
 
+def test_a_task_event_summary_is_cut_and_redacted_as_a_whole(board: Board, monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = Bus()
+    api = _api(board, bus)
+    seen: list[str] = []
+    monkeypatch.setattr('engineering.board.api.redact', lambda text: seen.append(text) or text)
+    hunter = Caller('hunter', RUN, 1)   # (a hunter posts for the fixer)
+    api.handle_request(hunter, json.dumps({'op': 'post', 'role': 'fixer', 'title': '頁' * 200, 'spec': {'issue': 11}}))
+    (event,) = bus.messages()
+    assert (event.type, len(event.summary.encode('utf-8')) <= 1024, seen[-1].startswith('頁')) == (
+        'task.posted', True, True)   # (the whole summary went through the redaction)
+
+
 def test_an_event_that_cannot_be_built_answers_400_not_500(board: Board, monkeypatch: pytest.MonkeyPatch) -> None:
     api = _api(board, Bus())
     task_id = claimed(board)
@@ -311,17 +350,55 @@ def test_an_event_that_cannot_be_built_answers_400_not_500(board: Board, monkeyp
 
 def test_repost_task_publishes_the_task_again_to_its_role(board: Board) -> None:
     bus = Bus()
-    publisher = EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/board')
+    publisher = EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/supervisor')
     task_id = claimed(board)
-    task = repost_task(board.store, publisher, WS, RUN, task_id, 'lease ran out')
+    board.tick(LEASE_S + 1)
+    task = repost_task(board.store, publisher, WS, RUN, task_id, 'lease ran out', 1)
     # A retry after a lost event: already open at the next attempt, so the same event again.
-    assert repost_task(board.store, publisher, WS, RUN, task_id, 'lease ran out') == task
+    assert repost_task(board.store, publisher, WS, RUN, task_id, 'lease ran out', 1) == task
     first, again = bus.messages()
-    assert (first.type, first.to.kind, first.to.id, first.attempt, first.event_id) == (
-        'task.posted', 'role', 'fixer', 2, again.event_id)
+    assert (first.type, first.to.kind, first.to.id, first.attempt, first.event_id, first.sender.kind) == (
+        'task.posted', 'role', 'fixer', 2, again.event_id, 'supervisor')
+    assert judge(first, bus.entries[0]['Source']).allowed   # (the router lets the supervisor send it)
 
 
 def test_repost_task_raises_for_a_task_never_reposted(board: Board) -> None:
     task_id = post(board.store)
     publisher = EventBridgePublisher(Bus(), 'voc-engineering', 'voc.engineering/board')
-    assert kind(lambda: repost_task(board.store, publisher, WS, RUN, task_id, 'x')) == 'conflict'
+    assert kind(lambda: repost_task(board.store, publisher, WS, RUN, task_id, 'x', 1)) == 'conflict'
+
+
+# --- the supervisor's refresh, the claim's epoch ------------------------------------------------------------------
+
+def test_the_supervisor_refreshes_a_holders_lease_even_after_it_ran_out(board: Board) -> None:
+    """A person's pause resumed late, or a slow continuation: the lease runs again, for that agent at that epoch."""
+    task_id = claimed(board)
+    board.tick(LEASE_S * 4)   # (paused: no heartbeat)
+    task = board.store.refresh(WS, RUN, task_id, agent='fixer-1', epoch=1)
+    assert task.lease_expires == int(board.clock[0].timestamp()) + LEASE_S
+    board.store.renew(WS, RUN, task_id, agent='fixer-1', epoch=1)   # (the holder renews again)
+
+
+def test_a_refresh_for_a_task_that_moved_on_is_refused(board: Board) -> None:
+    task_id = claimed(board)
+    assert kind(lambda: board.store.refresh(WS, RUN, task_id, agent='fixer-2', epoch=1)) == 'conflict'
+    assert kind(lambda: board.store.refresh(WS, RUN, task_id, agent='fixer-1', epoch=2)) == 'conflict'
+    board.store.repost(WS, RUN, task_id, reason='stalled', attempt=1)
+    assert kind(lambda: board.store.refresh(WS, RUN, task_id, agent='fixer-1', epoch=1)) == 'conflict'   # (open)
+    board.tick(1)
+    board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-1')
+    assert board.store.refresh(WS, RUN, task_id, agent='fixer-1', epoch=2).lease_epoch == 2
+
+
+def test_a_claims_epoch_is_the_tasks_attempt_and_the_holder_claims_again(board: Board) -> None:
+    """The harness builds its epoch from the task's attempt and never needs to re-claim; a re-claim by the holder (a
+    continuation with no saved brief) answers its task, at that same epoch, whatever state it is in short of an end."""
+    task_id = claimed(board)
+    board.tick(LEASE_S + 1)
+    board.store.repost(WS, RUN, task_id, reason='crashed', attempt=1)
+    board.tick(1)
+    task = board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-2')
+    assert (task.attempt, task.lease_epoch) == (2, 2)
+    board.store.move(WS, RUN, task_id, agent='fixer-2', epoch=2, to_state='in_progress', result_keys=[])
+    again = board.store.claim(WS, RUN, task_id, role='fixer', agent='fixer-2')
+    assert (again.state, again.lease_epoch) == ('in_progress', 2)

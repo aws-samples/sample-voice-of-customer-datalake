@@ -113,3 +113,29 @@ def test_the_run_control_reads_the_runs_caps_spend_start_and_stop(aws):
     assert control.stop_requested(RUN)
     with pytest.raises(RunNotActive):
         control.started_at(OTHER)
+
+
+def test_a_runs_connection_and_base_commit_are_kept_for_the_boards_launch(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=1000, connection='conn-1', commit='a' * 40)
+    run = runs.get(RUN)
+    assert run is not None
+    assert (run.connection, run.commit) == ('conn-1', 'a' * 40)
+
+
+@pytest.mark.parametrize(('connection', 'commit', 'error'), [
+    ('conn 1', '', 'connection'), ('', 'abc123', 'full hexadecimal'), ('', 'A' * 40, 'full hexadecimal')])
+def test_a_bad_connection_or_commit_starts_no_run(aws: Any, connection: str, commit: str, error: str):
+    runs = RunStore(aws[1])
+    with pytest.raises(RuntimeRefused, match=error):
+        runs.start(RUN, caps=RunCaps(max_tasks=5), now=1000, connection=connection, commit=commit)
+    assert runs.get(RUN) is None
+
+
+def test_a_runs_start_posts_its_coordinators_task(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=1000)
+    task = aws[1].get_item(Key={'pk': f'WS#default#RUN#{RUN}', 'sk': 'TASK#coordinate'})['Item']
+    assert (task['role'], task['state'], task['attempt']) == ('coordinator', 'open', 1)
+    with pytest.raises(RunExists):  # a retried start writes nothing again
+        runs.start(RUN, caps=RunCaps(max_tasks=5), now=1001)

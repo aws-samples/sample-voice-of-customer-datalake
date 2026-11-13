@@ -8,9 +8,10 @@
  *   delivery function ──▶ voc-engineering table (INBOX# rows) ◀── the board API's inbox op ◀── agent
  *
  * - The bus: one EventBridge custom bus, no archive and no schema registry (nothing billed while idle). Its policy
- *   denies `events:PutEvents` to every principal but the board API's role and the agent roles with a voice, whatever
- *   an identity policy grants, and denies each of those every `source` but its own (`addAgentPublisher`,
- *   engineering-runtime.ts).
+ *   denies `events:PutEvents` to every principal but the publishers, whatever an identity policy grants: the board
+ *   API's role, the runtime's supervisor and delivery roles, and the agent roles with a voice; and it denies each of
+ *   those every `source` but its own (`addPublisher`: the board `voc.engineering/board`, the runtime's two roles
+ *   `voc.engineering/supervisor`, each agent role its own, engineering-runtime.ts).
  * - One fixed rule sends every event of this account on the bus to the inbox router (`engineering/bus/router.py`),
  *   never a rule per run. The router checks voc-msg/1 and the sender, writes the run's conversation and pushes a
  *   posted task, and a message for an agent or the conductor, to the delivery function with its conversation seq
@@ -32,14 +33,15 @@
  *
  * Grants, exactly what the code calls: the router and the board GetItem, PutItem and UpdateItem on the voc-engineering
  * table (the transactions are Put and Update items, the board's history rows included; no delete), and the board Query
- * (its inbox op reads the caller's INBOX# rows); the
- * report builder GetItem, Query (a run's rows of a kind) and UpdateItem (the version counter and pointer), GetObject
- * on the runs' objects and PutObject on the reports in the workspace bucket, and ListBucket on it so a missing object
- * reads as missing rather than denied; the board `events:PutEvents` on the bus; the router `lambda:InvokeFunction` on
+ * (its inbox op reads the caller's INBOX# rows and its tasks op the run's tasks), `lambda:InvokeFunction` on the
+ * runtime's function by its name (the coordinator's `launch`, which sends only the `launch` action) and GetObject on
+ * the knowledge packs' objects (`ws/default/knowledge/*`, its `knowledge` op); the report builder GetItem, Query (a run's rows of a kind) and UpdateItem (the version counter and pointer), GetObject
+ * on the runs' objects and PutObject on the reports in the workspace bucket (no ListBucket: a missing object answers
+ * 403, which it reads as missing and logs); the board `events:PutEvents` on the bus; the router `lambda:InvokeFunction` on
  * the delivery function, by its name (the runtime's voc-engineering-delivery, deployed with it on the same flag), and
  * `sqs:SendMessage` on the DLQ as its failure destination; `kms:Decrypt` and `kms:GenerateDataKey` on the stack's
  * key, only through DynamoDB (and SQS for the router's and the report builder's failure records, S3 for the report
- * builder).
+ * builder and the board's knowledge reads).
  */
 import * as cdk from 'aws-cdk-lib';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -54,7 +56,9 @@ import { Construct } from 'constructs';
 
 import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
-import { ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS } from './core-buckets';
+import {
+  ENGINEERING_WORKSPACE, ENGINEERING_WORKSPACE_REPORTS_KEYS, ENGINEERING_WORKSPACE_RUNS_KEYS,
+} from './core-buckets';
 import { ENGINEERING_DLQ_BASE_NAME } from './dlq-alarms';
 
 /** The report builder's base name: its future callers (the broker, the supervisor) address it by this name. */
@@ -62,6 +66,15 @@ export const ENGINEERING_REPORTS_FUNCTION_BASE_NAME = 'voc-engineering-reports';
 
 /** The delivery function's base name (the runtime's): the router pushes every message to it. */
 const ENGINEERING_DELIVERY_FUNCTION_BASE_NAME = 'voc-engineering-delivery';
+/** The runtime's function (engineering-runtime.ts): the board invokes its `launch` action for the run's coordinator. */
+const ENGINEERING_RUNTIME_FUNCTION_BASE_NAME = 'voc-engineering-runtime';
+/** The knowledge packs' objects in the workspace bucket (engineering/knowledge/store.py), read for the agents. */
+const ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS = `ws/${ENGINEERING_WORKSPACE}/knowledge/*`;
+/**
+ * The board function's timeout (seconds): above its wait for the runtime's launch (100 s, board/api.py
+ * LAUNCH_READ_TIMEOUT_SECONDS), so the board answers the coordinator before it is cut off.
+ */
+const BOARD_TIMEOUT_SECONDS = 120;
 
 /** Sid of the Core key-policy statement that lets EventBridge write the inbox rule's undelivered events to the DLQ. */
 export const ENGINEERING_DLQ_KEY_SID = 'AllowEventBridgeToEngineeringDeadLetter';
@@ -89,6 +102,8 @@ export class EngineeringBus extends Construct {
   public readonly dlq: sqs.Queue;
   /** The board API: the agent roles may call its function URL (engineering-runtime.ts). */
   public readonly board: lambda.IFunction;
+  /** The board's function URL (IAM-authenticated): the agents' harness calls it, signed as their session. */
+  public readonly boardUrl: string;
   private readonly publishers: iam.IRole[] = [];
   /** The last of the bus's policy resources: each waits for the one before (one read-modify-write at a time). */
   private lastPolicy: Construct | undefined;
@@ -106,16 +121,19 @@ export class EngineeringBus extends Construct {
       reason: 'This queue IS the terminal failure record (the inbox rule\'s and the supervisor rule\'s dead-letter queue, the router\'s, the delivery function\'s and the report builder\'s async on-failure destination); nothing consumes it, so it has no DLQ of its own',
     }]);
     this.createRouter(props);
-    this.board = this.createBoardApi(props);
+    const board = this.createBoardApi(props);
+    this.board = board.fn;
+    this.boardUrl = board.url;
     this.pinPublishers();
     this.createReports(props);
   }
 
   /**
-   * Let `role` (an agent role) put events on the bus, only with `source` (its own, from its session tags:
-   * lambda/engineering/bus/senders.py): the bus policy denies it every other source, whatever its own policy says.
+   * Let `role` put events on the bus, only with `source` (lambda/engineering/bus/senders.py: an agent role's own, from
+   * its session tags; a service's, `voc.engineering/<service>`): the bus policy denies it every other source,
+   * whatever its own policy says.
    */
-  public addAgentPublisher(statementId: string, role: iam.IRole, source: string): void {
+  public addPublisher(statementId: string, role: iam.IRole, source: string): void {
     this.publishers.push(role);
     this.addPolicy(new iam.PolicyStatement({
       sid: `OwnSourceOnly${statementId}`,
@@ -151,13 +169,10 @@ export class EngineeringBus extends Construct {
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       sid: 'WriteReports', actions: ['s3:PutObject'], resources: [reportObjects],
     }));
-    // A key the board recorded may name an object its agent never wrote (a failed attempt): with ListBucket S3 answers
-    // 404, which reads as missing, rather than 403.
-    // Scoped to the runs' keys (the only ones it reads): never a listing of the reports or anything else.
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'MissingReadsAsMissing', actions: ['s3:ListBucket'], resources: [bucket.bucketArn],
-      conditions: { StringLike: { 's3:prefix': [ENGINEERING_WORKSPACE_RUNS_KEYS] } },
-    }));
+    // No ListBucket: a key the board recorded may name an object its agent never wrote (a failed attempt), which S3
+    // then answers 403, not 404; the builder may read every runs' key, so it reads that denial as missing and logs it
+    // (reports/handler.py). A ListBucket scoped by an s3:prefix condition would not help: a GetObject carries no
+    // prefix, so the condition never matches it.
     acknowledgeNag(role, [{
       id: 'AwsSolutions-IAM5',
       reason: 'The workspace bucket\'s object keys: reads of the runs\' objects the board recorded (their keys are known only at run time) and create-only writes of the reports; never another bucket',
@@ -196,8 +211,8 @@ export class EngineeringBus extends Construct {
   }
 
   /**
-   * The bus policy: an explicit deny of `events:PutEvents` for every principal but the publishers (the board's role,
-   * and each agent role added with `addAgentPublisher`), whatever an identity policy grants.
+   * The bus policy: an explicit deny of `events:PutEvents` for every principal but the publishers (each role added
+   * with `addPublisher`), whatever an identity policy grants.
    */
   private pinPublishers(): void {
     this.addPolicy(new iam.PolicyStatement({
@@ -216,13 +231,8 @@ export class EngineeringBus extends Construct {
     const role = workerRole(this, 'RouterRole');
     props.engineeringTable.grant(role, ...TABLE_ACTIONS);
     const delivery = props.uniqueName(ENGINEERING_DELIVERY_FUNCTION_BASE_NAME);
-    // By name: the delivery function is the runtime's (engineering-runtime.ts), so no construct here to grant on.
-    role.addToPrincipalPolicy(new iam.PolicyStatement({
-      sid: 'EngineeringDelivery', actions: ['lambda:InvokeFunction'],
-      resources: [cdk.Stack.of(this).formatArn({
-        service: 'lambda', resource: 'function', resourceName: delivery, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-      })],
-    }));
+    // By name: the delivery function is the runtime's and is deployed with it, so no construct to grant on.
+    this.grantInvokeByName(role, 'EngineeringDelivery', delivery);
     // The table's key, and the DLQ's for its failure records (a send to a queue on a customer-managed key needs
     // GenerateDataKey).
     grantKeyThrough(role, props.kmsKey, ['dynamodb', 'sqs']);
@@ -254,13 +264,43 @@ export class EngineeringBus extends Construct {
     });
   }
 
-  /** The board API (its role is a publisher). */
-  private createBoardApi(props: EngineeringBusProps): lambda.Function {
+  /** `lambda:InvokeFunction` on a function of this deployment by its name (one deployed with another stack). */
+  private grantInvokeByName(role: iam.IRole, sid: string, functionName: string): void {
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid, actions: ['lambda:InvokeFunction'],
+      resources: [cdk.Stack.of(this).formatArn({
+        service: 'lambda', resource: 'function', resourceName: functionName,
+        arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+      })],
+    }));
+  }
+
+  /**
+   * The board API (its role is a publisher, as the board only). Its role also invokes the runtime's function, for the coordinator's
+   * `launch` op (the board sends only the `launch` action; the coordinator role holds no invoke itself), and reads
+   * the knowledge packs' objects (`ws/<ws>/knowledge/*`) for the `knowledge` op; no ListBucket, so a missing object
+   * reads as denied, which the board reads as missing.
+   */
+  private createBoardApi(props: EngineeringBusProps): { fn: lambda.Function; url: string } {
     const role = workerRole(this, 'BoardRole');
-    this.publishers.push(role);
+    this.addPublisher('Board', role, 'voc.engineering/board');
     // Query: the inbox op reads the caller's INBOX# rows (board/inbox.py).
     props.engineeringTable.grant(role, ...TABLE_ACTIONS, 'dynamodb:Query');
+    const runtime = props.uniqueName(ENGINEERING_RUNTIME_FUNCTION_BASE_NAME);
+    this.grantInvokeByName(role, 'EngineeringRuntimeLaunch', runtime);
+    const knowledge = props.workspaceBucket.arnForObjects(ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS);
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'ReadKnowledgePacks', actions: ['s3:GetObject'], resources: [knowledge],
+    }));
+    acknowledgeNag(role, [{
+      id: 'AwsSolutions-IAM5',
+      reason: 'The knowledge packs\' objects in the workspace bucket (one prefix: their keys name the connection, package and version, known only at run time), read only',
+      findings: [resourceFinding(knowledge)],
+    }]);
+    // The key through DynamoDB for the table's reads and writes; through S3 only to decrypt (the board only reads
+    // the knowledge packs' objects, it writes none).
     grantKeyThrough(role, props.kmsKey, ['dynamodb']);
+    grantKeyThrough(role, props.kmsKey, ['s3'], ['kms:Decrypt']);
     this.bus.grantPutEventsTo(role);
     const board = createWorkerFunction(this, 'Board', {
       tree: 'engineering',
@@ -268,18 +308,21 @@ export class EngineeringBus extends Construct {
       handler: 'engineering/board/api.handler',
       role,
       layer: props.layer,
-      timeout: cdk.Duration.seconds(30),
+      // The board waits for the runtime's launch (its MicroVM's start and the session row) without retrying it.
+      timeout: cdk.Duration.seconds(BOARD_TIMEOUT_SECONDS),
       memorySize: 256,
       environment: {
         AGENT_ROLE_NAME_PATTERN: props.roleNamePattern,
         ENGINEERING_TABLE: props.engineeringTable.tableName,
         ENGINEERING_BUS_NAME: this.bus.eventBusName,
+        ENGINEERING_RUNTIME_FUNCTION: runtime,
+        ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
       },
       serviceName: 'voc-engineering-board',
     });
     // No resource-based policy: only identities an IAM policy grants lambda:InvokeFunctionUrl on it can call it.
-    board.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
-    return board;
+    const url = board.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM }).url;
+    return { fn: board, url };
   }
 }
 
@@ -288,10 +331,11 @@ function queueEncryption(key: kms.IKey): Pick<sqs.QueueProps, 'encryption' | 'en
 }
 
 /** kms:Decrypt and kms:GenerateDataKey on the stack's key, only through `services` (the table's, the queues'). */
-function grantKeyThrough(role: iam.Role, key: kms.IKey, services: readonly string[]): void {
+function grantKeyThrough(role: iam.Role, key: kms.IKey, services: readonly string[],
+  actions: readonly string[] = ['kms:Decrypt', 'kms:GenerateDataKey']): void {
   const { region } = cdk.Stack.of(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
-    actions: ['kms:Decrypt', 'kms:GenerateDataKey'],
+    actions: [...actions],
     resources: [key.keyArn],
     conditions: { StringEquals: { 'kms:ViaService': services.map((service) => `${service}.${region}.amazonaws.com`) } },
   }));

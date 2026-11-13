@@ -106,21 +106,15 @@ function viaServices(key: kms.IKey, actions: string[], services: string[]): iam.
 
 /**
  * The only bus source a session of `agentRole` may put events with (lambda/engineering/bus/senders.py): an agent's
- * own, from the tags only the launcher sets; the run coordinator speaks as its run's conductor. (The gate runner's is
- * one senders.py does not know yet: docs/autonomous-engineering.md → Runtime.)
+ * own, from the tags only the launcher sets; the run coordinator speaks as its run's conductor, the coach as its run's
+ * coach (a run-scoped source: senders.py checks the run and the refs as for an agent).
  */
 function eventSource(agentRole: string): string {
   const run = '${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}';
   if (agentRole === 'coordinator') return `voc.engineering/conductor/${run}`;
+  if (agentRole === 'coach') return `voc.engineering/coach/${run}`;
   return `voc.engineering/agent/${agentRole}/${run}/\${aws:PrincipalTag/agent}`;
 }
-
-/**
- * Agent roles that may not put events on the bus yet. The coach: senders.py knows it only as the service source
- * `voc.engineering/coach`, which names no workspace or run, so a coach session could speak, as the system, in any
- * run; it gets a voice once the bus has a run-scoped coach source.
- */
-const NO_VOICE = new Set(['coach']);
 
 /** What the runtime takes from the bus (engineering-bus.ts) and the connector broker (engineering-broker.ts). */
 export interface EngineeringPeers {
@@ -130,9 +124,11 @@ export interface EngineeringPeers {
    */
   deadLetterQueue: sqs.IQueue;
   bus: events.IEventBus;
-  /** The bus policy's pin of an agent role to its one source (EngineeringBus.addAgentPublisher). */
-  addAgentPublisher: (statementId: string, role: iam.IRole, source: string) => void;
+  /** The bus policy's pin of a role to its one source (EngineeringBus.addPublisher). */
+  addPublisher: (statementId: string, role: iam.IRole, source: string) => void;
   board: lambda.IFunction;
+  /** The board's function URL: handed to every agent's harness, its host on the agent's egress. */
+  boardUrl: string;
   broker: lambda.IFunction;
 }
 
@@ -209,6 +205,9 @@ function flag(scope: Construct, name: string): boolean {
   return booleanContextFlag(scope.node.tryGetContext(name), name, false, `Use -c ${name}=true or false.`);
 }
 
+/** The source the supervisor speaks with on the bus (lambda/engineering/runtime/board_bus.py SOURCE). */
+const SUPERVISOR_SOURCE = 'voc.engineering/supervisor';
+
 class EngineeringRuntime extends Construct {
   constructor(scope: Construct, id: string, props: WiredProps) {
     super(scope, id);
@@ -218,6 +217,9 @@ class EngineeringRuntime extends Construct {
     const deliveryRole = workerRole(this, 'EngineeringDeliveryRole');
     const agentRoles = new Map(AGENT_ROLES.map((agentRole) => [agentRole, this.createAgentRole(props, agentRole,
       [supervisorRole, deliveryRole])]));
+    for (const [id, role] of [['Supervisor', supervisorRole], ['Delivery', deliveryRole]] as const) {
+      this.grantSupervisorVoice(props, id, role);
+    }
     const environment = this.environment(props, agentRoles, ruleName);
     const fn = this.createSupervisor(props, supervisorRole, agentRoles, ruleName, environment);
     this.createRule(props.peers.deadLetterQueue, fn, ruleName);
@@ -244,6 +246,18 @@ class EngineeringRuntime extends Construct {
     return checkpoints;
   }
 
+  /**
+   * The supervisor's voice on the bus, for both functions' role (a wake's continuation speaks too): PutEvents, only
+   * with `voc.engineering/supervisor` (denied here for any other source, and by the bus's policy too).
+   */
+  private grantSupervisorVoice(props: WiredProps, id: string, role: iam.Role): void {
+    role.addToPrincipalPolicy(new iam.PolicyStatement({
+      sid: 'SpeakAsTheSupervisor', actions: ['events:PutEvents'], resources: [props.peers.bus.eventBusArn],
+      conditions: { StringEquals: { 'events:source': SUPERVISOR_SOURCE } },
+    }));
+    props.peers.addPublisher(id, role, SUPERVISOR_SOURCE);
+  }
+
   /** The launcher's AssumeRole of the agent roles (their trust also requires all four session tags). */
   private grantLaunch(role: iam.Role, agentRoles: Map<string, iam.Role>): void {
     role.addToPrincipalPolicy(new iam.PolicyStatement({
@@ -257,6 +271,8 @@ class EngineeringRuntime extends Construct {
     const stack = cdk.Stack.of(this);
     return {
       ENGINEERING_TABLE: props.engineeringTable.tableName,
+      ENGINEERING_BUS_NAME: props.peers.bus.eventBusName,
+      ENGINEERING_BOARD_URL: props.peers.boardUrl,
       RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
       ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
       SUPERVISOR_RULE_NAME: ruleName,
@@ -323,7 +339,8 @@ class EngineeringRuntime extends Construct {
       timeout: cdk.Duration.minutes(2),
       memorySize: 512,
       serviceName: 'voc-engineering-delivery',
-      // Its code launches nothing and switches no rule: neither the extra egress nor the rule's name.
+      // It never takes the launch action (a continuation reuses the session's stored egress) and switches no rule:
+      // neither the extra egress nor the rule's name.
       environment: Object.fromEntries(Object.entries(environment)
         .filter(([name]) => !['ENGINEERING_EXTRA_EGRESS', 'SUPERVISOR_RULE_NAME'].includes(name))),
       // The inbox row is written once (a conditional put), so a retry only wakes again.
@@ -395,14 +412,12 @@ class EngineeringRuntime extends Construct {
       sid: 'BoardAndBrokerThroughUrls', actions: ['lambda:InvokeFunction'], resources: urls,
       conditions: { Bool: { 'lambda:InvokedViaFunctionUrl': 'true' } },
     }));
-    // The bus, with its own source only: denied here for any other, and by the bus's policy too (which denies a
-    // role without a voice everything).
-    if (!NO_VOICE.has(agentRole)) {
-      role.addToPolicy(new iam.PolicyStatement({
-        sid: 'PutOnTheBus', actions: ['events:PutEvents'], resources: [peers.bus.eventBusArn],
-      }));
-      peers.addAgentPublisher(id, role, eventSource(agentRole));
-    }
+    // The bus, with its own source only: denied here for any other, and by the bus's policy too (which denies
+    // every role it does not admit everything).
+    role.addToPolicy(new iam.PolicyStatement({
+      sid: 'PutOnTheBus', actions: ['events:PutEvents'], resources: [peers.bus.eventBusArn],
+    }));
+    peers.addPublisher(id, role, eventSource(agentRole));
     role.addToPolicy(new iam.PolicyStatement({
       sid: 'NoRoleChaining',
       effect: iam.Effect.DENY,

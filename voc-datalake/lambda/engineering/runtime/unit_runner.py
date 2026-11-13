@@ -73,7 +73,7 @@ TOOLCHAIN_ENV: Final = ('CARGO_HOME', 'RUSTUP_HOME', 'GRADLE_USER_HOME', 'MAVEN_
 #: The agent's ids (``interface.AgentSpec.environment``, set on the MicroVM) and its region: the agent's own
 #: commands' only (the harness reads them); repository code never needs them.
 AGENT_ENV: Final = ('VOC_RUN_ID', 'VOC_AGENT_ID', 'VOC_TASK_ID', 'VOC_ROLE', 'VOC_RESTORE_KEY', 'VOC_COMMIT',
-                    'VOC_ATTEMPT', 'VOC_WORKSPACE_BUCKET', 'AWS_REGION')
+                    'VOC_ATTEMPT', 'VOC_WORKSPACE_BUCKET', 'VOC_BOARD_URL', 'AWS_REGION')
 #: Credential shapes masked in tool output: AWS access keys and secrets, host tokens (GitHub, GitLab),
 #: bearer headers, private keys, and `name=value` pairs whose name says secret.
 _CREDENTIAL_RES: Final = (

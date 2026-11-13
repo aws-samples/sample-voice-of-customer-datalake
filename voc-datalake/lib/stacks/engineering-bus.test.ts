@@ -89,28 +89,39 @@ describe('the engineering bus', () => {
     expect(Object.keys(on.findResources('AWS::Events::Archive'))).toStrictEqual([]);
   });
 
-  it('has a bus policy that denies PutEvents to every principal but the board\'s role and the agent roles with a voice', () => {
+  it('has a bus policy that denies PutEvents to every principal but the board\'s role, the runtime\'s two and the agent roles', () => {
     const on = template('on');
-    const boardRole = functionRoleId(on, functionId(on, 'voc-engineering-board'));
+    const [boardRole, supervisorRole, deliveryRole] = ['voc-engineering-board', 'voc-engineering-runtime',
+      'voc-engineering-delivery'].map((name) => functionRoleId(on, functionId(on, name)));
     const agentRoles = Object.keys(on.findResources('AWS::IAM::Role'))
       .filter((id) => /EngineeringAgent.*Role/.test(id)).sort(byCodeUnit);
     expect(agentRoles).toHaveLength(13);
-    // The agent roles with a voice: all but the coach (engineering-runtime.ts NO_VOICE).
-    const speaking = agentRoles.filter((id) => !id.includes('Coach'));
+    // Every agent role speaks (the coach as its run's coach).
+    const speaking = agentRoles;
     const statements = Object.values(on.findResources('AWS::Events::EventBusPolicy'))
       .map((policy) => z.looseObject({ Sid: z.string(), Condition: z.unknown() }).parse(policy.Properties?.Statement));
     const only = statements.find((statement) => statement.Sid === 'cdk-OnlyTheEngineeringPublishers');
     const allowed = z.object({ ArnNotEquals: z.object({ 'aws:PrincipalArn': z.array(z.unknown()) }) })
       .parse(only?.Condition).ArnNotEquals['aws:PrincipalArn'];
-    expect(allowed).toStrictEqual([boardRole, ...speaking].map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })));
+    expect(allowed).toStrictEqual([boardRole, ...speaking, supervisorRole, deliveryRole]
+      .map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })));
     expect(JSON.stringify(only)).toContain(busId(on));
   });
 
-  it('denies each agent role every bus source but its own, whatever its own policy says', () => {
+  it('pins the board and the runtime\'s two roles to their own service source on the bus', () => {
     const statements = Object.values(template('on').findResources('AWS::Events::EventBusPolicy'))
       .map((policy) => JSON.stringify(policy.Properties?.Statement)).filter((text) => text.includes('OwnSourceOnly'));
-    // One per agent role with a voice: none for the coach.
-    expect([statements.length, statements.some((text) => text.includes('Coach'))]).toStrictEqual([12, false]);
+    const source = (sid: string): string | undefined => /"StringNotEquals":\{"events:source":"([^"]+)"\}/
+      .exec(statements.find((text) => text.includes(`cdk-OwnSourceOnly${sid}"`)) ?? '')?.[1];
+    expect(['Board', 'Supervisor', 'Delivery'].map(source)).toStrictEqual(['voc.engineering/board',
+      'voc.engineering/supervisor', 'voc.engineering/supervisor']);
+  });
+
+  it('denies each publisher every bus source but its own, whatever its own policy says', () => {
+    const statements = Object.values(template('on').findResources('AWS::Events::EventBusPolicy'))
+      .map((policy) => JSON.stringify(policy.Properties?.Statement)).filter((text) => text.includes('OwnSourceOnly'));
+    // One per agent role (the coach's included), the board's, and the runtime's two.
+    expect([statements.length, statements.some((text) => text.includes('Coach'))]).toStrictEqual([16, true]);
     const fixer = statements.find((text) => text.includes('cdk-OwnSourceOnlyFixer'));
     expect(fixer).toContain('"Effect":"Deny"');
     expect(fixer).toContain('"StringNotEquals":{"events:source":"voc.engineering/agent/fixer/${aws:PrincipalTag/ws}/${aws:PrincipalTag/run}/${aws:PrincipalTag/agent}"}');
@@ -119,23 +130,23 @@ describe('the engineering bus', () => {
 
   it('writes the bus policy one statement at a time (each resource waits for the one before)', () => {
     const policies = Object.entries(template('on').findResources('AWS::Events::EventBusPolicy'));
-    expect(policies).toHaveLength(13);
+    expect(policies).toHaveLength(17);
     const ids = new Set(policies.map(([id]) => id));
     // Each policy's one dependency among them: the one written before it.
     const before = new Map(policies.map(([id, policy]) => [id,
       z.array(z.string()).parse([policy.DependsOn ?? []].flat()).filter((dep) => ids.has(dep))]));
     const first = [...before].filter(([, deps]) => deps.length === 0).map(([id]) => id);
     expect(first).toHaveLength(1);
-    // Walking back from every other policy, one step at a time, reaches all 13: one chain, no fan-out.
+    // Walking back from every other policy, one step at a time, reaches all 17: one chain, no fan-out.
     const next = new Map([...before].filter(([, deps]) => deps.length === 1).map(([id, [dep]]) => [dep, id]));
-    expect(next.size).toBe(12);
+    expect(next.size).toBe(16);
     let at: string | undefined = first[0];
     const seen: string[] = [];
     while (at !== undefined) {
       seen.push(at);
       at = next.get(at);
     }
-    expect(seen).toHaveLength(13);
+    expect(seen).toHaveLength(17);
   });
 
   it('hands the agent roles the real board and broker, and no role queue (they serve every run)', () => {
@@ -268,15 +279,44 @@ describe('the engineering bus', () => {
     expect(permissions).toStrictEqual([]);
   });
 
-  it('grants the board the table\'s item calls and its inbox query, a put on exactly the bus and the key, nothing else', () => {
+  it('grants the board the table\'s item calls and its inbox query, a put on exactly the bus, the runtime\'s invoke and the knowledge packs\' reads, nothing else', () => {
     const on = template('on');
     const board = functionId(on, 'voc-engineering-board');
     expect(actionsOf(on, board)).toStrictEqual(
-      [...TABLE_ACTIONS, 'dynamodb:Query', ...KEY_ACTIONS, 'events:PutEvents', 'logs:CreateLogStream',
-        'logs:PutLogEvents'].sort(byCodeUnit));
+      [...TABLE_ACTIONS, 'dynamodb:Query', ...KEY_ACTIONS, 'events:PutEvents', 'lambda:InvokeFunction',
+        'logs:CreateLogStream', 'logs:PutLogEvents', 's3:GetObject'].sort(byCodeUnit));
     const put = statementsOf(on, board).find((statement) => statement.Action === 'events:PutEvents');
     expect(put?.Resource).toStrictEqual({ 'Fn::GetAtt': [busId(on), 'Arn'] });
-    expect(keyServices(on, board)).toStrictEqual(['dynamodb.us-east-1.amazonaws.com']);
+    // The key: decrypt and data keys through DynamoDB (the table), only decrypt through S3 (it reads the packs and
+    // writes no object).
+    const keyUse = statementsOf(on, board)
+      .filter((statement) => JSON.stringify(statement.Action).includes('kms:'))
+      .map((statement) => [[statement.Action].flat(), z.looseObject({
+        Condition: z.object({ StringEquals: z.object({ 'kms:ViaService': z.unknown() }) }),
+      }).parse(statement).Condition.StringEquals['kms:ViaService']]);
+    expect(keyUse).toStrictEqual([
+      [KEY_ACTIONS, ['dynamodb.us-east-1.amazonaws.com']],
+      [['kms:Decrypt'], ['s3.us-east-1.amazonaws.com']],
+    ]);
+  });
+
+  it('gives the board a timeout above its wait for the runtime\'s launch, so a slow launch is answered, not cut off', () => {
+    const on = template('on');
+    const props = on.findResources('AWS::Lambda::Function')[functionId(on, 'voc-engineering-board')]?.Properties;
+    // 120 s: above board/api.py's 100 s wait for the launch (LAUNCH_READ_TIMEOUT_SECONDS), never retried.
+    expect(props?.Timeout).toBe(120);
+  });
+
+  it('lets the board invoke the runtime by name (its launch op) and read only the knowledge packs\' objects', () => {
+    const on = template('on');
+    const board = functionId(on, 'voc-engineering-board');
+    const invoke = statementsOf(on, board).find((statement) => statement.Action === 'lambda:InvokeFunction');
+    expect(JSON.stringify(invoke?.Resource)).toContain(':function:voc-engineering-runtime-');
+    const read = statementsOf(on, board).find((statement) => statement.Action === 's3:GetObject');
+    expect(JSON.stringify(read?.Resource)).toContain('/ws/default/knowledge/*');
+    expect(on.findResources('AWS::Lambda::Function')[board]?.Properties?.Environment?.Variables).toMatchObject({
+      ENGINEERING_RUNTIME_FUNCTION: expect.anything(), ENGINEERING_WORKSPACE_BUCKET: expect.anything(),
+    });
   });
 
   it('runs the report builder as one arm64 Python function with the table and the workspace bucket', () => {
@@ -311,7 +351,7 @@ describe('the engineering bus', () => {
     const reports = functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME);
     expect(actionsOf(on, reports)).toStrictEqual([
       'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem', ...KEY_ACTIONS, 'logs:CreateLogStream',
-      'logs:PutLogEvents', 's3:GetObject', 's3:ListBucket', 's3:PutObject', 'sqs:SendMessage',
+      'logs:PutLogEvents', 's3:GetObject', 's3:PutObject', 'sqs:SendMessage',
     ].sort(byCodeUnit));
     expect(keyServices(on, reports)).toStrictEqual(
       ['dynamodb.us-east-1.amazonaws.com', 's3.us-east-1.amazonaws.com', 'sqs.us-east-1.amazonaws.com']);
@@ -322,21 +362,11 @@ describe('the engineering bus', () => {
     const statements = statementsOf(on, functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME));
     const resourceOf = (action: string) => JSON.stringify(statements.find((statement) => statement.Action === action)
       ?.Resource);
-    expect({
-      get: resourceOf('s3:GetObject'), put: resourceOf('s3:PutObject'), list: resourceOf('s3:ListBucket'),
-    }).toStrictEqual({
+    expect({ get: resourceOf('s3:GetObject'), put: resourceOf('s3:PutObject') }).toStrictEqual({
       // The one workspace spelled out: an IAM `*` crosses `/`, so `ws/*/reports/*` would reach run objects too.
       get: expect.stringMatching(/"\/ws\/default\/runs\/\*"/), put: expect.stringMatching(/"\/ws\/default\/reports\/\*"/),
-      list: expect.stringMatching(WORKSPACE_IMPORT),
     });
     expect(JSON.parse(resourceOf('sqs:SendMessage'))).toStrictEqual({ 'Fn::GetAtt': [dlqId(on), 'Arn'] });
-  });
-
-  it('lets the report builder list only under the runs\' keys', () => {
-    const on = template('on');
-    const list = statementsOf(on, functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME))
-      .find((statement) => statement.Action === 's3:ListBucket');
-    expect(list?.['Condition']).toStrictEqual({ StringLike: { 's3:prefix': ['ws/default/runs/*'] } });
   });
 
   it('lets only the rule invoke the router', () => {

@@ -136,7 +136,7 @@ class Skill:
     def label(self) -> str:
         """``<name>@<version>``: what a session row's ``skill_version`` says (the store's ``SkillVersion.label``
         adds the connection for a connection's own version)."""
-        return skill_label(name=self.name, version=self.version)
+        return skill_label(self.name, self.version)
 
     def to_record(self) -> dict[str, Any]:
         return skill_record(self.name, self.version, self.content)

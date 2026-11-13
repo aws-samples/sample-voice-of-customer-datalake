@@ -38,7 +38,7 @@ from engineering.runtime.harness.ports import (
     Store,
     TaskBrief,
 )
-from engineering.runtime.harness.skills import skill_for
+from engineering.runtime.harness.skills import skill_for, skill_label
 from engineering.runtime.harness.status import StatusReport
 from engineering.runtime.harness.workspace import OutsideCheckout, Workspace
 from engineering.runtime.interface import CODE_ROLES
@@ -106,6 +106,8 @@ class AgentContext:
     #: The run coordinator's ports (the board's tasks, posting, launching; the knowledge pack's reader).
     planner: Planner = field(default_factory=PendingHarnessPorts)
     knowledge: KnowledgeReader = field(default_factory=PendingHarnessPorts)
+    #: Whether this process moved the task to done (the model's ``finish``).
+    finished: bool = False
 
     @property
     def runs_code(self) -> bool:
@@ -235,7 +237,8 @@ class ToolBox:
                                                     else ()))}
             unknown = [name for name in skill.tool_policy if name not in known]
             if unknown:
-                raise ValueError(f'{skill.label} names tools role {context.role} may not have: {", ".join(unknown)}')
+                raise ValueError(f'{skill_label(skill.name, skill.version)} names tools role {context.role} may not '
+                                 f'have: {", ".join(unknown)}')
             self.specs = tuple(known[name] for name in skill.tool_policy)
         self._allowed = {spec.name for spec in self.specs}
 
@@ -271,6 +274,8 @@ class ToolBox:
     def _finish(self, arguments: Mapping[str, Any]) -> ToolResult:
         summary = str(arguments.get('summary', ''))[:MAX_NOTE_CHARACTERS] or 'done'
         self.context.progress(f'finished: {summary[:480]}')
+        self.context.board.move(self.context.run_id, self.context.task_id, to_state='done')
+        self.context.finished = True
         return ToolResult('finished', finished=summary)
 
     def _write(self, arguments: Mapping[str, Any]) -> ToolResult:

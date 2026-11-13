@@ -16,6 +16,11 @@ from shared.ids import is_key_collision
 #: a run in flight at once, since two writers may commit their numbers out of order.
 TAIL_WINDOW = 20
 
+#: The attribute a launch holds an agent's ``AGENT#`` row by until its session is written (runtime/sessions.py
+#: ``SessionStore.hold_launch``): a row with it and no ``seq`` is a launch under way or lost, not an agent yet, so
+#: every reader of agents skips it (reports/facts.py too).
+LAUNCH_HOLD = 'launching_until'
+
 
 def window_start(after: int) -> int:
     """Where a read of numbered rows after ``after`` starts: ``TAIL_WINDOW`` below it, on every page, so a number taken

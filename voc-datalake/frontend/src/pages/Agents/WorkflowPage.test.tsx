@@ -20,6 +20,12 @@ import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
+// The deployment's engineering module (config.json `features.engineering`).
+const engineering = vi.hoisted(() => ({ available: true }))
+vi.mock('../../runtimeConfig', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../runtimeConfig')>(),
+  isEngineeringAvailable: () => engineering.available,
+}))
 
 const { WorkflowLibrary } = await import('./WorkflowLibrary')
 const { default: WorkflowPage } = await import('./WorkflowPage')
@@ -53,6 +59,7 @@ stubResizeObserverForSuite()
 beforeEach(() => {
   resetFetchApi()
   adminFlag.isAdmin = true
+  engineering.available = true
 })
 
 describe('Workflow library — New workflow and Open', () => {
@@ -89,6 +96,16 @@ describe('Workflow library — New workflow and Open', () => {
     const parsed = workflowDefinitionSchema.safeParse(isDefinitionBody(body) ? body.definition : null)
     expect(parsed.data?.schema).toBe('voc-workflow/2')
     expect(parsed.data?.nodes.map((n) => n.type)).toStrictEqual(['start', 'end'])
+  })
+
+  it('offers no New engineering flow without the engineering module, and still lists and opens a saved one', async () => {
+    engineering.available = false
+    renderAt('/agents', {
+      'GET /workflows': () => ({ items: [{ workflow_id: 'wf_eng', name: 'Old hunt', revision: 1, kind: 'engineering' }] }),
+    })
+    expect(await screen.findByRole('link', { name: 'Open Old hunt' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New workflow' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'New engineering flow' })).toBeNull()
   })
 
   it('creates nothing until the dialog is submitted: Create is off without a name, and Cancel closes it', async () => {

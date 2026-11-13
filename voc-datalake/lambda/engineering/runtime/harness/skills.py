@@ -100,11 +100,6 @@ class Skill:
         if not self.model:
             raise SkillError('a skill names the model it was written for')
 
-    @property
-    def label(self) -> str:
-        """``<name>@<version>``: what a session row's ``skill_version`` says."""
-        return skill_label(self.name, self.version)
-
     def system_prompt(self) -> str:
         """The instructions, then the worked examples."""
         shown = '\n\n'.join(f'Example {n}. When: {example.situation}\nDo: {example.action}'
@@ -174,3 +169,12 @@ SKILLS: Final[Mapping[str, Skill]] = {COORDINATOR.name: COORDINATOR}
 
 def skill_for(role: str) -> Skill | None:
     return SKILLS.get(role)
+
+
+#: The harness's entry in every image (engineering-images/common/harness.py).
+HARNESS_ENTRY: Final = ('/usr/bin/python3', '-I', '/opt/voc/harness.py', 'run')
+
+
+def harness_argv(skill: Skill) -> tuple[str, ...]:
+    """The argv a launch runs an agent of ``skill`` with: its harness and its model (``main.py`` ``run``)."""
+    return (*HARNESS_ENTRY, '--adapter', skill.harness, '--model', skill.model)

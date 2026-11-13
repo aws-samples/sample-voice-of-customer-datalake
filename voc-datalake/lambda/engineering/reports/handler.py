@@ -84,7 +84,9 @@ def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
         from shared.aws import get_dynamodb_client, get_s3_client
 
         _reports = Reports(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'],
-                           # Its ListBucket on the runs' keys (engineering-bus.ts) makes a missing one 404; any denial
-                           # is a real one and fails the build.
-                           WorkspaceStore(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET']))
+                           # No ListBucket (engineering-bus.ts): a missing object answers 403. It may read every runs'
+                           # key, so a denial reads as missing, and the store logs each one (a real KMS or policy
+                           # denial shows there).
+                           WorkspaceStore(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET'],
+                                          denied_is_missing=True))
     return _reports.build(*request)

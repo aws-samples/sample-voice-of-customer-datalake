@@ -10,10 +10,11 @@ import pytest
 from engineering.bus.test.messages import message
 from engineering.runtime import handler
 from engineering.runtime.aws import AwsMicroVmRuntime
+from engineering.runtime.board_bus import SupervisorBus
 from engineering.runtime.interface import AgentSpec, MicroVm, RuntimeRefused
-from engineering.runtime.ports import PendingPorts, PortNotWired
-from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore
-from engineering.runtime.sessions import StaleSession
+from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, run_pk
+from engineering.runtime.sessions import LAUNCH_HOLD_SECONDS, StaleSession
+from engineering.runtime.supervisor import SessionBusy
 from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE, WORKSPACE_BUCKET
 from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
 from shared import aws as shared_aws
@@ -26,12 +27,18 @@ LAUNCH = {'action': 'launch', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id'
           'harness': [sys.executable, '-c', 'pass']}
 
 
+#: The engineering bus the supervisor speaks on (moto's).
+BUS = 'voc-engineering'
+#: The board API's function URL the agents are handed.
+BOARD_URL = 'https://abc123def.lambda-url.us-east-1.on.aws/'
+
 @pytest.fixture
 def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     assert aws is not None  # moto's S3 and voc-engineering are up for the handler's own clients
     monkeypatch.setattr(handler, '_runtime', LocalMicroVmRuntime)
     for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
                         'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
+                        'ENGINEERING_BUS_NAME': BUS, 'ENGINEERING_BOARD_URL': BOARD_URL,
                         'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_REGION': 'us-east-1'}.items():
         monkeypatch.setenv(name, value)
     for client in ('_dynamodb_resource', '_s3_client', '_lambda_client', '_eventbridge_client'):
@@ -40,6 +47,7 @@ def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     handler._sts_client.cache_clear()
     events = boto3.client('events', region_name='us-east-1')
     events.put_rule(Name=SCHEDULE, ScheduleExpression='rate(1 minute)', State='DISABLED')
+    events.create_event_bus(Name=BUS)
     handler.lambda_handler({'action': 'start_run', 'run_id': RUN, 'max_tasks': 50, 'goal': 'fix the parser',
                             'repo': 'example/app', 'flow': 'bug-hunt'}, None)
     return events
@@ -84,12 +92,14 @@ def test_the_launchs_attempt_reaches_the_session_and_the_microvms_environment(wi
     supervisor = handler._supervisor()
     session = supervisor.sessions.get(RUN, 'fixer-1')
     assert session is not None
-    env = session.spec(None, supervisor.workspace_bucket).environment()
+    env = session.spec(None, supervisor.workspace_bucket, supervisor.board_url).environment()
     assert (session.task_attempt, env['VOC_ATTEMPT'], env['VOC_COMMIT'], env['VOC_WORKSPACE_BUCKET']) == (
         2, '2', COMMIT, WORKSPACE_BUCKET)
     # Each bucket for its own: the cache's mount from the raw one, the agents' keys in the workspace one.
     assert (supervisor.bucket, supervisor.workspace_bucket) == (BUCKET, WORKSPACE_BUCKET)
     assert f'{WORKSPACE_BUCKET}.s3.us-east-1.amazonaws.com' in session.egress
+    # The board: its URL in the harness's environment, its own host (by name) on the egress the session keeps.
+    assert (env['VOC_BOARD_URL'], 'abc123def.lambda-url.us-east-1.on.aws' in session.egress) == (BOARD_URL, True)
 
 
 def test_no_agent_is_launched_for_a_run_that_was_never_started_or_has_ended(wired: Any):
@@ -115,15 +125,71 @@ def test_a_launch_racing_the_runs_end_is_refused_by_the_session_write_and_ends_i
     assert handler._supervisor().sessions.get(RUN, 'fixer-1') is None
 
 
-def test_a_second_launch_of_the_same_agent_is_refused_and_ends_the_microvm_it_started(
+def test_a_repeated_launch_answers_the_session_the_first_wrote_and_starts_no_second_microvm(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    """The board's retry of a launch (its answer lost, or timed out) for the same task and attempt."""
+    assert wired is not None
+    first = handler.lambda_handler(LAUNCH, None)
+    _, started = _recording(monkeypatch)
+    assert handler.lambda_handler(LAUNCH, None) == first
+    assert started == []
+    session = handler._supervisor().sessions.get(RUN, 'fixer-1')
+    assert session is not None
+    assert session.seq == 1   # (the first launch's row, untouched)
+
+
+def test_an_agent_with_a_session_for_another_task_or_attempt_is_refused_before_any_microvm(
         wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
     handler.lambda_handler(LAUNCH, None)
-    runtime, started = _recording(monkeypatch)
-    with pytest.raises(StaleSession):
+    _, started = _recording(monkeypatch)
+    for change in ({'task_id': 'task-2'}, {'attempt': 2}):
+        with pytest.raises(StaleSession, match='another task or attempt'):
+            handler.lambda_handler({**LAUNCH, **change}, None)
+    assert started == []
+
+
+def test_a_launch_while_another_still_starts_the_agents_microvm_is_busy_and_starts_none(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    """The first launch holds the agent's row before its MicroVM starts (and writes the session after): a second
+    one meanwhile (a retry after the board's call timed out) is refused, never a second MicroVM."""
+    assert wired is not None
+    sessions = handler._supervisor().sessions
+    sessions.hold_launch(RUN, 'fixer-1', int(handler.clock()))   # (the first launch, still booting)
+    _, started = _recording(monkeypatch)
+    with pytest.raises(SessionBusy, match='under way'):
         handler.lambda_handler(LAUNCH, None)
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        runtime.mint_token(started[0])
+    assert (started, sessions.get(RUN, 'fixer-1')) == ([], None)
+    # A hold past its time (a launch killed at the function's limit) lets the next launch through.
+    now = handler.clock()
+    monkeypatch.setattr(handler, 'clock', lambda: now + LAUNCH_HOLD_SECONDS + 1)
+    assert handler.lambda_handler(LAUNCH, None)['status'] == 'booting'
+    assert len(started) == 1
+    session = sessions.get(RUN, 'fixer-1')
+    assert session is not None
+    item = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE).get_item(
+        Key={'pk': run_pk(RUN), 'sk': 'AGENT#fixer-1'}).get('Item', {})
+    assert item.get('seq') == 1
+    assert 'launching_until' not in item   # (the session's write removed the hold)
+
+
+def test_a_microvm_that_fails_to_start_lets_go_of_the_launch_so_a_retry_starts_at_once(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    runtime = handler._supervisor().runtime
+    original, tries = runtime.run, []
+
+    def fails_once(spec: AgentSpec) -> MicroVm:
+        tries.append(spec)
+        if len(tries) == 1:
+            raise RuntimeRefused('no capacity')
+        return original(spec)
+
+    monkeypatch.setattr(runtime, 'run', fails_once)
+    with pytest.raises(RuntimeRefused, match='no capacity'):
+        handler.lambda_handler(LAUNCH, None)
+    assert handler.lambda_handler(LAUNCH, None)['status'] == 'booting'   # (no hold left behind: not busy)
+    assert len(tries) == 2
 
 
 @pytest.mark.parametrize('change', [{'harness': []}, {'harness': 'python3 -c pass'}, {'harness': ['python3', 1]},
@@ -270,27 +336,34 @@ def _metric(out: str, name: str) -> float:
     raise AssertionError(f'{name} was not recorded')
 
 
-def test_until_the_board_and_bus_land_a_tick_with_live_sessions_moves_nothing_rather_than_guesses(
-        wired: Any, capsys: pytest.CaptureFixture[str]):
+def test_a_tick_reads_the_board_and_reports_the_runs_health_on_the_bus_as_the_supervisor(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     assert wired is not None
     handler.lambda_handler(LAUNCH, None)
+    bus = handler._supervisor().bus
+    assert isinstance(bus, SupervisorBus)  # wired: the bus itself, not a port that refuses
+    publisher = bus.publisher
+    put: list[dict[str, Any]] = []
+    original = publisher.client.put_events
+
+    def recording(**kwargs: Any) -> Any:
+        put.extend(kwargs['Entries'])
+        return original(**kwargs)
+
+    monkeypatch.setattr(publisher.client, 'put_events', recording)
     before = handler._supervisor().sessions.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
-    assert handler.lambda_handler({'action': 'tick'}, None) == {'sessions': {'booting': 1}}
+    handler.lambda_handler({'action': 'tick'}, None)
     after = handler._supervisor().sessions.get('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'fixer-1')
     assert before is not None
     assert after is not None
-    # The tick claimed the row and let it go again when the board refused: nothing else about the session moved.
-    assert (replace(after, seq=before.seq), after.claimed_until) == (before, None)
+    # The board was read (the task is not on it: no lease) and the session moved on from booting.
+    assert (after.seq > before.seq, after.claimed_until) == (True, None)
+    [health] = [entry for entry in put if entry['DetailType'] == 'run.health']
+    detail = json.loads(health['Detail'])
+    assert (health['EventBusName'], health['Source'], detail['from'], detail['to']['kind']) == (
+        BUS, 'voc.engineering/supervisor', {'kind': 'supervisor', 'id': 'supervisor'}, 'run')
     assert _metric(capsys.readouterr().out, 'EngineeringLiveSessions') == 1
 
-
-@pytest.mark.parametrize(('method', 'args'), [
-    ('lease', ('r', 't')), ('repost', ('r', 't', 'x')), ('emit', ('r', 'a', 'k', 's')), ('inbox_depth', ('r', 'a')),
-    ('budget', ('r',)), ('started_at', ('r',)), ('stop_requested', ('r',)), ('needs_human', ('r', 'x')),
-], ids=lambda value: value if isinstance(value, str) else '')
-def test_every_pending_port_refuses_rather_than_guesses(method: str, args: tuple[str, ...]):
-    with pytest.raises(PortNotWired, match='not wired yet'):
-        getattr(PendingPorts(), method)(*args)
 
 
 def test_the_delivery_entry_point_records_the_message_in_its_runs_inbox(wired: Any):
@@ -343,3 +416,64 @@ def test_a_signal_reaches_the_supervisor_and_an_unknown_one_is_refused(wired: An
     answer = handler.lambda_handler({'action': 'signal', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id': 'fixer-1',
                                      'signal': 'stop_now'}, None)
     assert answer == {'agents': {'fixer-1': 'stopped'}, 'applied': {'fixer-1': True}}
+
+
+def _coordinator_launch(**extra: Any) -> dict[str, Any]:
+    launch = {key: value for key, value in LAUNCH.items() if key != 'harness'}
+    return {**launch, 'agent_id': 'coordinator-0', 'role': 'coordinator', 'task_id': 'coordinate', **extra}
+
+
+def test_a_role_with_a_skill_runs_its_skills_harness_and_is_labelled_by_it(wired: Any):
+    assert wired is not None
+    handler.lambda_handler(_coordinator_launch(), None)
+    session = handler._supervisor().sessions.get(RUN, 'coordinator-0')
+    assert session is not None
+    assert session.harness == ('/usr/bin/python3', '-I', '/opt/voc/harness.py', 'run', '--adapter', 'converse',
+                               '--model', 'global.anthropic.claude-sonnet-5-5')
+    row = handler._supervisor().sessions._table.get_item(Key={'pk': f'WS#default#RUN#{RUN}',
+                                                                'sk': 'AGENT#coordinator-0'})['Item']
+    assert (row['model'], row['skill_version']) == ('global.anthropic.claude-sonnet-5-5', 'coordinator@1')
+
+
+def test_a_launch_naming_another_harness_for_a_role_with_a_skill_is_refused(wired: Any):
+    assert wired is not None
+    with pytest.raises(RuntimeRefused, match='its skill'):
+        handler.lambda_handler(_coordinator_launch(harness=['python3', '-c', 'print(1)']), None)
+    assert handler._supervisor().sessions.get(RUN, 'coordinator-0') is None
+
+
+def test_a_role_with_no_skill_yet_needs_the_requests_harness(wired: Any):
+    assert wired is not None
+    launch = {key: value for key, value in LAUNCH.items() if key != 'harness'}
+    with pytest.raises(RuntimeRefused, match='no skill yet'):
+        handler.lambda_handler(launch, None)
+
+
+def _on_the_board(attempt: int) -> None:
+    """task-1 on the board at ``attempt`` (posted, then re-posted to reach it)."""
+    from engineering.board.store import BoardStore
+    from engineering.connectors.identity import WORKSPACE
+    from shared.aws import get_dynamodb_client
+    store = BoardStore(get_dynamodb_client(), TABLE, new_id=lambda: 'task-1')
+    store.post(WORKSPACE, RUN, role='fixer', title='Fix the parser', spec={'issue': 7}, parent_task='', priority=1,
+               actor='coordinator-0')
+    for at in range(1, attempt):
+        store.claim(WORKSPACE, RUN, 'task-1', role='fixer', agent='fixer-9')
+        store.repost(WORKSPACE, RUN, 'task-1', reason='stalled', attempt=at)
+
+
+def test_a_launch_takes_its_tasks_attempt_from_the_board(wired: Any):
+    assert wired is not None
+    _on_the_board(2)
+    handler.lambda_handler(LAUNCH, None)
+    session = handler._supervisor().sessions.get(RUN, 'fixer-1')
+    assert session is not None
+    assert session.task_attempt == 2
+
+
+def test_a_launch_naming_another_attempt_than_the_boards_is_refused(wired: Any):
+    assert wired is not None
+    _on_the_board(2)
+    with pytest.raises(RuntimeRefused, match='at attempt 2, not 1'):
+        handler.lambda_handler({**LAUNCH, 'attempt': 1}, None)
+    assert handler._supervisor().sessions.get(RUN, 'fixer-1') is None

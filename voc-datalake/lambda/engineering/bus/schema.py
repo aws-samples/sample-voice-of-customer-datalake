@@ -27,7 +27,7 @@ MAX_SUMMARY_BYTES = 1024
 #: it a voice.
 ROLES = frozenset({'understander', 'hunter', 'fixer', 'committer', 'commit-reviewer', 'pr-author', 'pr-reviewer',
                    'builder', 'final-go', 'mapper'})
-FROM_KINDS = frozenset({'agent', 'conductor', 'supervisor', 'human', 'system'})
+FROM_KINDS = frozenset({'agent', 'conductor', 'supervisor', 'coach', 'human', 'system'})
 TO_KINDS = frozenset({'role', 'agent', 'conductor', 'run'})
 TYPES = frozenset({
     'task.posted', 'task.claimed', 'task.progress', 'task.review', 'task.done', 'task.failed', 'task.needs_human',
@@ -35,7 +35,8 @@ TYPES = frozenset({
     'review.requested', 'review.result',
     'gate.go', 'gate.no_go',
     'run.started', 'run.health', 'run.paused', 'run.resumed', 'run.ended',
-    'signal.save', 'signal.pause', 'signal.resume', 'signal.shutdown', 'signal.stop_now',
+    'run.agent_continued', 'run.agent_timed_out', 'run.agent_failed',
+    'signal.save', 'signal.pause', 'signal.resume', 'signal.shutdown', 'signal.stop_now', 'signal.check_in',
     'skill.proposed', 'skill.accepted', 'skill.rolled_back',
     'outcome.pr_opened', 'outcome.accepted', 'outcome.merged', 'outcome.closed', 'outcome.reverted',
     'outcome.review_posted',
