@@ -19,15 +19,16 @@ the platform package version.
 
 ## [7.00.01] - 2026-11-13
 
-The repository's Kiro review agents can never read secret files under kiro-cli V3.
+The repository's Kiro agents can no longer read `.env`, key and credential files with their read tool.
 
 ### Fixed
 
-- The Kiro agents in `.kiro/agents/` can no longer open `.env`, key and credential files with the read tool under kiro-cli V3, which enforces only an agent's `permissions.rules` (it ignores `toolsSettings`). The two AI review agents behind the `tenets: AI review` / `commit: AI review` gate steps had no V3 rules in the repository (kiro-cli generated its own on each machine), and the four hook agents (first-principles, quality and security review, test generator) allowed reads with no path limit and denied nothing. Every agent that reads files now carries one deny rule built from the review's secret-path list (`SECRET_PATHS` in `scripts/ai-review/lib.mjs`, now also naming `.env` and `.env.*` outright), and a test fails for any agent whose tools include reading but lacks it. The review agents read the repository only, as before. The rule covers the read tool only. Two gaps remain, both verified live with kiro-cli 3.3.0: `test-generator` keeps the shell it needs to run tests, so a shell command could still print a secret file; and the `grep` tool of `first-principles-reviewer` prints lines from a denied `.env` (kiro-cli's search ignores both the `fs_read` deny and `.kiroignore`, against its own documentation). Keep secrets out of the working tree, or gitignored and outside these agents' reach.
+- The four hook agents in `.kiro/agents/` (first-principles, quality and security review, test generator) could read any file on the machine, `.env` and `~/.aws` included: they pre-approved `fs_read` in `allowedTools`, had no path limit and denied nothing. Every agent now carries the same rules as the two AI review agents behind the `tenets: AI review` / `commit: AI review` gate steps, built from one list (`SECRET_PATHS` in `scripts/ai-review/lib.mjs`, now naming `.env` and `.env.*` outright): reads of the repository only (`./**`), never a secret-shaped path, in both formats, and no read tool pre-approved. Verified live with kiro-cli 3.3.0: the agents read repository files without a prompt and are refused `.env`; it takes the `toolsSettings` block (an agent with only the documented V3 `permissions` deny read `.env`), and a pre-approved `fs_read` bypassed the deny, so a test now pins all three for every agent. The test generator also may not write a secret-shaped path. No agent file carries a machine-specific `kiroUpgrade` marker any more.
+- Two gaps remain, both verified with kiro-cli 3.3.0 and outside what agent rules can close: the `grep` tool of `first-principles-reviewer` prints lines from a denied `.env` (kiro-cli's search ignores the deny rules and `.kiroignore`, against its own documentation), and `test-generator` keeps the shell and the pre-approved writes it needs, so it can still print a file with a shell command or write outside the repository. Keep secrets out of the working tree, or gitignored.
 
 ### Upgrade notes
 
-- Nothing to deploy: tooling only. A developer whose kiro-cli already upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`); no agent file carries a machine-specific `kiroUpgrade` marker any more (one left behind could make kiro-cli regenerate the file and drop the deny rule).
+- Nothing to deploy: tooling only. A version bump moves only the `APP_VERSION` of the Api and Processing Lambdas, so those two template hashes in `voc-datalake/lib/test-support/baseline.json` change, as on every release. A developer whose kiro-cli upgraded these agent files locally should take the committed versions (`git checkout -- .kiro/agents`).
 
 ## [7.00.00] - 2026-11-13
 

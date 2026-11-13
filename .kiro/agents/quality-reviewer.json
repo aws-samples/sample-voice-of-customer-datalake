@@ -8,7 +8,6 @@
     "thinking"
   ],
   "allowedTools": [
-    "fs_read",
     "thinking"
   ],
   "resources": [
@@ -17,10 +16,36 @@
     "file://.kiro/steering/coding-standards.md",
     "file://.kiro/steering/structure.md"
   ],
+  "toolsSettings": {
+    "fs_read": {
+      "allowedPaths": [
+        "./**"
+      ],
+      "deniedPaths": [
+        "**/.env",
+        "**/.env.*",
+        "**/*.env",
+        "**/*.env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*id_rsa*",
+        "**/*id_ed25519*",
+        "**/*credentials*",
+        "**/*.secret*",
+        "**/*.npmrc",
+        "**/*.netrc"
+      ]
+    }
+  },
   "permissions": {
     "rules": [
       {
         "capability": "fs_read",
+        "match": [
+          "./**"
+        ],
         "effect": "allow"
       },
       {

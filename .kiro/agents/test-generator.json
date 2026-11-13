@@ -10,7 +10,6 @@
     "write"
   ],
   "allowedTools": [
-    "fs_read",
     "fs_write",
     "thinking",
     "shell"
@@ -21,10 +20,57 @@
     "file://.kiro/steering/structure.md",
     "file://.kiro/steering/testing.md"
   ],
+  "toolsSettings": {
+    "fs_read": {
+      "allowedPaths": [
+        "./**"
+      ],
+      "deniedPaths": [
+        "**/.env",
+        "**/.env.*",
+        "**/*.env",
+        "**/*.env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*id_rsa*",
+        "**/*id_ed25519*",
+        "**/*credentials*",
+        "**/*.secret*",
+        "**/*.npmrc",
+        "**/*.netrc"
+      ]
+    },
+    "fs_write": {
+      "allowedPaths": [
+        "./**"
+      ],
+      "deniedPaths": [
+        "**/.env",
+        "**/.env.*",
+        "**/*.env",
+        "**/*.env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*id_rsa*",
+        "**/*id_ed25519*",
+        "**/*credentials*",
+        "**/*.secret*",
+        "**/*.npmrc",
+        "**/*.netrc"
+      ]
+    }
+  },
   "permissions": {
     "rules": [
       {
         "capability": "fs_read",
+        "match": [
+          "./**"
+        ],
         "effect": "allow"
       },
       {
@@ -63,7 +109,44 @@
       },
       {
         "capability": "fs_write",
+        "match": [
+          "./**"
+        ],
         "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "match": [
+          "**/.env",
+          "**/.env/**",
+          "**/.env.*",
+          "**/.env.*/**",
+          "**/*.env",
+          "**/*.env/**",
+          "**/*.env.*",
+          "**/*.env.*/**",
+          "**/*.pem",
+          "**/*.pem/**",
+          "**/*.key",
+          "**/*.key/**",
+          "**/*.p12",
+          "**/*.p12/**",
+          "**/*.pfx",
+          "**/*.pfx/**",
+          "**/*id_rsa*",
+          "**/*id_rsa*/**",
+          "**/*id_ed25519*",
+          "**/*id_ed25519*/**",
+          "**/*credentials*",
+          "**/*credentials*/**",
+          "**/*.secret*",
+          "**/*.secret*/**",
+          "**/*.npmrc",
+          "**/*.npmrc/**",
+          "**/*.netrc",
+          "**/*.netrc/**"
+        ],
+        "effect": "deny"
       },
       {
         "capability": "shell",
