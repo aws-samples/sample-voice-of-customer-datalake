@@ -214,7 +214,11 @@ message names (`ws_repo.message_scope`: one that is not a workspace id is droppe
 page only there, and writes the memories there, only while that workspace is active (`lambda/shared/workspace.py`
 `is_active`: a workspace being deleted gets no write, not even a cursor) and the conversation's owner still writes
 there (`stored_role`: a viewer's and a removed member's sessions give nothing);
-agent runs and project chats, which carry no workspace yet, drop a message that names one ([memory](memory.md)). Plan steps carry it too (since
+agent runs and project chats, which carry no workspace yet, drop a message that names one ([memory](memory.md)). Company context's store (Unreleased) can keep a workspace's: `lambda/shared/company_context.py`
+`company_context_key` and `my_context_key` (`WS#{ws}#SETTINGS#company_context`, `WS#{ws}#USERCTX#{sub}`, the `config`
+row only: onboarding and briefing preferences keep `USERCTX#{sub}`), and its reads and writes take an optional
+workspace. No route passes one: the document, research and persona generators read the company context and run on
+the deployment's projects, so the routes move with projects (the same release), not before. Plan steps carry it too (since
 6.18.00): the approval's `X-Workspace-Id` is kept on the plan (one that is not a workspace id is the one 404) and each step names it to the
 domain Lambdas the same way ([Assistant plan mode](assistant-plan-mode.md#identity-and-permissions)). And the global
 MCP tools (Unreleased): a token minted inside a workspace (`POST /connect/tokens` with `X-Workspace-Id`), and an

@@ -7,6 +7,10 @@ Storage (aggregates table):
     SETTINGS#design_system   / config   tokens + guidelines + logo_url — admins edit, everyone reads
     SETTINGS#design_system   / REF#{id} one design reference (screenshot | html | figma | github | website)
 
+A workspace's first two (plumbing: no caller passes a workspace yet; the routes move with the generators that read
+them, docs/multi-workspace.md): ``WS#{ws}#SETTINGS#company_context`` and ``WS#{ws}#USERCTX#{sub}``
+(``company_context_key``, ``my_context_key``; the reads and writes take an optional workspace).
+
 References are sibling ROWS rather than a list on the config item so the async
 Figma/GitHub refresh can update one reference without a read-modify-write
 racing an admin saving tokens. A design-system read is therefore one Query on
@@ -26,7 +30,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date
 from typing import Any
 
@@ -41,11 +45,16 @@ from shared.css_values import (  # re-exported: the token editor's ONE rule set
 from shared.design_components import components_text, validate_components
 from shared.dynamo_paging import query_all
 from shared.exceptions import ValidationError
+from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.prompt_safety import data_block, injection_findings
 from shared.request_body import validated_text
 from shared.scope_names import HiddenNames, scoped_company_context, scoped_design_system
+from shared.scoped_keys import scoped_pk
 from shared.timestamps import ISO_DAY_RE
+from shared.workspace_config import get_scoped_item
+from shared.workspace_settings import settings_key
+from shared.ws_repo import WorkspaceScope
 
 COMPANY_CONTEXT_PK = 'SETTINGS#company_context'
 DESIGN_SYSTEM_PK = 'SETTINGS#design_system'
@@ -55,6 +64,20 @@ REFERENCE_SK_PREFIX = 'REF#'
 
 def user_context_pk(sub: str) -> str:
     return f'USERCTX#{sub}'
+
+
+def company_context_key(workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """The company context's row: the deployment's, or the workspace's (``WS#{ws}#SETTINGS#company_context``,
+    shared/workspace_settings.py as for every workspace kind of settings)."""
+    if workspace is None:
+        return {'pk': COMPANY_CONTEXT_PK, 'sk': CONFIG_SK}
+    return settings_key(workspace.ws, 'company_context')
+
+
+def my_context_key(sub: str, workspace: WorkspaceScope | None = None) -> dict[str, str]:
+    """A person's own objectives' row: ``USERCTX#{sub}``, or theirs inside the workspace (``WS#{ws}#USERCTX#{sub}``).
+    Only the ``config`` row moves: onboarding and briefing preferences keep the deployment's ``USERCTX#{sub}``."""
+    return {'pk': scoped_pk(workspace, user_context_pk(sub)), 'sk': CONFIG_SK}
 
 
 # ── Limits ───────────────────────────────────────────────────────────────────
@@ -339,9 +362,9 @@ def dict_entries(value: object) -> list:
     return [v for v in value if isinstance(v, dict)] if isinstance(value, list) else []
 
 
-def get_company_context(table: Any) -> dict:
-    """Public view ``{vision, objectives, updated_at, updated_by_username}``."""
-    item = _get(table, COMPANY_CONTEXT_PK)
+def get_company_context(table: Any, workspace: WorkspaceScope | None = None) -> dict:
+    """Public view ``{vision, objectives, updated_at, updated_by_username}`` (the workspace's when given)."""
+    item = get_scoped_item(table, company_context_key(workspace), workspace)
     return {
         'vision': item.get('vision') if isinstance(item.get('vision'), str) else '',
         'objectives': dict_entries(item.get('objectives')),
@@ -350,10 +373,23 @@ def get_company_context(table: Any) -> dict:
     }
 
 
-def get_my_context(table: Any, sub: str) -> dict:
-    """One user's ``{objectives, updated_at}`` (the row is keyed by their sub)."""
-    item = _get(table, user_context_pk(sub))
+def get_my_context(table: Any, sub: str, workspace: WorkspaceScope | None = None) -> dict:
+    """One user's ``{objectives, updated_at}`` (the row is keyed by their sub; inside the workspace when given)."""
+    item = get_scoped_item(table, my_context_key(sub, workspace), workspace)
     return {'objectives': dict_entries(item.get('objectives')), 'updated_at': item.get('updated_at')}
+
+
+def put_company_context(table: Any, clean: Mapping[str, Any], *, updated_at: str, updated_by_username: str | None,
+                        workspace: WorkspaceScope | None = None) -> None:
+    """Replace the company context (``clean``: ``validate_company_context``'s), the workspace's when given."""
+    table_view(workspace, table).put_item({**company_context_key(workspace), **clean, 'updated_at': updated_at,
+                                            'updated_by_username': updated_by_username})
+
+
+def put_my_context(table: Any, sub: str, clean: Mapping[str, Any], *, updated_at: str,
+                   workspace: WorkspaceScope | None = None) -> None:
+    """Replace a person's own objectives (``clean``: ``validate_my_context``'s), inside the workspace when given."""
+    table_view(workspace, table).put_item({**my_context_key(sub, workspace), **clean, 'updated_at': updated_at})
 
 
 def reference_view(item: dict) -> dict:

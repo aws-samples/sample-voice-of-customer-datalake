@@ -60,7 +60,9 @@ on the server). A refused field is marked and explained in place and nothing is 
 (`objectives[0].kpis[0].target is required`) is shown on that field.
 
 Storage: aggregates rows `SETTINGS#company_context`, `SETTINGS#design_system`, `USERCTX#{sub}`, `USERFLAGS#{sub}`
-(`sk = config`). Uploads (screenshots png/jpg/webp ≤ 5 MB, HTML ≤ 2 MB, the logo png/jpg/webp ≤ 5 MB) go to the raw bucket under
+(`sk = config`). A workspace's own vision and objectives and a person's objectives there have their keys,
+`WS#{ws}#SETTINGS#company_context` and `WS#{ws}#USERCTX#{sub}` (`lambda/shared/company_context.py`), which no route
+uses yet: they move with projects ([multi-workspace](multi-workspace.md)). Uploads (screenshots png/jpg/webp ≤ 5 MB, HTML ≤ 2 MB, the logo png/jpg/webp ≤ 5 MB) go to the raw bucket under
 `company-context/design/` by presigned PUT and are kept when a reference is archived; the reference's logo
 **preview** (`company-context/design/logo_preview_<ref id>.png|jpg|webp`, a copy made when it was read, and the
 sanitised `.svg` beside it), and a website reference's copied icons (everything under
