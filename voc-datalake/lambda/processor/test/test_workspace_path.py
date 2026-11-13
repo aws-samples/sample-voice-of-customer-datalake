@@ -188,20 +188,47 @@ class TestLogRows:
 
 
 class TestRadar:
-    def test_a_workspace_message_radar_would_claim_is_refused_and_stored_nowhere(self):
+    def test_a_stamped_workspace_message_is_refused_and_stored_nowhere(self):
+        """Its own config named a Radar brand (``radar_brand_key``): Radar is not keyed by workspace."""
         radar = MagicMock()
         with world_with_logs() as (feedback, llm, _aggregates), ExitStack() as stack:
             stack.enter_context(patch.object(handler, 'radar_table', radar))
-            stack.enter_context(patch.object(handler, 'radar_brand_for', return_value='Example Rival'))
             metrics = stack.enter_context(patch.object(handler, 'metrics'))
             with pytest.raises(handler.WorkspaceRadarRefusedError):
-                issues.deliver(review(workspace_id=WS))
+                issues.deliver(review(workspace_id=WS, radar_brand_key='rival'))
             stored = feedback.scan()['Items']
 
         assert [call.kwargs['name'] for call in metrics.add_metric.call_args_list].count('WorkspaceRadarRefused') == 1
         assert stored == []
         assert radar.method_calls == []
         llm.assert_not_called()
+
+    def test_a_workspace_message_under_a_radar_profiled_source_is_the_workspaces_own(self):
+        """The deployment's source profile naming a Radar brand is the deployment's Radar setting: it claims no
+        workspace's message, which is stored as the workspace's feedback, nothing written to voc-radar."""
+        radar = MagicMock()
+        with world_with_logs() as (feedback, _llm, _aggregates), ExitStack() as stack:
+            stack.enter_context(patch.object(handler, 'radar_table', radar))
+            profile = stack.enter_context(patch.object(handler, 'radar_brand_for', return_value='Example Rival'))
+            result = issues.deliver(review(workspace_id=WS))
+            (item,) = _items(feedback)
+
+        assert result['status'] == 'success'
+        assert item['pk'] == f'WS#{WS}#SOURCE#webscraper'
+        assert radar.method_calls == []
+        profile.assert_not_called()
+
+    def test_deployment_wide_the_profile_still_claims_the_message(self):
+        with world_with_logs() as (feedback, _llm, _aggregates), ExitStack() as stack:
+            stack.enter_context(patch.object(handler, 'radar_brand_for', return_value='Example Rival'))
+            claimed = stack.enter_context(patch.object(handler, 'process_radar_record',
+                                                       return_value={'status': 'success', 'radar': True}))
+            result = issues.deliver(review())
+            stored = feedback.scan()['Items']
+
+        assert result == {'status': 'success', 'radar': True}
+        claimed.assert_called_once()
+        assert stored == []
 
 
 class TestTheLayerRefusesAMixedItem:

@@ -164,7 +164,7 @@
       "editor": "Edición",
       "viewer": "Lectura"
     },
-    "sharedData": "Los espacios de trabajo aún no separan los datos: todos muestran los mismos comentarios, proyectos y ajustes. Por ahora, un espacio de trabajo decide quién puede abrirlo y quién gestiona sus miembros.",
+    "sharedData": "Cada espacio de trabajo tiene sus propios comentarios, paneles, marca y problemas resueltos; todavía no pueden llegar comentarios a un espacio de trabajo. Los proyectos, el asistente, Radar y los demás ajustes (categorías, dimensiones, fuentes) siguen siendo compartidos por todos los espacios de trabajo.",
     "moreFailed": "No se pudo cargar la página siguiente. Elige Mostrar más para volver a intentarlo.",
     "refreshFailed": "No se pudo actualizar la lista, así que puede no estar al día.",
     "members": {
@@ -278,6 +278,7 @@
       "pluginGone": "Esta implementación ya no ofrece ese plugin. Vuelve a cargar la página.",
       "pluginsChangedMeanwhile": "Los plugins del espacio de trabajo cambiaron mientras tanto. Vuelve a cargar la página e inténtalo de nuevo.",
       "ingestionNotYet": "La ingesta por espacio de trabajo llega con una versión posterior: un espacio de trabajo aún no puede activar un plugin.",
+      "ingestionRunNotYet": "La ingesta por espacio de trabajo llega con una versión posterior: todavía no se puede iniciar una ejecución en un espacio de trabajo.",
       "notDeploymentAdmin": "Solo los administradores de la implementación pueden cambiar la marca predeterminada.",
       "notBrandAdmin": "Solo los administradores de este espacio de trabajo pueden cambiar su marca.",
       "generic": "No funcionó. Inténtalo de nuevo.",

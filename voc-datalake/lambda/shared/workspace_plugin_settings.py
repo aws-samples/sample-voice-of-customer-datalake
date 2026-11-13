@@ -20,7 +20,8 @@ ceiling is answered like an unknown one (404): the deployment does not offer it.
 
 Not yet: enabling is refused (409, ``INGESTION_NOT_YET``, by ``parse_plugin_change``, before the workspace is
 resolved) and writes nothing, not even an audit row (a platform admin's entry included), while
-``PER_WORKSPACE_INGESTION`` is off; the workspaces role holds no PutItem on ``PLUGIN#*`` meanwhile
+``PER_WORKSPACE_INGESTION`` is off, and so is every run the operator routes would start in a workspace (the same
+check, ``hold_workspace_ingestion``); the workspaces role holds no PutItem on ``PLUGIN#*`` meanwhile
 (lib/stacks/api-workspaces-lambda.ts), so IAM holds it too. A ``PLUGIN#`` row is what the plugin's scheduled ingestor fans out over, into the
 workspace's own raw data (the data path, phase 2); until that path's processing and retention are in, a workspace that
 enabled a plugin would get raw data nothing processes or retains. The change that brings them turns it on and gives the role
@@ -44,7 +45,7 @@ from shared.workspace import ACTIVE, NOT_FOUND, WorkspaceContext, audit_key, aud
 from shared.workspace_members import NO_LONGER_ADMIN
 from shared.workspace_plugins import plugin_partition
 
-__all__ = ['offered_plugin', 'parse_plugin_change', 'set_plugin_enabled', 'workspace_plugins']
+__all__ = ['hold_workspace_ingestion', 'offered_plugin', 'parse_plugin_change', 'set_plugin_enabled', 'workspace_plugins']
 
 PLUGIN_ENABLED: Final = 'plugin_enabled'
 PLUGIN_DISABLED: Final = 'plugin_disabled'
@@ -69,15 +70,27 @@ def offered_plugin(plugin_id: object, ceiling: Sequence[str]) -> str:
     return plugin_id
 
 
+def hold_workspace_ingestion() -> None:
+    """The one hold on a workspace's ingestion: 409 ``INGESTION_NOT_YET`` while ``PER_WORKSPACE_INGESTION`` is off.
+
+    Called before anything that would start ingestion in a workspace: enabling a plugin (``parse_plugin_change``) and
+    the operator routes' runs in the request's workspace (Run now, a scraper's run, an S3 import's reprocess:
+    lambda/api/integrations_handler.py, scrapers_handler.py, shared/workspace_request.py ``deployment_only``), so the
+    change that turns the flag on lifts them together. A request without a workspace never calls it: it runs
+    deployment-wide as before."""
+    if not PER_WORKSPACE_INGESTION:
+        raise ConflictError(INGESTION_NOT_YET)
+
+
 def parse_plugin_change(body: dict[str, Any]) -> bool:
     """``{enabled: true|false}`` -> the asked state; 400 for anything else; 409 for an enable while
-    ``PER_WORKSPACE_INGESTION`` is off (see the module docstring)."""
+    ``PER_WORKSPACE_INGESTION`` is off (``hold_workspace_ingestion``; see the module docstring)."""
     reject_unknown_fields(body, {'enabled'})
     enabled = body.get('enabled')
     if not isinstance(enabled, bool):
         raise ValidationError('enabled must be true or false')
-    if enabled and not PER_WORKSPACE_INGESTION:
-        raise ConflictError(INGESTION_NOT_YET)
+    if enabled:
+        hold_workspace_ingestion()
     return enabled
 
 

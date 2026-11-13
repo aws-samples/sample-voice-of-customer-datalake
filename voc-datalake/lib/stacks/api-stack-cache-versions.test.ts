@@ -21,13 +21,22 @@ import { RenderedStringRecordSchema } from '../test-support/cfn-render';
 const LeadingKeysSchema = z.object({
   'ForAllValues:StringEquals': z.object({ 'dynamodb:LeadingKeys': z.array(z.string()) }),
 });
+/** A pattern pin (a workspace's version row: one workspace id, lib/utils/cache-version-grants.ts). */
+const LeadingKeyPatternsSchema = z.object({
+  'ForAllValues:StringLike': z.object({ 'dynamodb:LeadingKeys': z.array(z.string()) }),
+});
 
 /** The partitions every UpdateItem statement on `tableFragment` is pinned to (null = an unconditioned one). */
 function updatePartitions(statements: RolePolicyStatement[], tableFragment: string): (string[] | null)[] {
   return statements
     .filter((s) => s.actions.includes('dynamodb:UpdateItem') && s.resource.includes(tableFragment))
-    .map((s) => LeadingKeysSchema.safeParse(s.condition).data?.['ForAllValues:StringEquals']['dynamodb:LeadingKeys'] ?? null);
+    .map((s) => LeadingKeysSchema.safeParse(s.condition).data?.['ForAllValues:StringEquals']['dynamodb:LeadingKeys']
+      ?? LeadingKeyPatternsSchema.safeParse(s.condition).data?.['ForAllValues:StringLike']['dynamodb:LeadingKeys']
+      ?? null);
 }
+
+/** A workspace's version row, as the feedback edits bump it (docs/multi-workspace.md). */
+const WORKSPACE_VERSION_PARTITION = `WS#ws_${'?'.repeat(26)}#METRIC#meta`;
 
 let processing: Template;
 beforeAll(() => {
@@ -36,12 +45,17 @@ beforeAll(() => {
 }, SYNTH_TIMEOUT_MS);
 
 describe('cache version bumps are the only aggregates write of read-mostly API roles', () => {
-  it.each(['FeedbackEditLambdaRole', 'DataExplorerLambdaRole', 'UsersLambdaRole'])(
+  it.each(['DataExplorerLambdaRole', 'UsersLambdaRole'])(
     '%s may UpdateItem only the METRIC#meta partition',
     (role) => {
       expect(updatePartitions(policyStatementsOf(apiTemplate(), role), 'Aggregates')).toStrictEqual([['METRIC#meta']]);
     },
   );
+
+  it('FeedbackEditLambdaRole may UpdateItem only the METRIC#meta partition and one workspace\'s', () => {
+    expect(updatePartitions(policyStatementsOf(apiTemplate(), 'FeedbackEditLambdaRole'), 'Aggregates'))
+      .toStrictEqual([['METRIC#meta'], [WORKSPACE_VERSION_PARTITION]]);
+  });
 });
 
 describe('the Radar API', () => {

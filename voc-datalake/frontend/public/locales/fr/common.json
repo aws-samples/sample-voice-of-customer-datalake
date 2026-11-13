@@ -164,7 +164,7 @@
       "editor": "Édition",
       "viewer": "Lecture"
     },
-    "sharedData": "Les espaces de travail ne séparent pas encore les données : chacun affiche les mêmes retours, projets et paramètres. Pour l’instant, un espace de travail décide qui peut l’ouvrir et qui gère ses membres.",
+    "sharedData": "Chaque espace de travail a ses propres retours, tableaux de bord, marque et problèmes résolus ; aucun retour ne peut encore arriver dans un espace de travail. Les projets, l’assistant, Radar et les autres paramètres (catégories, dimensions, sources) restent partagés par tous les espaces de travail.",
     "moreFailed": "La page suivante n’a pas pu être chargée. Choisissez Afficher plus pour réessayer.",
     "refreshFailed": "La liste n’a pas pu être actualisée : elle n’est peut-être plus à jour.",
     "members": {
@@ -278,6 +278,7 @@
       "pluginGone": "Ce déploiement ne propose plus ce plugin. Rechargez la page.",
       "pluginsChangedMeanwhile": "Les plugins de l’espace de travail ont changé entre-temps. Rechargez la page et réessayez.",
       "ingestionNotYet": "L’ingestion par espace de travail arrive dans une version ultérieure : un espace de travail ne peut pas encore activer de plugin.",
+      "ingestionRunNotYet": "L’ingestion par espace de travail arrive dans une version ultérieure : aucune exécution ne peut encore démarrer dans un espace de travail.",
       "notDeploymentAdmin": "Seuls les administrateurs du déploiement peuvent modifier la marque par défaut.",
       "notBrandAdmin": "Seuls les administrateurs de cet espace de travail peuvent modifier sa marque.",
       "generic": "Cela n’a pas fonctionné. Réessayez.",

@@ -50,8 +50,10 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
   ]);
   acknowledgeNag(api, [
     ...s3ObjectSuppressions([
-      // silver/*: the feedback-edit API keeps the review as it was before an edit (write-once Put).
+      // silver/*: the feedback-edit API keeps the review as it was before an edit (write-once Put); ws/{one id}/silver/*
+      // a workspace's review (docs/multi-workspace.md).
       raw.arnForObjects('*'), raw.arnForObjects('raw/*'), raw.arnForObjects('silver/*'),
+      raw.arnForObjects(`${WORKSPACE_SILVER_HISTORY_PREFIX}*`),
       ingestion.s3ImportBucket.arnForObjects('*'),
       core.websiteBucket.arnForObjects('*'),
     ]),

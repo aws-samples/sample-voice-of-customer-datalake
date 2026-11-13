@@ -150,6 +150,12 @@ values; different filters combine with AND (`source=web,app&sentiment=negative` 
 from either source). One value means exactly what it always meant. Ported from PR #429
 (@aws-bryan); the code is `lambda/shared/item_facets.py`, used through `ItemFilters`.
 
+The same routes, and `PUT /feedback/{id}/category|dimensions`, take an optional `X-Workspace-Id` header: with it they
+read (and edit) only that workspace's feedback and counters, for its members (the one 404 otherwise; an edit needs the
+editor or admin role there); without it they read the deployment, as before ([Multi-workspace](multi-workspace.md),
+"Request flow"). The filters above, the categories configuration and each person's category access are the
+deployment's in both cases.
+
 | Parameter | Values |
 |---|---|
 | `source` | Source ids. Pushed down to DynamoDB as `=` (one) or `IN` (several) |

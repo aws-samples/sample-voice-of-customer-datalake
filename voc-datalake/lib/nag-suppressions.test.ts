@@ -230,7 +230,9 @@ describe('cdk-nag acknowledgements', () => {
       // 77: the plugin ingestors' raw writes under ws/{one id}/raw/* and their read of the voc/ws/* credentials secrets.
       // 78: the processor's write-once Silver versions under ws/{one id}/silver/* (its ws/{one id}/raw/* puts share
       // the ingestors' finding).
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 78, used: 78 });
+      // 79: the integrations and scrapers APIs' Get and Put of the voc/ws/* credentials secrets (one finding, both
+      // roles: lib/utils/workspace-secrets.ts grantWorkspaceSecretsReadWrite).
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 79, used: 79 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

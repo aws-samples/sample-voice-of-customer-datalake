@@ -21,9 +21,10 @@ describe('reprocessS3ImportFile', () => {
   it('posts the key to /s3-import/reprocess and returns the run', async () => {
     fetchApi.mockResolvedValue({ run: RUN })
     await expect(reprocessS3ImportFile('web/reviews.csv')).resolves.toStrictEqual(RUN)
-    const [path, init] = fetchApi.mock.calls[0] ?? []
+    const [path, init, scope] = fetchApi.mock.calls[0] ?? []
     expect(path).toBe('/s3-import/reprocess')
     expect(init).toMatchObject({ method: 'POST', body: JSON.stringify({ key: 'web/reviews.csv' }) })
+    expect(scope).toBe('deployment')
   })
 
   it.each([[null], [{}], [{ run: null }], [{ run: { status: 'running' } }], [{ run: { run_id: '' } }]])(
@@ -37,8 +38,8 @@ describe('getS3ImportReprocessRun', () => {
   it('polls the run by its encoded id', async () => {
     fetchApi.mockResolvedValue({ run: RUN })
     await getS3ImportReprocessRun('run 1/2')
-    // The shared double forwards (endpoint, options); a GET passes no options.
-    expect(fetchApi).toHaveBeenCalledWith('/s3-import/reprocess/run%201%2F2', undefined)
+    // Both calls are deployment-wide (the S3 import API refuses X-Workspace-Id).
+    expect(fetchApi).toHaveBeenCalledWith('/s3-import/reprocess/run%201%2F2', { method: 'GET' }, 'deployment')
   })
 
   it('reads malformed fields as their defaults, and an unreadable status as unknown', async () => {

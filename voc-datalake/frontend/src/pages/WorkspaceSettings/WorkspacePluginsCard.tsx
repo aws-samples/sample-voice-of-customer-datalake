@@ -18,19 +18,13 @@ import { useTranslation } from 'react-i18next'
 import { AlertCircle, Info, Plug } from 'lucide-react'
 import clsx from 'clsx'
 import Notice from '../../components/Notice/Notice'
-import { serverReason } from '../../lib/errors'
 import { getPluginManifests } from '../../plugins'
 import { usePluginCopy } from '../../plugins/pluginCopy'
 import { workspacePluginsApi, workspacePluginsKey } from '../../api/workspacePluginsApi'
 import type { WorkspacePlugin } from '../../api/workspacePluginsApi'
 import RefusalAlert from '../../workspace/RefusalAlert'
-import { INGESTION_NOT_YET, PLUGIN_REFUSALS } from '../../workspace/workspaceRefusals'
+import { isIngestionHeld as isHeld, PLUGIN_REFUSALS } from '../../workspace/workspaceRefusals'
 import { SECTION_TITLE } from '../Settings/sectionTitle'
-
-/** Whether a failed change is the server holding every enable back (and not another refusal). */
-function isHeld(error: unknown): boolean {
-  return serverReason(error) === INGESTION_NOT_YET
-}
 
 /** A plugin's name in the UI language: its manifest's copy, else its id (a plugin this build has no manifest for). */
 function usePluginName(): (id: string) => string {

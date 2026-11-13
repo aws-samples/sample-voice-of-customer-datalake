@@ -106,7 +106,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from assist_worker_fixtures import inline_assist_worker
-from integrations_route_ast_fixtures import plain_calls_in, route_functions, route_paths
+from integrations_route_ast_fixtures import ADMIN_GATE, gate_calls_in, plain_calls_in, route_functions, route_paths
 
 from shared.config_write_guard import etag
 
@@ -503,22 +503,29 @@ class TestScraperRouteCoverageIsComplete:
 
 
 def _first_statement_call(node: ast.FunctionDef) -> str | None:
-    """The plain function called by the first statement after the docstring, if any."""
+    """What the first statement after the docstring calls, if any: a plain function, or ``_request.<method>``."""
     body = node.body
     if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
         body = body[1:]
     first = body[0] if body else None
-    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Call) and isinstance(first.value.func, ast.Name):
-        return first.value.func.id
+    if not (isinstance(first, ast.Expr) and isinstance(first.value, ast.Call)):
+        return None
+    func = first.value.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id == '_request':
+        return f'_request.{func.attr}'
     return None
 
 
 class TestEveryScraperWriteIsAdminGated:
-    """Save, analyze, delete and run call require_admin first; the reads do not."""
+    """Save, analyze, delete and run call the admin gate (`_request.require_request_admin`: the deployment's
+    `admins`, or the workspace's admin role; test_route_admin_gates.py pins its two branches) first; the reads do
+    not."""
 
     @pytest.mark.parametrize('route', sorted(SCRAPER_ADMIN_ROUTES))
     def test_the_route_requires_admin(self, route):
-        assert 'require_admin' in plain_calls_in(_route_functions()[route]), (
+        assert ADMIN_GATE in gate_calls_in(_route_functions()[route]), (
             f'{route} writes the shared secret, invokes the webscraper or calls '
             'Bedrock with no admin gate'
         )
@@ -526,7 +533,7 @@ class TestEveryScraperWriteIsAdminGated:
     @pytest.mark.parametrize('route', sorted(SCRAPER_ADMIN_ROUTES))
     def test_the_gate_runs_first(self, route):
         """Before any secret read, URL check, fetch or model call."""
-        assert _first_statement_call(_route_functions()[route]) == 'require_admin'
+        assert _first_statement_call(_route_functions()[route]) == ADMIN_GATE
 
     def test_the_save_keeps_its_input_bounds_for_an_admin(self):
         """Admin-only does not mean unbounded: a refactor that drops them fails here."""
@@ -539,7 +546,9 @@ class TestEveryScraperWriteIsAdminGated:
     )
     def test_the_read_routes_are_deliberately_not_gated(self, route):
         """States the split as an assertion, so widening it is a choice."""
-        assert 'require_admin' not in plain_calls_in(_route_functions()[route]), (
+        route_function = _route_functions()[route]
+        assert 'require_admin' not in plain_calls_in(route_function)
+        assert ADMIN_GATE not in gate_calls_in(route_function), (
             f'{route} is a read; gating it would blank the Scrapers page for a '
             'non-admin. Move it to SCRAPER_ADMIN_ROUTES if that is intended.'
         )

@@ -135,7 +135,7 @@ _RADAR_ITEMS_MARK: Final = '#ITEMS#'
 _WHOLE_UPLOAD_PREFIXES: Final = ('raw/csv_upload/', 'raw/json_upload/')
 # The s3_import plugin's label for an imported file's items (plugins/s3_import/ingestor/handler.py
 # `_get_source_from_key`) and the folder it keeps the files' originals in under a bronze root
-# (plugins/_shared/raw_original.py `S3_IMPORT_SOURCE`).
+# (shared/plugin_identity.py `S3_IMPORT_SOURCE`, which plugins/_shared/raw_original.py files them under).
 S3_IMPORT_LABEL_PREFIX: Final = 'S3 - '
 _IMPORT_ORIGINALS_FOLDER: Final = 's3_import/'
 _MAX_VERSIONS_PER_DELETE: Final = 1000

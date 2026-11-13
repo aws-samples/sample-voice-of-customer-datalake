@@ -39,6 +39,9 @@ import { GLOBAL_MCP_METHOD_THROTTLE } from './global-mcp';
  */
 const MCP_TRANSPORT_HEADERS = ['MCP-Protocol-Version', 'Mcp-Method', 'Mcp-Name'];
 
+/** The request header naming the workspace (lambda/shared/workspace.py `WORKSPACE_HEADER`, case-insensitive). */
+export const WORKSPACE_HEADER = 'X-Workspace-Id';
+
 /** The REST API's name and its access-log group's, before `uniqueName`. */
 const API_NAME_BASE = 'voc-analytics-api';
 
@@ -50,14 +53,16 @@ const API_NAME_BASE = 'voc-analytics-api';
  * preflight and refused on the error path, or vice versa. The string form below is
  * derived from this array rather than typed again.
  */
-const CORS_ALLOW_HEADERS = [
+export const CORS_ALLOW_HEADERS = [
   'Content-Type',
   'Authorization',
   'X-Requested-With',
   'X-Amz-Date',
   'X-Amz-Security-Token',
-  // The current workspace (docs/multi-workspace.md, Request flow): the web app sends it with every call in one.
-  'X-Workspace-Id',
+  // The current workspace (docs/multi-workspace.md, Request flow): the web app sends it with every call in one. Also
+  // in the Lambdas' own CORS answer (lambda/shared/api.py create_cors_config), pinned to this list by
+  // api-stack-cors-preflight.test.ts.
+  WORKSPACE_HEADER,
   ...MCP_TRANSPORT_HEADERS,
 ];
 

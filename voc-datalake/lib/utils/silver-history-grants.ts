@@ -8,12 +8,25 @@
  */
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
-import { SILVER_HISTORY_PREFIX } from '../stacks/core-buckets';
+import { SILVER_HISTORY_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX } from '../stacks/core-buckets';
 
 export function grantSilverHistoryPut(rawDataBucket: s3.IBucket, grantee: iam.IGrantable): void {
   grantee.grantPrincipal.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'KeepSilverVersions',
     actions: ['s3:PutObject'],
     resources: [rawDataBucket.arnForObjects(`${SILVER_HISTORY_PREFIX}*`)],
+  }));
+}
+
+/**
+ * The same for a workspace's item (docs/multi-workspace.md): `s3:PutObject` under one workspace's
+ * `ws/{ws}/silver/` (`WORKSPACE_SILVER_HISTORY_PREFIX`: the workspace segment is exactly one id, IAM's `*` would
+ * also match `/`), which the bucket policy holds write-once like `silver/`.
+ */
+export function grantWorkspaceSilverHistoryPut(rawDataBucket: s3.IBucket, grantee: iam.IGrantable): void {
+  grantee.grantPrincipal.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'KeepWorkspaceSilverVersions',
+    actions: ['s3:PutObject'],
+    resources: [rawDataBucket.arnForObjects(`${WORKSPACE_SILVER_HISTORY_PREFIX}*`)],
   }));
 }

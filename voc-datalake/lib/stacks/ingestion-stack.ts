@@ -43,7 +43,7 @@ import { createDesignCapture } from './design-capture';
 import { PROCESSING_QUEUE_VISIBILITY_TIMEOUT } from './processor-timing';
 import { DESIGN_CAPTURE_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailConfig } from '../utils/inbound-email';
-import { WORKSPACE_SECRET_BASE_PREFIX, workspaceSecretsArn } from '../utils/workspace-secrets';
+import { WORKSPACE_SECRET_BASE_PREFIX, WORKSPACE_SECRET_PREFIX_ENV, workspaceSecretsArn } from '../utils/workspace-secrets';
 
 /**
  * S3-import staging bucket retention. Noncurrent versions are recoverable for a
@@ -378,7 +378,7 @@ export class VocIngestionStack extends VocStack {
       // A deployment-wide run (an event that names no workspace) reads the shared secret, as before.
       SECRETS_ARN: apiSecrets.secretArn,
       // Each run reads `{prefix}/{ws}/credentials` for the workspace its event names (plugins/_shared/base_ingestor.py).
-      WORKSPACE_SECRET_PREFIX: workspaceSecretPrefix,
+      [WORKSPACE_SECRET_PREFIX_ENV]: workspaceSecretPrefix,
       BRAND_NAME: config.brandName,
       POWERTOOLS_SERVICE_NAME: 'voc-ingestion',
       LOG_LEVEL: 'INFO',

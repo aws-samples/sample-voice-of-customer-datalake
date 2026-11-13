@@ -154,7 +154,7 @@
       "editor": "Edycja",
       "viewer": "Podgląd"
     },
-    "sharedData": "Obszary robocze nie rozdzielają jeszcze danych: każdy pokazuje te same opinie, projekty i ustawienia. Na razie obszar roboczy decyduje o tym, kto może go otworzyć i kto zarządza jego członkami.",
+    "sharedData": "Każdy obszar roboczy ma własne opinie, pulpity, markę i rozwiązane problemy; żadne opinie nie mogą jeszcze trafić do obszaru roboczego. Projekty, asystent, Radar i pozostałe ustawienia (kategorie, wymiary, źródła) są nadal wspólne dla wszystkich obszarów roboczych.",
     "moreFailed": "Nie udało się wczytać następnej strony. Wybierz Pokaż więcej, aby spróbować ponownie.",
     "refreshFailed": "Nie udało się odświeżyć listy, więc może być nieaktualna.",
     "members": {
@@ -268,6 +268,7 @@
       "pluginGone": "To wdrożenie nie oferuje już tej wtyczki. Odśwież stronę.",
       "pluginsChangedMeanwhile": "Wtyczki obszaru roboczego w międzyczasie się zmieniły. Odśwież stronę i spróbuj ponownie.",
       "ingestionNotYet": "Pozyskiwanie danych dla obszaru roboczego pojawi się w późniejszej wersji: obszar roboczy nie może jeszcze włączyć wtyczki.",
+      "ingestionRunNotYet": "Pozyskiwanie danych dla obszaru roboczego pojawi się w późniejszej wersji: w obszarze roboczym nie można jeszcze uruchomić przebiegu.",
       "notDeploymentAdmin": "Tylko administratorzy wdrożenia mogą zmieniać domyślną markę.",
       "notBrandAdmin": "Tylko administratorzy tego obszaru roboczego mogą zmieniać jego markę.",
       "generic": "Nie udało się. Spróbuj ponownie.",

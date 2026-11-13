@@ -9,7 +9,7 @@ import { endExpiredSession } from '../services/sessionExpiry'
 import { ApiError, AuthError } from '../lib/errors'
 import { getBaseUrl, getAuthHeaders, getDaysFromRange } from './baseUrl'
 import type { RequestScope } from './baseUrl'
-import { buildSearchParams, del, patch, post, put } from './requestKit'
+import { buildSearchParams, del, patch, post, put, runScope } from './requestKit'
 import { logsEndpoints, userAdminEndpoints } from './adminEndpoints'
 import { dataExplorerEndpoints, s3ImportEndpoints } from './dataEndpoints'
 import { isRecord } from '../lib/typeGuards'
@@ -277,10 +277,11 @@ export const api = {
     return normalizeSourcesStatus(await fetchApi<unknown>(`/sources/status${params}`))
   },
   
-  /** Also closes the source's circuit breaker (the response carries `circuit`). */
-  enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, put()),
+  /** Also closes the source's circuit breaker (the response carries `circuit`). The schedule is the deployment's
+   *  (every workspace's tick fans out from it), so enable and disable go without `X-Workspace-Id`. */
+  enableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/enable`, put(), 'deployment'),
   
-  disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, put()),
+  disableSource: (source: string) => fetchApi<{ success: boolean; source: string; enabled: boolean; message?: string }>(`/sources/${source}/disable`, put(), 'deployment'),
 
   /** Admin: close a tripped circuit breaker without turning the schedule back on. */
   resetSource: async (source: string) =>
@@ -294,7 +295,7 @@ export const api = {
   }>(`/sources/${source}/run`, {
     method: 'POST',
     ...(appId != null && appId !== '' ? { body: JSON.stringify({ app_id: appId }) } : {}),
-  }),
+  }, runScope(source)),
 
   getSourceRunStatus: (source: string) => fetchApi<{
     source: string;

@@ -10,7 +10,7 @@ The index is keyed ``gsi5pk`` + ``gsi1sk`` (the processing time, the same sort k
 ``gsi1-by-date`` uses), so a window is one key range per channel, newest first, and a read
 costs what the CHANNEL holds, not what the day holds. ``gsi5pk`` is the processor's
 ``CHANNEL#{source_channel}`` (shared/feedback_partitions.py; a workspace's item
-``WS#{ws}#CHANNEL#…``, which this deployment-wide read never names), not the raw
+``WS#{ws}#CHANNEL#…``, which only a read in that workspace names), not the raw
 ``source_channel``, which is the same in every workspace (docs/multi-workspace.md). It projects only
 ``CHANNEL_INDEX_FIELDS``: what the metric routes read off an item. That keeps each row
 small (a whole channel of 25,000 reviews reads in about 2 s), so the walk can afford a far
@@ -26,12 +26,14 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import ConditionBase, Key
+from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import ClientError
 
 from shared.feedback_partitions import CHANNEL_INDEX_PARTITION, channel_partition
 from shared.indexes import FEEDBACK_BY_CHANNEL_INDEX
+from shared.scoped_query import SortRange, query_partition
 from shared.time_budget import ROW_CAP_PARTIAL_REASON, TIME_BUDGET_PARTIAL_REASON, WalkBudget
+from shared.ws_repo import WorkspaceScope
 
 __all__ = ['CHANNEL_INDEX_FIELDS', 'ChannelIndexUnavailable', 'walk_channel']
 
@@ -84,6 +86,7 @@ def walk_channel(
     *,
     row_filter: ConditionBase | None = None,
     cap: int = CHANNEL_WALK_CAP,
+    scope: WorkspaceScope | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """The channel's rows processed on or after ``cutoff_date`` (YYYY-MM-DD), newest first.
 
@@ -91,21 +94,24 @@ def walk_channel(
     FilterExpression. Partial when ``cap`` rows were collected or the request's walk budget ran
     out with rows left; the budget then records the oldest day read in full, as the day walk
     does, with the reason (``row_cap`` when the cap cut it, else ``time_budget``). Raises :class:`ChannelIndexUnavailable` when the index is missing.
+
+    ``scope`` (a request acting in a workspace, docs/multi-workspace.md) reads that workspace's partition
+    ``WS#{ws}#CHANNEL#…`` through the workspace layer (shared/scoped_query.py); None reads the deployment's.
     """
     kwargs: dict[str, Any] = {
         'IndexName': FEEDBACK_BY_CHANNEL_INDEX,
-        # gsi1sk starts with the ISO processing time, so a date compares as its prefix.
-        'KeyConditionExpression': (Key(CHANNEL_INDEX_PARTITION).eq(channel_partition(None, channel))
-                                   & Key('gsi1sk').gte(cutoff_date)),
         'ScanIndexForward': False,
         'Limit': _PAGE_LIMIT,
     }
+    # gsi1sk starts with the ISO processing time, so a date compares as its prefix.
+    since = SortRange('gsi1sk', 'gte', cutoff_date)
+    partition = channel_partition(scope, channel)
     if row_filter is not None:
         kwargs['FilterExpression'] = row_filter
     rows: list[dict[str, Any]] = []
     while True:
         try:
-            response = table.query(**kwargs)
+            response = query_partition(scope, table, CHANNEL_INDEX_PARTITION, partition, sort=since, **kwargs)
         except ClientError as exc:
             if _index_missing(exc):
                 raise ChannelIndexUnavailable(str(exc)) from exc

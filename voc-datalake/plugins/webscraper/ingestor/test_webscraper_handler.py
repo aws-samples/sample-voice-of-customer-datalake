@@ -35,7 +35,7 @@ from _shared.test.workspace_fixtures import (
 # The execution id POST /scrapers/{id}/run names (shared/ids.py timestamped_id), and its invoke payload
 # (lambda/api/scrapers_handler.py run_scraper).
 SCRAPER_RUN_ID = "run_s1_20261112080000_0a1b2c3d"
-SCRAPERS_API_RUN = {"scraper_id": "s1", "execution_id": SCRAPER_RUN_ID, "manual_run": True}
+SCRAPERS_API_RUN = {"scraper_id": "s1", "execution_id": SCRAPER_RUN_ID}
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures

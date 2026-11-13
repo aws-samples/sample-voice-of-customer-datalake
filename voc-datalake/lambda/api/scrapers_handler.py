@@ -45,6 +45,19 @@ any plugin resource — see `test/test_scrapers_security.py`, whose inventory ca
 asserts that boundary so a reader is not told the prefix is fully covered when
 only this handler is. The `ast` pass cannot see across module boundaries, so
 nothing else would say so.
+
+WORKSPACES (docs/multi-workspace.md, "Request flow"; shared/workspace_request.py): a
+request that sends `X-Workspace-Id` acts in that workspace, resolved before any route
+runs (`_request.middleware`: 400 for an empty header, the one 404 for a non-member; a
+platform admin enters as admin, live-checked and audited; a write's role read from the
+table). There the admin routes need the caller's admin role in the workspace
+(`_request.require_request_admin`; the deployment's `admins` grants nothing there), the
+reads any member; the scraper configs are the workspace's own secret's `webscraper_configs`
+(shared/workspace_plugin_store.py), which the webscraper's run in that workspace reads, and
+a scraper naming a Radar brand is refused (400: Radar is not keyed by workspace yet);
+a run's invoke payload carries the RESOLVED workspace (`workspace_payload`, never a body
+field) and its run rows are `WS#{ws}#SCRAPER_RUN#{id}` (shared/run_rows.py). Without the
+header, exactly as before.
 """
 
 import http.client
@@ -65,18 +78,19 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import assist_jobs, config_write_guard
-from shared.api import api_handler, create_api_resolver, get_caller_subject, require_admin
+from shared.api import api_handler, create_api_resolver, get_caller_subject
 from shared.app_connector_listing import connectors_in_secret
 from shared.aws import get_secrets_client, put_secret_json
-from shared.exceptions import ApiError, ConfigurationError, ServiceError, ValidationError
+from shared.exceptions import ApiError, ServiceError, ValidationError
 from shared.http_utils import MAX_PAGE_BYTES
 from shared.ids import timestamped_id
+from shared.ingest_tables import table_view
 from shared.logging import logger, tracer
 from shared.producer_labels import normalise_label_fields
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_object_body
 from shared.row_ids import OPAQUE_ID_RE
-from shared.run_rows import run_status
+from shared.run_rows import run_status, scraper_run_partition
 from shared.scraper_limits import MAX_SCRAPERS, MAX_URLS_PER_SCRAPER, MAX_WEBSCRAPER_CONFIGS_BYTES
 from shared.scraper_run_errors import redacted_scraper_errors
 from shared.tables import get_aggregates_table
@@ -88,6 +102,8 @@ from shared.url_policy import (
     scraper_url_error,
     validate_url,
 )
+from shared.workspace_plugin_settings import hold_workspace_ingestion
+from shared.workspace_request import ResolvedRoutes, workspace_payload
 
 secretsmanager = get_secrets_client()
 lambda_client = boto3.client("lambda")
@@ -118,6 +134,13 @@ def require_webscraper_function():
     return WEBSCRAPER_FUNCTION_NAME
 
 app = create_api_resolver()
+
+# The request's workspace (shared/workspace_request.py ResolvedRoutes, shared with the integrations API): the
+# resolver middleware before every route (the assist worker's events never reach the resolver), the admin gate,
+# the credentials secret.
+_request = ResolvedRoutes(app)
+app.use(middlewares=[_request.middleware])
+
 
 # The URL policy itself (scheme, userinfo, resolve-and-check every address) is
 # `shared/url_policy.py` — the SAME implementation `save_scraper` applies to every
@@ -199,14 +222,14 @@ def _build_safe_opener() -> urllib.request.OpenerDirector:
 _SAFE_OPENER = _build_safe_opener()
 
 
-def _webscraper_configs_in_secret() -> tuple[dict, list]:
-    """The shared secret as stored and the `webscraper_configs` array it holds.
+def _webscraper_configs_in_secret(secret_id: str) -> tuple[dict, list]:
+    """The request's secret as stored (the shared one, or the workspace's) and the `webscraper_configs` array it
+    holds.
 
     The read half of every scraper route's read-modify-write; the write half is
-    `put_secret_json` on the same `secrets` dict.
+    `put_secret_json` on the same `secrets` dict and `secret_id`.
     """
-    response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-    secrets = json.loads(response.get('SecretString', '{}'))
+    secrets = _request.read_secrets(secretsmanager, secret_id)
     configs = json.loads(secrets.get('webscraper_configs', '[]'))
     return secrets, configs
 
@@ -227,11 +250,14 @@ def list_scrapers():
     basic-auth for an authenticated site): such a field must not come back
     from this route to a non-admin — strip it here for non-admins, or store it
     under its own secret key, rather than adding it to the config (#398).
+
+    In a workspace: any member, the workspace's own scrapers.
     """
-    if not SECRETS_ARN:
+    secret_id = _request.secret_id_or_none(SECRETS_ARN)
+    if secret_id is None:
         return {'scrapers': []}
     try:
-        _secrets, configs = _webscraper_configs_in_secret()
+        _secrets, configs = _webscraper_configs_in_secret(secret_id)
     except (ClientError, BotoCoreError, ValueError, TypeError, AttributeError) as e:
         # An AWS failure, or a secret whose JSON is not the {key: str} shape.
         logger.warning(f"Could not read scraper configs: {e}")
@@ -407,10 +433,12 @@ def save_scraper():
     `_validated_scraper` (shape, sizes, and every URL through
     `shared/url_policy.validate_url`, #244 — the ingestor re-checks at fetch time)
     and `_upserted_configs` (count and byte budget).
+
+    In a workspace: its admins, into the workspace's own secret (the configs its
+    webscraper runs read); 409 while that secret does not exist yet.
     """
-    require_admin(app.current_event.raw_event)
-    if not SECRETS_ARN:
-        raise ConfigurationError('Secrets not configured')
+    _request.require_request_admin()
+    secret_id = _request.secret_id(SECRETS_ARN)
 
     body = json_object_body(app)
     # Optional write rules (shared/config_write_guard.py): `mode: create` never
@@ -418,14 +446,16 @@ def save_scraper():
     mode = config_write_guard.write_mode(body)
     base = config_write_guard.base_etag(body)
     scraper = _validated_scraper(body)
+    # In a workspace no Radar brand (Radar is not keyed by workspace: its messages would be refused).
+    _request.refuse_radar_brand(scraper.get('radar_brand'))
 
     try:
-        secrets, configs = _webscraper_configs_in_secret()
+        secrets, configs = _webscraper_configs_in_secret(secret_id)
         stored = config_write_guard.find_existing(configs, lambda c: c.get('id') == scraper['id'])
         config_write_guard.check_write(stored, mode=mode, base=base, what=f'A scraper with id "{scraper["id"]}"')
         configs = _upserted_configs(configs, scraper)
         secrets['webscraper_configs'] = json.dumps(configs)
-        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
+        put_secret_json(secretsmanager, secret_id, secrets)
     except ApiError:
         # put_secret_json refuses an over-limit secret, and _upserted_configs a
         # count or budget overrun. Both are a 400 the user can act on ("remove
@@ -446,17 +476,17 @@ def delete_scraper(scraper_id: str):
     Admin-gated like the save above — it writes the shared secret — and
     destructive besides: it rewrites
     `webscraper_configs` with one entry removed, which stops that site being
-    scraped and cannot be undone from the run history.
+    scraped and cannot be undone from the run history. In a workspace: its
+    admins, in the workspace's own secret.
     """
-    require_admin(app.current_event.raw_event)
-    if not SECRETS_ARN:
-        raise ConfigurationError('Secrets not configured')
+    _request.require_request_admin()
+    secret_id = _request.secret_id(SECRETS_ARN)
     try:
-        secrets, configs = _webscraper_configs_in_secret()
+        secrets, configs = _webscraper_configs_in_secret(secret_id)
         configs = [c for c in configs if c.get('id') != scraper_id]
         secrets['webscraper_configs'] = json.dumps(configs)
-        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-    except ValidationError:
+        put_secret_json(secretsmanager, secret_id, secrets)
+    except ApiError:
         # A delete only ever SHRINKS this key, so the size guard cannot fire on
         # what this route adds. It can still fire on a secret that was ALREADY
         # over the limit — written before the guard existed — and that is exactly
@@ -476,16 +506,19 @@ def list_app_connectors():
 
     Read-only and open to every signed-in user, like GET /integrations/<source>/apps, which returns
     the same configs in full; this answers only the listed fields. The AI assistant reads it.
+    In a workspace: any member, the workspace's own connectors.
     """
-    if not SECRETS_ARN:
+    secret_id = _request.secret_id_or_none(SECRETS_ARN)
+    if secret_id is None:
         return {'connectors': []}
     try:
-        # The secret alone: a malformed `webscraper_configs` must not hide the connectors.
-        secrets = json.loads(secretsmanager.get_secret_value(SecretId=SECRETS_ARN).get('SecretString', '{}'))
+        # The secret alone: a malformed `webscraper_configs` must not hide the connectors. A secret that is not
+        # a JSON object is a ValueError (shared/workspace_plugin_store.py read_secret_json): no connectors.
+        secrets = _request.read_secrets(secretsmanager, secret_id)
     except (ClientError, BotoCoreError, ValueError, TypeError, AttributeError) as e:
         logger.warning(f"Could not read app connector configs: {e}")
         return {'connectors': []}
-    return {'connectors': connectors_in_secret(secrets) if isinstance(secrets, dict) else []}
+    return {'connectors': connectors_in_secret(secrets)}
 
 
 @app.get("/scrapers/templates")
@@ -542,19 +575,33 @@ def run_scraper(scraper_id: str):
     PAYLOAD, where the webscraper resolves it against its own configured list, so
     an unknown id is a run that finds nothing rather than a namespace a caller
     chose. The admin gate is what bounds who can write those partitions.
+
+    In a workspace: its admins. The payload's `workspace_id` is the RESOLVED
+    workspace (`workspace_payload`), so the webscraper runs there, finds the
+    scraper in that workspace's own secret (an id it does not hold finds
+    nothing) and moves the workspace's `WS#{ws}#SCRAPER_RUN#{id}` row written here. While per-workspace
+    ingestion is held (`PER_WORKSPACE_INGESTION` off) such a run answers the plugin settings' 409
+    (`hold_workspace_ingestion`, `INGESTION_NOT_YET`) before the secret is read or anything written.
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
+    context, scope = _request.context(), _request.scope()
+    if context is not None:
+        hold_workspace_ingestion()
+        # The run reads the workspace's secret (its scraper configs): 409 unless it is ready, before any row or run.
+        _request.secret_id(SECRETS_ARN)
     execution_id = timestamped_id(f'run_{scraper_id}', datetime.now(UTC))
+    # `execution_id` marks a manual run for the webscraper (it clears the secret cache, moves the run row); the
+    # `manual_run: true` this payload once carried was read by nothing, so it is no longer sent.
+    payload = workspace_payload({'scraper_id': scraper_id, 'execution_id': execution_id}, context)
     try:
         table = get_aggregates_table()
         if table:
-            table.put_item(Item={
-                'pk': f'SCRAPER_RUN#{scraper_id}', 'sk': execution_id, 'status': 'running',
+            table_view(scope, table).put_item({
+                'pk': scraper_run_partition(scope, scraper_id), 'sk': execution_id, 'status': 'running',
                 'started_at': now_iso(), 'pages_scraped': 0, 'items_found': 0, 'errors': []
             })
         function_name = require_webscraper_function()
-        lambda_client.invoke(FunctionName=function_name, InvocationType='Event',
-                            Payload=json.dumps({'scraper_id': scraper_id, 'execution_id': execution_id, 'manual_run': True}))
+        lambda_client.invoke(FunctionName=function_name, InvocationType='Event', Payload=json.dumps(payload))
     except Exception as e:
         logger.exception(f"Failed to run scraper: {e}")
         raise ServiceError('Failed to start scraper run') from e
@@ -564,10 +611,11 @@ def run_scraper(scraper_id: str):
 @app.get("/scrapers/<scraper_id>/status")
 @tracer.capture_method
 def get_scraper_status(scraper_id: str):
-    """Get the latest run status for a scraper."""
+    """Get the latest run status for a scraper (in a workspace: its ``WS#{ws}#SCRAPER_RUN#`` rows)."""
+    scope = _request.scope()
     try:
-        return run_status(get_aggregates_table(), f'SCRAPER_RUN#{scraper_id}', {'scraper_id': scraper_id},
-                          _scraper_run_fields)
+        return run_status(get_aggregates_table(), scraper_run_partition(scope, scraper_id), {'scraper_id': scraper_id},
+                          _scraper_run_fields, scope)
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get scraper status: {e}")
         return {'scraper_id': scraper_id, 'status': 'unknown', 'error': 'Failed to retrieve status'}
@@ -638,9 +686,10 @@ def analyze_url():
     before any job exists — re-run on every redirect hop, plus connect-time
     address pinning in `_SAFE_OPENER`. The fetch and the model call run in the
     scrapers worker (`analyze_url_work`); the caller polls
-    `GET /scrapers/jobs/{job_id}` for the old body.
+    `GET /scrapers/jobs/{job_id}` for the old body. In a workspace: its admins
+    (the job reads and writes no workspace data; it stays the caller's own).
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
     # A malformed body (not JSON, or JSON that is not an object) is the caller's
     # mistake: a 400, not the unhandled AttributeError that used to escape as a 502.
     body = json_object_body(app)

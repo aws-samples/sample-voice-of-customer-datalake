@@ -289,6 +289,34 @@ describe('the request scope: a deployment-wide call names no workspace', () => {
   })
 })
 
+describe('the deployment-only operator calls name no workspace, inside one too', () => {
+  // The API refuses them with X-Workspace-Id (400): the schedule every workspace's tick fans out from, and the
+  // S3 import's bucket, which is not keyed by workspace (docs/multi-workspace.md, 7.04.00).
+  afterEach(() => setCurrentWorkspace(null))
+
+  it.each([
+    ['enable a source', () => api.enableSource('webscraper')],
+    ['disable a source', () => api.disableSource('webscraper')],
+    ['Run now of the S3 import', () => api.runSource('s3_import')],
+    ['list the S3 import sources', () => api.getS3ImportSources()],
+    ['list the S3 import files', () => api.getS3ImportFiles({ source: 'reviews' })],
+    ['ask for an S3 import upload URL', () => api.getS3UploadUrl('a.csv', 'reviews')],
+    ['delete an S3 import file', () => api.deleteS3ImportFile('reviews/a.csv')],
+  ])('%s', async (_name, call) => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    await call()
+    expect(requestHeaders(0)['X-Workspace-Id']).toBeUndefined()
+  })
+
+  it("keeps the workspace on any other source's Run now", async () => {
+    setCurrentWorkspace(ACME)
+    mockJsonOnce({})
+    await api.runSource('webscraper')
+    expect(requestHeaders(0)['X-Workspace-Id']).toBe(ACME.id)
+  })
+})
+
 describe('401 handling', () => {
   it('refreshes session and retries on 401 response', async () => {
     queueUnauthorizedThenOk()

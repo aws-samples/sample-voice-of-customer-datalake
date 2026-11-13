@@ -61,8 +61,14 @@ export const PLATFORM_ADMIN_REFUSALS: readonly Refusal[] = [
   { status: 404, messageKey: 'common:workspaces.errors.userGone' },
 ]
 
-/** The server's reason when a workspace may not enable a plugin yet (`INGESTION_NOT_YET`, workspace_plugin_settings.py). */
+/** The server's reason when a workspace may not enable a plugin yet (`INGESTION_NOT_YET`, workspace_plugin_settings.py);
+ *  a run in a workspace (Run now, a scraper's run) is held with the same reason (`hold_workspace_ingestion`). */
 export const INGESTION_NOT_YET = 'Per-workspace ingestion arrives with phase 2 of multi-workspace: a workspace cannot enable a plugin yet'
+
+/** Whether a failed enable or run is the server holding per-workspace ingestion back (and not another refusal). */
+export function isIngestionHeld(error: unknown): boolean {
+  return apiErrorStatus(error) === 409 && serverReason(error) === INGESTION_NOT_YET
+}
 
 /** The refusals of `PUT /me/workspaces/current/plugins/{plugin_id}` (workspace_plugin_settings.py, workspace.py). */
 export const PLUGIN_REFUSALS: readonly Refusal[] = [

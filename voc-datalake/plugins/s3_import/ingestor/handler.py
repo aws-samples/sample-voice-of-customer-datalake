@@ -3,9 +3,9 @@ S3 Import Ingestor - Imports feedback from S3 bucket files (CSV, JSON, JSONL).
 Triggered by S3 events when files are uploaded.
 Folder name becomes the source: {folder}/file.csv -> source = "S3 - {folder}"
 
-A run is deployment-wide when its event names no workspace (an S3 upload's trigger, the API's reprocess and Run
-now), as always, and runs in the workspace an event names in ``workspace_id`` otherwise
-(``_shared/base_ingestor.py run_in_workspace``).
+A run is deployment-wide when its event names no workspace (an S3 upload's trigger, the S3 import API's reprocess,
+which refuses X-Workspace-Id, and Run now without it), as always, and runs in the workspace an event names in
+``workspace_id`` otherwise (``_shared/base_ingestor.py run_in_workspace``; Run now sent with X-Workspace-Id names it).
 
 Raw copies: the staged file as uploaded goes to ``raw/s3_import/...`` (a workspace run: ``ws/{ws}/raw/s3_import/...``)
 before it is read

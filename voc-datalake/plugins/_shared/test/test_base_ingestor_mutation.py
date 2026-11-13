@@ -146,8 +146,11 @@ class TestTheConstructionFailureReport:
     @pytest.mark.parametrize(
         ('payload', 'error_type', 'counted'),
         [
-            pytest.param({'other_plugin_key': 'x'}, 'ConfigurationError', True, id='namespace_miss'),
-            pytest.param({}, 'SecretUnreadableError', False, id='unreadable'),
+            # A run in a workspace: no key of this plugin (or an empty secret) is credentials not saved there yet,
+            # not counted; a secret that is not a JSON object is a misconfiguration, counted.
+            pytest.param({'other_plugin_key': 'x'}, 'WorkspaceCredentialsNotSet', False, id='namespace_miss'),
+            pytest.param({}, 'WorkspaceCredentialsNotSet', False, id='unreadable'),
+            pytest.param(['x'], 'ConfigurationError', True, id='not_an_object'),
         ],
     )
     def test_reports_the_exact_audit_event_run_status_and_breaker_failure(
@@ -185,7 +188,7 @@ class TestTheConstructionFailureReport:
         assert record_failure.call_args_list == ([call(message)] if counted else [])
 
     def test_each_failing_reporting_step_logs_its_own_warning(self, run_env, ingestor_logger):
-        run_env.aws.get_secret.return_value = {'other_plugin_key': 'x'}
+        run_env.aws.get_secret.return_value = ['x']  # a counted misconfiguration, so every step runs
         run_env.emit.side_effect = Exception('bus gone')
         run_env.table.update_item.side_effect = Exception('table gone')
         with (

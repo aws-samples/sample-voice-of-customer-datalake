@@ -328,6 +328,8 @@ def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
             "X-Amz-Date",
             "X-Api-Key",
             "X-Amz-Security-Token",
+            # The workspace a request acts in (shared/workspace.py WORKSPACE_HEADER; the gateway's preflight
+            # lists it too: lib/stacks/api-gateway.ts CORS_ALLOW_HEADERS).
             "X-Workspace-Id",
         ],
         expose_headers=["Content-Type", "ETag"],

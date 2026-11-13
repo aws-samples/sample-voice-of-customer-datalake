@@ -54,6 +54,18 @@ def _fresh_response_cache():
     DEFAULT_CACHE.clear()
 
 
+@pytest.fixture
+def deployment_wide_metrics_request():
+    """For cases that call metrics_handler's data helpers directly, outside a request: stand in for what its
+    `_workspace_first` middleware sets for a request with no X-Workspace-Id (deployment-wide), since `_ws_scope`
+    fails closed when nothing set it. A routed request overwrites the value and Powertools clears it afterwards."""
+    import metrics_handler
+
+    metrics_handler.app.append_context(**{metrics_handler.WORKSPACE_CONTEXT_KEY: None})
+    yield
+    metrics_handler.app.context.pop(metrics_handler.WORKSPACE_CONTEXT_KEY, None)
+
+
 @pytest.fixture(autouse=True)
 def _no_circuit_store():
     """`GET /sources/status`, enable and reset read/clear plugin circuit rows

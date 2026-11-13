@@ -12,9 +12,11 @@ Two paths (docs/multi-workspace.md, phase 2), chosen per message by ``workspace_
   every index partition prefixed (shared/feedback_partitions.py), written, checked for a duplicate and refreshed in
   place through the workspace layer (``ws_table``); its log rows ``WS#{ws}#LOGS#…``; its idempotency key
   ``WS#{ws}#…``, so one source item in two workspaces is two items; its Silver versions and inline raw copy under
-  ``ws/{ws}/``. Settings (categories, dimensions, source profiles) are still the deployment's. A message that
-  Radar would claim is refused (the record fails, and after its retries the queue's DLQ holds it): Radar is not
-  keyed by workspace yet (phase 3), and a workspace's review is never written to the deployment's voc-radar.
+  ``ws/{ws}/``. Settings (categories, dimensions, source profiles) are still the deployment's. A message
+  stamped with a Radar brand (``radar_brand_key``) is refused (the record fails, and after its retries the queue's
+  DLQ holds it): Radar is not keyed by workspace yet (phase 3), and a workspace's review is never written to the
+  deployment's voc-radar. A deployment source profile's ``radar_brand`` claims no workspace message: that is the
+  deployment's Radar setting, so such a message is stored as the workspace's own feedback.
 * A message that names none is stored deployment-wide exactly as before (``SOURCE#{source}``, ``LOGS#…``), with
   ``gsi4pk`` ``FEEDBACK#{id}`` and ``gsi5pk`` ``CHANNEL#{channel}`` for the two re-keyed indexes.
 * A message whose ``workspace_id`` is there but is not a workspace id is rejected like any invalid message
@@ -87,7 +89,7 @@ from shared.idempotency import (
 # tree, and a failure to import it fails the cold start — loud, alarmed by the
 # function's error metric, and impossible to mistake for a healthy processor.
 from shared.ingest_schemas import MAX_SOURCE_PLATFORM_LENGTH, IngestMessage, safe_validate_message
-from shared.ingest_tables import table_view
+from shared.ingest_tables import table_view, update_with_key
 from shared.logging import logger, metrics, tracer
 from shared.model_profile import PAYLOAD_KEY, model_profile_scope, profile_from_payload
 from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
@@ -163,9 +165,7 @@ radar_changed = BatchBump(bump_radar_version)
 
 def _update_in(scope: WorkspaceScope | None, update_kwargs: dict) -> None:
     """``update_item`` of an update built with its ``Key`` (shared/source_updates.py, shared/csv_updates.py)."""
-    kwargs = dict(update_kwargs)
-    key = kwargs.pop('Key')
-    table_view(scope,feedback_table).update_item(key, **kwargs)
+    update_with_key(table_view(scope, feedback_table), update_kwargs)
 
 # Idempotency configuration - prevents duplicate processing on SQS retries
 # Records are tracked for 1 hour (3600 seconds) to handle delayed retries
@@ -908,11 +908,14 @@ class RadarTableUnavailableError(Exception):
 
 
 class WorkspaceRadarRefusedError(Exception):
-    """A workspace's message that Radar would claim; the record fails (SQS → DLQ after its retries).
+    """A workspace's message stamped with a Radar brand (``radar_brand_key``); the record fails (SQS → DLQ after
+    its retries).
 
     Radar is not keyed by workspace yet (docs/multi-workspace.md, phase 3): storing the review in the
     deployment's voc-radar would put a workspace's data where every workspace's Radar reads, and storing
-    it as the workspace's own feedback would count another brand's review as its own.
+    it as the workspace's own feedback would count the brand its scraper or connector tracks as its own. A
+    message claimed only by a deployment source profile's ``radar_brand`` is not refused: it is stored as the
+    workspace's own feedback (the profile is the deployment's Radar setting).
     """
 
 
@@ -961,15 +964,23 @@ def process_radar_record(raw_record: dict, brand_label: str) -> dict:
 def _radar_result(raw_record: dict, scope: WorkspaceScope | None) -> dict | None:
     """The record's Radar outcome when Radar claims it, else None (it goes to voc-feedback).
 
-    A workspace's record Radar would claim raises ``WorkspaceRadarRefusedError`` (counted): never
-    written to the deployment's voc-radar, nor as the workspace's own feedback.
+    Radar is not keyed by workspace (phase 3), so a workspace's record is never claimed by it:
+
+    * one that carries its own stamp (``radar_brand_key``: its scraper, connector or page named a Radar brand)
+      raises ``WorkspaceRadarRefusedError`` (counted): never written to the deployment's voc-radar, nor as the
+      workspace's own feedback. The operator APIs refuse saving such a config in a workspace, so none should come;
+    * one without a stamp is the workspace's own feedback, whatever the deployment's source profiles say: a
+      profile's ``radar_brand`` is the deployment's Radar setting, not the workspace's (its source_platform may
+      also be a scraper name or a page's source id another workspace shares), so it claims no workspace's record.
     """
+    if scope is not None:
+        if raw_record.get('radar_brand_key'):
+            count_metric("WorkspaceRadarRefused")
+            raise WorkspaceRadarRefusedError('Radar is not keyed by workspace yet')
+        return None
     radar_brand = radar_brand_for(raw_record)
     if not radar_brand:
         return None
-    if scope is not None:
-        count_metric("WorkspaceRadarRefused")
-        raise WorkspaceRadarRefusedError('Radar is not keyed by workspace yet')
     return process_radar_record(raw_record, radar_brand)
 
 

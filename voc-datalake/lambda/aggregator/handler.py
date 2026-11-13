@@ -230,7 +230,9 @@ import secrets
 import sys
 import time
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
@@ -264,6 +266,7 @@ from shared.feedback import (
     persona_bucket,
 )
 from shared.idempotency import dedupe_claim_item
+from shared.ingest_tables import table_view, update_with_key
 
 # Shared module imports
 from shared.logging import logger, metrics, tracer
@@ -280,8 +283,11 @@ from shared.metric_keys import (
     SOURCE_PREFIX,
     SUBCATEGORY_PREFIX,
     TAG_PREFIX,
+    URGENT_PK,
     USEFULNESS_METRIC_TYPE,
     USEFULNESS_PREFIX,
+    metric_partition,
+    metric_type_partition,
 )
 from shared.source_profile import profile_counter_pks
 from shared.stream_claims import claim as claim_reversal
@@ -289,7 +295,7 @@ from shared.stream_claims import release as release_reversal
 from shared.stream_claims import reversal_key
 from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_UNRATED, stored_band
-from shared.ws_repo import is_workspace_key
+from shared.ws_repo import WorkspaceScope, is_workspace_key, scope_from_key, ws_table
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
@@ -362,11 +368,75 @@ REFUSED_METRIC = "AggregateWriteRefused"
 DECLINED_METRIC = "AggregateWriteDeclined"
 REPLAYED_METRIC = "AggregateRecordReplayed"
 CONFLICTED_METRIC = "AggregateTransactionConflicted"
-# WORKSPACE_SKIPPED_METRIC counts a stream record of a workspace's item (its `pk` starts
-# `WS#`, docs/multi-workspace.md) left out of the deployment-wide METRIC# counters. The
-# workspace counters (`WS#{ws}#METRIC#…`) are the aggregator's own slice; until then a
-# workspace's items are not aggregated at all, and this says how many were left out.
+# WORKSPACE_SKIPPED_METRIC counts a stream record whose `pk` starts `WS#` but names no
+# workspace (docs/multi-workspace.md): it is left out of every counter, never counted
+# deployment-wide. A WELL-FORMED workspace record (`WS#{ws}#…`) is aggregated into that
+# workspace's own counters — see "Two paths" below.
 WORKSPACE_SKIPPED_METRIC = "AggregatorWorkspaceRecordsSkipped"
+
+# --- Two paths: the deployment's counters and each workspace's ----------------
+# 🔑 A STREAM RECORD'S WORKSPACE COMES FROM ITS KEY (docs/multi-workspace.md, "Request
+# flow": DynamoDB Stream records carry the workspace in the key prefix). A record whose
+# `pk` is `WS#{ws}#…` is applied in that workspace; every other record deployment-wide,
+# exactly as before. Everything below is written for ONE scope and reads it from
+# `_record_scope` at the request boundary only: `_counter_request` / `_average_request` /
+# `_day_has_aggregates` / the watermark name the rows (`metric_partition`: `METRIC#x`
+# becomes `WS#{ws}#METRIC#x`, `metric_type` `WS#{ws}#<type>`), and `_send_update`,
+# `_get_aggregate` and `_check_transaction` send them through `ws_table`, which refuses a
+# key outside the workspace before DynamoDB. Every key inside this module (the outcomes the
+# persona compatibility reads, the coalesced runs' demand) stays in the deployment's
+# spelling, so the two paths share one description of every counter.
+#
+# The scope is a ContextVar set around one record (`record_handler`) or one coalesced run
+# (`_RunCoalescingProcessor`, whose runs never mix scopes: they group by it), never a
+# parameter threaded through forty functions whose one-record and coalesced paths must stay
+# outcome-for-outcome equal. The claims (`aggregator#stream#{eventID}`, the reversal claim)
+# keep their keys: an `eventID` is unique per record, so two workspaces never share one.
+_record_scope: ContextVar[WorkspaceScope | None] = ContextVar('aggregator_record_scope', default=None)
+
+
+@contextmanager
+def in_scope(scope: WorkspaceScope | None) -> Generator[None]:
+    """Apply what runs inside to `scope`'s counters (None: the deployment's)."""
+    token = _record_scope.set(scope)
+    try:
+        yield
+    finally:
+        _record_scope.reset(token)
+
+
+def _scope() -> WorkspaceScope | None:
+    return _record_scope.get()
+
+
+def _aggregates_view() -> Any:
+    """voc-aggregates in the record's scope (shared/ingest_tables.py `table_view`: the table itself deployment-wide,
+    `ws_table` in a workspace, which refuses a key outside it before DynamoDB)."""
+    return table_view(_scope(), aggregates_table)
+
+
+def _send_update(request: Mapping[str, Any]) -> None:
+    """One `update_item` of an aggregates row, in the record's scope (the same request deployment-wide)."""
+    update_with_key(_aggregates_view(), request)
+
+
+def _get_aggregate(key: Mapping[str, str]) -> Mapping[str, Any]:
+    """One `get_item` of an aggregates row (its key already the scope's), in the record's scope."""
+    return _aggregates_view().get_item(key)
+
+
+def _check_transaction(items: 'list[TransactWriteItemTypeDef]') -> None:
+    """In a workspace, every aggregates `Update` of a transaction passes `ws_table`'s update checks first
+    (`OutOfScopeError` otherwise, before anything is sent); the claims are the idempotency table's."""
+    scope = _scope()
+    if scope is None:
+        return
+    view = ws_table(scope, aggregates_table)
+    for item in items:
+        update = item.get('Update')
+        if update is not None and update.get('TableName') == AGGREGATES_TABLE:
+            view.check_update(update['Key'], **{name: value for name, value in update.items()
+                                                if name not in ('Key', 'TableName')})
 
 # The metric partitions are declared once in `shared.metric_keys`, which every reader
 # (`/metrics/*`, the agent heartbeat, the briefing) imports too, for the reason
@@ -707,10 +777,12 @@ def _counter_request(pk: str, sk: str, field: str, increment: int) -> _UpdateReq
     so how it was assembled is the only thing a reader has to go on.
     """
     now = datetime.now(UTC)
+    scope = _scope()
 
-    # Build update expression - include metric_type for GSI if applicable
+    # Build update expression - include metric_type for GSI if applicable. Derived from the
+    # deployment's spelling of `pk`, then named in the record's scope (see "Two paths").
     metric_type = get_metric_type(pk)
-    metric_type_values = {':metric_type': metric_type} if metric_type else {}
+    metric_type_values = {':metric_type': metric_type_partition(scope, metric_type)} if metric_type else {}
     # A DEcrement may not create a row and may not go below zero — see
     # `update_counter`. Decided here rather than bolted on afterwards, so the
     # condition, its `:floor` and the refused-item request travel together.
@@ -725,7 +797,7 @@ def _counter_request(pk: str, sk: str, field: str, increment: int) -> _UpdateReq
     floor_value = {':floor': -increment} if increment < 0 else {}  # pragma: no mutate - as above
 
     return {
-        'Key': {'pk': pk, 'sk': sk},
+        'Key': {'pk': metric_partition(scope, pk), 'sk': sk},
         'UpdateExpression': (
             'SET #field = if_not_exists(#field, :zero) + :inc, '
             'updated_at = :now'
@@ -768,7 +840,7 @@ def _average_request(pk: str, sk: str, value: Decimal, sign: int) -> _UpdateRequ
     """
     now = datetime.now(UTC)
     return {
-        'Key': {'pk': pk, 'sk': sk},
+        'Key': {'pk': metric_partition(_scope(), pk), 'sk': sk},
         'UpdateExpression': (
             'SET #sum = if_not_exists(#sum, :zero) + :val, '
             '#count = if_not_exists(#count, :zero) + :one, '
@@ -844,7 +916,7 @@ def update_counter(pk: str, sk: str, field: str, increment: int = 1) -> 'Counter
     """
     request = _counter_request(pk, sk, field, increment)
     if 'ConditionExpression' not in request:
-        aggregates_table.update_item(**request)
+        _send_update(request)
         return CounterWrite.LANDED
     outcome = _conditional_counter_write(request)
     if outcome is not CounterWrite.LANDED:
@@ -860,7 +932,7 @@ def _conditional_counter_write(request: _UpdateRequest) -> 'CounterWrite':
     for itself how many refusals to report. A non-conditional failure propagates.
     """
     try:
-        aggregates_table.update_item(**request)
+        _send_update(request)
     except ClientError as e:
         if not is_conditional_check_failure(e):
             raise
@@ -932,7 +1004,7 @@ def update_average(pk: str, sk: str, value: Decimal, sign: int = 1) -> bool:
         request['ExpressionAttributeValues'][':floor'] = 1
 
     try:
-        aggregates_table.update_item(**request)
+        _send_update(request)
     except ClientError as e:
         if not conditional or not is_conditional_check_failure(e):
             raise
@@ -979,7 +1051,7 @@ def _day_has_aggregates(date: str) -> bool:
     direction is unchanged, its cause is not silent.
     """
     try:
-        response = aggregates_table.get_item(Key={'pk': DAILY_TOTAL_PK, 'sk': date})
+        response = _get_aggregate({'pk': metric_partition(_scope(), DAILY_TOTAL_PK), 'sk': date})
     except ClientError as e:
         code = (_error_response(e) or {}).get('Error', {}).get('Code', '')  # pragma: no mutate - the fallback is only ever logged; no code is as non-transient as an unknown one
         message = (
@@ -1137,7 +1209,7 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     # Urgency counts (for alerts) — only urgent items have a row at all, so a
     # non-high item must not write one in either direction.
     if urgency == 'high':
-        dimensions.append(('METRIC#urgent', 'count'))
+        dimensions.append((URGENT_PK, 'count'))
 
     # Category + sentiment combo
     dimensions.append((f'METRIC#category_sentiment#{category}#{sentiment_label}', 'count'))
@@ -1456,6 +1528,7 @@ def _claimed_transaction(dedupe_key: str, items: 'list[TransactWriteItemTypeDef]
     batch is applied one record at a time, deliberately, since the alternative would
     make one poison record fail every other record's writes with it.
     """
+    _check_transaction(items)
     for attempt in range(TRANSACT_WRITE_ATTEMPTS):
         now = int(datetime.now(UTC).timestamp())
         try:
@@ -1861,6 +1934,26 @@ def process_new_feedback(item: dict, dedupe_key: str | None = None) -> bool:
 # for a date at or after it cannot win the condition, so it is skipped — after the
 # first few arrivals of a container's life, the watermark costs no write at all.
 _known_earliest_date: str | None = None
+# The same per workspace (its own watermark, `WS#{ws}#METRIC#meta`), by workspace id; emptied when it grows past
+# `_MAX_KNOWN_WORKSPACES`, which only costs a refused write per workspace.
+_known_workspace_earliest: dict[str, str] = {}
+_MAX_KNOWN_WORKSPACES = 1024
+
+
+def _known_earliest(scope: WorkspaceScope | None) -> str | None:
+    return _known_earliest_date if scope is None else _known_workspace_earliest.get(scope.ws)
+
+
+def _remember_earliest(scope: WorkspaceScope | None, date: str | None) -> None:
+    global _known_earliest_date
+    if scope is None:
+        _known_earliest_date = date
+        return
+    if date is None:
+        return
+    if len(_known_workspace_earliest) >= _MAX_KNOWN_WORKSPACES:
+        _known_workspace_earliest.clear()
+    _known_workspace_earliest[scope.ws] = date
 
 
 def lower_earliest_date(date: str) -> None:
@@ -1871,27 +1964,29 @@ def lower_earliest_date(date: str) -> None:
     update — set when absent or when `date` is earlier — so concurrent arrivals
     converge on the minimum. A refused condition is the common, benign outcome;
     its `ALL_OLD` response tells this container the stored date so later arrivals
-    skip the write.
+    skip the write. A workspace's record lowers the workspace's own watermark
+    (see "Two paths"), never the deployment's.
 
     Any OTHER failure propagates: the record is then retried by the batch
     processor, and this runs before the counters, so nothing is half-applied.
     """
-    global _known_earliest_date
     if parse_iso_date(date) is None:
         return
-    if _known_earliest_date is not None and date >= _known_earliest_date:
+    scope = _scope()
+    known = _known_earliest(scope)
+    if known is not None and date >= known:
         return
-    request = lower_watermark_request(date, now_iso())
+    request = lower_watermark_request(date, now_iso(), scope)
     try:
-        aggregates_table.update_item(**request)
+        _send_update(request)
     except ClientError as e:
         if not is_conditional_check_failure(e):
             raise
         response = _error_response(e) or {}
         stored = earliest_date_from_item(response.get('Item'))
-        _known_earliest_date = stored if stored is not None else _known_earliest_date
+        _remember_earliest(scope, stored if stored is not None else known)
         return
-    _known_earliest_date = date
+    _remember_earliest(scope, date)
 
 
 @tracer.capture_method
@@ -2266,18 +2361,27 @@ def _stream_partition_key(raw: object) -> object:
     return None
 
 
-def _is_workspace_record(raw: object) -> bool:
-    """Whether a stream record is a workspace's item (`WS#…`): never counted into the deployment-wide METRIC# rows,
-    which every workspace's numbers would otherwise include (docs/multi-workspace.md)."""
-    return is_workspace_key(_stream_partition_key(raw))
+def record_scope(raw: object) -> tuple[bool, WorkspaceScope | None]:
+    """`(refused, scope)` of a stream record, by its item's `pk` (see "Two paths").
+
+    `WS#{ws}#…` is that workspace's record; any other key the deployment's (`scope` None); a key that starts `WS#`
+    but names no workspace is refused: never counted deployment-wide, where every workspace's item would then sit.
+    """
+    pk = _stream_partition_key(raw)
+    if not is_workspace_key(pk):
+        return False, None
+    try:
+        return False, scope_from_key(pk)
+    except ValueError:
+        return True, None
 
 
-def _skip_workspace_record() -> dict:
-    """A workspace's record: counted (`WORKSPACE_SKIPPED_METRIC`) and left alone, the data version unmoved (no
-    deployment-wide read sees the item)."""
-    logger.info("Skipping a workspace's feedback record: workspace items are not aggregated yet")
+def _skip_unscoped_workspace_record() -> dict:
+    """A record whose `pk` starts `WS#` but names no workspace: counted (`WORKSPACE_SKIPPED_METRIC`) and left alone,
+    no data version moved."""
+    logger.warning("Skipping a feedback record whose key starts WS# but names no workspace")
     metrics.add_metric(name=WORKSPACE_SKIPPED_METRIC, unit="Count", value=1)
-    return {"status": "skipped", "reason": "workspace item"}
+    return {"status": "skipped", "reason": "unscoped workspace key"}
 
 
 def record_handler(record: DynamoDBRecord) -> dict:
@@ -2295,18 +2399,37 @@ def record_handler(record: DynamoDBRecord) -> dict:
     "a rebucket was attempted": `process_modified_feedback` returns writes that
     landed, and an edit whose every write was refused by its condition moved nothing
     while still being separately visible as REFUSED_METRIC.
+
+    A workspace's record (`pk` `WS#{ws}#…`) does all of this in that workspace's counters
+    (see "Two paths"); a `WS#` key naming no workspace is skipped and counted.
     """
     event_name = _event_name(record)
     logger.info(f"Processing record: event_name={event_name}")
 
-    if _is_workspace_record(getattr(record, 'raw_event', None)):
-        return _skip_workspace_record()
+    refused, scope = record_scope(getattr(record, 'raw_event', None))
+    if refused:
+        return _skip_unscoped_workspace_record()
+    with in_scope(scope):
+        return _handle_record(record, event_name)
+
+
+def _mark_data_changed() -> None:
+    """This batch changed the scope's feedback: its data_version is bumped once after the batch."""
+    scope = _scope()
+    if scope is None:
+        data_changed.mark()
+    else:
+        data_changed.mark(scope)
+
+
+def _handle_record(record: DynamoDBRecord, event_name: str | None) -> dict:
+    """`record_handler`'s body, in the record's scope."""
     if event_name not in ('INSERT', 'REMOVE', 'MODIFY'):
         logger.info(f"Skipping unrecognized event: {event_name}")
         return {"status": "skipped", "reason": "unrecognized event"}
     # Every recognized record is a feedback-table write the read routes can see (a list
-    # shows text a counter never moves on), so the batch bumps data_version once.
-    data_changed.mark()
+    # shows text a counter never moves on), so the batch bumps data_version once (per scope).
+    _mark_data_changed()
 
     stream = record.dynamodb
     new_image = stream.new_image if stream else None
@@ -2512,7 +2635,7 @@ def _plan_removal(plan: _PlannedReversal) -> None:
     """`record_handler` + `_handle_remove` for one REMOVE, up to its first write."""
     record = plan.record
     logger.info("Processing record: event_name=REMOVE")
-    data_changed.mark()
+    _mark_data_changed()
     stream = record.dynamodb
     item = _removal_to_reverse(record, stream.old_image if stream else None)
     if isinstance(item, _Skipped):
@@ -2655,7 +2778,7 @@ def _reverse_average_together(date: str, scores: list[Decimal]) -> bool:
     request['ExpressionAttributeValues'][':one'] = -len(scores)
     request['ExpressionAttributeValues'][':floor'] = len(scores)
     try:
-        aggregates_table.update_item(**request)
+        _send_update(request)
     except (ClientError, BotoCoreError):
         return False
     return True
@@ -2715,7 +2838,7 @@ def _plan_arrival(plan: _PlannedArrival) -> None:
     """`record_handler` + `_handle_insert` for one INSERT, up to its writes."""
     record = plan.record
     logger.info("Processing record: event_name=INSERT")
-    data_changed.mark()
+    _mark_data_changed()
     stream = record.dynamodb
     new_image = stream.new_image if stream else None
     if not new_image:
@@ -2845,8 +2968,10 @@ def _apply_alone(plan: _PlannedArrival) -> None:
 
 def _send_arrival_group(group: list[_PlannedArrival]) -> ClientError | None:
     """Send the group's transaction; the cancellation it met, or None when it committed."""
+    items = _arrival_group_items(group)
+    _check_transaction(items)
     try:
-        aggregates_table.meta.client.transact_write_items(TransactItems=_arrival_group_items(group))
+        aggregates_table.meta.client.transact_write_items(TransactItems=items)
     except ClientError as error:
         return error
     return None
@@ -2897,13 +3022,17 @@ def apply_arrivals(plans: list[_PlannedArrival]) -> None:
 _COALESCED_EVENTS = ('INSERT', 'REMOVE')
 
 
-def _run_kind(raw: object) -> str | None:
-    """The event a record joins a run of (INSERT or REMOVE), or None for one handled alone (a workspace's record
-    too: `record_handler` skips it, so it never joins a run's transaction)."""
-    if not isinstance(raw, Mapping) or _is_workspace_record(raw):
+def _run_kind(raw: object) -> tuple[str, WorkspaceScope | None] | None:
+    """The run a record joins: its event (INSERT or REMOVE) AND its scope, so a run never mixes the deployment's
+    records with a workspace's, nor two workspaces' (see "Two paths"). None for a record handled alone (a `WS#` key
+    naming no workspace too: `record_handler` skips it, so it never joins a run's transaction)."""
+    if not isinstance(raw, Mapping):
         return None
+    refused, scope = record_scope(raw)
     name = raw.get('eventName')
-    return name if name in _COALESCED_EVENTS else None
+    if refused or name not in _COALESCED_EVENTS:
+        return None
+    return name, scope
 
 
 class _RunCoalescingProcessor(BatchProcessor):
@@ -2913,19 +3042,21 @@ class _RunCoalescingProcessor(BatchProcessor):
     exactly as before. INSERT runs are joined only when the dedupe table is configured
     (their exactly-once claim is what the joint transaction carries). A run reports each
     record as the one-record path would: success with the same result dict, or failure
-    with the exception that stopped it.
+    with the exception that stopped it. A run is one scope's (`_run_kind`), applied in it.
     """
 
     def process(self) -> list[tuple]:
         results: list[tuple] = []
-        for kind, group in groupby(self.records, key=_run_kind):
+        for run_key, group in groupby(self.records, key=_run_kind):
             run = list(group)
-            if kind == 'REMOVE' and len(run) > 1:
-                results.extend(self._reverse_run(run))
-            elif kind == 'INSERT' and len(run) > 1 and IDEMPOTENCY_TABLE:
-                results.extend(self._arrival_run(run))
-            else:
-                results.extend(self._process_record(record) for record in run)
+            kind, scope = run_key if run_key is not None else (None, None)
+            with in_scope(scope):
+                if kind == 'REMOVE' and len(run) > 1:
+                    results.extend(self._reverse_run(run))
+                elif kind == 'INSERT' and len(run) > 1 and IDEMPOTENCY_TABLE:
+                    results.extend(self._arrival_run(run))
+                else:
+                    results.extend(self._process_record(record) for record in run)
         return results
 
     def _reverse_run(self, run: list[dict]) -> list[tuple]:
@@ -2967,7 +3098,8 @@ class _RunCoalescingProcessor(BatchProcessor):
 
 processor = _RunCoalescingProcessor(event_type=EventType.DynamoDBStreams)
 
-# One data_version bump per stream batch that carried a feedback write (docs/caching.md).
+# One data_version bump per stream batch that carried a feedback write (docs/caching.md): the
+# deployment's for its records, each workspace's own (`WS#{ws}#METRIC#meta`) for that workspace's.
 data_changed = BatchBump(bump_data_version)
 
 

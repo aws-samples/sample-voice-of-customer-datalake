@@ -2,6 +2,15 @@
 VoC Metrics API Lambda
 Handles read-only queries: /feedback/*, /metrics/*
 Split from main handler to reduce Lambda resource policy size.
+
+Two paths (docs/multi-workspace.md, "Request flow"; shared/workspace_request.py): a request that sends
+``X-Workspace-Id`` acts in that workspace (resolved before the route runs: 400 for an empty header, the one 404 for
+a non-member, an unknown or deleting workspace; a platform admin enters as admin, live-checked and audited), and
+every read then goes through shared/ws_repo.py ``ws_table`` on the workspace's partitions: the items by id
+(``WS#{ws}#FEEDBACK#…``), by date, category, urgency and channel (``WS#{ws}#DATE#…`` …), the counters
+(``WS#{ws}#METRIC#…``, ``metric_type`` ``WS#{ws}#<type>``), its data_version and watermark, and the response cache
+keyed by the workspace too. A request with no such header reads the deployment, exactly as before. The settings a
+route reads (categories, dimensions, the caller's category access) stay the deployment's until phase 3.
 """
 
 import os
@@ -12,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
-from boto3.dynamodb.conditions import ConditionBase, Key
+from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import category_access, data_quality, feedback_catalogue, other_category, release_watch, source_profile
@@ -39,7 +48,7 @@ from shared.channel_index import CHANNEL_INDEX_FIELDS, ChannelIndexUnavailable, 
 from shared.concurrency import concurrently, ordered_map
 from shared.data_version import VersionRead
 from shared.dimension_config import allowed_values, load_dimensions_config
-from shared.exceptions import ConfigurationError, ValidationError
+from shared.exceptions import ConfigurationError, ServiceError, ValidationError
 from shared.feedback import (
     PERSONA_PREFIX,
     basis_date,
@@ -48,7 +57,13 @@ from shared.feedback import (
     window_cutoff,
 )
 from shared.feedback_cursor import decode_key_cursor, decode_offset_cursor, encode_key_cursor, encode_offset_cursor
-from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
+from shared.feedback_partitions import (
+    FEEDBACK_ID_INDEX_PARTITION,
+    category_partition,
+    date_partition,
+    feedback_id_partition,
+    urgency_partition,
+)
 from shared.feedback_similarity import rank_similar
 from shared.feedback_types import FEEDBACK_TYPE_KEY
 from shared.github_metrics import GITHUB_SOURCE, github_breakdown, issue_attributes, matches_issue_filters
@@ -72,14 +87,20 @@ from shared.metric_keys import (
     SENTIMENT_PREFIX,
     SOURCE_PREFIX,
     TAG_PREFIX,
+    URGENT_PK,
     USEFULNESS_METRIC_TYPE,
     USEFULNESS_PREFIX,
+    metric_partition,
+    metric_type_partition,
 )
 from shared.problem_aggregation import PROBLEM_READ, SlimRead, aggregate_problems, parse_problem_query
 from shared.response_cache import memoized_route, request_versions
+from shared.scoped_query import SortRange, query_partition
 from shared.time_budget import ROW_CAP_PARTIAL_REASON, WalkBudget, budgeted_days
 from shared.urgent_pages import URGENCY_KEY_FIELDS, UrgentPage, read_urgent_page
 from shared.usefulness import USEFULNESS_FIELD
+from shared.workspace_request import RequestWorkspace
+from shared.ws_repo import WorkspaceScope, ws_table
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
@@ -116,8 +137,9 @@ BATCH_GET_BACKOFF_SECONDS = 0.05
 # GSI rows may be dropped, so read this many candidates per requested item.
 URGENT_FILTERED_OVERFETCH = 5
 
-# The urgency index partition every urgent read (and its next_token) stays in.
-URGENT_PARTITION = 'URGENCY#high'
+# The urgency every urgent read (and its next_token) stays in: the partition `URGENCY#high`, or the
+# workspace's `WS#{ws}#URGENCY#high` (`_urgent_partition`).
+URGENT_URGENCY = 'high'
 
 # The fields `/feedback/search` matches `q` against (substring, case-insensitive).
 SEARCH_TEXT_FIELDS = ('original_text', 'title', 'problem_summary')
@@ -191,6 +213,60 @@ def _aggregates_table() -> 'Table':
 # API resolver with standard CORS
 app = create_api_resolver()
 
+# The workspace a request acts in (shared/workspace_request.py): its warm container's memberships (30 s).
+_workspace = RequestWorkspace()
+WORKSPACE_CONTEXT_KEY = 'workspace_scope'
+WORKSPACE_NOT_RESOLVED = 'Could not read the data. Please retry.'
+
+
+def _ws_scope() -> WorkspaceScope | None:
+    """The workspace THIS request acts in (None: deployment-wide), resolved once per request.
+
+    Set only by `_workspace_first`, which resolves it afresh at the start of every request (overwriting whatever
+    the context holds), so a caller who is no member is refused before anything is read, and a value left on the
+    context can never stand in for this request's. Fails closed: when the key is absent (a data helper reached
+    without the middleware), it raises `WorkspaceNotResolved` (a 500, logged), never resolves the header again
+    (Powertools keeps the last event after a `resolve`, so that could be an EARLIER request's) and never falls back
+    to deployment-wide.
+    """
+    if WORKSPACE_CONTEXT_KEY not in app.context:
+        # The answer is the fixed 500 text; the shared exception handler logs it with its stack (ServiceError).
+        raise WorkspaceNotResolved(WORKSPACE_NOT_RESOLVED)
+    return app.context[WORKSPACE_CONTEXT_KEY]
+
+
+class WorkspaceNotResolved(ServiceError):
+    """A programming error: a data read outside `_workspace_first` (answered as a fixed 500, logged)."""
+
+
+def _request_scope() -> WorkspaceScope | None:
+    """The current event's workspace (shared/workspace_request.py), None when there is no event."""
+    event = getattr(app, 'current_event', None)
+    raw = getattr(event, 'raw_event', None) if event is not None else None
+    return _workspace.scope(raw) if isinstance(raw, dict) else None
+
+
+def _workspace_first(resolver: Any, next_middleware: Any) -> Any:
+    """Resolver middleware: the request's workspace is resolved (or refused) before its route reads anything, and
+    kept on the context for the request (never a value an earlier call left there)."""
+    resolver.append_context(**{WORKSPACE_CONTEXT_KEY: _request_scope()})
+    return next_middleware(resolver)
+
+
+app.use(middlewares=[_workspace_first])
+
+
+def _feedback_query(partition_attribute: str, partition: str, *, sort: SortRange | None = None,
+                    **kwargs: Any) -> dict:
+    """One page of a voc-feedback (index) partition, in the request's scope (shared/scoped_query.py)."""
+    return query_partition(_ws_scope(), _feedback_table(), partition_attribute, partition, sort=sort, **kwargs)
+
+
+def _aggregates_query(partition_attribute: str, partition: str, *, sort: SortRange | None = None,
+                      **kwargs: Any) -> dict:
+    """One page of a voc-aggregates (index) partition, in the request's scope (shared/scoped_query.py)."""
+    return query_partition(_ws_scope(), _aggregates_table(), partition_attribute, partition, sort=sort, **kwargs)
+
 
 # ============================================
 # Date-basis helpers
@@ -211,14 +287,15 @@ app = create_api_resolver()
 
 def _query_partition(
     index_name: str,
-    key_expr,
+    partition_attribute: str,
+    partition: str,
     max_matched: int,
     sources: tuple[str, ...] = (),
     scope: CategoryScope | None = None,
     row_condition: ConditionBase | None = None,
     read: SlimRead | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Page one GSI partition via LastEvaluatedKey.
+    """Page one GSI partition (``partition_attribute`` = ``partition``, in the request's scope) via LastEvaluatedKey.
 
     ``read`` (a :class:`SlimRead`) projects each row to its fields and lifts the
     page size and the per-partition scan ceiling to what such rows afford.
@@ -250,7 +327,6 @@ def _query_partition(
     while True:
         kwargs: dict[str, Any] = {
             'IndexName': index_name,
-            'KeyConditionExpression': key_expr,
             'Limit': read.page_limit if read else DATE_QUERY_LIMIT,
             'ScanIndexForward': False,
             **(read.query_kwargs() if read else {}),
@@ -259,7 +335,7 @@ def _query_partition(
             kwargs['FilterExpression'] = row_filter
         if last_key:
             kwargs['ExclusiveStartKey'] = last_key
-        response = _feedback_table().query(**kwargs)
+        response = _feedback_query(partition_attribute, partition, **kwargs)
         matched.extend(response.get('Items', []))
         scanned += response.get('ScannedCount', len(response.get('Items', [])))
         last_key = response.get('LastEvaluatedKey')
@@ -329,7 +405,7 @@ def _scan_recent_items(
         remaining = soft_cap - len(items)
         day_items, day_has_more = _query_partition(
             FEEDBACK_BY_DATE_INDEX,
-            Key('gsi1pk').eq(f'DATE#{date}'),
+            'gsi1pk', date_partition(_ws_scope(), date),
             max_matched=min(per_day_limit, remaining) if per_day_limit else remaining,
             sources=sources,
             scope=scope,
@@ -406,7 +482,8 @@ def _channel_rows(
     row_filter = scope_query.combine(extra.source_condition(), scope_query.scope_filter(scope))
     try:
         return walk_channel(
-            _feedback_table(), extra.channel, window_cutoff(days), _walk_budget(), row_filter=row_filter)
+            _feedback_table(), extra.channel, window_cutoff(days), _walk_budget(), row_filter=row_filter,
+            scope=_ws_scope())
     except ChannelIndexUnavailable:
         logger.warning('gsi5-by-channel unavailable; channel filter falls back to the day walk')
         return None
@@ -469,9 +546,11 @@ def _query_metric_window(
     """
     oldest = (current_date - timedelta(days=days - 1)).strftime('%Y-%m-%d')
     newest = current_date.strftime('%Y-%m-%d')
-    condition = Key('pk').eq(pk) & Key('sk').between(oldest, newest)
+    # `pk` is the deployment's spelling; a workspace's request reads its own `WS#{ws}#METRIC#…` row.
+    partition = metric_partition(_ws_scope(), pk)
+    window = SortRange('sk', 'between', oldest, newest)
     items: list[dict] = []
-    kwargs: dict = {'KeyConditionExpression': condition, 'ScanIndexForward': False}
+    kwargs: dict = {'ScanIndexForward': False}
     # A 365-day window of counter items sits far inside one 1 MB page today, but
     # that rests on item width the aggregator controls. So follow the cursor --
     # but bounded, never `while True`: one date yields at most one item and an
@@ -479,7 +558,7 @@ def _query_metric_window(
     # span more than `days` pages. A bound also means a surprising response
     # shape degrades to a short read instead of spinning.
     for _ in range(days):
-        response = _aggregates_table().query(**kwargs)
+        response = _aggregates_query('pk', partition, sort=window, **kwargs)
         items.extend(response.get('Items', []))
         last_key = response.get('LastEvaluatedKey')
         if not last_key:
@@ -525,12 +604,13 @@ def _walk_partial_fields() -> dict[str, str]:
 def _versions() -> VersionRead:
     """This request's cache versions + the earliest-data watermark: ONE BatchGetItem,
     the round trip the lone watermark `get_item` used to cost (docs/caching.md)."""
-    return request_versions(app, aggregates_table)
+    return request_versions(app, aggregates_table, scope=_ws_scope())
 
 
 # Opt-in warm-container memo for the read routes below (shared/response_cache.py).
-# The scope is resolved for every request before the memo is consulted.
-_memoized = memoized_route(app, scope=_caller_scope, versions=_versions)
+# The workspace and the scope are resolved for every request before the memo is consulted; the workspace is part
+# of the key, so no answer crosses from the deployment to a workspace or between workspaces.
+_memoized = memoized_route(app, scope=_caller_scope, versions=_versions, workspace=_ws_scope)
 
 
 def _window_days(params: dict, default: int) -> int:
@@ -843,10 +923,11 @@ def _metric_type_totals(
     the window by date, with the value read off the partition key after
     `pk_prefix`. Partial when the single read left rows behind.
     """
-    response = _aggregates_table().query(
-        IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX,
-        KeyConditionExpression=Key('metric_type').eq(metric_type)
-    )
+    # Both named in the request's scope: a workspace's rows are `WS#{ws}#METRIC#…` on `WS#{ws}#<type>`.
+    scope = _ws_scope()
+    prefix = metric_partition(scope, pk_prefix)
+    response = _aggregates_query(
+        'metric_type', metric_type_partition(scope, metric_type), IndexName=AGGREGATES_BY_METRIC_TYPE_INDEX)
     is_partial = _index_read_was_truncated(response)
 
     totals: dict[str, int] = {}
@@ -857,7 +938,7 @@ def _metric_type_totals(
     for item in items:
         sk = item.get('sk')
         if isinstance(sk, str) and oldest <= sk <= newest:
-            value = item['pk'].replace(pk_prefix, '')
+            value = item['pk'].replace(prefix, '')
             totals[value] = totals.get(value, 0) + int(item.get('count', 0))
     return totals, is_partial
 
@@ -876,10 +957,11 @@ def _feedback_by_id(feedback_id: str) -> dict:
     Also a 404 when the item's category is outside the caller's scope — the same
     answer as a missing item, so restricted callers learn nothing about it.
     """
-    # The deployment-wide partition of gsi4 (shared/feedback_partitions.py): a workspace's item never answers.
-    response = _feedback_table().query(
+    # gsi4's partition in the request's scope (shared/feedback_partitions.py): deployment-wide a workspace's item never
+    # answers, and in a workspace only its own (another workspace's id, or the deployment's, is not found).
+    response = _feedback_query(
+        FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition(_ws_scope(), feedback_id),
         IndexName=FEEDBACK_BY_ID_INDEX,
-        KeyConditionExpression=Key(FEEDBACK_ID_INDEX_PARTITION).eq(feedback_id_partition(None, feedback_id)),
         Limit=1
     )
     items = response.get('Items', [])
@@ -970,7 +1052,7 @@ def list_feedback():
         # paging still matters because one query returns at most one page.
         candidates, window_truncated = _query_partition(
             FEEDBACK_BY_CATEGORY_INDEX,
-            Key('gsi2pk').eq(f'CATEGORY#{extra.categories[0]}'),
+            'gsi2pk', category_partition(_ws_scope(), extra.categories[0]),
             max_matched=candidate_cap,
             # The partition IS the category; the rows are still re-checked in memory below.
             row_condition=replace(extra, categories=()).row_condition(),
@@ -1036,7 +1118,7 @@ def _walk_feedback_days(
     for i, date in enumerate(budgeted_days(days, budget)):
         day_items, day_has_more = _query_partition(
             FEEDBACK_BY_DATE_INDEX,
-            Key('gsi1pk').eq(f'DATE#{date}'),
+            'gsi1pk', date_partition(_ws_scope(), date),
             max_matched=candidate_cap - len(candidates),
             sources=sources,
             row_condition=row_condition,
@@ -1081,9 +1163,9 @@ def get_urgent_feedback():
     start_key = _urgent_start_key(params.get('next_token'), filters.cutoff_date)
 
     has_post_filters = _urgent_has_post_filters(filters)
-    key_expr = Key('gsi3pk').eq(URGENT_PARTITION) & Key('gsi3sk').gte(filters.cutoff_date)
+    since = SortRange('gsi3sk', 'gte', filters.cutoff_date)
     page = read_urgent_page(
-        lambda key, rows: _urgency_query(key_expr, filters.extra.sources, key, rows),
+        lambda key, rows: _urgency_query(since, filters.extra.sources, key, rows),
         _batch_get_feedback,
         filters.admits,
         limit=limit,
@@ -1096,7 +1178,7 @@ def get_urgent_feedback():
                     extra={'limit': limit, 'returned': len(page.items)})
     total = None
     if start_key is None:
-        total = _urgent_total(page, key_expr, filters.extra.sources, counted=not has_post_filters)
+        total = _urgent_total(page, since, filters.extra.sources, counted=not has_post_filters)
     return {
         'count': len(page.items),
         'total': total,
@@ -1120,22 +1202,34 @@ def _urgent_has_post_filters(filters: _ItemFilters) -> bool:
     )
 
 
+def _urgent_partition() -> str:
+    """The urgency index partition of the request's scope: `URGENCY#high`, or `WS#{ws}#URGENCY#high`."""
+    return urgency_partition(_ws_scope(), URGENT_URGENCY)
+
+
 def _urgent_start_key(token: object, cutoff_date: str) -> dict[str, str] | None:
-    """The ExclusiveStartKey a `next_token` names; 400 when it is not one this window issued."""
+    """The ExclusiveStartKey a `next_token` names; 400 when it is not one this window issued.
+
+    The cursor must name this request's urgency partition (`_urgent_partition`) and, in a workspace, an item of
+    the workspace: a cursor the deployment or another workspace issued is refused here (400), before the workspace
+    layer, which would refuse it too (shared/ws_repo.py checks a cursor's partitions), reads anything.
+    """
     if token in (None, ''):
         return None
     try:
-        key = decode_key_cursor(str(token), URGENCY_KEY_FIELDS, ('gsi3pk', URGENT_PARTITION))
+        key = decode_key_cursor(str(token), URGENCY_KEY_FIELDS, ('gsi3pk', _urgent_partition()))
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
-    if key['gsi3sk'] < cutoff_date:
+    scope = _ws_scope()
+    if key['gsi3sk'] < cutoff_date or (scope is not None and not scope.owns(key.get('pk'))):
         raise ValidationError('next_token is not valid')
     return key
 
 
-def _urgency_kwargs(key_expr, sources: tuple[str, ...], start_key: Mapping[str, Any] | None) -> dict[str, Any]:
-    """The urgency-index Query arguments every urgent read shares (sources pushed down)."""
-    kwargs: dict[str, Any] = {'IndexName': FEEDBACK_BY_URGENCY_INDEX, 'KeyConditionExpression': key_expr}
+def _urgency_kwargs(sources: tuple[str, ...], start_key: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The urgency-index Query arguments every urgent read shares (sources pushed down), but the key condition
+    (`_urgency_read` builds it in the request's scope)."""
+    kwargs: dict[str, Any] = {'IndexName': FEEDBACK_BY_URGENCY_INDEX}
     source_filter = any_of('source_platform', sources)
     if source_filter is not None:
         kwargs['FilterExpression'] = source_filter
@@ -1144,16 +1238,20 @@ def _urgency_kwargs(key_expr, sources: tuple[str, ...], start_key: Mapping[str, 
     return kwargs
 
 
+def _urgency_read(since: SortRange, sources: tuple[str, ...], start_key: Mapping[str, Any] | None,
+                  **kwargs: Any) -> dict:
+    """One page of the urgency partition from `since`, in the request's scope."""
+    return _feedback_query('gsi3pk', _urgent_partition(), sort=since, **_urgency_kwargs(sources, start_key), **kwargs)
+
+
 def _urgency_query(
-    key_expr, sources: tuple[str, ...], start_key: Mapping[str, str] | None, rows: int,
+    since: SortRange, sources: tuple[str, ...], start_key: Mapping[str, str] | None, rows: int,
 ) -> Mapping[str, Any]:
     """One newest-first page of the urgency index."""
-    return _feedback_table().query(
-        **_urgency_kwargs(key_expr, sources, start_key), Limit=rows, ScanIndexForward=False,
-    )
+    return _urgency_read(since, sources, start_key, Limit=rows, ScanIndexForward=False)
 
 
-def _urgent_total(page: UrgentPage, key_expr, sources: tuple[str, ...], *, counted: bool) -> int | None:
+def _urgent_total(page: UrgentPage, since: SortRange, sources: tuple[str, ...], *, counted: bool) -> int | None:
     """The first page's window total: exact when known, None when it would need every item read."""
     if page.next_key is None:
         return len(page.items)
@@ -1163,7 +1261,7 @@ def _urgent_total(page: UrgentPage, key_expr, sources: tuple[str, ...], *, count
     scanned = 0
     start_key = None
     while True:
-        response = _feedback_table().query(**_urgency_kwargs(key_expr, sources, start_key), Select='COUNT')
+        response = _urgency_read(since, sources, start_key, Select='COUNT')
         total += int(response.get('Count', 0))
         scanned += int(response.get('ScannedCount', 0))
         start_key = response.get('LastEvaluatedKey')
@@ -1188,10 +1286,14 @@ def _batch_get_feedback(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]
     an error — the route degrades to a shorter page and says so). A key whose
     item no longer exists is simply absent, as `get_item` returning no `Item` was.
 
-    Issued on the resource's client, which takes and returns native Python values.
+    Issued on the resource's client, which takes and returns native Python values. In a workspace every key must
+    be the workspace's (the rows came from its own partitions; `ws_table` checks them before the call).
     """
     table = _feedback_table()
     keys = _feedback_keys(rows)
+    scope = _ws_scope()
+    if scope is not None:
+        keys = ws_table(scope, table).check_keys(keys)
     by_key: dict[tuple[Any, Any], dict[str, Any]] = {}
     unread = False
     for start in range(0, len(keys), BATCH_GET_MAX_KEYS):
@@ -1286,9 +1388,9 @@ def get_entities():
     feedback_items = []
     for i in range(min(days, 7)):
         date = (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
-        response = _feedback_table().query(
+        response = _feedback_query(
+            'gsi1pk', date_partition(_ws_scope(), date),
             IndexName=FEEDBACK_BY_DATE_INDEX,
-            KeyConditionExpression=Key('gsi1pk').eq(f'DATE#{date}'),
             Limit=50,
             ScanIndexForward=False,
             **ISSUE_SAMPLE_PROJECTION,
@@ -1513,9 +1615,9 @@ def get_similar_feedback(feedback_id: str):
     source_item = _feedback_by_id(feedback_id)
     category = source_item.get('category', 'other')
 
-    response = _feedback_table().query(
+    response = _feedback_query(
+        'gsi2pk', category_partition(_ws_scope(), category),
         IndexName=FEEDBACK_BY_CATEGORY_INDEX,
-        KeyConditionExpression=Key('gsi2pk').eq(f'CATEGORY#{category}'),
         Limit=SIMILAR_CANDIDATE_ROWS,
         ScanIndexForward=source_item.get('sentiment_label') == 'negative',
     )
@@ -1750,7 +1852,7 @@ def _summary_from_aggregates(days: int) -> tuple[list[dict], list[dict], int, bo
     # branch used to omit the key entirely, which a caller reads as "complete".
     # The three are independent partitions, read concurrently.
     (total_items, is_partial), (sentiment_items, sentiment_truncated), (urgent_items, urgent_truncated) = (
-        _metric_windows([DAILY_TOTAL_PK, SENTIMENT_AVG_PK, 'METRIC#urgent'], days, current_date))
+        _metric_windows([DAILY_TOTAL_PK, SENTIMENT_AVG_PK, URGENT_PK], days, current_date))
     totals = [
         {'date': item['sk'], 'count': item.get('count', 0)}
         for item in total_items

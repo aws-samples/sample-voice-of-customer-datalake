@@ -42,8 +42,12 @@ Routes opt in with `@memoized_route`:
   including paged requests (the cursor is part of the query).
 - **Radar**: `GET /radar`, `/radar/brands`, `/radar/brands/{b}`, `/releases`, `/compare` and `/reviews`.
 
-The cache key is the route, the path, the normalized query string, today's UTC date,
-the caller's scope fingerprint and the versions (with the watermark). The resolved
+The cache key is the route, the workspace the request acts in (`X-Workspace-Id`, or none:
+deployment-wide; [Multi-workspace](multi-workspace.md)), the path, the normalized query string, today's UTC date,
+the caller's scope fingerprint and the versions (with the watermark). In a workspace the versions read takes the
+workspace's own `WS#{ws}#METRIC#meta / data_version` and watermark (the aggregator and the feedback edits bump it for
+that workspace's writes only) beside the deployment's `config_version` (settings stay the deployment's), so an answer
+never crosses from the deployment to a workspace or between workspaces. The resolved
 `days` window follows from the query, the watermark and the date. The scope
 fingerprint is a SHA-256 of the full category and source rule plus the admin and
 delegated flags. **The scope is resolved on every request before the memo is
@@ -79,7 +83,8 @@ the metrics and Radar entries depend on.
 ## 3. HTTP revalidation (every API Lambda, `create_api_resolver`)
 
 - A GET that answers 200 with JSON gets `ETag: W/"<first 32 hex of SHA-256(body)>"`,
-  `Cache-Control: private, no-cache` and `Vary: Authorization`. The browser may keep
+  `Cache-Control: private, no-cache` and `Vary: Authorization, X-Workspace-Id` (an answer depends on the caller and
+  on the workspace the request acts in). The browser may keep
   the answer but must ask again every time. If the request's `If-None-Match` matches,
   the answer is a **304 with an empty body**, still carrying the ETag and CORS headers.
   There is never a `max-age`: a browser cache is keyed by URL, not by user, and only

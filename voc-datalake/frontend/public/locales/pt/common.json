@@ -164,7 +164,7 @@
       "editor": "Edição",
       "viewer": "Leitura"
     },
-    "sharedData": "Os espaços de trabalho ainda não separam os dados: todos mostram os mesmos feedbacks, projetos e configurações. Por enquanto, um espaço de trabalho decide quem pode abri-lo e quem gerencia seus membros.",
+    "sharedData": "Cada espaço de trabalho tem seus próprios feedbacks, painéis, marca e problemas resolvidos; nenhum feedback pode chegar a um espaço de trabalho ainda. Projetos, o assistente, o Radar e as demais configurações (categorias, dimensões, fontes) continuam compartilhados por todos os espaços de trabalho.",
     "moreFailed": "Não foi possível carregar a próxima página. Escolha Mostrar mais para tentar novamente.",
     "refreshFailed": "Não foi possível atualizar a lista, então ela pode estar desatualizada.",
     "members": {
@@ -278,6 +278,7 @@
       "pluginGone": "Esta implantação não oferece mais esse plug-in. Recarregue a página.",
       "pluginsChangedMeanwhile": "Os plug-ins do espaço de trabalho mudaram nesse meio-tempo. Recarregue a página e tente novamente.",
       "ingestionNotYet": "A ingestão por espaço de trabalho chega em uma versão posterior: um espaço de trabalho ainda não pode ativar um plug-in.",
+      "ingestionRunNotYet": "A ingestão por espaço de trabalho chega em uma versão posterior: ainda não é possível iniciar uma execução em um espaço de trabalho.",
       "notDeploymentAdmin": "Somente os administradores da implantação podem alterar a marca padrão.",
       "notBrandAdmin": "Somente os administradores deste espaço de trabalho podem alterar a marca dele.",
       "generic": "Não funcionou. Tente novamente.",

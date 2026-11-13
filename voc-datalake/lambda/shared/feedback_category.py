@@ -29,10 +29,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared.api import DEFAULT_CATEGORIES
 from shared.category_gate import read_categories_config
 from shared.exceptions import ApiError, ConflictError, ServiceError, ValidationError
+from shared.feedback_partitions import category_partition
 from shared.logging import logger
 from shared.project_access import Caller
 from shared.silver_provenance import change_stamp, fields_of_update, keep_silver_version
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 CATEGORY_SOURCE_MANUAL = 'manual'
 # What a category reprocess job stamps (lambda/jobs/category_reprocess); one home for the worker and the catalogue.
@@ -128,18 +130,20 @@ class CategoryChange:
 
 def category_change(
     item: Mapping[str, Any], category: str, subcategory: str | None, override: dict,
+    scope: WorkspaceScope | None = None,
 ) -> CategoryChange:
     """Move ``item`` to ``category``/``subcategory`` (None removes it), conditionally.
 
     The condition holds only while the item exists and still has the category
     that was read — otherwise the write is a lost update (callers answer 409).
-    Keys and ``gsi2sk`` are untouched; only ``gsi2pk`` moves.
+    Keys and ``gsi2sk`` are untouched; only ``gsi2pk`` moves: to ``CATEGORY#{category}``, or for an item of the
+    workspace ``scope`` to its ``WS#{ws}#CATEGORY#…`` (shared/feedback_partitions.py).
     """
     change = CategoryChange(
         sets=['#cat_c = :cat_c', '#cat_g = :cat_g', '#cat_src = :cat_src', '#cat_o = :cat_o'],
         names={'#cat_c': 'category', '#cat_s': 'subcategory', '#cat_g': 'gsi2pk',
                '#cat_src': 'category_source', '#cat_o': 'category_override'},
-        values={':cat_c': category, ':cat_g': f'CATEGORY#{category}',
+        values={':cat_c': category, ':cat_g': category_partition(scope, category),
                 ':cat_src': CATEGORY_SOURCE_MANUAL, ':cat_o': override},
     )
     if subcategory is None:
@@ -184,12 +188,15 @@ def assignment_clauses(fields: Mapping[str, Any], prefix: str) -> tuple[list[str
     return sets, names, values
 
 
-def keep_before_edit(item: Mapping[str, Any], edit: ManualEdit, update_kwargs: Mapping[str, Any]) -> None:
-    """Keep ``item`` as it was before ``update_kwargs`` ran (``shared.silver_provenance``; never raises).
+def keep_before_edit(item: Mapping[str, Any], edit: ManualEdit, update_kwargs: Mapping[str, Any],
+                     scope: WorkspaceScope | None = None) -> None:
+    """Keep ``item`` as it was before ``update_kwargs`` ran (``shared.silver_provenance``; never raises); an item of
+    the workspace ``scope`` under ``ws/{ws}/silver/``.
 
     Called once the conditional update succeeded, so a refused edit leaves no version.
     """
-    keep_silver_version(item, actor=edit.actor, reason=edit.reason, changed_fields=fields_of_update(update_kwargs))
+    keep_silver_version(item, actor=edit.actor, reason=edit.reason, changed_fields=fields_of_update(update_kwargs),
+                        scope=scope)
 
 
 def update_expression(sets: list[str], removes: list[str]) -> str:

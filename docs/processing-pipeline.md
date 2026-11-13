@@ -371,6 +371,13 @@ that lands mid-run is reported, not overwritten (a re-run recomputes it). No ded
 the aggregator's claim is per stream record and the rebuild consumes none. A re-run writes only rows
 whose stored value differs, so it is idempotent and resumable.
 
+One scope per run ([Multi-workspace](multi-workspace.md)): by default it rebuilds the deployment's
+`METRIC#…` counters from the deployment's items only (a workspace's item is reported as "workspace
+items (not counted)"); `--workspace ws_…` rebuilds that workspace's counters (`WS#{ws}#METRIC#…`,
+`metric_type` `WS#{ws}#<type>`, its own watermark `WS#{ws}#METRIC#meta`) from that workspace's items
+only, every row put through the workspace layer. An item whose key starts `WS#` but names no
+workspace is counted in neither and reported. Rebuild each workspace that needs it with its own run.
+
 ## Monitoring
 
 ### Metrics

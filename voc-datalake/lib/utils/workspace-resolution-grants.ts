@@ -20,6 +20,7 @@
  * the role's other uses of the pool.
  */
 import * as cdk from 'aws-cdk-lib';
+import type * as cognito from 'aws-cdk-lib/aws-cognito';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { KEY_ACTIONS_FOR_WRITE_ONLY_GRANT } from './table-write-grants';
@@ -56,4 +57,17 @@ export function grantWorkspaceResolution(workspacesTable: dynamodb.ITable, role:
   role.addManagedPolicy(resolutionPolicy(role, workspacesTable));
   workspacesTable.encryptionKey?.grant(role, ...KEY_ACTIONS_FOR_WRITE_ONLY_GRANT);
   return { WORKSPACES_TABLE: workspacesTable.tableName };
+}
+
+/**
+ * The same resolution for a data-path or operator API whose role uses the user pool for nothing else (the metrics
+ * API, the feedback edits, the integrations and scrapers APIs; lambda/shared/workspace_request.py): the stack's one
+ * policy above, plus the live platform-admin check's Cognito `AdminListGroupsForUser` and `AdminGetUser` on the pool.
+ * Returns the resolver's environment, `WORKSPACES_TABLE` and `USER_POOL_ID`.
+ */
+export function grantRequestWorkspace(
+  workspacesTable: dynamodb.ITable, role: iam.Role, userPool: cognito.IUserPool,
+): Record<string, string> {
+  userPool.grant(role, 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
+  return { ...grantWorkspaceResolution(workspacesTable, role), USER_POOL_ID: userPool.userPoolId };
 }

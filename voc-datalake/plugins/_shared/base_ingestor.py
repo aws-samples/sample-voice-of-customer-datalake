@@ -5,17 +5,19 @@ Uses DynamoDB for watermarks and SQS for processing queue.
 Two paths (docs/multi-workspace.md, phase 2 "ingestion"; ``run_in_workspace``):
 
 * A run in a workspace: its event names it in ``workspace_id`` (the scheduled tick's
-  per-workspace invoke, a continuation part of one) and the verified scope comes from it
-  (``shared/ws_repo.py scope_from_message``). Everything it keeps is the workspace's:
-  watermarks (``WS#{ws}#{plugin}#{key}``), the ``WS#{ws}#SOURCE_RUN#`` rows, the circuit
-  breaker, the raw objects (``ws/{ws}/raw/...``), the credentials (the workspace's own
+  per-workspace invoke, a continuation part of one, the API's Run now and scraper run sent
+  with ``X-Workspace-Id``, which name the request's resolved workspace) and the verified
+  scope comes from it (``shared/ws_repo.py scope_from_message``). Everything it keeps is the
+  workspace's: watermarks (``WS#{ws}#{plugin}#{key}``), the ``WS#{ws}#SOURCE_RUN#`` rows, the
+  circuit breaker, the raw objects (``ws/{ws}/raw/...``), the credentials (the workspace's own
   secret), and every queued message carries ``workspace_id``. A ``workspace_id`` that is not
   a workspace id is refused.
-* A deployment-wide run: its event names no workspace (the API's Run now, scraper run and
-  reprocess, an S3 upload, the scheduled tick's own run). It does exactly what it did before
-  workspaces (``{plugin}#{key}`` watermarks, ``SOURCE_RUN#`` rows, the shared secret, ``raw/``).
-  This path stays until phase 2's last slice moves the API, the S3 trigger and the
-  processor onto workspaces, and is then removed.
+* A deployment-wide run: its event names no workspace (the API's Run now and scraper run
+  without ``X-Workspace-Id``, the S3 import API's reprocess, an S3 upload, the scheduled
+  tick's own run). It does exactly what it did before workspaces (``{plugin}#{key}``
+  watermarks, ``SOURCE_RUN#`` rows, the shared secret, ``raw/``). This path stays until
+  phase 2's last slice moves the S3 import, its trigger and the rest onto workspaces, and is
+  then removed.
 """
 
 import os
@@ -37,10 +39,12 @@ from shared.aws import (
     get_secret,
     get_sqs_client,
 )
-from shared.exceptions import ConfigurationError, SecretUnreadableError
+from shared.exceptions import ConfigurationError, SecretUnreadableError, WorkspaceCredentialsNotSet
 from shared.idempotency import dedupe_claim_item
 from shared.ingest_tables import ingest_table
 from shared.logging import logger, metrics, tracer
+from shared.plugin_identity import is_valid_plugin_identifier
+from shared.run_rows import source_run_partition
 from shared.timestamps import now_iso
 from shared.workspace_ids import credentials_secret_name
 from shared.workspace_plugins import workspaces_with_plugin
@@ -49,14 +53,13 @@ from shared.ws_repo import (
     WORKSPACE_FIELD,
     WorkspaceScope,
     message_scope,
-    source_run_pk,
     watermark_key,
 )
 
 from .audit import emit_audit_event
 from .circuit_breaker import CircuitBreaker
 from .normalized_item import normalized_item_fields
-from .plugin_secrets import filter_plugin_secrets
+from .plugin_secrets import filter_plugin_secrets, plugin_secret_prefix
 from .raw_archive import archive_raw_item
 from .raw_source import pop_raw_source
 from .self_invoke import invoke_self
@@ -170,12 +173,14 @@ def fan_out_once(plugin_id: str, event: Mapping) -> None:
 def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]) -> dict:
     """The one entry of every ingestor's ``lambda_handler`` (docs/multi-workspace.md).
 
-    * An event that names a workspace in ``workspace_id`` (the fan-out's runs, a continuation part of one) runs
-      ``run(scope)`` in it. One that names something that is not a workspace id is refused (logged and metered,
-      ``{"status": "refused"}``; never raised, so Lambda does not retry it), and never runs deployment-wide instead.
-    * An event that names none (the API's Run now, scraper run and reprocess, an S3 upload's trigger) runs
-      ``run(None)``: the deployment-wide path, exactly as before workspaces. That path stays until phase 2's last
-      slice moves the API, the S3 trigger and the processor onto workspaces, and is then removed.
+    * An event that names a workspace in ``workspace_id`` (the fan-out's runs, a continuation part of one, the API's
+      Run now and scraper run in a workspace) runs ``run(scope)`` in it. One that names something that is not a
+      workspace id is refused (logged and metered, ``{"status": "refused"}``; never raised, so Lambda does not retry
+      it), and never runs deployment-wide instead.
+    * An event that names none (the API's Run now and scraper run without ``X-Workspace-Id``, the S3 import API's
+      reprocess, an S3 upload's trigger) runs ``run(None)``: the deployment-wide path, exactly as before workspaces.
+      That path stays until phase 2's last slice moves the S3 import and its trigger onto workspaces, and is then
+      removed.
     * The scheduled tick first fans out to the workspaces that enabled the plugin (``fan_out_tick``, each its own
       invoke), at most once per tick (``fan_out_once``), then runs the deployment-wide run as before.
     """
@@ -189,6 +194,16 @@ def run_in_workspace(event: object, run: Callable[[WorkspaceScope | None], dict]
     if is_scheduled_tick(event):
         fan_out_once(SOURCE_PLATFORM, event)
     return run(scope)
+
+
+def _holds_namespace(plugin_id: str, all_secrets: object) -> bool:
+    """Whether a secret holds at least one of the plugin's ``<plugin>_<key>`` keys. True for a malformed plugin id
+    and for a secret that is not a JSON object, so ``filter_plugin_secrets`` refuses either as the counted
+    misconfiguration it is (the stored JSON may be any value, whatever ``get_secret`` is annotated with)."""
+    if not is_valid_plugin_identifier(plugin_id) or not isinstance(all_secrets, Mapping):
+        return True
+    prefix = plugin_secret_prefix(plugin_id)
+    return any(isinstance(key, str) and key.startswith(prefix) and len(key) > len(prefix) for key in all_secrets)
 
 
 class BaseIngestor(ABC):
@@ -353,11 +368,9 @@ class BaseIngestor(ABC):
         return watermark_key(self.scope, self.source_platform, key)
 
     def _source_run_pk(self) -> str:
-        """The run row's partition: ``SOURCE_RUN#{plugin}`` deployment-wide (what the API polls), else
-        ``WS#{ws}#SOURCE_RUN#{plugin}``."""
-        if self.scope is None:
-            return f"SOURCE_RUN#{self.source_platform}"
-        return source_run_pk(self.scope, self.source_platform)
+        """The run row's partition: ``SOURCE_RUN#{plugin}`` deployment-wide, else ``WS#{ws}#SOURCE_RUN#{plugin}``:
+        the one spelling the integrations API writes and polls (shared/run_rows.py ``source_run_partition``)."""
+        return source_run_partition(self.scope, self.source_platform)
 
     def _load_secrets(self) -> dict:
         """
@@ -381,8 +394,11 @@ class BaseIngestor(ABC):
         secret is read at all — so there is nothing to over-share. It is also what a
         plugin invoked outside the CDK-built environment (a local smoke run) hits.
 
-        A new workspace's secret holds ``{}`` until its credentials are saved, which
-        reads as ``SecretUnreadableError`` (not counted by the breaker).
+        In a workspace, a secret that holds none of this plugin's keys (a new workspace's
+        ``{}`` until its credentials are saved, or only other plugins' keys) raises
+        ``WorkspaceCredentialsNotSet``: like ``SecretUnreadableError`` (its base) it is not
+        counted by the workspace's breaker, and a manual run's row ends ``error`` naming it.
+        Deployment-wide a namespace miss stays a counted ``ConfigurationError``, as before.
         """
         if self.scope is None:
             if not SECRETS_ARN:
@@ -408,6 +424,11 @@ class BaseIngestor(ABC):
             # the next invocation and makes the failure retry-safe.
             clear_secret_cache()
 
+        if self.scope is not None and not _holds_namespace(self.source_platform, all_secrets):
+            raise WorkspaceCredentialsNotSet(
+                f"No credentials of '{self.source_platform}' are saved in this workspace's secret (no "
+                f"'{plugin_secret_prefix(self.source_platform)}*' keys): save them with "
+                "PUT /integrations/{source}/credentials in the workspace.")
         return filter_plugin_secrets(self.source_platform, all_secrets)
 
     def get_watermark(self, key: str, default: str | None = None) -> str | None:

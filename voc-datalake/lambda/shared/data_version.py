@@ -26,6 +26,11 @@ watermark (``shared.earliest_date``) and, for Radar, its counter in ONE
 the lone watermark ``get_item``. Any failure answers ``versions=None`` (the caller
 must not cache that request) and falls back to the plain watermark read.
 
+A workspace (docs/multi-workspace.md) has its own ``data_version`` and watermark under
+``WS#{ws}#METRIC#meta`` (``scope``): a workspace's feedback write bumps only its own, and a
+read in the workspace keys its cache on its own. ``config_version`` and Radar's counter stay
+the deployment's, like the settings they count (phase 3 moves the settings).
+
 Data-layer only (no API-resolver imports), so the aggregator and the job workers
 can use it.
 """
@@ -39,11 +44,19 @@ from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared.earliest_date import EARLIEST_DATE_KEY, METRIC_META_PK, earliest_date_from_item
+from shared.earliest_date import (
+    METRIC_META_PK,
+    earliest_date_from_item,
+    earliest_date_key,
+    meta_partition,
+)
+from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope, ws_table
 
-DATA_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': 'data_version'}
+DATA_VERSION_SK: Final = 'data_version'
+DATA_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': DATA_VERSION_SK}
 CONFIG_VERSION_KEY: Final = {'pk': METRIC_META_PK, 'sk': 'config_version'}
 RADAR_VERSION_KEY: Final = {'pk': 'SETTINGS#radar', 'sk': 'version'}
 VERSION_ATTRIBUTE: Final = 'v'
@@ -51,17 +64,25 @@ VERSION_ATTRIBUTE: Final = 'v'
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
 
-def _bump(table: Any, key: Mapping[str, str], name: str) -> bool:
-    """``ADD v 1`` on ``key``; True when it landed. Never raises (see the module docstring)."""
+def data_version_key(scope: WorkspaceScope | None = None) -> dict[str, str]:
+    """The ``data_version`` row: the deployment's (``DATA_VERSION_KEY``), or the workspace's (``WS#{ws}#METRIC#meta``)."""
+    if scope is None:
+        return dict(DATA_VERSION_KEY)
+    return {'pk': meta_partition(scope), 'sk': DATA_VERSION_SK}
+
+
+def _bump(table: Any, key: Mapping[str, str], name: str, scope: WorkspaceScope | None = None) -> bool:
+    """``ADD v 1`` on ``key`` (through the workspace layer with ``scope``); True when it landed. Never raises
+    (see the module docstring)."""
     if table is None:
         return False
+    request = {
+        'UpdateExpression': 'ADD #v :one SET updated_at = :now',
+        'ExpressionAttributeNames': {'#v': VERSION_ATTRIBUTE},
+        'ExpressionAttributeValues': {':one': 1, ':now': now_iso()},
+    }
     try:
-        table.update_item(
-            Key=dict(key),
-            UpdateExpression='ADD #v :one SET updated_at = :now',
-            ExpressionAttributeNames={'#v': VERSION_ATTRIBUTE},
-            ExpressionAttributeValues={':one': 1, ':now': now_iso()},
-        )
+        table_view(scope, table).update_item(key, **request)
     except _AWS_ERRORS:
         logger.exception('Could not bump a cache version; cached reads expire by age instead',
                          extra={'version': name})
@@ -69,9 +90,10 @@ def _bump(table: Any, key: Mapping[str, str], name: str) -> bool:
     return True
 
 
-def bump_data_version(aggregates_table: Any) -> bool:
-    """The feedback data changed (once per batch / request, never per record)."""
-    return _bump(aggregates_table, DATA_VERSION_KEY, 'data')
+def bump_data_version(aggregates_table: Any, scope: WorkspaceScope | None = None) -> bool:
+    """The feedback data changed (once per batch / request, never per record): the deployment's, or with
+    ``scope`` the workspace's own counter."""
+    return _bump(aggregates_table, data_version_key(scope), 'data', scope)
 
 
 def bump_config_version(aggregates_table: Any) -> bool:
@@ -85,27 +107,36 @@ def bump_radar_version(radar_table: Any) -> bool:
 
 
 class BatchBump:
-    """Collapse "this record wrote" marks into ONE bump per batch.
+    """Collapse "this record wrote" marks into ONE bump per batch (and per workspace).
 
     A record handler calls ``mark()`` after a write it made (thread-safe: the SQS
-    processor runs records on a thread pool); the batch entry point calls
-    ``flush(table)`` once after the batch, which bumps only when something was marked.
+    processor runs records on a thread pool), ``mark(scope)`` for a write of a
+    workspace's item; the batch entry point calls ``flush(table)`` once after the
+    batch, which bumps the deployment's counter when a deployment-wide write was
+    marked and each marked workspace's own (``bump(table, scope)``) once.
     """
 
-    def __init__(self, bump: Callable[[Any], bool]) -> None:
+    def __init__(self, bump: Callable[..., bool]) -> None:
         self._bump = bump
         self._lock = threading.Lock()
         self._marked = False
+        self._scopes: set[WorkspaceScope] = set()
 
-    def mark(self) -> None:
+    def mark(self, scope: WorkspaceScope | None = None) -> None:
         with self._lock:
-            self._marked = True
+            if scope is None:
+                self._marked = True
+            else:
+                self._scopes.add(scope)
 
     def flush(self, table: Any) -> bool:
-        """Bump once if anything was marked since the last flush; True when a bump landed."""
+        """Bump once per marked scope since the last flush; True when every bump landed and one was made."""
         with self._lock:
             marked, self._marked = self._marked, False
-        return bool(marked and self._bump(table))
+            scopes, self._scopes = self._scopes, set()
+        results = [self._bump(table)] if marked else []
+        results += [self._bump(table, scope) for scope in sorted(scopes, key=lambda scope: scope.ws)]
+        return bool(results) and all(results)
 
 
 @dataclass(frozen=True)
@@ -148,35 +179,55 @@ def _rows_by_sk(rows: object, pk: str) -> dict[str, Mapping[str, Any]]:
     return {str(row.get('sk')): row for row in rows if isinstance(row, Mapping) and row.get('pk') == pk}
 
 
-def _fallback_earliest(aggregates_table: Any) -> str | None:
-    """The plain watermark read the routes made before (fails open to None)."""
+def _fallback_earliest(aggregates_table: Any, scope: WorkspaceScope | None) -> str | None:
+    """The plain watermark read the routes made before (fails open to None); the workspace's with ``scope``."""
     try:
-        response = aggregates_table.get_item(Key=dict(EARLIEST_DATE_KEY))
+        response = table_view(scope, aggregates_table).get_item(earliest_date_key(scope))
     except Exception:
         # Fail open: the watermark only narrows windows, losing it costs efficiency, not data.
         logger.exception('Could not read the earliest-date watermark')
         return None
-    return earliest_date_from_item(response.get('Item') if isinstance(response, Mapping) else None)
+    return earliest_date_from_item(_item_of(response))
 
 
-def _batch_request(aggregates_table: Any, radar_table: Any) -> dict[str, Any]:
-    keys = [dict(DATA_VERSION_KEY), dict(CONFIG_VERSION_KEY), dict(EARLIEST_DATE_KEY)]
+def _item_of(response: object) -> object:
+    """A get_item answer's ``Item``; None when the answer is not a mapping (a stubbed table may answer anything)."""
+    return response.get('Item') if isinstance(response, Mapping) else None
+
+
+def _batch_request(aggregates_table: Any, radar_table: Any, scope: WorkspaceScope | None) -> dict[str, Any]:
+    keys = [data_version_key(scope), dict(CONFIG_VERSION_KEY), earliest_date_key(scope)]
+    if scope is not None:
+        # The workspace's own rows (its data_version and watermark), checked as any key of the workspace is; the
+        # config counter is the deployment's (its settings are).
+        ws_table(scope, aggregates_table).check_keys(keys[0::2])
     request: dict[str, Any] = {aggregates_table.name: {'Keys': keys, 'ConsistentRead': True}}
     if radar_table is not None:
         request[radar_table.name] = {'Keys': [dict(RADAR_VERSION_KEY)], 'ConsistentRead': True}
     return request
 
 
-def _parse(response: object, aggregates_table: Any, radar_table: Any) -> VersionRead | None:
+def _rows_by_key(rows: object) -> dict[tuple[str, str], Mapping[str, Any]]:
+    if not isinstance(rows, list):
+        return {}
+    return {(str(row.get('pk')), str(row.get('sk'))): row for row in rows if isinstance(row, Mapping)}
+
+
+def _row(rows: Mapping[tuple[str, str], Mapping[str, Any]], key: Mapping[str, str]) -> Mapping[str, Any] | None:
+    return rows.get((key['pk'], key['sk']))
+
+
+def _parse(response: object, aggregates_table: Any, radar_table: Any,
+           scope: WorkspaceScope | None) -> VersionRead | None:
     """The read, or None when the response is not a complete, well-formed answer."""
     if not isinstance(response, Mapping) or response.get('UnprocessedKeys'):
         return None
     responses = response.get('Responses')
     if not isinstance(responses, Mapping) or not isinstance(responses.get(aggregates_table.name), list):
         return None
-    meta = _rows_by_sk(responses.get(aggregates_table.name), METRIC_META_PK)
-    data = _counter(meta.get(DATA_VERSION_KEY['sk']))
-    config = _counter(meta.get(CONFIG_VERSION_KEY['sk']))
+    rows = _rows_by_key(responses.get(aggregates_table.name))
+    data = _counter(_row(rows, data_version_key(scope)))
+    config = _counter(_row(rows, CONFIG_VERSION_KEY))
     radar: int | None = None
     if radar_table is not None:
         radar_rows = _rows_by_sk(responses.get(radar_table.name), RADAR_VERSION_KEY['pk'])
@@ -185,12 +236,16 @@ def _parse(response: object, aggregates_table: Any, radar_table: Any) -> Version
             return None
     if data is None or config is None:
         return None
-    earliest = earliest_date_from_item(meta.get(EARLIEST_DATE_KEY['sk']))
+    earliest = earliest_date_from_item(_row(rows, earliest_date_key(scope)))
     return VersionRead(Versions(data, config, radar), earliest)
 
 
-def read_versions(aggregates_table: Any, radar_table: Any = None) -> VersionRead:
+def read_versions(aggregates_table: Any, radar_table: Any = None, scope: WorkspaceScope | None = None) -> VersionRead:
     """data_version + config_version + the earliest-date watermark (+ the Radar counter) in one call.
+
+    With ``scope`` the data_version and the watermark are the workspace's own (the config counter stays the
+    deployment's), so a cached answer of the deployment or of another workspace is never keyed alike by chance
+    of equal counters (shared/response_cache.py also keys on the workspace).
 
     Strongly consistent, so a write's bump is visible to the very next read (a person
     saving a correction sees it). Fails open: ``versions=None`` and the watermark from
@@ -200,12 +255,12 @@ def read_versions(aggregates_table: Any, radar_table: Any = None) -> VersionRead
         return VersionRead(None, None)
     try:
         response = aggregates_table.meta.client.batch_get_item(
-            RequestItems=_batch_request(aggregates_table, radar_table))
-        parsed = _parse(response, aggregates_table, radar_table)
+            RequestItems=_batch_request(aggregates_table, radar_table, scope))
+        parsed = _parse(response, aggregates_table, radar_table, scope)
     except Exception:
         # A version read must never fail the request.
         logger.exception('Could not read the cache versions; serving this request live')
         parsed = None
     if parsed is not None:
         return parsed
-    return VersionRead(None, _fallback_earliest(aggregates_table))
+    return VersionRead(None, _fallback_earliest(aggregates_table, scope))

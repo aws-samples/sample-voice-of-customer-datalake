@@ -10,6 +10,7 @@ import { sourcesStatusKey } from '../../api/queryKeys'
 import { ownValue } from '../Scrapers/scraper-helpers'
 import { CLOSED_CIRCUIT as CLOSED } from '../../api/sourcesStatusSchema'
 import type { SourceCircuit, SourceStatus, SourcesStatus } from '../../api/sourcesStatusSchema'
+import { useCurrentWorkspace } from '../../workspace/currentWorkspace'
 
 /** Shared by every SourceCard (and the source erasure panel) so the page makes one /sources/status call. */
 const SOURCES_STATUS_KEY = sourcesStatusKey()
@@ -38,6 +39,7 @@ export function useSourceSchedule(sourceId: string, apiEndpoint: string): {
   resetCircuit: () => Promise<void>
 } {
   const queryClient = useQueryClient()
+  const workspace = useCurrentWorkspace()
   const [loading, setLoading] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [resetFailed, setResetFailed] = useState(false)
@@ -60,7 +62,12 @@ export function useSourceSchedule(sourceId: string, apiEndpoint: string): {
     setLoading(true)
     try {
       const response = next ? await api.enableSource(sourceId) : await api.disableSource(sourceId)
-      patchOwn(next ? { enabled: response.enabled, circuit: CLOSED } : { enabled: response.enabled })
+      // Enabling closes the DEPLOYMENT's breaker (the schedule is the deployment's, sent without X-Workspace-Id).
+      // Outside a workspace that is the breaker the card shows; inside one the card shows the workspace's own,
+      // which enabling leaves as it is, so the status is read again rather than shown closed.
+      const closesShownBreaker = next && workspace === null
+      patchOwn(closesShownBreaker ? { enabled: response.enabled, circuit: CLOSED } : { enabled: response.enabled })
+      if (next && !closesShownBreaker) void queryClient.invalidateQueries({ queryKey: SOURCES_STATUS_KEY })
     } catch {
       // The toggle stays where it was; the card shows the server's last answer.
     } finally {

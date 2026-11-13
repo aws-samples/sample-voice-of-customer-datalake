@@ -75,6 +75,8 @@ from integrations_fixtures import (
     stub_rule_lookup,
 )
 from integrations_route_ast_fixtures import (
+    ADMIN_GATE,
+    gate_calls_in,
     module_function,
     plain_calls_in,
     route_functions,
@@ -1093,7 +1095,8 @@ class TestEverySourceRouteIsValidated:
 
 
 class TestEverySourceWriteIsAdminGated:
-    """Each mutating `<source>` route calls require_admin.
+    """Each mutating `<source>` route calls the admin gate (`_request.require_request_admin`: the
+    deployment's `admins`, or the workspace's admin role; test_route_admin_gates.py pins its two branches).
 
     The three `apps` routes and the three `sources` routes carried no gate while
     the credentials routes beside them did, so the boundary depended on which key
@@ -1102,7 +1105,7 @@ class TestEverySourceWriteIsAdminGated:
 
     @pytest.mark.parametrize('route', sorted(SOURCE_ADMIN_ROUTES))
     def test_the_route_requires_admin(self, route):
-        assert 'require_admin' in plain_calls_in(_source_routes()[route]), (
+        assert ADMIN_GATE in gate_calls_in(_source_routes()[route]), (
             f'{route} mutates or reads configuration with no admin gate'
         )
 
@@ -1114,7 +1117,7 @@ class TestEverySourceWriteIsAdminGated:
         empty that list for non-admins, so its openness is a decision and is pinned
         as one.
         """
-        assert 'require_admin' not in plain_calls_in(_source_routes()['list_app_configs'])
+        assert ADMIN_GATE not in gate_calls_in(_source_routes()['list_app_configs'])
 
 
 def _assert_ios_app_list_readable(mock_secrets, api_gateway_event, lambda_context, groups=None):
@@ -1717,6 +1720,7 @@ class TestTheQueryStringSourceRouteIsValidated:
         """
         route = module_function(_handler_module(), 'get_sources_status')
         assert 'require_admin' not in plain_calls_in(route)
+        assert ADMIN_GATE not in gate_calls_in(route)
 
 
 class TestTheStatusRouteDoesNotFanOutPerDuplicate:

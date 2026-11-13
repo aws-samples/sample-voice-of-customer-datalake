@@ -15,10 +15,12 @@ import type { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 
 import {
-  RefSchema, apiMethods, apiTemplate, apiTemplateAllPlugins, functionIdForHandler, nonOptions, resolveMethod,
+  RefSchema, apiMethods, apiTemplate, apiTemplateAllPlugins, functionIdForHandler, nonOptions, readRepoFile,
+  resolveMethod,
 } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
+import { CORS_ALLOW_HEADERS, WORKSPACE_HEADER } from './api-gateway';
 
 beforeAll(() => {
   apiTemplate();
@@ -77,6 +79,60 @@ describe('CORS preflight on exactly the method-bearing resources', () => {
   it('answers every preflight with the gateway MOCK (no compute)', () => {
     const types = new Set(apiMethods(apiTemplate()).filter((m) => m.httpMethod === 'OPTIONS').map((m) => m.integrationType));
     expect([...types]).toStrictEqual(['MOCK']);
+  });
+});
+
+/**
+ * `X-Workspace-Id` (docs/multi-workspace.md, "Request flow"): the web app sends it on every call inside a
+ * workspace (since 6.12.00); a non-simple header, so the browser preflights it. The gateway's generated OPTIONS, its own error responses and
+ * the Lambdas' CORS answer (lambda/shared/api.py `create_cors_config`) must all allow it, spelled as
+ * lambda/shared/workspace.py reads it (case-insensitively).
+ */
+describe('the workspace header passes the preflight', () => {
+  const lower = WORKSPACE_HEADER.toLowerCase();
+  const ParametersSchema = z.object({
+    Properties: z.object({
+      HttpMethod: z.string().optional(),
+      Integration: z.object({
+        IntegrationResponses: z.array(z.object({ ResponseParameters: z.record(z.string(), z.unknown()).optional() }))
+          .optional(),
+      }).optional(),
+      ResponseParameters: z.record(z.string(), z.unknown()).optional(),
+    }),
+  });
+  const allowed = (raw: unknown): Set<string> =>
+    new Set(String(raw).replace(/^'|'$/g, '').split(',').map((h) => h.trim().toLowerCase()));
+  /** Every published allow-list (at least one) names the header. */
+  const expectEachAllows = (lists: unknown[]): void => {
+    expect(lists.length).toBeGreaterThan(0);
+    expect(lists.filter((raw) => !allowed(raw).has(lower))).toStrictEqual([]);
+  };
+
+  it('is one of the allowed request headers, once', () => {
+    expect(CORS_ALLOW_HEADERS.filter((h) => h.toLowerCase() === lower)).toStrictEqual([WORKSPACE_HEADER]);
+  });
+
+  it('is allowed by every generated preflight', () => {
+    expectEachAllows(Object.values(apiTemplate().findResources('AWS::ApiGateway::Method'))
+      .map((method) => ParametersSchema.parse(method).Properties)
+      .filter((props) => props.HttpMethod === 'OPTIONS')
+      .flatMap((props) => props.Integration?.IntegrationResponses ?? [])
+      .map((response) => response.ResponseParameters?.['method.response.header.Access-Control-Allow-Headers'])
+      .filter((raw) => raw !== undefined));
+  });
+
+  it('is allowed by every gateway error response that lists headers', () => {
+    expectEachAllows(Object.values(apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'))
+      .map((response) => ParametersSchema.parse(response).Properties.ResponseParameters?.[
+        'gatewayresponse.header.Access-Control-Allow-Headers'])
+      .filter((raw) => raw !== undefined));
+  });
+
+  it('is in the Lambdas own CORS answer and is the header the middleware reads', () => {
+    const api = readRepoFile('lambda', 'shared', 'api.py');
+    expect(api).toContain(`"${WORKSPACE_HEADER}",`);
+    const workspace = readRepoFile('lambda', 'shared', 'workspace.py');
+    expect(/^WORKSPACE_HEADER: Final = '([^']+)'$/m.exec(workspace)?.[1]).toBe(lower);
   });
 });
 

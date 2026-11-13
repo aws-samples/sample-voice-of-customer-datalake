@@ -43,7 +43,12 @@ GATE_PRIMITIVE = 'require_admin'
 # Shared gates by name. Each one outside this file is itself checked structurally below
 # (test_every_shared_gate_primitive_is_an_admin_check), so a name here cannot hide a non-gate.
 # `require_board_admin` (``shared.engagement_identity``): an app-pool admin on the feedback boards' routes.
-GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin', 'require_settings_admin'})
+# `require_request_admin` (``shared.workspace_request``): a two-path route's gate, `require_admin` without
+# X-Workspace-Id and `require_workspace_admin` with it (both branches pinned below). `require_settings_admin`
+# (``shared.request_workspace``): the same two branches for a settings kind that moved into its workspace.
+TWO_PATH_GATE = 'require_request_admin'
+GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin', 'require_settings_admin',
+                             TWO_PATH_GATE})
 # Shared resolver middlewares that gate a whole module (checked the same way, below).
 GATE_MIDDLEWARES = frozenset({'admins_only'})
 SHARED_DIR = API_DIR.parent / 'shared'
@@ -217,7 +222,8 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'PUT /chat/conversations/<conversation_id>/title',
           'DELETE /chat/conversations/<conversation_id>',
           'POST /chat/conversations/<conversation_id>/cancel'),
-    _open("feedback edit: limited to the caller's category scope (shared/category_access.py)",
+    _open("feedback edit: limited to the caller's category scope (shared/category_access.py); with X-Workspace-Id "
+          "to the workspace's editors and admins (WORKSPACE_SCOPED below)",
           'feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/category',
           'PUT /feedback/<feedback_id>/dimensions'),
     _open('participants: every signed-in app user manages lists and people (engagement brief, 5.33)',
@@ -597,6 +603,216 @@ def test_removing_the_workspace_gate_is_detected(route):
     assert _workspace_gated(ast.unparse(tree))[route] is False
 
 
+# ── The data path's workspace dimension (docs/multi-workspace.md → Request flow, phase 2) ─────────────────────
+# Routes that serve both paths: with X-Workspace-Id they act in that workspace (shared/workspace_request.py
+# `RequestWorkspace`: the one 404 for a non-member, a platform admin's entry live-checked and audited) and read and
+# write only its partitions; without it, deployment-wide as before. Every route of a module that resolves a request's
+# workspace is listed (so a new route there is classified), and each resolves it before it reads: the metrics API in
+# a resolver middleware that runs before every route, the feedback edits as an unconditional top-level call.
+WORKSPACE_RESOLVER = 'RequestWorkspace'
+WORKSPACE_SCOPED: dict[str, frozenset[str]] = {
+    # Reads: any member (Roles: a viewer reads the workspace's feedback and dashboards).
+    'metrics_handler.py': frozenset({
+        'GET /feedback', 'GET /feedback/urgent', 'GET /feedback/entities', 'GET /feedback/search',
+        'GET /feedback/problems', 'GET /feedback/access', 'GET /feedback/catalogue', 'GET /feedback/<feedback_id>',
+        'GET /feedback/<feedback_id>/similar', 'GET /metrics/summary', 'GET /metrics/sentiment',
+        'GET /metrics/categories', 'GET /metrics/sources', 'GET /metrics/personas', 'GET /metrics/dimensions',
+        'GET /metrics/data-quality', 'GET /metrics/github', 'GET /metrics/release-watch',
+    }),
+    # Writes: the workspace's editors and admins (a viewer 403), the category scope as before.
+    'feedback_edit_handler.py': frozenset({
+        'PUT /feedback/<feedback_id>/category', 'PUT /feedback/<feedback_id>/dimensions',
+    }),
+    # The operator routes that start and watch ingestion: in a workspace the ADMIN_ONLY ones need the caller's admin
+    # role there (`require_request_admin`, test below), the reads any member; credentials and app connectors in the
+    # workspace's own secret, Run now with the resolved workspace on the payload, run rows and breaker rows its own.
+    'integrations_handler.py': frozenset({
+        'GET /integrations/status', 'GET /integrations/<source>/credentials', 'PUT /integrations/<source>/credentials',
+        'GET /integrations/<source>/apps', 'POST /integrations/<source>/apps',
+        'DELETE /integrations/<source>/apps/<app_id>', 'POST /sources/<source>/run', 'GET /sources/status',
+        'POST /sources/<source>/reset',
+        # Refused in a workspace (WORKSPACE_REFUSED): the schedule rule serves every workspace.
+        'PUT /sources/<source>/enable', 'PUT /sources/<source>/disable',
+    }),
+    'scrapers_handler.py': frozenset({
+        'GET /scrapers', 'POST /scrapers', 'DELETE /scrapers/<scraper_id>', 'GET /scrapers/connectors',
+        'GET /scrapers/templates', 'POST /scrapers/<scraper_id>/run', 'GET /scrapers/<scraper_id>/status',
+        'POST /scrapers/analyze-url', 'GET /scrapers/jobs/<job_id>',
+    }),
+}
+#: How each module resolves the workspace before a route reads: a middleware (module-wide: its name and the call
+#: its first statement makes, afresh for each request) or a per-route call.
+WORKSPACE_FIRST_MIDDLEWARE = {'metrics_handler.py': ('_workspace_first', '_request_scope')}
+WORKSPACE_FIRST_CALL = {'feedback_edit_handler.py': '_edit_scope'}
+#: The operator modules: one shared implementation (shared/workspace_request.py `ResolvedRoutes`), installed as
+#: `_request = ResolvedRoutes(app)` and `app.use(middlewares=[_request.middleware])`; its admin gate is
+#: `_request.require_request_admin()`.
+SHARED_RESOLVER = 'ResolvedRoutes'
+TWO_PATH_MODULES = frozenset({'integrations_handler.py', 'scrapers_handler.py'})
+#: Routes of a two-path module that a request in a workspace may not use: each calls the module's refusal as an
+#: unconditional top-level statement, right after its admin gate.
+WORKSPACE_REFUSAL = 'refuse_in_workspace'
+WORKSPACE_REFUSED: dict[str, frozenset[str]] = {
+    'integrations_handler.py': frozenset({'PUT /sources/<source>/enable', 'PUT /sources/<source>/disable'}),
+}
+#: Modules that do not act in a workspace yet: their first middleware refuses any request that sends
+#: X-Workspace-Id (shared/workspace_request.py `deployment_only`: one 400 for everyone, nothing read).
+DEPLOYMENT_ONLY_MODULES: dict[str, str] = {
+    's3_import_handler.py': 'the import bucket is not keyed by workspace: a reprocess in a workspace would ingest '
+                            "the deployment's staged files into it",
+}
+ALL_METHODS = PLATFORM_GATED_METHODS
+
+
+def _source(handler: str) -> str:
+    return (API_DIR / handler).read_text(encoding='utf-8')
+
+
+def _resolves(source: str) -> bool:
+    return f'{WORKSPACE_RESOLVER}(' in source or f'{SHARED_RESOLVER}(' in source
+
+
+def test_only_the_listed_modules_resolve_a_requests_workspace_for_the_data_path():
+    resolving = {path.name for path in _handler_files() if _resolves(path.read_text(encoding='utf-8'))}
+    assert resolving == set(WORKSPACE_SCOPED)
+    assert set(WORKSPACE_FIRST_MIDDLEWARE) | set(WORKSPACE_FIRST_CALL) | TWO_PATH_MODULES == set(WORKSPACE_SCOPED)
+
+
+@pytest.mark.parametrize('handler', sorted(WORKSPACE_SCOPED))
+def test_every_route_of_a_two_path_module_is_workspace_scoped(handler):
+    routes = {key for fn in _module_functions(ast.parse(_source(handler))).values()
+              for key in _route_keys(fn, ALL_METHODS)}
+    assert routes == WORKSPACE_SCOPED[handler], 'classify the new route in WORKSPACE_SCOPED'
+
+
+@pytest.mark.parametrize(('handler', 'middleware', 'resolver'), sorted(
+    (handler, middleware, resolver) for handler, (middleware, resolver) in WORKSPACE_FIRST_MIDDLEWARE.items()))
+def test_the_workspace_is_resolved_before_every_route(handler, middleware, resolver):
+    tree = ast.parse(_source(handler))
+    assert middleware in _middlewares(tree)
+    body = [s for s in _module_functions(tree)[middleware].body if not (isinstance(s, ast.Expr)
+                                                                       and isinstance(s.value, ast.Constant))]
+    first = body[0]
+    assert isinstance(first, ast.Expr | ast.Return), 'the middleware must resolve the workspace first'
+    calls = {_called_name(node) for node in ast.walk(first)}
+    assert resolver in calls, 'the middleware must resolve the workspace first, afresh for each request'
+
+
+def _shared_routes_class() -> ast.ClassDef:
+    tree = ast.parse((SHARED_DIR / 'workspace_request.py').read_text(encoding='utf-8'))
+    return next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == SHARED_RESOLVER)
+
+
+def _method(name: str) -> ast.FunctionDef:
+    return next(node for node in _shared_routes_class().body if isinstance(node, ast.FunctionDef) and node.name == name)
+
+
+@pytest.mark.parametrize('handler', sorted(TWO_PATH_MODULES))
+def test_an_operator_module_installs_the_shared_resolver_before_every_route(handler):
+    tree = ast.parse(_source(handler))
+    assigned = [stmt for stmt in tree.body if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call)
+                and _called_name(stmt.value) == SHARED_RESOLVER]
+    assert [ast.unparse(stmt) for stmt in assigned] == [f'_request = {SHARED_RESOLVER}(app)']
+    uses = [stmt.value for stmt in tree.body if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+            and _called_name(stmt.value) == 'use']
+    assert [ast.unparse(use) for use in uses] == ['app.use(middlewares=[_request.middleware])']
+
+
+def test_the_shared_middleware_resolves_before_it_hands_on():
+    """`ResolvedRoutes.middleware` resolves and keeps the membership before it hands on to `next_middleware`."""
+    names = [_called_name(node) for stmt in _method('middleware').body for node in ast.walk(stmt)
+             if isinstance(node, ast.Call)]
+    assert names.index('context') < names.index('append_context') < names.index('next_middleware')
+
+
+#: The admin-only reads of the two-path operator modules (also in ADMIN_ONLY_READS below).
+TWO_PATH_ADMIN_READS: dict[str, frozenset[str]] = {
+    'integrations_handler.py': frozenset({'GET /integrations/status', 'GET /integrations/<source>/credentials'}),
+}
+
+
+def _two_path_admin_keys() -> set[tuple[str, str]]:
+    """The admin-only routes of the two-path operator modules."""
+    return {(handler, route) for table in (ADMIN_ONLY, TWO_PATH_ADMIN_READS) for handler, routes in table.items()
+            if handler in TWO_PATH_MODULES for route in routes}
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(_two_path_admin_keys()))
+def test_every_admin_route_of_a_two_path_module_gates_on_the_workspace_role(handler, route):
+    """In a workspace the caller's role there decides (a workspace admin or an entered platform admin), never the
+    deployment's `admins`: the route calls `_request.require_request_admin()` first, never `require_admin`."""
+    [fn] = [fn for fn in _module_functions(ast.parse(_source(handler))).values()
+            if route in _route_keys(fn, ALL_METHODS)]
+    first = next(stmt for stmt in fn.body if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
+                 and not isinstance(stmt, ast.Import | ast.ImportFrom))
+    assert ast.unparse(first) == f'_request.{TWO_PATH_GATE}()'
+    assert GATE_PRIMITIVE not in {_called_name(node) for node in ast.walk(fn)}
+
+
+def test_the_two_path_gate_checks_each_path():
+    """`ResolvedRoutes.require_request_admin`: `require_admin` when no workspace was resolved,
+    `require_workspace_admin` otherwise (the classifier above trusts the name; this pins what it does)."""
+    [branch] = [stmt for stmt in _method(TWO_PATH_GATE).body if isinstance(stmt, ast.If)]
+    assert isinstance(branch.test, ast.Compare)
+    assert isinstance(branch.test.ops[0], ast.Is)
+    assert [_called_name(s.value) for s in branch.body if isinstance(s, ast.Expr)] == [GATE_PRIMITIVE]
+    assert [_called_name(s.value) for s in branch.orelse if isinstance(s, ast.Expr)] == [WORKSPACE_GATE]
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler, routes in WORKSPACE_REFUSED.items() for route in routes))
+def test_every_refused_route_refuses_a_workspace_after_its_gate(handler, route):
+    assert route in WORKSPACE_SCOPED[handler]
+    [fn] = [fn for fn in _module_functions(ast.parse(_source(handler))).values() if route in _route_keys(fn, ALL_METHODS)]
+    order = [name for stmt in fn.body if isinstance(stmt, ast.Expr) and (name := _called_name(stmt.value))]
+    assert order[:2] == [TWO_PATH_GATE, WORKSPACE_REFUSAL], order
+
+
+def test_only_the_listed_routes_refuse_a_workspace():
+    refusing = {(handler, key) for handler in WORKSPACE_SCOPED
+                for fn in _module_functions(ast.parse(_source(handler))).values()
+                if WORKSPACE_REFUSAL in _top_level_calls(fn) for key in _route_keys(fn, ALL_METHODS)}
+    assert refusing == {(handler, route) for handler, routes in WORKSPACE_REFUSED.items() for route in routes}
+
+
+@pytest.mark.parametrize('handler', sorted(DEPLOYMENT_ONLY_MODULES))
+def test_a_deployment_only_module_refuses_the_header_first(handler):
+    tree = ast.parse(_source(handler))
+    [use] = [stmt.value for stmt in tree.body if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+             and _called_name(stmt.value) == 'use']
+    [middlewares] = [keyword.value for keyword in use.keywords if keyword.arg == 'middlewares']
+    assert isinstance(middlewares, ast.List)
+    first = middlewares.elts[0]
+    assert isinstance(first, ast.Name)
+    assert first.id == 'deployment_only'
+    assert not _resolves(_source(handler))
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(
+    (handler, route) for handler in WORKSPACE_FIRST_CALL for route in WORKSPACE_SCOPED[handler]))
+def test_every_edit_resolves_its_workspace_unconditionally(handler, route):
+    [fn] = [fn for fn in _module_functions(ast.parse(_source(handler))).values() if route in _route_keys(fn, ALL_METHODS)]
+    assert WORKSPACE_FIRST_CALL[handler] in _top_level_calls(fn)
+    # Before the body is read, so a non-member's malformed body still gets the one 404.
+    order = [name for stmt in fn.body if isinstance(stmt, _VALUE_STATEMENTS)
+             for name in [_called_name(stmt.value)] if name in (WORKSPACE_FIRST_CALL[handler], 'json_body_value',
+                                                                 '_dimensions_body')]
+    assert order[0] == WORKSPACE_FIRST_CALL[handler], order
+
+
+def test_a_workspace_edit_needs_the_editor_role():
+    functions = _module_functions(ast.parse(_source('feedback_edit_handler.py')))
+    assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body)
+               for stmt in functions[WORKSPACE_FIRST_CALL['feedback_edit_handler.py']].body)
+
+
+def test_removing_the_workspace_middleware_is_detected():
+    tree = ast.parse(_source('metrics_handler.py'))
+    tree.body = [s for s in tree.body if not (isinstance(s, ast.Expr) and _called_name(s.value) == 'use')]
+    assert WORKSPACE_FIRST_MIDDLEWARE['metrics_handler.py'][0] in _middlewares(ast.parse(_source('metrics_handler.py')))
+    assert WORKSPACE_FIRST_MIDDLEWARE['metrics_handler.py'][0] not in _middlewares(tree)
+
+
 def test_every_table_entry_names_a_route_that_exists():
     inventory = _inventory()
     stale = sorted(key for key in _admin_keys() | set(_open_keys()) | _workspace_admin_keys() if key not in inventory)
@@ -628,6 +844,8 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
     }),
     # Every workspace of the deployment (the platform console, docs/multi-workspace.md): platform admins only.
     'workspaces_handler.py': frozenset({'GET /platform/workspaces'}),
+    # Which credentials are set, and their non-secret values: administrators (in a workspace, its admins).
+    **TWO_PATH_ADMIN_READS,
 }
 
 

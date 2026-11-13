@@ -39,6 +39,9 @@ from metrics_publishing_routes import (
 from metrics_handler import AGGREGATE_READ_ROWS
 from shared.api import MAX_FEEDBACK_WINDOW_DAYS, clear_categories_cache
 
+# Some cases call the data helpers directly (outside a request): deployment-wide, as the middleware sets it.
+pytestmark = pytest.mark.usefixtures('deployment_wide_metrics_request')
+
 # DERIVED from the handler source rather than listed here — see
 # `metrics_publishing_routes`. `test_the_derivation_finds_the_routes_that_publish
 # _the_flag` below is its positive control.

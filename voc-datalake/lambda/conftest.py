@@ -7,6 +7,7 @@ preventing conflicts between different test directories.
 import json
 import os
 import sys
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -147,6 +148,28 @@ def _clear_categories_cache() -> None:
     module = sys.modules.get('shared.api')
     if module is not None:
         module.clear_categories_cache()
+
+
+@pytest.fixture(autouse=True)
+def _reset_aggregator_batch_state():
+    """Give the aggregator a fresh batch state around every test, in every tree.
+
+    `aggregator.handler.data_changed` collects one "this batch wrote" mark per scope until `lambda_handler`
+    flushes it, and `_known_workspace_earliest` remembers each workspace's watermark: a test that calls
+    `record_handler` directly (the rebuild script's, the read APIs' workspace world) would otherwise leave marks
+    that the next test's `lambda_handler` flushes as an extra data_version update. Replaced, never flushed, before
+    and after each test (only when the module is loaded).
+    """
+    _reset_aggregator_state()
+    yield
+    _reset_aggregator_state()
+
+
+def _reset_aggregator_state() -> None:
+    module: Any = sys.modules.get('aggregator.handler')  # its attributes are the handler's, not ModuleType's
+    if module is not None:
+        module.data_changed = type(module.data_changed)(module.bump_data_version)
+        module._known_workspace_earliest.clear()
 
 
 def _clear_counted_sources() -> None:

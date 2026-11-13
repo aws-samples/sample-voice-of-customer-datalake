@@ -161,7 +161,7 @@
       "editor": "Editor",
       "viewer": "Viewer"
     },
-    "sharedData": "Workspaces do not separate data yet: every workspace shows the same feedback, projects and settings. For now a workspace decides who can open it and who manages its members.",
+    "sharedData": "Each workspace keeps its own feedback, dashboards, brand and resolved problems; no feedback can reach a workspace yet. Projects, the assistant, Radar and the other settings (categories, dimensions, sources) are still shared by every workspace.",
     "moreFailed": "The next page could not be loaded. Choose Show more to try again.",
     "refreshFailed": "The list could not be refreshed, so it may be out of date.",
     "members": {
@@ -275,6 +275,7 @@
       "pluginGone": "This deployment no longer offers that plugin. Reload the page.",
       "pluginsChangedMeanwhile": "The workspace's plugins changed meanwhile. Reload the page and try again.",
       "ingestionNotYet": "Per-workspace ingestion arrives with a later release: a workspace cannot enable a plugin yet.",
+      "ingestionRunNotYet": "Per-workspace ingestion arrives with a later release: a run cannot start in a workspace yet.",
       "notDeploymentAdmin": "Only the deployment's administrators can change the default brand.",
       "notBrandAdmin": "Only this workspace's admins can change its brand.",
       "generic": "That did not work. Try again.",

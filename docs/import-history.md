@@ -62,7 +62,9 @@ In `voc-aggregates`, two rows per run, with no `ttl` (kept while the platform ru
 
 An S3 import run in a workspace (multi-workspace, since 7.00.00, [multi-workspace.md](multi-workspace.md))
 writes the same two rows under `WS#{ws}#IMPORT_RUN` and `WS#{ws}#IMPORT_RUN#{run_id}`; the history routes read the
-deployment-wide rows above until they are keyed by workspace.
+deployment-wide rows above until they are keyed by workspace. Nothing in the app starts such a run yet: the import
+bucket is not keyed by workspace, so the S3 import API (its reprocess included) answers 400 to a request that sends
+`X-Workspace-Id`.
 
 The detail row is written first, so a listed run always has a detail. One partition holds every
 summary row; imports are a few per day, far below a partition's write limit. A row written by an
@@ -91,7 +93,7 @@ Both routes are on the manual-import Lambda and admin-only (its module middlewar
 - **Scheduled plugin runs and scraper runs.** They are collection, not imports, and already have
   their own run rows: `SOURCE_RUN#{source}` (manual "Run now" of a plugin) and `SCRAPER_RUN#{id}`
   (`GET /scrapers/{id}/status`, latest run only); a run in a workspace writes `WS#{ws}#SOURCE_RUN#{source}` and
-  `WS#{ws}#SCRAPER_RUN#{id}`.
+  `WS#{ws}#SCRAPER_RUN#{id}`, which the same routes read for a request sent with that workspace's `X-Workspace-Id`.
 
 To find which run created a feedback item, use the archived raw file for CSV and JSON uploads
 (`raw_s3_key`) and the item's `manual_import_job_id` for pastes; items do not carry a `run_id`.

@@ -24,15 +24,19 @@ import {
   assistWorkerName, createAssistWorker, functionArnByName, grantAssistWorkerInvoke,
 } from './api-assist-workers';
 import type { ApiStackContext } from './api-context';
-import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
+import {
+  AGGREGATES_VERSION_PARTITION, grantCacheVersionBump, grantWorkspaceCacheVersionBump,
+} from '../utils/cache-version-grants';
+import { WORKSPACE_SECRET_BASE_PREFIX, grantWorkspaceSecretsReadWrite } from '../utils/workspace-secrets';
+import { CIRCUIT_ROW_PARTITIONS } from './ingestion-roles';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
-import { grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
+import { grantRequestWorkspace, grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
 import { appVersion } from '../utils/connector-version';
-import { grantSilverHistoryPut } from '../utils/silver-history-grants';
+import { grantSilverHistoryPut, grantWorkspaceSilverHistoryPut } from '../utils/silver-history-grants';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailSettingsEnv } from '../utils/inbound-email';
 
 export interface DataLambdas {
@@ -66,12 +70,19 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     secretsArn, designIntegrationsSecretArn,
   } = ctx.props;
 
+  const { workspacesTable, userPool } = ctx.props;
+
   // Metrics API
   const metricsRole = ctx.role('MetricsLambdaRole');
   feedbackTable.grantReadData(metricsRole);
   // Read-only: the metrics routes never write (lib/customer-data-deletes.test.ts).
   aggregatesTable.grantReadData(metricsRole);
   kmsKey.grantEncryptDecrypt(metricsRole);
+  // A request's X-Workspace-Id (docs/multi-workspace.md): its membership read in voc-workspaces, a platform admin's
+  // entry audited (AUDIT#WS#* puts only) and live-checked in Cognito, through the stack's one workspace-resolution
+  // policy (lib/utils/workspace-resolution-grants.ts). The workspace's own partitions of voc-feedback and
+  // voc-aggregates are in the read grants above.
+  const metricsWorkspaceEnv = grantRequestWorkspace(workspacesTable, metricsRole, userPool);
 
   const metricsLambda = new lambda.Function(stack, 'MetricsApi', {
     functionName: ctx.uniqueName(METRICS_API_FUNCTION_BASE_NAME),
@@ -90,6 +101,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       ALLOWED_ORIGIN: allowedOrigin,
       // GET /feedback/catalogue imports the writers' modules, which read the pipeline version at import.
       APP_VERSION: appVersion(),
+      ...metricsWorkspaceEnv,
       POWERTOOLS_SERVICE_NAME: 'voc-metrics-api',
       LOG_LEVEL: 'INFO',
     },
@@ -107,11 +119,17 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   const feedbackEditRole = ctx.role('FeedbackEditLambdaRole');
   feedbackTable.grant(feedbackEditRole, 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem');
   aggregatesTable.grant(feedbackEditRole, 'dynamodb:GetItem', 'dynamodb:Query');
-  // The data_version bump after an edit (read-your-write for the read cache, docs/caching.md).
+  // The data_version bump after an edit (read-your-write for the read cache, docs/caching.md); an edit in a
+  // workspace bumps the workspace's own (`WS#{one id}#METRIC#meta`).
   grantCacheVersionBump(aggregatesTable, feedbackEditRole, AGGREGATES_VERSION_PARTITION);
+  grantWorkspaceCacheVersionBump(aggregatesTable, feedbackEditRole);
   kmsKey.grantEncryptDecrypt(feedbackEditRole);
-  // The review as it was before each edit (lambda/shared/silver_provenance.py): write-once Put under silver/ only.
+  // The review as it was before each edit (lambda/shared/silver_provenance.py): write-once Put under silver/ only,
+  // and a workspace's review under one workspace's ws/{ws}/silver/.
   grantSilverHistoryPut(rawDataBucket, feedbackEditRole);
+  grantWorkspaceSilverHistoryPut(rawDataBucket, feedbackEditRole);
+  // A request's X-Workspace-Id, as the metrics API resolves it (lib/utils/workspace-resolution-grants.ts).
+  const feedbackEditWorkspaceEnv = grantRequestWorkspace(workspacesTable, feedbackEditRole, userPool);
 
   const feedbackEditLambda = new lambda.Function(stack, 'FeedbackEditApi', {
     functionName: ctx.uniqueName(FEEDBACK_EDIT_API_FUNCTION_BASE_NAME),
@@ -129,6 +147,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       // pipeline_version (the enrichment provenance stays), so the app release is not needed here.
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       ALLOWED_ORIGIN: allowedOrigin,
+      ...feedbackEditWorkspaceEnv,
       POWERTOOLS_SERVICE_NAME: 'voc-feedback-edit-api',
       LOG_LEVEL: 'INFO',
     },
@@ -156,6 +175,12 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
     resources: [secretsArn],
   }));
+  // A request's X-Workspace-Id (docs/multi-workspace.md; lambda/shared/workspace_request.py): its membership read,
+  // a platform admin's entry audited and live-checked (lib/utils/workspace-resolution-grants.ts), and the
+  // workspace's own credentials secret read and written (credentials, app connectors).
+  const integrationsWorkspaceEnv = grantRequestWorkspace(workspacesTable, integrationsRole, userPool);
+  const workspaceSecretsEnv = grantWorkspaceSecretsReadWrite(
+    stack, integrationsRole, ctx.prefixed(WORKSPACE_SECRET_BASE_PREFIX), kmsKey);
   // The enable/disable routes and GET /sources/status toggle and describe a
   // per-plugin schedule rule: grant exactly the rules VocIngestionStack creates
   // (every enabled plugin whose ingestor declares a schedule), by their resolved
@@ -207,24 +232,31 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, PLUGIN_SECRET_DEFAULTS: JSON.stringify(pluginSecretDefaults), PLUGIN_SECRET_KEYS: JSON.stringify(secretConfigKeysByPlugin(allPlugins)), ENABLED_SOURCES: enabledSourcesEnv, ...ctx.prefixOnlyEnv({
       INGESTOR_FUNCTION_NAME_PATTERN: ctx.uniqueNamePattern(`voc-ingestor-${SOURCE_PLACEHOLDER}`),
       INGEST_SCHEDULE_RULE_NAME_PATTERN: ctx.uniqueNamePattern(`voc-ingest-${SOURCE_PLACEHOLDER}-schedule`),
-    }), AGGREGATES_TABLE: aggregatesTable.tableName },
+    }), AGGREGATES_TABLE: aggregatesTable.tableName, ...integrationsWorkspaceEnv,
+    ...workspaceSecretsEnv },
     layers: [apiLayer],
     logGroup: ctx.logGroup('IntegrationsApiLogs', ctx.uniqueName('voc-integrations-api')),
   });
-  // SOURCE_RUN#<source> run rows (PutItem); a tripped circuit is cleared by deleting its CIRCUIT#<plugin> row
-  // (shared/plugin_circuit.py clear_circuit), the only delete this role makes.
+  // SOURCE_RUN#<source> run rows, deployment-wide and a workspace's WS#{ws}#SOURCE_RUN#<source> (PutItem); a tripped
+  // circuit is cleared by deleting its CIRCUIT#<plugin> row, or in a workspace its WS#{ws}#CIRCUIT#<plugin> row
+  // (shared/plugin_circuit.py clear_circuit, the workspace segment one id), the only delete this role makes: the
+  // ingestors' breaker rows, one list (lib/stacks/ingestion-roles.ts CIRCUIT_ROW_PARTITIONS).
   grantReadAndWrites(aggregatesTable, integrationsRole, ['PutItem']);
-  grantKeyScopedWrites(aggregatesTable, integrationsRole, ['DeleteItem'], ['CIRCUIT#*']);
+  grantKeyScopedWrites(aggregatesTable, integrationsRole, ['DeleteItem'], CIRCUIT_ROW_PARTITIONS);
 
   // Scrapers API
   const scrapersRole = ctx.role('ScrapersLambdaRole');
-  // SCRAPER_RUN#<id> run rows (PutItem); no update, no delete.
+  // SCRAPER_RUN#<id> run rows, deployment-wide and a workspace's WS#{ws}#SCRAPER_RUN#<id> (PutItem); no update, no delete.
+  // The deployment key's encrypt and decrypt come with grantWorkspaceSecretsReadWrite below.
   grantReadAndWrites(aggregatesTable, scrapersRole, ['PutItem']);
-  kmsKey.grantEncryptDecrypt(scrapersRole);
   scrapersRole.addToPolicy(new iam.PolicyStatement({
     actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
     resources: [secretsArn],
   }));
+  // X-Workspace-Id as the integrations API resolves it; the workspace's own secret holds its scraper configs.
+  const scrapersWorkspaceEnv = grantRequestWorkspace(workspacesTable, scrapersRole, userPool);
+  const scrapersWorkspaceSecretsEnv = grantWorkspaceSecretsReadWrite(
+    stack, scrapersRole, ctx.prefixed(WORKSPACE_SECRET_BASE_PREFIX), kmsKey);
   // POST /scrapers/{id}/run invokes the webscraper ingestor by its exact name
   // (the same string handed down as WEBSCRAPER_FUNCTION_NAME).
   const webscraperFunctionName = ctx.uniqueName('voc-ingestor-webscraper');
@@ -255,7 +287,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     // this just keeps the Lambda from dying before that.
     timeout: cdk.Duration.seconds(120),
     memorySize: 1536, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
-    environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: webscraperFunctionName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO', JOBS_TABLE: jobsTable.tableName, [ASSIST_WORKER_ENV]: scrapersWorkerName },
+    environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: webscraperFunctionName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO', JOBS_TABLE: jobsTable.tableName, [ASSIST_WORKER_ENV]: scrapersWorkerName,
+      ...scrapersWorkspaceEnv, ...scrapersWorkspaceSecretsEnv },
     layers: [apiLayer],
     logGroup: ctx.logGroup('ScrapersApiLogs', ctx.uniqueName('voc-scrapers-api')),
   };

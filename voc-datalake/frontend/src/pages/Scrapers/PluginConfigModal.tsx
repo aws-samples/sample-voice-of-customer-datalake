@@ -35,6 +35,7 @@ import RadarSourcePicker from './RadarSourcePicker'
 import { RadarBadge } from './SourceCardParts'
 import { useRadarBrandLabel } from './useRadarBrands'
 import { allAppConfigsKey, appConfigsKey } from '../../api/queryKeys'
+import { isIngestionHeld } from '../../workspace/workspaceRefusals'
 
 interface PluginConfigModalProps {
   readonly plugin: PluginManifest
@@ -224,20 +225,27 @@ function SettingsPointer({ plugin }: Readonly<{ plugin: PluginManifest }>) {
 }
 
 function RunNowRow({
-  isAdmin, isPending, result, onRun,
+  isAdmin, isPending, result, error, onRun,
 }: {
   readonly isAdmin: boolean
   readonly isPending: boolean
   readonly result: { success: boolean; message: string } | undefined
+  /** The failed run's error: the server's ingestion hold in a workspace is shown as its own reason. */
+  readonly error: unknown
   readonly onRun: () => void
 }) {
   const { t } = useTranslation('scrapers')
+  const { t: tCommon } = useTranslation('common')
+  // Inside a workspace, Run now answers the plugin settings' 409 while per-workspace ingestion is held
+  // (INGESTION_NOT_YET, workspaceRefusals.ts): the button stays, so a run can start once the hold lifts.
+  const held = isIngestionHeld(error)
   return (
     <div className="flex items-center gap-2">
       <button onClick={onRun} disabled={isPending || !isAdmin} title={isAdmin ? undefined : ADMIN_ONLY_TITLE} className="btn btn-secondary">
         {isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
         {t('pluginConfig.runNow')}
       </button>
+      {held ? <ResultMessage success={false} message={tCommon('workspaces.errors.ingestionRunNotYet')} /> : null}
       {result == null ? null : <ResultMessage success={result.success} message={result.message === '' ? t('pluginConfig.runTriggered') : result.message} />}
     </div>
   )
@@ -381,7 +389,7 @@ export default function PluginConfigModal({
                 setEditingApp(null); setIsAdding(false)
               }} />
           ) : <SettingsPointer plugin={plugin} />}
-          {apps.length > 0 && <RunNowRow isAdmin={isAdmin} isPending={runMutation.isPending} result={runMutation.data} onRun={() => runMutation.mutate()} />}
+          {apps.length > 0 && <RunNowRow isAdmin={isAdmin} isPending={runMutation.isPending} result={runMutation.data} error={runMutation.error} onRun={() => runMutation.mutate()} />}
           {hasApps ? <AppSetup plugin={plugin} /> : null}
         </div>
         )}

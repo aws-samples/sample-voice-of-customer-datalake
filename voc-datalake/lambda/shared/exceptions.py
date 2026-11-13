@@ -82,6 +82,19 @@ class SecretUnreadableError(ConfigurationError):
     """
 
 
+class WorkspaceCredentialsNotSet(SecretUnreadableError):
+    """A plugin's run in a workspace whose secret holds none of the plugin's ``<plugin>_*`` keys (a new workspace's
+    ``{}``, or only other plugins' keys): nothing is saved for it there yet (or the read failed, which ``get_secret``
+    cannot tell apart from ``{}``).
+
+    A ``SecretUnreadableError``, so ``BaseIngestor`` does not count it against the workspace's circuit breaker: an
+    admin who has not saved this plugin's credentials in the workspace yet must not find the plugin stopped there
+    after a few runs. Its run row ends ``error`` naming this type (plugins/_shared/base_ingestor.py).
+
+    HTTP Status: 500 Internal Server Error
+    """
+
+
 class ServiceError(ApiError):
     """Raised when an external service call fails.
 

@@ -32,7 +32,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { grantKeyScopedWrites } from '../utils/table-write-grants';
-import { WORKSPACE_SECRET_BASE_PREFIX, workspaceSecretsArn } from '../utils/workspace-secrets';
+import { WORKSPACE_SECRET_BASE_PREFIX, WORKSPACE_SECRET_PREFIX_ENV, workspaceSecretsArn } from '../utils/workspace-secrets';
 import type { ApiStackContext } from './api-context';
 
 const WORKSPACES_API_FUNCTION_BASE_NAME = 'voc-workspaces-api';
@@ -114,7 +114,7 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
     WORKSPACES_TABLE: workspacesTable.tableName,
     USER_POOL_ID: userPool.userPoolId,
     KMS_KEY_ARN: kmsKey.keyArn,
-    WORKSPACE_SECRET_PREFIX: secretPrefix,
+    [WORKSPACE_SECRET_PREFIX_ENV]: secretPrefix,
     // The deployment's plugins (cdk.context.json): the ceiling a workspace picks its plugins from.
     ENABLED_SOURCES: inputs.enabledSourcesEnv,
     ALLOWED_ORIGIN: ctx.allowedOrigin,

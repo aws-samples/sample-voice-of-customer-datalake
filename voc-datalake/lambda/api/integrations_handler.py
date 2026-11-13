@@ -1,6 +1,31 @@
 """
 Integrations API Lambda - Handles /integrations/*, /sources/*
 Manages API credentials and data source schedules.
+
+Two paths (docs/multi-workspace.md, "Request flow"; shared/workspace_request.py): a request that sends
+``X-Workspace-Id`` acts in that workspace, resolved before any route runs (``_request.middleware``: 400 for an empty
+header, the one 404 for a non-member and an unknown or deleting workspace; a platform admin enters as admin,
+live-checked and audited; a write resolves the role from the table, never the 30 s cache). In a workspace:
+
+* the admin routes need the caller's admin role THERE (``_request.require_request_admin``: a member admin or an entered platform
+  admin; the deployment's ``admins`` group grants nothing, an editor or a viewer gets 403);
+* credentials and app connectors are read from and written to the workspace's own secret,
+  ``{prefix}/{ws}/credentials`` (shared/workspace_plugin_store.py: the name from the resolved workspace only), still
+  namespaced ``<plugin>_<key>``, and only while the workspace's ``secret_status`` is ``ready`` (409 otherwise); an
+  app connector or a page naming a Radar brand is refused (400: Radar is not keyed by workspace yet), and so is a
+  ``configs`` key on the credentials route (``CONFIGS_HAVE_THEIR_OWN_ROUTES``: the lists are saved through the
+  routes that check each entry);
+* Run now invokes the plugin's ingestor with the RESOLVED workspace's id in ``workspace_id``
+  (shared/workspace_request.py ``workspace_payload``: never a body field), so the run reads that workspace's
+  credentials and writes its own rows; its ``running`` row and ``GET /sources/status?run_status=`` are the
+  workspace's ``WS#{ws}#SOURCE_RUN#{source}`` (shared/run_rows.py); ``s3_import`` is refused there (400);
+* ``GET /sources/status`` reports the shared schedule rule and the workspace's own breaker, and
+  ``POST /sources/{source}/reset`` clears the workspace's ``WS#{ws}#CIRCUIT#{source}`` row only (shared/plugin_circuit.py);
+* ``PUT /sources/{source}/enable`` and ``/disable`` are refused (400): they turn the plugin's one EventBridge rule
+  on and off, which serves every workspace; which plugins a workspace runs is its plugin settings' (``PLUGIN#`` rows
+  in voc-workspaces, not built yet).
+
+A request without the header acts deployment-wide, exactly as before.
 """
 
 import json
@@ -9,13 +34,13 @@ from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC
 from functools import cache
-from typing import Any
+from typing import Any, Final
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import config_write_guard
-from shared.api import api_handler, create_api_resolver, is_admin, require_admin
+from shared.api import api_handler, create_api_resolver, is_admin
 from shared.aws import get_dynamodb_resource, get_secrets_client, put_secret_json
 from shared.enabled_sources import default_source_ids
 from shared.exceptions import (
@@ -25,11 +50,13 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.ids import timestamped_id
+from shared.ingest_tables import table_view
 from shared.logging import logger, metrics, tracer
 from shared.plugin_circuit import clear_circuit, closed_circuit, read_circuits
-from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
+from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, S3_IMPORT_SOURCE, is_valid_plugin_identifier
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_body_value, json_object_body
+from shared.run_rows import run_status, source_run_partition
 from shared.scraper_limits import INVALID_CONFIGS, scraper_list_error
 from shared.snapstart import api_route_warmer, botocore_model_warmer, register_snapshot_hooks
 from shared.timestamps import now_iso
@@ -37,6 +64,8 @@ from shared.url_policy import scraper_url_error, validate_url
 from shared.warm_init import warm_at_init
 from shared.web_review_targets import PLUGIN_ID as WEB_REVIEWS_PLUGIN
 from shared.web_review_targets import TargetError, target_source_id, validated_target
+from shared.workspace_plugin_settings import hold_workspace_ingestion
+from shared.workspace_request import DEPLOYMENT_ONLY, ResolvedRoutes, workspace_payload
 
 secretsmanager = get_secrets_client()
 events_client = boto3.client("events")
@@ -86,6 +115,22 @@ PLUGIN_DEFAULTS_ENV_VAR = "PLUGIN_SECRET_DEFAULTS"
 WRITE_ONLY_FIELDS_ENV_VAR = "PLUGIN_SECRET_KEYS"
 
 app = create_api_resolver()
+
+#: The answer of the schedule routes in a workspace (the module docstring).
+SCHEDULE_IS_THE_DEPLOYMENTS: Final = (
+    "A source's schedule is the deployment's and serves every workspace: send this request without "
+    "X-Workspace-Id. To let this workspace's runs go ahead again, use POST /sources/{source}/reset.")
+#: The credentials route's answer, in a workspace, to a `configs` value (the module docstring).
+CONFIGS_HAVE_THEIR_OWN_ROUTES: Final = (
+    'In a workspace, scraper and app connector lists are saved through their own routes, which check every entry: '
+    'use POST /scrapers for scrapers and POST /integrations/{source}/apps for app connectors and review pages, not '
+    'the configs key of PUT /integrations/{source}/credentials.')
+
+# The request's workspace, the one implementation the scrapers API shares (shared/workspace_request.py
+# ResolvedRoutes): its resolver middleware, installed here before every route, the admin gate and the request's
+# credentials secret.
+_request = ResolvedRoutes(app)
+app.use(middlewares=[_request.middleware])
 
 # ---------------------------------------------------------------------------
 # Credential key validation
@@ -144,7 +189,8 @@ def _validate_credential_key(key: object) -> None:
 
 
 WEBSCRAPER_SOURCE = 'webscraper'
-#: The credentials key the webscraper ingestor reads its scraper list from (``webscraper_configs``).
+#: The credentials key the webscraper ingestor reads its scraper list from (``webscraper_configs``), and the app
+#: plugins their connector lists (``<source>_configs``, ``_get_app_configs_key``).
 WEBSCRAPER_CONFIGS_KEY = 'configs'
 
 
@@ -438,16 +484,15 @@ def get_integration_status():
     """Get status of all integrations.
 
     Requires admin access — the response contains names of configured
-    credential keys, which reveals what integrations are active.
+    credential keys, which reveals what integrations are active. In a workspace:
+    its admins, from the workspace's own secret.
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
 
-    if not SECRETS_ARN:
-        raise ConfigurationError('Secrets not configured')
+    secret_id = _request.secret_id(SECRETS_ARN)
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
+        secrets = _request.read_secrets(secretsmanager, secret_id)
 
         # Report status for every source CDK told us about.  For each one, scan
         # the shared secret for keys named "{source}_*" — a prefix scan rather
@@ -486,7 +531,7 @@ def get_integration_status():
                 'configured': len(configured_keys) > 0,
                 'credentials_set': configured_keys,
             }
-    except ConfigurationError:
+    except ApiError:
         raise
     except Exception as e:
         logger.exception(f"Failed to get integration status: {e}")
@@ -512,9 +557,10 @@ def get_credentials(source: str):
     The caller must specify which keys to retrieve via the `keys` query
     parameter (comma-separated). Only matching keys are returned.
 
-    Requires admin access — credential management is an administrative operation.
+    Requires admin access — credential management is an administrative operation
+    (in a workspace: its admins, from its own secret).
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
 
     # Validate source before building the namespace prefix.  Without this
     # a caller sending source='foo_bar' + key='baz' would reach the same
@@ -524,8 +570,7 @@ def get_credentials(source: str):
     # app_reviews_ios's namespace.
     _validate_source_parameter(source)
 
-    if not SECRETS_ARN:
-        raise ConfigurationError('Secrets not configured')
+    secret_id = _request.secret_id(SECRETS_ARN)
 
     params = app.current_event.query_string_parameters or {}
     keys_param = params.get('keys', '')
@@ -546,8 +591,7 @@ def get_credentials(source: str):
     write_only = write_only_by_source.get(source, frozenset())
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
+        secrets = _request.read_secrets(secretsmanager, secret_id)
 
         prefix = f"{source}_"
         result = {}
@@ -559,7 +603,7 @@ def get_credentials(source: str):
             # by the scrapers handler as a top-level secret key).
             if key not in write_only and secrets.get(prefixed_key):
                 result[key] = secrets[prefixed_key]
-    except (ConfigurationError, ValidationError):
+    except ApiError:
         raise
     except Exception as e:
         logger.exception(f"Failed to get credentials for {source}: {e}")
@@ -584,8 +628,11 @@ def update_credentials(source: str):
 
     NOTE: Credential deletion is not currently supported.  Sending null or an
     empty string for a key silently skips it, leaving the stored value unchanged.
+
+    In a workspace: its admins, into the workspace's own secret (``{prefix}/{ws}/credentials``, named from the
+    resolved workspace only), which that workspace's runs read; 409 while that secret does not exist yet.
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
 
     # The write is the dangerous direction: without the allowlist half of this,
     # a caller could inject a value into another plugin's namespace
@@ -593,8 +640,7 @@ def update_credentials(source: str):
     # plugin's next run would use it as its own credential.
     _validate_source_parameter(source)
 
-    if not SECRETS_ARN:
-        raise ConfigurationError('Secrets not configured')
+    secret_id = _request.secret_id(SECRETS_ARN)
 
     body = json_body_value(app)
 
@@ -619,11 +665,15 @@ def update_credentials(source: str):
             raise ValidationError(
                 f"Value for key {key[:40]!r} must be a string."
             )
+    # In a workspace a `configs` list (`<source>_configs`: the webscraper's scrapers, an app plugin's connectors) is
+    # saved only through its own route, which checks each entry (a Radar brand among them would send every message
+    # of the workspace's runs to the DLQ): refused here whatever its value.
+    if _request.context() is not None and WEBSCRAPER_CONFIGS_KEY in body:
+        raise ValidationError(CONFIGS_HAVE_THEIR_OWN_ROUTES)
     _validate_webscraper_configs(source, body)
 
     try:
-        response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-        secrets = json.loads(response.get('SecretString', '{}'))
+        secrets = _request.read_secrets(secretsmanager, secret_id)
 
         prefix = f"{source}_"
         for key, value in body.items():
@@ -633,8 +683,8 @@ def update_credentials(source: str):
             if value:
                 secrets[f"{prefix}{key}"] = value
 
-        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-    except (ConfigurationError, ValidationError):
+        put_secret_json(secretsmanager, secret_id, secrets)
+    except ApiError:
         raise
     except Exception as e:
         logger.exception(f"Failed to update credentials: {e}")
@@ -684,14 +734,14 @@ def _with_source_id(source: str, app_config: dict, stored: dict | None) -> dict:
     return {**app_config, 'source_id': target_source_id(app_config if stored is None else stored)}
 
 
-def _app_configs_in_secret(source: str) -> tuple[dict, str, list]:
-    """The shared secret as stored, the key `source`'s app configs live under, and those configs.
+def _app_configs_in_secret(source: str, secret_id: str) -> tuple[dict, str, list]:
+    """The request's secret as stored (the shared one, or the workspace's), the key `source`'s app configs live
+    under, and those configs.
 
     The read half of every app-config route's read-modify-write; the write half is
-    `put_secret_json` on the same `secrets` dict.
+    `put_secret_json` on the same `secrets` dict and `secret_id`.
     """
-    response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
-    secrets = json.loads(response.get('SecretString', '{}'))
+    secrets = _request.read_secrets(secretsmanager, secret_id)
     configs_key = _get_app_configs_key(source)
     configs = json.loads(secrets.get(configs_key, '[]'))
     return secrets, configs_key, configs
@@ -710,7 +760,8 @@ def list_app_configs(source: str):
     NOT admin-gated, unlike the two write routes below. The Scrapers page renders
     this list for every authenticated user, and an app config holds a public app
     store id and a display name — not a credential. The write routes are the ones
-    that reach the shared secret with caller-supplied content.
+    that reach the shared secret with caller-supplied content. In a workspace: any
+    member, from the workspace's own secret.
     """
     # Both source checks even though APP_CONFIG_PLUGINS is narrower and runs
     # below: `source` reaches `_get_app_configs_key` and becomes a Secrets Manager
@@ -720,12 +771,13 @@ def list_app_configs(source: str):
     _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
-    if not SECRETS_ARN:
+    secret_id = _request.secret_id_or_none(SECRETS_ARN)
+    if secret_id is None:
         return {'apps': []}
 
     try:
-        _secrets, _configs_key, configs = _app_configs_in_secret(source)
-    except (ConfigurationError, ValidationError):
+        _secrets, _configs_key, configs = _app_configs_in_secret(source, secret_id)
+    except ApiError:
         raise
     except (ClientError, BotoCoreError, ValueError, TypeError, AttributeError) as e:
         # An AWS failure, or a secret whose JSON is not the {key: str} shape.
@@ -746,13 +798,13 @@ def save_app_config(source: str):
     caller supplied. Gating the credentials route while leaving this one open made
     the boundary depend on which key a write happened to land under, and a
     `users`-group caller could write `<source>_configs` on it — measured, 200.
+    In a workspace: its admins, into the workspace's own secret.
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
     _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
-    if not SECRETS_ARN:
-        raise ConfigurationError('Secrets not configured')
+    secret_id = _request.secret_id(SECRETS_ARN)
 
     body = json_object_body(app)
     # Optional write rules (shared/config_write_guard.py); absent = the upsert.
@@ -772,9 +824,11 @@ def save_app_config(source: str):
     if not app_config.get('app_name'):
         raise ValidationError('app_name is required')
     app_config = _validated_app_config(source, app_config)
+    # In a workspace no Radar brand (Radar is not keyed by workspace: its messages would be refused).
+    _request.refuse_radar_brand(app_config.get('radar_brand'))
 
     try:
-        secrets, configs_key, configs = _app_configs_in_secret(source)
+        secrets, configs_key, configs = _app_configs_in_secret(source, secret_id)
 
         existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == app_config['id']), None)
         stored = configs[existing_idx] if existing_idx is not None else None
@@ -786,7 +840,7 @@ def save_app_config(source: str):
             configs[existing_idx] = app_config
 
         secrets[configs_key] = json.dumps(configs)
-        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
+        put_secret_json(secretsmanager, secret_id, secrets)
     except ApiError:
         raise
     except Exception as e:
@@ -823,21 +877,20 @@ def delete_app_config(source: str, app_id: str):
     Admin-gated for the same reason as the POST above — it writes the shared
     secret — and additionally because it is destructive: it rewrites
     `<source>_configs` with one entry removed, which stops that app being
-    ingested.
+    ingested. In a workspace: its admins, in the workspace's own secret.
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
     _validate_source_parameter(source)
     if source not in APP_CONFIG_PLUGINS:
         raise ValidationError(f'Source {source} does not support multiple app configs')
-    if not SECRETS_ARN:
-        raise ConfigurationError('Secrets not configured')
+    secret_id = _request.secret_id(SECRETS_ARN)
 
     try:
-        secrets, configs_key, configs = _app_configs_in_secret(source)
+        secrets, configs_key, configs = _app_configs_in_secret(source, secret_id)
         configs = [c for c in configs if c.get('id') != app_id]
         secrets[configs_key] = json.dumps(configs)
-        put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-    except (ConfigurationError, ValidationError):
+        put_secret_json(secretsmanager, secret_id, secrets)
+    except ApiError:
         raise
     except Exception as e:
         logger.exception(f"Failed to delete app config for {source}: {e}")
@@ -865,18 +918,40 @@ def run_source(source: str):
     `_build_ingestor_function_name`, so an arbitrary value both named a function
     to invoke and wrote a `SOURCE_RUN#<source>` partition that nothing ever reads
     or expires.
+
+    In a workspace: its admins. The ingestor runs in the workspace (its credentials, watermarks, breaker, raw
+    objects and queued messages are the workspace's; plugins/_shared/base_ingestor.py ``run_in_workspace``): the
+    payload's ``workspace_id`` is the RESOLVED workspace (``workspace_payload``), never a body field, and the
+    ``running`` row is ``WS#{ws}#SOURCE_RUN#{source}``, the one the run moves. A workspace's runs are not gated on
+    its plugin settings (``PLUGIN#`` rows, not built yet), but they are held with them: while
+    ``PER_WORKSPACE_INGESTION`` is off the route answers the plugin settings' 409 (``hold_workspace_ingestion``,
+    ``INGESTION_NOT_YET``) after the source is validated and ``s3_import`` refused, before the secret is read. The
+    route answers 409 unless the workspace's secret is ``ready``; a run whose workspace secret holds none of the plugin's credentials ends ``error`` on its run row,
+    naming ``WorkspaceCredentialsNotSet``, and is not counted against the workspace's breaker (plugins/_shared/
+    base_ingestor.py). ``s3_import`` is refused there (400, the S3 import API's one answer: the import bucket is not
+    keyed by workspace), before anything is written or invoked. A deployment source profile that names a Radar
+    brand does not claim a workspace's messages (lambda/processor/handler.py ``_radar_result``): they are the
+    workspace's own feedback.
     """
     from datetime import datetime
 
     from shared.tables import get_aggregates_table
 
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
+    context, scope = _request.context(), _request.scope()
     _validate_source_parameter(source)
+    if context is not None:
+        if source == S3_IMPORT_SOURCE:
+            raise ValidationError(DEPLOYMENT_ONLY)
+        # No workspace run starts while per-workspace ingestion is held (409, the plugin settings' one check).
+        hold_workspace_ingestion()
+        # The run reads the workspace's secret: 409 unless it is ready, before any row is written or run invoked.
+        _request.secret_id(SECRETS_ARN)
 
     function_name = _build_ingestor_function_name(source)
 
     execution_id = timestamped_id(f'run_{source}', datetime.now(UTC))
-    payload: dict = {"execution_id": execution_id}
+    fields: dict = {"execution_id": execution_id}
     # The body is optional: a missing or malformed one (not JSON, or not an
     # object) runs every app config — deliberately not a 400.
     try:
@@ -884,14 +959,15 @@ def run_source(source: str):
     except ValidationError:
         body = {}
     if body.get("app_id"):
-        payload["app_id"] = body["app_id"]
+        fields["app_id"] = body["app_id"]
+    payload = workspace_payload(fields, context)
 
     # Create initial run status record
     try:
         table = get_aggregates_table()
         if table:
-            table.put_item(Item={
-                'pk': f'SOURCE_RUN#{source}', 'sk': execution_id,
+            table_view(scope, table).put_item({
+                'pk': source_run_partition(scope, source), 'sk': execution_id,
                 'status': 'running', 'items_found': 0,
                 'started_at': now_iso(),
             })
@@ -931,13 +1007,13 @@ def run_source(source: str):
 
 
 def _get_source_run_status(source: str):
-    """Get the latest run status for a data source plugin."""
-    from shared.run_rows import run_status
+    """Get the latest run status for a data source plugin (in a workspace: its ``WS#{ws}#SOURCE_RUN#`` rows)."""
     from shared.tables import get_aggregates_table
 
+    scope = _request.scope()
     try:
-        return run_status(get_aggregates_table(), f'SOURCE_RUN#{source}', {'source': source},
-                          lambda run: {'errors': run.get('errors', [])})
+        return run_status(get_aggregates_table(), source_run_partition(scope, source), {'source': source},
+                          lambda run: {'errors': run.get('errors', [])}, scope)
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get source run status: {e}")
         return {'source': source, 'status': 'unknown'}
@@ -1057,6 +1133,8 @@ def get_sources_status():
     # No rule can exist for a source that is not a plugin, so that entry is the
     # answer `describe_rule` would have given — see `_is_addressable_source` for
     # why that makes it output-identical, and why it must not raise.
+    # In a workspace the schedule is still the deployment's one rule (shared by every workspace) and the circuit
+    # the workspace's own; the breaker's error text only for its admins.
     circuits = _circuit_states(addressable, include_error=_caller_is_admin())
     status = {
         source: {
@@ -1070,7 +1148,16 @@ def get_sources_status():
 
 
 def _caller_is_admin() -> bool:
-    return is_admin(app.current_event.raw_event)
+    """An admin on the request's path: the deployment's ``admins`` group, or the workspace's admin role."""
+    context = _request.context()
+    return is_admin(app.current_event.raw_event) if context is None else context.role == 'admin'
+
+
+def refuse_in_workspace() -> None:
+    """400 for a request in a workspace (``SCHEDULE_IS_THE_DEPLOYMENTS``): the schedule routes act on the plugin's
+    one EventBridge rule, which serves every workspace, so only a deployment-wide request may turn it on or off."""
+    if _request.context() is not None:
+        raise ValidationError(SCHEDULE_IS_THE_DEPLOYMENTS)
 
 
 CIRCUIT_STATE_UNAVAILABLE = 'Failed to retrieve circuit state'
@@ -1082,19 +1169,21 @@ def _circuit_states(sources: list[str], *, include_error: bool) -> dict[str, dic
     The same per-item boundary as `_schedule_status`: a failed read degrades the
     `circuit` entries (closed, plus `error`) and the schedule half still answers.
     Only ADDRESSABLE sources are read: a query-string value that is not a plugin
-    has no breaker, and must not become a DynamoDB key.
+    has no breaker, and must not become a DynamoDB key. In a workspace: its own rows only.
     """
+    scope = _request.scope()
     try:
-        return read_circuits(sources, include_error=include_error)
+        return read_circuits(sources, include_error=include_error, scope=scope)
     except Exception:
         logger.exception("Failed to read circuit breaker state")
         return {source: {**closed_circuit(), 'error': CIRCUIT_STATE_UNAVAILABLE} for source in sources}
 
 
 def _clear_tripped_circuit(source: str) -> None:
-    """Delete *source*'s TRIPPED row, or raise a ServiceError naming what failed."""
+    """Delete *source*'s TRIPPED row (in a workspace: its own), or raise a ServiceError naming what failed."""
+    scope = _request.scope()
     try:
-        clear_circuit(source)
+        clear_circuit(source, scope)
     except Exception as e:
         logger.exception(f"Failed to reset the circuit breaker for {source}: {e}")
         metrics.add_metric(name="CircuitResetFailed", unit="Count", value=1)
@@ -1108,9 +1197,10 @@ def enable_source(source: str):
 
     Admin-gated and validated — see `run_source`. `source` reaches
     `_build_rule_name`, so an arbitrary value named an EventBridge rule to
-    enable.
+    enable. Refused in a workspace (400, `refuse_in_workspace`): use reset there.
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
+    refuse_in_workspace()
     _validate_source_parameter(source)
 
     # The TRIPPED row first: re-enabling only the schedule left every run skipped
@@ -1135,8 +1225,12 @@ def reset_source(source: str):
     to go ahead, but not necessarily the schedule. Admin-gated and validated like
     `enable_source`: `source` names a DynamoDB key. Answers the source's state
     afterwards — the schedule as `GET /sources/status` reports it, circuit closed.
+
+    In a workspace: its admins, and the workspace's own TRIPPED row only
+    (`WS#{ws}#CIRCUIT#{source}`); the deployment's breaker and every other
+    workspace's stay as they are, and the shared schedule rule is only described.
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
     _validate_source_parameter(source)
 
     _clear_tripped_circuit(source)
@@ -1150,9 +1244,11 @@ def disable_source(source: str):
 
     Admin-gated and validated — see `run_source`. This is the direction that
     silently stops ingestion, so leaving it open was a denial-of-data any
-    authenticated user could cause.
+    authenticated user could cause. Refused in a workspace (400, `refuse_in_workspace`):
+    the rule serves every workspace.
     """
-    require_admin(app.current_event.raw_event)
+    _request.require_request_admin()
+    refuse_in_workspace()
     _validate_source_parameter(source)
 
     rule_name = _build_rule_name(source)

@@ -87,6 +87,7 @@ from shared.request_body import json_object_body
 from shared.tables import cached_table
 from shared.warm_init import warm_at_init
 from shared.workspace import (
+    WORKSPACE_FAULT,
     MembershipCache,
     WorkspaceContext,
     list_my_workspaces,
@@ -120,7 +121,7 @@ KMS_KEY_ARN = os.environ.get('KMS_KEY_ARN', '')
 WORKSPACE_SECRET_PREFIX = os.environ.get('WORKSPACE_SECRET_PREFIX', '')
 # The fixed answers of a fault (#263: never the AWS text).
 FAILED_LIST = 'Failed to list your workspaces'
-FAILED_CURRENT = 'Failed to open the workspace'
+FAILED_CURRENT = WORKSPACE_FAULT
 FAILED_CREATE = 'Failed to create the workspace'
 FAILED_PLATFORM_LIST = 'Failed to list the workspaces'
 FAILED_MEMBERS = 'Failed to list the members'

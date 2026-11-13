@@ -242,20 +242,24 @@ The bases are listed below.
 The schedule retries cover delivery only (a throttled or unreachable function). A failure inside
 the ingestor is handled by the [circuit breaker](#circuit-breaker).
 
-**Workspaces** ([multi-workspace.md](multi-workspace.md), since 7.00.00). `run_in_workspace` in
-`plugins/_shared/base_ingestor.py` routes each event. One that names no workspace (a **Run now**, a
-scraper run, an S3 reprocess or upload) runs deployment-wide, exactly as before workspaces: the keys,
-the shared secret and `raw/` this page describes. One that names a workspace in `workspace_id` runs in
-it, with that workspace's keys (`WS#{ws}#…`), secret (`voc/ws/{ws}/credentials`) and raw objects
-(`ws/{ws}/raw/…`). One whose `workspace_id` is not a workspace id is refused. The schedule's tick
+**Workspaces** ([multi-workspace.md](multi-workspace.md), since 7.00.00; a Run now or a scraper run in a workspace since 7.04.00). `run_in_workspace` in
+`plugins/_shared/base_ingestor.py` routes each event. One that names no workspace (a **Run now** or a
+scraper run sent without `X-Workspace-Id`, an S3 reprocess or upload) runs deployment-wide, exactly as
+before workspaces: the keys, the shared secret and `raw/` this page describes. One that names a
+workspace in `workspace_id` runs in it, with that workspace's keys (`WS#{ws}#…`), secret
+(`voc/ws/{ws}/credentials`) and raw objects (`ws/{ws}/raw/…`): a **Run now** or a scraper run sent with
+`X-Workspace-Id` names the request's resolved workspace there (never a body field; the workspace's
+admins only), and the routes that read its run rows and its breaker read the workspace's
+([multi-workspace.md](multi-workspace.md), the operator routes' row). One whose `workspace_id` is not a
+workspace id is refused. The schedule's tick
 first fans out, at most once per tick (a claim of its EventBridge event id in `voc-idempotency`, so a
 retried delivery fans out no second time): it invokes the function once per workspace that enabled
 the plugin (`PLUGIN#{id}` rows in `voc-workspaces`, `lambda/shared/workspace_plugins.py`) with
 `{"workspace_id": ws}`; then it runs the deployment-wide run. A failed claim, list read or invoke is
 logged and metered (`IngestFanOutFailures`) and never changes the deployment-wide run; the next tick
 tries again. Nothing writes those rows yet, so a tick runs no workspace. The
-deployment-wide path stays until phase 2's last slice moves the API, the S3 trigger and the
-processor onto workspaces, and is then removed.
+deployment-wide path stays until phase 2's last slice moves the S3 import, its trigger and the rest
+of the API onto workspaces, and is then removed.
 
 **Roles** (`lib/stacks/ingestion-roles.ts`). Every ingestor role gets the same base grants:
 read/write on the watermarks and aggregates tables (DeleteItem on the aggregates table only for the
@@ -311,8 +315,11 @@ webhook plugin. Webhooks have no feedback-table access.
   workspace ([multi-workspace.md](multi-workspace.md)).
 - **Shared secret:** `voc-datalake/api-credentials` (with the account/region suffix), seeded with
   every loaded plugin's `secrets` as `<id>_<key>`, plus `webscraper_configs: "[]"`. The API saves
-  plugin credentials there; the webhooks and the ingestors' deployment-wide runs read it, and a run in
-  a workspace reads that workspace's own secret, `voc/ws/{ws}/credentials`, instead. The ingestion
+  plugin credentials, app connectors and scraper configs there; the webhooks and the ingestors'
+  deployment-wide runs read it, and a run in a workspace reads that workspace's own secret,
+  `voc/ws/{ws}/credentials`, instead, which the integrations and scrapers APIs write for a request sent
+  with that workspace's `X-Workspace-Id` (same `<id>_<key>` namespacing; the name built from the
+  resolved workspace only; 409 until the workspace's `secret_status` is `ready`). The ingestion
   stack outputs `ApiSecretsArn`, `LoadedPlugins` and `EnabledPlugins`.
 
 ## Writing an ingestor
@@ -525,7 +532,7 @@ admin-only because they change a shared secret, spend a third-party API's quota 
 
 | Route | Admin | Purpose |
 |-------|-------|---------|
-| `GET /integrations/status` | No | Which sources have credentials |
+| `GET /integrations/status` | Yes | Which sources have credentials |
 | `GET`/`PUT /integrations/<source>/credentials` | Yes | Read (secret fields omitted) and save config values |
 | `GET /integrations/<source>/apps` | No | List app/page configs of a multi-target source (public ids and display names only) |
 | `POST /integrations/<source>/apps`, `DELETE /integrations/<source>/apps/<app_id>` | Yes | Add or remove one target |
@@ -539,6 +546,28 @@ admin-only because they change a shared secret, spend a third-party API's quota 
 invokes the ingestor; the settings card polls it until `completed` or `error`. Scraper writes
 (`POST`/`DELETE /scrapers`, `POST /scrapers/{id}/run`, `POST /scrapers/analyze-url`) are admin-only
 for the same reasons ([scrapers.md](scrapers.md)).
+
+**In a workspace** (multi-workspace, since 7.04.00; [multi-workspace.md](multi-workspace.md)): a
+request that sends `X-Workspace-Id` acts in that workspace (a non-member gets the one 404). "Admin" is
+then the caller's role there (a workspace admin, or a platform admin who entered; an editor or a viewer
+gets 403, and the deployment's `admins` group grants nothing); the other routes are for any member.
+Credentials and app connectors are the workspace's own secret's; **Run now** invokes the ingestor
+with `{execution_id, app_id?, workspace_id}`, `workspace_id` the resolved workspace (never a body
+field), and writes and reads `WS#{ws}#SOURCE_RUN#<source>`; `GET /sources/status` reports the shared
+schedule rule and the workspace's breaker; **Reset** clears the workspace's breaker only; **enable**
+and **disable** answer 400, because the schedule rule serves every workspace (which plugins a
+workspace runs is its plugin settings', not built yet). Also refused there (400): an app connector or a review page
+that names a `radar_brand` (Radar is not keyed by workspace yet), a `configs` key on
+`PUT /integrations/<source>/credentials` (save the lists through `POST /scrapers` and `POST
+/integrations/<source>/apps`, which check each entry), and a **Run now** of `s3_import` (the import bucket is not
+keyed by workspace). The routes that use the workspace's secret answer 409 until its `secret_status` is `ready`
+(and when a `ready` workspace's secret is missing), naming the recovery steps of
+[multi-workspace.md](multi-workspace.md#credentials): the credentials routes, `GET /integrations/status`, the app
+connector routes, **Run now** and the scrapers API's list, save, delete, connectors and run. `GET /sources/status`,
+**Reset**, **enable** and **disable** read no secret and do not. A **Run now** in a workspace whose secret holds
+none of the plugin's credentials (a new workspace's `{}`, or only another plugin's keys) ends `error` on its run row,
+naming `WorkspaceCredentialsNotSet`, and does not count against the workspace's [circuit breaker](#circuit-breaker).
+Without the header, everything is as above.
 
 ## Circuit breaker
 
@@ -563,9 +592,10 @@ event names no workspace, and per workspace for a run in one ([multi-workspace.m
   after repeated failures" with the time, count and reason. Turning the source back on
   (`PUT /sources/<source>/enable`) closes the breaker and enables the schedule; **Reset**
   (`POST /sources/<source>/reset`) only closes the breaker. Those routes read and clear the
-  deployment-wide `CIRCUIT#<id>` row (`lambda/shared/plugin_circuit.py`) until the API is keyed by
-  workspace; until then a workspace's breaker is reset by deleting its `WS#{ws}#CIRCUIT#<id>` /
-  `TRIPPED` row. Failure rows are kept, so a plugin that is still broken trips again on its next failure.
+  deployment-wide `CIRCUIT#<id>` row (`lambda/shared/plugin_circuit.py`); with `X-Workspace-Id`, the
+  status and **Reset** read and clear that workspace's `WS#{ws}#CIRCUIT#<id>` / `TRIPPED` row only
+  (enable is refused there, above). Failure rows are kept on both paths, so a plugin that is still
+  broken trips again on its next failure.
 
 ## Observability
 

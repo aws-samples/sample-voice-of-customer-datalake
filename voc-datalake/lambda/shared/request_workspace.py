@@ -50,7 +50,7 @@ from shared.workspace import (
     resolve_workspace,
 )
 
-__all__ = ['request_workspace', 'require_settings_admin', 'require_workspace_writer']
+__all__ = ['WRITER_ROLES', 'request_workspace', 'require_settings_admin', 'require_workspace_writer']
 
 #: The roles that write in a workspace (an editor's and an admin's; a viewer reads).
 WRITER_ROLES: Final = frozenset({'editor', 'admin'})

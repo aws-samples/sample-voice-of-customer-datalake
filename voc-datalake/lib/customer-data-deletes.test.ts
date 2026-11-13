@@ -31,11 +31,9 @@ type Scope = readonly string[];
 const WHOLE_TABLE: Scope = [ALL];
 interface Deleter { readonly scope: Scope; readonly why: string }
 
-/** The circuit breaker's own row as the integrations API clears it (shared/plugin_circuit.py: deployment-wide until
- * the API is keyed by workspace). */
-const CIRCUIT_ROW: Deleter = { scope: ['CIRCUIT#*'], why: 'clears its tripped circuit-breaker row' };
-/** The breaker's row as the plugin ingestors write and clear it: deployment-wide, and one per workspace for a run in
- * one (plugins/_shared/circuit_breaker.py). */
+/** The breaker's row as the plugin ingestors write and clear it, and as the integrations API resets it
+ * (shared/plugin_circuit.py): deployment-wide, and one per workspace for a run in one or a request in one
+ * (plugins/_shared/circuit_breaker.py). */
 const WORKSPACE_CIRCUIT_ROW: Deleter = {
   scope: ['CIRCUIT#*', 'WS#ws_??????????????????????????#CIRCUIT#*'], why: 'clears its tripped circuit-breaker row (deployment-wide or the run\'s workspace)',
 };
@@ -51,7 +49,7 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure requests and declared retention limits (docs/source-policies.md)' },
   },
   AggregatesTable: {
-    'VocApiStack/IntegrationsLambdaRole': CIRCUIT_ROW,
+    'VocApiStack/IntegrationsLambdaRole': WORKSPACE_CIRCUIT_ROW,
     ...Object.fromEntries(INGESTOR_ROLES.map((role) => [role, WORKSPACE_CIRCUIT_ROW])),
     'VocApiStack/LogsLambdaRole': { scope: ['LOGS#validation#*'], why: 'DELETE /logs/validation/{source}' },
     'VocApiStack/FeedbackFormLambdaRole': { scope: ['FEEDBACK_FORM'], why: 'DELETE /feedback-forms/{id} (the config row)' },
@@ -116,7 +114,8 @@ const WORKSPACE_WRITERS: Readonly<Record<string, Scope>> = {
   'VocApiStack/WorkspacesLambdaRole': ['AUDIT#WS#*', 'PLUGIN#*', 'SLUG#*', 'USER#*', 'WORKSPACES', 'WS#*'],
   'VocApiStack/UsersLambdaRole': ['AUDIT#WS#*', 'USER#*', 'WS#*'],
   // A platform admin's entry into a workspace from a domain API: the stack's one workspace-resolution policy, attached
-  // to each domain API's role that resolves (lib/utils/workspace-resolution-grants.ts).
+  // to each domain API's role that resolves (lib/utils/workspace-resolution-grants.ts): the settings API, and since
+  // 7.04.00 the metrics API, the feedback edits and the integrations and scrapers APIs.
   'VocApiStack/WorkspaceResolutionPolicy': ['AUDIT#WS#*'],
   [RETENTION_ROLE]: ['WS#*'],
 };

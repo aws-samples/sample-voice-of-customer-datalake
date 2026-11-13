@@ -10,6 +10,8 @@ import { renderWithQueryClient } from '../../test/query-client'
 import SourceCard from './SourceCard'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import type { PluginManifest } from '../../plugins/types'
+import { setCurrentWorkspace } from '../../workspace/currentWorkspace'
+import { ACME } from '../../test/workspaceFixtures'
 
 const mockGetSourcesStatus = vi.fn<(...args: unknown[]) => unknown>()
 const mockEnableSource = vi.fn<(source: string) => unknown>()
@@ -161,6 +163,21 @@ describe('SourceCard circuit breaker notice', () => {
     expect(mockEnableSource).toHaveBeenCalledWith('app_reviews_android')
     await waitFor(() => expect(screen.queryByText('Paused after repeated failures')).not.toBeInTheDocument())
     expect(mockResetSource).not.toHaveBeenCalled()
+  })
+
+  it("inside a workspace, enabling keeps the workspace's tripped breaker and reads the status again", async () => {
+    // The schedule is the deployment's (enable goes without X-Workspace-Id and closes the deployment's breaker);
+    // the card shows the workspace's own breaker, which enabling does not close.
+    setCurrentWorkspace(ACME)
+    try {
+      mockEnableSource.mockResolvedValue({ success: true, source: 'app_reviews_android', enabled: true })
+      await renderAndEnable()
+
+      await waitFor(() => expect(mockGetSourcesStatus).toHaveBeenCalledTimes(2))
+      expect(screen.getByText('Paused after repeated failures')).toBeInTheDocument()
+    } finally {
+      setCurrentWorkspace(null)
+    }
   })
 
   it('a failed enable leaves the notice in place', async () => {

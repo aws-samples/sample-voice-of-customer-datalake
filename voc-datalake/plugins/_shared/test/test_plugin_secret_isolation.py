@@ -201,6 +201,10 @@ FOREIGN_ONLY_SECRET = {
     UNPREFIXED_KEY: UNPREFIXED_VALUE,
 }
 
+# A secret whose body is valid JSON but not an object: a human wrote the wrong thing, the counted misconfiguration
+# on both paths (in a workspace a plain namespace miss is credentials not saved yet, and is not counted).
+NOT_AN_OBJECT_SECRET = [OTHER_PLUGIN_VALUE]
+
 # A malformed identity (uppercase, refused by the character class) paired with a
 # payload that DOES carry keys under the prefix it would produce, so the identity
 # guard is observable as raise-vs-return rather than only through a message.
@@ -849,10 +853,12 @@ class TestAConstructionFailureIsReported:
         keys = [call.kwargs.get('Key') for call in table.update_item.call_args_list]
         assert {'pk': f'WS#{WS}#SOURCE_RUN#{PLUGIN_ID}', 'sk': self.EXECUTION_ID} in keys
 
-    def test_a_namespace_miss_records_a_circuit_breaker_failure(self):
+    def test_a_misconfiguration_records_a_circuit_breaker_failure(self):
         """Otherwise a plugin broken this way never stops in its workspace —
-        it just fails every fifteen minutes forever."""
-        _, _, record_failure, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+        it just fails every fifteen minutes forever. (A secret that is not a JSON
+        object: in a workspace a plain namespace miss is credentials not saved yet,
+        ``WorkspaceCredentialsNotSet``, which is not counted; test_base_ingestor.py.)"""
+        _, _, record_failure, _ = self._construct(NOT_AN_OBJECT_SECRET, self.EXECUTION_ID)
 
         assert record_failure.call_args_list, 'the circuit breaker saw nothing'
 
@@ -1036,17 +1042,17 @@ class TestAnUnreadableSecretIsNotAPluginFailure:
             'five in one window disable the schedule of a plugin that is fine'
         )
 
-    def test_the_control_a_namespace_miss_still_is_counted(self):
+    def test_the_control_a_misconfiguration_still_is_counted(self):
         """Non-vacuity, and the property the exemption must not cost: the breaker
-        still fires for a genuine misconfiguration. Without this, dropping
+        still fires for a genuine misconfiguration (here a secret that is not a JSON
+        object; deployment-wide a namespace miss is one too). Without this, dropping
         `record_failure` altogether — or widening the exemption to every
         `ConfigurationError` — passes the assertion above while removing the
         auto-disable entirely, which is a defect in the opposite direction."""
-        _, _, record_failure, _ = self._construct(FOREIGN_ONLY_SECRET, self.EXECUTION_ID)
+        _, _, record_failure, _ = self._construct(NOT_AN_OBJECT_SECRET, self.EXECUTION_ID)
 
         assert record_failure.call_args_list, (
-            'a namespace miss is a misconfiguration and retrying it forever is what '
-            'the breaker exists to stop'
+            'a misconfiguration is retried forever unless the breaker stops it'
         )
 
     def test_a_non_object_payload_is_not_the_unreadable_type(self):

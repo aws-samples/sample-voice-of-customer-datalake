@@ -55,6 +55,12 @@ def get_projects_table():
     return _get_table('PROJECTS_TABLE')
 
 
+def get_workspaces_table():
+    """The control plane's voc-workspaces (memberships, entry audits; shared/workspace.py), or None. Requires
+    WORKSPACES_TABLE env var. Not a data-path table: no feedback or counter lives there."""
+    return _get_table('WORKSPACES_TABLE')
+
+
 def configured_table(table: Any, name: str) -> Any:
     """``table``, or a ConfigurationError (500) naming it when its env var is unset."""
     if table is None:

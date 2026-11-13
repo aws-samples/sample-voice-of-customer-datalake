@@ -19,7 +19,7 @@ from typing import Any, overload
 
 from shared.ws_repo import WorkspaceScope, WorkspaceTable, partition_query, ws_table
 
-__all__ = ['DeploymentTable', 'ingest_table', 'table_view']
+__all__ = ['DeploymentTable', 'ingest_table', 'table_view', 'update_with_key']
 
 
 class DeploymentTable:
@@ -70,6 +70,12 @@ def ingest_table(scope: WorkspaceScope | None, resource: Any, name: str,
                  key: str = 'pk') -> WorkspaceTable | DeploymentTable:
     """The table ``name`` for a run in ``scope`` (``ws_table``), or for a deployment-wide run (``scope`` None)."""
     return table_view(scope, resource.Table(name), key)
+
+
+def update_with_key(view: WorkspaceTable | DeploymentTable, request: Mapping[str, Any]) -> dict:
+    """An ``update_item`` request built the boto3 way (``Key=`` among its arguments: shared/source_updates.py,
+    shared/feedback_category.py, the aggregator's counters) sent through ``view``, whose key is positional."""
+    return view.update_item(request['Key'], **{name: value for name, value in request.items() if name != 'Key'})
 
 
 def table_view(scope: WorkspaceScope | None, table: Any, key: str = 'pk') -> WorkspaceTable | DeploymentTable:

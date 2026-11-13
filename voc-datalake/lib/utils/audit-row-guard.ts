@@ -10,7 +10,8 @@
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row) and voc-workspaces (`AUDIT#WS#<ws>`, a platform
  * admin's entry into a workspace, the workspace's creation and its membership changes, written by the workspaces
  * API, lambda/shared/workspace.py, platform_workspaces.py and workspace_members.py; a deleted user's membership
- * removals, written by the users API, `AUDIT#WS#*` only). Every role that can write in one of those
+ * removals, written by the users API, `AUDIT#WS#*` only; a platform admin's entry through the metrics API or the
+ * feedback edits, each `AUDIT#WS#*` only). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
  *
  *   - a table the role is that table's audit writer for: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit

@@ -5,12 +5,16 @@ import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+import pytest
 from feedback_page_fixtures import serve_page_by_key
 from handler_events_fixtures import call_route
 from urgency_index_fixtures import batch_get_key_counts, wire_urgency_index
 
 from metrics_handler import lambda_handler
 from shared.earliest_date import EARLIEST_DATE_KEY
+
+# Some cases call the data helpers directly (outside a request): deployment-wide, as the middleware sets it.
+pytestmark = pytest.mark.usefixtures('deployment_wide_metrics_request')
 
 
 class TestListFeedbackEndpoint:

@@ -24,6 +24,7 @@ import { acknowledgementCovering } from '../utils/nag-ack';
 import type { IConstruct } from 'constructs';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
+import { WORKSPACE_RESOLUTION_POLICY_ID } from '../utils/workspace-resolution-grants';
 import { itemAt } from '../test-support/guards';
 
 /** A role construct's DefaultPolicy CloudFormation resource. */
@@ -163,15 +164,96 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
       ['Projects', 'Conversations', 'Jobs'].some((t) => s.resource.includes(t))
       || s.actions.some((a) => a.startsWith('sqs:') || a.startsWith('bedrock:')));
     expect(offenders).toStrictEqual([]);
-    // Its one S3 grant: a write-once PutObject of the review as it was (lambda/shared/silver_provenance.py).
+    // Its S3 grants: a write-once PutObject of the review as it was (lambda/shared/silver_provenance.py), under
+    // silver/ and, for a workspace's review, under one workspace's ws/{ws}/silver/ (one id: `ws_` and 26 `?`).
     const s3 = statements.filter((s) => s.actions.some((a) => a.startsWith('s3:')));
-    expect(s3.map((s) => s.actions)).toStrictEqual([['s3:PutObject']]);
-    expect(s3.every((s) => s.resource.includes('/silver/*'))).toBe(true);
+    expect(s3.map((s) => s.actions)).toStrictEqual([['s3:PutObject'], ['s3:PutObject']]);
+    expect(s3.map((s) => (s.resource.includes(`/ws/ws_${'?'.repeat(26)}/silver/*`) ? 'ws' : 'deployment')).sort(byCodeUnit))
+      .toStrictEqual(['deployment', 'ws']);
+    expect(s3.every((s) => s.resource.includes('silver/*'))).toBe(true);
   });
 
   it('is handed both table names and the raw bucket', () => {
     expect(Object.keys(lambdaEnv(apiTemplate(), 'feedback_edit_handler.lambda_handler')))
       .toStrictEqual(expect.arrayContaining(['FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET']));
+  });
+});
+
+// ── X-Workspace-Id on the data path (docs/multi-workspace.md, lib/utils/workspace-resolution-grants.ts) ───────
+// The metrics API, the feedback edits and the operator APIs (integrations, scrapers) resolve a request's workspace
+// (lambda/shared/workspace_request.py) through the stack's one workspace-resolution policy, as the settings API does
+// (platform-admin-writes.test.ts pins what that policy allows: GetItem on WS#* and AUDIT#WS#*, PutItem on AUDIT#WS#*
+// only), and run the live platform-admin check in Cognito; nothing else of the control plane.
+describe.each([
+  ['MetricsLambdaRole', 'metrics_handler.lambda_handler'],
+  ['FeedbackEditLambdaRole', 'feedback_edit_handler.lambda_handler'],
+  ['IntegrationsLambdaRole', 'integrations_handler.lambda_handler'],
+  ['ScrapersLambdaRole', 'scrapers_handler.lambda_handler'],
+])('%s resolves X-Workspace-Id', (role, handler) => {
+  it('attaches the one workspace-resolution policy and writes nothing in voc-workspaces from its own', () => {
+    const policies = Object.keys(apiTemplate().findResources('AWS::IAM::ManagedPolicy'))
+      .filter((id) => id.startsWith(WORKSPACE_RESOLUTION_POLICY_ID));
+    expect(policies).toHaveLength(1);
+    const attached = JSON.stringify(Object.entries(apiTemplate().findResources('AWS::IAM::Role'))
+      .find(([id]) => id.startsWith(role))?.[1]);
+    expect(attached).toContain(JSON.stringify({ Ref: policies[0] }));
+    expect(policyStatementsOf(apiTemplate(), role)
+      .filter((s) => s.resource.includes('Workspaces') && s.actions.some((a) => a.startsWith('dynamodb:'))))
+      .toStrictEqual([]);
+  });
+
+  it('may run the live platform-admin check and nothing else in Cognito', () => {
+    expect(actionsWithPrefix(roleStatements(apiTemplate(), role), 'cognito-idp:').sort(byCodeUnit))
+      .toStrictEqual(['cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser']);
+  });
+
+  it('is handed the workspaces table and the user pool', () => {
+    expect(Object.keys(lambdaEnv(apiTemplate(), handler)))
+      .toStrictEqual(expect.arrayContaining(['WORKSPACES_TABLE', 'USER_POOL_ID']));
+  });
+});
+
+// The operator APIs keep a workspace's plugin credentials, app connectors and scraper configs in its own secret
+// (lambda/shared/workspace_plugin_store.py): Get and Put on `voc/ws/*` beside the shared secret, never Create, Delete,
+// Describe or Tag (the workspaces API makes them), and the prefix in WORKSPACE_SECRET_PREFIX.
+describe.each([
+  ['IntegrationsLambdaRole', 'integrations_handler.lambda_handler'],
+  ['ScrapersLambdaRole', 'scrapers_handler.lambda_handler'],
+])('%s reads and writes a workspace\'s credentials secret', (role, handler) => {
+  const onWorkspaceSecrets = () => policyStatementsOf(apiTemplate(), role)
+    .filter((s) => s.resource.includes('voc/ws/*'));
+
+  it('may Get and Put every workspace secret, and nothing else there', () => {
+    expect(onWorkspaceSecrets().map((s) => [...s.actions].sort(byCodeUnit)))
+      .toStrictEqual([['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue']]);
+  });
+
+  it('holds no Create, Delete, Describe or Tag of a secret anywhere', () => {
+    expect(actionsWithPrefix(policyStatementsOf(apiTemplate(), role), 'secretsmanager:'))
+      .toStrictEqual(['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue']);
+  });
+
+  it('may decrypt and generate data keys with the deployment key the secrets are encrypted with', () => {
+    // The workspaces API creates every workspace secret with the customer-managed key (secretsmanager:KmsKeyArn);
+    // without these a Get or Put of one is AccessDenied (moto does not check KMS, so only this test can say so).
+    const kmsStatements = policyStatementsOf(apiTemplate(), role).filter((s) => s.actions.some((a) => a.startsWith('kms:')));
+    expect(kmsStatements.length).toBeGreaterThan(0);
+    expect(kmsStatements.every((s) => !s.resource.includes('"*"'))).toBe(true);
+    expect(actionsWithPrefix(kmsStatements, 'kms:'))
+      .toStrictEqual(expect.arrayContaining(['kms:Decrypt', 'kms:GenerateDataKey']));
+  });
+
+  it('is handed the workspaces\' secret prefix', () => {
+    expect(lambdaEnv(apiTemplate(), handler)).toHaveProperty('WORKSPACE_SECRET_PREFIX', 'voc/ws');
+  });
+});
+
+describe('the integrations API clears a workspace\'s breaker row', () => {
+  it('may delete only CIRCUIT#* and one workspace\'s WS#{ws}#CIRCUIT#* rows in aggregates', () => {
+    const deletes = policyStatementsOf(apiTemplate(), 'IntegrationsLambdaRole')
+      .filter((s) => s.actions.includes('dynamodb:DeleteItem'));
+    expect(deletes.map((s) => s.condition)).toStrictEqual([{ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
+      'CIRCUIT#*', `WS#ws_${'?'.repeat(26)}#CIRCUIT#*`] } }]);
   });
 });
 

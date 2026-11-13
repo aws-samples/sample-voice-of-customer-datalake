@@ -40,7 +40,7 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
@@ -328,6 +328,14 @@ class WorkspaceTable:
         if not self.scope.owns(key.get(self.key_attribute)):
             raise OutOfScopeError('a key outside the workspace')
 
+    def check_keys(self, keys: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """``keys`` as plain dicts once every one is in the scope (``OutOfScopeError`` otherwise): a caller's
+        ``BatchGetItem``, which this view does not make itself, names only keys of the workspace."""
+        checked = [dict(key) for key in keys]
+        for key in checked:
+            self._check_key(key)
+        return checked
+
     def _check_item(self, item: Mapping[str, Any]) -> None:
         self._check_key(item)
         for attribute in PARTITION_ATTRIBUTES:
@@ -362,6 +370,13 @@ class WorkspaceTable:
         the scope; any other use of one (a ``REMOVE``, ``if_not_exists``, arithmetic, a list append) is refused,
         because its value could not be checked here.
         """
+        self.check_update(key, **kwargs)
+        return self._unscoped_table.update_item(Key=dict(key), **kwargs)
+
+    def check_update(self, key: Mapping[str, Any], **kwargs: Any) -> None:
+        """``update_item``'s checks without the call (``OutOfScopeError`` when one fails): a caller that sends the
+        same update inside a ``TransactWriteItems`` (the aggregator's arrivals) checks each ``Update`` here first,
+        its parameters too (``ALLOWED_OPTIONS``, without the ``Key`` and ``TableName`` the transaction names)."""
         self._check_options('update_item', kwargs)
         self._check_key(key)
         expression = kwargs.get('UpdateExpression')
@@ -375,7 +390,6 @@ class WorkspaceTable:
                     assigned = _ASSIGNED_PLACEHOLDER.match(expression, match.end())
                     if assigned is None or not self.scope.owns(values.get(assigned.group(1))):
                         raise OutOfScopeError(f'{attribute} outside the workspace')
-        return self._unscoped_table.update_item(Key=dict(key), **kwargs)
 
     def query(self, partition_attribute: str, partition: str, *, sort_condition: str | None = None,
               **kwargs: Any) -> dict:

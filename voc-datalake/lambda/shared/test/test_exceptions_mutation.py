@@ -37,6 +37,7 @@ from shared.exceptions import (
     ServiceUnavailableError,
     TooManyRequestsError,
     ValidationError,
+    WorkspaceCredentialsNotSet,
 )
 
 # The complete table: every public class and the status api.py answers with.
@@ -46,6 +47,7 @@ STATUS_TABLE = [
     (NotFoundError, 404),
     (ConfigurationError, 500),
     (SecretUnreadableError, 500),
+    (WorkspaceCredentialsNotSet, 500),
     (ServiceError, 500),
     (AuthenticationError, 401),
     (AuthorizationError, 403),
@@ -131,7 +133,8 @@ class TestEveryRowIsAnApiError:
     def test_direct_parent_of_each_row(self):
         """Pins the shape of the tree: every row hangs off ApiError except
         SecretUnreadableError, which must stay under ConfigurationError so the
-        existing `except ConfigurationError` sites keep catching it."""
+        existing `except ConfigurationError` sites keep catching it, and
+        WorkspaceCredentialsNotSet under SecretUnreadableError."""
         parents = {cls: cls.__mro__[1] for cls, _ in STATUS_TABLE}
         assert parents == {
             ApiError: Exception,
@@ -139,6 +142,8 @@ class TestEveryRowIsAnApiError:
             NotFoundError: ApiError,
             ConfigurationError: ApiError,
             SecretUnreadableError: ConfigurationError,
+            # Not counted against a workspace's breaker, like its parent (plugins/_shared/base_ingestor.py).
+            WorkspaceCredentialsNotSet: SecretUnreadableError,
             ServiceError: ApiError,
             AuthenticationError: ApiError,
             AuthorizationError: ApiError,
@@ -150,8 +155,9 @@ class TestEveryRowIsAnApiError:
 
     def test_siblings_do_not_catch_each_other(self):
         """A 404 must never be swallowed by a 400 handler (and so on): no two
-        leaf classes are related, so `except NotFoundError` sees only its own."""
-        leaves = [cls for cls, _ in STATUS_TABLE if cls not in (ApiError, ConfigurationError)]
+        leaf classes are related, so `except NotFoundError` sees only its own.
+        (SecretUnreadableError is the one intended parent of a row: WorkspaceCredentialsNotSet.)"""
+        leaves = [cls for cls, _ in STATUS_TABLE if cls not in (ApiError, ConfigurationError, SecretUnreadableError)]
         for a in leaves:
             for b in leaves:
                 if a is not b:
