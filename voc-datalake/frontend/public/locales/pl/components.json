@@ -160,6 +160,7 @@
     "reprocess": {
       "title": "Ponownie przetwórz istniejące opinie",
       "description": "Po zmianie kategorii ponownie skategoryzuj opinie już zapisane w systemie. Opinie są aktualizowane na miejscu — nic nie zostanie usunięte.",
+      "workspaceDescription": "Po zmianie kategorii lub wymiarów tego obszaru roboczego ponownie wyprowadź nimi jego zapisane opinie. Odczytywane i aktualizowane na miejscu są tylko opinie tego obszaru roboczego — nic nie zostanie usunięte, a inne obszary robocze pozostaną nietknięte.",
       "modeLabel": "Tryb",
       "modes": {
         "processed": {

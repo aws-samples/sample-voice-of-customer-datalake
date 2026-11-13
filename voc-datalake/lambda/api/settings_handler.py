@@ -149,6 +149,7 @@ from shared.url_policy import validate_url
 from shared.workspace import WorkspaceContext, is_workspace_admin
 from shared.workspace_config import get_config_item, put_config_item
 from shared.workspace_request import RequestWorkspace
+from shared.workspace_routing import workspace_payload
 from shared.workspace_settings import settings_key
 from shared.ws_repo import WorkspaceScope, scope_of
 
@@ -181,6 +182,11 @@ FAILED_DIMENSIONS_READ = 'Failed to retrieve dimensions'
 FAILED_DIMENSIONS_SAVE = 'Failed to save dimensions'
 FAILED_SOURCES_READ = 'Failed to retrieve source profiles'
 FAILED_SOURCES_SAVE = 'Failed to save source profiles'
+# The category reprocess (since 7.13.00): a workspace's own job with `X-Workspace-Id`, for its admins
+# (`require_settings_admin`), the deployment's without it, as before.
+FAILED_REPROCESS_START = 'Failed to start reprocess job'
+FAILED_REPROCESS_READ = 'Failed to retrieve the reprocess job'
+FAILED_REPROCESS_CANCEL = 'Failed to cancel the reprocess job'
 
 # Problem keys are client-built as "category|subcategory|normalized problem
 # text". Bound their size in characters AND UTF-8 bytes (CJK text triples
@@ -952,9 +958,17 @@ def _caller_label(event: dict) -> str:
 @app.post("/settings/categories/reprocess")
 @tracer.capture_method
 def start_category_reprocess():
-    """Start re-categorising stored feedback (admin). 202 ``{job}``; 409 while one is active."""
+    """Start re-deriving stored feedback (admin). 202 ``{job}``; 409 while one of the same scope is active.
+
+    With ``X-Workspace-Id`` (since 7.13.00) the workspace's own job, for its admins (``require_settings_admin``, the
+    categories' own rule): its row and lock in the workspace's partition (shared/reprocess_jobs.py), the worker told
+    the workspace through ``workspace_payload`` (from the resolved membership, never the body), so it replays that
+    workspace's reviews only, with its own categories and dimensions. Without it the deployment's job, as before.
+    """
     event = app.current_event.raw_event
-    require_admin(event)
+    context = request_workspace(event, FAILED_REPROCESS_START, fresh=True)
+    require_settings_admin(event, context)
+    scope = _config_scope(context)
     table = _configured_table()
     if not CATEGORY_REPROCESS_FUNCTION:
         raise ConfigurationError('Category reprocess worker not configured')
@@ -965,16 +979,18 @@ def start_category_reprocess():
         body = {}
     if not isinstance(body, dict):
         raise ValidationError('Request body must be a JSON object')
-    job = _resume_reprocess(table, body, event) if 'resume' in body else _new_reprocess(table, body, event)
+    job = (_resume_reprocess(table, body, event, scope) if 'resume' in body
+           else _new_reprocess(table, body, event, scope))
     if job is None:
         raise ConflictError('A reprocess job is already queued or running')
     mode, days = job.get('mode'), job.get('days')
     try:
-        invoke_lambda_async(CATEGORY_REPROCESS_FUNCTION, {'job_id': job['sk'], **payload_fields()})
+        invoke_lambda_async(CATEGORY_REPROCESS_FUNCTION,
+                            workspace_payload({'job_id': job['sk'], **payload_fields()}, context, ingestion=False))
     except Exception as e:
         logger.exception("Failed to start category reprocess worker")
         reprocess_jobs.finish_job(table, job['sk'], reprocess_jobs.STATUS_FAILED,
-                                  error='Could not start the reprocess worker')
+                                  error='Could not start the reprocess worker', **reprocess_jobs.scope_option(scope))
         raise ServiceError('Failed to start reprocess job') from e
     logger.info("Category reprocess started", extra={'job_id': job['sk'], 'mode': mode, 'days': days})
     return Response(
@@ -984,7 +1000,7 @@ def start_category_reprocess():
     )
 
 
-def _new_reprocess(table: Any, body: dict, event: dict) -> dict | None:
+def _new_reprocess(table: Any, body: dict, event: dict, scope: WorkspaceScope | None = None) -> dict | None:
     """A new job for the body's mode and slice (``shared/reprocess_slices.py``); None while one is active."""
     mode = body.get('mode')
     if mode not in reprocess_jobs.MODES:
@@ -997,11 +1013,11 @@ def _new_reprocess(table: Any, body: dict, event: dict) -> dict | None:
     return reprocess_jobs.start_job(
         table, mode=mode, days=job_slice.days or 0, include_manual=include_manual,
         started_by=_caller_label(event), now=datetime.now(UTC), job_slice=job_slice,
-        started_by_sub=get_caller_subject(event),
+        started_by_sub=get_caller_subject(event), **reprocess_jobs.scope_option(scope),
     )
 
 
-def _resume_reprocess(table: Any, body: dict, event: dict) -> dict | None:
+def _resume_reprocess(table: Any, body: dict, event: dict, scope: WorkspaceScope | None = None) -> dict | None:
     """``{resume: <job_id>}``: a new job continuing a partial one at its cursor, with its mode and slice.
 
     400 for other fields or a malformed id, 404 for an unknown job, 409 unless the job
@@ -1012,7 +1028,8 @@ def _resume_reprocess(table: Any, body: dict, event: dict) -> dict | None:
     job_id = body.get('resume')
     if not reprocess_jobs.is_job_id(job_id):
         raise ValidationError('resume must be a reprocess job id')
-    previous = reprocess_jobs.get_job(table, str(job_id))
+    # The scope's own partition only: another workspace's job id is not found, as one that exists nowhere.
+    previous = reprocess_jobs.get_job(table, str(job_id), scope)
     if previous is None:
         raise NotFoundError('Reprocess job not found')
     resume = reprocess_jobs.resume_point(previous)
@@ -1024,7 +1041,7 @@ def _resume_reprocess(table: Any, body: dict, event: dict) -> dict | None:
             table, mode=str(previous.get('mode')), days=job_slice.days or 0,
             include_manual=previous.get('include_manual') is True, started_by=_caller_label(event),
             now=datetime.now(UTC), job_slice=job_slice,
-            started_by_sub=get_caller_subject(event), resume=resume,
+            started_by_sub=get_caller_subject(event), resume=resume, **reprocess_jobs.scope_option(scope),
         )
     except reprocess_jobs.ResumeRefused as e:
         raise ConflictError('This job was resumed already') from e
@@ -1044,15 +1061,19 @@ def _started_at(job: dict) -> datetime:
 @app.get("/settings/categories/reprocess")
 @tracer.capture_method
 def get_latest_category_reprocess():
-    """Latest reprocess job (admin) — ``{job: Job | null}``."""
-    require_admin(app.current_event.raw_event)
+    """Latest reprocess job (admin) — ``{job: Job | null}``: the workspace's own with ``X-Workspace-Id`` (its admins;
+    another workspace's or the deployment's job is never shown there), the deployment's without it."""
+    event = app.current_event.raw_event
+    context = request_workspace(event, FAILED_REPROCESS_READ)
+    require_settings_admin(event, context)
+    scope = _config_scope(context)
     table = _configured_table()
-    job = reprocess_jobs.get_latest_job(table)
+    job = reprocess_jobs.get_latest_job(table, scope)
     if not job:
         return {'job': None}
     view = reprocess_jobs.job_view(job)
     # A resumer that was cancelled or failed handed its partial job back: name it, so the SPA can offer Resume.
-    handed_back = reprocess_jobs.handed_back_job(table, job)
+    handed_back = reprocess_jobs.handed_back_job(table, job, scope)
     if handed_back is not None:
         view['resumable_job_id'] = handed_back
     return {'job': view}
@@ -1061,9 +1082,14 @@ def get_latest_category_reprocess():
 @app.post("/settings/categories/reprocess/<job_id>/cancel")
 @tracer.capture_method
 def cancel_category_reprocess(job_id: str):
-    """Cancel a queued/running job (admin); a finished job is returned unchanged."""
-    require_admin(app.current_event.raw_event)
-    job = reprocess_jobs.cancel_job(_configured_table(), job_id) if reprocess_jobs.is_job_id(job_id) else None
+    """Cancel a queued/running job (admin); a finished job is returned unchanged. With ``X-Workspace-Id`` only a job
+    of that workspace (its admins; another workspace's id is the 404 of an id that exists nowhere)."""
+    event = app.current_event.raw_event
+    context = request_workspace(event, FAILED_REPROCESS_CANCEL, fresh=True)
+    require_settings_admin(event, context)
+    scope = _config_scope(context)
+    job = (reprocess_jobs.cancel_job(_configured_table(), job_id, **reprocess_jobs.scope_option(scope))
+           if reprocess_jobs.is_job_id(job_id) else None)
     if not job:
         raise NotFoundError('Reprocess job not found')
     return {'job': reprocess_jobs.job_view(job)}

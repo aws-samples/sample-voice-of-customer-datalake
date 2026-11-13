@@ -127,6 +127,24 @@ describe("WorkspaceSettings: the workspace's categories, dimensions and source p
     expect(within(sources).queryByLabelText('Keep reviews forever')).not.toBeInTheDocument()
   })
 
+  it("offers its admins the workspace's own reprocess beside its categories, sent in the workspace", async () => {
+    const started = vi.fn<RouteHandler>(() => ({ job: null }))
+    renderPage(ACME, {
+      'GET /settings/categories/reprocess': () => ({ job: null }),
+      'POST /settings/categories/reprocess': started,
+    })
+    const categories = await screen.findByRole('region', { name: 'Categories' })
+    const panel = await within(categories).findByRole('region', { name: 'Reprocess existing feedback' })
+    expect(panel).toHaveTextContent("Only this workspace's reviews are read and updated in place")
+    await userEvent.click(within(panel).getByRole('button', { name: 'Start reprocessing' }))
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start reprocessing' }))
+    await waitFor(() => expect(started).toHaveBeenCalledWith({ mode: 'processed', include_manual: false, days: 0 }))
+    // The workspace's own job: the call names the current workspace ('workspace' scope, never 'deployment').
+    const sent = fetchApi.mock.calls.filter(([endpoint]) => endpoint === '/settings/categories/reprocess')
+    expect(sent.length).toBeGreaterThan(0)
+    expect(sent.every((call) => call[2] === 'workspace')).toBe(true)
+  })
+
   it('tells any other member who changes them, and shows no editor', async () => {
     renderPage(JUNIPER)
     expect(await screen.findByText("Only this workspace's admins can change its categories, dimensions and source policies."))

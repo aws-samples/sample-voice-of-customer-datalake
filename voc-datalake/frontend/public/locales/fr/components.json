@@ -159,6 +159,7 @@
     "reprocess": {
       "title": "Retraiter les retours existants",
       "description": "Après avoir modifié les catégories, recatégorisez les avis déjà enregistrés. Les avis sont mis à jour sur place — rien n'est supprimé.",
+      "workspaceDescription": "Après avoir modifié les catégories ou les dimensions de cet espace de travail, recalculez avec elles ses avis enregistrés. Seuls les avis de cet espace de travail sont lus et mis à jour sur place — rien n'est supprimé, et les autres espaces de travail ne sont pas touchés.",
       "modeLabel": "Mode de traitement",
       "modes": {
         "processed": {

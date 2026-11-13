@@ -148,7 +148,7 @@ def test_the_writer_refuses_a_key_outside_the_workspace(world):
     class _Context:
         ws = WS_A
 
-    writer = feedback_edit_handler._ItemWriter(scope_of(_Context()), world[0])
+    writer = feedback_edit_handler.ScopedUpdates(scope_of(_Context()), world[0])
     with pytest.raises(OutOfScopeError):
         writer.update_item(Key={'pk': ITEM['pk'], 'sk': ITEM['sk']}, UpdateExpression='SET #c = :c',
                            ExpressionAttributeNames={'#c': 'category'}, ExpressionAttributeValues={':c': 'x'})

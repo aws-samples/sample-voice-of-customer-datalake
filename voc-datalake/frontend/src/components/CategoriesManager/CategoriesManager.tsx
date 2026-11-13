@@ -66,7 +66,7 @@ export default function CategoriesManager() {
   const queryClient = useQueryClient()
   const isAdmin = useIsAdmin()
   // Whose categories (workspace/configScope.ts): Administration edits the deployment's, the workspace settings page
-  // the workspace's. The reprocess re-classifies the deployment's items with the deployment's categories only.
+  // the workspace's. The reprocess below is of the same scope.
   const scope = useConfigScope()
   const workspace = useCurrentWorkspace()
   const editsWorkspace = scope === 'workspace' && workspace !== null
@@ -278,9 +278,10 @@ export default function CategoriesManager() {
         </p>
       )}
 
-      {/* The category reprocess re-classifies the deployment's items with the deployment's categories (whatever
-          the address): not offered beside a workspace's own categories. */}
-      {!editsWorkspace && <ReprocessPanel />}
+      {/* The category reprocess of the same scope as these categories (useReprocessJob.ts): beside a workspace's
+          own categories its own job, replaying its reviews with its categories and dimensions (7.13.00); in
+          Administration the deployment's. */}
+      <ReprocessPanel inWorkspace={editsWorkspace} />
 
       <ConfirmModal
         isOpen={deleteCategoryId !== null}

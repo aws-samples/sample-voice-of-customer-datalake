@@ -12,9 +12,9 @@ only ever reads and writes its own rows and objects. This module is the one plac
   shared/workspace_routing.py). Never from a request field.
 * Key builders: ``feedback_key`` and the feedback indexes' partitions (``date_pk``, ``category_pk``,
   ``urgency_pk``, ``feedback_id_pk``, ``channel_pk``), ``metric_pk`` / ``metric_type``, ``watermark_key``,
-  ``source_run_pk``, ``scraper_run_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; the
+  ``source_run_pk``, ``scraper_run_pk``, ``erasure_job_pk``, ``reprocess_job_pk`` and ``s3_key`` for objects (``s3_prefix`` their common ``ws/{ws}/``), ``plugin_config_key`` (a plugin's config list; the
   credentials parameters' names are shared/workspace_ids.py ``credentials_parameter_name``).
-* ``ws_table``: a table that refuses any key, item, update or query outside the scope's partitions (every index
+* ``ws_table``: a table that refuses any key, item, update, query or scan outside the scope's partitions (every index
   partition of voc-feedback is one of ``PARTITION_ATTRIBUTES``: gsi4 and gsi5 are keyed on ``gsi4pk`` / ``gsi5pk``,
   no longer on the raw ``feedback_id`` and ``source_channel``), also in its multi-item calls on that one table
   (``transact_write_items``, ``batch_get_item``, ``batch_writer``): a caller never names a table, and one entry
@@ -38,6 +38,7 @@ The keys (``{ws}`` is ``ws_`` + a ULID, shared/workspace.py ``is_workspace_id``)
                     pk WS#{ws}#SOURCE_RUN#{source}        pk WS#{ws}#SCRAPER_RUN#{scraper_id}
                     pk WS#{ws}#FAILURES#{plugin}          pk WS#{ws}#CIRCUIT#{plugin} (the plugins' breaker)
                     pk WS#{ws}#JOB#erasure (a workspace's erasure jobs and their lock)
+                    pk WS#{ws}#JOB#category_reprocess (a workspace's category reprocess jobs and their lock)
                     pk WS#{ws}#PLUGIN_CONFIG  sk {plugin} (a plugin's config list, shared/plugin_configs.py)
     voc-watermarks  source WS#{ws}#{plugin}#{key}
     raw bucket      ws/{ws}/raw/{source}/{yyyy}/{mm}/{dd}/{stem}/{sha16}.json, ws/{ws}/silver/..., ws/{ws}/...
@@ -50,6 +51,8 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, NoReturn, Protocol, Self
+
+from boto3.dynamodb.conditions import Attr, ConditionBase
 
 from shared.batch_get import BATCH_GET_ATTEMPTS, batch_get_all
 from shared.dynamo_paging import iter_query
@@ -77,6 +80,7 @@ __all__ = [
     'partition_scope',
     'plugin_config_key',
     'plugin_config_pk',
+    'reprocess_job_pk',
     's3_key',
     's3_prefix',
     'scope_from_key',
@@ -120,6 +124,8 @@ ALLOWED_OPTIONS: Final[Mapping[str, frozenset[str]]] = {
     'query': frozenset({'IndexName', 'Limit', 'ExclusiveStartKey', 'ScanIndexForward', 'ConsistentRead',
                         'ProjectionExpression', 'FilterExpression', 'ExpressionAttributeNames',
                         'ExpressionAttributeValues', 'Select', 'ReturnConsumedCapacity'}),
+    # The filter is a boto3 condition (``Attr``), ANDed with the scope's own: no names or values of its own.
+    'scan': frozenset({'Limit', 'ExclusiveStartKey', 'FilterExpression', 'ConsistentRead', 'ReturnConsumedCapacity'}),
 }
 #: DynamoDB's ceiling on the entries of one TransactWriteItems.
 MAX_TRANSACT_ITEMS: Final = 100
@@ -324,6 +330,12 @@ def erasure_job_pk(scope: WorkspaceScope) -> str:
     return scope.key('JOB', 'erasure')
 
 
+def reprocess_job_pk(scope: WorkspaceScope) -> str:
+    """A workspace's category reprocess jobs and their lock (voc-aggregates, shared/reprocess_jobs.py):
+    ``WS#{ws}#JOB#category_reprocess``."""
+    return scope.key('JOB', 'category_reprocess')
+
+
 def plugin_config_pk(scope: WorkspaceScope) -> str:
     """The partition of every plugin's config list of the workspace in voc-aggregates: ``WS#{ws}#PLUGIN_CONFIG``."""
     return scope.key('PLUGIN_CONFIG')
@@ -507,6 +519,38 @@ class WorkspaceTable:
         """Every item of ``query`` across its pages (at most ``max_items``; shared/dynamo_paging.py pages)."""
         return iter_query(_BoundQuery(self, partition_attribute, partition, sort_condition), kwargs,
                           max_items=max_items)
+
+    def scan(self, **kwargs: Any) -> dict:
+        """One page of a Scan of the table that answers the scope's rows only: its ``FilterExpression`` (a boto3
+        condition, ``Attr(…)``; a string one is refused, as it could not be combined) is ANDed with the table's key
+        beginning ``WS#{ws}#``, and a returned row outside it (which the filter rules out) raises ``OutOfScopeError``
+        rather than reach the caller.
+
+        A cursor (``ExclusiveStartKey``) is a position in the whole table, not a partition read: DynamoDB applies
+        ``Limit`` before the filter, so a page's ``LastEvaluatedKey`` is the last row it evaluated, often another
+        scope's. So a cursor may name any row, but only by the table's own key (``pk``/``source`` and ``sk``); any
+        other attribute in it is refused. It never widens what is answered: the filter and the row check do that.
+
+        A Scan still reads, and is billed for, the whole table: the filter only narrows what comes back. Its caller
+        is a workspace's category reprocess (jobs/category_reprocess), as the deployment's reprocess scans the whole
+        table for its own rows.
+        """
+        self._check_options('scan', kwargs)
+        request = dict(kwargs)
+        caller_filter = request.pop('FilterExpression', None)
+        if caller_filter is not None and not isinstance(caller_filter, ConditionBase):
+            raise OutOfScopeError('a scan filter through the workspace layer is a boto3 condition')
+        start = request.get('ExclusiveStartKey')
+        if start is not None and (not isinstance(start, Mapping) or not start
+                                  or not set(start) <= {self.key_attribute, 'sk'}
+                                  or not all(isinstance(value, str) for value in start.values())):
+            raise OutOfScopeError('a scan cursor names the table key only')
+        scoped: ConditionBase = Attr(self.key_attribute).begins_with(self.scope.prefix)
+        response = self._unscoped_table.scan(
+            FilterExpression=scoped if caller_filter is None else scoped & caller_filter, **request)
+        if any(not self.scope.owns(item.get(self.key_attribute)) for item in response.get('Items') or []):
+            raise OutOfScopeError('a scanned row outside the workspace')
+        return response
 
     def transact_write_items(self, items: Sequence[Mapping[str, Any]], **kwargs: Any) -> dict:
         """One ``TransactWriteItems`` on this table: 1 to 100 entries, each ``{'Put': {'Item': …}}``,

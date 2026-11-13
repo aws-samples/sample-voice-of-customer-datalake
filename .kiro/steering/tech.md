@@ -129,9 +129,12 @@ Not behind API Gateway (Processing stack): `voc-category-reprocess` —
 `POST /settings/categories/reprocess` (the settings Lambda holds its name in
 `CATEGORY_REPROCESS_FUNCTION` plus an invoke grant). Re-categorises stored
 feedback in place, checkpointing and re-invoking itself before its 15-minute
-timeout. Permissions: feedback Scan/GetItem/UpdateItem, aggregates
-Get/Put/Update/Query, raw-bucket read (`raw/*`), KMS, Bedrock, Comprehend,
-Translate, invoke itself.
+timeout. A job started with `X-Workspace-Id` (since 7.13.00; `workspace_id` on its
+event and row) replays only that workspace's `WS#{ws}#…` reviews, through the
+workspace layer, with the workspace's own categories and dimensions. Permissions:
+feedback Scan/GetItem/UpdateItem, aggregates GetItem/UpdateItem, raw-bucket read
+(`raw/*` and one workspace's `ws/{ws}/raw/*`), PutObject on `silver/*` and one
+workspace's `ws/{ws}/silver/*`, KMS, Bedrock, Comprehend, Translate, invoke itself.
 
 Not behind API Gateway (Processing stack): `voc-retention` —
 `lambda/jobs/retention/handler.py`, daily schedule (mode `retention`) + async

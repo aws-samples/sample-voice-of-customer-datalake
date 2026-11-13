@@ -233,8 +233,37 @@ def settings_world(lambda_context: Any) -> Generator[World]:
         for key, mark in ((None, 'before_workspaces'), (WS_A, A_MARK), (WS_B, B_MARK)):
             for kind, deployment_key, row in _config_rows(settings_handler, mark):
                 aggregates.put_item(Item={**(deployment_key if key is None else settings_key(key, kind)), **row})
+        # A finished category reprocess of the deployment and of each workspace (7.13.00), each in its own job
+        # partition; the deployment's has A's id, so a request without the header naming it reaches the deployment's.
+        invoke = MagicMock(name='invoke_lambda_async')
+        stack.enter_context(patch.object(settings_handler, 'CATEGORY_REPROCESS_FUNCTION', 'voc-category-reprocess'))
+        stack.enter_context(patch.object(settings_handler, 'invoke_lambda_async', invoke))
+        for row in _reprocess_jobs():
+            aggregates.put_item(Item=row)
 
-        yield World(call=_caller(settings_handler, lambda_context), doubles={'cognito': cognito})
+        yield World(call=_caller(settings_handler, lambda_context), doubles={'cognito': cognito, 'lambda': invoke})
+
+
+#: A category reprocess job id of each workspace, and one in none (shared/reprocess_jobs.py ``rp_`` + 12 hex).
+REPROCESS_JOB_A = 'rp_0000000000a1'
+REPROCESS_JOB_B = 'rp_0000000000b1'
+_REPROCESS_JOB_IDS = {'A': {'job_id': REPROCESS_JOB_A}, 'B': {'job_id': REPROCESS_JOB_B},
+                      UNKNOWN: {'job_id': 'rp_0000000000ff'}}
+
+
+def _reprocess_jobs() -> list[dict[str, Any]]:
+    """A completed job of the deployment (``JOB#category_reprocess``, A's id) and of each workspace
+    (``WS#{ws}#JOB#category_reprocess``, naming it), each started by someone of its own scope."""
+    def row(pk: str, job_id: str, started_by: str, ws: str | None) -> dict[str, Any]:
+        stored = {'pk': pk, 'sk': job_id, 'status': 'completed', 'mode': 'processed', 'days': 0,
+                  'include_manual': False, 'scanned': 3, 'updated': 2, 'unchanged': 1, 'skipped_manual': 0,
+                  'failed': 0, 'started_by': started_by, 'created_at': '2026-11-12T00:00:00+00:00',
+                  'updated_at': '2026-11-12T00:05:00+00:00', 'date_basis': 'processed'}
+        return stored if ws is None else {**stored, 'workspace_id': ws}
+
+    return [row('JOB#category_reprocess', REPROCESS_JOB_A, 'before-workspaces-admin', None),
+            row(f'WS#{WS_A}#JOB#category_reprocess', REPROCESS_JOB_A, 'ada', WS_A),
+            row(f'WS#{WS_B}#JOB#category_reprocess', REPROCESS_JOB_B, f'{B_MARK}-bea', WS_B)]
 
 
 def _config_rows(settings_handler: Any, mark: str) -> list[tuple[str, dict[str, str], dict[str, Any]]]:
@@ -373,6 +402,19 @@ CASES: dict[tuple[str, str], RouteCase] = {
         literals={'terrain': 'a dimension key the admin typed, not a row of a workspace',
                   'gravel': 'a dimension value the admin typed, not a row of a workspace'},
         without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    # The category reprocess (7.13.00): each workspace's own job, its admins start, read and cancel it; without the
+    # header the deployment's job, for the deployment's admins, as before.
+    ('settings_handler.py', 'POST /settings/categories/reprocess'): RouteCase(
+        no_ids='the job is new and replays the workspace the header names: check 1 (B finished a job; A starts its own)',
+        body={'mode': 'processed', 'days': 0}, ok_status=202,
+        literals={'processed': 'a reprocess mode, the same words in every workspace',
+                  '0': 'a window in days (0 = all time), not a row of a workspace'},
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('settings_handler.py', 'GET /settings/categories/reprocess'): RouteCase(
+        no_ids="the header is its only id: check 1 (each workspace sees its own latest job, never B's)",
+        without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
+    ('settings_handler.py', 'POST /settings/categories/reprocess/<job_id>/cancel'): RouteCase(
+        ids=_REPROCESS_JOB_IDS, without_a_workspace=_AS_BEFORE, deployment_admins_without_a_workspace=True),
     ('settings_handler.py', 'GET /settings/sources'): RouteCase(
         no_ids='the header is its only id: check 1 (each workspace has its own source profiles)',
         without_a_workspace=_AS_BEFORE),

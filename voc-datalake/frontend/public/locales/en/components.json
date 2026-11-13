@@ -139,6 +139,7 @@
     "reprocess": {
       "title": "Reprocess existing feedback",
       "description": "After changing categories, re-categorise the reviews already stored. Reviews are updated in place — nothing is deleted.",
+      "workspaceDescription": "After changing this workspace's categories or dimensions, re-derive its stored reviews with them. Only this workspace's reviews are read and updated in place — nothing is deleted, and other workspaces are not touched.",
       "modeLabel": "Mode",
       "modes": {
         "processed": {

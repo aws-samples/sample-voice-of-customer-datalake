@@ -221,6 +221,12 @@ the only feedback write path reachable from the browser.
 
 When the categories change, an admin can re-categorise what is already stored
 (Administration → Taxonomy → Categories → "Reprocess existing feedback").
+Inside a workspace (since 7.13.00) its admins do the same for that workspace on its
+Workspace settings page, beside its categories: the routes below with `X-Workspace-Id`
+start, show and cancel the workspace's own job (one at a time per workspace), which
+replays only that workspace's reviews with its own categories and dimensions
+([multi-workspace](multi-workspace.md), the 7.13.00 row). Administration's panel stays
+the deployment's.
 Every mode also rates each review's usefulness band, which backfills reviews stored
 before the band existed ([data quality](data-quality.md#backfill-optional-field-not-rated)).
 

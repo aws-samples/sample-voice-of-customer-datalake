@@ -30,7 +30,7 @@ from shared.api import ALL_TIME_DAYS
 from shared.feedback import DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, basis_date
 from shared.retention import FEEDBACK_SK_PREFIX
 from shared.timestamps import ISO_DAY_RE
-from shared.ws_repo import WORKSPACE_KEY_PREFIX, is_workspace_key
+from shared.ws_repo import WORKSPACE_KEY_PREFIX, WorkspaceScope, is_workspace_key, ws_table
 
 DATE_BASIS_PROCESSED: Final = 'processed'
 DATE_BASES: Final = (DATE_BASIS_PROCESSED, DATE_BASIS_REVIEW)
@@ -178,10 +178,15 @@ def slice_from_job(job: Mapping[str, Any]) -> ReprocessSlice:
     )
 
 
-def admits(item: Mapping[str, Any], job_slice: ReprocessSlice, window: tuple[str | None, str | None]) -> bool:
-    """Is ``item`` inside the slice? (The read's filter narrows first; this is the rule.) Never a workspace's
-    item: the job reprocesses the deployment-wide feedback and writes deployment-wide index partitions."""
-    if is_workspace_key(item.get('pk')):
+def admits(item: Mapping[str, Any], job_slice: ReprocessSlice, window: tuple[str | None, str | None],
+           scope: WorkspaceScope | None = None) -> bool:
+    """Is ``item`` inside the slice? (The read's filter narrows first; this is the rule.) A job of the deployment
+    (``scope`` None) never admits a workspace's item, and a workspace's job (since 7.13.00) only that workspace's
+    (``WS#{ws}#…``): each job rewrites its own scope's items and index partitions only."""
+    if scope is None:
+        if is_workspace_key(item.get('pk')):
+            return False
+    elif not scope.owns(item.get('pk')):
         return False
     if job_slice.sources and item.get('source_platform') not in job_slice.sources:
         return False
@@ -197,15 +202,18 @@ def admits(item: Mapping[str, Any], job_slice: ReprocessSlice, window: tuple[str
     return (first is None or day >= first) and (last is None or day <= last)
 
 
-def read_filter(job_slice: ReprocessSlice, window: tuple[str | None, str | None]) -> ConditionBase:
-    """The FilterExpression a page's Scan applies: feedback rows, the sources (``source_platform``), the
-    categories and a processed-date window.
+def read_filter(job_slice: ReprocessSlice, window: tuple[str | None, str | None],
+                scope: WorkspaceScope | None = None) -> ConditionBase:
+    """The FilterExpression a page's Scan applies: feedback rows (the deployment's for a job of the deployment;
+    a workspace's job reads through the workspace layer, which adds its own partition's prefix), the sources
+    (``source_platform``), the categories and a processed-date window.
 
     A review-date window is not pushed down (its fallback to ``date`` cannot be
     expressed); ``admits`` applies it.
     """
-    conditions: list[ConditionBase] = [Attr('sk').begins_with(FEEDBACK_SK_PREFIX),
-                                       ~Attr('pk').begins_with(WORKSPACE_KEY_PREFIX)]
+    conditions: list[ConditionBase] = [Attr('sk').begins_with(FEEDBACK_SK_PREFIX)]
+    if scope is None:
+        conditions.append(~Attr('pk').begins_with(WORKSPACE_KEY_PREFIX))
     if job_slice.sources:
         conditions.append(Attr('source_platform').is_in(list(job_slice.sources)))
     if job_slice.categories:
@@ -224,15 +232,19 @@ def read_filter(job_slice: ReprocessSlice, window: tuple[str | None, str | None]
 
 def read_page(
     table: Any, cursor: dict | None, job_slice: ReprocessSlice, window: tuple[str | None, str | None],
-    page_size: int,
+    page_size: int, scope: WorkspaceScope | None = None,
 ) -> dict:
-    """One page of the slice: a Scan whose filter names the sources, categories and processed-date window.
+    """One page of the slice: a Scan whose filter names the sources, categories and processed-date window; for a
+    workspace's job (``scope``) through the workspace layer (shared/ws_repo.py ``WorkspaceTable.scan``), which
+    answers only ``WS#{ws}#…`` rows.
 
     Sources are matched on ``source_platform``, never on the partition: the processor stores an item under
     ``SOURCE#{brand_name}`` when it has a brand name, so a Query of ``SOURCE#{source}`` would skip it (the
     retention job matches sources the same way).
     """
-    kwargs: dict[str, Any] = {'Limit': page_size, 'FilterExpression': read_filter(job_slice, window)}
+    kwargs: dict[str, Any] = {'Limit': page_size, 'FilterExpression': read_filter(job_slice, window, scope)}
     if cursor:
         kwargs['ExclusiveStartKey'] = cursor
+    if scope is not None:
+        return ws_table(scope, table).scan(**kwargs)
     return table.scan(**kwargs)

@@ -412,6 +412,7 @@ class TestEveryRefusalNamesItsCause:
         assert payload['error'] == ('Resolved-problem limit reached (500). '
                                     'Unresolve entries you no longer need first.')
 
+    @pytest.mark.usefixtures('no_workspace')
     def test_a_malformed_job_id_is_not_even_read(self, route, table):
         response, payload = route('POST', '/settings/categories/reprocess/not-a-job/cancel',
                                   path_params={'job_id': 'not-a-job'},
@@ -421,6 +422,7 @@ class TestEveryRefusalNamesItsCause:
         table.get_item.assert_not_called()
         table.update_item.assert_not_called()
 
+    @pytest.mark.usefixtures('no_workspace')
     def test_a_cancel_of_a_missing_job_is_named(self, route, table):
         with patch.object(settings_handler.reprocess_jobs, 'cancel_job', return_value=None) as cancel_job:
             response, payload = route('POST', '/settings/categories/reprocess/rp_000000000000/cancel',
@@ -441,7 +443,10 @@ class TestEveryRefusalNamesItsCause:
         invoke.assert_not_called()
 
 
+@pytest.mark.usefixtures('no_workspace')
 class TestStartingAReprocess:
+    """The deployment's reprocess (a request that names no workspace), exactly as before 7.13.00."""
+
     JOB: ClassVar[dict[str, object]] = {'pk': 'JOB#category_reprocess', 'sk': 'rp_0123456789ab', 'status': 'queued', 'mode': 'raw', 'days': 0,
                                        'include_manual': False, 'started_by': 'alice', 'created_at': FIXED_NOW_ISO, 'updated_at': FIXED_NOW_ISO}
     CLAIMS: ClassVar[dict[str, object]] = {'sub': 'admin-sub', 'cognito:username': 'alice', 'cognito:groups': 'admins'}

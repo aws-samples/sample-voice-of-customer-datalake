@@ -159,6 +159,7 @@
     "reprocess": {
       "title": "Reprocessar o feedback existente",
       "description": "Depois de alterar as categorias, recategorize as avaliações já armazenadas. As avaliações são atualizadas no lugar — nada é excluído.",
+      "workspaceDescription": "Depois de alterar as categorias ou dimensões deste espaço de trabalho, derive novamente com elas as avaliações armazenadas. Só as avaliações deste espaço de trabalho são lidas e atualizadas no lugar — nada é excluído e os outros espaços de trabalho não são afetados.",
       "modeLabel": "Modo",
       "modes": {
         "processed": {

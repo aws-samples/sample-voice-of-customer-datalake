@@ -31,21 +31,30 @@ the stored text, with ``raw_fallback_sources``). A job that reaches the item
 ceiling ends ``partial`` with a ``resume_from`` cursor; a resume is a NEW job
 (``resumed_from``) that starts at that cursor, and the partial job records
 ``resumed_by`` so it is resumed once at a time (a resumer that ends failed or cancelled hands it back).
+
+A workspace's jobs (since 7.13.00, TENETS.md D3): every function takes ``scope``. With one, the job rows and the
+lock live in the workspace's own partition, ``WS#{ws}#JOB#category_reprocess`` (shared/ws_repo.py
+``reprocess_job_pk``), read and written through the workspace layer (``ws_table``), so one live job per workspace,
+beside the deployment's one and every other workspace's; a new row names its workspace (``workspace_id``, from the
+scope the settings API resolved from the caller's membership), which the worker checks against the partition it read
+it in. Without one (``scope`` None) every call is exactly the deployment's, on ``JOB#category_reprocess``.
 """
 import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypedDict
 
 from boto3.dynamodb.conditions import Key
 
 from shared import job_notices
 from shared.aws import is_conditional_check_failure
+from shared.ingest_tables import table_view
 from shared.logging import logger
 from shared.reprocess_slices import ReprocessSlice
 from shared.timestamps import now_iso
+from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope, reprocess_job_pk
 
 JOB_PK = 'JOB#category_reprocess'
 LOCK_SK = 'LOCK'
@@ -158,17 +167,54 @@ def job_view(item: dict) -> dict:
     return view
 
 
-def get_job(table: Any, job_id: str) -> dict | None:
-    return table.get_item(Key={'pk': JOB_PK, 'sk': job_id}, ConsistentRead=True).get('Item')
+def job_partition(scope: WorkspaceScope | None = None) -> str:
+    """The partition of ``scope``'s jobs and lock: the deployment's ``JOB#category_reprocess`` or the workspace's
+    ``WS#{ws}#JOB#category_reprocess``."""
+    return JOB_PK if scope is None else reprocess_job_pk(scope)
 
 
-def get_latest_job(table: Any) -> dict | None:
-    response = table.query(
-        KeyConditionExpression=Key('pk').eq(JOB_PK) & Key('sk').begins_with(JOB_ID_PREFIX),
-        ScanIndexForward=False,
-        Limit=1,
-        ConsistentRead=True,
-    )
+class ScopeOption(TypedDict, total=False):
+    """The ``scope=`` keyword of this module's functions, as ``scope_option`` builds it."""
+
+    scope: WorkspaceScope
+
+
+def scope_option(scope: WorkspaceScope | None) -> ScopeOption:
+    """``scope=`` for the calls of a workspace's job (this module's functions take it by name); nothing for the
+    deployment's, whose calls (the settings API's, the worker's) stay exactly as they were before workspaces (their
+    tests pin those calls, and some double this module's functions with the pre-workspace signatures)."""
+    return ScopeOption() if scope is None else ScopeOption(scope=scope)
+
+
+def _key(sk: str, scope: WorkspaceScope | None) -> dict[str, str]:
+    """A job row's (or the lock's, ``sk`` ``LOCK``) key in ``scope``'s partition."""
+    return {'sk': sk, 'pk': job_partition(scope)}
+
+
+def names_its_scope(job: dict, scope: WorkspaceScope | None) -> bool:
+    """Whether a job row read in ``scope``'s partition names that scope: a workspace's row its workspace
+    (``workspace_id``), a deployment row none."""
+    named = job.get(WORKSPACE_FIELD)
+    return named is None if scope is None else named == scope.ws
+
+
+def get_job(table: Any, job_id: str, scope: WorkspaceScope | None = None) -> dict | None:
+    return table_view(scope, table).get_item(_key(job_id, scope), ConsistentRead=True).get('Item')
+
+
+def get_latest_job(table: Any, scope: WorkspaceScope | None = None) -> dict | None:
+    if scope is None:
+        # The deployment's query, exactly as before workspaces (its boto3 key condition is pinned by its tests).
+        response = table.query(
+            KeyConditionExpression=Key('pk').eq(JOB_PK) & Key('sk').begins_with(JOB_ID_PREFIX),
+            ScanIndexForward=False,
+            Limit=1,
+            ConsistentRead=True,
+        )
+    else:
+        response = table_view(scope, table).query(
+            'pk', job_partition(scope), sort_condition='begins_with(sk, :job)',
+            ExpressionAttributeValues={':job': JOB_ID_PREFIX}, ScanIndexForward=False, Limit=1, ConsistentRead=True)
     items = response.get('Items') or []
     return items[0] if items else None
 
@@ -184,10 +230,10 @@ def is_stale(job: dict, now: datetime) -> bool:
     return (now - last).total_seconds() > STALE_AFTER_SECONDS
 
 
-def _claim_lock(table: Any, job_id: str, now: datetime) -> bool:
+def _claim_lock(table: Any, job_id: str, now: datetime, scope: WorkspaceScope | None = None) -> bool:
     try:
-        table.update_item(
-            Key={'pk': JOB_PK, 'sk': LOCK_SK},
+        table_view(scope, table).update_item(
+            _key(LOCK_SK, scope),
             UpdateExpression='SET active_job_id = :id, updated_at = :now',
             ConditionExpression='attribute_not_exists(active_job_id)',
             ExpressionAttributeValues={':id': job_id, ':now': now_iso(now)},
@@ -200,11 +246,11 @@ def _claim_lock(table: Any, job_id: str, now: datetime) -> bool:
         return True
 
 
-def release_lock(table: Any, job_id: str) -> None:
+def release_lock(table: Any, job_id: str, scope: WorkspaceScope | None = None) -> None:
     """Release the lock if (and only if) ``job_id`` holds it."""
     try:
-        table.update_item(
-            Key={'pk': JOB_PK, 'sk': LOCK_SK},
+        table_view(scope, table).update_item(
+            _key(LOCK_SK, scope),
             UpdateExpression='REMOVE active_job_id',
             ConditionExpression='active_job_id = :id',
             ExpressionAttributeValues={':id': job_id},
@@ -214,18 +260,18 @@ def release_lock(table: Any, job_id: str) -> None:
             raise
 
 
-def _reclaim_lock_if_dead(table: Any, now: datetime) -> bool:
+def _reclaim_lock_if_dead(table: Any, now: datetime, scope: WorkspaceScope | None = None) -> bool:
     """Free a lock whose holder can no longer make progress. True if freed."""
-    lock = table.get_item(Key={'pk': JOB_PK, 'sk': LOCK_SK}, ConsistentRead=True).get('Item') or {}
+    lock = table_view(scope, table).get_item(_key(LOCK_SK, scope), ConsistentRead=True).get('Item') or {}
     holder = lock.get('active_job_id')
     if not isinstance(holder, str):
         return True  # released between our claim and this read
-    job = get_job(table, holder)
+    job = get_job(table, holder, scope)
     if job and job.get('status') in ACTIVE_STATUSES:
         if not is_stale(job, now):
             return False
-        finish_job(table, holder, STATUS_FAILED, error='Job stopped making progress', now=now)
-    release_lock(table, holder)
+        finish_job(table, holder, STATUS_FAILED, error='Job stopped making progress', now=now, scope=scope)
+    release_lock(table, holder, scope)
     return True
 
 
@@ -239,21 +285,23 @@ class Resume:
 def start_job(
     table: Any, *, mode: str, days: int, include_manual: bool, started_by: str, now: datetime,
     job_slice: ReprocessSlice | None = None, started_by_sub: str = '', resume: Resume | None = None,
+    scope: WorkspaceScope | None = None,
 ) -> dict | None:
-    """Create a queued job holding the lock. None when another job is active.
+    """Create a queued job holding the lock (``scope``'s: the workspace's, or the deployment's). None when another
+    job of that scope is active.
 
     With ``resume`` the new job starts at the partial job's cursor, and the partial
     job is marked ``resumed_by`` (``ResumeRefused`` when it was already resumed).
     """
     job_id = new_job_id(now)
-    claimed = _claim_lock(table, job_id, now) or (
-        _reclaim_lock_if_dead(table, now) and _claim_lock(table, job_id, now)
+    claimed = _claim_lock(table, job_id, now, scope) or (
+        _reclaim_lock_if_dead(table, now, scope) and _claim_lock(table, job_id, now, scope)
     )
     if not claimed:
         return None
     stamp = now_iso(now)
     item = {
-        'pk': JOB_PK,
+        'pk': job_partition(scope),
         'sk': job_id,
         'status': STATUS_QUEUED,
         'mode': mode,
@@ -270,19 +318,22 @@ def start_job(
     if resume is not None:
         item['resumed_from'] = resume.job_id
         item['cursor'] = resume.cursor
+    if scope is not None:
+        # The workspace the job replays, set last: the scope the settings API resolved from the caller's membership.
+        item[WORKSPACE_FIELD] = scope.ws
     marked = False
     try:
         if resume is not None:
-            _mark_resumed(table, resume.job_id, job_id)
+            _mark_resumed(table, resume.job_id, job_id, scope)
             marked = True
-        table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
+        table_view(scope, table).put_item(item, ConditionExpression='attribute_not_exists(sk)')
     except Exception:
-        release_lock(table, job_id)  # first: nothing after it may keep the lock held
+        release_lock(table, job_id, scope)  # first: nothing after it may keep the lock held
         if marked and resume is not None:
             # The new job row was never written: hand the partial job back, or it would stay resumed by nothing.
             # Guarded here as well, so the original error is always the one re-raised.
             try:
-                _reopen_resumed(table, {'sk': job_id, 'resumed_from': resume.job_id})
+                _reopen_resumed(table, {'sk': job_id, 'resumed_from': resume.job_id}, scope)
             except Exception:  # a failed hand-back must not replace the start's own error
                 logger.exception('Partial reprocess job not handed back after a failed start')
         raise
@@ -293,11 +344,11 @@ class ResumeRefused(Exception):
     """The partial job is not resumable any more (resumed already, or not partial)."""
 
 
-def _mark_resumed(table: Any, partial_job_id: str, new_job_id_: str) -> None:
+def _mark_resumed(table: Any, partial_job_id: str, new_job_id_: str, scope: WorkspaceScope | None = None) -> None:
     """Record ``resumed_by`` on the partial job, once; ``ResumeRefused`` otherwise."""
     try:
-        table.update_item(
-            Key={'pk': JOB_PK, 'sk': partial_job_id},
+        table_view(scope, table).update_item(
+            _key(partial_job_id, scope),
             UpdateExpression='SET resumed_by = :new',
             ConditionExpression='attribute_exists(sk) AND #status = :partial AND attribute_not_exists(resumed_by)',
             ExpressionAttributeNames={'#status': 'status'},
@@ -309,12 +360,12 @@ def _mark_resumed(table: Any, partial_job_id: str, new_job_id_: str) -> None:
         raise
 
 
-def handed_back_job(table: Any, job: dict) -> str | None:
+def handed_back_job(table: Any, job: dict, scope: WorkspaceScope | None = None) -> str | None:
     """The partial job a cancelled or failed resumer ``job`` handed back, while it is resumable; else None."""
     parent_id = job.get('resumed_from')
     if job.get('status') not in (STATUS_FAILED, STATUS_CANCELLED) or not isinstance(parent_id, str) or not parent_id:
         return None
-    return parent_id if resume_point(get_job(table, parent_id)) is not None else None
+    return parent_id if resume_point(get_job(table, parent_id, scope)) is not None else None
 
 
 def resume_point(job: dict | None) -> Resume | None:
@@ -330,6 +381,7 @@ def resume_point(job: dict | None) -> Resume | None:
 def _transition(
     table: Any, job_id: str, updates: dict, *,
     worker_token: str | None = None, claim_from: str | None = None, claiming: bool = False,
+    scope: WorkspaceScope | None = None,
 ) -> dict | None:
     """SET ``updates`` on an ACTIVE job; None when the condition refused the write.
 
@@ -358,8 +410,8 @@ def _transition(
             condition += ' AND #token = :claim_from'
             values[':claim_from'] = claim_from
     try:
-        response = table.update_item(
-            Key={'pk': JOB_PK, 'sk': job_id},
+        response = table_view(scope, table).update_item(
+            _key(job_id, scope),
             UpdateExpression='SET ' + ', '.join(sets),
             ConditionExpression=condition,
             ExpressionAttributeNames=names,
@@ -375,7 +427,7 @@ def _transition(
 
 def claim_job(
     table: Any, job_id: str, worker_token: str, *, previous_token: str | None = None,
-    now: datetime | None = None,
+    now: datetime | None = None, scope: WorkspaceScope | None = None,
 ) -> dict | None:
     """Mark the job running and owned by ``worker_token``.
 
@@ -386,20 +438,20 @@ def claim_job(
     return _transition(
         table, job_id,
         {'status': STATUS_RUNNING, 'worker_token': worker_token, 'updated_at': now_iso(now)},
-        claiming=True, claim_from=previous_token,
+        claiming=True, claim_from=previous_token, scope=scope,
     )
 
 
 def checkpoint(
     table: Any, job_id: str, counters: dict, cursor: dict | None, worker_token: str,
-    now: datetime | None = None,
+    now: datetime | None = None, scope: WorkspaceScope | None = None,
 ) -> dict | None:
     """Persist progress. None when the job is no longer active (cancelled) or
     another delivery has claimed it — the caller must stop either way."""
     updates: dict[str, Any] = progress_updates(counters)
     updates['updated_at'] = now_iso(now)
     updates['cursor'] = cursor or {}
-    return _transition(table, job_id, updates, worker_token=worker_token)
+    return _transition(table, job_id, updates, worker_token=worker_token, scope=scope)
 
 
 def progress_updates(counters: dict) -> dict[str, Any]:
@@ -411,7 +463,8 @@ def progress_updates(counters: dict) -> dict[str, Any]:
     return updates
 
 
-def record_config(table: Any, job: dict, config: dict, worker_token: str) -> dict | None:
+def record_config(table: Any, job: dict, config: dict, worker_token: str,
+                  scope: WorkspaceScope | None = None) -> dict | None:
     """Record the configuration this invocation derives with (R4).
 
     The first invocation stores ``config``; a later one (a hand-over) that derives
@@ -425,7 +478,7 @@ def record_config(table: Any, job: dict, config: dict, worker_token: str) -> dic
         return job
     else:
         updates = {'config_changed': True, 'last_config': config}
-    return _transition(table, str(job.get('sk')), updates, worker_token=worker_token)
+    return _transition(table, str(job.get('sk')), updates, worker_token=worker_token, scope=scope)
 
 
 def finish_job(
@@ -439,8 +492,9 @@ def finish_job(
     stopped_at_ceiling: bool = False,
     resume_from: dict | None = None,
     now: datetime | None = None,
+    scope: WorkspaceScope | None = None,
 ) -> dict | None:
-    """Move an active job to a terminal status and release the lock.
+    """Move an active job to a terminal status and release the lock (both ``scope``'s).
 
     With ``worker_token`` (the worker's own finish) the write — and so the lock
     release — happens only while that token still owns the job; without it
@@ -456,18 +510,18 @@ def finish_job(
         updates['stopped_at_ceiling'] = True
     if resume_from:
         updates['resume_from'] = resume_from
-    result = _transition(table, job_id, updates, worker_token=worker_token)
+    result = _transition(table, job_id, updates, worker_token=worker_token, scope=scope)
     if result is not None or worker_token is None:
-        release_lock(table, job_id)
+        release_lock(table, job_id, scope)
     if result is not None and status in (STATUS_FAILED, STATUS_CANCELLED):
-        _reopen_resumed(table, result)
+        _reopen_resumed(table, result, scope)
     if result is not None:
         # The starter's page re-reads the job now (best effort, docs/realtime.md); an older row has no sub.
         job_notices.notify(result.get('started_by_sub'), job_id, status, job_type=JOB_TYPE)
     return result
 
 
-def _reopen_resumed(table: Any, job: dict) -> None:
+def _reopen_resumed(table: Any, job: dict, scope: WorkspaceScope | None = None) -> None:
     """A resumer that ended failed or cancelled hands its partial job back: resumable again from its cursor.
 
     Only that resumer's own mark is removed (``resumed_by`` must name it), so a later resumer is never undone.
@@ -477,8 +531,8 @@ def _reopen_resumed(table: Any, job: dict) -> None:
     if not isinstance(partial_job_id, str) or not partial_job_id:
         return
     try:
-        table.update_item(
-            Key={'pk': JOB_PK, 'sk': partial_job_id}, UpdateExpression='REMOVE resumed_by',
+        table_view(scope, table).update_item(
+            _key(partial_job_id, scope), UpdateExpression='REMOVE resumed_by',
             ConditionExpression='resumed_by = :me', ExpressionAttributeValues={':me': job.get('sk')},
         )
     except Exception as e:
@@ -486,10 +540,11 @@ def _reopen_resumed(table: Any, job: dict) -> None:
             logger.warning('Partial reprocess job not reopened', extra={'job_id': partial_job_id}, exc_info=True)
 
 
-def cancel_job(table: Any, job_id: str, now: datetime | None = None) -> dict | None:
-    """Cancel an active job; an already-terminal job is returned unchanged.
+def cancel_job(table: Any, job_id: str, now: datetime | None = None,
+               scope: WorkspaceScope | None = None) -> dict | None:
+    """Cancel an active job of ``scope``; an already-terminal job is returned unchanged.
 
-    None when the job does not exist.
+    None when the job does not exist in that scope's partition (another workspace's id included).
     """
-    cancelled = finish_job(table, job_id, STATUS_CANCELLED, now=now)
-    return cancelled if cancelled is not None else get_job(table, job_id)
+    cancelled = finish_job(table, job_id, STATUS_CANCELLED, now=now, scope=scope)
+    return cancelled if cancelled is not None else get_job(table, job_id, scope)

@@ -141,6 +141,19 @@ class TestKeys:
             s3_key(A, *parts)
 
 
+def _scan_every_page(repo, **kwargs) -> tuple[list[str], list[dict]]:
+    """Every page of ``repo.scan(**kwargs)``: the sort keys answered, and each page's ``LastEvaluatedKey``."""
+    found: list[str] = []
+    cursors: list[dict] = []
+    while True:
+        page = repo.scan(**kwargs, **({'ExclusiveStartKey': cursors[-1]} if cursors else {}))
+        found += [str(row['sk']) for row in page['Items']]
+        cursor = page.get('LastEvaluatedKey')
+        if not cursor:
+            return found, cursors
+        cursors.append(cursor)
+
+
 @pytest.fixture
 def table():
     with mock_aws():
@@ -311,6 +324,60 @@ class TestWorkspaceTable:
             del repo._scope
         assert not hasattr(repo, '__dict__')
         assert (repo.scope, repo.key_attribute) == (A, 'pk')
+
+    def test_a_scan_answers_the_scopes_rows_only(self, table):
+        """The category reprocess of a workspace (7.13.00): a Scan through the view answers only its rows, page by
+        page, with the caller's own boto3 filter ANDed in."""
+        from boto3.dynamodb.conditions import Attr
+
+        for scope, fid in ((A, 'f1'), (A, 'f2'), (B, 'f3')):
+            table.put_item(Item={**feedback_key(scope, 'web', fid), 'kind': 'review'})
+        table.put_item(Item={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f4', 'kind': 'review'})
+        table.put_item(Item={**feedback_key(A, 'web', 'f5'), 'kind': 'other'})
+        repo = ws_table(A, table)
+
+        found, _cursors = _scan_every_page(repo, Limit=2, FilterExpression=Attr('kind').eq('review'))
+        unfiltered = repo.scan()
+
+        assert sorted(found) == ['FEEDBACK#f1', 'FEEDBACK#f2']
+        assert sorted(row['sk'] for row in unfiltered['Items']) == ['FEEDBACK#f1', 'FEEDBACK#f2', 'FEEDBACK#f5']
+
+    def test_a_scan_resumes_from_a_cursor_on_another_scopes_row(self, table):
+        """``Limit`` applies before the filter, so a page's ``LastEvaluatedKey`` is often another scope's row: it
+        is a position in the table and is passed on, while the answer stays the scope's."""
+        for scope, fid in ((B, 'f0'), (A, 'f1'), (B, 'f2'), (A, 'f3')):
+            table.put_item(Item=feedback_key(scope, 'web', fid))
+        table.put_item(Item={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f4'})
+        repo = ws_table(A, table)
+
+        found, cursors = _scan_every_page(repo, Limit=1)
+
+        assert sorted(found) == ['FEEDBACK#f1', 'FEEDBACK#f3']
+        assert any(not A.owns(cursor['pk']) for cursor in cursors)
+
+    @pytest.mark.parametrize('kwargs', [
+        {'FilterExpression': 'kind = :k'},
+        {'ExclusiveStartKey': {**feedback_key(A, 'web', 'f1'), 'gsi2pk': f'WS#{WS}#CATEGORY#x'}},
+        {'ExclusiveStartKey': {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'text': 'x'}},
+        {'ExclusiveStartKey': {'pk': 1, 'sk': 'FEEDBACK#f1'}},
+        {'ExclusiveStartKey': {}},
+        {'ExclusiveStartKey': 'not a cursor'},
+        {'TableName': 'voc-workspaces'},
+        {'ExpressionAttributeValues': {':k': 'x'}},
+        {'IndexName': 'gsi1-by-date'},
+    ], ids=['string-filter', 'cursor-index-attribute', 'cursor-other-attribute', 'cursor-not-a-string',
+            'empty-cursor', 'malformed-cursor', 'table-name', 'values', 'index'])
+    def test_a_scan_refuses_anything_it_cannot_hold_to_the_scope(self, kwargs):
+        backing = MagicMock()
+        with pytest.raises(OutOfScopeError):
+            ws_table(A, backing).scan(**kwargs)
+        assert backing.method_calls == []
+
+    def test_a_scanned_row_outside_the_scope_never_reaches_the_caller(self):
+        backing = MagicMock()
+        backing.scan.return_value = {'Items': [{**feedback_key(A, 'web', 'f1')}, {**feedback_key(B, 'web', 'f2')}]}
+        with pytest.raises(OutOfScopeError, match='scanned row'):
+            ws_table(A, backing).scan(Limit=5)
 
     def test_watermark_keys_are_checked_by_source(self):
         backing = MagicMock()

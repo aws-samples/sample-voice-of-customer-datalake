@@ -349,10 +349,10 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /radar/settings',
     }),
     # Settings and models (the brand, the resolved problems, and since 7.08.00 the categories, dimensions and
-    # sources are workspace-scoped). The categories' generate and reprocess stay the deployment's for now.
+    # sources, and since 7.13.00 the category reprocess, are workspace-scoped). The categories' generate stays the
+    # deployment's for now.
     'settings_handler.py': frozenset({
         'DELETE /settings/design-system/references/<ref_id>',
-        'GET /settings/categories/reprocess',
         'GET /settings/company-context',
         'GET /settings/design-system',
         'GET /settings/email-inbox',
@@ -365,8 +365,6 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /settings/my-context',
         'GET /settings/my-onboarding',
         'POST /settings/categories/generate',
-        'POST /settings/categories/reprocess',
-        'POST /settings/categories/reprocess/<job_id>/cancel',
         'POST /settings/design-system/logo',
         'POST /settings/design-system/references',
         'POST /settings/design-system/references/<ref_id>/apply',

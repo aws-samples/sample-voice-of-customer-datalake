@@ -68,7 +68,7 @@ from shared.feedback_category import (
 from shared.feedback_dimensions import apply_dimension_edit
 from shared.feedback_partitions import FEEDBACK_ID_INDEX_PARTITION, feedback_id_partition
 from shared.indexes import FEEDBACK_BY_ID_INDEX
-from shared.ingest_tables import table_view, update_with_key
+from shared.ingest_tables import ScopedUpdates, table_view
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
@@ -100,18 +100,6 @@ def _edit_scope(event: dict) -> WorkspaceScope | None:
     if context.role not in EDITING_ROLES:
         raise AuthorizationError('Editing feedback needs the editor or admin role in this workspace')
     return scope_of(context)
-
-
-class _ItemWriter:
-    """The feedback table as shared/feedback_category.py ``apply_conditional_update`` calls it
-    (``update_item(Key=…, …)``), in the edit's scope (shared/ingest_tables.py ``table_view``: the table itself
-    deployment-wide, ``ws_table`` in a workspace)."""
-
-    def __init__(self, scope: WorkspaceScope | None, table: Any) -> None:
-        self._view = table_view(scope, table)
-
-    def update_item(self, **kwargs: Any) -> dict:
-        return update_with_key(self._view, kwargs)
 
 
 def _tables() -> tuple[Any, Any]:
@@ -192,7 +180,7 @@ def set_feedback_category(feedback_id: str):
     override = override_record(item, caller)
     edit = _edit(event, REASON_CATEGORY_EDIT)
     kwargs = _update_kwargs(item, category, subcategory, override, edit, workspace)
-    updated = apply_conditional_update(_ItemWriter(workspace, feedback_table), kwargs)
+    updated = apply_conditional_update(ScopedUpdates(workspace, feedback_table), kwargs)
     keep_before_edit(item, edit, kwargs, workspace)  # once the edit landed: a refused one leaves no version
     # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
     bump_data_version(aggregates_table, workspace)
@@ -237,7 +225,7 @@ def set_feedback_dimensions(feedback_id: str):
     new_tags = item.get('tags') if tags is None else tags
     edit = _edit(event, REASON_DIMENSIONS_EDIT)
     kwargs = _dimensions_update_kwargs(item, dimensions, sources, new_tags, edit)
-    updated = apply_conditional_update(_ItemWriter(workspace, feedback_table), kwargs)
+    updated = apply_conditional_update(ScopedUpdates(workspace, feedback_table), kwargs)
     keep_before_edit(item, edit, kwargs, workspace)  # once the edit landed: a refused one leaves no version
     bump_data_version(aggregates_table, workspace)
     return {

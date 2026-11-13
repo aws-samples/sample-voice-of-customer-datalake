@@ -199,7 +199,7 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | Ballots | `ballots_handler.py` | DynamoDB (aggregates Get/Put/Update, projects GetItem), KMS |
 | Radar | `radar_handler.py` | DynamoDB (radar RW, aggregates read), KMS, invoke the Radar scan worker |
 | Workspaces | `workspaces_handler.py` | DynamoDB (workspaces Query/GetItem, PutItem scoped to `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES`, `WS#*`: a workspace's creation, a member's add and the audit rows; UpdateItem scoped to `WS#*` and `USER#*` and the attribute `role` alone (a member's role change); DeleteItem scoped to `WS#*` and `USER#*` (a member's removal) and `PLUGIN#*` (a workspace's plugin disabled; no PutItem there until phase 2's data path lets a workspace enable one); ConditionCheckItem scoped to `WS#*`), KMS, Cognito (`AdminListGroupsForUser`, `AdminGetUser`: the live platform-admin check; `ListUsers`, `AdminCreateUser`: adding a member); no Secrets Manager or SSM (decision 19: a workspace's credentials are SSM parameters its first save makes, `lib/utils/workspace-secrets.ts`) |
-| Category Reprocess worker (`voc-category-reprocess`) | `jobs/category_reprocess/handler.py` | DynamoDB (feedback Scan/Get/Update, aggregates), S3 read (`raw/*`), KMS, Bedrock, Comprehend, Translate, self-invoke |
+| Category Reprocess worker (`voc-category-reprocess`) | `jobs/category_reprocess/handler.py` | DynamoDB (feedback Scan/Get/Update, aggregates Get/Update), S3 read (`raw/*`, one workspace's `ws/{ws}/raw/*` since 7.13.00), S3 PutObject (`silver/*`, one workspace's `ws/{ws}/silver/*`), KMS, Bedrock, Comprehend, Translate, self-invoke |
 
 **When adding new API endpoints:**
 

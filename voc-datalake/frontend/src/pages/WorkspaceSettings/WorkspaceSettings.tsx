@@ -9,6 +9,8 @@
  *   this workspace turned it on; its admins turn one on or off (WorkspacePluginsCard.tsx: enabling is held).
  * - The workspace's categories, dimensions and source policies (since 7.08.00): Administration's editors, with the
  *   workspace's `X-Workspace-Id`, for its admins (`WorkspaceConfigCards`); its other members see who changes them.
+ *   Since 7.13.00 the categories card also holds the workspace's own "Reprocess existing feedback" (and the
+ *   dimensions card its "Classify review types"): the workspace's own reprocess job, replaying its reviews only.
  *
  * The deployment's own sections of Administration stay there, for the deployment's `admins`: this page holds only
  * what the server keys by workspace. The server decides every save; the page only hides what the caller's role

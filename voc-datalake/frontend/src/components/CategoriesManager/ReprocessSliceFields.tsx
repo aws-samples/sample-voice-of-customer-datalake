@@ -5,7 +5,9 @@
  *
  * Sources are the ones the server knows to have data (`GET /settings/erasure` → `sources`, the
  * list the source erasure picker uses); categories are typed, so a category that is no longer
- * configured (the usual reason to reprocess) can still be named.
+ * configured (the usual reason to reprocess) can still be named. That source list is the
+ * deployment's, so beside a workspace's categories (7.13.00) no source slice is offered: a
+ * workspace's job from the panel replays every source of the workspace.
  *
  * @module components/CategoriesManager/ReprocessSliceFields
  */
@@ -110,10 +112,12 @@ function SourcePicker({ selected, onChange }: Readonly<{ selected: readonly stri
   )
 }
 
-export default function ReprocessSliceFields({ form, onChange, invalid }: Readonly<{
+export default function ReprocessSliceFields({ form, onChange, invalid, withSources = true }: Readonly<{
   form: ReprocessForm
   onChange: Change
   invalid: boolean
+  /** False beside a workspace's categories: the source list is the deployment's, so no source slice is offered. */
+  withSources?: boolean
 }>) {
   const { t } = useTranslation('components')
   const categoriesId = useId()
@@ -132,7 +136,7 @@ export default function ReprocessSliceFields({ form, onChange, invalid }: Readon
       {form.windowKind === 'days'
         ? <DaysField form={form} onChange={onChange} invalid={invalid} />
         : <RangeFields form={form} onChange={onChange} invalid={invalid} />}
-      <SourcePicker selected={form.sources} onChange={onChange} />
+      {withSources && <SourcePicker selected={form.sources} onChange={onChange} />}
       <div>
         <label htmlFor={categoriesId} className="block text-xs font-medium text-text-strong mb-1">{t('categoriesManager.reprocess.categoriesLabel')}</label>
         <input id={categoriesId} type="text" value={form.categoriesInput} className="input py-1.5 w-full max-w-md"
