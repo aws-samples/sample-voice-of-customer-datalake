@@ -24,7 +24,10 @@ Two more rules hold everywhere: a ``WorkspaceScope`` is built only inside the la
 ``scope_from_message``, ``scope_from_key``; aliases included), and no request-facing module (``lambda/api/``, the
 public webhooks, but for the asynchronous workers in ``ASYNC_API_WORKERS``) calls ``scope_from_message`` or
 ``scope_from_key``: a request's workspace comes from its resolved membership (``scope_of``), never from a field, a
-path or a cursor it sent. (``dataclasses.replace`` of a scope is not detected: it still validates the id.)
+path or a cursor it sent. (``dataclasses.replace`` of a scope is not detected: it still validates the id.) No
+request-facing module writes ``workspace_id`` into a mapping either: an operator route's invoke payload names its
+workspace only through shared/workspace_request.py ``workspace_payload``, which takes it from a resolved membership
+(a ``WorkspaceContext``, built only by shared/workspace.py and shared/workspace_members.py), never a body field.
 
 Known limits, each closed by the slice that moves the code: keys joined without a literal prefix
 (``'#'.join(('SOURCE', s))``), low-level clients (``boto3.client('dynamodb')``), S3 reads, and the TypeScript stream
@@ -79,7 +82,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
         2, {'SOURCE#': 1, 'Table': 1, 'generate_presigned_url': 1, 'get_aggregates_table': 2, 'put_object': 1}),
     'lambda/api/feedback_edit_handler.py': (2, {'get_aggregates_table': 1, 'get_feedback_table': 1}),
     'lambda/api/feedback_form_handler.py': (2, {'SOURCE#': 2, 'Table': 2}),
-    'lambda/api/integrations_handler.py': (2, {'SOURCE_RUN#': 2, 'get_aggregates_table': 2}),
+    # Both paths since the operator routes' slice: run rows through shared/run_rows.py (its SOURCE_RUN# moved there),
+    # the breaker through shared/plugin_circuit.py. Left: the voc-aggregates handle of Run now and the run status.
+    'lambda/api/integrations_handler.py': (2, {'get_aggregates_table': 2}),
     'lambda/api/logs_handler.py': (3, {'get_aggregates_table': 1}),
     'lambda/api/manual_import_handler.py': (2, {'Table': 2, 'raw/': 3}),
     'lambda/api/manual_import_processor.py': (2, {'Table': 1}),
@@ -151,15 +156,19 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/shared/raw_versions.py': (2, {'put_object': 1, 'raw/': 1}),
     'lambda/shared/release_watch.py': (3, {'DATE#': 1}),
     'lambda/shared/retention.py': (3, {'delete_objects': 2, 'raw/': 2}),
+    # The run rows' one deployment-wide spelling, consolidated from the integrations API's two (Run now's row and
+    # the run status) and the ingestors' one (plugins/_shared/base_ingestor.py); a workspace's partitions come from
+    # the layer (source_run_pk).
+    'lambda/shared/run_rows.py': (2, {'SOURCE_RUN#': 1}),
     'lambda/shared/s3_import_runs.py': (2, {'SOURCE_RUN#': 1}),
     'lambda/shared/s3_versions.py': (3, {'delete_objects': 1}),
     'lambda/shared/silver_provenance.py': (2, {'SOURCE#': 2, 'put_object': 1, 'silver/': 1}),
     'lambda/shared/source_profiles.py': (2, {'Table': 1}),
     'lambda/shared/tables.py': (2, {'Table': 2}),
     'lambda/shared/user_flags.py': (3, {'Table': 1}),
-    # The deployment-wide run's SOURCE_RUN# row (an event that names no workspace: kept until phase 2's last slice).
-    # and voc-workspaces opened deployment-wide for the tick's fan-out (the control plane's PLUGIN# list).
-    'plugins/_shared/base_ingestor.py': (2, {'SOURCE_RUN#': 1, 'ingest_table(None)': 1}),
+    # voc-workspaces opened deployment-wide for the tick's fan-out (the control plane's PLUGIN# list). Its run row's
+    # partition moved to shared/run_rows.py (source_run_partition), the spelling the API uses too.
+    'plugins/_shared/base_ingestor.py': (2, {'ingest_table(None)': 1}),
     # The one place an ingestor run opens a table by name, for both paths: the three call sites base_ingestor,
     # circuit_breaker and the webscraper held, consolidated (the deployment-wide tables and voc-workspaces).
     'lambda/shared/ingest_tables.py': (2, {'DeploymentTable': 1, 'Table': 1}),
@@ -348,13 +357,53 @@ def _workspace_field_writes(tree: ast.AST) -> list[int]:
 
 def test_no_request_facing_module_writes_the_workspace_field_into_a_message():
     """A request's body never chooses the workspace its feedback lands in: no module under ``lambda/api/`` (nor a
-    webhook) puts ``workspace_id`` into a mapping it could queue, and the source policy every producer applies drops
-    it (shared/source_policy.py ``apply_source_policy``). Only a plugin ingestor's run in a workspace sets it, from
-    its verified scope (plugins/_shared/base_ingestor.py ``send_to_queue``)."""
+    webhook) puts ``workspace_id`` into a mapping it could queue or send, and the source policy every producer applies
+    drops it (shared/source_policy.py ``apply_source_policy``). A plugin ingestor's run in a workspace sets it from its
+    verified scope (plugins/_shared/base_ingestor.py ``send_to_queue``); an operator route's invoke payload (Run now,
+    a scraper's run) gets it only through ``PAYLOAD_WRITER``, from the request's resolved membership (below)."""
     found = {_rel(path): lines for path in _modules()
              if _request_facing(_rel(path)) or _rel(path) in ASYNC_API_WORKERS
              if (lines := _workspace_field_writes(_parse(path)))}
     assert found == {}
+
+
+#: The one helper a request-facing module names a workspace on an invoke payload with, and its module.
+PAYLOAD_WRITER: Final = ('lambda/shared/workspace_request.py', 'workspace_payload')
+#: Where a ``WorkspaceContext`` (a resolved membership) is built: the request middleware and the members' changes.
+CONTEXT_BUILDERS: Final = ('lambda/shared/workspace.py', 'lambda/shared/workspace_members.py')
+
+
+def _function(module: str, name: str) -> ast.FunctionDef:
+    tree = _parse(ROOT / module)
+    return next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name)
+
+
+def test_the_payload_writer_takes_the_field_from_a_resolved_membership_only():
+    """``workspace_payload(payload, context)``: it drops a ``workspace_id`` the payload carries, refuses anything but a
+    ``WorkspaceContext``, and its one write of the field is ``context.ws``, after every other field. So the workspace
+    an operator route's run lands in is the one the request resolved, never a body field (a request-facing module
+    holds no other way: the rule above, and a ``WorkspaceContext`` is built only by ``CONTEXT_BUILDERS``)."""
+    module, name = PAYLOAD_WRITER
+    function = _function(module, name)
+    [context] = [arg.arg for arg in function.args.args if arg.arg == 'context']
+    checks = [node for node in ast.walk(function) if isinstance(node, ast.Call) and _called(node) == 'isinstance']
+    assert any(isinstance(arg, ast.Name) and arg.id == 'WorkspaceContext' for call in checks for arg in call.args)
+    writes = [node for node in ast.walk(function) if isinstance(node, ast.Dict) and any(map(_names_the_workspace_field,
+                                                                                          node.keys))]
+    assert len(writes) == 1
+    [display] = writes
+    assert _names_the_workspace_field(display.keys[-1]), 'the workspace goes after every other field'
+    value = display.values[-1]
+    assert isinstance(value, ast.Attribute)
+    assert value.attr == 'ws'
+    assert isinstance(value.value, ast.Name)
+    assert value.value.id == context
+
+
+def test_a_resolved_membership_is_built_only_by_the_control_plane():
+    """``WorkspaceContext(…)`` (what ``PAYLOAD_WRITER`` and shared/workspace_plugin_store.py accept as a resolved
+    request) is built only where a membership is resolved or changed, never by a request-facing module."""
+    assert _calls_of('WorkspaceContext') == sorted(CONTEXT_BUILDERS)
 
 
 def test_the_workspace_field_rule_sees_each_write(tmp_path):

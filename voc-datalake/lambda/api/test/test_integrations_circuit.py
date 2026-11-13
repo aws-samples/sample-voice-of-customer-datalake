@@ -204,17 +204,17 @@ class TestTheRowShape:
         assert plugin_circuit.circuit_from_row({'failure_count': True}, include_error=True)['failure_count'] == 0
 
     def test_the_key_matches_the_one_the_breaker_writes(self):
-        """Lockstep with plugins/_shared/circuit_breaker.py: the breaker's keys are this module's (the plugin
-        bundles ship lambda/shared): ``tripped_key`` for a deployment-wide run, the one these routes read and
-        clear, and ``workspace_tripped_key`` for a run in a workspace."""
+        """Lockstep with plugins/_shared/circuit_breaker.py: the breaker's key is this module's ``circuit_key``
+        (the plugin bundles ship lambda/shared), the one these routes read and clear on each path: ``tripped_key``
+        deployment-wide, ``workspace_tripped_key`` in a workspace."""
         breaker = PLUGINS_SHARED.read_text()
 
-        assert 'from shared.plugin_circuit import tripped_key, workspace_tripped_key' in breaker
-        assert re.search(r'return tripped_key\(self\.plugin_id\)', breaker)
-        assert re.search(r'return workspace_tripped_key\(self\.scope, self\.plugin_id\)', breaker)
-        assert plugin_circuit.workspace_tripped_key(WorkspaceScope(WS), 'x') == {
-            'pk': f'WS#{WS}#CIRCUIT#x', 'sk': 'TRIPPED'}
-        assert plugin_circuit.tripped_key('x') == {'pk': 'CIRCUIT#x', 'sk': 'TRIPPED'}
+        assert 'from shared.plugin_circuit import circuit_key' in breaker
+        assert re.search(r'return circuit_key\(self\.scope, self\.plugin_id\)', breaker)
+        assert plugin_circuit.circuit_key(WorkspaceScope(WS), 'x') == plugin_circuit.workspace_tripped_key(
+            WorkspaceScope(WS), 'x') == {'pk': f'WS#{WS}#CIRCUIT#x', 'sk': 'TRIPPED'}
+        assert plugin_circuit.circuit_key(None, 'x') == plugin_circuit.tripped_key('x') == {
+            'pk': 'CIRCUIT#x', 'sk': 'TRIPPED'}
 
     def test_the_breaker_and_this_api_use_the_same_table(self):
         breaker = PLUGINS_SHARED.read_text()

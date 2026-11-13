@@ -28,6 +28,7 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.archive_keys import archive_key_stem
+from shared.plugin_identity import S3_IMPORT_SOURCE
 from shared.raw_copy import RawTarget, bytes_copy, source_archive_mode
 from shared.source_policy import ARCHIVE_FILE
 from shared.ws_repo import WorkspaceScope
@@ -36,7 +37,6 @@ from .raw_archive import plugin_connector
 
 __all__ = ["archive_original"]
 
-S3_IMPORT_SOURCE = "s3_import"
 PROCESSED_PREFIX = "processed/"
 _CONTENT_TYPES = {".csv": "text/csv", ".json": "application/json", ".jsonl": "application/x-ndjson"}
 

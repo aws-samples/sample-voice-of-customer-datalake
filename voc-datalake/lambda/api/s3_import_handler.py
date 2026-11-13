@@ -25,6 +25,13 @@ by hand (the bucket's lifecycle rule moves that prefix to Glacier after 30 days)
 `POST /s3-import/reprocess` re-runs one file of either layout through the ingestor
 (issue #144); its run is a `SOURCE_RUN#s3_import` row, polled at
 `GET /s3-import/reprocess/<run_id>`.
+
+DEPLOYMENT-WIDE ONLY (docs/multi-workspace.md): the import bucket is not keyed by
+workspace, so every staged file is the deployment's, and a reprocess in a workspace
+would ingest the deployment's file into that workspace. Until the bucket, its
+upload and listing routes and the S3 trigger are keyed by workspace, a request that
+sends `X-Workspace-Id` is refused before anything else, with one 400 for everyone
+(`shared.workspace_request.deployment_only`, the first middleware).
 """
 
 import json
@@ -47,6 +54,7 @@ from shared.exceptions import ConfigurationError, ConflictError, NotFoundError, 
 from shared.logging import logger, tracer
 from shared.request_body import json_object_body
 from shared.tables import get_aggregates_table
+from shared.workspace_request import deployment_only
 
 s3_client = get_s3_client()
 S3_IMPORT_BUCKET = os.environ.get("S3_IMPORT_BUCKET", "")
@@ -68,8 +76,9 @@ INVALID_KEY = 'Key is outside the import layout <source>/<file.csv|.json|.jsonl>
 app = create_api_resolver()
 
 
-# Every S3-import route is admin-only (403 otherwise). See the module docstring.
-app.use(middlewares=[admins_only])
+# Every S3-import route is deployment-wide only (400 with X-Workspace-Id) and admin-only (403 otherwise). See the
+# module docstring.
+app.use(middlewares=[deployment_only, admins_only])
 
 
 def _deletable_key(key: str) -> str:

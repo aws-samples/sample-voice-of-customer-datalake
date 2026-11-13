@@ -106,6 +106,9 @@ const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly r
   // into a workspace (AUDIT#WS#<ws> only; lib/utils/workspace-request-grants.ts).
   { table: 'workspacesTable', rolePathSuffix: '/MetricsLambdaRole', partitionKey: 'AUDIT#WS#*' },
   { table: 'workspacesTable', rolePathSuffix: '/FeedbackEditLambdaRole', partitionKey: 'AUDIT#WS#*' },
+  // The operator APIs that resolve it too (Run now, scraper runs, the breaker, a workspace's credentials).
+  { table: 'workspacesTable', rolePathSuffix: '/IntegrationsLambdaRole', partitionKey: 'AUDIT#WS#*' },
+  { table: 'workspacesTable', rolePathSuffix: '/ScrapersLambdaRole', partitionKey: 'AUDIT#WS#*' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',

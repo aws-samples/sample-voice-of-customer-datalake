@@ -28,6 +28,8 @@ import {
   AGGREGATES_VERSION_PARTITION, grantCacheVersionBump, grantWorkspaceCacheVersionBump,
 } from '../utils/cache-version-grants';
 import { grantWorkspaceResolution, workspaceResolutionEnv } from '../utils/workspace-request-grants';
+import { WORKSPACE_SECRET_BASE_PREFIX, grantWorkspaceSecretsReadWrite } from '../utils/workspace-secrets';
+import { CIRCUIT_ROW_PARTITIONS } from './ingestion-roles';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
 import { briefingApiWiring } from './briefing-worker';
@@ -172,6 +174,12 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
     resources: [secretsArn],
   }));
+  // A request's X-Workspace-Id (docs/multi-workspace.md; lambda/shared/workspace_request.py): its membership read,
+  // a platform admin's entry audited and live-checked (lib/utils/workspace-request-grants.ts), and the workspace's
+  // own credentials secret read and written (credentials, app connectors).
+  grantWorkspaceResolution(integrationsRole, workspacesTable, userPool);
+  const workspaceSecretsEnv = grantWorkspaceSecretsReadWrite(
+    stack, integrationsRole, ctx.prefixed(WORKSPACE_SECRET_BASE_PREFIX), kmsKey);
   // The enable/disable routes and GET /sources/status toggle and describe a
   // per-plugin schedule rule: grant exactly the rules VocIngestionStack creates
   // (every enabled plugin whose ingestor declares a schedule), by their resolved
@@ -223,24 +231,31 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, PLUGIN_SECRET_DEFAULTS: JSON.stringify(pluginSecretDefaults), PLUGIN_SECRET_KEYS: JSON.stringify(secretConfigKeysByPlugin(allPlugins)), ENABLED_SOURCES: enabledSourcesEnv, ...ctx.prefixOnlyEnv({
       INGESTOR_FUNCTION_NAME_PATTERN: ctx.uniqueNamePattern(`voc-ingestor-${SOURCE_PLACEHOLDER}`),
       INGEST_SCHEDULE_RULE_NAME_PATTERN: ctx.uniqueNamePattern(`voc-ingest-${SOURCE_PLACEHOLDER}-schedule`),
-    }), AGGREGATES_TABLE: aggregatesTable.tableName },
+    }), AGGREGATES_TABLE: aggregatesTable.tableName, ...workspaceResolutionEnv(workspacesTable, userPool),
+    ...workspaceSecretsEnv },
     layers: [apiLayer],
     logGroup: ctx.logGroup('IntegrationsApiLogs', ctx.uniqueName('voc-integrations-api')),
   });
-  // SOURCE_RUN#<source> run rows (PutItem); a tripped circuit is cleared by deleting its CIRCUIT#<plugin> row
-  // (shared/plugin_circuit.py clear_circuit), the only delete this role makes.
+  // SOURCE_RUN#<source> run rows, deployment-wide and a workspace's WS#{ws}#SOURCE_RUN#<source> (PutItem); a tripped
+  // circuit is cleared by deleting its CIRCUIT#<plugin> row, or in a workspace its WS#{ws}#CIRCUIT#<plugin> row
+  // (shared/plugin_circuit.py clear_circuit, the workspace segment one id), the only delete this role makes: the
+  // ingestors' breaker rows, one list (lib/stacks/ingestion-roles.ts CIRCUIT_ROW_PARTITIONS).
   grantReadAndWrites(aggregatesTable, integrationsRole, ['PutItem']);
-  grantKeyScopedWrites(aggregatesTable, integrationsRole, ['DeleteItem'], ['CIRCUIT#*']);
+  grantKeyScopedWrites(aggregatesTable, integrationsRole, ['DeleteItem'], CIRCUIT_ROW_PARTITIONS);
 
   // Scrapers API
   const scrapersRole = ctx.role('ScrapersLambdaRole');
-  // SCRAPER_RUN#<id> run rows (PutItem); no update, no delete.
+  // SCRAPER_RUN#<id> run rows, deployment-wide and a workspace's WS#{ws}#SCRAPER_RUN#<id> (PutItem); no update, no delete.
+  // The deployment key's encrypt and decrypt come with grantWorkspaceSecretsReadWrite below.
   grantReadAndWrites(aggregatesTable, scrapersRole, ['PutItem']);
-  kmsKey.grantEncryptDecrypt(scrapersRole);
   scrapersRole.addToPolicy(new iam.PolicyStatement({
     actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
     resources: [secretsArn],
   }));
+  // X-Workspace-Id as the integrations API resolves it; the workspace's own secret holds its scraper configs.
+  grantWorkspaceResolution(scrapersRole, workspacesTable, userPool);
+  const scrapersWorkspaceSecretsEnv = grantWorkspaceSecretsReadWrite(
+    stack, scrapersRole, ctx.prefixed(WORKSPACE_SECRET_BASE_PREFIX), kmsKey);
   // POST /scrapers/{id}/run invokes the webscraper ingestor by its exact name
   // (the same string handed down as WEBSCRAPER_FUNCTION_NAME).
   const webscraperFunctionName = ctx.uniqueName('voc-ingestor-webscraper');
@@ -271,7 +286,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     // this just keeps the Lambda from dying before that.
     timeout: cdk.Duration.seconds(120),
     memorySize: 1536, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
-    environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: webscraperFunctionName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO', JOBS_TABLE: jobsTable.tableName, [ASSIST_WORKER_ENV]: scrapersWorkerName },
+    environment: { SECRETS_ARN: secretsArn, AGGREGATES_TABLE: aggregatesTable.tableName, WEBSCRAPER_FUNCTION_NAME: webscraperFunctionName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-scrapers-api', LOG_LEVEL: 'INFO', JOBS_TABLE: jobsTable.tableName, [ASSIST_WORKER_ENV]: scrapersWorkerName,
+      ...workspaceResolutionEnv(workspacesTable, userPool), ...scrapersWorkspaceSecretsEnv },
     layers: [apiLayer],
     logGroup: ctx.logGroup('ScrapersApiLogs', ctx.uniqueName('voc-scrapers-api')),
   };

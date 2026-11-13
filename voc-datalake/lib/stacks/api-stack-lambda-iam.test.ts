@@ -179,12 +179,14 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
 });
 
 // ── X-Workspace-Id on the data path (docs/multi-workspace.md, lib/utils/workspace-request-grants.ts) ──────────
-// The metrics API and the feedback edits resolve a request's workspace (lambda/shared/workspace_request.py): they
-// read voc-workspaces' WS#* and AUDIT#WS#* rows, put only an entry audit row (AUDIT#WS#*), and run the live
-// platform-admin check in Cognito; nothing else of the control plane.
+// The metrics API, the feedback edits and the operator APIs (integrations, scrapers) resolve a request's workspace
+// (lambda/shared/workspace_request.py): they read voc-workspaces' WS#* and AUDIT#WS#* rows, put only an entry audit
+// row (AUDIT#WS#*), and run the live platform-admin check in Cognito; nothing else of the control plane.
 describe.each([
   ['MetricsLambdaRole', 'metrics_handler.lambda_handler'],
   ['FeedbackEditLambdaRole', 'feedback_edit_handler.lambda_handler'],
+  ['IntegrationsLambdaRole', 'integrations_handler.lambda_handler'],
+  ['ScrapersLambdaRole', 'scrapers_handler.lambda_handler'],
 ])('%s resolves X-Workspace-Id', (role, handler) => {
   // The DynamoDB statements on voc-workspaces (the table's key grants name no `dynamodb:` action).
   const onWorkspaces = () => policyStatementsOf(apiTemplate(), role)
@@ -208,6 +210,50 @@ describe.each([
   it('is handed the workspaces table and the user pool', () => {
     expect(Object.keys(lambdaEnv(apiTemplate(), handler)))
       .toStrictEqual(expect.arrayContaining(['WORKSPACES_TABLE', 'USER_POOL_ID']));
+  });
+});
+
+// The operator APIs keep a workspace's plugin credentials, app connectors and scraper configs in its own secret
+// (lambda/shared/workspace_plugin_store.py): Get and Put on `voc/ws/*` beside the shared secret, never Create, Delete,
+// Describe or Tag (the workspaces API makes them), and the prefix in WORKSPACE_SECRET_PREFIX.
+describe.each([
+  ['IntegrationsLambdaRole', 'integrations_handler.lambda_handler'],
+  ['ScrapersLambdaRole', 'scrapers_handler.lambda_handler'],
+])('%s reads and writes a workspace\'s credentials secret', (role, handler) => {
+  const onWorkspaceSecrets = () => policyStatementsOf(apiTemplate(), role)
+    .filter((s) => s.resource.includes('voc/ws/*'));
+
+  it('may Get and Put every workspace secret, and nothing else there', () => {
+    expect(onWorkspaceSecrets().map((s) => [...s.actions].sort(byCodeUnit)))
+      .toStrictEqual([['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue']]);
+  });
+
+  it('holds no Create, Delete, Describe or Tag of a secret anywhere', () => {
+    expect(actionsWithPrefix(policyStatementsOf(apiTemplate(), role), 'secretsmanager:'))
+      .toStrictEqual(['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue']);
+  });
+
+  it('may decrypt and generate data keys with the deployment key the secrets are encrypted with', () => {
+    // The workspaces API creates every workspace secret with the customer-managed key (secretsmanager:KmsKeyArn);
+    // without these a Get or Put of one is AccessDenied (moto does not check KMS, so only this test can say so).
+    const kmsStatements = policyStatementsOf(apiTemplate(), role).filter((s) => s.actions.some((a) => a.startsWith('kms:')));
+    expect(kmsStatements.length).toBeGreaterThan(0);
+    expect(kmsStatements.every((s) => !s.resource.includes('"*"'))).toBe(true);
+    expect(actionsWithPrefix(kmsStatements, 'kms:'))
+      .toStrictEqual(expect.arrayContaining(['kms:Decrypt', 'kms:GenerateDataKey']));
+  });
+
+  it('is handed the workspaces\' secret prefix', () => {
+    expect(lambdaEnv(apiTemplate(), handler)).toHaveProperty('WORKSPACE_SECRET_PREFIX', 'voc/ws');
+  });
+});
+
+describe('the integrations API clears a workspace\'s breaker row', () => {
+  it('may delete only CIRCUIT#* and one workspace\'s WS#{ws}#CIRCUIT#* rows in aggregates', () => {
+    const deletes = policyStatementsOf(apiTemplate(), 'IntegrationsLambdaRole')
+      .filter((s) => s.actions.includes('dynamodb:DeleteItem'));
+    expect(deletes.map((s) => s.condition)).toStrictEqual([{ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [
+      'CIRCUIT#*', `WS#ws_${'?'.repeat(26)}#CIRCUIT#*`] } }]);
   });
 });
 

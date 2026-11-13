@@ -604,7 +604,7 @@ class TestTheTemplateCatalogue:
 # ============================================
 
 EXECUTION_ID = 'run_s-1_20260310120000_a1b2c3d4'
-RUN_PAYLOAD = json.dumps({'scraper_id': 's-1', 'execution_id': EXECUTION_ID, 'manual_run': True})
+RUN_PAYLOAD = json.dumps({'scraper_id': 's-1', 'execution_id': EXECUTION_ID})
 
 
 @pytest.mark.usefixtures('fixed_id_suffix')

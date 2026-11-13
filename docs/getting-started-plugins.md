@@ -172,9 +172,11 @@ def lambda_handler(event, context):
 ```
 
 `run_in_workspace` runs the ingestor deployment-wide (scope `None`) for an event that names no
-workspace, as every Run now and schedule tick does today, and in the workspace an event names in
-`workspace_id` otherwise; the tick first fans out (once per tick) to every workspace that enabled the plugin
-([multi-workspace.md](multi-workspace.md), not released yet). What the base class does for you when
+workspace, as every schedule tick's own run and every Run now sent without `X-Workspace-Id` does, and in
+the workspace an event names in `workspace_id` otherwise (a Run now sent with `X-Workspace-Id` names the
+request's workspace there, with that workspace's credentials); the tick first fans out (once per tick) to
+every workspace that enabled the plugin ([multi-workspace.md](multi-workspace.md), not released yet). Your
+code changes for none of it. What the base class does for you when
 `run()` is called:
 
 - skips the run while the plugin's circuit breaker is open;

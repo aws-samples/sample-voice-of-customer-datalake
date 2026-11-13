@@ -65,3 +65,18 @@ def plain_calls_in(node: ast.FunctionDef) -> set[str]:
         for call in ast.walk(node)
         if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
     }
+
+
+#: The two-path admin gate of the integrations and scrapers APIs, called on the module's request view
+#: (``_request.require_request_admin()``, shared/workspace_request.py ResolvedRoutes).
+ADMIN_GATE = '_request.require_request_admin'
+
+
+def gate_calls_in(node: ast.FunctionDef) -> set[str]:
+    """Every ``_request.<method>`` called anywhere in *node*'s body, as ``'_request.<method>'``."""
+    return {
+        f'_request.{call.func.attr}'
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name) and call.func.value.id == '_request'
+    }

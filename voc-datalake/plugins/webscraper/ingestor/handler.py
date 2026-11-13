@@ -21,8 +21,9 @@ from shared.http_utils import MAX_PAGE_BYTES, UnsafeURLError, fetch_public_url
 from shared.invocation_cost import measure_invocation_cost
 from shared.producer_labels import message_labels
 from shared.radar_brands import radar_stamp
+from shared.run_rows import scraper_run_partition
 from shared.timestamps import now_iso
-from shared.ws_repo import WorkspaceScope, scraper_run_pk
+from shared.ws_repo import WorkspaceScope
 
 # Inter-page delay jitter only needs a uniform draw; it is not security-relevant.
 _jitter = secrets.SystemRandom()
@@ -100,9 +101,10 @@ class WebScraperIngestor(BaseIngestor):
             return []
 
     def _scraper_run_pk(self, scraper_id: str) -> str:
-        """The scraper run row's partition: ``SCRAPER_RUN#{id}`` deployment-wide (what ``POST /scrapers/{id}/run``
-        and the scrapers API poll), ``WS#{ws}#SCRAPER_RUN#{id}`` for a run in a workspace."""
-        return f'SCRAPER_RUN#{scraper_id}' if self.scope is None else scraper_run_pk(self.scope, scraper_id)
+        """The scraper run row's partition: ``SCRAPER_RUN#{id}`` deployment-wide, ``WS#{ws}#SCRAPER_RUN#{id}`` for a
+        run in a workspace: the row ``POST /scrapers/{id}/run`` writes and the scrapers API polls on each path
+        (lambda/shared/run_rows.py ``scraper_run_partition``)."""
+        return scraper_run_partition(self.scope, scraper_id)
 
     def _update_run_status(self, scraper_id: str, updates: dict):
         """Update run status in DynamoDB for progress tracking."""
@@ -507,8 +509,9 @@ def _run_error_text(url: str, error: Exception) -> str:
 @metrics.log_metrics(capture_cold_start_metric=True)
 @measure_invocation_cost
 def lambda_handler(event, context):
-    """Lambda entry point (``run_in_workspace``): an event naming a workspace runs in it, one naming none
-    (``POST /scrapers/{id}/run``, the tick's own run) runs deployment-wide, and the tick also fans out."""
+    """Lambda entry point (``run_in_workspace``): an event naming a workspace runs in it (``POST /scrapers/{id}/run``
+    with X-Workspace-Id, a fan-out's run), one naming none (that route without it, the tick's own run) runs
+    deployment-wide, and the tick also fans out."""
     execution_id = event.get('execution_id') if isinstance(event, dict) else None
     scraper_id = event.get('scraper_id') if isinstance(event, dict) else None
 

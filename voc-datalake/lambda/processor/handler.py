@@ -958,15 +958,23 @@ def process_radar_record(raw_record: dict, brand_label: str) -> dict:
 def _radar_result(raw_record: dict, scope: WorkspaceScope | None) -> dict | None:
     """The record's Radar outcome when Radar claims it, else None (it goes to voc-feedback).
 
-    A workspace's record Radar would claim raises ``WorkspaceRadarRefusedError`` (counted): never
-    written to the deployment's voc-radar, nor as the workspace's own feedback.
+    Radar is not keyed by workspace (phase 3), so a workspace's record is never claimed by it:
+
+    * one that carries its own stamp (``radar_brand_key``: its scraper, connector or page named a Radar brand)
+      raises ``WorkspaceRadarRefusedError`` (counted): never written to the deployment's voc-radar, nor as the
+      workspace's own feedback. The operator APIs refuse saving such a config in a workspace, so none should come;
+    * one without a stamp is the workspace's own feedback, whatever the deployment's source profiles say: a
+      profile's ``radar_brand`` is the deployment's Radar setting, not the workspace's (its source_platform may
+      also be a scraper name or a page's source id another workspace shares), so it claims no workspace's record.
     """
+    if scope is not None:
+        if raw_record.get('radar_brand_key'):
+            count_metric("WorkspaceRadarRefused")
+            raise WorkspaceRadarRefusedError('Radar is not keyed by workspace yet')
+        return None
     radar_brand = radar_brand_for(raw_record)
     if not radar_brand:
         return None
-    if scope is not None:
-        count_metric("WorkspaceRadarRefused")
-        raise WorkspaceRadarRefusedError('Radar is not keyed by workspace yet')
     return process_radar_record(raw_record, radar_brand)
 
 

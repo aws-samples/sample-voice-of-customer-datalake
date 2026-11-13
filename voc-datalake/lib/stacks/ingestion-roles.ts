@@ -53,9 +53,9 @@ import { RAW_LAYER_PREFIX, WORKSPACE_ID_PATTERN, WORKSPACE_RAW_LAYER_PREFIX } fr
  * The circuit breaker's own rows, which it deletes when it closes (plugins/_shared/circuit_breaker.py): the
  * deployment-wide `CIRCUIT#<plugin>` / `TRIPPED`, and one per workspace, `WS#{ws}#CIRCUIT#<plugin>`. The workspace
  * segment is exactly one id (WORKSPACE_ID_PATTERN), so `WS#{ws}#SOURCE#x#CIRCUIT#y` is out of reach; a `CIRCUIT#`
- * partition is the breaker's alone.
+ * partition is the breaker's alone. The integrations API clears the same rows (lib/stacks/api-data-lambdas.ts).
  */
-const CIRCUIT_ROW_PARTITIONS = ['CIRCUIT#*', `WS#${WORKSPACE_ID_PATTERN}#CIRCUIT#*`];
+export const CIRCUIT_ROW_PARTITIONS =['CIRCUIT#*', `WS#${WORKSPACE_ID_PATTERN}#CIRCUIT#*`];
 /** The scheduled tick's claim keys in voc-idempotency: `ingestor#fanout#{plugin}#{event id}` (base_ingestor.py). */
 const FAN_OUT_CLAIM_PREFIX = 'ingestor#fanout#';
 

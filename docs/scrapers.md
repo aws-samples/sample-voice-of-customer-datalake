@@ -222,6 +222,16 @@ All routes require a signed-in (Cognito) user. "Admin" means the `admins` group.
 | POST | `/scrapers/analyze-url` | Admin | AI-assisted selector detection. Answers `202 {success, job_id, status: 'pending'}`; the work runs on `voc-scrapers-assist` |
 | GET | `/scrapers/jobs/{job_id}` | The starter | Poll an analyze-url job: `pending` / `running`, then `completed` with `result` or `failed` with `error` |
 
+**In a workspace** (multi-workspace, not released yet; [multi-workspace.md](multi-workspace.md)): a request that
+sends `X-Workspace-Id` acts in that workspace (a non-member gets the one 404). "Admin" is then the caller's role
+there (a workspace admin, or a platform admin who entered; an editor or a viewer gets 403, and the `admins` group
+grants nothing), "Any user" any member. The scraper list, saves and deletes use the workspace's own credentials
+secret (`voc/ws/{ws}/credentials`, its `webscraper_configs`; these routes and a run answer 409 until the workspace's `secret_status` is `ready`), which the
+webscraper's run in that workspace reads; a run invokes the webscraper with the request's resolved workspace in
+`workspace_id` (never a body field) and writes and reads `WS#{ws}#SCRAPER_RUN#<scraper id>`; the connectors listing
+reads the workspace's secret too. A scraper that names a `radar_brand` is refused there (400): Radar is not keyed by
+workspace yet. Without the header, every route is as above.
+
 The same URL prefix also serves the import routes, from a second Lambda
 (`manual_import_handler.py`). Every one is **admin-only**, enforced by one middleware for the whole module,
 because an import writes feedback straight into the enrichment pipeline:
@@ -241,7 +251,8 @@ import file writes one run record; the **Import history** section of the Data so
 ([import-history.md](import-history.md)).
 
 S3 bulk import (`/s3-import/*`, `s3_import_handler.py`) is admin-only on every
-route for the same reason; see [data-lake-structure.md](data-lake-structure.md).
+route for the same reason, and deployment-wide only: a request that sends `X-Workspace-Id` gets one 400 (the import
+bucket is not keyed by workspace); see [data-lake-structure.md](data-lake-structure.md).
 
 ### Who can do what
 

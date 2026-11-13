@@ -914,3 +914,38 @@ class TestTheDeploymentWidePathIsUnchanged:
     @pytest.mark.usefixtures('ingestor_aws')
     def test_its_breaker_is_the_deployment_wide_one(self):
         assert ingestor_yielding(scope=None).circuit_breaker.scope is None
+
+
+class TestAWorkspaceWithoutThePluginsCredentials:
+    """A run in a workspace whose secret holds none of the plugin's keys (a new workspace's ``{}``, or only another
+    plugin's keys): it ends ``error`` naming the missing credentials and never counts against the workspace's breaker,
+    so an admin who has not saved them yet does not find the plugin stopped there after a few runs."""
+
+    @pytest.mark.parametrize('stored', [{}, {'other_plugin_api_key': 'k'}], ids=['empty', 'another-plugin'])
+    @patch('_shared.base_ingestor.AGGREGATES_TABLE', 'voc-aggregates-test')
+    def test_the_run_fails_naming_them_and_the_breaker_does_not_count_it(self, ingestor_aws, stored):
+        from shared.exceptions import WorkspaceCredentialsNotSet
+
+        ingestor_aws.get_secret.return_value = stored
+        with patch('_shared.circuit_breaker.CircuitBreaker.record_failure') as counted, \
+                patch('_shared.base_ingestor.emit_audit_event') as audit, \
+                pytest.raises(WorkspaceCredentialsNotSet, match="No credentials of 'test_source'"):
+            ingestor_yielding(execution_id='exec-1')
+
+        counted.assert_not_called()
+        update = ingestor_aws.table.update_item.call_args.kwargs
+        assert update['Key'] == {'pk': f'WS#{WS}#SOURCE_RUN#test_source', 'sk': 'exec-1'}
+        assert ['WorkspaceCredentialsNotSet'] in update['ExpressionAttributeValues'].values()
+        assert audit.call_args.args[3]['counted_against_circuit_breaker'] is False
+
+    def test_deployment_wide_a_namespace_miss_still_counts(self, ingestor_aws):
+        from shared.exceptions import ConfigurationError, WorkspaceCredentialsNotSet
+
+        ingestor_aws.get_secret.return_value = {'other_plugin_api_key': 'k'}
+        with patch('_shared.base_ingestor.SECRETS_ARN', 'arn:shared'), \
+                patch('_shared.circuit_breaker.CircuitBreaker.record_failure') as counted, \
+                pytest.raises(ConfigurationError) as raised:
+            ingestor_yielding(scope=None)
+
+        assert not isinstance(raised.value, WorkspaceCredentialsNotSet)
+        counted.assert_called_once()

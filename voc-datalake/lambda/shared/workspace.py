@@ -88,6 +88,9 @@ class WorkspaceContext:
     slug: str
     #: True when a platform admin entered without being a member admin (audited).
     platform_admin: bool
+    #: The workspace ``META``'s ``secret_status`` (``ready`` once its credentials secret exists, else ``pending``):
+    #: the operator APIs use the workspace's secret only when it is ``ready`` (shared/workspace_plugin_store.py).
+    secret_status: str = ''
 
 
 class MembershipCache:
@@ -182,11 +185,13 @@ def _load(table: Any, event: dict, ws: str, platform_admin: bool,
     meta = _item(table, ws_key(ws), 'META')
     if meta.get('status') != ACTIVE:
         raise NotFoundError(NOT_FOUND)
-    name, slug = text_fields(meta, 'name', 'slug')
+    name, slug, secret_status = text_fields(meta, 'name', 'slug', 'secret_status')
     if enters_as_platform_admin:
         _audit_platform_admin_entry(table, ws, sub)
-        return WorkspaceContext(ws=ws, role='admin', name=name, slug=slug, platform_admin=True)
-    return WorkspaceContext(ws=ws, role=role or '', name=name, slug=slug, platform_admin=False)
+        return WorkspaceContext(ws=ws, role='admin', name=name, slug=slug, platform_admin=True,
+                                secret_status=secret_status)
+    return WorkspaceContext(ws=ws, role=role or '', name=name, slug=slug, platform_admin=False,
+                            secret_status=secret_status)
 
 
 def resolve_workspace(table: Any, event: dict, cache: MembershipCache, *,

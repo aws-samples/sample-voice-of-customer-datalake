@@ -7,22 +7,23 @@ State lives in the AGGREGATES table (``pk``/``sk``, TTL attribute ``ttl``):
 * ``CIRCUIT#<plugin>`` / ``TRIPPED`` — present while the breaker is open.
 
 Those are the deployment-wide rows, of a run whose event names no workspace (the API's
-Run now and reprocess, an S3 upload, the scheduled tick's own run). A trip there also
-disables the plugin's EventBridge schedule, as it always did; that one rule is also what
-fans out to every workspace (base_ingestor.py ``fan_out_once``), so a deployment-wide trip
-(like ``PUT /sources/{source}/disable``) stops every workspace's scheduled runs too, until
-the source is enabled again. The integrations API
-reads and clears the ``TRIPPED`` row (``lambda/shared/plugin_circuit.py`` — same key,
+Run now without ``X-Workspace-Id`` and the S3 import reprocess, an S3 upload, the scheduled
+tick's own run). A trip there also disables the plugin's EventBridge schedule, as it always
+did; that one rule is also what fans out to every workspace (base_ingestor.py
+``fan_out_once``), so a deployment-wide trip (like ``PUT /sources/{source}/disable``) stops
+every workspace's scheduled runs too, until the source is enabled again. The integrations
+API reads and clears the ``TRIPPED`` row (``lambda/shared/plugin_circuit.py`` — same key,
 pinned in lockstep by its tests): enabling a source or ``POST /sources/{source}/reset``
-closes the breaker again. That path stays until phase 2's last slice moves the API, the
-S3 trigger and the processor onto workspaces (docs/multi-workspace.md).
+closes the breaker again. That path stays until phase 2's last slice moves the S3 import
+and its trigger onto workspaces (docs/multi-workspace.md).
 
 A run in a workspace keeps its own rows, ``WS#{ws}#FAILURES#<plugin>`` and
 ``WS#{ws}#CIRCUIT#<plugin>`` / ``TRIPPED`` (``plugin_circuit.workspace_tripped_key``). Its
 trip stops that workspace's runs (``is_open``) and disables no schedule: the plugin's one
 rule serves every workspace (the tick fans out), so one workspace's failing credentials
-must not stop the others. The API's status and reset do not reach those rows yet; an
-operator resets one by deleting its ``TRIPPED`` row.
+must not stop the others. The integrations API reads that row for ``GET /sources/status``
+and clears it for ``POST /sources/{source}/reset`` when the request sends that workspace's
+``X-Workspace-Id`` (its admins); enable and disable are deployment-wide only.
 
 It once addressed the WATERMARKS table with the same ``pk``/``sk`` keys, but that table's
 only key is ``source``: every query, get and delete was a ValidationException (caught and
@@ -40,7 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.aws import get_dynamodb_resource, get_eventbridge_client
 from shared.ingest_tables import ingest_table
 from shared.logging import logger, metrics
-from shared.plugin_circuit import tripped_key, workspace_tripped_key
+from shared.plugin_circuit import circuit_key
 from shared.timestamps import now_iso
 from shared.ws_repo import WORKSPACE_FIELD, WorkspaceScope
 
@@ -74,9 +75,8 @@ class CircuitBreaker:
 
     @property
     def _tripped_key(self) -> dict:
-        if self.scope is None:
-            return tripped_key(self.plugin_id)
-        return workspace_tripped_key(self.scope, self.plugin_id)
+        """The TRIPPED row on this breaker's path: the one key the integrations API reads and clears too."""
+        return circuit_key(self.scope, self.plugin_id)
 
     def record_failure(self, error: str) -> None:
         """Record a failure. May trigger circuit breaker."""
