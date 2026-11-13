@@ -741,9 +741,27 @@
     "tabs": {
       "agents": "エージェント",
       "board": "ボード",
-      "conversation": "会話"
+      "conversation": "会話",
+      "reports": "レポート"
     },
-    "panels": "実行のエージェント、ボード、会話",
+    "panels": "実行のエージェント、ボード、会話、レポート",
+    "reports": {
+      "title": "レポート: {{subject}}",
+      "version": "バージョン",
+      "latest": "最新 (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "作成 {{when}}",
+      "readFailed": "このレポートを読み込めませんでした。",
+      "missing": "このバージョンは書き込まれませんでした (作成が完了しませんでした)。別のバージョンを選んでください。",
+      "loadFailed": "レポートを読み込めませんでした。",
+      "none": "まだレポートはありません。",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "ゴール",
+        "pr": "プルリクエスト",
+        "commit": "コミット"
+      }
+    },
     "flow": "実行のフロー（エージェントがいるステップを表示）",
     "noFlow": "実行のフローを読み込めませんでした。その他の情報は表示されています。",
     "notFound": "エンジニアリング実行が見つかりません",

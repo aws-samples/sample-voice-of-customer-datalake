@@ -253,11 +253,14 @@ class SessionStore:
         return item is not None and 'seq' not in item and int(item.get(LAUNCH_HOLD, 0)) >= now
 
     def release_launch(self, run_id: str, agent_id: str) -> None:
-        """Let go of a launch that started no session (its MicroVM failed to start): a retry may launch at once."""
+        """Let go of a launch that started no session (its MicroVM failed to start): a retry may launch at once. The
+        hold is run out (0), never removed: the row stays a launch hold, which no reader takes for an agent (the
+        report builder's facts skip it), rather than a key-only row read as an agent with no role."""
         try:
-            self._table.update_item(Key=_key(run_id, agent_id), UpdateExpression='REMOVE #hold',
+            self._table.update_item(Key=_key(run_id, agent_id), UpdateExpression='SET #hold = :ended',
                                     ConditionExpression='attribute_not_exists(seq)',
-                                    ExpressionAttributeNames={'#hold': LAUNCH_HOLD})
+                                    ExpressionAttributeNames={'#hold': LAUNCH_HOLD},
+                                    ExpressionAttributeValues={':ended': 0})
         except ClientError as error:
             if not is_conditional_check_failure(error):   # (a session exists: its creation removed the hold)
                 raise
@@ -335,7 +338,12 @@ class SessionStore:
         return any(session.status in LIVE_STATUSES or (session.claimed_until or 0) >= now
                    for session in self.of_run(run_id))
 
+    def watched(self) -> Iterator[tuple[str, list[AgentSession]]]:
+        """Every session, live or not, of each run the supervisor watches, run by run (one query per run)."""
+        for run_id in self._runs.listed():
+            yield run_id, self.of_run(run_id)
+
     def active(self) -> Iterator[AgentSession]:
         """Every live session of the runs the supervisor watches, run by run."""
-        for run_id in self._runs.listed():
-            yield from (session for session in self.of_run(run_id) if session.status in LIVE_STATUSES)
+        for _run_id, sessions in self.watched():
+            yield from (session for session in sessions if session.status in LIVE_STATUSES)

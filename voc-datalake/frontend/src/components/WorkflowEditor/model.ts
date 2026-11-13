@@ -7,8 +7,7 @@
  *
  * @module components/WorkflowEditor/model
  */
-import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
-import { WORKFLOW_SCHEMA_V2 } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import { gateLabelFor } from './loopGates'
 import type {
   WorkflowDefinition, WorkflowEdge, WorkflowEdgeLabel, WorkflowLoop, WorkflowNode, WorkflowNodeRole, WorkflowNodeType,

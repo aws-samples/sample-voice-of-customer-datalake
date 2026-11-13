@@ -53,6 +53,12 @@ from engineering.runtime.interface import check_id
 
 CHECKOUT_ROOT: Final = '/work/repo'
 HEARTBEAT_SECONDS: Final = 60.0
+#: The run coordinator's role (its stop without ``finish`` is a crash: ``_finished``).
+COORDINATOR_ROLE: Final = 'coordinator'
+#: The last progress report of a session that stopped without its ``finish`` (its task goes to a person).
+STOPPED_UNFINISHED: Final = 'Stopped without saying the task is done: a person decides what happens next.'
+#: The run coordinator's (its stop is a crash, which the supervisor continues: no person is asked yet).
+COORDINATOR_STOPPED: Final = 'Stopped without finishing the run: continued as a crash.'
 
 
 class S3Store:
@@ -277,11 +283,26 @@ def _finished(session: AgentSession) -> None:
     """A session that ended without its ``finish`` (two answers without a tool; a CLI ending cleanly) never leaves
     its task in progress, nor calls it done: the task goes to a person (``needs_human``), since an agent that stops
     without saying it is done may have given up. The CLI's ``finish`` runs in its tool server: its ``finished``
-    file says it ran, so its task is done already. Any refusal (the lease not this agent's, run out, the task
-    unable to move) is raised: a crash, which the supervisor continues or ends."""
+    file says it ran, so its task is done already. Its last progress report says why first, so the person sees it
+    on the task. Any refusal (the lease not this agent's, run out, the task unable to move) is raised: a crash,
+    which the supervisor continues or ends.
+
+    The run coordinator is the exception: its task is the run's plan, and a coordinate task sent to a person would
+    leave the run active with nobody planning it. It stops as a crash (``CoordinatorStopped``), so the supervisor
+    continues it from its checkpoint, and after the crashes it allows sends the run to a person, whose Resume
+    replaces it (the task still held, so it can be re-posted)."""
     context = session.context
-    if not (context.finished or session.finished_elsewhere):
-        context.board.move(context.run_id, context.task_id, to_state='needs_human')
+    if context.finished or session.finished_elsewhere:
+        return
+    if context.role == COORDINATOR_ROLE:
+        context.board.progress(context.run_id, context.task_id, context.agent_id, COORDINATOR_STOPPED)
+        raise CoordinatorStopped('the run coordinator stopped without finishing the run')
+    context.board.progress(context.run_id, context.task_id, context.agent_id, STOPPED_UNFINISHED)
+    context.board.move(context.run_id, context.task_id, to_state='needs_human')
+
+
+class CoordinatorStopped(RuntimeError):
+    """The run coordinator ended its session without ``finish``: a crash, never its task sent to a person."""
 
 
 def entry() -> None:  # pragma: no cover - the image's entry script

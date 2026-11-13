@@ -117,7 +117,14 @@ describe('agent write tools', () => {
   // Workflow writes take a complete, bounded definition.
   it.each<[string, unknown, boolean]>([
     ['the sample', SAMPLE_WORKFLOW, true],
-    ['an unknown schema version', { ...SAMPLE_WORKFLOW, schema: 'voc-workflow/2' }, false],
+    ['an unknown schema version', { ...SAMPLE_WORKFLOW, schema: 'voc-workflow/3' }, false],
+    // An engineering flow's shape (its rules are the agents Lambda's: validate_workflow).
+    ['an engineering flow', { ...SAMPLE_WORKFLOW, schema: 'voc-workflow/2', nodes: [
+      { id: 'n_start', type: 'start', position: { x: 0, y: 0 }, data: { title: 'Start' } },
+      { id: 'n_hunt', type: 'agent', position: { x: 0, y: 100 }, data: { title: 'Hunt', params: { role: 'hunter' } } },
+      { id: 'n_end', type: 'end', position: { x: 0, y: 200 }, data: { title: 'End' } },
+    ], edges: [{ id: 'e1', source: 'n_start', target: 'n_hunt' }, { id: 'e2', source: 'n_hunt', target: 'n_end' }],
+    loops: [] }, true],
     ['no nodes', { ...SAMPLE_WORKFLOW, nodes: [] }, false],
     ['a partial definition', { name: 'partial', nodes: SAMPLE_WORKFLOW.nodes }, false],
     ['an unknown node type', { ...SAMPLE_WORKFLOW, nodes: [{ ...SAMPLE_WORKFLOW.nodes[0], type: 'shell' }] }, false],

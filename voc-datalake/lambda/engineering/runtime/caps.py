@@ -10,8 +10,8 @@ An agent runs as long as its task needs and it makes progress. These are the onl
 - ``pause_after``: a MicroVM's 8-hour life is handled by continuation: at 7 h 30 by default (or earlier,
   when the agent announces a step longer than what is left) the agent is asked to pause; one that has
   not acknowledged by ``hard_stop`` (7 h 50) is treated as a crash, so no MicroVM reaches its limit.
-- ``max_crash_continuations``: a crash is continued this many times in a row; then the task goes back
-  to the board (or, for the conductor, the run to a person).
+- ``max_crash_continuations``: a crash (a running agent's new MicroVM that will not start among them) is continued
+  this many times in a row; then the task goes back to the board (or, for the conductor, the run to a person).
 - ``wake_grace``: a MicroVM woken for a message (``delivery.py``) is not suspended again for an open wait for
   this long, so its harness reads its inbox and closes the wait first.
 

@@ -29,7 +29,7 @@ once).
 from __future__ import annotations
 
 import contextlib
-from collections import Counter, defaultdict
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Final
@@ -93,9 +93,16 @@ class Supervisor:
 
     def tick(self, now: int) -> dict[str, int]:
         """One pass over every live session; the number of sessions in each status afterwards."""
-        by_run: dict[str, list[AgentSession]] = defaultdict(list)
-        for session in self.sessions.active():
-            by_run[session.run_id].append(session)
+        by_run: dict[str, list[AgentSession]] = {}
+        for run_id, every in self.sessions.watched():
+            live = [session for session in every if session.status in LIVE_STATUSES]
+            if live:
+                by_run[run_id] = live
+            try:
+                self._coordinator_lost(run_id, every, now)
+            except Exception:
+                logger.exception('engineering supervisor: a run\'s coordinator could not be checked',
+                                 extra={'run_id': run_id})
         statuses: Counter[str] = Counter()
         for run_id, run_sessions in by_run.items():
             try:
@@ -105,6 +112,25 @@ class Supervisor:
                 logger.exception('engineering supervisor: a run could not be checked', extra={'run_id': run_id})
                 statuses.update(session.status for session in run_sessions)
         return dict(statuses)
+
+    def _coordinator_lost(self, run_id: str, sessions: list[AgentSession], now: int) -> None:
+        """Ask for a person again when the run's newest coordinator failed and the run is still active: the session
+        was ended as failed but sending the run to a person did not land (``_crashed``), and nothing else would ask.
+        Only from the sessions the tick read already, and one read of the coordinate task's lease when its newest
+        coordinator failed: none while another coordinator is live or moving, nor once a Resume re-posted the task
+        for a new one (its attempt moved on; that one may still be booting)."""
+        coordinators = [session for session in sessions if session.role == 'coordinator']
+        if not coordinators or any(session.status in LIVE_STATUSES or (session.claimed_until or 0) >= now
+                                   for session in coordinators):
+            return
+        newest = max(coordinators, key=lambda session: (session.task_attempt, session.started_at))
+        if newest.status != 'failed':
+            return   # (done, or a person's Shut down or Stop now: never replaced, the run stays theirs)
+        lease = self.board.lease(run_id, newest.task_id)
+        if lease is None or lease.attempt != newest.task_attempt or lease.final_state:
+            return
+        if self.control.is_active(run_id):
+            self.control.needs_human(run_id, 'coordinator')
 
     def _stopping(self, run_id: str, now: int) -> bool:
         # An ended run first: it is past any decision point, the 30-day one included.
@@ -467,8 +493,11 @@ class Supervisor:
             return self._continue(session, now, crashed=True)
         self._emit(session, 'run', 'failed', f'{session.agent_id} crashed {session.crashes + 1} times.')
         if session.role == 'coordinator':
+            # Its session failed first, then the run goes to a person: a Resume landing between the two then finds
+            # the coordinator failed and replaces it, never a session still kept (and nothing to replace).
+            ended = self._end(session, 'failed', now)
             self.control.needs_human(session.run_id, 'coordinator')
-            return self._end(session, 'failed', now)
+            return ended
         self.board.repost(session.run_id, session.task_id, 'crashed', attempt=session.task_attempt)
         return self._end(session, 'reposted', now)
 
@@ -488,7 +517,21 @@ class Supervisor:
         self._terminate(session)
         restore = self.checkpoints.latest(session.run_id, session.agent_id, session.commit, session.task_attempt)
         spec = session.spec(restore, self.workspace_bucket, self.board_url)
-        vm = self._vm_call(lambda: self.runtime.run(spec))
+        try:
+            vm = self._vm_call(lambda: self.runtime.run(spec))
+        except MicroVmCallFailed:
+            # A crash whose new MicroVM will not start counts as one more crash (every crash is a running agent's),
+            # so one that never starts is escalated like an agent that keeps crashing (its task re-posted, a
+            # coordinator's run sent to a person), never tried again on every tick. Any other continuation leaves
+            # the row as it was: a pause's comes back here as a crash once its failures add up, and an agent held
+            # without a MicroVM is tried again (a wake's once-per-wait mark is not spent by a start that failed).
+            if crashed:
+                try:
+                    self._save(replace(session, crashes=session.crashes + 1))
+                except Exception:
+                    logger.exception('engineering supervisor: a failed start could not be counted as a crash',
+                                     extra={'run_id': session.run_id, 'agent_id': session.agent_id})
+            raise
         continued = replace(session.on(vm, now, restore), crashes=session.crashes + 1 if crashed else 0,
                             microvm_seconds=session.microvm_seconds + self._elapsed(session, now))
         try:

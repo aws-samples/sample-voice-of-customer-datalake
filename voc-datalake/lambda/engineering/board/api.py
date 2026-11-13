@@ -20,7 +20,11 @@ refused (409) before an agent is numbered. The coordinator claims the run's ``co
 (``BoardStore.coordinate_items``, in the start's transaction with META, which records the run's ``commit`` and
 ``connection``; a run started without them answers 409 to ``launch`` and ``knowledge``, since no retry can succeed).
 ``knowledge`` takes the caller's ``task_id`` and reads that one task's row: the caller must hold its live lease.
-Each change is published on the bus as the board (``task.*``), after the row is
+The run's start launches the coordinator itself (``coordinator-1``, the runtime's ``start_run``); this op launches
+the rest. A coordinator acts only while it is the run's: every op of the coordinator role first checks the caller is
+the coordinate task's recorded coordinator at the task's attempt (403 "the run has another coordinator now" for one
+the runtime replaced, ``BoardStore.launch_coordinator``). Each change is published on the bus as the board
+(``task.*``), after the row is
 written: the row is the record, the event a notification. A failed publish answers 503 and the agent retries; every
 operation is idempotent, and the event's id comes from the change itself, so the retry publishes the same event again
 (a redelivery its receivers dedupe), including a retried post the board answered from its ``spec_hash`` dedupe. A
@@ -29,7 +33,8 @@ retried progress report is a new report (its time is part of it).
 The supervisor re-posts a task whose lease ran out with ``repost_task`` (through its ``Board.repost`` port,
 engineering/runtime/board_bus.py): the store's ``repost``, then the task published again as
 ``task.posted`` to its role, so the delivery function records it for the role's agents to read (it wakes
-nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away.
+nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away. The coordinate task is
+written only: no role reads a ``task.posted`` for it.
 """
 from __future__ import annotations
 
@@ -45,7 +50,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.inbox import MAX_LIMIT, Inbox
 from engineering.board.model import EVENT_OF, FINAL, OPEN, Task
-from engineering.board.store import COORDINATOR, BoardError, BoardStore
+from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
 from engineering.bus.schema import ROLES, Message, MessageError, Party, Refs, fit_summary
 from engineering.connectors.identity import WORKSPACE, Caller, UnknownCaller, caller_from_event, own_account
@@ -57,7 +62,7 @@ from engineering.runtime.egress import REGISTRY_HOSTS
 from engineering.runtime.harness.skills import skill_for
 from engineering.runtime.interface import MAX_TASK_PATHS, RuntimeRefused
 from engineering.workspace.layout import LayoutError
-from shared.logging import logger
+from shared.logging import logger, metrics
 
 BOARD_SOURCE = 'voc.engineering/board'
 MAX_TITLE = 200
@@ -147,9 +152,13 @@ def repost_task(store: BoardStore, publisher: EventBridgePublisher, ws: str, run
     ``task.posted``: bus/senders.py), so each service role publishes as one source.
 
     A retry after a lost event finds the task already open at the next attempt, and publishes it again (the same
-    change, so the same event: a redelivery). A task that moved on (a newer claim) is refused: ``BoardError``."""
+    change, so the same event: a redelivery). A task that moved on (a newer claim) is refused: ``BoardError``.
+
+    The coordinate task is re-posted with no ``task.posted``: no role's agents read one for it (only the coordinator
+    recorded on it claims it, ``BoardStore.launch_coordinator``), and the bus has no queue role ``coordinator``."""
     task = store.repost(ws, run_id, task_id, reason=reason, attempt=attempt)
-    publisher.publish(replace(_event(task, run_id), sender=Party('supervisor', 'supervisor')))
+    if task.task_id != COORDINATE_TASK:
+        publisher.publish(replace(_event(task, run_id), sender=Party('supervisor', 'supervisor')))
     return task
 
 
@@ -365,8 +374,9 @@ class BoardApi:
             pack = self.knowledge.for_agent(WORKSPACE, connection, package or ROOT)
         except PackError as exc:
             if exc.kind != 'invalid':
-                # An approved version whose object is missing or denied, or whose row changed (PackNotFound,
-                # PackConflict): the store's fault, so 503 (try again), never "none approved" nor the caller's.
+                # An approved version whose object is missing, denied or unreadable, or whose row changed
+                # (PackNotFound, PackUnavailable, PackConflict): the store's fault, so 503 (try again), never "none
+                # approved" nor the caller's.
                 raise BoardError('unavailable', 'the knowledge pack cannot be read right now') from exc
             raise BoardError('invalid', f'"package" is not a package with a knowledge pack: {exc}'[:MAX_TITLE]) from exc
         except LayoutError as exc:
@@ -436,8 +446,26 @@ class BoardApi:
                                            to_state=_text(body, 'to'), result_keys=keys))
         raise BoardError('invalid', 'op is post, claim, renew, progress, move, inbox, knowledge, tasks or launch')
 
+    def _current_coordinator(self, caller: Caller) -> None:
+        """A coordinator acts only while it is the run's: the coordinate task's recorded coordinator at the task's
+        attempt. Once the task is re-posted (and a new coordinator recorded on it, ``BoardStore.launch_coordinator``),
+        the replaced one's session is refused every op, its claim included. A run whose start wrote no coordinate
+        task (the runtime before its merge) has only its start's coordinator, so the role is all there is to check."""
+        try:
+            task = self.store.task(WORKSPACE, caller.run_id, COORDINATE_TASK)
+        except BoardError as exc:
+            if exc.kind != 'not_found':
+                raise
+            return
+        # (A read before the op: an op racing a re-post can still go through once; the coordinate task's claim, the
+        # one that would give it the run again, repeats the check in its own write, BoardStore.claim.)
+        if (task.launched_agent, task.launched_attempt) != (agent_id(caller), task.attempt):
+            raise BoardError('forbidden', 'the run has another coordinator now: this one stops')
+
     def handle_request(self, caller: Caller, raw_body: Any) -> dict[str, Any]:
         try:
+            if caller.role == COORDINATOR:
+                self._current_coordinator(caller)
             body = _object(raw_body)
             direct = self._direct(caller, body)
             if direct is not None:
@@ -495,6 +523,7 @@ def _from_environment() -> BoardApi:
                     images=frozenset(filter(None, os.environ.get('ENGINEERING_IMAGE_LANGUAGES', '').split(','))))
 
 
+@metrics.log_metrics   # (the workspace store's count of denied reads taken as missing, from `knowledge`)
 def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
     global _api   # the warm container's clients, built once
     try:

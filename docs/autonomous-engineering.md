@@ -68,8 +68,13 @@ stack). Designed for them from day one.
   the checkouts, and the cache filler (a step that runs no repository code: fetch only, from the lockfile, install
   scripts off) writes the dependency caches. A toolchain whose dependency resolution runs build files (Gradle, Maven)
   gets no shared dependency cache: its resolution counts as repository code with network (the registry list only,
-  nothing customer-derived, no credential), in the sandbox, for that run only. No MicroVM that
-  runs repository code writes to the cache.
+  nothing customer-derived, no credential), in the sandbox, for that run only. Gradle runs without its daemon
+  (`GRADLE_OPTS=-Dorg.gradle.daemon=false` in the Java image), whose client talks to it over loopback, which the
+  dependency step's code firewall rejects; a build that asks for a JVM other than the client's
+  (`org.gradle.jvmargs`, which many repositories set, `org.gradle.java.home`, daemon JVM criteria) still forks a
+  single-use daemon, and worker processes talk over loopback too, which is rejected as well (unverified in a
+  MicroVM: such a repository's dependency step may fail; making loopback usable there is a design change to the
+  firewall). No MicroVM that runs repository code writes to the cache.
 
 ## Repository connectors
 
@@ -342,7 +347,20 @@ What exists:
   started without its commit or connection answers 409 to `launch` and `knowledge`, with that reason: only a new
   run's start records them, so no retry can succeed),
   never posted, and claimed only by the run's coordinator, which renews and reports progress on it like
-  any agent. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
+  any agent. It records the coordinator the start launches on it (`coordinator-1`, with META's `agent_count` 1
+  written in the same transaction, so the board's launches number from 2). A new coordinator for it is recorded only
+  by the run's trusted code (`BoardStore.launch_coordinator`: the task open at the attempt given, the next
+  `coordinator-<n>`, a retry reusing it), never by a board op: a person's Resume of a run whose coordinator is gone
+  re-posts the task at the attempt it was at and then calls it ([Runtime](#runtime-one-microvm-per-agent)). A
+  coordinator acts only while it is the run's: every board op of the coordinator role checks the caller is the
+  coordinate task's recorded coordinator at the task's attempt, so a replaced coordinator's session is refused (403)
+  by the board from the re-post on, its claim included; a run whose start wrote no coordinate task has only its
+  start's coordinator, so there the role is the check. The board alone checks it: the connectors broker and the
+  bus source (`voc.engineering/conductor/<ws>/<run>`) still take the role. The runtime replaces only a coordinator
+  whose session failed, whose MicroVM the supervisor ended with it; if that end failed (it is logged), the old
+  MicroVM can still reach the broker and speak from its bus source until its idle policy ends it, and only the
+  board refuses it. The coordinate task's re-post
+  publishes no `task.posted` (no role reads one for it). A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
   its role, language and paths, the role one with a skill, the language one this deployment has a MicroVM image
   for (`-c engineeringImageArns`) and the paths by the checkout's own rule, all checked before an agent is
@@ -353,11 +371,11 @@ What exists:
   the same agent, and a re-posted task, at its new attempt, a new one; a task no longer open is refused before the
   runtime is asked). The runtime's refusals (a bad request, a run not active or stopped, a session busy, the agent's
   session there for another task or attempt) answer 409 with their message; a bad request or another task's session clears the
-  task's recorded launch (the runtime answers a repeat with its session, and one while the first still starts as
-  busy, before any other check, so such a refusal means no session and no launch of the agent exist) with a `launch_refused` history row, so the next launch numbers a new
-  agent with the settings it gives then (a busy session, or a run not active, keeps it); the runtime answers a
-  repeat before any other check, so a repeat of a launch whose session got
-  through gets that session (200); anything else 503. A launch is started once: the board waits for the runtime's answer up to 100 s, within its own 120 s limit,
+  task's recorded launch with a `launch_refused` history row, so the next launch numbers a new agent with the
+  settings it gives then (a busy session, or a run not active, keeps it). The runtime answers a repeat with its
+  session, and one while the first still starts as busy, before any other check: such a refusal so means no session
+  and no launch of the agent exist, and a repeat of a launch whose session got through gets that session (200);
+  anything else 503. A launch is started once: the board waits for the runtime's answer up to 100 s, within its own 120 s limit,
   and its client never retries the call itself; the runtime holds the agent's row (`launching_until`, one
   conditional write) before it starts the MicroVM, so a repeat for the same task and attempt answers the session the
   first one wrote, and one while the first still starts its MicroVM is refused as busy (409), never a second MicroVM.
@@ -366,7 +384,7 @@ What exists:
   the approved knowledge pack (`knowledge` `{task_id, package}`, as data) of one of its task's paths (the spec's
   `paths` and the ones its agent was launched on) or of the root (`''`, the knowledge store's `.`), never another's:
   the board reads that one task's row and checks the caller holds its live lease; a package the store
-  cannot key is a 400, and an approved version whose object is missing or whose row changed a 503. Each change is published
+  cannot key is a 400, and an approved version whose object is missing or unreadable, or whose row changed, a 503. Each change is published
   on the bus as the board's `task.*` event after the row is written. A failed publish answers 503, and the retry
   publishes the same event again. Each post, claim and move also writes a `TASKLOG#<task>#<at>#<state>` row in the
   same transaction (the actor and the operation; no past state is overwritten; a renewal or a progress report is
@@ -374,7 +392,11 @@ What exists:
   task's history; a result key a move records must be one of the caller's own workspace objects of the lease's attempt.
 - **The workspace** (`workspace/`): the key layout below, voc-finding/1 shard lines (`workspace/findings.py`: a line
   off the schema is skipped and counted; credential-shaped strings and personal data are redacted) and the store
-  (bounded reads, create-only writes). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
+  (bounded reads, a cut read logged; create-only writes; its readers without ListBucket, the report builder, the
+  Agents API and the board's `knowledge`, take a denied read as missing, and each such read is logged and counted
+  as the `EngineeringWorkspaceDeniedReads` metric; a plain missing object counts too, as it is denied as well (a
+  failed attempt's result, or a report version that was counted and never written when someone opens it), so a
+  broken policy shows as the count rising well above its usual level). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
   encrypted with the stack's key, versioned, access-logged, kept under `-c protectData`), where nothing expires
   until a retention that writes its `AUDIT#delete` row exists (*planned*; "The workspace" further down this
   section). The runtime's agents write their checkpoints and patches there, each under its own keys
@@ -398,8 +420,7 @@ What exists:
 
 Not built yet: the rest of the harness's side (its broker interface still refuses every call:
 [Runtime](#runtime-one-microvm-per-agent), "Not aligned yet"); the skills of the roles other than the coordinator
-(the board's launch of such a role is refused, 409); the run coordinator's own launch (the run's start,
-or whoever starts it, is to launch it on its `coordinate` task, and again after a re-post); a person's board actions
+(the board's launch of such a role is refused, 409); a person's board actions
 (POST),
 planned as the run monitor's board controls; the agents' findings in the workspace (the runtime writes their
 checkpoints and patches there). The rest of this section is the
@@ -535,19 +556,26 @@ an engineering flow is a workflow of schema `voc-workflow/2` (start, end and the
 `reduce`, `board`, `quality_gate`, `learning_loop`, `self_improvement`, `memory`, `stop_at_pr`), held to the rules
 above (every map meets one reduce on every way out, a quality gate's GO and NO-GO arrows with NO-GO to the human
 decision point, a committer or PR author ends only at a stop at PR or a human decision point); the Agents API saves
-and validates one, keeps each workflow's kind, lists both kinds in `GET /workflows` (each with its `kind`) and keeps
+and validates one (a new one only where the engineering module is deployed, 409 elsewhere; one already saved
+anywhere), keeps each workflow's kind, lists both kinds in `GET /workflows` (each with its `kind`) and keeps
 engineering flows out of every agent ([docs/autonomous-agents.md](autonomous-agents.md)). The quality gate step's
 settings are the gate's own (`max_rounds`, `packs`, `final_go_model`, `reviewers`). The web app's workflow editor
 builds them: an Engineering palette, each step's settings and the graph rules as you edit (held to the server by a
-shared fixture). *Planned*: the six default flows as templates.
+shared fixture); its library offers New engineering flow only where the module is deployed (`config.json`
+`features.engineering`). *Planned*: the six default flows as templates.
 
 **From the assistant.** Describing a flow ("every night, hunt bugs in the payments package and open PRs for the ones
-you can fix") makes the AI assistant draft it in the editor behind an approval card, like its other writes; "refresh
-the knowledge pack", "pull the latest from the repository" and "what is agent X doing" work from the assistant too,
-through the same REST routes and MCP tools as everything else (tenet 4).
+you can fix") makes the AI assistant draft it behind an approval card, like its other writes: its workflow tools
+(`validate_workflow`, `create_workflow`, `update_workflow`) take a `voc-workflow/2` definition with the engineering
+steps, the agents API's `POST /workflows/validate` judges its rules, and a new one is created only where the
+deployment has the engineering module (the API's 409; the web app's card checks `features.engineering` first, as the
+library's New engineering flow and the editor's Save as do). *Planned*:
+"refresh the knowledge pack", "pull the latest from the repository" and "what is agent X doing" from the assistant
+too, through the same REST routes as everything else (an engineering run's reads are administrators-only, so no MCP
+tool while an MCP token never acts as an administrator: TENETS.md's tenet 4 gap).
 
 **The run monitor.** The run view shows every agent's status and where it is in the flow (the editor's graph with the
-live step highlighted), the board and the conversation. Inspecting an agent shows its current step, its last progress,
+live step highlighted), the board, the conversation and the run's reports (each version's Markdown). Inspecting an agent shows its current step, its last progress,
 its heartbeat's age, its MicroVM's state and age, its recent tool calls and, when it looks stuck, why (no progress for
 N minutes, the same step repeated). A person can message the run coordinator or an agent as a participant, and send
 signals: Save (checkpoint now), Pause, Resume, Shut down (checkpoint, then stop) and Stop now. Stop now is the
@@ -655,7 +683,10 @@ to it from its tags; `from.kind` `coach`) among them. Not aligned yet (the runti
   function URL, `VOC_BOARD_URL`, signed as the agent's own session for the `lambda` service; the brief is the
   holder's claim, whose lease epoch goes with every heartbeat, progress report and move: in progress once briefed,
   done when the agent finishes; a session that ends without its finish (two
-  answers without a tool; a CLI ending cleanly) sends its task to a person (needs a human), never done; the inbox is read after a cursor, each notice kept once by its event id,
+  answers without a tool; a CLI ending cleanly) sends its task to a person (needs a human), never done, its last
+  progress report saying why (the run coordinator's is a crash instead, which the supervisor continues and then
+  sends the run to a person, whose Resume replaces it: a coordinate task with a person would leave the run with
+  nobody planning it); the inbox is read after a cursor, each notice kept once by its event id,
   `signal.save` and `signal.pause` acted on, anything else shown as data. A checkpoint holds no message: its cursor
   stops before the oldest one taken and not yet done, with every id done its continuation can meet again. A save or
   a pause is done once acted on; any other message once the model saved its notes after having it (the Converse
@@ -800,8 +831,29 @@ continues it in a new one once the wait closes.
 - **The run's start and end.** The runtime's `start_run` writes the run's `META` row in voc-engineering
   (`WS#<ws>#RUN#<run>` / `META`: its task cap, which the board counts its tasks against, its hard caps on tokens and
   cost, its goal, repository, flow, status and start time, its connection and base commit, which the board's
-  launch starts the run's agents on, never taken from an agent, on which the router numbers the conversation) once, and
-  lists it for the supervisor (`WS#<ws>#RUNS`, a row per run, in the same transaction); `end_run` sets its status
+  launch starts the run's agents on, never taken from an agent, its language (the repository's toolchain image),
+  on which the router numbers the conversation) once, with its `coordinate` task, and
+  lists it for the supervisor (`WS#<ws>#RUNS`, a row per run, in the same transaction). It then launches the run's
+  coordinator on that task, for a run started with its connection, commit and language: `coordinator-1`, the run's
+  first agent (META's `agent_count` starts at 1, so the board numbers the agents it launches from 2), on the
+  coordinator's skill's harness; a retried start of an active run launches it only if no session of it exists yet, so a start whose
+  launch failed launches it on its retry. The coordinator's launch follows the board's launch rules: a first start
+  whose coordinator could not be launched (the role with no skill, a language this deployment has no MicroVM image
+  for, `-c engineeringImageArns`) is refused before anything is written, and a Resume that would number a new
+  coordinator checks the same before it re-posts or numbers anything; the runtime's `launch` answers a repeat
+  from its session and refuses one while another launch of the coordinator still starts before any other check
+  (a start that meets one is refused as busy, `SessionBusy`, the run written and the record kept, so it asks
+  again; a Resume logs it and still answers; a Resume whose new coordinator is refused or whose MicroVM fails to start
+  logs it and sends the run back to a person, as a start does); a refusal that means no session and no
+  launch of it exist (a bad request, or its session there for another task or attempt) clears the coordinator
+  recorded on the `coordinate` task with a `launch_refused` history row, so the next start or Resume numbers a new
+  one (a start raises the refusal, a Resume logs it, since the Resume itself was applied), while a failure of the
+  MicroVM service keeps the record. A start whose coordinator then does not launch (refused, or its MicroVM did not
+  start) sends the run to a person (the `coordinator` decision point, the run monitor's Resume prompt) and raises
+  the failure, so a run is never left active with no coordinator and no session; that person's Resume launches it.
+  A coordinator a person shut down or stopped is never replaced: the run stays active, with no coordinator, until a
+  person ends it or resumes that agent (the run monitor shows the coordinator's own status in its Agents panel, and
+  says nothing more about it yet); `end_run` sets its status
   (`done`, `failed` or `stopped`) and end time, ends every MicroVM of it, and the run stops being listed once none
   of its agents is live (one busy with another move is ended by the next tick, which sees the run ended). A retried
   start or end does what the first one left undone. After that first write only the run's own attributes are ever
@@ -809,8 +861,27 @@ continues it in a new one once the wait closes.
   in the same write as the agent's row, so a run that ends meanwhile gets no agent nothing supervises. The
   supervisor reads its caps, its spend (its agents' tokens and what was priced on their rows), its start and its
   end from there; a human decision point is the run's status, and a Resume of the whole run makes it active again
-  (never the 30-day one, which offers only "stop"). An agent's tokens are those of every MicroVM it ran in, not
-  only the current one's.
+  (never the 30-day one, which offers only "stop", nor replaced by another decision point). A Resume of the whole
+  run also makes sure it has a coordinator, as its start does: the one its `coordinate` task records is left alone
+  while its session is live or held (the Resume continues a held one) or a person ended it (a Shut down or Stop
+  now stays final), started if it has none yet, and replaced if its session failed (it kept crashing, which is what
+  sent the run to a person): the task re-posted at its attempt
+  (the store's re-post alone: no `task.posted`, since only the coordinator recorded next claims it), a new
+  `coordinator-<n>` recorded at the next attempt by `BoardStore.launch_coordinator` with the person as its actor,
+  and its MicroVM started. The board refuses the old one every coordinator op from the re-post on; its MicroVM was
+  ended with its session, and if that end failed (logged), it can still reach the broker and its bus source until
+  its idle policy ends it: only the board refuses it. If sending the run to a person fails after the session was
+  ended as failed, each later tick asks again while the run is active and that failed coordinator is still the
+  coordinate task's (from the sessions the tick reads anyway, and that task's one row). Every change of the
+  run's status (its start, its end, a decision point, a Resume) records who made it and when (D4): a row of its
+  own, in the same transaction as META's change (`RUNLOG#<at>#<status>#<hex>`, a random suffix: the status, the actor, the reason,
+  the time), so the run's history is more than its last state; a change that loses a race with another write of
+  META is tried again. The actor is the request's `actor` (its printable text), `unattributed` when it names
+  nobody, or `supervisor` for the decision points it sets. The run monitor sends the person's id with its signals,
+  so a person's Resume is theirs; no caller of `start_run` or `end_run` sends one yet, so a start or end is
+  `unattributed` until one does. A decision point asked for again, for the same reason (the supervisor asks on every
+  tick while a budget stays spent), changes nothing and writes no row. An agent's tokens are those of every MicroVM
+  it ran in, not only the current one's.
 - **Sessions.** One row per agent of a run, the board's own `AGENT#<agent>` row in the run's partition: ids, times,
   the MicroVM's id and endpoint, the boot step, the continuation count, the checkpoint it restored from, the run
   monitor's inspection data, the live cost counters and what the reports read (role, model, skill version, MicroVM
@@ -877,8 +948,10 @@ continues it in a new one once the wait closes.
   number, after a pause or a crash, the checkpoint). An agent pausing itself the same way, before a step longer
   than its MicroVM has left, is *planned* (the harness has no such tool yet). One that has not paused by 7 h 50 is treated as a crash, on an open wait too; one asked to pause for a long wait
   whose checkpoint does not come within 3 minutes is held as waiting, without its MicroVM, from its last checkpoint. A crash (an exit other than 0
-  and 75, a lapsed lease) is continued twice in a row at most, then the task is re-posted (the run coordinator: the
-  run goes to a person). Any number of continuations otherwise.
+  and 75, a lapsed lease, a running agent's new MicroVM that will not start) is continued twice in a row at most,
+  then the task is re-posted (the run coordinator: the run goes to a person). Any number of continuations
+  otherwise; an agent held without a MicroVM whose new one will not start is tried again at its next wake, tick or
+  Resume.
 - **Checkpoints.** An agent saves each checkpoint as a new object, in the workspace's layout under its task's commit
   and attempt (which its launch names),
   `ws/<ws>/runs/<run>/<agent>/commits/<sha>/_checkpoints/attempt-<n>/<seq>-<nonce>.json`: its position, plan, notes
@@ -939,14 +1012,15 @@ continues it in a new one once the wait closes.
 ## Reports
 
 *Partly built*: the builder (`voc-datalake/lambda/engineering/reports/`, the `voc-engineering-reports` Lambda,
-deployed only with `-c engineeringAgents=true`) and the administrators' reads through REST
-([above](#how-the-agents-work-together); no MCP tool while the reads are admin-only). A report (voc-report/1) is built from what the run recorded: its `META`,
+deployed only with `-c engineeringAgents=true`), the administrators' reads through REST
+([above](#how-the-agents-work-together); no MCP tool while the reads are admin-only) and the run monitor's Reports
+panel in the web app (each report's versions as Markdown, [docs/autonomous-agents.md](autonomous-agents.md)). A report (voc-report/1) is built from what the run recorded: its `META`,
 each agent's metering (`AGENT#`: skill version, model, MicroVM-seconds, tokens, metered cost), the conversation's
 count, the board's tasks and their history, and only the workspace objects their result keys name (never a listing).
 The PR report takes the quality gate's record only from an ended final-go task under the PR's head commit, checked
 against the gate's own shapes before its Markdown goes into the description. Every version is new (an atomic
 counter, create-only objects, D1). Not built yet: its callers (the run coordinator's closing task, the supervisor,
-the write broker before it opens a PR: nothing invokes it, and no role holds an invoke on it), the run view, and
+the write broker before it opens a PR: nothing invokes it, and no role holds an invoke on it), and
 "what the agents learned" and "what improved since the last run". The design:
 
 - **Commit report**: what the commit changes and why (its task), the gate packs' results, each review round's
@@ -1179,4 +1253,4 @@ and the phase that ships them names them in that row.
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, nothing invoking them yet ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, nothing invoking them yet (same place); the coach and the benchmark gate planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)) and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents and the six default flows planned |
-| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)); the templates, live cost, skill histories, the reports' view and the assistant drafting flows planned |
+| 5 | the UI: the templates and new steps in the editor, the run monitor (graph, board, conversation, live cost), skill histories and scorecards, the reports, the assistant drafting flows | in progress: the new steps in the editor, and the run monitor (the flow with its agents' steps lit, the board, the conversation, each agent as the supervisor saw it, an administrator's signals and answers, the reports with their versions; polling, no cost yet: [docs/autonomous-agents.md](autonomous-agents.md)), and the assistant drafting flows behind its approval card ([above](#how-the-agents-work-together)); the templates, live cost, skill histories and the assistant's run tools planned |

@@ -245,6 +245,15 @@ def test_the_cli_ends_done_once_it_finished(tmp_path):
     assert _cli(tmp_path, popen=popen, sleep=lambda _s: None).run(w.session) == 'done'
     assert started['cwd'].startswith(str(tmp_path / 'home' / 'cli'))
     assert not os.path.exists(started['cwd'])
+    # Its tool server's finish moved the task: main.py does not send it to a person.
+    assert w.session.finished_elsewhere is True
+
+
+def test_a_cli_that_ends_cleanly_without_its_finish_is_done_but_not_finished(tmp_path):
+    w = world(tmp_path)
+    assert _cli(tmp_path, popen=lambda _argv, **_kwargs: FakeProcess(2), sleep=lambda _s: None).run(w.session) == 'done'
+    # Nothing moved the task: main.py sends it to a person, as for two answers without a tool.
+    assert w.session.finished_elsewhere is False
 
 
 def test_a_pause_during_the_cli_checkpoints_its_last_notes_and_ends_it(tmp_path):

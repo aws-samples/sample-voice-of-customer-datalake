@@ -12,7 +12,7 @@ import pytest
 
 from engineering.runtime.caps import Timings
 from engineering.runtime.checkpoints import checkpoint_prefix
-from engineering.runtime.interface import Command, MicroVm, RuntimeRefused
+from engineering.runtime.interface import AgentSpec, Command, MicroVm, RuntimeRefused
 from engineering.runtime.launcher import Launcher, RunStopped
 from engineering.runtime.ports import Budget, Lease
 from engineering.runtime.runs import RunCaps
@@ -168,12 +168,82 @@ def test_a_crashing_agent_is_continued_twice_then_its_task_is_reposted(world: Wo
     assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'crashed')]
 
 
+def test_an_agent_whose_new_microvm_never_starts_is_escalated_not_retried_forever(
+        world: World, monkeypatch: pytest.MonkeyPatch):
+    world.launch(code='import sys; sys.exit(1)')
+    _until(world, 1000, lambda s: s.status == 'working')
+
+    def down(_spec: AgentSpec) -> MicroVm:
+        raise RuntimeError('the MicroVM service refused the start')
+
+    monkeypatch.setattr(world.runtime, 'run', down)   # every continuation's start fails from now on
+    ended = _until(world, 1000, lambda s: s.status == 'reposted')
+    assert ended.crashes == T.max_crash_continuations
+    assert world.board.reposted == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB/task-1', 'crashed')]
+
+
 def test_a_run_coordinator_that_keeps_crashing_goes_to_a_person_not_to_the_board(world: World):
     world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code='import sys; sys.exit(1)')
     ended = _until(world, 1000, lambda s: s.status == 'failed', agent_id='coordinator-0')
     assert ended.status == 'failed'
     assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'coordinator')]
     assert not world.board.reposted
+
+
+def test_a_crashed_coordinators_session_has_failed_before_its_run_goes_to_a_person(world: World):
+    """A Resume landing between the two finds the coordinator failed (and replaces it), never a session kept."""
+    world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code='import sys; sys.exit(1)')
+    seen: list[str] = []
+    recorded = world.control.needs_human
+
+    def needs_human(run_id: str, reason: str) -> None:
+        seen.append(world.session('coordinator-0').status)
+        recorded(run_id, reason)
+
+    world.control.needs_human = needs_human   # type: ignore[method-assign]
+    _until(world, 1000, lambda s: s.status == 'failed', agent_id='coordinator-0')
+    assert seen == ['failed']
+
+
+def test_a_coordinators_decision_point_that_failed_to_land_is_asked_for_again_on_the_next_tick(world: World):
+    """The session ended as failed, then sending the run to a person threw: no coordinator, and the run active."""
+    world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code='import sys; sys.exit(1)')
+    recorded, calls = world.control.needs_human, []
+
+    def flaky(run_id: str, reason: str) -> None:
+        calls.append(reason)
+        if len(calls) == 1:
+            raise RuntimeError('the run table was unavailable')
+        recorded(run_id, reason)
+
+    world.control.needs_human = flaky   # type: ignore[method-assign]
+    for _ in range(300):   # until the crash continuations are spent and the first ask threw
+        world.renew(1000, agent_id='coordinator-0', task_id='coordinate')
+        world.supervisor.tick(1000)
+        if calls:
+            break
+    assert (world.session('coordinator-0').status, world.control.humans) == ('failed', [])
+    world.supervisor.tick(1000)   # the next tick asks again, from the sessions it reads anyway
+    assert world.control.humans == [('01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'coordinator')]
+    world.supervisor.tick(1000)   # and only once: the run now waits at its decision point
+    assert calls == ['coordinator', 'coordinator']
+
+
+def test_a_failed_coordinator_replaced_or_ended_by_a_person_asks_for_nobody(world: World):
+    world.launch(agent_id='coordinator-0', role='coordinator', task_id='coordinate', code='import sys; sys.exit(1)')
+    session = world.session('coordinator-0')
+    world.store.save(replace(session, status='failed'))
+    # A Resume re-posted the coordinate task for a new coordinator (still booting): its attempt moved on.
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/coordinate'] = replace(
+        world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/coordinate'], agent_id='', attempt=2)
+    world.supervisor.tick(1000)
+    assert world.control.humans == []
+    # A coordinator a person stopped is theirs: the run stays active, nobody is asked.
+    world.store.save(replace(world.session('coordinator-0'), status='stopped'))
+    world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/coordinate'] = replace(
+        world.board.leases['01JD3R4NZXQ7Y2W8K4M6P9T0AB/coordinate'], attempt=1)
+    world.supervisor.tick(1000)
+    assert world.control.humans == []
 
 
 def test_a_lost_lease_is_a_crash(world: World):

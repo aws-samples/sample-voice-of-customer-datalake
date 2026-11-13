@@ -8,7 +8,8 @@
  * @module components/WorkflowEditor/ParamsFields
  */
 import { useTranslation } from 'react-i18next'
-import { END_STATUSES, ENGINEERING_NODE_TYPES, REVIEW_TARGETS } from '../../api/workflowsApi'
+import { ENGINEERING_NODE_TYPES } from '@stream/assistant/tools/agent-limits'
+import { END_STATUSES, REVIEW_TARGETS } from '../../api/workflowsApi'
 import { LabeledField } from '../LabeledField/LabeledField'
 import { EngineeringParamsFields } from './EngineeringParamsFields'
 import type { WorkflowNode } from '../../api/workflowsApi'

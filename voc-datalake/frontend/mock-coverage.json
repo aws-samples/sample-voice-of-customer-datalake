@@ -604,6 +604,26 @@
   },
   {
     "file": "api/engineeringRunsApi.ts",
+    "method": "GET",
+    "call": "engineeringRunPath(runId, '/reports')",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/reports"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
+    "method": "GET",
+    "call": "engineeringRunPath(runId, path)",
+    "probes": [
+      {
+        "path": "/agents/engineering/01JDA7K3M9Q2R5T8V0W4X6Y1Z3/reports/goal/01JDA7K3M9Q2R5T8V0W4X6Y1Z3?version=2"
+      }
+    ]
+  },
+  {
+    "file": "api/engineeringRunsApi.ts",
     "method": "POST",
     "call": "engineeringRunPath(runId, '/signals')",
     "probes": [

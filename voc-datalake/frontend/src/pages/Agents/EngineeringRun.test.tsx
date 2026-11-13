@@ -1,6 +1,6 @@
 /**
  * @fileoverview The run monitor of an engineering run: its header (no cost yet), the flow with the agents' steps lit,
- * the Agents, Board and Conversation panels, an admin's signals (at the attempt the board shows; Stop now asks first;
+ * the Agents, Board, Conversation and Reports panels (each report's versions, as Markdown only), an admin's signals (at the attempt the board shows; Stop now asks first;
  * a moved-on attempt says to reload) and answers (to the conductor, or on the thread replied to), a non-admin's
  * read-only view, and the page for a run that is not there.
  */
@@ -13,7 +13,7 @@ import { TestRouter } from '@test/TestRouter'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi as route, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
 import { engineeringBoard, engineeringFlowView, engineeringMessage, engineeringOverview } from '@test/engineeringRunFixtures'
 import { ApiError } from '../../lib/errors'
-import { liveSteps } from './engineeringRunText'
+import { groupsInOrder, liveSteps } from './engineeringRunText'
 import { parseOverview } from '../../api/engineeringRunsApi'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
@@ -103,6 +103,105 @@ describe('the run monitor', () => {
   })
 })
 
+describe('the reports', () => {
+  const SHA = 'a'.repeat(40)
+  const index = () => ({ items: [
+    { level: 'commit', subject: SHA, latest_version: 1 },
+    { level: 'goal', subject: 'RUN1', latest_version: 2 },
+    { level: 'later', subject: 'x' },   // (a bad entry costs itself)
+  ] })
+  const report = (version: number) => ({ report: { version, built_at: '2026-11-12T09:00:00Z' },
+    markdown: `# Goal report\n\nVersion ${version}\n\n<script>alert(1)</script>` })
+
+  const openGoal = async (extra: Record<string, Handler> = {}) => {
+    routes({ [`GET ${BASE}/reports`]: index, [`GET ${BASE}/reports/goal/RUN1?version=2`]: () => report(2), ...extra })
+    renderRun()
+    await userEvent.click(await screen.findByRole('tab', { name: /Reports/ }))
+    const goal = await screen.findByRole('region', { name: 'Goal' })
+    await userEvent.click(within(goal).getByRole('button', { name: 'RUN1 (v2)' }))
+    await screen.findByText('Version 2')
+  }
+
+  it('lists them by level, goal first, and shows the latest version of the one chosen as Markdown only', async () => {
+    await openGoal()
+    const levels = within(screen.getByRole('tabpanel')).getAllByRole('region')
+    expect(levels.map((region) => region.getAttribute('aria-label')).slice(0, 2)).toStrictEqual(['Goal', 'Commits'])
+    expect(within(screen.getByRole('region', { name: 'Commits' })).getByText(`${SHA} (v1)`)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Goal report' })).toBeInTheDocument()
+    // Markdown only: the raw HTML in a report is never rendered.
+    expect(document.querySelector('script')).toBeNull()
+  })
+
+  it('reads an earlier version when it is picked, once', async () => {
+    const first = vi.fn(() => report(1))
+    await openGoal({ [`GET ${BASE}/reports/goal/RUN1?version=1`]: first })
+    await userEvent.selectOptions(screen.getByLabelText('Version'), 'v1')
+    expect(await screen.findByText('Version 1')).toBeInTheDocument()
+    expect(first.mock.calls).toHaveLength(1)
+  })
+
+  it('says when no report is written yet', async () => {
+    routes({ [`GET ${BASE}/reports`]: () => ({ items: [] }) })
+    renderRun()
+    await userEvent.click(await screen.findByRole('tab', { name: /Reports/ }))
+    expect(await screen.findByText('No report has been written yet.')).toBeInTheDocument()
+  })
+
+  it('says an earlier version that was never written (404) is so, with no retry', async () => {
+    await openGoal({ [`GET ${BASE}/reports/goal/RUN1?version=1`]: () => { throw new ApiError(404, 'no') } })
+    await userEvent.selectOptions(screen.getByLabelText('Version'), 'v1')
+    expect(await screen.findByText(/This version was never written/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Retry|Try again/ })).toBeNull()
+  })
+
+  it('reads a 404 of the latest version (which was written) as a failed read, with a retry', async () => {
+    routes({
+      [`GET ${BASE}/reports`]: index,
+      [`GET ${BASE}/reports/commit/${SHA}?version=1`]: () => { throw new ApiError(404, 'no') },
+    })
+    renderRun()
+    await userEvent.click(await screen.findByRole('tab', { name: /Reports/ }))
+    await userEvent.click(await screen.findByRole('button', { name: `${SHA} (v1)` }))
+    expect(await screen.findByText(/This report could not be read/)).toBeInTheDocument()
+    expect(screen.queryByText(/never written/)).toBeNull()
+  })
+
+  it('lists a level the page does not know after the known ones, by its name', async () => {
+    routes({ [`GET ${BASE}/reports`]: () => ({ items: [...index().items, { level: 'audit', subject: 'x', latest_version: 1 }] }) })
+    renderRun()
+    await userEvent.click(await screen.findByRole('tab', { name: /Reports/ }))
+    await screen.findByRole('region', { name: 'audit' })
+    const levels = within(screen.getByRole('tabpanel')).getAllByRole('region')
+    expect(levels.map((region) => region.getAttribute('aria-label'))).toStrictEqual(['Goal', 'Commits', 'audit'])
+  })
+})
+
+describe('the reports while the run is under way', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('follows the latest: a newer version the index shows is read, the one on screen kept until it comes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const index = { latest: 2 }
+    const gate: { open?: () => void } = {}
+    const third = { promise: new Promise<void>((resolve) => { gate.open = resolve }) }
+    const report = (version: number) => ({ report: { built_at: '' }, markdown: `Version ${version}` })
+    routes({
+      [`GET ${BASE}/reports`]: () => ({ items: [{ level: 'goal', subject: 'RUN1', latest_version: index.latest }] }),
+      [`GET ${BASE}/reports/goal/RUN1?version=2`]: () => report(2),
+      [`GET ${BASE}/reports/goal/RUN1?version=3`]: async () => { await third.promise; return report(3) },
+    })
+    renderRun()
+    await userEvent.click(await screen.findByRole('tab', { name: /Reports/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'RUN1 (v2)' }))
+    await screen.findByText('Version 2')
+    index.latest = 3
+    await vi.advanceTimersByTimeAsync(16_000)
+    expect([await screen.findByRole('option', { name: 'Latest (v3)' }), screen.getByText('Version 2')]).toHaveLength(2)
+    gate.open?.()
+    expect(await screen.findByText('Version 3')).toBeInTheDocument()
+  })
+})
+
 describe('an admin acts on the run', () => {
   it('pauses the agent on a task at the attempt the board shows', async () => {
     const signal = vi.fn((_body: unknown) => ({ signal: { event_id: 'e', signal: 'pause', agents: { 'fixer-1': 'pause_requested' }, applied: { 'fixer-1': true } } }))
@@ -112,6 +211,23 @@ describe('an admin acts on the run', () => {
     await userEvent.click(within(fixer).getByRole('button', { name: 'Pause — Agent fixer-1' }))
     await waitFor(() => expect(signal).toHaveBeenCalledWith({ signal: 'pause', task_id: 'task-1', attempt: 2 }))
     expect(await screen.findByText('Sent. fixer-1: Pause requested')).toBeInTheDocument()
+  })
+
+  it('reads the run again after a signal, but not its reports (a signal writes none)', async () => {
+    const reads = vi.fn(() => ({ items: [] }))
+    routes({
+      [`POST ${BASE}/signals`]: () => ({ signal: { event_id: 'e', signal: 'save', agents: {}, applied: {} } }),
+      [`GET ${BASE}/reports`]: reads,
+    })
+    renderRun()
+    await userEvent.click(await screen.findByRole('tab', { name: /Reports/ }))
+    await screen.findByText('No report has been written yet.')
+    const overviewReads = () => fetchApi.mock.calls.filter(([endpoint]) => endpoint === BASE).length
+    const before = overviewReads()
+    const run = screen.getByRole('group', { name: 'The whole run' })
+    await userEvent.click(within(run).getByRole('button', { name: 'Save — The whole run' }))
+    await waitFor(() => expect(overviewReads()).toBeGreaterThan(before))
+    expect(reads.mock.calls).toHaveLength(1)
   })
 
   it('says which agents a signal did nothing to', async () => {
@@ -216,6 +332,13 @@ describe('who may act', () => {
     renderRun()
     await screen.findByRole('heading', { name: 'Fix the paging bugs' })
     expect(screen.queryByRole('group', { name: 'The whole run' })).toBeNull()
+  })
+})
+
+describe('groupsInOrder', () => {
+  it('keeps the page\'s order for the groups present, then the unknown ones by name, each once', () => {
+    expect(groupsInOrder(['goal', 'pr', 'commit'], ['commit', 'later', 'goal', 'commit', 'audit']))
+      .toStrictEqual(['goal', 'commit', 'audit', 'later'])
   })
 })
 

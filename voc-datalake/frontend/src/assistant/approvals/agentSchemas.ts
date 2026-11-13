@@ -12,9 +12,10 @@
  */
 import { z } from 'zod'
 import {
-  AGENT_BUDGET_RULES, AGENT_LIMITS, WORKFLOW_LIMITS, WORKFLOW_SCHEMA_VERSION,
+  AGENT_BUDGET_RULES, AGENT_LIMITS, WORKFLOW_LIMITS, WORKFLOW_SCHEMA_V2, WORKFLOW_SCHEMA_VERSION,
 } from '@stream/assistant/tools/agent-limits'
 import { buildAgentFieldsShape } from '../../api/agentsApi'
+import { isEngineeringAvailable } from '../../runtimeConfig'
 import { buildWorkflowDefinitionSchema } from '../../api/workflowsApi'
 import { hasAnyKey, idSchema } from './schemas'
 import { nonEmpty } from '@stream/assistant/tools/client/text-schemas'
@@ -33,8 +34,20 @@ const STREAM_AGENT_LIMITS: AgentLimits = { ...AGENT_LIMITS, ...AGENT_BUDGET_RULE
 const MAX_CHANGE_SUMMARY = 500
 const changeSummary = nonEmpty(MAX_CHANGE_SUMMARY)
 
-// The assistant drafts agents workflows only (its server tools take voc-workflow/1); engineering flows are the editor's.
-const approvalWorkflowDefinitionSchema = buildWorkflowDefinitionSchema(STREAM_WORKFLOW_LIMITS, idSchema, [WORKFLOW_SCHEMA_VERSION])
+/** Either kind of workflow, as the stream's schema takes them. */
+const approvalWorkflowDefinitionSchema = buildWorkflowDefinitionSchema(
+  STREAM_WORKFLOW_LIMITS, idSchema, [WORKFLOW_SCHEMA_VERSION, WORKFLOW_SCHEMA_V2],
+)
+
+/**
+ * A NEW engineering flow (`voc-workflow/2`) only where the deployment has the engineering module (config.json
+ * `features.engineering`, owner decision 28), as the library's New engineering flow button; one already saved is
+ * changed anywhere, as in the editor. Read when the card is checked, so the deployment's config decides.
+ */
+const newWorkflowDefinitionSchema = approvalWorkflowDefinitionSchema.refine(
+  (definition) => definition.schema !== WORKFLOW_SCHEMA_V2 || isEngineeringAvailable(),
+  { message: 'engineering flows are created only where the engineering module is deployed', path: ['schema'] },
+)
 
 const agentFields = buildAgentFieldsShape(STREAM_AGENT_LIMITS, idSchema)
 
@@ -54,7 +67,7 @@ export const agentActionArgs = z.strictObject({ agent_id: idSchema })
 
 export const cancelAgentRunArgs = z.strictObject({ agent_id: idSchema, run_id: idSchema })
 
-export const createWorkflowArgs = z.strictObject({ definition: approvalWorkflowDefinitionSchema })
+export const createWorkflowArgs = z.strictObject({ definition: newWorkflowDefinitionSchema })
 
 export const updateWorkflowArgs = z.strictObject({
   workflow_id: idSchema,

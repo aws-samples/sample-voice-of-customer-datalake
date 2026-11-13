@@ -134,6 +134,12 @@ describe('agent executors', () => {
       .rejects.toThrow(STALE_WORKFLOW_MESSAGE)
   })
 
+  it('a copy of an engineering flow where the module is off (409) says why, and that nothing was created', async () => {
+    fetchApi.mockRejectedValue(new Error('API Error: 409'))
+    await expect(setup().run('duplicate_workflow', { workflow_id: 'wf_eng' }))
+      .rejects.toThrow('copied only where the engineering module is deployed; nothing was created')
+  })
+
   it('run_agent while a run is active (409) says nothing was started', async () => {
     fetchApi.mockRejectedValue(new Error('API Error: 409'))
     await expect(setup().run('run_agent', { agent_id: 'ag_1' })).rejects.toThrow('already has a run in progress')

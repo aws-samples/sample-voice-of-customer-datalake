@@ -20,12 +20,9 @@ import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
-// The deployment's engineering module (config.json `features.engineering`).
-const engineering = vi.hoisted(() => ({ available: true }))
-vi.mock('../../runtimeConfig', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../../runtimeConfig')>(),
-  isEngineeringAvailable: () => engineering.available,
-}))
+vi.mock('../../runtimeConfig', (importOriginal) =>
+  import('@test/engineeringModule').then((m) => m.runtimeConfigModule(importOriginal)))
+const { engineeringModule: engineering } = await import('@test/engineeringModule')
 
 const { WorkflowLibrary } = await import('./WorkflowLibrary')
 const { default: WorkflowPage } = await import('./WorkflowPage')
@@ -138,6 +135,15 @@ describe('Workflow page', () => {
     expect(await screen.findByText('Saved as “Research flow (copy)”.')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/agents/workflows/wf_2')
     expect(screen.queryByRole('dialog', { name: 'Unsaved changes' })).not.toBeInTheDocument()
+  })
+
+  it.each([true, false])('offers Save as on a saved engineering flow only with the module (%s), Save either way', async (available) => {
+    engineering.available = available
+    const flow = workflowView(2, { ...emptyDefinition('Bug hunt'), schema: 'voc-workflow/2' })
+    renderAt('/agents/workflows/wf_1', { 'GET /workflows/wf_1': () => flow })
+    expect(await screen.findByRole('button', { name: 'Export' })).toBeInTheDocument()
+    expect([screen.queryByRole('button', { name: 'Save as…' }) !== null, screen.queryByRole('button', { name: 'Save' }) !== null])
+      .toStrictEqual([available, true])
   })
 })
 

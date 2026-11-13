@@ -455,6 +455,12 @@ def _create_from(raw: object, derived_from: str | None) -> Response:
     definition = _valid_definition(raw)
     if isinstance(definition, Response):
         return definition
+    if definition['schema'] == workflow_schema.SCHEMA_V2 and not engineering_agents_on():
+        # Every way to a new workflow comes here (POST /workflows: New, the editor's Save as, an imported draft saved
+        # as new, the assistant's create card; and the assistant's …/duplicate): a NEW engineering flow only where the
+        # module is deployed (owner decision 28, held on the server too); one already saved keeps working.
+        raise ConflictError('engineering flows are created only where the engineering agents module is deployed: '
+                            'an engineering flow already saved still opens and saves')
     created = store.create_workflow(_agents_table(), definition, created_by=caller.subject,
                                     username=caller.username, now=store.utc_now(), derived_from=derived_from)
     logger.info('Workflow created', extra={'workflow_id': created['workflow_id']})

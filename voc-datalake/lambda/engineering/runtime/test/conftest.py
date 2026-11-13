@@ -94,6 +94,10 @@ class FakeControl:
     def needs_human(self, run_id: str, reason: str) -> None:
         self.humans.append((run_id, reason))
 
+    def is_active(self, run_id: str) -> bool:
+        """Active until stopped or sent to a person (a Resume is the test's to model)."""
+        return run_id not in self.stops and all(run != run_id for run, _reason in self.humans)
+
 
 def quick_checkout(_commit: str, _paths: Sequence[str]) -> list[Command]:
     """A checkout that needs no cache: one command that writes the file a harness can look for."""

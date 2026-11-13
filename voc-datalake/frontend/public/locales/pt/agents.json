@@ -747,9 +747,27 @@
     "tabs": {
       "agents": "Agentes",
       "board": "Quadro",
-      "conversation": "Conversa"
+      "conversation": "Conversa",
+      "reports": "Relatórios"
     },
-    "panels": "Os agentes, o quadro e a conversa da execução",
+    "panels": "Os agentes, o quadro, a conversa e os relatórios da execução",
+    "reports": {
+      "title": "Relatório: {{subject}}",
+      "version": "Versão",
+      "latest": "Mais recente (v{{n, number}})",
+      "versionN": "v{{n, number}}",
+      "builtAt": "Gerado {{when}}",
+      "readFailed": "Não foi possível ler este relatório.",
+      "missing": "Esta versão nunca foi escrita (a sua geração não terminou). Escolha outra versão.",
+      "loadFailed": "Não foi possível carregar os relatórios.",
+      "none": "Nenhum relatório foi escrito ainda.",
+      "entry": "{{subject}} (v{{n, number}})",
+      "levels": {
+        "goal": "Objetivo",
+        "pr": "Pull requests",
+        "commit": "Commits"
+      }
+    },
     "flow": "O fluxo da execução, com os passos em que estão os seus agentes",
     "noFlow": "Não foi possível ler o fluxo da execução: mostra-se o resto.",
     "notFound": "Execução de engenharia não encontrada",

@@ -199,7 +199,7 @@ def test_an_admin_signals_the_agent_on_a_task_at_the_attempt_seen(lambda_context
     assert body['signal']['applied'] == {'fixer-1': True}
     (invoked,) = actions.runtime.requests
     assert json.loads(invoked['Payload']) == {'action': 'signal', 'run_id': RUN, 'signal': 'pause',
-                                              'agent_id': 'fixer-1', 'attempt': 1}
+                                              'agent_id': 'fixer-1', 'attempt': 1, 'actor': 'admin-sub'}
     entry, _outcome = actions.bus.entries
     assert (entry['Source'], entry['DetailType']) == ('voc.engineering/api', 'signal.pause')
     assert 'by alice' in json.loads(entry['Detail'])['summary']

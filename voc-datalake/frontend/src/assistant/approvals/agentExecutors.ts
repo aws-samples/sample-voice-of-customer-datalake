@@ -79,8 +79,18 @@ export async function updateWorkflow(args: UpdateWorkflowArgs, ctx: WriteToolExe
   }
 }
 
+/**
+ * The duplicate's only 409: a copy of an engineering flow where the deployment has no engineering module
+ * (agents_handler `_create_from`; the store's `create_workflow` raises no conflict of its own, a new id each time).
+ */
+const ENGINEERING_COPY_OFF = 'Engineering flows are copied only where the engineering module is deployed; nothing was '
+  + 'created (the flow itself still opens and saves).'
+
 export async function duplicateWorkflow(args: DuplicateWorkflowArgs, ctx: WriteToolExecutionContext) {
-  const view = await workflowsApi.duplicate(args.workflow_id, args.name)
+  const view = await workflowsApi.duplicate(args.workflow_id, args.name).catch((error: unknown) => {
+    if (apiErrorStatus(error) === 409) throw new StaleApprovalError(ENGINEERING_COPY_OFF)
+    throw error
+  })
   void invalidateKeys(ctx.queryClient, keysFor.workflows())
   return { summary: `Copied workflow ${args.workflow_id} to "${view.name}" (${view.workflow_id}).`, data: { workflow_id: view.workflow_id } }
 }

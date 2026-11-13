@@ -9,18 +9,21 @@ only the supervisor's types (``bus/senders.py``): the signals to an agent, ``run
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Any, Final, Literal
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 from engineering.board.api import repost_task
 from engineering.board.model import FINAL, OPEN
-from engineering.board.store import LEASE_S, BoardError, BoardStore
+from engineering.board.store import COORDINATE_TASK, LEASE_S, BoardError, BoardStore
 from engineering.bus.publish import EventBridgePublisher, new_event_id
 from engineering.bus.schema import Message, Party, fit_summary
 from engineering.connectors.identity import WORKSPACE
 from engineering.quality_gate.text import redact
 from engineering.runtime.ports import Lease
+from shared.logging import logger
 
 #: The supervisor's source on the bus (bus/senders.py).
 SOURCE: Final = 'voc.engineering/supervisor'
@@ -31,6 +34,9 @@ TYPES: Final = {
     'failed': 'run.agent_failed',
 }
 _SUPERVISOR: Final = Party('supervisor', 'supervisor')
+#: An agent's session as ``BoardLeases.coordinator_to_start`` asks after it: ``failed`` (it kept crashing), ``none``
+#: yet, or ``kept`` (live, held, or ended by a person's Shut down or Stop now or by its task: never replaced).
+SessionState = Literal['kept', 'failed', 'none']
 
 
 class BoardLeases:
@@ -43,7 +49,7 @@ class BoardLeases:
     def lease(self, run_id: str, task_id: str) -> Lease | None:
         """The task's lease (an open task's has no holder, only its attempt), or None for no task."""
         if not task_id:
-            return None  # the run coordinator holds no task
+            return None  # a session with no task (the run coordinator's is ``coordinate``, read like any other)
         try:
             task = self.store.task(WORKSPACE, run_id, task_id)
         except BoardError as error:
@@ -88,6 +94,57 @@ class BoardLeases:
                     raise
             return
         repost_task(self.store, self.publisher, WORKSPACE, run_id, task_id, reason, attempt)
+
+    def coordinator_to_start(self, run_id: str, session: Callable[[str], SessionState], *,
+                             actor: str, launchable: Callable[[], None] = lambda: None) -> tuple[str, int] | None:
+        """The run coordinator the runtime is to start, and its task's attempt, or None when the run has one (or no
+        coordinate task, or one that ended). ``session(agent)`` says whether that agent's session ``failed``, has
+        ``none`` yet, or is ``kept`` as it is. ``launchable()`` raises what the launch would refuse (no skill, no
+        image): it runs before a re-post or a new ``coordinator-<n>`` is numbered, as the board's launch op checks
+        before it numbers an agent, so a refused Resume uses up none of the run's agent numbers.
+
+        The coordinate task's coordinator is its holder, or the one recorded as launched at its attempt (the run's
+        start records ``coordinator-1``). One with no session yet (a fresh start, or a start whose MicroVM failed) is
+        started as it is. One whose session failed (it kept crashing, so the run went to a person) is replaced: the
+        task re-posted at its attempt, a new ``coordinator-<n>`` recorded at the next (``launch_coordinator``, which
+        the board then checks every coordinator op against, so the old one is refused from the re-post on; its
+        MicroVM ended with its session). A retry finds the new one recorded, with no session or a live one."""
+        try:
+            task = self.store.task(WORKSPACE, run_id, COORDINATE_TASK)
+        except BoardError as error:
+            if error.kind == 'not_found':
+                return None
+            raise
+        if task.state in FINAL:
+            return None
+        recorded = task.launched_agent if task.launched_attempt == task.attempt else ''
+        holder = task.lease_agent if task.state != OPEN else recorded
+        state = session(holder) if holder else 'none'
+        if state == 'kept':
+            return None   # live or held, or a person ended it (a Shut down or Stop now stays final)
+        if holder and state == 'none' and task.state == OPEN:
+            return holder, task.attempt
+        launchable()
+        if holder:
+            # The store's re-post alone, never published: a task.posted is for the role that claims a task, and the
+            # coordinate task is claimed only by the coordinator recorded next (the bus has no coordinator queue).
+            task = self.store.repost(WORKSPACE, run_id, COORDINATE_TASK, reason=f'{holder} is gone: a new coordinator',
+                                     attempt=task.attempt, actor=actor)
+        launched = self.store.launch_coordinator(WORKSPACE, run_id, attempt=task.attempt, actor=actor)
+        return launched.launched_agent, launched.attempt
+
+    def clear_coordinator(self, run_id: str, agent_id: str, attempt: int, *, actor: str, reason: str) -> None:
+        """Forget the coordinator recorded on the coordinate task after the runtime refused its launch (the board's
+        ``CLEARS_LAUNCH`` rule: no session and no launch of it exist), so the next start or Resume numbers a new one.
+        Only that record, at that attempt (a task that moved on is left as it is); a ``launch_refused`` history row
+        says who and why (D4). A failure here is logged, never raised: the caller raises the runtime's refusal."""
+        try:
+            task = self.store.task(WORKSPACE, run_id, COORDINATE_TASK)
+            if task.launched_agent == agent_id and task.attempt == attempt == task.launched_attempt:
+                self.store.clear_launch(WORKSPACE, run_id, task, actor=actor, reason=reason)
+        except (BoardError, ClientError, BotoCoreError):
+            logger.exception('engineering runtime: a refused coordinator launch could not be cleared',
+                             extra={'run_id': run_id, 'agent_id': agent_id})
 
 
 class SupervisorBus:

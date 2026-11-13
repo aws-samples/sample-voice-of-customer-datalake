@@ -7,12 +7,15 @@ from typing import Any
 import boto3
 import pytest
 
+from engineering.board.store import COORDINATE_TASK, BoardError, BoardStore
 from engineering.bus.test.messages import message
+from engineering.connectors.identity import WORKSPACE
 from engineering.runtime import handler
 from engineering.runtime.aws import AwsMicroVmRuntime
 from engineering.runtime.board_bus import SupervisorBus
+from engineering.runtime.harness.skills import COORDINATOR, harness_argv
 from engineering.runtime.interface import AgentSpec, MicroVm, RuntimeRefused
-from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, run_pk
+from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, meta_key, run_pk
 from engineering.runtime.sessions import LAUNCH_HOLD_SECONDS, StaleSession
 from engineering.runtime.supervisor import SessionBusy
 from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE, WORKSPACE_BUCKET
@@ -31,6 +34,9 @@ LAUNCH = {'action': 'launch', 'run_id': '01JD3R4NZXQ7Y2W8K4M6P9T0AB', 'agent_id'
 BUS = 'voc-engineering'
 #: The board API's function URL the agents are handed.
 BOARD_URL = 'https://abc123def.lambda-url.us-east-1.on.aws/'
+#: The deployment's MicroVM images (the local fake runs every language; the handler's checks read these).
+IMAGE_ARNS = {'python': 'arn:aws:lambda:us-east-1:123456789012:microvm-image/python',
+              'java': 'arn:aws:lambda:us-east-1:123456789012:microvm-image/java'}
 
 @pytest.fixture
 def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
@@ -39,6 +45,7 @@ def wired(aws: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch) -> Any:
     for name, value in {'RAW_DATA_BUCKET': BUCKET, 'ENGINEERING_WORKSPACE_BUCKET': WORKSPACE_BUCKET, 'ENGINEERING_TABLE': TABLE,
                         'SUPERVISOR_RULE_NAME': SCHEDULE, 'ENGINEERING_AGENT_ROLE_ARNS': json.dumps(ROLE_ARNS),
                         'ENGINEERING_BUS_NAME': BUS, 'ENGINEERING_BOARD_URL': BOARD_URL,
+                        'ENGINEERING_IMAGE_ARNS': json.dumps(IMAGE_ARNS),
                         'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_REGION': 'us-east-1'}.items():
         monkeypatch.setenv(name, value)
     for client in ('_dynamodb_resource', '_s3_client', '_lambda_client', '_eventbridge_client'):
@@ -300,9 +307,397 @@ def test_a_retried_start_or_end_finishes_what_the_first_one_left(wired: Any):
     assert (_runs().listed(), _state(wired)) == ([], 'DISABLED')
 
 
+#: The run's first agent, the coordinator its coordinate task records.
+COORDINATOR_AGENT = 'coordinator-1'
+COORDINATED = {'action': 'start_run', 'run_id': OTHER_RUN, 'max_tasks': 5, 'goal': 'fix the parser',
+               'connection': 'conn-1', 'commit': COMMIT, 'language': 'python'}
+
+
+def test_a_runs_start_launches_its_coordinator_on_its_coordinate_task(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _runtime, started = _recording(monkeypatch)
+    assert handler.lambda_handler(COORDINATED, None) == {'run_id': OTHER_RUN, 'status': 'active'}
+    session = handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT)
+    assert session is not None
+    assert (session.role, session.task_id, session.task_attempt, session.paths, session.connection, session.commit,
+            session.language, session.harness) == ('coordinator', COORDINATE_TASK, 1, (), 'conn-1', COMMIT, 'python',
+                                                    harness_argv(COORDINATOR))
+    assert [vm.agent_id for vm in started] == [COORDINATOR_AGENT]
+    # The coordinator is the run's first agent: the board numbers the agents it launches from 2.
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    meta = table.get_item(Key=meta_key(OTHER_RUN)).get('Item')
+    assert meta is not None
+    assert (meta['agent_count'], meta['language']) == (1, 'python')
+
+
+def test_a_retried_start_keeps_the_coordinator_it_launched(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    handler.lambda_handler(COORDINATED, None)
+    _runtime, started = _recording(monkeypatch)
+    handler.lambda_handler(COORDINATED, None)
+    assert started == []   # no second MicroVM, not even one ended again
+
+
+def test_two_starts_racing_launch_one_coordinator(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    handler.lambda_handler(COORDINATED, None)
+    first = handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT)
+    runtime, started = _recording(monkeypatch)
+    assert runtime is not None
+    with monkeypatch.context() as patch:
+        # The second start read no session before the first one's write: the launch's hold refuses it as busy
+        # before any MicroVM starts (ask again; a retry then finds the first one's session).
+        patch.setattr(handler._supervisor().sessions, 'get', lambda *_args: None)
+        with pytest.raises(SessionBusy):
+            handler.lambda_handler(COORDINATED, None)
+    assert started == []
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) == first
+    assert handler.lambda_handler(COORDINATED, None) == {'run_id': OTHER_RUN, 'status': 'active'}
+    assert started == []
+
+
+def test_a_start_racing_a_coordinator_launch_still_under_way_is_busy_and_keeps_the_record(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _runs().start(OTHER_RUN, caps=RunCaps(max_tasks=5), now=int(handler.clock()), connection='conn-1', commit=COMMIT,
+                  language='python')
+    # Another start's launch holds the coordinator's row while its MicroVM boots.
+    handler._supervisor().sessions.hold_launch(OTHER_RUN, COORDINATOR_AGENT, int(handler.clock()))
+    _runtime, started = _recording(monkeypatch)
+    with pytest.raises(SessionBusy, match='under way'):
+        handler.lambda_handler(COORDINATED, None)
+    assert (started, _coordinate_task().launched_agent) == ([], COORDINATOR_AGENT)
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.status == 'active'   # (never sent to a person: that launch under way is the run's coordinator)
+
+
+def test_a_resume_that_finds_the_new_coordinators_launch_under_way_still_answers(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _coordinator_gone()
+    # Another Resume's launch of the new coordinator holds it (its MicroVM still starting, or killed meanwhile).
+    handler._supervisor().sessions.hold_launch(OTHER_RUN, 'coordinator-2', int(handler.clock()))
+    _runtime, started = _recording(monkeypatch)
+    assert set(handler.lambda_handler(RESUME, None)) == {'agents', 'applied'}
+    assert (started, handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2')) == ([], None)
+
+
+def test_a_resume_whose_new_coordinator_fails_to_start_still_answers_and_a_resume_again_starts_it(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _coordinator_gone()
+    with monkeypatch.context() as patch:
+        patch.setattr(handler._supervisor().runtime, 'run', _service_down)
+        assert set(handler.lambda_handler(RESUME, None)) == {'agents', 'applied'}   # the Resume was applied
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    # Back at a person's decision point, as a start whose coordinator fails: never active with nobody planning it.
+    assert (run.status, handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2')) == ('needs_human', None)
+    rows = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE).query(
+        KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
+        ExpressionAttributeValues={':pk': meta_key(OTHER_RUN)['pk'], ':log': 'RUNLOG#'})['Items']
+    latest = max(rows, key=lambda row: str(row['sk']))
+    assert (latest['status'], latest['actor']) == ('needs_human', RESUME['actor'])   # (the person's, D4)
+    handler.lambda_handler(RESUME, None)
+    assert handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2') is not None
+
+
+def test_a_launch_whose_microvm_failed_leaves_a_run_out_hold_no_agent_in_the_facts_and_may_launch_again(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    from engineering.reports.facts import FactsReader
+    from engineering.rows import LAUNCH_HOLD
+    assert wired is not None
+    _start_whose_launch_fails(monkeypatch)
+    item = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE).get_item(
+        Key={'pk': run_pk(OTHER_RUN), 'sk': f'AGENT#{COORDINATOR_AGENT}'}).get('Item')
+    assert item is not None
+    assert (item[LAUNCH_HOLD], 'seq' in item) == (0, False)   # (a run-out hold, never a key-only row)
+    sessions = handler._supervisor().sessions
+    assert not sessions.launch_under_way(OTHER_RUN, COORDINATOR_AGENT, int(handler.clock()))
+    facts = FactsReader(boto3.client('dynamodb', region_name='us-east-1'), TABLE).read(WORKSPACE, OTHER_RUN)
+    assert facts is not None
+    assert facts.agents == ()
+    handler.lambda_handler(RESUME, None)   # the person's Resume takes the run-out hold and launches at once
+    assert sessions.get(OTHER_RUN, COORDINATOR_AGENT) is not None
+
+
+def test_a_launch_whose_session_write_and_terminate_both_fail_still_lets_go_of_its_hold(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    supervisor = handler._supervisor()
+
+    def no_session(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError('the session write failed')
+
+    def no_terminate(_vm: MicroVm) -> None:
+        raise RuntimeError('the terminate failed')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(supervisor.sessions, 'create', no_session)
+        patch.setattr(supervisor.runtime, 'terminate', no_terminate)
+        with pytest.raises(RuntimeError, match='terminate failed'):
+            handler.lambda_handler(LAUNCH, None)
+    assert not supervisor.sessions.launch_under_way(RUN, 'fixer-1', int(handler.clock()))
+    assert handler.lambda_handler(LAUNCH, None)['status'] == 'booting'
+
+
+def _service_down(_spec: AgentSpec) -> MicroVm:
+    """The MicroVM service failing a start: a failure, not a refusal, so a launch keeps its recorded agent."""
+    raise RuntimeError('the MicroVM service is unavailable')
+
+
+def _start_whose_launch_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A start that wrote the run, then failed to launch its coordinator (the MicroVM service was down)."""
+    with monkeypatch.context() as patch:
+        patch.setattr(handler._supervisor().runtime, 'run', _service_down)
+        with pytest.raises(RuntimeError, match='unavailable'):
+            handler.lambda_handler(COORDINATED, None)
+
+
+def _coordinate_task() -> Any:
+    return BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE, new_id=lambda: '').task(
+        WORKSPACE, OTHER_RUN, COORDINATE_TASK)
+
+
+def test_a_coordinator_launch_the_runtime_refuses_clears_its_record_so_a_retry_numbers_a_new_one(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    runtime = handler._supervisor().runtime
+
+    def refused(_spec: AgentSpec) -> MicroVm:
+        raise RuntimeRefused('no MicroVM image is configured for this language')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(runtime, 'run', refused)
+        with pytest.raises(RuntimeRefused, match='no MicroVM image'):
+            handler.lambda_handler(COORDINATED, None)
+    task = _coordinate_task()
+    assert (task.state, task.attempt, task.launched_agent) == ('open', 1, '')
+    moves = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE, new_id=lambda: '').history(
+        WORKSPACE, OTHER_RUN)[COORDINATE_TASK]
+    refusals = [(move.actor, move.reason) for move in moves if move.op == 'launch_refused']
+    # Nobody named: the run's history label (runs.UNATTRIBUTED), the same as its RUNLOG rows'.
+    assert refusals == [('unattributed', 'coordinator-1: no MicroVM image is configured for this language')]
+    # The run went to a person; their Resume numbers a new coordinator, as the board's launch does after a
+    # refusal it cleared.
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.status == 'needs_human'
+    handler.lambda_handler(RESUME, None)
+    assert (_coordinate_task().launched_agent, handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2')
+            is not None) == ('coordinator-2', True)
+
+
+def test_a_refused_coordinator_launch_whose_record_cannot_be_cleared_still_raises_the_refusal(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    assert wired is not None
+    runtime = handler._supervisor().runtime
+
+    def refused(_spec: AgentSpec) -> MicroVm:
+        raise RuntimeRefused('no MicroVM image is configured for this language')
+
+    def moved(*_args: Any, **_kwargs: Any) -> None:
+        raise BoardError('conflict', 'the task is no longer open at this attempt')
+
+    monkeypatch.setattr(runtime, 'run', refused)
+    monkeypatch.setattr(BoardStore, 'clear_launch', moved)
+    with pytest.raises(RuntimeRefused, match='no MicroVM image'):
+        handler.lambda_handler(COORDINATED, None)
+    assert 'could not be cleared' in caplog.text
+    assert _coordinate_task().launched_agent == COORDINATOR_AGENT
+
+
+def _unlaunchable(monkeypatch: pytest.MonkeyPatch, missing: str) -> str:
+    """The coordinator made unlaunchable (its role with no skill, or no image for the run's language); the refusal."""
+    if missing == 'skill':
+        monkeypatch.setattr(handler, 'skill_for', lambda _role: None)
+        return 'no coordinator can be launched'
+    monkeypatch.setenv('ENGINEERING_IMAGE_ARNS', json.dumps({'java': IMAGE_ARNS['java']}))
+    return 'no python image'
+
+
+@pytest.mark.parametrize('missing', ['skill', 'image'])
+def test_a_first_start_whose_coordinator_cannot_be_launched_is_refused_before_anything_is_written(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, missing: str):
+    assert wired is not None
+    with pytest.raises(RuntimeRefused, match=_unlaunchable(monkeypatch, missing)):
+        handler.lambda_handler(COORDINATED, None)
+    assert _runs().get(OTHER_RUN) is None
+
+
+@pytest.mark.parametrize('missing', ['skill', 'image'])
+def test_a_resume_whose_new_coordinator_cannot_be_launched_numbers_none_and_still_answers(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, missing: str):
+    assert wired is not None
+    board = _coordinator_gone()
+    _unlaunchable(monkeypatch, missing)
+    _runtime, started = _recording(monkeypatch)
+    assert set(handler.lambda_handler(RESUME, None)) == {'agents', 'applied'}
+    task = board.task(WORKSPACE, OTHER_RUN, COORDINATE_TASK)
+    # Neither re-posted nor numbered: the failed coordinator's task is as it was, the run's agent count too.
+    assert (task.attempt, task.launched_agent, started) == (1, COORDINATOR_AGENT, [])
+    meta = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE).get_item(Key=meta_key(OTHER_RUN)).get('Item')
+    assert meta is not None
+    assert meta['agent_count'] == 1
+
+
+def test_a_start_whose_coordinator_failed_to_launch_sends_the_run_to_a_person_whose_resume_launches_it(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _start_whose_launch_fails(monkeypatch)
+    # Never left active with no coordinator and no session: the run waits at the coordinator's decision point.
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    meta = table.get_item(Key=meta_key(OTHER_RUN)).get('Item')
+    assert meta is not None
+    assert (meta['status'], meta['needs_human']) == ('needs_human', 'coordinator')
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) is None
+    _runtime, started = _recording(monkeypatch)
+    assert handler.lambda_handler(COORDINATED, None)['status'] == 'needs_human'   # (a retried start launches nothing)
+    assert started == []
+    handler.lambda_handler(RESUME, None)
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) is not None
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.status == 'active'
+
+def test_a_retried_start_of_a_run_at_its_decision_point_launches_nothing(wired: Any, monkeypatch: pytest.MonkeyPatch):
+    _start_whose_launch_fails(monkeypatch)
+    _runs().needs_human(OTHER_RUN, 'budget', now=1)
+    _runtime, started = _recording(monkeypatch)
+    assert handler.lambda_handler(COORDINATED, None) == {'run_id': OTHER_RUN, 'status': 'needs_human'}
+    assert (started, _state(wired)) == ([], 'ENABLED')
+
+
+@pytest.mark.parametrize('missing', ['connection', 'commit', 'language'])
+def test_a_run_without_its_connection_commit_or_language_starts_without_a_coordinator(wired: Any, missing: str):
+    assert wired is not None
+    handler.lambda_handler({**COORDINATED, missing: ''}, None)
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) is None
+
+
+@pytest.mark.parametrize('without', [None, 'connection'], ids=['coordinated', 'no-connection'])
+def test_a_start_with_a_language_that_has_no_image_is_refused_before_anything_is_written(
+        wired: Any, without: str | None):
+    assert wired is not None
+    event = {**COORDINATED, 'language': 'cobol', **({without: ''} if without else {})}
+    with pytest.raises(RuntimeRefused, match='cobol'):
+        handler.lambda_handler(event, None)
+    assert _runs().get(OTHER_RUN) is None
+
+
+RESUME = {'action': 'signal', 'run_id': OTHER_RUN, 'signal': 'resume', 'actor': 'admin-1'}
+
+
+def _coordinator_gone(*, claimed: bool = True) -> BoardStore:
+    """A run whose coordinator kept crashing (after its claim, or before it): its session ended, the run at a
+    person."""
+    handler.lambda_handler(COORDINATED, None)
+    board = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE, new_id=lambda: 'unused')
+    if claimed:
+        board.claim(WORKSPACE, OTHER_RUN, COORDINATE_TASK, role='coordinator', agent=COORDINATOR_AGENT)
+    sessions = handler._supervisor().sessions
+    session = sessions.get(OTHER_RUN, COORDINATOR_AGENT)
+    assert session is not None
+    sessions.save(replace(session, status='failed'))
+    _runs().needs_human(OTHER_RUN, 'coordinator', now=1)
+    return board
+
+
+@pytest.mark.parametrize('claimed', [True, False], ids=['after-its-claim', 'before-its-claim'])
+def test_a_resume_of_a_run_whose_coordinator_is_gone_starts_a_new_one_on_a_new_attempt(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, claimed: bool):
+    assert wired is not None
+    board = _coordinator_gone(claimed=claimed)
+    _runtime, started = _recording(monkeypatch)
+    handler.lambda_handler(RESUME, None)
+    task = board.task(WORKSPACE, OTHER_RUN, COORDINATE_TASK)
+    assert (task.state, task.attempt, task.launched_agent, task.launched_attempt) == ('open', 2, 'coordinator-2', 2)
+    session = handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2')
+    assert session is not None
+    assert (session.task_attempt, session.harness, [vm.agent_id for vm in started]) == (
+        2, harness_argv(COORDINATOR), ['coordinator-2'])
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert run.status == 'active'
+    # Who asked is on the launch's history row.
+    moves = board.history(WORKSPACE, OTHER_RUN)[COORDINATE_TASK]
+    assert [(move.op, move.actor) for move in moves if move.op in ('repost', 'launch')] == [
+        ('repost', 'admin-1'), ('launch', 'admin-1')]   # (D4: the re-post is the person's Resume too)
+
+
+def test_a_resume_after_a_re_post_that_landed_without_its_new_coordinator_records_one_once(wired: Any):
+    assert wired is not None
+    board = _coordinator_gone()
+    # An earlier Resume re-posted the task and died before it recorded the new coordinator.
+    board.repost(WORKSPACE, OTHER_RUN, COORDINATE_TASK, reason='gone', attempt=1)
+    handler.lambda_handler(RESUME, None)
+    handler.lambda_handler(RESUME, None)
+    task = board.task(WORKSPACE, OTHER_RUN, COORDINATE_TASK)
+    assert (task.attempt, task.launched_agent, task.launched_attempt) == (2, 'coordinator-2', 2)
+    assert handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-3') is None
+
+
+# A Resume leaves a waiting session as it is (it waits for its wait), and a stopped one is final.
+@pytest.mark.parametrize('status', ['waiting', 'stopped'], ids=['held-for-its-wait', 'shut-down-by-a-person'])
+def test_a_resume_never_replaces_a_coordinator_held_or_ended_by_a_person(wired: Any, status: str):
+    assert wired is not None
+    handler.lambda_handler(COORDINATED, None)
+    sessions = handler._supervisor().sessions
+    session = sessions.get(OTHER_RUN, COORDINATOR_AGENT)
+    assert session is not None
+    sessions.save(replace(session, status=status))   # held for its wait, or a person's Shut down / Stop now
+    handler.lambda_handler(RESUME, None)
+    task = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE, new_id=lambda: '').task(
+        WORKSPACE, OTHER_RUN, COORDINATE_TASK)
+    assert (task.attempt, task.launched_agent) == (1, COORDINATOR_AGENT)
+    assert sessions.get(OTHER_RUN, 'coordinator-2') is None
+
+
+def test_a_resume_the_board_refuses_a_new_coordinator_still_answers_and_starts_none(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _coordinator_gone()
+    # The run launched as many agents as it may (the board's cap on agent_count).
+    boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE).update_item(
+        Key=meta_key(OTHER_RUN), UpdateExpression='SET agent_count = :all', ExpressionAttributeValues={':all': 999})
+    _runtime, started = _recording(monkeypatch)
+    answer = handler.lambda_handler(RESUME, None)
+    assert set(answer) == {'agents', 'applied'}
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert (run.status, started, handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2')) == (
+        'active', [], None)
+
+
+def test_a_retried_resume_keeps_the_new_coordinator_and_a_live_one_is_left_alone(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _coordinator_gone()
+    handler.lambda_handler(RESUME, None)
+    _runtime, started = _recording(monkeypatch)
+    handler.lambda_handler(RESUME, None)   # a retry, and any later Resume of the run while it has its coordinator
+    assert started == []
+    task = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE, new_id=lambda: '').task(
+        WORKSPACE, OTHER_RUN, COORDINATE_TASK)
+    assert (task.attempt, task.launched_agent) == (2, 'coordinator-2')
+
+
+def test_who_resumed_or_ended_a_run_is_recorded_with_the_change(wired: Any):
+    assert wired is not None
+    _runs().needs_human(RUN, 'budget', now=1)
+    handler.lambda_handler({'action': 'signal', 'run_id': RUN, 'signal': 'resume', 'actor': 'admin-2'}, None)
+    handler.lambda_handler({'action': 'end_run', 'run_id': RUN, 'status': 'stopped', 'actor': 'admin-1'}, None)
+    table = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE)
+    rows = table.query(KeyConditionExpression='pk = :pk AND begins_with(sk, :log)',
+                       ExpressionAttributeValues={':pk': meta_key(RUN)['pk'], ':log': 'RUNLOG#'})['Items']
+    assert sorted((str(row['status']), str(row['actor'])) for row in rows) == [
+        ('active', 'admin-2'), ('active', 'unattributed'), ('needs_human', 'supervisor'), ('stopped', 'admin-1')]
+
+
 def test_resuming_a_run_at_its_decision_point_lets_it_launch_again(wired: Any):
     assert wired is not None
-    _runs().needs_human(RUN, 'budget')
+    _runs().needs_human(RUN, 'budget', now=1)
     with pytest.raises(RunNotActive, match='active run'):
         handler.lambda_handler(LAUNCH, None)
     handler.lambda_handler({'action': 'signal', 'run_id': RUN, 'signal': 'resume'}, None)

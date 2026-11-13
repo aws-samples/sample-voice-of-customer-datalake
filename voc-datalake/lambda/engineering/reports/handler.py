@@ -22,7 +22,7 @@ from engineering.reports.render import render_markdown
 from engineering.reports.store import ReportStore
 from engineering.workspace.layout import ID, SHA
 from engineering.workspace.store import WorkspaceStore
-from shared.logging import logger
+from shared.logging import logger, metrics
 from shared.timestamps import now_iso
 
 _PR = re.compile(r'[1-9][0-9]{0,9}\Z')
@@ -78,6 +78,7 @@ def _request(event: Mapping[str, Any]) -> tuple[str, str, str, str] | None:
 _reports: Reports | None = None
 
 
+@metrics.log_metrics   # (the workspace store's count of denied reads taken as missing)
 def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
     """``context`` is unused."""
     global _reports   # the warm container's clients, built once
@@ -91,8 +92,8 @@ def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
 
         _reports = Reports(get_dynamodb_client(), os.environ['ENGINEERING_TABLE'],
                            # No ListBucket (engineering-bus.ts): a missing object answers 403. It may read every runs'
-                           # key, so a denial reads as missing, and the store logs each one (a real KMS or policy
-                           # denial shows there).
+                           # key, so a denial reads as missing, and the store logs and counts each one
+                           # (EngineeringWorkspaceDeniedReads: a real KMS or policy denial shows there).
                            WorkspaceStore(get_s3_client(), os.environ['ENGINEERING_WORKSPACE_BUCKET'],
                                           denied_is_missing=True))
     return _reports.build(*request)

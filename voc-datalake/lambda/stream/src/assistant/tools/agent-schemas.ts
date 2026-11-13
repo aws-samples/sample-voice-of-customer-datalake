@@ -20,11 +20,14 @@ import {
   AGENT_SCHEDULE_EVERY,
   AGENT_THRESHOLD_PER,
   AGENT_VISIBILITIES,
+  ENGINEERING_NODE_TYPES,
+  WORKFLOW_ALL_NODE_TYPES,
   WORKFLOW_EDGE_LABELS,
   WORKFLOW_LIMITS,
   WORKFLOW_LOOP_UNTIL,
   WORKFLOW_NODE_ROLES,
   WORKFLOW_NODE_TYPES,
+  WORKFLOW_SCHEMA_V2,
   WORKFLOW_SCHEMA_VERSION,
 } from './agent-limits.js';
 import { idProperty, idSchema } from './spec.js';
@@ -35,7 +38,7 @@ const jsonLength = (value: unknown) => JSON.stringify(value).length;
 
 const nodeSchema = z.object({
   id: idSchema,
-  type: z.enum(WORKFLOW_NODE_TYPES),
+  type: z.enum(WORKFLOW_ALL_NODE_TYPES),
   position: z.object({ x: z.number(), y: z.number() }).strict(),
   data: z.object({
     title: z.string().trim().min(1).max(WORKFLOW_LIMITS.maxTitleChars),
@@ -61,7 +64,7 @@ const loopSchema = z.object({
 }).strict();
 
 export const workflowDefinitionSchema = z.object({
-  schema: z.literal(WORKFLOW_SCHEMA_VERSION),
+  schema: z.enum([WORKFLOW_SCHEMA_VERSION, WORKFLOW_SCHEMA_V2]),
   name: z.string().trim().min(1).max(WORKFLOW_LIMITS.maxNameChars),
   description: z.string().max(WORKFLOW_LIMITS.maxDescriptionChars).optional(),
   nodes: z.array(nodeSchema).min(1).max(WORKFLOW_LIMITS.maxNodes),
@@ -80,7 +83,14 @@ export const WORKFLOW_DEFINITION_PROPERTY: DocumentType = {
     + 'edges: [{id, source, target, label?: pass|fail|agreed|not_agreed}], '
     + 'loops: [{node_ids, until: persona_agreement|review_pass, max_rounds: 1-5}]}. '
     + `Node types: ${WORKFLOW_NODE_TYPES.join(', ')}. persona_review params: {target: prfaq|prd|prototype}. `
-    + `At most ${WORKFLOW_LIMITS.maxNodes} nodes; one start, a reachable end, no orphan nodes, cycles only inside loops.`,
+    + `At most ${WORKFLOW_LIMITS.maxNodes} nodes; one start, a reachable end, no orphan nodes, cycles only inside loops. `
+    + `An engineering flow (agents that work on a code repository) is {schema: "${WORKFLOW_SCHEMA_V2}", ...} with start, `
+    + `end and only these steps: ${ENGINEERING_NODE_TYPES.join(', ')}; no data.role and no loops (its board repeats). `
+    + 'Its settings are in params, e.g. agent {role: hunter|fixer|builder|committer|pr-author|..., skill_version?, '
+    + 'model?, budget_share?}, board {posters: [roles], claimers: [roles], until?: drained|caps}, map {shard_by: '
+    + 'packages|history|pr_pages, shard_cap?}, quality_gate {max_rounds?, packs?, reviewers?} with a pass arrow and a '
+    + 'fail arrow to an end {status: needs_human}, memory {mode: read|write, scope: repo|role|person}. A flow with a '
+    + 'committer or PR author ends at stop_at_pr (there is no merge step). validate_workflow gives the exact rules.',
 };
 
 // ── Agent configuration ──

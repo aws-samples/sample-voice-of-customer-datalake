@@ -10,10 +10,12 @@
   new MicroVM reads its brief by claiming again).
 - ``coordinate_items``: the run's ``coordinate`` task (role ``coordinator``), which only the run's start writes,
   in its own transaction (trusted code, never an agent's post): the coordinator claims it, renews and reports
-  progress on it like any agent, so the supervisor judges it by its lease too.
+  progress on it like any agent, so the supervisor judges it by its lease too. It records the coordinator the start
+  launches (``coordinator-1``), and only that coordinator claims it, in the claim's own condition.
 - ``launch``: the coordinator's launch of an agent for an open task, recorded once on the task
   (``launched_agent``, its id ``<role>-<n>`` from the run's ``agent_count``) with a history row; a retried launch
-  reuses the agent it recorded.
+  reuses the agent it recorded. Never for the coordinate task: ``launch_coordinator`` (the run's trusted code only)
+  records a new coordinator on it after a re-post, at the attempt given.
 - ``renew`` (the heartbeat), ``progress`` and ``move``: only the lease holder with the lease's epoch, before the
   lease runs out, on a task that has not ended, so an agent whose lease was lost cannot act on the task again.
   ``progress`` sets ``progress_at``, a short ``step`` and ``waiting`` (an open question, review or decision): the
@@ -58,7 +60,8 @@ MAX_LINE = 200
 #: The run's coordinate task (one per run, the coordinator's): its id and its role.
 COORDINATE_TASK = 'coordinate'
 COORDINATOR = 'coordinator'
-#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 1.
+#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 2, the run's
+#: start having taken 1 for its coordinator (``coordinate_items``' ``coordinator-1``, ``agent_count`` 1 on META).
 MAX_AGENTS = 999
 
 
@@ -245,10 +248,13 @@ class BoardStore:
             raise BoardError('forbidden', f'a {current.role} task is not for a {role}')
         now = self.now()
         at = now.isoformat()
+        # The coordinate task is claimed only by the coordinator recorded on it at its attempt, in the write's own
+        # condition: a replaced coordinator never claims it, even when the re-post lands between its read and this.
+        own = ' AND launched_agent = :agent AND launched_attempt = attempt' if role == COORDINATOR else ''
         return self._write(ws, run_id, task_id, _Write(
             set_expr='SET #state = :claimed, lease_agent = :agent, lease_epoch = attempt, lease_expires = :expires, '
                      'updated_by = :agent, updated_at = :at',
-            condition='#state = :open AND #role = :role AND attempt = :attempt',
+            condition=f'#state = :open AND #role = :role AND attempt = :attempt{own}',
             names={'#state': 'state', '#role': 'role'},
             values={':claimed': {'S': CLAIMED}, ':open': {'S': OPEN}, ':role': {'S': role}, ':agent': {'S': agent},
                     ':attempt': {'N': str(current.attempt)},
@@ -263,13 +269,19 @@ class BoardStore:
         """The run's coordinate task and its history row, as plain Python items (numbers as ``Decimal``) for the run's
         start transaction to put, each ``attribute_not_exists``: ``RunStore.start`` writes through the resource
         table's ``meta.client.transact_write_items``, which serializes them itself. Open, attempt 1, for the
-        coordinator alone."""
+        coordinator alone, and recorded as launched for ``coordinator-1`` at attempt 1, the run's first agent: the
+        runtime's run start launches it and writes META's ``agent_count`` 1 in the same transaction
+        (``runs.RunStore.start``). A coordinator that dies before its claim is not re-posted like any agent: the
+        supervisor continues it as a crash, then sends the run to a person, whose Resume replaces it
+        (``runtime/board_bus.BoardLeases.coordinator_to_start``)."""
         task: dict[str, Any] = {**task_key(ws, run_id, COORDINATE_TASK), 'task_id': {'S': COORDINATE_TASK},
                 'role': {'S': COORDINATOR}, 'state': {'S': OPEN}, 'title': {'S': 'Coordinate the run'},
                 'spec': {'S': json.dumps({'coordinate': True}, sort_keys=True)},
                 'spec_hash': {'S': spec_hash(COORDINATOR, '', {'coordinate': True})}, 'depth': {'N': '0'},
                 'priority': {'N': '0'}, 'attempt': {'N': '1'}, 'posted_by': {'S': 'run-start'},
-                'updated_by': {'S': 'run-start'}, 'updated_at': {'S': at}}
+                'updated_by': {'S': 'run-start'}, 'updated_at': {'S': at},
+                'launched_agent': {'S': f'{COORDINATOR}-1'}, 'launched_attempt': {'N': '1'}, 'launched_paths': {'L': []},
+                'launched_language': {'S': ''}}
         plain = TypeDeserializer()
         return [{name: plain.deserialize(value) for name, value in item.items()}
                 for item in (task, Move(COORDINATE_TASK, OPEN, 'run-start', at, 1, 'start').item(ws, run_id))]
@@ -295,8 +307,27 @@ class BoardStore:
         ``paths`` and ``language`` it is launched with. A retry at the same attempt finds the agent recorded and
         reuses it (with its recorded paths and language); after a repost (a new attempt) the task gets a new ``<role>-<n>``."""
         current = self.task(ws, run_id, task_id)
-        if current.role != role or current.role == COORDINATOR:
+        if current.role == COORDINATOR:
+            raise BoardError('invalid', "the coordinate task's coordinator comes from the run, never from a launch")
+        if current.role != role:
             raise BoardError('invalid', f'the task is a {current.role} task, not a {role} one to launch')
+        return self._record_launch(ws, run_id, current, actor=actor, paths=paths, language=language)
+
+    def launch_coordinator(self, ws: str, run_id: str, *, attempt: int, actor: str = 'runtime') -> Task:
+        """Record a new run coordinator for the run's coordinate task: the run's trusted code only (the runtime calls
+        it when a person's Resume finds the run's coordinator failed, after re-posting the task at its attempt:
+        ``runtime/board_bus.BoardLeases.coordinator_to_start``), never a board op, so no agent can start a coordinator. Like ``launch``:
+        the task open at ``attempt`` (the task's, the same fence as ``repost``), the next ``coordinator-<n>`` from
+        META's ``agent_count``, and a retry at the same attempt reusing it. ``actor``: who the history row names
+        (the person who resumed, when the caller knows). No paths and no language: the coordinator's are the run's."""
+        current = self.task(ws, run_id, COORDINATE_TASK)
+        if attempt != current.attempt:
+            raise BoardError('conflict', f'the coordinate task is at attempt {current.attempt}, not {attempt}')
+        return self._record_launch(ws, run_id, current, actor=actor, paths=(), language='')
+
+    def _record_launch(self, ws: str, run_id: str, current: Task, *, actor: str, paths: Sequence[str],
+                       language: str) -> Task:
+        task_id, role = current.task_id, current.role
         if current.state != OPEN:
             raise BoardError('conflict', 'only an open task gets an agent launched for it')
         if current.launched_agent and current.launched_attempt == current.attempt:
@@ -385,13 +416,16 @@ class BoardStore:
                     ':waiting': {'BOOL': waiting}},
             already=lambda _task: False, refusal='the lease is not yours, has run out, or the task has ended'))
 
-    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None) -> Task:
+    def repost(self, ws: str, run_id: str, task_id: str, *, reason: str, attempt: int | None = None,
+               actor: str = 'supervisor') -> Task:
         """The supervisor's re-post of the task at the ``attempt`` it judged (crashed, stalled, its lease run out):
         ``open`` again at the next attempt, the lease cleared, its reason in the history row. Only at that attempt,
         so a retried re-post never revokes the claim a new agent made meanwhile (a later attempt), and two re-posts
         never both apply. Pass it: without it (a caller from before it, ``None``) the attempt read now is taken,
         which cannot tell a retry from a newer claim. An open task is re-posted only when an agent was launched for
-        it at this attempt and never claimed it (it died or stalled first): the next attempt gets a new agent."""
+        it at this attempt and never claimed it (it died or stalled first): the next attempt gets a new agent.
+        ``actor``: who the task's row and history row name (D4): the supervisor, or the person whose Resume replaces
+        a failed run coordinator (``runtime/board_bus.BoardLeases.coordinator_to_start``)."""
         current = self.task(ws, run_id, task_id)
         unclaimed = current.state == OPEN and bool(current.launched_agent) and current.launched_attempt == current.attempt
         if attempt is None:
@@ -415,11 +449,11 @@ class BoardStore:
                        'OR (#state = :open AND launched_attempt = :attempt))'),
             names={'#state': 'state'},
             values={**ended, ':open': {'S': OPEN}, ':one': {'N': '1'}, ':no': {'BOOL': False},
-                    ':actor': {'S': 'supervisor'}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
+                    ':actor': {'S': actor}, ':at': {'S': at}, ':attempt': {'N': str(attempt)}},
             # Another re-post of the same attempt landed between the read and the write.
             already=lambda t: t.state == OPEN and t.attempt == attempt + 1,
             refusal='the task moved on since it was read'),
-            Move(task_id, OPEN, 'supervisor', at, attempt + 1, 'repost', reason=why).item(ws, run_id))
+            Move(task_id, OPEN, actor, at, attempt + 1, 'repost', reason=why).item(ws, run_id))
 
     def move(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, to_state: str,
              result_keys: Sequence[object]) -> Task:

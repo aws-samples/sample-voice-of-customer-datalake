@@ -90,3 +90,7 @@ class RunControl(Protocol):
         """Put the run at a human decision point (``budget``, ``coordinator``, ``thirty_days``: stop only)."""
         ...
 
+    def is_active(self, run_id: str) -> bool:
+        """The run is active: not ended, and not waiting at a decision point."""
+        ...
+

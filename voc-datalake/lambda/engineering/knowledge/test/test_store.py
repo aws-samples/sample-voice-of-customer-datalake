@@ -200,7 +200,7 @@ def test_missing_versions_and_unreadable_content(world: World) -> None:
     world.store.approve('default', CONN, WEB, 2, ADMIN)
     with pytest.raises(PackError, match='not a readable pack') as unreadable:
         world.store.latest_approved('default', CONN, WEB)
-    assert unreadable.value.kind == 'invalid'
+    assert unreadable.value.kind == 'unavailable'   # (the store's fault, never the caller's: a 5xx)
 
 
 def test_an_approved_version_whose_row_says_otherwise_is_not_read(world: World) -> None:

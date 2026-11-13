@@ -161,6 +161,14 @@ def test_a_report_of_no_run_or_a_bad_request_is_refused(run: Run, monkeypatch: p
     assert handler({'run_id': RUN, 'level': 'pr', 'subject': '42', 'head': SHA}, None)['version'] == 1
 
 
+def test_the_handler_flushes_its_metrics_the_workspace_count_of_denied_reads_included(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    flushed: list[bool] = []
+    monkeypatch.setattr(handler_module.metrics.provider, 'flush_metrics', lambda *_a, **_k: flushed.append(True))
+    assert handler({}, None)['status'] == 'refused'
+    assert flushed == [True]
+
+
 def test_a_pr_report_is_refused_when_a_recorded_gate_record_cannot_be_read(run: Run) -> None:
     """Workspace objects never expire, so a recorded one unread is a denial: the PR description never drops it."""
     gate_key = f'ws/default/runs/{RUN}/final-go-2/commits/{SHA}/_gate/attempt-1/record.json'
@@ -275,6 +283,8 @@ def test_facts_read_what_is_there_and_zero_for_the_rest() -> None:
         # A launch killed while it held its row (no session written): not an agent of the run.
         client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'AGENT#a-2'},
                                                LAUNCH_HOLD: {'N': '1700000000'}})
+        # A launch whose MicroVM failed: its hold run out (0), still a hold, never an agent.
+        client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'AGENT#a-3'}, LAUNCH_HOLD: {'N': '0'}})
         facts = FactsReader(client, TABLE).read('default', RUN)
     assert facts is not None
     assert [agent.agent for agent in facts.agents] == ['a-1']
