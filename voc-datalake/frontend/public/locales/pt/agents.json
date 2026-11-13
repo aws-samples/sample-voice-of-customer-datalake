@@ -346,6 +346,10 @@
       "until": "Até",
       "maxRounds": "Máximo de rodadas",
       "description": "Descrição",
+      "monthlyBudget": "Orçamento mensal (dólares americanos)",
+      "monthlyBudgetHint": "O que as execuções deste fluxo podem gastar num mês civil (UTC). Fica guardado com o fluxo: ainda nada é parado nem alertado.",
+      "monthlyBudgetInvalid": "Introduza um valor em dólares e cêntimos de US$ 0,01 a {{largest}}, ou deixe vazio para não ter orçamento.",
+      "monthlyBudgetNone": "Sem orçamento",
       "arrowTarget": "Para a etapa",
       "arrowTargetNone": "Escolha uma etapa…",
       "joinLoop": "Loop"

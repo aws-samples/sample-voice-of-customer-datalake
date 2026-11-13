@@ -142,6 +142,9 @@
     },
     "workflow": {
       "unchanged": "제안된 정의가 현재 정의와 동일합니다.",
+      "budgetSet": "월 예산을 {{now}}(으)로 설정",
+      "budgetChanged": "월 예산: {{was}} → {{now}}",
+      "budgetRemoved": "월 예산 삭제(이전 {{was}})",
       "meta": "변경됨: {{fields}}",
       "addedSteps": "추가된 단계",
       "removedSteps": "삭제된 단계",

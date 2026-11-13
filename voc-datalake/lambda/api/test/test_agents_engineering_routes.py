@@ -515,7 +515,8 @@ def test_a_board_that_fails_after_writing_is_a_503_and_the_retry_sends_the_event
     assert json.loads(entry['Detail'])['summary'].endswith('take by a person')
 
 
-@pytest.mark.parametrize('forge', ['type', 'sender', 'run', 'task', 'two', 'schema', 'summary', 'credential'])
+@pytest.mark.parametrize('forge', ['type', 'sender', 'run', 'task', 'two', 'schema', 'summary', 'credential',
+                                   'no answer'])
 def test_an_event_the_board_hands_back_that_is_not_the_persons_action_is_never_sent(
         lambda_context: Any, run: tuple[Any, EngineeringRun], actions: Actions, monkeypatch: pytest.MonkeyPatch,
         forge: str) -> None:
@@ -534,7 +535,10 @@ def test_an_event_the_board_hands_back_that_is_not_the_persons_action_is_never_s
                       'schema': {**event, 'schema': 'voc-msg/0'},
                       'summary': {**event, 'summary': 'x' * 2048},
                       'credential': {**event, 'summary': 'AKIA' + 'Q' * 16}}
-            answer['events'] = [event, event] if forge == 'two' else [forged[forge]]
+            if forge == 'no answer':   # (an ok with no answer: the board's fault too)
+                del answer['answer']
+            else:
+                answer['events'] = [event, event] if forge == 'two' else [forged[forge]]
             return {'StatusCode': 200, 'Payload': io.BytesIO(json.dumps(answer).encode())}
 
     monkeypatch.setattr('shared.aws.get_lambda_client', lambda: Forging(actions.runtime, engineering.client))

@@ -3037,6 +3037,13 @@ function checkWorkflowShape(def, add) {
   if (def.nodes.length > WORKFLOW_MAX_NODES) add(`a workflow can have at most ${WORKFLOW_MAX_NODES} steps`);
   if (!Array.isArray(def.edges)) add('edges must be a list');
   if (def.loops !== undefined && !Array.isArray(def.loops)) add('loops must be a list');
+  // An engineering flow's monthly budget (workflow_engineering.py budget_of): dollars and cents, 0.01 to 100,000.
+  if (def.budget !== undefined && def.budget !== null) {
+    const amount = isPlainObject(def.budget) && Object.keys(def.budget).length === 1 ? def.budget.monthly_usd : undefined;
+    const cents = typeof amount === 'number' && Number.isFinite(amount) && Math.round(amount * 100) / 100 === amount;
+    if (!cents || amount < 0.01 || amount > 100_000) add('budget is {monthly_usd}: what its runs may spend in a month, in dollars and cents from 0.01 to 100,000');
+    else if (def.schema !== 'voc-workflow/2') add('only an engineering flow has a budget');
+  }
   const types = new Map();
   for (const node of def.nodes) {
     if (!isPlainObject(node) || typeof node.id !== 'string' || !WORKFLOW_ELEMENT_ID.test(node.id)) { add('every step needs an id of 1-64 letters, digits, "_" or "-"'); continue; }

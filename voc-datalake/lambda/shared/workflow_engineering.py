@@ -24,6 +24,11 @@ to the same answers by the shared fixture ``frontend/src/test/engineeringFlows.j
   a stop at PR or a human decision point, and at least one is a stop at PR.
 
 Only a quality gate's arrows carry a label; an engineering flow repeats through its board, so it declares no loops.
+
+A flow may carry ``budget: {monthly_usd}``: what its runs may spend in a calendar month (UTC), from 0.01 to
+``MAX_MONTHLY_BUDGET_USD`` dollars, in dollars and cents (an amount with more decimals is refused, never rounded:
+the amount a person approves is the amount kept). It is recorded with the flow and stops nothing. Only an
+engineering flow has one.
 """
 from __future__ import annotations
 
@@ -65,6 +70,11 @@ DEFAULT_REVIEWERS: Final = {'security': False, 'quality': False, 'first-principl
 _REVIEWER_NAME = re.compile(r'[a-z][a-z0-9-]{0,39}\Z')
 MAX_MEMORY_LIMIT: Final = 50
 MAX_MODEL_CHARS: Final = 128
+#: The largest monthly budget a flow takes, in dollars (the editor's and the assistant's schemas take the same).
+MAX_MONTHLY_BUDGET_USD: Final = 100_000
+BUDGET_KEYS: Final = frozenset({'monthly_usd'})
+BUDGET_RULE: Final = ('budget is {monthly_usd}: what its runs may spend in a month, in dollars and cents from 0.01 '
+                      f'to {MAX_MONTHLY_BUDGET_USD:,}')
 GATE_NEEDS_BOTH_ARROWS: Final = ("a quality gate needs a 'pass' arrow (GO) and a 'fail' arrow (NO-GO), "
                                  'every arrow labelled')
 GATE_FAIL_TO_A_PERSON: Final = ("a quality gate's 'fail' arrow goes to a human decision point "
@@ -177,6 +187,23 @@ def _memory_issues(params: Mapping[str, Any]) -> list[str]:
 
 _PARAMS = {'agent': _agent_issues, 'quality_gate': _gate_issues, 'board': _board_issues, 'map': _map_issues,
            'memory': _memory_issues}
+
+
+def budget_of(raw: object) -> tuple[dict[str, float] | None, str | None]:
+    """A flow's ``budget``, or the rule it breaks; ``(None, None)`` when it has none."""
+    if raw is None:
+        return None, None
+    if not isinstance(raw, Mapping) or frozenset(raw) != BUDGET_KEYS:
+        return None, BUDGET_RULE
+    amount = raw['monthly_usd']
+    # (a whole number of any size is fine to compare; only a float can be inf or nan, and isfinite on a huge int
+    # raises OverflowError, which would be a 500)
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) \
+            or (isinstance(amount, float) and not math.isfinite(amount)):
+        return None, BUDGET_RULE
+    if round(amount, 2) != amount or not 0.01 <= amount <= MAX_MONTHLY_BUDGET_USD:
+        return None, BUDGET_RULE
+    return {'monthly_usd': amount}, None
 
 
 def params_issues(node_type: str, params: Mapping[str, Any]) -> list[str]:

@@ -20,7 +20,9 @@ import {
   AGENT_SCHEDULE_EVERY,
   AGENT_THRESHOLD_PER,
   AGENT_VISIBILITIES,
+  ENGINEERING_MAX_MONTHLY_BUDGET_USD,
   ENGINEERING_NODE_TYPES,
+  MONTHLY_BUDGET_RULE,
   WORKFLOW_ALL_NODE_TYPES,
   WORKFLOW_EDGE_LABELS,
   WORKFLOW_LIMITS,
@@ -29,6 +31,7 @@ import {
   WORKFLOW_NODE_TYPES,
   WORKFLOW_SCHEMA_V2,
   WORKFLOW_SCHEMA_VERSION,
+  isMonthlyBudgetUsd,
 } from './agent-limits.js';
 import { idProperty, idSchema } from './spec.js';
 
@@ -70,9 +73,13 @@ export const workflowDefinitionSchema = z.object({
   nodes: z.array(nodeSchema).min(1).max(WORKFLOW_LIMITS.maxNodes),
   edges: z.array(edgeSchema).max(WORKFLOW_LIMITS.maxEdges),
   loops: z.array(loopSchema).max(WORKFLOW_LIMITS.maxLoops),
+  budget: z.object({ monthly_usd: z.number().refine(isMonthlyBudgetUsd, MONTHLY_BUDGET_RULE) }).strict().optional(),
 }).strict().refine(
   (definition) => jsonLength(definition) <= WORKFLOW_LIMITS.maxDefinitionJsonChars,
   'the definition is too large',
+).refine(
+  (definition) => definition.budget === undefined || definition.schema === WORKFLOW_SCHEMA_V2,
+  'only an engineering flow has a budget',
 );
 
 /** Model-facing JSON schema of a definition (shape only; the zod schema is the judge). */
@@ -90,7 +97,10 @@ export const WORKFLOW_DEFINITION_PROPERTY: DocumentType = {
     + 'model?, budget_share?}, board {posters: [roles], claimers: [roles], until?: drained|caps}, map {shard_by: '
     + 'packages|history|pr_pages, shard_cap?}, quality_gate {max_rounds?, packs?, reviewers?} with a pass arrow and a '
     + 'fail arrow to an end {status: needs_human}, memory {mode: read|write, scope: repo|role|person}. A flow with a '
-    + 'committer or PR author ends at stop_at_pr (there is no merge step). validate_workflow gives the exact rules.',
+    + 'committer or PR author ends at stop_at_pr (there is no merge step). It may carry budget: {monthly_usd} (what '
+    + `its runs may spend in a calendar month, in dollars and cents from 0.01 to ${String(ENGINEERING_MAX_MONTHLY_BUDGET_USD)}; leave `
+    + 'budget out for none, never null); change it only when the person asked, and say so in change_summary. '
+    + 'validate_workflow gives the exact rules.',
 };
 
 // ── Agent configuration ──

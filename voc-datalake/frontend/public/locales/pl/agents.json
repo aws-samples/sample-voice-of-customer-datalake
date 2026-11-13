@@ -305,6 +305,10 @@
       "until": "Do momentu",
       "maxRounds": "Maksymalna liczba rund",
       "description": "Opis",
+      "monthlyBudget": "Miesięczny budżet (dolary amerykańskie)",
+      "monthlyBudgetHint": "Ile mogą wydać uruchomienia tego przepływu w miesiącu kalendarzowym (UTC). Zapisywany z przepływem: na razie niczego nie zatrzymuje ani nie wysyła alertów.",
+      "monthlyBudgetInvalid": "Wpisz kwotę w dolarach i centach od 0,01 USD do {{largest}} albo zostaw puste pole, jeśli bez budżetu.",
+      "monthlyBudgetNone": "Brak budżetu",
       "arrowTarget": "Do kroku",
       "arrowTargetNone": "Wybierz krok…",
       "joinLoop": "Pętla"

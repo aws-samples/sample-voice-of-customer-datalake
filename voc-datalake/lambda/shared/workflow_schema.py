@@ -34,7 +34,8 @@ An engineering flow is ``schema: 'voc-workflow/2'`` (plan v3 4.9): ``start``, ``
 ``shared.workflow_engineering``. The agents' interpreter runs only ``voc-workflow/1``.
 
 Unknown top-level keys (``exported_from`` on an imported file, say) are dropped by
-normalisation; unknown keys inside nodes and edges are dropped too.
+normalisation; unknown keys inside nodes and edges are dropped too. An engineering flow's
+``budget`` (``workflow_engineering.budget_of``) is kept only when set.
 
 A stored definition from before 3.00.00 may still carry ``pass``/``fail`` arrows
 out of a custom step. They are normalised ON READ (:func:`decode_definition`,
@@ -327,8 +328,16 @@ def _parse(raw: object, out: _Collector) -> dict[str, Any] | None:
     loops = [loop for i, value in enumerate(raw_loops) if (loop := _loop(value, i, out))]
     _unique(nodes, 'node', out)
     _unique(edges, 'edge', out)
-    return {'schema': schema, 'name': name, 'description': description,
-            'nodes': nodes, 'edges': edges, 'loops': loops}
+    parsed = {'schema': schema, 'name': name, 'description': description,
+              'nodes': nodes, 'edges': edges, 'loops': loops}
+    budget, broken = engineering.budget_of(raw.get('budget'))
+    if broken:
+        out.add(broken)
+    elif budget is not None and schema != SCHEMA_V2:
+        out.add('only an engineering flow has a budget')
+    elif budget is not None:   # (kept only when set: a flow saved before budgets reads and encodes as before)
+        parsed['budget'] = budget
+    return parsed
 
 
 # --------------------------------------------------------------------------
@@ -596,7 +605,7 @@ def diff_definitions(before: Mapping[str, Any] | None, after: Mapping[str, Any])
     """What ``after`` adds, removes and changes relative to ``before`` (None = new).
 
     ``{nodes: {added, removed, changed: [{id, fields}]}, edges: {...}, loops_changed,
-    meta_changed: ['name'|'description'], unchanged}``. A moved node lists
+    meta_changed: ['name'|'description'|'budget'], unchanged}``. A moved node lists
     ``position`` among its changed fields so a preview can show or hide moves.
     """
     before = before or {}
@@ -605,7 +614,7 @@ def diff_definitions(before: Mapping[str, Any] | None, after: Mapping[str, Any])
     edges = _diff_items(_by_id(before.get('edges')), _by_id(after.get('edges')), edge_fields)
     loops_before = sorted(_loop_key(loop) for loop in before.get('loops') or [])
     loops_after = sorted(_loop_key(loop) for loop in after.get('loops') or [])
-    meta = [name for name in ('name', 'description') if before.get(name) != after.get(name)]
+    meta = [name for name in ('name', 'description', 'budget') if before.get(name) != after.get(name)]
     loops_changed = loops_before != loops_after
     unchanged = not (meta or loops_changed or any(nodes.values()) or any(edges.values()))
     return {'nodes': nodes, 'edges': edges, 'loops_changed': loops_changed,

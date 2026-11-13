@@ -1055,9 +1055,12 @@ def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
         if answer.get('status') != 'ok':
             kind = str(answer.get('kind'))
             raise _BOARD_ERRORS.get(kind, ServiceUnavailableError)(str(answer.get('message') or 'the board refused it'))
+        result = answer.get('answer')
+        if not isinstance(result, dict):   # (the board's fault, as an event that is not the person's: nothing sent)
+            logger.error('engineering: the board answered ok with no answer')
+            raise ServiceUnavailableError('the board could not be reached: retry')
         for message in _persons_events(answer.get('events'), parse, run_id, caller.subject, request):
             publisher.publish(message)
-        return answer['answer']
     except Refused as refused:   # (the monitor's refusals: the same kinds)
         raise _BOARD_ERRORS[refused.kind](str(refused)) from refused
     except (ClientError, BotoCoreError) as exc:
@@ -1065,6 +1068,7 @@ def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
         raise ServiceUnavailableError('the board could not be reached: retry') from exc
     except PublishError as exc:
         raise ServiceUnavailableError('the board changed but its event was not published: retry') from exc
+    return result
 
 
 def _persons_events(raw: Any, parse: Any, run_id: str, subject: str, request: dict[str, str]) -> list[Any]:

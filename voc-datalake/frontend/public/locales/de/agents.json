@@ -342,6 +342,10 @@
       "until": "Bis",
       "maxRounds": "Maximale Runden",
       "description": "Beschreibung",
+      "monthlyBudget": "Monatsbudget (US-Dollar)",
+      "monthlyBudgetHint": "Was die Läufe dieses Ablaufs in einem Kalendermonat (UTC) ausgeben dürfen. Wird mit dem Ablauf gespeichert: Noch wird nichts gestoppt oder gemeldet.",
+      "monthlyBudgetInvalid": "Geben Sie einen Betrag in Dollar und Cent von 0,01 $ bis {{largest}} ein, oder lassen Sie das Feld für kein Budget leer.",
+      "monthlyBudgetNone": "Kein Budget",
       "arrowTarget": "Zum Schritt",
       "arrowTargetNone": "Schritt wählen…",
       "joinLoop": "Schleife"

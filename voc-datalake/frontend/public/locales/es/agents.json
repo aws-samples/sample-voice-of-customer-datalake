@@ -346,6 +346,10 @@
       "until": "Hasta que",
       "maxRounds": "Rondas máximas",
       "description": "Descripción",
+      "monthlyBudget": "Presupuesto mensual (dólares estadounidenses)",
+      "monthlyBudgetHint": "Lo que pueden gastar las ejecuciones de este flujo en un mes natural (UTC). Se guarda con el flujo: aún no detiene nada ni genera alertas.",
+      "monthlyBudgetInvalid": "Introduce un importe en dólares y centavos de 0,01 US$ a {{largest}}, o déjalo vacío para no tener presupuesto.",
+      "monthlyBudgetNone": "Sin presupuesto",
       "arrowTarget": "Al paso",
       "arrowTargetNone": "Elige un paso…",
       "joinLoop": "Bucle"

@@ -371,6 +371,10 @@
       "until": "Until",
       "maxRounds": "Maximum rounds",
       "description": "Description",
+      "monthlyBudget": "Monthly budget (US dollars)",
+      "monthlyBudgetHint": "What this flow’s runs may spend in a calendar month (UTC). Recorded with the flow: nothing is stopped or alerted on yet.",
+      "monthlyBudgetInvalid": "Enter an amount in dollars and cents from $0.01 to {{largest}}, or leave it empty for none.",
+      "monthlyBudgetNone": "No budget",
       "arrowTarget": "To step",
       "arrowTargetNone": "Choose a step…",
       "joinLoop": "Loop"

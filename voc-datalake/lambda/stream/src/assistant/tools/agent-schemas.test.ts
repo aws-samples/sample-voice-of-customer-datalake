@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AGENT_BUDGET_RULES, AGENT_LIMITS } from './agent-limits.js';
+import { AGENT_BUDGET_RULES, AGENT_LIMITS, MONTHLY_BUDGET_RULE } from './agent-limits.js';
 import { agentFieldsShape, workflowDefinitionSchema } from './agent-schemas.js';
 
 function definitionAt(x: number, y: number): unknown {
@@ -24,6 +24,28 @@ describe('workflowDefinitionSchema node positions', () => {
     [Number.NaN, 0],
   ])('rejects the non-finite position (%s, %s)', (x, y) => {
     expect(workflowDefinitionSchema.safeParse(definitionAt(x, y)).success).toBe(false);
+  });
+});
+
+describe('workflowDefinitionSchema monthly budget', () => {
+  const withBudget = (schema: string, budget: unknown) => ({ ...(definitionAt(0, 0) as object), schema, budget });
+
+  // (the server's cases: test_workflow_engineering.py)
+  it.each([50, 49.99, 0.01, 12.5, 100_000])('takes %s dollars', (monthly) => {
+    expect(workflowDefinitionSchema.safeParse(withBudget('voc-workflow/2', { monthly_usd: monthly })).success).toBe(true);
+  });
+
+  it('says its rule in the server\'s words', () => {
+    expect(MONTHLY_BUDGET_RULE).toBe('budget is {monthly_usd}: what its runs may spend in a month, in dollars and cents from 0.01 to 100,000');
+  });
+
+  it.each([0, 0.004, 0.005, 49.999, -5, 100_001, 100_000.01, '50', null])('refuses %s dollars', (monthly) => {
+    expect(workflowDefinitionSchema.safeParse(withBudget('voc-workflow/2', { monthly_usd: monthly })).success).toBe(false);
+  });
+
+  it('refuses a budget on an agents workflow, and anything else in one', () => {
+    expect(workflowDefinitionSchema.safeParse(withBudget('voc-workflow/1', { monthly_usd: 50 })).success).toBe(false);
+    expect(workflowDefinitionSchema.safeParse(withBudget('voc-workflow/2', { monthly_usd: 50, cap: true })).success).toBe(false);
   });
 });
 

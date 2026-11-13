@@ -11,8 +11,8 @@
 //                     (MOCK_ENGINEERING_AGENT_BUSY=1), the request recorded
 //   POST …/messages   {to: 'conductor' | 'agent', agent?, text, thread_id?}: admin; 404 for an agent not in the run
 //   POST …/board/tasks {role, title, spec, priority?}: admin; a person posts a task (403 for the coordinator's role)
-//   POST …/board/tasks/<task_id>/<action>: take {over?} | block {reason} | priority {priority} | move {to} (only a task
-//                     the mock's admin took); 409 for an ended task or another person's hold without over
+//   POST …/board/tasks/<task_id>/<action>: take {over?} | block {reason} | priority {priority} | move {to} | release (the
+//                     last two only on a task the mock's admin took); 409 for an ended task or another person's hold without over
 //   GET  …/reports    the run's reports, each with its latest version
 //   GET  …/reports/<level>/<subject>?version=   one version: {report, markdown}; 404 for no such report or version
 //   GET  /agents/engineering/spend?month=&by=&workflow=   the spend ledger's month, grouped (admin; 400 for a bad
@@ -38,6 +38,7 @@ export function sampleEngineeringFlow() {
     schema: 'voc-workflow/2',
     name: 'Fix the reported bugs',
     description: 'The coordinator posts a fix per confirmed bug; fixers take them; the gate reviews each change.',
+    budget: { monthly_usd: 50 },
     nodes: [
       node('start', 'start', 'Start', 0),
       node('board', 'board', 'Fix board', 120, { posters: ['coordinator'], claimers: ['fixer'], until: 'drained' }),

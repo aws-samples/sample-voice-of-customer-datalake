@@ -342,6 +342,10 @@
       "until": "終了条件",
       "maxRounds": "最大ラウンド数",
       "description": "説明",
+      "monthlyBudget": "月間予算（米ドル）",
+      "monthlyBudgetHint": "このフローの実行が 1 か月（UTC の暦月）に使える金額です。フローと一緒に保存されますが、まだ停止や通知は行いません。",
+      "monthlyBudgetInvalid": "ドルとセント（小数点以下 2 桁まで）で 0.01 ドルから {{largest}} までの金額を入力するか、予算なしの場合は空欄にしてください。",
+      "monthlyBudgetNone": "予算なし",
       "arrowTarget": "接続先ステップ",
       "arrowTargetNone": "ステップを選択…",
       "joinLoop": "ループ"

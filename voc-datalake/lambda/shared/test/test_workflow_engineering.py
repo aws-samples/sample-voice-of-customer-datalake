@@ -6,7 +6,15 @@ from typing import Any
 
 import pytest
 
-from shared.workflow_schema import SCHEMA, SCHEMA_V2, validate_definition
+from shared.workflow_engineering import BUDGET_RULE, MAX_MONTHLY_BUDGET_USD
+from shared.workflow_schema import (
+    SCHEMA,
+    SCHEMA_V2,
+    default_template,
+    diff_definitions,
+    encode_definition,
+    validate_definition,
+)
 
 
 def node(node_id: str, kind: str, **params: Any) -> dict[str, Any]:
@@ -239,3 +247,51 @@ def test_an_engineering_flow_declares_no_loops_and_no_step_roles() -> None:
     roled = copy.deepcopy(bug_fix())
     roled['nodes'][1]['data']['role'] = 'worker'
     assert errors(roled) == [("an engineering step takes no data.role (an agent's role is its params.role)", 'hunt')]
+
+
+@pytest.mark.parametrize(('given', 'kept'), [(250, 250), (49.99, 49.99), (0.01, 0.01), (12.5, 12.5),
+                                             (MAX_MONTHLY_BUDGET_USD, MAX_MONTHLY_BUDGET_USD)])
+def test_a_flow_keeps_its_monthly_budget_as_given(given: float, kept: float) -> None:
+    result = validate_definition(flow(bug_fix()['nodes'], bug_fix()['edges'], budget={'monthly_usd': given}))
+    assert result.errors == ()
+    assert result.definition is not None
+    assert result.definition['budget'] == {'monthly_usd': kept}
+
+
+@pytest.mark.parametrize('budget', [
+    {'monthly_usd': 0}, {'monthly_usd': 0.004}, {'monthly_usd': 0.005}, {'monthly_usd': 49.999}, {'monthly_usd': -5},
+    {'monthly_usd': MAX_MONTHLY_BUDGET_USD + 1}, {'monthly_usd': MAX_MONTHLY_BUDGET_USD + 0.01},
+    {'monthly_usd': int('1' * 400)},   # (a whole number too large for a float: refused, never a 500)
+    {'monthly_usd': float('inf')}, {'monthly_usd': float('nan')}, {'monthly_usd': True}, {'monthly_usd': '50'},
+    {'monthly_usd': None}, {}, {'monthly_usd': 50, 'hard': True}, 50, [50], 'monthly',
+])
+def test_a_budget_that_is_not_an_amount_of_dollars_is_refused(budget: object) -> None:
+    assert errors(flow(bug_fix()['nodes'], bug_fix()['edges'], budget=budget)) == [(BUDGET_RULE, None)]
+
+
+def test_the_budget_rule_reads_as_the_editor_and_the_assistant_say_it() -> None:
+    # (the same words as MONTHLY_BUDGET_RULE in the stream's agent-limits.ts, pinned there too)
+    assert BUDGET_RULE == 'budget is {monthly_usd}: what its runs may spend in a month, in dollars and cents from 0.01 to 100,000'
+
+
+def test_only_an_engineering_flow_has_a_budget() -> None:
+    agents_flow = {**default_template(), 'budget': {'monthly_usd': 50}}
+    assert errors(agents_flow) == [('only an engineering flow has a budget', None)]
+
+
+def test_a_flow_with_no_budget_reads_and_encodes_as_before() -> None:
+    result = validate_definition(bug_fix())
+    assert result.definition is not None
+    assert 'budget' not in result.definition
+    assert '"budget":' not in encode_definition(result.definition)
+    assert validate_definition({**bug_fix(), 'budget': None}).definition == result.definition
+
+
+def test_a_budget_change_shows_in_the_diff() -> None:
+    before = validate_definition(bug_fix()).definition
+    after = validate_definition({**bug_fix(), 'budget': {'monthly_usd': 80}}).definition
+    assert before is not None
+    assert after is not None
+    assert diff_definitions(before, after)['meta_changed'] == ['budget']
+    assert diff_definitions(before, after)['unchanged'] is False
+    assert diff_definitions(after, after)['unchanged'] is True

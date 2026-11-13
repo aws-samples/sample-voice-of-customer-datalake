@@ -342,6 +342,10 @@
       "until": "直到",
       "maxRounds": "最大轮数",
       "description": "描述",
+      "monthlyBudget": "月度预算（美元）",
+      "monthlyBudgetHint": "此流程的运行在一个自然月（UTC）内可花费的金额。随流程保存：目前不会停止运行，也不会发出提醒。",
+      "monthlyBudgetInvalid": "请输入以美元和美分计（最多两位小数）、介于 0.01 美元到 {{largest}} 之间的金额，或留空表示无预算。",
+      "monthlyBudgetNone": "无预算",
       "arrowTarget": "指向步骤",
       "arrowTargetNone": "选择一个步骤…",
       "joinLoop": "循环"

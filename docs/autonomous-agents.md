@@ -127,6 +127,15 @@ budget shares above 1 in all; and a committer or PR author (an agent, or a board
 anywhere but a stop at PR or a human decision point. There is no merge step. An engineering flow declares no loops (its
 board does the repeating) and holds no agents step; an agents workflow holds no engineering step.
 
+An engineering flow may carry `budget: {monthly_usd}`: what its runs may spend in a calendar month (UTC),
+in dollars and cents from 0.01 to 100,000 (more decimals are refused, not rounded, so the amount approved is the
+amount kept; else 400, and 400 on an agents workflow; the editor's Monthly budget field
+under the flow's description, empty for none; leave `budget` out for none, never `null` in the assistant's draft). It
+is recorded with the flow and, for now, nothing reads it: alerts against the spend ledger are planned. A flow saved without one reads and saves as before. Only a signed-in administrator saves a workflow
+(a delegated credential, an MCP token or an agent, gets 403), so the assistant changes a budget only through its
+`create_workflow` and `update_workflow` cards, which say it in dollars ("Monthly budget set to $80.00", "Monthly
+budget: $50.00 → $80.00", or removed) for the person approving it; a duplicate keeps its source's budget.
+
 The two kinds never mix: no agent runs an engineering flow (`POST`/`PUT /agents` refuse one), a saved workflow keeps
 its kind (a save of the other kind over it is refused: save it as a new workflow), and the agents' runtime refuses a
 `voc-workflow/2` definition. `GET /workflows` lists both kinds, each with its `kind` (`agents` | `engineering`): the

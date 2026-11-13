@@ -346,6 +346,10 @@
       "until": "Jusqu'à",
       "maxRounds": "Nombre maximal de tours",
       "description": "Description",
+      "monthlyBudget": "Budget mensuel (dollars américains)",
+      "monthlyBudgetHint": "Ce que les exécutions de ce flux peuvent dépenser sur un mois civil (UTC). Enregistré avec le flux : rien n’est encore arrêté ni signalé.",
+      "monthlyBudgetInvalid": "Saisissez un montant en dollars et cents de 0,01 $US à {{largest}}, ou laissez vide pour aucun budget.",
+      "monthlyBudgetNone": "Aucun budget",
       "arrowTarget": "Vers l’étape",
       "arrowTargetNone": "Choisissez une étape…",
       "joinLoop": "Boucle"
