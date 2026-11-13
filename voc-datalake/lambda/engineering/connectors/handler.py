@@ -3,13 +3,16 @@
 POST ``{"operation": ..., "args": {...}}``; the caller comes from the request's IAM identity (``identity``), never
 from the body. Status codes: 200 with ``{"result": ...}``; 400 a body the broker cannot read; 403 a caller that is
 not an agent, or a role that may not make the operation; 404 a read of what the repository does not have; 409 a
-refusal for the run's or the board's state, or a host state other than the checked one (the branch moved, another
-tree); 422 a refusal by the write rules; 502 a host error; 503 no repository connection, or the host rate limiting
-(with ``Retry-After``). Every refusal carries ``{"error": <plain reason>}``.
+refusal for the run's, the dial's or the board's state, or a host state other than the checked one (the branch
+moved, another tree); 422 a refusal by the write rules or of the submitted patch; 502 a host error; 503 no
+repository connection, the run's records or the way of working unreadable for now, or the host rate limiting (with
+``Retry-After``). Every refusal carries ``{"error": <plain reason>}``.
 
 The broker's connector: the GitHub client (``github.GitHubHost``) over the connections' SSM credentials, once the
-stack names their prefix; the run records, the board's GO ledger and the bundle reader are not built yet
-(``hosts.UNCONNECTED``), so every permitted operation still answers 503.
+stack names their prefix; with the engineering table, the workspace bucket and the aggregates table named too, the
+run's record and the board's GO ledger (``records.RunRecords``), the submitted patch's reader
+(``patches.WorkspacePatches``) and the dial (``dial.WaysOfWorking``). Without them, ``hosts.UNCONNECTED`` stands in
+and every permitted operation answers 503.
 
 Nothing from the body is logged or echoed (it may hold a bundle, a comment, or a token pasted by mistake): the log
 line has the operation, the caller's role, run and agent index, and the status.
@@ -34,9 +37,11 @@ from engineering.connectors.broker import (
     NotPermitted,
 )
 from engineering.connectors.credentials import PARAMETER_PREFIX_ENV, ParameterStoreCredentials
+from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
 from engineering.connectors.hosts import (
     NO_CONNECTION,
+    OBJECT_ID,
     UNCONNECTED,
     CommentTarget,
     Conflict,
@@ -47,9 +52,13 @@ from engineering.connectors.hosts import (
     NoConnection,
     NotFound,
     ReadKind,
+    Unavailable,
 )
 from engineering.connectors.identity import Caller, UnknownCaller, caller_from_event, own_account
+from engineering.connectors.patches import WorkspacePatches
+from engineering.connectors.records import RunRecords
 from engineering.connectors.write_policy import WriteRefused
+from engineering.workspace.store import WorkspaceStore
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
 
@@ -62,6 +71,10 @@ MAX_NAME: Final = 1024
 _READ_KINDS: Final[Mapping[str, ReadKind]] = {
     'file': 'file', 'history': 'history', 'issue': 'issue', 'pull_request': 'pull_request'}
 _COMMENT_TARGETS: Final[Mapping[str, CommentTarget]] = {'issue': 'issue', 'pull_request': 'pull_request'}
+#: The stores the run's record, the GO ledger, the patches and the dial live in (set by engineering-broker.ts).
+TABLE_ENV: Final = 'ENGINEERING_TABLE'
+BUCKET_ENV: Final = 'ENGINEERING_WORKSPACE_BUCKET'
+AGGREGATES_ENV: Final = 'AGGREGATES_TABLE'
 
 
 class BadRequest(Exception):
@@ -142,13 +155,15 @@ def _post_comment(broker: Broker, caller: Caller, args: Mapping[str, object]) ->
 
 
 def _push_bundle(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
-    _keys(args, {'branch', 'bundle'})
-    try:
-        bundle = base64.b64decode(_text(args, 'bundle', MAX_BODY_CHARS), validate=True)
-    except binascii.Error:
-        raise BadRequest('bundle is a base64 git bundle.') from None
+    """``{branch, patch, tree_hash, message}``: the caller's submitted patch (its workspace key) as one commit."""
+    _keys(args, {'branch', 'patch', 'tree_hash', 'message'})
+    tree_hash = _text(args, 'tree_hash', MAX_NAME)
+    if not OBJECT_ID.fullmatch(tree_hash):
+        raise BadRequest('tree_hash is a full git tree id (the one the board\'s GO names).')
     branch = _text(args, 'branch', MAX_NAME)
-    return {'branch': branch, 'tree_hash': broker.push_bundle(caller, branch, bundle)}
+    pushed = broker.push_bundle(caller, branch, _text(args, 'patch', MAX_NAME), tree_hash,
+                                _text(args, 'message', MAX_TEXT))
+    return {'branch': branch, 'tree_hash': pushed}
 
 
 def _open_or_update_draft_pr(broker: Broker, caller: Caller, args: Mapping[str, object]) -> dict[str, object]:
@@ -169,7 +184,7 @@ _OPERATIONS: Final[Mapping[str, Callable[[Broker, Caller, Mapping[str, object]],
 #: Each refusal the broker or the host client raises, and its status: the nearest class in the refusal's MRO.
 _REFUSAL_STATUSES: Final[Mapping[type, int]] = {
     NotPermitted: 403, NotNow: 409, Conflict: 409, WriteRefused: 422,
-    InvalidTarget: 400, NotFound: 404, HostBusy: 503, HostError: 502,
+    InvalidTarget: 400, NotFound: 404, HostBusy: 503, Unavailable: 503, HostError: 502,
 }
 
 
@@ -205,18 +220,29 @@ def handle(event: Mapping[str, object], role_name_pattern: str, account: str, br
 
 
 @lru_cache(maxsize=1)
-def broker_for(parameter_prefix: str) -> Broker:
+def broker_for(parameter_prefix: str, table: str = '', bucket: str = '', aggregates: str = '') -> Broker:
     """The container's broker (one, so its credentials and tokens stay warm): the GitHub client over the
-    connections under ``parameter_prefix``, with no run records or GO ledger yet; no connector without a prefix."""
+    connections under ``parameter_prefix``, and the run's records, the patches and the dial in ``table``, ``bucket``
+    and ``aggregates`` (``UNCONNECTED`` while any is unnamed); no connector without a prefix."""
     if not parameter_prefix:
         return Broker(None)
     host = GitHubHost(ParameterStoreCredentials(parameter_prefix).get)
-    return Broker(Connector(host=host, bundles=UNCONNECTED, runs=UNCONNECTED, ledger=UNCONNECTED))
+    if not (table and bucket and aggregates):
+        return Broker(Connector(host=host, bundles=UNCONNECTED, runs=UNCONNECTED, ledger=UNCONNECTED,
+                                dial=UNCONNECTED))
+    from shared.aws import get_dynamodb_client, get_dynamodb_resource, get_s3_client
+
+    # No ListBucket on the broker's role: an object never written answers 403, read as missing (and counted).
+    workspace = WorkspaceStore(get_s3_client(), bucket, denied_is_missing=True)
+    records = RunRecords(get_dynamodb_client(), table, workspace, host.default_branch)
+    return Broker(Connector(host=host, bundles=WorkspacePatches(workspace, host.file_at), runs=records,
+                            ledger=records, dial=WaysOfWorking(get_dynamodb_resource().Table(aggregates))))
 
 
-@instrumented_handler
+@instrumented_handler   # (its metrics flush: the workspace store's count of denied reads taken as missing)
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
-    # The run records and the board's GO ledger are not built yet: every permitted, well-formed operation answers 503.
     account = own_account(getattr(context, 'invoked_function_arn', None))
-    return handle(event, os.environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
-                  broker_for(os.environ.get(PARAMETER_PREFIX_ENV, '')))
+    environ = os.environ
+    return handle(event, environ.get(ROLE_NAME_PATTERN_ENV, ''), account,
+                  broker_for(environ.get(PARAMETER_PREFIX_ENV, ''), environ.get(TABLE_ENV, ''),
+                             environ.get(BUCKET_ENV, ''), environ.get(AGGREGATES_ENV, '')))

@@ -48,6 +48,8 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 from engineering.connectors.credentials import GitHubAppCredential
 from engineering.connectors.hosts import (
+    FILE_MODES,
+    OBJECT_ID,
     BundleContents,
     CommentTarget,
     Conflict,
@@ -75,8 +77,6 @@ DEFAULT_RETRY_SECONDS: Final = 60
 #: The most of one response the client reads (a Lambda function URL answers at most 6 MB).
 MAX_RESPONSE_BYTES: Final = 5 * 1024 * 1024
 PAGE_SIZE: Final = 30
-#: The git modes a pushed file may have: a file, an executable, a symbolic link (never a submodule or a tree).
-FILE_MODES: Final = frozenset({'100644', '100755', '120000'})
 #: A comparison of a new branch's base with the default branch that puts the base on it (``base...head``: the head
 #: is behind the base, or the same commit).
 _ON_DEFAULT_BRANCH: Final = frozenset({'behind', 'identical'})
@@ -99,7 +99,10 @@ _COMMENTS: Final[Mapping[CommentTarget, Permissions]] = {
     'issue': {'issues': 'write'}, 'pull_request': {'pull_requests': 'write'}}
 _PUSH: Final[Permissions] = {'contents': 'write'}
 _BRANCH: Final[Permissions] = {'contents': 'read'}
-_PULLS: Final[Permissions] = {'pull_requests': 'read'}
+#: The repository's own facts (its default branch): what every token holds anyway.
+_METADATA: Final[Permissions] = {'metadata': 'read'}
+#: How long a connection's default branch is kept before it is read again.
+DEFAULT_BRANCH_SECONDS: Final = 300
 _DRAFT: Final[Permissions] = {'contents': 'read', 'pull_requests': 'write'}
 
 
@@ -285,6 +288,8 @@ class GitHubHost:
         self._clock = clock
         #: (connection, installation, owner/repository, permissions) -> (token, when it stops being used).
         self._tokens: dict[tuple[str, int, str, tuple[tuple[str, str], ...]], tuple[str, float]] = {}
+        #: (connection, owner/repository) -> (its default branch, when it is read again).
+        self._default_branches: dict[tuple[str, str], tuple[str, float]] = {}
 
     # --- HTTP -------------------------------------------------------------------------------------------------
 
@@ -354,6 +359,28 @@ class GitHubHost:
         except UnicodeDecodeError:
             raise InvalidTarget('The file is not UTF-8 text; the broker reads text files only.') from None
 
+    def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
+        """The bytes of ``path`` at ``commit`` (a full object id), ``None`` when the commit has no such file: a
+        submitted patch's base (``patches.py``). At most ``MAX_RESPONSE_BYTES``, like every answer."""
+        if not OBJECT_ID.fullmatch(commit):
+            raise InvalidTarget('The commit is a full object id.')
+        response = self._api(connection_id, _READS['file'], 'GET',
+                             f'/contents/{_repository_path(path)}?{urlencode({"ref": commit})}', 'the base file read',
+                             accept=_RAW, ok=(200, 404))
+        return None if response.status == 404 else response.body
+
+    def default_branch(self, connection_id: str) -> str:
+        """The repository's default branch, kept ``DEFAULT_BRANCH_SECONDS`` per connection and repository."""
+        credential = self._credentials(connection_id)
+        key = (connection_id, f'{credential.owner}/{credential.repository}')
+        held = self._default_branches.get(key)
+        now = self._clock()
+        if held is not None and now < held[1]:
+            return held[0]
+        branch = _text(_json(self._api(connection_id, _METADATA, 'GET', '', 'the repository read')), 'default_branch')
+        self._default_branches[key] = (branch, now + DEFAULT_BRANCH_SECONDS)
+        return branch
+
     def _read_history(self, connection_id: str, target: str, page: str) -> ReadPage:
         # "." is the whole repository's history; any other target, the history of that path.
         fields: dict[str, object] = {'per_page': PAGE_SIZE, 'page': page}
@@ -391,9 +418,6 @@ class GitHubHost:
             content[key] = _items(_json(response), fields)
             cursors += [c for c in [next_page(response.headers)] if c is not None]
         return ReadPage(content=json.dumps(content), next_cursor=cursors[0] if cursors else None)
-
-    def open_pull_request(self, connection_id: str, branch: str) -> PullRequestRef | None:
-        return self._open_pull_request(connection_id, _PULLS, branch)
 
     def _open_pull_request(self, connection_id: str, permissions: Permissions, branch: str) -> PullRequestRef | None:
         credential = self._credentials(connection_id)

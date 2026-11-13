@@ -17,6 +17,32 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.23.00] - 2026-11-13
+
+Autonomous engineering agents: the connector's broker reads what a run recorded (its record, the board's final-go GO, the committer's submitted patch) and the dial before anything is pushed. Human-driven pushes nothing, AI-assisted waits for a person's go on the run, AI-driven goes on to a draft pull request. Reads only, no fixed cost, off by default (`-c engineeringAgents=true`).
+
+### Added
+
+- The broker's readers (`voc-datalake/lambda/engineering/connectors/`): `records.py`, the caller's run from its own `META` (status, connection, commit, the person who started it; only an active run is served, a META naming another run is none), the board's GO ledger (the latest ended final-go task's gate record, read alone, a GO only for exactly the tree asked about) and a person's go; `patches.py`, the committer's submitted patch (`git diff --binary`), read only from the caller's own `_patches/` keys on the run's commit, at most 6 MB (refused, never cut), applied exactly to the run's commit as the host has it (text hunks, binary literals and deltas, renames, deletions, mode changes; no copy, submodule, fuzz, text sent as a binary patch, or path with a control character; content bounded by a running total); `dial.py`, the run starter's stored way of working (its `mode` alone), failing closed: only an explicitly stored AI-assisted or AI-driven lets a run push. They replace `hosts.UNCONNECTED` where the stack names the engineering table, the workspace bucket and the aggregates table.
+- The dial before every push and pull request (TENETS.md tenet 3): Human-driven refuses both (reads and comments stay as the write rules allow); AI-assisted holds both for a person's go on the run; AI-driven goes on to the GO and the write rules. A pull request is a draft in every mode, and no operation marks one ready or merges. A test for each mode.
+- `POST /agents/engineering/<run_id>/go` (the Agents API, an administrator acting for themselves, 404 while the module is off, no MCP tool): a person's go on a live run, written by the board function as one create-only `GO#person` row `{by, at, reason?}` (`{reason?}`: at most 500 characters, credential-shaped text redacted); a go already given is answered as it stands. No event, no bus needed: the row is the record.
+- The GitHub client reads a file at a commit (`file_at`, raw, `contents: read`) and the repository's default branch (`metadata: read`, kept five minutes).
+- `RunStore.start` records the person who started the run on its `META` (`started_by`).
+
+### Changed
+
+- `push_bundle` takes `{branch, patch, tree_hash, message}`: the workspace key of the committer's submitted patch, the tree the board's GO names and the commit's message (it took a base64 bundle in the request, which nothing parsed). The host's client pushes one commit on the run's commit and moves the branch only when the tree it rebuilt is that tree.
+- Every push needs the board's final-go GO for exactly its tree (before, only a push to a branch with an open pull request did); the broker refuses a run waiting at a person's decision, or ended, as it refused a stopped one; a run's records, the workspace or the way of working that cannot be read answer 503.
+- docs/autonomous-engineering.md (Repository connectors: what the broker reads, its grants and what is still planned; the templates' dial; Trust and safety; the phase table's row 1), docs/autonomous-agents.md (the go route) and docs/deployment.md say so; TENETS.md's tenet 3 row says the broker reads the dial and AI-assisted waits for a person's go, one per run, and tenet 4's admin-only list names the go.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true` only, the broker's role gains reads, never a write: `dynamodb:GetItem` and `dynamodb:Query` on `voc-engineering` in the runs' partitions (`WS#*#RUN#*`), `dynamodb:GetItem` on the aggregates table in the people's flag partitions (`USERFLAGS#*`) and of a row only its key and `mode` (`dynamodb:Attributes`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`), `s3:GetObject` on `voc-eng-workspace`'s `ws/default/runs/*/commits/*/_patches/*` and `ws/default/runs/*/final-go-*/commits/*/_gate/*`, and `kms:Decrypt` on the stack's key through DynamoDB and S3. Its function gets `ENGINEERING_TABLE`, `ENGINEERING_WORKSPACE_BUCKET` and `AGGREGATES_TABLE`. VocProcessingStack now needs VocCoreStack's table and bucket before it creates the broker, as it did for the bus.
+- The dial's effect: a run's push and pull request now follow the way of working of the person who started it (Users → a person's way of working). A run started without a person (every run today: nothing starts one with its person yet) is Human-driven for the broker and pushes nothing. The broker fails closed, stricter than the documents' reading (where no row is AI-driven): a person with no saved way of working pushes nothing; they set AI-assisted or AI-driven to let a run push (so does a stored mode outside the three). Nothing pushes yet in any mode: no connection can be stored and no CI attestation is recorded, so every push and pull request is still refused, and every operation answers 503 without a connection.
+- No stored row is changed; a run started before this release has no `started_by` and works Human-driven for the broker.
+
+Merged from the voc-autonomous branch. Off by default.
+
 ## [6.22.00] - 2026-11-13
 
 Autonomous engineering agents: the spend ledger and its Agents → Spend tab, a flow's monthly budget (recorded only), and a person's board actions made by the board's own function, so the Agents API writes no board row. No fixed cost.

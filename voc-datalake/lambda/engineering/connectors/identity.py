@@ -47,6 +47,11 @@ class Caller:
     agent_index: int
 
 
+def agent_id(caller: Caller) -> str:
+    """The agent's id on the board, the bus and in the workspace's keys: ``<role>-<index>`` (its run comes with it)."""
+    return f'{caller.role}-{caller.agent_index}'
+
+
 def _user_arn(event: Mapping[str, object]) -> str:
     node: object = event
     for key in ('requestContext', 'authorizer', 'iam', 'userArn'):

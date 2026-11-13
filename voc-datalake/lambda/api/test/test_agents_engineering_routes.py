@@ -360,6 +360,59 @@ def test_another_persons_hold_is_ended_only_when_over_asks(lambda_context: Any, 
         'voc.engineering/api', {'kind': 'human', 'id': 'admin-sub'})
 
 
+def test_an_admin_gives_an_ai_assisted_run_its_go_once_without_the_bus(lambda_context: Any,
+                                                                         run: tuple[Any, EngineeringRun],
+                                                                         actions: Actions,
+                                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    _, engineering = run
+    monkeypatch.delenv('ENGINEERING_BUS_NAME')   # (the row is the record: no event, so no bus needed)
+    status, body = _call(lambda_context, 'POST', f'{BASE}/go', body={})
+    assert (status, body['go']['by'], body['go']['created']) == (200, 'human:admin-sub', True)
+    other = {**ADMIN, 'sub': 'admin-2-sub', 'cognito:username': 'carol'}
+    status, again = _call(lambda_context, 'POST', f'{BASE}/go', body={}, claims=other)
+    assert (status, again['go']['by'], again['go']['created']) == (200, 'human:admin-sub', False)
+    row = engineering.client.get_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'},
+                                                            'sk': {'S': 'GO#person'}})['Item']
+    assert row['by'] == {'S': 'human:admin-sub'}
+    assert actions.bus.entries == []
+
+
+@pytest.mark.parametrize('claims', [USER, DELEGATED_ADMIN])
+def test_only_an_admin_acting_for_themselves_gives_a_go(lambda_context: Any, run: tuple[Any, EngineeringRun],
+                                                         actions: Actions, claims: dict[str, str]) -> None:
+    _, engineering = run
+    assert _call(lambda_context, 'POST', f'{BASE}/go', body={}, claims=claims)[0] == 403
+    assert 'Item' not in engineering.client.get_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'},
+                                                                           'sk': {'S': 'GO#person'}})
+    assert actions.bus.entries == []
+
+
+def test_an_ended_or_unknown_run_takes_no_go(lambda_context: Any, run: tuple[Any, EngineeringRun],
+                                             actions: Actions) -> None:
+    _, engineering = run
+    assert _call(lambda_context, 'POST', f'/agents/engineering/{UNKNOWN}/go', body={})[0] == 404
+    engineering.client.update_item(
+        TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'META'}},
+        UpdateExpression='SET ended_at = :at', ExpressionAttributeValues={':at': {'S': '2026-11-13T12:00:00Z'}})
+    assert _call(lambda_context, 'POST', f'{BASE}/go', body={})[0] == 409
+    assert actions.runtime.requests == []
+
+
+@pytest.mark.parametrize('events', [[{'not': 'an event'}], ['a person event']])
+def test_a_go_whose_board_hands_back_an_event_is_the_boards_fault(lambda_context: Any, actions: Actions,
+                                                                   monkeypatch: pytest.MonkeyPatch,
+                                                                   events: list[object]) -> None:
+    import agents_handler
+    from engineering.board import api as board_api
+
+    real = board_api.person_request
+    monkeypatch.setattr(board_api, 'person_request', lambda store, person: {**real(store, person), 'events': events})
+    if events == ['a person event']:   # (one the API would take for the person's: a go still sends none)
+        monkeypatch.setattr(agents_handler, '_persons_events', lambda raw, *_: list(raw))
+    assert _call(lambda_context, 'POST', f'{BASE}/go', body={})[0] == 503
+    assert actions.bus.entries == []
+
+
 def _taken(lambda_context: Any, engineering: EngineeringRun) -> str:
     """The run's task, taken by the signed-in admin."""
     assert _call(lambda_context, 'POST', f'{BASE}/board/tasks/{engineering.task_id}/take', body={})[0] == 200

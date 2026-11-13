@@ -233,7 +233,9 @@ describe('cdk-nag acknowledgements', () => {
       // board's read of the knowledge packs' objects (one prefix), its IAM5.
       // 89 -> 90: the engineering runtime's read of the quality gate's records for a run's retrospective (one
       // prefix), its IAM5.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 90, used: 90 });
+      // 90 -> 92: the engineering broker's reads of the agents' submitted patches and of the gate records (two
+      // prefixes), their IAM5.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 92, used: 92 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

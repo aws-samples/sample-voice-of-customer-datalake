@@ -79,12 +79,64 @@ stack). Designed for them from day one.
 ## Repository connectors
 
 *Partly built*: the broker's caller identity, operations per role and write rules, the GitHub client and the
-credential reader (`voc-datalake/lambda/engineering/connectors/`), deployed only with `-c engineeringAgents=true`.
-Planned: the broker reading the run records (the runtime writes each run's META, with its connection, commit and
-language, since 6.11.00; the broker is built with `runs=UNCONNECTED`), the board's GO ledger, the bundle reader, the
-connection page that stores a credential, the checkout cache by commit sha, sparse clones, and the GitLab client.
-Until the broker reads them, it finds no run, so every permitted, well-formed operation still answers 503 and
-nothing reaches GitHub.
+credential reader, and, since 6.23.00, its readers of what a run recorded: the run's own record, the board's GO
+ledger, the committer's submitted patch and the dial (`voc-datalake/lambda/engineering/connectors/`: `records.py`,
+`patches.py`, `dial.py`), deployed only with `-c engineeringAgents=true`. Planned: the connection page that stores a
+credential (so no deployment has a connection yet, and every operation still answers 503), the CI attestation's
+record, the run's issue and pull request and its cited reviews on the run's record, the checkout cache by commit
+sha, sparse clones, and the GitLab client.
+
+**What the broker reads (6.23.00).** Reads only, of rows and objects other code writes:
+
+- **The run** (`records.py`): the caller's run's `META` (its session names the run, never the request), read
+  strongly consistent: its status, connection, commit and `started_by`, the person who started it (the run's start
+  records it since 6.23.00; a run started with no person has none). A META that names another run is no run; the
+  broker serves only an `active` run (stopped, ended or waiting at a person's decision: 409, with the reason). The
+  default branch comes from the host (kept five minutes). Not on the record yet, so read as absent: the CI
+  attestation (so every push and pull request is still refused, after the dial), the run's issue and pull request
+  (so no comment is accepted), and the reviews behind its feedback ids (so the verbatim-quote rule has nothing to
+  compare; the personal-data rules still run).
+- **The GO ledger**: the run's `TASK#` rows (one Query of its partition). The final-go task that ended last
+  (done, failed or needing a person, a person's block included) is the run's verdict whatever its state, with the
+  gate record its own holder, a final-go agent, recorded last (`_gate/attempt-<n>/record.json`); an older task's
+  passing record never stands in for it. Only a GO of a task that ended done, with no stop, for exactly the tree asked about,
+  counts. Only that one record is read (at most 1 MB); one that cannot be read or is off `voc-gate-record/1` is no GO.
+  Every push and every pull request needs it: the push for the tree it names, the pull request for the branch's
+  tree on the host.
+- **The submitted patch** (`patches.py`): the push names the committer's patch (what `submit_work` wrote,
+  `git diff --cached --binary` against the run's commit), its message and the GO'd tree. Only a key of the caller's
+  own is read (`ws/default/runs/<run>/<agent>/commits/<run's commit>/_patches/attempt-<n>/<name>.diff`), at most 6 MB (refused, never
+  cut). It is applied file by file to the run's commit as the host has it: every hunk must match its base exactly, a
+  binary file is a literal or a delta on its base; a copy, a submodule, a binary file without its content, a binary
+  patch whose file is text by git's own rule (no NUL byte in its first 8000 bytes) or reads as UTF-16 text (it would
+  pass the write rules unread: text comes as a text diff), a path with a
+  control character, more than 1,000 files or 32 MB of content (a running total, and a delta's stated size before
+  it is built) are refused. The write rules then read every path it changes and every line it
+  adds, and the host's client pushes one commit on the run's commit and moves the branch only when the tree it
+  rebuilt is the GO'd one. A branch takes one such push: a later push to it finds the branch moved and is refused
+  (409) until pushes build on the branch's head (planned).
+- **The dial** (`dial.py`, TENETS.md tenet 3): the way of working of the person who started the run, from
+  `shared/ai_mode.py` (`USERFLAGS#<sub>` / `ai_mode` in the aggregates table, written only by the users API for an
+  administrator), read again at every push and pull request. Human-driven: every push and pull request is refused
+  (409, with the reason); reads and comments stay as the write rules allow. AI-assisted: a push or a pull request
+  waits for a person's go on the run, `POST /agents/engineering/<run_id>/go` (an administrator acting for
+  themselves; the board function writes one create-only `GO#person` row, `{by, at, reason?}` (a reason of at most
+  500 characters, credential-shaped text redacted), while the run is live; a go already given is answered as it
+  stands; no event, the row is the record). AI-driven: goes on to the GO and the write rules. It fails closed, on
+  purpose stricter than `shared/ai_mode.py`'s reading for documents (where no row is AI-driven): only an explicitly
+  stored AI-assisted or AI-driven lets a run push. A person with no saved way of working pushes nothing (they, or
+  an administrator for them, set AI-assisted or AI-driven to let a run push); so does a stored mode outside the
+  modes, a run that names no person, or one that names something that is not a person's subject; a read that fails
+  is 503, never a pass. The broker reads only the row's `mode` (a projection, which its IAM grant requires). In every mode a pull request is a draft: no operation marks one ready or merges. The go is one per run, not
+  per step: marking where each flow's later steps wait is planned with the flows.
+
+The broker's role reads exactly these (`voc-datalake/lib/stacks/engineering-broker.ts`, pinned by its test):
+`dynamodb:GetItem` and `dynamodb:Query` on voc-engineering in the runs' partitions (`WS#*#RUN#*`), `dynamodb:GetItem`
+on the aggregates table in the people's flag partitions (`USERFLAGS#*`) and of a row only its key and `mode`
+(`dynamodb:Attributes`, `dynamodb:Select` `SPECIFIC_ATTRIBUTES`), `s3:GetObject` on the workspace's patches and the
+final-go agents' gate records (`ws/default/runs/*/commits/*/_patches/*`,
+`ws/default/runs/*/final-go-*/commits/*/_gate/*`), and `kms:Decrypt` through DynamoDB and S3;
+no write to any table or bucket.
 
 **What is built.** The GitHub client (`connectors/github.py`) reuses a cached installation token or, to mint one, signs
 a nine-minute App JWT (RS256, the App's private key from the connection's parameter, below) for an installation token for the connection's one repository and
@@ -96,8 +148,8 @@ follow the `Link` header's next page (the cursor is that page number, nothing el
 pull request, its conversation, its review comments and its reviews, a page of each. A rate limit (`Retry-After`,
 `X-RateLimit-Remaining: 0` with `X-RateLimit-Reset`, or a secondary rate limit) is never waited out inside a call: it
 is answered 503 with `Retry-After`. A file path with an empty, `.` or `..` part is refused before any request, and a
-file that is not UTF-8 text is refused rather than read lossily. A push takes the bundle as the bundle reader parsed
-it (its base commit and each commit's changed files; its changed paths and added lines cover every commit, not only
+file that is not UTF-8 text is refused rather than read lossily; a patch's base file is read raw at the run's commit.
+A push takes its commits as the patch reader read them (`BundleContents`: its base commit and each commit's changed files; its changed paths and added lines cover every commit, not only
 the final tree). The client refuses a commit that changes a path the bundle does not list, and refuses unless the
 branch's head is the bundle's base or, for a branch not on GitHub yet, the base is the default branch's head or an
 ancestor of it (a base GitHub does not have is refused too). It rebuilds the commits with the Git Data API (a tree on
@@ -112,8 +164,8 @@ cannot turn a pull request someone marked ready back into a draft. Every request
 transport, with no redirect followed; a token is sent only in the `Authorization` header, never in a URL or a log
 line. The client has no method for a merge, an approval, settings, branch protection, members, webhooks or secrets.
 Each write the host accepts gets an operational log line with the operation, the caller, the connection and what was
-written (issue or pull request number, branch, tree hash, commit count), never a body, a bundle or a token; the
-durable audit row (D4) comes with the broker reading the run records.
+written (issue or pull request number, branch, tree hash, commit count), never a body, a patch or a token; the
+durable audit row of each write (D4) is still planned (the broker writes no table).
 
 | Host | Credential | Permissions it holds | Never |
 |---|---|---|---|
@@ -133,13 +185,14 @@ branch, being refused:
 |---|---|
 | every agent | read files, history, issues and pull requests through the broker; checkouts come from the cache it fills |
 | issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record) |
-| committer | push a git bundle to the agent's branch |
+| committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`) |
 | PR author | open or update the agent's draft pull request |
 
 Every operation goes through the connector's rules, which refuse, before the host would: a push to any branch but
-the run's own (`voc-agent/{run_id}/…`, the run from the caller's session name), the default branch above all; a push
-to a branch with an open pull request unless the board holds a GO for the new tree; a bundle with other than exactly
-one head ref; a merge, an approval; any call to
+the run's own (`voc-agent/{run_id}/…`, the run from the caller's session name), the default branch above all; any
+push or pull request the dial holds (above); any push or pull request without the board's final-go GO for exactly
+its tree (since 6.23.00 every push, not only one to a branch with an open pull request); a push with other than
+exactly one head ref; a merge, an approval; any call to
 settings, branch protection, members, webhooks or secrets; a change to the CI definition paths it knows (the GitHub
 workflows and actions folders, the GitLab CI files: best effort, since a pipeline can include other files; the CI
 attestation below is the real boundary, and the GitHub App holds no `workflows` permission); a write that carries
@@ -597,8 +650,9 @@ English in every language (the template's name and description are translated). 
 engineering runtime does not start a run from a flow. *Planned*: the templates over MCP (their route is for
 administrators, and an MCP token never acts as one: TENETS.md's tenet 4 gap, as for a run's reads), and marking in
 each template where the dial stops it (tenet 3: human-driven stops at the proposal or plan, AI-assisted waits for a
-person's go after the plan); today a template does not say, and the dial is to be enforced by the runtime, not the
-template.
+person's go after the plan); today a template does not say, and the dial is enforced server side, not by the
+template: the broker reads it before every push and pull request since 6.23.00 ([Repository
+connectors](#repository-connectors)); the runtime's other steps do not read it yet.
 
 **New steps in the workflow editor**, each with its settings, a palette entry and validation rules, like the existing
 steps and loops: Agent (a role from the catalog, with its skill version, model and budget), Map (fan-out over shards,
@@ -1441,7 +1495,10 @@ ARN, in the change that first uses it.
   each step past the plan waiting for a person's go. AI-driven: the flow runs end to end to a draft pull request. A
   person marks a pull request ready and merges it; an agent never merges, never marks one ready and never changes the
   dial. Whether a passing skill version may apply itself in AI-driven mode is not part of this and still waits for
-  the owner.
+  the owner. *Built for the broker* (6.23.00, [Repository connectors](#repository-connectors)): it reads the dial of
+  the person who started the run before every push and pull request, refuses both in Human-driven, holds both for a
+  person's go on the run in AI-assisted (one go per run; per-step waits are planned), and has no operation that marks
+  a pull request ready or merges; the rest of a flow does not read the dial yet.
 - **Repository text is data, never instructions.** READMEs, code, issues, PR comments, the knowledge pack, memories,
   other agents' messages and customer feedback (which anyone can send through the public forms) reach a model inside
   DATA blocks. That lowers the risk of a planted instruction; it does
@@ -1586,7 +1643,7 @@ and the phase that ships them names them in that row.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | this design, the benchmark harness and its fixtures | design written; the benchmark harness (the `voc-bench/1` cases, the runner, scorecards) and its four fixtures built, nothing invoking them yet ([Evaluation](#evaluation)) |
-| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader (the broker reads no run record and there is no GO ledger yet, so it still refuses every operation with 503); the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
+| 1 | the connectors (GitHub, then GitLab) and the broker, credentials, read paths, sparse clones; the Understand flow, the knowledge pack per package and the repository's tenets | in progress: the broker's caller identity, operations per role and write rules; the GitHub client and the credential reader; the broker's readers of the run's record, the board's GO ledger, the submitted patch and the dial, and a person's go on an AI-assisted run (6.23.00, [above](#repository-connectors); no connection can be stored yet, so every operation still answers 503, and with one every push and pull request would still be refused until the CI attestation is recorded); planned: the connection page, the attestation's record, GitLab, sparse clones and the checkout cache; the knowledge pack's package detection, shards, map step, reduce and versioned store with approval ([above](#the-knowledge-pack)), nothing invoking them yet |
 | 2 | the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, the cache, the mount, scoped roles); the bus, inboxes, board, conversation, workspace | in progress: the bus, the inbox router, the conversation, the board API with each task's history, its agents' `inbox`, `progress`, `tasks` and `knowledge` ops, the coordinator's `coordinate` task and `launch`, the lease's refresh and the supervisor's re-post, the push to the delivery function, the workspace's layout, findings and store in its own bucket, and the administrators' run monitor (its reads, signals and answers) and the read routes for a run's board and conversation ([above](#how-the-agents-work-together)); the runtime (one MicroVM per agent, the launcher, the harness, the supervisor, continuation, checkpoints, sparse clones, the mount, scoped roles, the run monitor's signals, the images, the run's start and end, the agent roles' access to the board, the broker and the bus, the delivery function: built, not yet run against AWS, [above](#runtime-one-microvm-per-agent)) |
 | 3 | the language gate packs and the quality gate; skills and their history, the coach, agent memory, the benchmark gate for skill versions | in progress: the three gate packs and the quality gate step, as a CLI ([above](#the-quality-gate)); the skills' record, diff and versioned store with an administrator's acceptance and rollback, proposed to by the coach from a run's retrospective ([above](#getting-better-skills-the-coach-the-learning-loop-memory)); the agents' memory store and its recall for a task, its role lessons drafted by a run's retrospective (recall not yet invoked by the harness; same place); the benchmark gate for skill versions (no regression, a gain on the failure's case) and its record on a version, which a coach's version needs to be accepted, nothing invoking it yet ([Evaluation](#evaluation)); the coach (a failure in, a proposed version naming its expected benchmark case out, through the skills store, with its `skill.proposed` message for the caller to publish), invoked by the learning loop (same place as the skills); the learning loop and its scorecards, built: a run's end starts its retrospective (an asynchronous invocation of the runtime), which takes at most three failures to the coach (one Converse call each, once), drafts a lesson in agent memory for each failure taken to the coach (at most three per run) for an administrator to approve, and writes one create-only scorecard row per skill version per run, read by one bounded Query per version (same place); a connection's own cases from its failures, people's reactions on the host as the loop's input, and the scorecard screens planned |
 | 4 | the agents, the six default flows and the new editor steps' server side, the reports, the run monitor's signals | in progress: the new editor steps' server side (engineering flows as `voc-workflow/2`, [above](#how-the-agents-work-together)), the six default flows as validated templates in one file the server lists (`GET /workflows/templates`) and the web app reads (same place), and the report builder with its administrators' REST reads ([Reports](#reports)), nothing invoking it yet; the agents planned, and no run started from a flow yet |

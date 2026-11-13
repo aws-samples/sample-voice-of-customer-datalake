@@ -53,8 +53,9 @@ from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
 from engineering.board.model import CLAIMED, FINAL, MOVES, NEEDS_HUMAN, OPEN, PERSON_PREFIX, Move, Task, task_key
+from engineering.connectors.hosts import ACTIVE
 from engineering.quality_gate.text import redact
-from engineering.rows import Refused, get_row, run_pk, run_rows
+from engineering.rows import Refused, get_row, run_pk, run_rows, string_attr
 from engineering.workspace.layout import parse_agent_key
 from shared.aws import is_conditional_check_failure
 from shared.ids import is_key_collision
@@ -74,6 +75,10 @@ PERSON_LEASE_EXPIRES = 253_402_300_799
 #: The run's coordinate task (one per run, the coordinator's): its id and its role.
 COORDINATE_TASK = 'coordinate'
 COORDINATOR = 'coordinator'
+#: A person's go on a run (``person_go``): its row's sort key in the run's partition.
+PERSON_GO_SK = 'GO#person'
+#: The longest reason a person's go keeps.
+MAX_GO_REASON = 500
 #: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 2, the run's
 #: start having taken 1 for its coordinator (``coordinate_items``' ``coordinator-1``, ``agent_count`` 1 on META).
 MAX_AGENTS = 999
@@ -87,6 +92,19 @@ class BoardError(Refused):
 class Posted:
     task: Task
     created: bool
+
+
+@dataclass(frozen=True)
+class PersonGo:
+    """A person's go on a run: who gave it and when; ``created``, this call wrote it."""
+
+    by: str
+    at: str
+    created: bool
+    reason: str = ''
+
+    def view(self) -> dict[str, Any]:
+        return {'by': self.by, 'at': self.at, 'created': self.created, 'reason': self.reason or None}
 
 
 @dataclass(frozen=True)
@@ -641,6 +659,35 @@ class BoardStore:
             remove='lease_agent, lease_epoch, lease_expires, progress_at, step',
             values={':open': {'S': OPEN}, ':one': {'N': '1'}}, done=done, pin_holder=True,
             row_attempt=current.attempt + 1)   # (its history row at the attempt it opens, as a re-post's)
+
+    def person_go(self, ws: str, run_id: str, *, actor: str, reason: str = '') -> PersonGo:
+        """A person's go on the run (an AI-assisted run's push and pull request wait for it: connectors/records.py):
+        one create-only ``GO#person`` row in the run's partition, ``{by, at}`` (D1, D4), written only while the run
+        is live (active or at a decision point: META read first, with the GetItem and the create-only PutItem the
+        board's role already holds; a run that ends between the two keeps a go nothing reads, since the broker serves
+        only an active run). A go already there is answered as it is (``created`` False), whoever gave it: it is never
+        replaced, and nothing takes it back but the run's end. ``reason``, when given (why, D4), is kept with it: at
+        most ``MAX_GO_REASON`` characters, credential-shaped text redacted."""
+        if not actor.startswith(PERSON_PREFIX):
+            raise BoardError('invalid', f'a person acts as {PERSON_PREFIX}<their id>')
+        if len(reason) > MAX_GO_REASON:
+            raise BoardError('invalid', f'a reason is at most {MAX_GO_REASON} characters')
+        if string_attr(self.meta(ws, run_id) or {}, 'status') not in {ACTIVE, NEEDS_HUMAN}:
+            raise BoardError('conflict', 'the run is not live: it takes no go')
+        pk = {'S': run_pk(ws, run_id)}
+        at = self.now().isoformat()
+        item = {'pk': pk, 'sk': {'S': PERSON_GO_SK}, 'kind': {'S': 'person_go'}, 'by': {'S': actor}, 'at': {'S': at}}
+        if reason.strip():
+            item['reason'] = {'S': redact(reason.strip())}
+        try:
+            self.client.put_item(TableName=self.table, Item=item, ConditionExpression='attribute_not_exists(pk)')
+        except ClientError as exc:
+            if not is_key_collision(exc):
+                raise
+            held = self._get({'pk': pk, 'sk': {'S': PERSON_GO_SK}}) or {}
+            return PersonGo(by=string_attr(held, 'by'), at=string_attr(held, 'at'), created=False,
+                            reason=string_attr(held, 'reason'))
+        return PersonGo(by=actor, at=at, created=True, reason=string_attr(item, 'reason'))
 
     def move(self, ws: str, run_id: str, task_id: str, *, agent: str, epoch: int, to_state: str,
              result_keys: Sequence[object]) -> Task:

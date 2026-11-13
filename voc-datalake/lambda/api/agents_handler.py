@@ -22,7 +22,8 @@ Permissions:
   acting for themselves (403 for anyone else, an MCP credential included), and so are its signals
   and a person's answers in it (``POST …/signals``, ``…/messages``, like a decision) and a
   person's board actions (``POST …/board/tasks``, ``…/board/tasks/<task_id>/<action>``:
-  engineering/board/api.py PersonBoard), and the runs' spend by month (``GET /agents/engineering/spend``,
+  engineering/board/api.py PersonBoard) and a person's go on a run (``POST …/go``, what an AI-assisted run's push
+  waits for), and the runs' spend by month (``GET /agents/engineering/spend``,
   engineering/spend.py); while the engineering agents are off every caller gets 404.
 
 Own role (20 KB policy limit): the agents table (read/write), the aggregates table
@@ -1055,10 +1056,11 @@ def message_engineering_run(run_id: str):
 _BOARD_ERRORS = {**_MONITOR_ERRORS, 'forbidden': AuthorizationError, 'cap': TooManyRequestsError}
 
 
-def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
-    """A person's board action (``request``: ``{op: post}`` or ``{op: act, task_id, action}``) through the board
-    function, whose own role writes the change (this role writes no board row: engineering/board/api.py
-    person_request); the events it hands back are published here, from the API's source, as the person."""
+def _person_board_action(run_id: str, request: dict[str, str], *, publishes: bool = True) -> dict:
+    """A person's board action (``request``: ``{op: post}``, ``{op: act, task_id, action}`` or ``{op: go}``) through
+    the board function, whose own role writes the change (this role writes no board row: engineering/board/api.py
+    person_request); the events it hands back are published here, from the API's source, as the person. An action
+    that ``publishes`` nothing (a go: its row is the record) needs no bus."""
     monitor, caller = _acting_monitor(run_id)
     from engineering.bus.publish import PublishError
     from engineering.bus.schema import parse
@@ -1067,7 +1069,7 @@ def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
     board = os.environ.get('ENGINEERING_BOARD_FUNCTION', '')
     try:
         monitor.open_run(run_id)   # (an ended run takes no more work, as with a signal)
-        publisher = monitor.bus()  # (no bus, no change: its event could not be sent)
+        publisher = monitor.bus() if publishes else None  # (no bus, no change: its event could not be sent)
         if not board:
             raise ServiceUnavailableError('the board cannot be reached from here: the deployment names no board function')
         person = {**request, 'run_id': run_id, 'subject': caller.subject, 'body': json_object_body(app)}
@@ -1079,8 +1081,13 @@ def _person_board_action(run_id: str, request: dict[str, str]) -> dict:
         if not isinstance(result, dict):   # (the board's fault, as an event that is not the person's: nothing sent)
             logger.error('engineering: the board answered ok with no answer')
             raise ServiceUnavailableError('the board could not be reached: retry')
-        for message in _persons_events(answer.get('events'), parse, run_id, caller.subject, request):
-            publisher.publish(message)
+        messages = _persons_events(answer.get('events'), parse, run_id, caller.subject, request)
+        if messages:
+            if publisher is None:   # (an action that publishes nothing handed an event back: the board's fault)
+                logger.error('engineering: the board handed back an event for an action that has none')
+                raise ServiceUnavailableError('the board could not be reached: retry')
+            for message in messages:
+                publisher.publish(message)
     except Refused as refused:   # (the monitor's refusals: the same kinds)
         raise _BOARD_ERRORS[refused.kind](str(refused)) from refused
     except (ClientError, BotoCoreError) as exc:
@@ -1146,6 +1153,18 @@ def act_on_engineering_task(run_id: str, task_id: str, action: str):
     """``priority {priority}`` | ``block {reason, over?}`` | ``take {over?}`` | ``move {to}`` | ``release {}`` →
     ``{task}`` (admin)."""
     return _person_board_action(run_id, {'op': 'act', 'task_id': task_id, 'action': action})
+
+
+@app.post('/agents/engineering/<run_id>/go')
+@tracer.capture_method
+def give_engineering_go(run_id: str):
+    """``{}`` → ``{go: {by, at, created}}``: an administrator's go on the run (admin acting for themselves), which an
+    AI-assisted run's push and pull request wait for (TENETS.md tenet 3; engineering/connectors/broker.py). Written
+    once, create-only, by the board function (``GO#person``, board/store.py person_go); a go already given is
+    answered as it is. No bus needed: the row is the record (who and when, D4)."""
+    answer = _person_board_action(run_id, {'op': 'go'}, publishes=False)
+    logger.info('Engineering run given a go', extra={'run_id': run_id, 'go_written': answer.get('go', {}).get('created')})
+    return answer
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

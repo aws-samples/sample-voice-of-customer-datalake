@@ -9,10 +9,12 @@ from engineering.connectors.hosts import (
     CommentTarget,
     Commit,
     Connector,
+    Dial,
     PullRequestRef,
     ReadKind,
     ReadPage,
     RunRecord,
+    Submission,
 )
 
 RUN = '01JC8Z3K4M5N6P7Q8R9S0T1V2W'
@@ -45,11 +47,16 @@ def url_event(user_arn: str | None, body: object = None) -> dict[str, object]:
     return event
 
 
+#: The person who started the run (``record().started_by``), whose way of working the dial reads.
+STARTER = 'person-sub-1'
+
+
 def record(**overrides: object) -> RunRecord:
-    """A live, attested run on connection ``conn-1`` for issue 42 and pull request 7 that cited ``REVIEW``, with
-    ``overrides``."""
-    base = RunRecord(connection_id='conn-1', default_branch='main', stopped=False, ci_attested=True,
-                     cited_reviews=(REVIEW,), issue_number=42, pull_request_number=7, bot_addresses=(BOT,))
+    """A live, attested run on connection ``conn-1`` for issue 42 and pull request 7 that cited ``REVIEW``, started by
+    ``STARTER`` on ``BASE``, with ``overrides``."""
+    base = RunRecord(connection_id='conn-1', default_branch='main', status='active', ci_attested=True,
+                     cited_reviews=(REVIEW,), issue_number=42, pull_request_number=7, bot_addresses=(BOT,),
+                     commit=BASE, started_by=STARTER)
     return replace(base, **overrides)
 
 
@@ -66,21 +73,26 @@ def bundle_contents(*messages: str, heads: tuple[str, ...] = (f'refs/heads/{BRAN
 
 @dataclass
 class FakeHost:
-    open_pr: PullRequestRef | None = None
     tree_hash: str | None = TREE
     calls: list[tuple[object, ...]] = field(default_factory=list)
+
+    files: dict[str, bytes] = field(default_factory=dict)
 
     def read(self, connection_id: str, kind: ReadKind, target: str, cursor: str | None) -> ReadPage:
         self.calls.append(('read', connection_id, kind, target, cursor))
         return ReadPage(content=f'{kind}:{target}', next_cursor=None if cursor else 'page-2')
 
+    def file_at(self, connection_id: str, commit: str, path: str) -> bytes | None:
+        self.calls.append(('file_at', connection_id, commit, path))
+        return self.files.get(path)
+
+    def default_branch(self, connection_id: str) -> str:
+        self.calls.append(('default_branch', connection_id))
+        return 'main'
+
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         self.calls.append(('post_comment', connection_id, on, number, body))
         return f'https://code.example.com/{on}/{number}#comment-1'
-
-    def open_pull_request(self, connection_id: str, branch: str) -> PullRequestRef | None:
-        self.calls.append(('open_pull_request', connection_id, branch))
-        return self.open_pr
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         self.calls.append(('branch_tree_hash', connection_id, branch))
@@ -103,10 +115,10 @@ class FakeHost:
 @dataclass
 class FakeBundles:
     contents_: BundleContents = field(default_factory=bundle_contents)
-    read: list[bytes] = field(default_factory=list)
+    read: list[Submission] = field(default_factory=list)
 
-    def contents(self, bundle: bytes) -> BundleContents:
-        self.read.append(bundle)
+    def contents(self, submission: Submission) -> BundleContents:
+        self.read.append(submission)
         return self.contents_
 
 
@@ -121,12 +133,31 @@ class FakeRuns:
 @dataclass
 class FakeLedger:
     goes: set[tuple[str, str]] = field(default_factory=set)
+    #: The runs a person gave their go.
+    people: set[str] = field(default_factory=set)
 
     def has_go(self, run_id: str, tree_hash: str) -> bool:
         return (run_id, tree_hash) in self.goes
 
+    def person_go(self, run_id: str) -> bool:
+        return run_id in self.people
+
+
+@dataclass
+class FakeDial:
+    """Every person's way of working (AI-driven unless ``modes`` says otherwise); records whom it was asked about."""
+
+    modes: dict[str, str] = field(default_factory=dict)
+    asked: list[str] = field(default_factory=list)
+
+    def mode(self, person: str) -> str:
+        self.asked.append(person)
+        return self.modes.get(person, 'ai_driven')
+
 
 def connector(host: FakeHost | None = None, bundles: FakeBundles | None = None, runs: FakeRuns | None = None,
-              ledger: FakeLedger | None = None) -> Connector:
+              ledger: FakeLedger | None = None, dial: Dial | None = None) -> Connector:
+    """The collaborators, each a fake: by default the run's final go answered GO for ``TREE``, and its starter works
+    AI-driven."""
     return Connector(host=host or FakeHost(), bundles=bundles or FakeBundles(), runs=runs or FakeRuns(),
-                     ledger=ledger or FakeLedger())
+                     ledger=ledger if ledger is not None else FakeLedger({(RUN, TREE)}), dial=dial or FakeDial())

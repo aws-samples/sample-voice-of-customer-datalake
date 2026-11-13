@@ -3,7 +3,9 @@
 ``WS#<ws>#RUN#<run>`` / ``META`` is the run's own row: the board counts its tasks on it (``task_count``, under
 the run's ``max_tasks``), the inbox router numbers its conversation on it (``msg_seq``), the delivery function
 numbers its inbox on it (``inbox_seq``, ``delivery.py``), the reports read its
-goal, repository, flow, status and times, and the supervisor its caps and its start. The run's start writes it,
+goal, repository, flow, status and times, the supervisor its caps and its start, and the connector's broker its
+status, connection, commit and ``started_by`` (the person who started it, whose way of working its dial reads:
+``connectors/records.py``). The run's start writes it,
 once; its end sets its status and end time. Nothing else here ever writes over the board's, the router's or the
 inbox's counters: after the first write every change is an update of this module's own attributes. The start
 takes the run's first agent number (``agent_count`` 1, the board's counter of ``<role>-<n>`` ids) for its
@@ -165,7 +167,10 @@ class RunStore:
         meta: dict[str, Any] = {**meta_key(run_id), 'run_id': run_id, 'status': 'active', 'started_at': _iso(now),
                                 'started_epoch': now, 'max_tasks': caps.max_tasks, 'goal': _text(goal),
                                 'repo': _text(repo), 'flow': _text(flow), 'connection': connection, 'commit': commit,
-                                'language': language, 'agent_count': 1}
+                                'language': language, 'agent_count': 1,
+                                # Whose way of working the broker's dial reads (connectors/dial.py): the person
+                                # who started the run, '' for none (then nothing is pushed: Human-driven).
+                                'started_by': _actor(actor) if actor else ''}
         if caps.max_tokens is not None:
             meta['max_tokens'] = caps.max_tokens
         if caps.max_cost_usd is not None:

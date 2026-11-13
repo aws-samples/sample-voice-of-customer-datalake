@@ -30,6 +30,10 @@ _MISSING = frozenset({'NoSuchKey', '404'})
 _DENIED = frozenset({'AccessDenied', '403'})
 
 
+class ObjectTooLarge(ValueError):
+    """An object over what its reader takes whole (``read_bytes``)."""
+
+
 def _code(exc: ClientError) -> object:
     response: Mapping[str, Any] = exc.response
     return response.get('Error', {}).get('Code')
@@ -47,10 +51,10 @@ class WorkspaceStore:
         self.bucket = bucket
         self.missing = _MISSING | _DENIED if denied_is_missing else _MISSING
 
-    def read_text(self, key: str) -> str | None:
-        """The object's text (at most ``MAX_READ_BYTES``; more is cut), or None when it does not exist."""
+    def _get(self, key: str, limit: int) -> tuple[bytes, int] | None:
+        """The object's first ``limit`` bytes and its whole size, or None when it does not exist."""
         try:
-            answer = self.s3.get_object(Bucket=self.bucket, Key=key, Range=f'bytes=0-{MAX_READ_BYTES - 1}')
+            answer = self.s3.get_object(Bucket=self.bucket, Key=key, Range=f'bytes=0-{limit - 1}')
         except ClientError as exc:
             code = _code(exc)
             if code in self.missing:
@@ -61,12 +65,32 @@ class WorkspaceStore:
                     metrics.add_metric(name=ENGINEERING_DENIED_READS_METRIC, unit='Count', value=1)
                 return None
             if code == 'InvalidRange':   # an empty object: S3 has no byte 0 to range over
-                return ''
+                return b'', 0
             raise
+        body = answer['Body'].read(limit)
         total = str(answer.get('ContentRange', '')).rpartition('/')[2]
-        if total.isdigit() and int(total) > MAX_READ_BYTES:
-            logger.warning('workspace: a read was cut', extra={'key': key, 'size': int(total), 'read': MAX_READ_BYTES})
-        return answer['Body'].read().decode('utf-8', errors='replace')
+        return body, int(total) if total.isdigit() else len(body)
+
+    def read_text(self, key: str) -> str | None:
+        """The object's text (at most ``MAX_READ_BYTES``; more is cut), or None when it does not exist."""
+        read = self._get(key, MAX_READ_BYTES)
+        if read is None:
+            return None
+        body, total = read
+        if total > MAX_READ_BYTES:
+            logger.warning('workspace: a read was cut', extra={'key': key, 'size': total, 'read': MAX_READ_BYTES})
+        return body.decode('utf-8', errors='replace')
+
+    def read_bytes(self, key: str, limit: int) -> bytes | None:
+        """The whole object, or None when it does not exist; ``ObjectTooLarge`` (never a cut) when it is over
+        ``limit`` bytes."""
+        read = self._get(key, limit)
+        if read is None:
+            return None
+        body, total = read
+        if total > limit:
+            raise ObjectTooLarge(f'the object is {total} bytes, over the {limit} read')
+        return body
 
     def put_once(self, key: str, body: str, content_type: str) -> bool:
         """Create the object; False when it already exists (left as it was). Another conditional write to it in

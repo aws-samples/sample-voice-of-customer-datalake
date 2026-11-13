@@ -54,7 +54,14 @@ from engineering.board.model import EVENT_OF, FINAL, NEEDS_HUMAN, OPEN, PERSON_P
 from engineering.board.store import COORDINATE_TASK, COORDINATOR, BoardError, BoardStore, Posted
 from engineering.bus.publish import EventBridgePublisher, PublishError, change_event_id, new_event_id
 from engineering.bus.schema import ID, ROLES, ULID, Message, MessageError, Party, Refs, fit_summary
-from engineering.connectors.identity import WORKSPACE, Caller, UnknownCaller, caller_from_event, own_account
+from engineering.connectors.identity import (
+    WORKSPACE,
+    Caller,
+    UnknownCaller,
+    agent_id,
+    caller_from_event,
+    own_account,
+)
 from engineering.knowledge.store import PackError
 from engineering.knowledge.workspaces import ROOT
 from engineering.quality_gate.text import redact
@@ -76,11 +83,6 @@ STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, '
 #: (from the UI) are not agents' and do not come through this API.
 POSTERS: Mapping[str, frozenset[str]] = {'coordinator': ROLES, 'hunter': frozenset({'fixer'}),
                                          'builder': frozenset({'builder'})}
-
-
-def agent_id(caller: Caller) -> str:
-    """The agent's id on the board and the bus: ``<role>-<index>`` (its run comes with it)."""
-    return f'{caller.role}-{caller.agent_index}'
 
 
 def _answer(status: int, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -662,7 +664,8 @@ class _Kept:
 
 
 def person_request(store: BoardStore, request: Mapping[str, Any]) -> dict[str, Any]:
-    """A person's board action, as the Agents API asks it (``{op: post|act, run_id, subject, body, task_id?, action?}``)
+    """A person's board action, as the Agents API asks it (``{op: post|act|go, run_id, subject, body, task_id?,
+    action?}``; ``go`` is a person's go on the run, ``BoardStore.person_go``)
     through a direct invoke of this function, never its URL: the agent roles may invoke it only through the URL, so a
     direct invoke is the API's role, which has checked the person is an administrator acting for themselves and the
     run is open. The board's own role writes the change (the API's role writes no board row), and the events it
@@ -681,8 +684,13 @@ def person_request(store: BoardStore, request: Mapping[str, Any]) -> dict[str, A
         elif op == 'act' and isinstance(task_id := request.get('task_id'), str) \
                 and isinstance(action := request.get('action'), str):
             answer = people.act(run_id, task_id, action, body, subject)
+        elif op == 'go':
+            # A person's go on the run (the row is the record: no board event, nothing for the API to publish).
+            answer = {'go': store.person_go(WORKSPACE, run_id, actor=PERSON_PREFIX + subject,
+                                            reason=_text(body, 'reason', required=False)).view()}
         else:
-            return {'status': 'refused', 'kind': 'invalid', 'message': 'op is post, or act with a task_id and an action'}
+            return {'status': 'refused', 'kind': 'invalid',
+                    'message': 'op is post, go, or act with a task_id and an action'}
     except Refused as refused:
         return {'status': 'refused', 'kind': refused.kind, 'message': str(refused)}
     except (ClientError, BotoCoreError):

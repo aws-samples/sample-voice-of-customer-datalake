@@ -176,6 +176,15 @@ def test_every_change_of_a_runs_status_records_who_made_it_and_when(aws: Any):
     assert 'needs_human' not in aws[1].get_item(Key=META)['Item']
 
 
+def test_meta_names_the_person_who_started_the_run_for_the_brokers_dial(aws: Any):
+    runs = RunStore(aws[1])
+    runs.start(RUN, caps=RunCaps(max_tasks=5), now=0, actor='admin-1')
+    runs.end(RUN, 'stopped', now=60, actor='admin-2')   # (only the start sets it)
+    assert aws[1].get_item(Key=META)['Item']['started_by'] == 'admin-1'
+    runs.start(OTHER, caps=RunCaps(max_tasks=5), now=0)
+    assert aws[1].get_item(Key={'pk': f'WS#default#RUN#{OTHER}', 'sk': 'META'})['Item']['started_by'] == ''
+
+
 def test_the_supervisors_decision_point_is_recorded_at_its_clocks_time(aws: Any):
     runs = RunStore(aws[1])
     runs.start(RUN, caps=RunCaps(max_tasks=5), now=0)

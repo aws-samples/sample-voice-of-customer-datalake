@@ -15,7 +15,14 @@ from engineering.connectors.broker import (
     NotPermitted,
     permitted,
 )
-from engineering.connectors.hosts import BundleContents, CommentTarget, NoConnection, PullRequestRef, RunRecord
+from engineering.connectors.hosts import (
+    BundleContents,
+    CommentTarget,
+    NoConnection,
+    PullRequestRef,
+    RunRecord,
+    Submission,
+)
 from engineering.connectors.identity import AGENT_ROLES, Caller
 from engineering.connectors.test.fakes import (
     BOT,
@@ -24,8 +31,10 @@ from engineering.connectors.test.fakes import (
     PERSON,
     REVIEW,
     RUN,
+    STARTER,
     TREE,
     FakeBundles,
+    FakeDial,
     FakeHost,
     FakeLedger,
     FakeRuns,
@@ -39,10 +48,17 @@ WRITERS = {'understander': POST_COMMENT, 'pr-reviewer': POST_COMMENT, 'committer
            'pr-author': OPEN_OR_UPDATE_DRAFT_PR}
 OPERATIONS = (READ, POST_COMMENT, PUSH_BUNDLE, OPEN_OR_UPDATE_DRAFT_PR)
 OPEN_PR = PullRequestRef(number=7, url='https://code.example.com/pull/7')
+PATCH = f'ws/default/runs/{RUN}/committer-1/commits/{"a" * 40}/_patches/attempt-1/task-1-0a1b2c3d.diff'
+MESSAGE = 'Fix the refund total (fb_0123abcd)'
 
 
 def caller(role: str, run_id: str = RUN) -> Caller:
     return Caller(role=role, run_id=run_id, agent_index=1)
+
+
+def push(broker: Broker, who: Caller, branch: str = BRANCH) -> str:
+    """The committer's push of ``PATCH`` for ``TREE``."""
+    return broker.push_bundle(who, branch, PATCH, TREE, MESSAGE)
 
 
 def call(broker: Broker, who: Caller, operation: str) -> object:
@@ -50,7 +66,7 @@ def call(broker: Broker, who: Caller, operation: str) -> object:
     calls: dict[str, Callable[[], object]] = {
         READ: lambda: broker.read(who, 'file', 'src/refund.py', None),
         POST_COMMENT: lambda: broker.post_comment(who, 'issue', 42, 'The refund total is rounded too early.'),
-        PUSH_BUNDLE: lambda: broker.push_bundle(who, f'voc-agent/{who.run_id}/fix', b'bundle'),
+        PUSH_BUNDLE: lambda: push(broker, who, f'voc-agent/{who.run_id}/fix'),
         OPEN_OR_UPDATE_DRAFT_PR: lambda: broker.open_or_update_draft_pr(
             who, f'voc-agent/{who.run_id}/fix', 'Fix the refund total', 'From feedback fb_0123abcd.'),
     }
@@ -81,7 +97,7 @@ def test_each_role_makes_only_its_operations(role: str, operation: str) -> None:
 def test_a_fixer_cannot_push() -> None:
     broker, host = go_broker()
     with pytest.raises(NotPermitted):
-        broker.push_bundle(caller('fixer'), BRANCH, b'bundle')
+        push(broker, caller('fixer'))
     assert host.writes() == []
 
 
@@ -105,9 +121,13 @@ def test_with_no_connection_every_operation_is_refused(operation: str) -> None:
 
 @pytest.mark.parametrize(('runs', 'reason'), [
     (FakeRuns({}), 'The run is not one the broker knows.'),
-    (FakeRuns({RUN: record(stopped=True)}), 'The run is stopped; the broker refuses its operations.'),
+    (FakeRuns({RUN: record(status='stopped')}), 'The run is stopped; the broker refuses its operations.'),
+    (FakeRuns({RUN: record(status='needs_human')}),
+     "The run waits at a person's decision; the broker refuses its operations until it is resumed."),
+    (FakeRuns({RUN: record(status='done')}), 'The run has ended; the broker refuses its operations.'),
+    (FakeRuns({RUN: record(status='failed')}), 'The run has ended; the broker refuses its operations.'),
 ])
-def test_refuses_an_unknown_or_stopped_run(runs: FakeRuns, reason: str) -> None:
+def test_refuses_an_unknown_or_inactive_run(runs: FakeRuns, reason: str) -> None:
     host = FakeHost()
     with pytest.raises(NotNow) as caught:
         Broker(connector(host=host, runs=runs)).read(caller('mapper'), 'file', 'README.md', None)
@@ -167,8 +187,10 @@ def test_the_committer_pushes_to_its_runs_branch() -> None:
     host = FakeHost()
     bundles = FakeBundles()
     broker = Broker(connector(host=host, bundles=bundles, ledger=FakeLedger({(RUN, TREE)})))
-    assert broker.push_bundle(caller('committer'), BRANCH, b'bundle') == TREE
-    assert bundles.read == [b'bundle']   # the rules ran on the bundle's own contents
+    assert push(broker, caller('committer')) == TREE
+    # The rules ran on what the caller's own patch holds: its run, its agent id, its record, the GO'd tree.
+    assert bundles.read == [Submission(run_id=RUN, agent_id='committer-1', run=record(), key=PATCH, branch=BRANCH,
+                                       tree_hash=TREE, message=MESSAGE)]
     # The host gets the tree the rules checked, and must push only that (with a lease).
     # The run's default branch, from its record: a new branch must start on it.
     assert host.calls[-1] == ('push_bundle', 'conn-1', BRANCH, bundles.contents_, TREE, 'main')
@@ -179,7 +201,7 @@ def test_a_bundle_without_exactly_one_head_is_refused(heads: tuple[str, ...]) ->
     host = FakeHost()
     broker = Broker(connector(host=host, bundles=FakeBundles(bundle_contents(heads=heads))))
     with pytest.raises(WriteRefused) as caught:
-        broker.push_bundle(caller('committer'), BRANCH, b'bundle')
+        push(broker, caller('committer'))
     assert caught.value.reason == f'A pushed bundle carries exactly one head ref; this one carries {len(heads)}.'
     assert host.writes() == []
 
@@ -188,7 +210,7 @@ def test_a_bundle_without_exactly_one_head_is_refused(heads: tuple[str, ...]) ->
 def test_a_push_to_any_branch_but_the_runs_own_is_refused(branch: str) -> None:
     broker, host = go_broker()
     with pytest.raises(WriteRefused) as caught:
-        broker.push_bundle(caller('committer'), branch, b'bundle')
+        push(broker, caller('committer'), branch)
     assert not isinstance(caught.value, NotNow | NotPermitted)
     assert host.writes() == []
 
@@ -197,7 +219,8 @@ def test_a_committer_of_another_run_cannot_push_to_this_runs_branch() -> None:
     runs = FakeRuns({RUN: record(), OTHER_RUN: record()})
     host = FakeHost()
     with pytest.raises(WriteRefused) as caught:
-        Broker(connector(host=host, runs=runs)).push_bundle(caller('committer', OTHER_RUN), BRANCH, b'bundle')
+        push(Broker(connector(host=host, runs=runs, ledger=FakeLedger({(OTHER_RUN, TREE)}))),
+             caller('committer', OTHER_RUN))
     assert OTHER_RUN in caught.value.reason
     assert host.writes() == []
 
@@ -217,7 +240,7 @@ def test_a_bundle_the_write_rules_refuse_is_not_pushed(contents: BundleContents,
     host = FakeHost()
     broker = Broker(connector(host=host, bundles=FakeBundles(contents)))
     with pytest.raises(WriteRefused) as caught:
-        broker.push_bundle(caller('committer'), BRANCH, b'bundle')
+        push(broker, caller('committer'))
     assert expected in caught.value.reason
     assert host.writes() == []
 
@@ -226,30 +249,102 @@ def test_a_bundle_the_write_rules_refuse_is_not_pushed(contents: BundleContents,
 def test_the_bots_own_sign_off_is_pushed(trailer: str) -> None:
     host = FakeHost()
     broker = Broker(connector(host=host, bundles=FakeBundles(bundle_contents(f'Fix the refund total\n\n{trailer}'))))
-    assert broker.push_bundle(caller('committer'), BRANCH, b'bundle') == TREE
+    assert push(broker, caller('committer')) == TREE
     assert host.writes() == ['push_bundle']
 
 
-def test_a_push_to_a_branch_with_an_open_pr_needs_a_go_for_the_new_tree() -> None:
-    host = FakeHost(open_pr=OPEN_PR)
-    broker = Broker(connector(host=host, ledger=FakeLedger({(RUN, 'another-tree'), (OTHER_RUN, TREE)})))
+def test_every_push_needs_the_final_go_for_exactly_its_tree() -> None:
+    host, bundles = FakeHost(), FakeBundles()
+    broker = Broker(connector(host=host, bundles=bundles,
+                              ledger=FakeLedger({(RUN, 'e' * 40), (OTHER_RUN, TREE)})))
     with pytest.raises(NotNow) as caught:
-        broker.push_bundle(caller('committer'), BRANCH, b'bundle')
-    assert 'no GO' in caught.value.reason
-    assert host.writes() == []
+        push(broker, caller('committer'))
+    assert caught.value.reason.startswith('The board holds no final-go GO for this tree')
+    # Refused before the patch is read or the host asked anything: no GO, nothing of the workspace is touched.
+    assert (host.calls, bundles.read) == ([], [])
 
 
-def test_a_push_to_a_branch_with_an_open_pr_goes_through_with_its_go() -> None:
-    host = FakeHost(open_pr=OPEN_PR)
-    assert Broker(connector(host=host, ledger=FakeLedger({(RUN, TREE)}))).push_bundle(
-        caller('committer'), BRANCH, b'bundle') == TREE
-    assert host.writes() == ['push_bundle']
-
-
-def test_a_push_to_a_branch_with_no_pr_needs_no_go() -> None:
+def test_a_push_goes_through_with_the_go_for_its_tree() -> None:
     host = FakeHost()
-    assert Broker(connector(host=host)).push_bundle(caller('committer'), BRANCH, b'bundle') == TREE
+    assert push(Broker(connector(host=host, ledger=FakeLedger({(RUN, TREE)}))), caller('committer')) == TREE
     assert host.writes() == ['push_bundle']
+
+
+# --- the dial (TENETS.md tenet 3): the way of working of the person who started the run --------------------------
+
+WRITES = [('committer', PUSH_BUNDLE), ('pr-author', OPEN_OR_UPDATE_DRAFT_PR)]
+
+
+@pytest.mark.parametrize(('role', 'operation'), WRITES)
+def test_human_driven_pushes_no_branch_and_opens_no_pull_request(role: str, operation: str) -> None:
+    host, bundles, dial = FakeHost(), FakeBundles(), FakeDial({STARTER: 'human_driven'})
+    broker = Broker(connector(host=host, bundles=bundles, dial=dial, ledger=FakeLedger({(RUN, TREE)}, {RUN})))
+    with pytest.raises(NotNow) as caught:
+        call(broker, caller(role), operation)
+    assert caught.value.reason.startswith('This run works Human-driven')
+    # Even with a person's go and a GO: nothing is read from the host or the workspace, nothing is written.
+    assert (host.calls, bundles.read, dial.asked) == ([], [], [STARTER])
+
+
+@pytest.mark.parametrize(('role', 'operation'), [('mapper', READ), ('understander', POST_COMMENT)])
+def test_human_driven_still_reads_and_comments(role: str, operation: str) -> None:
+    host, dial = FakeHost(), FakeDial({STARTER: 'human_driven'})
+    broker = Broker(connector(host=host, dial=dial))
+    assert call(broker, caller(role), operation) is not None
+    assert ([c[0] for c in host.calls], dial.asked) == ([operation], [])   # (the dial is read for pushes only)
+
+
+@pytest.mark.parametrize(('role', 'operation'), WRITES)
+def test_ai_assisted_waits_for_a_persons_go_on_the_run(role: str, operation: str) -> None:
+    host, dial = FakeHost(), FakeDial({STARTER: 'ai_assisted'})
+    waiting = Broker(connector(host=host, dial=dial, ledger=FakeLedger({(RUN, TREE)}, {OTHER_RUN})))
+    with pytest.raises(NotNow) as caught:
+        call(waiting, caller(role), operation)
+    assert caught.value.reason.startswith("This run works AI-assisted: a push or a pull request waits for a person's")
+    assert host.writes() == []
+    given = Broker(connector(host=host, dial=dial, ledger=FakeLedger({(RUN, TREE)}, {RUN})))
+    assert call(given, caller(role), operation) is not None
+    assert host.writes() == [operation]
+
+
+@pytest.mark.parametrize(('role', 'operation'), WRITES)
+def test_ai_driven_goes_on_without_a_persons_go(role: str, operation: str) -> None:
+    host = FakeHost()
+    broker = Broker(connector(host=host, dial=FakeDial({STARTER: 'ai_driven'}), ledger=FakeLedger({(RUN, TREE)})))
+    assert call(broker, caller(role), operation) is not None
+    assert host.writes() == [operation]
+
+
+@pytest.mark.parametrize('mode', ['human_driven', 'ai_assisted', 'ai_driven'])
+def test_a_pull_request_is_a_draft_in_every_mode_and_nothing_marks_it_ready_or_merges(mode: str) -> None:
+    host = FakeHost()
+    broker = Broker(connector(host=host, dial=FakeDial({STARTER: mode}), ledger=FakeLedger({(RUN, TREE)}, {RUN})))
+    if mode == 'human_driven':
+        with pytest.raises(NotNow):
+            call(broker, caller('pr-author'), OPEN_OR_UPDATE_DRAFT_PR)
+    else:
+        call(broker, caller('pr-author'), OPEN_OR_UPDATE_DRAFT_PR)
+    # The only pull request write is the host's open-or-update of a draft; no operation of any role marks one
+    # ready, merges or approves it.
+    assert {c[0] for c in host.calls} <= {'branch_tree_hash', 'open_or_update_draft_pr'}
+    assert not [name for name in dir(Broker) if any(word in name for word in ('merge', 'ready', 'approve'))]
+
+
+@pytest.mark.parametrize('starter', ['', 'agent:fixer-1', 'mcp:tok_1'])
+def test_a_run_no_person_started_is_human_driven(starter: str) -> None:
+    host = FakeHost()
+    broker = Broker(connector(host=host, runs=FakeRuns({RUN: record(started_by=starter)}),
+                              dial=FakeDial({starter: 'human_driven'})))
+    with pytest.raises(NotNow) as caught:
+        push(broker, caller('committer'))
+    assert caught.value.reason.startswith('This run works Human-driven')
+
+
+def test_a_mode_the_broker_does_not_know_is_refused_as_human_driven() -> None:
+    broker = Broker(connector(dial=FakeDial({STARTER: 'ai_first'})))
+    with pytest.raises(NotNow) as caught:
+        push(broker, caller('committer'))
+    assert caught.value.reason.startswith('This run works Human-driven')
 
 
 @pytest.mark.parametrize('operation', [PUSH_BUNDLE, OPEN_OR_UPDATE_DRAFT_PR])
@@ -314,7 +409,7 @@ def test_each_write_is_logged_with_what_it_wrote_and_never_its_text(caplog: pyte
     broker, _ = go_broker()
     body = 'The refund total is rounded too early.'
     broker.post_comment(caller('understander'), 'issue', 42, body)
-    broker.push_bundle(caller('committer'), BRANCH, b'bundle')
+    push(broker, caller('committer'))
     broker.open_or_update_draft_pr(caller('pr-author'), BRANCH, 'Fix the refund total', 'From fb_0123abcd.')
     who = {'run_id': RUN, 'agent': 1, 'connection_id': 'conn-1'}
     assert wrote(caplog) == [

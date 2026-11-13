@@ -5,13 +5,16 @@ import base64
 import json
 from collections.abc import Callable, Mapping
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+from moto import mock_aws
 
+from engineering.board.test.table import create_table
 from engineering.connectors import handler
 from engineering.connectors.broker import Broker
 from engineering.connectors.credentials import PARAMETER_PREFIX_ENV
+from engineering.connectors.dial import WaysOfWorking
 from engineering.connectors.github import GitHubHost
 from engineering.connectors.hosts import (
     NO_CONNECTION,
@@ -22,19 +25,26 @@ from engineering.connectors.hosts import (
     InvalidTarget,
     NoConnection,
     NotFound,
-    PullRequestRef,
     ReadKind,
     ReadPage,
+    RunRecord,
+    Submission,
+    Unavailable,
 )
+from engineering.connectors.patches import WorkspacePatches
+from engineering.connectors.records import RunRecords
 from engineering.connectors.test.fakes import (
     ACCOUNT,
+    BASE,
     BRANCH,
     OTHER_RUN,
     PATTERN,
     REVIEW,
     RUN,
+    STARTER,
     TREE,
     FakeBundles,
+    FakeDial,
     FakeHost,
     FakeLedger,
     FakeRuns,
@@ -45,12 +55,13 @@ from engineering.connectors.test.fakes import (
 )
 
 TOKEN = 'ghs_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'
-BUNDLE = base64.b64encode(b'git bundle bytes').decode()
+PATCH = f'ws/default/runs/{RUN}/committer-3/commits/{BASE}/_patches/attempt-1/task-1-0a1b2c3d.diff'
+#: A committer's push: its submitted patch, as one commit, for the tree the GO names.
+PUSH = {'branch': BRANCH, 'patch': PATCH, 'tree_hash': TREE, 'message': 'Fix the refund total (fb_0123abcd)'}
 
 
 def answer(event: dict[str, object], broker: Broker | None = None) -> tuple[int, dict[str, Any]]:
-    response = handler.handle(event, PATTERN, ACCOUNT,
-                              broker or Broker(connector(ledger=FakeLedger({(RUN, TREE)}))))
+    response = handler.handle(event, PATTERN, ACCOUNT, broker or Broker(connector()))
     assert response['headers'] == {'Content-Type': 'application/json'}
     return response['statusCode'], json.loads(response['body'])
 
@@ -83,12 +94,13 @@ def test_posts_a_comment() -> None:
     assert (status, body) == (200, {'result': {'url': 'https://code.example.com/issue/42#comment-1'}})
 
 
-def test_pushes_a_bundle_decoded_from_base64() -> None:
+def test_pushes_the_committers_submitted_patch() -> None:
     host, bundles = FakeHost(), FakeBundles()
-    status, body = ask('committer', 'push_bundle', {'branch': BRANCH, 'bundle': BUNDLE},
-                       Broker(connector(host=host, bundles=bundles)))
+    status, body = ask('committer', 'push_bundle', PUSH, Broker(connector(host=host, bundles=bundles)))
     assert (status, body) == (200, {'result': {'branch': BRANCH, 'tree_hash': TREE}})
-    assert bundles.read == [b'git bundle bytes']
+    (submission,) = bundles.read
+    assert (submission.key, submission.agent_id, submission.tree_hash, submission.message) == (
+        PATCH, 'committer-3', TREE, PUSH['message'])
     assert host.calls[-1] == ('push_bundle', 'conn-1', BRANCH, bundles.contents_, TREE, 'main')
 
 
@@ -108,7 +120,7 @@ def test_403_for_a_caller_that_is_not_an_agent(user_arn: str | None) -> None:
 
 
 def test_403_for_a_role_that_may_not_make_the_operation() -> None:
-    status, body = ask('fixer', 'push_bundle', {'branch': BRANCH, 'bundle': BUNDLE})
+    status, body = ask('fixer', 'push_bundle', PUSH)
     assert (status, body) == (403, {'error': 'The fixer role may not push bundle.'})
 
 
@@ -146,9 +158,13 @@ def test_400_for_a_body_that_is_not_a_request(body: object) -> None:
     ('pr-reviewer', 'post_comment', {'on': 'issue', 'number': '3', 'body': 'x'}),
     ('pr-reviewer', 'post_comment', {'on': 'commit', 'number': 3, 'body': 'x'}),
     ('pr-reviewer', 'post_comment', {'on': 'issue', 'number': 3, 'body': 'x' * 65_537}),
-    ('committer', 'push_bundle', {'branch': BRANCH, 'bundle': 'not base64!'}),
-    ('committer', 'push_bundle', {'branch': BRANCH}),
-    ('committer', 'push_bundle', {'branch': BRANCH, 'bundle': BUNDLE, 'run_id': OTHER_RUN}),
+    ('committer', 'push_bundle', {**PUSH, 'tree_hash': 'not-a-tree'}),
+    ('committer', 'push_bundle', {**PUSH, 'tree_hash': TREE.upper()}),
+    ('committer', 'push_bundle', {**PUSH, 'message': ''}),
+    ('committer', 'push_bundle', {**PUSH, 'patch': 'x' * 1025}),
+    ('committer', 'push_bundle', {'branch': BRANCH, 'patch': PATCH}),
+    ('committer', 'push_bundle', {**PUSH, 'bundle': 'Z2l0'}),
+    ('committer', 'push_bundle', {**PUSH, 'run_id': OTHER_RUN}),
     ('pr-author', 'open_or_update_draft_pr', {'branch': BRANCH, 'title': 'Fix', 'body': 'x', 'draft': False}),
 ])
 def test_400_for_args_that_are_not_the_operations(role: str, operation: str, args: dict[str, object]) -> None:
@@ -173,22 +189,38 @@ def test_400_for_a_body_over_the_function_url_limit() -> None:
 
 
 def test_409_for_a_stopped_run() -> None:
-    broker = Broker(connector(runs=FakeRuns({RUN: record(stopped=True)})))
+    broker = Broker(connector(runs=FakeRuns({RUN: record(status='stopped')})))
     status, body = ask('mapper', 'read', {'kind': 'file', 'target': 'a'}, broker)
     assert (status, body) == (409, {'error': 'The run is stopped; the broker refuses its operations.'})
 
 
-def test_409_for_a_push_to_an_open_pr_without_a_go() -> None:
-    broker = Broker(connector(host=FakeHost(open_pr=PullRequestRef(7, 'u'))))
-    status, body = ask('committer', 'push_bundle', {'branch': BRANCH, 'bundle': BUNDLE}, broker)
+def test_409_for_a_push_without_a_go() -> None:
+    broker = Broker(connector(ledger=FakeLedger()))
+    status, body = ask('committer', 'push_bundle', PUSH, broker)
     assert status == 409
-    assert 'no GO' in body['error']
+    assert 'no final-go GO' in body['error']
+
+
+@pytest.mark.parametrize(('mode', 'expected'), [('human_driven', 'Human-driven'), ('ai_assisted', 'AI-assisted')])
+def test_409_for_a_push_the_dial_holds(mode: str, expected: str) -> None:
+    broker = Broker(connector(dial=FakeDial({STARTER: mode})))
+    status, body = ask('committer', 'push_bundle', PUSH, broker)
+    assert (status, expected in body['error']) == (409, True)
 
 
 def test_422_for_another_runs_branch() -> None:
-    status, body = ask('committer', 'push_bundle', {'branch': f'voc-agent/{OTHER_RUN}/x', 'bundle': BUNDLE})
+    status, body = ask('committer', 'push_bundle', {**PUSH, 'branch': f'voc-agent/{OTHER_RUN}/x'})
     assert status == 422
     assert "own run's branches" in body['error']
+
+
+def test_503_while_the_runs_records_cannot_be_read() -> None:
+    class Unreadable(FakeRuns):
+        def run(self, run_id: str) -> RunRecord | None:  # noqa: ARG002 - FakeRuns's signature
+            raise Unavailable("The run's record could not be read; retry.")
+
+    status, body = ask('mapper', 'read', {'kind': 'file', 'target': 'a'}, Broker(connector(runs=Unreadable())))
+    assert (status, body) == (503, {'error': "The run's record could not be read; retry."})
 
 
 def test_422_for_a_comment_quoting_a_review_and_the_quote_is_not_echoed() -> None:
@@ -199,7 +231,7 @@ def test_422_for_a_comment_quoting_a_review_and_the_quote_is_not_echoed() -> Non
 
 def test_503_for_every_operation_with_no_connection() -> None:
     for role, operation, args in [('mapper', 'read', {'kind': 'file', 'target': 'a'}),
-                                  ('committer', 'push_bundle', {'branch': BRANCH, 'bundle': BUNDLE})]:
+                                  ('committer', 'push_bundle', PUSH)]:
         assert ask(role, operation, args, Broker(None)) == (503, {'error': NO_CONNECTION})
 
 
@@ -259,16 +291,45 @@ def test_with_the_parameter_prefix_the_broker_holds_the_github_client_and_still_
         connected = handler.broker_for('/voc/engineering/')._connector
     finally:
         handler.broker_for.cache_clear()
-    # The run records are not built yet, so the run is never found and nothing reaches GitHub (or SSM).
+    # Without the engineering table and the workspace bucket named, no run is read and nothing reaches GitHub (or SSM).
     assert (response['statusCode'], json.loads(response['body'])) == (503, {'error': NO_CONNECTION})
     assert connected is not None
     assert isinstance(connected.host, GitHubHost)
-    assert (connected.runs, connected.ledger, connected.bundles) == (UNCONNECTED, UNCONNECTED, UNCONNECTED)
+    assert (connected.runs, connected.ledger, connected.bundles, connected.dial) == (UNCONNECTED,) * 4
     assert handler.broker_for('')._connector is None
 
 
+def test_with_its_stores_named_the_broker_reads_the_callers_run_from_its_record(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in ((handler.ROLE_NAME_PATTERN_ENV, PATTERN), (PARAMETER_PREFIX_ENV, '/voc/engineering/'),
+                        (handler.TABLE_ENV, 'voc-engineering'), (handler.BUCKET_ENV, 'voc-eng-workspace'),
+                        (handler.AGGREGATES_ENV, 'voc-aggregates')):
+        monkeypatch.setenv(name, value)
+    handler.broker_for.cache_clear()
+    with mock_aws():
+        client = create_table()
+        try:
+            with patch('shared.aws.get_dynamodb_client', return_value=client), \
+                    patch('shared.aws.get_s3_client', return_value=MagicMock()), \
+                    patch('shared.aws.get_dynamodb_resource', return_value=MagicMock()):
+                response = handler.lambda_handler(url_event(role_arn('mapper'), READ_A), lambda_context())
+                connected = handler.broker_for('/voc/engineering/', 'voc-engineering', 'voc-eng-workspace',
+                                               'voc-aggregates')._connector
+        finally:
+            handler.broker_for.cache_clear()
+    # The run's META is read (none here), so the caller's run is unknown: refused before GitHub or SSM is reached.
+    assert (response['statusCode'], json.loads(response['body'])) == (
+        409, {'error': 'The run is not one the broker knows.'})
+    assert connected is not None
+    assert isinstance(connected.runs, RunRecords)
+    assert connected.ledger is connected.runs
+    assert (isinstance(connected.bundles, WorkspacePatches), isinstance(connected.dial, WaysOfWorking)) == (True, True)
+
+
 @pytest.mark.parametrize('call', [lambda: UNCONNECTED.run(RUN), lambda: UNCONNECTED.has_go(RUN, TREE),
-                                  lambda: UNCONNECTED.contents(b'bundle')])
+                                  lambda: UNCONNECTED.person_go(RUN), lambda: UNCONNECTED.mode('person-sub-1'),
+                                  lambda: UNCONNECTED.contents(Submission(RUN, 'committer-1', record(), 'k', BRANCH,
+                                                                          TREE, 'Fix'))])
 def test_the_unbuilt_collaborators_have_no_connection(call: Callable[[], object]) -> None:
     with pytest.raises(NoConnection):
         call()

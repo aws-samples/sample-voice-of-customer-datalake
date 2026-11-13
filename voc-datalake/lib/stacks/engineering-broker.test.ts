@@ -65,17 +65,21 @@ describe('the engineering broker', () => {
     expect(permissions).toStrictEqual([]);
   });
 
-  it('holds its log writes, the connections\' parameters and their key through SSM, and nothing else', () => {
+  it('holds its log writes, the connections\' parameters, the run records\' reads and their key, and nothing else', () => {
     const on = template('on');
     const statements = brokerStatements(on);
     const actions = statements.flatMap((statement) => [statement.Action].flat()).sort(byCodeUnit);
-    expect(actions).toStrictEqual(['kms:Decrypt', 'logs:CreateLogStream', 'logs:PutLogEvents', 'ssm:GetParameter']);
+    // Reads only: no PutItem, UpdateItem, DeleteItem, PutObject or GenerateDataKey anywhere on its role.
+    expect(actions).toStrictEqual([
+      'dynamodb:GetItem', 'dynamodb:GetItem', 'dynamodb:Query', 'kms:Decrypt', 'kms:Decrypt', 'logs:CreateLogStream',
+      'logs:PutLogEvents', 's3:GetObject', 'ssm:GetParameter',
+    ]);
     const parameters = {
       'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':ssm:us-east-1:111111111111:parameter/voc/engineering/*']],
     };
     expect(statements.find((statement) => statement.Action === 'ssm:GetParameter'))
       .toMatchObject({ Effect: 'Allow', Resource: parameters });
-    const decrypt = statements.find((statement) => statement.Action === 'kms:Decrypt');
+    const decrypt = statements.find((statement) => statement.Sid === 'EngineeringConnectionCredentialsKey');
     // Through SSM only, and only for the connections' parameters (SSM's encryption context names the parameter).
     expect(decrypt).toMatchObject({
       Effect: 'Allow',
@@ -86,6 +90,55 @@ describe('the engineering broker', () => {
     });
     // The stack's one customer-managed key (an import from the test's dependency stack), never "*".
     expect(JSON.stringify(decrypt?.Resource)).toContain('Fn::ImportValue');
+  });
+
+  it('reads the runs\' rows of voc-engineering only in the runs\' partitions', () => {
+    const records = brokerStatements(template('on')).find((statement) => statement.Sid === 'EngineeringRunRecords');
+    expect(records).toMatchObject({
+      Effect: 'Allow', Action: ['dynamodb:GetItem', 'dynamodb:Query'],
+      Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['WS#*#RUN#*'] } },
+    });
+    // One table: voc-engineering's ARN (an import from VocCoreStack), never an index or "*".
+    expect(JSON.stringify(records?.Resource)).toMatch(/^\{"Fn::ImportValue":"[^"]*GetAttEngineering[^"]*Arn[^"]*"\}$/);
+    expect(JSON.stringify(records?.Resource)).not.toContain('index');
+  });
+
+  it('reads a person\'s way of working from the aggregates table\'s flag partitions only', () => {
+    const modes = brokerStatements(template('on')).find((statement) => statement.Sid === 'WaysOfWorking');
+    // Of that row, only its mode (and its key), by a projection: never the whole item or another attribute.
+    expect(modes).toMatchObject({
+      Effect: 'Allow', Action: 'dynamodb:GetItem',
+      Condition: {
+        'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['USERFLAGS#*'] },
+        'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'mode'] },
+        StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+      },
+    });
+    expect(JSON.stringify(modes?.Resource)).toContain('Aggregates');
+  });
+
+  it('reads only the agents\' patches and the gate records of the workspace', () => {
+    const objects = brokerStatements(template('on'))
+      .find((statement) => statement.Sid === 'SubmittedPatchesAndGateRecords');
+    expect(objects?.Action).toBe('s3:GetObject');
+    const keys = [objects?.Resource].flat().map((resource) => JSON.stringify(resource).replace(/^.*"(\/ws[^"]*)".*$/, '$1'));
+    expect(keys).toStrictEqual([
+      '/ws/default/runs/*/commits/*/_patches/*', '/ws/default/runs/*/final-go-*/commits/*/_gate/*']);
+  });
+
+  it('decrypts what it reads through DynamoDB and S3 only', () => {
+    const statements = brokerStatements(template('on'));
+    expect(statements.find((statement) => statement.Sid === 'EngineeringRunRecordsKey')).toMatchObject({
+      Action: 'kms:Decrypt',
+      Condition: { StringEquals: { 'kms:ViaService': ['dynamodb.us-east-1.amazonaws.com', 's3.us-east-1.amazonaws.com'] } },
+    });
+  });
+
+  it('names the stores it reads', () => {
+    const on = template('on');
+    const variables = on.findResources('AWS::Lambda::Function')[brokerId(on)]?.Properties?.Environment?.Variables;
+    expect(['ENGINEERING_TABLE', 'ENGINEERING_WORKSPACE_BUCKET', 'AGGREGATES_TABLE']
+      .filter((name) => !(name in (variables ?? {})))).toStrictEqual([]);
   });
 
   it('has no managed policy on its role', () => {

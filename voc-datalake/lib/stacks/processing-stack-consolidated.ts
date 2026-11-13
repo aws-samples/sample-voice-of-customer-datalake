@@ -361,13 +361,14 @@ export class VocProcessingStack extends VocStack {
     let peers: EngineeringPeers | undefined;
     if (engineeringAgentsEnabled(this)) {
       const roleNamePattern = this.uniqueNamePattern(ENGINEERING_ROLE_NAME_TEMPLATE);
-      const broker = new EngineeringBroker(this, 'EngineeringBroker', {
-        uniqueName, layer: processingLayer, roleNamePattern, kmsKey, deploymentPrefix: this.deploymentPrefix,
-      });
       if (!props.engineeringTable) throw new Error('engineeringAgents needs VocCoreStack\'s voc-engineering table');
       if (!props.engineeringWorkspaceBucket) {
         throw new Error('engineeringAgents needs VocCoreStack\'s voc-eng-workspace bucket');
       }
+      const broker = new EngineeringBroker(this, 'EngineeringBroker', {
+        uniqueName, layer: processingLayer, roleNamePattern, kmsKey, deploymentPrefix: this.deploymentPrefix,
+        engineeringTable: props.engineeringTable, workspaceBucket: props.engineeringWorkspaceBucket, aggregatesTable,
+      });
       const bus = new EngineeringBus(this, 'EngineeringBus', {
         uniqueName, layer: processingLayer, roleNamePattern, kmsKey, engineeringTable: props.engineeringTable,
         workspaceBucket: props.engineeringWorkspaceBucket,

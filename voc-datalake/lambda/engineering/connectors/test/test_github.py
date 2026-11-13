@@ -181,14 +181,11 @@ def test_a_push_holds_contents_write_and_a_pull_request_contents_read_and_pull_r
                              'permissions': {'contents': 'read', 'pull_requests': 'write'}}]
 
 
-def test_the_branch_and_pull_request_lookups_only_read() -> None:
-    api = (FakeGitHub().on('GET', f'{REPO}{QUOTED_REF}', answer(404, {}))
-           .on('GET', f'{REPO}/pulls?state=open&head=example-org%3A{BRANCH.replace("/", "%2F")}&per_page=1',
-               answer(200, [])))
+def test_the_branch_lookup_only_reads() -> None:
+    api = FakeGitHub().on('GET', f'{REPO}{QUOTED_REF}', answer(404, {}))
     host = client(api)
     assert host.branch_tree_hash('c', BRANCH) is None
-    assert host.open_pull_request('c', BRANCH) is None
-    assert [s['permissions'] for s in api.scopes()] == [{'contents': 'read'}, {'pull_requests': 'read'}]
+    assert [s['permissions'] for s in api.scopes()] == [{'contents': 'read'}]
 
 
 @pytest.mark.parametrize('repointed', [
@@ -682,8 +679,42 @@ def test_no_token_or_jwt_is_ever_in_a_url_or_a_log_line(caplog: pytest.LogCaptur
 
 def test_the_client_has_no_merge_approve_settings_or_revoke_method() -> None:
     public = {name for name in dir(GitHubHost) if not name.startswith('_')}
-    assert public == {'read', 'post_comment', 'open_pull_request', 'branch_tree_hash', 'push_bundle',
+    # Reads (a patch's base file, the default branch) and the three writes: nothing else.
+    assert public == {'read', 'file_at', 'default_branch', 'post_comment', 'branch_tree_hash', 'push_bundle',
                       'open_or_update_draft_pr'}
+
+
+def test_a_base_file_is_read_raw_at_its_commit_and_a_missing_one_is_none() -> None:
+    commit = 'a' * 40
+    api = (FakeGitHub()
+           .on('GET', f'{REPO}/contents/src/refund.py?ref={commit}',
+               Response(status=200, headers={}, body=b'\x00binary and text\n'))
+           .on('GET', f'{REPO}/contents/src/gone.py?ref={commit}', answer(404, {})))
+    host = client(api)
+    assert host.file_at('c', commit, 'src/refund.py') == b'\x00binary and text\n'
+    assert host.file_at('c', commit, 'src/gone.py') is None
+    assert api.sent[-1].headers['Accept'] == 'application/vnd.github.raw+json'
+    assert api.scopes()[0]['permissions'] == {'contents': 'read'}
+
+
+@pytest.mark.parametrize(('commit', 'path'), [('main', 'a.py'), ('a' * 39, 'a.py'), ('a' * 40, '../a.py'),
+                                              ('a' * 40, 'src//a.py')])
+def test_a_base_file_read_takes_only_a_full_commit_and_a_path_inside(commit: str, path: str) -> None:
+    api = FakeGitHub()
+    with pytest.raises(InvalidTarget):
+        client(api).file_at('c', commit, path)
+    assert api.calls() == []
+
+
+def test_the_default_branch_is_read_with_metadata_only_and_kept_five_minutes() -> None:
+    api = FakeGitHub().on('GET', REPO, answer(200, {'default_branch': 'trunk'}), answer(200, {'default_branch': 'main'}))
+    clock = Clock()
+    host = client(api, clock)
+    assert (host.default_branch('c'), host.default_branch('c')) == ('trunk', 'trunk')
+    assert api.calls() == [('GET', REPO)]
+    assert api.scopes()[0]['permissions'] == {'metadata': 'read'}
+    clock.now += github.DEFAULT_BRANCH_SECONDS
+    assert host.default_branch('c') == 'main'
 
 
 # --- the HTTPS transport --------------------------------------------------------------------------------------------

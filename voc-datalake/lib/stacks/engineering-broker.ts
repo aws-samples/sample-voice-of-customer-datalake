@@ -9,26 +9,39 @@
  *
  * What exists: the caller identity, the operations per role, the write rules and the GitHub client
  * (lambda/engineering/connectors/github.py), which reads a connection's GitHub App credential from the SSM
- * SecureString `/[<prefix>-]voc/engineering/{connection_id}` (credentials.py). The run records and the board's GO
- * ledger are not built yet, so every permitted, well-formed operation still answers 503 (an unknown caller or a role
- * without the operation 403, a bad body 400). Beyond writing its own log group (lib/utils/lambda-log-grants.ts), the
- * role holds exactly `ssm:GetParameter` on the connections' parameters (no other parameter, no put or delete) and
- * `kms:Decrypt` on the stack's key only through SSM (`kms:ViaService`) and only for those parameters (the
- * `PARAMETER_ARN` encryption context): no table or bucket. The function URL has no
+ * SecureString `/[<prefix>-]voc/engineering/{connection_id}` (credentials.py); the run's record, the board's GO
+ * ledger and a person's go (records.py), the committer's submitted patch (patches.py) and the dial (dial.py), all
+ * read, never written. Beyond writing its own log group (lib/utils/lambda-log-grants.ts), the role holds exactly:
+ * - `ssm:GetParameter` on the connections' parameters (no other parameter, no put or delete) and `kms:Decrypt` on
+ *   the stack's key through SSM (`kms:ViaService`) only for those parameters (the `PARAMETER_ARN` context);
+ * - `dynamodb:GetItem` and `dynamodb:Query` on voc-engineering, only in the runs' partitions (`WS#*#RUN#*`, as a
+ *   `dynamodb:LeadingKeys` condition): the run's META and its `GO#person` row by key, its `TASK#` rows by one Query
+ *   (IAM cannot narrow a GetItem by sort key; the code reads those rows only);
+ * - `dynamodb:GetItem` on the aggregates table, only in the people's flag partitions (`USERFLAGS#*`): the way of
+ *   working of the person who started a run (shared/ai_mode.py), and of that row only `mode` (with its key: a
+ *   `dynamodb:Attributes` condition, the read a projection);
+ * - `s3:GetObject` on voc-eng-workspace's agents' patches and final-go agents' gate records only
+ *   (`ws/default/runs/*\/commits/*\/_patches/*`, `ws/default/runs/*\/final-go-*\/commits/*\/_gate/*`; no ListBucket, so a key never written answers 403,
+ *   read as missing);
+ * - `kms:Decrypt` on the stack's key through DynamoDB and S3 only (no GenerateDataKey: it encrypts nothing).
+ * No write to any table or bucket. The function URL has no
  * resource-based policy, so only identities of this account that an IAM policy grants `lambda:InvokeFunctionUrl`
  * on it can call it: the agent roles (engineering-runtime.ts). Idle, it costs nothing (tenet 7): standard
  * SSM parameters have no monthly charge.
  */
 import * as cdk from 'aws-cdk-lib';
+import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import type * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
 import { booleanContextFlag } from '../utils/context-flag';
 import { SIGNING_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { createWorkerFunction, workerRole } from '../utils/worker-lambda';
+import { ENGINEERING_WORKSPACE } from './core-buckets';
 
 /** The CDK context key that deploys the engineering agents (default off). */
 const ENGINEERING_AGENTS_CONTEXT_KEY = 'engineeringAgents';
@@ -54,6 +67,23 @@ export function engineeringParameterPrefix(deploymentPrefix: string | undefined)
 /** `lambda/engineering/connectors/handler.py`, path-style inside the worker bundle. */
 const BROKER_HANDLER = 'engineering/connectors/handler.lambda_handler';
 
+/** The runs' partitions in voc-engineering (`WS#<ws>#RUN#<run>`: META, TASK#, GO#person), a LeadingKeys pattern. */
+const BROKER_RUN_PARTITIONS = 'WS#*#RUN#*';
+/** The people's flag partitions in the aggregates table (shared/user_flags.py USERFLAGS_PREFIX; ai_mode's row). */
+const BROKER_PEOPLE_PARTITIONS = 'USERFLAGS#*';
+/**
+ * The workspace keys the broker reads: an agent's submitted patches and the gate records (workspace/layout.py:
+ * `ws/<ws>/runs/<run>/<agent>/commits/<sha>/_<kind>/attempt-<n>/<name>`). The workspace is spelled out, as in
+ * every grant on the bucket (core-buckets.ts).
+ */
+const BROKER_WORKSPACE_KEYS = [
+  `ws/${ENGINEERING_WORKSPACE}/runs/*/commits/*/_patches/*`,
+  // Only a final-go agent's gate records (`<agent>` is `final-go-<n>`): the GO ledger reads no other's.
+  `ws/${ENGINEERING_WORKSPACE}/runs/*/final-go-*/commits/*/_gate/*`,
+];
+/** The way-of-working row's attributes the broker may read (its key, and `mode`: connectors/dial.py MODE_ATTRIBUTE). */
+const BROKER_PEOPLE_ATTRIBUTES = ['pk', 'sk', 'mode'];
+
 /**
  * Whether `-c engineeringAgents=true` asked for the engineering agents (CLI context arrives as a string), strictly
  * parsed: a typo fails the synth instead of deploying the opposite. The one parser of the flag (core, processing,
@@ -72,6 +102,12 @@ export interface EngineeringBrokerProps {
   /** The stack's customer-managed key, which encrypts the connections' SecureString parameters. */
   kmsKey: kms.IKey;
   deploymentPrefix: string | undefined;
+  /** voc-engineering (VocCoreStack): the runs' META, tasks and a person's go, read only. */
+  engineeringTable: dynamodb.ITable;
+  /** voc-eng-workspace (VocCoreStack): the agents' submitted patches and the gate records, read only. */
+  workspaceBucket: s3.IBucket;
+  /** The aggregates table: the people's way of working (shared/ai_mode.py), read only. */
+  aggregatesTable: dynamodb.ITable;
 }
 
 export class EngineeringBroker extends Construct {
@@ -94,7 +130,13 @@ export class EngineeringBroker extends Construct {
       // the ref once), one request after another: 30 s was shorter than a large bundle's chain. Idle cost is nil either way.
       timeout: cdk.Duration.seconds(120),
       memorySize: 256,
-      environment: { AGENT_ROLE_NAME_PATTERN: props.roleNamePattern, ENGINEERING_PARAMETER_PREFIX: parameterPrefix },
+      environment: {
+        AGENT_ROLE_NAME_PATTERN: props.roleNamePattern,
+        ENGINEERING_PARAMETER_PREFIX: parameterPrefix,
+        ENGINEERING_TABLE: props.engineeringTable.tableName,
+        ENGINEERING_WORKSPACE_BUCKET: props.workspaceBucket.bucketName,
+        AGGREGATES_TABLE: props.aggregatesTable.tableName,
+      },
       serviceName: 'voc-engineering-broker',
     });
     // cryptography signs the GitHub App's JWT (RS256): the signing layer, for this one function of the stack.
@@ -123,7 +165,51 @@ export class EngineeringBroker extends Construct {
         StringLike: { 'kms:EncryptionContext:PARAMETER_ARN': parameters },
       },
     }));
+    grantRunRecordReads(role, props);
     broker.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
     this.function = broker;
   }
+}
+
+/**
+ * The broker's reads of what a run recorded (records.py, patches.py, dial.py): the runs' partitions of voc-engineering
+ * (GetItem, Query), the people's flags of the aggregates table (GetItem), the agents' patches and gate records in the
+ * workspace (GetObject), and the stack's key to decrypt them through DynamoDB and S3. Nothing written.
+ */
+function grantRunRecordReads(role: iam.Role, props: EngineeringBrokerProps): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'EngineeringRunRecords',
+    actions: ['dynamodb:GetItem', 'dynamodb:Query'],
+    resources: [props.engineeringTable.tableArn],
+    conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_RUN_PARTITIONS] } },
+  }));
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'WaysOfWorking',
+    actions: ['dynamodb:GetItem'],
+    resources: [props.aggregatesTable.tableArn],
+    // Only the mode of the row, asked by a projection (dial.py): a GetItem asking for any other attribute, or for
+    // the whole item, is denied.
+    conditions: {
+      'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [BROKER_PEOPLE_PARTITIONS] },
+      'ForAllValues:StringEquals': { 'dynamodb:Attributes': BROKER_PEOPLE_ATTRIBUTES },
+      StringEqualsIfExists: { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' },
+    },
+  }));
+  const objects = BROKER_WORKSPACE_KEYS.map((keys) => props.workspaceBucket.arnForObjects(keys));
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'SubmittedPatchesAndGateRecords', actions: ['s3:GetObject'], resources: objects,
+  }));
+  acknowledgeNag(role, [{
+    id: 'AwsSolutions-IAM5',
+    reason: 'The workspace bucket\'s agents\' patches and gate records (their run, agent and commit are known only at '
+      + 'run time), read only; the code reads the caller\'s own patch and the run\'s recorded gate record alone',
+    findings: objects.map(resourceFinding),
+  }]);
+  const { region } = cdk.Stack.of(role);
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    sid: 'EngineeringRunRecordsKey',
+    actions: ['kms:Decrypt'],
+    resources: [props.kmsKey.keyArn],
+    conditions: { StringEquals: { 'kms:ViaService': ['dynamodb', 's3'].map((service) => `${service}.${region}.amazonaws.com`) } },
+  }));
 }

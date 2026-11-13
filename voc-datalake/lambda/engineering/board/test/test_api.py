@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError
 from engineering.board import api as api_module
 from engineering.board.api import BoardApi, handler
 from engineering.board.inbox import Inbox
-from engineering.board.store import BoardStore
+from engineering.board.store import BoardError, BoardStore
 from engineering.board.test.table import RUN, TABLE, board, engineering_table
 from engineering.board.test.test_inbox import notice
 from engineering.bus.publish import EventBridgePublisher, PublishError
@@ -294,6 +294,74 @@ def test_a_persons_request_that_is_not_one_is_refused_and_writes_nothing(person:
     with engineering_table() as client:
         answer = api_module.person_request(BoardStore(client, TABLE, new_id=lambda: 'task-1'), person)
     assert (answer['status'], answer['kind']) == ('refused', kind)
+
+
+def _status(client: Any, status: str) -> None:
+    client.update_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'META'}},
+                       UpdateExpression='SET #s = :s', ExpressionAttributeNames={'#s': 'status'},
+                       ExpressionAttributeValues={':s': {'S': status}})
+
+
+def test_a_persons_go_is_written_once_and_hands_back_no_event() -> None:
+    go = {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}}
+    with engineering_table() as client:
+        _status(client, 'active')
+        store = BoardStore(client, TABLE, new_id=lambda: 'task-1')
+        first = api_module.person_request(store, go)
+        again = api_module.person_request(store, {**go, 'subject': 'other-admin'})
+        row = client.get_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'GO#person'}})
+    assert (first['status'], first['events'], first['answer']['go']['by'], first['answer']['go']['created']) == (
+        'ok', [], 'human:admin-sub', True)
+    # A second go is answered as the first one stands: never replaced (create-only, D1), whoever asks.
+    assert (again['answer']['go']['by'], again['answer']['go']['created'], again['answer']['go']['at']) == (
+        'human:admin-sub', False, first['answer']['go']['at'])
+    assert (row['Item']['by'], row['Item']['kind']) == ({'S': 'human:admin-sub'}, {'S': 'person_go'})
+
+
+def test_a_go_keeps_its_reason_bounded_and_redacted() -> None:
+    secret = 'AKIA' + 'ABCDEFGHIJKLMNOP'
+    with engineering_table() as client:
+        _status(client, 'active')
+        store = BoardStore(client, TABLE, new_id=lambda: 'task-1')
+        long = api_module.person_request(store, {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub',
+                                                 'body': {'reason': 'x' * 501}})
+        bad = api_module.person_request(store, {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub',
+                                                'body': {'reason': 7}})
+        given = api_module.person_request(store, {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub',
+                                                  'body': {'reason': f' Plan reviewed, key {secret} '}})
+        row = client.get_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'GO#person'}})
+    assert ((long['status'], long['kind']), (bad['status'], bad['kind'])) == (('refused', 'invalid'),) * 2
+    assert secret not in given['answer']['go']['reason']
+    assert given['answer']['go']['reason'].startswith('Plan reviewed, key ')
+    assert row['Item']['reason']['S'] == given['answer']['go']['reason']
+
+
+@pytest.mark.parametrize('status', ['done', 'stopped', 'failed'])
+def test_an_ended_run_takes_no_go(status: str) -> None:
+    with engineering_table() as client:
+        _status(client, status)
+        answer = api_module.person_request(BoardStore(client, TABLE, new_id=lambda: 'task-1'),
+                                           {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}})
+        row = client.get_item(TableName=TABLE, Key={'pk': {'S': f'WS#default#RUN#{RUN}'}, 'sk': {'S': 'GO#person'}})
+    assert (answer['status'], answer['kind'], 'Item' in row) == ('refused', 'conflict', False)
+
+
+def test_a_go_is_a_persons_only() -> None:
+    with engineering_table() as client:
+        _status(client, 'needs_human')
+        store = BoardStore(client, TABLE, new_id=lambda: 'task-1')
+        with pytest.raises(BoardError):
+            store.person_go(WORKSPACE, RUN, actor='fixer-1')
+        assert store.person_go(WORKSPACE, RUN, actor='human:admin-sub').created
+
+
+def test_a_table_that_refuses_a_go_is_unavailable() -> None:
+    failing = MagicMock()
+    failing.get_item.return_value = {'Item': {'status': {'S': 'active'}}}
+    failing.put_item.side_effect = ClientError({'Error': {'Code': 'InternalServerError', 'Message': 'x'}}, 'PutItem')
+    answer = api_module.person_request(BoardStore(failing, TABLE, new_id=lambda: 'task-1'),
+                                       {'op': 'go', 'run_id': RUN, 'subject': 'admin-sub', 'body': {}})
+    assert (answer['status'], answer['kind']) == ('refused', 'unavailable')
 
 
 def test_a_table_that_refuses_a_persons_action_is_unavailable() -> None:
