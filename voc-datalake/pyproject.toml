@@ -17,10 +17,6 @@ ignore_names = [
     "handler",
     # voc-engineering-delivery's entry point (lib/stacks/engineering-runtime.ts, engineering/runtime/handler).
     "delivery_handler",
-    # A skill record's stored shape (engineering/runtime/harness/skills.py): the seam the skills store adopts,
-    # which is not built yet; the coordinator tests pin the round trip.
-    "to_record",
-    "from_record",
     # Read by aws-lambda-powertools from the Lambda context; conftest fakes of that context set it.
     "memory_limit_in_mb",
     # pydantic: the model's config, read by pydantic itself (lambda/shared/ingest_schemas.py).

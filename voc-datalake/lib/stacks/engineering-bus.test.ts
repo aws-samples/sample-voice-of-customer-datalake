@@ -287,7 +287,24 @@ describe('the engineering bus', () => {
         'logs:CreateLogStream', 'logs:PutLogEvents', 's3:GetObject'].sort(byCodeUnit));
     const put = statementsOf(on, board).find((statement) => statement.Action === 'events:PutEvents');
     expect(put?.Resource).toStrictEqual({ 'Fn::GetAtt': [busId(on), 'Arn'] });
-    expect(keyServices(on, board)).toStrictEqual(['dynamodb.us-east-1.amazonaws.com', 's3.us-east-1.amazonaws.com']);
+    // The key: decrypt and data keys through DynamoDB (the table), only decrypt through S3 (it reads the packs and
+    // writes no object).
+    const keyUse = statementsOf(on, board)
+      .filter((statement) => JSON.stringify(statement.Action).includes('kms:'))
+      .map((statement) => [[statement.Action].flat(), z.looseObject({
+        Condition: z.object({ StringEquals: z.object({ 'kms:ViaService': z.unknown() }) }),
+      }).parse(statement).Condition.StringEquals['kms:ViaService']]);
+    expect(keyUse).toStrictEqual([
+      [KEY_ACTIONS, ['dynamodb.us-east-1.amazonaws.com']],
+      [['kms:Decrypt'], ['s3.us-east-1.amazonaws.com']],
+    ]);
+  });
+
+  it('gives the board a timeout above its wait for the runtime\'s launch, so a slow launch is answered, not cut off', () => {
+    const on = template('on');
+    const props = on.findResources('AWS::Lambda::Function')[functionId(on, 'voc-engineering-board')]?.Properties;
+    // 120 s: above board/api.py's 100 s wait for the launch (LAUNCH_READ_TIMEOUT_SECONDS), never retried.
+    expect(props?.Timeout).toBe(120);
   });
 
   it('lets the board invoke the runtime by name (its launch op) and read only the knowledge packs\' objects', () => {

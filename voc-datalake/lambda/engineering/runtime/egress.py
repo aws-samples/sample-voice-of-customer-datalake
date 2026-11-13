@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from typing import Final
 from urllib.parse import urlsplit
 
-from engineering.runtime.interface import CODE_ROLES, RuntimeRefused
+from engineering.runtime.interface import CODE_ROLES, FUNCTION_URL_RE, RuntimeRefused
 
 #: The package registries each toolchain image fetches from (the images' ready hooks prefetch from the
 #: same hosts). Only these, per language: a Python agent never reaches the npm registry.
@@ -26,8 +26,6 @@ REGISTRY_HOSTS: Final[dict[str, tuple[str, ...]]] = {
     'java': ('repo.maven.apache.org', 'repo1.maven.org', 'plugins.gradle.org', 'services.gradle.org'),
 }
 MAX_EXTRA_HOSTS: Final = 10
-#: A Lambda function URL's host.
-_FUNCTION_URL_RE: Final = re.compile(r'^[a-z0-9]{1,64}\.lambda-url\.[a-z0-9-]+\.on\.aws\Z')
 _HOST_RE: Final = re.compile(r'^(?=.{1,253}\Z)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z')
 _REGION_RE: Final = re.compile(r'^[a-z]{2}(-[a-z]+)+-\d\Z')
 _BUCKET_RE: Final = re.compile(r'^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\Z')
@@ -45,7 +43,7 @@ def service_host(url: str) -> str:
     """A platform function URL's own host (https only): ``<url-id>.lambda-url.<region>.on.aws``."""
     parts = urlsplit(url)
     host = check_host(parts.hostname or '')
-    if parts.scheme != 'https' or not _FUNCTION_URL_RE.match(host):
+    if parts.scheme != 'https' or not FUNCTION_URL_RE.match(host):
         raise RuntimeRefused(f'{url!r} is not a function URL')
     return host
 

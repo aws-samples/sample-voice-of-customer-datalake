@@ -521,6 +521,19 @@ def test_a_refused_move_at_the_end_is_a_crash_never_a_success(aws, tmp_path):
              runner=FakeRunner(), bedrock=lambda: FakeBedrock([[], []]))
 
 
+def test_a_run_coordinator_that_stops_without_finish_is_a_crash_never_its_task_sent_to_a_person(aws, tmp_path):
+    s3, _ = aws
+    board = FakeBoard()
+    session = build_session(_env(tmp_path, VOC_ROLE='coordinator', VOC_AGENT_ID='coordinator-1',
+                                 VOC_TASK_ID='coordinate'), s3=s3, ports=_ports(board), runner=FakeRunner(),
+                            checkout=str(tmp_path))
+    # Its task is the run's plan: the supervisor continues it, then sends the run to a person, whose Resume
+    # replaces it (the task still held, so it can be re-posted).
+    with pytest.raises(harness_main.CoordinatorStopped):
+        harness_main._finished(session)
+    assert (board.moves, board.progress_seen[-1][3]) == ([], harness_main.STOPPED_UNFINISHED)
+
+
 def test_a_session_its_cli_tool_server_finished_moves_nothing_more(aws, tmp_path):
     s3, _ = aws
     board = FakeBoard()

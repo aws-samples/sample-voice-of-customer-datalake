@@ -125,7 +125,7 @@ class BoardLeases:
             task = self.store.repost(WORKSPACE, run_id, COORDINATE_TASK, reason=f'{holder} is gone: a new coordinator',
                                      attempt=task.attempt)
         launched = self.store.launch_coordinator(WORKSPACE, run_id, attempt=task.attempt, actor=actor)
-        return launched.task.launched_agent, launched.task.attempt
+        return launched.launched_agent, launched.attempt
 
 
 class SupervisorBus:

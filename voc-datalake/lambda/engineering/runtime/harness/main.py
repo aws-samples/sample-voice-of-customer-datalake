@@ -53,6 +53,8 @@ from engineering.runtime.interface import check_id
 
 CHECKOUT_ROOT: Final = '/work/repo'
 HEARTBEAT_SECONDS: Final = 60.0
+#: The run coordinator's role (its stop without ``finish`` is a crash: ``_finished``).
+COORDINATOR_ROLE: Final = 'coordinator'
 #: The last progress report of a session that stopped without its ``finish`` (its task goes to a person).
 STOPPED_UNFINISHED: Final = 'Stopped without saying the task is done: a person decides what happens next.'
 
@@ -202,10 +204,10 @@ def default_ports(env: Mapping[str, str], credentials: Any = None) -> Ports:
     transport = SignedTransport(board_url(url), env['AWS_REGION'], credentials)
     # The lease's epoch is the task's attempt (the board's claim sets it so): the harness, a continuation and the CLI's
     # tool server renew, report and move on it without claiming.
-    run_id = env['VOC_RUN_ID']
-    return Ports(board=BoardHttp(transport, run_id, env['VOC_TASK_ID'], epoch=int(env.get('VOC_ATTEMPT', '1'))),
+    run_id, task_id = env['VOC_RUN_ID'], env['VOC_TASK_ID']
+    return Ports(board=BoardHttp(transport, run_id, task_id, epoch=int(env.get('VOC_ATTEMPT', '1'))),
                  inbox=InboxHttp(transport, run_id, env['VOC_AGENT_ID']), broker=pending,
-                 planner=BoardPlanner(transport, run_id), knowledge=BoardKnowledge(transport, run_id))
+                 planner=BoardPlanner(transport, run_id), knowledge=BoardKnowledge(transport, run_id, task_id))
 
 
 def adapter_for(args: argparse.Namespace, env: Mapping[str, str], bedrock: Callable[[], Any]) -> Adapter:
@@ -281,11 +283,23 @@ def _finished(session: AgentSession) -> None:
     without saying it is done may have given up. The CLI's ``finish`` runs in its tool server: its ``finished``
     file says it ran, so its task is done already. Its last progress report says why first, so the person sees it
     on the task. Any refusal (the lease not this agent's, run out, the task unable to move) is raised: a crash,
-    which the supervisor continues or ends."""
+    which the supervisor continues or ends.
+
+    The run coordinator is the exception: its task is the run's plan, and a coordinate task sent to a person would
+    leave the run active with nobody planning it. It stops as a crash (``CoordinatorStopped``), so the supervisor
+    continues it from its checkpoint, and after the crashes it allows sends the run to a person, whose Resume
+    replaces it (the task still held, so it can be re-posted)."""
     context = session.context
-    if not (context.finished or session.finished_elsewhere):
-        context.board.progress(context.run_id, context.task_id, context.agent_id, STOPPED_UNFINISHED)
-        context.board.move(context.run_id, context.task_id, to_state='needs_human')
+    if context.finished or session.finished_elsewhere:
+        return
+    context.board.progress(context.run_id, context.task_id, context.agent_id, STOPPED_UNFINISHED)
+    if context.role == COORDINATOR_ROLE:
+        raise CoordinatorStopped('the run coordinator stopped without finishing the run')
+    context.board.move(context.run_id, context.task_id, to_state='needs_human')
+
+
+class CoordinatorStopped(RuntimeError):
+    """The run coordinator ended its session without ``finish``: a crash, never its task sent to a person."""
 
 
 def entry() -> None:  # pragma: no cover - the image's entry script

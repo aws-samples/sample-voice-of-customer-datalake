@@ -88,13 +88,6 @@ def _result_key(key: str, ws: str, run_id: str, agent: str, epoch: int) -> bool:
                                                                                                 epoch)
 
 
-@dataclass(frozen=True)
-class Launched:
-    """A launch's task, and whether its agent was recorded before (a retry, or a racing launch's)."""
-
-    task: Task
-    reused: bool
-
 
 @dataclass(frozen=True)
 class _Write:
@@ -307,7 +300,7 @@ class BoardStore:
         return f'{role}-{int(answer["Attributes"]["agent_count"]["N"])}'
 
     def launch(self, ws: str, run_id: str, task_id: str, *, role: str, actor: str,
-               paths: Sequence[str] = (), language: str = '') -> Launched:
+               paths: Sequence[str] = (), language: str = '') -> Task:
         """Record the coordinator's launch of an agent for an open task of ``role``, at the task's attempt, with the
         ``paths`` and ``language`` it is launched with. A retry at the same attempt finds the agent recorded and
         reuses it (with its recorded paths and language); after a repost (a new attempt) the task gets a new ``<role>-<n>``."""
@@ -318,7 +311,7 @@ class BoardStore:
             raise BoardError('invalid', f'the task is a {current.role} task, not a {role} one to launch')
         return self._record_launch(ws, run_id, current, actor=actor, paths=paths, language=language)
 
-    def launch_coordinator(self, ws: str, run_id: str, *, attempt: int, actor: str = 'runtime') -> Launched:
+    def launch_coordinator(self, ws: str, run_id: str, *, attempt: int, actor: str = 'runtime') -> Task:
         """Record a new run coordinator for the run's coordinate task: the run's trusted code only (the runtime calls
         it when a person's Resume finds the run's coordinator failed, after re-posting the task at its attempt:
         ``runtime/board_bus.BoardLeases.coordinator_to_start``), never a board op, so no agent can start a coordinator. Like ``launch``:
@@ -331,16 +324,16 @@ class BoardStore:
         return self._record_launch(ws, run_id, current, actor=actor, paths=(), language='')
 
     def _record_launch(self, ws: str, run_id: str, current: Task, *, actor: str, paths: Sequence[str],
-                       language: str) -> Launched:
+                       language: str) -> Task:
         task_id, role = current.task_id, current.role
         if current.state != OPEN:
             raise BoardError('conflict', 'only an open task gets an agent launched for it')
         if current.launched_agent and current.launched_attempt == current.attempt:
-            return Launched(current, reused=True)   # (a retried launch: the same agent again)
+            return current   # (a retried launch: the same agent again)
         agent = self._next_agent(ws, run_id, role)
         at = self.now().isoformat()
         attempt = current.attempt
-        task = self._write(ws, run_id, task_id, _Write(
+        return self._write(ws, run_id, task_id, _Write(
             set_expr=('SET launched_agent = :agent, launched_attempt = :attempt, launched_paths = :paths, '
                       'launched_language = :language'),
             condition='#state = :open AND attempt = :attempt AND '
@@ -352,7 +345,6 @@ class BoardStore:
             already=lambda t: t.state == OPEN and bool(t.launched_agent) and t.launched_attempt == attempt,
             refusal='the task is no longer open at this attempt'),
             Move(task_id, OPEN, actor, at, attempt, 'launch', reason=f'launched {agent}').item(ws, run_id))
-        return Launched(task, reused=task.launched_agent != agent)
 
     def _holder(self, agent: str, epoch: int, now: datetime) -> tuple[str, dict[str, Any]]:
         """The lease holder, with the lease's epoch, before the lease runs out (the supervisor re-posts it then), or

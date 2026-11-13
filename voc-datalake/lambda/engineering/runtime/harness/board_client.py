@@ -21,12 +21,17 @@ from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
 from engineering.runtime.harness.ports import PAUSE, SAVE, InboxMessage, TaskBrief, TaskSummary
+from engineering.runtime.interface import FUNCTION_URL_RE
 
 #: The board API's own limit on a page of the inbox.
 PAGE: Final = 50
 #: Pages read per ``take`` at most: the rest waits for the next one (a tool call, a turn).
 MAX_PAGES: Final = 4
 TIMEOUT_SECONDS: Final = 30
+#: A launch's wait: above the board function's own limit (120 s, engineering-bus.ts; it waits up to 100 s for the
+#: runtime), so the board's answer always arrives first. A retry after a lost answer is safe: the runtime answers the
+#: session it has, or refuses (409) while the first launch still starts the MicroVM.
+LAUNCH_TIMEOUT_SECONDS: Final = 125
 MAX_ANSWER_BYTES: Final = 1024 * 1024
 #: The inbox types the harness acts on itself; any other is shown to the model as data (its type is its kind).
 ACTED_ON: Final = {'signal.save': SAVE, 'signal.pause': PAUSE}
@@ -88,8 +93,9 @@ class SignedTransport:
         SigV4Auth(self.credentials.get_frozen_credentials(), 'lambda', self.region).add_auth(request)
         prepared = urllib.request.Request(url, data=data, method='POST',  # noqa: S310 - https, checked above
                                           headers=dict(request.headers.items()))
+        timeout = LAUNCH_TIMEOUT_SECONDS if body.get('op') == 'launch' else TIMEOUT_SECONDS
         try:
-            with _OPENER.open(prepared, timeout=TIMEOUT_SECONDS) as answer:
+            with _OPENER.open(prepared, timeout=timeout) as answer:
                 return _json(answer.read(MAX_ANSWER_BYTES + 1))
         except urllib.error.HTTPError as error:
             answer = _json(error.read(MAX_ANSWER_BYTES + 1))
@@ -120,9 +126,10 @@ def _json(raw: bytes) -> dict[str, Any]:
 
 
 def board_url(url: str) -> str:
-    """The board's function URL, as the runtime hands it: https, a host, nothing else."""
+    """The board's function URL, as the runtime hands it: https, a function URL's own host, nothing else."""
     parts = urlsplit(url)
-    if parts.scheme != 'https' or not parts.hostname or parts.query or parts.fragment or parts.path not in ('', '/'):
+    if (parts.scheme != 'https' or not FUNCTION_URL_RE.match(parts.hostname or '') or parts.port is not None
+            or parts.username or parts.query or parts.fragment or parts.path not in ('', '/')):
         raise ValueError(f'{url!r} is not a function URL')
     return f'https://{parts.hostname}/'
 
@@ -297,14 +304,16 @@ class BoardPlanner:
 @dataclass
 class BoardKnowledge:
     """``ports.KnowledgeReader`` on the board API's ``knowledge`` op: a package's latest approved pack, fenced as data
-    by the store (none when no version is approved)."""
+    by the store (none when no version is approved). It names the agent's own task, whose lease the board checks it
+    holds (one read of that task's row)."""
 
     transport: Transport
     run_id: str
+    task_id: str
 
-    def read(self, *, run_id: str, package: str) -> list[str]:
-        if run_id != self.run_id:
-            raise ValueError('the harness reads its own run\'s knowledge only')
-        answer = self.transport.post({'op': 'knowledge', 'package': package})
+    def read(self, *, run_id: str, task_id: str, package: str) -> list[str]:
+        if (run_id, task_id) != (self.run_id, self.task_id):
+            raise ValueError('the harness reads the knowledge of its own task only')
+        answer = self.transport.post({'op': 'knowledge', 'task_id': task_id, 'package': package})
         text = answer.get('text')
         return [text] if answer.get('version') is not None and isinstance(text, str) else []

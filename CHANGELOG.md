@@ -17,6 +17,122 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.15.00] - 2026-11-12
+
+Autonomous engineering agents: the supervisor and the harness run on the board and the bus, the board gains the coordinator's ops, and New engineering flow shows only where the module is deployed. Merged from the voc-autonomous-b and voc-autonomous-c branches. Off by default.
+
+### Added
+
+- The board for the coordinator and the harness: the run's `coordinate` task (written by the run's start with META's commit and connection, claimable only by the run's coordinator); the ops `launch` (coordinator only: it numbers the agent `<role>-<n>` and invokes only the runtime's `launch` action, once per task attempt: a repeat returns the session the first wrote, one still booting is busy; an image language and the checkout's path rule are checked before an agent is numbered; a refusal, or a run started without a connection or commit, answers 409), `tasks` and `knowledge` (`{task_id, package}`: a package of a task whose lease the caller holds, or the root, read through the pack's agent reader); the store's lease `refresh` for the supervisor, and `repost_task` at the attempt the supervisor judged.
+- The harness's board client (`runtime/harness/board_client.py`): a SigV4 POST to the board's function URL (`VOC_BOARD_URL`) as the agent's own session; the coordinator's planner and knowledge reader go through it.
+- The supervisor's board and bus (`runtime/board_bus.py`): leases, refresh and re-post through the board's store, and events as voc-msg/1 from the supervisor's own source.
+- Who speaks on the bus: the gate runner (its gate results only), a run's coach (from a run-scoped source), the supervisor (`signal.*`, `run.agent_*`, and `task.posted` for a re-post), and the API's skill announcements as the signed-in person.
+- `features.engineering` in the web app's `config.json`, from VocApiStack's `EngineeringAvailable` output: the workflow library offers New engineering flow only where the engineering module is deployed (engineering flows already saved still list, open and save).
+
+### Changed
+
+- A fresh agent's claim gets its time; a CLI message counts as done only once the model's notes are saved; a session that ends without its finish goes to a person (needs_human), never done.
+- The voc-skill/1 record keeps one home (`runtime/harness/skills.py`), and a launch takes its argv from the role's skill.
+- The bus policy admits the board's, the supervisor's and the delivery function's roles and the agent roles, each pinned to its own source.
+- The report builder reads a denied object as missing and logs it; the workspace store retries a `ConditionalRequestConflict` and logs a read cut at 4 MB.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: the board Lambda (timeout 120 s, above a launch's boot) may invoke `voc-engineering-runtime` (IAM grants the function; the board's code sends it only the `launch` action, through its op), reads the knowledge packs and gets `ENGINEERING_RUNTIME_FUNCTION`; the agents get `VOC_BOARD_URL`. `npm run deploy:frontend` reads `EngineeringAvailable` (a missing output means false). Without the flag nothing changes.
+
+## [6.14.00] - 2026-11-12
+
+Autonomous engineering agents, phase 3: the agents' memory, slice 1, scoped per repository, per role and per person, every learned memory a draft until it is approved, recalled for a task as fenced data. Nothing invokes it yet.
+
+### Added
+
+- Agent memory, slice 1 (`voc-datalake/lambda/engineering/agent_memory/`, docs/autonomous-engineering.md "Agent memory", docs/memory.md): the agents' part of the memory layer, kept in `voc-engineering` (`WS#<ws>#AMEM#REPO#<connection>`, `…#ROLE#<connection>#<role>`, `…#PERSON#<user>`) rather than `voc-memory`, whose company memories reach every shared generator and have no connection in their keys. Three scopes: a repository's, a role's within a connection (one connection's lessons never reach another's agents) and a person's, kept only for a signed-in user of this deployment. Each memory is a bounded statement (400 characters; credentials and personal data redacted, the layer's hygiene applied, a cited review's sentence refused: feedback ids only), with its provenance (a run, a review comment on the connection's own host, or a person), a confidence and a review date. A learned memory needs 0.8 confidence and stays a draft until an administrator (repository, role) or the person (their own) approves it; every edit is a new create-only version with its author (D1, D4), checked against the memory's revision; forget archives and restore brings it back, and nothing is deleted. An agent acts through a run context built from its run's record (its connection, run, role and the people on its task): it learns and confirms only within its run's connection, its own role's lessons and the people on its task, with its own run as the provenance; a person confirms only as themselves. Each source counts once, up to 20, and an approved repository or role memory confirmed three times is returned as a knowledge-pack proposal, never written to the pack. Every learn, write and edit must pass the reviews the run cited (`review_texts` is required). Recall for a task reads the run's connection's, its role's and its people's approved memories, keeps whole memories within a count and character limit, flags stale and conflicting ones (a conflict names the first five others and counts the rest, found in O(n log n)), and fences them in one DATA block. Reads stay bounded: a scope holds at most 200 live and 500 stored memories per connection (a person's per person and connection) and a memory at most 21 confirmation rows. An administrator erases a person's memories for a legal obligation (D5): a tombstone and an `AUDIT#delete` row (who, what, when, the legal basis) first, then their id de-identified wherever other scopes name it, then their partition deleted, and they are refused in every scope afterwards; nothing calls it yet (no path erases a signed-in user's data today; its caller will need its own grants and the `AUDIT#` row guard extended to `voc-engineering`). Nothing invokes it yet: the learning loop, the harness and the routes land with phases 4 and 5.
+
+### Changed
+
+- Shared write helpers (`create_only`, `transact_or_refuse`) move into `voc-datalake/lambda/engineering/rows.py`, which the skills store now uses; it also gains `whole_partition` (an erasure's unbounded read), and `partition_rows` takes `max_items`. The knowledge notes' subject pattern is public (`SUBJECT`).
+
+### Upgrade notes
+
+- Nothing changes in a deployment.
+
+## [6.13.00] - 2026-11-12
+
+Autonomous engineering agents: engineering flows in the workflow editor, the run monitor, push delivery per run with the board's inbox, the board's progress and repost, and the run coordinator on a versioned skill. Merged from the voc-autonomous-c and voc-autonomous-b branches. Off by default.
+
+### Added
+
+- The workflow editor builds engineering flows (voc-workflow/2): New engineering flow, an Engineering palette (agent, map, reduce, board, quality gate, learning loop, self-improvement, memory, stop at PR) and settings panels that offer only what the server accepts; `engineeringRules.ts` mirrors `shared/workflow_engineering.py`, checked against a shared 37-flow fixture. `GET /workflows` now lists both kinds (6.09.00 left engineering flows out until the editor could open them).
+- The run monitor at `/agents/engineering/:runId`: the run, its flow with each agent's step lit, the agents as the supervisor last saw them, Board and Conversation tabs, per-agent and run signals at the attempt the person saw (Stop now asks first), and answers to the run coordinator or an agent. Administrators only. Its actions answer 503 until the runtime and the bus are configured, and no stack configures them yet: the overview says so (`actions_available`), and the page then shows one line saying why instead of the signal and answer controls.
+- The board's `inbox` op (`INBOX#<addressee>#<inbox_seq>#<event_id>`, read in write order; every read, a full page's as well as the tail's, re-reads the 20 numbers below its cursor, as the conversation's pages now do, so a notice committed late is never skipped), the `progress` op (a waiting holder keeps its lease) and the supervisor's `repost` (a new attempt; nothing calls it yet).
+- The run coordinator on a versioned voc-skill/1 record (`coordinator@1`, Converse loop): it is to plan through the board and the knowledge pack, and its tools are exactly its skill's tool policy. Its planner and knowledge ports still refuse every call, as the harness's other ports do, until the board and pack adapters land, so it cannot plan a run yet.
+
+### Changed
+
+- Delivery is a push per run: the router invokes `voc-engineering-delivery` with `{message, seq}` (a redelivery carries its first seq); a posted task wakes nobody, and its row is there for the role's agents to read. The inbox is numbered in write order with a once-per-event marker, so a notice delivered late is still read.
+- A signal's request is recorded before it is applied and its outcome after (each agent applied, not applied, or stale: 409).
+- An ended task's spec marker is freed, so the same spec can be posted again.
+- The skills store and the harness share one voc-skill/1 home (`runtime/harness/skills.py`, the module the images ship); the store keeps its stricter checks.
+
+### Upgrade notes
+
+- With `-c engineeringAgents=true`: the ten role queues and `ENGINEERING_ROLE_QUEUE_URLS` are gone (agents never reach SQS); the router gains `lambda:InvokeFunction` on `voc-engineering-delivery` and the board role `dynamodb:Query`. Still no fixed cost. Without the flag nothing changes.
+
+## [6.12.00] - 2026-11-12
+
+Autonomous engineering agents, phase 3: the skills' record and their versioned store, every version used only once an administrator accepts it, with its diff, its reason and a rollback that keeps the history. Nothing invokes it yet.
+
+### Added
+
+- Skills, slice 1 (`voc-datalake/lambda/engineering/skills/`, docs/autonomous-engineering.md "Getting better"): the `voc-skill/1` record (the role, an allowed model, the `converse` or `cli` harness, the tool policy; bounded instructions of at most 500 lines and examples; a record naming a budget, cap, the dial, permissions or safety instructions is refused), a stable, readable diff of two versions with a one-line summary made from it by rule, and a versioned store in `voc-engineering` (`WS#<ws>#SKILL#<connection>#<role>`: a `HEAD` counter and current pointer, one `VER#` row per version with its diff, why, benchmark, who proposed it and who accepted it, capped at 256 KB, and create-only `LOG#` rows: accepted, rejected, rolled back, and a promoted version's source). A version is used only once an administrator accepts it, in a transaction that refuses a version written on a base that is no longer current; the history is read a page at a time. The coach writes only the version of the connection its run is for, from that run's failure, once per run and failure kind (a conditional `RUN#` row), and never one that changes the tool policy, model or harness. A connection falls back to the shared skill. An administrator can promote a connection's lesson to the shared skill: the store refuses a promoted version that adds an instruction line or example text of 20 characters or more (case and spacing aside) which the connection's version also adds, and the administrator carries the rest of keeping that connection's text out; the source connection is kept in a log row only an administrator reads, never on the shared version. An administrator can roll back to any accepted version as a new version, keeping the whole history (D1, D4). A proposal, an acceptance and a rollback each return their `skill.proposed`, `skill.accepted` or `skill.rolled_back` announcement for the bus (a rejection announces nothing). Nothing invokes it yet: the harness, the coach and the administrators' routes land with phases 4 and 5.
+
+### Changed
+
+- The shared row helpers move into `voc-datalake/lambda/engineering/rows.py`; the run-id pattern is public in `bus/schema.py` (`ULID`). An agent's `Actor` (`engineering/knowledge/store.py`) can carry the connection its run is for.
+- vulture's kept seams of the engineering agents (the knowledge pack's and the skills store's) move from `pyproject.toml`'s `ignore_names` to `voc-datalake/scripts/vulture_whitelist.py`, by class and attribute, checked by pyright.
+
+### Upgrade notes
+
+- Nothing changes in a deployment.
+
+## [6.11.00] - 2026-11-12
+
+Autonomous engineering agents, phase 4: the run's start and end, the agents' checkpoints and patches in the workspace layout, the delivery function, MicroVM time in a run's cost, and the run monitor's signal results. Merged from the voc-autonomous-b branch. Off by default.
+
+### Added
+
+- A run's start and end on `voc-engineering` (`runtime/runs.py`, `handler.py`). `start_run` writes the run's META row and lists the run for the supervisor in one transaction; META holds the task cap the board counts against, the hard caps on tokens and cost, and the goal, repository, flow, status and start (the list row is `WS#<ws>#RUNS`). `end_run` sets the status and end time and stops every MicroVM of the run. Both finish on a retry what a first call left. An ended run stays listed until none of its agents is live or being moved; then it is released, and with no run listed the supervisor's rule switches off. Session rows are the board's `AGENT#` rows, written by update only (the broker's `cost_usd` is never overwritten), created only while META is active, so an ending run gets no unsupervised agent. Caps refuse NaN and infinity.
+- `voc-engineering-delivery` (`runtime/delivery.py`), the function the inbox router names. It records each voc-msg/1 message once in its run's inbox (`WS#<ws>#RUN#<run>` / `INBOX#<addressee>#<seq:012d>#<event_id>`, a conditional put, so a redelivery writes nothing), then wakes the addressees: a working agent's MicroVM is resumed with a fresh session and kept awake for 10 minutes (later messages do not extend it); an agent held without a MicroVM is continued in a new one, once per wait; the 45-minute wait limit counts from the wait's start, so a stream of messages cannot keep a MicroVM running. Nobody is woken in a run that has ended, is past 30 days or has spent its budget. A busy addressee or a failed wake fails the call, so Lambda retries it (twice; failures go to `voc-engineering-dlq`). A posted task wakes nobody.
+- The agent roles reach the board's and the broker's function URLs (`lambda:InvokeFunctionUrl` with IAM authentication). Each role with a voice puts events on the engineering bus under its own source only; the bus policy denies each such role every other source. The coach has no voice yet. No agent role reads the shared role queues.
+
+### Changed
+
+- An agent's checkpoints and patches follow `voc-eng-workspace`'s layout (`ws/<ws>/runs/<run>/<agent>/commits/<sha>/_<checkpoints|patches>/attempt-<n>/`), written create-only. The launch takes the task's attempt (1 to 9999), and a continuation restores only from its own task's attempt. The commit pattern has one home (`runtime/checkpoints.SHA`), which `workspace/layout.py` imports. Egress allows both buckets' endpoints.
+- An agent's MicroVM time is priced into its `AGENT#` row's `cost_usd`, in the same write that moves the session, so a run's cost cap counts it and each second is priced once (forward only).
+- The run monitor's `signal` action answers each agent's status and whether the signal took effect (not when the agent is busy, its move failed, or there was nothing to do), and takes an optional `attempt`: an agent on another attempt of its task is answered stale and left alone (Stop now is never stale).
+- `engineeringAgentsEnabled` is the one strict parser of `-c engineeringAgents`.
+
+### Upgrade notes
+
+- Without `-c engineeringAgents=true` nothing changes. With it, VocProcessingStack gains `voc-engineering-delivery` with its own role (the run partitions' item reads and writes, never a delete or the run registry; the MicroVM resume, run, terminate and auth-token calls; the checkpoints' reads; the dead-letter queue; and, to renew an agent's session on a wake, the launcher's AssumeRole, so each agent role now trusts the supervisor and the delivery role, each only with all four session tags); the supervisor gains Get/Put/Update/ConditionCheck/Query on `WS#*#RUN#*` and `WS#*#RUNS`, Delete only on the registry, and `ENGINEERING_TABLE`; the agent roles gain function-URL invoke on the board and the broker and their own event source on the bus.
+- New `-c engineeringMicrovmUsdPerSecond` (0 to 0.01 USD, at most 12 decimal places, checked at synth and again at start); unset means 0, so MicroVM time is not priced. Set it to the region's MicroVM price.
+
+## [6.10.00] - 2026-11-12
+
+Autonomous engineering agents, phase 1: the knowledge pack's first slice, the code that turns a repository into cited, versioned "how this repository works" documents, each a draft until an administrator approves it. Nothing invokes it yet.
+
+### Added
+
+- The knowledge pack, slice 1 (`voc-datalake/lambda/engineering/knowledge/`, docs/autonomous-engineering.md "The knowledge pack"), as tested code that nothing invokes yet (the Understand flow and its mapper agent land in phase 4). It detects a repository's packages from its file listing and manifests (Cargo, npm / yarn / pnpm, uv, Go modules and `go.work`, Gradle, Maven, Python packages, with Bazel `BUILD` roots as the fallback) and their CODEOWNERS owners (handles only). Detection is deterministic and bounded (what it leaves out past its caps is counted), and a listing with an absolute path or an empty, `.` or `..` part is refused. It cuts each package into shards within a byte budget (files by directory, split again and windowed when too big; history in windows of 50 commits, oldest first; pull requests in pages of 20) with stable ids, so a run resumes at the first shard not mapped. Each shard is mapped by one fenced, redacted model call (a file's lines numbered as git numbers them) into `voc-note/1` notes, whose citations must name what that shard itself read (a `path:line` of one of its files and a line it showed, a full sha of its history window, a review-comment URL of the connection's own repository found in its pull request page); anything else is removed, and a note left without one is dropped and counted. The reduce reads a shard's notes only from this refresh's own workspace key (its workspace, run, agent, commit and package) and checks them again. Claims are redacted for credentials and personal data. The notes reduce into the seven documents per package plus an overview with the package table, as deterministic Markdown with citation footnotes; a refreshed claim that contradicts a person's edit is flagged, not applied. Versions are stored per refresh or edit (D1), with rows `WS#<ws>#REPO#<connection>` / `KPACK#<package>#<version:06d>` in `voc-engineering` and create-only objects under `ws/<ws>/knowledge/…` in the workspace bucket. Each version is a draft until an administrator approves it, recorded with who and when (D4), and agents read only the latest approved version, through one reader that hands them its documents inside fenced DATA blocks. A person's edit is held to the bar of a mapped claim (one redacted line, citations of the repository's paths, commits or review comments only), and approving a draft built on an older version than the approved one is refused. A mapped shard whose notes cannot be read, or whose key is not the refresh's own, stops the publish and is named, never read as empty.
+
+### Fixed
+
+- The engineering runtime's interface no longer imports the launcher (CodeQL `py/unsafe-cyclic-import`): `hand_session` takes a `HandedSession` protocol declared in `runtime/interface.py`. Behaviour is unchanged.
+
+### Upgrade notes
+
+- Nothing changes in a deployment: no route, Lambda or stack changes.
+
 ## [6.09.00] - 2026-11-12
 
 Autonomous engineering agents: the run's S3 workspace, the commit, PR and goal reports, the board's history, admin-only reads of a run over REST, and engineering flows as a second kind of workflow. Merged from the voc-autonomous-c branch. Off by default.

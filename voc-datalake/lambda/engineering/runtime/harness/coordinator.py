@@ -12,9 +12,9 @@ from collections.abc import Callable, Mapping
 from typing import Any, Final
 
 from engineering.connectors.identity import AGENT_ROLES
-from engineering.runtime.checkout import MAX_SPARSE_PATHS, check_sparse_path
+from engineering.runtime.checkout import check_sparse_path
 from engineering.runtime.harness.board_client import BoardRefused
-from engineering.runtime.interface import check_id
+from engineering.runtime.interface import MAX_TASK_PATHS, check_id
 
 #: What tools.py hands in (its ToolSpec and ToolResult classes, its AgentContext): taken as arguments, never
 #: imported, so this module and tools.py, which imports it, do not import each other.
@@ -31,7 +31,7 @@ LANGUAGES: Final = frozenset({'java', 'node', 'python', 'rust'})
 def specs(tool_spec: Callable[..., Built]) -> tuple[Built, ...]:
     text = {'type': 'string'}
     paths = {'type': 'array', 'items': {'type': 'string'},
-             'description': f'Repository paths (relative, no ".."), at most {MAX_SPARSE_PATHS}.'}
+             'description': f'Repository paths (relative, no ".."), at most {MAX_TASK_PATHS}.'}
     role = {'type': 'string', 'enum': sorted(TASK_ROLES)}
     return (
         tool_spec('read_board', 'The run\'s tasks on the board: each one\'s id, role, title, state and attempt.', {}),
@@ -63,8 +63,8 @@ def _role(arguments: Mapping[str, Any]) -> str:
 def _paths(arguments: Mapping[str, Any]) -> tuple[str, ...]:
     """Repository paths as the checkout takes them (``checkout.check_sparse_path``: relative, no ``..``, no glob)."""
     raw = arguments.get('paths', [])
-    if not isinstance(raw, list) or len(raw) > MAX_SPARSE_PATHS or not all(isinstance(path, str) for path in raw):
-        raise ValueError(f'paths are at most {MAX_SPARSE_PATHS} repository paths')
+    if not isinstance(raw, list) or len(raw) > MAX_TASK_PATHS or not all(isinstance(path, str) for path in raw):
+        raise ValueError(f'paths are at most {MAX_TASK_PATHS} repository paths')
     return tuple(check_sparse_path(path) for path in raw)
 
 
@@ -97,7 +97,7 @@ def handlers(context: Built, result: Callable[..., Built],
 
     def read_knowledge(_arguments: Mapping[str, Any]) -> Built:
         # The root's pack: the coordinator's task (the run's coordinate task) has no paths of its own.
-        parts = context.knowledge.read(run_id=context.run_id, package='')
+        parts = context.knowledge.read(run_id=context.run_id, task_id=context.task_id, package='')
         if not parts:
             return result('no approved knowledge pack for the repository yet')
         return result('\n'.join(as_data(f'knowledge:{n}', part) for n, part in enumerate(parts, 1)))

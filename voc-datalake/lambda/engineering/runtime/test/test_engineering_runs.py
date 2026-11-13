@@ -152,7 +152,7 @@ def test_the_coordinator_is_the_runs_first_agent_so_the_board_numbers_its_launch
     posted = board.post('default', RUN, role='fixer', title='Fix the parser', spec={'goal': 'fix it'},
                         parent_task='', priority=1, actor='coordinator-1')
     launched = board.launch('default', RUN, posted.task.task_id, role='fixer', actor='coordinator-1')
-    assert launched.task.launched_agent == 'fixer-2'
+    assert launched.launched_agent == 'fixer-2'
 
 
 def _history(table: Any) -> list[tuple[str, str, str, str]]:

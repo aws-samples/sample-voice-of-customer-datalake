@@ -80,10 +80,10 @@ class Planner(Protocol):
 
 class KnowledgeReader(Protocol):
     """The knowledge pack's agent reader: the caller's run's connection's latest approved pack of ``package`` (one of
-    its own task's paths, or '' for the repository's root; the board takes the connection from the verified caller),
-    as text fenced as data (none when no version is approved)."""
+    its own task's paths, or '' for the repository's root; the board takes the connection from the verified caller and
+    checks it holds ``task_id``'s live lease), as text fenced as data (none when no version is approved)."""
 
-    def read(self, *, run_id: str, package: str) -> list[str]: ...
+    def read(self, *, run_id: str, task_id: str, package: str) -> list[str]: ...
 
 
 class Inbox(Protocol):
@@ -157,8 +157,8 @@ class PendingHarnessPorts:
     def launch(self, *, run_id: str, task_id: str, role: str, language: str, paths: tuple[str, ...]) -> str:
         raise self._refuse(f'launch({run_id}, {task_id}, {role}, {language}, {len(paths)} paths)')
 
-    def read(self, *, run_id: str, package: str) -> list[str]:
-        raise self._refuse(f'knowledge.read({run_id}): {package[:40]}')
+    def read(self, *, run_id: str, task_id: str, package: str) -> list[str]:
+        raise self._refuse(f'knowledge.read({run_id}, {task_id}): {package[:40]}')
 
     def take(self, *, run_id: str, agent_id: str) -> list[InboxMessage]:
         raise self._refuse(f'inbox.take({run_id}, {agent_id})')

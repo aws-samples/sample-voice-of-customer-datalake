@@ -70,6 +70,11 @@ const ENGINEERING_DELIVERY_FUNCTION_BASE_NAME = 'voc-engineering-delivery';
 const ENGINEERING_RUNTIME_FUNCTION_BASE_NAME = 'voc-engineering-runtime';
 /** The knowledge packs' objects in the workspace bucket (engineering/knowledge/store.py), read for the agents. */
 const ENGINEERING_WORKSPACE_KNOWLEDGE_KEYS = `ws/${ENGINEERING_WORKSPACE}/knowledge/*`;
+/**
+ * The board function's timeout (seconds): above its wait for the runtime's launch (100 s, board/api.py
+ * LAUNCH_READ_TIMEOUT_SECONDS), so the board answers the coordinator before it is cut off.
+ */
+const BOARD_TIMEOUT_SECONDS = 120;
 
 /** Sid of the Core key-policy statement that lets EventBridge write the inbox rule's undelivered events to the DLQ. */
 export const ENGINEERING_DLQ_KEY_SID = 'AllowEventBridgeToEngineeringDeadLetter';
@@ -292,7 +297,10 @@ export class EngineeringBus extends Construct {
       reason: 'The knowledge packs\' objects in the workspace bucket (one prefix: their keys name the connection, package and version, known only at run time), read only',
       findings: [resourceFinding(knowledge)],
     }]);
-    grantKeyThrough(role, props.kmsKey, ['dynamodb', 's3']);
+    // The key through DynamoDB for the table's reads and writes; through S3 only to decrypt (the board only reads
+    // the knowledge packs' objects, it writes none).
+    grantKeyThrough(role, props.kmsKey, ['dynamodb']);
+    grantKeyThrough(role, props.kmsKey, ['s3'], ['kms:Decrypt']);
     this.bus.grantPutEventsTo(role);
     const board = createWorkerFunction(this, 'Board', {
       tree: 'engineering',
@@ -300,7 +308,8 @@ export class EngineeringBus extends Construct {
       handler: 'engineering/board/api.handler',
       role,
       layer: props.layer,
-      timeout: cdk.Duration.seconds(30),
+      // The board waits for the runtime's launch (its MicroVM's start and the session row) without retrying it.
+      timeout: cdk.Duration.seconds(BOARD_TIMEOUT_SECONDS),
       memorySize: 256,
       environment: {
         AGENT_ROLE_NAME_PATTERN: props.roleNamePattern,
@@ -322,10 +331,11 @@ function queueEncryption(key: kms.IKey): Pick<sqs.QueueProps, 'encryption' | 'en
 }
 
 /** kms:Decrypt and kms:GenerateDataKey on the stack's key, only through `services` (the table's, the queues'). */
-function grantKeyThrough(role: iam.Role, key: kms.IKey, services: readonly string[]): void {
+function grantKeyThrough(role: iam.Role, key: kms.IKey, services: readonly string[],
+  actions: readonly string[] = ['kms:Decrypt', 'kms:GenerateDataKey']): void {
   const { region } = cdk.Stack.of(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
-    actions: ['kms:Decrypt', 'kms:GenerateDataKey'],
+    actions: [...actions],
     resources: [key.keyArn],
     conditions: { StringEquals: { 'kms:ViaService': services.map((service) => `${service}.${region}.amazonaws.com`) } },
   }));

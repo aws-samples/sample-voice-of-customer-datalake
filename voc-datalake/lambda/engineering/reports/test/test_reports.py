@@ -20,6 +20,7 @@ from engineering.reports.build import gather
 from engineering.reports.facts import FactsReader
 from engineering.reports.handler import Reports, handler
 from engineering.reports.store import ReportError
+from engineering.rows import LAUNCH_HOLD
 from engineering.workspace.store import WorkspaceStore
 
 BUCKET = 'voc-engineering-workspace'
@@ -264,6 +265,10 @@ def test_facts_read_what_is_there_and_zero_for_the_rest() -> None:
         client = create_table()
         client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'META'}})
         client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'AGENT#a-1'}, 'cost_usd': {'N': '-1'}})
+        # A launch killed while it held its row (no session written): not an agent of the run.
+        client.put_item(TableName=TABLE, Item={'pk': {'S': PK}, 'sk': {'S': 'AGENT#a-2'},
+                                               LAUNCH_HOLD: {'N': '1700000000'}})
         facts = FactsReader(client, TABLE).read('default', RUN)
     assert facts is not None
+    assert [agent.agent for agent in facts.agents] == ['a-1']
     assert (facts.goal, facts.events, facts.agents[0].cost_usd, facts.agents[0].role) == ('', 0, 0, '')

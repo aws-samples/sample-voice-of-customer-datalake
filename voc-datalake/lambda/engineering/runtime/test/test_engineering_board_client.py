@@ -164,10 +164,18 @@ def test_the_harness_reads_its_own_inbox_only():
 
 
 @pytest.mark.parametrize('url', ['http://abc.lambda-url.us-east-1.on.aws/', 'https://abc.lambda-url.us-east-1.on.aws/x',
-                                 'https://abc.lambda-url.us-east-1.on.aws/?a=1', 'https:///'])
+                                 'https://abc.lambda-url.us-east-1.on.aws/?a=1', 'https:///',
+                                 # https, but not a function URL's own host (the egress's rule: egress.py)
+                                 'https://evil.example.org/', 'https://lambda.us-east-1.amazonaws.com/',
+                                 'https://abc.lambda-url.us-east-1.on.aws.example.org/',
+                                 'https://abc.lambda-url.us-east-1.on.aws:8443/', 'https://u@abc.lambda-url.us-east-1.on.aws/'])
 def test_the_board_url_is_a_function_url_and_nothing_else(url: str):
     with pytest.raises(ValueError, match='not a function URL'):
         board_url(url)
+
+
+def test_the_board_url_keeps_a_function_urls_own_host():
+    assert board_url(URL.rstrip('/')) == URL
 
 
 @pytest.mark.parametrize('url', ['http://abc.lambda-url.us-east-1.on.aws/', 'https://lambda.us-east-1.amazonaws.com/',
@@ -241,6 +249,10 @@ def test_a_call_is_signed_as_the_agents_session_for_the_lambda_service(monkeypat
     assert (headers['x-amz-security-token'], bool(headers['x-amz-date'])) == ('session-token', True)
     signed = headers['authorization'].split('SignedHeaders=')[1].split(',')[0].split(';')
     assert {'host', 'x-amz-date', 'x-amz-security-token'} <= set(signed)
+    # A launch waits longer than the board function may run (120 s), so the board's answer always comes first.
+    SignedTransport(URL, 'us-east-1', Credentials()).post({'op': 'launch', 'task_id': 'task-2'})
+    assert seen[-1][1] == board_client.LAUNCH_TIMEOUT_SECONDS
+    assert board_client.LAUNCH_TIMEOUT_SECONDS > 120
     assert all(name in headers or name == 'host' for name in signed)
 
 
@@ -353,7 +365,12 @@ def test_the_coordinators_planner_lists_posts_and_launches_through_the_board():
 def test_the_knowledge_reader_answers_a_packages_approved_pack_or_none():
     from engineering.runtime.harness.board_client import BoardKnowledge
     board = Board([{'version': 3, 'text': '<data>conventions</data>'}, {'version': None}])
-    reader = BoardKnowledge(board, RUN)
-    assert reader.read(run_id=RUN, package='') == ['<data>conventions</data>']
-    assert reader.read(run_id=RUN, package='web') == []
-    assert board.sent == [{'op': 'knowledge', 'package': ''}, {'op': 'knowledge', 'package': 'web'}]
+    reader = BoardKnowledge(board, RUN, 'task-1')
+    assert reader.read(run_id=RUN, task_id='task-1', package='') == ['<data>conventions</data>']
+    assert reader.read(run_id=RUN, task_id='task-1', package='web') == []
+    # The agent's own task goes with each read: the board checks its lease on that one row.
+    assert board.sent == [{'op': 'knowledge', 'task_id': 'task-1', 'package': ''},
+                          {'op': 'knowledge', 'task_id': 'task-1', 'package': 'web'}]
+    with pytest.raises(ValueError, match='its own task'):
+        reader.read(run_id=RUN, task_id='task-2', package='')
+    assert len(board.sent) == 2

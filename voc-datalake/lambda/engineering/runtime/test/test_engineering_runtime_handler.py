@@ -15,8 +15,9 @@ from engineering.runtime.aws import AwsMicroVmRuntime
 from engineering.runtime.board_bus import SupervisorBus
 from engineering.runtime.harness.skills import COORDINATOR, harness_argv
 from engineering.runtime.interface import AgentSpec, MicroVm, RuntimeRefused
-from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, meta_key
-from engineering.runtime.sessions import StaleSession
+from engineering.runtime.runs import Run, RunCaps, RunNotActive, RunStore, meta_key, run_pk
+from engineering.runtime.sessions import LAUNCH_HOLD_SECONDS, StaleSession
+from engineering.runtime.supervisor import SessionBusy
 from engineering.runtime.test.conftest import BUCKET, COMMIT, ROLE_ARNS, RUN, TABLE, WORKSPACE_BUCKET
 from engineering.runtime.test.local_runtime import LocalMicroVmRuntime
 from shared import aws as shared_aws
@@ -127,15 +128,71 @@ def test_a_launch_racing_the_runs_end_is_refused_by_the_session_write_and_ends_i
     assert handler._supervisor().sessions.get(RUN, 'fixer-1') is None
 
 
-def test_a_second_launch_of_the_same_agent_is_refused_and_ends_the_microvm_it_started(
+def test_a_repeated_launch_answers_the_session_the_first_wrote_and_starts_no_second_microvm(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    """The board's retry of a launch (its answer lost, or timed out) for the same task and attempt."""
+    assert wired is not None
+    first = handler.lambda_handler(LAUNCH, None)
+    _, started = _recording(monkeypatch)
+    assert handler.lambda_handler(LAUNCH, None) == first
+    assert started == []
+    session = handler._supervisor().sessions.get(RUN, 'fixer-1')
+    assert session is not None
+    assert session.seq == 1   # (the first launch's row, untouched)
+
+
+def test_an_agent_with_a_session_for_another_task_or_attempt_is_refused_before_any_microvm(
         wired: Any, monkeypatch: pytest.MonkeyPatch):
     assert wired is not None
     handler.lambda_handler(LAUNCH, None)
-    runtime, started = _recording(monkeypatch)
-    with pytest.raises(StaleSession):
+    _, started = _recording(monkeypatch)
+    for change in ({'task_id': 'task-2'}, {'attempt': 2}):
+        with pytest.raises(StaleSession, match='another task or attempt'):
+            handler.lambda_handler({**LAUNCH, **change}, None)
+    assert started == []
+
+
+def test_a_launch_while_another_still_starts_the_agents_microvm_is_busy_and_starts_none(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    """The first launch holds the agent's row before its MicroVM starts (and writes the session after): a second
+    one meanwhile (a retry after the board's call timed out) is refused, never a second MicroVM."""
+    assert wired is not None
+    sessions = handler._supervisor().sessions
+    sessions.hold_launch(RUN, 'fixer-1', int(handler.clock()))   # (the first launch, still booting)
+    _, started = _recording(monkeypatch)
+    with pytest.raises(SessionBusy, match='under way'):
         handler.lambda_handler(LAUNCH, None)
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        runtime.mint_token(started[0])
+    assert (started, sessions.get(RUN, 'fixer-1')) == ([], None)
+    # A hold past its time (a launch killed at the function's limit) lets the next launch through.
+    now = handler.clock()
+    monkeypatch.setattr(handler, 'clock', lambda: now + LAUNCH_HOLD_SECONDS + 1)
+    assert handler.lambda_handler(LAUNCH, None)['status'] == 'booting'
+    assert len(started) == 1
+    session = sessions.get(RUN, 'fixer-1')
+    assert session is not None
+    item = boto3.resource('dynamodb', region_name='us-east-1').Table(TABLE).get_item(
+        Key={'pk': run_pk(RUN), 'sk': 'AGENT#fixer-1'}).get('Item', {})
+    assert item.get('seq') == 1
+    assert 'launching_until' not in item   # (the session's write removed the hold)
+
+
+def test_a_microvm_that_fails_to_start_lets_go_of_the_launch_so_a_retry_starts_at_once(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    runtime = handler._supervisor().runtime
+    original, tries = runtime.run, []
+
+    def fails_once(spec: AgentSpec) -> MicroVm:
+        tries.append(spec)
+        if len(tries) == 1:
+            raise RuntimeRefused('no capacity')
+        return original(spec)
+
+    monkeypatch.setattr(runtime, 'run', fails_once)
+    with pytest.raises(RuntimeRefused, match='no capacity'):
+        handler.lambda_handler(LAUNCH, None)
+    assert handler.lambda_handler(LAUNCH, None)['status'] == 'booting'   # (no hold left behind: not busy)
+    assert len(tries) == 2
 
 
 @pytest.mark.parametrize('change', [{'harness': []}, {'harness': 'python3 -c pass'}, {'harness': ['python3', 1]},
@@ -273,13 +330,15 @@ def test_two_starts_racing_launch_one_coordinator(wired: Any, monkeypatch: pytes
     assert wired is not None
     handler.lambda_handler(COORDINATED, None)
     first = handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT)
-    runtime, started = _recording(monkeypatch)
+    _runtime, started = _recording(monkeypatch)
     with monkeypatch.context() as patch:
-        # The second start read no session before the first one's write.
+        # The second start read no session before the first one's write: the first's launch hold refuses it
+        # before any MicroVM starts (ask again; a retry then finds the first one's session).
         patch.setattr(handler._supervisor().sessions, 'get', lambda *_args: None)
-        handler.lambda_handler(COORDINATED, None)
-    with pytest.raises(RuntimeRefused, match='terminated'):
-        runtime.mint_token(started[0])   # its MicroVM ended; the first start's session is the run's
+        with pytest.raises(SessionBusy):
+            handler.lambda_handler(COORDINATED, None)
+    assert started == []
+    assert handler.lambda_handler(COORDINATED, None) == {'run_id': OTHER_RUN, 'status': 'active'}
     assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) == first
 
 
@@ -409,6 +468,48 @@ def test_a_resume_the_board_refuses_a_new_coordinator_still_answers_and_starts_n
     assert run is not None
     assert (run.status, started, handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2')) == (
         'active', [], None)
+
+
+def test_a_launch_whose_microvm_failed_leaves_no_agent_in_the_runs_facts_and_may_launch_again(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    from engineering.reports.facts import FactsReader
+    assert wired is not None
+    _start_whose_launch_fails(monkeypatch)   # its hold let go, its row kept as a hold (no session written)
+    facts = FactsReader(boto3.client('dynamodb', region_name='us-east-1'), TABLE).read(WORKSPACE, OTHER_RUN)
+    assert facts is not None
+    assert facts.agents == ()
+    handler.lambda_handler(COORDINATED, None)   # the retry launches at once
+    assert handler._supervisor().sessions.get(OTHER_RUN, COORDINATOR_AGENT) is not None
+
+
+def test_a_resume_whose_new_coordinator_fails_to_start_still_answers_and_a_resume_again_starts_it(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _coordinator_gone()
+    runtime = handler._supervisor().runtime
+
+    def down(_spec: AgentSpec) -> MicroVm:
+        raise RuntimeRefused('the MicroVM service refused the start')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(runtime, 'run', down)
+        assert set(handler.lambda_handler(RESUME, None)) == {'agents', 'applied'}   # the Resume was applied
+    run = _runs().get(OTHER_RUN)
+    assert run is not None
+    assert (run.status, handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2')) == ('active', None)
+    handler.lambda_handler(RESUME, None)
+    assert handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2') is not None
+
+
+def test_a_resume_that_finds_the_new_coordinators_launch_under_way_still_answers(
+        wired: Any, monkeypatch: pytest.MonkeyPatch):
+    assert wired is not None
+    _coordinator_gone()
+    # Another Resume's launch of the new coordinator holds it (its MicroVM still starting, or killed meanwhile).
+    handler._supervisor().sessions.hold_launch(OTHER_RUN, 'coordinator-2', int(handler.clock()))
+    _runtime, started = _recording(monkeypatch)
+    assert set(handler.lambda_handler(RESUME, None)) == {'agents', 'applied'}
+    assert (started, handler._supervisor().sessions.get(OTHER_RUN, 'coordinator-2')) == ([], None)
 
 
 def test_a_retried_resume_keeps_the_new_coordinator_and_a_live_one_is_left_alone(

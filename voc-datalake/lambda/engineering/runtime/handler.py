@@ -4,7 +4,8 @@
   "connection"?, "commit"?, "language"?, "actor"?}``: the run's ``META`` row and its ``coordinate`` task
   (``runs.RunStore.start``), the supervisor's rule switched on, and, for a run with its connection, commit and
   language, its coordinator launched on that task (``coordinator-1``, on the coordinator's skill's harness). A
-  retry of a run that is live switches the rule on again, keeps the first start's caps and launches the
+  run started without its connection or commit can launch no agent and read no knowledge (the board answers
+  409). A retry of a run that is live switches the rule on again, keeps the first start's caps and launches the
   coordinator only if the run is active and no session of it exists yet.
 - ``{"action": "end_run", "run_id", "status", "actor"?}``: the run ended (``done``, ``failed`` or ``stopped``), every
   MicroVM of it ended (one busy with another move at the next tick, which sees the run ended), then settled. A
@@ -54,16 +55,9 @@ from engineering.runtime.delivery import deliver
 from engineering.runtime.harness.skills import harness_argv, skill_for, skill_label
 from engineering.runtime.interface import AgentSpec, MicroVmRuntime, RuntimeRefused
 from engineering.runtime.launcher import Launcher
-from engineering.runtime.runs import (
-    ENDED,
-    RunCaps,
-    RunExists,
-    RunNotActive,
-    RunStore,
-    TableRunControl,
-)
-from engineering.runtime.sessions import LIVE_STATUSES, AgentSession, SessionStore, StaleSession
-from engineering.runtime.supervisor import Supervisor
+from engineering.runtime.runs import ENDED, Run, RunCaps, RunExists, RunNotActive, RunStore, TableRunControl
+from engineering.runtime.sessions import LIVE_STATUSES, AgentSession, LaunchUnderWay, SessionStore, StaleSession
+from engineering.runtime.supervisor import SessionBusy, Supervisor
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics
 
@@ -142,7 +136,7 @@ def signal_action(event: Mapping[str, Any]) -> dict[str, Any]:
         with contextlib.suppress(RunNotActive):  # it was not at a decision point
             _runs().resume(run_id, now=int(clock()), actor=str(event.get('actor') or ''))
         # A run whose coordinator kept crashing waited for this Resume: it gets a new one.
-        _ensure_coordinator(run_id, str(event.get('actor') or ''))
+        _ensure_coordinator(run_id, str(event.get('actor') or ''), resumed=True)
     return {'agents': {agent: status for agent, (status, _) in answers.items()},
             'applied': {agent: applied for agent, (_, applied) in answers.items()}}
 
@@ -209,13 +203,16 @@ def _harness(event: Mapping[str, Any]) -> tuple[tuple[str, ...], dict[str, str]]
                           'skill_version': str(event.get('skill_version', ''))[:200]}
 
 
-def _ensure_coordinator(run_id: str, actor: str) -> None:
+def _ensure_coordinator(run_id: str, actor: str, *, resumed: bool) -> None:
     """Make sure an active run with its connection, commit and language has a coordinator: the one its coordinate
     task records, started when it has no session yet (the run's start, ``coordinator-1``; a start whose MicroVM
     failed), or a new one in its place when its session failed: it kept crashing, which sent the run to a person
     (``BoardLeases.coordinator_to_start``). Nothing for a run whose coordinator is live or held (a Resume continues
     a held one itself), nor one a person shut down or stopped. A refusal of the board's (the run's agent cap, a
-    racing start or Resume that moved the task on) is logged, never raised: the Resume it follows was applied."""
+    racing start or Resume that moved the task on) is logged, never raised: the Resume it follows was applied. A
+    launch of it under way (another start's or Resume's, or one killed while its MicroVM booted, until its hold runs
+    out) refuses a start (``SessionBusy``: ask again; the run is written) and is logged for a Resume, as is a new
+    coordinator's MicroVM that fails to start (the Resume it follows was applied; a Resume again starts it)."""
     from engineering.runtime.board_bus import BoardLeases
     run = _runs().get(run_id)
     if run is None or run.status != 'active' or not (run.connection and run.commit and run.language):
@@ -237,17 +234,29 @@ def _ensure_coordinator(run_id: str, actor: str) -> None:
             raise
         logger.warning('engineering runtime: no new coordinator', extra={'run_id': run_id, 'reason': str(error)})
         return
-    if found is None:
-        return
-    agent_id, attempt = found
-    with contextlib.suppress(StaleSession):   # a retried start or Resume racing this one: its launch is the run's
-        launch({'run_id': run_id, 'agent_id': agent_id, 'role': COORDINATOR, 'task_id': COORDINATE_TASK,
+    if found is not None:
+        _start_coordinator(run, *found, resumed=resumed)
+
+
+def _start_coordinator(run: Run, agent_id: str, attempt: int, *, resumed: bool) -> None:
+    """The coordinator's MicroVM, through ``launch``. A launch a racing start or Resume made first is the run's. Any
+    other refusal (a launch under way, ``SessionBusy``; a MicroVM that will not start) is raised for a start (ask
+    again: the run is written) and logged for a Resume, which was applied (a Resume again starts it)."""
+    try:
+        launch({'run_id': run.run_id, 'agent_id': agent_id, 'role': COORDINATOR, 'task_id': COORDINATE_TASK,
                 'attempt': attempt, 'language': run.language, 'paths': [], 'commit': run.commit,
                 'connection': run.connection})
+    except StaleSession:
+        return
+    except Exception:
+        if not resumed:
+            raise
+        logger.exception('engineering runtime: the new coordinator did not start', extra={'run_id': run.run_id})
 
 
 def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
-    """Start a run with its caps and launch its coordinator; the supervisor's rule is on from then."""
+    """Start a run with its caps, its repository ``connection`` and ``commit`` (the board's ``launch`` and
+    ``knowledge`` read them from META), and launch its coordinator; the supervisor's rule is on from then."""
     caps = RunCaps(max_tasks=_optional_number(event, 'max_tasks', int) or 0,
                    max_tokens=_optional_number(event, 'max_tokens', int),
                    max_cost_usd=_optional_number(event, 'max_cost_usd', float))
@@ -263,7 +272,7 @@ def start_run(event: Mapping[str, Any]) -> dict[str, Any]:
             raise
         status = run.status  # a retry of a live run: its rule may never have been switched on
     _switch(True)
-    _ensure_coordinator(run_id, str(event.get('actor') or ''))
+    _ensure_coordinator(run_id, str(event.get('actor') or ''), resumed=False)
     return {'run_id': run_id, 'status': status}
 
 
@@ -287,8 +296,21 @@ def _strings(value: object) -> TypeGuard[list[str]]:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
+def _launched(sessions: SessionStore, spec: AgentSpec) -> dict[str, Any] | None:
+    """The agent's session when a launch of it already wrote one: for the same task and attempt, what that launch
+    answered (a repeat is the same launch); for another, ``StaleSession`` (not this launch's agent); else None."""
+    session = sessions.get(spec.run_id, spec.agent_id)
+    if session is None:
+        return None
+    if (session.task_id, session.task_attempt) != (spec.task_id, spec.attempt):
+        raise StaleSession(f'session {spec.run_id}/{spec.agent_id} exists for another task or attempt')
+    return {'run_id': session.run_id, 'agent_id': session.agent_id, 'status': session.status}
+
+
 def launch(event: Mapping[str, Any]) -> dict[str, Any]:
-    """Start one agent of a run on one task (refused when that agent already has a session in the run)."""
+    """Start one agent of a run on one task, once: a repeat for the same task and attempt answers the session the
+    first wrote, and is refused (``SessionBusy``) while the first is still starting its MicroVM; an agent with a
+    session for another task or attempt is refused (``StaleSession``)."""
     harness, labels = _harness(event)
     paths = event.get('paths', [])
     if not _strings(paths):
@@ -310,7 +332,21 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
                      task_id=str(event.get('task_id', '')), language=language, egress=allowlist,
                      connection=str(event.get('connection', '')), commit=commit, attempt=attempt,
                      workspace_bucket=supervisor.workspace_bucket, board_url=supervisor.board_url)
-    vm = supervisor.runtime.run(spec)
+    existing = _launched(supervisor.sessions, spec)
+    if existing is not None:
+        return existing
+    try:   # held before the MicroVM starts: a repeated launch of this agent never starts a second one
+        supervisor.sessions.hold_launch(spec.run_id, spec.agent_id, int(clock()))
+    except LaunchUnderWay:
+        existing = _launched(supervisor.sessions, spec)
+        if existing is not None:
+            return existing
+        raise SessionBusy(f'a launch of {spec.agent_id} is under way: ask again in a few minutes') from None
+    try:
+        vm = supervisor.runtime.run(spec)
+    except Exception:
+        supervisor.sessions.release_launch(spec.run_id, spec.agent_id)
+        raise
     try:
         session = supervisor.sessions.create(AgentSession(
             run_id=spec.run_id, agent_id=spec.agent_id, role=role, task_id=spec.task_id, language=language,
@@ -320,7 +356,10 @@ def launch(event: Mapping[str, Any]) -> dict[str, Any]:
             labels)
     except Exception:
         # No session row, no MicroVM: one that nothing supervises would run until its idle policy.
-        supervisor.runtime.terminate(vm)
+        try:
+            supervisor.runtime.terminate(vm)
+        finally:
+            supervisor.sessions.release_launch(spec.run_id, spec.agent_id)
         raise
     return {'run_id': session.run_id, 'agent_id': session.agent_id, 'status': session.status}
 

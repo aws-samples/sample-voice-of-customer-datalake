@@ -10,9 +10,9 @@ leaves.
 """
 from __future__ import annotations
 
-from engineering.board.api import repost_task
-from engineering.board.store import BoardStore
-from engineering.knowledge.store import PackStore, PackVersion
+from engineering.agent_memory.recall import Recall
+from engineering.agent_memory.store import AgentMemoryStore
+from engineering.knowledge.store import PackVersion
 from engineering.knowledge.understand import understand_package
 from engineering.skills.store import Change, SkillStore, SkillVersion, VersionPage
 
@@ -20,10 +20,8 @@ from engineering.skills.store import Change, SkillStore, SkillVersion, VersionPa
 # (docs/autonomous-engineering.md), its tests drive it until then.
 understand_package.__name__
 
-# PackStore.for_agent: the one read of a pack for an agent's prompt (its documents fenced as data); the agents that
-# call it land in phase 4. PackVersion's D4 record of who wrote and approved a version, read back for the pack's
-# admin REST reads (planned with the Understand flow).
-PackStore.for_agent
+# PackVersion's D4 record of who wrote and approved a version, read back for the pack's admin REST reads (planned
+# with the Understand flow).
 PackVersion.author_kind
 PackVersion.approved_by
 PackVersion.approved_at
@@ -45,10 +43,19 @@ SkillVersion.rejected_at
 Change.announcement
 VersionPage.next_after
 
-# The supervisor's re-post of a task (board/api.py): the runtime's Board.repost port (engineering/runtime/ports.py)
-# is to call it; the board's tests drive it until it is wired.
-repost_task.__name__
-
-# The run's coordinate task (board/store.py): the runtime's RunStore.start is to put its items in the start
-# transaction; the board's tests drive it until it is wired.
-BoardStore.coordinate_items
+# The agents' memory store, written by the agents' learning (the learning loop, phase 5), read by the harness's
+# recall for a task (phase 4's agents) and approved, edited, forgotten and restored through the people's and the
+# administrators' routes (phase 5), and erased by the platform's erasure of a person (not wired yet); its tests drive
+# it until then. Recall.left_out: how many applicable memories the bounds left out, for the run journal.
+AgentMemoryStore.erase_person_memories
+AgentMemoryStore.learn_agent_memory
+AgentMemoryStore.write_agent_memory
+AgentMemoryStore.confirm_agent_memory
+AgentMemoryStore.approve_agent_memory
+AgentMemoryStore.edit_agent_memory
+AgentMemoryStore.forget_agent_memory
+AgentMemoryStore.restore_agent_memory
+AgentMemoryStore.agent_memory_history
+AgentMemoryStore.pending_agent_memories
+AgentMemoryStore.recall_for_task
+Recall.left_out

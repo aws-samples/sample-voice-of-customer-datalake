@@ -20,6 +20,7 @@ from typing import Any, Final, Literal
 
 from botocore.exceptions import ClientError
 
+from engineering.rows import LAUNCH_HOLD
 from engineering.runtime.interface import AgentSpec, MicroVm
 from engineering.runtime.runs import RunNotActive, RunStore, meta_key, run_pk
 from shared.aws import consistent_item, is_conditional_check_failure
@@ -39,8 +40,17 @@ WITH_MICROVM: Final = frozenset({'booting', 'working', 'pause_requested'})
 After = Literal['continue', 'hold', 'wait', 'shutdown']
 
 
+#: How long a launch holds it: the runtime function's own limit (engineering-runtime.ts, 5 minutes), so a launch
+#: killed at its limit lets go by then.
+LAUNCH_HOLD_SECONDS: Final = 5 * 60
+
+
 class StaleSession(RuntimeError):
     """Someone else moved the session since it was read."""
+
+
+class LaunchUnderWay(RuntimeError):
+    """The agent has its session, or another launch of it holds its row (``SessionStore.hold_launch``)."""
 
 
 @dataclass(frozen=True)
@@ -204,14 +214,15 @@ class SessionStore:
         """
         first = replace(session, seq=1)
         name = self._table.name
+        # The launch's hold (``hold_launch``) goes with the row's creation: the session is the record from then on.
+        extra: dict[str, str | None] = {**(labels or {}), LAUNCH_HOLD: None}
         try:
             self._table.meta.client.transact_write_items(TransactItems=[
                 {'ConditionCheck': {'TableName': name, 'Key': meta_key(session.run_id),
                                     'ConditionExpression': '#status = :active',
                                     'ExpressionAttributeNames': {'#status': 'status'},
                                     'ExpressionAttributeValues': {':active': 'active'}}},
-                {'Update': {'TableName': name, **self._update(first, 'attribute_not_exists(seq)', {},
-                                                              dict(labels or {}))}},
+                {'Update': {'TableName': name, **self._update(first, 'attribute_not_exists(seq)', {}, extra)}},
             ])
         except ClientError as error:
             if is_key_collision(error, put_index=0):
@@ -220,6 +231,34 @@ class SessionStore:
                 raise StaleSession(f'session {session.run_id}/{session.agent_id} exists') from error
             raise
         return first
+
+    def hold_launch(self, run_id: str, agent_id: str, now: int) -> None:
+        """Take the agent's launch before its MicroVM starts, for ``LAUNCH_HOLD_SECONDS``: one conditional write on the
+        agent's row while it holds no session yet. ``LaunchUnderWay`` when the agent has its session already, or
+        another launch of it holds it (a retry while the first still boots never starts a second MicroVM)."""
+        try:
+            self._table.update_item(
+                Key=_key(run_id, agent_id), UpdateExpression='SET #hold = :until',
+                ConditionExpression='attribute_not_exists(seq) AND (attribute_not_exists(#hold) OR #hold < :now)',
+                ExpressionAttributeNames={'#hold': LAUNCH_HOLD},
+                ExpressionAttributeValues={':until': now + LAUNCH_HOLD_SECONDS, ':now': now})
+        except ClientError as error:
+            if is_conditional_check_failure(error):
+                raise LaunchUnderWay(f'{run_id}/{agent_id} has a session or a launch under way') from error
+            raise
+
+    def release_launch(self, run_id: str, agent_id: str) -> None:
+        """Let go of a launch that started no session (its MicroVM failed to start): a retry may launch at once. The
+        hold is run out (0), never removed: the row stays a launch hold, which no reader takes for an agent (the
+        report builder's facts skip it), rather than a key-only row read as an agent with no role."""
+        try:
+            self._table.update_item(Key=_key(run_id, agent_id), UpdateExpression='SET #hold = :ended',
+                                    ConditionExpression='attribute_not_exists(seq)',
+                                    ExpressionAttributeNames={'#hold': LAUNCH_HOLD},
+                                    ExpressionAttributeValues={':ended': 0})
+        except ClientError as error:
+            if not is_conditional_check_failure(error):   # (a session exists: its creation removed the hold)
+                raise
 
     def save(self, session: AgentSession) -> AgentSession:
         """Write ``session`` over the row it was read from; ``StaleSession`` when the row moved meanwhile."""
@@ -249,7 +288,7 @@ class SessionStore:
 
     @staticmethod
     def _update(session: AgentSession, condition: str, values: dict[str, Any],
-                extra: dict[str, str] | None = None, cost: Decimal | None = None) -> dict[str, Any]:
+                extra: dict[str, str | None] | None = None, cost: Decimal | None = None) -> dict[str, Any]:
         """The update that SETs the session's own attributes (REMOVEs the ones it no longer has), under ``condition``."""
         names: dict[str, str] = {}
         sets, removes, own = [], [], {**_own(session), **(extra or {})}
