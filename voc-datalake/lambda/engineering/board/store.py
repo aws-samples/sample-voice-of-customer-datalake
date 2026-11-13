@@ -10,10 +10,12 @@
   new MicroVM reads its brief by claiming again).
 - ``coordinate_items``: the run's ``coordinate`` task (role ``coordinator``), which only the run's start writes,
   in its own transaction (trusted code, never an agent's post): the coordinator claims it, renews and reports
-  progress on it like any agent, so the supervisor judges it by its lease too.
+  progress on it like any agent, so the supervisor judges it by its lease too. It records the coordinator the start
+  launches (``coordinator-1``), and only that coordinator claims it, in the claim's own condition.
 - ``launch``: the coordinator's launch of an agent for an open task, recorded once on the task
   (``launched_agent``, its id ``<role>-<n>`` from the run's ``agent_count``) with a history row; a retried launch
-  reuses the agent it recorded.
+  reuses the agent it recorded. Never for the coordinate task: ``launch_coordinator`` (the run's trusted code only)
+  records a new coordinator on it after a re-post, at the attempt given.
 - ``renew`` (the heartbeat), ``progress`` and ``move``: only the lease holder with the lease's epoch, before the
   lease runs out, on a task that has not ended, so an agent whose lease was lost cannot act on the task again.
   ``progress`` sets ``progress_at``, a short ``step`` and ``waiting`` (an open question, review or decision): the
@@ -253,10 +255,13 @@ class BoardStore:
             raise BoardError('forbidden', f'a {current.role} task is not for a {role}')
         now = self.now()
         at = now.isoformat()
+        # The coordinate task is claimed only by the coordinator recorded on it at its attempt, in the write's own
+        # condition: a replaced coordinator never claims it, even when the re-post lands between its read and this.
+        own = ' AND launched_agent = :agent AND launched_attempt = attempt' if role == COORDINATOR else ''
         return self._write(ws, run_id, task_id, _Write(
             set_expr='SET #state = :claimed, lease_agent = :agent, lease_epoch = attempt, lease_expires = :expires, '
                      'updated_by = :agent, updated_at = :at',
-            condition='#state = :open AND #role = :role AND attempt = :attempt',
+            condition=f'#state = :open AND #role = :role AND attempt = :attempt{own}',
             names={'#state': 'state', '#role': 'role'},
             values={':claimed': {'S': CLAIMED}, ':open': {'S': OPEN}, ':role': {'S': role}, ':agent': {'S': agent},
                     ':attempt': {'N': str(current.attempt)},

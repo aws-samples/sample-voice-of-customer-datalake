@@ -28,7 +28,7 @@ from engineering.rows import run_pk
 from engineering.test.run_fixture import LambdaClient
 
 WS = 'default'
-COORDINATOR = Caller('coordinator', RUN, 0)
+COORDINATOR = Caller('coordinator', RUN, 1)   # (coordinator-1: the run's start launches it)
 FIXER = Caller('fixer', RUN, 1)
 AT = '2026-11-12T09:00:00+00:00'
 
@@ -131,7 +131,7 @@ def test_the_run_start_writes_the_coordinate_task_for_the_coordinator_alone(run:
     status, _ = call(run, FIXER, op='claim', task_id=COORDINATE_TASK)
     assert status == 403
     status, body = call(run, COORDINATOR, op='claim', task_id=COORDINATE_TASK)
-    assert (status, body['task']['lease']['agent']) == (200, 'coordinator-0')
+    assert (status, body['task']['lease']['agent']) == (200, 'coordinator-1')
     assert call(run, COORDINATOR, op='renew', task_id=COORDINATE_TASK, epoch=1)[0] == 200
     assert call(run, COORDINATOR, op='progress', task_id=COORDINATE_TASK, epoch=1, step='Planning')[0] == 200
 
@@ -155,9 +155,43 @@ def test_a_coordinator_dead_before_its_claim_is_reposted_and_the_runtime_launche
             again.task.launched_agent) == ('coordinator-2', 2, False, True, 'coordinator-2')
     last = run.store.history(WS, RUN)[COORDINATE_TASK][-1]
     assert (last.op, last.actor, last.reason) == ('launch', 'runtime', 'launched coordinator-2')
-    # The board's own launch op still refuses the coordinator's role.
-    assert call(run, COORDINATOR, op='launch', task_id=COORDINATE_TASK, role='coordinator', language='py',
-                paths=[])[0] == 400
+    # The board's own launch op still refuses the coordinator's role, even to the run's current coordinator.
+    assert call(run, Caller('coordinator', RUN, 2), op='launch', task_id=COORDINATE_TASK, role='coordinator',
+                language='py', paths=[])[0] == 400
+
+
+def test_a_replaced_coordinator_is_refused_every_op_and_the_new_one_works(run: Board) -> None:
+    """After the runtime re-posts the coordinate task and records a new coordinator, the old one's session (still
+    alive, say) can no longer post, list, launch, read knowledge, read its inbox or claim the coordinate task."""
+    task_id = fixer_task(run)
+
+    def old_ones() -> list[tuple[int, bool]]:
+        answers = [call(run, COORDINATOR, op='post', role='fixer', title='More', spec={'issue': 2}),
+                   call(run, COORDINATOR, op='tasks'),
+                   call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='py', paths=[]),
+                   call(run, COORDINATOR, op='knowledge', package=''),
+                   call(run, COORDINATOR, op='inbox', after=0),
+                   call(run, COORDINATOR, op='claim', task_id=COORDINATE_TASK)]
+        return [(status, 'another coordinator' in body['error']) for status, body in answers]
+
+    run.store.repost(WS, RUN, COORDINATE_TASK, reason='the coordinator is gone', attempt=1)
+    # Between the re-post and the new coordinator's record, the old one is no longer the run's either.
+    assert old_ones() == [(403, True)] * 6
+    run.store.launch_coordinator(WS, RUN, attempt=2)
+    assert old_ones() == [(403, True)] * 6
+    new = Caller('coordinator', RUN, 2)
+    assert call(run, new, op='claim', task_id=COORDINATE_TASK)[0] == 200
+    assert call(run, new, op='tasks')[0] == 200
+
+
+def test_the_coordinate_tasks_claim_checks_its_coordinator_in_the_write_itself(run: Board) -> None:
+    """A re-post landing between the API's check and the claim: the store's own condition refuses the old one."""
+    run.store.repost(WS, RUN, COORDINATE_TASK, reason='the coordinator is gone', attempt=1)
+    run.store.launch_coordinator(WS, RUN, attempt=2)
+    with pytest.raises(BoardError, match='not open'):
+        run.store.claim(WS, RUN, COORDINATE_TASK, role='coordinator', agent='coordinator-1')
+    assert run.store.claim(WS, RUN, COORDINATE_TASK, role='coordinator', agent='coordinator-2').lease_agent == \
+        'coordinator-2'
 
 
 def test_a_new_coordinator_is_only_for_an_open_coordinate_task(run: Board) -> None:
@@ -219,7 +253,7 @@ def test_the_coordinator_launches_an_agent_for_an_open_task_once(run: Board) -> 
                        'language': 'python', 'paths': ['services/billing'], 'commit': 'a' * 40,
                        'connection': 'repo-1'}
     last = run.store.history(WS, RUN)[task_id][-1]
-    assert (last.op, last.actor, last.reason) == ('launch', 'coordinator-0', 'launched fixer-2')
+    assert (last.op, last.actor, last.reason) == ('launch', 'coordinator-1', 'launched fixer-2')
     again = call(run, COORDINATOR, op='launch', task_id=task_id, role='fixer', language='python', paths=[])
     assert again[1]['agent_id'] == 'fixer-2'   # (a retry: the same agent, no second number)
     assert run.launcher.requests[-1]['paths'] == ['services/billing']   # (with the paths it was launched on)

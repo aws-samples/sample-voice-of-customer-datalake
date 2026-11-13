@@ -17,7 +17,9 @@ never chooses the agent's argv: the runtime's ``launch`` in this tree still requ
 launch is refused (409) until the runtime derives the harness from the role's skill. The coordinator claims the run's ``coordinate`` task, which only the run's start is to write
 (``BoardStore.coordinate_items``; the runtime's run start does not call it yet, nor record META's ``commit`` and
 ``connection``, so until it does there is no coordinate task, the coordinator's claim and ``knowledge`` answer 404, and an
-agent's ``knowledge`` answers 503). Each change is published on the bus as the board (``task.*``), after the row is
+agent's ``knowledge`` answers 503). A coordinator acts only while it is the run's: every op of the coordinator role
+first checks the caller is the coordinate task's recorded coordinator at the task's attempt (403 "the run has another
+coordinator now" for one the runtime replaced, ``BoardStore.launch_coordinator``). Each change is published on the bus as the board (``task.*``), after the row is
 written: the row is the record, the event a notification. A failed publish answers 503 and the agent retries; every
 operation is idempotent, and the event's id comes from the change itself, so the retry publishes the same event again
 (a redelivery its receivers dedupe), including a retried post the board answered from its ``spec_hash`` dedupe. A
@@ -365,8 +367,26 @@ class BoardApi:
                                            to_state=_text(body, 'to'), result_keys=keys))
         raise BoardError('invalid', 'op is post, claim, renew, progress, move, inbox, knowledge, tasks or launch')
 
+    def _current_coordinator(self, caller: Caller) -> None:
+        """A coordinator acts only while it is the run's: the coordinate task's recorded coordinator at the task's
+        attempt. Once the task is re-posted (and a new coordinator recorded on it, ``BoardStore.launch_coordinator``),
+        the replaced one's session is refused every op, its claim included. A run whose start wrote no coordinate
+        task (the runtime before its merge) has only its start's coordinator, so the role is all there is to check."""
+        try:
+            task = self.store.task(WORKSPACE, caller.run_id, COORDINATE_TASK)
+        except BoardError as exc:
+            if exc.kind != 'not_found':
+                raise
+            return
+        # (A read before the op: an op racing a re-post can still go through once; the coordinate task's claim, the
+        # one that would give it the run again, repeats the check in its own write, BoardStore.claim.)
+        if (task.launched_agent, task.launched_attempt) != (agent_id(caller), task.attempt):
+            raise BoardError('forbidden', 'the run has another coordinator now: this one stops')
+
     def handle_request(self, caller: Caller, raw_body: Any) -> dict[str, Any]:
         try:
+            if caller.role == COORDINATOR:
+                self._current_coordinator(caller)
             body = _object(raw_body)
             direct = self._direct(caller, body)
             if direct is not None:

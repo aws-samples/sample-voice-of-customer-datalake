@@ -347,7 +347,11 @@ What exists:
   written in the same transaction, so the board's launches number from 2; the start in this tree writes neither). A new coordinator for it is to be recorded only by the run's trusted code
   (`BoardStore.launch_coordinator`: the task open at the attempt given, the next `coordinator-<n>`, a retry reusing
   it), never by a board op: the runtime's Resume of a run whose coordinator is gone is to re-post the task at the
-  attempt it judged and then call it (not wired in this tree: its whole-run Resume only resumes the run). A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
+  attempt it judged and then call it (not wired in this tree: its whole-run Resume only resumes the run). A
+  coordinator acts only while it is the run's: every board op of the coordinator role checks the caller is the
+  coordinate task's recorded coordinator at the task's attempt, so a replaced coordinator's session is refused (403)
+  from the re-post on, its claim included; a run whose start wrote no coordinate task has only its start's
+  coordinator, so there the role is the check. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
   its role, language and paths; the board invokes the runtime's `launch` action only, with the run's commit and
   connection from its META, numbers the agent `<role>-<n>` from the run's counter, at most 999, and records it on the
