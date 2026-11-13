@@ -179,7 +179,15 @@ WORKSPACE_GATE = 'require_workspace_admin'
 WORKSPACE_ADMIN_ONLY: dict[str, frozenset[str]] = {
     'workspaces_handler.py': frozenset({
         'POST /me/workspaces/current/members', 'PUT /me/workspaces/current/members/<sub>',
+        # The workspace's export (docs/multi-workspace.md, "Export and delete"): start it, and sign a 15-minute
+        # download link of a completed one (an audited read of the whole workspace's data).
+        'POST /me/workspaces/current/export', 'POST /me/workspaces/current/export/link',
     }),
+}
+# Reads for a workspace's admins only, gated like the writes above: the status of the export of the whole
+# workspace's data.
+WORKSPACE_ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
+    'workspaces_handler.py': frozenset({'GET /me/workspaces/current/export'}),
 }
 
 
@@ -550,7 +558,11 @@ def _workspace_gated(source: str) -> dict[str, bool]:
             for fn in functions.values() for key in _route_keys(fn, PLATFORM_GATED_METHODS)}
 
 
-@pytest.mark.parametrize(('handler', 'route'), sorted(_workspace_admin_keys()))
+def _workspace_admin_read_keys() -> set[tuple[str, str]]:
+    return {(handler, route) for handler, routes in WORKSPACE_ADMIN_ONLY_READS.items() for route in routes}
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(_workspace_admin_keys() | _workspace_admin_read_keys()))
 def test_every_workspace_admin_route_carries_the_workspace_gate(handler, route):
     assert _workspace_gated((API_DIR / handler).read_text(encoding='utf-8')).get(route) is True, (
         f'{handler} {route} is missing or lost its require_workspace_admin gate')
@@ -559,7 +571,11 @@ def test_every_workspace_admin_route_carries_the_workspace_gate(handler, route):
 def test_only_the_listed_routes_carry_the_workspace_gate_unconditionally():
     gated = {(path.name, key) for path in _handler_files()
              for key, has in _workspace_gated(path.read_text(encoding='utf-8')).items() if has}
-    assert gated == _workspace_admin_keys()
+    assert gated == _workspace_admin_keys() | _workspace_admin_read_keys()
+
+
+def test_every_workspace_admin_read_is_a_read():
+    assert all(route.startswith('GET ') for _handler, route in _workspace_admin_read_keys())
 
 
 def test_the_workspace_gate_raises_authorization_error():
@@ -568,7 +584,8 @@ def test_the_workspace_gate_raises_authorization_error():
                for stmt in functions[WORKSPACE_GATE].body)
 
 
-@pytest.mark.parametrize('route', sorted(WORKSPACE_ADMIN_ONLY['workspaces_handler.py']))
+@pytest.mark.parametrize('route', sorted(WORKSPACE_ADMIN_ONLY['workspaces_handler.py']
+                                         | WORKSPACE_ADMIN_ONLY_READS['workspaces_handler.py']))
 def test_removing_the_workspace_gate_is_detected(route):
     tree = ast.parse((API_DIR / 'workspaces_handler.py').read_text(encoding='utf-8'))
     for fn in _module_functions(tree).values():

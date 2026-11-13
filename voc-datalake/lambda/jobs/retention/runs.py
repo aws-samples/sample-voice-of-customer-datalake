@@ -18,6 +18,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from jobs.retention.exports import ERASED_WORKSPACES
 from shared import job_notices
 from shared.aws import is_conditional_check_failure
 from shared.erasure_jobs import job_key
@@ -45,6 +46,8 @@ COUNTERS: Final = ('scanned', *ERASURE_JOB_COUNTERS)
 # like the others, and written on the job and audit rows only once above 0 (a run without boards, members or
 # workspace items reads as before).
 _CARRIED_LISTS: Final = ('erased_sources', 'review_files')
+# ``ERASED_WORKSPACES`` (jobs/retention/exports.py), the workspaces whose exports an erasure still has to clear, is
+# carried only while it holds one (a run that reached no workspace reads as before).
 # ``workspace_id``: the one workspace a job named (its row's, checked by the handler's ``_named_workspace``).
 _AUDIT_OPTIONAL: Final = ('job_id', 'field', 'source', 'value_hash', 'cutoffs', 'legal_basis', 'legal_bases',
                           'erased_sources', 'workspace_id')
@@ -65,6 +68,9 @@ def new_run(event: Mapping[str, Any], mode: str) -> dict[str, Any]:
         values = carried.get(name)
         run[name] = [str(value) for value in values] if isinstance(values, list) else []
     run['review_files_more'] = carried.get('review_files_more') is True
+    erased = carried.get(ERASED_WORKSPACES)
+    if isinstance(erased, list) and erased:
+        run[ERASED_WORKSPACES] = [str(ws) for ws in erased]
     return run
 
 
@@ -75,6 +81,7 @@ def carried_state(run: Mapping[str, Any]) -> dict[str, Any]:
         **{counter: run[counter] for counter in COUNTERS}, **optional_counts(run),
         **{name: list(run[name]) for name in _CARRIED_LISTS},
         'review_files_more': run['review_files_more'],
+        **({ERASED_WORKSPACES: list(run[ERASED_WORKSPACES])} if run.get(ERASED_WORKSPACES) else {}),
     }
 
 

@@ -136,8 +136,12 @@ MEMBER_COUNTER: Final = 'member_rows_deidentified'
 WORKSPACE_ITEM_COUNTER: Final = 'deleted_workspace_items'
 # Rows a retention run skipped because their partition starts `WS#` but names no workspace (an erasure fails on one).
 UNSCOPED_ROW_COUNTER: Final = 'unscoped_rows_skipped'
+# The export objects (zips and work objects, every version) an erasure deleted under the workspaces it reached:
+# an export is a derived copy (jobs/retention/exports.py).
+EXPORT_OBJECT_COUNTER: Final = 'deleted_export_objects'
 # The counters on the job and audit rows only once above 0 (a run that touched none reads as before).
-ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER)
+ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER,
+                                    EXPORT_OBJECT_COUNTER)
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'

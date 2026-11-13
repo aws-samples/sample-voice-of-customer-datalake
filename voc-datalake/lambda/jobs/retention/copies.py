@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
+from jobs.retention import exports
 from jobs.retention.runs import MODE_ERASE, note_erased_source, note_review_file
 from shared import retention
 from shared.legal_basis import legal_basis_or_legacy
@@ -112,6 +113,10 @@ class ItemDeleter:
     def delete(self, item: Mapping[str, Any], store: str) -> None:
         """The item's whole-file upload (see the module docstring), then the item with its own archive."""
         run = self._run
+        scope = None if store == STORE_RADAR else retention.item_scope(item)
+        if scope is not None and run.get('mode') == MODE_ERASE:
+            # Its exports hold a copy of the item: closed before any of it goes, cleared by the `exports` phase.
+            exports.note_workspace(run, scope, self._tables['aggregates'])
         self._whole_upload(item)
         self._import_originals(item)
         if store == STORE_RADAR:
@@ -120,7 +125,7 @@ class ItemDeleter:
         else:
             _, objects = retention.delete_item(self._tables[STORE_FEEDBACK], self._s3, self._bucket, item)
             run['deleted_items'] += 1
-            if retention.item_scope(item) is not None:
+            if scope is not None:
                 run[WORKSPACE_ITEM_COUNTER] = int(run.get(WORKSPACE_ITEM_COUNTER) or 0) + 1
         run['deleted_objects'] += objects
         # A workspace item's source too: the lineage pass looks up `{feedback_id}` tombstone keys, which a

@@ -101,6 +101,7 @@ max-returns = 8
 "lambda/shared/test/test_root_conftest.py" = ["S603"]  # fresh pytest session, fixed argv (one literal plugin name)
 "lambda/design_capture/conftest.py" = ["S603"]  # the DOM tests' jsdom runner: fixed argv (the located node binary, -e, a constant script)
 "../scripts/audit/test_py_layers.py" = ["S603"]  # fixed argv: docker + the pinned Lambda image + a constant probe
+"lambda/jobs/workspace_export/test/test_zip_stream.py" = ["S603"]  # `unzip -t` of the zip the test wrote: fixed argv
 "lambda/shared/test/test_snapstart.py" = ["S311"]  # tests the `random` reseed itself
 "lambda/shared/test/test_model_agreement_handler.py" = ["S102"]  # execs the handler inlined in the CDK stack
 "scripts/mcp_gate.py" = ["S314"]                          # parses the JUnit XML our own pytest run just wrote

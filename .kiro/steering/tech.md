@@ -74,7 +74,7 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-engagement-api` | `engagement_handler.py` (routers in `shared/*_routes.py`) | `/participants/*`, `/feature-requests/*` (board authorizer: app + board pools), public `POST /unsubscribe` | DynamoDB participants + feature-requests RW, projects read, aggregates GetItem, KMS, `ses:SendEmail` (only with `-c emailFrom`, `ses:FromAddress` pinned), invoke itself (async send slices, no retries) |
 | `voc-ballots-api` | `ballots_handler.py` | `/voting-sessions/*` (room votes on a Prioritization row; `GET .../config` and `POST .../submit` public) | DynamoDB aggregates Get/Put/Update, projects GetItem, KMS |
 | `voc-radar-api` | `radar_handler.py` | `/radar`, `/radar/{proxy+}` (other brands, docs/radar.md) | DynamoDB radar Get/Query/Put/BatchGet, aggregates read, KMS, invoke the Radar scan worker |
-| `voc-workspaces-api` | `workspaces_handler.py` (`lambda/shared/workspace.py`, `platform_workspaces.py`, `platform_admin.py`, `workspace_members.py`) | `GET`/`POST`/`PUT`/`DELETE /me/{proxy+}`: `GET /me/workspaces`, `GET /me/workspaces/current`, `GET`/`POST /me/workspaces/current/members` and `PUT`/`DELETE /me/workspaces/current/members/{sub}` (any member reads; workspace admins add, change roles and remove; a member may leave); `GET`/`POST /platform/{proxy+}`: `GET /platform/workspaces`, `POST /platform/workspaces` (platform admins only, live check; docs/multi-workspace.md) | DynamoDB workspaces Query/GetItem, PutItem only where `dynamodb:LeadingKeys` matches `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES` or `WS#*` (a workspace's creation and a member's add, each one transaction of conditional puts, and the audit rows of an entry and a membership change; the audit-row guard names this role the table's audit writer), UpdateItem only on `WS#*` and `USER#*` and only the attribute `role` (`dynamodb:Attributes`; a member's role change), DeleteItem only on `WS#*` and `USER#*` (a member's removal: the code deletes `MEMBER#` and `USER#` keys; IAM cannot pin the sort key), ConditionCheckItem only on `WS#*`; KMS; Cognito `AdminListGroupsForUser` + `AdminGetUser` on the user pool (the live platform-admin check), `ListUsers` + `AdminCreateUser` (adding a member: the email's account, or a new one); no Secrets Manager or SSM (decision 19: a workspace's credentials are SSM Parameter Store SecureStrings, one per plugin, made by their first save; `lib/utils/workspace-secrets.ts`); no other table |
+| `voc-workspaces-api` | `workspaces_handler.py` (`lambda/shared/workspace.py`, `platform_workspaces.py`, `platform_admin.py`, `workspace_members.py`) | `GET`/`POST`/`PUT`/`DELETE /me/{proxy+}`: `GET /me/workspaces`, `GET /me/workspaces/current`, `GET`/`POST /me/workspaces/current/members` and `PUT`/`DELETE /me/workspaces/current/members/{sub}` (any member reads; workspace admins add, change roles and remove; a member may leave), `POST`/`GET /me/workspaces/current/export` and `POST /me/workspaces/current/export/link` (workspace admins only: start an export, read its status, sign a fresh, audited 15-minute download link; `lambda/shared/export_jobs.py`); `GET`/`POST /platform/{proxy+}`: `GET /platform/workspaces`, `POST /platform/workspaces` (platform admins only, live check; docs/multi-workspace.md) | DynamoDB workspaces Query/GetItem, PutItem only where `dynamodb:LeadingKeys` matches `AUDIT#WS#*`, `SLUG#*`, `USER#*`, `WORKSPACES` or `WS#*` (a workspace's creation and a member's add, each one transaction of conditional puts, and the audit rows of an entry and a membership change; the audit-row guard names this role the table's audit writer), UpdateItem only on `WS#*` and `USER#*` and only the attribute `role` (`dynamodb:Attributes`; a member's role change), DeleteItem only on `WS#*` and `USER#*` (a member's removal: the code deletes `MEMBER#` and `USER#` keys; IAM cannot pin the sort key), ConditionCheckItem only on `WS#*`; KMS; Cognito `AdminListGroupsForUser` + `AdminGetUser` on the user pool (the live platform-admin check), `ListUsers` + `AdminCreateUser` (adding a member: the email's account, or a new one); no Secrets Manager or SSM (decision 19: a workspace's credentials are SSM Parameter Store SecureStrings, one per plugin, made by their first save; `lib/utils/workspace-secrets.ts`); for the export routes (`lib/stacks/api-workspace-export.ts`): voc-aggregates PutItem, UpdateItem and Query on `WS#{one id}#JOB#export` only (the lock, the job row), `s3:GetObject` under `ws/{one id}/exports/*` (it signs the download link) and the invoke of `voc-workspace-export`; no other table |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` (admin-only; incl. `POST /s3-import/reprocess`, `GET /s3-import/reprocess/{run_id}`) | S3 import bucket RW, KMS; with the `s3_import` plugin enabled (`lib/stacks/api-s3-import-lambda.ts`): `lambda:InvokeFunction` on exactly `voc-ingestor-s3_import` (by name, env `S3_IMPORT_INGESTOR_FUNCTION`) and aggregates Put/Get/UpdateItem + Query (the duplicate-run check, 409) pinned by `dynamodb:LeadingKeys` to `SOURCE_RUN#s3_import` (the reprocess run rows) |
 
 Push notices (6.04.00, docs/realtime.md): `appsync:EventPublish` on exactly one namespace each, as VocCoreStack's
@@ -133,6 +133,29 @@ timeout. Permissions: feedback Scan/GetItem/UpdateItem, aggregates
 Get/Put/Update/Query, raw-bucket read (`raw/*`), KMS, Bedrock, Comprehend,
 Translate, invoke itself.
 
+Not behind API Gateway (Processing stack): `voc-workspace-export` — `lambda/jobs/workspace_export/handler.py`
+(phase 4a, docs/multi-workspace.md "Export and delete"; `lib/stacks/workspace-export-worker.ts`), async invoke by
+name from `POST /me/workspaces/current/export` (env `EXPORT_FUNCTION` on the workspaces API) with
+`{export_id, workspace_id}`; a claim needs a fresh row (generation 0 created, or the last one moved, within the
+hour) and an event older than 40 minutes (throttling retries) is dropped (`maxEventAge`: with the 15-minute
+timeout it stays inside the lock's hour). A dropped invoke is never silent: a start dropped unrun shows failed,
+"The export did not start", past the hour; a hand-over throttled past the event age ends the export failed, "The
+export stopped before it finished", once its row is stale (an hour after its last progress, its lock stale too, so
+a new start works). Writes one workspace's data as JSONL
+per entity plus `manifest.json` into one streaming ZIP64 (`zip_stream.py`) in one S3 multipart upload under
+`ws/{ws}/exports/{export_id}/`, claiming each generation on its job row (`WS#{ws}#JOB#export`, one live export per
+workspace by its `LOCK`), handing over to itself before its 15-minute timeout, cancelling when the workspace begins
+deleting, and ending with a job notice (`workspace_export`) when it writes its outcome. 1,769 MB, reserved
+concurrency 10 (free; about five workspaces export at once before throttling; the account's quota need is 130 with
+the MCP endpoint's 20, docs/deployment.md), no async retry. Permissions: feedback Query of `gsi1-by-date` only, on `WS#{one id}#DATE#*`; aggregates GetItem + Query on
+`WS#{one id}#*` and UpdateItem on `WS#{one id}#JOB#export`; workspaces Query on `WS#{one id}` and
+`AUDIT#WS#{one id}` only; raw bucket `s3:PutObject`, `PutObjectTagging`, `GetObject`, `AbortMultipartUpload`,
+`ListMultipartUploadParts` under `ws/{one id}/exports/*` only, and `s3:DeleteObject` on its own work objects
+(`ws/{one id}/exports/*/work/*`) only; KMS; invoke itself; the `jobs` publish policy. No Scan, no other delete, no
+DynamoDB delete, no SSM or Secrets Manager (credentials are never exported). The raw bucket expires objects tagged
+`voc-export=true` after 10 days and denies that tag, and a copy of an export object, outside `ws/{one id}/exports/*`
+(`lib/stacks/core-buckets.ts`).
+
 Not behind API Gateway (Processing stack): `voc-retention` —
 `lambda/jobs/retention/handler.py`, daily schedule (mode `retention`) + async
 invoke from `POST /settings/erasure` (mode `erase`, env `RETENTION_FUNCTION` on
@@ -141,9 +164,16 @@ unless a source profile sets `retention_days` or an erasure is requested, each
 with a legal basis (`shared/legal_basis.py`; `legal_basis` required on the
 route, `retention_legal_basis` on a profile with a period). Every deleted item
 first gets a tombstone (`AUDIT#tombstone#{source}` / `{feedback_id}`, no ttl).
-Phases: `voc-feedback` items, `voc-radar` reviews (+ markers), whole-source
-raw sweep, then lineage (artifacts in `voc-projects` citing an erased id lose
-it and get `erased_evidence`). Whole-file uploads (`raw/csv_upload/*`,
+Phases, in order (`handler.py` `_phases`): `voc-feedback` items, `voc-radar` reviews (+ markers), the feedback
+boards, the workspace memberships, the whole-source raw sweep, then (an erasure only) the exports of every
+workspace whose item it deleted or membership it de-identified, a derived copy (`lambda/jobs/retention/exports.py`:
+the export lock taken, its export jobs marked `erased`, its open uploads aborted, every version under
+`ws/{ws}/exports/` deleted, swept twice, the lock freed), then lineage (artifacts in `voc-projects` citing an
+erased id lose it and get `erased_evidence`). A workspace's exports are already closed (the lock taken, every
+export marked `erased`, so no link is signed) when the run first meets the workspace, before its item goes or its
+membership changes, and closed again at each hand-over (the lock renewed, any export that slipped in marked); a
+job that names one workspace closes them at its start (so it deletes them even when it matches nothing) and walks
+the items and the exports only. Whole-file uploads (`raw/csv_upload/*`,
 `raw/json_upload/*`) are deleted only by a whole-source erasure of their source,
 else listed as `files_needing_review`. A whole-source erasure (`field: 'source'`) scans by
 `source_platform`, then sweeps `raw/{source}/` (every version), writing progress
@@ -152,7 +182,8 @@ aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones 
 radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan/UpdateItem, workspaces Scan + UpdateItem
 pinned to `WS#*` and the attributes `email` and `name` (since 6.11.00 an erasure by email without a source
 de-identifies the person's `MEMBER#` rows, `lambda/jobs/retention/members.py`), raw bucket
-`s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions`, KMS,
+`s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions` (and on each workspace's raw, silver
+and exports prefixes, with `AbortMultipartUpload` and `ListBucketMultipartUploads` for its exports), KMS,
 invoke itself; an erasure job's end notice to its starter (6.04.00: VocCoreStack's `jobs` publish managed policy,
 `appsync:EventPublish` on `jobs` only; docs/realtime.md). Ingestion-side Lambdas (plugins, webhooks, manual import,
 feedback forms, data explorer) apply the source policy before archive/SQS and

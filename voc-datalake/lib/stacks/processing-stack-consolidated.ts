@@ -24,6 +24,7 @@ import { AgentRuntime } from './agent-runtime';
 import { createBriefingWorker } from './briefing-worker';
 import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
+import { createWorkspaceExportWorker } from './workspace-export-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
@@ -303,6 +304,21 @@ export class VocProcessingStack extends VocStack {
     // An erasure job's end reaches the admin who started it (jobs/retention/runs.py, docs/realtime.md): a publish
     // grant (the `jobs` managed policy) and the host only; nothing else on the only customer-data delete role changes (D5).
     grantRealtimePublish(props.realtime, 'jobs', [retentionWorker]);
+
+    // ============================================
+    // WORKSPACE EXPORT (docs/multi-workspace.md "Export and delete")
+    // ============================================
+    const workspaceExportWorker = createWorkspaceExportWorker(this, 'WorkspaceExportWorker', {
+      uniqueName: (baseName) => this.uniqueName(baseName),
+      layer: processingLayer,
+      kmsKey,
+      feedbackTable,
+      aggregatesTable,
+      workspacesTable: props.workspacesTable,
+      rawDataBucket,
+    });
+    // An export's end reaches the admin who started it (lambda/jobs/workspace_export/handler.py, docs/realtime.md).
+    grantRealtimePublish(props.realtime, 'jobs', [workspaceExportWorker]);
 
     // ============================================
     // MEMORY + AUTONOMOUS AGENTS

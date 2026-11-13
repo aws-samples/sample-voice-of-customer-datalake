@@ -106,6 +106,9 @@ describe('exact grants over the app', () => {
       ['Allow', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
       ['Deny', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
       ['Allow', ['s3:ListBucketVersions']],
+      // A workspace's open export upload, which an erasure that reaches the workspace aborts (a derived copy, D5).
+      ['Allow', ['s3:AbortMultipartUpload']],
+      ['Allow', ['s3:ListBucketMultipartUploads']],
     ]);
   });
 

@@ -26,7 +26,11 @@ A run walks its PHASES in order, each paged and time-budgeted:
    (``WS#{ws}#SOURCE#…``, with their objects under ``ws/{ws}/``; counted in ``deleted_workspace_items`` as
    well); an erasure by author (a display name), source id or CSV row (ids unique only within one account or
    upload) and a whole-source erasure leave them (``shared/retention.reaches_workspaces``); a job that names a
-   workspace reaches that workspace's items only, and this is its one phase;
+   workspace reaches that workspace's items only, and this is its one phase but the next;
+   then (after the boards and memberships below, before the raw sweep's successor, lineage) ``exports`` — an erasure
+   only, once it deleted any workspace's item or de-identified one of its memberships: that workspace's exports, a
+   derived copy (``exports.py``): its export jobs marked ``erased``, its open export upload aborted, every version
+   under ``ws/{ws}/exports/`` deleted and swept once more (``deleted_export_objects``);
 2. ``radar`` — voc-radar (other brands' reviews), when ``RADAR_TABLE`` is set;
    then ``boards`` — an erasure by email only, when ``FEATURE_REQUESTS_TABLE`` is set:
    the person's board requests and +1s are de-identified and their raw copies deleted
@@ -61,7 +65,7 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
-from jobs.retention import boards, lineage, members
+from jobs.retention import boards, exports, lineage, members
 from jobs.retention.copies import ItemDeleter, write_tombstones
 from jobs.retention.runs import (
     MODE_ERASE,
@@ -109,6 +113,7 @@ JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
 STATUS_COMPLETED: Final = 'completed'
 STATUS_FAILED: Final = 'failed'
 PHASE_ITEMS: Final = 'items'
+PHASE_EXPORTS: Final = 'exports'
 PHASE_RADAR: Final = 'radar'
 PHASE_BOARDS: Final = 'boards'
 PHASE_MEMBERS: Final = 'members'
@@ -197,6 +202,10 @@ def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, An
     scope = _named_workspace(job)
     if (scope.ws if scope else None) != (partition.ws if partition else None):
         raise ValueError('The job row names another workspace than its partition')
+    if scope is not None and run['generation'] == 0:
+        # A job of one workspace closes its exports at its start (the lock, every export marked erased), before
+        # anything is read or deleted; the `exports` phase sweeps them and frees the lock (exports.py).
+        exports.note_workspace(run, scope, aggregates_table)
     if run['field'] == SOURCE_FIELD:
         _check_whole_source(run['source'], value)
     field, source = str(job.get('field')), run['source']
@@ -252,9 +261,20 @@ def _hand_over(walk: Walk, phase: str, cursor: dict | None) -> dict:
     run = walk.run
     _whole_source_lock_call(walk.aggregates, run, refresh_source_lock, 'renew')
     _workspace_lock_call(walk.aggregates, run, refresh_workspace_lock, 'renew')
+    _renew_export_locks(walk.aggregates, run)
     payload = {**walk.event, 'mode': run['mode'], 'phase': phase, 'cursor': cursor, 'run': carried_state(run)}
     invoke_lambda_async(walk.context.function_name, payload)
     return {'status': 'continued', 'run_id': run['run_id']}
+
+
+def _renew_export_locks(aggregates_table: Any, run: dict[str, Any]) -> None:
+    """Re-close the exports of every workspace the run still has to clear (``exports.renew``: each export lock
+    renewed, any export that slipped in marked erased); best effort, as the other locks: a failure is logged, and
+    the ``exports`` phase closes them again before it sweeps."""
+    try:
+        exports.renew(run, aggregates_table)
+    except _AWS_ERRORS as e:
+        logger.warning('Could not renew the workspace export locks', extra={'error_type': type(e).__name__})
 
 
 def _workspace_lock_call(aggregates_table: Any, run: dict[str, Any],
@@ -442,6 +462,17 @@ def _erase_from_members(walk: Walk, cursor: dict | None) -> dict | None:
                         eraser.tombstones, eraser.erase)
 
 
+def _erase_exports(walk: Walk, _cursor: dict | None) -> dict | None:
+    """The exports of every workspace the erasure reached: marked erased, open uploads aborted, every version of
+    their objects deleted (exports.py, TENETS.md D5). Each step is idempotent, so a hand-over resumes with none."""
+    if not RAW_DATA_BUCKET:
+        return None
+    done = exports.clear(walk.run, walk.s3, RAW_DATA_BUCKET, walk.aggregates,
+                         lambda: has_time_left(walk.context, TIME_RESERVE_MS))
+    record_progress(walk.aggregates, walk.run, PHASE_EXPORTS)
+    return None if done else _hand_over(walk, PHASE_EXPORTS, None)
+
+
 def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
     """Mark the workspace artifacts that cited a deleted item (``lineage.py``), page by page."""
     projects = walk.tables['projects']
@@ -456,12 +487,17 @@ def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
 def _phases(walk: Walk) -> list[str]:
     """The phases this run walks, in order (the lineage one is decided when it is reached).
 
-    A job that names a workspace walks the item scan only: Radar, the feedback boards and the workspace memberships
+    A job that names a workspace walks the item scan and that workspace's exports only: Radar, the feedback boards
+    and the workspace memberships
     are the deployment's (not keyed by workspace), there is no whole-source sweep, and no artifact cites a workspace
     item until projects move (phase 3)."""
     phases = [PHASE_ITEMS]
+    # The exports of every workspace the item scan or the memberships reached, after both (decided when it is
+    # reached: exports.py), so an export started between them is swept too; before the lineage pass. Each such
+    # workspace's exports were already closed (locked, marked erased) when the run first met it: no link meanwhile.
+    exports_phase = [PHASE_EXPORTS] if walk.run['mode'] == MODE_ERASE else []
     if walk.run.get('workspace_id'):
-        return phases
+        return [*phases, *exports_phase]
     if STORE_RADAR in walk.tables:
         phases.append(PHASE_RADAR)
     if boards.STORE_BOARDS in walk.tables and boards.applies(walk.run):
@@ -470,6 +506,7 @@ def _phases(walk: Walk) -> list[str]:
         phases.append(PHASE_MEMBERS)
     if walk.run.get('field') == SOURCE_FIELD:
         phases.append(PHASE_RAW)
+    phases.extend(exports_phase)
     if 'projects' in walk.tables:
         phases.append(PHASE_LINEAGE)
     return phases
@@ -493,7 +530,8 @@ def _walk_phases(walk: Walk) -> dict | None:
     remaining = phases[phases.index(resumed):] if resumed in phases else phases
     cursor = (walk.event.get('cursor') or None) if resumed in phases else None
     for phase in remaining:
-        if phase == PHASE_LINEAGE and not _deleted_anything(walk.run):
+        if (phase == PHASE_LINEAGE and not _deleted_anything(walk.run)) or (
+                phase == PHASE_EXPORTS and not exports.pending(walk.run)):
             continue
         handed_over = _PHASE_RUNNERS[phase](walk, cursor)
         if handed_over is not None:
@@ -504,6 +542,7 @@ def _walk_phases(walk: Walk) -> dict | None:
 
 _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
     PHASE_ITEMS: lambda walk, cursor: _walk_store(walk, PHASE_ITEMS, cursor),
+    PHASE_EXPORTS: _erase_exports,
     PHASE_RADAR: lambda walk, cursor: _walk_store(walk, PHASE_RADAR, cursor),
     PHASE_BOARDS: _erase_from_boards,
     PHASE_MEMBERS: _erase_from_members,

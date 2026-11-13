@@ -182,7 +182,16 @@ describe('audit rows (AUDIT#*) across every stack', () => {
       tables: ['WorkspacesTable'],
     });
     expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
-    expect(denied(statements, AUDIT_DENY_WRITE_SID)).toBe(NO_STATEMENT);
+    // Its export routes write their job and lock rows in voc-aggregates, where it writes no audit row: it may
+    // forge, change or remove none there (lib/stacks/api-workspace-export.ts).
+    expect(tablesOf(denied(statements, AUDIT_DENY_WRITE_SID))).toStrictEqual(['AggregatesTable']);
+  });
+
+  it('the export job may not put, change or remove an audit row in voc-aggregates, and writes no other guarded table', () => {
+    const statements = byRole.get('VocProcessingStack/WorkspaceExportWorkerExportRole') ?? [];
+    expect(writtenBy(statements)).toStrictEqual(['AggregatesTable']);
+    expect(tablesOf(denied(statements, AUDIT_DENY_WRITE_SID))).toStrictEqual(['AggregatesTable']);
+    expect(denied(statements, AUDIT_DENY_CHANGE_SID)).toBe(NO_STATEMENT);
   });
 
   it('leaves a read-only role alone', () => {

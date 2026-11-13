@@ -55,6 +55,7 @@ import { grantRealtimePublish } from '../utils/realtime';
 import { addApiRoutes } from './api-routes';
 import { createRadarLambda } from './api-radar-lambda';
 import { createParticipantsLambda } from './api-participants-lambda';
+import { grantWorkspaceExportRoutes } from './api-workspace-export';
 import { createWorkspacesLambda } from './api-workspaces-lambda';
 import { emailSenderOf } from '../utils/email-sender';
 import { API_ASYNC_FAILURES_QUEUE_BASE_NAME, importApiAsyncFailureQueue } from './dlq-alarms';
@@ -276,6 +277,9 @@ export class VocApiStack extends VocStack {
     const radarLambda = createRadarLambda(ctx);
     const engagementLambda = createParticipantsLambda(ctx);
     const workspacesLambda = createWorkspacesLambda(ctx);
+    // A workspace's export (docs/multi-workspace.md "Export and delete"): its routes' grants; the job is
+    // VocProcessingStack's (workspace-export-worker.ts), invoked by name.
+    grantWorkspaceExportRoutes(ctx, workspacesLambda);
     const assistant = createAssistantLambdas(ctx, {
       projectsLambda: projects.projectsLambda,
       metricsLambda: data.metricsLambda,

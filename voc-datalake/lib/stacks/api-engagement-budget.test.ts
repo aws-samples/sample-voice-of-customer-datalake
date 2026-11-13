@@ -54,6 +54,9 @@
  * The public routes' workspace slice (docs/multi-workspace.md) spends 2 in a synth with the GitHub webhook: a
  * workspace's endpoint `/webhooks/github_issues/{ws}` (one resource, one POST, no preflight) through the webhook's
  * existing integration (no new function, role or invoke permission). The ceiling is 414; the 425 gate is unchanged.
+ *
+ * Phase 4a (a workspace's export) spends none here: its routes ride `/me/{proxy+}` and the workspaces API's
+ * existing integration, and the job is VocProcessingStack's (workspace-export-worker.ts), invoked by name.
  */
 import { describe, expect, it } from 'vitest';
 

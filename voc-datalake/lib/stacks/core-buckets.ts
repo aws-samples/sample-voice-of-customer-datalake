@@ -17,7 +17,8 @@
  * current or noncurrent, and a bucket-policy statement refuses any PutObject under them that
  * could overwrite (no `If-None-Match`). Only voc-retention deletes there (lawful erasure / a declared retention period). The raw
  * bucket's workspace prefixes have no noncurrent rule either: a workspace delete removes every
- * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires.
+ * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires, and a workspace export's objects
+ * (`ws/{ws}/exports/`), by their `voc-export=true` tag, which the bucket policy refuses anywhere else.
  *
  * Resources are created directly on the stack passed in (not inside a child
  * construct), so their logical ids are exactly those VocCoreStack always had.
@@ -73,6 +74,26 @@ export const WORKSPACE_SILVER_HISTORY_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSP
 export const APPEND_ONLY_PREFIXES = [
   RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
 ] as const;
+/**
+ * A tenant workspace's exports, `ws/{ws}/exports/` (docs/multi-workspace.md "Export and delete", the export job
+ * lib/stacks/api-workspace-export.ts): a copy of the workspace's data for its admins to download, not a tier of the
+ * lake, so it expires (EXPORT_EXPIRATION_DAYS).
+ */
+export const WORKSPACE_EXPORTS_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/exports/`;
+/**
+ * The object tag every export object carries (`voc-export=true`, lambda/shared/ws_repo.py `EXPORT_TAGGING`), and
+ * the one thing the export lifecycle rule matches: a lifecycle prefix cannot name "every workspace's exports/"
+ * (it is literal), so the rule filters on the tag, and the bucket policy refuses the tag on any key outside a
+ * workspace's exports (DenyExportTagOutsideExports), so it can never expire anything in raw/ or silver/ (D1).
+ */
+export const EXPORT_TAG_KEY = 'voc-export';
+const EXPORT_TAG_VALUE = 'true';
+/**
+ * An export's objects expire 10 days after they are written: its download window is 7 days (the server's,
+ * lambda/shared/export_jobs.py), plus a margin; the version the expiry leaves behind goes 1 day later.
+ */
+export const EXPORT_EXPIRATION_DAYS = 10;
+export const EXPORT_NONCURRENT_VERSION_DAYS = 1;
 /**
  * `scratch/` objects (workflow claim-checks) expire after this many days, and so do their noncurrent versions (a
  * workflow's own delete leaves one): no workflow runs longer than 2 h.
@@ -158,6 +179,53 @@ function denyOverwritingRawWrites(bucket: s3.Bucket): void {
       Bool: { 's3:ObjectCreationOperation': 'true' },
     },
   }));
+}
+
+/**
+ * Deny every PutObject or PutObjectTagging that sets the export tag (EXPORT_TAG_KEY) on a key outside a workspace's
+ * exports (WORKSPACE_EXPORTS_PREFIX, one workspace id: never `ws/*\/exports/*`, whose `*` would also match
+ * `ws/{ws}/raw/exports/…`), for every principal: the export lifecycle rule matches that tag alone, so this keeps it
+ * from ever reaching `raw/`, `silver/` or any other prefix (D1: nothing there expires).
+ */
+function denyExportTagOutsideExports(bucket: s3.Bucket): void {
+  bucket.addToResourcePolicy(new iam.PolicyStatement({
+    sid: 'DenyExportTagOutsideExports',
+    effect: iam.Effect.DENY,
+    principals: [new iam.AnyPrincipal()],
+    actions: ['s3:PutObject', 's3:PutObjectTagging'],
+    notResources: [bucket.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`)],
+    conditions: { 'ForAnyValue:StringEquals': { 's3:RequestObjectTagKeys': EXPORT_TAG_KEY } },
+  }));
+  // A copy keeps its source's tags unless the request replaces them, and then names no tag key at all: so no object
+  // under any workspace's exports may be copied to a key outside one (it would carry the tag out).
+  bucket.addToResourcePolicy(new iam.PolicyStatement({
+    sid: 'DenyExportCopiesOutsideExports',
+    effect: iam.Effect.DENY,
+    principals: [new iam.AnyPrincipal()],
+    actions: ['s3:PutObject'],
+    notResources: [bucket.arnForObjects(`${WORKSPACE_EXPORTS_PREFIX}*`)],
+    conditions: { StringLike: { 's3:x-amz-copy-source': EXPORT_COPY_SOURCES } },
+  }));
+}
+
+/**
+ * A copy source (`bucket/key`, with or without a leading `/`, its `/` sent as is or URL-encoded `%2F` / `%2f`)
+ * naming one workspace's exports: the workspace segment is one id (`WORKSPACE_ID_PATTERN`), as everywhere.
+ */
+const EXPORT_COPY_SOURCES = [
+  `*ws/${WORKSPACE_ID_PATTERN}/exports/*`,
+  `*ws%2F${WORKSPACE_ID_PATTERN}%2Fexports%2F*`,
+  `*ws%2f${WORKSPACE_ID_PATTERN}%2fexports%2f*`,
+];
+
+/** The raw bucket's one expiring rule outside scratch/: a workspace export's objects, by their tag. */
+function exportExpiryRule(): s3.LifecycleRule {
+  return {
+    id: 'export-expiry',
+    tagFilters: { [EXPORT_TAG_KEY]: EXPORT_TAG_VALUE },
+    expiration: cdk.Duration.days(EXPORT_EXPIRATION_DAYS),
+    noncurrentVersionExpiration: cdk.Duration.days(EXPORT_NONCURRENT_VERSION_DAYS),
+  };
 }
 
 /** What differs between the private, versioned data buckets. */
@@ -251,6 +319,7 @@ export function createCoreBuckets(
         id: 'scratch-expiry', prefix: 'scratch/', expiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
         noncurrentVersionExpiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
       },
+      exportExpiryRule(),
     ],
     cors: [{
       // PUT is required for browser-side presigned uploads (project product docs).
@@ -266,6 +335,7 @@ export function createCoreBuckets(
   });
 
   denyOverwritingRawWrites(rawDataBucket);
+  denyExportTagOutsideExports(rawDataBucket);
 
   // Frontend hosting bucket
   const websiteBucket = new s3.Bucket(scope, 'WebsiteBucket', {

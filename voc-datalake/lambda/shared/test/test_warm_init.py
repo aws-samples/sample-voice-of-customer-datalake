@@ -18,7 +18,7 @@ LAMBDA_ROOT = Path(__file__).resolve().parents[2]
 WARMED_HANDLERS = (
     'agents/heartbeat/handler.py', 'agents/conductor/handler.py', 'briefing/handler.py',
     'memory/scanner/handler.py', 'memory/retention/handler.py', 'jobs/retention/handler.py',
-    'jobs/radar_scan/handler.py', 'api/agents_handler.py', 'api/ballots_handler.py',
+    'jobs/radar_scan/handler.py', 'jobs/workspace_export/handler.py', 'api/agents_handler.py', 'api/ballots_handler.py',
     'api/projects_handler.py', 'api/radar_handler.py', 'api/logs_handler.py',
     # SnapStart functions: their snapshot is primed by shared.snapstart; this covers `$LATEST` environments.
     'api/memory_handler.py', 'api/mcp_tokens_handler.py', 'api/integrations_handler.py',

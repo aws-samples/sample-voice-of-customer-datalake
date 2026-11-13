@@ -485,8 +485,9 @@ both. Four more alarm metrics cost $0.40 a month at the list price while alertin
 invocations; at the stage ceiling (20 rps) that needs well under 20. The reservation keeps a runaway client
 from starving the account's other Lambdas and guarantees the endpoint its share. Past it, invocations are
 throttled and API Gateway answers with a 5xx. The 20 come out of the account's
-unreserved pool, which Lambda keeps at 100 or more, so the account's concurrency quota must be at least 120
-or the deploy fails. It is the only reservation in the app; `docs/lambda-sizing.md` covers memory only.
+unreserved pool, which Lambda keeps at 100 or more; with the workspace export job's 10 (the app's only other
+reservation, `lib/stacks/workspace-export-worker.ts`) the account's concurrency quota must be at least 130
+or the deploy fails. `docs/lambda-sizing.md` covers memory only.
 
 `-c mcpReservedConcurrency=<n>` changes the number (a whole number, checked at synth; default 20). `0` means
 no reservation at all: the function then shares the unreserved pool like every other Lambda, which is the

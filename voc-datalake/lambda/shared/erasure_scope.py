@@ -41,6 +41,7 @@ from shared.erasure_jobs import (
     acquire_workspace_lock,
     job_key,
     job_partition,
+    release_quietly,
     release_workspace_lock,
 )
 from shared.exceptions import ConflictError, ValidationError
@@ -165,10 +166,7 @@ def fail_unstarted_job(table: Any, job: Mapping[str, Any], context: WorkspaceCon
 def _release_on_error(table: Any, scope: WorkspaceScope, job_id: str, now: datetime) -> None:
     """Free the workspace's lock on an error path, best effort: a failed release is logged (its type only) so the
     caller's own error is the one reported; an unreleased lock goes stale after an hour anyway."""
-    try:
-        release_workspace_lock(table, scope, job_id, now)
-    except (ClientError, BotoCoreError) as exc:
-        logger.warning('Could not release the workspace erasure lock', extra={'error_type': type(exc).__name__})
+    release_quietly(lambda: release_workspace_lock(table, scope, job_id, now), 'workspace erasure')
 
 
 def listed_jobs(table: Any, context: WorkspaceContext | None, limit: int) -> list[dict[str, Any]]:
