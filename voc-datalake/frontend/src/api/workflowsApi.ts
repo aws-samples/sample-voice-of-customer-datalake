@@ -1,7 +1,7 @@
 /**
- * @fileoverview Autonomous-agent workflow library: the `voc-workflow/1`
- * definition model (Zod), the lenient read normalizers and the REST calls
- * (`/workflows/*`, `agents_handler.py`).
+ * @fileoverview The workflow library: the definition model (Zod) of both kinds,
+ * an agents workflow (`voc-workflow/1`) and an engineering flow (`voc-workflow/2`),
+ * the lenient read normalizers and the REST calls (`/workflows/*`, `agents_handler.py`).
  *
  * The definition schema is BUILT from a limits object so the two boundaries
  * that judge a definition share one shape:
@@ -82,7 +82,7 @@ const jsonLength = (value: unknown) => JSON.stringify(value).length
 
 /**
  * A strict definition schema for the given limits and element-id rule, of the given kinds (both by default: the
- * editor's; the assistant's approval boundary takes agents workflows, and engineering flows where the module is deployed).
+ * editor's and the assistant's approval boundary's, whose create card adds the engineering module's check).
  */
 export function buildWorkflowDefinitionSchema(
   limits: WorkflowLimits, elementId: z.ZodType<string>,

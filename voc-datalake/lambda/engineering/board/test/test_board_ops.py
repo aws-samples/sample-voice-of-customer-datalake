@@ -12,7 +12,7 @@ from typing import Any
 import boto3
 import pytest
 
-from engineering.board.api import BoardApi, LambdaLauncher
+from engineering.board.api import BoardApi, LambdaLauncher, repost_task
 from engineering.board.inbox import Inbox
 from engineering.board.store import COORDINATE_TASK, MAX_AGENTS, BoardError, BoardStore
 from engineering.board.test.table import RUN, TABLE, engineering_table
@@ -182,6 +182,18 @@ def test_a_replaced_coordinator_is_refused_every_op_and_the_new_one_works(run: B
     new = Caller('coordinator', RUN, 2)
     assert call(run, new, op='claim', task_id=COORDINATE_TASK)[0] == 200
     assert call(run, new, op='tasks')[0] == 200
+
+
+def test_the_supervisors_repost_of_the_coordinate_task_publishes_nothing(run: Board) -> None:
+    """No role reads a task.posted for it (the bus has no queue role coordinator): written, never published."""
+    bus = Bus()
+    supervisor = EventBridgePublisher(bus, 'voc-engineering', 'voc.engineering/supervisor')
+    other = fixer_task(run)
+    call(run, FIXER, op='claim', task_id=other)
+    task = repost_task(run.store, supervisor, WS, RUN, COORDINATE_TASK, 'the coordinator kept crashing', 1)
+    assert (task.state, task.attempt, bus.entries) == ('open', 2, [])
+    repost_task(run.store, supervisor, WS, RUN, other, 'the lease ran out', 1)
+    assert [message.type for message in bus.messages()] == ['task.posted']   # (any other task: as before)
 
 
 def test_the_coordinate_tasks_claim_checks_its_coordinator_in_the_write_itself(run: Board) -> None:

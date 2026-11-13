@@ -138,8 +138,8 @@ End), its settings panels set each step's settings (no step role and no loops: i
 graph rules are mirrored as you edit (`WorkflowEditor/engineeringRules.ts`, held to the
 server by the shared fixture `frontend/src/test/engineeringFlows.json`). The AI assistant drafts one too, with its
 workflow tools (`validate_workflow`, then `create_workflow` or `update_workflow` behind an approval card), and the
-web app creates a new one that way only where the module is on, like the button (one already saved is changed
-anywhere, as in the editor).
+web app creates a new one that way only where the module is on, like the button (one already saved is changed, or
+copied with `duplicate_workflow`, anywhere, as in the editor).
 
 ### An engineering run: monitor, board, conversation, reports
 

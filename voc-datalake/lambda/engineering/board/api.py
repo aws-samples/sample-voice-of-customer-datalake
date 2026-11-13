@@ -28,7 +28,8 @@ retried progress report is a new report (its time is part of it).
 The supervisor re-posts a task whose lease ran out with ``repost_task`` (its ``Board.repost`` port,
 engineering/runtime/ports.py, is to call it): the store's ``repost``, then the task published again as
 ``task.posted`` to its role, so the delivery function records it for the role's agents to read (it wakes
-nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away.
+nobody). Only at the attempt the supervisor judged, so it never takes a newer claim away. The coordinate task is
+written only: no role reads a ``task.posted`` for it.
 """
 from __future__ import annotations
 
@@ -142,9 +143,13 @@ def repost_task(store: BoardStore, publisher: EventBridgePublisher, ws: str, run
     ``task.posted``: bus/senders.py), so each service role publishes as one source.
 
     A retry after a lost event finds the task already open at the next attempt, and publishes it again (the same
-    change, so the same event: a redelivery). A task that moved on (a newer claim) is refused: ``BoardError``."""
+    change, so the same event: a redelivery). A task that moved on (a newer claim) is refused: ``BoardError``.
+
+    The coordinate task is re-posted with no ``task.posted``: no role's agents read one for it (only the coordinator
+    recorded on it claims it, ``BoardStore.launch_coordinator``), and the bus has no queue role ``coordinator``."""
     task = store.repost(ws, run_id, task_id, reason=reason, attempt=attempt)
-    publisher.publish(replace(_event(task, run_id), sender=Party('supervisor', 'supervisor')))
+    if task.task_id != COORDINATE_TASK:
+        publisher.publish(replace(_event(task, run_id), sender=Party('supervisor', 'supervisor')))
     return task
 
 

@@ -350,8 +350,11 @@ What exists:
   attempt it judged and then call it (not wired in this tree: its whole-run Resume only resumes the run). A
   coordinator acts only while it is the run's: every board op of the coordinator role checks the caller is the
   coordinate task's recorded coordinator at the task's attempt, so a replaced coordinator's session is refused (403)
-  from the re-post on, its claim included; a run whose start wrote no coordinate task has only its start's
-  coordinator, so there the role is the check. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
+  by the board from the re-post on, its claim included; a run whose start wrote no coordinate task has only its
+  start's coordinator, so there the role is the check. The board alone checks it: the connectors broker and the
+  bus source (`voc.engineering/conductor/<ws>/<run>`) still take the role, so the runtime is to end a replaced
+  coordinator's session and MicroVM when it replaces it (voc-auto-b's next merge). The coordinate task's re-post
+  publishes no `task.posted` (no role reads one for it). A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
   its role, language and paths; the board invokes the runtime's `launch` action only, with the run's commit and
   connection from its META, numbers the agent `<role>-<n>` from the run's counter, at most 999, and records it on the
