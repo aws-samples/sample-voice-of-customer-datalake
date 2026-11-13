@@ -58,7 +58,8 @@ MAX_LINE = 200
 #: The run's coordinate task (one per run, the coordinator's): its id and its role.
 COORDINATE_TASK = 'coordinate'
 COORDINATOR = 'coordinator'
-#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 1.
+#: An agent's index in its id (``<role>-<n>``): the runtime takes 0-999; a launch numbers them from 2, the run's start
+#: having taken 1 for its coordinator.
 MAX_AGENTS = 999
 
 
@@ -270,13 +271,18 @@ class BoardStore:
         """The run's coordinate task and its history row, as plain Python items (numbers as ``Decimal``) for the run's
         start transaction to put, each ``attribute_not_exists``: ``RunStore.start`` writes through the resource
         table's ``meta.client.transact_write_items``, which serializes them itself. Open, attempt 1, for the
-        coordinator alone."""
+        coordinator alone, and recorded as launched for ``coordinator-1`` at attempt 1, the run's first agent: the
+        runtime's run start is to launch it and write META's ``agent_count`` 1 in the same transaction (voc-auto-b's
+        next merge; in this tree the start writes neither), so a coordinator that dies before its claim is re-posted
+        like any agent."""
         task: dict[str, Any] = {**task_key(ws, run_id, COORDINATE_TASK), 'task_id': {'S': COORDINATE_TASK},
                 'role': {'S': COORDINATOR}, 'state': {'S': OPEN}, 'title': {'S': 'Coordinate the run'},
                 'spec': {'S': json.dumps({'coordinate': True}, sort_keys=True)},
                 'spec_hash': {'S': spec_hash(COORDINATOR, '', {'coordinate': True})}, 'depth': {'N': '0'},
                 'priority': {'N': '0'}, 'attempt': {'N': '1'}, 'posted_by': {'S': 'run-start'},
-                'updated_by': {'S': 'run-start'}, 'updated_at': {'S': at}}
+                'updated_by': {'S': 'run-start'}, 'updated_at': {'S': at},
+                'launched_agent': {'S': f'{COORDINATOR}-1'}, 'launched_attempt': {'N': '1'}, 'launched_paths': {'L': []},
+                'launched_language': {'S': ''}}
         plain = TypeDeserializer()
         return [{name: plain.deserialize(value) for name, value in item.items()}
                 for item in (task, Move(COORDINATE_TASK, OPEN, 'run-start', at, 1, 'start').item(ws, run_id))]
@@ -302,8 +308,27 @@ class BoardStore:
         ``paths`` and ``language`` it is launched with. A retry at the same attempt finds the agent recorded and
         reuses it (with its recorded paths and language); after a repost (a new attempt) the task gets a new ``<role>-<n>``."""
         current = self.task(ws, run_id, task_id)
-        if current.role != role or current.role == COORDINATOR:
+        if current.role == COORDINATOR:
+            raise BoardError('invalid', "the coordinate task's coordinator comes from the run, never from a launch")
+        if current.role != role:
             raise BoardError('invalid', f'the task is a {current.role} task, not a {role} one to launch')
+        return self._record_launch(ws, run_id, current, actor=actor, paths=paths, language=language)
+
+    def launch_coordinator(self, ws: str, run_id: str, *, attempt: int, actor: str = 'runtime') -> Launched:
+        """Record a new run coordinator for the run's coordinate task: the run's trusted code only (the runtime is to
+        call it when a person's Resume takes a run whose coordinator is gone off its decision point, after re-posting
+        the task at the attempt it judged), never a board op, so no agent can start a coordinator. Like ``launch``:
+        the task open at ``attempt`` (the task's, the same fence as ``repost``), the next ``coordinator-<n>`` from
+        META's ``agent_count``, and a retry at the same attempt reusing it. ``actor``: who the history row names
+        (the person who resumed, when the caller knows). No paths and no language: the coordinator's are the run's."""
+        current = self.task(ws, run_id, COORDINATE_TASK)
+        if attempt != current.attempt:
+            raise BoardError('conflict', f'the coordinate task is at attempt {current.attempt}, not {attempt}')
+        return self._record_launch(ws, run_id, current, actor=actor, paths=(), language='')
+
+    def _record_launch(self, ws: str, run_id: str, current: Task, *, actor: str, paths: Sequence[str],
+                       language: str) -> Launched:
+        task_id, role = current.task_id, current.role
         if current.state != OPEN:
             raise BoardError('conflict', 'only an open task gets an agent launched for it')
         if current.launched_agent and current.launched_attempt == current.attempt:

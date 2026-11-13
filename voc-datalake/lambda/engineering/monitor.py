@@ -83,7 +83,7 @@ class Applied:
 class Runtime(Protocol):
     """The supervisor's signal (``LambdaRuntime`` calls voc-engineering-runtime)."""
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None) -> Applied: ...
+    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str) -> Applied: ...
 
 
 def _line(value: Any) -> str | None:
@@ -217,8 +217,10 @@ class LambdaRuntime:
         self.client = client
         self.function_name = function_name
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None) -> Applied:
-        request: dict[str, Any] = {'action': 'signal', 'run_id': run_id, 'signal': signal}
+    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str) -> Applied:
+        """``actor``: the person who sent it (the signal record's sender), for the runtime to record who changed the
+        run's status (a whole-run Resume: D4, voc-auto-b's next merge; the runtime in this tree ignores it)."""
+        request: dict[str, Any] = {'action': 'signal', 'run_id': run_id, 'signal': signal, 'actor': actor}
         if agent_id is not None:
             request['agent_id'] = agent_id
             if attempt is not None:
@@ -328,7 +330,7 @@ class RunMonitor:
         one = target.kind == 'agent'
         try:
             answer = self.runtime.signal(run_id, target.id if one else None, signal.name,
-                                         signal.attempt if one else None)
+                                         signal.attempt if one else None, actor=actor.subject)
         except (ClientError, BotoCoreError) as exc:
             self._outcome(publisher, record, 'not applied: the supervisor could not be reached')
             raise MonitorError('unavailable', 'The supervisor could not be reached: send the signal again') from exc

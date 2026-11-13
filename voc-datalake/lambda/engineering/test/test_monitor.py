@@ -32,7 +32,7 @@ from engineering.test.run_fixture import FIXER, LambdaClient
 
 ADMIN = Actor('admin-sub', 'ada')
 START = datetime(2026, 11, 12, 9, 0, tzinfo=UTC)
-COORDINATOR = replace(FIXER, agent_id='coordinator-0', role='coordinator', task_id='', status='waiting',
+COORDINATOR = replace(FIXER, agent_id='coordinator-1', role='coordinator', task_id='', status='waiting',
                       microvm_seconds=0, tokens={'model-a': {'in': 50, 'out': 5}, 'model-b': {'in': 7, 'out': 1}},
                       inspect={'stuck_why': 'x' * 400, 'heartbeat_age': True})
 
@@ -67,11 +67,13 @@ class Runtime:
         self.fail: Exception | None = None
         self.answer: dict[str, str] = {}
         self.not_applied: set[str] = set()
+        self.actors: list[str] = []
 
-    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None) -> Applied:
+    def signal(self, run_id: str, agent_id: str | None, signal: str, attempt: int | None, *, actor: str) -> Applied:
         if self.fail is not None:
             raise self.fail
         self.calls.append((run_id, agent_id, signal, attempt))
+        self.actors.append(actor)
         agents = self.answer or {agent_id or 'fixer-1': 'paused'}
         return Applied(agents, {agent: agent not in self.not_applied and status not in {'busy', 'stale'}
                                 for agent, status in agents.items()})
@@ -89,7 +91,7 @@ def run() -> Iterator[tuple[Any, RunMonitor, Runtime, Publisher, str]]:
                                                       ':t': {'S': '2026-11-12T08:00:00Z'}, ':m': {'N': '12'}})
         tasks = board(client)
         task = tasks.post('default', RUN, role='fixer', title='Fix the page size', spec={'issue': 7}, parent_task='',
-                          priority=1, actor='coordinator-0').task
+                          priority=1, actor='coordinator-1').task
         tasks.claim('default', RUN, task.task_id, role='fixer', agent='fixer-1')
         runtime, publisher = Runtime(), Publisher()
         monitor = RunMonitor(client, TABLE, Sessions(FIXER, COORDINATOR), runtime=runtime, publisher=publisher,
@@ -177,7 +179,7 @@ def test_an_open_task_has_no_agent_to_signal(run) -> None:
     client, monitor, runtime, _, _ = run
     task = BoardStore(client, TABLE, new_id=lambda: 'task-open').post(
         'default', RUN, role='fixer', title='Another', spec={'issue': 8}, parent_task='', priority=1,
-        actor='coordinator-0').task
+        actor='coordinator-1').task
     with pytest.raises(MonitorError) as open_task:
         monitor.signal(RUN, parse_signal({'signal': 'pause', 'task_id': task.task_id, 'attempt': 1}), ADMIN)
     assert (open_task.value.kind, runtime.calls) == ('conflict', [])
@@ -316,29 +318,29 @@ def test_an_answer_holding_a_credential_is_refused(run) -> None:
 
 def test_the_lambda_runtime_calls_the_supervisors_signal_action() -> None:
     client = LambdaClient({'agents': {'fixer-1': 'pause_requested'}, 'applied': {'fixer-1': True}})
-    assert LambdaRuntime(client, 'voc-engineering-runtime').signal(RUN, 'fixer-1', 'pause', 2) == Applied(
+    assert LambdaRuntime(client, 'voc-engineering-runtime').signal(RUN, 'fixer-1', 'pause', 2, actor='admin-1') == Applied(
         {'fixer-1': 'pause_requested'}, {'fixer-1': True})
     (request,) = client.requests
     assert (request['FunctionName'], request['InvocationType'], json.loads(request['Payload'])) == (
         'voc-engineering-runtime', 'RequestResponse', {'action': 'signal', 'run_id': RUN, 'signal': 'pause',
-                                                       'agent_id': 'fixer-1', 'attempt': 2})
+                                                       'agent_id': 'fixer-1', 'attempt': 2, 'actor': 'admin-1'})
     run_wide = LambdaClient({'agents': []})
-    assert LambdaRuntime(run_wide, 'f').signal(RUN, None, 'save', None) == Applied({}, {})
+    assert LambdaRuntime(run_wide, 'f').signal(RUN, None, 'save', None, actor='admin-1') == Applied({}, {})
     assert {'agent_id', 'attempt'} & set(json.loads(run_wide.requests[0]['Payload'])) == set()
     left_out = LambdaClient({'agents': {'fixer-1': 'working', 'hunter-1': 'paused'}, 'applied': {'hunter-1': True}})
-    assert LambdaRuntime(left_out, 'f').signal(RUN, None, 'save', None).applied == {
+    assert LambdaRuntime(left_out, 'f').signal(RUN, None, 'save', None, actor='admin-1').applied == {
         'fixer-1': False, 'hunter-1': True}   # (an agent the map leaves out is never taken as done)
     earlier = LambdaClient({'agents': {'fixer-1': 'working', 'hunter-1': 'busy'}})   # (the runtime before applied)
-    assert LambdaRuntime(earlier, 'f').signal(RUN, None, 'save', None).applied == {'fixer-1': True, 'hunter-1': False}
+    assert LambdaRuntime(earlier, 'f').signal(RUN, None, 'save', None, actor='admin-1').applied == {'fixer-1': True, 'hunter-1': False}
 
 
 def test_the_supervisor_refusing_or_failing_says_so() -> None:
     refused = LambdaClient({'errorType': 'RuntimeRefused', 'errorMessage': 'run R is stopped: it cannot be resumed'},
                            'Unhandled')
     with pytest.raises(MonitorError, match='cannot be resumed') as conflict:
-        LambdaRuntime(refused, 'f').signal(RUN, None, 'resume', None)
+        LambdaRuntime(refused, 'f').signal(RUN, None, 'resume', None, actor='admin-1')
     with pytest.raises(MonitorError) as failed:
-        LambdaRuntime(LambdaClient({'errorType': 'KeyError'}, 'Unhandled'), 'f').signal(RUN, None, 'save', None)
+        LambdaRuntime(LambdaClient({'errorType': 'KeyError'}, 'Unhandled'), 'f').signal(RUN, None, 'save', None, actor='admin-1')
     assert (conflict.value.kind, failed.value.kind) == ('conflict', 'unavailable')
 
 
@@ -349,6 +351,8 @@ def test_a_stop_now_carries_the_attempt_and_is_applied(run) -> None:
                                              'attempt': 1}), ADMIN)
     assert (runtime.calls, sent['applied'], publisher.sent[1].summary.endswith('applied: fixer-1 stopped')) == (
         [(RUN, 'fixer-1', 'stop_now', 1)], {'fixer-1': True}, True)
+    # The supervisor is told who sent it, the signal record's sender (D4: who changed the run's status).
+    assert runtime.actors == [ADMIN.subject] == [publisher.sent[0].sender.id]
 
 
 def test_a_stale_attempt_is_a_conflict_and_nothing_was_done(run) -> None:
@@ -363,13 +367,13 @@ def test_a_stale_attempt_is_a_conflict_and_nothing_was_done(run) -> None:
 
 def test_each_agent_the_supervisor_did_not_apply_to_is_recorded_and_answered_so(run) -> None:
     _, monitor, runtime, publisher, _ = run
-    runtime.answer = {'fixer-1': 'paused', 'coordinator-0': 'working'}
-    runtime.not_applied = {'coordinator-0'}   # (a Resume of an agent already running: nothing to do)
+    runtime.answer = {'fixer-1': 'paused', 'coordinator-1': 'working'}
+    runtime.not_applied = {'coordinator-1'}   # (a Resume of an agent already running: nothing to do)
     sent = monitor.signal(RUN, parse_signal({'signal': 'pause'}), ADMIN)
     request, outcome = publisher.sent
-    assert sent['applied'] == {'fixer-1': True, 'coordinator-0': False}
+    assert sent['applied'] == {'fixer-1': True, 'coordinator-1': False}
     assert outcome.summary == (f'signal.pause request {request.event_id}: applied: fixer-1 paused; '
-                               'not applied: coordinator-0 working')
+                               'not applied: coordinator-1 working')
 
 
 def test_a_signal_the_supervisor_did_not_apply_is_unavailable(run) -> None:

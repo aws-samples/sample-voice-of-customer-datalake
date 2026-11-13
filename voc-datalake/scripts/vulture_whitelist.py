@@ -55,3 +55,6 @@ BoardStore.coordinate_items
 # The supervisor's renewal of a holder's lease before it continues the agent (BoardStore.refresh): the runtime's
 # Board port is to call it.
 BoardStore.refresh
+# A new run coordinator on the coordinate task (BoardStore.launch_coordinator): the runtime's Resume of a run whose
+# coordinator is gone is to call it (voc-auto-b's); the board's tests drive it until it is wired.
+BoardStore.launch_coordinator

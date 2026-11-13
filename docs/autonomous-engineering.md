@@ -343,7 +343,11 @@ What exists:
   `launch` and `knowledge` read from META: until it does, a run has no coordinate task, so the coordinator's claim and its `knowledge` answer 404, and an
   agent's `knowledge` and a `launch` answer 503, the launch before it numbers an agent),
   never posted, and claimed only by the run's coordinator, which renews and reports progress on it like
-  any agent. A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
+  any agent. It records the coordinator the start is to launch on it (`coordinator-1`, with META's `agent_count` 1
+  written in the same transaction, so the board's launches number from 2; the start in this tree writes neither). A new coordinator for it is to be recorded only by the run's trusted code
+  (`BoardStore.launch_coordinator`: the task open at the attempt given, the next `coordinator-<n>`, a retry reusing
+  it), never by a board op: the runtime's Resume of a run whose coordinator is gone is to re-post the task at the
+  attempt it judged and then call it (not wired in this tree: its whole-run Resume only resumes the run). A task whose launched agent never claimed it (it died or stalled first) is re-posted too. The
   coordinator also lists its run's tasks (`tasks`) and launches an agent for an open task (`launch`:
   its role, language and paths; the board invokes the runtime's `launch` action only, with the run's commit and
   connection from its META, numbers the agent `<role>-<n>` from the run's counter, at most 999, and records it on the
@@ -365,7 +369,9 @@ What exists:
   off the schema is skipped and counted; credential-shaped strings and personal data are redacted) and the store
   (bounded reads, a cut read logged; create-only writes; its readers without ListBucket, the report builder, the
   Agents API and the board's `knowledge`, take a denied read as missing, and each such read is logged and counted
-  as the `EngineeringWorkspaceDeniedReads` metric, so a broken policy shows as a rising count). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
+  as the `EngineeringWorkspaceDeniedReads` metric; a plain missing object counts too, as it is denied as well (a
+  failed attempt's result, or a report version that was counted and never written when someone opens it), so a
+  broken policy shows as the count rising well above its usual level). It lives in its own bucket, `voc-eng-workspace` (VocCoreStack, private,
   encrypted with the stack's key, versioned, access-logged, kept under `-c protectData`), where nothing expires
   until a retention that writes its `AUDIT#delete` row exists (*planned*; "The workspace" further down this
   section). Nothing writes agents' objects there yet: the runtime's agent roles write
