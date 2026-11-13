@@ -375,7 +375,15 @@ sides; `shared/radar_releases.py` `list_releases`, `count_releases`; `shared/rad
 partition or a cursor outside it before DynamoDB (a cursor of another partition is a 400; a marker pointing outside
 the workspace reads as absent), the table itself without, both with one key condition (the same rows as before). No caller passes one: the Radar routes, the brief, the scan job (its last scan, `RADARSCAN`,
 and its release writes) and the processor's routing, dedupe check and writes stay the deployment's and move together at the
-cut-over; its data version (`SETTINGS#radar` / `version`) moves with the cached reads' version counters. The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
+cut-over; its data version (`SETTINGS#radar` / `version`) moves with the cached reads' version counters. Projects
+are next (Unreleased, groundwork only): every key of a project's rows (`PROJECT#{id}`, its documents' and personas'
+`gsi1pk`, `TYPE#PROJECT`, where a document is listed and a document row's four keys) is built in one module, `lambda/shared/project_keys.py`
+(but the product-doc extractor, a stdlib-only bundle that spells its own), so the move gives each builder a scope in
+one place, and the raw-access guard (`lambda/shared/test/test_ws_raw_access.py`) now counts every module that opens
+the projects' or jobs' table (`get_projects_table`, `get_jobs_table`) or spells `PROJECT#` / `TYPE#PROJECT`, all phase
+3. Nothing moves yet: the projects' writes need the layer's scoped transactions, batch reads and batch writes first,
+and the move then takes the whole project partition (voc-projects, its jobs in voc-jobs, its participant lists, the
+state machines' and the async jobs' inputs, the product documents' S3 prefix) in one release. The cross-workspace suite runs the resolved problems' and the brand's routes (its check 3 expects, for a route
 whose case says why, the deployment's answer with no row of either workspace touched instead of the 400; for the
 brand's `PUT`, 403 to a caller outside the deployment's `admins`). The
 deployment kinds' writes need the deployment's `admins` and a live platform admin (since 6.18.00): `PUT /settings/appearance` and the three alert writes

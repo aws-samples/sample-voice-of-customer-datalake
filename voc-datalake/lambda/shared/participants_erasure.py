@@ -30,6 +30,7 @@ from shared.logging import logger
 from shared.participants_asks import RESPONSE_SK, UNSUBSCRIBE_SK, hashed_token_key, recipient_key
 from shared.participants_lists import remove_member
 from shared.participants_store import email_guard_key, require_person
+from shared.project_keys import project_pk
 from shared.timestamps import now_iso
 
 TOMBSTONE_PK: Final = 'AUDIT#tombstone#participant'
@@ -56,7 +57,7 @@ def _delete_rows(table: Any, person: Mapping[str, Any], rows: list[dict[str, Any
             for kind in (RESPONSE_SK, UNSUBSCRIBE_SK):
                 batch.delete_item(Key=hashed_token_key(token_hash, kind))
         for project_id in projects:
-            batch.delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSON#{person_id}'})
+            batch.delete_item(Key={'pk': project_pk(project_id), 'sk': f'PERSON#{person_id}'})
         for row in rows:
             if not str(row.get('sk', '')).startswith('LIST#'):  # remove_member already took the list mirrors
                 batch.delete_item(Key={'pk': row['pk'], 'sk': row['sk']})

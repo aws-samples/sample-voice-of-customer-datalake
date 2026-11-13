@@ -108,6 +108,14 @@ from shared.persona_context import personas_prompt_context
 from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, resolve_evidence_ids
 from shared.persona_knowledge import PERSONA_KNOWLEDGE_STEP, persona_knowledge_fields, with_persona_knowledge
 from shared.project_access import Caller
+from shared.project_keys import (
+    PROJECT_PREFIX,
+    PROJECT_TYPE_PK,
+    document_keys,
+    document_listing,
+    personas_index_pk,
+    project_pk,
+)
 from shared.project_writes import (
     PROJECT_DELETION_ATTRIBUTE,
     PROJECT_WRITABLE_ATTRIBUTE_NAMES,
@@ -441,7 +449,7 @@ def _iter_project_index_rows() -> Iterator[dict]:
     """Every project META row on the by-type index, newest first, all pages."""
     return _paginated_items({
         'IndexName': PROJECTS_BY_TYPE_INDEX,
-        'KeyConditionExpression': Key('gsi1pk').eq('TYPE#PROJECT'),
+        'KeyConditionExpression': Key('gsi1pk').eq(PROJECT_TYPE_PK),
         'ScanIndexForward': False,
     })
 
@@ -451,7 +459,7 @@ def _count_project_children(project_id: object) -> tuple[int, int]:
     persona_count = 0
     document_count = 0
     for child in _paginated_items({
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(str(project_id))),
         'ProjectionExpression': 'sk',
     }):
         sk = child.get('sk')
@@ -491,9 +499,9 @@ def create_project(body: dict, caller: Caller) -> dict:
 
     def put_project(project_id: str) -> dict:
         item = {
-            'pk': f'PROJECT#{project_id}',
+            'pk': project_pk(project_id),
             'sk': 'META',
-            'gsi1pk': 'TYPE#PROJECT',
+            'gsi1pk': PROJECT_TYPE_PK,
             'gsi1sk': now,
             'project_id': project_id,
             'name': body.get('name', 'New Project'),
@@ -698,7 +706,7 @@ def _query_partition_items(partition_key: str) -> list[dict]:
 def _find_document(project_id: str, document_id: str) -> dict | None:
     """Find one document using projected pages and stop at the first match."""
     query = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
         'ConsistentRead': True,
         'ProjectionExpression': (
             'pk, sk, document_id, #type, #title, base_title, #version'
@@ -772,7 +780,7 @@ def _fenced_json(raw: str | None, failure_message: str) -> dict:
 def _stored_persona(project_id: str, persona_id: str) -> dict:
     """The persona record, or a 404."""
     response = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'}
+        Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'}
     )
     item = response.get('Item')
     if not item:
@@ -885,7 +893,7 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
 
     # Read the complete partition before assigning legacy versions. A partial
     # collection can give two same-title documents the same apparent position.
-    items = _query_partition_items(f'PROJECT#{project_id}')
+    items = _query_partition_items(project_pk(project_id))
     if not items:
         raise NotFoundError('Project not found')
 
@@ -964,10 +972,10 @@ def parse_project_detail_ids(raw: str) -> list[str]:
 def _viewable_ids(project_ids: list[str], caller: Caller) -> set[str]:
     """Which ids name a live project ``caller`` may VIEW — decided on META alone,
     before any partition read or URL signing on the caller's behalf."""
-    keys = [{'pk': f'PROJECT#{project_id}', 'sk': 'META'} for project_id in project_ids]
+    keys = [{'pk': project_pk(project_id), 'sk': 'META'} for project_id in project_ids]
     metas = batch_get_all(projects_table, keys, failure=ServiceError('Failed to read projects'))
     return {
-        str(meta['pk'])[len('PROJECT#'):] for meta in metas
+        str(meta['pk'])[len(PROJECT_PREFIX):] for meta in metas
         if isinstance(meta.get('pk'), str) and not is_project_tombstone(meta)
         and project_access.resolve_access(meta, caller).can_view
     }
@@ -1026,7 +1034,7 @@ def _query_project_chat_items(project_id: str) -> list[dict]:
     # `created_at` is load-bearing for normalize_document_versions; `status`
     # preserves compatibility with status-only historical tombstones.
     query = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
         'ConsistentRead': True,
         'ProjectionExpression': (
             'pk, sk, project_id, #name, #status, #deleting, persona_id, '
@@ -1130,7 +1138,7 @@ def get_project_chat_context(
             and isinstance(document_sk, str)
         ):
             response = projects_table.get_item(
-                Key={'pk': f'PROJECT#{project_id}', 'sk': document_sk},
+                Key={'pk': project_pk(project_id), 'sk': document_sk},
                 ConsistentRead=True,
                 ProjectionExpression='document_id, content',
             )
@@ -1190,7 +1198,7 @@ def update_project(project_id: str, body: dict) -> dict:
         expr_values[':filters'] = body['filters']
 
     update_params = {
-        'Key': {'pk': f'PROJECT#{project_id}', 'sk': 'META'},
+        'Key': {'pk': project_pk(project_id), 'sk': 'META'},
         'UpdateExpression': update_expr,
         'ConditionExpression': PROJECT_WRITABLE_CONDITION,
         'ExpressionAttributeValues': expr_values,
@@ -1296,7 +1304,7 @@ def _delete_project_job_rows(project_id: str) -> None:
         )
         return
     query: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
         'ConsistentRead': True,
         'ProjectionExpression': 'pk, sk',
     }
@@ -1416,7 +1424,7 @@ def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
-    project_key = f'PROJECT#{project_id}'
+    project_key = project_pk(project_id)
     meta_key = project_meta_key(project_id)
     now = now_iso()
     _start_project_deletion(project_id, meta_key, now)
@@ -1689,7 +1697,7 @@ def _existing_persona_names(project_id: str) -> list[str]:
     """
     try:
         items = projects_table.query(
-            KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
+            KeyConditionExpression=Key('pk').eq(project_pk(project_id))
             & Key('sk').begins_with('PERSONA#'),
             ProjectionExpression='#name',
             ExpressionAttributeNames={'#name': 'name'},
@@ -2369,9 +2377,9 @@ def _build_persona_items(
 
         # Build the full persona item with all 8 sections
         item = {
-            'pk': f'PROJECT#{project_id}',
+            'pk': project_pk(project_id),
             'sk': f'PERSONA#{persona_id}',
-            'gsi1pk': f'PROJECT#{project_id}#PERSONAS',
+            'gsi1pk': personas_index_pk(project_id),
             'gsi1sk': now,
             'persona_id': persona_id,
             'name': fix_persona_name(persona.get('name', f'Persona {i+1}')),
@@ -3049,10 +3057,7 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '') -> di
 
     def build(doc_id: str) -> dict:
         return {
-            'pk': f'PROJECT#{project_id}',
-            'sk': f'DOC#{doc_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-            'gsi1sk': now,
+            **document_keys(project_id, f'DOC#{doc_id}', now),
             'document_id': doc_id,
             'document_type': document_type,
             'title': title,
@@ -3154,7 +3159,7 @@ def delete_document(
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
-    project_key = f'PROJECT#{project_id}'
+    project_key = project_pk(project_id)
     items = _query_partition_items(project_key)
     document = _require_document(next(
         (
@@ -3340,7 +3345,7 @@ _MANAGED_DUPLICATE_TYPES = {'PRD#': 'prd', 'PRFAQ#': 'prfaq', 'PROTOTYPE#': 'pro
 def _source_document_item(project_id: str, document_id: str) -> dict:
     sk = _stored_document_sort_key(_find_document(project_id, document_id))
     item = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': sk}, ConsistentRead=True,
+        Key={'pk': project_pk(project_id), 'sk': sk}, ConsistentRead=True,
     ).get('Item')
     if not isinstance(item, dict) or item.get('document_id') != document_id:
         raise NotFoundError('Document not found')
@@ -3402,8 +3407,7 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
     now = now_iso()
     fields = {key: value for key, value in source.items() if key not in _DUPLICATE_DROPPED_FIELDS}
     fields.update({
-        'gsi1pk': f'PROJECT#{target_project_id}#DOCUMENTS',
-        'gsi1sk': now,
+        **document_listing(target_project_id, now),
         'created_at': now,
         'updated_at': now,
         'duplicated_from': {'project_id': project_id, 'document_id': document_id},
@@ -3432,7 +3436,7 @@ def duplicate_document(project_id: str, document_id: str, target_project_id: str
     new_id = f'dup_{digest}'
     item = {
         **fields,
-        'pk': f'PROJECT#{target_project_id}',
+        'pk': project_pk(target_project_id),
         'sk': f'{prefix}{new_id}',
         'document_id': new_id,
         'title': source.get('title') or 'Untitled',
@@ -3484,7 +3488,7 @@ def update_persona(project_id: str, persona_id: str, body: dict) -> dict:
             expr_values[f':{field}'] = body[field]
 
     update_params = {
-        'Key': {'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+        'Key': {'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
         'UpdateExpression': update_expr,
         'ConditionExpression': 'attribute_exists(pk) AND attribute_exists(sk)',
         'ExpressionAttributeValues': expr_values,
@@ -3525,7 +3529,7 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
 
     try:
         projects_table.update_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
             UpdateExpression='SET research_notes = list_append(if_not_exists(research_notes, :empty), :note), updated_at = :now',
             ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
             ExpressionAttributeValues={
@@ -3580,7 +3584,7 @@ def regenerate_persona_avatar(project_id: str, persona_id: str) -> dict:
     # serve the previous one), then sweep the images it no longer names.
     now = now_iso()
     projects_table.update_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+        Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
         UpdateExpression='SET avatar_url = :url, avatar_prompt = :prompt, updated_at = :now',
         ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
         ExpressionAttributeValues={
@@ -3653,7 +3657,7 @@ def _persona_delete_transaction(
             'Delete': {
                 'TableName': table_name,
                 'Key': {
-                    'pk': f'PROJECT#{project_id}',
+                    'pk': project_pk(project_id),
                     'sk': f'PERSONA#{persona_id}',
                 },
                 'ConditionExpression': (
@@ -3705,7 +3709,7 @@ def _persona_name(project_id: str, persona_id: str) -> str | None:
     """The persona's name (a fictional archetype), read before a delete; None when unreadable."""
     try:
         response = projects_table.get_item(
-            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'PERSONA#{persona_id}'},
             ProjectionExpression='#name', ExpressionAttributeNames={'#name': 'name'},
         )
     except ClientError:
@@ -3875,10 +3879,7 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
 
         def build(research_id: str) -> dict:
             return {
-                'pk': f'PROJECT#{project_id}',
-                'sk': f'RESEARCH#{research_id}',
-                'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-                'gsi1sk': now,
+                **document_keys(project_id, f'RESEARCH#{research_id}', now),
                 'document_id': research_id,
                 'document_type': 'research',
                 'title': research_document_title(body.get('title'), research_question, now_dt),

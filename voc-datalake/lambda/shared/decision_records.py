@@ -38,6 +38,7 @@ from shared.derivation import ROLE_REFERENCE, build_derivation, derivation_sourc
 from shared.dynamo_paging import iter_query
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
 from shared.project_access import Caller
+from shared.project_keys import document_keys, project_pk
 from shared.project_writes import create_counted_project_child, projects_table_name, transact_project_actions
 from shared.timestamps import now_iso
 
@@ -179,7 +180,7 @@ def decision_derivation(decision: Mapping[str, Any]) -> dict:
 
 def _project_document_ids(table: Any, project_id: str) -> set[str]:
     query: dict[str, Any] = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)),
         'ProjectionExpression': 'document_id',
         'ConsistentRead': True,
     }
@@ -211,8 +212,7 @@ def create_decision(table: Any, project_id: str, body: Mapping[str, Any], caller
 
     def build(doc_id: str) -> dict:
         return {
-            'pk': f'PROJECT#{project_id}', 'sk': f'DOC#{doc_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS', 'gsi1sk': now,
+            **document_keys(project_id, f'DOC#{doc_id}', now),
             'document_id': doc_id, 'document_type': DECISION_DOCUMENT_TYPE,
             'title': title, 'content': render_content(title, decision), 'decision': decision,
             'derivation': decision_derivation(decision), 'revision': 1,
@@ -227,7 +227,7 @@ def stored_decision(table: Any, project_id: str, document_id: str) -> dict:
     """The decision document, or 404 (a missing id and a non-decision document alike)."""
     if not EVIDENCE_ID_RE.match(document_id):
         raise NotFoundError('Decision not found')
-    item = table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'DOC#{document_id}'},
+    item = table.get_item(Key={'pk': project_pk(project_id), 'sk': f'DOC#{document_id}'},
                           ConsistentRead=True).get('Item')
     if not isinstance(item, dict) or item.get('document_type') != DECISION_DOCUMENT_TYPE:
         raise NotFoundError('Decision not found')

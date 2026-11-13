@@ -91,6 +91,7 @@ from shared.logging import logger, metrics
 from shared.model_config import surface_context_window_tokens
 from shared.model_profile import model_profile_scope, payload_fields, profile_from_payload
 from shared.persona_context import personas_prompt_context
+from shared.project_keys import document_listing, project_pk
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
 from shared.prototype_pins import (
@@ -191,7 +192,7 @@ def _gather_context(
     # Query project items once if we need personas or documents
     wants_documents = data_sources.get('documents') or data_sources.get('research')
     if data_sources.get('personas') or wants_documents:
-        resp = projects_table.query(KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}'))
+        resp = projects_table.query(KeyConditionExpression=Key('pk').eq(project_pk(project_id)))
         all_project_items = resp.get('Items', [])
 
         # Gather personas
@@ -764,8 +765,7 @@ def _document_item_fields(project_id: str, job_id: str, feature_idea: str,
     """
     now = now_iso()
     item_fields = {
-        'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-        'gsi1sk': now,
+        **document_listing(project_id, now),
         'feature_idea': clean_stored_text(feature_idea),
         'content': clean_stored_text(content),
         'job_id': job_id,
@@ -959,7 +959,7 @@ def _document_by_id(projects_table, project_id: str, sk_prefix: str, document_id
     client-supplied id here without a separate ownership check.
     """
     resp = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'{sk_prefix}{document_id}'},
+        Key={'pk': project_pk(project_id), 'sk': f'{sk_prefix}{document_id}'},
     )
     return resp.get('Item') or None
 
@@ -1007,7 +1007,7 @@ def _newest_document_id(projects_table, project_id: str, sk_prefix: str) -> str 
     """
     newest = None
     params: dict = {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with(sk_prefix),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)) & Key('sk').begins_with(sk_prefix),
         # None of these names can collide with a DynamoDB reserved word (`sk` is
         # not one, and the others contain an underscore), so no
         # ExpressionAttributeNames are needed. `sk` is here only as the fallback
@@ -1215,7 +1215,7 @@ def _base_prototype(projects_table, project_id: str, base_prototype_id: str) -> 
     if not base_prototype_id:
         return None
     item = projects_table.get_item(
-        Key={'pk': f'PROJECT#{project_id}', 'sk': f'PROTOTYPE#{base_prototype_id}'},
+        Key={'pk': project_pk(project_id), 'sk': f'PROTOTYPE#{base_prototype_id}'},
     ).get('Item')
     if not item:
         raise RuntimeError(
@@ -1385,7 +1385,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
     if not prd and not prfaq:
         raise RuntimeError('No PRD or PR/FAQ found for this project. Generate at least one first.')
 
-    proj_resp = projects_table.get_item(Key={'pk': f'PROJECT#{project_id}', 'sk': 'META'})
+    proj_resp = projects_table.get_item(Key={'pk': project_pk(project_id), 'sk': 'META'})
     project_name = (proj_resp.get('Item') or {}).get('name') or 'Project'
 
     title = doc_config.get('title') or default_prototype_title(prd, prfaq, f'Prototype: {project_name}')
@@ -1489,8 +1489,7 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
 
     item_fields = {
         **prototype_identity,
-        'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-        'gsi1sk': now,
+        **document_listing(project_id, now),
         # NO prototype_url here. `/prototypes/*` is restricted by a CloudFront
         # trusted key group (issue #229), so a usable URL carries a signature
         # and an expiry — persisting one would bake in an expiry that outlives

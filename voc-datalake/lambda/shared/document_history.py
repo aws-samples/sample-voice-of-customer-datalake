@@ -48,6 +48,7 @@ from shared.document_versions import (
 )
 from shared.dynamo_paging import iter_query, query_all
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
+from shared.project_keys import project_pk
 from shared.project_writes import projects_table_name
 from shared.row_ids import OPAQUE_ID_RE
 
@@ -126,7 +127,7 @@ def _series_documents(table: Any, project_id: str, document: dict, document_type
     int ``version`` and leaves every other row alone, which the type filter drops.
     """
     series = normalized_base_title(series_base(document), document_type)
-    rows = query_all(table, {'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'), 'ConsistentRead': True})
+    rows = query_all(table, {'KeyConditionExpression': Key('pk').eq(project_pk(project_id)), 'ConsistentRead': True})
     versions = [
         row for row in normalize_document_versions(rows)
         if managed_document_type(row) == document_type

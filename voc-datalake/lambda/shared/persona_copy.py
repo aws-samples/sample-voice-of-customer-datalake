@@ -20,6 +20,7 @@ from shared.ids import timestamped_id
 from shared.logging import logger
 from shared.persona_save import ProjectNotWritableError, save_persona_items, store_persona_count
 from shared.project_gate import PROJECT_NOT_FOUND
+from shared.project_keys import personas_index_pk, project_pk
 from shared.s3_versions import delete_every_version
 
 SourceScope = Literal['project', 'company']
@@ -39,7 +40,7 @@ def read_source_personas(table: Any, container: str, persona_ids: Sequence[str])
     personas = []
     for persona_id in persona_ids:
         item = table.get_item(
-            Key={'pk': f'PROJECT#{container}', 'sk': f'PERSONA#{persona_id}'}, ConsistentRead=True,
+            Key={'pk': project_pk(container), 'sk': f'PERSONA#{persona_id}'}, ConsistentRead=True,
         ).get('Item')
         if not isinstance(item, dict):
             raise NotFoundError(PERSONA_NOT_FOUND)
@@ -94,8 +95,8 @@ def _sweep_copied_avatars(s3: Any, bucket: str, items: list[dict]) -> None:
 def _new_item(source: dict, target: str, new_id: str, now: str, provenance: dict) -> dict:
     return {
         **{field: value for field, value in source.items() if field not in NOT_COPIED},
-        'pk': f'PROJECT#{target}', 'sk': f'PERSONA#{new_id}',
-        'gsi1pk': f'PROJECT#{target}#PERSONAS', 'gsi1sk': now,
+        'pk': project_pk(target), 'sk': f'PERSONA#{new_id}',
+        'gsi1pk': personas_index_pk(target), 'gsi1sk': now,
         'persona_id': new_id, 'created_at': now, 'updated_at': now,
         'research_notes': [], 'copied_from': provenance, 'avatar_url': None,
         # The source's reviews when it had any, else a no-evidence marker; never invented.

@@ -28,6 +28,7 @@ from shared.engagement_common import (
 from shared.exceptions import NotFoundError, ValidationError
 from shared.indexes import PARTICIPANTS_LISTING_INDEX
 from shared.participants_store import person_key
+from shared.project_keys import project_pk
 
 LIST_PREFIX: Final = 'lst'
 LISTS_PARTITION: Final = 'LISTS'
@@ -167,7 +168,7 @@ def delete_list(table: Any, list_id: str) -> None:
             batch.delete_item(Key={'pk': f'PERSON#{person_id}', 'sk': f'LIST#{list_id}'})
             batch.delete_item(Key={'pk': f'LIST#{list_id}', 'sk': f'MEMBER#{person_id}'})
         for project_id in item.get('project_ids') or ():
-            batch.delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'LIST#{list_id}'})
+            batch.delete_item(Key={'pk': project_pk(project_id), 'sk': f'LIST#{list_id}'})
     for person_id in members:
         _track_membership(table, person_id, list_id, member=False)
     table.delete_item(Key=list_key(list_id))
@@ -184,13 +185,13 @@ def _track(table: Any, kind: str, target_id: str, project_id: str, *, linked: bo
 
 def link(table: Any, project_id: str, kind: str, target_id: str, added_by: str) -> None:
     """Link a list (``kind`` 'LIST') or a person ('PERSON') to a project (idempotent)."""
-    table.put_item(Item={'pk': f'PROJECT#{project_id}', 'sk': f'{kind}#{target_id}', 'target_id': target_id,
+    table.put_item(Item={'pk': project_pk(project_id), 'sk': f'{kind}#{target_id}', 'target_id': target_id,
                          'added_at': now_iso(), 'added_by': added_by})
     _track(table, kind, target_id, project_id, linked=True)
 
 
 def unlink(table: Any, project_id: str, kind: str, target_id: str) -> None:
-    table.delete_item(Key={'pk': f'PROJECT#{project_id}', 'sk': f'{kind}#{target_id}'})
+    table.delete_item(Key={'pk': project_pk(project_id), 'sk': f'{kind}#{target_id}'})
     _track(table, kind, target_id, project_id, linked=False)
 
 
@@ -199,7 +200,7 @@ def project_links(table: Any, project_id: str) -> tuple[list[str], list[str]]:
     lists: list[str] = []
     people: list[str] = []
     for row in iter_query(table, {'KeyConditionExpression': 'pk = :pk',
-                                  'ExpressionAttributeValues': {':pk': f'PROJECT#{project_id}'}},
+                                  'ExpressionAttributeValues': {':pk': project_pk(project_id)}},
                           max_items=MAX_PROJECT_LINKS):
         kind, _, target = str(row.get('sk', '')).partition('#')
         (lists if kind == 'LIST' else people).append(target)

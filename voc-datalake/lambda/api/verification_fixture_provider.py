@@ -31,6 +31,7 @@ from shared.exceptions import (
 )
 from shared.logging import logger, tracer
 from shared.prioritization_keys import PRIORITIZATION_PK
+from shared.project_keys import PROJECT_TYPE_PK, document_keys, project_pk
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_aggregates_table, get_projects_table
 
@@ -241,9 +242,9 @@ def _records(
     ownership = _ownership(request, fixture_id)
     project_items = [
         {
-            'pk': f'PROJECT#{project_id}',
+            'pk': project_pk(project_id),
             'sk': 'META',
-            'gsi1pk': 'TYPE#PROJECT',
+            'gsi1pk': PROJECT_TYPE_PK,
             'gsi1sk': _FIXED_CREATED_AT,
             'project_id': project_id,
             'name': f'ABCA baseline fixture {fixture_id}',
@@ -259,10 +260,7 @@ def _records(
             **ownership,
         },
         {
-            'pk': f'PROJECT#{project_id}',
-            'sk': f'PRD#{document_id}',
-            'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-            'gsi1sk': _FIXED_CREATED_AT,
+            **document_keys(project_id, f'PRD#{document_id}', _FIXED_CREATED_AT),
             'document_id': document_id,
             'document_type': 'prd',
             'title': 'ABCA prioritization baseline',
@@ -298,7 +296,7 @@ def _existing_expiry(
 ) -> tuple[str, int] | None:
     """The owned fixture's (expires_at, ttl) when it can be reused as is, else None."""
     item = projects_table.get_item(
-        Key={'pk': f"PROJECT#{ids['project_id']}", 'sk': 'META'},
+        Key={'pk': project_pk(ids['project_id']), 'sk': 'META'},
         ConsistentRead=True,
     ).get('Item')
     if item is None:
@@ -403,11 +401,11 @@ def probe_fixture(request: dict[str, str]) -> dict[str, Any]:
     ids = _ids(request)
     ownership = _ownership(request, ids['fixture_id'])
     project = _require_owned(_get_exact(
-        projects, {'pk': f"PROJECT#{ids['project_id']}", 'sk': 'META'},
+        projects, {'pk': project_pk(ids['project_id']), 'sk': 'META'},
     ), ownership, 'project')
     document_id = ids['document_ids']['scorable_prd']
     document = _require_owned(_get_exact(
-        projects, {'pk': f"PROJECT#{ids['project_id']}", 'sk': f'PRD#{document_id}'},
+        projects, {'pk': project_pk(ids['project_id']), 'sk': f'PRD#{document_id}'},
     ), ownership, 'document')
     row_id = ids['row_ids']['baseline_row']
     row = _require_owned(_get_exact(
@@ -439,8 +437,8 @@ def teardown_fixture(request: dict[str, str]) -> dict[str, Any]:
     row_id = ids['row_ids']['baseline_row']
     project_name, aggregate_name = _table_name(projects, 'Projects'), _table_name(aggregates, 'Aggregates')
     keys = [
-        (projects, project_name, {'pk': f'PROJECT#{project_id}', 'sk': 'META'}),
-        (projects, project_name, {'pk': f'PROJECT#{project_id}', 'sk': f'PRD#{document_id}'}),
+        (projects, project_name, {'pk': project_pk(project_id), 'sk': 'META'}),
+        (projects, project_name, {'pk': project_pk(project_id), 'sk': f'PRD#{document_id}'}),
         (aggregates, aggregate_name, {'pk': PRIORITIZATION_PK, 'sk': f'ROW#{row_id}'}),
     ]
     _transact(

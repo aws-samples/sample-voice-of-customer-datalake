@@ -50,6 +50,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
+from shared.project_keys import project_pk
+
 VISIBILITY_PUBLIC: Final = 'public'
 VISIBILITY_PRIVATE: Final = 'private'
 VISIBILITIES: Final = frozenset({VISIBILITY_PUBLIC, VISIBILITY_PRIVATE})
@@ -131,10 +133,11 @@ def meta_gate_read(project_id: str, deletion_attribute: str) -> dict[str, Any]:
 
     Shared by every Lambda that gates on a project (projects API, ballots), so
     they read the same attributes the same way. ``deletion_attribute`` is passed
-    in to keep this module free of imports.
+    in to keep this module free of shared/project_writes.py (it imports only the
+    key builder).
     """
     return {
-        'Key': {'pk': f'PROJECT#{project_id}', 'sk': 'META'},
+        'Key': {'pk': project_pk(project_id), 'sk': 'META'},
         'ConsistentRead': True,
         'ProjectionExpression': _GATE_PROJECTION,
         'ExpressionAttributeNames': {

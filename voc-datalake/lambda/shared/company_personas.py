@@ -21,6 +21,7 @@ from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.logging import logger
 from shared.project_access import VISIBILITY_PRIVATE
+from shared.project_keys import project_pk
 from shared.project_writes import project_meta_key
 from shared.timestamps import now_iso
 
@@ -73,7 +74,7 @@ def _created_at(item: dict) -> str:
 def company_persona_items(table: Any) -> list[dict]:
     """Every company persona row, newest ``created_at`` first."""
     rows = list(iter_query(table, {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{COMPANY_PERSONAS_CONTAINER}')
+        'KeyConditionExpression': Key('pk').eq(project_pk(COMPANY_PERSONAS_CONTAINER))
         & Key('sk').begins_with('PERSONA#'),
     }))
     return sorted(rows, key=_created_at, reverse=True)

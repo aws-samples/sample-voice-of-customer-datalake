@@ -32,6 +32,7 @@ from boto3.dynamodb.conditions import Key
 
 from shared.dynamo_paging import iter_query
 from shared.persona_replace import PROTECTED_FIELD, is_protected
+from shared.project_keys import project_pk
 from shared.prompt_safety import neutralise_tags
 
 #: The newest personas projected into the prompt.
@@ -148,7 +149,7 @@ def _describe_existing(rows: Iterable[dict]) -> ExistingPersonas:
 def read_existing_personas(table: Any, project_id: str, *, only_protected: bool = False) -> ExistingPersonas:
     """The personas a generation keeps (every page): all of them when adding, the protected ones when replacing."""
     rows = iter_query(table, {
-        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
+        'KeyConditionExpression': Key('pk').eq(project_pk(project_id)) & Key('sk').begins_with('PERSONA#'),
         'ProjectionExpression': ', '.join(_ATTRIBUTE_NAMES),
         'ExpressionAttributeNames': dict(_ATTRIBUTE_NAMES),
     })

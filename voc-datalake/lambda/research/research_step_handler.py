@@ -51,6 +51,7 @@ from shared.jobs import update_job_status
 from shared.logging import logger, tracer
 from shared.model_config import surface_context_window_tokens
 from shared.persona_context import personas_prompt_context
+from shared.project_keys import document_keys, project_pk
 from shared.project_writes import create_counted_project_child
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import (
@@ -360,7 +361,7 @@ def _project_items(proj_table: Any, project_id: str) -> list[dict]:
     One query page stops at 1 MB, so a project with many long documents had its
     later personas and documents silently missing from the research context.
     """
-    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}')}
+    query: dict[str, Any] = {'KeyConditionExpression': Key('pk').eq(project_pk(project_id))}
     items: list[dict] = []
     for _page in range(MAX_PROJECT_ITEM_PAGES):
         response = proj_table.query(**query)
@@ -823,10 +824,7 @@ Public-web grounding for this report came from the following searches:
     if proj_table:
         def build(document_id: str) -> dict:
             return {
-                'pk': f'PROJECT#{project_id}',
-                'sk': f'RESEARCH#{document_id}',
-                'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
-                'gsi1sk': now,
+                **document_keys(project_id, f'RESEARCH#{document_id}', now),
                 'document_id': document_id,
                 'document_type': 'research',
                 'title': title,
