@@ -68,8 +68,13 @@ stack). Designed for them from day one.
   the checkouts, and the cache filler (a step that runs no repository code: fetch only, from the lockfile, install
   scripts off) writes the dependency caches. A toolchain whose dependency resolution runs build files (Gradle, Maven)
   gets no shared dependency cache: its resolution counts as repository code with network (the registry list only,
-  nothing customer-derived, no credential), in the sandbox, for that run only. No MicroVM that
-  runs repository code writes to the cache.
+  nothing customer-derived, no credential), in the sandbox, for that run only. Gradle runs without its daemon
+  (`GRADLE_OPTS=-Dorg.gradle.daemon=false` in the Java image), whose client talks to it over loopback, which the
+  dependency step's code firewall rejects; a build that asks for a JVM other than the client's
+  (`org.gradle.jvmargs`, which many repositories set, `org.gradle.java.home`, daemon JVM criteria) still forks a
+  single-use daemon, and worker processes talk over loopback too, which is rejected as well (unverified in a
+  MicroVM: such a repository's dependency step may fail; making loopback usable there is a design change to the
+  firewall). No MicroVM that runs repository code writes to the cache.
 
 ## Repository connectors
 

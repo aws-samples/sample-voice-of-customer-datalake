@@ -21,7 +21,10 @@ COPY engineering-images/common/harness.py /opt/voc/harness.py
 COPY engineering-images/common/entrypoint.sh /opt/voc/entrypoint.sh
 COPY engineering-images/common/check-runner.sh engineering-images/java/ready.sh engineering-images/java/validate.sh /opt/voc/hooks/
 
-ENV GRADLE_USER_HOME=/opt/voc/cache/gradle MAVEN_OPTS=-Dmaven.repo.local=/opt/voc/cache/m2
+# No Gradle daemon: it talks to its client over loopback, which the code firewall rejects in the dependency step
+# (entrypoint.sh). The runner passes it to repository code (unit_runner.TOOLCHAIN_ENV).
+ENV GRADLE_USER_HOME=/opt/voc/cache/gradle MAVEN_OPTS=-Dmaven.repo.local=/opt/voc/cache/m2 \
+    GRADLE_OPTS=-Dorg.gradle.daemon=false
 WORKDIR /work
 EXPOSE 8080
 # The runner starts as root only to drop every command to `code` or `unit` (unit_runner.sandboxed_argv).
